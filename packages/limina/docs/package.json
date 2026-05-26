@@ -6,7 +6,7 @@
     "docs:build": "vitepress build",
     "docs:dev": "vitepress dev --host 0.0.0.0",
     "docs:preview": "vitepress preview --host 0.0.0.0",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "limina checker build",
     "clean": "del-cli .vitepress/cache .vitepress/dist .tsbuild node_modules"
   },
   "packageManager": "pnpm@10.26.0",
@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:dev",
+    "limina": "workspace:*",
     "del-cli": "catalog:dev",
     "typescript": "catalog:dev",
     "vitepress": "catalog:frameworks"
