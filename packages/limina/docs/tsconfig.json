@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "isolatedDeclarations": false,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "stripInternal": false,
+    "types": ["node"],
+  },
+  "include": [
+    ".vitepress/config.ts",
+    ".vitepress/theme/**/*.ts",
+    "en/config.ts",
+    "zh/config.ts",
+  ],
+}

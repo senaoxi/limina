@@ -1,0 +1,98 @@
+# Pipelines
+
+Pipelines are named workflows for `limina check <name>`.
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  pipelines: {
+    publish: [
+      'graph:check',
+      'source:check',
+      'proof:check',
+      'checker:build',
+      'checker:typecheck',
+      'package:check',
+      'release:check',
+      {
+        type: 'command',
+        command: 'pnpm',
+        args: ['test'],
+      },
+    ],
+  },
+});
+```
+
+## String Steps
+
+String steps can be built-in Limina tasks:
+
+- `checker:build`
+- `checker:typecheck`
+- `graph:check`
+- `package:check`
+- `proof:check`
+- `release:check`
+- `source:check`
+
+They can also be simple external commands. Simple commands are split on whitespace; use object form when arguments contain spaces, or when the step needs `cwd` or environment variables.
+
+## Object Command Step
+
+Object form declares an external command explicitly:
+
+```js
+{
+  type: 'command',
+  command: 'pnpm',
+  args: ['test'],
+  cwd: 'packages/app',
+  env: {
+    NODE_ENV: 'test',
+  },
+}
+```
+
+## Object Task Step
+
+Built-in tasks can also be written explicitly:
+
+```js
+{
+  type: 'task',
+  name: 'source:check',
+}
+```
+
+Pipelines are a good place to fix team workflows as named commands. A `publish` pipeline can typecheck, build, and then inspect package output, so local scripts and CI share the same order instead of drifting apart.
+
+After configuration, `pnpm exec limina check publish` runs steps in array order. If a change introduces a cross-package relative import:
+
+```ts
+// packages/app/src/main.ts
+import { createClient } from '../../core/src/index';
+```
+
+the pipeline fails during `graph:check` or `source:check`, and later build, package check, and external test commands are skipped. The release flow stops at the check closest to the source of the problem.
+
+In a fuller example, the directory can look like this:
+
+```text
+packages/app/
+  src/main.ts
+packages/core/
+  src/index.ts
+```
+
+The module imports across package folders with a relative path:
+
+```ts
+// packages/app/src/main.ts
+import { createClient } from '../../core/src/index';
+```
+
+When `pnpm exec limina check publish` runs, Limina executes pipeline steps in array order. It enters `graph:check` and `source:check` first, where it analyzes TypeScript imports, package owners, and relative import boundaries.
+
+The result is a failure during the source/graph stage; `checker:build`, `package:check`, and `pnpm test` do not continue. The user can fix the closest cause first: replace the cross-package relative import with the `@acme/core` package export, then express the dependency through the manifest and project reference.

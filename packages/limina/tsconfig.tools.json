@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Package-local tooling check. Declaration leaf: tsconfig.tools.dts.json.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "lib": ["ESNext"],
+    "types": ["node"]
+  },
+  "include": ["package.json", "packagePlugin.ts", "rolldown.config.ts"]
+}

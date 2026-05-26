@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Package-local library check. Declaration leaf: tsconfig.lib.dts.json.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": true,
+    "lib": ["ESNext"],
+    "types": ["node"]
+  },
+  "include": ["src/"],
+  "exclude": ["src/**/__tests__/**/*.ts", "vitest.config.ts"]
+}

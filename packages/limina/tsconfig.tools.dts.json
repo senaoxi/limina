@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Tools declaration leaf for package build/config files.
+  "extends": ["./tsconfig.tools.json", "../../tsconfig.dts.base.json"],
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/tools.tsbuildinfo"
+  }
+}

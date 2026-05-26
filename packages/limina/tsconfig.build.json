@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.lib.dts.json"
+    },
+    {
+      "path": "./tsconfig.tools.dts.json"
+    },
+    {
+      "path": "./tsconfig.test.dts.json"
+    }
+  ]
+}
