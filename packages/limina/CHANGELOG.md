@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-05-26
+
+### Features
+
+- feat: limina (#67) ([e190fb1](https://github.com/XiSenao/docs-islands/commit/e190fb1))
+
 ## [0.0.3] - 2026-05-25
 
 ### Features
