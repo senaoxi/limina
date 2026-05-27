@@ -382,6 +382,53 @@ export interface PackageConfig {
   entries?: PackageEntry[];
 }
 
+export interface ReleaseContentHashConfigArgs {
+  /**
+   * Package currently being release-checked.
+   */
+  importerName: string;
+  /**
+   * Workspace dependency package being compared against npm.
+   */
+  dependencyName: string;
+}
+
+/**
+ * Release dependency artifact content hash settings.
+ */
+export interface ReleaseContentHashConfig {
+  /**
+   * npm dist-tag used as the online baseline for dependency package output.
+   *
+   * @default "latest"
+   */
+  baselineTag?: string | ((args: ReleaseContentHashConfigArgs) => string);
+  /**
+   * Use Limina's built-in dependency artifact ignore set as a fallback when
+   * `ignore` is omitted or returns `undefined`.
+   *
+   * @default false
+   */
+  builtinIgnore?: boolean;
+  /**
+   * Additional package-relative glob patterns ignored by dependency artifact
+   * content hashes.
+   */
+  ignore?:
+    | string[]
+    | ((args: ReleaseContentHashConfigArgs) => string[] | undefined);
+}
+
+/**
+ * Release check settings.
+ */
+export interface ReleaseConfig {
+  /**
+   * Dependency artifact content hash comparison settings.
+   */
+  contentHash?: ReleaseContentHashConfig;
+}
+
 /**
  * Limina user config.
  */
@@ -410,6 +457,10 @@ export interface LiminaConfig {
    * Rules that prove source files are covered by graph or checker entries.
    */
   proof?: ProofConfig;
+  /**
+   * Rules for release dependency artifact comparisons.
+   */
+  release?: ReleaseConfig;
 }
 
 /**
@@ -695,8 +746,120 @@ function collectCheckerConfigProblems(config: LiminaConfig): string[] {
   return problems;
 }
 
+function collectReleaseConfigProblems(config: LiminaConfig): string[] {
+  const problems: string[] = [];
+
+  if (!checkerObjectSchema.safeParse(config).success) {
+    return problems;
+  }
+
+  const release = config.release;
+
+  if (release === undefined) {
+    return problems;
+  }
+
+  if (!checkerObjectSchema.safeParse(release).success) {
+    problems.push(
+      [
+        'Invalid Limina release config:',
+        '  field: release',
+        `  value: ${formatUnknownValue(release)}`,
+        '  reason: release must be an object.',
+      ].join('\n'),
+    );
+    return problems;
+  }
+
+  const contentHash = release.contentHash;
+
+  if (contentHash === undefined) {
+    return problems;
+  }
+
+  if (!checkerObjectSchema.safeParse(contentHash).success) {
+    problems.push(
+      [
+        'Invalid Limina release config:',
+        '  field: release.contentHash',
+        `  value: ${formatUnknownValue(contentHash)}`,
+        '  reason: release.contentHash must be an object.',
+      ].join('\n'),
+    );
+    return problems;
+  }
+
+  const baselineTag = contentHash.baselineTag;
+
+  if (
+    baselineTag !== undefined &&
+    typeof baselineTag !== 'function' &&
+    (typeof baselineTag !== 'string' || baselineTag.trim().length === 0)
+  ) {
+    problems.push(
+      [
+        'Invalid Limina release config:',
+        '  field: release.contentHash.baselineTag',
+        `  value: ${formatUnknownValue(baselineTag)}`,
+        '  reason: baselineTag must be a non-empty string or function.',
+      ].join('\n'),
+    );
+  }
+
+  const builtinIgnore = contentHash.builtinIgnore;
+
+  if (builtinIgnore !== undefined && typeof builtinIgnore !== 'boolean') {
+    problems.push(
+      [
+        'Invalid Limina release config:',
+        '  field: release.contentHash.builtinIgnore',
+        `  value: ${formatUnknownValue(builtinIgnore)}`,
+        '  reason: builtinIgnore must be a boolean.',
+      ].join('\n'),
+    );
+  }
+
+  const ignore = contentHash.ignore;
+
+  if (ignore === undefined || typeof ignore === 'function') {
+    return problems;
+  }
+
+  if (!Array.isArray(ignore)) {
+    problems.push(
+      [
+        'Invalid Limina release config:',
+        '  field: release.contentHash.ignore',
+        `  value: ${formatUnknownValue(ignore)}`,
+        '  reason: ignore must be an array of non-empty strings or function.',
+      ].join('\n'),
+    );
+    return problems;
+  }
+
+  for (const [index, pattern] of ignore.entries()) {
+    if (typeof pattern === 'string' && pattern.trim().length > 0) {
+      continue;
+    }
+
+    problems.push(
+      [
+        'Invalid Limina release config:',
+        `  field: release.contentHash.ignore[${index}]`,
+        `  value: ${formatUnknownValue(pattern)}`,
+        '  reason: ignore patterns must be non-empty strings.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
 export function validateLiminaConfig(config: LiminaConfig): void {
-  const problems = collectCheckerConfigProblems(config);
+  const problems = [
+    ...collectCheckerConfigProblems(config),
+    ...collectReleaseConfigProblems(config),
+  ];
 
   if (problems.length > 0) {
     throw new Error(problems.join('\n\n'));

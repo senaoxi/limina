@@ -1,9 +1,17 @@
 import { unpack } from '@publint/pack';
-import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import type { ResolvedLiminaConfig } from './config';
-import { formatErrorMessage } from './logger';
+// @ts-expect-error -- picomatch v4 does not ship TypeScript declarations.
+import rawPicomatch from 'picomatch';
+import {
+  packOutputTarball,
+  type PackedPackageTarball,
+} from './commands/package';
+import type {
+  ReleaseContentHashConfigArgs,
+  ResolvedLiminaConfig,
+} from './config';
+import { ReleaseLogger, formatErrorMessage } from './logger';
 import { toRelativePath } from './utils/path';
 import {
   collectWorkspacePackages,
@@ -80,11 +88,43 @@ interface PackedPackageContentFile {
   relativePath: string;
 }
 
+type ContentHashDiffKind = (typeof CONTENT_HASH_DIFF_KINDS)[number];
+
+interface PackedArtifactContent {
+  filesByPath: Map<string, PackedPackageContentFile>;
+  packageVersion: string | null;
+}
+
+interface ContentHashDiff {
+  kind: ContentHashDiffKind;
+  relativePath: string;
+}
+
+type ContentHashDiffGroup = Record<ContentHashDiffKind, string[]>;
+
+interface ContentHashIgnoreRule {
+  label: string;
+  matches: (relativePath: string) => boolean;
+}
+
+interface IgnoredContentHashDiffGroup {
+  diffs: ContentHashDiffGroup;
+  label: string;
+}
+
+interface WorkspacePackageOutputComparison {
+  ignoredDiffGroups: IgnoredContentHashDiffGroup[];
+  localVersion: string | null;
+  matchesBaseline: boolean;
+  releaseRelevantDiffs: ContentHashDiffGroup;
+}
+
 interface RegistryVersionMetadata {
-  gitHead?: unknown;
+  dist?: unknown;
 }
 
 interface RegistryPackageMetadata {
+  'dist-tags'?: unknown;
   versions?: unknown;
 }
 
@@ -134,7 +174,28 @@ const require = createRequire(import.meta.url);
 const semver = require('semver') as SemverModule;
 const { NpmPackageJsonLint } =
   require('npm-package-json-lint') as NpmPackageJsonLintModule;
+const picomatch = rawPicomatch as unknown as (
+  pattern: string | readonly string[],
+  options?: {
+    dot?: boolean;
+  },
+) => (value: string) => boolean;
+const DEFAULT_CONTENT_HASH_BASELINE_TAG = 'latest';
+const CONTENT_HASH_DIFF_KINDS = [
+  'local-only',
+  'remote-only',
+  'changed',
+] as const;
 const REQUIRED_RELEASE_FILES = ['README.md', 'LICENSE.md'] as const;
+const ARTIFACT_HASH_IGNORED_FILES = new Set([
+  'README',
+  'README.md',
+  'CHANGELOG.md',
+  'HISTORY.md',
+  'CONTRIBUTING.md',
+  'CODE_OF_CONDUCT.md',
+  'SECURITY.md',
+]);
 const SOURCE_MAPPING_URL_PATTERN =
   /(?:\/\/\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=)/u;
 const PACKED_MANIFEST_LINT_CONFIG = {
@@ -324,84 +385,484 @@ function findRegistryVersionMetadata(
     : null;
 }
 
-function execGitCommand(
-  config: ResolvedLiminaConfig,
-  args: string[],
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      'git',
-      ['-C', config.rootDir, ...args],
-      {
-        encoding: 'utf8',
-        maxBuffer: 10 * 1024 * 1024,
-      },
-      (error, stdout) => {
-        if (error) {
-          reject(error);
-          return;
-        }
+function findRegistryDistTagVersion(
+  metadata: RegistryPackageMetadata,
+  distTag: string,
+): string | null {
+  if (!isRecord(metadata['dist-tags'])) {
+    return null;
+  }
 
-        resolve(stdout);
-      },
+  const version = metadata['dist-tags'][distTag];
+
+  return typeof version === 'string' && version.trim().length > 0
+    ? version
+    : null;
+}
+
+function getRegistryTarballUrl(
+  versionMetadata: RegistryVersionMetadata,
+): string | null {
+  if (!isRecord(versionMetadata.dist)) {
+    return null;
+  }
+
+  const tarballUrl = versionMetadata.dist.tarball;
+
+  return typeof tarballUrl === 'string' && tarballUrl.trim().length > 0
+    ? tarballUrl
+    : null;
+}
+
+async function fetchRegistryTarball(tarballUrl: string): Promise<Buffer> {
+  const response = await fetch(tarballUrl, {
+    headers: {
+      accept: 'application/octet-stream',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `unable to download npm tarball ${tarballUrl}: ${response.status} ${response.statusText}`,
     );
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+function resolveWorkspacePackageOutputDir(
+  config: ResolvedLiminaConfig,
+  workspacePackage: WorkspacePackage,
+): string {
+  const configuredEntry = config.package?.entries?.find(
+    (entry) => entry.name === workspacePackage.name,
+  );
+
+  return configuredEntry
+    ? path.resolve(config.rootDir, configuredEntry.outDir)
+    : path.join(workspacePackage.directory, 'dist');
+}
+
+function isIgnoredArtifactHashFile(relativePath: string): boolean {
+  return (
+    ARTIFACT_HASH_IGNORED_FILES.has(relativePath) ||
+    relativePath.startsWith('docs/') ||
+    relativePath.startsWith('examples/')
+  );
+}
+
+function resolveReleaseContentHashBaselineTag(
+  config: ResolvedLiminaConfig,
+  args: ReleaseContentHashConfigArgs,
+): string {
+  const configuredBaselineTag = config.release?.contentHash?.baselineTag;
+  const baselineTag =
+    typeof configuredBaselineTag === 'function'
+      ? configuredBaselineTag(args)
+      : (configuredBaselineTag ?? DEFAULT_CONTENT_HASH_BASELINE_TAG);
+
+  if (typeof baselineTag !== 'string' || baselineTag.trim().length === 0) {
+    throw new Error(
+      'release.contentHash.baselineTag must resolve to a non-empty string',
+    );
+  }
+
+  return baselineTag.trim();
+}
+
+function normalizeReleaseContentHashIgnorePatterns(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(
+      'release.contentHash.ignore must resolve to an array of non-empty strings or undefined',
+    );
+  }
+
+  return value.map((pattern, index) => {
+    if (typeof pattern !== 'string' || pattern.trim().length === 0) {
+      throw new Error(
+        `release.contentHash.ignore[${index}] must resolve to a non-empty string`,
+      );
+    }
+
+    return pattern.trim();
   });
 }
 
-async function hasWorkspacePackageChangesSinceGitHead(options: {
-  config: ResolvedLiminaConfig;
-  gitHead: string;
-  workspacePackage: WorkspacePackage;
-}): Promise<boolean> {
-  const relativeDirectory = toRelativePath(
-    options.config.rootDir,
-    options.workspacePackage.directory,
-  );
+function createUserContentHashIgnoreRules(
+  patterns: readonly string[],
+): ContentHashIgnoreRule[] {
+  return patterns.map((pattern) => {
+    const matches = picomatch(pattern, {
+      dot: true,
+    });
 
-  try {
-    await execGitCommand(options.config, [
-      'diff',
-      '--quiet',
-      options.gitHead,
-      '--',
-      relativeDirectory,
-    ]);
-  } catch (error) {
-    if (isRecord(error) && error.code === 1) {
-      return true;
-    }
+    return {
+      label: `user "${pattern}"`,
+      matches,
+    };
+  });
+}
 
-    throw error;
+function createBuiltinContentHashIgnoreRule(): ContentHashIgnoreRule {
+  return {
+    label: 'builtin',
+    matches: isIgnoredArtifactHashFile,
+  };
+}
+
+function resolveReleaseContentHashIgnoreRules(
+  config: ResolvedLiminaConfig,
+  args: ReleaseContentHashConfigArgs,
+): ContentHashIgnoreRule[] {
+  const contentHash = config.release?.contentHash;
+  const configuredIgnore = contentHash?.ignore;
+  const useBuiltinFallback = contentHash?.builtinIgnore === true;
+
+  if (configuredIgnore === undefined) {
+    return useBuiltinFallback ? [createBuiltinContentHashIgnoreRule()] : [];
   }
 
-  const untrackedOutput = await execGitCommand(options.config, [
-    'ls-files',
-    '--others',
-    '--exclude-standard',
-    '--',
-    relativeDirectory,
-  ]);
+  if (typeof configuredIgnore === 'function') {
+    const resolvedIgnore = configuredIgnore(args);
 
-  return untrackedOutput.trim().length > 0;
+    if (resolvedIgnore === undefined) {
+      return useBuiltinFallback ? [createBuiltinContentHashIgnoreRule()] : [];
+    }
+
+    return createUserContentHashIgnoreRules(
+      normalizeReleaseContentHashIgnorePatterns(resolvedIgnore),
+    );
+  }
+
+  return createUserContentHashIgnoreRules(
+    normalizeReleaseContentHashIgnorePatterns(configuredIgnore),
+  );
+}
+
+function createContentHashDiffGroup(): ContentHashDiffGroup {
+  return {
+    changed: [],
+    'local-only': [],
+    'remote-only': [],
+  };
+}
+
+function addContentHashDiff(
+  group: ContentHashDiffGroup,
+  diff: ContentHashDiff,
+): void {
+  group[diff.kind].push(diff.relativePath);
+}
+
+function sortContentHashDiffGroup(group: ContentHashDiffGroup): void {
+  for (const kind of CONTENT_HASH_DIFF_KINDS) {
+    group[kind].sort((a, b) => a.localeCompare(b));
+  }
+}
+
+function countContentHashDiffs(group: ContentHashDiffGroup): number {
+  return CONTENT_HASH_DIFF_KINDS.reduce(
+    (count, kind) => count + group[kind].length,
+    0,
+  );
+}
+
+function hasContentHashDiffs(group: ContentHashDiffGroup): boolean {
+  return countContentHashDiffs(group) > 0;
+}
+
+function readPackedPackageVersion(
+  contentFiles: readonly PackedPackageContentFile[],
+): string | null {
+  const packageJsonFile = contentFiles.find(
+    (file) => file.relativePath === 'package.json',
+  );
+
+  if (!packageJsonFile) {
+    return null;
+  }
+
+  try {
+    const manifest = JSON.parse(
+      Buffer.from(packageJsonFile.data).toString('utf8'),
+    ) as unknown;
+
+    if (!isRecord(manifest) || typeof manifest.version !== 'string') {
+      return null;
+    }
+
+    const version = manifest.version.trim();
+
+    return version.length > 0 ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+async function readPackedArtifactContent(
+  tarball: Buffer,
+): Promise<PackedArtifactContent> {
+  const packedPackage = await unpackPackedPackage(tarball);
+  const contentFiles = getPackedContentFiles(packedPackage);
+  const filesByPath = new Map<string, PackedPackageContentFile>(
+    contentFiles.map((file) => [file.relativePath, file]),
+  );
+
+  return {
+    filesByPath,
+    packageVersion: readPackedPackageVersion(contentFiles),
+  };
+}
+
+function fileDataEquals(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) {
+    return false;
+  }
+
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function createContentHashDiffs(options: {
+  localArtifact: PackedArtifactContent;
+  remoteArtifact: PackedArtifactContent;
+}): ContentHashDiff[] {
+  const paths = new Set([
+    ...options.localArtifact.filesByPath.keys(),
+    ...options.remoteArtifact.filesByPath.keys(),
+  ]);
+  const diffs: ContentHashDiff[] = [];
+
+  for (const relativePath of [...paths].sort((a, b) => a.localeCompare(b))) {
+    const localFile = options.localArtifact.filesByPath.get(relativePath);
+    const remoteFile = options.remoteArtifact.filesByPath.get(relativePath);
+
+    if (localFile && !remoteFile) {
+      diffs.push({
+        kind: 'local-only',
+        relativePath,
+      });
+      continue;
+    }
+
+    if (!localFile && remoteFile) {
+      diffs.push({
+        kind: 'remote-only',
+        relativePath,
+      });
+      continue;
+    }
+
+    if (
+      localFile &&
+      remoteFile &&
+      !fileDataEquals(localFile.data, remoteFile.data)
+    ) {
+      diffs.push({
+        kind: 'changed',
+        relativePath,
+      });
+    }
+  }
+
+  return diffs;
+}
+
+function partitionContentHashDiffs(options: {
+  diffs: readonly ContentHashDiff[];
+  ignoreRules: readonly ContentHashIgnoreRule[];
+}): {
+  ignoredDiffGroups: IgnoredContentHashDiffGroup[];
+  releaseRelevantDiffs: ContentHashDiffGroup;
+} {
+  const releaseRelevantDiffs = createContentHashDiffGroup();
+  const ignoredDiffGroups = options.ignoreRules.map((rule) => ({
+    diffs: createContentHashDiffGroup(),
+    label: rule.label,
+  }));
+
+  for (const diff of options.diffs) {
+    const ignoredGroupIndex = options.ignoreRules.findIndex((rule) =>
+      rule.matches(diff.relativePath),
+    );
+
+    if (ignoredGroupIndex === -1) {
+      addContentHashDiff(releaseRelevantDiffs, diff);
+      continue;
+    }
+
+    addContentHashDiff(ignoredDiffGroups[ignoredGroupIndex].diffs, diff);
+  }
+
+  sortContentHashDiffGroup(releaseRelevantDiffs);
+
+  for (const group of ignoredDiffGroups) {
+    sortContentHashDiffGroup(group.diffs);
+  }
+
+  return {
+    ignoredDiffGroups: ignoredDiffGroups.filter((group) =>
+      hasContentHashDiffs(group.diffs),
+    ),
+    releaseRelevantDiffs,
+  };
+}
+
+function formatReleaseRelevantContentHashDiffs(
+  diffs: ContentHashDiffGroup,
+): string[] {
+  if (!hasContentHashDiffs(diffs)) {
+    return [];
+  }
+
+  const lines = ['', 'Release-relevant diffs:'];
+
+  for (const kind of CONTENT_HASH_DIFF_KINDS) {
+    const paths = diffs[kind];
+
+    if (paths.length === 0) {
+      continue;
+    }
+
+    lines.push(
+      `  ${kind}:`,
+      ...paths.map((relativePath) => `    ${relativePath}`),
+    );
+  }
+
+  return lines;
+}
+
+function formatIgnoredContentHashDiffs(
+  groups: readonly IgnoredContentHashDiffGroup[],
+): string[] {
+  if (groups.length === 0) {
+    return [];
+  }
+
+  const lines = ['', 'Ignored contentHash diffs:'];
+
+  for (const group of groups) {
+    lines.push(
+      `  ${group.label}:`,
+      ...CONTENT_HASH_DIFF_KINDS.map(
+        (kind) => `    ${kind}: ${group.diffs[kind].length}`,
+      ),
+    );
+  }
+
+  return lines;
+}
+
+function formatContentHashComparisonReport(options: {
+  baselineTag: string;
+  baselineVersion: string;
+  comparison: WorkspacePackageOutputComparison;
+  dependencyName: string;
+  importerName: string;
+  localVersionFallback: string | undefined;
+}): string {
+  const { comparison, dependencyName } = options;
+  const status = comparison.matchesBaseline ? 'PASS' : 'FAIL';
+  const localVersion =
+    comparison.localVersion ??
+    options.localVersionFallback ??
+    '(missing version)';
+  const lines = [
+    `[release-check] ${status} ${options.importerName} -> ${dependencyName}`,
+    `Baseline: npm ${options.baselineTag} -> ${dependencyName}@${options.baselineVersion}`,
+    `Local: ${dependencyName}@${localVersion}`,
+    ...formatReleaseRelevantContentHashDiffs(comparison.releaseRelevantDiffs),
+    ...formatIgnoredContentHashDiffs(comparison.ignoredDiffGroups),
+  ];
+
+  return lines.join('\n');
+}
+
+async function compareLocalWorkspacePackageOutputToBaseline(options: {
+  config: ResolvedLiminaConfig;
+  ignoreRules: readonly ContentHashIgnoreRule[];
+  tarballUrl: string;
+  workspacePackage: WorkspacePackage;
+}): Promise<WorkspacePackageOutputComparison> {
+  let localPackedTarball: PackedPackageTarball | undefined;
+
+  try {
+    const localOutDir = resolveWorkspacePackageOutputDir(
+      options.config,
+      options.workspacePackage,
+    );
+    const publishedTarball = await fetchRegistryTarball(options.tarballUrl);
+    localPackedTarball = await packOutputTarball(localOutDir);
+
+    const [remoteArtifact, localArtifact] = await Promise.all([
+      readPackedArtifactContent(publishedTarball),
+      readPackedArtifactContent(localPackedTarball.tarball),
+    ]);
+    const { ignoredDiffGroups, releaseRelevantDiffs } =
+      partitionContentHashDiffs({
+        diffs: createContentHashDiffs({
+          localArtifact,
+          remoteArtifact,
+        }),
+        ignoreRules: options.ignoreRules,
+      });
+
+    return {
+      ignoredDiffGroups,
+      localVersion: localArtifact.packageVersion,
+      matchesBaseline: !hasContentHashDiffs(releaseRelevantDiffs),
+      releaseRelevantDiffs,
+    };
+  } finally {
+    if (localPackedTarball) {
+      await localPackedTarball.cleanup();
+    }
+  }
 }
 
 async function verifyWorkspacePackagePublished(options: {
   config: ResolvedLiminaConfig;
+  importerName: string;
   state: ReleaseConsistencyState;
   workspacePackage: WorkspacePackage;
 }): Promise<void> {
-  const { state, workspacePackage } = options;
-  const version = workspacePackage.manifest.version;
+  const { importerName, state, workspacePackage } = options;
+  const dependencyName = workspacePackage.name;
+  const problemBase = {
+    dependencyName,
+    importerName,
+    packageName: dependencyName,
+  };
+  const contentHashArgs = {
+    dependencyName,
+    importerName,
+  };
+  let baselineTag: string;
+  let ignoreRules: ContentHashIgnoreRule[];
 
-  if (!version || !semver.valid(version)) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+  try {
+    baselineTag = resolveReleaseContentHashBaselineTag(
+      options.config,
+      contentHashArgs,
+    );
+    ignoreRules = resolveReleaseContentHashIgnoreRules(
+      options.config,
+      contentHashArgs,
+    );
+  } catch (error) {
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
+      ...problemBase,
       message: [
-        'workspace package must declare a valid semver version',
-        'before another publishable package can depend on it',
+        `invalid release.contentHash config for ${dependencyName}:`,
+        formatErrorMessage(error),
       ].join(' '),
-      packageName: workspacePackage.name,
     });
     return;
   }
@@ -409,91 +870,105 @@ async function verifyWorkspacePackagePublished(options: {
   let metadata: RegistryPackageMetadata | null;
 
   try {
-    metadata = await fetchRegistryPackageMetadata(workspacePackage.name, state);
+    metadata = await fetchRegistryPackageMetadata(dependencyName, state);
   } catch (error) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
+      ...problemBase,
       message: [
-        `unable to read npm registry metadata for ${workspacePackage.name}@${version}:`,
+        `unable to read npm registry metadata for ${dependencyName}:`,
         formatErrorMessage(error),
       ].join(' '),
-      packageName: workspacePackage.name,
     });
     return;
   }
 
   if (!metadata) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
-      message: `${workspacePackage.name}@${version} is not published to the npm registry`,
-      packageName: workspacePackage.name,
+      ...problemBase,
+      message: `${dependencyName} is not published to the npm registry`,
     });
     return;
   }
 
-  const versionMetadata = findRegistryVersionMetadata(metadata, version);
+  const baselineVersion = findRegistryDistTagVersion(metadata, baselineTag);
+
+  if (!baselineVersion) {
+    state.unpublishedPackageNames.add(dependencyName);
+    state.registryProblems.push({
+      ...problemBase,
+      message: `${dependencyName} registry metadata has no "${baselineTag}" dist-tag`,
+    });
+    return;
+  }
+
+  const versionMetadata = findRegistryVersionMetadata(
+    metadata,
+    baselineVersion,
+  );
 
   if (!versionMetadata) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
-      message: `${workspacePackage.name}@${version} is not published to the npm registry`,
-      packageName: workspacePackage.name,
+      ...problemBase,
+      message: `${dependencyName}@${baselineVersion} is not published to the npm registry`,
     });
     return;
   }
 
-  if (
-    typeof versionMetadata.gitHead !== 'string' ||
-    versionMetadata.gitHead.trim().length === 0
-  ) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+  const tarballUrl = getRegistryTarballUrl(versionMetadata);
+
+  if (!tarballUrl) {
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
-      message: [
-        `${workspacePackage.name}@${version} registry metadata has no gitHead,`,
-        'so limina cannot prove the published source baseline',
-      ].join(' '),
-      packageName: workspacePackage.name,
+      ...problemBase,
+      message: `${dependencyName}@${baselineVersion} registry metadata has no dist.tarball`,
     });
     return;
   }
 
-  let hasChanges: boolean;
+  let comparison: WorkspacePackageOutputComparison;
 
   try {
-    hasChanges = await hasWorkspacePackageChangesSinceGitHead({
+    comparison = await compareLocalWorkspacePackageOutputToBaseline({
       config: options.config,
-      gitHead: versionMetadata.gitHead,
+      ignoreRules,
+      tarballUrl,
       workspacePackage,
     });
   } catch (error) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
+      ...problemBase,
       message: [
-        `unable to compare ${workspacePackage.name}@${version}`,
-        `against published gitHead ${versionMetadata.gitHead}:`,
+        `unable to compare local package output for ${dependencyName}`,
+        `against npm ${baselineTag} ${dependencyName}@${baselineVersion}:`,
         formatErrorMessage(error),
       ].join(' '),
-      packageName: workspacePackage.name,
     });
     return;
   }
 
-  if (hasChanges) {
-    state.unpublishedPackageNames.add(workspacePackage.name);
+  const comparisonReport = formatContentHashComparisonReport({
+    baselineTag,
+    baselineVersion,
+    comparison,
+    dependencyName,
+    importerName,
+    localVersionFallback: workspacePackage.manifest.version,
+  });
+
+  if (!comparison.matchesBaseline) {
+    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
-      importerName: workspacePackage.name,
-      message: [
-        `${workspacePackage.name}@${version} has workspace changes`,
-        `after the published npm registry gitHead ${versionMetadata.gitHead}`,
-      ].join(' '),
-      packageName: workspacePackage.name,
+      ...problemBase,
+      message: comparisonReport,
     });
+    return;
   }
+
+  ReleaseLogger.info(comparisonReport);
 }
 
 async function visitWorkspacePackageDependencies(options: {
@@ -570,6 +1045,7 @@ async function visitWorkspacePackageDependencies(options: {
       state.visitedPackages.add(targetPackage.name);
       await verifyWorkspacePackagePublished({
         config,
+        importerName,
         state,
         workspacePackage: targetPackage,
       });

@@ -6,7 +6,9 @@
   "author": "Senao Xi",
   "description": "Configurable monorepo architecture and TypeScript graph governance CLI",
   "files": [
-    "dist"
+    "LICENSE.md",
+    "README.md",
+    "README.zh-CN.md"
   ],
   "keywords": [
     "monorepo",
@@ -48,6 +50,7 @@
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",
     "npm-package-json-lint": "catalog:lint",
+    "picomatch": "catalog:prod",
     "publint": "catalog:lint",
     "semver": "catalog:dev",
     "tinyglobby": "catalog:prod",
@@ -57,6 +60,7 @@
   "devDependencies": {
     "@docs-islands/eslint-config": "workspace:*",
     "@docs-islands/utils": "link:../../utils/dist",
+    "@docs-islands/plugin-license": "link:../plugins/license/dist",
     "@vue/compiler-sfc": "catalog:dev",
     "@types/node": "catalog:dev",
     "del-cli": "catalog:dev",

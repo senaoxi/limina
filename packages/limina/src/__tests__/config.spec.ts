@@ -46,6 +46,13 @@ describe('defineConfig', () => {
           },
         ],
       },
+      release: {
+        contentHash: {
+          baselineTag: 'next',
+          builtinIgnore: false,
+          ignore: ['client/**'],
+        },
+      },
     });
 
     expect(config.config?.checkers?.typescript?.entry).toBe(
@@ -59,6 +66,9 @@ describe('defineConfig', () => {
       'attw',
       'boundary',
     ]);
+    expect(config.release?.contentHash?.baselineTag).toBe('next');
+    expect(config.release?.contentHash?.builtinIgnore).toBe(false);
+    expect(config.release?.contentHash?.ignore).toEqual(['client/**']);
   });
 
   it('resolves built-in checker defaults', () => {
@@ -340,6 +350,201 @@ export default null;
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
         /limina config must export or return an object/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('loads release contentHash function config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  release: {
+    contentHash: {
+      baselineTag: ({ importerName, dependencyName }) =>
+        importerName === '@example/app' && dependencyName === '@example/dep'
+          ? 'beta'
+          : 'latest',
+      builtinIgnore: true,
+      ignore: ({ dependencyName }) =>
+        dependencyName === '@example/dep' ? ['client/**'] : undefined,
+    },
+  },
+};
+`,
+      );
+
+      const config = await loadConfig({ cwd: rootDir });
+      const baselineTag = config.release?.contentHash?.baselineTag;
+      const builtinIgnore = config.release?.contentHash?.builtinIgnore;
+      const ignore = config.release?.contentHash?.ignore;
+
+      expect(typeof baselineTag).toBe('function');
+      expect(builtinIgnore).toBe(true);
+      expect(typeof ignore).toBe('function');
+
+      if (typeof baselineTag === 'function') {
+        expect(
+          baselineTag({
+            dependencyName: '@example/dep',
+            importerName: '@example/app',
+          }),
+        ).toBe('beta');
+      }
+
+      if (typeof ignore === 'function') {
+        expect(
+          ignore({
+            dependencyName: '@example/dep',
+            importerName: '@example/app',
+          }),
+        ).toEqual(['client/**']);
+        expect(
+          ignore({
+            dependencyName: '@example/other',
+            importerName: '@example/app',
+          }),
+        ).toBeUndefined();
+      }
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects empty release contentHash baseline tags', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  release: {
+    contentHash: {
+      baselineTag: '',
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /baselineTag must be a non-empty string or function/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects non-boolean release contentHash builtinIgnore config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  release: {
+    contentHash: {
+      builtinIgnore: 'yes',
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /builtinIgnore must be a boolean/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects non-array release contentHash ignore config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  release: {
+    contentHash: {
+      ignore: 'client/**',
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /ignore must be an array of non-empty strings or function/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects empty release contentHash ignore patterns', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  release: {
+    contentHash: {
+      ignore: ['client/**', ''],
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /ignore patterns must be non-empty strings/u,
       );
     } finally {
       await rm(rootDir, {

@@ -90,4 +90,8 @@ packages/core/
 
 ## Release checks
 
-`limina release check` 独立于 `package check`。它使用同一组 `package.entries` 做选择，打包 npm tarball，然后校验发布卫生和基于 npm registry metadata 的 workspace 发布依赖一致性。它会拒绝 private output、缺失 README/license、source map 文件、JavaScript `sourceMappingURL` 注释、packed manifest 泄露 `workspace:`/`link:`，以及不覆盖本地 workspace 版本的发布依赖 range。没有 `--package` 时，它要求 cwd 最近的 `package.json#name` 必须命中配置 entry；传入一个或多个 `--package <name>` 时会跳过 cwd 匹配。
+`limina release check` 独立于 `package check`。它使用同一组 `package.entries` 做选择，打包 npm tarball，然后校验发布卫生和基于 npm registry metadata 的 workspace 发布依赖一致性。对于 workspace 发布依赖，Limina 会把本地打包产物和 npm dist-tag baseline 做 package-relative content diff 对比，`release.contentHash.baselineTag` 默认是 `latest`。diff 报告会把文件分成 `changed`、`local-only`、`remote-only` 三类；失败时会列出 release-relevant 的具体文件名。
+
+默认 `release.contentHash.builtinIgnore` 是 `false`，所以 README、changelog、contributing、security 文件以及 `docs/**`、`examples/**` 都不会被忽略。设置 `builtinIgnore: true` 后，内置忽略集只会在 `release.contentHash.ignore` 未配置或 ignore 函数返回 `undefined` 时作为兜底；ignore 函数返回 `[]` 表示该 dependency 不忽略任何文件。`release.contentHash.ignore` 可以是 package-relative glob 数组，例如 `client/**` 或 `dist/*.wasm`，也可以写成函数并按 importer/dependency 包名返回不同规则。被忽略的报告会按命中的规则分组，并统计 `changed`、`local-only`、`remote-only` 三类数量。
+
+如果按配置忽略后消费者可见 package 内容一致，就不会要求该依赖重新发布。Release checks 也会拒绝 private output、缺失 README/license、source map 文件、JavaScript `sourceMappingURL` 注释、packed manifest 泄露 `workspace:`/`link:`，以及不覆盖本地 workspace 版本的发布依赖 range。没有 `--package` 时，它要求 cwd 最近的 `package.json#name` 必须命中配置 entry；传入一个或多个 `--package <name>` 时会跳过 cwd 匹配。

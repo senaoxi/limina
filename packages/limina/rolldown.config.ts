@@ -1,3 +1,5 @@
+import licensePlugin from '@docs-islands/plugin-license';
+import path from 'node:path';
 import { defineConfig, type RolldownOptions } from 'rolldown';
 import { dts } from 'rolldown-plugin-dts';
 import packagePlugin from './packagePlugin';
@@ -14,7 +16,14 @@ const moduleConfig: RolldownOptions = defineConfig({
   platform: 'node',
   preserveEntrySignatures: 'strict',
   external,
-  plugins: [packagePlugin()],
+  plugins: [
+    packagePlugin(),
+    licensePlugin(
+      path.resolve(__dirname, 'LICENSE.md'),
+      'limina license',
+      'limina',
+    ),
+  ],
   output: {
     dir: 'dist',
     entryFileNames: '[name].js',
