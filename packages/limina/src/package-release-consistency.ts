@@ -1,6 +1,7 @@
 import { unpack } from '@publint/pack';
 import { execFile } from 'node:child_process';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import type { ResolvedLiminaConfig } from './config';
 import { formatErrorMessage } from './logger';
 import { toRelativePath } from './utils/path';
@@ -22,6 +23,31 @@ interface SemverModule {
     },
   ) => boolean;
   valid: (version: string) => string | null;
+}
+
+interface NpmPackageJsonLintIssue {
+  lintId: string;
+  lintMessage: string;
+  node: string;
+  severity: string;
+}
+
+interface NpmPackageJsonLintResult {
+  results: Array<{
+    errorCount: number;
+    issues: NpmPackageJsonLintIssue[];
+  }>;
+}
+
+interface NpmPackageJsonLintModule {
+  NpmPackageJsonLint: new (options: {
+    config: Record<string, unknown>;
+    cwd: string;
+    packageJsonFilePath: string;
+    packageJsonObject: PublishManifest;
+  }) => {
+    lint: () => NpmPackageJsonLintResult;
+  };
 }
 
 interface PublishDependencyEntry {
@@ -81,6 +107,7 @@ interface ReleaseConsistencyState {
   directWorkspaceDependencies: DirectWorkspaceDependency[];
   edges: Map<string, Set<string>>;
   missingWorkspaceDependencies: ReleaseConsistencyProblem[];
+  packedManifestLintProblems: ReleaseConsistencyProblem[];
   packedManifestProblems: ReleaseConsistencyProblem[];
   privateWorkspaceDependencies: ReleaseConsistencyProblem[];
   releaseHygieneProblems: ReleaseConsistencyProblem[];
@@ -105,9 +132,54 @@ export class PackageReleaseConsistencyError extends Error {
 
 const require = createRequire(import.meta.url);
 const semver = require('semver') as SemverModule;
+const { NpmPackageJsonLint } =
+  require('npm-package-json-lint') as NpmPackageJsonLintModule;
 const REQUIRED_RELEASE_FILES = ['README.md', 'LICENSE.md'] as const;
 const SOURCE_MAPPING_URL_PATTERN =
   /(?:\/\/\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=)/u;
+const PACKED_MANIFEST_LINT_CONFIG = {
+  rules: {
+    'bin-type': 'error',
+    'bundledDependencies-type': 'error',
+    'config-type': 'error',
+    'cpu-type': 'error',
+    'dependencies-type': 'error',
+    'description-type': 'error',
+    'devDependencies-type': 'error',
+    'directories-type': 'error',
+    'engines-type': 'error',
+    'files-type': 'error',
+    'homepage-type': 'error',
+    'keywords-type': 'error',
+    'license-type': 'error',
+    'main-type': 'error',
+    'man-type': 'error',
+    'name-format': 'error',
+    'name-type': 'error',
+    'no-archive-dependencies': 'error',
+    'no-archive-devDependencies': 'error',
+    'no-file-dependencies': 'error',
+    'no-file-devDependencies': 'error',
+    'no-git-dependencies': 'error',
+    'no-git-devDependencies': 'error',
+    'no-repeated-dependencies': 'error',
+    'optionalDependencies-type': 'error',
+    'os-type': 'error',
+    'peerDependencies-type': 'error',
+    'preferGlobal-type': 'error',
+    'private-type': 'error',
+    'repository-type': 'error',
+    'require-license': 'error',
+    'require-name': 'error',
+    'require-types': 'error',
+    'require-version': 'error',
+    'scripts-type': 'error',
+    'type-type': 'error',
+    'valid-values-private': ['error', [false]],
+    'version-format': 'error',
+    'version-type': 'error',
+  },
+} as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -122,6 +194,7 @@ function createReleaseConsistencyState(): ReleaseConsistencyState {
     directWorkspaceDependencies: [],
     edges: new Map<string, Set<string>>(),
     missingWorkspaceDependencies: [],
+    packedManifestLintProblems: [],
     packedManifestProblems: [],
     privateWorkspaceDependencies: [],
     releaseHygieneProblems: [],
@@ -568,6 +641,44 @@ function readPackedPackageJson(options: {
   }
 }
 
+function formatNpmPackageJsonLintIssue(issue: NpmPackageJsonLintIssue): string {
+  return `${issue.lintId} [${issue.node || 'package.json'}]: ${
+    issue.lintMessage
+  }`;
+}
+
+function validatePackedManifestLint(options: {
+  config: ResolvedLiminaConfig;
+  manifest: PublishManifest;
+  outDir: string;
+  rootPackageName: string;
+  state: ReleaseConsistencyState;
+}): void {
+  const lintResult = new NpmPackageJsonLint({
+    config: PACKED_MANIFEST_LINT_CONFIG,
+    cwd: options.config.rootDir,
+    packageJsonFilePath: path.join(options.outDir, 'package.json'),
+    packageJsonObject: options.manifest,
+  }).lint();
+
+  for (const result of lintResult.results) {
+    if (result.errorCount === 0) {
+      continue;
+    }
+
+    for (const issue of result.issues) {
+      if (issue.severity !== 'error') {
+        continue;
+      }
+
+      options.state.packedManifestLintProblems.push({
+        importerName: options.rootPackageName,
+        message: formatNpmPackageJsonLintIssue(issue),
+      });
+    }
+  }
+}
+
 function isJavaScriptPackageFile(relativePath: string): boolean {
   return /\.(?:cjs|mjs|js)$/u.test(relativePath);
 }
@@ -729,6 +840,7 @@ function createReleaseConsistencyError(options: {
     state.missingWorkspaceDependencies.length +
     state.registryProblems.length +
     state.releaseHygieneProblems.length +
+    state.packedManifestLintProblems.length +
     state.packedManifestProblems.length;
 
   if (problemCount === 0) {
@@ -758,6 +870,10 @@ function createReleaseConsistencyError(options: {
     ...formatProblemLines(
       'Workspace packages must be published before this package:',
       state.registryProblems,
+    ),
+    ...formatProblemLines(
+      'Packed package manifest failed npm-package-json-lint:',
+      state.packedManifestLintProblems,
     ),
     ...formatProblemLines(
       'Packed package manifest is inconsistent with workspace publish dependencies:',
@@ -814,6 +930,14 @@ export async function assertPackageReleaseConsistency(
   });
 
   if (packedManifest) {
+    validatePackedManifestLint({
+      config: options.config,
+      manifest: packedManifest,
+      outDir: options.outDir,
+      rootPackageName: options.outputManifest.name,
+      state,
+    });
+
     validatePackedManifest({
       manifest: packedManifest,
       rootPackageName: options.outputManifest.name,

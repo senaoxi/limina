@@ -230,7 +230,10 @@ async function createOutputPackage(
       exports: {
         '.': './index.js',
       },
+      license: 'MIT',
       name: '@example/pkg',
+      types: './index.d.ts',
+      version: '1.0.0',
       ...manifest,
     }),
   );
@@ -276,7 +279,9 @@ async function createWorkspacePackage(
       exports: {
         '.': './index.js',
       },
+      license: 'MIT',
       name: packageName,
+      types: './index.d.ts',
       version: '1.0.0',
       ...outputManifest,
     }),
@@ -844,16 +849,102 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('fails release checks when the packed manifest fails npm-package-json-lint', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      packageCheckMocks.packedManifestOverrides.set(outDir, {
+        dependencies: {},
+        exports: {
+          '.': './index.js',
+        },
+        name: '@example/a',
+        version: '1.0.0',
+      });
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('lints the packed manifest instead of the output manifest', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      await writeText(
+        path.join(outDir, 'package.json'),
+        JSON.stringify({
+          dependencies: {},
+          exports: {
+            '.': './index.js',
+          },
+          name: '@example/a',
+          version: '1.0.0',
+        }),
+      );
+      packageCheckMocks.packedManifestOverrides.set(outDir, {
+        dependencies: {},
+        exports: {
+          '.': './index.js',
+        },
+        license: 'MIT',
+        name: '@example/a',
+        types: './index.d.ts',
+        version: '1.0.0',
+      });
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it('ignores workspace and link specifiers in source devDependencies', async () => {
     const rootDir = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {
-        devDependencies: {
-          '@example/b': 'workspace:*',
-          '@example/c': 'link:../c/dist',
+      const outDir = await createWorkspacePackage(
+        rootDir,
+        '@example/a',
+        {
+          devDependencies: {
+            '@example/b': 'workspace:*',
+            '@example/c': 'link:../c/dist',
+          },
         },
-      });
+        {},
+      );
 
       await createWorkspacePackage(rootDir, '@example/b', {
         private: true,

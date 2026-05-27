@@ -47,6 +47,7 @@
     "@publint/pack": "catalog:lint",
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",
+    "npm-package-json-lint": "catalog:lint",
     "publint": "catalog:lint",
     "semver": "catalog:dev",
     "tinyglobby": "catalog:prod",

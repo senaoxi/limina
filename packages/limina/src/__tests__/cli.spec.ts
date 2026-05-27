@@ -164,7 +164,9 @@ describe('limina CLI', () => {
           exports: {
             '.': './index.js',
           },
+          license: 'MIT',
           name: packageName,
+          types: './index.d.ts',
           version: '1.0.0',
         }),
       );
