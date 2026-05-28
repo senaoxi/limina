@@ -8,6 +8,7 @@
     "types": ["node"],
   },
   "include": [
+    "client.d.ts",
     ".vitepress/config.ts",
     ".vitepress/theme/**/*.ts",
     "en/config.ts",

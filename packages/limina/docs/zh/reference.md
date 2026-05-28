@@ -35,7 +35,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina paths apply`                            | `paths generate` 的兼容别名。                                                                          |
 | `limina paths check`                            | generated path configs 过期时失败。                                                                    |
 | `limina checker build`                          | 运行支持 build mode 的 checker entries。                                                               |
-| `limina checker typecheck`                      | 运行 `svelte-check` 这类 source-only checker entry。                                                   |
+| `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类 source-only checker entry。                                       |
 | `limina package check`                          | 运行配置好的 package output checks。                                                                   |
 | `limina package check --package <name>`         | 按配置名运行单个 package entry。                                                                       |
 | `limina package check --tool <tool>`            | 只运行 `publint`、`attw`、`boundary` 或 `all`。                                                        |
@@ -110,7 +110,7 @@ jobs:
 
 ### `limina checker build` 和 `checker typecheck` 如何选择目标？
 
-`checker build` 会从已配置 entry 运行一等公民 build preset（`tsc -b` 和 `vue-tsc -b`）。`checker typecheck` 会直接运行 source-only preset，目前是 `svelte-check --tsconfig <entry>`。
+`checker build` 会从已配置 entry 运行一等公民 build preset（`tsc -b`、`tsgo -b` 和 `vue-tsc -b`）。`tsgo` 由 Microsoft 的 `@typescript/native-preview` 包提供。`checker typecheck` 会直接运行 source-only execution preset，目前是 `vue-tsgo --project <entry>` 和 `svelte-check --tsconfig <entry>`。Limina 有意不让 `vue-tsgo` 进入 `checker build`：当前 `vue-tsgo --build` 不能保持 TypeScript project-reference 边界，也不具备增量构建语义；但它配置的 tsconfig entry 仍会参与 Limina graph/proof coverage。一等公民 Vue build 检查优先使用 `vue-tsc`。
 
 ### 为什么 package checks 需要先 build？
 
@@ -122,7 +122,7 @@ jobs:
 
 ### Vue 或 Svelte 文件应该放进 TypeScript graph 吗？
 
-框架文件应该由对应框架 checker entry 覆盖。Limina 可以通过 `vue-tsc` 或 `svelte-check` 证明覆盖，不需要把这些文件假装成普通 `tsc -b` declaration leaf。
+框架文件应该由对应框架 checker entry 覆盖。Limina 可以通过 `vue-tsc`、`vue-tsgo` 或 `svelte-check` 证明覆盖，不需要把这些文件假装成普通 `tsc -b` declaration leaf。
 
 ### `--mode` 适合哪些配置？
 

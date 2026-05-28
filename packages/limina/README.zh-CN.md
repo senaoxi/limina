@@ -11,7 +11,7 @@
 
 `limina` 是一个面向 TypeScript monorepo 的可配置治理 CLI。它把 TypeScript project references、源码 typecheck、兼容 `paths`、包导出策略和发布前 package 检查统一收敛到一个显式的 `limina.config.mjs` 文件中。
 
-Limina 不是 bundler，也不会替代 `tsc`、`vue-tsc`、测试框架或发布工具。它的职责是编排这些工具，并验证它们依赖的工程架构是否始终一致。
+Limina 不是 bundler，也不会替代 `tsc`、`tsgo`、`vue-tsc`、`vue-tsgo`、测试框架或发布工具。它的职责是编排这些工具，并验证它们依赖的工程架构是否始终一致。
 
 ## 为什么需要 Limina？
 
@@ -136,7 +136,7 @@ pnpm exec limina package check --package @acme/core
 
 ### Checker entry
 
-每个 checker 都必须有一个 `config.checkers.<name>.entry`，通常是一个 `tsconfig*.build.json` graph 聚合配置。内置一等公民 preset（`tsc` 和 `vue-tsc`）会参与 graph、source、proof 和 build 检查；`svelte-check` 这类 source-only preset 会证明源码覆盖，并通过 `limina checker typecheck` 执行直接类型检查。
+每个 checker 都必须有一个 `config.checkers.<name>.entry`，通常是一个 `tsconfig*.build.json` graph 聚合配置。内置一等公民 build preset（`tsc`、`tsgo` 和 `vue-tsc`）会参与 graph、source、proof 和 build 检查；`vue-tsgo`、`svelte-check` 这类 source-only execution preset 会通过 `limina checker typecheck` 执行直接类型检查，其中 `vue-tsgo` 仍会使用自己的 tsconfig entry 参与 Limina graph 和 proof coverage。Vue project-reference 的一等公民 build 优先使用 `vue-tsc`；当前 `vue-tsgo` 的 build 模式不能保持 TypeScript project-reference 边界，也不具备增量构建语义。
 
 ### 声明叶子与 local companion
 
@@ -170,7 +170,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina paths apply`                            | `paths generate` 的兼容别名。                                    |
 | `limina paths check`                            | 当 generated path files 过期时失败。                             |
 | `limina checker build`                          | 对支持 build 模式的 checker entry 执行 build。                   |
-| `limina checker typecheck`                      | 运行 `svelte-check` 这类 source-only checker entry。             |
+| `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类 source-only checker entry。 |
 | `limina package check`                          | 运行已配置的 package output checks。                             |
 | `limina package check --package <name>`         | 检查单个已配置 package entry。                                   |
 | `limina package check --tool <tool>`            | 只运行 `publint`、`attw` 或 `boundary`。                         |

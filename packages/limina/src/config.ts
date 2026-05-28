@@ -36,7 +36,7 @@ export type PipelineStep =
        */
       args?: string[];
       /**
-       * Executable name, for example `pnpm`, `tsc`, or `vue-tsc`.
+       * Executable name, for example `pnpm`, `tsc`, `tsgo`, `vue-tsc`, or `vue-tsgo`.
        *
        * The command runs from the inferred workspace root unless `cwd` is set.
        */
@@ -79,7 +79,12 @@ export type BuiltinTaskName =
   | 'release:check'
   | 'source:check';
 
-export type BuiltinCheckerPreset = 'svelte-check' | 'tsc' | 'vue-tsc';
+export type BuiltinCheckerPreset =
+  | 'svelte-check'
+  | 'tsc'
+  | 'tsgo'
+  | 'vue-tsc'
+  | 'vue-tsgo';
 
 export type CheckerPreset = BuiltinCheckerPreset;
 
@@ -90,7 +95,7 @@ export type CheckerExecutionKind = 'build' | 'typecheck';
  */
 export interface CheckerConfig {
   /**
-   * Built-in checker preset, such as `tsc`, `vue-tsc`, or `svelte-check`.
+   * Built-in checker preset, such as `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, or `svelte-check`.
    */
   preset: CheckerPreset;
   /**

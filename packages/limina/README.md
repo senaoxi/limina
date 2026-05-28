@@ -11,7 +11,7 @@ English | [简体中文](./README.zh-CN.md)
 
 `limina` is a configurable governance CLI for TypeScript monorepos. It keeps TypeScript project references, source typechecks, compatibility paths, package export policy, and publish-time package checks in one explicit `limina.config.mjs` file.
 
-Limina is not a bundler and does not replace `tsc`, `vue-tsc`, tests, or release tooling. It coordinates them and verifies that the architecture they depend on stays consistent.
+Limina is not a bundler and does not replace `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, tests, or release tooling. It coordinates them and verifies that the architecture they depend on stays consistent.
 
 ## Why Limina?
 
@@ -136,7 +136,7 @@ pnpm exec limina package check --package @acme/core
 
 ### Checker entry
 
-Each checker has one required `config.checkers.<name>.entry`, usually a `tsconfig*.build.json` graph aggregator. Built-in first-class presets (`tsc` and `vue-tsc`) participate in graph, source, proof, and build checks. Source-only presets such as `svelte-check` prove source coverage and run direct checker execution through `limina checker typecheck`.
+Each checker has one required `config.checkers.<name>.entry`, usually a `tsconfig*.build.json` graph aggregator. Built-in first-class build presets (`tsc`, `tsgo`, and `vue-tsc`) participate in graph, source, proof, and build checks. Source-only execution presets such as `vue-tsgo` and `svelte-check` run direct checker execution through `limina checker typecheck`; `vue-tsgo` still uses its tsconfig entry for Limina graph and proof coverage. Prefer `vue-tsc` for first-class Vue project-reference builds; current `vue-tsgo` build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics.
 
 ### Declaration leaf and local companion
 
@@ -170,7 +170,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina paths apply`                            | Compatibility alias for `paths generate`.                                             |
 | `limina paths check`                            | Fail when generated path files are stale.                                             |
 | `limina checker build`                          | Run build execution for checker entries that support it.                              |
-| `limina checker typecheck`                      | Run source-only checker entries such as `svelte-check`.                               |
+| `limina checker typecheck`                      | Run source-only checker entries such as `vue-tsgo` and `svelte-check`.                |
 | `limina package check`                          | Run configured package output checks.                                                 |
 | `limina package check --package <name>`         | Check one configured package entry.                                                   |
 | `limina package check --tool <tool>`            | Run only `publint`, `attw`, or `boundary`.                                            |

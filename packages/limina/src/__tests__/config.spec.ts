@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defineConfig, getActiveCheckers, loadConfig } from '../config';
+import { collectGraphProjectRoutes } from '../tsconfig';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -99,6 +100,151 @@ describe('defineConfig', () => {
       preset: 'tsc',
       entry: 'tsconfig.build.json',
     });
+  });
+
+  it('accepts tsgo as a first-class TypeScript checker preset', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'tsconfig.build.json'),
+        JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: './packages/app/tsconfig.lib.dts.json',
+            },
+          ],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/app/tsconfig.lib.dts.json'),
+        JSON.stringify({
+          extends: './tsconfig.lib.json',
+          references: [],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/app/tsconfig.lib.json'),
+        JSON.stringify({
+          files: ['src/index.ts'],
+        }),
+      );
+
+      const config = {
+        config: {
+          checkers: {
+            nativeTypescript: {
+              preset: 'tsgo' as const,
+              entry: 'tsconfig.build.json',
+            },
+          },
+        },
+        configPath: path.join(rootDir, 'limina.config.mjs'),
+        rootDir,
+      };
+      const activeCheckers = getActiveCheckers(config);
+      const graphRoutes = collectGraphProjectRoutes(config);
+
+      expect(activeCheckers).toEqual([
+        {
+          entry: 'tsconfig.build.json',
+          extensions: [
+            '.d.cts',
+            '.d.mts',
+            '.d.ts',
+            '.json',
+            '.cts',
+            '.mts',
+            '.tsx',
+            '.ts',
+          ],
+          name: 'nativeTypescript',
+          preset: 'tsgo',
+        },
+      ]);
+      expect(graphRoutes.problems).toEqual([]);
+      expect(graphRoutes.routes).toHaveLength(1);
+      expect(graphRoutes.routes[0]?.checkerName).toBe('nativeTypescript');
+      expect(
+        graphRoutes.routes[0]?.projectPaths.map((configPath) =>
+          path.relative(rootDir, configPath),
+        ),
+      ).toEqual(['packages/app/tsconfig.lib.dts.json']);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('accepts vue-tsgo as a source-only Vue checker preset with graph coverage', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'tsconfig.vue.build.json'),
+        JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: './packages/app/tsconfig.vue.dts.json',
+            },
+          ],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/app/tsconfig.vue.dts.json'),
+        JSON.stringify({
+          extends: './tsconfig.vue.json',
+          references: [],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/app/tsconfig.vue.json'),
+        JSON.stringify({
+          files: ['src/App.vue'],
+        }),
+      );
+
+      const config = {
+        config: {
+          checkers: {
+            vue: {
+              preset: 'vue-tsgo' as const,
+              entry: 'tsconfig.vue.build.json',
+            },
+          },
+        },
+        configPath: path.join(rootDir, 'limina.config.mjs'),
+        rootDir,
+      };
+      const activeCheckers = getActiveCheckers(config);
+      const graphRoutes = collectGraphProjectRoutes(config);
+
+      expect(activeCheckers).toEqual([
+        {
+          entry: 'tsconfig.vue.build.json',
+          extensions: ['.vue'],
+          name: 'vue',
+          preset: 'vue-tsgo',
+        },
+      ]);
+      expect(graphRoutes.problems).toEqual([]);
+      expect(graphRoutes.routes).toHaveLength(1);
+      expect(graphRoutes.routes[0]?.checkerName).toBe('vue');
+      expect(
+        graphRoutes.routes[0]?.projectPaths.map((configPath) =>
+          path.relative(rootDir, configPath),
+        ),
+      ).toEqual(['packages/app/tsconfig.vue.dts.json']);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
   });
 
   it('returns config factories unchanged', async () => {

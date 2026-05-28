@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -221,6 +229,78 @@ describe('runPipeline', () => {
       expect(
         chunks.filter((chunk) => chunk.includes('[pass] command:')).length,
       ).toBe(2);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('clears stale vue-tsgo cache before command steps', async () => {
+    const fixture = await createConfig();
+
+    await writeText(
+      path.join(fixture.config.rootDir, 'package.json'),
+      JSON.stringify({
+        name: 'fixture',
+        type: 'module',
+      }),
+    );
+    await writeText(
+      path.join(fixture.config.rootDir, 'tsconfig.vue.build.json'),
+      JSON.stringify({ files: [] }),
+    );
+    await writeText(
+      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo'),
+      [
+        '#!/usr/bin/env sh',
+        'exec node "$(dirname "$0")/vue-tsgo.js" "$@"',
+        '',
+      ].join('\n'),
+    );
+    await writeText(
+      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo.js'),
+      [
+        "import { createHash } from 'node:crypto';",
+        "import { existsSync, writeFileSync } from 'node:fs';",
+        "import path from 'node:path';",
+        'const configPath = path.resolve(process.cwd(), process.argv.at(-1));',
+        "const hash = createHash('sha256').update(configPath).digest('hex').slice(0, 8);",
+        "const stalePath = path.join(process.cwd(), 'node_modules/.cache/vue-tsgo', hash, 'stale.txt');",
+        "writeFileSync(path.join(process.cwd(), 'stale-state.txt'), String(existsSync(stalePath)));",
+        '',
+      ].join('\n'),
+    );
+    await chmod(
+      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo'),
+      0o755,
+    );
+    await writeText(
+      path.join(
+        fixture.config.rootDir,
+        'node_modules/.cache/vue-tsgo',
+        createHash('sha256')
+          .update(path.join(fixture.config.rootDir, 'tsconfig.vue.build.json'))
+          .digest('hex')
+          .slice(0, 8),
+        'stale.txt',
+      ),
+      'stale\n',
+    );
+
+    fixture.config.pipelines = {
+      vue: [
+        {
+          args: ['--build', 'tsconfig.vue.build.json'],
+          command: 'vue-tsgo',
+          type: 'command',
+        },
+      ],
+    };
+
+    try {
+      await expect(runPipeline(fixture.config, 'vue')).resolves.toBe(true);
+      await expect(
+        readFile(path.join(fixture.config.rootDir, 'stale-state.txt'), 'utf8'),
+      ).resolves.toBe('false');
     } finally {
       await fixture.cleanup();
     }

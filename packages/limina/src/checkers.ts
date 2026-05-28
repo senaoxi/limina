@@ -8,6 +8,17 @@ import type {
 } from './config';
 import { toRelativePath } from './utils/path';
 
+const typeScriptCheckerExtensions = [
+  '.ts',
+  '.tsx',
+  '.cts',
+  '.mts',
+  '.d.ts',
+  '.d.cts',
+  '.d.mts',
+  '.json',
+] as const;
+
 export interface CheckerCommandTarget {
   args: string[];
   command: string;
@@ -59,6 +70,21 @@ function createTscCommandTarget(
   };
 }
 
+function createTsgoCommandTarget(
+  options: CheckerCommandTargetOptions,
+): CheckerCommandTarget {
+  const relativeConfigPath = toRelativePath(
+    options.projectRootDir,
+    options.configPath,
+  );
+
+  return {
+    args: ['-b', relativeConfigPath, '--pretty', 'false'],
+    command: 'tsgo',
+    label: `tsgo -b ${relativeConfigPath}`,
+  };
+}
+
 function createVueTscCommandTarget(
   options: CheckerCommandTargetOptions,
 ): CheckerCommandTarget {
@@ -71,6 +97,30 @@ function createVueTscCommandTarget(
     args: ['-b', relativeConfigPath, '--pretty', 'false'],
     command: 'vue-tsc',
     label: `${options.checker.name}: vue-tsc -b ${relativeConfigPath}`,
+  };
+}
+
+function createVueTsgoCommandTarget(
+  options: CheckerCommandTargetOptions,
+): CheckerCommandTarget {
+  const relativeConfigPath = toRelativePath(
+    options.projectRootDir,
+    options.configPath,
+  );
+
+  /**
+   * vue-tsgo exposes a --build flag, but in current releases that mode
+   * generates a transient virtual TS workspace and asks tsgo's LSP for
+   * diagnostics. It does not preserve TypeScript project-reference boundaries
+   * or provide incremental build semantics, so Limina only uses vue-tsgo as a
+   * source-only execution checker while still using its tsconfig entry for
+   * Limina's own graph and proof coverage. Prefer vue-tsc for first-class Vue
+   * build checks.
+   */
+  return {
+    args: ['--project', relativeConfigPath],
+    command: 'vue-tsgo',
+    label: `${options.checker.name}: vue-tsgo --project ${relativeConfigPath}`,
   };
 }
 
@@ -101,19 +151,19 @@ const builtinCheckerAdapters = {
   },
   tsc: {
     createCommandTarget: createTscCommandTarget,
-    defaultExtensions: [
-      '.ts',
-      '.tsx',
-      '.cts',
-      '.mts',
-      '.d.ts',
-      '.d.cts',
-      '.d.mts',
-      '.json',
-    ],
+    defaultExtensions: [...typeScriptCheckerExtensions],
     execution: 'build',
     packageNames: ['typescript'],
     preset: 'tsc',
+    sourceGraph: true,
+    tier: 'first-class',
+  },
+  tsgo: {
+    createCommandTarget: createTsgoCommandTarget,
+    defaultExtensions: [...typeScriptCheckerExtensions],
+    execution: 'build',
+    packageNames: ['@typescript/native-preview'],
+    preset: 'tsgo',
     sourceGraph: true,
     tier: 'first-class',
   },
@@ -125,6 +175,15 @@ const builtinCheckerAdapters = {
     preset: 'vue-tsc',
     sourceGraph: true,
     tier: 'first-class',
+  },
+  'vue-tsgo': {
+    createCommandTarget: createVueTsgoCommandTarget,
+    defaultExtensions: ['.vue'],
+    execution: 'typecheck',
+    packageNames: ['vue-tsgo', '@typescript/native-preview'],
+    preset: 'vue-tsgo',
+    sourceGraph: true,
+    tier: 'source-only',
   },
 } satisfies Record<BuiltinCheckerPreset, CheckerAdapter>;
 

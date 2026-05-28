@@ -6,7 +6,11 @@ import { runPackageCheck } from './commands/package';
 import { runProofCheck } from './commands/proof';
 import { runReleaseCheck } from './commands/release';
 import { runSourceCheck } from './commands/source';
-import { runCheckerBuild, runCheckerTypecheck } from './commands/typecheck';
+import {
+  prepareVueTsgoCache,
+  runCheckerBuild,
+  runCheckerTypecheck,
+} from './commands/typecheck';
 import type {
   BuiltinTaskName,
   PipelineStep,
@@ -88,6 +92,79 @@ export function getPipelineStepLabel(step: NormalizedPipelineStep): string {
   }
 
   return [step.command, ...(step.args ?? [])].join(' ');
+}
+
+function createCommandStepEnvironment(
+  cwd: string,
+  step: Extract<PipelineStep, { type: 'command' }>,
+): NodeJS.ProcessEnv {
+  const basePath = step.env?.PATH ?? process.env.PATH;
+
+  return {
+    ...process.env,
+    ...step.env,
+    PATH: [path.join(cwd, 'node_modules/.bin'), basePath]
+      .filter(Boolean)
+      .join(path.delimiter),
+  };
+}
+
+function isVueTsgoCommand(command: string): boolean {
+  const commandName = path.basename(command).toLowerCase();
+
+  return commandName === 'vue-tsgo' || commandName === 'vue-tsgo.cmd';
+}
+
+function collectVueTsgoCommandConfigPaths(
+  step: Extract<PipelineStep, { type: 'command' }>,
+  cwd: string,
+): string[] {
+  if (!isVueTsgoCommand(step.command)) {
+    return [];
+  }
+
+  const args = step.args ?? [];
+  const configPaths: string[] = [];
+
+  for (const [index, arg] of args.entries()) {
+    if (
+      arg !== '--build' &&
+      arg !== '-b' &&
+      arg !== '--project' &&
+      arg !== '-p'
+    ) {
+      continue;
+    }
+
+    const configArg = args[index + 1];
+
+    if (!configArg || configArg.startsWith('-')) {
+      continue;
+    }
+
+    configPaths.push(path.resolve(cwd, configArg));
+  }
+
+  return configPaths.length > 0
+    ? configPaths
+    : [path.resolve(cwd, 'tsconfig.json')];
+}
+
+async function prepareCommandStepCache(
+  step: Extract<PipelineStep, { type: 'command' }>,
+  cwd: string,
+): Promise<void> {
+  await Promise.all(
+    collectVueTsgoCommandConfigPaths(step, cwd).map((configPath) =>
+      prepareVueTsgoCache({
+        args: step.args ?? [],
+        command: step.command,
+        configPath,
+        cwd,
+        label: getPipelineStepLabel(step),
+      }),
+    ),
+  );
 }
 
 export async function runBuiltinTask(
@@ -189,21 +266,23 @@ export function normalizePipelineStep(
   };
 }
 
-export function runCommandStep(
+export async function runCommandStep(
   config: ResolvedLiminaConfig,
   step: Extract<PipelineStep, { type: 'command' }>,
   options: RunPipelineOptions = {},
-): Promise<boolean> | boolean {
+): Promise<boolean> {
   const label = getPipelineStepLabel(step);
   const task = options.flow?.start(`command: ${label}`, { depth: 1 });
+  const cwd = step.cwd
+    ? path.resolve(config.rootDir, step.cwd)
+    : config.rootDir;
   const commandOptions = {
-    cwd: step.cwd ? path.resolve(config.rootDir, step.cwd) : config.rootDir,
-    env: {
-      ...process.env,
-      ...step.env,
-    },
+    cwd,
+    env: createCommandStepEnvironment(cwd, step),
     shell: process.platform === 'win32',
   };
+
+  await prepareCommandStepCache(step, cwd);
 
   if (options.flow?.interactive) {
     return new Promise((resolve, reject) => {

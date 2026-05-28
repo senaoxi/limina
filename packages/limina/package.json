@@ -72,12 +72,17 @@
     "vitest": "catalog:test"
   },
   "peerDependencies": {
+    "@typescript/native-preview": "catalog:dev",
     "@vue/compiler-sfc": "catalog:dev",
     "svelte-check": "catalog:dev",
     "typescript": "catalog:dev",
-    "vue-tsc": "catalog:dev"
+    "vue-tsc": "catalog:dev",
+    "vue-tsgo": "catalog:dev"
   },
   "peerDependenciesMeta": {
+    "@typescript/native-preview": {
+      "optional": true
+    },
     "@vue/compiler-sfc": {
       "optional": true
     },
@@ -88,6 +93,9 @@
       "optional": true
     },
     "vue-tsc": {
+      "optional": true
+    },
+    "vue-tsgo": {
       "optional": true
     }
   },

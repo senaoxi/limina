@@ -21,7 +21,7 @@ export default defineConfig({
 
 For TypeScript, this is usually a build graph aggregator. It points to declaration projects through `references`. Limina walks that graph to discover what should be checked.
 
-For framework files, a checker entry can use `vue-tsc` or `svelte-check`. These checkers cover files that normal `tsc` does not understand by itself.
+For framework files, a checker entry can use `vue-tsc`, `vue-tsgo`, or `svelte-check`. These checkers cover files that normal `tsc` does not understand by itself.
 
 Any source family you want Limina to govern needs a checker entry in `limina.config.mjs`. Plain TypeScript packages usually point at the root `tsconfig.build.json`; Vue or Svelte projects add their framework checker entries. Graph, proof, paths, and checker commands all start from these entries, so they define which projects are inside the governed surface.
 
@@ -60,7 +60,7 @@ tsconfig.tools.dts.json  <->    tsconfig.tools.json
 tsconfig.test.dts.json   <->    tsconfig.test.json
 ```
 
-The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b` or `vue-tsc -b`.
+The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`. Current `vue-tsgo` support is source-only for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage.
 
 This split keeps build output settings out of the ordinary typecheck config.
 

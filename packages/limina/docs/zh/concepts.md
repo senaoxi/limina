@@ -21,7 +21,7 @@ export default defineConfig({
 
 对 TypeScript 来说，它通常是一个 build graph 聚合器，通过 `references` 指向声明 project。Limina 会沿着这个图发现应该检查的目标。
 
-对框架文件来说，checker entry 可以使用 `vue-tsc` 或 `svelte-check`。这些 checker 负责普通 `tsc` 无法独立理解的文件。
+对框架文件来说，checker entry 可以使用 `vue-tsc`、`vue-tsgo` 或 `svelte-check`。这些 checker 负责普通 `tsc` 无法独立理解的文件。
 
 只要你希望 Limina 检查某一类源码，就需要在 `limina.config.mjs` 中给它一个 checker entry。普通 TypeScript package 通常指向根 `tsconfig.build.json`；Vue 或 Svelte 项目则增加对应框架 checker。后续的 graph、proof、paths 和 checker 命令都会从这些 entry 出发，所以 entry 本质上决定了“哪些项目应该进入治理范围”。
 
@@ -60,7 +60,7 @@ tsconfig.tools.dts.json  <->    tsconfig.tools.json
 tsconfig.test.dts.json   <->    tsconfig.test.json
 ```
 
-Companion 负责严格 typecheck 语义，例如 `strict`、`lib`、`types`、`jsx` 和框架设置。Proof check 会验证 declaration leaf 与 companion 的文件集和类型检查相关 compilerOptions 保持一致；checker build 则通过 `tsc -b` 或 `vue-tsc -b` 运行一等公民 entry。
+Companion 负责严格 typecheck 语义，例如 `strict`、`lib`、`types`、`jsx` 和框架设置。Proof check 会验证 declaration leaf 与 companion 的文件集和类型检查相关 compilerOptions 保持一致；checker build 则通过 `tsc -b`、`tsgo -b` 或 `vue-tsc -b` 运行一等公民 entry。当前 `vue-tsgo` 在执行上是 source-only，因为它的 build 模式不能保持 TypeScript project-reference 边界，也不具备增量构建语义；但它配置的 tsconfig entry 仍会参与 Limina graph/proof coverage。
 
 这样可以把构建输出设置和普通类型检查设置分开。
 

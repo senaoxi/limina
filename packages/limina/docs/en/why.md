@@ -6,7 +6,7 @@ As the repository grows, the same files begin to serve different jobs:
 
 - the editor wants fast local type information;
 - `tsc -b` wants a clean project reference graph;
-- framework files may need `vue-tsc` or `svelte-check`;
+- framework files may need `vue-tsc`, `vue-tsgo`, or `svelte-check`;
 - packages may import each other through `workspace:*`;
 - published output must work after it is packed and installed.
 

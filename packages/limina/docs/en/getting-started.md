@@ -110,8 +110,8 @@ The first failure usually tells you which layer to inspect:
 - `graph:check` usually points to imports, project references, `workspace:*`, or label rules that are out of sync;
 - `source:check` usually points to file ownership, cross-package relative imports, dependency declarations, or `#imports`;
 - `proof:check` usually points to checker entries, declaration leaves, local companions, or allowlists that do not cover source files;
-- `checker:build` means a first-class checker such as `tsc` or `vue-tsc` found type errors in build mode;
-- `checker:typecheck` means a source-only checker such as `svelte-check` found type errors.
+- `checker:build` means a first-class checker such as `tsc`, `tsgo`, or `vue-tsc` found type errors in build mode;
+- `checker:typecheck` means a source-only checker such as `vue-tsgo` or `svelte-check` found type errors.
 
 For example, if `@acme/app` adds an import from `@acme/core` and the first `pnpm typecheck` fails in graph checking, start with the importing file and expected reference shown in the report. Re-run the same command after the fix to confirm graph, source ownership, coverage proof, and checker execution together.
 
@@ -138,4 +138,4 @@ export default defineConfig({
 });
 ```
 
-Built-in presets are `tsc`, `vue-tsc`, and `svelte-check`. Install the matching package when you enable a checker; `vue-tsc` entries also require `@vue/compiler-sfc` so Limina can parse SFC imports.
+Built-in presets are `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, and `svelte-check`. Install the matching package when you enable a checker; `tsgo` and `vue-tsgo` require `@typescript/native-preview`, and `vue-tsc` entries also require `@vue/compiler-sfc` so Limina can parse SFC imports.

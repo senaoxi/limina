@@ -688,6 +688,59 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it('accepts TypeScript source covered by a vue-tsgo checker entry', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'tools/covered.vue':
+          '<script setup lang="ts">import "./helper";</script>\n',
+        'tools/helper.ts': 'export const helper = 1;\n',
+        'tools/widget.tsx': 'export const widget = <div />;\n',
+        'tools/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.json',
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            noEmit: false,
+            outDir: './.tsbuild',
+            tsBuildInfoFile: './.tsbuild/build.tsbuildinfo',
+          },
+        }),
+        'tools/tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            jsx: 'preserve',
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['covered.vue', 'helper.ts', 'widget.tsx'],
+        }),
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            checkers: {
+              ...fixture.config.config?.checkers,
+              vue: {
+                entry: 'tools/tsconfig.dts.json',
+                preset: 'vue-tsgo',
+              },
+            },
+          },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('does not require coverage for excluded config json files', async () => {
     const fixture = await createFixture(
       createPassingFiles({

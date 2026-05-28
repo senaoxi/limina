@@ -1,3 +1,5 @@
+/// <reference path="../../client.d.ts" />
+
 import type { Theme } from 'vitepress';
 import DefaultTheme from 'vitepress/theme';
 

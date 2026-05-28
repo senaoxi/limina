@@ -35,7 +35,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina paths apply`                            | Compatibility alias for `paths generate`.                                                                                     |
 | `limina paths check`                            | Fail when generated path configs are stale.                                                                                   |
 | `limina checker build`                          | Run build execution for checker entries that support it.                                                                      |
-| `limina checker typecheck`                      | Run source-only checker entries such as `svelte-check`.                                                                       |
+| `limina checker typecheck`                      | Run source-only checker entries such as `vue-tsgo` and `svelte-check`.                                                        |
 | `limina package check`                          | Run configured package output checks.                                                                                         |
 | `limina package check --package <name>`         | Run one package entry by configured name.                                                                                     |
 | `limina package check --tool <tool>`            | Run only `publint`, `attw`, `boundary`, or `all`.                                                                             |
@@ -110,7 +110,7 @@ jobs:
 
 ### How do `limina checker build` and `checker typecheck` choose targets?
 
-`checker build` runs first-class build presets from their configured entries (`tsc -b` and `vue-tsc -b`). `checker typecheck` runs source-only presets directly, currently `svelte-check --tsconfig <entry>`.
+`checker build` runs first-class build presets from their configured entries (`tsc -b`, `tsgo -b`, and `vue-tsc -b`). `tsgo` is backed by Microsoft's `@typescript/native-preview` package. `checker typecheck` runs source-only execution presets directly, currently `vue-tsgo --project <entry>` and `svelte-check --tsconfig <entry>`. Limina intentionally keeps `vue-tsgo` out of `checker build` because current `vue-tsgo --build` does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage. Prefer `vue-tsc` for first-class Vue build checks.
 
 ### Why do package checks require a build first?
 
@@ -122,7 +122,7 @@ They inspect the package output under `package.entries[].outDir`. That output mu
 
 ### Should Vue or Svelte files be placed in the TypeScript graph?
 
-Framework files should be covered by their framework checker entry. Limina can prove coverage through `vue-tsc` or `svelte-check` without pretending those files are ordinary `tsc -b` declaration leaves.
+Framework files should be covered by their framework checker entry. Limina can prove coverage through `vue-tsc`, `vue-tsgo`, or `svelte-check` without pretending those files are ordinary `tsc -b` declaration leaves.
 
 ### What is `--mode` for?
 

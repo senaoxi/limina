@@ -36,10 +36,42 @@ export default defineConfig({
 `preset` 决定 Limina 调用哪个 checker runner：
 
 - `tsc`：处理 TypeScript 和 JSON；
+- `tsgo`：通过 `@typescript/native-preview` 处理 TypeScript 和 JSON；
 - `vue-tsc`：处理 `.vue`；
+- `vue-tsgo`：通过 `vue-tsgo` 和 `@typescript/native-preview` 处理 `.vue`；
 - `svelte-check`：处理 `.svelte`。
 
-Limina 只接受内置 preset。`tsc` 和 `vue-tsc` 是一等公民 build checker；`svelte-check` 是 source-only checker。
+Limina 只接受内置 preset。`tsc`、`tsgo` 和 `vue-tsc` 是一等公民 build checker；`vue-tsgo` 具备 Limina graph coverage 能力，但执行上是 source-only；`svelte-check` 是 source-only。
+
+`tsgo` 使用 Microsoft 的预览包 `@typescript/native-preview`，执行 `tsgo -b <entry> --pretty false`。当你希望 Limina 的 build checker 试跑 native TypeScript preview，同时保持和 `tsc` 相同的 source graph 模型时，可以使用它。
+
+```js
+export default defineConfig({
+  config: {
+    checkers: {
+      typescript: {
+        preset: 'tsgo',
+        entry: 'tsconfig.build.json',
+      },
+    },
+  },
+});
+```
+
+`vue-tsgo` 使用 KazariEX 的 `vue-tsgo` 包和 `@typescript/native-preview`，并通过 `limina checker typecheck` 执行 `vue-tsgo --project <entry>`。Limina 会有意把它作为 source-only execution checker：当前 `vue-tsgo --build` 会把源码 import 展开到临时虚拟 TS workspace，不能保持 TypeScript project-reference 边界，也不具备增量构建语义。Limina 仍会使用已配置的 `vue-tsgo` tsconfig entry 做自己的 graph 和 proof coverage。一等公民 Vue build 检查优先使用 `vue-tsc`。
+
+```js
+export default defineConfig({
+  config: {
+    checkers: {
+      vue: {
+        preset: 'vue-tsgo',
+        entry: 'tsconfig.vue.build.json',
+      },
+    },
+  },
+});
+```
 
 ## `entry`
 
@@ -52,7 +84,9 @@ Limina 只接受内置 preset。`tsc` 和 `vue-tsc` 是一等公民 build checke
 `extensions` 不是用户配置项。Limina 会为每个内置 preset 固定 extensions，因为它们是 proof 语义的一部分：
 
 - `tsc`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`；
+- `tsgo`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`；
 - `vue-tsc`：`.vue`；
+- `vue-tsgo`：`.vue`；
 - `svelte-check`：`.svelte`。
 
 配置 `extensions` 会被拒绝。
@@ -66,7 +100,7 @@ const count: number = '1';
 </script>
 ```
 
-`limina checker build` 会用 `vue-tsc -b` 覆盖这个入口下的 Vue 文件，而不是只跑普通 `tsc`。如果没有给 Vue 源码配置 checker entry，`proof check` 也更容易暴露“这些文件没有被任何 checker 覆盖”的问题。
+`limina checker build` 会用 `vue-tsc -b` 覆盖一等公民 Vue entry，而不是只跑普通 `tsc` / `tsgo`。`vue-tsgo` entry 在执行上是 source-only，会在后续通过 `limina checker typecheck` 执行，同时仍会把它的 tsconfig route 贡献给 Limina coverage proof。如果没有给 Vue 源码配置 checker entry，`proof check` 也更容易暴露“这些文件没有被任何 checker 覆盖”的问题。
 
 完整一点看，目录通常类似这样：
 
@@ -87,8 +121,8 @@ const count: number = '1';
 </script>
 ```
 
-运行 `pnpm exec limina checker build` 时，Limina 会从 `config.checkers.vue.entry` 指向的 `tsconfig.vue.build.json` 出发，并执行 `vue-tsc -b`，因为 `vue-tsc` 是一等公民 checker。
+运行 `pnpm exec limina checker build` 时，Limina 会从 `config.checkers.vue.entry` 指向的 `tsconfig.vue.build.json` 出发，并对一等公民 Vue checker 执行 `vue-tsc -b`。如果 entry 使用 `vue-tsgo`，Limina 会保留它的 graph/proof coverage，但 checker 本身会通过 `pnpm exec limina checker typecheck` 执行为 `vue-tsgo --project <entry>`。
 
-结果是这个类型错误由 `vue-tsc` 报出。这样用户能知道 `.vue` 文件不是靠普通 `tsc` 顺便覆盖，而是由专门的 checker entry 进入 Limina 的检查范围。
+结果是这个类型错误由已配置的 Vue checker 报出。这样用户能知道 `.vue` 文件不是靠普通 `tsc` 顺便覆盖，而是由专门的 checker entry 进入 Limina 的检查范围。
 
-对于 `svelte-check`，Limina 会证明 `.svelte` 源码覆盖，并通过 `limina checker typecheck` 执行 `svelte-check --tsconfig <entry>`。当前 Limina 不解析 `.svelte` import graph，因此 graph/source/proof 的能力边界比一等公民 checker 更窄。
+对于 `vue-tsgo` 和 `svelte-check`，Limina 会通过 `limina checker typecheck` 执行直接 source-only checker 命令。`vue-tsgo` 仍会作为 graph-aware entry 参与 Limina 自己的 tsconfig coverage proof，但它不是一等公民 build runner。
