@@ -9,7 +9,7 @@
     "typecheck": "limina checker build",
     "clean": "del-cli .vitepress/cache .vitepress/dist .tsbuild node_modules"
   },
-  "packageManager": "pnpm@10.26.0",
+  "packageManager": "pnpm@10.33.4",
   "dependencies": {
     "vue": "catalog:prod"
   },
