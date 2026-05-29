@@ -482,7 +482,6 @@ export async function runCheckerBuild(
       TypecheckLogger.error('checker build finished with failures', elapsed());
       task?.fail('checker build finished with failures');
     }
-
     return result;
   } catch (error) {
     TypecheckLogger.error(

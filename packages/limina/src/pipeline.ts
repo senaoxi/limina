@@ -271,6 +271,7 @@ export async function runCommandStep(
   step: Extract<PipelineStep, { type: 'command' }>,
   options: RunPipelineOptions = {},
 ): Promise<boolean> {
+  debugger;
   const label = getPipelineStepLabel(step);
   const task = options.flow?.start(`command: ${label}`, { depth: 1 });
   const cwd = step.cwd
