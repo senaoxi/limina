@@ -10,6 +10,7 @@ const logger = createLogger({
 export const CliLogger: ScopedLogger = logger.getLoggerByGroup('task.cli');
 export const GraphLogger: ScopedLogger = logger.getLoggerByGroup('task.graph');
 export const InitLogger: ScopedLogger = logger.getLoggerByGroup('task.init');
+export const NxLogger: ScopedLogger = logger.getLoggerByGroup('task.nx');
 export const PackageLogger: ScopedLogger =
   logger.getLoggerByGroup('task.package');
 export const PathsLogger: ScopedLogger = logger.getLoggerByGroup('task.paths');

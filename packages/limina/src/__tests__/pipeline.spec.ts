@@ -150,6 +150,13 @@ describe('runPipeline', () => {
     });
   });
 
+  it('recognizes nx:check as a built-in task', () => {
+    expect(normalizePipelineStep('nx:check')).toEqual({
+      name: 'nx:check',
+      type: 'task',
+    });
+  });
+
   it('reports missing user pipeline config with a config hint', async () => {
     const fixture = await createConfig();
 

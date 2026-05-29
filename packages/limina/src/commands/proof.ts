@@ -81,6 +81,7 @@ const defaultSourceExclude = [
   'coverage',
   '**/tsconfig*.json',
   '**/package.json',
+  '**/project.json',
   '.prettierrc.json',
   '.markdownlint.json',
   'vercel.json',

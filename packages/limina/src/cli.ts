@@ -2,6 +2,7 @@
 import { cac } from 'cac';
 import { runGraphCheck } from './commands/graph';
 import { runInit } from './commands/init';
+import { runNx } from './commands/nx';
 import { runPackageCheck } from './commands/package';
 import { runPaths } from './commands/paths';
 import { runProofCheck } from './commands/proof';
@@ -195,6 +196,45 @@ async function main(): Promise<void> {
           : 'limina paths passed',
       );
     });
+
+  cli
+    .command(
+      'nx <action> [...targets]',
+      'Sync or check Nx project target dependencies from workspace artifact dependencies',
+    )
+    .action(
+      async (
+        action: string,
+        targets: string[] | undefined,
+        flags: GlobalFlags,
+      ) => {
+        if (action !== 'sync' && action !== 'check') {
+          throw new Error(
+            `Unknown nx action "${action}". Expected sync or check.`,
+          );
+        }
+
+        const flow = createCliFlow();
+        flow.intro(`limina nx ${action}`);
+        const config = await load(flags, 'nx');
+        const result = await runNx(config, {
+          check: action === 'check',
+          clearScreen: false,
+          flow,
+          targets,
+        });
+
+        if (action === 'check' && result.changed) {
+          process.exitCode = 1;
+        }
+
+        flow.outro(
+          action === 'check' && result.changed
+            ? 'limina nx failed'
+            : 'limina nx passed',
+        );
+      },
+    );
 
   cli
     .command('graph <action>', 'Check TypeScript graph architecture')

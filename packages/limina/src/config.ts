@@ -74,6 +74,7 @@ export type BuiltinTaskName =
   | 'checker:build'
   | 'checker:typecheck'
   | 'graph:check'
+  | 'nx:check'
   | 'package:check'
   | 'proof:check'
   | 'release:check'
@@ -133,6 +134,7 @@ export interface SourceBoundaryConfig {
    *   "coverage",
    *   "**\/tsconfig*.json",
    *   "**\/package.json",
+   *   "**\/project.json",
    *   ".prettierrc.json",
    *   ".markdownlint.json",
    *   "vercel.json",
@@ -474,6 +476,7 @@ export interface LiminaConfig {
 export type LiminaCommand =
   | 'check'
   | 'graph'
+  | 'nx'
   | 'package'
   | 'paths'
   | 'proof'

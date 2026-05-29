@@ -239,6 +239,207 @@ describe('limina CLI', () => {
     }
   }, 30000);
 
+  it('runs nx sync with repeated targets from the public command', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-nx-sync-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({
+          name: 'root',
+          private: true,
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default {};\n',
+      );
+      await writeText(
+        path.join(rootDir, 'packages/a/package.json'),
+        stringifyConfig({
+          dependencies: {
+            '@example/b': 'link:../b/dist',
+          },
+          name: '@example/a',
+          scripts: {
+            build: 'echo build',
+          },
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/b/package.json'),
+        stringifyConfig({
+          name: '@example/b',
+          scripts: {
+            build: 'echo build',
+          },
+        }),
+      );
+
+      const result = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'limina.config.mjs'),
+          'nx',
+          'sync',
+          'docs:build',
+          'build',
+          'docs:build',
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+          },
+        },
+      );
+
+      expect(result.stdout).toContain('limina nx sync');
+      expect(result.stdout).toContain('limina nx passed');
+      expect(
+        await readFile(path.join(rootDir, 'packages/a/project.json'), 'utf8'),
+      ).toContain('"docs:build"');
+      expect(
+        await readFile(path.join(rootDir, 'packages/a/project.json'), 'utf8'),
+      ).toContain('"@example/b"');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  }, 15000);
+
+  it('runs nx check with the default build target from the public command', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-nx-check-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({
+          name: 'root',
+          private: true,
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default {};\n',
+      );
+      await writeText(
+        path.join(rootDir, 'packages/a/package.json'),
+        stringifyConfig({
+          name: '@example/a',
+          scripts: {
+            build: 'echo build',
+          },
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/a/project.json'),
+        stringifyConfig({
+          name: '@example/a',
+          targets: {
+            build: {
+              dependsOn: [],
+            },
+          },
+        }),
+      );
+
+      const result = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'limina.config.mjs'),
+          'nx',
+          'check',
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+          },
+        },
+      );
+
+      expect(result.stdout).toContain('limina nx check');
+      expect(result.stdout).toContain('limina nx passed');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  }, 15000);
+
+  it('rejects the old nx generate action from the public command', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-nx-generate-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+
+    try {
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default {};\n',
+      );
+
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'nx',
+            'generate',
+          ],
+          {
+            cwd: rootDir,
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          'Unknown nx action "generate". Expected sync or check.',
+        ),
+      });
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  }, 15000);
+
   it('runs init from the public command', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-init-')),
