@@ -34,6 +34,8 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina paths generate`                         | Generate compatibility TypeScript `paths` configs.                                                                            |
 | `limina paths apply`                            | Compatibility alias for `paths generate`.                                                                                     |
 | `limina paths check`                            | Fail when generated path configs are stale.                                                                                   |
+| `limina nx sync [target...]`                    | Sync `project.json` target `dependsOn` entries from artifact dependencies. Defaults to `build`.                               |
+| `limina nx check [target...]`                   | Fail when synced Nx target `dependsOn` entries are stale. Defaults to `build`.                                                |
 | `limina checker build`                          | Run build execution for checker entries that support it.                                                                      |
 | `limina checker typecheck`                      | Run source-only checker entries such as `vue-tsgo` and `svelte-check`.                                                        |
 | `limina package check`                          | Run configured package output checks.                                                                                         |
@@ -54,6 +56,13 @@ pnpm exec limina graph check
 ```
 
 Use these while changing TypeScript configs or package boundaries.
+
+When link-based artifact dependencies change, sync the Nx target graph:
+
+```sh
+pnpm exec limina nx sync build docs:build
+pnpm exec limina nx check build docs:build
+```
 
 ### Pull Requests
 

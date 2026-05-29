@@ -34,6 +34,8 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina paths generate`                         | 生成兼容 TypeScript `paths` config。                                                                   |
 | `limina paths apply`                            | `paths generate` 的兼容别名。                                                                          |
 | `limina paths check`                            | generated path configs 过期时失败。                                                                    |
+| `limina nx sync [target...]`                    | 根据 artifact dependencies 同步 `project.json` target 的 `dependsOn`。默认 target 为 `build`。         |
+| `limina nx check [target...]`                   | 检查 Nx target 的 `dependsOn` 是否过期。默认 target 为 `build`。                                       |
 | `limina checker build`                          | 运行支持 build mode 的 checker entries。                                                               |
 | `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类 source-only checker entry。                                       |
 | `limina package check`                          | 运行配置好的 package output checks。                                                                   |
@@ -54,6 +56,13 @@ pnpm exec limina graph check
 ```
 
 修改 TypeScript config 或 package boundary 时，可以先跑这两个。
+
+link artifact dependencies 变化时，同步 Nx target graph：
+
+```sh
+pnpm exec limina nx sync build docs:build
+pnpm exec limina nx check build docs:build
+```
 
 ### Pull Request
 
