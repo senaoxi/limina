@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { glob } from 'tinyglobby';
 import ts from 'typescript';
 import { getCheckerAdapter, normalizeExtensions } from './checkers';
 import { getActiveCheckers, type ResolvedLiminaConfig } from './config';
@@ -14,6 +15,7 @@ const generatedConfigFilePattern =
 const baseConfigFilePattern = /^tsconfig(?:\..+)?\.base\.json$/u;
 const checkConfigFilePattern = /^tsconfig(?:\..+)?\.check\.json$/u;
 const tsconfigFilePattern = /^tsconfig(?:\..+)?\.json$/u;
+const tsconfigGlobPattern = '**/tsconfig*.json';
 
 interface ReferencePathInfo {
   rawPath: string;
@@ -316,6 +318,27 @@ export function isOrdinaryTypecheckConfigPath(configPath: string): boolean {
     tsconfigFilePattern.test(fileName) &&
     !isReservedTypeScriptConfigFile(fileName)
   );
+}
+
+export async function collectOrdinaryTypecheckConfigPaths(
+  config: ResolvedLiminaConfig,
+): Promise<string[]> {
+  const paths = await glob(tsconfigGlobPattern, {
+    cwd: config.rootDir,
+    absolute: true,
+    ignore: [
+      '**/.git/**',
+      '**/.tsbuild/**',
+      '**/coverage/**',
+      '**/dist/**',
+      '**/node_modules/**',
+    ],
+  });
+
+  return paths
+    .map(normalizeAbsolutePath)
+    .filter(isOrdinaryTypecheckConfigPath)
+    .sort();
 }
 
 export function collectGraphProjectRouteFromRoot(options: {

@@ -298,6 +298,45 @@ function createVueWorkspacePackageFiles(options: {
   };
 }
 
+function createRootWorkspaceDependencyFiles(options: {
+  rootDependencies?: Record<string, string>;
+  rootSource: string;
+  rootTsconfigInclude?: string[];
+}): Record<string, string> {
+  return {
+    'package.json': stringifyConfig({
+      devDependencies: options.rootDependencies ?? {
+        '@example/internal': 'workspace:*',
+      },
+      name: '@example/root',
+      private: true,
+      type: 'module',
+    }),
+    'packages/internal/package.json': stringifyConfig({
+      exports: {
+        '.': './src/index.ts',
+      },
+      name: '@example/internal',
+      type: 'module',
+    }),
+    'packages/internal/src/index.ts':
+      'export type InternalValue = number;\nexport const internalValue = 1;\n',
+    'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+    'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+    'scripts/index.ts': options.rootSource,
+    'tsconfig.build.json': stringifyConfig({
+      files: [],
+      references: [],
+    }),
+    'tsconfig.json': typecheckConfig(
+      options.rootTsconfigInclude ?? ['scripts/**/*.ts'],
+    ),
+  };
+}
+
 describe('runGraphCheck checker entry', () => {
   it('reports missing graph references from nested aggregators', async () => {
     const fixture = await createFixture({
@@ -361,6 +400,196 @@ describe('runGraphCheck checker entry', () => {
 
     try {
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+describe('runGraphCheck unused workspace dependencies', () => {
+  it('rejects package workspace dependencies that source does not import', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects root workspace dependencies that root-owned source does not import', async () => {
+    const fixture = await createFixture(
+      createRootWorkspaceDependencyFiles({
+        rootSource: 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts workspace dependencies used by static source imports', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
+        appSource:
+          "import type { InternalValue } from '@example/internal';\nexport { internalValue } from '@example/internal';\nvoid import('@example/internal');\nexport type Value = InternalValue;\n",
+      }),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('counts workspace dependency subpath imports as root package usage', async () => {
+    const fixture = await createFixture(
+      createRootWorkspaceDependencyFiles({
+        rootSource:
+          "import type { InternalValue } from '@example/internal/subpath';\nexport type Value = InternalValue;\n",
+      }),
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows configured unused workspace dependencies with a reason', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+      {
+        unusedWorkspaceDependencies: {
+          allowlist: [
+            {
+              dependency: '@example/internal',
+              importer: '@example/app',
+              reason: 'Loaded by a generated virtual module in tests.',
+            },
+          ],
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects invalid unused workspace dependency allowlist entries', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+      {
+        unusedWorkspaceDependencies: {
+          allowlist: [
+            {
+              dependency: '@example/internal',
+              importer: '@example/missing',
+              reason: 'This package does not exist.',
+            },
+          ],
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('ignores tsconfig check files when collecting workspace dependency usage', async () => {
+    const fixture = await createFixture({
+      ...createRootWorkspaceDependencyFiles({
+        rootSource: 'export const value = 1;\n',
+      }),
+      'checks/check-only.ts':
+        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      'tsconfig.check.json': typecheckConfig(['checks/check-only.ts']),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects usage tsconfigs that include files from another package owner', async () => {
+    const fixture = await createFixture(
+      createRootWorkspaceDependencyFiles({
+        rootSource: 'export const value = 1;\n',
+        rootTsconfigInclude: [
+          'scripts/**/*.ts',
+          'packages/internal/src/**/*.ts',
+        ],
+      }),
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('ignores external and self dependencies', async () => {
+    const fixture = await createFixture({
+      'packages/app/package.json': stringifyConfig({
+        dependencies: {
+          '@example/app': 'workspace:*',
+          zod: '^1.0.0',
+        },
+        name: '@example/app',
+        type: 'module',
+      }),
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/app/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }

@@ -249,6 +249,37 @@ export interface GraphRule {
 }
 
 /**
+ * Explicit exception for a declared workspace package dependency that is used
+ * through generated code, config files, scripts, or another path static import
+ * analysis cannot see.
+ */
+export interface GraphUnusedWorkspaceDependencyAllowlistEntry {
+  /**
+   * Importing package name from package.json.
+   */
+  importer: string;
+  /**
+   * Declared workspace dependency package name.
+   */
+  dependency: string;
+  /**
+   * Why the dependency is safe to keep even without a static source import.
+   */
+  reason: string;
+}
+
+/**
+ * Workspace dependency usage proof settings.
+ */
+export interface GraphUnusedWorkspaceDependenciesConfig {
+  /**
+   * Declared workspace dependencies intentionally not visible through static
+   * source imports.
+   */
+  allowlist?: GraphUnusedWorkspaceDependencyAllowlistEntry[];
+}
+
+/**
  * TypeScript project graph policy.
  */
 export interface GraphConfig {
@@ -259,6 +290,11 @@ export interface GraphConfig {
    * `"limina": "<label>"`.
    */
   rules?: Record<string, GraphRule>;
+  /**
+   * Checks that workspace package dependencies declared in package.json are
+   * actually used by source owned by that package.
+   */
+  unusedWorkspaceDependencies?: GraphUnusedWorkspaceDependenciesConfig;
 }
 
 /**

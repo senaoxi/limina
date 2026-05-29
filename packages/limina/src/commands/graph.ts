@@ -2,7 +2,11 @@ import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
-import type { ResolvedLiminaConfig } from '../config';
+import { getCheckerAdapter, normalizeExtensions } from '../checkers';
+import {
+  getActiveCheckerExtensions,
+  type ResolvedLiminaConfig,
+} from '../config';
 import type { LiminaFlowReporter } from '../flow';
 import {
   collectImportsFromFile,
@@ -32,15 +36,19 @@ import {
 } from '../graph-rules';
 import { GraphLogger, clearCliScreen, formatErrorMessage } from '../logger';
 import {
+  collectOrdinaryTypecheckConfigPaths,
   collectSourceGraphProjectExtensions,
   formatReferences,
 } from '../tsconfig';
-import { toRelativePath } from '../utils/path';
+import { isPathInsideDirectory, toRelativePath } from '../utils/path';
 import {
   collectImporters,
+  collectPackageOwners,
   collectWorkspacePackages,
   findPackageForSpecifier,
   type ImporterInfo,
+  type PackageManifest,
+  type PackageOwner,
   type WorkspacePackage,
 } from '../workspace';
 
@@ -113,6 +121,464 @@ function formatCompilerOptionValue(value: unknown): string {
 
 function compilerOptionEquals(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+type DependencySectionName =
+  | 'dependencies'
+  | 'devDependencies'
+  | 'optionalDependencies'
+  | 'peerDependencies';
+
+interface WorkspaceDependencyDeclaration {
+  dependencyName: string;
+  importer: WorkspacePackage;
+  packageJsonPath: string;
+  sectionName: DependencySectionName;
+  specifier: string;
+}
+
+const dependencySectionNames: DependencySectionName[] = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+];
+
+const typeScriptCheckerExtensions =
+  getCheckerAdapter('tsc')?.defaultExtensions ?? [];
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function formatUnknownValue(value: unknown): string {
+  if (value === undefined) {
+    return 'undefined';
+  }
+
+  return JSON.stringify(value);
+}
+
+function createWorkspaceDependencyKey(
+  importerName: string,
+  dependencyName: string,
+): string {
+  return `${importerName}\0${dependencyName}`;
+}
+
+function getWorkspacePackageJsonPath(
+  workspacePackage: WorkspacePackage,
+): string {
+  return path.join(workspacePackage.directory, 'package.json');
+}
+
+function findOwnerForPath(
+  filePath: string,
+  owners: PackageOwner[],
+): PackageOwner | null {
+  return (
+    owners.find((owner) => isPathInsideDirectory(filePath, owner.directory)) ??
+    null
+  );
+}
+
+function getDependencySection(
+  manifest: PackageManifest,
+  sectionName: DependencySectionName,
+): Record<string, string> | null {
+  const section = manifest[sectionName];
+
+  if (!isPlainRecord(section)) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(section).filter((entry): entry is [string, string] => {
+      return typeof entry[1] === 'string';
+    }),
+  );
+}
+
+function collectWorkspaceDependencyDeclarations(
+  workspacePackages: WorkspacePackage[],
+): WorkspaceDependencyDeclaration[] {
+  const workspacePackageNames = new Set(
+    workspacePackages.map((workspacePackage) => workspacePackage.name),
+  );
+  const declarations: WorkspaceDependencyDeclaration[] = [];
+
+  for (const importer of workspacePackages) {
+    for (const sectionName of dependencySectionNames) {
+      const section = getDependencySection(importer.manifest, sectionName);
+
+      if (!section) {
+        continue;
+      }
+
+      for (const [dependencyName, specifier] of Object.entries(section)) {
+        if (
+          dependencyName === importer.name ||
+          !workspacePackageNames.has(dependencyName)
+        ) {
+          continue;
+        }
+
+        declarations.push({
+          dependencyName,
+          importer,
+          packageJsonPath: getWorkspacePackageJsonPath(importer),
+          sectionName,
+          specifier,
+        });
+      }
+    }
+  }
+
+  return declarations.sort((left, right) => {
+    if (left.packageJsonPath !== right.packageJsonPath) {
+      return left.packageJsonPath.localeCompare(right.packageJsonPath);
+    }
+
+    if (left.dependencyName !== right.dependencyName) {
+      return left.dependencyName.localeCompare(right.dependencyName);
+    }
+
+    return left.sectionName.localeCompare(right.sectionName);
+  });
+}
+
+function collectUnusedWorkspaceDependencyAllowlist(options: {
+  config: ResolvedLiminaConfig;
+  declarations: WorkspaceDependencyDeclaration[];
+  problems: string[];
+  workspacePackages: WorkspacePackage[];
+}): Set<string> {
+  const allowedKeys = new Set<string>();
+  const rawConfig = options.config.graph?.unusedWorkspaceDependencies;
+
+  if (rawConfig === undefined) {
+    return allowedKeys;
+  }
+
+  if (!isPlainRecord(rawConfig)) {
+    options.problems.push(
+      [
+        'Invalid unused workspace dependency config:',
+        '  field: graph.unusedWorkspaceDependencies',
+        `  value: ${formatUnknownValue(rawConfig)}`,
+        '  reason: graph.unusedWorkspaceDependencies must be an object.',
+      ].join('\n'),
+    );
+    return allowedKeys;
+  }
+
+  const rawAllowlist = rawConfig.allowlist;
+
+  if (rawAllowlist === undefined) {
+    return allowedKeys;
+  }
+
+  if (!Array.isArray(rawAllowlist)) {
+    options.problems.push(
+      [
+        'Invalid unused workspace dependency allowlist config:',
+        '  field: graph.unusedWorkspaceDependencies.allowlist',
+        `  value: ${formatUnknownValue(rawAllowlist)}`,
+        '  reason: allowlist must be an array.',
+      ].join('\n'),
+    );
+    return allowedKeys;
+  }
+
+  const workspacePackageNames = new Set(
+    options.workspacePackages.map((workspacePackage) => workspacePackage.name),
+  );
+  const declarationKeys = new Set(
+    options.declarations.map((declaration) =>
+      createWorkspaceDependencyKey(
+        declaration.importer.name,
+        declaration.dependencyName,
+      ),
+    ),
+  );
+
+  rawAllowlist.forEach((entry, index) => {
+    const field = `graph.unusedWorkspaceDependencies.allowlist[${index}]`;
+
+    if (!isPlainRecord(entry)) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}`,
+          `  value: ${formatUnknownValue(entry)}`,
+          '  reason: allowlist entries must be objects with non-empty importer, dependency, and reason fields.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    const importerValue = entry.importer;
+    const dependencyValue = entry.dependency;
+    const reasonValue = entry.reason;
+
+    if (
+      typeof importerValue !== 'string' ||
+      importerValue.trim().length === 0
+    ) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}.importer`,
+          `  value: ${formatUnknownValue(importerValue)}`,
+          '  reason: importer must be a non-empty workspace package name.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    if (
+      typeof dependencyValue !== 'string' ||
+      dependencyValue.trim().length === 0
+    ) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}.dependency`,
+          `  value: ${formatUnknownValue(dependencyValue)}`,
+          '  reason: dependency must be a non-empty workspace package name.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}.reason`,
+          `  value: ${formatUnknownValue(reasonValue)}`,
+          '  reason: reason must be a non-empty string.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    const importerName = importerValue.trim();
+    const dependencyName = dependencyValue.trim();
+    const dependencyKey = createWorkspaceDependencyKey(
+      importerName,
+      dependencyName,
+    );
+
+    if (!workspacePackageNames.has(importerName)) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}.importer`,
+          `  importer: ${importerName}`,
+          '  reason: importer must name a package from the pnpm workspace.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    if (!workspacePackageNames.has(dependencyName)) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}.dependency`,
+          `  dependency: ${dependencyName}`,
+          '  reason: dependency must name a package from the pnpm workspace.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    if (!declarationKeys.has(dependencyKey)) {
+      options.problems.push(
+        [
+          'Invalid unused workspace dependency allowlist config:',
+          `  field: ${field}`,
+          `  importer: ${importerName}`,
+          `  dependency: ${dependencyName}`,
+          '  reason: allowlist entries must match a workspace dependency declared by the importer package manifest.',
+        ].join('\n'),
+      );
+      return;
+    }
+
+    allowedKeys.add(dependencyKey);
+  });
+
+  return allowedKeys;
+}
+
+function getUsageSourceExtensions(config: ResolvedLiminaConfig): string[] {
+  return normalizeExtensions([
+    ...typeScriptCheckerExtensions,
+    ...getActiveCheckerExtensions(config),
+  ]);
+}
+
+async function collectUsedWorkspaceDependencies(options: {
+  config: ResolvedLiminaConfig;
+  packageOwners: PackageOwner[];
+  problems: string[];
+  workspacePackages: WorkspacePackage[];
+}): Promise<Map<string, Set<string>>> {
+  const usageByImporterName = new Map<string, Set<string>>();
+  const workspacePackageNames = new Set(
+    options.workspacePackages.map((workspacePackage) => workspacePackage.name),
+  );
+  const workspacePackagesByPackageJsonPath = new Map(
+    options.workspacePackages.map((workspacePackage) => [
+      getWorkspacePackageJsonPath(workspacePackage),
+      workspacePackage,
+    ]),
+  );
+  const sourceExtensions = getUsageSourceExtensions(options.config);
+  const configPaths = await collectOrdinaryTypecheckConfigPaths(options.config);
+
+  for (const configPath of configPaths) {
+    const owner = findOwnerForPath(configPath, options.packageOwners);
+
+    if (!owner) {
+      options.problems.push(
+        [
+          'Tsconfig has no package owner:',
+          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+          '  reason: workspace dependency usage analysis assigns each tsconfig*.json to its nearest package.json.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    const ownerWorkspacePackage = workspacePackagesByPackageJsonPath.get(
+      owner.packageJsonPath,
+    );
+    const project = parseProject(options.config, configPath, sourceExtensions);
+
+    for (const filePath of project.fileNames) {
+      const fileOwner = findOwnerForPath(filePath, options.packageOwners);
+
+      if (fileOwner?.packageJsonPath !== owner.packageJsonPath) {
+        options.problems.push(
+          [
+            'Tsconfig source file set crosses package owner scope:',
+            `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+            `  package owner: ${toRelativePath(options.config.rootDir, owner.packageJsonPath)}`,
+            `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
+            ...(fileOwner
+              ? [
+                  `  file owner: ${toRelativePath(options.config.rootDir, fileOwner.packageJsonPath)}`,
+                ]
+              : []),
+            '  reason: each usage tsconfig must only include files owned by its nearest package.json.',
+            '  fix: narrow the tsconfig include/files set or move the file under the owning package config.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (!ownerWorkspacePackage) {
+        continue;
+      }
+
+      const usedDependencyNames =
+        usageByImporterName.get(ownerWorkspacePackage.name) ??
+        new Set<string>();
+
+      for (const importRecord of collectImportsFromFile(
+        filePath,
+        options.config.rootDir,
+      )) {
+        const targetPackage = findPackageForSpecifier(
+          importRecord.specifier,
+          options.workspacePackages,
+        );
+
+        if (
+          !targetPackage ||
+          targetPackage.name === ownerWorkspacePackage.name ||
+          !workspacePackageNames.has(targetPackage.name)
+        ) {
+          continue;
+        }
+
+        usedDependencyNames.add(targetPackage.name);
+      }
+
+      usageByImporterName.set(ownerWorkspacePackage.name, usedDependencyNames);
+    }
+  }
+
+  return usageByImporterName;
+}
+
+async function addUnusedWorkspaceDependencyProblems(options: {
+  config: ResolvedLiminaConfig;
+  packageOwners: PackageOwner[];
+  problems: string[];
+  workspacePackages: WorkspacePackage[];
+}): Promise<void> {
+  if (options.workspacePackages.length === 0) {
+    return;
+  }
+
+  const declarations = collectWorkspaceDependencyDeclarations(
+    options.workspacePackages,
+  );
+
+  if (declarations.length === 0) {
+    return;
+  }
+
+  const allowlist = collectUnusedWorkspaceDependencyAllowlist({
+    config: options.config,
+    declarations,
+    problems: options.problems,
+    workspacePackages: options.workspacePackages,
+  });
+  const usedDependenciesByImporterName = await collectUsedWorkspaceDependencies(
+    {
+      config: options.config,
+      packageOwners: options.packageOwners,
+      problems: options.problems,
+      workspacePackages: options.workspacePackages,
+    },
+  );
+
+  for (const declaration of declarations) {
+    const dependencyKey = createWorkspaceDependencyKey(
+      declaration.importer.name,
+      declaration.dependencyName,
+    );
+
+    if (allowlist.has(dependencyKey)) {
+      continue;
+    }
+
+    if (
+      usedDependenciesByImporterName
+        .get(declaration.importer.name)
+        ?.has(declaration.dependencyName)
+    ) {
+      continue;
+    }
+
+    options.problems.push(
+      [
+        'Unused workspace package dependency:',
+        `  importer: ${declaration.importer.name}`,
+        `  package manifest: ${toRelativePath(options.config.rootDir, declaration.packageJsonPath)}`,
+        `  dependency: ${declaration.dependencyName}`,
+        `  section: ${declaration.sectionName}`,
+        `  specifier: ${declaration.specifier}`,
+        '  reason: workspace package dependencies should be used by source owned by the importer package, or explicitly allowlisted when usage is not visible to static import analysis.',
+        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, import it from source owned by ${declaration.importer.name}, or add graph.unusedWorkspaceDependencies.allowlist with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
+      ].join('\n'),
+    );
+  }
 }
 
 function addDtsOptionProblems(
@@ -449,6 +915,7 @@ async function runGraphCheckInternal(
   );
   const fileOwnerLookup = createFileOwnerLookup(projects);
   const packages = await collectWorkspacePackages(config);
+  const packageOwners = await collectPackageOwners(config);
   const importers = collectImporters(config, packages);
   const problems: string[] = [...graphRoute.problems];
   const graphRules = normalizeGraphRules({
@@ -460,6 +927,13 @@ async function runGraphCheckInternal(
     packages,
     problems,
     projectPaths,
+  });
+
+  await addUnusedWorkspaceDependencyProblems({
+    config,
+    packageOwners,
+    problems,
+    workspacePackages: packages,
   });
 
   for (const project of projects) {

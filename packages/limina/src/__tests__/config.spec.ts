@@ -47,6 +47,17 @@ describe('defineConfig', () => {
           },
         ],
       },
+      graph: {
+        unusedWorkspaceDependencies: {
+          allowlist: [
+            {
+              dependency: '@example/generated',
+              importer: '@example/core',
+              reason: 'Loaded by generated code.',
+            },
+          ],
+        },
+      },
       release: {
         contentHash: {
           baselineTag: 'next',
@@ -67,6 +78,9 @@ describe('defineConfig', () => {
       'attw',
       'boundary',
     ]);
+    expect(
+      config.graph?.unusedWorkspaceDependencies?.allowlist?.[0]?.dependency,
+    ).toBe('@example/generated');
     expect(config.release?.contentHash?.baselineTag).toBe('next');
     expect(config.release?.contentHash?.builtinIgnore).toBe(false);
     expect(config.release?.contentHash?.ignore).toEqual(['client/**']);

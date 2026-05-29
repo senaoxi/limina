@@ -128,3 +128,33 @@ import { createServerClient } from '@acme/internal-node';
 When `pnpm exec limina graph check` runs, Limina parses imports from `src/client/load.ts` with TypeScript. Because the file belongs to a leaf labeled `"limina": "runtime-client"`, Limina compares each resolved specifier with `deny.deps`: `node:fs` matches `node:*`, and `@acme/internal-node` matches the package rule.
 
 The result is a graph check failure with the configured reason for each match. Reviewers can immediately see that browser runtime code imported Node-only capabilities instead of guessing whether those imports will break in the browser.
+
+## `unusedWorkspaceDependencies.allowlist`
+
+`graph check` also verifies that workspace packages declared in `package.json` are actually used by source owned by that package. This applies to every workspace package, including the workspace root.
+
+Limina scans dependency names in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`. If the dependency name matches a package from the pnpm workspace, Limina expects the importer package to use it through a static source import such as `import`, `export ... from`, `import type`, or dynamic `import()`.
+
+The source scope comes from package-owned `tsconfig*.json` files. Limina excludes `tsconfig*.dts.json`, `tsconfig*.build.json`, `tsconfig*.base.json`, and `tsconfig*.check.json`; each remaining tsconfig belongs to its nearest `package.json`. If a tsconfig includes files owned by another nearer package, graph check reports that as a config problem.
+
+For dependencies used by generated code, config files, scripts, or runtime strings that static import analysis cannot see, add an allowlist entry:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  graph: {
+    unusedWorkspaceDependencies: {
+      allowlist: [
+        {
+          importer: '@acme/app',
+          dependency: '@acme/runtime',
+          reason: 'Loaded by a Vite virtual module generated at build time.',
+        },
+      ],
+    },
+  },
+});
+```
+
+Allowlist entries must name existing workspace packages and a dependency pair that is still declared in the importer package manifest. If the dependency becomes unused and intentional, keep the reason close to the config; if it is no longer needed, remove the dependency instead.

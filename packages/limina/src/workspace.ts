@@ -294,14 +294,18 @@ async function collectWorkspacePackagesFromPatterns(
   const ignorePatterns = workspacePatterns
     .filter((pattern) => pattern.startsWith('!'))
     .map((pattern) => `${pattern.slice(1).replace(/\/$/u, '')}/**`);
-  const packageJsonPaths = new Set<string>([
-    ...(await glob(includePatterns, {
+  const packageJsonPaths = new Set<string>(
+    await glob(includePatterns, {
       cwd: config.rootDir,
       absolute: false,
       ignore: ['**/node_modules/**', '**/dist/**', ...ignorePatterns],
-    })),
-    'package.json',
-  ]);
+    }),
+  );
+
+  if (existsSync(path.join(config.rootDir, 'package.json'))) {
+    packageJsonPaths.add('package.json');
+  }
+
   const packages: WorkspacePackage[] = [];
 
   for (const packageJsonPath of [...new Set(packageJsonPaths)].sort()) {
