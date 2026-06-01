@@ -1,11 +1,15 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import ts from 'typescript';
+import {
+  type CheckerProjectParseContext,
+  parseCheckerProjectConfigForContext,
+  resolveModuleNameWithCheckers,
+} from './checkers';
 import type { ResolvedLiminaConfig } from './config';
 import {
   createExtensionPattern,
-  createExtraFileExtensions,
   getDtsCompanionConfigPath,
   getRawReferencePaths,
   isDtsConfigPath,
@@ -23,10 +27,11 @@ import {
 } from './workspace';
 
 export interface ProjectInfo {
+  checkerPresets: CheckerProjectParseContext['checkerPresets'];
   configPath: string;
   extensions: string[];
   fileNames: string[];
-  label: string | null;
+  labels: string[];
   labelProblem: string | null;
   options: ts.CompilerOptions;
   references: Set<string>;
@@ -87,113 +92,135 @@ function formatUnknownValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function readProjectLabel(
+function readProjectGraphRules(
   config: ResolvedLiminaConfig,
   configPath: string,
-): Pick<ProjectInfo, 'label' | 'labelProblem'> {
+): Pick<ProjectInfo, 'labels' | 'labelProblem'> {
   if (!isDtsProjectConfig(configPath)) {
     return {
-      label: null,
+      labels: [],
       labelProblem: null,
     };
   }
 
   const configObject = readJsonConfig(config, configPath);
 
-  if (!Object.hasOwn(configObject, 'limina')) {
+  if (!Object.hasOwn(configObject, 'liminaOptions')) {
     return {
-      label: null,
+      labels: [],
       labelProblem: null,
     };
   }
 
-  const value = configObject.limina;
+  const optionsValue = configObject.liminaOptions;
 
-  if (typeof value === 'string' && value.trim()) {
+  if (
+    !optionsValue ||
+    typeof optionsValue !== 'object' ||
+    Array.isArray(optionsValue)
+  ) {
     return {
-      label: value.trim(),
+      labels: [],
+      labelProblem: [
+        'Invalid Limina graph options:',
+        `  project: ${toRelativePath(config.rootDir, configPath)}`,
+        '  field: liminaOptions',
+        `  value: ${formatUnknownValue(optionsValue)}`,
+        '  reason: liminaOptions must be an object with an optional graphRules array.',
+      ].join('\n'),
+    };
+  }
+
+  const graphRules = (optionsValue as { graphRules?: unknown }).graphRules;
+
+  if (graphRules === undefined) {
+    return {
+      labels: [],
       labelProblem: null,
     };
+  }
+
+  if (!Array.isArray(graphRules)) {
+    return {
+      labels: [],
+      labelProblem: [
+        'Invalid Limina graph rules:',
+        `  project: ${toRelativePath(config.rootDir, configPath)}`,
+        '  field: liminaOptions.graphRules',
+        `  value: ${formatUnknownValue(graphRules)}`,
+        '  reason: liminaOptions.graphRules must be an array of non-empty string labels.',
+      ].join('\n'),
+    };
+  }
+
+  const labels: string[] = [];
+
+  for (const [index, value] of graphRules.entries()) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return {
+        labels: [],
+        labelProblem: [
+          'Invalid Limina graph rule label:',
+          `  project: ${toRelativePath(config.rootDir, configPath)}`,
+          `  field: liminaOptions.graphRules[${index}]`,
+          `  value: ${formatUnknownValue(value)}`,
+          '  reason: graph rule labels must be non-empty strings.',
+        ].join('\n'),
+      };
+    }
+
+    const label = value.trim();
+
+    if (!labels.includes(label)) {
+      labels.push(label);
+    }
   }
 
   return {
-    label: null,
-    labelProblem: [
-      'Invalid Limina graph label:',
-      `  project: ${toRelativePath(config.rootDir, configPath)}`,
-      `  field: limina`,
-      `  value: ${formatUnknownValue(value)}`,
-      '  reason: tsconfig*.dts.json may declare one non-empty string label with "limina".',
-    ].join('\n'),
+    labels,
+    labelProblem: null,
   };
+}
+
+export function formatProjectLabels(labels: readonly string[]): string {
+  if (labels.length === 0) {
+    return '(none)';
+  }
+
+  return labels.join(', ');
 }
 
 export function parseProject(
   config: ResolvedLiminaConfig,
   configPath: string,
-  extensions?: string[],
+  contextOrExtensions?: CheckerProjectParseContext | string[],
 ): ProjectInfo {
-  const diagnostics: ts.Diagnostic[] = [];
-  const parsed = extensions
-    ? ts.parseJsonConfigFileContent(
-        readJsonConfig(config, configPath),
-        ts.sys,
-        path.dirname(configPath),
-        {},
-        configPath,
-        undefined,
-        createExtraFileExtensions(extensions),
-      )
-    : ts.getParsedCommandLineOfConfigFile(
-        configPath,
-        {},
-        {
-          ...ts.sys,
-          onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
-            diagnostics.push(diagnostic);
-          },
-        },
-      );
-
-  if (!parsed) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-        getCanonicalFileName: (fileName) => fileName,
-        getCurrentDirectory: () => config.rootDir,
-        getNewLine: () => '\n',
-      }),
-    );
-  }
-
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(parsed.errors, {
-        getCanonicalFileName: (fileName) => fileName,
-        getCurrentDirectory: () => config.rootDir,
-        getNewLine: () => '\n',
-      }),
-    );
-  }
-
-  const labelInfo = readProjectLabel(config, configPath);
-  const projectExtensions = extensions ?? [
-    '.ts',
-    '.tsx',
-    '.cts',
-    '.mts',
-    '.d.ts',
-    '.d.cts',
-    '.d.mts',
-  ];
+  const context = Array.isArray(contextOrExtensions)
+    ? {
+        checkerPresets: [] as CheckerProjectParseContext['checkerPresets'],
+        extensions: contextOrExtensions,
+      }
+    : (contextOrExtensions ?? {
+        checkerPresets: [] as CheckerProjectParseContext['checkerPresets'],
+        extensions: [],
+      });
+  const parsed = parseCheckerProjectConfigForContext({
+    configPath,
+    context,
+    projectRootDir: config.rootDir,
+  });
+  const labelInfo = readProjectGraphRules(config, configPath);
+  const projectExtensions = parsed.extensions;
   const filePattern = createExtensionPattern(projectExtensions);
 
   return {
+    checkerPresets: context.checkerPresets,
     configPath: normalizeAbsolutePath(configPath),
     extensions: projectExtensions,
     fileNames: parsed.fileNames
       .filter((fileName) => filePattern.test(fileName))
       .map(normalizeAbsolutePath),
-    label: labelInfo.label,
+    labels: labelInfo.labels,
     labelProblem: labelInfo.labelProblem,
     options: parsed.options,
     references: new Set(getRawReferencePaths(config, configPath)),
@@ -207,6 +234,14 @@ function getSourceFileKind(filePath: string): ts.ScriptKind {
 
   if (filePath.endsWith('.jsx')) {
     return ts.ScriptKind.JSX;
+  }
+
+  if (
+    filePath.endsWith('.js') ||
+    filePath.endsWith('.mjs') ||
+    filePath.endsWith('.cjs')
+  ) {
+    return ts.ScriptKind.JS;
   }
 
   return ts.ScriptKind.TS;
@@ -348,47 +383,25 @@ export function resolveInternalImport(
   specifier: string,
   containingFile: string,
   options: ts.CompilerOptions,
-  extensions: string[] = [],
+  contextOrExtensions: CheckerProjectParseContext | ProjectInfo | string[] = [],
 ): string | null {
-  const resolved = ts.resolveModuleName(
-    specifier,
+  const context = Array.isArray(contextOrExtensions)
+    ? {
+        checkerPresets: [] as CheckerProjectParseContext['checkerPresets'],
+        extensions: contextOrExtensions,
+      }
+    : {
+        checkerPresets: contextOrExtensions.checkerPresets,
+        extensions: contextOrExtensions.extensions,
+      };
+  const resolved = resolveModuleNameWithCheckers({
+    compilerOptions: options,
     containingFile,
-    options,
-    ts.sys,
-  ).resolvedModule;
-
-  if (resolved?.resolvedFileName) {
-    return normalizeAbsolutePath(resolved.resolvedFileName);
-  }
-
-  if (!isRelativeSpecifier(specifier)) {
-    return null;
-  }
-
-  const resolvedSpecifierPath = path.resolve(
-    path.dirname(containingFile),
+    context,
     specifier,
-  );
-  const candidatePaths = path.extname(specifier)
-    ? [resolvedSpecifierPath]
-    : extensions.flatMap((extension) => [
-        `${resolvedSpecifierPath}${extension}`,
-        path.join(resolvedSpecifierPath, `index${extension}`),
-      ]);
+  });
 
-  for (const candidatePath of candidatePaths) {
-    if (!existsSync(candidatePath)) {
-      continue;
-    }
-
-    if (!statSync(candidatePath).isFile()) {
-      continue;
-    }
-
-    return normalizeAbsolutePath(candidatePath);
-  }
-
-  return null;
+  return resolved ? normalizeAbsolutePath(resolved) : null;
 }
 
 function chooseOwningProject(projectPaths: string[]): string {

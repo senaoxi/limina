@@ -5,10 +5,13 @@ import { isDtsProjectConfig } from './graph-context';
 import { normalizeAbsolutePath } from './utils/path';
 import { getPackageRootSpecifier, type WorkspacePackage } from './workspace';
 
-export interface GraphRuleRefDeny {
+export interface GraphRuleRef {
   path: string;
   reason: string;
 }
+
+export type GraphRuleRefDeny = GraphRuleRef;
+export type GraphRuleRefAllow = GraphRuleRef;
 
 export interface GraphRuleDepDeny {
   kind: 'node-builtin' | 'package' | 'package-import';
@@ -19,6 +22,7 @@ export interface GraphRuleDepDeny {
 }
 
 export interface NormalizedGraphRules {
+  allowRefsByLabel: Map<string, Map<string, GraphRuleRefAllow>>;
   depsByLabel: Map<string, GraphRuleDepDeny[]>;
   refsByLabel: Map<string, Map<string, GraphRuleRefDeny>>;
 }
@@ -198,15 +202,16 @@ function addNormalizedRuleRef(options: {
   label: string;
   problems: string[];
   projectPathSet: Set<string>;
-  refsByLabel: Map<string, Map<string, GraphRuleRefDeny>>;
+  refsByLabel: Map<string, Map<string, GraphRuleRef>>;
+  ruleKind: 'allow' | 'deny';
 }): void {
-  const field = `graph.rules.${options.label}.deny.refs[${options.index}]`;
+  const field = `graph.rules.${options.label}.${options.ruleKind}.refs[${options.index}]`;
 
   if (!isPlainRecord(options.entry)) {
     addRuleEntryConfigProblem(options.problems, [
       `  field: ${field}`,
       `  value: ${formatUnknownValue(options.entry)}`,
-      '  reason: deny.refs entries must be objects with non-empty path and reason fields.',
+      `  reason: ${options.ruleKind}.refs entries must be objects with non-empty path and reason fields.`,
     ]);
     return;
   }
@@ -218,7 +223,7 @@ function addNormalizedRuleRef(options: {
     addRuleEntryConfigProblem(options.problems, [
       `  field: ${field}.path`,
       `  value: ${formatUnknownValue(pathValue)}`,
-      '  reason: deny.refs path is required and must be a non-empty string.',
+      `  reason: ${options.ruleKind}.refs path is required and must be a non-empty string.`,
     ]);
     return;
   }
@@ -227,7 +232,7 @@ function addNormalizedRuleRef(options: {
     addRuleEntryConfigProblem(options.problems, [
       `  field: ${field}.reason`,
       `  value: ${formatUnknownValue(reasonValue)}`,
-      '  reason: deny.refs reason is required and must be a non-empty string.',
+      `  reason: ${options.ruleKind}.refs reason is required and must be a non-empty string.`,
     ]);
     return;
   }
@@ -240,7 +245,7 @@ function addNormalizedRuleRef(options: {
     addRuleEntryConfigProblem(options.problems, [
       `  field: ${field}.path`,
       `  path: ${pathValue}`,
-      '  reason: deny.refs path must point to a project reachable from a checker entry.',
+      `  reason: ${options.ruleKind}.refs path must point to a project reachable from a checker entry.`,
     ]);
     return;
   }
@@ -249,7 +254,7 @@ function addNormalizedRuleRef(options: {
     addRuleEntryConfigProblem(options.problems, [
       `  field: ${field}.path`,
       `  path: ${pathValue}`,
-      '  reason: deny.refs path must point to a tsconfig*.dts.json declaration leaf.',
+      `  reason: ${options.ruleKind}.refs path must point to a tsconfig*.dts.json declaration leaf.`,
     ]);
     return;
   }
@@ -335,6 +340,7 @@ export function normalizeGraphRules(options: {
   problems: string[];
   projectPaths: string[];
 }): NormalizedGraphRules {
+  const allowRefsByLabel = new Map<string, Map<string, GraphRuleRefAllow>>();
   const depsByLabel = new Map<string, GraphRuleDepDeny[]>();
   const refsByLabel = new Map<string, Map<string, GraphRuleRefDeny>>();
   const projectPathSet = new Set(options.projectPaths);
@@ -361,11 +367,7 @@ export function normalizeGraphRules(options: {
       continue;
     }
 
-    if (rawRule.deny === undefined) {
-      continue;
-    }
-
-    if (!isPlainRecord(rawRule.deny)) {
+    if (rawRule.deny !== undefined && !isPlainRecord(rawRule.deny)) {
       addRuleEntryConfigProblem(options.problems, [
         `  field: graph.rules.${label}.deny`,
         `  value: ${formatUnknownValue(rawRule.deny)}`,
@@ -374,20 +376,15 @@ export function normalizeGraphRules(options: {
       continue;
     }
 
-    const refs = rawRule.deny.refs;
+    const deny = isPlainRecord(rawRule.deny) ? rawRule.deny : undefined;
+    const denyRefs = deny?.refs;
 
     if (
       shouldNormalizeRuleKind(options.include, 'refs') &&
-      refs !== undefined
+      denyRefs !== undefined
     ) {
-      if (!Array.isArray(refs)) {
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.deny.refs`,
-          `  value: ${formatUnknownValue(refs)}`,
-          '  reason: deny.refs must be an array.',
-        ]);
-      } else {
-        refs.forEach((entry, index) => {
+      if (Array.isArray(denyRefs)) {
+        for (const [index, entry] of denyRefs.entries()) {
           addNormalizedRuleRef({
             config: options.config,
             entry,
@@ -396,47 +393,48 @@ export function normalizeGraphRules(options: {
             problems: options.problems,
             projectPathSet,
             refsByLabel,
+            ruleKind: 'deny',
           });
-        });
+        }
+      } else {
+        addRuleEntryConfigProblem(options.problems, [
+          `  field: graph.rules.${label}.deny.refs`,
+          `  value: ${formatUnknownValue(denyRefs)}`,
+          '  reason: deny.refs must be an array.',
+        ]);
       }
     }
 
     if (
       shouldNormalizeRuleKind(options.include, 'deps') &&
-      rawRule.deny.workspaceDeps !== undefined
+      deny?.workspaceDeps !== undefined
     ) {
       addRuleEntryConfigProblem(options.problems, [
         `  field: graph.rules.${label}.deny.workspaceDeps`,
-        `  value: ${formatUnknownValue(rawRule.deny.workspaceDeps)}`,
+        `  value: ${formatUnknownValue(deny.workspaceDeps)}`,
         '  reason: deny.workspaceDeps has been removed; use deny.deps.',
       ]);
     }
 
     if (
       shouldNormalizeRuleKind(options.include, 'deps') &&
-      rawRule.deny.nodeBuiltins !== undefined
+      deny?.nodeBuiltins !== undefined
     ) {
       addRuleEntryConfigProblem(options.problems, [
         `  field: graph.rules.${label}.deny.nodeBuiltins`,
-        `  value: ${formatUnknownValue(rawRule.deny.nodeBuiltins)}`,
+        `  value: ${formatUnknownValue(deny.nodeBuiltins)}`,
         '  reason: deny.nodeBuiltins has been removed; use deny.deps.',
       ]);
     }
 
-    const deps = rawRule.deny.deps;
+    const deps = deny?.deps;
 
     if (
       shouldNormalizeRuleKind(options.include, 'deps') &&
       deps !== undefined
     ) {
-      if (!Array.isArray(deps)) {
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.deny.deps`,
-          `  value: ${formatUnknownValue(deps)}`,
-          '  reason: deny.deps must be an array.',
-        ]);
-      } else {
-        deps.forEach((entry, index) => {
+      if (Array.isArray(deps)) {
+        for (const [index, entry] of deps.entries()) {
           addNormalizedDep({
             depsByLabel,
             entry,
@@ -444,12 +442,57 @@ export function normalizeGraphRules(options: {
             label,
             problems: options.problems,
           });
-        });
+        }
+      } else {
+        addRuleEntryConfigProblem(options.problems, [
+          `  field: graph.rules.${label}.deny.deps`,
+          `  value: ${formatUnknownValue(deps)}`,
+          '  reason: deny.deps must be an array.',
+        ]);
+      }
+    }
+
+    if (rawRule.allow !== undefined && !isPlainRecord(rawRule.allow)) {
+      addRuleEntryConfigProblem(options.problems, [
+        `  field: graph.rules.${label}.allow`,
+        `  value: ${formatUnknownValue(rawRule.allow)}`,
+        '  reason: graph rule allow must be an object.',
+      ]);
+      continue;
+    }
+
+    const allow = isPlainRecord(rawRule.allow) ? rawRule.allow : undefined;
+    const allowRefs = allow?.refs;
+
+    if (
+      shouldNormalizeRuleKind(options.include, 'refs') &&
+      allowRefs !== undefined
+    ) {
+      if (Array.isArray(allowRefs)) {
+        for (const [index, entry] of allowRefs.entries()) {
+          addNormalizedRuleRef({
+            config: options.config,
+            entry,
+            index,
+            label,
+            problems: options.problems,
+            projectPathSet,
+            refsByLabel: allowRefsByLabel,
+            ruleKind: 'allow',
+          });
+        }
+      } else {
+        addRuleEntryConfigProblem(options.problems, [
+          `  field: graph.rules.${label}.allow.refs`,
+          `  value: ${formatUnknownValue(allowRefs)}`,
+          '  reason: allow.refs must be an array.',
+        ]);
       }
     }
   }
 
   return {
+    allowRefsByLabel,
     depsByLabel,
     refsByLabel,
   };
@@ -459,36 +502,64 @@ export function isNodeBuiltinSpecifier(specifier: string): boolean {
   return nodeBuiltinNames.has(specifier);
 }
 
-export function getDeniedRefRule(
-  rules: NormalizedGraphRules,
-  label: string | null,
-  targetProjectPath: string,
-): GraphRuleRefDeny | null {
-  if (!label) {
-    return null;
+type LabelSelection = readonly string[] | string | null;
+
+function getSelectedLabels(labels: LabelSelection): readonly string[] {
+  if (!labels) {
+    return [];
   }
 
-  return rules.refsByLabel.get(label)?.get(targetProjectPath) ?? null;
+  return typeof labels === 'string' ? [labels] : labels;
+}
+
+function getRefRule<T extends GraphRuleRef>(
+  refsByLabel: Map<string, Map<string, T>>,
+  labels: LabelSelection,
+  targetProjectPath: string,
+): T | null {
+  for (const label of getSelectedLabels(labels)) {
+    const rule = refsByLabel.get(label)?.get(targetProjectPath);
+
+    if (rule) {
+      return rule;
+    }
+  }
+
+  return null;
+}
+
+export function getDeniedRefRule(
+  rules: NormalizedGraphRules,
+  labels: LabelSelection,
+  targetProjectPath: string,
+): GraphRuleRefDeny | null {
+  return getRefRule(rules.refsByLabel, labels, targetProjectPath);
+}
+
+export function getAllowedRefRule(
+  rules: NormalizedGraphRules,
+  labels: LabelSelection,
+  targetProjectPath: string,
+): GraphRuleRefAllow | null {
+  return getRefRule(rules.allowRefsByLabel, labels, targetProjectPath);
 }
 
 function getRuleDeps(
   rules: NormalizedGraphRules,
-  label: string | null,
+  labels: LabelSelection,
 ): GraphRuleDepDeny[] {
-  if (!label) {
-    return [];
-  }
-
-  return rules.depsByLabel.get(label) ?? [];
+  return getSelectedLabels(labels).flatMap(
+    (label) => rules.depsByLabel.get(label) ?? [],
+  );
 }
 
 export function getDeniedDepRuleForPackage(
   rules: NormalizedGraphRules,
-  label: string | null,
+  labels: LabelSelection,
   packageName: string,
 ): GraphRuleDepDeny | null {
   return (
-    getRuleDeps(rules, label).find(
+    getRuleDeps(rules, labels).find(
       (rule) => rule.kind === 'package' && rule.normalizedName === packageName,
     ) ?? null
   );
@@ -496,10 +567,10 @@ export function getDeniedDepRuleForPackage(
 
 export function getDeniedDepRuleForSpecifier(
   rules: NormalizedGraphRules,
-  label: string | null,
+  labels: LabelSelection,
   specifier: string,
 ): GraphRuleDepDeny | null {
-  const deps = getRuleDeps(rules, label);
+  const deps = getRuleDeps(rules, labels);
   const packageImportRule = deps.find(
     (rule) =>
       rule.kind === 'package-import' &&
@@ -537,7 +608,7 @@ export function getDeniedDepRuleForSpecifier(
 
   return getDeniedDepRuleForPackage(
     rules,
-    label,
+    labels,
     getPackageRootSpecifier(specifier),
   );
 }

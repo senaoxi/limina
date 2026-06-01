@@ -1,24 +1,29 @@
 import { createElapsedTimer } from 'logaria/helper';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
-import ts from 'typescript';
+import type ts from 'typescript';
 import type { ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
-import { PathsLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import {
+  collectImportsFromFile,
+  parseProject,
+  type ProjectInfo,
+  resolveInternalImport,
+} from '../graph-context';
+import { clearCliScreen, formatErrorMessage, PathsLogger } from '../logger';
 import {
   aliasMatchesSpecifier,
   collectExportEntries,
 } from '../package-exports';
 import {
-  collectGraphProjectRoute,
-  getRawReferencePaths,
+  collectSourceGraphProjectExtensions,
+  createLiminaTsconfigSchemaPath,
   readJsonConfig,
 } from '../tsconfig';
 import {
   isPathInsideDirectory,
-  normalizeAbsolutePath,
   toAbsolutePath,
   toPosixPath,
   toRelativePath,
@@ -30,19 +35,6 @@ import {
   type ImporterInfo,
   type WorkspacePackage,
 } from '../workspace';
-
-interface ProjectInfo {
-  configPath: string;
-  fileNames: string[];
-  options: ts.CompilerOptions;
-  references: Set<string>;
-}
-
-interface ImportRecord {
-  filePath: string;
-  line: number;
-  specifier: string;
-}
 
 interface GeneratedConfig {
   aliasCount: number;
@@ -75,147 +67,14 @@ function generatedFileMarker(config: ResolvedLiminaConfig): string {
   );
 }
 
-function parseProject(
-  config: ResolvedLiminaConfig,
-  configPath: string,
-): ProjectInfo {
-  const diagnostics: ts.Diagnostic[] = [];
-  const parsed = ts.getParsedCommandLineOfConfigFile(
-    configPath,
-    {},
-    {
-      ...ts.sys,
-      onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
-        diagnostics.push(diagnostic);
-      },
-    },
-  );
-
-  if (!parsed) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-        getCanonicalFileName: (fileName) => fileName,
-        getCurrentDirectory: () => config.rootDir,
-        getNewLine: () => '\n',
-      }),
-    );
-  }
-
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(parsed.errors, {
-        getCanonicalFileName: (fileName) => fileName,
-        getCurrentDirectory: () => config.rootDir,
-        getNewLine: () => '\n',
-      }),
-    );
-  }
-
-  return {
-    configPath: normalizeAbsolutePath(configPath),
-    fileNames: parsed.fileNames
-      .filter((fileName) => /\.(?:[cm]?tsx?|d\.[cm]?ts)$/u.test(fileName))
-      .map(normalizeAbsolutePath),
-    options: parsed.options,
-    references: new Set(getRawReferencePaths(config, configPath)),
-  };
-}
-
-function getSourceFileKind(filePath: string): ts.ScriptKind {
-  if (filePath.endsWith('.tsx')) {
-    return ts.ScriptKind.TSX;
-  }
-
-  if (filePath.endsWith('.jsx')) {
-    return ts.ScriptKind.JSX;
-  }
-
-  return ts.ScriptKind.TS;
-}
-
-function stringLiteralValue(node: ts.Node | undefined): string | null {
-  return node && ts.isStringLiteralLike(node) ? node.text : null;
-}
-
-function collectImportsFromFile(filePath: string): ImportRecord[] {
-  const sourceText = readFileSync(filePath, 'utf8');
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    getSourceFileKind(filePath),
-  );
-  const imports: ImportRecord[] = [];
-  const addImport = (specifier: string, node: ts.Node): void => {
-    const location = sourceFile.getLineAndCharacterOfPosition(
-      node.getStart(sourceFile),
-    );
-
-    imports.push({
-      filePath,
-      line: location.line + 1,
-      specifier,
-    });
-  };
-  const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      const specifier = stringLiteralValue(node.moduleSpecifier);
-
-      if (specifier) {
-        addImport(specifier, node);
-      }
-    } else if (ts.isImportTypeNode(node)) {
-      const specifier = ts.isLiteralTypeNode(node.argument)
-        ? stringLiteralValue(node.argument.literal)
-        : null;
-
-      if (specifier) {
-        addImport(specifier, node);
-      }
-    } else if (
-      ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword
-    ) {
-      const specifier = stringLiteralValue(node.arguments[0]);
-
-      if (specifier) {
-        addImport(specifier, node);
-      }
-    }
-
-    ts.forEachChild(node, visit);
-  };
-
-  visit(sourceFile);
-
-  return imports;
-}
-
-function resolveInternalImport(
-  specifier: string,
-  containingFile: string,
-  options: ts.CompilerOptions,
-): string | null {
-  const resolved = ts.resolveModuleName(
-    specifier,
-    containingFile,
-    options,
-    ts.sys,
-  ).resolvedModule;
-
-  return resolved?.resolvedFileName
-    ? normalizeAbsolutePath(resolved.resolvedFileName)
-    : null;
-}
-
 function resolveImportWithoutMatchingPaths(
   specifier: string,
   containingFile: string,
   options: ts.CompilerOptions,
+  project: ProjectInfo,
 ): string | null {
   if (!options.paths) {
-    return resolveInternalImport(specifier, containingFile, options);
+    return resolveInternalImport(specifier, containingFile, options, project);
   }
 
   const paths = Object.fromEntries(
@@ -228,7 +87,7 @@ function resolveImportWithoutMatchingPaths(
     paths: Object.keys(paths).length > 0 ? paths : undefined,
   };
 
-  return resolveInternalImport(specifier, containingFile, nextOptions);
+  return resolveInternalImport(specifier, containingFile, nextOptions, project);
 }
 
 function createFileOwnerLookup(projects: ProjectInfo[]): Map<string, string[]> {
@@ -413,7 +272,7 @@ function formatGeneratedConfig(
   const outputDirectory = path.dirname(outputPath);
 
   return `{
-  "$schema": "https://json.schemastore.org/tsconfig",
+  "$schema": "${createLiminaTsconfigSchemaPath(config.rootDir, outputPath)}",
   /**
    * ${generatedFileMarker(config)}
    *
@@ -475,15 +334,19 @@ function createGeneratedConfigs(
 async function collectGeneratedConfigs(
   config: ResolvedLiminaConfig,
 ): Promise<GeneratedConfig[]> {
-  const graphRoute = collectGraphProjectRoute(config);
-  const projectPaths = graphRoute.projectPaths;
+  const graphRoute = collectSourceGraphProjectExtensions(config);
+  const projectPaths = [...graphRoute.projectContextsByPath.keys()].sort();
 
   if (graphRoute.problems.length > 0) {
     throw new Error(graphRoute.problems.join('\n\n'));
   }
 
   const projects = projectPaths.map((projectPath) =>
-    parseProject(config, projectPath),
+    parseProject(
+      config,
+      projectPath,
+      graphRoute.projectContextsByPath.get(projectPath),
+    ),
   );
   const fileOwnerLookup = createFileOwnerLookup(projects);
   const packages = await collectWorkspacePackages(config);
@@ -498,7 +361,10 @@ async function collectGeneratedConfigs(
     );
 
     for (const filePath of project.fileNames) {
-      for (const importRecord of collectImportsFromFile(filePath)) {
+      for (const importRecord of collectImportsFromFile(
+        filePath,
+        config.rootDir,
+      )) {
         const targetPackage = findPackageForSpecifier(
           importRecord.specifier,
           packages,
@@ -518,6 +384,7 @@ async function collectGeneratedConfigs(
           importRecord.specifier,
           filePath,
           project.options,
+          project,
         );
 
         if (!resolvedFilePath) {
@@ -532,6 +399,7 @@ async function collectGeneratedConfigs(
                 importRecord.specifier,
                 filePath,
                 project.options,
+                project,
               )
             : resolvedFilePath;
 

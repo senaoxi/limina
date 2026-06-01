@@ -2,30 +2,37 @@ import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
-import ts from 'typescript';
-import { getCheckerAdapter, normalizeExtensions } from '../checkers';
+import type ts from 'typescript';
+import {
+  type CheckerProjectParseContext,
+  normalizeExtensions,
+  parseCheckerProjectConfigForContext,
+  resolveCheckerProjectExtensions,
+} from '../checkers';
 import {
   getActiveCheckerExtensions,
   getActiveCheckers,
+  isStrictConfig,
   type ResolvedCheckerConfig,
   type ResolvedLiminaConfig,
 } from '../config';
 import type { LiminaFlowReporter } from '../flow';
-import { ProofLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, ProofLogger } from '../logger';
 import {
+  type CheckerGraphProjectRoute,
   collectCheckerEntryProjectRoutes,
   collectGraphProjectRouteFromRoot,
   collectGraphProjectRoutes,
   createExtensionPattern,
-  createExtraFileExtensions,
-  createFormatHost,
   getDtsCompanionConfigPath,
+  isBuildGraphConfigPath,
+  isDtsConfigPath,
   isOrdinaryTypecheckConfigPath,
+  type JsonObject,
   parseProjectFileNamesForExtensions,
   readJsonConfig,
   resolveProjectConfigPath,
   resolveReferencePath,
-  type CheckerGraphProjectRoute,
 } from '../tsconfig';
 import { normalizeAbsolutePath, toRelativePath } from '../utils/path';
 
@@ -53,7 +60,7 @@ interface AllowlistEntryCollection {
 
 interface CoverageSource {
   label: string;
-  type: 'allowlist' | 'checker' | 'graph';
+  type: 'allowlist' | 'checker' | 'graph' | 'preset';
 }
 
 export interface RunProofCheckOptions {
@@ -62,7 +69,12 @@ export interface RunProofCheckOptions {
   flowDepth?: number;
 }
 
-type ConfigFileOwners = Map<string, string[]>;
+interface ConfigFileOwner {
+  checkerPreset: ResolvedCheckerConfig['preset'];
+  configPath: string;
+}
+
+type ConfigFileOwners = Map<string, ConfigFileOwner[]>;
 
 interface ParsedConfig {
   fileNames: string[];
@@ -119,23 +131,47 @@ const ignoredSemanticCompilerOptions = new Set([
   'tsBuildInfoFile',
 ]);
 
-const typeScriptCheckerExtensions =
-  getCheckerAdapter('tsc')?.defaultExtensions ?? [];
-
-function getFirstClassCoverageExtensions(extensions: string[]): string[] {
-  return normalizeExtensions([...typeScriptCheckerExtensions, ...extensions]);
-}
+const javaScriptConfigFilePattern = /(?:^|[/\\])[^/\\]+\.config\.[cm]?js$/u;
+const typeScriptFamilyCheckerPresets = new Set<ResolvedCheckerConfig['preset']>(
+  ['tsc', 'tsgo', 'vue-tsc', 'vue-tsgo'],
+);
 
 function getCheckerCoverageExtensions(
   checker: ResolvedCheckerConfig,
 ): string[] {
-  const adapter = getCheckerAdapter(checker.preset);
+  return checker.extensions;
+}
 
-  if (!adapter?.sourceGraph) {
-    return checker.extensions;
-  }
+function getActiveCheckerContext(
+  config: ResolvedLiminaConfig,
+): CheckerProjectParseContext {
+  return {
+    checkerPresets: [
+      ...new Set(getActiveCheckers(config).map((checker) => checker.preset)),
+    ],
+    extensions: getActiveCheckerExtensions(config),
+  };
+}
 
-  return getFirstClassCoverageExtensions(checker.extensions);
+function createCheckerProjectContext(options: {
+  config: ResolvedLiminaConfig;
+  configPath: string;
+  extensions: string[];
+  preset: ResolvedCheckerConfig['preset'];
+}): CheckerProjectParseContext {
+  const adapterExtensions = resolveCheckerProjectExtensions({
+    configPath: options.configPath,
+    preset: options.preset,
+    projectRootDir: options.config.rootDir,
+  });
+
+  return {
+    checkerPresets: [options.preset],
+    extensions: normalizeExtensions([
+      ...options.extensions,
+      ...adapterExtensions,
+    ]),
+  };
 }
 
 async function collectTsconfigPaths(
@@ -334,7 +370,7 @@ function collectConfiguredAllowlistEntries(
     };
   }
 
-  rawEntries.forEach((entry, index) => {
+  for (const [index, entry] of rawEntries.entries()) {
     const field = `proof.allowlist[${index}]`;
 
     if (!isPlainRecord(entry)) {
@@ -346,7 +382,7 @@ function collectConfiguredAllowlistEntries(
           '  reason: allowlist entries must be objects with non-empty file and reason fields.',
         ].join('\n'),
       );
-      return;
+      continue;
     }
 
     const fileValue = entry.file;
@@ -361,7 +397,7 @@ function collectConfiguredAllowlistEntries(
           '  reason: allowlist file must be a non-empty string.',
         ].join('\n'),
       );
-      return;
+      continue;
     }
 
     if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
@@ -373,14 +409,14 @@ function collectConfiguredAllowlistEntries(
           '  reason: allowlist reason must be a non-empty string.',
         ].join('\n'),
       );
-      return;
+      continue;
     }
 
     entries.push({
       filePath: normalizeAbsolutePath(path.join(config.rootDir, fileValue)),
       reason: reasonValue.trim(),
     });
-  });
+  }
 
   return {
     entries,
@@ -399,6 +435,54 @@ function addCoverage(
   coverageByFile.set(filePath, sources);
 }
 
+function findTypeScriptFamilyChecker(
+  config: ResolvedLiminaConfig,
+): ResolvedCheckerConfig | null {
+  return (
+    getActiveCheckers(config).find((checker) =>
+      typeScriptFamilyCheckerPresets.has(checker.preset),
+    ) ?? null
+  );
+}
+
+function addPresetJavaScriptConfigCoverage(options: {
+  config: ResolvedLiminaConfig;
+  coverageByFile: Map<string, CoverageSource[]>;
+  sourceFiles: Set<string>;
+}): void {
+  const checker = findTypeScriptFamilyChecker(options.config);
+
+  if (!checker) {
+    return;
+  }
+
+  for (const filePath of options.sourceFiles) {
+    if (
+      options.coverageByFile.has(filePath) ||
+      !javaScriptConfigFilePattern.test(filePath)
+    ) {
+      continue;
+    }
+
+    addCoverage(options.coverageByFile, filePath, {
+      label: `${checker.name}:${checker.preset} preset`,
+      type: 'preset',
+    });
+  }
+}
+
+function parseProjectCoverageFileNames(options: {
+  config: ResolvedLiminaConfig;
+  configPath: string;
+  context: CheckerProjectParseContext;
+}): string[] {
+  return parseCheckerProjectConfigForContext({
+    configPath: options.configPath,
+    context: options.context,
+    projectRootDir: options.config.rootDir,
+  }).fileNames;
+}
+
 function collectCoverage(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
@@ -411,11 +495,18 @@ function collectCoverage(options: {
 
   for (const route of options.graphRoutes) {
     for (const graphProjectPath of route.projectPaths) {
-      for (const filePath of parseProjectFileNamesForExtensions(
-        options.config,
-        graphProjectPath,
-        getFirstClassCoverageExtensions(route.extensions),
-      )) {
+      const projectContext = createCheckerProjectContext({
+        config: options.config,
+        configPath: graphProjectPath,
+        extensions: route.extensions,
+        preset: route.checkerPreset,
+      });
+
+      for (const filePath of parseProjectCoverageFileNames({
+        config: options.config,
+        configPath: graphProjectPath,
+        context: projectContext,
+      })) {
         if (!options.sourceFiles.has(filePath)) {
           continue;
         }
@@ -430,11 +521,18 @@ function collectCoverage(options: {
 
   for (const checkerTarget of options.checkerTargets) {
     for (const configPath of checkerTarget.coverageConfigPaths) {
-      for (const filePath of parseProjectFileNamesForExtensions(
-        options.config,
+      const projectContext = createCheckerProjectContext({
+        config: options.config,
         configPath,
-        getCheckerCoverageExtensions(checkerTarget.checker),
-      )) {
+        extensions: getCheckerCoverageExtensions(checkerTarget.checker),
+        preset: checkerTarget.checker.preset,
+      });
+
+      for (const filePath of parseProjectCoverageFileNames({
+        config: options.config,
+        configPath,
+        context: projectContext,
+      })) {
         if (!options.sourceFiles.has(filePath)) {
           continue;
         }
@@ -449,6 +547,12 @@ function collectCoverage(options: {
       }
     }
   }
+
+  addPresetJavaScriptConfigCoverage({
+    config: options.config,
+    coverageByFile,
+    sourceFiles: options.sourceFiles,
+  });
 
   if (options.includeAllowlist !== false) {
     for (const entry of options.allowlistEntries) {
@@ -466,59 +570,56 @@ function collectCoverage(options: {
   return coverageByFile;
 }
 
-function collectProjectExtensionsByPath(
+function collectProjectContextsByPath(
+  config: ResolvedLiminaConfig,
   routes: CheckerGraphProjectRoute[],
-): Map<string, string[]> {
-  const projectExtensionsByPath = new Map<string, string[]>();
+): Map<string, CheckerProjectParseContext> {
+  const projectContextsByPath = new Map<string, CheckerProjectParseContext>();
 
   for (const route of routes) {
     for (const projectPath of route.projectPaths) {
-      const extensions = new Set([
-        ...(projectExtensionsByPath.get(projectPath) ?? []),
-        ...route.extensions,
-      ]);
+      const existingContext = projectContextsByPath.get(projectPath) ?? {
+        checkerPresets: [],
+        extensions: [],
+      };
+      const routeContext = createCheckerProjectContext({
+        config,
+        configPath: projectPath,
+        extensions: route.extensions,
+        preset: route.checkerPreset,
+      });
 
-      projectExtensionsByPath.set(projectPath, [...extensions].sort());
+      projectContextsByPath.set(projectPath, {
+        checkerPresets: [
+          ...new Set([
+            ...existingContext.checkerPresets,
+            ...routeContext.checkerPresets,
+          ]),
+        ],
+        extensions: normalizeExtensions([
+          ...existingContext.extensions,
+          ...routeContext.extensions,
+        ]),
+      });
     }
   }
 
-  return projectExtensionsByPath;
+  return projectContextsByPath;
 }
 
 function parseConfig(
   config: ResolvedLiminaConfig,
   configPath: string,
-  extensions: string[] = [],
+  context: CheckerProjectParseContext = {
+    checkerPresets: [],
+    extensions: [],
+  },
 ): ParsedConfig {
-  const diagnostics: ts.Diagnostic[] = [];
-  const configObject = readJsonConfig(config, configPath);
-  const parsed = ts.parseJsonConfigFileContent(
-    configObject,
-    ts.sys,
-    path.dirname(configPath),
-    {},
+  const parsed = parseCheckerProjectConfigForContext({
     configPath,
-    undefined,
-    createExtraFileExtensions(extensions),
-  );
-
-  if (diagnostics.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(
-        diagnostics,
-        createFormatHost(config.rootDir),
-      ),
-    );
-  }
-
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(
-        parsed.errors,
-        createFormatHost(config.rootDir),
-      ),
-    );
-  }
+    context,
+    projectRootDir: config.rootDir,
+  });
 
   return {
     fileNames: parsed.fileNames.map(normalizeAbsolutePath).sort(),
@@ -637,14 +738,80 @@ function addDtsConfigSemanticProblems(options: {
   }
 }
 
+function getDtsConfigPathForTypecheckConfig(configPath: string): string {
+  const directory = path.dirname(configPath);
+  const fileName = path.basename(configPath);
+  const dtsFileName =
+    fileName === 'tsconfig.json'
+      ? 'tsconfig.dts.json'
+      : fileName.replace(/\.json$/u, '.dts.json');
+
+  return normalizeAbsolutePath(path.join(directory, dtsFileName));
+}
+
+function isDefaultTypecheckAggregator(configObject: JsonObject): boolean {
+  return Object.hasOwn(configObject, 'references');
+}
+
+function normalizeRawExtends(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return [value];
+  }
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function resolveRawExtendsPath(configPath: string, rawExtends: string): string {
+  const resolvedPath = path.resolve(path.dirname(configPath), rawExtends);
+
+  return normalizeAbsolutePath(
+    path.extname(resolvedPath) ? resolvedPath : `${resolvedPath}.json`,
+  );
+}
+
+function addStrictDtsCompanionExtendsProblems(options: {
+  config: ResolvedLiminaConfig;
+  configObject: JsonObject;
+  dtsConfigPath: string;
+  localConfigPath: string;
+  problems: string[];
+}): void {
+  const rawExtends = normalizeRawExtends(options.configObject.extends);
+  const extendsCompanion = rawExtends.some(
+    (entry) =>
+      resolveRawExtendsPath(options.dtsConfigPath, entry) ===
+      options.localConfigPath,
+  );
+
+  if (extendsCompanion) {
+    return;
+  }
+
+  options.problems.push(
+    [
+      'Strict mode requires declaration leaves to extend their companion typecheck config:',
+      `  declaration leaf: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
+      `  expected companion: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
+      `  extends: ${rawExtends.length > 0 ? rawExtends.join(', ') : '(none)'}`,
+      '  reason: strict: true requires tsconfig*.dts.json to add only declaration/build output behavior on top of the matching tsconfig*.json.',
+    ].join('\n'),
+  );
+}
+
 function addDtsConfigProblems(options: {
   config: ResolvedLiminaConfig;
   graphProjectPaths: Set<string>;
   problems: string[];
   dtsConfigPaths: string[];
-  projectExtensionsByPath: Map<string, string[]>;
+  projectContextsByPath: Map<string, CheckerProjectParseContext>;
 }): void {
   for (const configPath of options.dtsConfigPaths) {
+    const configObject = readJsonConfig(options.config, configPath);
+
     if (!options.graphProjectPaths.has(configPath)) {
       options.problems.push(
         [
@@ -667,13 +834,19 @@ function addDtsConfigProblems(options: {
       continue;
     }
 
-    const extensions = options.projectExtensionsByPath.get(configPath) ?? [];
-    const dtsConfig = parseConfig(options.config, configPath, extensions);
-    const localConfig = parseConfig(
-      options.config,
-      localConfigPath,
-      extensions,
-    );
+    if (isStrictConfig(options.config)) {
+      addStrictDtsCompanionExtendsProblems({
+        config: options.config,
+        configObject,
+        dtsConfigPath: configPath,
+        localConfigPath,
+        problems: options.problems,
+      });
+    }
+
+    const context = options.projectContextsByPath.get(configPath);
+    const dtsConfig = parseConfig(options.config, configPath, context);
+    const localConfig = parseConfig(options.config, localConfigPath, context);
 
     if (dtsConfig.options.composite !== true) {
       options.problems.push(
@@ -797,6 +970,40 @@ function addBuildGraphConfigProblems(options: {
       problems: options.problems,
       role: 'build graph',
     });
+
+    if (!isStrictConfig(options.config)) {
+      continue;
+    }
+
+    if (!Array.isArray(configObject.references)) {
+      continue;
+    }
+
+    for (const [index, reference] of configObject.references.entries()) {
+      if (!isPlainRecord(reference) || typeof reference.path !== 'string') {
+        continue;
+      }
+
+      const referencePath = resolveReferencePath(configPath, reference.path);
+
+      if (
+        isBuildGraphConfigPath(referencePath) ||
+        isDtsConfigPath(referencePath)
+      ) {
+        continue;
+      }
+
+      options.problems.push(
+        [
+          'Strict mode build graph references a non-build project:',
+          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+          `  field: references[${index}].path`,
+          `  reference: ${reference.path}`,
+          `  resolved: ${toRelativePath(options.config.rootDir, referencePath)}`,
+          '  reason: strict: true requires tsconfig*.build.json to reference only tsconfig*.build.json aggregators or tsconfig*.dts.json declaration leaves.',
+        ].join('\n'),
+      );
+    }
   }
 }
 
@@ -824,15 +1031,15 @@ function addDefaultTsconfigShapeProblems(options: {
       continue;
     }
 
-    configObject.references.forEach((reference, index) => {
+    for (const [index, reference] of configObject.references.entries()) {
       if (!isPlainRecord(reference) || typeof reference.path !== 'string') {
-        return;
+        continue;
       }
 
       const referencePath = resolveReferencePath(configPath, reference.path);
 
       if (isOrdinaryTypecheckConfigPath(referencePath)) {
-        return;
+        continue;
       }
 
       options.problems.push(
@@ -845,7 +1052,7 @@ function addDefaultTsconfigShapeProblems(options: {
           '  reason: tsconfig.json is the default IDE/typecheck entry and must not reference declaration build graph configs.',
         ].join('\n'),
       );
-    });
+    }
   }
 }
 
@@ -930,10 +1137,17 @@ function collectConfigFileOwners(
         continue;
       }
 
+      const projectContext = createCheckerProjectContext({
+        config,
+        configPath,
+        extensions: route.extensions,
+        preset: route.checkerPreset,
+      });
+
       for (const filePath of parseProjectFileNamesForExtensions(
         config,
         configPath,
-        route.extensions,
+        projectContext,
       )) {
         if (!sourceFiles.has(filePath)) {
           continue;
@@ -941,7 +1155,10 @@ function collectConfigFileOwners(
 
         const owners = ownersByFile.get(filePath) ?? [];
 
-        owners.push(configPath);
+        owners.push({
+          checkerPreset: route.checkerPreset,
+          configPath,
+        });
         ownersByFile.set(filePath, owners);
       }
     }
@@ -961,6 +1178,112 @@ function addDuplicateGraphCoverageProblems(options: {
         toRelativePath(options.config.rootDir, right),
       ),
   )) {
+    const ownersByPreset = new Map<string, ConfigFileOwner[]>();
+
+    for (const owner of owners) {
+      const presetOwners = ownersByPreset.get(owner.checkerPreset) ?? [];
+
+      presetOwners.push(owner);
+      ownersByPreset.set(owner.checkerPreset, presetOwners);
+    }
+
+    for (const presetOwners of ownersByPreset.values()) {
+      const uniqueOwners = [
+        ...new Set(presetOwners.map((owner) => owner.configPath)),
+      ];
+
+      if (uniqueOwners.length <= 1) {
+        continue;
+      }
+
+      options.problems.push(
+        [
+          'Duplicate checker graph coverage:',
+          `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
+          '  covered by:',
+          ...uniqueOwners
+            .sort((left, right) =>
+              toRelativePath(options.config.rootDir, left).localeCompare(
+                toRelativePath(options.config.rootDir, right),
+              ),
+            )
+            .map(
+              (configPath) =>
+                `    - ${toRelativePath(options.config.rootDir, configPath)}`,
+            ),
+          '  reason: a checker graph file must have a single declaration owner; move the file to one dts leaf or narrow include/exclude patterns.',
+        ].join('\n'),
+      );
+    }
+  }
+}
+
+function addStrictOrdinaryTypecheckCompanionProblems(options: {
+  config: ResolvedLiminaConfig;
+  ordinaryConfigPaths: string[];
+  problems: string[];
+}): void {
+  for (const configPath of options.ordinaryConfigPaths) {
+    const configObject = readJsonConfig(options.config, configPath);
+
+    if (
+      path.basename(configPath) === 'tsconfig.json' &&
+      isDefaultTypecheckAggregator(configObject)
+    ) {
+      continue;
+    }
+
+    const expectedDtsConfigPath =
+      getDtsConfigPathForTypecheckConfig(configPath);
+
+    if (existsSync(expectedDtsConfigPath)) {
+      continue;
+    }
+
+    options.problems.push(
+      [
+        'Strict mode typecheck config is missing its declaration leaf:',
+        `  typecheck config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  expected declaration leaf: ${toRelativePath(options.config.rootDir, expectedDtsConfigPath)}`,
+        '  reason: strict: true requires every tsconfig*.json typecheck leaf to have a same-named tsconfig*.dts.json build leaf.',
+      ].join('\n'),
+    );
+  }
+}
+
+function addStrictDuplicateTypecheckOwnershipProblems(options: {
+  config: ResolvedLiminaConfig;
+  ordinaryConfigPaths: string[];
+  problems: string[];
+}): void {
+  const fileOwners = new Map<string, string[]>();
+  const context = getActiveCheckerContext(options.config);
+
+  for (const configPath of options.ordinaryConfigPaths) {
+    const configObject = readJsonConfig(options.config, configPath);
+
+    if (
+      path.basename(configPath) === 'tsconfig.json' &&
+      isDefaultTypecheckAggregator(configObject)
+    ) {
+      continue;
+    }
+
+    for (const fileName of parseConfig(options.config, configPath, context)
+      .fileNames) {
+      const owners = fileOwners.get(fileName) ?? [];
+
+      owners.push(configPath);
+      fileOwners.set(fileName, owners);
+    }
+  }
+
+  for (const [fileName, owners] of [...fileOwners.entries()].sort(
+    ([left], [right]) =>
+      toRelativePath(options.config.rootDir, left).localeCompare(
+        toRelativePath(options.config.rootDir, right),
+      ),
+  )) {
     const uniqueOwners = [...new Set(owners)];
 
     if (uniqueOwners.length <= 1) {
@@ -969,9 +1292,9 @@ function addDuplicateGraphCoverageProblems(options: {
 
     options.problems.push(
       [
-        'Duplicate checker graph coverage:',
-        `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
-        '  covered by:',
+        'Strict mode source file belongs to multiple typecheck configs:',
+        `  file: ${toRelativePath(options.config.rootDir, fileName)}`,
+        '  typecheck configs:',
         ...uniqueOwners
           .sort((left, right) =>
             toRelativePath(options.config.rootDir, left).localeCompare(
@@ -979,10 +1302,9 @@ function addDuplicateGraphCoverageProblems(options: {
             ),
           )
           .map(
-            (configPath) =>
-              `    - ${toRelativePath(options.config.rootDir, configPath)}`,
+            (owner) => `    - ${toRelativePath(options.config.rootDir, owner)}`,
           ),
-        '  reason: a checker graph file must have a single declaration owner; move the file to one dts leaf or narrow include/exclude patterns.',
+        '  reason: strict: true requires each source module to belong to exactly one tsconfig*.json typecheck leaf.',
       ].join('\n'),
     );
   }
@@ -1074,7 +1396,8 @@ async function runProofCheckInternal(
     ),
   ].sort();
   const entryProjectPathSet = new Set(entryProjectPaths);
-  const entryProjectExtensionsByPath = collectProjectExtensionsByPath(
+  const entryProjectContextsByPath = collectProjectContextsByPath(
+    config,
     entryRouteCollection.routes,
   );
   const dtsConfigPaths = await collectDtsConfigPaths(config);
@@ -1083,15 +1406,17 @@ async function runProofCheckInternal(
   const ordinaryTypecheckConfigPaths =
     await collectOrdinaryTypecheckConfigPaths(config);
 
-  problems.push(...graphRouteCollection.problems);
-  problems.push(...entryRouteCollection.problems);
+  problems.push(
+    ...graphRouteCollection.problems,
+    ...entryRouteCollection.problems,
+  );
 
   addDtsConfigProblems({
     config,
     dtsConfigPaths,
     graphProjectPaths: entryProjectPathSet,
     problems,
-    projectExtensionsByPath: entryProjectExtensionsByPath,
+    projectContextsByPath: entryProjectContextsByPath,
   });
   addBuildGraphConfigProblems({
     buildGraphConfigPaths,
@@ -1108,6 +1433,19 @@ async function runProofCheckInternal(
     ordinaryConfigPaths: ordinaryTypecheckConfigPaths,
     problems,
   });
+
+  if (isStrictConfig(config)) {
+    addStrictOrdinaryTypecheckCompanionProblems({
+      config,
+      ordinaryConfigPaths: ordinaryTypecheckConfigPaths,
+      problems,
+    });
+    addStrictDuplicateTypecheckOwnershipProblems({
+      config,
+      ordinaryConfigPaths: ordinaryTypecheckConfigPaths,
+      problems,
+    });
+  }
 
   if (problems.length > 0) {
     ProofLogger.error(problems.join('\n\n'));

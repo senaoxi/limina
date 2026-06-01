@@ -113,18 +113,49 @@ export interface ResolvedCheckerConfig {
 }
 
 /**
- * Source boundary that must be covered by checker entries or allowlist proof.
+ * Explicit exception for a declared workspace package dependency that is used
+ * through generated code, config files, scripts, or another path static import
+ * analysis cannot see.
+ */
+export interface SourceUnusedDependencyIgnoreEntry {
+  /**
+   * Importing package name from package.json.
+   */
+  importer: string;
+  /**
+   * Declared workspace dependency package name.
+   */
+  dependency: string;
+  /**
+   * Why the dependency is safe to keep even without a static source import.
+   */
+  reason: string;
+}
+
+/**
+ * Source dependency usage settings.
+ */
+export interface SourceUnusedDependenciesConfig {
+  /**
+   * Declared workspace dependencies intentionally not visible through static
+   * source imports.
+   */
+  ignore?: SourceUnusedDependencyIgnoreEntry[];
+}
+
+/**
+ * Global source boundary used by source and proof checks.
  */
 export interface SourceBoundaryConfig {
   /**
-   * Glob patterns for source files that need proof coverage.
+   * Glob patterns for source files that Limina should govern.
    *
    * When omitted, Limina derives the source boundary from configured checker
    * extensions and then applies `exclude`.
    */
   include?: string[];
   /**
-   * Glob patterns or directory shorthands to omit from proof coverage.
+   * Glob patterns or directory shorthands to omit from source governance.
    *
    * @default: [
    *   "node_modules",
@@ -141,6 +172,11 @@ export interface SourceBoundaryConfig {
    * ]
    */
   exclude?: string[];
+  /**
+   * Checks that workspace package dependencies declared in package.json are
+   * actually used by source owned by that package.
+   */
+  unusedDependencies?: SourceUnusedDependenciesConfig;
 }
 
 /**
@@ -152,7 +188,7 @@ export interface SharedLiminaConfig {
    */
   checkers?: Record<string, CheckerConfig>;
   /**
-   * Source file boundary used by coverage proof.
+   * Global source file boundary used by source and proof checks.
    */
   source?: SourceBoundaryConfig;
 }
@@ -206,6 +242,21 @@ export interface GraphRuleRefDenyEntry {
 }
 
 /**
+ * Declaration leaf boundary explicitly allowed for projects with a matching
+ * Limina graph rule when static import analysis cannot prove the edge.
+ */
+export interface GraphRuleRefAllowEntry {
+  /**
+   * Target `tsconfig*.dts.json` path, relative to the inferred workspace root.
+   */
+  path: string;
+  /**
+   * Human-readable explanation documenting why this extra reference is safe.
+   */
+  reason: string;
+}
+
+/**
  * Dependency denied to projects with a matching Limina label.
  */
 export interface GraphRuleDepDenyEntry {
@@ -238,45 +289,29 @@ export interface GraphRuleDenyConfig {
 }
 
 /**
+ * Allow lists for a Limina graph label.
+ */
+export interface GraphRuleAllowConfig {
+  /**
+   * Extra declaration leaf boundaries that matching projects may keep even
+   * when static import analysis cannot prove them.
+   */
+  refs?: GraphRuleRefAllowEntry[];
+}
+
+/**
  * Package-level graph governance rule keyed by a label declared in
  * `tsconfig*.dts.json`.
  */
 export interface GraphRule {
   /**
+   * Allowed graph boundaries that static analysis cannot prove.
+   */
+  allow?: GraphRuleAllowConfig;
+  /**
    * Denied graph boundaries and workspace package dependencies.
    */
   deny?: GraphRuleDenyConfig;
-}
-
-/**
- * Explicit exception for a declared workspace package dependency that is used
- * through generated code, config files, scripts, or another path static import
- * analysis cannot see.
- */
-export interface GraphUnusedWorkspaceDependencyAllowlistEntry {
-  /**
-   * Importing package name from package.json.
-   */
-  importer: string;
-  /**
-   * Declared workspace dependency package name.
-   */
-  dependency: string;
-  /**
-   * Why the dependency is safe to keep even without a static source import.
-   */
-  reason: string;
-}
-
-/**
- * Workspace dependency usage proof settings.
- */
-export interface GraphUnusedWorkspaceDependenciesConfig {
-  /**
-   * Declared workspace dependencies intentionally not visible through static
-   * source imports.
-   */
-  allowlist?: GraphUnusedWorkspaceDependencyAllowlistEntry[];
 }
 
 /**
@@ -286,15 +321,10 @@ export interface GraphConfig {
   /**
    * Label-based package and build-boundary access rules.
    *
-   * A `tsconfig*.dts.json` can opt into one rule by declaring
-   * `"limina": "<label>"`.
+   * A `tsconfig*.dts.json` can opt into one or more rules by declaring
+   * `liminaOptions.graphRules`.
    */
   rules?: Record<string, GraphRule>;
-  /**
-   * Checks that workspace package dependencies declared in package.json are
-   * actually used by source owned by that package.
-   */
-  unusedWorkspaceDependencies?: GraphUnusedWorkspaceDependenciesConfig;
 }
 
 /**
@@ -477,6 +507,16 @@ export interface ReleaseConfig {
  */
 export interface LiminaConfig {
   /**
+   * Enable strict workspace modeling rules.
+   *
+   * Strict mode keeps the existing command surface but makes graph, proof,
+   * source, package, and release checks enforce the complete Limina workspace
+   * model.
+   *
+   * @default false
+   */
+  strict?: boolean;
+  /**
    * Shared project facts, such as checker entries and source boundary.
    */
   config?: SharedLiminaConfig;
@@ -595,6 +635,7 @@ const checkerConfigShapeSchema = z.looseObject({
 });
 
 const liminaConfigShapeSchema = z.looseObject({
+  strict: z.boolean().optional(),
   config: z
     .looseObject({
       checkers: z.record(z.string(), checkerConfigShapeSchema).optional(),
@@ -653,6 +694,15 @@ function formatLiminaConfigShapeIssue(
       '  field: config',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       '  reason: config must be an object.',
+    ].join('\n');
+  }
+
+  if (field === 'strict') {
+    return [
+      'Invalid Limina config:',
+      '  field: strict',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: strict must be a boolean.',
     ].join('\n');
   }
 
@@ -899,15 +949,46 @@ function collectReleaseConfigProblems(config: LiminaConfig): string[] {
   return problems;
 }
 
+function collectDeprecatedConfigProblems(config: LiminaConfig): string[] {
+  const problems: string[] = [];
+
+  if (!checkerObjectSchema.safeParse(config).success) {
+    return problems;
+  }
+
+  const graph = config.graph;
+
+  if (!graph || typeof graph !== 'object' || Array.isArray(graph)) {
+    return problems;
+  }
+
+  if (Object.hasOwn(graph, 'unusedWorkspaceDependencies')) {
+    problems.push(
+      [
+        'Deprecated Limina config:',
+        '  field: graph.unusedWorkspaceDependencies',
+        '  reason: graph.unusedWorkspaceDependencies has been removed; use config.source.unusedDependencies.ignore.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
 export function validateLiminaConfig(config: LiminaConfig): void {
   const problems = [
     ...collectCheckerConfigProblems(config),
+    ...collectDeprecatedConfigProblems(config),
     ...collectReleaseConfigProblems(config),
   ];
 
   if (problems.length > 0) {
     throw new Error(problems.join('\n\n'));
   }
+}
+
+export function isStrictConfig(config: Pick<LiminaConfig, 'strict'>): boolean {
+  return config.strict === true;
 }
 
 export function getActiveCheckers(

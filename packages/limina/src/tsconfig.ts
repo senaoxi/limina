@@ -2,9 +2,20 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
 import ts from 'typescript';
-import { getCheckerAdapter, normalizeExtensions } from './checkers';
+import {
+  type CheckerProjectParseContext,
+  getCheckerAdapter,
+  normalizeExtensions,
+  parseCheckerProjectConfigForContext,
+  resolveCheckerProjectExtensions,
+} from './checkers';
+import type { CheckerPreset } from './config';
 import { getActiveCheckers, type ResolvedLiminaConfig } from './config';
-import { normalizeAbsolutePath, toRelativePath } from './utils/path';
+import {
+  normalizeAbsolutePath,
+  toPosixPath,
+  toRelativePath,
+} from './utils/path';
 
 export type JsonObject = Record<string, unknown>;
 
@@ -16,6 +27,14 @@ const baseConfigFilePattern = /^tsconfig(?:\..+)?\.base\.json$/u;
 const checkConfigFilePattern = /^tsconfig(?:\..+)?\.check\.json$/u;
 const tsconfigFilePattern = /^tsconfig(?:\..+)?\.json$/u;
 const tsconfigGlobPattern = '**/tsconfig*.json';
+// eslint-disable-next-line regexp/no-useless-assertions -- Empty extension sets must match no paths.
+const neverMatchingPattern = new RegExp(String.fromCodePoint(97, 94), 'u');
+const liminaTsconfigSchemaPath = [
+  'node_modules',
+  'limina',
+  'schemas',
+  'tsconfig-schema.json',
+];
 
 interface ReferencePathInfo {
   rawPath: string;
@@ -34,6 +53,7 @@ export interface CollectGraphProjectPathsResult {
 
 export interface CheckerGraphProjectRoute {
   checkerName: string;
+  checkerPreset: CheckerPreset;
   extensions: string[];
   projectPaths: string[];
   rootConfigPath: string;
@@ -46,6 +66,7 @@ export interface CollectCheckerGraphProjectRoutesResult {
 
 export interface CollectSourceGraphProjectExtensionsResult {
   problems: string[];
+  projectContextsByPath: Map<string, CheckerProjectParseContext>;
   projectExtensionsByPath: Map<string, string[]>;
 }
 
@@ -57,13 +78,27 @@ export function createFormatHost(rootDir: string): ts.FormatDiagnosticsHost {
   };
 }
 
+export function createLiminaTsconfigSchemaPath(
+  rootDir: string,
+  configPath: string,
+): string {
+  const relativePath = toPosixPath(
+    path.relative(
+      path.dirname(configPath),
+      path.join(rootDir, ...liminaTsconfigSchemaPath),
+    ),
+  );
+
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+}
+
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 }
 
 export function createExtensionPattern(extensions: string[]): RegExp {
   if (extensions.length === 0) {
-    return /(?!)/u;
+    return neverMatchingPattern;
   }
 
   return new RegExp(
@@ -73,33 +108,6 @@ export function createExtensionPattern(extensions: string[]): RegExp {
       .join('|')})$`,
     'u',
   );
-}
-
-export function createExtraFileExtensions(
-  extensions: string[],
-): ts.FileExtensionInfo[] {
-  const nativeExtensions = new Set([
-    '.ts',
-    '.tsx',
-    '.cts',
-    '.mts',
-    '.d.ts',
-    '.d.cts',
-    '.d.mts',
-    '.js',
-    '.jsx',
-    '.cjs',
-    '.mjs',
-    '.json',
-  ]);
-
-  return extensions
-    .filter((extension) => !nativeExtensions.has(extension))
-    .map((extension) => ({
-      extension,
-      isMixedContent: true,
-      scriptKind: ts.ScriptKind.Deferred,
-    }));
 }
 
 function readJsonConfigFile(rootDir: string, configPath: string): JsonObject {
@@ -225,7 +233,7 @@ function collectReferencePathInfosFromConfigObject(
     };
   }
 
-  references.forEach((reference, index) => {
+  for (const [index, reference] of references.entries()) {
     const field = `references[${index}]`;
 
     if (
@@ -242,7 +250,7 @@ function collectReferencePathInfosFromConfigObject(
           '  reason: each reference entry must be an object with a non-empty string path.',
         ].join('\n'),
       );
-      return;
+      continue;
     }
 
     const pathValue = (reference as { path?: unknown }).path;
@@ -257,14 +265,14 @@ function collectReferencePathInfosFromConfigObject(
           '  reason: reference path must be a non-empty string.',
         ].join('\n'),
       );
-      return;
+      continue;
     }
 
     referenceInfos.push({
       rawPath: pathValue,
       resolvedPath: resolveReferencePath(configPath, pathValue),
     });
-  });
+  }
 
   return {
     problems,
@@ -484,6 +492,7 @@ export function collectGraphProjectRoutes(
     problems.push(...routeCollection.problems);
     routes.push({
       checkerName: checker.name,
+      checkerPreset: checker.preset,
       extensions: checker.extensions,
       projectPaths: routeCollection.projectPaths,
       rootConfigPath,
@@ -527,6 +536,7 @@ export function collectCheckerEntryProjectRoutes(
     problems.push(...routeCollection.problems);
     routes.push({
       checkerName: checker.name,
+      checkerPreset: checker.preset,
       extensions: checker.extensions,
       projectPaths: routeCollection.projectPaths,
       rootConfigPath,
@@ -556,17 +566,30 @@ export function collectSourceGraphProjectExtensions(
   config: ResolvedLiminaConfig,
 ): CollectSourceGraphProjectExtensionsResult {
   const routeCollection = collectGraphProjectRoutes(config);
+  const projectContextsByPath = new Map<string, CheckerProjectParseContext>();
   const projectExtensionsByPath = new Map<string, string[]>();
-  const typeScriptExtensions =
-    getCheckerAdapter('tsc')?.defaultExtensions ?? [];
-
   for (const route of routeCollection.routes) {
-    const routeExtensions = normalizeExtensions([
-      ...typeScriptExtensions,
-      ...route.extensions,
-    ]);
-
     for (const projectPath of route.projectPaths) {
+      const adapterExtensions = resolveCheckerProjectExtensions({
+        configPath: projectPath,
+        preset: route.checkerPreset,
+        projectRootDir: config.rootDir,
+      });
+      const routeExtensions = normalizeExtensions(adapterExtensions);
+      const projectContext = projectContextsByPath.get(projectPath) ?? {
+        checkerPresets: [],
+        extensions: [],
+      };
+
+      projectContextsByPath.set(projectPath, {
+        checkerPresets: [
+          ...new Set([...projectContext.checkerPresets, route.checkerPreset]),
+        ],
+        extensions: normalizeExtensions([
+          ...projectContext.extensions,
+          ...routeExtensions,
+        ]),
+      });
       projectExtensionsByPath.set(
         projectPath,
         normalizeExtensions([
@@ -579,6 +602,7 @@ export function collectSourceGraphProjectExtensions(
 
   return {
     problems: routeCollection.problems,
+    projectContextsByPath,
     projectExtensionsByPath,
   };
 }
@@ -600,42 +624,23 @@ export function parseProjectFileNames(
 export function parseProjectFileNamesForExtensions(
   config: ResolvedLiminaConfig,
   configPath: string,
-  extensions: string[],
-  pattern: RegExp = createExtensionPattern(extensions),
+  contextOrExtensions: CheckerProjectParseContext | string[],
+  pattern?: RegExp,
 ): string[] {
-  const diagnostics: ts.Diagnostic[] = [];
-  const configObject = readJsonConfig(config, configPath);
-  const parsed = ts.parseJsonConfigFileContent(
-    configObject,
-    ts.sys,
-    path.dirname(configPath),
-    {},
+  const context = Array.isArray(contextOrExtensions)
+    ? {
+        checkerPresets: [] satisfies CheckerPreset[],
+        extensions: contextOrExtensions,
+      }
+    : contextOrExtensions;
+  const parsed = parseCheckerProjectConfigForContext({
     configPath,
-    undefined,
-    createExtraFileExtensions(extensions),
-  );
+    context,
+    projectRootDir: config.rootDir,
+  });
+  const filePattern = pattern ?? createExtensionPattern(parsed.extensions);
 
-  if (diagnostics.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(
-        diagnostics,
-        createFormatHost(config.rootDir),
-      ),
-    );
-  }
-
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(
-        parsed.errors,
-        createFormatHost(config.rootDir),
-      ),
-    );
-  }
-
-  return parsed.fileNames
-    .filter((fileName) => pattern.test(fileName))
-    .map(normalizeAbsolutePath);
+  return parsed.fileNames.filter((fileName) => filePattern.test(fileName));
 }
 
 export function formatReferences(

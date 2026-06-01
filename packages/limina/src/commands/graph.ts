@@ -1,10 +1,16 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
-import { getCheckerAdapter, normalizeExtensions } from '../checkers';
+import {
+  type CheckerProjectParseContext,
+  normalizeExtensions,
+} from '../checkers';
 import {
   getActiveCheckerExtensions,
+  getActiveCheckers,
+  isStrictConfig,
   type ResolvedLiminaConfig,
 } from '../config';
 import type { LiminaFlowReporter } from '../flow';
@@ -15,40 +21,47 @@ import {
   findPackageForFile,
   findTargetProject,
   formatArtifactDependencyPolicy,
+  formatProjectLabels,
   getTypecheckConfigPath,
+  type ImportRecord,
   inferPackageProject,
   isDtsProjectConfig,
   isRelativeSpecifier,
   parseProject,
+  type ProjectInfo,
   resolveInternalImport,
   shouldResolveThroughGraph,
-  type ImportRecord,
-  type ProjectInfo,
 } from '../graph-context';
 import {
+  getAllowedRefRule,
   getDeniedDepRuleForPackage,
   getDeniedDepRuleForSpecifier,
   getDeniedRefRule,
-  normalizeGraphRules,
   type GraphRuleDepDeny,
   type GraphRuleRefDeny,
   type NormalizedGraphRules,
+  normalizeGraphRules,
 } from '../graph-rules';
-import { GraphLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, GraphLogger } from '../logger';
+import { collectStrictSourceExportEntries } from '../package-exports';
 import {
-  collectOrdinaryTypecheckConfigPaths,
+  collectGraphProjectRouteFromRoot,
   collectSourceGraphProjectExtensions,
+  type CollectSourceGraphProjectExtensionsResult,
   formatReferences,
+  isBuildGraphConfigPath,
+  isDtsConfigPath,
 } from '../tsconfig';
-import { isPathInsideDirectory, toRelativePath } from '../utils/path';
+import {
+  normalizeAbsolutePath,
+  toPosixPath,
+  toRelativePath,
+} from '../utils/path';
 import {
   collectImporters,
-  collectPackageOwners,
   collectWorkspacePackages,
   findPackageForSpecifier,
   type ImporterInfo,
-  type PackageManifest,
-  type PackageOwner,
   type WorkspacePackage,
 } from '../workspace';
 
@@ -56,6 +69,19 @@ export interface RunGraphCheckOptions {
   clearScreen?: boolean;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
+}
+
+export interface RunGraphSyncOptions {
+  clearScreen?: boolean;
+  cwd?: string;
+  entryPath?: string;
+  flow?: LiminaFlowReporter;
+  flowDepth?: number;
+}
+
+export interface RunGraphSyncResult {
+  changed: boolean;
+  projectCount: number;
 }
 
 const requiredDtsCompilerOptions: [keyof ts.CompilerOptions, unknown][] = [
@@ -123,462 +149,9 @@ function compilerOptionEquals(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-type DependencySectionName =
-  | 'dependencies'
-  | 'devDependencies'
-  | 'optionalDependencies'
-  | 'peerDependencies';
-
-interface WorkspaceDependencyDeclaration {
-  dependencyName: string;
-  importer: WorkspacePackage;
-  packageJsonPath: string;
-  sectionName: DependencySectionName;
-  specifier: string;
-}
-
-const dependencySectionNames: DependencySectionName[] = [
-  'dependencies',
-  'devDependencies',
-  'peerDependencies',
-  'optionalDependencies',
-];
-
-const typeScriptCheckerExtensions =
-  getCheckerAdapter('tsc')?.defaultExtensions ?? [];
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function formatUnknownValue(value: unknown): string {
-  if (value === undefined) {
-    return 'undefined';
-  }
-
-  return JSON.stringify(value);
-}
-
-function createWorkspaceDependencyKey(
-  importerName: string,
-  dependencyName: string,
-): string {
-  return `${importerName}\0${dependencyName}`;
-}
-
-function getWorkspacePackageJsonPath(
-  workspacePackage: WorkspacePackage,
-): string {
-  return path.join(workspacePackage.directory, 'package.json');
-}
-
-function findOwnerForPath(
-  filePath: string,
-  owners: PackageOwner[],
-): PackageOwner | null {
-  return (
-    owners.find((owner) => isPathInsideDirectory(filePath, owner.directory)) ??
-    null
-  );
-}
-
-function getDependencySection(
-  manifest: PackageManifest,
-  sectionName: DependencySectionName,
-): Record<string, string> | null {
-  const section = manifest[sectionName];
-
-  if (!isPlainRecord(section)) {
-    return null;
-  }
-
-  return Object.fromEntries(
-    Object.entries(section).filter((entry): entry is [string, string] => {
-      return typeof entry[1] === 'string';
-    }),
-  );
-}
-
-function collectWorkspaceDependencyDeclarations(
-  workspacePackages: WorkspacePackage[],
-): WorkspaceDependencyDeclaration[] {
-  const workspacePackageNames = new Set(
-    workspacePackages.map((workspacePackage) => workspacePackage.name),
-  );
-  const declarations: WorkspaceDependencyDeclaration[] = [];
-
-  for (const importer of workspacePackages) {
-    for (const sectionName of dependencySectionNames) {
-      const section = getDependencySection(importer.manifest, sectionName);
-
-      if (!section) {
-        continue;
-      }
-
-      for (const [dependencyName, specifier] of Object.entries(section)) {
-        if (
-          dependencyName === importer.name ||
-          !workspacePackageNames.has(dependencyName)
-        ) {
-          continue;
-        }
-
-        declarations.push({
-          dependencyName,
-          importer,
-          packageJsonPath: getWorkspacePackageJsonPath(importer),
-          sectionName,
-          specifier,
-        });
-      }
-    }
-  }
-
-  return declarations.sort((left, right) => {
-    if (left.packageJsonPath !== right.packageJsonPath) {
-      return left.packageJsonPath.localeCompare(right.packageJsonPath);
-    }
-
-    if (left.dependencyName !== right.dependencyName) {
-      return left.dependencyName.localeCompare(right.dependencyName);
-    }
-
-    return left.sectionName.localeCompare(right.sectionName);
-  });
-}
-
-function collectUnusedWorkspaceDependencyAllowlist(options: {
-  config: ResolvedLiminaConfig;
-  declarations: WorkspaceDependencyDeclaration[];
-  problems: string[];
-  workspacePackages: WorkspacePackage[];
-}): Set<string> {
-  const allowedKeys = new Set<string>();
-  const rawConfig = options.config.graph?.unusedWorkspaceDependencies;
-
-  if (rawConfig === undefined) {
-    return allowedKeys;
-  }
-
-  if (!isPlainRecord(rawConfig)) {
-    options.problems.push(
-      [
-        'Invalid unused workspace dependency config:',
-        '  field: graph.unusedWorkspaceDependencies',
-        `  value: ${formatUnknownValue(rawConfig)}`,
-        '  reason: graph.unusedWorkspaceDependencies must be an object.',
-      ].join('\n'),
-    );
-    return allowedKeys;
-  }
-
-  const rawAllowlist = rawConfig.allowlist;
-
-  if (rawAllowlist === undefined) {
-    return allowedKeys;
-  }
-
-  if (!Array.isArray(rawAllowlist)) {
-    options.problems.push(
-      [
-        'Invalid unused workspace dependency allowlist config:',
-        '  field: graph.unusedWorkspaceDependencies.allowlist',
-        `  value: ${formatUnknownValue(rawAllowlist)}`,
-        '  reason: allowlist must be an array.',
-      ].join('\n'),
-    );
-    return allowedKeys;
-  }
-
-  const workspacePackageNames = new Set(
-    options.workspacePackages.map((workspacePackage) => workspacePackage.name),
-  );
-  const declarationKeys = new Set(
-    options.declarations.map((declaration) =>
-      createWorkspaceDependencyKey(
-        declaration.importer.name,
-        declaration.dependencyName,
-      ),
-    ),
-  );
-
-  rawAllowlist.forEach((entry, index) => {
-    const field = `graph.unusedWorkspaceDependencies.allowlist[${index}]`;
-
-    if (!isPlainRecord(entry)) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}`,
-          `  value: ${formatUnknownValue(entry)}`,
-          '  reason: allowlist entries must be objects with non-empty importer, dependency, and reason fields.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    const importerValue = entry.importer;
-    const dependencyValue = entry.dependency;
-    const reasonValue = entry.reason;
-
-    if (
-      typeof importerValue !== 'string' ||
-      importerValue.trim().length === 0
-    ) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}.importer`,
-          `  value: ${formatUnknownValue(importerValue)}`,
-          '  reason: importer must be a non-empty workspace package name.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    if (
-      typeof dependencyValue !== 'string' ||
-      dependencyValue.trim().length === 0
-    ) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}.dependency`,
-          `  value: ${formatUnknownValue(dependencyValue)}`,
-          '  reason: dependency must be a non-empty workspace package name.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}.reason`,
-          `  value: ${formatUnknownValue(reasonValue)}`,
-          '  reason: reason must be a non-empty string.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    const importerName = importerValue.trim();
-    const dependencyName = dependencyValue.trim();
-    const dependencyKey = createWorkspaceDependencyKey(
-      importerName,
-      dependencyName,
-    );
-
-    if (!workspacePackageNames.has(importerName)) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}.importer`,
-          `  importer: ${importerName}`,
-          '  reason: importer must name a package from the pnpm workspace.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    if (!workspacePackageNames.has(dependencyName)) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}.dependency`,
-          `  dependency: ${dependencyName}`,
-          '  reason: dependency must name a package from the pnpm workspace.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    if (!declarationKeys.has(dependencyKey)) {
-      options.problems.push(
-        [
-          'Invalid unused workspace dependency allowlist config:',
-          `  field: ${field}`,
-          `  importer: ${importerName}`,
-          `  dependency: ${dependencyName}`,
-          '  reason: allowlist entries must match a workspace dependency declared by the importer package manifest.',
-        ].join('\n'),
-      );
-      return;
-    }
-
-    allowedKeys.add(dependencyKey);
-  });
-
-  return allowedKeys;
-}
-
-function getUsageSourceExtensions(config: ResolvedLiminaConfig): string[] {
-  return normalizeExtensions([
-    ...typeScriptCheckerExtensions,
-    ...getActiveCheckerExtensions(config),
-  ]);
-}
-
-async function collectUsedWorkspaceDependencies(options: {
-  config: ResolvedLiminaConfig;
-  packageOwners: PackageOwner[];
-  problems: string[];
-  workspacePackages: WorkspacePackage[];
-}): Promise<Map<string, Set<string>>> {
-  const usageByImporterName = new Map<string, Set<string>>();
-  const workspacePackageNames = new Set(
-    options.workspacePackages.map((workspacePackage) => workspacePackage.name),
-  );
-  const workspacePackagesByPackageJsonPath = new Map(
-    options.workspacePackages.map((workspacePackage) => [
-      getWorkspacePackageJsonPath(workspacePackage),
-      workspacePackage,
-    ]),
-  );
-  const sourceExtensions = getUsageSourceExtensions(options.config);
-  const configPaths = await collectOrdinaryTypecheckConfigPaths(options.config);
-
-  for (const configPath of configPaths) {
-    const owner = findOwnerForPath(configPath, options.packageOwners);
-
-    if (!owner) {
-      options.problems.push(
-        [
-          'Tsconfig has no package owner:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: workspace dependency usage analysis assigns each tsconfig*.json to its nearest package.json.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    const ownerWorkspacePackage = workspacePackagesByPackageJsonPath.get(
-      owner.packageJsonPath,
-    );
-    const project = parseProject(options.config, configPath, sourceExtensions);
-
-    for (const filePath of project.fileNames) {
-      const fileOwner = findOwnerForPath(filePath, options.packageOwners);
-
-      if (fileOwner?.packageJsonPath !== owner.packageJsonPath) {
-        options.problems.push(
-          [
-            'Tsconfig source file set crosses package owner scope:',
-            `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-            `  package owner: ${toRelativePath(options.config.rootDir, owner.packageJsonPath)}`,
-            `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
-            ...(fileOwner
-              ? [
-                  `  file owner: ${toRelativePath(options.config.rootDir, fileOwner.packageJsonPath)}`,
-                ]
-              : []),
-            '  reason: each usage tsconfig must only include files owned by its nearest package.json.',
-            '  fix: narrow the tsconfig include/files set or move the file under the owning package config.',
-          ].join('\n'),
-        );
-        continue;
-      }
-
-      if (!ownerWorkspacePackage) {
-        continue;
-      }
-
-      const usedDependencyNames =
-        usageByImporterName.get(ownerWorkspacePackage.name) ??
-        new Set<string>();
-
-      for (const importRecord of collectImportsFromFile(
-        filePath,
-        options.config.rootDir,
-      )) {
-        const targetPackage = findPackageForSpecifier(
-          importRecord.specifier,
-          options.workspacePackages,
-        );
-
-        if (
-          !targetPackage ||
-          targetPackage.name === ownerWorkspacePackage.name ||
-          !workspacePackageNames.has(targetPackage.name)
-        ) {
-          continue;
-        }
-
-        usedDependencyNames.add(targetPackage.name);
-      }
-
-      usageByImporterName.set(ownerWorkspacePackage.name, usedDependencyNames);
-    }
-  }
-
-  return usageByImporterName;
-}
-
-async function addUnusedWorkspaceDependencyProblems(options: {
-  config: ResolvedLiminaConfig;
-  packageOwners: PackageOwner[];
-  problems: string[];
-  workspacePackages: WorkspacePackage[];
-}): Promise<void> {
-  if (options.workspacePackages.length === 0) {
-    return;
-  }
-
-  const declarations = collectWorkspaceDependencyDeclarations(
-    options.workspacePackages,
-  );
-
-  if (declarations.length === 0) {
-    return;
-  }
-
-  const allowlist = collectUnusedWorkspaceDependencyAllowlist({
-    config: options.config,
-    declarations,
-    problems: options.problems,
-    workspacePackages: options.workspacePackages,
-  });
-  const usedDependenciesByImporterName = await collectUsedWorkspaceDependencies(
-    {
-      config: options.config,
-      packageOwners: options.packageOwners,
-      problems: options.problems,
-      workspacePackages: options.workspacePackages,
-    },
-  );
-
-  for (const declaration of declarations) {
-    const dependencyKey = createWorkspaceDependencyKey(
-      declaration.importer.name,
-      declaration.dependencyName,
-    );
-
-    if (allowlist.has(dependencyKey)) {
-      continue;
-    }
-
-    if (
-      usedDependenciesByImporterName
-        .get(declaration.importer.name)
-        ?.has(declaration.dependencyName)
-    ) {
-      continue;
-    }
-
-    options.problems.push(
-      [
-        'Unused workspace package dependency:',
-        `  importer: ${declaration.importer.name}`,
-        `  package manifest: ${toRelativePath(options.config.rootDir, declaration.packageJsonPath)}`,
-        `  dependency: ${declaration.dependencyName}`,
-        `  section: ${declaration.sectionName}`,
-        `  specifier: ${declaration.specifier}`,
-        '  reason: workspace package dependencies should be used by source owned by the importer package, or explicitly allowlisted when usage is not visible to static import analysis.',
-        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, import it from source owned by ${declaration.importer.name}, or add graph.unusedWorkspaceDependencies.allowlist with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
-      ].join('\n'),
-    );
-  }
+interface ReferenceExpectation {
+  importRecords: ImportRecord[];
+  targetProjectPath: string;
 }
 
 function addDtsOptionProblems(
@@ -651,7 +224,7 @@ function addTypecheckParityProblems(
   const typecheckProject = parseProject(
     config,
     typecheckConfigPath,
-    dtsProject.extensions,
+    dtsProject,
   );
 
   for (const optionName of comparableTypecheckOptions) {
@@ -709,7 +282,7 @@ function addDeniedReferenceProblems(options: {
   projectsByPath: Map<string, ProjectInfo>;
   rules: NormalizedGraphRules;
 }): void {
-  if (!options.project.label) {
+  if (options.project.labels.length === 0) {
     return;
   }
 
@@ -720,14 +293,14 @@ function addDeniedReferenceProblems(options: {
 
     const deniedRefRule = getDeniedRefRule(
       options.rules,
-      options.project.label,
+      options.project.labels,
       referencePath,
     );
     const targetPackage = findPackageForFile(referencePath, options.packages);
     const deniedDepRule = targetPackage
       ? getDeniedDepRuleForPackage(
           options.rules,
-          options.project.label,
+          options.project.labels,
           targetPackage.name,
         )
       : null;
@@ -738,7 +311,7 @@ function addDeniedReferenceProblems(options: {
 
     const lines = [
       'Denied graph access:',
-      `  rule: ${options.project.label}`,
+      `  rules: ${formatProjectLabels(options.project.labels)}`,
       `  referencing project: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
       `  referenced project: ${toRelativePath(options.config.rootDir, referencePath)}`,
     ];
@@ -769,7 +342,7 @@ function addDeniedDepImportProblem(options: {
   options.problems.push(
     [
       'Denied graph access:',
-      `  rule: ${options.project.label}`,
+      `  rules: ${formatProjectLabels(options.project.labels)}`,
       `  importing project: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
       `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
       `  imported specifier: ${options.importRecord.specifier}`,
@@ -790,7 +363,7 @@ function addDeniedRefImportProblem(options: {
   options.problems.push(
     [
       'Denied graph access:',
-      `  rule: ${options.project.label}`,
+      `  rules: ${formatProjectLabels(options.project.labels)}`,
       `  importing project: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
       `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
       `  imported specifier: ${options.importRecord.specifier}`,
@@ -897,6 +470,719 @@ function addWorkspaceReferenceDependencyProblems(
   }
 }
 
+function addStrictWorkspaceExportProblems(options: {
+  config: ResolvedLiminaConfig;
+  problems: string[];
+  sourceFileOwnerLookup: Map<string, string[]>;
+  workspacePackages: WorkspacePackage[];
+}): void {
+  for (const workspacePackage of options.workspacePackages) {
+    collectStrictSourceExportEntries({
+      config: options.config,
+      problems: options.problems,
+      sourceFileOwnerLookup: options.sourceFileOwnerLookup,
+      workspacePackage,
+    });
+  }
+}
+
+function getExpectedReferencesForProject(
+  expectedReferencesByProjectPath: Map<
+    string,
+    Map<string, ReferenceExpectation>
+  >,
+  project: ProjectInfo,
+): Map<string, ReferenceExpectation> {
+  const expectedReferences =
+    expectedReferencesByProjectPath.get(project.configPath) ?? new Map();
+
+  expectedReferencesByProjectPath.set(project.configPath, expectedReferences);
+
+  return expectedReferences;
+}
+
+function addExpectedReference(options: {
+  expectedReferencesByProjectPath: Map<
+    string,
+    Map<string, ReferenceExpectation>
+  >;
+  importRecord: ImportRecord;
+  project: ProjectInfo;
+  targetProjectPath: string;
+}): void {
+  const expectedReferences = getExpectedReferencesForProject(
+    options.expectedReferencesByProjectPath,
+    options.project,
+  );
+  const expectation = expectedReferences.get(options.targetProjectPath) ?? {
+    importRecords: [],
+    targetProjectPath: options.targetProjectPath,
+  };
+
+  expectation.importRecords.push(options.importRecord);
+  expectedReferences.set(options.targetProjectPath, expectation);
+}
+
+function formatImportRecordLines(
+  config: ResolvedLiminaConfig,
+  importRecords: ImportRecord[],
+): string[] {
+  return importRecords
+    .slice(0, 5)
+    .map(
+      (importRecord) =>
+        `    - ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line} imports ${importRecord.specifier}`,
+    )
+    .concat(
+      importRecords.length > 5
+        ? [`    ...and ${importRecords.length - 5} more`]
+        : [],
+    );
+}
+
+function addReferenceCompletenessProblems(options: {
+  config: ResolvedLiminaConfig;
+  expectedReferencesByProjectPath: Map<
+    string,
+    Map<string, ReferenceExpectation>
+  >;
+  graphRules: NormalizedGraphRules;
+  problems: string[];
+  projects: ProjectInfo[];
+  projectsByPath: Map<string, ProjectInfo>;
+}): void {
+  for (const project of options.projects) {
+    if (!isDtsProjectConfig(project.configPath)) {
+      continue;
+    }
+
+    const expectedReferences =
+      options.expectedReferencesByProjectPath.get(project.configPath) ??
+      new Map();
+
+    for (const expectation of [...expectedReferences.values()].sort(
+      (left, right) =>
+        left.targetProjectPath.localeCompare(right.targetProjectPath),
+    )) {
+      if (project.references.has(expectation.targetProjectPath)) {
+        continue;
+      }
+
+      options.problems.push(
+        [
+          'Missing project reference for workspace import:',
+          `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+          `  expected reference: ${toRelativePath(options.config.rootDir, expectation.targetProjectPath)}`,
+          `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
+          '  imports:',
+          ...formatImportRecordLines(options.config, expectation.importRecords),
+          '  fix: add the expected tsconfig*.dts.json reference, or run `limina graph sync` to update declaration references.',
+        ].join('\n'),
+      );
+    }
+
+    for (const referencePath of [...project.references].sort()) {
+      if (
+        expectedReferences.has(referencePath) ||
+        !options.projectsByPath.has(referencePath)
+      ) {
+        continue;
+      }
+
+      if (
+        getAllowedRefRule(options.graphRules, project.labels, referencePath)
+      ) {
+        continue;
+      }
+
+      options.problems.push(
+        [
+          'Extra project reference not proven by static imports:',
+          `  project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+          `  extra reference: ${toRelativePath(options.config.rootDir, referencePath)}`,
+          `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
+          '  reason: tsconfig*.dts.json references must match declaration leaves reached by static import/export analysis.',
+          '  fix: remove the extra reference, import from the referenced project, or document the exception in graph.rules.<label>.allow.refs.',
+        ].join('\n'),
+      );
+    }
+  }
+}
+
+function collectExpectedReferences(options: {
+  config: ResolvedLiminaConfig;
+  fileOwnerLookup: Map<string, string[]>;
+  graphRules: NormalizedGraphRules;
+  importers: ImporterInfo[];
+  packages: WorkspacePackage[];
+  problems: string[];
+  projectPaths: string[];
+  projects: ProjectInfo[];
+  projectsByPath: Map<string, ProjectInfo>;
+  selectedProjectPaths?: Set<string>;
+}): Map<string, Map<string, ReferenceExpectation>> {
+  const expectedReferencesByProjectPath = new Map<
+    string,
+    Map<string, ReferenceExpectation>
+  >();
+
+  for (const project of options.projects) {
+    if (
+      options.selectedProjectPaths &&
+      !options.selectedProjectPaths.has(project.configPath)
+    ) {
+      continue;
+    }
+
+    for (const filePath of project.fileNames) {
+      for (const importRecord of collectImportsFromFile(
+        filePath,
+        options.config.rootDir,
+      )) {
+        const rawDeniedDepRule = getDeniedDepRuleForSpecifier(
+          options.graphRules,
+          project.labels,
+          importRecord.specifier,
+        );
+
+        if (rawDeniedDepRule) {
+          addDeniedDepImportProblem({
+            config: options.config,
+            importRecord,
+            problems: options.problems,
+            project,
+            rule: rawDeniedDepRule,
+          });
+          continue;
+        }
+
+        const resolvedFilePath = resolveInternalImport(
+          importRecord.specifier,
+          filePath,
+          project.options,
+          project,
+        );
+        const targetPackage = findPackageForSpecifier(
+          importRecord.specifier,
+          options.packages,
+        );
+        const importer = findImporterForFile(
+          importRecord.filePath,
+          options.importers,
+        );
+
+        if (!resolvedFilePath) {
+          if (!targetPackage) {
+            continue;
+          }
+
+          options.problems.push(
+            [
+              'Unresolved workspace import:',
+              `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  imported specifier: ${importRecord.specifier}`,
+              `  matched workspace package: ${targetPackage.name}`,
+              `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
+          resolvedFilePath,
+          options.packages,
+        );
+        const targetPackageForGraph = targetPackage;
+        const resolvedPackageName = getResolvedPackageName(
+          resolvedFilePath,
+          options.packages,
+        );
+        const deniedDepRule = resolvedPackageName
+          ? getDeniedDepRuleForPackage(
+              options.graphRules,
+              project.labels,
+              resolvedPackageName,
+            )
+          : null;
+
+        if (deniedDepRule) {
+          addDeniedDepImportProblem({
+            config: options.config,
+            importRecord,
+            problems: options.problems,
+            project,
+            rule: deniedDepRule,
+          });
+          continue;
+        }
+
+        if (isRelativeSpecifier(importRecord.specifier)) {
+          const sourcePackage = findPackageForFile(
+            importRecord.filePath,
+            options.packages,
+          );
+
+          if (
+            sourcePackage &&
+            targetWorkspacePackageForResolved &&
+            sourcePackage.name !== targetWorkspacePackageForResolved.name
+          ) {
+            options.problems.push(
+              [
+                'Cross-package relative import:',
+                `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+                `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+                `  imported specifier: ${importRecord.specifier}`,
+                `  source package: ${sourcePackage.name}`,
+                `  target package: ${targetWorkspacePackageForResolved.name}`,
+                `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
+                '  reason: workspace packages must depend through package exports.',
+              ].join('\n'),
+            );
+            continue;
+          }
+        }
+
+        if (
+          targetPackageForGraph &&
+          shouldResolveThroughGraph(importer, targetPackageForGraph) &&
+          !options.fileOwnerLookup.has(resolvedFilePath)
+        ) {
+          const referencedProjectPath = inferPackageProject(
+            resolvedFilePath,
+            targetPackageForGraph,
+            options.projectPaths,
+          );
+          const hasProjectReference =
+            referencedProjectPath &&
+            project.references.has(referencedProjectPath);
+
+          options.problems.push(
+            [
+              hasProjectReference
+                ? 'Referenced workspace dependency resolves through package exports to a build artifact:'
+                : 'Workspace source dependency resolved outside the source graph:',
+              `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+              ...(referencedProjectPath
+                ? [
+                    `  referenced project: ${toRelativePath(options.config.rootDir, referencedProjectPath)}`,
+                    `  project reference present: ${hasProjectReference ? 'yes' : 'no'}`,
+                  ]
+                : []),
+              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  imported specifier: ${importRecord.specifier}`,
+              `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
+              '  reason: workspace:* dependencies are source dependencies, but TypeScript resolved this package export to a file not owned by the source graph. tsc -b does not rewrite package exports through project references.',
+              `  fix: expose source files from the dependency package exports, add a source paths config to this declaration leaf extends, or stop using workspace:* plus project references for artifact consumption; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
+              '  hint: run `limina paths generate` to create a compatibility paths file, then manually add it to the first position of the listed tsconfig*.dts.json extends array.',
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        const targetProjectPath = findTargetProject({
+          fileOwnerLookup: options.fileOwnerLookup,
+          packages: options.packages,
+          projectPaths: options.projectPaths,
+          resolvedFilePath,
+          specifier: importRecord.specifier,
+        });
+
+        if (!targetProjectPath) {
+          if (!targetPackageForGraph) {
+            continue;
+          }
+
+          if (!targetWorkspacePackageForResolved) {
+            if (shouldResolveThroughGraph(importer, targetPackageForGraph)) {
+              options.problems.push(
+                [
+                  'Workspace source import resolved outside the workspace graph:',
+                  `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+                  `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+                  `  imported specifier: ${importRecord.specifier}`,
+                  `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
+                  `  reason: workspace:* dependencies are source dependency edges and must resolve to files owned by the source graph; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
+                ].join('\n'),
+              );
+            }
+            continue;
+          }
+
+          options.problems.push(
+            [
+              'Unable to map workspace import to a graph project:',
+              `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  imported specifier: ${importRecord.specifier}`,
+              `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
+              `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        if (targetProjectPath === project.configPath) {
+          continue;
+        }
+
+        const deniedRefRule = getDeniedRefRule(
+          options.graphRules,
+          project.labels,
+          targetProjectPath,
+        );
+
+        if (deniedRefRule) {
+          addDeniedRefImportProblem({
+            config: options.config,
+            importRecord,
+            problems: options.problems,
+            project,
+            rule: deniedRefRule,
+            targetProjectPath,
+          });
+          continue;
+        }
+
+        if (
+          targetPackageForGraph &&
+          !shouldResolveThroughGraph(importer, targetPackageForGraph)
+        ) {
+          continue;
+        }
+
+        if (!options.projectsByPath.has(targetProjectPath)) {
+          options.problems.push(
+            [
+              'Expected graph target is not reachable from any checker entry:',
+              `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  imported specifier: ${importRecord.specifier}`,
+              `  expected graph project: ${toRelativePath(options.config.rootDir, targetProjectPath)}`,
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        addExpectedReference({
+          expectedReferencesByProjectPath,
+          importRecord,
+          project,
+          targetProjectPath,
+        });
+      }
+    }
+  }
+
+  return expectedReferencesByProjectPath;
+}
+
+function getGraphSyncExtensions(config: ResolvedLiminaConfig): string[] {
+  return normalizeExtensions(getActiveCheckerExtensions(config));
+}
+
+function getGraphSyncContext(
+  config: ResolvedLiminaConfig,
+): CheckerProjectParseContext {
+  return {
+    checkerPresets: [
+      ...new Set(getActiveCheckers(config).map((checker) => checker.preset)),
+    ],
+    extensions: getGraphSyncExtensions(config),
+  };
+}
+
+function createProjectExtensionsResult(options: {
+  context: CheckerProjectParseContext;
+  extensions: string[];
+  problems: string[];
+  projectPaths: string[];
+}): CollectSourceGraphProjectExtensionsResult {
+  return {
+    problems: options.problems,
+    projectContextsByPath: new Map(
+      [...new Set(options.projectPaths)]
+        .sort()
+        .map((projectPath) => [projectPath, options.context]),
+    ),
+    projectExtensionsByPath: new Map(
+      [...new Set(options.projectPaths)]
+        .sort()
+        .map((projectPath) => [projectPath, options.extensions]),
+    ),
+  };
+}
+
+function collectGraphSyncProjectExtensions(options: {
+  config: ResolvedLiminaConfig;
+  cwd: string;
+  entryPath?: string;
+}): {
+  graphRoute: CollectSourceGraphProjectExtensionsResult;
+  selectedProjectPaths: Set<string>;
+} {
+  if (!options.entryPath) {
+    const graphRoute = collectSourceGraphProjectExtensions(options.config);
+
+    return {
+      graphRoute,
+      selectedProjectPaths: new Set(
+        [...graphRoute.projectExtensionsByPath.keys()].filter(isDtsConfigPath),
+      ),
+    };
+  }
+
+  const entryPath = normalizeAbsolutePath(
+    path.isAbsolute(options.entryPath)
+      ? options.entryPath
+      : path.resolve(options.cwd, options.entryPath),
+  );
+
+  if (!existsSync(entryPath)) {
+    throw new Error(
+      [
+        'Graph sync entry does not exist:',
+        `  path: ${toRelativePath(options.config.rootDir, entryPath)}`,
+        '  reason: graph sync paths must point to an existing tsconfig*.build.json solution or tsconfig*.dts.json declaration leaf.',
+      ].join('\n'),
+    );
+  }
+
+  if (isBuildGraphConfigPath(entryPath)) {
+    const route = collectGraphProjectRouteFromRoot({
+      rootConfigPath: entryPath,
+      rootDir: options.config.rootDir,
+    });
+    const context = getGraphSyncContext(options.config);
+    const graphRoute = createProjectExtensionsResult({
+      context,
+      extensions: context.extensions,
+      problems: route.problems,
+      projectPaths: route.projectPaths,
+    });
+
+    return {
+      graphRoute,
+      selectedProjectPaths: new Set(route.projectPaths.filter(isDtsConfigPath)),
+    };
+  }
+
+  if (isDtsConfigPath(entryPath)) {
+    const graphRoute = collectSourceGraphProjectExtensions(options.config);
+    const projectExtensionsByPath = new Map(graphRoute.projectExtensionsByPath);
+    const projectContextsByPath = new Map(graphRoute.projectContextsByPath);
+    const context = getGraphSyncContext(options.config);
+
+    projectExtensionsByPath.set(
+      entryPath,
+      projectExtensionsByPath.get(entryPath) ?? context.extensions,
+    );
+    projectContextsByPath.set(
+      entryPath,
+      projectContextsByPath.get(entryPath) ?? context,
+    );
+
+    return {
+      graphRoute: {
+        problems: graphRoute.problems,
+        projectContextsByPath,
+        projectExtensionsByPath,
+      },
+      selectedProjectPaths: new Set([entryPath]),
+    };
+  }
+
+  throw new Error(
+    [
+      'Invalid graph sync entry:',
+      `  path: ${toRelativePath(options.config.rootDir, entryPath)}`,
+      '  reason: graph sync paths must point to a tsconfig*.build.json solution or a tsconfig*.dts.json declaration leaf.',
+    ].join('\n'),
+  );
+}
+
+function arePathSetsEqual(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getSyncedReferencePaths(options: {
+  expectedReferences: Map<string, ReferenceExpectation>;
+  graphRules: NormalizedGraphRules;
+  project: ProjectInfo;
+}): string[] {
+  const referencePaths = new Set(options.expectedReferences.keys());
+
+  for (const referencePath of options.project.references) {
+    if (
+      !referencePaths.has(referencePath) &&
+      getAllowedRefRule(
+        options.graphRules,
+        options.project.labels,
+        referencePath,
+      )
+    ) {
+      referencePaths.add(referencePath);
+    }
+  }
+
+  return [...referencePaths].sort();
+}
+
+function formatReferencePath(
+  configPath: string,
+  referencePath: string,
+): string {
+  const relativePath = toPosixPath(
+    path.relative(path.dirname(configPath), referencePath),
+  );
+
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+}
+
+function createReferencesPropertyText(
+  configPath: string,
+  referencePaths: string[],
+  indent: string,
+): string {
+  if (referencePaths.length === 0) {
+    return `${indent}"references": []`;
+  }
+
+  return [
+    `${indent}"references": [`,
+    ...referencePaths.flatMap((referencePath, index) => [
+      `${indent}  {`,
+      `${indent}    "path": ${JSON.stringify(formatReferencePath(configPath, referencePath))}`,
+      `${indent}  }${index === referencePaths.length - 1 ? '' : ','}`,
+    ]),
+    `${indent}]`,
+  ].join('\n');
+}
+
+function getLineIndent(text: string, position: number): string {
+  const lineStart = text.lastIndexOf('\n', position - 1) + 1;
+  const match = /^[\t ]*/u.exec(text.slice(lineStart, position));
+
+  return match?.[0] ?? '  ';
+}
+
+function getTopLevelJsonObject(
+  configPath: string,
+  text: string,
+): {
+  objectExpression: ts.ObjectLiteralExpression;
+  sourceFile: ts.JsonSourceFile;
+} {
+  const sourceFile = ts.parseJsonText(configPath, text);
+  const statement = sourceFile.statements[0];
+
+  if (
+    !statement ||
+    !ts.isExpressionStatement(statement) ||
+    !ts.isObjectLiteralExpression(statement.expression)
+  ) {
+    throw new Error(
+      [
+        'Invalid tsconfig JSON:',
+        `  config: ${configPath}`,
+        '  reason: graph sync can only update tsconfig files whose top-level value is an object.',
+      ].join('\n'),
+    );
+  }
+
+  return {
+    objectExpression: statement.expression,
+    sourceFile,
+  };
+}
+
+function getPropertyNameText(
+  property: ts.ObjectLiteralElementLike,
+): string | null {
+  if (!ts.isPropertyAssignment(property)) {
+    return null;
+  }
+
+  if (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) {
+    return property.name.text;
+  }
+
+  return null;
+}
+
+function updateReferencesText(options: {
+  configPath: string;
+  referencePaths: string[];
+  text: string;
+}): string {
+  const { objectExpression, sourceFile } = getTopLevelJsonObject(
+    options.configPath,
+    options.text,
+  );
+  const referencesProperty = objectExpression.properties.find(
+    (property) => getPropertyNameText(property) === 'references',
+  );
+
+  if (referencesProperty) {
+    const propertyStart = referencesProperty.getStart(sourceFile);
+    const lineStart = options.text.lastIndexOf('\n', propertyStart - 1) + 1;
+    const prefix = options.text.slice(lineStart, propertyStart);
+    const start = prefix.trim().length === 0 ? lineStart : propertyStart;
+    const indent = getLineIndent(options.text, propertyStart);
+    const propertyText = createReferencesPropertyText(
+      options.configPath,
+      options.referencePaths,
+      start === lineStart ? indent : '',
+    );
+
+    return `${options.text.slice(0, start)}${propertyText}${options.text.slice(referencesProperty.end)}`;
+  }
+
+  if (options.referencePaths.length === 0) {
+    return options.text;
+  }
+
+  const closeBraceIndex = options.text.lastIndexOf('}', objectExpression.end);
+  const propertyText = createReferencesPropertyText(
+    options.configPath,
+    options.referencePaths,
+    '  ',
+  );
+  const needsComma = objectExpression.properties.length > 0;
+
+  return `${options.text.slice(0, closeBraceIndex)}${needsComma ? ',' : ''}\n${propertyText}\n${options.text.slice(closeBraceIndex)}`;
+}
+
+async function writeProjectReferences(options: {
+  configPath: string;
+  referencePaths: string[];
+}): Promise<void> {
+  const text = await readFile(options.configPath, 'utf8');
+  const updatedText = updateReferencesText({
+    configPath: options.configPath,
+    referencePaths: options.referencePaths,
+    text,
+  });
+
+  if (updatedText !== text) {
+    await writeFile(options.configPath, updatedText);
+  }
+}
+
 async function runGraphCheckInternal(
   config: ResolvedLiminaConfig,
   options: { logSuccess?: boolean } = {},
@@ -907,7 +1193,7 @@ async function runGraphCheckInternal(
     parseProject(
       config,
       projectPath,
-      graphRoute.projectExtensionsByPath.get(projectPath),
+      graphRoute.projectContextsByPath.get(projectPath),
     ),
   );
   const projectsByPath = new Map(
@@ -915,7 +1201,6 @@ async function runGraphCheckInternal(
   );
   const fileOwnerLookup = createFileOwnerLookup(projects);
   const packages = await collectWorkspacePackages(config);
-  const packageOwners = await collectPackageOwners(config);
   const importers = collectImporters(config, packages);
   const problems: string[] = [...graphRoute.problems];
   const graphRules = normalizeGraphRules({
@@ -928,13 +1213,14 @@ async function runGraphCheckInternal(
     problems,
     projectPaths,
   });
-
-  await addUnusedWorkspaceDependencyProblems({
-    config,
-    packageOwners,
-    problems,
-    workspacePackages: packages,
-  });
+  if (isStrictConfig(config)) {
+    addStrictWorkspaceExportProblems({
+      config,
+      problems,
+      sourceFileOwnerLookup: fileOwnerLookup,
+      workspacePackages: packages,
+    });
+  }
 
   for (const project of projects) {
     if (project.labelProblem) {
@@ -959,253 +1245,28 @@ async function runGraphCheckInternal(
       importers,
       problems,
     );
-
-    for (const filePath of project.fileNames) {
-      for (const importRecord of collectImportsFromFile(
-        filePath,
-        config.rootDir,
-      )) {
-        const rawDeniedDepRule = getDeniedDepRuleForSpecifier(
-          graphRules,
-          project.label,
-          importRecord.specifier,
-        );
-
-        if (rawDeniedDepRule) {
-          addDeniedDepImportProblem({
-            config,
-            importRecord,
-            problems,
-            project,
-            rule: rawDeniedDepRule,
-          });
-          continue;
-        }
-
-        const resolvedFilePath = resolveInternalImport(
-          importRecord.specifier,
-          filePath,
-          project.options,
-          project.extensions,
-        );
-        const targetPackage = findPackageForSpecifier(
-          importRecord.specifier,
-          packages,
-        );
-        const importer = findImporterForFile(importRecord.filePath, importers);
-
-        if (!resolvedFilePath) {
-          if (!targetPackage) {
-            continue;
-          }
-
-          problems.push(
-            [
-              'Unresolved workspace import:',
-              `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-              `  imported specifier: ${importRecord.specifier}`,
-              `  matched workspace package: ${targetPackage.name}`,
-              `  current references: ${formatReferences(config.rootDir, project.references)}`,
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
-          resolvedFilePath,
-          packages,
-        );
-        const targetPackageForGraph = targetPackage;
-        const resolvedPackageName = getResolvedPackageName(
-          resolvedFilePath,
-          packages,
-        );
-        const deniedDepRule = resolvedPackageName
-          ? getDeniedDepRuleForPackage(
-              graphRules,
-              project.label,
-              resolvedPackageName,
-            )
-          : null;
-
-        if (deniedDepRule) {
-          addDeniedDepImportProblem({
-            config,
-            importRecord,
-            problems,
-            project,
-            rule: deniedDepRule,
-          });
-          continue;
-        }
-
-        if (isRelativeSpecifier(importRecord.specifier)) {
-          const sourcePackage = findPackageForFile(
-            importRecord.filePath,
-            packages,
-          );
-
-          if (
-            sourcePackage &&
-            targetWorkspacePackageForResolved &&
-            sourcePackage.name !== targetWorkspacePackageForResolved.name
-          ) {
-            problems.push(
-              [
-                'Cross-package relative import:',
-                `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-                `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-                `  imported specifier: ${importRecord.specifier}`,
-                `  source package: ${sourcePackage.name}`,
-                `  target package: ${targetWorkspacePackageForResolved.name}`,
-                `  resolved file: ${toRelativePath(config.rootDir, resolvedFilePath)}`,
-                '  reason: workspace packages must depend through package exports.',
-              ].join('\n'),
-            );
-            continue;
-          }
-        }
-
-        if (
-          targetPackageForGraph &&
-          shouldResolveThroughGraph(importer, targetPackageForGraph) &&
-          !fileOwnerLookup.has(resolvedFilePath)
-        ) {
-          const referencedProjectPath = inferPackageProject(
-            resolvedFilePath,
-            targetPackageForGraph,
-            projectPaths,
-          );
-          const hasProjectReference =
-            referencedProjectPath &&
-            project.references.has(referencedProjectPath);
-
-          problems.push(
-            [
-              hasProjectReference
-                ? 'Referenced workspace dependency resolves through package exports to a build artifact:'
-                : 'Workspace source dependency resolved outside the source graph:',
-              `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-              ...(referencedProjectPath
-                ? [
-                    `  referenced project: ${toRelativePath(config.rootDir, referencedProjectPath)}`,
-                    `  project reference present: ${hasProjectReference ? 'yes' : 'no'}`,
-                  ]
-                : []),
-              `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-              `  imported specifier: ${importRecord.specifier}`,
-              `  resolved file: ${toRelativePath(config.rootDir, resolvedFilePath)}`,
-              '  reason: workspace:* dependencies are source dependencies, but TypeScript resolved this package export to a file not owned by the source graph. tsc -b does not rewrite package exports through project references.',
-              `  fix: expose source files from the dependency package exports, add a source paths config to this declaration leaf extends, or stop using workspace:* plus project references for artifact consumption; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
-              '  hint: run `limina paths generate` to create a compatibility paths file, then manually add it to the first position of the listed tsconfig*.dts.json extends array.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        const targetProjectPath = findTargetProject({
-          fileOwnerLookup,
-          packages,
-          projectPaths,
-          resolvedFilePath,
-          specifier: importRecord.specifier,
-        });
-
-        if (!targetProjectPath) {
-          if (!targetPackageForGraph) {
-            continue;
-          }
-
-          if (!targetWorkspacePackageForResolved) {
-            if (
-              targetPackageForGraph &&
-              shouldResolveThroughGraph(importer, targetPackageForGraph)
-            ) {
-              problems.push(
-                [
-                  'Workspace source import resolved outside the workspace graph:',
-                  `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-                  `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-                  `  imported specifier: ${importRecord.specifier}`,
-                  `  resolved file: ${toRelativePath(config.rootDir, resolvedFilePath)}`,
-                  `  reason: workspace:* dependencies are source dependency edges and must resolve to files owned by the source graph; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
-                ].join('\n'),
-              );
-            }
-            continue;
-          }
-
-          problems.push(
-            [
-              'Unable to map workspace import to a graph project:',
-              `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-              `  imported specifier: ${importRecord.specifier}`,
-              `  resolved file: ${toRelativePath(config.rootDir, resolvedFilePath)}`,
-              `  current references: ${formatReferences(config.rootDir, project.references)}`,
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        if (targetProjectPath === project.configPath) {
-          continue;
-        }
-
-        const deniedRefRule = getDeniedRefRule(
-          graphRules,
-          project.label,
-          targetProjectPath,
-        );
-
-        if (deniedRefRule) {
-          addDeniedRefImportProblem({
-            config,
-            importRecord,
-            problems,
-            project,
-            rule: deniedRefRule,
-            targetProjectPath,
-          });
-          continue;
-        }
-
-        if (
-          targetPackageForGraph &&
-          !shouldResolveThroughGraph(importer, targetPackageForGraph)
-        ) {
-          continue;
-        }
-
-        if (!projectsByPath.has(targetProjectPath)) {
-          problems.push(
-            [
-              'Expected graph target is not reachable from any checker entry:',
-              `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-              `  imported specifier: ${importRecord.specifier}`,
-              `  expected graph project: ${toRelativePath(config.rootDir, targetProjectPath)}`,
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        if (!project.references.has(targetProjectPath)) {
-          problems.push(
-            [
-              'Missing project reference for workspace import:',
-              `  importing project: ${toRelativePath(config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-              `  imported specifier: ${importRecord.specifier}`,
-              `  expected reference: ${toRelativePath(config.rootDir, targetProjectPath)}`,
-              `  current references: ${formatReferences(config.rootDir, project.references)}`,
-            ].join('\n'),
-          );
-        }
-      }
-    }
   }
+
+  const expectedReferencesByProjectPath = collectExpectedReferences({
+    config,
+    fileOwnerLookup,
+    graphRules,
+    importers,
+    packages,
+    problems,
+    projectPaths,
+    projects,
+    projectsByPath,
+  });
+
+  addReferenceCompletenessProblems({
+    config,
+    expectedReferencesByProjectPath,
+    graphRules,
+    problems,
+    projects,
+    projectsByPath,
+  });
 
   if (problems.length > 0) {
     GraphLogger.error(problems.join('\n\n'));
@@ -1219,6 +1280,128 @@ async function runGraphCheckInternal(
   }
 
   return true;
+}
+
+async function runGraphSyncInternal(
+  config: ResolvedLiminaConfig,
+  options: { cwd: string; entryPath?: string },
+): Promise<RunGraphSyncResult> {
+  const { graphRoute, selectedProjectPaths } =
+    collectGraphSyncProjectExtensions({
+      config,
+      cwd: options.cwd,
+      entryPath: options.entryPath,
+    });
+  const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
+  const projects = projectPaths.map((projectPath) =>
+    parseProject(
+      config,
+      projectPath,
+      graphRoute.projectContextsByPath.get(projectPath),
+    ),
+  );
+  const projectsByPath = new Map(
+    projects.map((project) => [project.configPath, project]),
+  );
+  const fileOwnerLookup = createFileOwnerLookup(projects);
+  const packages = await collectWorkspacePackages(config);
+  const importers = collectImporters(config, packages);
+  const problems: string[] = [...graphRoute.problems];
+  const graphRules = normalizeGraphRules({
+    config,
+    include: {
+      deps: true,
+      refs: true,
+    },
+    packages,
+    problems,
+    projectPaths,
+  });
+
+  for (const project of projects) {
+    if (!selectedProjectPaths.has(project.configPath)) {
+      continue;
+    }
+
+    if (project.labelProblem) {
+      problems.push(project.labelProblem);
+    }
+
+    addDeniedReferenceProblems({
+      config,
+      packages,
+      problems,
+      project,
+      projectsByPath,
+      rules: graphRules,
+    });
+    addWorkspaceReferenceDependencyProblems(
+      config,
+      project,
+      projectsByPath,
+      packages,
+      importers,
+      problems,
+    );
+  }
+
+  const expectedReferencesByProjectPath = collectExpectedReferences({
+    config,
+    fileOwnerLookup,
+    graphRules,
+    importers,
+    packages,
+    problems,
+    projectPaths,
+    projects,
+    projectsByPath,
+    selectedProjectPaths,
+  });
+
+  if (problems.length > 0) {
+    throw new Error(problems.join('\n\n'));
+  }
+
+  let changed = false;
+  let projectCount = 0;
+
+  for (const project of projects) {
+    if (
+      !selectedProjectPaths.has(project.configPath) ||
+      !isDtsProjectConfig(project.configPath)
+    ) {
+      continue;
+    }
+
+    projectCount += 1;
+
+    const referencePaths = getSyncedReferencePaths({
+      expectedReferences:
+        expectedReferencesByProjectPath.get(project.configPath) ?? new Map(),
+      graphRules,
+      project,
+    });
+    const nextReferences = new Set(referencePaths);
+
+    if (arePathSetsEqual(project.references, nextReferences)) {
+      continue;
+    }
+
+    await writeProjectReferences({
+      configPath: project.configPath,
+      referencePaths,
+    });
+    changed = true;
+  }
+
+  GraphLogger.info(
+    `${changed ? 'Synced' : 'Skipped unchanged'} ${projectCount} declaration graph project${projectCount === 1 ? '' : 's'}.`,
+  );
+
+  return {
+    changed,
+    projectCount,
+  };
 }
 
 export async function runGraphCheck(
@@ -1258,6 +1441,47 @@ export async function runGraphCheck(
       elapsed(),
     );
     task?.fail('graph check failed', { error });
+    throw error;
+  }
+}
+
+export async function runGraphSync(
+  config: ResolvedLiminaConfig,
+  options: RunGraphSyncOptions = {},
+): Promise<RunGraphSyncResult> {
+  if (options.clearScreen ?? true) {
+    clearCliScreen();
+  }
+
+  const elapsed = createElapsedTimer();
+  const action = options.entryPath
+    ? `graph sync ${options.entryPath}`
+    : 'graph sync';
+  const task = options.flow?.start(action, {
+    depth: options.flowDepth ?? 0,
+  });
+
+  GraphLogger.info(`${action} started`);
+
+  try {
+    const result = await runGraphSyncInternal(config, {
+      cwd: options.cwd ?? process.cwd(),
+      entryPath: options.entryPath,
+    });
+
+    if (!options.flow?.interactive) {
+      GraphLogger.success(`${action} finished`, elapsed());
+    }
+
+    task?.pass();
+
+    return result;
+  } catch (error) {
+    GraphLogger.error(
+      `${action} failed: ${formatErrorMessage(error)}`,
+      elapsed(),
+    );
+    task?.fail(`${action} failed`, { error });
     throw error;
   }
 }

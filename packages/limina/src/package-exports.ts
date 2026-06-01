@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ResolvedLiminaConfig } from './config';
 import {
+  isPathInsideDirectory,
+  normalizeAbsolutePath,
   normalizeSlashes,
   normalizeWorkspacePath,
   toPosixPath,
@@ -43,6 +45,8 @@ export interface PackageExportSourceEntry {
   exportKey: string;
   target: string;
 }
+
+export type SourceFileOwnerLookup = ReadonlyMap<string, readonly string[]>;
 
 export function configuredArtifactDirectories(
   config: ResolvedLiminaConfig,
@@ -238,6 +242,41 @@ export function wildcardBaseDirectory(pattern: string): string {
   return lastSlashIndex === -1 ? '.' : prefix.slice(0, lastSlashIndex);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
+}
+
+function createWildcardPatternMatcher(pattern: string): RegExp {
+  return new RegExp(
+    `^${normalizeSlashes(pattern).split('*').map(escapeRegExp).join('.*')}$`,
+    'u',
+  );
+}
+
+function hasOwnedSourceFileMatchingPattern(options: {
+  packageDirectory: string;
+  sourceFileOwnerLookup: SourceFileOwnerLookup;
+  target: string;
+}): boolean {
+  const matcher = createWildcardPatternMatcher(options.target);
+
+  for (const filePath of options.sourceFileOwnerLookup.keys()) {
+    if (!isPathInsideDirectory(filePath, options.packageDirectory)) {
+      continue;
+    }
+
+    const packageRelativePath = toPosixPath(
+      path.relative(options.packageDirectory, filePath),
+    );
+
+    if (matcher.test(packageRelativePath)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function sourceWildcardPatternCandidates(
   config: ResolvedLiminaConfig,
   target: string,
@@ -249,11 +288,15 @@ export function sourceWildcardPatternCandidates(
 
   for (const extension of configuredSourceExtensions(config)) {
     if (preferSrcPrefix) {
-      candidates.push(`src/${sourcePattern}${extension}`);
-      candidates.push(`${sourcePattern}${extension}`);
+      candidates.push(
+        `src/${sourcePattern}${extension}`,
+        `${sourcePattern}${extension}`,
+      );
     } else {
-      candidates.push(`${sourcePattern}${extension}`);
-      candidates.push(`src/${sourcePattern}${extension}`);
+      candidates.push(
+        `${sourcePattern}${extension}`,
+        `src/${sourcePattern}${extension}`,
+      );
     }
   }
 
@@ -330,26 +373,34 @@ export function resolveDirectSourcePackageTarget(
   config: ResolvedLiminaConfig,
   packageDirectory: string,
   rawTarget: string,
+  sourceFileOwnerLookup: SourceFileOwnerLookup,
 ): string | null {
   const target = normalizePackageTarget(rawTarget);
 
-  if (!target || !isLikelySourceTarget(config, target)) {
+  if (!target || isInsideArtifactDirectory(config, target)) {
     return null;
   }
 
   if (target.includes('*')) {
     const baseDirectory = wildcardBaseDirectory(target);
 
-    return existsSync(path.join(packageDirectory, baseDirectory))
+    return existsSync(path.join(packageDirectory, baseDirectory)) &&
+      hasOwnedSourceFileMatchingPattern({
+        packageDirectory,
+        sourceFileOwnerLookup,
+        target,
+      })
       ? toPosixPath(
           path.join(toRelativePath(config.rootDir, packageDirectory), target),
         )
       : null;
   }
 
-  const absoluteTarget = path.join(packageDirectory, target);
+  const absoluteTarget = normalizeAbsolutePath(
+    path.join(packageDirectory, target),
+  );
 
-  return existsSync(absoluteTarget)
+  return existsSync(absoluteTarget) && sourceFileOwnerLookup.has(absoluteTarget)
     ? normalizeWorkspacePath(config.rootDir, absoluteTarget)
     : null;
 }
@@ -415,6 +466,7 @@ export function collectExportEntries(
 export function collectStrictSourceExportEntries(options: {
   config: ResolvedLiminaConfig;
   problems: string[];
+  sourceFileOwnerLookup: SourceFileOwnerLookup;
   workspacePackage: WorkspacePackage;
 }): PackageExportSourceEntry[] {
   const exportsField = options.workspacePackage.manifest.exports;
@@ -451,12 +503,12 @@ export function collectStrictSourceExportEntries(options: {
     }
 
     let target: string | null = null;
-
     for (const candidate of candidates) {
       target = resolveDirectSourcePackageTarget(
         options.config,
         options.workspacePackage.directory,
         candidate,
+        options.sourceFileOwnerLookup,
       );
 
       if (target) {
@@ -472,7 +524,7 @@ export function collectStrictSourceExportEntries(options: {
           `  export: ${exportKey}`,
           `  package directory: ${toRelativePath(options.config.rootDir, options.workspacePackage.directory)}`,
           `  candidates: ${candidates.length > 0 ? candidates.join(', ') : '(none)'}`,
-          '  reason: limina init requires workspace package exports to expose source files so project references can model source dependency edges.',
+          '  reason: strict: true requires workspace package exports to expose source files so project references and bundlers can model source dependency edges.',
         ].join('\n'),
       );
       continue;
