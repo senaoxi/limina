@@ -26,7 +26,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | Command                                         | Description                                                                                                                   |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `limina init [--yes]`                           | Generate declaration leaves, build aggregators, root config, and a `limina:check` script for an uninitialized pnpm workspace. |
-| `limina check`                                  | Run the default pipeline: graph, source, proof, checker build, and checker typecheck.                                         |
+| `limina check`                                  | Run the default pipeline: graph, source, Nx project sync, proof, checker build, and checker typecheck.                        |
 | `limina check <pipeline>`                       | Run a named user pipeline from `pipelines`.                                                                                   |
 | `limina graph check`                            | Validate project references, workspace imports, graph rules, and source/artifact dependency semantics.                        |
 | `limina graph sync [path]`                      | Rewrite declaration-leaf references from TypeScript-resolved source imports.                                                  |
@@ -71,7 +71,7 @@ pnpm exec limina nx check build docs:build
 pnpm exec limina check
 ```
 
-This proves graph, source ownership, coverage, first-class checker builds, and second-class checker execution together.
+This proves graph, source ownership, Nx project sync, coverage, first-class checker builds, and second-class checker execution together.
 
 ### Pre-publish
 

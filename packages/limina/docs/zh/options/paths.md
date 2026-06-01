@@ -1,28 +1,30 @@
 # Paths
 
-Paths settings 控制生成的 compatibility config。
+Paths settings 控制生成的 compatibility config。所有字段都是可选的；下面的示例展示的就是内置默认值。
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   paths: {
-    artifactDirectories: ['dist'],
-    conditionPriority: ['types', 'import', 'default'],
+    artifactDirectories: ['dist', 'build', 'lib', 'esm', 'cjs', 'out'],
+    conditionPriority: ['source', 'development', 'types', 'import', 'module', 'default', 'require'],
     generatedFileName: 'tsconfig.dts.paths.generated.json',
     generatedFileMarker: 'GENERATED FILE - DO NOT EDIT BY HAND.',
-    sourceExtensions: ['.ts', '.tsx', '.vue'],
+    sourceExtensions: ['.ts', '.tsx', '.mts', '.cts', '.d.ts', '.d.mts', '.d.cts'],
   },
 });
 ```
 
+目前只有名为 `tsconfig.lib.dts.json` 的 declaration leaf 会被生成路径；其他名字的 leaf 不会得到生成文件。
+
 ## `artifactDirectories`
 
-`artifactDirectories` 告诉 Limina 哪些目录名代表构建产物，例如 `dist`、`build`、`lib`。当 `workspace:*` 依赖解析到这些目录时，Limina 会把它当作“源码依赖落到了 artifact”来处理。
+`artifactDirectories` 告诉 Limina 哪些目录名代表构建产物，例如 `dist`、`build`、`lib`。当 `workspace:*` 依赖解析到这些目录时，Limina 会把它当作“源码依赖落到了 artifact”来处理。默认值为 `['dist', 'build', 'lib', 'esm', 'cjs', 'out']`。未设置时，`limina nx sync` 在检测制品构建边时会退回到更窄的 `['dist']`。
 
 ## `conditionPriority`
 
-`conditionPriority` 控制读取 package exports 时优先看哪些 condition。包同时声明 `types`、`import`、`default` 时，这个顺序会影响 Limina 选择哪个导出入口来反推源码 aliases。
+`conditionPriority` 控制读取 package exports 时优先看哪些 condition。包同时声明 `types`、`import`、`default` 时，这个顺序会影响 Limina 选择哪个导出入口来反推源码 aliases。默认值为 `['source', 'development', 'types', 'import', 'module', 'default', 'require']`。
 
 ## `generatedFileName`
 
@@ -30,11 +32,11 @@ export default defineConfig({
 
 ## `generatedFileMarker`
 
-`generatedFileMarker` 是生成文件头部的标记。Limina 用它判断哪些 generated paths 文件可以安全刷新或移除。
+`generatedFileMarker` 是生成文件头部的标记。Limina 用它判断哪些 generated paths 文件可以安全刷新或移除。默认值为 `GENERATED FILE - DO NOT EDIT BY HAND.`。
 
 ## `sourceExtensions`
 
-`sourceExtensions` 是 Limina 把 artifact export 映射回源码入口时尝试的后缀，例如 `.ts`、`.tsx`、`.vue`。
+`sourceExtensions` 是 Limina 把 artifact export 映射回源码入口时尝试的后缀，例如 `.ts`、`.tsx`、`.d.ts`。默认值为 `['.ts', '.tsx', '.mts', '.cts', '.d.ts', '.d.mts', '.d.cts']`。
 
 例如 `@acme/app` 的源码写了：
 

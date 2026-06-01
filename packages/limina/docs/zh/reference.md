@@ -26,7 +26,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | Command                                         | 说明                                                                                                   |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `limina init [--yes]`                           | 为未初始化的 pnpm workspace 生成 declaration leaves、build aggregators、根配置和 `limina:check` 脚本。 |
-| `limina check`                                  | 运行默认 pipeline：graph、source、proof、checker build 和 checker typecheck。                          |
+| `limina check`                                  | 运行默认 pipeline：graph、source、Nx 项目同步、proof、checker build 和 checker typecheck。             |
 | `limina check <pipeline>`                       | 运行 `pipelines` 中的用户命名 pipeline。                                                               |
 | `limina graph check`                            | 校验 project references、workspace imports、graph rules 和 source/artifact dependency 语义。           |
 | `limina graph sync [path]`                      | 根据 TypeScript 解析到的源码 import 重写 declaration leaf references。                                 |
@@ -71,7 +71,7 @@ pnpm exec limina nx check build docs:build
 pnpm exec limina check
 ```
 
-它会一起证明 graph、source ownership、coverage、一等公民 checker build 和二等公民 checker execution。
+它会一起证明 graph、source ownership、Nx 项目同步、coverage、一等公民 checker build 和二等公民 checker execution。
 
 ### 发布前
 

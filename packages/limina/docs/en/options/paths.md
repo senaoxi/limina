@@ -1,28 +1,30 @@
 # Paths
 
-Paths settings control generated compatibility configs.
+Paths settings control generated compatibility configs. Every field is optional; the example below shows the built-in defaults.
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   paths: {
-    artifactDirectories: ['dist'],
-    conditionPriority: ['types', 'import', 'default'],
+    artifactDirectories: ['dist', 'build', 'lib', 'esm', 'cjs', 'out'],
+    conditionPriority: ['source', 'development', 'types', 'import', 'module', 'default', 'require'],
     generatedFileName: 'tsconfig.dts.paths.generated.json',
     generatedFileMarker: 'GENERATED FILE - DO NOT EDIT BY HAND.',
-    sourceExtensions: ['.ts', '.tsx', '.vue'],
+    sourceExtensions: ['.ts', '.tsx', '.mts', '.cts', '.d.ts', '.d.mts', '.d.cts'],
   },
 });
 ```
 
+Generation currently targets only declaration leaves named `tsconfig.lib.dts.json`; other leaf names receive no generated paths file.
+
 ## `artifactDirectories`
 
-`artifactDirectories` tells Limina which directory names represent build output, such as `dist`, `build`, or `lib`. When a `workspace:*` dependency resolves into one of those directories, Limina treats it as a source dependency falling back to an artifact.
+`artifactDirectories` tells Limina which directory names represent build output, such as `dist`, `build`, or `lib`. When a `workspace:*` dependency resolves into one of those directories, Limina treats it as a source dependency falling back to an artifact. Defaults to `['dist', 'build', 'lib', 'esm', 'cjs', 'out']`. When this is unset, `limina nx sync` falls back to a narrower `['dist']` for its artifact-edge detection.
 
 ## `conditionPriority`
 
-`conditionPriority` controls which package export conditions Limina checks first. When a package exports `types`, `import`, and `default`, this order affects which export entry is used to infer source aliases.
+`conditionPriority` controls which package export conditions Limina checks first. When a package exports `types`, `import`, and `default`, this order affects which export entry is used to infer source aliases. Defaults to `['source', 'development', 'types', 'import', 'module', 'default', 'require']`.
 
 ## `generatedFileName`
 
@@ -30,11 +32,11 @@ export default defineConfig({
 
 ## `generatedFileMarker`
 
-`generatedFileMarker` is the header marker written into generated files. Limina uses it to know which generated paths files can be safely refreshed or removed.
+`generatedFileMarker` is the header marker written into generated files. Limina uses it to know which generated paths files can be safely refreshed or removed. Defaults to `GENERATED FILE - DO NOT EDIT BY HAND.`.
 
 ## `sourceExtensions`
 
-`sourceExtensions` are the suffixes Limina tries when mapping an artifact export back to source, such as `.ts`, `.tsx`, or `.vue`.
+`sourceExtensions` are the suffixes Limina tries when mapping an artifact export back to source, such as `.ts`, `.tsx`, or `.d.ts`. Defaults to `['.ts', '.tsx', '.mts', '.cts', '.d.ts', '.d.mts', '.d.cts']`.
 
 For example, `@acme/app` source imports `@acme/core`:
 

@@ -101,14 +101,16 @@ pnpm typecheck
 
 1. `graph:check`
 2. `source:check`
-3. `proof:check`
-4. `checker:build`
-5. `checker:typecheck`
+3. `nx:check`
+4. `proof:check`
+5. `checker:build`
+6. `checker:typecheck`
 
 第一次运行失败时，可以按类别判断下一步：
 
 - `graph:check` 失败，多半是 import、project reference、`workspace:*` 或 label rule 没有对齐；
 - `source:check` 失败，多半是文件归属、跨 package 相对 import、依赖声明或 `#imports` 有问题；
+- `nx:check` 失败，多半是 `project.json` 缺失或过期；它的 `dependsOn` 构建边由 `link:` 制品依赖推导得出，所以全新 workspace 需要先运行 `limina nx sync`；
 - `proof:check` 失败，多半是 checker entry、declaration leaf、local companion 或 allowlist 没有覆盖到源码；
 - `checker:build` 失败，说明 `tsc`、`tsgo` 或 `vue-tsc` 这类一等公民 checker 在 build 模式发现类型错误；
 - `checker:typecheck` 失败，说明 `vue-tsgo`、`svelte-check` 这类二等公民 typecheck execution checker 发现类型错误。

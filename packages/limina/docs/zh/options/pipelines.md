@@ -32,6 +32,7 @@ export default defineConfig({
 - `checker:build`
 - `checker:typecheck`
 - `graph:check`
+- `nx:check`
 - `package:check`
 - `proof:check`
 - `release:check`

@@ -19,6 +19,7 @@ Limina is built around a single config file, `limina.config.mjs`, and a few focu
 
 - **Graph checks** verify that real imports match TypeScript project references and workspace dependency rules.
 - **Source checks** keep files inside the package that owns them and make sure imports are declared where they are used.
+- **Nx checks** keep each package's `project.json` `dependsOn` build edges in sync with `link:` artifact dependencies.
 - **Proof checks** show that declaration configs, local typecheck configs, checker entries, and allowlists cover the intended source files.
 - **Checker runs** call `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, or `svelte-check` against the right targets derived from the graph.
 - **Path generation** creates explicit TypeScript `paths` files only when a workspace dependency is consumed as source but still exports build artifacts.

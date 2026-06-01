@@ -32,6 +32,7 @@ String steps can be built-in Limina tasks:
 - `checker:build`
 - `checker:typecheck`
 - `graph:check`
+- `nx:check`
 - `package:check`
 - `proof:check`
 - `release:check`

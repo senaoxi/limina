@@ -101,14 +101,16 @@ The default check pipeline runs:
 
 1. `graph:check`
 2. `source:check`
-3. `proof:check`
-4. `checker:build`
-5. `checker:typecheck`
+3. `nx:check`
+4. `proof:check`
+5. `checker:build`
+6. `checker:typecheck`
 
 The first failure usually tells you which layer to inspect:
 
 - `graph:check` usually points to imports, project references, `workspace:*`, or label rules that are out of sync;
 - `source:check` usually points to file ownership, cross-package relative imports, dependency declarations, or `#imports`;
+- `nx:check` usually points to a missing or stale `project.json`; its `dependsOn` build edges are derived from `link:` artifact dependencies, so a fresh workspace must run `limina nx sync` first;
 - `proof:check` usually points to checker entries, declaration leaves, local companions, or allowlists that do not cover source files;
 - `checker:build` means a first-class build execution checker such as `tsc`, `tsgo`, or `vue-tsc` found type errors;
 - `checker:typecheck` means a second-class typecheck execution checker such as `vue-tsgo` or `svelte-check` found type errors.
