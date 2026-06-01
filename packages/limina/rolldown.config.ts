@@ -1,10 +1,12 @@
 import licensePlugin from '@docs-islands/plugin-license';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type RolldownOptions } from 'rolldown';
 import { dts } from 'rolldown-plugin-dts';
 import packagePlugin from './packagePlugin';
 
 const external = [/^[\w@][^:]/, /^node:/];
+const packageDir = fileURLToPath(new URL('.', import.meta.url));
 
 const moduleConfig: RolldownOptions = defineConfig({
   input: {
@@ -19,7 +21,7 @@ const moduleConfig: RolldownOptions = defineConfig({
   plugins: [
     packagePlugin(),
     licensePlugin(
-      path.resolve(__dirname, 'LICENSE.md'),
+      path.resolve(packageDir, 'LICENSE.md'),
       'limina license',
       'limina',
     ),

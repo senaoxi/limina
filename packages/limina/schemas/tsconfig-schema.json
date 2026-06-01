@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "id": "https://docs.senao.me/docs-islands/limina/schemas/tsconfig-schema.json",
+  "title": "Limina TypeScript Configuration",
+  "description": "TypeScript tsconfig.json with Limina graph governance options.",
+  "allowTrailingCommas": true,
+  "allOf": [
+    {
+      "$ref": "https://json.schemastore.org/tsconfig"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "liminaOptions": {
+          "$ref": "#/definitions/liminaOptions"
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "liminaOptions": {
+      "type": "object",
+      "description": "Limina-specific options for this TypeScript project.",
+      "additionalProperties": true,
+      "properties": {
+        "graphRules": {
+          "type": "array",
+          "description": "Graph rule labels from limina.config.mjs#graph.rules that apply to this declaration leaf.",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/nonEmptyString"
+          }
+        }
+      }
+    }
+  }
+}

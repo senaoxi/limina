@@ -6,9 +6,11 @@
   "author": "Senao Xi",
   "description": "Configurable monorepo architecture and TypeScript graph governance CLI",
   "files": [
+    "bin",
     "LICENSE.md",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "schemas"
   ],
   "keywords": [
     "monorepo",
@@ -40,6 +42,7 @@
     "build:watch": "rolldown --config rolldown.config.ts --watch",
     "typecheck": "node bin/limina.js checker build",
     "test": "vitest run",
+    "lint": "eslint . --config ./eslint.config.mjs --fix --cache --cache-location ./node_modules/.cache/eslint/",
     "clean": "del-cli .tsbuild .eslintcache dist coverage node_modules"
   },
   "dependencies": {
@@ -103,6 +106,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
+    "./schemas/tsconfig-schema.json": "./schemas/tsconfig-schema.json",
     "./package.json": "./package.json"
   },
   "sideEffects": false
