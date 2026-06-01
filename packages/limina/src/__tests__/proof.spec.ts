@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { runProofCheck } from '../commands/proof';
 import type { ResolvedLiminaConfig } from '../config';
+import { ProofLogger } from '../logger';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -94,6 +95,54 @@ function createPassingFiles(
   };
 }
 
+function createStrictSingleEnvironmentFiles(
+  overrides: Record<string, string> = {},
+): Record<string, string> {
+  return {
+    'packages/pkg/src/index.ts': 'export const value = 1;\n',
+    'packages/pkg/tsconfig.dts.json': JSON.stringify({
+      extends: './tsconfig.json',
+      compilerOptions: {
+        composite: true,
+        declaration: true,
+        emitDeclarationOnly: true,
+        noEmit: false,
+        outDir: './.tsbuild',
+        rootDir: 'src',
+        tsBuildInfoFile: './.tsbuild/build.tsbuildinfo',
+      },
+    }),
+    'packages/pkg/tsconfig.json': JSON.stringify({
+      compilerOptions: {
+        lib: ['ES2023'],
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        strict: true,
+        target: 'ES2023',
+        types: [],
+      },
+      include: ['src/**/*.ts'],
+    }),
+    'tsconfig.json': JSON.stringify({
+      files: [],
+      references: [
+        {
+          path: './packages/pkg/tsconfig.json',
+        },
+      ],
+    }),
+    'tsconfig.build.json': JSON.stringify({
+      files: [],
+      references: [
+        {
+          path: './packages/pkg/tsconfig.dts.json',
+        },
+      ],
+    }),
+    ...overrides,
+  };
+}
+
 function createStrictMultiEnvironmentFiles(
   overrides: Record<string, string> = {},
 ): Record<string, string> {
@@ -174,10 +223,10 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('rejects dts leaves that do not explicitly extend their companion in strict mode', async () => {
+  it('rejects dts leaves that do not transitively extend their companion in strict mode', async () => {
     const fixture = await createFixture(
-      createPassingFiles({
-        'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+      createStrictSingleEnvironmentFiles({
+        'packages/pkg/tsconfig.dts.json': JSON.stringify({
           compilerOptions: {
             composite: true,
             declaration: true,
@@ -206,6 +255,39 @@ describe('runProofCheck dts config semantics', () => {
           strict: true,
         }),
       ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts dts leaves that transitively extend their companion in strict mode', async () => {
+    const fixture = await createFixture(
+      createStrictSingleEnvironmentFiles({
+        'packages/pkg/tsconfig.dts.base.json': JSON.stringify({
+          extends: './tsconfig.json',
+        }),
+        'packages/pkg/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.dts.base.json',
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            noEmit: false,
+            outDir: './.tsbuild',
+            rootDir: 'src',
+            tsBuildInfoFile: './.tsbuild/build.tsbuildinfo',
+          },
+        }),
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -710,6 +792,54 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it('reports tsconfig-covered files outside the configured source boundary', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPassingFiles({
+        'packages/pkg/fixtures/covered.ts': 'export const covered = 1;\n',
+        'packages/pkg/tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            lib: ['ES2023'],
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts', 'fixtures/**/*.ts'],
+        }),
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            source: {
+              include: ['packages/pkg/src/**/*.ts'],
+            },
+          },
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Typecheck proof source boundary does not match tsconfig coverage',
+      );
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'packages/pkg/fixtures/covered.ts',
+      );
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'config.source and tsconfig*.json coverage describe different module sets',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
   it('accepts JavaScript files included by the checker parsed project', async () => {
     const fixture = await createFixture(
       createPassingFiles({
@@ -758,7 +888,7 @@ describe('runProofCheck dts config semantics', () => {
           config: {
             ...fixture.config.config,
             source: {
-              include: ['tools/eslint.config.mjs'],
+              include: ['packages/pkg/src/**/*.ts', 'tools/eslint.config.mjs'],
             },
           },
         }),
@@ -782,7 +912,7 @@ describe('runProofCheck dts config semantics', () => {
           config: {
             ...fixture.config.config,
             source: {
-              include: ['eslint.config.mjs'],
+              include: ['packages/pkg/src/**/*.ts', 'eslint.config.mjs'],
             },
           },
         }),
@@ -988,7 +1118,7 @@ describe('runProofCheck dts config semantics', () => {
           config: {
             ...fixture.config.config,
             source: {
-              include: ['package.json'],
+              include: ['packages/pkg/src/**/*.ts', 'package.json'],
               exclude: ['package.json'],
             },
           },

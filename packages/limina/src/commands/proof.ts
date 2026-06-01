@@ -486,9 +486,8 @@ function parseProjectCoverageFileNames(options: {
 function collectCoverage(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
-  includeAllowlist?: boolean;
-  allowlistEntries: AllowlistEntry[];
   checkerTargets: CheckerCoverageTarget[];
+  outsideSourceCoverageByFile?: Map<string, CoverageSource[]>;
   sourceFiles: Set<string>;
 }): Map<string, CoverageSource[]> {
   const coverageByFile = new Map<string, CoverageSource[]>();
@@ -507,14 +506,24 @@ function collectCoverage(options: {
         configPath: graphProjectPath,
         context: projectContext,
       })) {
+        const coverageSource: CoverageSource = {
+          label: toRelativePath(options.config.rootDir, graphProjectPath),
+          type: 'graph',
+        };
+
         if (!options.sourceFiles.has(filePath)) {
+          if (options.outsideSourceCoverageByFile) {
+            addCoverage(
+              options.outsideSourceCoverageByFile,
+              filePath,
+              coverageSource,
+            );
+          }
+
           continue;
         }
 
-        addCoverage(coverageByFile, filePath, {
-          label: toRelativePath(options.config.rootDir, graphProjectPath),
-          type: 'graph',
-        });
+        addCoverage(coverageByFile, filePath, coverageSource);
       }
     }
   }
@@ -533,17 +542,27 @@ function collectCoverage(options: {
         configPath,
         context: projectContext,
       })) {
-        if (!options.sourceFiles.has(filePath)) {
-          continue;
-        }
-
-        addCoverage(coverageByFile, filePath, {
+        const coverageSource: CoverageSource = {
           label: `${toRelativePath(
             options.config.rootDir,
             configPath,
           )} via ${checkerTarget.label}`,
           type: 'checker',
-        });
+        };
+
+        if (!options.sourceFiles.has(filePath)) {
+          if (options.outsideSourceCoverageByFile) {
+            addCoverage(
+              options.outsideSourceCoverageByFile,
+              filePath,
+              coverageSource,
+            );
+          }
+
+          continue;
+        }
+
+        addCoverage(coverageByFile, filePath, coverageSource);
       }
     }
   }
@@ -554,20 +573,35 @@ function collectCoverage(options: {
     sourceFiles: options.sourceFiles,
   });
 
-  if (options.includeAllowlist !== false) {
-    for (const entry of options.allowlistEntries) {
-      if (!options.sourceFiles.has(entry.filePath)) {
-        continue;
-      }
-
-      addCoverage(coverageByFile, entry.filePath, {
-        label: entry.reason,
-        type: 'allowlist',
-      });
-    }
-  }
-
   return coverageByFile;
+}
+
+function cloneCoverageByFile(
+  coverageByFile: Map<string, CoverageSource[]>,
+): Map<string, CoverageSource[]> {
+  return new Map(
+    [...coverageByFile.entries()].map(([filePath, sources]) => [
+      filePath,
+      [...sources],
+    ]),
+  );
+}
+
+function addAllowlistCoverage(options: {
+  allowlistEntries: AllowlistEntry[];
+  coverageByFile: Map<string, CoverageSource[]>;
+  sourceFiles: Set<string>;
+}): void {
+  for (const entry of options.allowlistEntries) {
+    if (!options.sourceFiles.has(entry.filePath)) {
+      continue;
+    }
+
+    addCoverage(options.coverageByFile, entry.filePath, {
+      label: entry.reason,
+      type: 'allowlist',
+    });
+  }
 }
 
 function collectProjectContextsByPath(
@@ -773,6 +807,40 @@ function resolveRawExtendsPath(configPath: string, rawExtends: string): string {
   );
 }
 
+function configExtendsPathTransitively(options: {
+  config: ResolvedLiminaConfig;
+  configObject: JsonObject;
+  configPath: string;
+  targetConfigPath: string;
+}): boolean {
+  const visited = new Set([options.configPath]);
+  const pending = normalizeRawExtends(options.configObject.extends).map(
+    (entry) => resolveRawExtendsPath(options.configPath, entry),
+  );
+
+  for (const configPath of pending) {
+    if (configPath === options.targetConfigPath) {
+      return true;
+    }
+
+    if (visited.has(configPath) || !existsSync(configPath)) {
+      continue;
+    }
+
+    visited.add(configPath);
+
+    const configObject = readJsonConfig(options.config, configPath);
+
+    pending.push(
+      ...normalizeRawExtends(configObject.extends).map((entry) =>
+        resolveRawExtendsPath(configPath, entry),
+      ),
+    );
+  }
+
+  return false;
+}
+
 function addStrictDtsCompanionExtendsProblems(options: {
   config: ResolvedLiminaConfig;
   configObject: JsonObject;
@@ -781,11 +849,12 @@ function addStrictDtsCompanionExtendsProblems(options: {
   problems: string[];
 }): void {
   const rawExtends = normalizeRawExtends(options.configObject.extends);
-  const extendsCompanion = rawExtends.some(
-    (entry) =>
-      resolveRawExtendsPath(options.dtsConfigPath, entry) ===
-      options.localConfigPath,
-  );
+  const extendsCompanion = configExtendsPathTransitively({
+    config: options.config,
+    configObject: options.configObject,
+    configPath: options.dtsConfigPath,
+    targetConfigPath: options.localConfigPath,
+  });
 
   if (extendsCompanion) {
     return;
@@ -793,10 +862,10 @@ function addStrictDtsCompanionExtendsProblems(options: {
 
   options.problems.push(
     [
-      'Strict mode requires declaration leaves to extend their companion typecheck config:',
+      'Strict mode requires declaration leaves to transitively extend their companion typecheck config:',
       `  declaration leaf: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
       `  expected companion: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
-      `  extends: ${rawExtends.length > 0 ? rawExtends.join(', ') : '(none)'}`,
+      `  direct extends: ${rawExtends.length > 0 ? rawExtends.join(', ') : '(none)'}`,
       '  reason: strict: true requires tsconfig*.dts.json to add only declaration/build output behavior on top of the matching tsconfig*.json.',
     ].join('\n'),
   );
@@ -1383,6 +1452,42 @@ function addUncoveredSourceProblems(options: {
   );
 }
 
+function addSourceBoundaryMismatchProblems(options: {
+  config: ResolvedLiminaConfig;
+  outsideSourceCoverageByFile: Map<string, CoverageSource[]>;
+  problems: string[];
+}): void {
+  const outsideSourceFiles = [
+    ...options.outsideSourceCoverageByFile.entries(),
+  ].sort(([left], [right]) => left.localeCompare(right));
+
+  if (outsideSourceFiles.length === 0) {
+    return;
+  }
+
+  options.problems.push(
+    [
+      'Typecheck proof source boundary does not match tsconfig coverage:',
+      ...outsideSourceFiles
+        .slice(0, 20)
+        .flatMap(([filePath, sources]) => [
+          `  - ${toRelativePath(options.config.rootDir, filePath)}`,
+          ...sources
+            .slice(0, 3)
+            .map((source) => `    covered by: ${source.label}`),
+          sources.length > 3 ? `    ... ${sources.length - 3} more` : '',
+        ]),
+      outsideSourceFiles.length > 20
+        ? `  ... ${outsideSourceFiles.length - 20} more`
+        : '',
+      '  reason: config.source and tsconfig*.json coverage describe different module sets.',
+      '  fix: include these files in config.source, exclude them from the related tsconfig*.json, or move intentionally unmanaged files out of checker coverage.',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  );
+}
+
 async function runProofCheckInternal(
   config: ResolvedLiminaConfig,
   options: { logSuccess?: boolean } = {},
@@ -1468,19 +1573,19 @@ async function runProofCheckInternal(
 
   problems.push(...allowlistCollection.problems);
 
+  const outsideSourceCoverageByFile = new Map<string, CoverageSource[]>();
   const baseCoverageByFile = collectCoverage({
-    allowlistEntries,
     checkerTargets,
     config,
     graphRoutes: graphRouteCollection.routes,
-    includeAllowlist: false,
+    outsideSourceCoverageByFile,
     sourceFiles,
   });
-  const coverageByFile = collectCoverage({
+  const coverageByFile = cloneCoverageByFile(baseCoverageByFile);
+
+  addAllowlistCoverage({
     allowlistEntries,
-    checkerTargets,
-    config,
-    graphRoutes: graphRouteCollection.routes,
+    coverageByFile,
     sourceFiles,
   });
   const graphFileOwners = collectConfigFileOwners(
@@ -1506,6 +1611,11 @@ async function runProofCheckInternal(
     coverageByFile,
     problems,
     sourceFiles,
+  });
+  addSourceBoundaryMismatchProblems({
+    config,
+    outsideSourceCoverageByFile,
+    problems,
   });
 
   if (problems.length > 0) {
