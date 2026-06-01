@@ -11,8 +11,10 @@ export {
   type CheckerPreset,
   type GraphConfig,
   type GraphRule,
+  type GraphRuleAllowConfig,
   type GraphRuleDenyConfig,
   type GraphRuleDepDenyEntry,
+  type GraphRuleRefAllowEntry,
   type GraphRuleRefDenyEntry,
   type LiminaCommand,
   type LiminaConfig,
@@ -39,6 +41,8 @@ export {
   type RuntimeEnvironment,
   type SharedLiminaConfig,
   type SourceBoundaryConfig,
+  type SourceUnusedDependenciesConfig,
+  type SourceUnusedDependencyIgnoreEntry,
 } from './config';
 
 export {
@@ -51,6 +55,13 @@ export {
   type LiminaFlowTask,
 } from './flow';
 
+export {
+  runGraphCheck,
+  runGraphSync,
+  type RunGraphCheckOptions,
+  type RunGraphSyncOptions,
+  type RunGraphSyncResult,
+} from './commands/graph';
 export {
   runInit,
   type RunInitOptions,
