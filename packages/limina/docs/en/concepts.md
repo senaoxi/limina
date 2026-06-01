@@ -60,7 +60,7 @@ tsconfig.tools.dts.json  <->    tsconfig.tools.json
 tsconfig.test.dts.json   <->    tsconfig.test.json
 ```
 
-The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`. Current `vue-tsgo` support is source-only for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage.
+The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`. Current `vue-tsgo` support is second-class for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage.
 
 This split keeps build output settings out of the ordinary typecheck config.
 
@@ -92,11 +92,13 @@ If a package only wants to consume another package the way an outside user would
 
 ## Labels and Rules
 
-A declaration leaf can opt into a graph rule with a `limina` label:
+A declaration leaf can opt into one or more graph rules with `liminaOptions.graphRules`:
 
 ```jsonc
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
 }
 ```
 
@@ -123,4 +125,4 @@ export default defineConfig({
 
 Use labels for boundaries that matter to the architecture: browser vs Node, public API vs internal tools, production vs tests, or package-specific rules.
 
-When a group of source files has a real boundary, put a label on the matching `tsconfig*.dts.json` and define the rule in `limina.config.mjs`. For example, a browser runtime leaf can declare `"limina": "runtime-client"` while the rule denies `node:*` and `@acme/internal-node`. The boundary no longer depends on convention alone; an import of `node:fs` from the browser project fails Graph check with the rule's reason.
+When a group of source files has a real boundary, put one or more graph rule labels on the matching `tsconfig*.dts.json` and define those rules in `limina.config.mjs`. For example, a browser runtime leaf can declare `"graphRules": ["runtime-client"]` under `liminaOptions` while the rule denies `node:*` and `@acme/internal-node`. The boundary no longer depends on convention alone; an import of `node:fs` from the browser project fails Graph check with the rule's reason.

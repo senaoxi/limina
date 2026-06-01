@@ -27,6 +27,14 @@ export default defineConfig({
             },
           ],
         },
+        allow: {
+          refs: [
+            {
+              path: 'packages/app/src/generated/tsconfig.lib.dts.json',
+              reason: 'generated declarations are wired by the build pipeline',
+            },
+          ],
+        },
       },
     },
   },
@@ -35,13 +43,15 @@ export default defineConfig({
 
 ## `rules.<label>`
 
-The `rules` key must match the `limina` label in a declaration leaf. Only `tsconfig*.dts.json` files with the same label enable that rule.
+The `rules` key must match an entry in `liminaOptions.graphRules` in a declaration leaf. A leaf can list multiple labels, and Limina merges the matching rules.
 
-Pair the rule with a label in the declaration leaf:
+Pair the rule with labels in the declaration leaf:
 
 ```jsonc
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
   "extends": ["./tsconfig.lib.json"],
   "references": [],
 }
@@ -79,7 +89,9 @@ The client leaf is labeled `runtime-client`, but it incorrectly references the N
 ```jsonc
 // packages/app/src/client/tsconfig.lib.dts.json
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
   "extends": ["./tsconfig.lib.json"],
   "references": [
     {
@@ -92,6 +104,12 @@ The client leaf is labeled `runtime-client`, but it incorrectly references the N
 When `pnpm exec limina graph check` runs, Limina starts from the checker entry, finds reachable declaration leaves, and reads each leaf's `references`. When it sees the `runtime-client` leaf referencing `packages/app/src/node/tsconfig.lib.dts.json`, it compares that reference with `graph.rules.runtime-client.deny.refs`.
 
 The result is a graph check failure that points at the forbidden project reference and prints the configured `reason`. This means the problem is not just one import line; the TypeScript graph itself now says client runtime depends on Node runtime.
+
+## `allow.refs`
+
+`allow.refs` uses the same entry shape as `deny.refs`, but it only allows extra declared references that static import analysis cannot prove. It does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
+
+`limina graph sync` keeps currently declared extra references only when they match the merged `allow.refs` rules. It does not add unused allow entries.
 
 ## `deny.deps`
 
@@ -125,36 +143,6 @@ import { readFileSync } from 'node:fs';
 import { createServerClient } from '@acme/internal-node';
 ```
 
-When `pnpm exec limina graph check` runs, Limina parses imports from `src/client/load.ts` with TypeScript. Because the file belongs to a leaf labeled `"limina": "runtime-client"`, Limina compares each resolved specifier with `deny.deps`: `node:fs` matches `node:*`, and `@acme/internal-node` matches the package rule.
+When `pnpm exec limina graph check` runs, Limina parses imports from `src/client/load.ts` with TypeScript. Because the file belongs to a leaf configured with `liminaOptions.graphRules: ["runtime-client"]`, Limina compares each resolved specifier with `deny.deps`: `node:fs` matches `node:*`, and `@acme/internal-node` matches the package rule.
 
 The result is a graph check failure with the configured reason for each match. Reviewers can immediately see that browser runtime code imported Node-only capabilities instead of guessing whether those imports will break in the browser.
-
-## `unusedWorkspaceDependencies.allowlist`
-
-`graph check` also verifies that workspace packages declared in `package.json` are actually used by source owned by that package. This applies to every workspace package, including the workspace root.
-
-Limina scans dependency names in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`. If the dependency name matches a package from the pnpm workspace, Limina expects the importer package to use it through a static source import such as `import`, `export ... from`, `import type`, or dynamic `import()`.
-
-The source scope comes from package-owned `tsconfig*.json` files. Limina excludes `tsconfig*.dts.json`, `tsconfig*.build.json`, `tsconfig*.base.json`, and `tsconfig*.check.json`; each remaining tsconfig belongs to its nearest `package.json`. If a tsconfig includes files owned by another nearer package, graph check reports that as a config problem.
-
-For dependencies used by generated code, config files, scripts, or runtime strings that static import analysis cannot see, add an allowlist entry:
-
-```js
-import { defineConfig } from 'limina';
-
-export default defineConfig({
-  graph: {
-    unusedWorkspaceDependencies: {
-      allowlist: [
-        {
-          importer: '@acme/app',
-          dependency: '@acme/runtime',
-          reason: 'Loaded by a Vite virtual module generated at build time.',
-        },
-      ],
-    },
-  },
-});
-```
-
-Allowlist entries must name existing workspace packages and a dependency pair that is still declared in the importer package manifest. If the dependency becomes unused and intentional, keep the reason close to the config; if it is no longer needed, remove the dependency instead.

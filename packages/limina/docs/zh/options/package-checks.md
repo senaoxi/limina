@@ -33,6 +33,8 @@ export default defineConfig({
 
 `outDir` 指向消费者实际安装到的构建后 package 目录，通常是 `packages/*/dist`。这个目录里应该有发布用的 `package.json`、JavaScript 和 declarations。README/license 与 tarball 卫生由 `limina release check` 校验。
 
+开启顶层 `strict: true` 后，每个 `outDir/package.json` 都必须存在，并且看起来像一个完整的 npm package manifest。Limina 还会拒绝 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中残留的 `workspace:`、`link:`、`file:`、`catalog:` specifier，因为构建产物应该已经是消费者和 npm 实际看到的发布就绪 manifest。
+
 ## `checks`
 
 `checks` 控制启用哪些工具：
@@ -94,4 +96,4 @@ packages/core/
 
 默认 `release.contentHash.builtinIgnore` 是 `false`，所以 README、changelog、contributing、security 文件以及 `docs/**`、`examples/**` 都不会被忽略。设置 `builtinIgnore: true` 后，内置忽略集只会在 `release.contentHash.ignore` 未配置或 ignore 函数返回 `undefined` 时作为兜底；ignore 函数返回 `[]` 表示该 dependency 不忽略任何文件。`release.contentHash.ignore` 可以是 package-relative glob 数组，例如 `client/**` 或 `dist/*.wasm`，也可以写成函数并按 importer/dependency 包名返回不同规则。被忽略的报告会按命中的规则分组，并统计 `changed`、`local-only`、`remote-only` 三类数量。
 
-如果按配置忽略后消费者可见 package 内容一致，就不会要求该依赖重新发布。Release checks 也会拒绝 private output、缺失 README/license、source map 文件、JavaScript `sourceMappingURL` 注释、packed manifest 泄露 `workspace:`/`link:`，以及不覆盖本地 workspace 版本的发布依赖 range。没有 `--package` 时，它要求 cwd 最近的 `package.json#name` 必须命中配置 entry；传入一个或多个 `--package <name>` 时会跳过 cwd 匹配。
+如果按配置忽略后消费者可见 package 内容一致，就不会要求该依赖重新发布。Release checks 也会拒绝 private output、缺失 README/license、source map 文件、JavaScript `sourceMappingURL` 注释，以及不覆盖本地 workspace 版本的发布依赖 range。开启顶层 `strict: true` 后，release checks 还会拒绝 output manifest 和 packed manifest 所有依赖区间里泄露的 `workspace:`、`link:`、`file:`、`catalog:`。没有 `--package` 时，它要求 cwd 最近的 `package.json#name` 必须命中配置 entry；传入一个或多个 `--package <name>` 时会跳过 cwd 匹配。

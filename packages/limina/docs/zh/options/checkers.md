@@ -41,7 +41,7 @@ export default defineConfig({
 - `vue-tsgo`：通过 `vue-tsgo` 和 `@typescript/native-preview` 处理 `.vue`；
 - `svelte-check`：处理 `.svelte`。
 
-Limina 只接受内置 preset。`tsc`、`tsgo` 和 `vue-tsc` 是一等公民 build checker；`vue-tsgo` 具备 Limina graph coverage 能力，但执行上是 source-only；`svelte-check` 是 source-only。
+Limina 只接受内置 preset。`tsc`、`tsgo` 和 `vue-tsc` 支持 build execution，所以是一等公民；`vue-tsgo` 和 `svelte-check` 只支持直接 typecheck execution，所以是二等公民。`vue-tsgo` 仍具备 Limina source graph 能力，`svelte-check` 则不参与 source graph。
 
 `tsgo` 使用 Microsoft 的预览包 `@typescript/native-preview`，执行 `tsgo -b <entry> --pretty false`。当你希望 Limina 的 build checker 试跑 native TypeScript preview，同时保持和 `tsc` 相同的 source graph 模型时，可以使用它。
 
@@ -58,7 +58,7 @@ export default defineConfig({
 });
 ```
 
-`vue-tsgo` 使用 KazariEX 的 `vue-tsgo` 包和 `@typescript/native-preview`，并通过 `limina checker typecheck` 执行 `vue-tsgo --project <entry>`。Limina 会有意把它作为 source-only execution checker：当前 `vue-tsgo --build` 会把源码 import 展开到临时虚拟 TS workspace，不能保持 TypeScript project-reference 边界，也不具备增量构建语义。Limina 仍会使用已配置的 `vue-tsgo` tsconfig entry 做自己的 graph 和 proof coverage。一等公民 Vue build 检查优先使用 `vue-tsc`。
+`vue-tsgo` 使用 KazariEX 的 `vue-tsgo` 包和 `@typescript/native-preview`，并通过 `limina checker typecheck` 执行 `vue-tsgo --project <entry>`。Limina 会有意把它作为二等公民 execution checker：当前 `vue-tsgo --build` 会把源码 import 展开到临时虚拟 TS workspace，不能保持 TypeScript project-reference 边界，也不具备增量构建语义。Limina 仍会使用已配置的 `vue-tsgo` tsconfig entry 做自己的 graph 和 proof coverage。一等公民 Vue build 检查优先使用 `vue-tsc`。
 
 ```js
 export default defineConfig({
@@ -85,9 +85,9 @@ export default defineConfig({
 
 - `tsc`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`；
 - `tsgo`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`；
-- `vue-tsc`：`.vue`；
-- `vue-tsgo`：`.vue`；
-- `svelte-check`：`.svelte`。
+- `vue-tsc`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`，以及 `@vue/language-core` 返回的 Vue 扩展；
+- `vue-tsgo`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`，以及 `@vue/language-core` 返回的 Vue 扩展；
+- `svelte-check`：`.ts`、`.tsx`、`.cts`、`.mts`、`.d.ts`、`.d.cts`、`.d.mts`、`.json`、`.svelte`。
 
 配置 `extensions` 会被拒绝。
 
@@ -100,7 +100,7 @@ const count: number = '1';
 </script>
 ```
 
-`limina checker build` 会用 `vue-tsc -b` 覆盖一等公民 Vue entry，而不是只跑普通 `tsc` / `tsgo`。`vue-tsgo` entry 在执行上是 source-only，会在后续通过 `limina checker typecheck` 执行，同时仍会把它的 tsconfig route 贡献给 Limina coverage proof。如果没有给 Vue 源码配置 checker entry，`proof check` 也更容易暴露“这些文件没有被任何 checker 覆盖”的问题。
+`limina checker build` 会用 `vue-tsc -b` 覆盖一等公民 Vue entry，而不是只跑普通 `tsc` / `tsgo`。`vue-tsgo` entry 在执行上是二等公民，会在后续通过 `limina checker typecheck` 执行，同时仍会把它的 tsconfig route 贡献给 Limina coverage proof。如果没有给 Vue 源码配置 checker entry，`proof check` 也更容易暴露“这些文件没有被任何 checker 覆盖”的问题。
 
 完整一点看，目录通常类似这样：
 
@@ -125,4 +125,4 @@ const count: number = '1';
 
 结果是这个类型错误由已配置的 Vue checker 报出。这样用户能知道 `.vue` 文件不是靠普通 `tsc` 顺便覆盖，而是由专门的 checker entry 进入 Limina 的检查范围。
 
-对于 `vue-tsgo` 和 `svelte-check`，Limina 会通过 `limina checker typecheck` 执行直接 source-only checker 命令。`vue-tsgo` 仍会作为 graph-aware entry 参与 Limina 自己的 tsconfig coverage proof，但它不是一等公民 build runner。
+对于 `vue-tsgo` 和 `svelte-check`，Limina 会通过 `limina checker typecheck` 执行直接二等公民 checker 命令。`vue-tsgo` 仍会作为 graph-aware entry 参与 Limina 自己的 tsconfig coverage proof，但它不是一等公民 build runner。

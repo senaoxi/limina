@@ -40,7 +40,7 @@ Limina's source check keeps these rules plain:
 - a non-aggregator tsconfig should not mix several package owners;
 - relative imports must stay inside the same package owner;
 - bare imports must be listed in `dependencies` or `devDependencies`;
-- `#imports` must match the nearest package's `imports` field and resolve inside that package.
+- `#imports` must match the nearest package's `imports` field, must not target another workspace package, and must resolve inside that package.
 
 For example, `packages/app/src/main.ts` reaches into another package with `../core/src/index`. Limina reports the cross-package relative import and nudges the dependency back through `@acme/core` package exports. After that, reviewers can understand the dependency from manifests and exports instead of chasing relative paths.
 
@@ -58,4 +58,4 @@ Limina tries to keep the rules visible. Instead of hiding policy in a preset, it
 
 That makes architecture changes something reviewers can read, not something CI discovers only after the merge.
 
-For example, if browser runtime code must never reach Node-only packages, put `"limina": "runtime-client"` in the declaration leaf and define the deny rule under `graph.rules.runtime-client`. Future boundary changes then appear in config or tsconfig diffs, where reviewers can discuss them directly.
+For example, if browser runtime code must never reach Node-only packages, put `"graphRules": ["runtime-client"]` under `liminaOptions` in the declaration leaf and define the deny rule under `graph.rules.runtime-client`. Future boundary changes then appear in config or tsconfig diffs, where reviewers can discuss them directly.

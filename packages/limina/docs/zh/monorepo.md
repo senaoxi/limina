@@ -294,6 +294,8 @@ dist package:
 
 limina 的职责就是把这些一致性要求变成可执行检查。
 
+顶层 `strict: true` 会要求 Limina 把这套模型当作必须满足的结构约束，而不是兼容性的提示行为。在这个模式下，普通 `tsconfig*.json` leaf 必须有同名 `tsconfig*.dts.json` build leaf；源码归属必须落到 nearest `package.json`；`workspace:` 包的 exports 必须接入源码图；`link:`/artifact 依赖不能继续保留跨包 project reference；构建后或打包后的 manifest 必须已经是合法 npm package manifest，不能残留 pnpm 本地依赖协议。
+
 可以把它理解成下面这个公式：
 
 ```text id="dk29fb"
@@ -731,7 +733,9 @@ limina 用 label 表达架构边界。
 ```jsonc
 // packages/app/src/client/tsconfig.dts.json
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
   "extends": ["./tsconfig.json", "../../../tsconfig.dts.base.json"],
   "references": [],
 }
@@ -870,7 +874,7 @@ Unauthorized bare package import:
   package owner: packages/core/package.json
   imported specifier: vitest
   package: vitest
-  reason: source imports must be authorized by the nearest package.json dependencies or devDependencies.
+  reason: source imports must be authorized by the nearest package.json dependencies, devDependencies, peerDependencies, or optionalDependencies.
 ```
 
 ### 修复方式

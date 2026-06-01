@@ -136,13 +136,23 @@ pnpm exec limina package check --package @acme/core
 
 ### Checker entry
 
-Each checker has one required `config.checkers.<name>.entry`, usually a `tsconfig*.build.json` graph aggregator. Built-in first-class build presets (`tsc`, `tsgo`, and `vue-tsc`) participate in graph, source, proof, and build checks. Source-only execution presets such as `vue-tsgo` and `svelte-check` run direct checker execution through `limina checker typecheck`; `vue-tsgo` still uses its tsconfig entry for Limina graph and proof coverage. Prefer `vue-tsc` for first-class Vue project-reference builds; current `vue-tsgo` build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics.
+Each checker has one required `config.checkers.<name>.entry`, usually a `tsconfig*.build.json` graph aggregator. Presets with build execution (`tsc`, `tsgo`, and `vue-tsc`) are first-class and participate in graph, source, proof, and build checks. Presets without build execution (`vue-tsgo` and `svelte-check`) are second-class and run direct checker execution through `limina checker typecheck`; `vue-tsgo` still uses its tsconfig entry for Limina graph and proof coverage. Prefer `vue-tsc` for first-class Vue project-reference builds; current `vue-tsgo` build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics.
 
 ### Declaration leaf and local companion
 
 Declaration leaves should have strict local companions. For example, `tsconfig.lib.dts.json` pairs with `tsconfig.lib.json`, and `tsconfig.dts.json` pairs with `tsconfig.json`.
 
 The default `tsconfig.json` is the IDE/typecheck entry for its directory. A single-environment directory should use it as the local leaf; a multi-environment directory should make it a pure aggregator with `files: []` and `references`.
+
+Limina publishes a local tsconfig schema that composes the community SchemaStore tsconfig schema and adds `liminaOptions` completion:
+
+```jsonc
+{
+  "$schema": "./node_modules/limina/schemas/tsconfig-schema.json",
+}
+```
+
+The `$schema` path is relative to the tsconfig file that declares it, so nested package configs should adjust the leading `../` segments.
 
 ### Source dependencies and artifact dependencies
 
@@ -165,12 +175,13 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina check`                                  | Run the built-in default check pipeline.                                              |
 | `limina check <pipeline>`                       | Run a named user pipeline from `pipelines`.                                           |
 | `limina graph check`                            | Validate project references and architecture import rules.                            |
+| `limina graph sync [path]`                      | Rewrite declaration-leaf references from TypeScript-resolved source imports.          |
 | `limina proof check`                            | Prove declaration configs, local typecheck configs, and source coverage stay aligned. |
 | `limina paths generate`                         | Generate compatibility source `paths` configs for artifact-facing workspace exports.  |
 | `limina paths apply`                            | Compatibility alias for `paths generate`.                                             |
 | `limina paths check`                            | Fail when generated path files are stale.                                             |
 | `limina checker build`                          | Run build execution for checker entries that support it.                              |
-| `limina checker typecheck`                      | Run source-only checker entries such as `vue-tsgo` and `svelte-check`.                |
+| `limina checker typecheck`                      | Run second-class checker entries such as `vue-tsgo` and `svelte-check`.               |
 | `limina package check`                          | Run configured package output checks.                                                 |
 | `limina package check --package <name>`         | Check one configured package entry.                                                   |
 | `limina package check --tool <tool>`            | Run only `publint`, `attw`, or `boundary`.                                            |
@@ -200,7 +211,7 @@ config: {
 }
 ```
 
-`config.checkers` defines checker entries. Every configured checker must declare a non-empty `entry` and use a built-in preset. Checker `extensions` are fixed by Limina and cannot be configured; if `source.include` is omitted, Limina derives the source boundary from configured checker extensions, then applies `source.exclude`.
+`config.checkers` defines checker entries. Every configured checker must declare a non-empty `entry` and use a built-in preset. Checker `extensions` are fixed by Limina and cannot be configured; if `config.source.include` is omitted, Limina derives the global source boundary from configured checker extensions, then applies `config.source.exclude`.
 
 ### `graph`
 
@@ -235,11 +246,13 @@ graph: {
 }
 ```
 
-A declaration leaf opts into a rule by adding a `limina` label:
+A declaration leaf opts into one or more rules with `liminaOptions.graphRules`:
 
 ```jsonc
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
   "extends": ["./tsconfig.json", "../../tsconfig.dts.base.json"],
   "references": [],
 }

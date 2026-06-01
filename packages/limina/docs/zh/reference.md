@@ -29,6 +29,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina check`                                  | 运行默认 pipeline：graph、source、proof、checker build 和 checker typecheck。                          |
 | `limina check <pipeline>`                       | 运行 `pipelines` 中的用户命名 pipeline。                                                               |
 | `limina graph check`                            | 校验 project references、workspace imports、graph rules 和 source/artifact dependency 语义。           |
+| `limina graph sync [path]`                      | 根据 TypeScript 解析到的源码 import 重写 declaration leaf references。                                 |
 | `limina source check`                           | 校验 package 归属、相对 import 边界、bare dependency 声明和 `#imports`。                               |
 | `limina proof check`                            | 校验 declaration leaves、local companions、checker coverage、纯 aggregators 和 source coverage。       |
 | `limina paths generate`                         | 生成兼容 TypeScript `paths` config。                                                                   |
@@ -37,7 +38,7 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina nx sync [target...]`                    | 根据 artifact dependencies 同步 `project.json` target 的 `dependsOn`。默认 target 为 `build`。         |
 | `limina nx check [target...]`                   | 检查 Nx target 的 `dependsOn` 是否过期。默认 target 为 `build`。                                       |
 | `limina checker build`                          | 运行支持 build mode 的 checker entries。                                                               |
-| `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类 source-only checker entry。                                       |
+| `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类二等公民 checker entry。                                           |
 | `limina package check`                          | 运行配置好的 package output checks。                                                                   |
 | `limina package check --package <name>`         | 按配置名运行单个 package entry。                                                                       |
 | `limina package check --tool <tool>`            | 只运行 `publint`、`attw`、`boundary` 或 `all`。                                                        |
@@ -70,7 +71,7 @@ pnpm exec limina nx check build docs:build
 pnpm exec limina check
 ```
 
-它会一起证明 graph、source ownership、coverage、一等公民 checker build 和 source-only checker execution。
+它会一起证明 graph、source ownership、coverage、一等公民 checker build 和二等公民 checker execution。
 
 ### 发布前
 
@@ -119,7 +120,7 @@ jobs:
 
 ### `limina checker build` 和 `checker typecheck` 如何选择目标？
 
-`checker build` 会从已配置 entry 运行一等公民 build preset（`tsc -b`、`tsgo -b` 和 `vue-tsc -b`）。`tsgo` 由 Microsoft 的 `@typescript/native-preview` 包提供。`checker typecheck` 会直接运行 source-only execution preset，目前是 `vue-tsgo --project <entry>` 和 `svelte-check --tsconfig <entry>`。Limina 有意不让 `vue-tsgo` 进入 `checker build`：当前 `vue-tsgo --build` 不能保持 TypeScript project-reference 边界，也不具备增量构建语义；但它配置的 tsconfig entry 仍会参与 Limina graph/proof coverage。一等公民 Vue build 检查优先使用 `vue-tsc`。
+`checker build` 会从已配置 entry 运行一等公民 build execution preset（`tsc -b`、`tsgo -b` 和 `vue-tsc -b`）。`tsgo` 由 Microsoft 的 `@typescript/native-preview` 包提供。`checker typecheck` 会直接运行二等公民 typecheck execution preset，目前是 `vue-tsgo --project <entry>` 和 `svelte-check --tsconfig <entry>`。Limina 有意不让 `vue-tsgo` 进入 `checker build`：当前 `vue-tsgo --build` 不能保持 TypeScript project-reference 边界，也不具备增量构建语义；但它配置的 tsconfig entry 仍会参与 Limina graph/proof coverage。一等公民 Vue build 检查优先使用 `vue-tsc`。
 
 ### 为什么 package checks 需要先 build？
 

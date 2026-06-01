@@ -136,13 +136,23 @@ pnpm exec limina package check --package @acme/core
 
 ### Checker entry
 
-每个 checker 都必须有一个 `config.checkers.<name>.entry`，通常是一个 `tsconfig*.build.json` graph 聚合配置。内置一等公民 build preset（`tsc`、`tsgo` 和 `vue-tsc`）会参与 graph、source、proof 和 build 检查；`vue-tsgo`、`svelte-check` 这类 source-only execution preset 会通过 `limina checker typecheck` 执行直接类型检查，其中 `vue-tsgo` 仍会使用自己的 tsconfig entry 参与 Limina graph 和 proof coverage。Vue project-reference 的一等公民 build 优先使用 `vue-tsc`；当前 `vue-tsgo` 的 build 模式不能保持 TypeScript project-reference 边界，也不具备增量构建语义。
+每个 checker 都必须有一个 `config.checkers.<name>.entry`，通常是一个 `tsconfig*.build.json` graph 聚合配置。支持 build execution 的 preset（`tsc`、`tsgo` 和 `vue-tsc`）是一等公民，会参与 graph、source、proof 和 build 检查；不支持 build execution 的 preset（`vue-tsgo`、`svelte-check`）是二等公民，会通过 `limina checker typecheck` 执行直接类型检查，其中 `vue-tsgo` 仍会使用自己的 tsconfig entry 参与 Limina graph 和 proof coverage。Vue project-reference 的一等公民 build 优先使用 `vue-tsc`；当前 `vue-tsgo` 的 build 模式不能保持 TypeScript project-reference 边界，也不具备增量构建语义。
 
 ### 声明叶子与 local companion
 
 声明叶子应该拥有严格的本地 companion。例如，`tsconfig.lib.dts.json` 配对 `tsconfig.lib.json`，`tsconfig.dts.json` 配对 `tsconfig.json`。
 
 默认 `tsconfig.json` 是当前目录的 IDE/typecheck 入口。单环境目录应直接用它作为 local leaf；多环境目录应让它成为只包含 `files: []` 和 `references` 的纯聚合器。
+
+Limina 会发布一个本地 tsconfig schema：它组合社区通用的 SchemaStore tsconfig schema，并补充 `liminaOptions` 的补全与校验。
+
+```jsonc
+{
+  "$schema": "./node_modules/limina/schemas/tsconfig-schema.json",
+}
+```
+
+`$schema` 路径以声明它的 tsconfig 文件为基准；如果配置在嵌套 package 中，需要按目录层级调整前面的 `../`。
 
 ### Source dependencies 与 artifact dependencies
 
@@ -160,23 +170,24 @@ Source graph checks 不能证明安装后的 package 对消费者可用。`limin
 limina [--config limina.config.mjs] [--mode mode] <command>
 ```
 
-| 命令                                            | 说明                                                             |
-| ----------------------------------------------- | ---------------------------------------------------------------- |
-| `limina check`                                  | 运行内置默认检查 pipeline。                                      |
-| `limina check <pipeline>`                       | 运行 `pipelines` 中的用户命名 pipeline。                         |
-| `limina graph check`                            | 校验 project references 和架构 import 规则。                     |
-| `limina proof check`                            | 证明声明 configs、本地 typecheck configs 和源码覆盖保持一致。    |
-| `limina paths generate`                         | 为 artifact-facing workspace exports 生成源码 `paths` 兼容配置。 |
-| `limina paths apply`                            | `paths generate` 的兼容别名。                                    |
-| `limina paths check`                            | 当 generated path files 过期时失败。                             |
-| `limina checker build`                          | 对支持 build 模式的 checker entry 执行 build。                   |
-| `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类 source-only checker entry。 |
-| `limina package check`                          | 运行已配置的 package output checks。                             |
-| `limina package check --package <name>`         | 检查单个已配置 package entry。                                   |
-| `limina package check --tool <tool>`            | 只运行 `publint`、`attw` 或 `boundary`。                         |
-| `limina package check --attw-profile <profile>` | 覆盖 ATTW profile：`strict`、`node16` 或 `esm-only`。            |
-| `limina release check`                          | 按 cwd package entry 校验发布卫生和发布依赖一致性。              |
-| `limina release check --package <name>`         | 校验一个或多个 package entry 的发布卫生和发布依赖一致性。        |
+| 命令                                            | 说明                                                                   |
+| ----------------------------------------------- | ---------------------------------------------------------------------- |
+| `limina check`                                  | 运行内置默认检查 pipeline。                                            |
+| `limina check <pipeline>`                       | 运行 `pipelines` 中的用户命名 pipeline。                               |
+| `limina graph check`                            | 校验 project references 和架构 import 规则。                           |
+| `limina graph sync [path]`                      | 根据 TypeScript 解析到的源码 import 重写 declaration leaf references。 |
+| `limina proof check`                            | 证明声明 configs、本地 typecheck configs 和源码覆盖保持一致。          |
+| `limina paths generate`                         | 为 artifact-facing workspace exports 生成源码 `paths` 兼容配置。       |
+| `limina paths apply`                            | `paths generate` 的兼容别名。                                          |
+| `limina paths check`                            | 当 generated path files 过期时失败。                                   |
+| `limina checker build`                          | 对支持 build 模式的 checker entry 执行 build。                         |
+| `limina checker typecheck`                      | 运行 `vue-tsgo`、`svelte-check` 这类二等公民 checker entry。           |
+| `limina package check`                          | 运行已配置的 package output checks。                                   |
+| `limina package check --package <name>`         | 检查单个已配置 package entry。                                         |
+| `limina package check --tool <tool>`            | 只运行 `publint`、`attw` 或 `boundary`。                               |
+| `limina package check --attw-profile <profile>` | 覆盖 ATTW profile：`strict`、`node16` 或 `esm-only`。                  |
+| `limina release check`                          | 按 cwd package entry 校验发布卫生和发布依赖一致性。                    |
+| `limina release check --package <name>`         | 校验一个或多个 package entry 的发布卫生和发布依赖一致性。              |
 
 ## 配置参考
 
@@ -200,7 +211,7 @@ config: {
 }
 ```
 
-`config.checkers` 定义 checker entry。每个已配置的 checker 都必须声明非空 `entry` 并使用内置 preset。Checker `extensions` 由 Limina 固定，用户不能配置；如果省略 `source.include`，Limina 会从已配置 checker 的 extensions 推导源码边界，然后再应用 `source.exclude`。
+`config.checkers` 定义 checker entry。每个已配置的 checker 都必须声明非空 `entry` 并使用内置 preset。Checker `extensions` 由 Limina 固定，用户不能配置；如果省略 `config.source.include`，Limina 会从已配置 checker 的 extensions 推导全局源码边界，然后再应用 `config.source.exclude`。
 
 ### `graph`
 
@@ -235,11 +246,13 @@ graph: {
 }
 ```
 
-声明叶子可以通过添加 `limina` label 启用某条规则：
+声明叶子可以通过 `liminaOptions.graphRules` 启用一条或多条规则：
 
 ```jsonc
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
   "extends": ["./tsconfig.json", "../../tsconfig.dts.base.json"],
   "references": [],
 }

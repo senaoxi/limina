@@ -6,6 +6,7 @@ Limina reads configuration from `limina.config.mjs` inside the workspace. It usu
 import { defineConfig } from 'limina';
 
 export default defineConfig({
+  strict: true,
   config: {},
 });
 ```
@@ -14,6 +15,7 @@ Config can also be a function:
 
 ```js
 export default defineConfig(({ command, mode }) => ({
+  strict: mode === 'ci',
   config: {
     // return different entries for CI, local, or release usage
   },
@@ -27,6 +29,28 @@ export default defineConfig(({ command, mode }) => ({
 Function configs are useful when local, CI, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
 
 Prefer `command` branching for package output entries that only matter to package and release commands. Reserve `mode` for broader environment-level differences.
+
+## `strict`
+
+`strict` is a top-level boolean. It defaults to `false` so existing projects keep the same behavior after upgrading.
+
+Set `strict: true` when the workspace is ready for Limina's full structural model:
+
+```js
+export default defineConfig(({ mode }) => ({
+  strict: mode === 'strict' || mode === 'ci',
+  config: {
+    checkers: {
+      typescript: {
+        preset: 'tsc',
+        entry: 'tsconfig.build.json',
+      },
+    },
+  },
+}));
+```
+
+In strict mode, the existing command surface stays the same, but `graph:check`, `source:check`, `proof:check`, `package:check`, and `release:check` enforce extra modeling constraints. Typecheck leaves must have same-named declaration leaves, declaration leaves must extend their companions and keep the same file set except for declaration/build output options, build graph configs may only reference build aggregators or declaration leaves, source ownership must stay under the nearest `package.json`, workspace exports must point at source entries, and built or packed package manifests must not expose `workspace:`, `link:`, `file:`, or `catalog:` dependency specifiers.
 
 ## `command`
 

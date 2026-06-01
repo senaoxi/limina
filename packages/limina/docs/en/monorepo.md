@@ -297,6 +297,8 @@ dist package:
 
 limina’s job is to turn these consistency requirements into executable checks.
 
+Top-level `strict: true` asks Limina to treat this model as mandatory instead of advisory compatibility behavior. In that mode, ordinary `tsconfig*.json` leaves must have same-named `tsconfig*.dts.json` build leaves, source ownership must resolve to the nearest `package.json`, `workspace:` package exports must enter the source graph, `link:`/artifact dependencies must not keep cross-package project references, and built or packed manifests must already be valid npm package manifests without pnpm-local dependency protocols.
+
 You can understand it with this formula:
 
 ```text id="dk29fb"
@@ -736,7 +738,9 @@ limina expresses architecture boundaries with labels.
 ```jsonc
 // packages/app/src/client/tsconfig.dts.json
 {
-  "limina": "runtime-client",
+  "liminaOptions": {
+    "graphRules": ["runtime-client"],
+  },
   "extends": ["./tsconfig.json", "../../../tsconfig.dts.base.json"],
   "references": [],
 }
@@ -875,7 +879,7 @@ Unauthorized bare package import:
   package owner: packages/core/package.json
   imported specifier: vitest
   package: vitest
-  reason: source imports must be authorized by the nearest package.json dependencies or devDependencies.
+  reason: source imports must be authorized by the nearest package.json dependencies, devDependencies, peerDependencies, or optionalDependencies.
 ```
 
 ### How to fix it

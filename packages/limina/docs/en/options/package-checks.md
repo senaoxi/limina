@@ -33,6 +33,8 @@ export default defineConfig({
 
 `outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, JavaScript, and declarations. Release-only files and tarball hygiene are checked by `limina release check`.
 
+When top-level `strict: true` is enabled, each `outDir/package.json` must exist and look like a complete npm package manifest. Limina also rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and npm receive.
+
 ## `checks`
 
 `checks` selects the tools to run:
@@ -94,4 +96,4 @@ The result can include several output-layer failures: `attw` finds `types` point
 
 By default, `release.contentHash.builtinIgnore` is `false`, so README/changelog/contributing/security files plus `docs/**` and `examples/**` are not ignored. Set `builtinIgnore: true` to use that built-in ignore set only as a fallback when `release.contentHash.ignore` is omitted or an ignore function returns `undefined`; an ignore function returning `[]` means that dependency ignores no files. `release.contentHash.ignore` can be a package-relative glob array such as `client/**` or `dist/*.wasm`, or a function that receives the importer and dependency package names. Ignored reports are grouped by the matching rule and show counts for `changed`, `local-only`, and `remote-only`.
 
-If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish. Release checks also reject private outputs, missing README/license files, source map files, JavaScript `sourceMappingURL` directives, `workspace:`/`link:` leaks in packed manifests, and publish dependency ranges that do not cover local workspace versions. Without `--package`, it requires the nearest cwd `package.json#name` to match a configured entry. Pass `--package <name>` one or more times to skip cwd matching.
+If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish. Release checks also reject private outputs, missing README/license files, source map files, JavaScript `sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions. With top-level `strict: true`, release checks additionally reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from all dependency sections in both output and packed manifests. Without `--package`, it requires the nearest cwd `package.json#name` to match a configured entry. Pass `--package <name>` one or more times to skip cwd matching.

@@ -111,7 +111,7 @@ pnpm typecheck
 - `source:check` 失败，多半是文件归属、跨 package 相对 import、依赖声明或 `#imports` 有问题；
 - `proof:check` 失败，多半是 checker entry、declaration leaf、local companion 或 allowlist 没有覆盖到源码；
 - `checker:build` 失败，说明 `tsc`、`tsgo` 或 `vue-tsc` 这类一等公民 checker 在 build 模式发现类型错误；
-- `checker:typecheck` 失败，说明 `vue-tsgo`、`svelte-check` 这类 source-only checker 发现类型错误。
+- `checker:typecheck` 失败，说明 `vue-tsgo`、`svelte-check` 这类二等公民 typecheck execution checker 发现类型错误。
 
 例如 `@acme/app` 新增了 `@acme/core` import，第一次跑 `pnpm typecheck` 报 graph 问题时，优先看提示里的 importing file 和 expected reference。修完后再跑同一个命令，确认 graph、source ownership、coverage proof 和 checker execution 一起通过。
 
