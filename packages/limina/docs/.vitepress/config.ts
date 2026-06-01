@@ -17,7 +17,7 @@ export default defineConfig({
       {
         rel: 'icon',
         type: 'image/svg+xml',
-        href: `${base}limina.svg`,
+        href: `${base}logo.svg`,
       },
     ],
     ['meta', { name: 'theme-color', content: '#111827' }],
