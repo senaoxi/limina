@@ -63,6 +63,9 @@ const compilerOptions = {
   target: 'ES2023',
   types: [],
 };
+const rootTsconfigSchema = './node_modules/limina/schemas/tsconfig-schema.json';
+const packageTsconfigSchema =
+  '../../node_modules/limina/schemas/tsconfig-schema.json';
 
 function typecheckConfig(include: string[]): string {
   return stringifyConfig({
@@ -338,7 +341,7 @@ describe('runInit', () => {
       expect(
         await readJson(path.join(fixture.rootDir, 'tsconfig.build.json')),
       ).toEqual({
-        $schema: 'https://json.schemastore.org/tsconfig',
+        $schema: rootTsconfigSchema,
         files: [],
         references: [
           {
@@ -355,7 +358,7 @@ describe('runInit', () => {
     } finally {
       await fixture.cleanup();
     }
-  }, 30000);
+  }, 30_000);
 
   it('generates declaration leaves, build aggregators, config, and root script', async () => {
     const fixture = await createFixture(createWorkspaceFixture());
@@ -373,7 +376,7 @@ describe('runInit', () => {
           path.join(fixture.rootDir, 'packages/foo/tsconfig.lib.dts.json'),
         ),
       ).toEqual({
-        $schema: 'https://json.schemastore.org/tsconfig',
+        $schema: packageTsconfigSchema,
         extends: ['./tsconfig.lib.json'],
         compilerOptions: {
           composite: true,
@@ -411,7 +414,7 @@ describe('runInit', () => {
           path.join(fixture.rootDir, 'packages/bar/tsconfig.build.json'),
         ),
       ).toEqual({
-        $schema: 'https://json.schemastore.org/tsconfig',
+        $schema: packageTsconfigSchema,
         files: [],
         references: [
           {
@@ -441,5 +444,5 @@ describe('runInit', () => {
     } finally {
       await fixture.cleanup();
     }
-  }, 30000);
+  }, 30_000);
 });

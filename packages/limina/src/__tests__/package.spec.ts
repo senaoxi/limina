@@ -11,10 +11,10 @@ const packageCheckMocks = vi.hoisted(() => ({
   packedManifestOverrides: new Map<string, Record<string, unknown>>(),
   packedTarballFiles: new Map<
     string,
-    Array<{
+    {
       data: Buffer;
       name: string;
-    }>
+    }[]
   >(),
   packedTarballManifests: new Map<string, Record<string, unknown>>(),
   packCalls: [] as string[],
@@ -25,24 +25,24 @@ const packageCheckMocks = vi.hoisted(() => ({
 
 vi.mock('@publint/pack', async () => {
   const fs = await import('node:fs/promises');
-  const pathModule = await import('node:path');
+  const { default: pathModule } = await import('node:path');
 
   async function collectPackedFiles(
     outDir: string,
     directoryPath = outDir,
   ): Promise<
-    Array<{
+    {
       data: Buffer;
       name: string;
-    }>
+    }[]
   > {
     const entries = await fs.readdir(directoryPath, {
       withFileTypes: true,
     });
-    const files: Array<{
+    const files: {
       data: Buffer;
       name: string;
-    }> = [];
+    }[] = [];
 
     for (const entry of entries) {
       const absolutePath = pathModule.join(directoryPath, entry.name);
@@ -291,10 +291,10 @@ function createPublishedPackageFiles(
     files?: Record<string, string>;
     manifest?: Record<string, unknown>;
   } = {},
-): Array<{
+): {
   data: Buffer;
   name: string;
-}> {
+}[] {
   const manifest = {
     dependencies: {},
     exports: {
@@ -389,6 +389,7 @@ function createConfig(
   entries: NonNullable<NonNullable<ResolvedLiminaConfig['package']>['entries']>,
   options: {
     release?: ResolvedLiminaConfig['release'];
+    strict?: boolean;
   } = {},
 ): ResolvedLiminaConfig {
   return {
@@ -398,6 +399,7 @@ function createConfig(
     },
     release: options.release,
     rootDir,
+    strict: options.strict,
   };
 }
 
@@ -663,6 +665,41 @@ describe('runPackageCheck and runReleaseCheck', () => {
           ]),
         }),
       ).resolves.toBe(true);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('rejects pnpm-local output manifest dependency specifiers in strict package checks', async () => {
+    const pkg = await createOutputPackage(
+      {
+        'index.js': 'export const value = 1;\n',
+      },
+      {
+        devDependencies: {
+          '@example/dev': 'catalog:dev',
+        },
+      },
+    );
+
+    try {
+      await expect(
+        runPackageCheck({
+          config: createConfig(
+            pkg.outDir,
+            [
+              {
+                checks: ['boundary'],
+                name: '@example/pkg',
+                outDir: pkg.outDir,
+              },
+            ],
+            {
+              strict: true,
+            },
+          ),
+        }),
+      ).resolves.toBe(false);
     } finally {
       await pkg.cleanup();
     }
@@ -1113,6 +1150,51 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('fails strict release checks when the packed manifest leaks local specifiers in devDependencies', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      packageCheckMocks.packedManifestOverrides.set(outDir, {
+        devDependencies: {
+          '@example/dev': 'file:../dev',
+        },
+        exports: {
+          '.': './index.js',
+        },
+        license: 'MIT',
+        name: '@example/a',
+        types: './index.d.ts',
+        version: '1.0.0',
+      });
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(
+            rootDir,
+            [
+              {
+                checks: ['boundary'],
+                name: '@example/a',
+                outDir,
+              },
+            ],
+            {
+              strict: true,
+            },
+          ),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it('fails when a workspace dependency version is not published', async () => {
     const rootDir = await createWorkspaceRoot();
 
@@ -1341,7 +1423,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('prints the baseline version and ignored contentHash diff counts', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const rootDir = await createWorkspaceRoot();
 
     try {
@@ -1594,7 +1676,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
               release: {
                 contentHash: {
                   builtinIgnore: true,
-                  ignore: () => undefined,
+                  ignore: (): string[] | undefined => undefined,
                 },
               },
             },
@@ -1723,10 +1805,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('prints release-relevant contentHash diff file names when dependency output differs', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const errorSpy = vi
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const rootDir = await createWorkspaceRoot();
 
     try {
@@ -2768,7 +2848,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('prints the filtered checks in the package check plan', async () => {
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const pkg = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });

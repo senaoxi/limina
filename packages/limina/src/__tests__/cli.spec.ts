@@ -51,23 +51,25 @@ describe('limina CLI', () => {
 
     try {
       await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - app\n',
+      );
+      await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
-            checkers: {
-              typescript: {
-                entry: 'tsconfig.build.json',
-                preset: 'tsc',
+            config: {
+              checkers: {
+                typescript: {
+                  entry: 'tsconfig.build.json',
+                  preset: 'tsc',
+                },
               },
             },
           },
           null,
           2,
         )};\n`,
-      );
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages:\n  - app\n',
       );
       await writeText(
         path.join(rootDir, 'tsconfig.build.json'),
@@ -135,7 +137,7 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 15000);
+  }, 15_000);
 
   it('runs release check with repeated package filters from the public command', async () => {
     const rootDir = await realpath(
@@ -237,7 +239,7 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 30000);
+  }, 30_000);
 
   it('runs nx sync with repeated targets from the public command', async () => {
     const rootDir = await realpath(
@@ -320,7 +322,112 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 15000);
+  }, 15_000);
+
+  it('runs graph sync with a declaration leaf path from the public command', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-graph-sync-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - app\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `export default ${JSON.stringify(
+          {
+            config: {
+              checkers: {
+                typescript: {
+                  entry: 'tsconfig.build.json',
+                  preset: 'tsc',
+                },
+              },
+            },
+          },
+          null,
+          2,
+        )};\n`,
+      );
+      await writeText(
+        path.join(rootDir, 'app/node.ts'),
+        'export const nodeValue = 1;\n',
+      );
+      await writeText(
+        path.join(rootDir, 'app/runtime.ts'),
+        "import { nodeValue } from './node';\nexport const runtimeValue = nodeValue;\n",
+      );
+      await writeText(
+        path.join(rootDir, 'app/tsconfig.node.dts.json'),
+        stringifyConfig({
+          compilerOptions: buildCompilerOptions,
+          include: ['node.ts'],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'app/tsconfig.runtime.dts.json'),
+        stringifyConfig({
+          compilerOptions: {
+            ...buildCompilerOptions,
+            tsBuildInfoFile: './.tsbuild/runtime.tsbuildinfo',
+          },
+          include: ['runtime.ts'],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'tsconfig.build.json'),
+        stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './app/tsconfig.node.dts.json',
+            },
+            {
+              path: './app/tsconfig.runtime.dts.json',
+            },
+          ],
+        }),
+      );
+
+      const result = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'limina.config.mjs'),
+          'graph',
+          'sync',
+          'app/tsconfig.runtime.dts.json',
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+          },
+        },
+      );
+
+      expect(result.stdout).toContain('limina graph sync');
+      expect(result.stdout).toContain('limina graph passed');
+      expect(
+        await readFile(
+          path.join(rootDir, 'app/tsconfig.runtime.dts.json'),
+          'utf8',
+        ),
+      ).toContain('"path": "./tsconfig.node.dts.json"');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  }, 15_000);
 
   it('runs nx check with the default build target from the public command', async () => {
     const rootDir = await realpath(
@@ -393,7 +500,7 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 15000);
+  }, 15_000);
 
   it('rejects the old nx generate action from the public command', async () => {
     const rootDir = await realpath(
@@ -438,7 +545,7 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 15000);
+  }, 15_000);
 
   it('runs init from the public command', async () => {
     const rootDir = await realpath(
@@ -511,5 +618,5 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 30000);
+  }, 30_000);
 });

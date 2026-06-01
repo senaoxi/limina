@@ -269,6 +269,9 @@ describe('runPaths', () => {
       });
 
       await expect(readFile(generatedPath, 'utf8')).resolves.toContain(
+        '"$schema": "../../node_modules/limina/schemas/tsconfig-schema.json"',
+      );
+      await expect(readFile(generatedPath, 'utf8')).resolves.toContain(
         '"@example/b": ["../b/src/index.ts"]',
       );
       await expect(readFile(generatedPath, 'utf8')).resolves.toContain(

@@ -94,12 +94,161 @@ function createPassingFiles(
   };
 }
 
+function createStrictMultiEnvironmentFiles(
+  overrides: Record<string, string> = {},
+): Record<string, string> {
+  return createPassingFiles({
+    'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+      extends: './tsconfig.lib.json',
+      compilerOptions: {
+        composite: true,
+        declaration: true,
+        emitDeclarationOnly: true,
+        noEmit: false,
+        outDir: './.tsbuild',
+        rootDir: 'src',
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      },
+    }),
+    'packages/pkg/tsconfig.lib.json': JSON.stringify({
+      compilerOptions: {
+        lib: ['ES2023'],
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        strict: true,
+        target: 'ES2023',
+        types: [],
+      },
+      include: ['src/**/*.ts'],
+    }),
+    'packages/pkg/tsconfig.test.json': JSON.stringify({
+      compilerOptions: {
+        lib: ['ES2023'],
+        module: 'ESNext',
+        moduleResolution: 'bundler',
+        strict: true,
+        target: 'ES2023',
+        types: [],
+      },
+      include: ['src/**/*.ts'],
+    }),
+    'packages/pkg/tsconfig.json': JSON.stringify({
+      files: [],
+      references: [
+        {
+          path: './tsconfig.lib.json',
+        },
+        {
+          path: './tsconfig.test.json',
+        },
+      ],
+    }),
+    ...overrides,
+  });
+}
+
 describe('runProofCheck dts config semantics', () => {
   it('accepts a single-environment dts leaf paired with default tsconfig.json', async () => {
     const fixture = await createFixture(createPassingFiles());
 
     try {
       await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('gates missing typecheck declaration companions behind strict mode', async () => {
+    const fixture = await createFixture(createStrictMultiEnvironmentFiles());
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects dts leaves that do not explicitly extend their companion in strict mode', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            lib: ['ES2023'],
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            noEmit: false,
+            outDir: './.tsbuild',
+            rootDir: 'src',
+            strict: true,
+            target: 'ES2023',
+            tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
+      }),
+    );
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects build graph references to ordinary configs in strict mode', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'tsconfig.extra.build.json': JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: './packages/pkg/tsconfig.json',
+            },
+          ],
+        }),
+      }),
+    );
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects duplicate ordinary typecheck ownership in strict mode', async () => {
+    const fixture = await createFixture(createStrictMultiEnvironmentFiles());
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -556,6 +705,88 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts JavaScript files included by the checker parsed project', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'tools/eslint.config.mjs': 'export default [];\n',
+        'tools/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.json',
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            noEmit: false,
+            outDir: './.tsbuild',
+            rootDir: '.',
+            tsBuildInfoFile: './.tsbuild/tools.tsbuildinfo',
+          },
+        }),
+        'tools/tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            allowJs: true,
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['eslint.config.mjs'],
+        }),
+        'tsconfig.build.json': JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: './packages/pkg/tsconfig.lib.dts.json',
+            },
+            {
+              path: './tools/tsconfig.dts.json',
+            },
+          ],
+        }),
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            source: {
+              include: ['tools/eslint.config.mjs'],
+            },
+          },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts JavaScript config files handled by an active preset', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'eslint.config.mjs': 'export default [];\n',
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            source: {
+              include: ['eslint.config.mjs'],
+            },
+          },
+        }),
+      ).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }

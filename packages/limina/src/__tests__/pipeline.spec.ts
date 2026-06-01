@@ -175,6 +175,10 @@ describe('runPipeline', () => {
 
     fixture.config.config = {
       checkers: {
+        svelte: {
+          entry: 'tsconfig.svelte.build.json',
+          preset: 'svelte-check',
+        },
         typescript: {
           entry: 'tsconfig.build.json',
           preset: 'tsc',
@@ -189,6 +193,28 @@ describe('runPipeline', () => {
 
       expect(
         chunks.some((chunk) => chunk.includes('[start] default check')),
+      ).toBe(true);
+      expect(
+        chunks.some((chunk) =>
+          chunk.includes('first-class build execution: typescript (tsc)'),
+        ),
+      ).toBe(true);
+      expect(
+        chunks.some((chunk) =>
+          chunk.includes(
+            'second-class typecheck execution: svelte (svelte-check)',
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        chunks.some((chunk) =>
+          chunk.includes('source graph: typescript (tsc)'),
+        ),
+      ).toBe(true);
+      expect(
+        chunks.some((chunk) =>
+          chunk.includes('no source graph: svelte (svelte-check)'),
+        ),
       ).toBe(true);
       expect(
         chunks.some((chunk) => chunk.includes('[start] graph check')),

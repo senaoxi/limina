@@ -14,8 +14,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CheckerPackageResolver } from '../checkers';
 import {
   runCheckerBuild as runCheckerBuildCommand,
-  runCheckerTypecheck as runCheckerTypecheckCommand,
   type RunCheckerBuildOptions,
+  runCheckerTypecheck as runCheckerTypecheckCommand,
   type RunCheckerTypecheckOptions,
   type TypecheckTarget,
   type TypecheckTargetResult,
@@ -217,7 +217,7 @@ describe('runCheckerBuild', () => {
     const calls: TypecheckTarget[] = [];
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
-      .mockImplementation(() => undefined);
+      .mockImplementation(() => {});
     const fixture = await createFixture({
       'tsconfig.build.json': tsconfig({ files: [] }),
       'tsconfig.vue.build.json': tsconfig({ files: [] }),
@@ -265,14 +265,14 @@ describe('runCheckerBuild', () => {
     const calls: TypecheckTarget[] = [];
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
-      .mockImplementation(() => undefined);
+      .mockImplementation(() => {});
     const fixture = await createFixture({
       'tsconfig.build.json': tsconfig({ files: [] }),
     });
 
     try {
       const result = await runCheckerBuild({
-        checkerPackageResolver: () => undefined,
+        checkerPackageResolver: (): string | undefined => undefined,
         config: {
           config: {
             checkers: {
@@ -327,7 +327,7 @@ describe('runCheckerBuild', () => {
 });
 
 describe('runCheckerTypecheck', () => {
-  it('runs only source-only checker entries', async () => {
+  it('runs only second-class checker entries', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({
       'tsconfig.build.json': tsconfig({ files: [] }),
@@ -352,7 +352,7 @@ describe('runCheckerTypecheck', () => {
     }
   });
 
-  it('runs vue-tsgo checker entries with source-only project mode', async () => {
+  it('runs vue-tsgo checker entries with second-class project mode', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({
       'tsconfig.vue.build.json': tsconfig({ files: [] }),
@@ -389,11 +389,11 @@ describe('runCheckerTypecheck', () => {
     }
   });
 
-  it('requires vue-tsgo and the native preview package for vue-tsgo source-only entries', async () => {
+  it('requires vue-tsgo and the native preview package for vue-tsgo second-class entries', async () => {
     const calls: TypecheckTarget[] = [];
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
-      .mockImplementation(() => undefined);
+      .mockImplementation(() => {});
     const fixture = await createFixture({
       'tsconfig.vue.build.json': tsconfig({ files: [] }),
     });
@@ -432,7 +432,7 @@ describe('runCheckerTypecheck', () => {
     }
   });
 
-  it('clears stale vue-tsgo cache before using the source-only default runner', async () => {
+  it('clears stale vue-tsgo cache before using the second-class default runner', async () => {
     const fixture = await createFixture({
       'package.json': tsconfig({
         name: 'fixture',
@@ -501,7 +501,7 @@ describe('runCheckerTypecheck', () => {
     }
   });
 
-  it('passes without running targets when no source-only checkers are configured', async () => {
+  it('passes without running targets when no second-class checkers are configured', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({
       'tsconfig.build.json': tsconfig({ files: [] }),

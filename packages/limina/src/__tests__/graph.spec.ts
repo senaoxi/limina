@@ -1,6 +1,7 @@
 import {
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -10,10 +11,17 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { runGraphCheck } from '../commands/graph';
+import { runGraphCheck, runGraphSync } from '../commands/graph';
 import type { GraphConfig, ResolvedLiminaConfig } from '../config';
 
 const requireFromTest = createRequire(import.meta.url);
+const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
+  {
+    typescript: {
+      preset: 'tsc',
+      entry: 'tsconfig.build.json',
+    },
+  };
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -23,12 +31,9 @@ async function writeText(filePath: string, text: string): Promise<void> {
 async function createFixture(
   files: Record<string, string>,
   graph?: GraphConfig,
-  checkers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] = {
-    typescript: {
-      preset: 'tsc',
-      entry: 'tsconfig.build.json',
-    },
-  },
+  checkers: NonNullable<
+    ResolvedLiminaConfig['config']
+  >['checkers'] = defaultCheckers,
 ): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
@@ -132,7 +137,15 @@ function buildConfig(options: {
   tsBuildInfoFile: string;
 }): string {
   return stringifyConfig({
-    ...(options.limina === undefined ? {} : { limina: options.limina }),
+    ...(options.limina === undefined
+      ? {}
+      : {
+          liminaOptions: {
+            graphRules: Array.isArray(options.limina)
+              ? options.limina
+              : [options.limina],
+          },
+        }),
     compilerOptions: {
       ...buildCompilerOptions,
       rootDir: '.',
@@ -298,7 +311,7 @@ function createVueWorkspacePackageFiles(options: {
   };
 }
 
-function createRootWorkspaceDependencyFiles(options: {
+function _createRootWorkspaceDependencyFiles(options: {
   rootDependencies?: Record<string, string>;
   rootSource: string;
   rootTsconfigInclude?: string[];
@@ -374,6 +387,182 @@ describe('runGraphCheck checker entry', () => {
     }
   });
 
+  it('requires workspace package exports to point directly at source in strict mode', async () => {
+    const fixture = await createFixture({
+      'packages/internal/dist/index.d.ts':
+        'export declare const value: number;\n',
+      'packages/internal/dist/index.js': 'export const value = 1;\n',
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './dist/index.js',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runGraphCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts source package exports in strict mode', async () => {
+    const fixture = await createFixture({
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './src/index.ts',
+          './package.json': './package.json',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(
+        runGraphCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts tsconfig-owned json package exports in strict mode', async () => {
+    const fixture = await createFixture({
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './src/index.ts',
+          './schema.json': './schemas/schema.json',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/schemas/schema.json': '{ "title": "Internal" }\n',
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts', 'schemas/schema.json'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig([
+        'src/**/*.ts',
+        'schemas/schema.json',
+      ]),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(
+        runGraphCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects package exports outside checker-reachable tsconfigs in strict mode', async () => {
+    const fixture = await createFixture({
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './src/index.ts',
+          './schema.json': './schemas/schema.json',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/schemas/schema.json': '{ "title": "Internal" }\n',
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(
+        runGraphCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('reports malformed graph reference entries', async () => {
     const fixture = await createFixture({
       'app/src/index.ts': 'export const value = 1;\n',
@@ -400,196 +589,6 @@ describe('runGraphCheck checker entry', () => {
 
     try {
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-});
-
-describe('runGraphCheck unused workspace dependencies', () => {
-  it('rejects package workspace dependencies that source does not import', async () => {
-    const fixture = await createFixture(
-      createWorkspacePackageFiles({
-        appSource: 'export const value = 1;\n',
-      }),
-    );
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('rejects root workspace dependencies that root-owned source does not import', async () => {
-    const fixture = await createFixture(
-      createRootWorkspaceDependencyFiles({
-        rootSource: 'export const value = 1;\n',
-      }),
-    );
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('accepts workspace dependencies used by static source imports', async () => {
-    const fixture = await createFixture(
-      createWorkspacePackageFiles({
-        appReferences: ['../internal/tsconfig.lib.dts.json'],
-        appSource:
-          "import type { InternalValue } from '@example/internal';\nexport { internalValue } from '@example/internal';\nvoid import('@example/internal');\nexport type Value = InternalValue;\n",
-      }),
-    );
-
-    try {
-      await linkWorkspacePackage(
-        fixture.rootDir,
-        'packages/app',
-        'packages/internal',
-        '@example/internal',
-      );
-
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('counts workspace dependency subpath imports as root package usage', async () => {
-    const fixture = await createFixture(
-      createRootWorkspaceDependencyFiles({
-        rootSource:
-          "import type { InternalValue } from '@example/internal/subpath';\nexport type Value = InternalValue;\n",
-      }),
-    );
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('allows configured unused workspace dependencies with a reason', async () => {
-    const fixture = await createFixture(
-      createWorkspacePackageFiles({
-        appSource: 'export const value = 1;\n',
-      }),
-      {
-        unusedWorkspaceDependencies: {
-          allowlist: [
-            {
-              dependency: '@example/internal',
-              importer: '@example/app',
-              reason: 'Loaded by a generated virtual module in tests.',
-            },
-          ],
-        },
-      },
-    );
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('rejects invalid unused workspace dependency allowlist entries', async () => {
-    const fixture = await createFixture(
-      createWorkspacePackageFiles({
-        appSource: 'export const value = 1;\n',
-      }),
-      {
-        unusedWorkspaceDependencies: {
-          allowlist: [
-            {
-              dependency: '@example/internal',
-              importer: '@example/missing',
-              reason: 'This package does not exist.',
-            },
-          ],
-        },
-      },
-    );
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('ignores tsconfig check files when collecting workspace dependency usage', async () => {
-    const fixture = await createFixture({
-      ...createRootWorkspaceDependencyFiles({
-        rootSource: 'export const value = 1;\n',
-      }),
-      'checks/check-only.ts':
-        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
-      'tsconfig.check.json': typecheckConfig(['checks/check-only.ts']),
-    });
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('rejects usage tsconfigs that include files from another package owner', async () => {
-    const fixture = await createFixture(
-      createRootWorkspaceDependencyFiles({
-        rootSource: 'export const value = 1;\n',
-        rootTsconfigInclude: [
-          'scripts/**/*.ts',
-          'packages/internal/src/**/*.ts',
-        ],
-      }),
-    );
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('ignores external and self dependencies', async () => {
-    const fixture = await createFixture({
-      'packages/app/package.json': stringifyConfig({
-        dependencies: {
-          '@example/app': 'workspace:*',
-          zod: '^1.0.0',
-        },
-        name: '@example/app',
-        type: 'module',
-      }),
-      'packages/app/src/index.ts': 'export const value = 1;\n',
-      'packages/app/tsconfig.lib.dts.json': buildConfig({
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
-      }),
-      'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
-      'pnpm-workspace.yaml': `
-packages:
-  - packages/*
-`,
-      'tsconfig.build.json': stringifyConfig({
-        files: [],
-        references: [
-          {
-            path: './packages/app/tsconfig.lib.dts.json',
-          },
-        ],
-      }),
-    });
-
-    try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -627,7 +626,7 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
-  it('reports invalid declaration project limina labels', async () => {
+  it('reports invalid declaration project graph rule labels', async () => {
     const fixture = await createFixture(
       createLocalBoundaryFiles({
         limina: '',
@@ -656,6 +655,158 @@ describe('runGraphCheck graph rules', () => {
                 {
                   path: 'app/tsconfig.node.dts.json',
                   reason: '',
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports extra declaration references not proven by imports', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        runtimeReferences: ['./tsconfig.node.dts.json'],
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows extra declaration references documented by graph rules', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        limina: 'runtime',
+        runtimeReferences: ['./tsconfig.node.dts.json'],
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+      {
+        rules: {
+          runtime: {
+            allow: {
+              refs: [
+                {
+                  path: 'app/tsconfig.node.dts.json',
+                  reason: 'Loaded through generated runtime declarations.',
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('merges graph rules from multiple declaration labels', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        limina: ['runtime', 'generated'],
+        runtimeReferences: ['./tsconfig.node.dts.json'],
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+      {
+        rules: {
+          generated: {
+            allow: {
+              refs: [
+                {
+                  path: 'app/tsconfig.node.dts.json',
+                  reason: 'Generated declaration references runtime internals.',
+                },
+              ],
+            },
+          },
+          runtime: {
+            deny: {
+              deps: [
+                {
+                  name: 'node:*',
+                  reason: 'runtime code must not import Node builtins',
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects invalid graph rule allow refs', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        limina: 'runtime',
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+      {
+        rules: {
+          runtime: {
+            allow: {
+              refs: [
+                {
+                  path: 'app/tsconfig.node.dts.json',
+                  reason: '',
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps deny refs authoritative over allow refs', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        limina: 'runtime',
+        runtimeReferences: ['./tsconfig.node.dts.json'],
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+      {
+        rules: {
+          runtime: {
+            allow: {
+              refs: [
+                {
+                  path: 'app/tsconfig.node.dts.json',
+                  reason: 'Allowed only when not explicitly denied.',
+                },
+              ],
+            },
+            deny: {
+              refs: [
+                {
+                  path: 'app/tsconfig.node.dts.json',
+                  reason: 'runtime code must not depend on node internals',
                 },
               ],
             },
@@ -1123,6 +1274,238 @@ describe('runGraphCheck graph rules', () => {
       );
 
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+describe('runGraphSync', () => {
+  it('syncs missing references from configured checker entries', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        runtimeSource:
+          "import { nodeValue } from './node';\nexport const runtimeValue = nodeValue;\n",
+      }),
+    );
+
+    try {
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: fixture.rootDir,
+      });
+
+      expect(result.changed).toBe(true);
+      expect(
+        await readFile(
+          path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+          'utf8',
+        ),
+      ).toContain('\n  "references": [');
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('syncs all declaration leaves reachable from a build solution path', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        runtimeSource:
+          "import { nodeValue } from './node';\nexport const runtimeValue = nodeValue;\n",
+      }),
+    );
+
+    try {
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: fixture.rootDir,
+        entryPath: 'tsconfig.build.json',
+      });
+
+      expect(result).toMatchObject({
+        changed: true,
+        projectCount: 2,
+      });
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('syncs only the requested declaration leaf path', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        runtimeSource:
+          "import { nodeValue } from './node';\nexport const runtimeValue = nodeValue;\n",
+      }),
+    );
+
+    try {
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: path.join(fixture.rootDir, 'app'),
+        entryPath: './tsconfig.runtime.dts.json',
+      });
+
+      expect(result).toMatchObject({
+        changed: true,
+        projectCount: 1,
+      });
+      expect(
+        await readFile(
+          path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+          'utf8',
+        ),
+      ).toContain('"path": "./tsconfig.node.dts.json"');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts absolute declaration leaf paths', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        runtimeSource:
+          "import { nodeValue } from './node';\nexport const runtimeValue = nodeValue;\n",
+      }),
+    );
+
+    try {
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: '/',
+        entryPath: path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+      });
+
+      expect(result.changed).toBe(true);
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('removes stale references that are not allowed', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        runtimeReferences: ['./tsconfig.node.dts.json'],
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+    );
+
+    try {
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: fixture.rootDir,
+        entryPath: 'app/tsconfig.runtime.dts.json',
+      });
+
+      expect(result.changed).toBe(true);
+      const syncedText = await readFile(
+        path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+        'utf8',
+      );
+
+      expect(syncedText).toContain('\n  "references": []');
+      expect(syncedText).not.toContain('\n    "references":');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves allowed stale references', async () => {
+    const fixture = await createFixture(
+      createLocalBoundaryFiles({
+        limina: 'runtime',
+        runtimeReferences: ['./tsconfig.node.dts.json'],
+        runtimeSource: 'export const runtimeValue = 1;\n',
+      }),
+      {
+        rules: {
+          runtime: {
+            allow: {
+              refs: [
+                {
+                  path: 'app/tsconfig.node.dts.json',
+                  reason: 'Generated declarations reference this leaf.',
+                },
+              ],
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      const before = await readFile(
+        path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+        'utf8',
+      );
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: fixture.rootDir,
+      });
+      const after = await readFile(
+        path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+        'utf8',
+      );
+
+      expect(result.changed).toBe(false);
+      expect(after).toBe(before);
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not rewrite references when only order differs', async () => {
+    const fixture = await createFixture({
+      ...createLocalBoundaryFiles({
+        runtimeReferences: [
+          './tsconfig.node.b.dts.json',
+          './tsconfig.node.dts.json',
+        ],
+        runtimeSource:
+          "import { nodeValue } from './node';\nimport { nodeBValue } from './node-b';\nexport const runtimeValue = nodeValue + nodeBValue;\n",
+      }),
+      'app/node-b.ts': 'export const nodeBValue = 2;\n',
+      'app/tsconfig.node.b.dts.json': buildConfig({
+        include: ['node-b.ts'],
+        tsBuildInfoFile: './.tsbuild/node-b.tsbuildinfo',
+      }),
+      'app/tsconfig.node.b.json': typecheckConfig(['node-b.ts']),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.node.dts.json',
+          },
+          {
+            path: './app/tsconfig.node.b.dts.json',
+          },
+          {
+            path: './app/tsconfig.runtime.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const before = await readFile(
+        path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+        'utf8',
+      );
+      const result = await runGraphSync(fixture.config, {
+        clearScreen: false,
+        cwd: fixture.rootDir,
+      });
+      const after = await readFile(
+        path.join(fixture.rootDir, 'app/tsconfig.runtime.dts.json'),
+        'utf8',
+      );
+
+      expect(result.changed).toBe(false);
+      expect(after).toBe(before);
     } finally {
       await fixture.cleanup();
     }
