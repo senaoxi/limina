@@ -1,19 +1,21 @@
 import { createElapsedTimer } from 'logaria/helper';
 import path from 'node:path';
-import type { ResolvedLiminaConfig } from '../config';
+import { isStrictConfig, type ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
-import { ReleaseLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, ReleaseLogger } from '../logger';
 import {
-  PackageReleaseConsistencyError,
   assertPackageReleaseConsistency,
+  PackageReleaseConsistencyError,
 } from '../package-release-consistency';
 import { toRelativePath } from '../utils/path';
+import { isLocalPackageDependencySpecifier } from '../workspace';
 import {
   createPackageEntrySelectionPlan,
-  packOutputTarball,
-  readDistPackageJson,
+  type DistPackageJson,
   type PackageEntrySelectionPlan,
   type PackedPackageTarball,
+  packOutputTarball,
+  readDistPackageJson,
 } from './package';
 
 export interface RunReleaseCheckOptions {
@@ -48,6 +50,47 @@ function logReleaseCheckPlan(options: {
       ),
     ].join('\n'),
   );
+}
+
+function collectStrictOutputManifestProblems(options: {
+  label: string;
+  manifest: DistPackageJson;
+  outDir: string;
+  rootDir: string;
+}): string[] {
+  const sections = [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+  ] as const;
+  const problems: string[] = [];
+
+  for (const sectionName of sections) {
+    const section = options.manifest[sectionName];
+
+    if (!section || typeof section !== 'object' || Array.isArray(section)) {
+      continue;
+    }
+
+    for (const [dependencyName, specifier] of Object.entries(section)) {
+      if (
+        typeof specifier !== 'string' ||
+        !isLocalPackageDependencySpecifier(specifier)
+      ) {
+        continue;
+      }
+
+      problems.push(
+        [
+          `${options.label}: ${options.manifest.name} -> ${dependencyName} [${sectionName}] (${specifier}): output package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers when strict: true`,
+          `  output: ${toRelativePath(options.rootDir, options.outDir)}`,
+        ].join('\n'),
+      );
+    }
+  }
+
+  return problems;
 }
 
 async function packReleaseTarball(options: {
@@ -103,6 +146,26 @@ async function runReleaseCheckEntry(options: {
       label: options.label,
       packageJsonPath: outputPackageJsonPath,
     });
+    const strictOutputProblems = isStrictConfig(options.config)
+      ? collectStrictOutputManifestProblems({
+          label: options.label,
+          manifest: outputManifest,
+          outDir: options.outDir,
+          rootDir: options.config.rootDir,
+        })
+      : [];
+
+    if (strictOutputProblems.length > 0) {
+      throw new PackageReleaseConsistencyError(
+        [
+          `package release check failed for ${options.label}:`,
+          `  output: ${toRelativePath(options.config.rootDir, options.outDir)}`,
+          '',
+          'Output package manifest is not publish-ready:',
+          ...strictOutputProblems.map((problem) => `  - ${problem}`),
+        ].join('\n'),
+      );
+    }
 
     if (outputManifest.private === true) {
       throw new PackageReleaseConsistencyError(

@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
-import { NxLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, NxLogger } from '../logger';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,

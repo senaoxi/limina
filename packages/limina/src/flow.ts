@@ -58,9 +58,13 @@ export interface LiminaFlowOutputOptions {
   stream?: 'stderr' | 'stdout';
 }
 
-const DEFAULT_CI_ENV_VALUES = ['1', 'true'];
+const DEFAULT_CI_ENV_VALUES = new Set(['1', 'true']);
 const DEFAULT_TERMINAL_COLUMNS = 80;
-const ANSI_PATTERN = /\u001B\[[0-?]*[ -/]*[@-~]/gu;
+const ANSI_ESCAPE = String.fromCodePoint(0x1b);
+const ANSI_PATTERN = new RegExp(
+  String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
+  'gu',
+);
 const ANSI_RESET = '\u001B[0m';
 const ANSI_GREEN = '\u001B[32m';
 const ANSI_RED = '\u001B[31m';
@@ -76,7 +80,7 @@ const FLOW_SYMBOL_BY_STATUS: Record<FlowStatus, string> = {
 };
 
 function isCiEnvironment(env: NodeJS.ProcessEnv): boolean {
-  return DEFAULT_CI_ENV_VALUES.includes(String(env.CI).toLowerCase());
+  return DEFAULT_CI_ENV_VALUES.has(String(env.CI).toLowerCase());
 }
 
 function formatElapsedTime(milliseconds: number): string {
@@ -101,7 +105,7 @@ function formatFailureMessage(message: string, error: unknown): string {
     return message;
   }
 
-  const detail = formatErrorMessage(error).replace(/\s+/gu, ' ').trim();
+  const detail = formatErrorMessage(error).replaceAll(/\s+/gu, ' ').trim();
 
   return detail ? `${message}: ${detail}` : message;
 }
@@ -127,7 +131,7 @@ function toWritableText(chunk: unknown): string {
 }
 
 function stripControlSequences(text: string): string {
-  return text.replace(ANSI_PATTERN, '').replaceAll('\r', '');
+  return text.replaceAll(ANSI_PATTERN, '').replaceAll('\r', '');
 }
 
 function colorInteractiveSymbol(status: FlowStatus, symbol: string): string {

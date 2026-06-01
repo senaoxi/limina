@@ -4,18 +4,19 @@ import path from 'node:path';
 // @ts-expect-error -- picomatch v4 does not ship TypeScript declarations.
 import rawPicomatch from 'picomatch';
 import {
-  packOutputTarball,
   type PackedPackageTarball,
+  packOutputTarball,
 } from './commands/package';
 import type {
   ReleaseContentHashConfigArgs,
   ResolvedLiminaConfig,
 } from './config';
-import { ReleaseLogger, formatErrorMessage } from './logger';
+import { formatErrorMessage, ReleaseLogger } from './logger';
 import { toRelativePath } from './utils/path';
 import {
   collectWorkspacePackages,
   getPublishDependencySections,
+  isLocalPackageDependencySpecifier,
   isWorkspaceDependencySpecifier,
   type PackageManifest,
   type PublishDependencySectionName,
@@ -41,10 +42,10 @@ interface NpmPackageJsonLintIssue {
 }
 
 interface NpmPackageJsonLintResult {
-  results: Array<{
+  results: {
     errorCount: number;
     issues: NpmPackageJsonLintIssue[];
-  }>;
+  }[];
 }
 
 interface NpmPackageJsonLintModule {
@@ -64,8 +65,19 @@ interface PublishDependencyEntry {
   specifier: string;
 }
 
+type PackageDependencySectionName =
+  | PublishDependencySectionName
+  | 'devDependencies';
+
+interface PackageDependencyEntry {
+  dependencyName: string;
+  sectionName: PackageDependencySectionName;
+  specifier: string;
+}
+
 interface PublishManifest {
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   name: string;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -139,7 +151,7 @@ interface ReleaseConsistencyProblem {
   importerName: string;
   message: string;
   packageName?: string;
-  sectionName?: PublishDependencySectionName;
+  sectionName?: PackageDependencySectionName;
   specifier?: string;
 }
 
@@ -197,7 +209,7 @@ const ARTIFACT_HASH_IGNORED_FILES = new Set([
   'SECURITY.md',
 ]);
 const SOURCE_MAPPING_URL_PATTERN =
-  /(?:\/\/\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=)/u;
+  /\/\/\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=/u;
 const PACKED_MANIFEST_LINT_CONFIG = {
   rules: {
     'bin-type': 'error',
@@ -273,6 +285,49 @@ function collectPublishDependencyEntries(
   const entries: PublishDependencyEntry[] = [];
 
   for (const { dependencies, name } of getPublishDependencySections(manifest)) {
+    for (const [dependencyName, specifier] of Object.entries(dependencies)) {
+      entries.push({
+        dependencyName,
+        sectionName: name,
+        specifier,
+      });
+    }
+  }
+
+  return entries;
+}
+
+function collectPackageDependencyEntries(
+  manifest: PublishManifest | PackageManifest,
+): PackageDependencyEntry[] {
+  const entries: PackageDependencyEntry[] = [];
+  const sections: {
+    dependencies: Record<string, string> | undefined;
+    name: PackageDependencySectionName;
+  }[] = [
+    {
+      dependencies: manifest.dependencies,
+      name: 'dependencies',
+    },
+    {
+      dependencies: manifest.devDependencies,
+      name: 'devDependencies',
+    },
+    {
+      dependencies: manifest.peerDependencies,
+      name: 'peerDependencies',
+    },
+    {
+      dependencies: manifest.optionalDependencies,
+      name: 'optionalDependencies',
+    },
+  ];
+
+  for (const { dependencies, name } of sections) {
+    if (!dependencies) {
+      continue;
+    }
+
     for (const [dependencyName, specifier] of Object.entries(dependencies)) {
       entries.push({
         dependencyName,
@@ -472,7 +527,7 @@ function resolveReleaseContentHashBaselineTag(
 
 function normalizeReleaseContentHashIgnorePatterns(value: unknown): string[] {
   if (!Array.isArray(value)) {
-    throw new Error(
+    throw new TypeError(
       'release.contentHash.ignore must resolve to an array of non-empty strings or undefined',
     );
   }
@@ -1208,6 +1263,7 @@ function validatePackedManifest(options: {
   manifest: PublishManifest;
   rootPackageName: string;
   state: ReleaseConsistencyState;
+  strict: boolean;
 }): void {
   const { manifest, rootPackageName, state } = options;
 
@@ -1221,6 +1277,32 @@ function validatePackedManifest(options: {
         importerName: rootPackageName,
         message:
           'packed package manifest must not expose workspace: or link: dependency specifiers',
+        sectionName: entry.sectionName,
+        specifier: entry.specifier,
+      });
+    }
+  }
+
+  if (options.strict) {
+    for (const entry of collectPackageDependencyEntries(manifest)) {
+      if (!isLocalPackageDependencySpecifier(entry.specifier)) {
+        continue;
+      }
+
+      const isAlreadyCoveredPublishSpecifier =
+        entry.sectionName !== 'devDependencies' &&
+        (isWorkspaceDependencySpecifier(entry.specifier) ||
+          isLinkDependencySpecifier(entry.specifier));
+
+      if (isAlreadyCoveredPublishSpecifier) {
+        continue;
+      }
+
+      state.packedManifestProblems.push({
+        dependencyName: entry.dependencyName,
+        importerName: rootPackageName,
+        message:
+          'strict packed package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers in any dependency section',
         sectionName: entry.sectionName,
         specifier: entry.specifier,
       });
@@ -1418,6 +1500,7 @@ export async function assertPackageReleaseConsistency(
       manifest: packedManifest,
       rootPackageName: options.outputManifest.name,
       state,
+      strict: options.config.strict === true,
     });
   }
 

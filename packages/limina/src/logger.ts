@@ -1,5 +1,5 @@
 import { createLogger } from 'logaria';
-import { formatErrorMessage } from 'logaria/helper';
+
 import type { ScopedLogger } from 'logaria/types';
 import readline from 'node:readline';
 
@@ -35,4 +35,4 @@ export function clearCliScreen(): void {
   readline.clearScreenDown(process.stdout);
 }
 
-export { formatErrorMessage };
+export { formatErrorMessage } from 'logaria/helper';

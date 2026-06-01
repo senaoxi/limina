@@ -7,7 +7,7 @@ import { pack } from '@publint/pack';
 import { init, parse } from 'es-module-lexer';
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -21,13 +21,18 @@ import type {
   ResolvedLiminaConfig,
   RuntimeEnvironment,
 } from '../config';
+import { isStrictConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
-import { PackageLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, PackageLogger } from '../logger';
 import { toRelativePath } from '../utils/path';
-import { getPackageRootSpecifier } from '../workspace';
+import {
+  getPackageRootSpecifier,
+  isLocalPackageDependencySpecifier,
+} from '../workspace';
 
 export interface DistPackageJson {
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   exports?: Record<string, unknown>;
   name: string;
   optionalDependencies?: Record<string, string>;
@@ -58,6 +63,18 @@ export interface PackedPackageTarball {
 interface SelfSpecifierMatchers {
   exact: Set<string>;
   prefixes: string[];
+}
+
+type PackageDependencySectionName =
+  | 'dependencies'
+  | 'devDependencies'
+  | 'optionalDependencies'
+  | 'peerDependencies';
+
+interface PackageDependencyEntry {
+  dependencyName: string;
+  sectionName: PackageDependencySectionName;
+  specifier: string;
 }
 
 export interface RunPackageCheckOptions {
@@ -104,6 +121,81 @@ const nodeBuiltinSpecifiers = new Set(
 );
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function collectPackageDependencyEntries(
+  manifest: DistPackageJson,
+): PackageDependencyEntry[] {
+  const sectionNames: PackageDependencySectionName[] = [
+    'dependencies',
+    'devDependencies',
+    'peerDependencies',
+    'optionalDependencies',
+  ];
+  const entries: PackageDependencyEntry[] = [];
+
+  for (const sectionName of sectionNames) {
+    const section = manifest[sectionName];
+
+    if (!isRecord(section)) {
+      continue;
+    }
+
+    for (const [dependencyName, specifier] of Object.entries(section)) {
+      if (typeof specifier !== 'string') {
+        continue;
+      }
+
+      entries.push({
+        dependencyName,
+        sectionName,
+        specifier,
+      });
+    }
+  }
+
+  return entries;
+}
+
+function collectStrictBuiltPackageManifestProblems(options: {
+  label: string;
+  manifest: DistPackageJson;
+  packageJsonPath: string;
+}): string[] {
+  const problems: string[] = [];
+
+  if (
+    typeof options.manifest.name !== 'string' ||
+    options.manifest.name.trim().length === 0
+  ) {
+    problems.push(
+      [
+        `[${options.label}] [strict] output package.json is not a complete npm package manifest`,
+        `  package.json: ${options.packageJsonPath}`,
+        '  field: name',
+        '  reason: strict: true requires built package outputs to include a non-empty package name.',
+      ].join('\n'),
+    );
+  }
+
+  for (const entry of collectPackageDependencyEntries(options.manifest)) {
+    if (!isLocalPackageDependencySpecifier(entry.specifier)) {
+      continue;
+    }
+
+    problems.push(
+      [
+        `[${options.label}] [strict] output package.json exposes a pnpm-local dependency specifier`,
+        `  package.json: ${options.packageJsonPath}`,
+        `  dependency: ${entry.dependencyName}`,
+        `  section: ${entry.sectionName}`,
+        `  specifier: ${entry.specifier}`,
+        '  reason: strict: true requires built package manifests to be publish-ready npm package manifests without workspace:, link:, file:, or catalog: specifiers.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
 }
 
 function isPackageCheckTool(value: string): value is PackageCheckTool {
@@ -849,11 +941,21 @@ async function runPackageCheckEntry(options: {
   let packedDist: PackedPackageTarball | undefined;
 
   try {
-    await readDistPackageJson({
+    const outputManifest = await readDistPackageJson({
       config: options.config,
       label,
       packageJsonPath: outputPackageJsonPath,
     });
+    const strictManifestProblems = isStrictConfig(options.config)
+      ? collectStrictBuiltPackageManifestProblems({
+          label,
+          manifest: outputManifest,
+          packageJsonPath: toRelativePath(
+            options.config.rootDir,
+            outputPackageJsonPath,
+          ),
+        })
+      : [];
 
     const needsPackedTarball =
       options.checks.includes('publint') || options.checks.includes('attw');
@@ -884,7 +986,11 @@ async function runPackageCheckEntry(options: {
       packTask?.pass();
     }
 
-    let passed = true;
+    let passed = strictManifestProblems.length === 0;
+
+    for (const problem of strictManifestProblems) {
+      PackageLogger.error(problem);
+    }
 
     if (options.checks.includes('publint')) {
       passed =

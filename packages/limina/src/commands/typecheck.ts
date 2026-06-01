@@ -5,19 +5,19 @@ import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  type CheckerPackageResolver,
   collectMissingCheckerPeerDependencies,
   formatMissingCheckerPeerDependencies,
   getCheckerAdapter,
-  type CheckerPackageResolver,
 } from '../checkers';
 import {
-  getActiveCheckers,
   type CheckerExecutionKind,
+  getActiveCheckers,
   type ResolvedCheckerConfig,
   type ResolvedLiminaConfig,
 } from '../config';
 import type { LiminaFlowReporter, LiminaFlowTask } from '../flow';
-import { TypecheckLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, TypecheckLogger } from '../logger';
 import {
   collectGraphProjectRouteFromRoot,
   resolveProjectConfigPath,
@@ -251,7 +251,7 @@ async function runWithConcurrency(
     onTargetStart?: (target: TypecheckTarget) => void;
   } = {},
 ): Promise<TypecheckTargetResult[]> {
-  const results = new Array<TypecheckTargetResult>(targets.length);
+  const results: TypecheckTargetResult[] = [];
   let nextIndex = 0;
 
   await Promise.all(
@@ -539,12 +539,12 @@ async function runCheckerTypecheckInternal(
   });
 
   if (targets.length === 0) {
-    options.flow?.info('no source-only checker entries configured', {
+    options.flow?.info('no second-class checker entries configured', {
       depth: flowDepth + 1,
     });
 
     if (!options.flow?.interactive) {
-      TypecheckLogger.success('No source-only checker entries configured.');
+      TypecheckLogger.success('No second-class checker entries configured.');
     }
 
     return {

@@ -10,11 +10,12 @@ import { parse as parseYaml } from 'yaml';
 import type { ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
 import { collectImportsFromFile, isRelativeSpecifier } from '../graph-context';
-import { InitLogger, clearCliScreen, formatErrorMessage } from '../logger';
+import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
 import {
+  createLiminaTsconfigSchemaPath,
   isOrdinaryTypecheckConfigPath,
-  readJsonConfig,
   type JsonObject,
+  readJsonConfig,
 } from '../tsconfig';
 import {
   isPathInsideDirectory,
@@ -27,8 +28,8 @@ import {
   getDependencySections,
   getPackageRootSpecifier,
   isWorkspaceDependencySpecifier,
-  readJsonFile,
   type PackageManifest,
+  readJsonFile,
   type WorkspacePackage,
 } from '../workspace';
 
@@ -383,11 +384,14 @@ function isPackageImportSpecifier(specifier: string): boolean {
   return specifier.startsWith('#');
 }
 
-function createDtsConfig(project: TypecheckProject): JsonObject {
+function createDtsConfig(
+  rootDir: string,
+  project: TypecheckProject,
+): JsonObject {
   const fileName = path.basename(project.configPath);
   const scope = project.scope;
   const output: JsonObject = {
-    $schema: 'https://json.schemastore.org/tsconfig',
+    $schema: createLiminaTsconfigSchemaPath(rootDir, project.dtsConfigPath),
     extends: [`./${fileName}`],
     compilerOptions: {
       composite: true,
@@ -411,9 +415,13 @@ function createDtsConfig(project: TypecheckProject): JsonObject {
   return output;
 }
 
-function createBuildAggregator(references: string[]): JsonObject {
+function createBuildAggregator(
+  rootDir: string,
+  configPath: string,
+  references: string[],
+): JsonObject {
   return {
-    $schema: 'https://json.schemastore.org/tsconfig',
+    $schema: createLiminaTsconfigSchemaPath(rootDir, configPath),
     files: [],
     references: references.map((referencePath) => ({
       path: referencePath,
@@ -479,6 +487,7 @@ async function writeTextFile(
 async function writeBuildAggregatorFile(options: {
   configPath: string;
   references: string[];
+  rootDir: string;
   writtenFiles: string[];
 }): Promise<boolean> {
   if (options.references.length === 0) {
@@ -487,7 +496,13 @@ async function writeBuildAggregatorFile(options: {
 
   await writeTextFile(
     options.configPath,
-    stringifyJson(createBuildAggregator(options.references)),
+    stringifyJson(
+      createBuildAggregator(
+        options.rootDir,
+        options.configPath,
+        options.references,
+      ),
+    ),
     options.writtenFiles,
   );
 
@@ -612,7 +627,7 @@ async function updateRootPackageJson(options: {
 
   const manifest = readJsonFile<PackageManifest>(packageJsonPath);
   const scripts = {
-    ...(manifest.scripts ?? {}),
+    ...manifest.scripts,
   };
   let changed = false;
 
@@ -636,7 +651,7 @@ async function updateRootPackageJson(options: {
 
   if (!hasDependency(manifest, 'limina')) {
     manifest.devDependencies = {
-      ...(manifest.devDependencies ?? {}),
+      ...manifest.devDependencies,
       limina: options.metadata.versionRange,
     };
     installRequired = true;
@@ -950,7 +965,7 @@ async function writeGeneratedTsconfigs(options: {
   for (const project of options.projects) {
     await writeTextFile(
       project.dtsConfigPath,
-      stringifyJson(createDtsConfig(project)),
+      stringifyJson(createDtsConfig(options.rootDir, project)),
       options.writtenFiles,
     );
   }
@@ -975,6 +990,7 @@ async function writeGeneratedTsconfigs(options: {
       await writeBuildAggregatorFile({
         configPath: buildConfigPath,
         references,
+        rootDir: options.rootDir,
         writtenFiles: options.writtenFiles,
       })
     ) {
@@ -997,6 +1013,7 @@ async function writeGeneratedTsconfigs(options: {
   await writeBuildAggregatorFile({
     configPath: rootBuildConfigPath,
     references: rootReferences,
+    rootDir: options.rootDir,
     writtenFiles: options.writtenFiles,
   });
 }

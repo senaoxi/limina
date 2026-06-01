@@ -423,6 +423,15 @@ export function isWorkspaceDependencySpecifier(specifier: string): boolean {
   return specifier.startsWith('workspace:');
 }
 
+export function isLocalPackageDependencySpecifier(specifier: string): boolean {
+  return (
+    specifier.startsWith('workspace:') ||
+    specifier.startsWith('link:') ||
+    specifier.startsWith('file:') ||
+    specifier.startsWith('catalog:')
+  );
+}
+
 export function getPackageRootSpecifier(specifier: string): string {
   if (specifier.startsWith('@')) {
     const [scope, name] = specifier.split('/');

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { cac } from 'cac';
-import { runGraphCheck } from './commands/graph';
+import { runGraphCheck, runGraphSync } from './commands/graph';
 import { runInit } from './commands/init';
 import { runNx } from './commands/nx';
 import { runPackageCheck } from './commands/package';
@@ -10,14 +10,14 @@ import { runReleaseCheck } from './commands/release';
 import { runSourceCheck } from './commands/source';
 import { runCheckerBuild, runCheckerTypecheck } from './commands/typecheck';
 import {
-  loadConfig,
   type LiminaCommand,
+  loadConfig,
   type PackageAttwProfile,
   type PackageCheckToolSelection,
   type ResolvedLiminaConfig,
 } from './config';
 import { createLiminaFlowReporter } from './flow';
-import { CliLogger, clearCliScreen, formatErrorMessage } from './logger';
+import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 import { runDefaultCheck, runPipeline } from './pipeline';
 
 interface GlobalFlags {
@@ -237,25 +237,55 @@ async function main(): Promise<void> {
     );
 
   cli
-    .command('graph <action>', 'Check TypeScript graph architecture')
-    .action(async (action: string, flags: GlobalFlags) => {
-      if (action !== 'check') {
-        throw new Error(`Unknown graph action "${action}". Expected check.`);
-      }
-      const flow = createCliFlow();
-      flow.intro('limina graph check');
-      const config = await load(flags, 'graph');
-      const passed = await runGraphCheck(config, {
-        clearScreen: false,
-        flow,
-      });
+    .command(
+      'graph <action> [entryPath]',
+      'Check or sync TypeScript graph architecture',
+    )
+    .action(
+      async (
+        action: string,
+        entryPath: string | undefined,
+        flags: GlobalFlags,
+      ) => {
+        if (action !== 'check' && action !== 'sync') {
+          throw new Error(
+            `Unknown graph action "${action}". Expected check or sync.`,
+          );
+        }
+        const flow = createCliFlow();
+        flow.intro(`limina graph ${action}`);
+        const config = await load(flags, 'graph');
 
-      if (!passed) {
-        process.exitCode = 1;
-      }
+        if (action === 'check') {
+          const passed = await runGraphCheck(config, {
+            clearScreen: false,
+            flow,
+          });
 
-      flow.outro(passed ? 'limina graph passed' : 'limina graph failed');
-    });
+          if (!passed) {
+            process.exitCode = 1;
+          }
+
+          flow.outro(passed ? 'limina graph passed' : 'limina graph failed');
+          return;
+        }
+
+        try {
+          await runGraphSync(config, {
+            clearScreen: false,
+            cwd: process.cwd(),
+            entryPath,
+            flow,
+          });
+        } catch (error) {
+          process.exitCode = 1;
+          flow.outro('limina graph failed');
+          throw error;
+        }
+
+        flow.outro('limina graph passed');
+      },
+    );
 
   cli
     .command('proof <action>', 'Check root typecheck coverage proof')

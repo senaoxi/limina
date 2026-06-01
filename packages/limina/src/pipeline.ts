@@ -56,28 +56,38 @@ function reportCheckerCapabilities(
     return;
   }
 
-  const firstClass: string[] = [];
-  const sourceOnly: string[] = [];
+  const buildExecution: string[] = [];
+  const typecheckExecution: string[] = [];
+  const sourceGraph: string[] = [];
+  const noSourceGraph: string[] = [];
 
   for (const checker of getActiveCheckers(config)) {
     const adapter = getCheckerAdapter(checker.preset);
     const label = `${checker.name} (${checker.preset})`;
 
-    if (adapter?.tier === 'first-class') {
-      firstClass.push(label);
-    } else if (adapter?.tier === 'source-only') {
-      sourceOnly.push(label);
+    if (adapter?.execution === 'build') {
+      buildExecution.push(label);
+    } else if (adapter?.execution === 'typecheck') {
+      typecheckExecution.push(label);
+    }
+
+    if (adapter?.sourceGraph) {
+      sourceGraph.push(label);
+    } else {
+      noSourceGraph.push(label);
     }
   }
 
   flow.info(
     [
       'checker capability summary:',
-      `  first-class: ${firstClass.length > 0 ? firstClass.join(', ') : '(none)'}`,
-      `  source-only: ${sourceOnly.length > 0 ? sourceOnly.join(', ') : '(none)'}`,
-      ...(sourceOnly.length > 0
+      `  first-class build execution: ${buildExecution.length > 0 ? buildExecution.join(', ') : '(none)'}`,
+      `  second-class typecheck execution: ${typecheckExecution.length > 0 ? typecheckExecution.join(', ') : '(none)'}`,
+      `  source graph: ${sourceGraph.length > 0 ? sourceGraph.join(', ') : '(none)'}`,
+      `  no source graph: ${noSourceGraph.length > 0 ? noSourceGraph.join(', ') : '(none)'}`,
+      ...(typecheckExecution.length > 0
         ? [
-            '  note: source-only checkers get coverage proof and direct typecheck, but Limina does not parse their internal import graph.',
+            '  note: second-class checkers run through checker:typecheck; source graph participation is reported separately.',
           ]
         : []),
     ].join('\n'),
@@ -87,6 +97,10 @@ function reportCheckerCapabilities(
 
 function isBuiltinTaskName(value: string): value is BuiltinTaskName {
   return builtInTaskNames.has(value);
+}
+
+function assertNeverTaskName(taskName: never): never {
+  throw new Error(`Unsupported built-in task: ${taskName}`);
 }
 
 export function getPipelineStepLabel(step: NormalizedPipelineStep): string {
@@ -249,6 +263,9 @@ export async function runBuiltinTask(
 
       return result.passed;
     }
+    default: {
+      return assertNeverTaskName(taskName);
+    }
   }
 }
 
@@ -284,7 +301,6 @@ export async function runCommandStep(
   step: Extract<PipelineStep, { type: 'command' }>,
   options: RunPipelineOptions = {},
 ): Promise<boolean> {
-  debugger;
   const label = getPipelineStepLabel(step);
   const task = options.flow?.start(`command: ${label}`, { depth: 1 });
   const cwd = step.cwd

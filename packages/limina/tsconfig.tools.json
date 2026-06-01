@@ -4,8 +4,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "declaration": true,
+    "allowJs": true,
+    "isolatedDeclarations": false,
     "lib": ["ESNext"],
     "types": ["node"]
   },
-  "include": ["package.json", "packagePlugin.ts", "rolldown.config.ts"]
+  "include": [
+    "eslint.config.mjs",
+    "package.json",
+    "packagePlugin.ts",
+    "rolldown.config.ts"
+  ]
 }
