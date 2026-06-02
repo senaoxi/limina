@@ -1,5 +1,5 @@
 import { createElapsedTimer } from 'logaria/helper';
-import path from 'node:path';
+import path from 'pathe';
 import { isStrictConfig, type ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
 import { clearCliScreen, formatErrorMessage, ReleaseLogger } from '../logger';

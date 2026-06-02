@@ -1,23 +1,21 @@
-import path from 'node:path';
+import { normalize, relative, resolve } from 'pathe';
 
 export function toPosixPath(value: string): string {
-  return value.split(path.sep).join('/');
+  return normalizeSlashes(value);
 }
 
 export function normalizeAbsolutePath(value: string): string {
-  return toPosixPath(path.resolve(value));
+  return resolve(value);
 }
 
 export function toRelativePath(rootDir: string, absolutePath: string): string {
-  const relativePath = toPosixPath(
-    path.relative(rootDir, path.resolve(absolutePath)),
-  );
+  const relativePath = relative(rootDir, resolve(absolutePath));
 
   return relativePath.length === 0 ? '.' : relativePath;
 }
 
 export function toAbsolutePath(rootDir: string, workspacePath: string): string {
-  return path.resolve(rootDir, workspacePath);
+  return resolve(rootDir, workspacePath);
 }
 
 export function normalizeWorkspacePath(rootDir: string, value: string): string {
@@ -26,6 +24,14 @@ export function normalizeWorkspacePath(rootDir: string, value: string): string {
 
 export function normalizeSlashes(value: string): string {
   return value.replaceAll('\\', '/');
+}
+
+export function normalizeAbsolutePathIdentity(value: string): string {
+  const normalizedPath = normalize(value);
+
+  return normalizedPath.length > 1 && !/^[A-Za-z]:\/$/u.test(normalizedPath)
+    ? normalizedPath.replace(/\/+$/u, '')
+    : normalizedPath;
 }
 
 export function isPathInsideDirectory(

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import path from 'pathe';
 
 const packageDir = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const distCliPath = path.join(packageDir, 'cli.js');

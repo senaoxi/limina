@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
-import path from 'node:path';
+import path from 'pathe';
 import { publint } from 'publint';
 import { formatMessage } from 'publint/utils';
 import type {

@@ -1,6 +1,6 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
+import path from 'pathe';
 import { glob } from 'tinyglobby';
 import type ts from 'typescript';
 import {

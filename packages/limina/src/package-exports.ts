@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import path from 'node:path';
+import path from 'pathe';
 import type { ResolvedLiminaConfig } from './config';
 import {
   isPathInsideDirectory,

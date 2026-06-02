@@ -3,13 +3,17 @@ import { createElapsedTimer } from 'logaria/helper';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import path from 'node:path';
+import path from 'pathe';
 import { glob } from 'tinyglobby';
 import ts from 'typescript';
 import { parse as parseYaml } from 'yaml';
 import type { ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
-import { collectImportsFromFile, isRelativeSpecifier } from '../graph-context';
+import {
+  collectImportsFromFile,
+  createImportAnalysisContext,
+  isRelativeSpecifier,
+} from '../graph-context';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
 import {
   createLiminaTsconfigSchemaPath,
@@ -784,6 +788,7 @@ function inferProjectReferences(options: {
     packageByName,
     rootDir: options.config.rootDir,
   });
+  const importAnalysis = createImportAnalysisContext();
 
   for (const project of options.projects) {
     if (!project.owner) {
@@ -808,6 +813,7 @@ function inferProjectReferences(options: {
       for (const importRecord of collectImportsFromFile(
         fileName,
         options.config.rootDir,
+        importAnalysis,
       )) {
         const resolvedFilePath = resolveImportWithTypeScript({
           cache: resolutionCache,

@@ -1,13 +1,14 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import path from 'pathe';
 import type { ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
 import { clearCliScreen, formatErrorMessage, NxLogger } from '../logger';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
+  normalizeAbsolutePathIdentity,
   toPosixPath,
   toRelativePath,
 } from '../utils/path';
@@ -211,8 +212,11 @@ function findArtifactCycle(
 export async function collectNxProjectSyncPlans(
   config: ResolvedLiminaConfig,
 ): Promise<NxProjectSyncPlan[]> {
+  const rootDirIdentity = normalizeAbsolutePathIdentity(config.rootDir);
   const workspacePackages = (await collectWorkspacePackages(config)).filter(
-    (workspacePackage) => workspacePackage.directory !== config.rootDir,
+    (workspacePackage) =>
+      normalizeAbsolutePathIdentity(workspacePackage.directory) !==
+      rootDirIdentity,
   );
   const packagesByName = new Map(
     workspacePackages.map((workspacePackage) => [

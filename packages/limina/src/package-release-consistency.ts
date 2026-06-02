@@ -1,6 +1,6 @@
 import { unpack } from '@publint/pack';
 import { createRequire } from 'node:module';
-import path from 'node:path';
+import path from 'pathe';
 // @ts-expect-error -- picomatch v4 does not ship TypeScript declarations.
 import rawPicomatch from 'picomatch';
 import {

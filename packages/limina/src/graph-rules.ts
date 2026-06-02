@@ -1,5 +1,5 @@
 import { builtinModules } from 'node:module';
-import path from 'node:path';
+import path from 'pathe';
 import type { ResolvedLiminaConfig } from './config';
 import { isDtsProjectConfig } from './graph-context';
 import { normalizeAbsolutePath } from './utils/path';

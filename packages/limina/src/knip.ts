@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import path from 'node:path';
+import path from 'pathe';
 import type { ResolvedLiminaConfig } from './config';
 import { normalizeAbsolutePath, toRelativePath } from './utils/path';
 import type { WorkspacePackage } from './workspace';

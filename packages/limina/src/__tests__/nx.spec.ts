@@ -357,6 +357,53 @@ describe('runNx', () => {
     }
   });
 
+  it('filters the root package when rootDir uses an equivalent path spelling', async () => {
+    const fixture = await createFixture({
+      'packages/a/package.json': createPackageJson('@example/a', {
+        build: true,
+        dependencies: {
+          '@example/b': 'link:../b/dist',
+        },
+      }),
+      'packages/a/project.json': stringifyConfig({
+        name: '@example/a',
+        targets: {
+          build: {
+            dependsOn: [
+              {
+                projects: ['@example/b'],
+                target: 'build',
+              },
+            ],
+          },
+        },
+      }),
+      'packages/b/package.json': createPackageJson('@example/b', {
+        build: true,
+      }),
+      'packages/b/project.json': stringifyConfig({
+        name: '@example/b',
+        targets: {
+          build: {
+            dependsOn: [],
+          },
+        },
+      }),
+    });
+
+    fixture.config.rootDir = `${fixture.rootDir}${path.sep}`;
+
+    try {
+      await expect(runNx(fixture.config, { check: true })).resolves.toEqual({
+        changed: false,
+        edgeCount: 1,
+        outputCount: 2,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('checks dependsOn project sets without requiring the same order', async () => {
     const fixture = await createFixture({
       'packages/a/package.json': createPackageJson('@example/a', {

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import path from 'node:path';
+import path from 'pathe';
 import {
   type CheckerPackageResolver,
   collectMissingCheckerPeerDependencies,

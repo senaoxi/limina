@@ -1,13 +1,15 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import path from 'pathe';
 import { glob } from 'tinyglobby';
 import type ts from 'typescript';
 import type { ResolvedLiminaConfig } from '../config';
 import type { LiminaFlowReporter } from '../flow';
 import {
   collectImportsFromFile,
+  createImportAnalysisContext,
+  type ImportAnalysisContext,
   parseProject,
   type ProjectInfo,
   resolveInternalImport,
@@ -72,9 +74,16 @@ function resolveImportWithoutMatchingPaths(
   containingFile: string,
   options: ts.CompilerOptions,
   project: ProjectInfo,
+  importAnalysis: ImportAnalysisContext,
 ): string | null {
   if (!options.paths) {
-    return resolveInternalImport(specifier, containingFile, options, project);
+    return resolveInternalImport(
+      specifier,
+      containingFile,
+      options,
+      project,
+      importAnalysis,
+    );
   }
 
   const paths = Object.fromEntries(
@@ -87,7 +96,13 @@ function resolveImportWithoutMatchingPaths(
     paths: Object.keys(paths).length > 0 ? paths : undefined,
   };
 
-  return resolveInternalImport(specifier, containingFile, nextOptions, project);
+  return resolveInternalImport(
+    specifier,
+    containingFile,
+    nextOptions,
+    project,
+    importAnalysis,
+  );
 }
 
 function createFileOwnerLookup(projects: ProjectInfo[]): Map<string, string[]> {
@@ -353,6 +368,7 @@ async function collectGeneratedConfigs(
   const importers = collectImporters(config, packages);
   const exportEntriesByPackage = new Map<string, [string, string][]>();
   const drafts = new Map<string, GeneratedConfigDraft>();
+  const importAnalysis = createImportAnalysisContext();
 
   for (const project of projects) {
     const keepsGeneratedPaths = projectExtendsGeneratedConfig(
@@ -364,6 +380,7 @@ async function collectGeneratedConfigs(
       for (const importRecord of collectImportsFromFile(
         filePath,
         config.rootDir,
+        importAnalysis,
       )) {
         const targetPackage = findPackageForSpecifier(
           importRecord.specifier,
@@ -385,6 +402,7 @@ async function collectGeneratedConfigs(
           filePath,
           project.options,
           project,
+          importAnalysis,
         );
 
         if (!resolvedFilePath) {
@@ -400,6 +418,7 @@ async function collectGeneratedConfigs(
                 filePath,
                 project.options,
                 project,
+                importAnalysis,
               )
             : resolvedFilePath;
 

@@ -1,13 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-import ts from 'typescript';
+import path from 'pathe';
+import type ts from 'typescript';
 import {
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
-  resolveModuleNameWithCheckers,
 } from './checkers';
 import type { ResolvedLiminaConfig } from './config';
+
 import {
   createExtensionPattern,
   getDtsCompanionConfigPath,
@@ -35,36 +33,6 @@ export interface ProjectInfo {
   labelProblem: string | null;
   options: ts.CompilerOptions;
   references: Set<string>;
-}
-
-export interface ImportRecord {
-  filePath: string;
-  line: number;
-  specifier: string;
-}
-
-interface VueSfcBlock {
-  content: string;
-  lang?: string;
-  loc: {
-    start: {
-      line: number;
-    };
-  };
-  src?: string;
-}
-
-interface VueCompilerSfc {
-  parse: (
-    source: string,
-    options?: { filename?: string },
-  ) => {
-    descriptor: {
-      script?: VueSfcBlock | null;
-      scriptSetup?: VueSfcBlock | null;
-    };
-    errors: unknown[];
-  };
 }
 
 export function isRelativeSpecifier(specifier: string): boolean {
@@ -227,183 +195,6 @@ export function parseProject(
   };
 }
 
-function getSourceFileKind(filePath: string): ts.ScriptKind {
-  if (filePath.endsWith('.tsx')) {
-    return ts.ScriptKind.TSX;
-  }
-
-  if (filePath.endsWith('.jsx')) {
-    return ts.ScriptKind.JSX;
-  }
-
-  if (
-    filePath.endsWith('.js') ||
-    filePath.endsWith('.mjs') ||
-    filePath.endsWith('.cjs')
-  ) {
-    return ts.ScriptKind.JS;
-  }
-
-  return ts.ScriptKind.TS;
-}
-
-function stringLiteralValue(node: ts.Node | undefined): string | null {
-  return node && ts.isStringLiteralLike(node) ? node.text : null;
-}
-
-function getVueCompilerSfc(rootDir: string): VueCompilerSfc {
-  const requireFromRoot = createRequire(path.join(rootDir, 'package.json'));
-
-  try {
-    return requireFromRoot('@vue/compiler-sfc') as VueCompilerSfc;
-  } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'MODULE_NOT_FOUND'
-    ) {
-      throw new Error(
-        'Vue source graph support requires @vue/compiler-sfc. Fix: pnpm add -D @vue/compiler-sfc',
-      );
-    }
-
-    throw error;
-  }
-}
-
-function getVueBlockScriptKind(block: VueSfcBlock): ts.ScriptKind {
-  return block.lang === 'tsx' || block.lang === 'jsx'
-    ? ts.ScriptKind.TSX
-    : ts.ScriptKind.TS;
-}
-
-function collectImportsFromSourceText(options: {
-  filePath: string;
-  lineOffset?: number;
-  scriptKind: ts.ScriptKind;
-  sourceText: string;
-}): ImportRecord[] {
-  const sourceFile = ts.createSourceFile(
-    options.filePath,
-    options.sourceText,
-    ts.ScriptTarget.Latest,
-    true,
-    options.scriptKind,
-  );
-  const imports: ImportRecord[] = [];
-  const lineOffset = options.lineOffset ?? 0;
-  const addImport = (specifier: string, node: ts.Node): void => {
-    const location = sourceFile.getLineAndCharacterOfPosition(
-      node.getStart(sourceFile),
-    );
-
-    imports.push({
-      filePath: options.filePath,
-      line: lineOffset + location.line + 1,
-      specifier,
-    });
-  };
-  const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      const specifier = stringLiteralValue(node.moduleSpecifier);
-
-      if (specifier) {
-        addImport(specifier, node);
-      }
-    } else if (ts.isImportTypeNode(node)) {
-      const specifier = ts.isLiteralTypeNode(node.argument)
-        ? stringLiteralValue(node.argument.literal)
-        : null;
-
-      if (specifier) {
-        addImport(specifier, node);
-      }
-    } else if (
-      ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword
-    ) {
-      const specifier = stringLiteralValue(node.arguments[0]);
-
-      if (specifier) {
-        addImport(specifier, node);
-      }
-    }
-
-    ts.forEachChild(node, visit);
-  };
-
-  visit(sourceFile);
-
-  return imports;
-}
-
-function collectVueImportsFromFile(
-  filePath: string,
-  rootDir: string,
-): ImportRecord[] {
-  const sourceText = readFileSync(filePath, 'utf8');
-  const compiler = getVueCompilerSfc(rootDir);
-  const result = compiler.parse(sourceText, { filename: filePath });
-
-  if (result.errors.length > 0) {
-    throw new Error(
-      `Failed to parse Vue SFC imports for ${toRelativePath(rootDir, filePath)}: ${String(result.errors[0])}`,
-    );
-  }
-
-  return [result.descriptor.script, result.descriptor.scriptSetup]
-    .filter((block): block is VueSfcBlock => Boolean(block && !block.src))
-    .flatMap((block) =>
-      collectImportsFromSourceText({
-        filePath,
-        lineOffset: block.loc.start.line - 1,
-        scriptKind: getVueBlockScriptKind(block),
-        sourceText: block.content,
-      }),
-    );
-}
-
-export function collectImportsFromFile(
-  filePath: string,
-  rootDir: string,
-): ImportRecord[] {
-  if (filePath.endsWith('.vue')) {
-    return collectVueImportsFromFile(filePath, rootDir);
-  }
-
-  return collectImportsFromSourceText({
-    filePath,
-    scriptKind: getSourceFileKind(filePath),
-    sourceText: readFileSync(filePath, 'utf8'),
-  });
-}
-
-export function resolveInternalImport(
-  specifier: string,
-  containingFile: string,
-  options: ts.CompilerOptions,
-  contextOrExtensions: CheckerProjectParseContext | ProjectInfo | string[] = [],
-): string | null {
-  const context = Array.isArray(contextOrExtensions)
-    ? {
-        checkerPresets: [] as CheckerProjectParseContext['checkerPresets'],
-        extensions: contextOrExtensions,
-      }
-    : {
-        checkerPresets: contextOrExtensions.checkerPresets,
-        extensions: contextOrExtensions.extensions,
-      };
-  const resolved = resolveModuleNameWithCheckers({
-    compilerOptions: options,
-    containingFile,
-    context,
-    specifier,
-  });
-
-  return resolved ? normalizeAbsolutePath(resolved) : null;
-}
-
 function chooseOwningProject(projectPaths: string[]): string {
   return [...projectPaths].sort((left, right) => {
     const directoryDepthDelta =
@@ -534,3 +325,11 @@ export function findTargetProject(options: {
     options.projectPaths,
   );
 }
+
+export {
+  collectImportsFromFile,
+  createImportAnalysisContext,
+  resolveInternalImport,
+  type ImportAnalysisContext,
+  type ImportRecord,
+} from './import-analysis';

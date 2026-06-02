@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import path from 'pathe';
 import { z } from 'zod';
 import {
   getCheckerAdapter,
@@ -1023,10 +1023,48 @@ function collectReleaseConfigProblems(config: LiminaConfig): string[] {
   return problems;
 }
 
+function collectNestedSourceCheckConfigProblems(
+  config: LiminaConfig,
+): string[] {
+  const source = config?.config?.source as
+    | (SourceBoundaryConfig & Record<string, unknown>)
+    | undefined;
+  const problems: string[] = [];
+
+  if (!source || typeof source !== 'object') {
+    return problems;
+  }
+
+  if (Object.hasOwn(source, 'unusedDependencies')) {
+    problems.push(
+      [
+        'Invalid Limina source config:',
+        '  field: config.source.unusedDependencies',
+        `  value: ${formatUnknownValue(source.unusedDependencies)}`,
+        '  reason: source.unusedDependencies belongs at the top-level source config, not under config.source.',
+      ].join('\n'),
+    );
+  }
+
+  if (Object.hasOwn(source, 'unusedModules')) {
+    problems.push(
+      [
+        'Invalid Limina source config:',
+        '  field: config.source.unusedModules.ignore',
+        `  value: ${formatUnknownValue((source.unusedModules as SourceUnusedModulesConfig | undefined)?.ignore)}`,
+        '  reason: source.unusedModules belongs at the top-level source config, not under config.source.',
+      ].join('\n'),
+    );
+  }
+
+  return problems;
+}
+
 export function validateLiminaConfig(config: LiminaConfig): void {
   const problems = [
     ...collectCheckerConfigProblems(config),
     ...collectReleaseConfigProblems(config),
+    ...collectNestedSourceCheckConfigProblems(config),
   ];
 
   if (problems.length > 0) {

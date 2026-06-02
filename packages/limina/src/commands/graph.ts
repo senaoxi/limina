@@ -1,7 +1,7 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import path from 'pathe';
 import ts from 'typescript';
 import {
   type CheckerProjectParseContext,
@@ -17,6 +17,7 @@ import type { LiminaFlowReporter } from '../flow';
 import {
   collectImportsFromFile,
   createFileOwnerLookup,
+  createImportAnalysisContext,
   findImporterForFile,
   findPackageForFile,
   findTargetProject,
@@ -620,6 +621,7 @@ function collectExpectedReferences(options: {
   projectsByPath: Map<string, ProjectInfo>;
   selectedProjectPaths?: Set<string>;
 }): Map<string, Map<string, ReferenceExpectation>> {
+  const importAnalysis = createImportAnalysisContext();
   const expectedReferencesByProjectPath = new Map<
     string,
     Map<string, ReferenceExpectation>
@@ -637,6 +639,7 @@ function collectExpectedReferences(options: {
       for (const importRecord of collectImportsFromFile(
         filePath,
         options.config.rootDir,
+        importAnalysis,
       )) {
         const rawDeniedDepRule = getDeniedDepRuleForSpecifier(
           options.graphRules,
@@ -660,6 +663,7 @@ function collectExpectedReferences(options: {
           filePath,
           project.options,
           project,
+          importAnalysis,
         );
         const targetPackage = findPackageForSpecifier(
           importRecord.specifier,

@@ -1,6 +1,6 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
-import path from 'node:path';
+import path from 'pathe';
 import { glob } from 'tinyglobby';
 import type { CheckerProjectParseContext } from '../checkers';
 import {
@@ -12,6 +12,7 @@ import {
 import type { LiminaFlowReporter } from '../flow';
 import {
   collectImportsFromFile,
+  createImportAnalysisContext,
   getTypecheckConfigPath,
   type ImportRecord,
   isDtsProjectConfig,
@@ -1786,6 +1787,7 @@ async function runSourceCheckInternal(
     owners: packageOwners,
     sourceProjectEntries,
   });
+  const importAnalysis = createImportAnalysisContext();
   const problems: string[] = [...graphRoute.problems];
 
   await addTsconfigGovernanceProblems({
@@ -1843,12 +1845,14 @@ async function runSourceCheckInternal(
       for (const importRecord of collectImportsFromFile(
         filePath,
         config.rootDir,
+        importAnalysis,
       )) {
         const resolvedFilePath = resolveInternalImport(
           importRecord.specifier,
           filePath,
           project.options,
           project,
+          importAnalysis,
         );
 
         if (isRelativeSpecifier(importRecord.specifier)) {

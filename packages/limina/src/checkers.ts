@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import path from 'node:path';
+import path from 'pathe';
 import ts from 'typescript';
 import type {
   BuiltinCheckerPreset,

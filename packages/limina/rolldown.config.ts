@@ -1,6 +1,6 @@
 import licensePlugin from '@docs-islands/plugin-license';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import path from 'pathe';
 import { defineConfig, type RolldownOptions } from 'rolldown';
 import { dts } from 'rolldown-plugin-dts';
 import packagePlugin from './packagePlugin';

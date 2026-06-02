@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import path from 'node:path';
+import path from 'pathe';
 import { getCheckerAdapter } from './checkers';
 import { runGraphCheck } from './commands/graph';
 import { runNx } from './commands/nx';
