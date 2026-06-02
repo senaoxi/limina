@@ -1,8 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  clearImportAnalysisCache,
   collectImportsFromFile,
   createImportAnalysisContext,
   resolveInternalImport,
@@ -20,6 +21,14 @@ async function writeText(rootDir: string, filePath: string, text: string) {
 
   return absolutePath;
 }
+
+beforeEach(() => {
+  clearImportAnalysisCache();
+});
+
+afterEach(() => {
+  clearImportAnalysisCache();
+});
 
 describe('import analysis', () => {
   it('collects static, type, export-from, dynamic, and import-type dependencies', async () => {
@@ -256,6 +265,92 @@ describe('import analysis', () => {
           createImportAnalysisContext(),
         ),
       ).toBe(nativeFeaturePath);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('reuses shared import collection cache across default contexts', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const filePath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { first } from './first';\nvoid first;\n",
+      );
+
+      expect(
+        collectImportsFromFile(filePath, rootDir).map((item) => item.specifier),
+      ).toEqual(['./first']);
+
+      await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { second } from './second';\nvoid second;\n",
+      );
+
+      expect(
+        collectImportsFromFile(filePath, rootDir).map((item) => item.specifier),
+      ).toEqual(['./first']);
+      expect(
+        createImportAnalysisContext({
+          isolated: true,
+        })
+          .collectImportsFromFile(filePath, rootDir)
+          .map((item) => item.specifier),
+      ).toEqual(['./second']);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('reuses shared module resolution cache across default contexts', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { missing } from './missing';\nvoid missing;\n",
+      );
+      const compilerOptions = {};
+      const extensions = ['.ts'];
+
+      expect(
+        resolveInternalImport(
+          './missing',
+          indexPath,
+          compilerOptions,
+          extensions,
+        ),
+      ).toBeNull();
+
+      const missingPath = await writeText(
+        rootDir,
+        'src/missing.ts',
+        'export const missing = 1;\n',
+      );
+
+      expect(
+        resolveInternalImport(
+          './missing',
+          indexPath,
+          compilerOptions,
+          extensions,
+        ),
+      ).toBeNull();
+
+      clearImportAnalysisCache();
+
+      expect(
+        resolveInternalImport(
+          './missing',
+          indexPath,
+          compilerOptions,
+          extensions,
+        ),
+      ).toBe(missingPath);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

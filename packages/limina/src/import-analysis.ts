@@ -26,12 +26,23 @@ export interface ImportAnalysisContext {
   ) => string | null;
 }
 
+export interface CreateImportAnalysisContextOptions {
+  isolated?: boolean;
+}
+
 type ImportResolveContextInput =
   | CheckerProjectParseContext
   | Pick<CheckerProjectParseContext, 'checkerPresets' | 'extensions'>
   | string[];
 
 type ResolvedImportContext = CheckerProjectParseContext;
+
+interface ImportAnalysisCaches {
+  importsCache: Map<string, ImportRecord[]>;
+  resolutionCache: Map<string, string | null>;
+  resolverCache: Map<string, ResolverFactory>;
+  sourceTextCache: Map<string, string>;
+}
 
 const importOrExportKeywordRE = /\b(?:import|export)\b/u;
 const scriptExtractorRE =
@@ -685,23 +696,42 @@ function normalizeResolvedPathForImporter(
   return normalizedPath;
 }
 
-export function createImportAnalysisContext(): ImportAnalysisContext {
-  const sourceTextCache = new Map<string, string>();
-  const importsCache = new Map<string, ImportRecord[]>();
-  const resolverCache = new Map<string, ResolverFactory>();
-  const resolutionCache = new Map<string, string | null>();
+function createImportAnalysisCaches(): ImportAnalysisCaches {
+  return {
+    importsCache: new Map<string, ImportRecord[]>(),
+    resolutionCache: new Map<string, string | null>(),
+    resolverCache: new Map<string, ResolverFactory>(),
+    sourceTextCache: new Map<string, string>(),
+  };
+}
+
+const sharedImportAnalysisCaches = createImportAnalysisCaches();
+
+export function clearImportAnalysisCache(): void {
+  sharedImportAnalysisCaches.importsCache.clear();
+  sharedImportAnalysisCaches.resolutionCache.clear();
+  sharedImportAnalysisCaches.resolverCache.clear();
+  sharedImportAnalysisCaches.sourceTextCache.clear();
+}
+
+export function createImportAnalysisContext(
+  options: CreateImportAnalysisContextOptions = {},
+): ImportAnalysisContext {
+  const caches = options.isolated
+    ? createImportAnalysisCaches()
+    : sharedImportAnalysisCaches;
 
   const readSourceText = (filePath: string): string => {
-    if (!sourceTextCache.has(filePath)) {
-      sourceTextCache.set(filePath, readFileSync(filePath, 'utf8'));
+    if (!caches.sourceTextCache.has(filePath)) {
+      caches.sourceTextCache.set(filePath, readFileSync(filePath, 'utf8'));
     }
 
-    return sourceTextCache.get(filePath)!;
+    return caches.sourceTextCache.get(filePath)!;
   };
 
   const collectImportsFromFile = (filePath: string): ImportRecord[] => {
     const normalizedFilePath = normalizeAbsolutePath(filePath);
-    const cached = importsCache.get(normalizedFilePath);
+    const cached = caches.importsCache.get(normalizedFilePath);
 
     if (cached) {
       return cached;
@@ -719,7 +749,7 @@ export function createImportAnalysisContext(): ImportAnalysisContext {
           sourceText,
         });
 
-    importsCache.set(normalizedFilePath, imports);
+    caches.importsCache.set(normalizedFilePath, imports);
     return imports;
   };
 
@@ -731,10 +761,10 @@ export function createImportAnalysisContext(): ImportAnalysisContext {
   }): string | null => {
     const resolverCacheKey = createResolverCacheKey(options);
     const resolver =
-      resolverCache.get(resolverCacheKey) ??
+      caches.resolverCache.get(resolverCacheKey) ??
       new ResolverFactory(createResolverOptions(options));
 
-    resolverCache.set(resolverCacheKey, resolver);
+    caches.resolverCache.set(resolverCacheKey, resolver);
 
     let resolved: ReturnType<ResolverFactory['resolveFileSync']>;
 
@@ -783,7 +813,7 @@ export function createImportAnalysisContext(): ImportAnalysisContext {
       },
       specifier,
     });
-    const cached = resolutionCache.get(cacheKey);
+    const cached = caches.resolutionCache.get(cacheKey);
 
     if (cached !== undefined) {
       return cached;
@@ -831,7 +861,7 @@ export function createImportAnalysisContext(): ImportAnalysisContext {
             specifier,
           })));
 
-    resolutionCache.set(cacheKey, resolved);
+    caches.resolutionCache.set(cacheKey, resolved);
     return resolved;
   };
 

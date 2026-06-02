@@ -327,9 +327,11 @@ export function findTargetProject(options: {
 }
 
 export {
+  clearImportAnalysisCache,
   collectImportsFromFile,
   createImportAnalysisContext,
   resolveInternalImport,
+  type CreateImportAnalysisContextOptions,
   type ImportAnalysisContext,
   type ImportRecord,
 } from './import-analysis';

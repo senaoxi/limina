@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
@@ -158,9 +157,7 @@ interface VueLanguageCore {
   getAllExtensions: (vueOptions: unknown) => string[];
 }
 
-interface VueTscShowConfig {
-  files?: unknown;
-}
+const parsedProjectConfigCache = new Map<string, ParsedCheckerProjectConfig>();
 
 function createFormatHost(rootDir: string): ts.FormatDiagnosticsHost {
   return {
@@ -215,6 +212,48 @@ function createParsedCheckerProjectConfig(options: {
   };
 }
 
+function cloneParsedCheckerProjectConfig(
+  parsedConfig: ParsedCheckerProjectConfig,
+): ParsedCheckerProjectConfig {
+  return {
+    extensions: [...parsedConfig.extensions],
+    fileNames: [...parsedConfig.fileNames],
+    options: { ...parsedConfig.options },
+  };
+}
+
+function resolveContextCheckerPresets(
+  context: CheckerProjectParseContext,
+): CheckerPreset[] {
+  return context.checkerPresets.length > 0
+    ? [...new Set(context.checkerPresets)].sort((left, right) =>
+        left.localeCompare(right),
+      )
+    : (['tsc'] satisfies CheckerPreset[]);
+}
+
+function createParsedProjectConfigCacheKey(options: {
+  checkerPresets: CheckerPreset[];
+  configPath: string;
+  extensions: string[];
+  projectRootDir: string;
+}): string {
+  const configStat = statSync(options.configPath);
+
+  return JSON.stringify({
+    checkerPresets: options.checkerPresets,
+    configPath: normalizeAbsolutePath(options.configPath),
+    configSize: configStat.size,
+    configTime: configStat.mtimeMs,
+    extensions: normalizeExtensions(options.extensions),
+    projectRootDir: normalizeAbsolutePath(options.projectRootDir),
+  });
+}
+
+export function clearCheckerProjectConfigCache(): void {
+  parsedProjectConfigCache.clear();
+}
+
 function createExtraFileExtensions(
   extensions: string[],
 ): ts.FileExtensionInfo[] {
@@ -225,7 +264,7 @@ function createExtraFileExtensions(
   return extensions
     .filter((extension) => !nativeExtensions.has(extension))
     .map((extension) => ({
-      extension,
+      extension: extension.startsWith('.') ? extension.slice(1) : extension,
       isMixedContent: true,
       scriptKind: ts.ScriptKind.Deferred,
     }));
@@ -298,91 +337,6 @@ function parseTypeScriptProjectConfig(
     fileNames: parsed.fileNames,
     parsed,
   });
-}
-
-function isNoInputsFoundDiagnostic(diagnostic: ts.Diagnostic): boolean {
-  return diagnostic.code === 18_003;
-}
-
-function formatProjectConfigParseError(options: { error: unknown }): string {
-  if (
-    options.error &&
-    typeof options.error === 'object' &&
-    'stderr' in options.error &&
-    typeof options.error.stderr === 'string' &&
-    options.error.stderr.trim().length > 0
-  ) {
-    return options.error.stderr.trim();
-  }
-
-  if (
-    options.error &&
-    typeof options.error === 'object' &&
-    'stdout' in options.error &&
-    typeof options.error.stdout === 'string' &&
-    options.error.stdout.trim().length > 0
-  ) {
-    return options.error.stdout.trim();
-  }
-
-  return String(options.error);
-}
-
-function parseVueTscShowConfigFileNames(
-  options: CheckerProjectConfigParseOptions,
-): string[] | null {
-  const requireFromChecker = createCheckerPackageRequire({
-    packageName: 'vue-tsc',
-    projectRootDir: options.projectRootDir,
-  });
-
-  if (!requireFromChecker) {
-    return null;
-  }
-
-  let showConfigText: string;
-
-  try {
-    showConfigText = execFileSync(
-      process.execPath,
-      [
-        requireFromChecker.resolve('vue-tsc/bin/vue-tsc.js'),
-        '--showConfig',
-        '-p',
-        options.configPath,
-      ],
-      {
-        cwd: options.projectRootDir,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-  } catch (error) {
-    throw new Error(
-      [
-        'Unable to parse Vue checker project config with vue-tsc:',
-        `  config: ${toRelativePath(options.projectRootDir, options.configPath)}`,
-        `  reason: ${formatProjectConfigParseError({
-          error,
-        })}`,
-      ].join('\n'),
-    );
-  }
-
-  const showConfig = JSON.parse(showConfigText) as VueTscShowConfig;
-
-  if (!Array.isArray(showConfig.files)) {
-    return [];
-  }
-
-  return showConfig.files
-    .filter((fileName): fileName is string => typeof fileName === 'string')
-    .map((fileName) =>
-      normalizeAbsolutePath(
-        path.resolve(path.dirname(options.configPath), fileName),
-      ),
-    )
-    .sort();
 }
 
 function isModuleNotFoundError(error: unknown): boolean {
@@ -462,25 +416,46 @@ function getVueLanguageCore(options: {
   }
 }
 
+function createVueParsedCommandLine(options: {
+  configPath: string;
+  packageName: string;
+  projectRootDir: string;
+}): {
+  commandLine: ReturnType<VueLanguageCore['createParsedCommandLine']>;
+  configPath: string;
+  vueLanguageCore: VueLanguageCore;
+} {
+  const vueLanguageCore = getVueLanguageCore({
+    packageName: options.packageName,
+    projectRootDir: options.projectRootDir,
+  });
+  const configPath = normalizeAbsolutePath(options.configPath);
+
+  return {
+    commandLine: vueLanguageCore.createParsedCommandLine(
+      ts,
+      ts.sys,
+      configPath,
+    ),
+    configPath,
+    vueLanguageCore,
+  };
+}
+
 function resolveVueProjectExtensions(
   options: CheckerProjectConfigParseOptions,
   packageName: string,
 ): string[] {
-  const vueLanguageCore = getVueLanguageCore({
+  const { commandLine, vueLanguageCore } = createVueParsedCommandLine({
+    configPath: options.configPath,
     packageName,
     projectRootDir: options.projectRootDir,
   });
 
-  const parsed = vueLanguageCore.createParsedCommandLine(
-    ts,
-    ts.sys,
-    normalizeAbsolutePath(options.configPath),
-  );
-
   try {
     return normalizeExtensions([
       ...getTypeScriptCheckerExtensions(),
-      ...vueLanguageCore.getAllExtensions(parsed.vueOptions),
+      ...vueLanguageCore.getAllExtensions(commandLine.vueOptions),
     ]);
   } catch (error) {
     throw new Error(
@@ -512,24 +487,28 @@ function parseVueProjectConfig(
   options: CheckerProjectConfigParseOptions,
   packageName: string,
 ): ParsedCheckerProjectConfig {
-  const extensions = resolveVueProjectExtensionsForChecker(
-    options,
-    packageName,
+  const { commandLine, configPath, vueLanguageCore } =
+    createVueParsedCommandLine({
+      configPath: options.configPath,
+      packageName,
+      projectRootDir: options.projectRootDir,
+    });
+  const extensions = normalizeExtensions([
+    ...(options.extensions ?? []),
+    ...getTypeScriptCheckerExtensions(),
+    ...vueLanguageCore.getAllExtensions(commandLine.vueOptions),
+  ]);
+  const configFile = ts.readJsonConfigFile(configPath, ts.sys.readFile);
+  const parsed = ts.parseJsonSourceFileConfigFileContent(
+    configFile,
+    ts.sys,
+    path.dirname(configPath),
+    {},
+    configPath,
+    undefined,
+    createExtraFileExtensions(extensions),
   );
-  const vueTscFileNames =
-    packageName === 'vue-tsc' ? parseVueTscShowConfigFileNames(options) : null;
-
-  if (!vueTscFileNames) {
-    // vue-tsgo does not expose a synchronous showConfig-style file list, so
-    // keep non-native extension support scoped to Vue checker adapters.
-    return parseProjectConfigWithExtraFileExtensions(options, extensions);
-  }
-
-  const { diagnostics, parsed } = readTypeScriptProjectConfig(options);
-  const errors = [...diagnostics, ...parsed.errors].filter(
-    (diagnostic) =>
-      !(vueTscFileNames.length > 0 && isNoInputsFoundDiagnostic(diagnostic)),
-  );
+  const errors = parsed.errors;
 
   if (errors.length > 0) {
     throw new Error(
@@ -542,7 +521,7 @@ function parseVueProjectConfig(
 
   return createParsedCheckerProjectConfig({
     extensions,
-    fileNames: vueTscFileNames,
+    fileNames: parsed.fileNames,
     parsed,
   });
 }
@@ -764,10 +743,19 @@ export function parseCheckerProjectConfigForContext(options: {
   context: CheckerProjectParseContext;
   projectRootDir: string;
 }): ParsedCheckerProjectConfig {
-  const checkerPresets =
-    options.context.checkerPresets.length > 0
-      ? options.context.checkerPresets
-      : (['tsc'] satisfies CheckerPreset[]);
+  const checkerPresets = resolveContextCheckerPresets(options.context);
+  const cacheKey = createParsedProjectConfigCacheKey({
+    checkerPresets,
+    configPath: options.configPath,
+    extensions: options.context.extensions,
+    projectRootDir: options.projectRootDir,
+  });
+  const cached = parsedProjectConfigCache.get(cacheKey);
+
+  if (cached) {
+    return cloneParsedCheckerProjectConfig(cached);
+  }
+
   const parsedConfigs = checkerPresets.map((preset) => {
     const adapter = getCheckerAdapter(preset);
 
@@ -781,8 +769,17 @@ export function parseCheckerProjectConfigForContext(options: {
       projectRootDir: options.projectRootDir,
     });
   });
+  const parsedConfig = mergeParsedProjectConfigs(
+    parsedConfigs,
+    options.context.extensions,
+  );
 
-  return mergeParsedProjectConfigs(parsedConfigs, options.context.extensions);
+  parsedProjectConfigCache.set(
+    cacheKey,
+    cloneParsedCheckerProjectConfig(parsedConfig),
+  );
+
+  return cloneParsedCheckerProjectConfig(parsedConfig);
 }
 
 export function resolveModuleNameWithCheckers(options: {
