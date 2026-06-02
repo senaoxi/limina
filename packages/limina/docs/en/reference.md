@@ -23,6 +23,8 @@ If you only want the first check running, start with [Config File](./options/con
 limina [--config limina.config.mjs] [--mode mode] <command>
 ```
 
+For what each built-in task detects, with examples, see [Built-in Tasks](./built-in-tasks.md).
+
 | Command                                         | Description                                                                                                                   |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `limina init [--yes]`                           | Generate declaration leaves, build aggregators, root config, and a `limina:check` script for an uninitialized pnpm workspace. |

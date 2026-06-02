@@ -26,7 +26,6 @@ import {
   type ImportRecord,
   inferPackageProject,
   isDtsProjectConfig,
-  isRelativeSpecifier,
   parseProject,
   type ProjectInfo,
   resolveInternalImport,
@@ -715,33 +714,6 @@ function collectExpectedReferences(options: {
             rule: deniedDepRule,
           });
           continue;
-        }
-
-        if (isRelativeSpecifier(importRecord.specifier)) {
-          const sourcePackage = findPackageForFile(
-            importRecord.filePath,
-            options.packages,
-          );
-
-          if (
-            sourcePackage &&
-            targetWorkspacePackageForResolved &&
-            sourcePackage.name !== targetWorkspacePackageForResolved.name
-          ) {
-            options.problems.push(
-              [
-                'Cross-package relative import:',
-                `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
-                `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
-                `  imported specifier: ${importRecord.specifier}`,
-                `  source package: ${sourcePackage.name}`,
-                `  target package: ${targetWorkspacePackageForResolved.name}`,
-                `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
-                '  reason: workspace packages must depend through package exports.',
-              ].join('\n'),
-            );
-            continue;
-          }
         }
 
         if (

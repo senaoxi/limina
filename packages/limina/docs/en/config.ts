@@ -25,6 +25,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/monorepo',
       },
       {
+        text: 'Built-in Tasks',
+        link: '/built-in-tasks',
+      },
+      {
         text: 'Options',
         items: [
           {

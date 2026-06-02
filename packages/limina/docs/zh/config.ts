@@ -25,6 +25,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/zh/monorepo',
       },
       {
+        text: '内置任务',
+        link: '/zh/built-in-tasks',
+      },
+      {
         text: '配置项',
         items: [
           {

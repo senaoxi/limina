@@ -1023,69 +1023,9 @@ function collectReleaseConfigProblems(config: LiminaConfig): string[] {
   return problems;
 }
 
-function collectDeprecatedConfigProblems(config: LiminaConfig): string[] {
-  const problems: string[] = [];
-
-  if (!checkerObjectSchema.safeParse(config).success) {
-    return problems;
-  }
-
-  const graph = config.graph;
-
-  if (
-    graph &&
-    typeof graph === 'object' &&
-    !Array.isArray(graph) &&
-    Object.hasOwn(graph, 'unusedWorkspaceDependencies')
-  ) {
-    problems.push(
-      [
-        'Deprecated Limina config:',
-        '  field: graph.unusedWorkspaceDependencies',
-        '  reason: graph.unusedWorkspaceDependencies has been removed; use source.unusedDependencies.ignore.',
-      ].join('\n'),
-    );
-  }
-
-  const sharedSource = config.config?.source;
-
-  if (
-    sharedSource &&
-    typeof sharedSource === 'object' &&
-    !Array.isArray(sharedSource) &&
-    Object.hasOwn(sharedSource, 'unusedDependencies')
-  ) {
-    problems.push(
-      [
-        'Deprecated Limina config:',
-        '  field: config.source.unusedDependencies',
-        '  reason: config.source.unusedDependencies has moved to source.unusedDependencies.',
-      ].join('\n'),
-    );
-  }
-
-  if (
-    sharedSource &&
-    typeof sharedSource === 'object' &&
-    !Array.isArray(sharedSource) &&
-    Object.hasOwn(sharedSource, 'unusedModules')
-  ) {
-    problems.push(
-      [
-        'Deprecated Limina config:',
-        '  field: config.source.unusedModules',
-        '  reason: config.source.unusedModules has moved to source.unusedModules.ignore.',
-      ].join('\n'),
-    );
-  }
-
-  return problems;
-}
-
 export function validateLiminaConfig(config: LiminaConfig): void {
   const problems = [
     ...collectCheckerConfigProblems(config),
-    ...collectDeprecatedConfigProblems(config),
     ...collectReleaseConfigProblems(config),
   ];
 

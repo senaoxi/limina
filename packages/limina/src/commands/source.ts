@@ -1248,16 +1248,7 @@ function collectUnusedModuleConfig(options: {
   const rawIgnore = rawConfig.ignore;
 
   if (rawEntries !== undefined) {
-    if (!Array.isArray(rawEntries)) {
-      options.problems.push(
-        [
-          'Invalid unused module entry config:',
-          '  field: source.unusedModules.entries',
-          `  value: ${formatUnknownValue(rawEntries)}`,
-          '  reason: entries must be an array.',
-        ].join('\n'),
-      );
-    } else {
+    if (Array.isArray(rawEntries)) {
       for (const [index, entry] of rawEntries.entries()) {
         const field = `source.unusedModules.entries[${index}]`;
 
@@ -1392,6 +1383,15 @@ function collectUnusedModuleConfig(options: {
           );
         }
       }
+    } else {
+      options.problems.push(
+        [
+          'Invalid unused module entry config:',
+          '  field: source.unusedModules.entries',
+          `  value: ${formatUnknownValue(rawEntries)}`,
+          '  reason: entries must be an array.',
+        ].join('\n'),
+      );
     }
   }
 

@@ -545,6 +545,21 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
+  it('rejects relative imports that cross workspace package owners', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource:
+          "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
+      }),
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('requires workspace packages to be declared by the nearest owner', async () => {
     const fixture = await createFixture({
       ...createWorkspaceRootFiles(['app', 'packages/*']),

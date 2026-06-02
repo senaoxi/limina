@@ -503,8 +503,8 @@ More seriously, this style of import does not represent how real consumers use t
 limina treats this as cross-package relative path penetration:
 
 ```text
-Cross-package relative import:
-  reason: workspace packages must depend through package exports.
+Relative import escapes package owner scope:
+  reason: relative source imports must not cross the nearest package.json owner boundary.
 ```
 
 ### Recommended style
@@ -1108,7 +1108,7 @@ For example:
 | Symptom                                                 | limina’s judgment                                                 |
 | ------------------------------------------------------- | ----------------------------------------------------------------- |
 | `workspace:*` but resolves to `dist`                    | Source dependency and TypeScript resolution are inconsistent      |
-| Cross-package relative import                           | Bypasses package exports and the dependency graph                 |
+| Cross-package relative import                           | Bypasses package exports and the package owner boundary           |
 | Project reference crosses packages but no `workspace:*` | TS graph declares a source dependency, but package graph does not |
 | dts leaf has no companion                               | Declaration emit has no strict typecheck proof                    |
 | Source file is not covered by any checker               | Green CI does not mean the file was checked                       |

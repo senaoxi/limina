@@ -23,6 +23,8 @@ Limina 的配置入口是 workspace 内部的 `limina.config.mjs`。具体字段
 limina [--config limina.config.mjs] [--mode mode] <command>
 ```
 
+每条内置任务具体检测什么、配什么例子，见 [内置任务](./built-in-tasks.md)。
+
 | Command                                         | 说明                                                                                                   |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `limina init [--yes]`                           | 为未初始化的 pnpm workspace 生成 declaration leaves、build aggregators、根配置和 `limina:check` 脚本。 |

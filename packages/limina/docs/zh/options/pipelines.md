@@ -76,7 +76,7 @@ object form 显式声明外部命令：
 import { createClient } from '../../core/src/index';
 ```
 
-pipeline 会先在 `graph:check` 或 `source:check` 阶段失败，后面的 build、package check 和外部测试命令会被跳过。这样发布流程会停在最接近问题源头的检查上，而不是继续跑一串后续步骤。
+pipeline 会在 `source:check` 阶段失败，后面的 build、package check 和外部测试命令会被跳过。这样发布流程会停在最接近问题源头的检查上，而不是继续跑一串后续步骤。
 
 完整一点看，目录可以是：
 
@@ -94,6 +94,6 @@ packages/core/
 import { createClient } from '../../core/src/index';
 ```
 
-运行 `pnpm exec limina check publish` 时，Limina 会按 pipeline 数组顺序执行。它先进入 `graph:check` 和 `source:check`，在这些阶段分析 TypeScript import、package owner 和相对路径边界。
+运行 `pnpm exec limina check publish` 时，Limina 会按 pipeline 数组顺序执行。`graph:check` 会先校验 declaration edge，然后 `source:check` 分析 package owner 和相对路径边界。
 
-结果是流程在 source/graph 阶段失败，`checker:build`、`package:check` 和 `pnpm test` 不会继续执行。用户可以先修最近的源头问题：把跨包相对 import 改成 `@acme/core` package export，并在 manifest 和 project reference 中表达这条依赖。
+结果是流程在 source 阶段失败，`checker:build`、`package:check` 和 `pnpm test` 不会继续执行。用户可以先修最近的源头问题：把跨包相对 import 改成 `@acme/core` package export，并在 manifest 和 project reference 中表达这条依赖。

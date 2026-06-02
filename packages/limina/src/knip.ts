@@ -52,9 +52,8 @@ const knipJsonIssueFields = [
   'devDependencies',
   'optionalPeerDependencies',
 ] as const;
-const knipSourceIssueTypes = ['dependencies', 'files'] as const;
 
-type KnipSourceIssueType = (typeof knipSourceIssueTypes)[number];
+type KnipSourceIssueType = 'dependencies' | 'files';
 
 function resolveKnipCliPath(): string {
   try {

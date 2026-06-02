@@ -1104,16 +1104,17 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
-  it('keeps cross-package relative import checks active without package dependency rules', async () => {
+  it('allows cross-package relative imports when declaration references are aligned', async () => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
         appSource:
           "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
       }),
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1225,9 +1226,10 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
-  it('keeps cross-package relative import checks active for Vue scripts', async () => {
+  it('allows cross-package relative imports from Vue scripts when declaration references are aligned', async () => {
     const fixture = await createFixture(
       createVueWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
         appSource:
           '<script setup lang="ts">\nimport { internalValue } from \'../../internal/src/index\';\nconst value = internalValue;\n</script>\n',
       }),
@@ -1243,7 +1245,7 @@ describe('runGraphCheck graph rules', () => {
     try {
       await linkCompilerSfc(fixture.rootDir);
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }

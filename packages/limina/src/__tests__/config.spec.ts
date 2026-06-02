@@ -372,40 +372,6 @@ describe('defineConfig', () => {
 });
 
 describe('loadConfig', () => {
-  it('rejects deprecated graph unused workspace dependency config', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
-
-    try {
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages: []\n',
-      );
-      await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
-        `
-export default {
-  graph: {
-    unusedWorkspaceDependencies: {
-      allowlist: [],
-    },
-  },
-};
-`,
-      );
-
-      await expect(
-        loadConfig({
-          cwd: rootDir,
-        }),
-      ).rejects.toThrow('source.unusedDependencies.ignore');
-    } finally {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
-    }
-  });
-
   it('rejects unused dependency config nested under config.source', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 

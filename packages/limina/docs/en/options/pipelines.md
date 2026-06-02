@@ -76,7 +76,7 @@ After configuration, `pnpm exec limina check publish` runs steps in array order.
 import { createClient } from '../../core/src/index';
 ```
 
-the pipeline fails during `graph:check` or `source:check`, and later build, package check, and external test commands are skipped. The release flow stops at the check closest to the source of the problem.
+the pipeline fails during `source:check`, and later build, package check, and external test commands are skipped. The release flow stops at the check closest to the source of the problem.
 
 In a fuller example, the directory can look like this:
 
@@ -94,6 +94,6 @@ The module imports across package folders with a relative path:
 import { createClient } from '../../core/src/index';
 ```
 
-When `pnpm exec limina check publish` runs, Limina executes pipeline steps in array order. It enters `graph:check` and `source:check` first, where it analyzes TypeScript imports, package owners, and relative import boundaries.
+When `pnpm exec limina check publish` runs, Limina executes pipeline steps in array order. `graph:check` first validates declaration edges, then `source:check` analyzes package owners and relative import boundaries.
 
-The result is a failure during the source/graph stage; `checker:build`, `package:check`, and `pnpm test` do not continue. The user can fix the closest cause first: replace the cross-package relative import with the `@acme/core` package export, then express the dependency through the manifest and project reference.
+The result is a failure during the source stage; `checker:build`, `package:check`, and `pnpm test` do not continue. The user can fix the closest cause first: replace the cross-package relative import with the `@acme/core` package export, then express the dependency through the manifest and project reference.

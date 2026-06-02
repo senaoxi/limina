@@ -498,8 +498,8 @@ import { createClient } from '../../core/src/client';
 limina 会认为这是跨包相对路径穿透：
 
 ```text
-Cross-package relative import:
-  reason: workspace packages must depend through package exports.
+Relative import escapes package owner scope:
+  reason: relative source imports must not cross the nearest package.json owner boundary.
 ```
 
 ### 推荐写法
@@ -1100,13 +1100,13 @@ built package outputs consumed by users
 
 例如：
 
-| 现象                                       | limina 的判断                            |
-| ------------------------------------------ | ---------------------------------------- |
-| `workspace:*` 但解析到 `dist`              | 源码依赖和 TypeScript resolution 不一致  |
-| 跨包相对 import                            | 绕开 package exports 和 dependency graph |
-| project reference 跨包但没有 `workspace:*` | TS 图声明了源码依赖，但 package 图没有   |
-| dts leaf 没有 companion                    | declaration emit 没有严格 typecheck 证明 |
-| source file 没被任何 checker 覆盖          | CI 绿不代表文件被检查                    |
-| browser runtime import `node:fs`           | 运行时边界被破坏                         |
-| dist manifest exports/types 错误           | 源码健康但发布产物不健康                 |
-| dist import 未声明依赖                     | 消费者安装后可能缺依赖                   |
+| 现象                                       | limina 的判断                              |
+| ------------------------------------------ | ------------------------------------------ |
+| `workspace:*` 但解析到 `dist`              | 源码依赖和 TypeScript resolution 不一致    |
+| 跨包相对 import                            | 绕开 package exports 和 package owner 边界 |
+| project reference 跨包但没有 `workspace:*` | TS 图声明了源码依赖，但 package 图没有     |
+| dts leaf 没有 companion                    | declaration emit 没有严格 typecheck 证明   |
+| source file 没被任何 checker 覆盖          | CI 绿不代表文件被检查                      |
+| browser runtime import `node:fs`           | 运行时边界被破坏                           |
+| dist manifest exports/types 错误           | 源码健康但发布产物不健康                   |
+| dist import 未声明依赖                     | 消费者安装后可能缺依赖                     |
