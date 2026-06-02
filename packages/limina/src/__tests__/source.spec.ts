@@ -7,6 +7,7 @@ import type {
   GraphConfig,
   ResolvedLiminaConfig,
   SourceBoundaryConfig,
+  SourceCheckConfig,
 } from '../config';
 import { SourceLogger } from '../logger';
 
@@ -19,7 +20,11 @@ async function createFixture(
   files: Record<string, string>,
   options:
     | GraphConfig
-    | { graph?: GraphConfig; source?: SourceBoundaryConfig } = {},
+    | {
+        graph?: GraphConfig;
+        source?: SourceCheckConfig;
+        sourceBoundary?: SourceBoundaryConfig;
+      } = {},
 ): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
@@ -34,12 +39,17 @@ async function createFixture(
   }
 
   const hasOptionsShape =
-    Object.hasOwn(options, 'graph') || Object.hasOwn(options, 'source');
+    Object.hasOwn(options, 'graph') ||
+    Object.hasOwn(options, 'source') ||
+    Object.hasOwn(options, 'sourceBoundary');
   const graph = hasOptionsShape
     ? (options as { graph?: GraphConfig }).graph
     : (options as GraphConfig);
   const source = hasOptionsShape
-    ? (options as { source?: SourceBoundaryConfig }).source
+    ? (options as { source?: SourceCheckConfig }).source
+    : undefined;
+  const sourceBoundary = hasOptionsShape
+    ? (options as { sourceBoundary?: SourceBoundaryConfig }).sourceBoundary
     : undefined;
 
   return {
@@ -57,11 +67,12 @@ async function createFixture(
             entry: 'tsconfig.build.json',
           },
         },
-        source,
+        source: sourceBoundary,
       },
       configPath: path.join(rootDir, 'limina.config.mjs'),
       graph,
       rootDir,
+      source,
     },
     rootDir,
   };
@@ -130,6 +141,9 @@ function createPackageFixture(options: {
 }): Record<string, string> {
   return {
     'app/package.json': stringifyConfig({
+      exports: {
+        '.': './src/index.ts',
+      },
       name: '@example/app',
       type: 'module',
       ...options.manifest,
@@ -167,14 +181,45 @@ function createNodeModulePackage(
   };
 }
 
+function createWorkspaceRootFiles(
+  workspaces: string[] = ['packages/*'],
+): Record<string, string> {
+  return {
+    'package.json': stringifyConfig({
+      name: '@example/root',
+      private: true,
+      type: 'module',
+      workspaces,
+    }),
+  };
+}
+
 function createWorkspacePackageFiles(options: {
   appManifest?: Record<string, unknown>;
   appSource: string;
+  internalManifest?: Record<string, unknown>;
 }): Record<string, string> {
+  const internalPackageManifest = {
+    exports: {
+      '.': './src/index.ts',
+    },
+    name: '@example/internal',
+    type: 'module',
+    ...options.internalManifest,
+  };
+
   return {
+    ...createWorkspaceRootFiles(),
+    'node_modules/@example/internal/bin/internal.js': '#!/usr/bin/env node\n',
+    'node_modules/@example/internal/package.json': stringifyConfig(
+      internalPackageManifest,
+    ),
     'packages/app/package.json': stringifyConfig({
       dependencies: {
         '@example/internal': 'workspace:*',
+      },
+      exports: {
+        '.': './src/index.ts',
       },
       name: '@example/app',
       type: 'module',
@@ -186,13 +231,7 @@ function createWorkspacePackageFiles(options: {
       tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
     }),
     'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
-    'packages/internal/package.json': stringifyConfig({
-      exports: {
-        '.': './src/index.ts',
-      },
-      name: '@example/internal',
-      type: 'module',
-    }),
+    'packages/internal/package.json': stringifyConfig(internalPackageManifest),
     'packages/internal/src/index.ts':
       'export type InternalValue = number;\nexport const internalValue = 1;\n',
     'packages/internal/tsconfig.lib.dts.json': buildConfig({
@@ -228,9 +267,13 @@ function createRootWorkspaceDependencyFiles(options: {
       devDependencies: options.rootDependencies ?? {
         '@example/internal': 'workspace:*',
       },
+      exports: {
+        '.': './scripts/index.ts',
+      },
       name: '@example/root',
       private: true,
       type: 'module',
+      workspaces: ['packages/*'],
     }),
     'packages/internal/package.json': stringifyConfig({
       exports: {
@@ -504,6 +547,7 @@ describe('runSourceCheck package authority', () => {
 
   it('requires workspace packages to be declared by the nearest owner', async () => {
     const fixture = await createFixture({
+      ...createWorkspaceRootFiles(['app', 'packages/*']),
       ...createPackageFixture({
         source:
           "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
@@ -539,6 +583,7 @@ packages:
       },
     };
     const fixture = await createFixture({
+      ...createWorkspaceRootFiles(['app', 'packages/*']),
       ...createPackageFixture({
         manifest: {
           peerDependencies: {
@@ -580,6 +625,7 @@ packages:
       },
     };
     const fixture = await createFixture({
+      ...createWorkspaceRootFiles(['app', 'packages/*']),
       ...createPackageFixture({
         manifest: {
           dependencies: {
@@ -686,6 +732,7 @@ packages:
       },
     };
     const fixture = await createFixture({
+      ...createWorkspaceRootFiles(['app', 'packages/*']),
       ...createPackageFixture({
         manifest: {
           dependencies: {
@@ -901,6 +948,77 @@ packages:
     }
   });
 
+  it('counts workspace dependencies used by package scripts through a default scoped package bin', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appManifest: {
+          scripts: {
+            typecheck: 'NODE_ENV=test internal check',
+          },
+        },
+        appSource: 'export const value = 1;\n',
+        internalManifest: {
+          bin: './bin/internal.js',
+        },
+      }),
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('counts workspace dependencies used by package scripts through object bins', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appManifest: {
+          scripts: {
+            typecheck: 'example-internal check',
+          },
+        },
+        appSource: 'export const value = 1;\n',
+        internalManifest: {
+          bin: {
+            'example-internal': './bin/internal.js',
+          },
+        },
+      }),
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not count package manager script names as workspace binary usage', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appManifest: {
+          scripts: {
+            'example-internal': 'echo local script',
+            typecheck: 'pnpm example-internal',
+          },
+        },
+        appSource: 'export const value = 1;\n',
+        internalManifest: {
+          bin: {
+            'example-internal': './bin/internal.js',
+          },
+        },
+      }),
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('counts workspace dependency subpath imports as root package usage', async () => {
     const fixture = await createFixture(
       createRootWorkspaceDependencyFiles({
@@ -944,6 +1062,27 @@ packages:
   });
 
   it('rejects invalid unused dependency ignore entries', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const ignore = [
+      {
+        dependency: '@example/internal',
+        importer: '@example/app',
+      },
+      {
+        dependency: 'zod',
+        importer: '@example/app',
+        reason: 'External packages are outside this rule.',
+      },
+      {
+        dependency: '@example/app',
+        importer: '@example/internal',
+        reason: 'The dependency is not declared by this importer.',
+      },
+    ] as unknown as NonNullable<
+      SourceCheckConfig['unusedDependencies']
+    >['ignore'];
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
@@ -951,13 +1090,7 @@ packages:
       {
         source: {
           unusedDependencies: {
-            ignore: [
-              {
-                dependency: '@example/internal',
-                importer: '@example/missing',
-                reason: 'This package does not exist.',
-              },
-            ],
+            ignore,
           },
         },
       },
@@ -965,7 +1098,17 @@ packages:
 
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('reason must be a non-empty string');
+      expect(errors).toContain(
+        'dependency must name a package from the pnpm workspace',
+      );
+      expect(errors).toContain(
+        'ignore entries must match a workspace dependency declared by the importer package manifest',
+      );
     } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -978,7 +1121,7 @@ packages:
       {
         source: {
           unusedDependencies:
-            [] as unknown as SourceBoundaryConfig['unusedDependencies'],
+            [] as unknown as SourceCheckConfig['unusedDependencies'],
         },
       },
     );
@@ -990,12 +1133,31 @@ packages:
     }
   });
 
-  it('counts workspace dependency usage from the global source boundary', async () => {
+  it('does not count workspace dependency usage from files unreachable from package entries', async () => {
     const fixture = await createFixture({
-      ...createRootWorkspaceDependencyFiles({
-        rootSource: 'export const value = 1;\n',
+      ...createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
       }),
-      'tools/uses-internal.ts':
+      'packages/app/src/dead.ts':
+        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses the full owner module set as dependency surface when package exports are absent', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appManifest: {
+          exports: undefined,
+        },
+        appSource: 'export const value = 1;\n',
+      }),
+      'packages/app/src/feature.ts':
         "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
     });
 
@@ -1006,43 +1168,369 @@ packages:
     }
   });
 
-  it('respects global source excludes when collecting workspace dependency usage', async () => {
+  it('still reports unused dependencies when no owner modules import them without package exports', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appManifest: {
+          exports: undefined,
+        },
+        appSource: 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts strict source modules reachable from exported source entries', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appSource:
+          "import { helperValue } from './helper';\nexport { internalValue } from '@example/internal';\nexport const value = helperValue;\n",
+      }),
+      'packages/app/src/helper.ts': 'export const helperValue = 1;\n',
+    });
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects strict source modules unreachable from package entries', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
+    });
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('Unused source module:');
+      expect(errors).toContain('owner: @example/app');
+      expect(errors).toContain('file: packages/app/src/dead.ts');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not report strict unused source modules for no-exports owners', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appManifest: {
+          exports: undefined,
+        },
+        appSource: 'export const value = 1;\n',
+      }),
+      'packages/app/src/feature.ts':
+        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+    });
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not report unreachable source modules outside strict mode', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts strict source modules reachable from package bins', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appManifest: {
+          bin: {
+            'example-app': './src/cli.ts',
+          },
+        },
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      'packages/app/src/cli.ts': 'export const cliValue = 1;\n',
+    });
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts strict source modules reachable from package scripts', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appManifest: {
+          scripts: {
+            check: 'node src/script-entry.ts',
+          },
+        },
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      'packages/app/src/script-entry.ts': 'export const scriptValue = 1;\n',
+    });
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts strict source modules reachable from configured entry globs', async () => {
     const fixture = await createFixture(
       {
-        ...createRootWorkspaceDependencyFiles({
-          rootSource: 'export const value = 1;\n',
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
         }),
-        'checks/check-only.ts':
-          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
-        'tsconfig.check.json': typecheckConfig(['checks/check-only.ts']),
+        'packages/app/src/test-entry.spec.ts':
+          "import { testedValue } from './tested';\nexport const value = testedValue;\n",
+        'packages/app/src/tested.ts': 'export const testedValue = 1;\n',
       },
       {
         source: {
-          exclude: ['checks'],
+          unusedModules: {
+            entries: [
+              {
+                files: ['packages/app/src/**/*.spec.ts'],
+                owner: '@example/app',
+                reason: 'Vitest loads spec modules directly.',
+              },
+            ],
+          },
         },
       },
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('counts globally included check files when they stay inside source', async () => {
-    const fixture = await createFixture({
-      ...createRootWorkspaceDependencyFiles({
-        rootSource: 'export const value = 1;\n',
-      }),
-      'checks/check-only.ts':
-        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
-      'tsconfig.check.json': typecheckConfig(['checks/check-only.ts']),
-    });
+  it('allows configured strict unused source modules with a reason', async () => {
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/generated/runtime.ts':
+          'export const generatedRuntime = 1;\n',
+      },
+      {
+        source: {
+          unusedModules: {
+            ignore: [
+              {
+                file: 'packages/app/src/generated/runtime.ts',
+                owner: '@example/app',
+                reason: 'Loaded by the framework runtime in generated code.',
+              },
+            ],
+          },
+        },
+      },
+    );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects invalid unused source module entry configs', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const entries = [
+      {
+        files: ['packages/app/src/**/*.spec.ts'],
+        owner: '@example/app',
+      },
+      {
+        files: ['packages/app/src/**/*.spec.ts'],
+        owner: '@example/missing',
+        reason: 'Missing owner.',
+      },
+      {
+        files: [] as string[],
+        owner: '@example/app',
+        reason: 'Empty files.',
+      },
+      {
+        files: ['../outside.ts'],
+        owner: '@example/app',
+        reason: 'Outside the repository.',
+      },
+      {
+        files: ['packages/internal/src/**/*.ts'],
+        owner: '@example/app',
+        reason: 'Wrong owner directory.',
+      },
+    ] as unknown as NonNullable<SourceCheckConfig['unusedModules']>['entries'];
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      {
+        source: {
+          unusedModules: {
+            entries,
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('Invalid unused module entry config:');
+      expect(errors).toContain('reason must be a non-empty string');
+      expect(errors).toContain(
+        'owner must name an existing package owner with a package.json name',
+      );
+      expect(errors).toContain(
+        'files must be a non-empty array of workspace-root-relative glob patterns',
+      );
+      expect(errors).toContain(
+        'file patterns must be positive workspace-root-relative globs inside the workspace root',
+      );
+      expect(errors).toContain(
+        'file patterns must stay inside the owner package directory',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects invalid unused source module ignore entries', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const ignore = [
+      {
+        file: 'packages/app/src/dead.ts',
+        owner: '@example/app',
+      },
+      {
+        file: 'packages/app/src/dead.ts',
+        owner: '@example/missing',
+        reason: 'Owner does not exist.',
+      },
+      {
+        file: '../outside.ts',
+        owner: '@example/app',
+        reason: 'Outside the repository.',
+      },
+      {
+        file: 'packages/internal/src/index.ts',
+        owner: '@example/app',
+        reason: 'Wrong package owner.',
+      },
+    ] as unknown as NonNullable<SourceCheckConfig['unusedModules']>['ignore'];
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
+      },
+      {
+        source: {
+          unusedModules: {
+            enabled: true,
+            ignore,
+          } as unknown as SourceCheckConfig['unusedModules'],
+        },
+      },
+    );
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('source.unusedModules.enabled is not supported');
+      expect(errors).toContain('reason must be a non-empty string');
+      expect(errors).toContain(
+        'owner must name an existing package owner with a package.json name',
+      );
+      expect(errors).toContain('file must resolve inside the workspace root');
+      expect(errors).toContain(
+        'file must belong to the owner source module set known to Limina',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -1071,18 +1559,11 @@ packages:
         appManifest: {
           dependencies: {
             '@example/app': 'workspace:*',
+            '@example/internal': 'workspace:*',
             zod: '^1.0.0',
           },
         },
-        appSource: 'export const value = 1;\n',
-      }),
-      'packages/app/package.json': stringifyConfig({
-        dependencies: {
-          '@example/app': 'workspace:*',
-          zod: '^1.0.0',
-        },
-        name: '@example/app',
-        type: 'module',
+        appSource: "export { internalValue } from '@example/internal';\n",
       }),
     });
 

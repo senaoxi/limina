@@ -24,15 +24,33 @@ describe('defineConfig', () => {
         source: {
           include: ['src/**/*.ts'],
           exclude: ['dist'],
-          unusedDependencies: {
-            ignore: [
-              {
-                dependency: '@example/generated',
-                importer: '@example/core',
-                reason: 'Loaded by generated code.',
-              },
-            ],
-          },
+        },
+      },
+      source: {
+        unusedDependencies: {
+          ignore: [
+            {
+              dependency: '@example/generated',
+              importer: '@example/core',
+              reason: 'Loaded by generated code.',
+            },
+          ],
+        },
+        unusedModules: {
+          entries: [
+            {
+              files: ['packages/core/src/**/*.spec.ts'],
+              owner: '@example/core',
+              reason: 'Vitest loads test modules directly.',
+            },
+          ],
+          ignore: [
+            {
+              file: 'packages/core/src/generated/runtime.ts',
+              owner: '@example/core',
+              reason: 'Loaded by a framework runtime.',
+            },
+          ],
         },
       },
       pipelines: {
@@ -79,9 +97,15 @@ describe('defineConfig', () => {
       'attw',
       'boundary',
     ]);
-    expect(
-      config.config?.source?.unusedDependencies?.ignore?.[0]?.dependency,
-    ).toBe('@example/generated');
+    expect(config.source?.unusedDependencies?.ignore?.[0]?.dependency).toBe(
+      '@example/generated',
+    );
+    expect(config.source?.unusedModules?.ignore?.[0]?.file).toBe(
+      'packages/core/src/generated/runtime.ts',
+    );
+    expect(config.source?.unusedModules?.entries?.[0]?.files).toEqual([
+      'packages/core/src/**/*.spec.ts',
+    ]);
     expect(config.release?.contentHash?.baselineTag).toBe('next');
     expect(config.release?.contentHash?.builtinIgnore).toBe(false);
     expect(config.release?.contentHash?.ignore).toEqual(['client/**']);
@@ -373,7 +397,79 @@ export default {
         loadConfig({
           cwd: rootDir,
         }),
-      ).rejects.toThrow('config.source.unusedDependencies.ignore');
+      ).rejects.toThrow('source.unusedDependencies.ignore');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects unused dependency config nested under config.source', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    source: {
+      unusedDependencies: {
+        ignore: [],
+      },
+    },
+  },
+};
+`,
+      );
+
+      await expect(
+        loadConfig({
+          cwd: rootDir,
+        }),
+      ).rejects.toThrow('source.unusedDependencies');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects unused module config nested under config.source', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    source: {
+      unusedModules: {
+        ignore: [],
+      },
+    },
+  },
+};
+`,
+      );
+
+      await expect(
+        loadConfig({
+          cwd: rootDir,
+        }),
+      ).rejects.toThrow('source.unusedModules.ignore');
     } finally {
       await rm(rootDir, {
         force: true,

@@ -218,6 +218,40 @@ config: {
 
 `config.checkers` defines checker entries. Every configured checker must declare a non-empty `entry` and use a built-in preset. Checker `extensions` are fixed by Limina and cannot be configured; if `config.source.include` is omitted, Limina derives the global source boundary from configured checker extensions, then applies `config.source.exclude`.
 
+### `source`
+
+```js
+source: {
+  unusedDependencies: {
+    ignore: [
+      {
+        importer: '@example/app',
+        dependency: '@example/generated',
+        reason: 'Loaded by generated virtual modules.',
+      },
+    ],
+  },
+  unusedModules: {
+    entries: [
+      {
+        owner: '@example/app',
+        files: ['packages/app/src/**/*.spec.ts'],
+        reason: 'Vitest loads spec modules directly.',
+      },
+    ],
+    ignore: [
+      {
+        owner: '@example/app',
+        file: 'packages/app/src/generated/runtime.ts',
+        reason: 'Loaded by the framework runtime.',
+      },
+    ],
+  },
+}
+```
+
+`source` configures source-owned dependency checks. `source:check` delegates unused workspace dependency analysis to Knip and expects dependencies to be reachable from source-facing package entries, binaries, scripts, or Knip-supported tool entries. When a package owner has no `package.json#exports`, Limina treats the whole governed source module set as the application surface by generating a temporary Knip entry that imports it. In `strict: true`, it also asks Knip for unused source modules from the owner module sets Limina already knows; no-exports owners skip this unused-file coverage because their whole module set is intentionally included. Dead-file imports no longer prove dependency usage for exported package owners, and the dead file itself is reported in strict mode. Use `source.unusedModules.entries` to add owner-scoped Knip entry globs for test runners or local tooling that should not be package exports. Use `source.unusedDependencies.ignore` only for declared workspace dependencies whose usage is intentionally not visible to Knip; use `source.unusedModules.ignore` for intentional strict-mode source modules. There is no `source.unusedModules.enabled` switch.
+
 ### `graph`
 
 ```js

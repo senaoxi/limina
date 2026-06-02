@@ -114,8 +114,8 @@ export interface ResolvedCheckerConfig {
 
 /**
  * Explicit exception for a declared workspace package dependency that is used
- * through generated code, config files, scripts, or another path static import
- * analysis cannot see.
+ * through generated code, runtime strings, or another path that Knip
+ * dependency analysis cannot see.
  */
 export interface SourceUnusedDependencyIgnoreEntry {
   /**
@@ -127,7 +127,8 @@ export interface SourceUnusedDependencyIgnoreEntry {
    */
   dependency: string;
   /**
-   * Why the dependency is safe to keep even without a static source import.
+   * Why the dependency is safe to keep even when Knip cannot prove it is
+   * reachable from package entries, binaries, or scripts.
    */
   reason: string;
 }
@@ -137,14 +138,88 @@ export interface SourceUnusedDependencyIgnoreEntry {
  */
 export interface SourceUnusedDependenciesConfig {
   /**
-   * Declared workspace dependencies intentionally not visible through static
-   * source imports.
+   * Declared workspace dependencies intentionally not visible through Knip's
+   * entry-reachable dependency graph.
    */
   ignore?: SourceUnusedDependencyIgnoreEntry[];
 }
 
 /**
- * Global source boundary used by source and proof checks.
+ * Explicit exception for a source module that is owned by a package but is
+ * intentionally not reachable from Knip's package entry graph.
+ */
+export interface SourceUnusedModuleIgnoreEntry {
+  /**
+   * Named package owner from package.json.
+   */
+  owner: string;
+  /**
+   * Workspace-root-relative source module path.
+   */
+  file: string;
+  /**
+   * Why the source module is safe to keep even when Knip cannot prove it is
+   * reachable from package entries, binaries, or scripts.
+   */
+  reason: string;
+}
+
+/**
+ * Additional source module entries for Knip's strict-mode reachability graph.
+ */
+export interface SourceUnusedModuleEntryConfig {
+  /**
+   * Named package owner from package.json.
+   */
+  owner: string;
+  /**
+   * Workspace-root-relative file or glob patterns that Knip should treat as
+   * additional entries for this owner.
+   */
+  files: string[];
+  /**
+   * Why these modules are legitimate entries even though they are not package
+   * exports, binaries, scripts, or plugin-discovered entries.
+   */
+  reason: string;
+}
+
+/**
+ * Source module usage settings.
+ */
+export interface SourceUnusedModulesConfig {
+  /**
+   * Additional entry globs for source modules loaded by test runners or local
+   * tooling rather than package exports.
+   */
+  entries?: SourceUnusedModuleEntryConfig[];
+  /**
+   * Package-owned source modules intentionally not visible through Knip's
+   * entry-reachable file graph.
+   */
+  ignore?: SourceUnusedModuleIgnoreEntry[];
+}
+
+/**
+ * Source-owned dependency usage check settings.
+ */
+export interface SourceCheckConfig {
+  /**
+   * Checks that workspace package dependencies declared in package.json are
+   * reachable from package entries, binaries, or scripts owned by that package.
+   */
+  unusedDependencies?: SourceUnusedDependenciesConfig;
+  /**
+   * Strict-mode exceptions for package-owned source modules that are not
+   * reachable from package entries, binaries, or scripts owned by that package.
+   *
+   * There is no enabled switch: strict: true enables unused module checks.
+   */
+  unusedModules?: SourceUnusedModulesConfig;
+}
+
+/**
+ * Global source boundary used by proof checks.
  */
 export interface SourceBoundaryConfig {
   /**
@@ -172,11 +247,6 @@ export interface SourceBoundaryConfig {
    * ]
    */
   exclude?: string[];
-  /**
-   * Checks that workspace package dependencies declared in package.json are
-   * actually used by source owned by that package.
-   */
-  unusedDependencies?: SourceUnusedDependenciesConfig;
 }
 
 /**
@@ -188,7 +258,7 @@ export interface SharedLiminaConfig {
    */
   checkers?: Record<string, CheckerConfig>;
   /**
-   * Global source file boundary used by source and proof checks.
+   * Global source file boundary used by proof checks.
    */
   source?: SourceBoundaryConfig;
 }
@@ -544,6 +614,10 @@ export interface LiminaConfig {
    * Rules for release dependency artifact comparisons.
    */
   release?: ReleaseConfig;
+  /**
+   * Rules for source-owned dependency usage checks.
+   */
+  source?: SourceCheckConfig;
 }
 
 /**
@@ -958,16 +1032,49 @@ function collectDeprecatedConfigProblems(config: LiminaConfig): string[] {
 
   const graph = config.graph;
 
-  if (!graph || typeof graph !== 'object' || Array.isArray(graph)) {
-    return problems;
-  }
-
-  if (Object.hasOwn(graph, 'unusedWorkspaceDependencies')) {
+  if (
+    graph &&
+    typeof graph === 'object' &&
+    !Array.isArray(graph) &&
+    Object.hasOwn(graph, 'unusedWorkspaceDependencies')
+  ) {
     problems.push(
       [
         'Deprecated Limina config:',
         '  field: graph.unusedWorkspaceDependencies',
-        '  reason: graph.unusedWorkspaceDependencies has been removed; use config.source.unusedDependencies.ignore.',
+        '  reason: graph.unusedWorkspaceDependencies has been removed; use source.unusedDependencies.ignore.',
+      ].join('\n'),
+    );
+  }
+
+  const sharedSource = config.config?.source;
+
+  if (
+    sharedSource &&
+    typeof sharedSource === 'object' &&
+    !Array.isArray(sharedSource) &&
+    Object.hasOwn(sharedSource, 'unusedDependencies')
+  ) {
+    problems.push(
+      [
+        'Deprecated Limina config:',
+        '  field: config.source.unusedDependencies',
+        '  reason: config.source.unusedDependencies has moved to source.unusedDependencies.',
+      ].join('\n'),
+    );
+  }
+
+  if (
+    sharedSource &&
+    typeof sharedSource === 'object' &&
+    !Array.isArray(sharedSource) &&
+    Object.hasOwn(sharedSource, 'unusedModules')
+  ) {
+    problems.push(
+      [
+        'Deprecated Limina config:',
+        '  field: config.source.unusedModules',
+        '  reason: config.source.unusedModules has moved to source.unusedModules.ignore.',
       ].join('\n'),
     );
   }

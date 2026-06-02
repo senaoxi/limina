@@ -41,6 +41,7 @@ export {
   type RuntimeEnvironment,
   type SharedLiminaConfig,
   type SourceBoundaryConfig,
+  type SourceCheckConfig,
   type SourceUnusedDependenciesConfig,
   type SourceUnusedDependencyIgnoreEntry,
 } from './config';

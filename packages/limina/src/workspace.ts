@@ -9,6 +9,7 @@ const pnpmWorkspaceFileName = 'pnpm-workspace.yaml';
 const pnpmWorkspaceListTimeoutMs = 3000;
 
 export interface PackageManifest {
+  bin?: Record<string, string> | string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   exports?: unknown;

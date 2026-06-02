@@ -52,6 +52,7 @@
     "@publint/pack": "catalog:lint",
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",
+    "knip": "catalog:lint",
     "npm-package-json-lint": "catalog:lint",
     "picomatch": "catalog:prod",
     "publint": "catalog:lint",

@@ -21,22 +21,26 @@ import {
   resolveInternalImport,
 } from '../graph-context';
 import { isNodeBuiltinSpecifier } from '../graph-rules';
+import {
+  collectKnipSourceIssues,
+  type KnipOwnerProject,
+  type KnipSourceIssues,
+} from '../knip';
 import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
 import {
   collectSourceGraphProjectExtensions,
-  createExtensionPattern,
   isOrdinaryTypecheckConfigPath,
   readJsonConfig,
 } from '../tsconfig';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
+  normalizeSlashes,
   toRelativePath,
 } from '../utils/path';
 import {
   collectPackageOwners,
   collectWorkspacePackages,
-  findPackageForSpecifier,
   getPackageRootSpecifier,
   type PackageManifest,
   type PackageOwner,
@@ -53,6 +57,12 @@ export interface RunSourceCheckOptions {
 interface SourceProjectEntry {
   fileNames: string[];
   project: ProjectInfo;
+}
+
+interface OwnerSourceModuleSet {
+  checkUnusedFiles: boolean;
+  files: string[];
+  owner: PackageOwner;
 }
 
 interface PackageImportMatch {
@@ -110,19 +120,6 @@ const dependencySectionNames: DependencySectionName[] = [
   'peerDependencies',
   'optionalDependencies',
 ];
-const defaultSourceExclude = [
-  'node_modules',
-  'dist',
-  '.git',
-  '.tsbuild',
-  'coverage',
-  '**/tsconfig*.json',
-  '**/package.json',
-  '**/project.json',
-  '.prettierrc.json',
-  '.markdownlint.json',
-  'vercel.json',
-];
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -147,74 +144,6 @@ function findOwnerForFile(
         (left, right) => right.directory.length - left.directory.length,
       )[0] ?? null
   );
-}
-
-function hasGlobSyntax(pattern: string): boolean {
-  return /[*?[\]{}()!+@]/u.test(pattern);
-}
-
-function isDirectoryShorthand(pattern: string): boolean {
-  return (
-    !hasGlobSyntax(pattern) && !pattern.includes('/') && !path.extname(pattern)
-  );
-}
-
-function normalizeSourceExcludePattern(pattern: string): string[] {
-  const normalized = pattern.replaceAll('\\', '/').replace(/\/+$/u, '');
-
-  if (!normalized) {
-    return [];
-  }
-
-  if (isDirectoryShorthand(normalized)) {
-    return [`${normalized}/**`, `**/${normalized}/**`];
-  }
-
-  if (hasGlobSyntax(normalized)) {
-    return [normalized];
-  }
-
-  if (normalized.includes('/')) {
-    return [normalized, `${normalized}/**`];
-  }
-
-  return [normalized, `**/${normalized}`];
-}
-
-function sourceIncludePatterns(config: ResolvedLiminaConfig): string[] {
-  if (config.config?.source?.include) {
-    return config.config.source.include;
-  }
-
-  return getActiveCheckerExtensions(config).map(
-    (extension) => `**/*${extension}`,
-  );
-}
-
-function sourceExcludePatterns(config: ResolvedLiminaConfig): string[] {
-  return (config.config?.source?.exclude ?? defaultSourceExclude).flatMap(
-    normalizeSourceExcludePattern,
-  );
-}
-
-async function collectConfiguredSourceFiles(
-  config: ResolvedLiminaConfig,
-): Promise<string[]> {
-  const explicitInclude = config.config?.source?.include !== undefined;
-  const sourceFilePattern = explicitInclude
-    ? null
-    : createExtensionPattern(getActiveCheckerExtensions(config));
-  const files = await glob(sourceIncludePatterns(config), {
-    cwd: config.rootDir,
-    absolute: true,
-    ignore: sourceExcludePatterns(config),
-    onlyFiles: true,
-  });
-
-  return files
-    .map(normalizeAbsolutePath)
-    .filter((filePath) => sourceFilePattern?.test(filePath) ?? true)
-    .sort();
 }
 
 function findNearestPackageInfo(
@@ -395,6 +324,13 @@ function createWorkspaceDependencyKey(
   return `${importerName}\0${dependencyName}`;
 }
 
+function createPackageDependencyIssueKey(
+  packageJsonPath: string,
+  dependencyName: string,
+): string {
+  return `${normalizeAbsolutePath(packageJsonPath)}\0${dependencyName}`;
+}
+
 function getWorkspacePackageJsonPath(
   workspacePackage: WorkspacePackage,
 ): string {
@@ -473,7 +409,7 @@ function collectUnusedDependencyIgnore(options: {
   workspacePackages: WorkspacePackage[];
 }): Set<string> {
   const ignoredKeys = new Set<string>();
-  const rawConfig = options.config.config?.source?.unusedDependencies;
+  const rawConfig = options.config.source?.unusedDependencies;
 
   if (rawConfig === undefined) {
     return ignoredKeys;
@@ -483,9 +419,9 @@ function collectUnusedDependencyIgnore(options: {
     options.problems.push(
       [
         'Invalid unused dependency config:',
-        '  field: config.source.unusedDependencies',
+        '  field: source.unusedDependencies',
         `  value: ${formatUnknownValue(rawConfig)}`,
-        '  reason: config.source.unusedDependencies must be an object.',
+        '  reason: source.unusedDependencies must be an object.',
       ].join('\n'),
     );
     return ignoredKeys;
@@ -501,7 +437,7 @@ function collectUnusedDependencyIgnore(options: {
     options.problems.push(
       [
         'Invalid unused dependency ignore config:',
-        '  field: config.source.unusedDependencies.ignore',
+        '  field: source.unusedDependencies.ignore',
         `  value: ${formatUnknownValue(rawIgnore)}`,
         '  reason: ignore must be an array.',
       ].join('\n'),
@@ -522,7 +458,7 @@ function collectUnusedDependencyIgnore(options: {
   );
 
   for (const [index, entry] of rawIgnore.entries()) {
-    const field = `config.source.unusedDependencies.ignore[${index}]`;
+    const field = `source.unusedDependencies.ignore[${index}]`;
 
     if (!isPlainRecord(entry)) {
       options.problems.push(
@@ -1157,108 +1093,514 @@ async function addTsconfigGovernanceProblems(options: {
   }
 }
 
-async function collectUsedWorkspaceDependencies(options: {
-  config: ResolvedLiminaConfig;
+function createOwnerSourceFileKey(ownerName: string, filePath: string): string {
+  return `${ownerName}\0${normalizeAbsolutePath(filePath)}`;
+}
+
+function hasProvidedPackageExports(owner: PackageOwner): boolean {
+  return Object.hasOwn(owner.manifest, 'exports');
+}
+
+interface UnusedModuleConfig {
+  entryPatternsByOwnerName: Map<string, string[]>;
+  ignoredKeys: Set<string>;
+}
+
+function collectOwnerSourceModuleSets(options: {
   owners: PackageOwner[];
-  workspacePackages: WorkspacePackage[];
-}): Promise<Map<string, Set<string>>> {
-  const usageByImporterName = new Map<string, Set<string>>();
-  const workspacePackageNames = new Set(
-    options.workspacePackages.map((workspacePackage) => workspacePackage.name),
-  );
-  const workspacePackagesByPackageJsonPath = new Map(
-    options.workspacePackages.map((workspacePackage) => [
-      getWorkspacePackageJsonPath(workspacePackage),
-      workspacePackage,
-    ]),
-  );
-  const sourceFiles = await collectConfiguredSourceFiles(options.config);
+  sourceProjectEntries: SourceProjectEntry[];
+}): OwnerSourceModuleSet[] {
+  const filesByOwner = new Map<
+    string,
+    { files: Set<string>; owner: PackageOwner }
+  >();
 
-  for (const filePath of sourceFiles) {
-    const owner = findOwnerForFile(filePath, options.owners);
+  for (const sourceProjectEntry of options.sourceProjectEntries) {
+    for (const fileName of sourceProjectEntry.fileNames) {
+      const filePath = normalizeAbsolutePath(fileName);
+      const owner = findOwnerForFile(filePath, options.owners);
 
-    if (!owner) {
-      continue;
-    }
-    const ownerWorkspacePackage = workspacePackagesByPackageJsonPath.get(
-      owner.packageJsonPath,
-    );
-
-    if (!ownerWorkspacePackage) {
-      continue;
-    }
-
-    const usedDependencyNames =
-      usageByImporterName.get(ownerWorkspacePackage.name) ?? new Set<string>();
-
-    for (const importRecord of collectImportsFromFile(
-      filePath,
-      options.config.rootDir,
-    )) {
-      const targetPackage = findPackageForSpecifier(
-        importRecord.specifier,
-        options.workspacePackages,
-      );
-
-      if (
-        !targetPackage ||
-        targetPackage.name === ownerWorkspacePackage.name ||
-        !workspacePackageNames.has(targetPackage.name)
-      ) {
+      if (!owner?.name) {
         continue;
       }
 
-      usedDependencyNames.add(targetPackage.name);
-    }
+      const ownerFiles = filesByOwner.get(owner.packageJsonPath) ?? {
+        files: new Set<string>(),
+        owner,
+      };
 
-    usageByImporterName.set(ownerWorkspacePackage.name, usedDependencyNames);
+      ownerFiles.files.add(filePath);
+      filesByOwner.set(owner.packageJsonPath, ownerFiles);
+    }
   }
 
-  return usageByImporterName;
+  return [...filesByOwner.values()]
+    .map(({ files, owner }) => ({
+      checkUnusedFiles: hasProvidedPackageExports(owner),
+      files: [...files].sort((left, right) => left.localeCompare(right)),
+      owner,
+    }))
+    .sort((left, right) =>
+      left.owner.packageJsonPath.localeCompare(right.owner.packageJsonPath),
+    );
 }
 
-async function addUnusedDependencyProblems(options: {
-  config: ResolvedLiminaConfig;
-  owners: PackageOwner[];
-  problems: string[];
-  workspacePackages: WorkspacePackage[];
-}): Promise<void> {
-  const declarations = collectWorkspaceDependencyDeclarations(
-    options.workspacePackages,
-  );
-  const ignoredDependencies = collectUnusedDependencyIgnore({
-    config: options.config,
-    declarations,
-    problems: options.problems,
-    workspacePackages: options.workspacePackages,
-  });
+function normalizeWorkspacePattern(value: string): string {
+  let pattern = normalizeSlashes(value.trim());
 
-  if (options.workspacePackages.length === 0 || declarations.length === 0) {
-    return;
+  while (pattern.startsWith('./')) {
+    pattern = pattern.slice(2);
   }
 
-  const usedDependenciesByImporterName = await collectUsedWorkspaceDependencies(
-    {
-      config: options.config,
-      owners: options.owners,
-      workspacePackages: options.workspacePackages,
-    },
+  return pattern;
+}
+
+function isInvalidWorkspacePattern(pattern: string): boolean {
+  return (
+    pattern.startsWith('!') ||
+    path.isAbsolute(pattern) ||
+    /^[A-Za-z]:[\\/]/u.test(pattern) ||
+    pattern === '..' ||
+    pattern.startsWith('../') ||
+    pattern.includes('/../') ||
+    pattern.endsWith('/..')
+  );
+}
+
+function toOwnerRelativeEntryPattern(options: {
+  config: ResolvedLiminaConfig;
+  owner: PackageOwner;
+  pattern: string;
+}): string | null {
+  const ownerDirectory = toRelativePath(
+    options.config.rootDir,
+    options.owner.directory,
   );
 
-  for (const declaration of declarations) {
+  if (ownerDirectory === '.') {
+    return options.pattern;
+  }
+
+  if (options.pattern === ownerDirectory) {
+    return '.';
+  }
+
+  if (options.pattern.startsWith(`${ownerDirectory}/`)) {
+    return options.pattern.slice(ownerDirectory.length + 1);
+  }
+
+  return null;
+}
+
+function collectUnusedModuleConfig(options: {
+  config: ResolvedLiminaConfig;
+  ownerModuleSets: OwnerSourceModuleSet[];
+  problems: string[];
+}): UnusedModuleConfig {
+  const ignoredKeys = new Set<string>();
+  const entryPatternsByOwnerName = new Map<string, string[]>();
+  const rawConfig = options.config.source?.unusedModules;
+  const emptyConfig = {
+    entryPatternsByOwnerName,
+    ignoredKeys,
+  };
+
+  if (rawConfig === undefined) {
+    return emptyConfig;
+  }
+
+  if (!isPlainRecord(rawConfig)) {
+    options.problems.push(
+      [
+        'Invalid unused module config:',
+        '  field: source.unusedModules',
+        `  value: ${formatUnknownValue(rawConfig)}`,
+        '  reason: source.unusedModules must be an object.',
+      ].join('\n'),
+    );
+    return emptyConfig;
+  }
+
+  if (Object.hasOwn(rawConfig, 'enabled')) {
+    options.problems.push(
+      [
+        'Invalid unused module config:',
+        '  field: source.unusedModules.enabled',
+        `  value: ${formatUnknownValue(rawConfig.enabled)}`,
+        '  reason: source.unusedModules.enabled is not supported; strict: true enables unused source module checks automatically.',
+      ].join('\n'),
+    );
+  }
+
+  const moduleSetByOwnerName = new Map(
+    options.ownerModuleSets.map((moduleSet) => [
+      moduleSet.owner.name as string,
+      moduleSet,
+    ]),
+  );
+  const moduleFilesByOwnerName = new Map(
+    options.ownerModuleSets.map((moduleSet) => [
+      moduleSet.owner.name as string,
+      new Set(moduleSet.files),
+    ]),
+  );
+  const rawEntries = rawConfig.entries;
+  const rawIgnore = rawConfig.ignore;
+
+  if (rawEntries !== undefined) {
+    if (!Array.isArray(rawEntries)) {
+      options.problems.push(
+        [
+          'Invalid unused module entry config:',
+          '  field: source.unusedModules.entries',
+          `  value: ${formatUnknownValue(rawEntries)}`,
+          '  reason: entries must be an array.',
+        ].join('\n'),
+      );
+    } else {
+      for (const [index, entry] of rawEntries.entries()) {
+        const field = `source.unusedModules.entries[${index}]`;
+
+        if (!isPlainRecord(entry)) {
+          options.problems.push(
+            [
+              'Invalid unused module entry config:',
+              `  field: ${field}`,
+              `  value: ${formatUnknownValue(entry)}`,
+              '  reason: entry configs must be objects with non-empty owner, files, and reason fields.',
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        const ownerValue = entry.owner;
+        const filesValue = entry.files;
+        const reasonValue = entry.reason;
+
+        if (typeof ownerValue !== 'string' || ownerValue.trim().length === 0) {
+          options.problems.push(
+            [
+              'Invalid unused module entry config:',
+              `  field: ${field}.owner`,
+              `  value: ${formatUnknownValue(ownerValue)}`,
+              '  reason: owner must be a non-empty package owner name.',
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        if (!Array.isArray(filesValue) || filesValue.length === 0) {
+          options.problems.push(
+            [
+              'Invalid unused module entry config:',
+              `  field: ${field}.files`,
+              `  value: ${formatUnknownValue(filesValue)}`,
+              '  reason: files must be a non-empty array of workspace-root-relative glob patterns.',
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        if (
+          typeof reasonValue !== 'string' ||
+          reasonValue.trim().length === 0
+        ) {
+          options.problems.push(
+            [
+              'Invalid unused module entry config:',
+              `  field: ${field}.reason`,
+              `  value: ${formatUnknownValue(reasonValue)}`,
+              '  reason: reason must be a non-empty string.',
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        const ownerName = ownerValue.trim();
+        const moduleSet = moduleSetByOwnerName.get(ownerName);
+
+        if (!moduleSet) {
+          options.problems.push(
+            [
+              'Invalid unused module entry config:',
+              `  field: ${field}.owner`,
+              `  owner: ${ownerName}`,
+              '  reason: owner must name an existing package owner with a package.json name.',
+            ].join('\n'),
+          );
+          continue;
+        }
+
+        const ownerRelativePatterns =
+          entryPatternsByOwnerName.get(ownerName) ?? [];
+
+        for (const [fileIndex, fileValue] of filesValue.entries()) {
+          const fileField = `${field}.files[${fileIndex}]`;
+
+          if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
+            options.problems.push(
+              [
+                'Invalid unused module entry config:',
+                `  field: ${fileField}`,
+                `  value: ${formatUnknownValue(fileValue)}`,
+                '  reason: file patterns must be non-empty strings.',
+              ].join('\n'),
+            );
+            continue;
+          }
+
+          const pattern = normalizeWorkspacePattern(fileValue);
+
+          if (isInvalidWorkspacePattern(pattern)) {
+            options.problems.push(
+              [
+                'Invalid unused module entry config:',
+                `  field: ${fileField}`,
+                `  file: ${pattern}`,
+                '  reason: file patterns must be positive workspace-root-relative globs inside the workspace root.',
+              ].join('\n'),
+            );
+            continue;
+          }
+
+          const ownerRelativePattern = toOwnerRelativeEntryPattern({
+            config: options.config,
+            owner: moduleSet.owner,
+            pattern,
+          });
+
+          if (!ownerRelativePattern) {
+            options.problems.push(
+              [
+                'Invalid unused module entry config:',
+                `  field: ${fileField}`,
+                `  owner: ${ownerName}`,
+                `  file: ${pattern}`,
+                '  reason: file patterns must stay inside the owner package directory.',
+              ].join('\n'),
+            );
+            continue;
+          }
+
+          ownerRelativePatterns.push(ownerRelativePattern);
+        }
+
+        if (ownerRelativePatterns.length > 0) {
+          entryPatternsByOwnerName.set(
+            ownerName,
+            [...new Set(ownerRelativePatterns)].sort(),
+          );
+        }
+      }
+    }
+  }
+
+  if (rawIgnore === undefined) {
+    return {
+      entryPatternsByOwnerName,
+      ignoredKeys,
+    };
+  }
+
+  if (!Array.isArray(rawIgnore)) {
+    options.problems.push(
+      [
+        'Invalid unused module ignore config:',
+        '  field: source.unusedModules.ignore',
+        `  value: ${formatUnknownValue(rawIgnore)}`,
+        '  reason: ignore must be an array.',
+      ].join('\n'),
+    );
+    return {
+      entryPatternsByOwnerName,
+      ignoredKeys,
+    };
+  }
+
+  for (const [index, entry] of rawIgnore.entries()) {
+    const field = `source.unusedModules.ignore[${index}]`;
+
+    if (!isPlainRecord(entry)) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}`,
+          `  value: ${formatUnknownValue(entry)}`,
+          '  reason: ignore entries must be objects with non-empty owner, file, and reason fields.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    const ownerValue = entry.owner;
+    const fileValue = entry.file;
+    const reasonValue = entry.reason;
+
+    if (typeof ownerValue !== 'string' || ownerValue.trim().length === 0) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.owner`,
+          `  value: ${formatUnknownValue(ownerValue)}`,
+          '  reason: owner must be a non-empty package owner name.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.file`,
+          `  value: ${formatUnknownValue(fileValue)}`,
+          '  reason: file must be a non-empty workspace-root-relative path.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.reason`,
+          `  value: ${formatUnknownValue(reasonValue)}`,
+          '  reason: reason must be a non-empty string.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    const ownerName = ownerValue.trim();
+    const file = normalizeSlashes(fileValue.trim());
+    const moduleSet = moduleSetByOwnerName.get(ownerName);
+
+    if (!moduleSet) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.owner`,
+          `  owner: ${ownerName}`,
+          '  reason: owner must name an existing package owner with a package.json name.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/u.test(file)) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.file`,
+          `  file: ${file}`,
+          '  reason: file must be relative to the workspace root.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    const filePath = normalizeAbsolutePath(
+      path.resolve(options.config.rootDir, file),
+    );
+
+    if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.file`,
+          `  file: ${file}`,
+          '  reason: file must resolve inside the workspace root.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (!moduleFilesByOwnerName.get(ownerName)?.has(filePath)) {
+      options.problems.push(
+        [
+          'Invalid unused module ignore config:',
+          `  field: ${field}.file`,
+          `  owner: ${ownerName}`,
+          `  file: ${file}`,
+          '  reason: file must belong to the owner source module set known to Limina.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    ignoredKeys.add(createOwnerSourceFileKey(ownerName, filePath));
+  }
+
+  return {
+    entryPatternsByOwnerName,
+    ignoredKeys,
+  };
+}
+
+function createKnipOwnerProjects(options: {
+  entryPatternsByOwnerName: Map<string, string[]>;
+  ignoredModuleKeys: Set<string>;
+  includeFiles: boolean;
+  ownerModuleSets: OwnerSourceModuleSet[];
+}): KnipOwnerProject[] {
+  return options.ownerModuleSets.map((moduleSet) => ({
+    directory: moduleSet.owner.directory,
+    entryFiles:
+      options.entryPatternsByOwnerName.get(moduleSet.owner.name as string) ??
+      [],
+    ignoreFiles: moduleSet.files
+      .filter((filePath) =>
+        options.ignoredModuleKeys.has(
+          createOwnerSourceFileKey(moduleSet.owner.name as string, filePath),
+        ),
+      )
+      .map((filePath) => toRelativePath(moduleSet.owner.directory, filePath))
+      .sort(),
+    projectFiles: options.includeFiles
+      ? moduleSet.files
+          .map((filePath) =>
+            toRelativePath(moduleSet.owner.directory, filePath),
+          )
+          .sort()
+      : [],
+    virtualEntrySourceFiles: moduleSet.checkUnusedFiles ? [] : moduleSet.files,
+  }));
+}
+
+function addUnusedDependencyProblems(options: {
+  config: ResolvedLiminaConfig;
+  declarations: WorkspaceDependencyDeclaration[];
+  ignoredDependencies: Set<string>;
+  knipIssues: KnipSourceIssues;
+  problems: string[];
+}): void {
+  const unusedDependencyIssueKeys = new Set(
+    options.knipIssues.unusedWorkspaceDependencies.map((issue) =>
+      createPackageDependencyIssueKey(
+        issue.packageJsonPath,
+        issue.dependencyName,
+      ),
+    ),
+  );
+
+  for (const declaration of options.declarations) {
     const dependencyKey = createWorkspaceDependencyKey(
       declaration.importer.name,
       declaration.dependencyName,
     );
 
-    if (ignoredDependencies.has(dependencyKey)) {
+    if (options.ignoredDependencies.has(dependencyKey)) {
       continue;
     }
 
     if (
-      usedDependenciesByImporterName
-        .get(declaration.importer.name)
-        ?.has(declaration.dependencyName)
+      !unusedDependencyIssueKeys.has(
+        createPackageDependencyIssueKey(
+          declaration.packageJsonPath,
+          declaration.dependencyName,
+        ),
+      )
     ) {
       continue;
     }
@@ -1271,10 +1613,129 @@ async function addUnusedDependencyProblems(options: {
         `  dependency: ${declaration.dependencyName}`,
         `  section: ${declaration.sectionName}`,
         `  specifier: ${declaration.specifier}`,
-        '  reason: workspace package dependencies should be used by source owned by the importer package, or explicitly ignored when usage is not visible to static import analysis.',
-        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, import it from source owned by ${declaration.importer.name}, or add config.source.unusedDependencies.ignore with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
+        '  reason: workspace package dependencies should be reachable from package entries, binaries, scripts, or explicitly ignored when usage is not visible to Knip analysis.',
+        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, make it reachable from an entry owned by ${declaration.importer.name}, invoke one of its package binaries from scripts owned by ${declaration.importer.name}, or add source.unusedDependencies.ignore with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
       ].join('\n'),
     );
+  }
+}
+
+function addUnusedModuleProblems(options: {
+  config: ResolvedLiminaConfig;
+  ignoredModuleKeys: Set<string>;
+  knipIssues: KnipSourceIssues;
+  ownerModuleSets: OwnerSourceModuleSet[];
+  problems: string[];
+}): void {
+  const moduleSetByFilePath = new Map<string, OwnerSourceModuleSet>();
+  const reportedKeys = new Set<string>();
+
+  for (const moduleSet of options.ownerModuleSets) {
+    if (!moduleSet.checkUnusedFiles) {
+      continue;
+    }
+
+    for (const filePath of moduleSet.files) {
+      moduleSetByFilePath.set(filePath, moduleSet);
+    }
+  }
+
+  for (const issue of options.knipIssues.unusedSourceFiles) {
+    const filePath = normalizeAbsolutePath(issue.filePath);
+    const moduleSet = moduleSetByFilePath.get(filePath);
+
+    if (!moduleSet?.owner.name) {
+      continue;
+    }
+
+    const issueKey = createOwnerSourceFileKey(moduleSet.owner.name, filePath);
+
+    if (options.ignoredModuleKeys.has(issueKey) || reportedKeys.has(issueKey)) {
+      continue;
+    }
+
+    reportedKeys.add(issueKey);
+
+    options.problems.push(
+      [
+        'Unused source module:',
+        `  owner: ${moduleSet.owner.name}`,
+        `  package manifest: ${toRelativePath(options.config.rootDir, moduleSet.owner.packageJsonPath)}`,
+        `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
+        '  reason: strict mode requires owner-governed source modules to be reachable from package entries, binaries, scripts, or Knip plugin entries.',
+        `  fix: delete ${toRelativePath(options.config.rootDir, filePath)}, make it reachable from an entry owned by ${moduleSet.owner.name}, or add source.unusedModules.ignore with owner "${moduleSet.owner.name}", file "${toRelativePath(options.config.rootDir, filePath)}", and a reason.`,
+      ].join('\n'),
+    );
+  }
+}
+
+async function addKnipBackedSourceProblems(options: {
+  config: ResolvedLiminaConfig;
+  ownerModuleSets: OwnerSourceModuleSet[];
+  problems: string[];
+  workspacePackages: WorkspacePackage[];
+}): Promise<void> {
+  const declarations = collectWorkspaceDependencyDeclarations(
+    options.workspacePackages,
+  );
+  const ignoredDependencies = collectUnusedDependencyIgnore({
+    config: options.config,
+    declarations,
+    problems: options.problems,
+    workspacePackages: options.workspacePackages,
+  });
+  const unusedModuleConfig = collectUnusedModuleConfig({
+    config: options.config,
+    ownerModuleSets: options.ownerModuleSets,
+    problems: options.problems,
+  });
+  const includeFiles =
+    isStrictConfig(options.config) && options.ownerModuleSets.length > 0;
+  const needsDependencyAnalysis =
+    options.workspacePackages.length > 0 && declarations.length > 0;
+  const ownerProjects = createKnipOwnerProjects({
+    entryPatternsByOwnerName: unusedModuleConfig.entryPatternsByOwnerName,
+    ignoredModuleKeys: unusedModuleConfig.ignoredKeys,
+    includeFiles,
+    ownerModuleSets: options.ownerModuleSets,
+  });
+  const hasOwnerProjectEntries = ownerProjects.some(
+    (ownerProject) =>
+      ownerProject.entryFiles.length > 0 ||
+      ownerProject.virtualEntrySourceFiles.length > 0,
+  );
+
+  if (!needsDependencyAnalysis && !includeFiles) {
+    return;
+  }
+
+  const knipIssues = await collectKnipSourceIssues({
+    config: options.config,
+    ignoredKeys: ignoredDependencies,
+    includeFiles,
+    ownerProjects:
+      includeFiles || (needsDependencyAnalysis && hasOwnerProjectEntries)
+        ? ownerProjects
+        : [],
+    workspacePackages: options.workspacePackages,
+  });
+
+  addUnusedDependencyProblems({
+    config: options.config,
+    declarations,
+    ignoredDependencies,
+    knipIssues,
+    problems: options.problems,
+  });
+
+  if (includeFiles) {
+    addUnusedModuleProblems({
+      config: options.config,
+      ignoredModuleKeys: unusedModuleConfig.ignoredKeys,
+      knipIssues,
+      ownerModuleSets: options.ownerModuleSets,
+      problems: options.problems,
+    });
   }
 }
 
@@ -1321,6 +1782,10 @@ async function runSourceCheckInternal(
   const sourceProjectEntries = createSourceProjectEntries(config, projects);
   const packages = await collectWorkspacePackages(config);
   const packageOwners = await collectPackageOwners(config);
+  const ownerModuleSets = collectOwnerSourceModuleSets({
+    owners: packageOwners,
+    sourceProjectEntries,
+  });
   const problems: string[] = [...graphRoute.problems];
 
   await addTsconfigGovernanceProblems({
@@ -1328,9 +1793,9 @@ async function runSourceCheckInternal(
     owners: packageOwners,
     problems,
   });
-  await addUnusedDependencyProblems({
+  await addKnipBackedSourceProblems({
     config,
-    owners: packageOwners,
+    ownerModuleSets,
     problems,
     workspacePackages: packages,
   });

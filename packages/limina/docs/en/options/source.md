@@ -1,6 +1,6 @@
 # Source Coverage
 
-Source settings define Limina's global source boundary. `source check` uses this boundary for source-owned validations, and `proof check` uses the same boundary for coverage proof.
+Source settings define Limina's global source boundary for coverage proof. `proof check` uses this boundary to decide which files must be covered by checker entries or an allowlist. `source check` owns package authority and ordinary typecheck ownership checks separately; its unused workspace dependency branch is Knip-backed and uses package entries instead of `include` / `exclude`. In `strict: true`, `source check` also uses Knip to report unused source modules from Limina's package owner module sets.
 
 ```js
 import { defineConfig } from 'limina';
@@ -50,32 +50,84 @@ If `runtime.ts` is not covered by any checker, the result is a proof check failu
 
 ## `unusedDependencies.ignore`
 
-`source check` verifies that workspace packages declared in `package.json` are used by source owned by that package. This applies to every workspace package, including the workspace root.
+`source check` verifies that workspace packages declared in `package.json` are reachable from the importing package's public entry graph. This applies to every workspace package, including the workspace root.
 
-Limina scans dependency names in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`. If the dependency name matches a package from the pnpm workspace, Limina expects the importer package to use it through a static source import such as `import`, `export ... from`, `import type`, or dynamic `import()`.
+Limina delegates this unused dependency analysis to Knip. It scans dependency names in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`. If the dependency name matches a package from the pnpm workspace, Limina expects Knip to prove the dependency is reachable from package entries such as source-facing `exports`, package `bin` entries, scripts, or Knip-supported tool/plugin entries.
 
-The source scope comes from the global `config.source.include` / `config.source.exclude` boundary. Each matched source file belongs to its nearest `package.json`, and workspace dependency usage is counted only from source owned by the importer package. Separately, `source check` verifies ordinary typecheck config ownership for `tsconfig*.json` files excluding `tsconfig*.dts.json`, `tsconfig*.build.json`, `tsconfig*.base.json`, and `tsconfig*.check.json`.
+Because Limina strict mode requires workspace package exports to point directly at source entries, those exports naturally become Knip entries. If a package owner has no `package.json#exports` field, Limina treats it as an application-style owner: it generates a temporary Knip entry that imports the full owner source module set, so dependency usage may be proven by any module governed by that package.json. An import that exists only in an unreachable dead file no longer proves a dependency is used for exported package owners; in strict mode, that dead file is also reported as an unused source module. Separately, `source check` still verifies ordinary typecheck config ownership for `tsconfig*.json` files excluding `tsconfig*.dts.json`, `tsconfig*.build.json`, `tsconfig*.base.json`, and `tsconfig*.check.json`.
 
-For dependencies used by generated code, config files, scripts, or runtime strings that static import analysis cannot see, add an ignore entry:
+For dependencies used by generated code, runtime strings, or another path Knip cannot see, add an ignore entry:
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
-    source: {
-      unusedDependencies: {
-        ignore: [
-          {
-            importer: '@acme/app',
-            dependency: '@acme/runtime',
-            reason: 'Loaded by generated code outside static source imports.',
-          },
-        ],
-      },
+  source: {
+    unusedDependencies: {
+      ignore: [
+        {
+          importer: '@acme/app',
+          dependency: '@acme/runtime',
+          reason: 'Loaded by generated code outside the entry-reachable graph.',
+        },
+      ],
     },
   },
 });
 ```
 
 Ignore entries must name existing workspace packages and a dependency pair that is still declared in the importer package manifest. If the dependency is intentionally retained, keep the reason close to the config; if it is no longer needed, remove the dependency instead.
+
+## `unusedModules.entries`
+
+`source check` enables unused source module detection automatically when `strict: true`. There is no `source.unusedModules.enabled` switch. Limina provides Knip with the source module set governed by each named package owner, then Knip decides whether those modules are reachable from package `exports`, `bin`, scripts, or Knip-supported plugin entries.
+
+For package owners without `package.json#exports`, Limina treats the whole governed source module set as the package.json surface. It generates a temporary entry for dependency analysis and skips unused-file coverage for that owner, because every known source module is intentionally part of the application surface.
+
+Some source modules are legitimate entries without being package exports. For example, test runners may load `*.spec.ts` files directly. Add owner-scoped Knip entry globs for those cases:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  strict: true,
+  source: {
+    unusedModules: {
+      entries: [
+        {
+          owner: '@acme/app',
+          files: ['packages/app/src/**/*.spec.ts'],
+          reason: 'Vitest loads spec modules directly.',
+        },
+      ],
+    },
+  },
+});
+```
+
+Entry configs must use a named package owner, positive workspace-root-relative glob patterns inside that owner directory, and a non-empty reason.
+
+## `unusedModules.ignore`
+
+Use an ignore entry only when a strict-mode source module is intentionally retained but not visible to Knip:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  strict: true,
+  source: {
+    unusedModules: {
+      ignore: [
+        {
+          owner: '@acme/app',
+          file: 'packages/app/src/generated/runtime.ts',
+          reason: 'Generated runtime module loaded by the framework.',
+        },
+      ],
+    },
+  },
+});
+```
+
+Ignore entries must use a named package owner, a workspace-root-relative file path that stays inside the repository, and a non-empty reason. The file must belong to that owner's source module set known to Limina.

@@ -1,6 +1,6 @@
 # Source coverage
 
-Source settings 定义 Limina 的全局源码边界。`source check` 会用这条边界做 source-owned validations，`proof check` 也使用同一条边界做 coverage proof。
+Source settings 定义 Limina 用于 coverage proof 的全局源码边界。`proof check` 会用这条边界判断哪些文件必须被 checker entries 或 allowlist 覆盖。`source check` 另外负责 package authority 和 ordinary typecheck ownership；其中 unused workspace dependency 分支由 Knip 接管，使用 package entries，而不是 `include` / `exclude`。在 `strict: true` 下，`source check` 还会把 Limina 已知的 package owner module set 交给 Knip，用来报告 unused source modules。
 
 ```js
 import { defineConfig } from 'limina';
@@ -50,32 +50,84 @@ packages/core/
 
 ## `unusedDependencies.ignore`
 
-`source check` 会验证 `package.json` 中声明的 workspace package 是否真的被这个 package 自己的源码使用。这个规则会检查每个 workspace package，包括 workspace root。
+`source check` 会验证 `package.json` 中声明的 workspace package 是否能从 importer package 的公开入口图触达。这个规则会检查每个 workspace package，包括 workspace root。
 
-Limina 会扫描 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中的依赖名。只要依赖名匹配 pnpm workspace 中的 package，Limina 就期待 importer package 的归属源码里出现静态 import，例如 `import`、`export ... from`、`import type` 或 dynamic `import()`。
+Limina 会把这部分 unused dependency 分析交给 Knip。它会扫描 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中的依赖名。只要依赖名匹配 pnpm workspace 中的 package，Limina 就期待 Knip 能证明这条依赖可以从 source-facing `exports`、package `bin`、scripts，或 Knip 支持的工具 / plugin 入口触达。
 
-源码范围来自全局 `config.source.include` / `config.source.exclude` 边界。每个命中的源码文件归属离它最近的 `package.json`，workspace dependency usage 也只从 importer package 自己拥有的源码里统计。与此同时，`source check` 会校验 ordinary typecheck config 的 owner：也就是排除 `tsconfig*.dts.json`、`tsconfig*.build.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 后剩余的 `tsconfig*.json`。
+因为 Limina strict mode 要求 workspace package exports 直接指向源码入口，这些 exports 会天然成为 Knip entries。如果某个 package owner 没有 `package.json#exports` 字段，Limina 会把它视为应用型 owner：临时生成一个 Knip entry，导入这个 package.json 管辖的完整 source module 集合，因此任意被该 package.json 管辖的模块都可以证明 dependency 使用。对于有 exports 的 package owner，只出现在不可达 dead file 里的 import 不再能证明依赖被使用；在 strict mode 下，这个 dead file 本身也会被报告为 unused source module。与此同时，`source check` 仍会校验 ordinary typecheck config 的 owner：也就是排除 `tsconfig*.dts.json`、`tsconfig*.build.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 后剩余的 `tsconfig*.json`。
 
-对于生成代码、配置文件、脚本或运行时字符串等静态 import 分析看不到的真实使用，可以添加 ignore entry：
+对于生成代码、运行时字符串，或其他 Knip 无法看见的真实使用，可以添加 ignore entry：
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
-  config: {
-    source: {
-      unusedDependencies: {
-        ignore: [
-          {
-            importer: '@acme/app',
-            dependency: '@acme/runtime',
-            reason: 'Loaded by generated code outside static source imports.',
-          },
-        ],
-      },
+  source: {
+    unusedDependencies: {
+      ignore: [
+        {
+          importer: '@acme/app',
+          dependency: '@acme/runtime',
+          reason: 'Loaded by generated code outside the entry-reachable graph.',
+        },
+      ],
     },
   },
 });
 ```
 
 ignore entry 必须指向已存在的 workspace package，并且这对 importer/dependency 仍然要在 importer 的 package manifest 中声明。如果这个依赖是有意保留的，就把原因留在配置旁边；如果它已经不需要了，应直接删除依赖声明。
+
+## `unusedModules.entries`
+
+`source check` 会在 `strict: true` 时自动启用 unused source module 检测。这里没有 `source.unusedModules.enabled` 开关。Limina 会给 Knip 提供每个具名 package owner 管辖的 source module 集合，再由 Knip 判断这些模块是否能从 package `exports`、`bin`、scripts，或 Knip 支持的 plugin entries 触达。
+
+对于没有 `package.json#exports` 的 package owner，Limina 会把完整的被治理 source module 集合作为 package.json 的检测面。它会为 dependency 分析生成临时 entry，并跳过该 owner 的 unused-file 覆盖检查，因为这些已知 source module 都被视为应用入口面的一部分。
+
+有些 source module 是合法入口，但不应该暴露成 package export。比如测试 runner 会直接加载 `*.spec.ts` 文件。此时可以为 owner 增加 Knip entry globs：
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  strict: true,
+  source: {
+    unusedModules: {
+      entries: [
+        {
+          owner: '@acme/app',
+          files: ['packages/app/src/**/*.spec.ts'],
+          reason: 'Vitest loads spec modules directly.',
+        },
+      ],
+    },
+  },
+});
+```
+
+entry config 必须使用具名 package owner；`files` 必须是正向的 workspace-root-relative glob，并且位于该 owner package 目录内；`reason` 必须是非空字符串。
+
+## `unusedModules.ignore`
+
+只有当 strict-mode source module 确实需要保留，但 Knip 无法看见它的使用时，才添加 ignore entry：
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  strict: true,
+  source: {
+    unusedModules: {
+      ignore: [
+        {
+          owner: '@acme/app',
+          file: 'packages/app/src/generated/runtime.ts',
+          reason: 'Generated runtime module loaded by the framework.',
+        },
+      ],
+    },
+  },
+});
+```
+
+ignore entry 必须使用具名 package owner、workspace-root-relative file path，并且解析后仍在 repo root 内；同时 `reason` 必须是非空字符串。这个文件也必须确实属于 Limina 已知的该 owner source module set。
