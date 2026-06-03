@@ -166,7 +166,7 @@ Reports `Unused workspace package dependency:`. If it is genuinely used through 
 
 ### Strict: source modules unreachable from exports (Knip)
 
-In strict mode, Limina also lets Knip check whether an owner's source module is unreachable from the package `exports`, `bin`, and scripts — in which case it is a dead module.
+In strict mode, Limina also lets Knip check whether an owner's source module is unreachable from package `exports`, `bin`, scripts, Knip-supported plugin entries, and `source.additionalEntries` — in which case it is a dead module.
 
 ```js
 source: {
@@ -178,7 +178,7 @@ source: {
 }
 ```
 
-Reports `Unused source module:`. For something intentionally kept but invisible to Knip, ignore it via `source.unusedModules.ignore`.
+Reports `Unused source module:`. If the module is a real extra entry, add it through `source.additionalEntries`; for something intentionally kept but invisible to Knip, ignore it via `source.unusedModules.ignore`.
 
 ## `nx:check`
 

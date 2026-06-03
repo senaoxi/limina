@@ -1,5 +1,6 @@
+import ignore from 'ignore';
 import { createElapsedTimer } from 'logaria/helper';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
 import { glob } from 'tinyglobby';
 import type ts from 'typescript';
@@ -34,7 +35,11 @@ import {
   resolveProjectConfigPath,
   resolveReferencePath,
 } from '../tsconfig';
-import { normalizeAbsolutePath, toRelativePath } from '../utils/path';
+import {
+  normalizeAbsolutePath,
+  toPosixPath,
+  toRelativePath,
+} from '../utils/path';
 
 interface CheckerCoverageTarget {
   checker: ResolvedCheckerConfig;
@@ -85,18 +90,31 @@ const dtsConfigPattern = '**/tsconfig*.dts.json';
 const buildGraphConfigPattern = '**/tsconfig*.build.json';
 const tsconfigJsonPattern = '**/tsconfig.json';
 const tsconfigFilePattern = '**/tsconfig*.json';
+const defaultSourceIncludeExtensions = [
+  '.ts',
+  '.d.ts',
+  '.tsx',
+  '.cts',
+  '.d.cts',
+  '.mts',
+  '.d.mts',
+  '.mjs',
+  '.json',
+];
+const defaultSourceIncludeExtensionSet = new Set<string>(
+  defaultSourceIncludeExtensions,
+);
 const defaultSourceExclude = [
-  'node_modules',
+  'nx.json',
+  'project.json',
+  'tsconfig.json',
+  '**/tsconfig.*.json',
   'dist',
+  '.nx',
   '.git',
   '.tsbuild',
   'coverage',
-  '**/tsconfig*.json',
-  '**/package.json',
-  '**/project.json',
-  '.prettierrc.json',
-  '.markdownlint.json',
-  'vercel.json',
+  'node_modules',
 ];
 
 const ignoredSemanticCompilerOptions = new Set([
@@ -258,14 +276,20 @@ function normalizeSourceExcludePattern(pattern: string): string[] {
   return [normalized, `**/${normalized}`];
 }
 
+function defaultSourceExtensions(config: ResolvedLiminaConfig): string[] {
+  const checkerExtensions = getActiveCheckerExtensions(config).filter(
+    (extension) => !defaultSourceIncludeExtensionSet.has(extension),
+  );
+
+  return [...defaultSourceIncludeExtensions, ...checkerExtensions];
+}
+
 function sourceIncludePatterns(config: ResolvedLiminaConfig): string[] {
   if (config.config?.source?.include) {
     return config.config.source.include;
   }
 
-  return getActiveCheckerExtensions(config).map(
-    (extension) => `**/*${extension}`,
-  );
+  return defaultSourceExtensions(config).map((extension) => `**/*${extension}`);
 }
 
 function sourceExcludePatterns(config: ResolvedLiminaConfig): string[] {
@@ -274,13 +298,33 @@ function sourceExcludePatterns(config: ResolvedLiminaConfig): string[] {
   );
 }
 
+function createGitignoreFilter(
+  config: ResolvedLiminaConfig,
+): ((filePath: string) => boolean) | null {
+  if (config.config?.source?.exclude !== undefined) {
+    return null;
+  }
+
+  const gitignorePath = path.join(config.rootDir, '.gitignore');
+
+  if (!existsSync(gitignorePath)) {
+    return null;
+  }
+
+  const matcher = ignore().add(readFileSync(gitignorePath, 'utf8'));
+
+  return (filePath) =>
+    matcher.ignores(toPosixPath(toRelativePath(config.rootDir, filePath)));
+}
+
 async function collectExpectedSourceFiles(
   config: ResolvedLiminaConfig,
 ): Promise<Set<string>> {
   const explicitInclude = config.config?.source?.include !== undefined;
   const proofFilePattern = explicitInclude
     ? null
-    : createExtensionPattern(getActiveCheckerExtensions(config));
+    : createExtensionPattern(defaultSourceExtensions(config));
+  const gitignoreFilter = createGitignoreFilter(config);
   const files = await glob(sourceIncludePatterns(config), {
     cwd: config.rootDir,
     absolute: true,
@@ -292,6 +336,7 @@ async function collectExpectedSourceFiles(
     files
       .map(normalizeAbsolutePath)
       .filter((filePath) => proofFilePattern?.test(filePath) ?? true)
+      .filter((filePath) => !gitignoreFilter?.(filePath))
       .sort(),
   );
 }

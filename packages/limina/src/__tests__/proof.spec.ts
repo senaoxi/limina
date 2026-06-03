@@ -792,6 +792,145 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it('reports fixed default source extensions outside checker coverage', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPassingFiles({
+        'packages/pkg/fixtures/config.mjs': 'export default {};\n',
+        'packages/pkg/fixtures/data.json': JSON.stringify({ ok: true }),
+        'packages/pkg/fixtures/ignored.cjs': 'exports.value = 1;\n',
+        'packages/pkg/fixtures/ignored.js': 'export const value = 1;\n',
+        'packages/pkg/fixtures/ignored.jsx': 'export const value = <div />;\n',
+        'packages/pkg/fixtures/uncovered.cts': 'export const value = 1;\n',
+        'packages/pkg/fixtures/uncovered.d.cts':
+          'export declare const value: number;\n',
+        'packages/pkg/fixtures/uncovered.d.mts':
+          'export declare const value: number;\n',
+        'packages/pkg/fixtures/uncovered.mts': 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      const output = errorSpy.mock.calls.join('\n');
+
+      expect(output).toContain('packages/pkg/fixtures/config.mjs');
+      expect(output).toContain('packages/pkg/fixtures/data.json');
+      expect(output).toContain('packages/pkg/fixtures/uncovered.cts');
+      expect(output).toContain('packages/pkg/fixtures/uncovered.d.cts');
+      expect(output).toContain('packages/pkg/fixtures/uncovered.d.mts');
+      expect(output).toContain('packages/pkg/fixtures/uncovered.mts');
+      expect(output).not.toContain('packages/pkg/fixtures/ignored.cjs');
+      expect(output).not.toContain('packages/pkg/fixtures/ignored.js');
+      expect(output).not.toContain('packages/pkg/fixtures/ignored.jsx');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses root gitignore patterns in the default source exclude', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPassingFiles({
+        '.gitignore': 'ignored-default/*.ts\n!ignored-default/keep.ts\n',
+        'ignored-default/hidden.ts': 'export const hidden = 1;\n',
+        'ignored-default/keep.ts': 'export const keep = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      const output = errorSpy.mock.calls.join('\n');
+
+      expect(output).toContain('ignored-default/keep.ts');
+      expect(output).not.toContain('ignored-default/hidden.ts');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not use root gitignore patterns when source exclude is configured', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPassingFiles({
+        '.gitignore': 'ignored-default/*.ts\n',
+        'ignored-default/hidden.ts': 'export const hidden = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            source: {
+              exclude: [],
+              include: ['packages/pkg/src/**/*.ts', 'ignored-default/*.ts'],
+            },
+          },
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'ignored-default/hidden.ts',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('applies required default source excludes when source exclude is omitted', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        '.git/uncovered.ts': 'export const value = 1;\n',
+        '.nx/uncovered.ts': 'export const value = 1;\n',
+        '.tsbuild/uncovered.ts': 'export const value = 1;\n',
+        'coverage/uncovered.ts': 'export const value = 1;\n',
+        'dist/uncovered.ts': 'export const value = 1;\n',
+        'node_modules/uncovered.ts': 'export const value = 1;\n',
+        'nx.json': JSON.stringify({ namedInputs: {} }),
+        'project.json': JSON.stringify({ name: 'fixture' }),
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            source: {
+              include: [
+                'packages/pkg/src/**/*.ts',
+                'nx.json',
+                'project.json',
+                'tsconfig.json',
+                'tsconfig.build.json',
+                'dist/**/*.ts',
+                '.nx/**/*.ts',
+                '.git/**/*.ts',
+                '.tsbuild/**/*.ts',
+                'coverage/**/*.ts',
+                'node_modules/**/*.ts',
+              ],
+            },
+          },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('reports tsconfig-covered files outside the configured source boundary', async () => {
     const errorSpy = vi
       .spyOn(ProofLogger, 'error')
@@ -1053,6 +1192,120 @@ describe('runProofCheck dts config semantics', () => {
         }),
       ).resolves.toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses Vue checker extensions in the default source include', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPassingFiles({
+        'tools/covered.vue':
+          '<script setup lang="ts">const value = 1;</script>\n',
+        'tools/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.json',
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            noEmit: false,
+            outDir: './.tsbuild',
+            tsBuildInfoFile: './.tsbuild/build.tsbuildinfo',
+          },
+        }),
+        'tools/tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['covered.vue'],
+        }),
+        'tools/uncovered.vue':
+          '<script setup lang="ts">const value = 2;</script>\n',
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            checkers: {
+              ...fixture.config.config?.checkers,
+              vue: {
+                entry: 'tools/tsconfig.dts.json',
+                preset: 'vue-tsc',
+              },
+            },
+          },
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain('tools/uncovered.vue');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses Svelte checker extensions in the default source include', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPassingFiles({
+        'tools/covered.svelte': '<script>const value = 1;</script>\n',
+        'tools/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.json',
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            noEmit: false,
+            outDir: './.tsbuild',
+            tsBuildInfoFile: './.tsbuild/build.tsbuildinfo',
+          },
+        }),
+        'tools/tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['covered.svelte'],
+        }),
+        'tools/uncovered.svelte': '<script>const value = 2;</script>\n',
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            checkers: {
+              ...fixture.config.config?.checkers,
+              svelte: {
+                entry: 'tools/tsconfig.dts.json',
+                preset: 'svelte-check',
+              },
+            },
+          },
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'tools/uncovered.svelte',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });

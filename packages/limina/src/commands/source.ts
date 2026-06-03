@@ -147,11 +147,30 @@ function findOwnerForFile(
   );
 }
 
-function findNearestPackageInfo(
-  filePath: string,
-  options: { requireName?: boolean } = {},
-): NearestPackageInfo | null {
-  let currentDir = normalizeAbsolutePath(path.dirname(filePath));
+function getManifestPackageName(manifest: PackageManifest): string | undefined {
+  return typeof manifest.name === 'string' && manifest.name.trim().length > 0
+    ? manifest.name.trim()
+    : undefined;
+}
+
+function isNodeModulesPackageRoot(directory: string): boolean {
+  const parentDirectory = path.dirname(directory);
+  const parentName = path.basename(parentDirectory);
+
+  if (parentName === 'node_modules') {
+    return true;
+  }
+
+  if (parentName.startsWith('@')) {
+    return path.basename(path.dirname(parentDirectory)) === 'node_modules';
+  }
+
+  return false;
+}
+
+function findNearestPackageInfo(filePath: string): NearestPackageInfo | null {
+  const normalizedFilePath = normalizeAbsolutePath(filePath);
+  let currentDir = normalizeAbsolutePath(path.dirname(normalizedFilePath));
 
   while (true) {
     const packageJsonPath = normalizeAbsolutePath(
@@ -160,18 +179,21 @@ function findNearestPackageInfo(
 
     if (existsSync(packageJsonPath)) {
       const manifest = readJsonFile<PackageManifest>(packageJsonPath);
-      const name =
-        typeof manifest.name === 'string' && manifest.name.trim().length > 0
-          ? manifest.name.trim()
-          : undefined;
-
-      if (!options.requireName || name) {
-        return {
-          directory: currentDir,
-          manifest,
-          name,
-          packageJsonPath,
-        };
+      const name = getManifestPackageName(manifest);
+      const packageInfo = {
+        directory: currentDir,
+        manifest,
+        name,
+        packageJsonPath,
+      };
+      if (name) {
+        return packageInfo;
+      }
+      // An unnamed manifest at a node_modules package root is the authoritative
+      // root for the resolved import; stop here so the caller can reject it
+      // rather than escaping into an ancestor package such as the importer.
+      if (isNodeModulesPackageRoot(currentDir)) {
+        return packageInfo;
       }
     }
 
@@ -250,16 +272,9 @@ function classifyResolvedPackageTarget(options: {
     };
   }
 
-  const artifactPackageInfo =
-    packageInfo.name === undefined
-      ? findNearestPackageInfo(options.resolvedFilePath, {
-          requireName: true,
-        })
-      : packageInfo;
-
   return {
     kind: 'artifact-package',
-    packageInfo: artifactPackageInfo ?? packageInfo,
+    packageInfo,
   };
 }
 
@@ -1200,39 +1215,6 @@ function collectUnusedModuleConfig(options: {
 }): UnusedModuleConfig {
   const ignoredKeys = new Set<string>();
   const entryPatternsByOwnerName = new Map<string, string[]>();
-  const rawConfig = options.config.source?.unusedModules;
-  const emptyConfig = {
-    entryPatternsByOwnerName,
-    ignoredKeys,
-  };
-
-  if (rawConfig === undefined) {
-    return emptyConfig;
-  }
-
-  if (!isPlainRecord(rawConfig)) {
-    options.problems.push(
-      [
-        'Invalid unused module config:',
-        '  field: source.unusedModules',
-        `  value: ${formatUnknownValue(rawConfig)}`,
-        '  reason: source.unusedModules must be an object.',
-      ].join('\n'),
-    );
-    return emptyConfig;
-  }
-
-  if (Object.hasOwn(rawConfig, 'enabled')) {
-    options.problems.push(
-      [
-        'Invalid unused module config:',
-        '  field: source.unusedModules.enabled',
-        `  value: ${formatUnknownValue(rawConfig.enabled)}`,
-        '  reason: source.unusedModules.enabled is not supported; strict: true enables unused source module checks automatically.',
-      ].join('\n'),
-    );
-  }
-
   const moduleSetByOwnerName = new Map(
     options.ownerModuleSets.map((moduleSet) => [
       moduleSet.owner.name as string,
@@ -1245,18 +1227,17 @@ function collectUnusedModuleConfig(options: {
       new Set(moduleSet.files),
     ]),
   );
-  const rawEntries = rawConfig.entries;
-  const rawIgnore = rawConfig.ignore;
+  const rawEntries = options.config.source?.additionalEntries;
 
   if (rawEntries !== undefined) {
     if (Array.isArray(rawEntries)) {
       for (const [index, entry] of rawEntries.entries()) {
-        const field = `source.unusedModules.entries[${index}]`;
+        const field = `source.additionalEntries[${index}]`;
 
         if (!isPlainRecord(entry)) {
           options.problems.push(
             [
-              'Invalid unused module entry config:',
+              'Invalid additional source entry config:',
               `  field: ${field}`,
               `  value: ${formatUnknownValue(entry)}`,
               '  reason: entry configs must be objects with non-empty owner, files, and reason fields.',
@@ -1272,7 +1253,7 @@ function collectUnusedModuleConfig(options: {
         if (typeof ownerValue !== 'string' || ownerValue.trim().length === 0) {
           options.problems.push(
             [
-              'Invalid unused module entry config:',
+              'Invalid additional source entry config:',
               `  field: ${field}.owner`,
               `  value: ${formatUnknownValue(ownerValue)}`,
               '  reason: owner must be a non-empty package owner name.',
@@ -1284,7 +1265,7 @@ function collectUnusedModuleConfig(options: {
         if (!Array.isArray(filesValue) || filesValue.length === 0) {
           options.problems.push(
             [
-              'Invalid unused module entry config:',
+              'Invalid additional source entry config:',
               `  field: ${field}.files`,
               `  value: ${formatUnknownValue(filesValue)}`,
               '  reason: files must be a non-empty array of workspace-root-relative glob patterns.',
@@ -1299,7 +1280,7 @@ function collectUnusedModuleConfig(options: {
         ) {
           options.problems.push(
             [
-              'Invalid unused module entry config:',
+              'Invalid additional source entry config:',
               `  field: ${field}.reason`,
               `  value: ${formatUnknownValue(reasonValue)}`,
               '  reason: reason must be a non-empty string.',
@@ -1314,7 +1295,7 @@ function collectUnusedModuleConfig(options: {
         if (!moduleSet) {
           options.problems.push(
             [
-              'Invalid unused module entry config:',
+              'Invalid additional source entry config:',
               `  field: ${field}.owner`,
               `  owner: ${ownerName}`,
               '  reason: owner must name an existing package owner with a package.json name.',
@@ -1332,7 +1313,7 @@ function collectUnusedModuleConfig(options: {
           if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
             options.problems.push(
               [
-                'Invalid unused module entry config:',
+                'Invalid additional source entry config:',
                 `  field: ${fileField}`,
                 `  value: ${formatUnknownValue(fileValue)}`,
                 '  reason: file patterns must be non-empty strings.',
@@ -1346,7 +1327,7 @@ function collectUnusedModuleConfig(options: {
           if (isInvalidWorkspacePattern(pattern)) {
             options.problems.push(
               [
-                'Invalid unused module entry config:',
+                'Invalid additional source entry config:',
                 `  field: ${fileField}`,
                 `  file: ${pattern}`,
                 '  reason: file patterns must be positive workspace-root-relative globs inside the workspace root.',
@@ -1364,7 +1345,7 @@ function collectUnusedModuleConfig(options: {
           if (!ownerRelativePattern) {
             options.problems.push(
               [
-                'Invalid unused module entry config:',
+                'Invalid additional source entry config:',
                 `  field: ${fileField}`,
                 `  owner: ${ownerName}`,
                 `  file: ${pattern}`,
@@ -1387,14 +1368,17 @@ function collectUnusedModuleConfig(options: {
     } else {
       options.problems.push(
         [
-          'Invalid unused module entry config:',
-          '  field: source.unusedModules.entries',
+          'Invalid additional source entry config:',
+          '  field: source.additionalEntries',
           `  value: ${formatUnknownValue(rawEntries)}`,
-          '  reason: entries must be an array.',
+          '  reason: additionalEntries must be an array.',
         ].join('\n'),
       );
     }
   }
+
+  const rawConfig = options.config.source?.unusedModules;
+  const rawIgnore = isPlainRecord(rawConfig) ? rawConfig.ignore : undefined;
 
   if (rawIgnore === undefined) {
     return {
@@ -1615,7 +1599,7 @@ function addUnusedDependencyProblems(options: {
         `  section: ${declaration.sectionName}`,
         `  specifier: ${declaration.specifier}`,
         '  reason: workspace package dependencies should be reachable from package entries, binaries, scripts, or explicitly ignored when usage is not visible to Knip analysis.',
-        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, make it reachable from an entry owned by ${declaration.importer.name}, invoke one of its package binaries from scripts owned by ${declaration.importer.name}, or add source.unusedDependencies.ignore with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
+        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, make it reachable from a default entry or source.additionalEntries owned by ${declaration.importer.name}, invoke one of its package binaries from scripts owned by ${declaration.importer.name}, or add source.unusedDependencies.ignore with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
       ].join('\n'),
     );
   }
@@ -1664,7 +1648,7 @@ function addUnusedModuleProblems(options: {
         `  package manifest: ${toRelativePath(options.config.rootDir, moduleSet.owner.packageJsonPath)}`,
         `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
         '  reason: strict mode requires owner-governed source modules to be reachable from package entries, binaries, scripts, or Knip plugin entries.',
-        `  fix: delete ${toRelativePath(options.config.rootDir, filePath)}, make it reachable from an entry owned by ${moduleSet.owner.name}, or add source.unusedModules.ignore with owner "${moduleSet.owner.name}", file "${toRelativePath(options.config.rootDir, filePath)}", and a reason.`,
+        `  fix: delete ${toRelativePath(options.config.rootDir, filePath)}, make it reachable from a default entry or source.additionalEntries owned by ${moduleSet.owner.name}, or add source.unusedModules.ignore with owner "${moduleSet.owner.name}", file "${toRelativePath(options.config.rootDir, filePath)}", and a reason.`,
       ].join('\n'),
     );
   }

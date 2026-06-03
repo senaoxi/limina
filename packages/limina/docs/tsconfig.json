@@ -9,6 +9,7 @@
   },
   "include": [
     "client.d.ts",
+    "package.json",
     ".vitepress/config.ts",
     ".vitepress/theme/**/*.ts",
     "en/config.ts",

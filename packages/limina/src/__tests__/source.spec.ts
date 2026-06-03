@@ -360,7 +360,7 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
-  it('uses the nearest named package.json for artifact imports', async () => {
+  it('unwraps unnamed nested artifact package.json files to the named package root', async () => {
     const fixture = await createFixture({
       ...createPackageFixture({
         manifest: {
@@ -386,6 +386,42 @@ describe('runSourceCheck package authority', () => {
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects resolved artifact package roots without package names', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            'unnamed-pkg': '^1.0.0',
+          },
+        },
+        source:
+          "import type { Unnamed } from 'unnamed-pkg';\nexport type T = Unnamed;\n",
+      }),
+      'app/node_modules/unnamed-pkg/index.d.ts':
+        'export interface Unnamed { value: string }\n',
+      'app/node_modules/unnamed-pkg/package.json': stringifyConfig({
+        type: 'module',
+        types: './index.d.ts',
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('Resolved package import has no package name:');
+      expect(errors).toContain(
+        'resolved package.json: app/node_modules/unnamed-pkg/package.json',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -1339,7 +1375,7 @@ packages:
     }
   });
 
-  it('accepts strict source modules reachable from configured entry globs', async () => {
+  it('accepts strict source modules reachable from additional entry globs', async () => {
     const fixture = await createFixture(
       {
         ...createWorkspacePackageFiles({
@@ -1351,15 +1387,13 @@ packages:
       },
       {
         source: {
-          unusedModules: {
-            entries: [
-              {
-                files: ['packages/app/src/**/*.spec.ts'],
-                owner: '@example/app',
-                reason: 'Vitest loads spec modules directly.',
-              },
-            ],
-          },
+          additionalEntries: [
+            {
+              files: ['packages/app/src/**/*.spec.ts'],
+              owner: '@example/app',
+              reason: 'Vitest loads spec modules directly.',
+            },
+          ],
         },
       },
     );
@@ -1412,7 +1446,7 @@ packages:
     }
   });
 
-  it('rejects invalid unused source module entry configs', async () => {
+  it('rejects invalid additional source entry configs', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
@@ -1441,16 +1475,14 @@ packages:
         owner: '@example/app',
         reason: 'Wrong owner directory.',
       },
-    ] as unknown as NonNullable<SourceCheckConfig['unusedModules']>['entries'];
+    ] as unknown as SourceCheckConfig['additionalEntries'];
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: "export { internalValue } from '@example/internal';\n",
       }),
       {
         source: {
-          unusedModules: {
-            entries,
-          },
+          additionalEntries: entries,
         },
       },
     );
@@ -1464,7 +1496,8 @@ packages:
       ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
-      expect(errors).toContain('Invalid unused module entry config:');
+      expect(errors).toContain('Invalid additional source entry config:');
+      expect(errors).toContain('source.additionalEntries');
       expect(errors).toContain('reason must be a non-empty string');
       expect(errors).toContain(
         'owner must name an existing package owner with a package.json name',
@@ -1519,7 +1552,6 @@ packages:
       {
         source: {
           unusedModules: {
-            enabled: true,
             ignore,
           } as unknown as SourceCheckConfig['unusedModules'],
         },
@@ -1535,7 +1567,6 @@ packages:
       ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
-      expect(errors).toContain('source.unusedModules.enabled is not supported');
       expect(errors).toContain('reason must be a non-empty string');
       expect(errors).toContain(
         'owner must name an existing package owner with a package.json name',
