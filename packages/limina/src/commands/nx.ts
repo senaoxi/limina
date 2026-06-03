@@ -45,8 +45,8 @@ function stringifyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function configuredArtifactDirectories(config: ResolvedLiminaConfig): string[] {
-  return config.paths?.artifactDirectories ?? defaultArtifactDirectories;
+function configuredArtifactDirectories(): string[] {
+  return defaultArtifactDirectories;
 }
 
 function isLinkDependencySpecifier(specifier: string): boolean {
@@ -67,7 +67,7 @@ function matchesArtifactDirectory(
   targetPackage: WorkspacePackage,
   linkTargetPath: string,
 ): boolean {
-  return configuredArtifactDirectories(config).some((artifactDirectory) => {
+  return configuredArtifactDirectories().some((artifactDirectory) => {
     const artifactPath = normalizeAbsolutePath(
       path.join(targetPackage.directory, artifactDirectory),
     );
@@ -284,7 +284,7 @@ export async function collectNxProjectSyncPlans(
               `  dependency: ${dependencyLabel}`,
               `  specifier: ${specifier}`,
               `  resolved: ${toRelativePath(config.rootDir, linkTargetPath)}`,
-              `  expected artifact directories: ${configuredArtifactDirectories(config).join(', ')}`,
+              `  expected artifact directories: ${configuredArtifactDirectories().join(', ')}`,
             ].join('\n'),
           );
           continue;

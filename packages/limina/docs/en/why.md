@@ -26,9 +26,9 @@ For example, `@acme/app` imports `@acme/core`, but `packages/app/tsconfig.lib.dt
 
 That distinction matters because TypeScript project references do not rewrite package exports. If package A references package B but imports `@scope/b`, TypeScript still follows B's package exports. When those exports point to `dist`, the graph may silently consume build output instead of source.
 
-Limina detects this situation. It asks you to either expose source entries, stop modeling the edge as a source dependency, or generate an explicit compatibility `paths` file.
+Limina detects this situation. It asks you to either expose source entries in the source manifest or stop modeling the edge as a source dependency.
 
-For example, `@acme/app` depends on `@acme/core` with `workspace:*`, but `@acme/core` exports `./dist/index.js`. Limina reports that the source dependency resolved to build output. You can expose source entries instead, or run `limina paths generate` to create `tsconfig.dts.paths.generated.json` and manually add it as the first `extends` entry in the relevant declaration leaf. The compatibility path becomes reviewable configuration instead of an invisible TypeScript resolution accident.
+For example, `@acme/app` depends on `@acme/core` with `workspace:*`, but `@acme/core`'s source manifest exports `./dist/index.js`. Limina reports that the source dependency resolved to build output. Fix the source manifest so `exports` points at `./src/index.ts`, then let the build or packaging step rewrite the published manifest to `./index.js` and `./index.d.ts`. If `app` intentionally consumes built output, use `link:`, `catalog:`, `file:`, or semver instead and remove the cross-package project reference.
 
 ## Source Ownership Should Be Boring
 
@@ -54,7 +54,7 @@ For example, source typechecking passes, but `dist/package.json` points `types` 
 
 ## The Design Goal
 
-Limina tries to keep the rules visible. Instead of hiding policy in a preset, it keeps checker entries, graph rules, package entries, allowlists, paths options, and pipelines in `limina.config.mjs`.
+Limina tries to keep the rules visible. Instead of hiding policy in a preset, it keeps checker entries, graph rules, package entries, allowlists, and pipelines in `limina.config.mjs`.
 
 That makes architecture changes something reviewers can read, not something CI discovers only after the merge.
 

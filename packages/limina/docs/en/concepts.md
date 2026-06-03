@@ -23,7 +23,7 @@ For TypeScript, this is usually a build graph aggregator. It points to declarati
 
 For framework files, a checker entry can use `vue-tsc`, `vue-tsgo`, or `svelte-check`. These checkers cover files that normal `tsc` does not understand by itself.
 
-Any source family you want Limina to govern needs a checker entry in `limina.config.mjs`. Plain TypeScript packages usually point at the root `tsconfig.build.json`; Vue or Svelte projects add their framework checker entries. Graph, proof, paths, and checker commands all start from these entries, so they define which projects are inside the governed surface.
+Any source family you want Limina to govern needs a checker entry in `limina.config.mjs`. Plain TypeScript packages usually point at the root `tsconfig.build.json`; Vue or Svelte projects add their framework checker entries. Graph, proof, source, and checker commands all start from these entries, so they define which projects are inside the governed surface.
 
 ## Declaration Leaf
 
@@ -78,9 +78,9 @@ If a config only groups several leaves, keep it as an aggregator. A root `tsconf
 
 A dependency declared with `workspace:*` is a source dependency. It means this workspace package should be represented by project references and source-facing resolution.
 
-If TypeScript resolves a `workspace:*` import to `dist`, Limina reports it. You can fix that by exposing source entries, removing the source graph edge, or generating explicit compatibility paths.
+If TypeScript resolves a `workspace:*` import to `dist`, Limina reports it. You can fix that by exposing source entries in the source manifest or by removing the source graph edge.
 
-When `@acme/app` declares `"@acme/core": "workspace:*"`, the edge says app should consume core as source, so it should also have the matching project reference and source-resolvable entry. Limina prevents this source dependency from quietly going through `dist`. If artifact-facing exports must stay temporarily, `limina paths generate` can create explicit compatibility paths that you add as the first `extends` entry in the relevant declaration leaf.
+When `@acme/app` declares `"@acme/core": "workspace:*"`, the edge says app should consume core as source, so it should also have the matching project reference and source-resolvable entry. Limina prevents this source dependency from quietly going through `dist`. Source manifests should expose `src` entries; built or published manifests should be rewritten to expose artifact entries.
 
 ## Artifact Dependency
 

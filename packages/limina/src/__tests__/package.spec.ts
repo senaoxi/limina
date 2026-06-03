@@ -1065,6 +1065,61 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('accepts source manifests that expose source entries while release manifests expose artifacts', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(
+        rootDir,
+        '@example/a',
+        {
+          exports: {
+            '.': './src/index.ts',
+            './feature': './src/feature.ts',
+          },
+          types: './src/index.ts',
+        },
+        {
+          exports: {
+            '.': './index.js',
+            './feature': './feature.js',
+          },
+          types: './index.d.ts',
+        },
+      );
+
+      await writeText(
+        path.join(rootDir, 'packages/a/src/feature.ts'),
+        'export const feature = 1;\n',
+      );
+      await writeText(
+        path.join(outDir, 'index.d.ts'),
+        'export declare const value: number;\n',
+      );
+      await writeText(
+        path.join(outDir, 'feature.js'),
+        'export const feature = 1;\n',
+      );
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it('ignores workspace and link specifiers in source devDependencies', async () => {
     const rootDir = await createWorkspaceRoot();
 

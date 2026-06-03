@@ -21,8 +21,6 @@ export type JsonObject = Record<string, unknown>;
 
 const dtsConfigFilePattern = /^tsconfig(?:\..+)?\.dts\.json$/u;
 const buildGraphConfigFilePattern = /^tsconfig(?:\..+)?\.build\.json$/u;
-const generatedConfigFilePattern =
-  /^tsconfig(?:\..+)?\.paths\.generated\.json$/u;
 const baseConfigFilePattern = /^tsconfig(?:\..+)?\.base\.json$/u;
 const checkConfigFilePattern = /^tsconfig(?:\..+)?\.check\.json$/u;
 const tsconfigFilePattern = /^tsconfig(?:\..+)?\.json$/u;
@@ -313,7 +311,6 @@ function isReservedTypeScriptConfigFile(fileName: string): boolean {
   return (
     dtsConfigFilePattern.test(fileName) ||
     buildGraphConfigFilePattern.test(fileName) ||
-    generatedConfigFilePattern.test(fileName) ||
     baseConfigFilePattern.test(fileName) ||
     checkConfigFilePattern.test(fileName)
   );

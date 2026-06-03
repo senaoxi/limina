@@ -75,7 +75,7 @@ import { createClient } from '@acme/core'; // 引用了 core
 }
 ```
 
-这种情况报 `Referenced workspace dependency resolves through package exports to a build artifact:`。修复：把 `exports` 指向源码入口；过渡期也可以用 `limina paths generate` 生成兼容 paths。
+这种情况报 `Referenced workspace dependency resolves through package exports to a build artifact:`。修复：让源码 manifest 的 `exports` 指向源码入口，或把依赖改成 artifact 协议并移除 project reference。
 
 ### 命中 deny 规则的引用/依赖会被拒
 

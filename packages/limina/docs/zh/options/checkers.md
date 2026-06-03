@@ -1,6 +1,6 @@
 # Checker entries
 
-Checker entries 会被 graph、source、proof、paths 和 checker commands 共同使用。
+Checker entries 会被 graph、source、proof 和 checker commands 共同使用。
 
 ```js
 import { defineConfig } from 'limina';
@@ -75,7 +75,7 @@ export default defineConfig({
 
 ## `entry`
 
-`entry` 是 checker 的入口配置，通常是一个 build graph aggregator，例如 `tsconfig.build.json` 或 `tsconfig.vue.build.json`。Graph、proof、paths 和 checker commands 都会从这些 entry 推导检查范围。
+`entry` 是 checker 的入口配置，通常是一个 build graph aggregator，例如 `tsconfig.build.json` 或 `tsconfig.vue.build.json`。Graph、proof、source 和 checker commands 都会从这些 entry 推导检查范围。
 
 如果 `entry` 指向的 graph 里包含 `packages/app/tsconfig.lib.dts.json`，而 app 源码 import 了 `@acme/core`，Limina 就会沿着这个入口检查 app 是否正确 reference 了 core。
 

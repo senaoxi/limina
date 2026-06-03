@@ -18,7 +18,7 @@ English | [简体中文](./README.zh-CN.md)
 - Keep source dependency graphs aligned with type build graphs
 - Guard package, runtime, and workspace boundaries
 - Cover TypeScript and framework-specific checkers
-- Manage compatibility paths for workspace source dependencies
+- Keep source manifests and built package outputs aligned
 - Validate package outputs before release
 - Compose checks for local development, CI, and publishing
 

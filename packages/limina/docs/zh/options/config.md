@@ -50,11 +50,11 @@ export default defineConfig(({ mode }) => ({
 }));
 ```
 
-strict 模式不会改变命令入口，但会在 `graph:check`、`source:check`、`proof:check`、`package:check` 和 `release:check` 中追加更完整的建模约束。Typecheck leaf 必须有同名 declaration leaf；declaration leaf 必须继承 companion，并且除 declaration/build 输出配置外保持相同文件集合；build graph config 只能引用 build aggregator 或 declaration leaf；源码归属必须落在 nearest `package.json` 下；workspace exports 必须指向源码入口；构建后和打包后的 package manifest 不能暴露 `workspace:`、`link:`、`file:` 或 `catalog:` 依赖 specifier。
+strict 模式不会改变命令入口，但会在 `graph:check`、`source:check`、`proof:check`、`package:check` 和 `release:check` 中追加更完整的建模约束。Typecheck leaf 必须有同名 declaration leaf；declaration leaf 必须继承 companion，并且除 declaration/build 输出配置外保持相同文件集合；build graph config 只能引用 build aggregator 或 declaration leaf；源码归属必须落在 nearest `package.json` 下；workspace 源码 import 必须解析到 source graph 拥有的文件；构建后和打包后的 package manifest 不能暴露 `workspace:`、`link:`、`file:` 或 `catalog:` 依赖 specifier。
 
 ## `command`
 
-`command` 表示当前加载配置的命令族，例如 `check`、`graph`、`paths`、`package` 或 `release`。当某些昂贵配置只服务于特定命令时，可以按 `command` 分支返回。
+`command` 表示当前加载配置的命令族，例如 `check`、`graph`、`source`、`package` 或 `release`。当某些昂贵配置只服务于特定命令时，可以按 `command` 分支返回。
 
 例如只在 package-aware 命令里声明发布产物 entries：
 

@@ -437,7 +437,7 @@ function createLiminaConfigContent(): string {
   return `import { defineConfig } from 'limina';
 
 export default defineConfig({
-  // Shared checker entries used by graph, proof, paths, and typecheck checks.
+  // Shared checker entries used by graph, proof, and typecheck checks.
   config: {
     checkers: {
       typescript: {

@@ -50,11 +50,11 @@ export default defineConfig(({ mode }) => ({
 }));
 ```
 
-In strict mode, the existing command surface stays the same, but `graph:check`, `source:check`, `proof:check`, `package:check`, and `release:check` enforce extra modeling constraints. Typecheck leaves must have same-named declaration leaves, declaration leaves must extend their companions and keep the same file set except for declaration/build output options, build graph configs may only reference build aggregators or declaration leaves, source ownership must stay under the nearest `package.json`, workspace exports must point at source entries, and built or packed package manifests must not expose `workspace:`, `link:`, `file:`, or `catalog:` dependency specifiers.
+In strict mode, the existing command surface stays the same, but `graph:check`, `source:check`, `proof:check`, `package:check`, and `release:check` enforce extra modeling constraints. Typecheck leaves must have same-named declaration leaves, declaration leaves must extend their companions and keep the same file set except for declaration/build output options, build graph configs may only reference build aggregators or declaration leaves, source ownership must stay under the nearest `package.json`, workspace source imports must resolve to source graph-owned files, and built or packed package manifests must not expose `workspace:`, `link:`, `file:`, or `catalog:` dependency specifiers.
 
 ## `command`
 
-`command` is the command family currently loading the config, such as `check`, `graph`, `paths`, `package`, or `release`. Use it when expensive configuration only matters for one command family.
+`command` is the command family currently loading the config, such as `check`, `graph`, `source`, `package`, or `release`. Use it when expensive configuration only matters for one command family.
 
 For example, declare package output entries only for package-aware commands:
 

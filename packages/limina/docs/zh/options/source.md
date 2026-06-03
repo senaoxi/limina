@@ -54,7 +54,7 @@ packages/core/
 
 Limina 会把这部分 unused dependency 分析交给 Knip。它会扫描 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中的依赖名。只要依赖名匹配 pnpm workspace 中的 package，Limina 就期待 Knip 能证明这条依赖可以从 source-facing `exports`、package `bin`、scripts，或 Knip 支持的工具 / plugin 入口触达。
 
-因为 Limina strict mode 要求 workspace package exports 直接指向源码入口，这些 exports 会天然成为 Knip entries。如果某个 package owner 没有 `package.json#exports` 字段，Limina 会把它视为应用型 owner：临时生成一个 Knip entry，导入这个 package.json 管辖的完整 source module 集合，因此任意被该 package.json 管辖的模块都可以证明 dependency 使用。对于有 exports 的 package owner，只出现在不可达 dead file 里的 import 不再能证明依赖被使用；在 strict mode 下，这个 dead file 本身也会被报告为 unused source module。与此同时，`source check` 仍会校验 ordinary typecheck config 的 owner：也就是排除 `tsconfig*.dts.json`、`tsconfig*.build.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 后剩余的 `tsconfig*.json`。
+因为源码 manifest 的最佳实践是直接暴露源码入口，这些 exports 会天然成为 Knip entries。如果某个 package owner 没有 `package.json#exports` 字段，Limina 会把它视为应用型 owner：临时生成一个 Knip entry，导入这个 package.json 管辖的完整 source module 集合，因此任意被该 package.json 管辖的模块都可以证明 dependency 使用。对于有 exports 的 package owner，只出现在不可达 dead file 里的 import 不再能证明依赖被使用；在 strict mode 下，这个 dead file 本身也会被报告为 unused source module。与此同时，`source check` 仍会校验 ordinary typecheck config 的 owner：也就是排除 `tsconfig*.dts.json`、`tsconfig*.build.json`、`tsconfig*.base.json` 和 `tsconfig*.check.json` 后剩余的 `tsconfig*.json`。
 
 对于生成代码、运行时字符串，或其他 Knip 无法看见的真实使用，可以添加 ignore entry：
 

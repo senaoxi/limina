@@ -10,7 +10,6 @@ import {
 import {
   getActiveCheckerExtensions,
   getActiveCheckers,
-  isStrictConfig,
   type ResolvedLiminaConfig,
 } from '../config';
 import type { LiminaFlowReporter } from '../flow';
@@ -43,7 +42,6 @@ import {
   normalizeGraphRules,
 } from '../graph-rules';
 import { clearCliScreen, formatErrorMessage, GraphLogger } from '../logger';
-import { collectStrictSourceExportEntries } from '../package-exports';
 import {
   collectGraphProjectRouteFromRoot,
   collectSourceGraphProjectExtensions,
@@ -470,22 +468,6 @@ function addWorkspaceReferenceDependencyProblems(
   }
 }
 
-function addStrictWorkspaceExportProblems(options: {
-  config: ResolvedLiminaConfig;
-  problems: string[];
-  sourceFileOwnerLookup: Map<string, string[]>;
-  workspacePackages: WorkspacePackage[];
-}): void {
-  for (const workspacePackage of options.workspacePackages) {
-    collectStrictSourceExportEntries({
-      config: options.config,
-      problems: options.problems,
-      sourceFileOwnerLookup: options.sourceFileOwnerLookup,
-      workspacePackage,
-    });
-  }
-}
-
 function getExpectedReferencesForProject(
   expectedReferencesByProjectPath: Map<
     string,
@@ -750,8 +732,7 @@ function collectExpectedReferences(options: {
               `  imported specifier: ${importRecord.specifier}`,
               `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
               '  reason: workspace:* dependencies are source dependencies, but TypeScript resolved this package export to a file not owned by the source graph. tsc -b does not rewrite package exports through project references.',
-              `  fix: expose source files from the dependency package exports, add a source paths config to this declaration leaf extends, or stop using workspace:* plus project references for artifact consumption; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
-              '  hint: run `limina paths generate` to create a compatibility paths file, then manually add it to the first position of the listed tsconfig*.dts.json extends array.',
+              `  fix: point the dependency package's source manifest exports at source files, or stop using workspace:* plus project references for artifact consumption; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
             ].join('\n'),
           );
           continue;
@@ -1189,15 +1170,6 @@ async function runGraphCheckInternal(
     problems,
     projectPaths,
   });
-  if (isStrictConfig(config)) {
-    addStrictWorkspaceExportProblems({
-      config,
-      problems,
-      sourceFileOwnerLookup: fileOwnerLookup,
-      workspacePackages: packages,
-    });
-  }
-
   for (const project of projects) {
     if (project.labelProblem) {
       problems.push(project.labelProblem);

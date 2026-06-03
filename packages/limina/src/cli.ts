@@ -4,7 +4,6 @@ import { runGraphCheck, runGraphSync } from './commands/graph';
 import { runInit } from './commands/init';
 import { runNx } from './commands/nx';
 import { runPackageCheck } from './commands/package';
-import { runPaths } from './commands/paths';
 import { runProofCheck } from './commands/proof';
 import { runReleaseCheck } from './commands/release';
 import { runSourceCheck } from './commands/source';
@@ -164,37 +163,6 @@ async function main(): Promise<void> {
       }
 
       flow.outro(passed ? 'limina check passed' : 'limina check failed');
-    });
-
-  cli
-    .command(
-      'paths <action>',
-      'Generate source paths for workspace dependency artifact exports',
-    )
-    .action(async (action: string, flags: GlobalFlags) => {
-      if (action !== 'generate' && action !== 'apply' && action !== 'check') {
-        throw new Error(
-          `Unknown paths action "${action}". Expected generate, apply, or check.`,
-        );
-      }
-      const flow = createCliFlow();
-      flow.intro(`limina paths ${action}`);
-      const config = await load(flags, 'paths');
-      const result = await runPaths(config, {
-        check: action === 'check',
-        clearScreen: false,
-        flow,
-      });
-
-      if (action === 'check' && result.changed) {
-        process.exitCode = 1;
-      }
-
-      flow.outro(
-        action === 'check' && result.changed
-          ? 'limina paths failed'
-          : 'limina paths passed',
-      );
     });
 
   cli
@@ -438,6 +406,12 @@ async function main(): Promise<void> {
   cli.parse(process.argv, { run: false });
 
   try {
+    const commandName = cli.args[0];
+
+    if (!cli.matchedCommand && commandName) {
+      throw new Error(`Unknown command "${commandName}".`);
+    }
+
     await cli.runMatchedCommand();
   } catch (error) {
     CliLogger.error(`limina failed: ${formatErrorMessage(error)}`);
