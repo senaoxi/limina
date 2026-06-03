@@ -768,7 +768,9 @@ export default defineConfig({
 
 ```text
 Denied graph access:
-  rule: runtime-client
+  rules: runtime-client
+  importing project: packages/app/src/client/tsconfig.dts.json
+  file: packages/app/src/client/runtime.ts:1
   imported specifier: node:fs
   denied dependency: node:*
   reason: client runtime must stay free of Node builtin imports

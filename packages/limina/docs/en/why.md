@@ -39,7 +39,7 @@ Limina's source check keeps these rules plain:
 - source files must belong to a nearest package owner;
 - a non-aggregator tsconfig should not mix several package owners;
 - relative imports must stay inside the same package owner;
-- bare imports must be listed in `dependencies` or `devDependencies`;
+- bare imports must be declared in the nearest `package.json`, in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`;
 - `#imports` must match the nearest package's `imports` field, must not target another workspace package, and must resolve inside that package.
 
 For example, `packages/app/src/main.ts` reaches into another package with `../core/src/index`. Limina reports the cross-package relative import and nudges the dependency back through `@acme/core` package exports. After that, reviewers can understand the dependency from manifests and exports instead of chasing relative paths.

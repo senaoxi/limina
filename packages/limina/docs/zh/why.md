@@ -39,7 +39,7 @@ Limina 的 source check 把规则说清楚：
 - 源码文件必须属于最近的 package owner；
 - 非聚合 tsconfig 不应该混合多个 package owner；
 - 相对 import 不能逃出同一个 package owner；
-- bare import 必须写在 `dependencies` 或 `devDependencies`；
+- bare import 必须写在最近 `package.json` 的依赖声明里——`dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies`；
 - `#imports` 必须匹配最近 package 的 `imports` 字段，不能指向其他 workspace package，并且必须解析到这个 package 内部。
 
 例如：`packages/app/src/main.ts` 通过 `../core/src/index` 读取另一个 package 的源码。Limina 会把它报告为跨 package 相对 import，提示改用 `@acme/core` 的 package export。修完后，package 边界会出现在 manifest 和 exports 里，reviewer 不需要追相对路径才能理解依赖关系。

@@ -898,7 +898,10 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('accepts JavaScript config files handled by an active preset', async () => {
+  it('reports JavaScript config files outside checker and allowlist coverage', async () => {
+    const errorSpy = vi
+      .spyOn(ProofLogger, 'error')
+      .mockImplementation(() => {});
     const fixture = await createFixture(
       createPassingFiles({
         'eslint.config.mjs': 'export default [];\n',
@@ -916,8 +919,13 @@ describe('runProofCheck dts config semantics', () => {
             },
           },
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Source files are not covered by typecheck proof',
+      );
+      expect(errorSpy.mock.calls.join('\n')).toContain('eslint.config.mjs');
     } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
