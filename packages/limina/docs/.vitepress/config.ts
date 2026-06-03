@@ -61,6 +61,7 @@ export default defineConfig({
         icon: 'github',
         link: 'https://github.com/XiSenao/docs-islands/tree/main/packages/limina',
       },
+      { icon: 'npm', link: 'https://npmjs.com/package/limina' },
     ],
   },
 });
