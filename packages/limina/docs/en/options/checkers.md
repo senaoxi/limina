@@ -1,6 +1,6 @@
 # Checker Entries
 
-Checker entries are shared by graph, source, proof, paths, and checker commands.
+Checker entries are shared by graph, source, proof, and checker commands.
 
 ```js
 import { defineConfig } from 'limina';
@@ -75,7 +75,7 @@ export default defineConfig({
 
 ## `entry`
 
-`entry` is the checker entry config, usually a build graph aggregator such as `tsconfig.build.json` or `tsconfig.vue.build.json`. Graph, proof, paths, and checker commands all derive their scope from these entries.
+`entry` is the checker entry config, usually a build graph aggregator such as `tsconfig.build.json` or `tsconfig.vue.build.json`. Graph, proof, source, and checker commands all derive their scope from these entries.
 
 If the graph under `entry` includes `packages/app/tsconfig.lib.dts.json` and app source imports `@acme/core`, Limina follows this entry and checks whether app references core correctly.
 

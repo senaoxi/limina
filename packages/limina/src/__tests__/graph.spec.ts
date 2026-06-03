@@ -387,7 +387,7 @@ describe('runGraphCheck checker entry', () => {
     }
   });
 
-  it('requires workspace package exports to point directly at source in strict mode', async () => {
+  it('allows artifact-facing exports in strict mode when no workspace source import selects them', async () => {
     const fixture = await createFixture({
       'packages/internal/dist/index.d.ts':
         'export declare const value: number;\n',
@@ -426,7 +426,101 @@ packages:
           ...fixture.config,
           strict: true,
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects workspace imports that resolve through exports to dist', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
+        appSource:
+          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      }),
+      'packages/internal/dist/index.d.ts':
+        'export declare const internalValue: number;\n',
+      'packages/internal/dist/index.js': 'export const internalValue = 1;\n',
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './dist/index.js',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects cross-package build references without workspace protocol dependencies', async () => {
+    const fixture = await createFixture({
+      'packages/a/package.json': stringifyConfig({
+        dependencies: {
+          '@example/b': 'link:../b/dist',
+        },
+        name: '@example/a',
+        type: 'module',
+      }),
+      'packages/a/src/index.ts':
+        "import { value } from '@example/b';\nexport const result = value;\n",
+      'packages/a/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        references: ['../b/tsconfig.lib.dts.json'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/a/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'packages/b/package.json': stringifyConfig({
+        exports: {
+          '.': './src/index.ts',
+        },
+        name: '@example/b',
+        type: 'module',
+      }),
+      'packages/b/src/index.ts': 'export const value = 1;\n',
+      'packages/b/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/b/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/b/tsconfig.lib.dts.json',
+          },
+          {
+            path: './packages/a/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/a',
+        'packages/b',
+        '@example/b',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -520,7 +614,7 @@ packages:
     }
   });
 
-  it('rejects package exports outside checker-reachable tsconfigs in strict mode', async () => {
+  it('does not inspect unselected package exports outside checker-reachable tsconfigs in strict mode', async () => {
     const fixture = await createFixture({
       'packages/internal/package.json': stringifyConfig({
         exports: {
@@ -557,7 +651,7 @@ packages:
           ...fixture.config,
           strict: true,
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }

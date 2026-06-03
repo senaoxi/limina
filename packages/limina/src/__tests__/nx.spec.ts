@@ -485,32 +485,23 @@ describe('runNx', () => {
     }
   });
 
-  it('uses configured artifact directories', async () => {
-    const fixture = await createFixture(
-      {
-        'packages/a/package.json': createPackageJson('@example/a', {
-          build: true,
-          dependencies: {
-            '@example/b': 'link:../b/lib',
-          },
-        }),
-        'packages/b/package.json': createPackageJson('@example/b', {
-          build: true,
-        }),
-      },
-      {
-        paths: {
-          artifactDirectories: ['lib'],
+  it('rejects non-dist link targets as artifact directories by default', async () => {
+    const fixture = await createFixture({
+      'packages/a/package.json': createPackageJson('@example/a', {
+        build: true,
+        dependencies: {
+          '@example/b': 'link:../b/lib',
         },
-      },
-    );
+      }),
+      'packages/b/package.json': createPackageJson('@example/b', {
+        build: true,
+      }),
+    });
 
     try {
-      await expect(runNx(fixture.config)).resolves.toMatchObject({
-        changed: true,
-        edgeCount: 1,
-        outputCount: 2,
-      });
+      await expect(runNx(fixture.config)).rejects.toThrow(
+        /does not point at an artifact directory/u,
+      );
     } finally {
       await fixture.cleanup();
     }

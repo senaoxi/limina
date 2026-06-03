@@ -407,7 +407,7 @@ packages/core/src/index.ts
 }
 ```
 
-同时，`@acme/core` 的 exports 或 paths 也应该让 TypeScript 在源码图中解析到源码，而不是 `dist`。
+同时，`@acme/core` 源码 manifest 的 exports 也应该让 TypeScript 在源码图中解析到源码，而不是 `dist`。
 
 ### limina 会怎么看
 
@@ -420,41 +420,33 @@ but TypeScript resolved this package export to a file not owned by the source gr
 
 ### 修复方式
 
-有三种方向：
+有两种方向：
 
-第一种，给 package exports 增加 source-facing condition，例如：
+第一种，让源码 manifest 直接暴露源码入口：
 
 ```json
 {
   "exports": {
-    ".": {
-      "source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  }
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts"
 }
 ```
 
-第二种，使用 limina 生成兼容 paths：
+然后让 build 或 packaging 流程改写进入 `dist` 的 package manifest：
 
-```sh
-pnpm exec limina paths generate
-```
-
-然后在对应 `tsconfig*.dts.json` 中手动加入：
-
-```jsonc
+```json
 {
-  "extends": [
-    "./tsconfig.dts.paths.generated.json",
-    "./tsconfig.lib.json",
-    "../../tsconfig.dts.base.json",
-  ],
+  "exports": {
+    ".": "./index.js"
+  },
+  "types": "./index.d.ts"
 }
 ```
 
-第三种，如果你本来就想消费 `dist`，那就不要把它建模成源码依赖。使用 `link:`、`catalog:` 或 semver，并移除 project reference。
+第二种，如果你本来就想消费 `dist`，那就不要把它建模成源码依赖。使用 `link:`、`file:`、`catalog:` 或 semver，并移除 project reference。
+
+Limina 不把 `source` export condition 作为默认源码策略。内置 resolver 只有在 TypeScript 配置了匹配的 custom condition 时才会选中该分支，所以直接源码入口才是更清晰的仓库契约。
 
 ---
 
@@ -515,12 +507,20 @@ import { createClient } from '@acme/core/client';
 ```json
 {
   "exports": {
-    "./client": {
-      "source": "./src/client.ts",
-      "types": "./dist/client.d.ts",
-      "import": "./dist/client.js"
-    }
-  }
+    "./client": "./src/client.ts"
+  },
+  "types": "./src/index.ts"
+}
+```
+
+构建后的 package manifest 则应该暴露 artifact 入口：
+
+```json
+{
+  "exports": {
+    "./client": "./client.js"
+  },
+  "types": "./index.d.ts"
 }
 ```
 

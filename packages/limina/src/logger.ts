@@ -13,7 +13,6 @@ export const InitLogger: ScopedLogger = logger.getLoggerByGroup('task.init');
 export const NxLogger: ScopedLogger = logger.getLoggerByGroup('task.nx');
 export const PackageLogger: ScopedLogger =
   logger.getLoggerByGroup('task.package');
-export const PathsLogger: ScopedLogger = logger.getLoggerByGroup('task.paths');
 export const ProofLogger: ScopedLogger = logger.getLoggerByGroup('task.proof');
 export const ReleaseLogger: ScopedLogger =
   logger.getLoggerByGroup('task.release');

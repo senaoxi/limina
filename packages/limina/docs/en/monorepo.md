@@ -412,7 +412,7 @@ In limina’s model, `workspace:*` means a **source dependency**. Since `app` de
 }
 ```
 
-At the same time, `@acme/core`’s exports or paths should allow TypeScript to resolve into the source graph, not into `dist`.
+At the same time, `@acme/core`'s source manifest exports should allow TypeScript to resolve into the source graph, not into `dist`.
 
 ### How limina sees this
 
@@ -425,41 +425,33 @@ but TypeScript resolved this package export to a file not owned by the source gr
 
 ### How to fix it
 
-There are three possible directions.
+There are two possible directions.
 
-First, add a source-facing condition to package exports:
+First, make the source manifest expose source entries directly:
 
 ```json
 {
   "exports": {
-    ".": {
-      "source": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  }
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts"
 }
 ```
 
-Second, use limina to generate compatible paths:
+Then let your build or packaging step rewrite the package manifest that goes into `dist`:
 
-```sh
-pnpm exec limina paths generate
-```
-
-Then manually add the generated paths config to the relevant `tsconfig*.dts.json`:
-
-```jsonc
+```json
 {
-  "extends": [
-    "./tsconfig.dts.paths.generated.json",
-    "./tsconfig.lib.json",
-    "../../tsconfig.dts.base.json",
-  ],
+  "exports": {
+    ".": "./index.js"
+  },
+  "types": "./index.d.ts"
 }
 ```
 
-Third, if you intentionally want to consume `dist`, then do not model it as a source dependency. Use `link:`, `catalog:`, or semver, and remove the project reference.
+Second, if you intentionally want to consume `dist`, then do not model it as a source dependency. Use `link:`, `file:`, `catalog:`, or semver, and remove the project reference.
+
+Limina does not rely on a `source` export condition as the default source strategy. Its built-in resolver only selects that branch when TypeScript is configured with a matching custom condition, so direct source entries are the clearer repository contract.
 
 ---
 
@@ -486,7 +478,7 @@ But it violates package boundaries.
 }
 ```
 
-and it has also bypassed `@acme/core`’s `exports`:
+and it has also bypassed `@acme/core`'s `exports`:
 
 ```json
 {
@@ -520,12 +512,20 @@ Then explicitly export it in `@acme/core/package.json`:
 ```json
 {
   "exports": {
-    "./client": {
-      "source": "./src/client.ts",
-      "types": "./dist/client.d.ts",
-      "import": "./dist/client.js"
-    }
-  }
+    "./client": "./src/client.ts"
+  },
+  "types": "./src/index.ts"
+}
+```
+
+The built package manifest should expose the artifact entry instead:
+
+```json
+{
+  "exports": {
+    "./client": "./client.js"
+  },
+  "types": "./index.d.ts"
 }
 ```
 

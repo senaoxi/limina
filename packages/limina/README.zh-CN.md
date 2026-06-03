@@ -18,7 +18,7 @@
 - 保持源码依赖图与类型构建图一致
 - 守住 package、运行时与工程边界
 - 覆盖 TypeScript 与框架专属 checker
-- 管理 workspace 源码依赖的兼容路径
+- 让源码 manifest 与构建产物 manifest 保持一致
 - 验证发布前 package 产物
 - 组合适合本地、CI 与发布流程的检查
 

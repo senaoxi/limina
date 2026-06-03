@@ -10,7 +10,6 @@ Limina 的配置入口是 workspace 内部的 `limina.config.mjs`。具体字段
 - [Checker entries](./options/checkers.md)：`config.checkers.<name>`、内置 `preset`、固定 extensions 和 `entry`。
 - [Source coverage](./options/source.md)：`config.source.include` 和 `config.source.exclude`。
 - [Graph rules](./options/graph-rules.md)：`graph.rules.<label>`、`deny.refs` 和 `deny.deps`。
-- [Paths](./options/paths.md)：compatibility paths 的生成配置。
 - [Proof allowlist](./options/proof-allowlist.md)：源码覆盖例外的 `file` 和 `reason`。
 - [Package checks](./options/package-checks.md)：构建产物检查目标、工具和 runtime boundary。
 - [Pipelines](./options/pipelines.md)：命名工作流、内置 task 和外部 command step。
@@ -34,9 +33,6 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 | `limina graph sync [path]`                      | 根据 TypeScript 解析到的源码 import 重写 declaration leaf references。                                 |
 | `limina source check`                           | 校验 package 归属、相对 import 边界、bare dependency 声明和 `#imports`。                               |
 | `limina proof check`                            | 校验 declaration leaves、local companions、checker coverage、纯 aggregators 和 source coverage。       |
-| `limina paths generate`                         | 生成兼容 TypeScript `paths` config。                                                                   |
-| `limina paths apply`                            | `paths generate` 的兼容别名。                                                                          |
-| `limina paths check`                            | generated path configs 过期时失败。                                                                    |
 | `limina nx sync [target...]`                    | 根据 artifact dependencies 同步 `project.json` target 的 `dependsOn`。默认 target 为 `build`。         |
 | `limina nx check [target...]`                   | 检查 Nx target 的 `dependsOn` 是否过期。默认 target 为 `build`。                                       |
 | `limina checker build`                          | 运行支持 build mode 的 checker entries。                                                               |
@@ -114,7 +110,7 @@ jobs:
 
 - 保持 `tsconfig.build.json` 为只包含 `files: []` 和 `references` 的纯 aggregator。
 - Declaration leaf 应靠近 local companion，并只额外添加声明输出设置。
-- 优先修 source-facing package exports，不要长期依赖 generated paths。
+- 源码 manifest 保持指向源码入口，构建/发布 manifest 再改写到 artifact 入口。
 - Source checks、package checks 和 release checks 都要跑，它们保护的是不同层。
 - Allowlist 保持少而清楚，并解释每个例外为什么安全。
 
@@ -130,7 +126,7 @@ jobs:
 
 ### 为什么 workspace exports 指向 dist 会导致 graph 问题？
 
-`workspace:*` 表示 source dependency，但 TypeScript 会按 package exports 解析 package import。如果 exports 指向 `dist`，graph 消费的就不再是源码。Limina 会要求你修 exports、调整依赖模型，或生成显式 compatibility paths。
+`workspace:*` 表示 source dependency，但 TypeScript 会按 package exports 解析 package import。如果源码 manifest exports 指向 `dist`，graph 消费的就不再是源码。让源码 manifest 指向 `src` 入口，或改用 artifact dependency 协议并移除 project reference。
 
 ### Vue 或 Svelte 文件应该放进 TypeScript graph 吗？
 
@@ -148,5 +144,4 @@ jobs:
 - `pnpm exec limina check` 通过；
 - package build 已经运行；
 - `pnpm exec limina package check --package <name>` 通过；
-- `pnpm exec limina release check --package <name>` 通过；
-- 使用 paths 时，`pnpm exec limina paths check` 确认 generated paths 未过期。
+- `pnpm exec limina release check --package <name>` 通过。

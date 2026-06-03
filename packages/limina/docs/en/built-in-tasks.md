@@ -75,7 +75,7 @@ If `packages/app/tsconfig.lib.dts.json` does not list core in `references`, it r
 }
 ```
 
-This reports `Referenced workspace dependency resolves through package exports to a build artifact:`. Fix: point `exports` at the source entry; as a transition, you can also generate compatibility paths with `limina paths generate`.
+This reports `Referenced workspace dependency resolves through package exports to a build artifact:`. Fix the source manifest so `exports` points at the source entry, or change the dependency to an artifact protocol and remove the project reference.
 
 ### References/dependencies that hit a deny rule are rejected
 

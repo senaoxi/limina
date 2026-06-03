@@ -547,6 +547,49 @@ describe('limina CLI', () => {
     }
   }, 15_000);
 
+  it('rejects removed paths commands from the public command', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-paths-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+
+    try {
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default {};\n',
+      );
+
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'paths',
+            'check',
+          ],
+          {
+            cwd: rootDir,
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining('Unknown command'),
+      });
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  }, 15_000);
+
   it('runs init from the public command', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-init-')),

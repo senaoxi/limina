@@ -500,7 +500,7 @@ export default defineConfig(async ({ mode }) => ({
       );
 
       const config = await loadConfig({
-        command: 'paths',
+        command: 'graph',
         cwd: rootDir,
         mode: 'ci',
       });
@@ -1098,6 +1098,36 @@ export default {
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
         /checker routes are not supported/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects removed paths config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  paths: {
+    artifactDirectories: ['lib'],
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /paths config has been removed/u,
       );
     } finally {
       await rm(rootDir, {

@@ -1,6 +1,6 @@
 # Limina
 
-Limina keeps a TypeScript monorepo honest. It checks that the source graph, package ownership, typecheck coverage, generated compatibility paths, and built package outputs all describe the same project.
+Limina keeps a TypeScript monorepo honest. It checks that the source graph, package ownership, typecheck coverage, source manifests, and built package outputs all describe the same project.
 
 For a small package, `tsc --noEmit` may be enough. In a larger workspace, there are usually more moving parts:
 
@@ -22,7 +22,7 @@ Limina is built around a single config file, `limina.config.mjs`, and a few focu
 - **Nx checks** keep each package's `project.json` `dependsOn` build edges in sync with `link:` artifact dependencies.
 - **Proof checks** show that declaration configs, local typecheck configs, checker entries, and allowlists cover the intended source files.
 - **Checker runs** call `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, or `svelte-check` against the right targets derived from the graph.
-- **Path generation** creates explicit TypeScript `paths` files only when a workspace dependency is consumed as source but still exports build artifacts.
+- **Package-output checks** verify that built artifacts and publish metadata still match the source package model.
 - **Package checks** inspect built output the way consumers install it, using `publint`, Are The Types Wrong, and a runtime import boundary scan.
 - **Pipelines** compose Limina tasks and shell commands into local, PR, and publish workflows.
 
@@ -43,7 +43,7 @@ Limina is not a bundler, test runner, package publisher, or hidden preset. The g
 - **A pull request changes a cross-package import**: `@acme/app` adds `import { createClient } from '@acme/core'`, but the app declaration leaf does not reference core. `limina check` reports the missing project reference or missing `workspace:*` dependency before the build graph drifts after merge.
 - **Browser code imports a Node-only dependency**: a `runtime-client` project accidentally imports `node:fs` or `@acme/internal-node`. A graph rule blocks that edge before the browser runtime fails in production.
 - **Source typechecks pass but publish output is broken**: local `tsc` passes, but `dist/package.json` points `exports` or `types` at the wrong files. `limina package check` inspects the built output from a consumer's point of view before npm publish.
-- **A workspace dependency still exports `dist`**: a package uses `workspace:*` to mean source dependency, but its package exports still point to build output. Limina reports that the edge is not resolving as source and can generate an explicit `tsconfig.dts.paths.generated.json` compatibility file.
+- **A workspace dependency still exports `dist`**: a package uses `workspace:*` to mean source dependency, but its source manifest exports still point to build output. Limina reports that the edge is not resolving as source, so the source manifest should expose `src` entries or the edge should become an artifact dependency.
 
 ## How It Fits Into Your Workflow
 

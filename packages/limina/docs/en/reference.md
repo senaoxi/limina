@@ -10,7 +10,6 @@ Limina configuration starts from `limina.config.mjs` inside the workspace. Read 
 - [Checker Entries](./options/checkers.md): `config.checkers.<name>`, built-in `preset`, fixed extensions, and `entry`.
 - [Source Coverage](./options/source.md): `config.source.include` and `config.source.exclude`.
 - [Graph Rules](./options/graph-rules.md): `graph.rules.<label>`, `deny.refs`, and `deny.deps`.
-- [Paths](./options/paths.md): generated compatibility path settings.
 - [Proof Allowlist](./options/proof-allowlist.md): source coverage exceptions with `file` and `reason`.
 - [Package Checks](./options/package-checks.md): built output entries, tools, and runtime boundaries.
 - [Pipelines](./options/pipelines.md): named workflows, built-in tasks, and external command steps.
@@ -34,9 +33,6 @@ For what each built-in task detects, with examples, see [Built-in Tasks](./built
 | `limina graph sync [path]`                      | Rewrite declaration-leaf references from TypeScript-resolved source imports.                                                  |
 | `limina source check`                           | Validate package ownership, relative import boundaries, bare dependency declarations, and `#imports`.                         |
 | `limina proof check`                            | Validate declaration leaves, local companions, checker coverage, pure aggregators, and source coverage.                       |
-| `limina paths generate`                         | Generate compatibility TypeScript `paths` configs.                                                                            |
-| `limina paths apply`                            | Compatibility alias for `paths generate`.                                                                                     |
-| `limina paths check`                            | Fail when generated path configs are stale.                                                                                   |
 | `limina nx sync [target...]`                    | Sync `project.json` target `dependsOn` entries from artifact dependencies. Defaults to `build`.                               |
 | `limina nx check [target...]`                   | Fail when synced Nx target `dependsOn` entries are stale. Defaults to `build`.                                                |
 | `limina checker build`                          | Run build execution for checker entries that support it.                                                                      |
@@ -114,7 +110,7 @@ jobs:
 
 - Keep `tsconfig.build.json` files as pure aggregators with `files: []` and `references`.
 - Keep declaration leaves close to local companions, and let declaration leaves add only declaration-output settings.
-- Prefer source-facing package exports over long-term generated paths.
+- Keep source manifests pointed at source entries, then rewrite built manifests to artifact entries during packaging.
 - Run source, package, and release checks; they protect different layers.
 - Keep allowlists small and explain why each exception is safe.
 
@@ -130,7 +126,7 @@ They inspect the package output under `package.entries[].outDir`. That output mu
 
 ### Why do workspace exports pointing to dist cause graph problems?
 
-`workspace:*` means source dependency, but TypeScript resolves package imports through package exports. If exports point to `dist`, the graph is no longer consuming source. Limina asks you to fix exports, change the dependency model, or generate explicit compatibility paths.
+`workspace:*` means source dependency, but TypeScript resolves package imports through package exports. If source-package exports point to `dist`, the graph is no longer consuming source. Point the source manifest at `src` entries, or change the dependency to an artifact protocol and remove the project reference.
 
 ### Should Vue or Svelte files be placed in the TypeScript graph?
 
@@ -148,5 +144,4 @@ Before publishing Limina itself or a package governed by Limina, check that:
 - `pnpm exec limina check` passes;
 - the package build has run;
 - `pnpm exec limina package check --package <name>` passes;
-- `pnpm exec limina release check --package <name>` passes;
-- generated paths are current with `pnpm exec limina paths check` when paths are used.
+- `pnpm exec limina release check --package <name>` passes.

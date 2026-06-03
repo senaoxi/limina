@@ -250,51 +250,17 @@ export interface SourceBoundaryConfig {
 }
 
 /**
- * Shared project facts used by graph, paths, proof, and related checks.
+ * Shared project facts used by graph, proof, and related checks.
  */
 export interface SharedLiminaConfig {
   /**
-   * Checker capabilities shared by graph, proof, paths, and tsc tasks.
+   * Checker capabilities shared by graph, proof, and tsc tasks.
    */
   checkers?: Record<string, CheckerConfig>;
   /**
    * Global source file boundary used by proof checks.
    */
   source?: SourceBoundaryConfig;
-}
-
-/**
- * Options for generated TypeScript `paths` compatibility files.
- */
-export interface PathsConfig {
-  /**
-   * Directory names treated as build artifacts when mapping package exports
-   * back to source files.
-   */
-  artifactDirectories?: string[];
-  /**
-   * Export condition priority when resolving package exports.
-   *
-   * Put more specific conditions earlier when your package exports use several
-   * entries such as `types`, `import`, `node`, or `default`.
-   */
-  conditionPriority?: string[];
-  /**
-   * File name used for generated path mapping configs.
-   *
-   * @default "tsconfig.dts.paths.generated.json"
-   */
-  generatedFileName?: string;
-  /**
-   * Header marker written into generated files.
-   *
-   * Limina uses this to know which files it is allowed to refresh.
-   */
-  generatedFileMarker?: string;
-  /**
-   * Source extensions tried when replacing artifact exports with source files.
-   */
-  sourceExtensions?: string[];
 }
 
 /**
@@ -599,10 +565,6 @@ export interface LiminaConfig {
    */
   package?: PackageConfig;
   /**
-   * Options for generating TypeScript source `paths` compatibility files.
-   */
-  paths?: PathsConfig;
-  /**
    * Named command pipelines runnable through `limina check <name>`.
    */
   pipelines?: Record<string, PipelineStep[]>;
@@ -628,7 +590,6 @@ export type LiminaCommand =
   | 'graph'
   | 'nx'
   | 'package'
-  | 'paths'
   | 'proof'
   | 'release'
   | 'source'
@@ -639,7 +600,7 @@ export type LiminaCommand =
  */
 export interface LiminaConfigEnv {
   /**
-   * CLI command family, such as `check`, `graph`, or `paths`.
+   * CLI command family, such as `check`, `graph`, or `package`.
    */
   command: LiminaCommand;
   /**
@@ -697,25 +658,169 @@ export function defineConfig(config: LiminaConfigExport): LiminaConfigExport {
   return config;
 }
 
-const nonEmptyStringSchema = z
-  .string()
-  .refine((value) => value.trim().length > 0);
+const checkerExtensionsConfigReason =
+  'checker extensions are fixed by built-in presets and cannot be configured.';
 
-const checkerObjectSchema = z.looseObject({});
+const checkerRoutesConfigReason =
+  'checker routes are not supported; move routes.build to entry and migrate routes.typecheck targets to tsconfig*.dts.json leaves reachable from that entry with local companions.';
 
-const checkerConfigShapeSchema = z.looseObject({
-  entry: nonEmptyStringSchema,
-  preset: nonEmptyStringSchema,
+const unsupportedCheckerPresetReason =
+  'configured checker entries require a built-in checker adapter.';
+
+const checkerConfigShapeSchema = z
+  .looseObject({})
+  .superRefine((checker, ctx) => {
+    const preset = checker.preset;
+    const entry = checker.entry;
+
+    if (Object.hasOwn(checker, 'extensions')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: checkerExtensionsConfigReason,
+        path: ['extensions'],
+      });
+    }
+
+    if (Object.hasOwn(checker, 'routes')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: checkerRoutesConfigReason,
+        path: ['routes'],
+      });
+    }
+
+    if (typeof preset !== 'string' || preset.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'checker preset must be a non-empty string.',
+        path: ['preset'],
+      });
+    } else if (!getCheckerAdapter(preset)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: unsupportedCheckerPresetReason,
+        path: ['preset'],
+      });
+    }
+
+    if (typeof entry !== 'string' || entry.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'checker entry must be a non-empty string path.',
+        path: ['entry'],
+      });
+    }
+  });
+
+const sharedLiminaConfigShapeSchema = z
+  .looseObject({
+    checkers: z.record(z.string(), checkerConfigShapeSchema).optional(),
+  })
+  .superRefine((sharedConfig, ctx) => {
+    const source = sharedConfig.source;
+
+    if (source === null || source === undefined || typeof source !== 'object') {
+      return;
+    }
+
+    const sourceRecord = source as Record<string, unknown>;
+
+    if (Object.hasOwn(sourceRecord, 'unusedDependencies')) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'source.unusedDependencies belongs at the top-level source config, not under config.source.',
+        path: ['source', 'unusedDependencies'],
+      });
+    }
+
+    if (Object.hasOwn(sourceRecord, 'unusedModules')) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'source.unusedModules belongs at the top-level source config, not under config.source.',
+        path: ['source', 'unusedModules', 'ignore'],
+      });
+    }
+  });
+
+const releaseContentHashShapeSchema = z
+  .looseObject({})
+  .superRefine((contentHash, ctx) => {
+    const baselineTag = contentHash.baselineTag;
+
+    if (
+      baselineTag !== undefined &&
+      typeof baselineTag !== 'function' &&
+      (typeof baselineTag !== 'string' || baselineTag.trim().length === 0)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'baselineTag must be a non-empty string or function.',
+        path: ['baselineTag'],
+      });
+    }
+
+    const builtinIgnore = contentHash.builtinIgnore;
+
+    if (builtinIgnore !== undefined && typeof builtinIgnore !== 'boolean') {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'builtinIgnore must be a boolean.',
+        path: ['builtinIgnore'],
+      });
+    }
+
+    const ignore = contentHash.ignore;
+
+    if (ignore === undefined || typeof ignore === 'function') {
+      return;
+    }
+
+    if (!Array.isArray(ignore)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'ignore must be an array of non-empty strings or function.',
+        path: ['ignore'],
+      });
+      return;
+    }
+
+    for (const [index, pattern] of ignore.entries()) {
+      if (typeof pattern === 'string' && pattern.trim().length > 0) {
+        continue;
+      }
+
+      ctx.addIssue({
+        code: 'custom',
+        message: 'ignore patterns must be non-empty strings.',
+        path: ['ignore', index],
+      });
+    }
+  });
+
+const releaseConfigShapeSchema = z.looseObject({
+  contentHash: releaseContentHashShapeSchema.optional(),
 });
 
-const liminaConfigShapeSchema = z.looseObject({
-  strict: z.boolean().optional(),
-  config: z
-    .looseObject({
-      checkers: z.record(z.string(), checkerConfigShapeSchema).optional(),
-    })
-    .optional(),
-});
+const liminaConfigShapeSchema = z
+  .looseObject({
+    strict: z.boolean().optional(),
+    config: sharedLiminaConfigShapeSchema.optional(),
+    release: releaseConfigShapeSchema.optional(),
+  })
+  .superRefine((config, ctx) => {
+    if (!Object.hasOwn(config, 'paths')) {
+      return;
+    }
+
+    ctx.addIssue({
+      code: 'custom',
+      message:
+        'paths config has been removed; use graph/proof/source checks instead.',
+      path: ['paths'],
+    });
+  });
 
 function formatUnknownValue(value: unknown): string {
   if (value === undefined) {
@@ -780,12 +885,39 @@ function formatLiminaConfigShapeIssue(
     ].join('\n');
   }
 
+  if (field === 'paths') {
+    return [
+      'Invalid Limina paths config:',
+      '  field: paths',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
+    ].join('\n');
+  }
+
   if (field === 'config.checkers') {
     return [
       'Invalid Limina checker config:',
       '  field: config.checkers',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       '  reason: config.checkers must be an object keyed by checker name.',
+    ].join('\n');
+  }
+
+  if (field === 'config.source.unusedDependencies') {
+    return [
+      'Invalid Limina source config:',
+      '  field: config.source.unusedDependencies',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
+    ].join('\n');
+  }
+
+  if (field === 'config.source.unusedModules.ignore') {
+    return [
+      'Invalid Limina source config:',
+      '  field: config.source.unusedModules.ignore',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
     ].join('\n');
   }
 
@@ -803,6 +935,15 @@ function formatLiminaConfigShapeIssue(
     }
 
     if (pathSegments[3] === 'preset') {
+      if (issue.message === unsupportedCheckerPresetReason) {
+        return [
+          'Unsupported Limina checker preset:',
+          `  field: ${checkerField}.preset`,
+          `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+          `  reason: ${issue.message}`,
+        ].join('\n');
+      }
+
       return [
         'Invalid Limina checker config:',
         `  field: ${checkerField}.preset`,
@@ -819,6 +960,82 @@ function formatLiminaConfigShapeIssue(
         '  reason: checker entry must be a non-empty string path.',
       ].join('\n');
     }
+
+    if (pathSegments[3] === 'extensions') {
+      return [
+        'Invalid Limina checker config:',
+        `  field: ${checkerField}.extensions`,
+        `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+        `  reason: ${issue.message}`,
+      ].join('\n');
+    }
+
+    if (pathSegments[3] === 'routes') {
+      return [
+        'Invalid Limina checker config:',
+        `  field: ${checkerField}.routes`,
+        `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+        `  reason: ${issue.message}`,
+      ].join('\n');
+    }
+  }
+
+  if (field === 'release') {
+    return [
+      'Invalid Limina release config:',
+      '  field: release',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: release must be an object.',
+    ].join('\n');
+  }
+
+  if (field === 'release.contentHash') {
+    return [
+      'Invalid Limina release config:',
+      '  field: release.contentHash',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: release.contentHash must be an object.',
+    ].join('\n');
+  }
+
+  if (field === 'release.contentHash.baselineTag') {
+    return [
+      'Invalid Limina release config:',
+      '  field: release.contentHash.baselineTag',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: baselineTag must be a non-empty string or function.',
+    ].join('\n');
+  }
+
+  if (field === 'release.contentHash.builtinIgnore') {
+    return [
+      'Invalid Limina release config:',
+      '  field: release.contentHash.builtinIgnore',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: builtinIgnore must be a boolean.',
+    ].join('\n');
+  }
+
+  if (field === 'release.contentHash.ignore') {
+    return [
+      'Invalid Limina release config:',
+      '  field: release.contentHash.ignore',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: ignore must be an array of non-empty strings or function.',
+    ].join('\n');
+  }
+
+  if (
+    pathSegments[0] === 'release' &&
+    pathSegments[1] === 'contentHash' &&
+    pathSegments[2] === 'ignore'
+  ) {
+    return [
+      'Invalid Limina release config:',
+      `  field: ${field}`,
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      '  reason: ignore patterns must be non-empty strings.',
+    ].join('\n');
   }
 
   return [
@@ -841,231 +1058,8 @@ function collectLiminaConfigShapeProblems(value: unknown): string[] {
   );
 }
 
-function collectCheckerConfigProblems(config: LiminaConfig): string[] {
-  const problems = collectLiminaConfigShapeProblems(config);
-
-  if (!checkerObjectSchema.safeParse(config).success) {
-    return problems;
-  }
-
-  const checkers = config.config?.checkers;
-
-  if (checkers === undefined) {
-    return problems;
-  }
-
-  if (!checkerObjectSchema.safeParse(checkers).success) {
-    return problems;
-  }
-
-  for (const [checkerName, checker] of Object.entries(checkers)) {
-    const field = `config.checkers.${checkerName}`;
-
-    const checkerObjectResult = checkerObjectSchema.safeParse(checker);
-
-    if (!checkerObjectResult.success) {
-      continue;
-    }
-
-    const checkerRecord = checkerObjectResult.data;
-    const preset = checkerRecord.preset;
-
-    if (Object.hasOwn(checkerRecord, 'extensions')) {
-      problems.push(
-        [
-          'Invalid Limina checker config:',
-          `  field: ${field}.extensions`,
-          `  value: ${formatUnknownValue(checkerRecord.extensions)}`,
-          '  reason: checker extensions are fixed by built-in presets and cannot be configured.',
-        ].join('\n'),
-      );
-    }
-
-    if (Object.hasOwn(checkerRecord, 'routes')) {
-      problems.push(
-        [
-          'Invalid Limina checker config:',
-          `  field: ${field}.routes`,
-          `  value: ${formatUnknownValue(checkerRecord.routes)}`,
-          '  reason: checker routes are not supported; move routes.build to entry and migrate routes.typecheck targets to tsconfig*.dts.json leaves reachable from that entry with local companions.',
-        ].join('\n'),
-      );
-    }
-
-    if (typeof preset !== 'string' || preset.trim().length === 0) {
-      continue;
-    }
-
-    const adapter = getCheckerAdapter(preset);
-
-    if (!adapter) {
-      problems.push(
-        [
-          'Unsupported Limina checker preset:',
-          `  field: ${field}.preset`,
-          `  value: ${formatUnknownValue(preset)}`,
-          '  reason: configured checker entries require a built-in checker adapter.',
-        ].join('\n'),
-      );
-      continue;
-    }
-  }
-
-  return problems;
-}
-
-function collectReleaseConfigProblems(config: LiminaConfig): string[] {
-  const problems: string[] = [];
-
-  if (!checkerObjectSchema.safeParse(config).success) {
-    return problems;
-  }
-
-  const release = config.release;
-
-  if (release === undefined) {
-    return problems;
-  }
-
-  if (!checkerObjectSchema.safeParse(release).success) {
-    problems.push(
-      [
-        'Invalid Limina release config:',
-        '  field: release',
-        `  value: ${formatUnknownValue(release)}`,
-        '  reason: release must be an object.',
-      ].join('\n'),
-    );
-    return problems;
-  }
-
-  const contentHash = release.contentHash;
-
-  if (contentHash === undefined) {
-    return problems;
-  }
-
-  if (!checkerObjectSchema.safeParse(contentHash).success) {
-    problems.push(
-      [
-        'Invalid Limina release config:',
-        '  field: release.contentHash',
-        `  value: ${formatUnknownValue(contentHash)}`,
-        '  reason: release.contentHash must be an object.',
-      ].join('\n'),
-    );
-    return problems;
-  }
-
-  const baselineTag = contentHash.baselineTag;
-
-  if (
-    baselineTag !== undefined &&
-    typeof baselineTag !== 'function' &&
-    (typeof baselineTag !== 'string' || baselineTag.trim().length === 0)
-  ) {
-    problems.push(
-      [
-        'Invalid Limina release config:',
-        '  field: release.contentHash.baselineTag',
-        `  value: ${formatUnknownValue(baselineTag)}`,
-        '  reason: baselineTag must be a non-empty string or function.',
-      ].join('\n'),
-    );
-  }
-
-  const builtinIgnore = contentHash.builtinIgnore;
-
-  if (builtinIgnore !== undefined && typeof builtinIgnore !== 'boolean') {
-    problems.push(
-      [
-        'Invalid Limina release config:',
-        '  field: release.contentHash.builtinIgnore',
-        `  value: ${formatUnknownValue(builtinIgnore)}`,
-        '  reason: builtinIgnore must be a boolean.',
-      ].join('\n'),
-    );
-  }
-
-  const ignore = contentHash.ignore;
-
-  if (ignore === undefined || typeof ignore === 'function') {
-    return problems;
-  }
-
-  if (!Array.isArray(ignore)) {
-    problems.push(
-      [
-        'Invalid Limina release config:',
-        '  field: release.contentHash.ignore',
-        `  value: ${formatUnknownValue(ignore)}`,
-        '  reason: ignore must be an array of non-empty strings or function.',
-      ].join('\n'),
-    );
-    return problems;
-  }
-
-  for (const [index, pattern] of ignore.entries()) {
-    if (typeof pattern === 'string' && pattern.trim().length > 0) {
-      continue;
-    }
-
-    problems.push(
-      [
-        'Invalid Limina release config:',
-        `  field: release.contentHash.ignore[${index}]`,
-        `  value: ${formatUnknownValue(pattern)}`,
-        '  reason: ignore patterns must be non-empty strings.',
-      ].join('\n'),
-    );
-  }
-
-  return problems;
-}
-
-function collectNestedSourceCheckConfigProblems(
-  config: LiminaConfig,
-): string[] {
-  const source = config?.config?.source as
-    | (SourceBoundaryConfig & Record<string, unknown>)
-    | undefined;
-  const problems: string[] = [];
-
-  if (!source || typeof source !== 'object') {
-    return problems;
-  }
-
-  if (Object.hasOwn(source, 'unusedDependencies')) {
-    problems.push(
-      [
-        'Invalid Limina source config:',
-        '  field: config.source.unusedDependencies',
-        `  value: ${formatUnknownValue(source.unusedDependencies)}`,
-        '  reason: source.unusedDependencies belongs at the top-level source config, not under config.source.',
-      ].join('\n'),
-    );
-  }
-
-  if (Object.hasOwn(source, 'unusedModules')) {
-    problems.push(
-      [
-        'Invalid Limina source config:',
-        '  field: config.source.unusedModules.ignore',
-        `  value: ${formatUnknownValue((source.unusedModules as SourceUnusedModulesConfig | undefined)?.ignore)}`,
-        '  reason: source.unusedModules belongs at the top-level source config, not under config.source.',
-      ].join('\n'),
-    );
-  }
-
-  return problems;
-}
-
 export function validateLiminaConfig(config: LiminaConfig): void {
-  const problems = [
-    ...collectCheckerConfigProblems(config),
-    ...collectReleaseConfigProblems(config),
-    ...collectNestedSourceCheckConfigProblems(config),
-  ];
+  const problems = collectLiminaConfigShapeProblems(config);
 
   if (problems.length > 0) {
     throw new Error(problems.join('\n\n'));

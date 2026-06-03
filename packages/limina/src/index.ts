@@ -32,7 +32,6 @@ export {
   type PackageConfig,
   type PackageEntry,
   type PackagePublintCheckConfig,
-  type PathsConfig,
   type PipelineStep,
   type ProofAllowlistEntry,
   type ProofConfig,

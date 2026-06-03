@@ -74,10 +74,6 @@ const sidebar: DefaultTheme.SidebarItem[] = [
             link: '/zh/options/graph-rules',
           },
           {
-            text: 'Paths',
-            link: '/zh/options/paths',
-          },
-          {
             text: 'Proof allowlist',
             link: '/zh/options/proof-allowlist',
           },
