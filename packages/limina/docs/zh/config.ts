@@ -1,4 +1,30 @@
+import { loadEnv } from '@docs-islands/utils/env';
+import pkg from 'limina/package.json';
+import { execSync } from 'node:child_process';
 import type { DefaultTheme, LocaleSpecificConfig } from 'vitepress';
+
+const { env } = loadEnv();
+const isBuild = env === 'production';
+
+function resolveCommitId(): string | null {
+  if (!isBuild) {
+    return 'dev';
+  }
+
+  try {
+    return execSync('git rev-parse --short=7 HEAD', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+const commitId = resolveCommitId();
+const footerMessage = commitId
+  ? `根据 MIT 许可证发布。 (${commitId})`
+  : '根据 MIT 许可证发布。 (dev)';
 
 const sidebar: DefaultTheme.SidebarItem[] = [
   {
@@ -93,13 +119,22 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/zh/reference',
       },
       {
-        text: 'npm',
-        link: 'https://www.npmjs.com/package/limina',
+        text: pkg.version,
+        items: [
+          {
+            text: '更新日志',
+            link: 'https://github.com/XiSenao/docs-islands/blob/main/packages/limina/CHANGELOG.md',
+          },
+          {
+            text: '参与贡献',
+            link: 'https://github.com/XiSenao/docs-islands/blob/main/.github/CONTRIBUTING.md',
+          },
+        ],
       },
     ],
     sidebar,
     footer: {
-      message: '根据 MIT 许可证发布。',
+      message: footerMessage,
       copyright: '版权所有 © 2026-present Limina contributors',
     },
     docFooter: {

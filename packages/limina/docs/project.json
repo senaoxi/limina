@@ -3,7 +3,12 @@
   "name": "@docs-islands/limina-docs",
   "targets": {
     "docs:build": {
-      "dependsOn": []
+      "dependsOn": [
+        {
+          "projects": ["@docs-islands/utils"],
+          "target": "build"
+        }
+      ]
     }
   },
   "metadata": {
