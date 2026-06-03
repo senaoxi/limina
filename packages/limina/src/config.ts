@@ -165,9 +165,16 @@ export interface SourceUnusedModuleIgnoreEntry {
 }
 
 /**
- * Additional source module entries for Knip's strict-mode reachability graph.
+ * Additional source module entries for Knip's source reachability graph.
+ *
+ * Default entries come from package exports, package binaries, package scripts,
+ * and Knip-supported plugin entries. Owners without package.json#exports are
+ * treated as application-style owners: Limina provides the full governed source
+ * module set as the entry surface and skips unused-file coverage for that
+ * owner. Use this only for extra entry modules loaded by test runners, local
+ * tools, or build steps that should not become package exports.
  */
-export interface SourceUnusedModuleEntryConfig {
+export interface SourceAdditionalEntryConfig {
   /**
    * Named package owner from package.json.
    */
@@ -189,11 +196,6 @@ export interface SourceUnusedModuleEntryConfig {
  */
 export interface SourceUnusedModulesConfig {
   /**
-   * Additional entry globs for source modules loaded by test runners or local
-   * tooling rather than package exports.
-   */
-  entries?: SourceUnusedModuleEntryConfig[];
-  /**
    * Package-owned source modules intentionally not visible through Knip's
    * entry-reachable file graph.
    */
@@ -205,6 +207,16 @@ export interface SourceUnusedModulesConfig {
  */
 export interface SourceCheckConfig {
   /**
+   * Additional entries are appended to Limina/Knip's default source entry
+   * surface. For owners with package.json exports, default entries come from
+   * package exports, bin, scripts, and Knip-supported plugin entries. For
+   * owners without exports, Limina treats the full governed source module set
+   * as an application-style entry surface and skips unused-file coverage for
+   * that owner. Use additionalEntries only for modules loaded directly by test
+   * runners, local tooling, or build steps that should not be package exports.
+   */
+  additionalEntries?: SourceAdditionalEntryConfig[];
+  /**
    * Checks that workspace package dependencies declared in package.json are
    * reachable from package entries, binaries, or scripts owned by that package.
    */
@@ -212,8 +224,6 @@ export interface SourceCheckConfig {
   /**
    * Strict-mode exceptions for package-owned source modules that are not
    * reachable from package entries, binaries, or scripts owned by that package.
-   *
-   * There is no enabled switch: strict: true enables unused module checks.
    */
   unusedModules?: SourceUnusedModulesConfig;
 }
@@ -225,25 +235,28 @@ export interface SourceBoundaryConfig {
   /**
    * Glob patterns for source files that Limina should govern.
    *
-   * When omitted, Limina derives the source boundary from configured checker
-   * extensions and then applies `exclude`.
+   * When omitted, Limina uses TypeScript/JSON source defaults and adds
+   * framework extensions from configured checkers, such as `.vue` or
+   * `.svelte`.
    */
   include?: string[];
   /**
    * Glob patterns or directory shorthands to omit from source governance.
    *
+   * When omitted, Limina reads the workspace root `.gitignore` and combines it
+   * with the built-in excludes below.
+   *
    * @default: [
-   *   "node_modules",
+   *   "nx.json",
+   *   "project.json",
+   *   "tsconfig.json",
+   *   "**\/tsconfig.*.json",
    *   "dist",
+   *   ".nx",
    *   ".git",
    *   ".tsbuild",
    *   "coverage",
-   *   "**\/tsconfig*.json",
-   *   "**\/package.json",
-   *   "**\/project.json",
-   *   ".prettierrc.json",
-   *   ".markdownlint.json",
-   *   "vercel.json",
+   *   "node_modules",
    * ]
    */
   exclude?: string[];

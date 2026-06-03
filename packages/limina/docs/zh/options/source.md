@@ -17,13 +17,13 @@ export default defineConfig({
 
 ## `include`
 
-`include` 是 Limina 需要检查的全局源码 glob。省略时，Limina 会从 active checker extensions 推导源码文件，再应用默认 exclude list。
+`include` 是 Limina 需要检查的全局源码 glob。省略时，Limina 会先使用 `**/*.ts`、`**/*.d.ts`、`**/*.tsx`、`**/*.cts`、`**/*.d.cts`、`**/*.mts`、`**/*.d.mts`、`**/*.mjs` 和 `**/*.json` 这组基础源码范围，再根据 active checkers 补充 `**/*.vue` 或 `**/*.svelte` 等框架扩展，最后应用默认 exclude list。
 
 如果你希望 `packages/**/src` 下的 TypeScript、TSX 和 Vue 文件都进入治理，就把它们写进 `include`。之后新增文件会自动进入 source 和 proof checks 的检查范围。
 
 ## `exclude`
 
-`exclude` 是不需要进入源码治理的目录或 glob。它适合排除 `dist`、`.tsbuild`、fixtures、生成缓存等不应该当作源码治理的内容。
+`exclude` 是不需要进入源码治理的目录或 glob。它适合排除 `dist`、`.tsbuild`、fixtures、生成缓存等不应该当作源码治理的内容。省略 `exclude` 时，Limina 会读取 workspace root 的 `.gitignore`，并且始终额外排除 `nx.json`、`project.json`、`tsconfig.json`、`**/tsconfig.*.json`、`dist`、`.nx`、`.git`、`.tsbuild`、`coverage` 和 `node_modules`。
 
 例如 `include` 覆盖了 `packages/**/src/**/*.{ts,tsx,vue}` 后，新增这个文件：
 
@@ -78,13 +78,13 @@ export default defineConfig({
 
 ignore entry 必须指向已存在的 workspace package，并且这对 importer/dependency 仍然要在 importer 的 package manifest 中声明。如果这个依赖是有意保留的，就把原因留在配置旁边；如果它已经不需要了，应直接删除依赖声明。
 
-## `unusedModules.entries`
+## `additionalEntries`
 
-`source check` 会在 `strict: true` 时自动启用 unused source module 检测。这里没有 `source.unusedModules.enabled` 开关。Limina 会给 Knip 提供每个具名 package owner 管辖的 source module 集合，再由 Knip 判断这些模块是否能从 package `exports`、`bin`、scripts，或 Knip 支持的 plugin entries 触达。
+`source check` 会为 package-owned source modules 建立 entry-reachable graph。对于带有 `package.json#exports` 的 owner，默认入口来自 package `exports`、`bin`、scripts，以及 Knip 支持的 plugin entries。
 
-对于没有 `package.json#exports` 的 package owner，Limina 会把完整的被治理 source module 集合作为 package.json 的检测面。它会为 dependency 分析生成临时 entry，并跳过该 owner 的 unused-file 覆盖检查，因为这些已知 source module 都被视为应用入口面的一部分。
+对于没有 `package.json#exports` 的 package owner，Limina 会把完整的被治理 source module 集合视为应用型入口面。它会为 dependency 分析生成临时 entry，并跳过该 owner 的 unused-file 覆盖检查，因为这些已知 source module 都被视为应用入口面的一部分。
 
-有些 source module 是合法入口，但不应该暴露成 package export。比如测试 runner 会直接加载 `*.spec.ts` 文件。此时可以为 owner 增加 Knip entry globs：
+有些 source module 是合法入口，但不应该暴露成 package export。比如测试 runner 会直接加载 `*.spec.ts` 文件。此时可以通过 `source.additionalEntries` 为测试 runner、本地工具或构建步骤追加 owner-scoped globs：
 
 ```js
 import { defineConfig } from 'limina';
@@ -92,24 +92,22 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   strict: true,
   source: {
-    unusedModules: {
-      entries: [
-        {
-          owner: '@acme/app',
-          files: ['packages/app/src/**/*.spec.ts'],
-          reason: 'Vitest loads spec modules directly.',
-        },
-      ],
-    },
+    additionalEntries: [
+      {
+        owner: '@acme/app',
+        files: ['packages/app/src/**/*.spec.ts'],
+        reason: 'Vitest loads spec modules directly.',
+      },
+    ],
   },
 });
 ```
 
-entry config 必须使用具名 package owner；`files` 必须是正向的 workspace-root-relative glob，并且位于该 owner package 目录内；`reason` 必须是非空字符串。
+additional entry config 必须使用具名 package owner；`files` 必须是正向的 workspace-root-relative glob，并且位于该 owner package 目录内；`reason` 必须是非空字符串。
 
 ## `unusedModules.ignore`
 
-只有当 strict-mode source module 确实需要保留，但 Knip 无法看见它的使用时，才添加 ignore entry：
+`source check` 会在 `strict: true` 时自动启用 unused source module 检测。只有当 strict-mode source module 确实需要保留，但 Knip 无法看见它的使用时，才添加 ignore entry：
 
 ```js
 import { defineConfig } from 'limina';

@@ -17,13 +17,13 @@ export default defineConfig({
 
 ## `include`
 
-`include` is the global source glob set that Limina should inspect. When it is omitted, Limina derives source files from active checker extensions and applies the default exclude list.
+`include` is the global source glob set that Limina should inspect. When it is omitted, Limina starts with `**/*.ts`, `**/*.d.ts`, `**/*.tsx`, `**/*.cts`, `**/*.d.cts`, `**/*.mts`, `**/*.d.mts`, `**/*.mjs`, and `**/*.json`, then adds framework extensions from active checkers such as `**/*.vue` or `**/*.svelte`. It then applies the default exclude list.
 
 If every TypeScript, TSX, and Vue file under `packages/**/src` should be governed, put those globs in `include`. New files then automatically become part of source and proof checks.
 
 ## `exclude`
 
-`exclude` is the directory or glob set that should stay outside source governance. Use it for `dist`, `.tsbuild`, fixtures, generated caches, and other files that should not be treated as governed source.
+`exclude` is the directory or glob set that should stay outside source governance. Use it for `dist`, `.tsbuild`, fixtures, generated caches, and other files that should not be treated as governed source. When `exclude` is omitted, Limina reads the workspace root `.gitignore` and always also excludes `nx.json`, `project.json`, `tsconfig.json`, `**/tsconfig.*.json`, `dist`, `.nx`, `.git`, `.tsbuild`, `coverage`, and `node_modules`.
 
 For example, after `include` covers `packages/**/src/**/*.{ts,tsx,vue}`, adding this file makes it part of the proof boundary:
 
@@ -78,13 +78,13 @@ export default defineConfig({
 
 Ignore entries must name existing workspace packages and a dependency pair that is still declared in the importer package manifest. If the dependency is intentionally retained, keep the reason close to the config; if it is no longer needed, remove the dependency instead.
 
-## `unusedModules.entries`
+## `additionalEntries`
 
-`source check` enables unused source module detection automatically when `strict: true`. There is no `source.unusedModules.enabled` switch. Limina provides Knip with the source module set governed by each named package owner, then Knip decides whether those modules are reachable from package `exports`, `bin`, scripts, or Knip-supported plugin entries.
+`source check` builds an entry-reachable graph for package-owned source modules. For owners with `package.json#exports`, default entries come from package `exports`, `bin`, scripts, and Knip-supported plugin entries.
 
-For package owners without `package.json#exports`, Limina treats the whole governed source module set as the package.json surface. It generates a temporary entry for dependency analysis and skips unused-file coverage for that owner, because every known source module is intentionally part of the application surface.
+For package owners without `package.json#exports`, Limina treats the whole governed source module set as an application-style entry surface. It generates a temporary entry for dependency analysis and skips unused-file coverage for that owner, because every known source module is intentionally part of the application surface.
 
-Some source modules are legitimate entries without being package exports. For example, test runners may load `*.spec.ts` files directly. Add owner-scoped Knip entry globs for those cases:
+Some source modules are legitimate entries without being package exports. For example, test runners may load `*.spec.ts` files directly. Add `source.additionalEntries` owner-scoped globs for test runners, local tooling, or build steps that should not become package exports:
 
 ```js
 import { defineConfig } from 'limina';
@@ -92,24 +92,22 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   strict: true,
   source: {
-    unusedModules: {
-      entries: [
-        {
-          owner: '@acme/app',
-          files: ['packages/app/src/**/*.spec.ts'],
-          reason: 'Vitest loads spec modules directly.',
-        },
-      ],
-    },
+    additionalEntries: [
+      {
+        owner: '@acme/app',
+        files: ['packages/app/src/**/*.spec.ts'],
+        reason: 'Vitest loads spec modules directly.',
+      },
+    ],
   },
 });
 ```
 
-Entry configs must use a named package owner, positive workspace-root-relative glob patterns inside that owner directory, and a non-empty reason.
+Additional entry configs must use a named package owner, positive workspace-root-relative glob patterns inside that owner directory, and a non-empty reason.
 
 ## `unusedModules.ignore`
 
-Use an ignore entry only when a strict-mode source module is intentionally retained but not visible to Knip:
+`source check` enables unused source module detection automatically when `strict: true`. Use an ignore entry only when a strict-mode source module is intentionally retained but not visible to Knip:
 
 ```js
 import { defineConfig } from 'limina';

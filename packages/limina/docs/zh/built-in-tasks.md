@@ -160,7 +160,7 @@ export default defineConfig({
 
 ### strict：从 exports 不可达的源码模块（Knip）
 
-strict 模式下，Limina 还会让 Knip 检查：某个 owner 的源码模块如果从 package `exports`、`bin`、scripts 都触达不到，就是 dead module。
+strict 模式下，Limina 还会让 Knip 检查：某个 owner 的源码模块如果从 package `exports`、`bin`、scripts、Knip 支持的 plugin entries 和 `source.additionalEntries` 都触达不到，就是 dead module。
 
 ```js
 source: {
@@ -172,7 +172,7 @@ source: {
 }
 ```
 
-报 `Unused source module:`。确属有意保留但 Knip 看不见的，用 `source.unusedModules.ignore` 豁免。
+报 `Unused source module:`。如果它是真实的额外入口，写进 `source.additionalEntries`；确属有意保留但 Knip 看不见的，用 `source.unusedModules.ignore` 豁免。
 
 ## `nx:check`
 

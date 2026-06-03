@@ -52,6 +52,7 @@
     "@publint/pack": "catalog:lint",
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",
+    "ignore": "catalog:prod",
     "knip": "catalog:lint",
     "npm-package-json-lint": "catalog:lint",
     "oxc-parser": "catalog:prod",

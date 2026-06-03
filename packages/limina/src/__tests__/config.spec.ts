@@ -27,6 +27,13 @@ describe('defineConfig', () => {
         },
       },
       source: {
+        additionalEntries: [
+          {
+            files: ['packages/core/src/**/*.spec.ts'],
+            owner: '@example/core',
+            reason: 'Vitest loads test modules directly.',
+          },
+        ],
         unusedDependencies: {
           ignore: [
             {
@@ -37,13 +44,6 @@ describe('defineConfig', () => {
           ],
         },
         unusedModules: {
-          entries: [
-            {
-              files: ['packages/core/src/**/*.spec.ts'],
-              owner: '@example/core',
-              reason: 'Vitest loads test modules directly.',
-            },
-          ],
           ignore: [
             {
               file: 'packages/core/src/generated/runtime.ts',
@@ -103,7 +103,7 @@ describe('defineConfig', () => {
     expect(config.source?.unusedModules?.ignore?.[0]?.file).toBe(
       'packages/core/src/generated/runtime.ts',
     );
-    expect(config.source?.unusedModules?.entries?.[0]?.files).toEqual([
+    expect(config.source?.additionalEntries?.[0]?.files).toEqual([
       'packages/core/src/**/*.spec.ts',
     ]);
     expect(config.release?.contentHash?.baselineTag).toBe('next');
