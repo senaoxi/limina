@@ -143,7 +143,7 @@ Reports `Tsconfig source file set mixes package owners:` or `Source module belon
 
 ### Declared-but-unused workspace dependencies (Knip)
 
-A `workspace:*` / `link:` workspace dependency is declared in `package.json`, but no source file actually imports it. This analysis is delegated to Knip.
+A dependency on another package in the pnpm workspace is declared in `package.json`, but no source file in the importing package actually imports it. Detection is by dependency name: any of the four sections (`dependencies` / `devDependencies` / `peerDependencies` / `optionalDependencies`) counts, regardless of the version protocol (`workspace:`, `link:`, `catalog:`, a plain version range, and so on). The reachability analysis is delegated to Knip.
 
 ```js
 // limina.config.mjs

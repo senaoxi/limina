@@ -60,7 +60,7 @@ interface AllowlistEntryCollection {
 
 interface CoverageSource {
   label: string;
-  type: 'allowlist' | 'checker' | 'graph' | 'preset';
+  type: 'allowlist' | 'checker' | 'graph';
 }
 
 export interface RunProofCheckOptions {
@@ -130,11 +130,6 @@ const ignoredSemanticCompilerOptions = new Set([
   'sourceRoot',
   'tsBuildInfoFile',
 ]);
-
-const javaScriptConfigFilePattern = /(?:^|[/\\])[^/\\]+\.config\.[cm]?js$/u;
-const typeScriptFamilyCheckerPresets = new Set<ResolvedCheckerConfig['preset']>(
-  ['tsc', 'tsgo', 'vue-tsc', 'vue-tsgo'],
-);
 
 function getCheckerCoverageExtensions(
   checker: ResolvedCheckerConfig,
@@ -435,42 +430,6 @@ function addCoverage(
   coverageByFile.set(filePath, sources);
 }
 
-function findTypeScriptFamilyChecker(
-  config: ResolvedLiminaConfig,
-): ResolvedCheckerConfig | null {
-  return (
-    getActiveCheckers(config).find((checker) =>
-      typeScriptFamilyCheckerPresets.has(checker.preset),
-    ) ?? null
-  );
-}
-
-function addPresetJavaScriptConfigCoverage(options: {
-  config: ResolvedLiminaConfig;
-  coverageByFile: Map<string, CoverageSource[]>;
-  sourceFiles: Set<string>;
-}): void {
-  const checker = findTypeScriptFamilyChecker(options.config);
-
-  if (!checker) {
-    return;
-  }
-
-  for (const filePath of options.sourceFiles) {
-    if (
-      options.coverageByFile.has(filePath) ||
-      !javaScriptConfigFilePattern.test(filePath)
-    ) {
-      continue;
-    }
-
-    addCoverage(options.coverageByFile, filePath, {
-      label: `${checker.name}:${checker.preset} preset`,
-      type: 'preset',
-    });
-  }
-}
-
 function parseProjectCoverageFileNames(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
@@ -566,12 +525,6 @@ function collectCoverage(options: {
       }
     }
   }
-
-  addPresetJavaScriptConfigCoverage({
-    config: options.config,
-    coverageByFile,
-    sourceFiles: options.sourceFiles,
-  });
 
   return coverageByFile;
 }

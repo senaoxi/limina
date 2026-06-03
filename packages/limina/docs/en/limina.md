@@ -22,8 +22,8 @@ Limina is built around a single config file, `limina.config.mjs`, and a few focu
 - **Nx checks** keep each package's `project.json` `dependsOn` build edges in sync with `link:` artifact dependencies.
 - **Proof checks** show that declaration configs, local typecheck configs, checker entries, and allowlists cover the intended source files.
 - **Checker runs** call `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, or `svelte-check` against the right targets derived from the graph.
-- **Package-output checks** verify that built artifacts and publish metadata still match the source package model.
 - **Package checks** inspect built output the way consumers install it, using `publint`, Are The Types Wrong, and a runtime import boundary scan.
+- **Release checks** pack the npm tarball and verify publish hygiene: required README and license files, no shipped source maps, packed-manifest consistency, and workspace publish dependencies compared against npm registry content.
 - **Pipelines** compose Limina tasks and shell commands into local, PR, and publish workflows.
 
 ## Good Fit
