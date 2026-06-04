@@ -28,10 +28,10 @@ const footerMessage = commitId
 
 const sidebar: DefaultTheme.SidebarItem[] = [
   {
-    text: 'Limina',
+    text: '入门',
     items: [
       {
-        text: '概览',
+        text: '什么是 Limina',
         link: '/zh/limina',
       },
       {
@@ -42,54 +42,86 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: '快速开始',
         link: '/zh/getting-started',
       },
+    ],
+  },
+  {
+    text: '指南',
+    items: [
       {
         text: '核心概念',
         link: '/zh/concepts',
-      },
-      {
-        text: 'Monorepo',
-        link: '/zh/monorepo',
       },
       {
         text: '内置任务',
         link: '/zh/built-in-tasks',
       },
       {
-        text: '配置项',
-        items: [
-          {
-            text: '配置文件',
-            link: '/zh/options/config',
-          },
-          {
-            text: 'Checker entries',
-            link: '/zh/options/checkers',
-          },
-          {
-            text: 'Source coverage',
-            link: '/zh/options/source',
-          },
-          {
-            text: 'Graph rules',
-            link: '/zh/options/graph-rules',
-          },
-          {
-            text: 'Proof allowlist',
-            link: '/zh/options/proof-allowlist',
-          },
-          {
-            text: 'Package checks',
-            link: '/zh/options/package-checks',
-          },
-          {
-            text: 'Pipelines',
-            link: '/zh/options/pipelines',
-          },
-        ],
+        text: '工作流',
+        link: '/zh/workflows',
+      },
+    ],
+  },
+  {
+    text: '深入',
+    collapsed: true,
+    items: [
+      {
+        text: '架构一致性',
+        link: '/zh/architecture-conformance',
+      },
+    ],
+  },
+  {
+    text: '配置参考',
+    items: [
+      {
+        text: '概览',
+        link: '/zh/config/',
       },
       {
-        text: '参考',
-        link: '/zh/reference',
+        text: '配置文件',
+        link: '/zh/config/config-file',
+      },
+      {
+        text: '检查器入口',
+        link: '/zh/config/checkers',
+      },
+      {
+        text: '源码边界',
+        link: '/zh/config/source-boundary',
+      },
+      {
+        text: '源码检查',
+        link: '/zh/config/source-checks',
+      },
+      {
+        text: '图规则',
+        link: '/zh/config/graph-rules',
+      },
+      {
+        text: '覆盖证明允许清单',
+        link: '/zh/config/proof-allowlist',
+      },
+      {
+        text: '包检查',
+        link: '/zh/config/package-checks',
+      },
+      {
+        text: '发布检查',
+        link: '/zh/config/release-checks',
+      },
+      {
+        text: '流水线',
+        link: '/zh/config/pipelines',
+      },
+    ],
+  },
+  {
+    text: 'CLI 参考',
+    items: [
+      {
+        text: 'CLI 命令',
+        link: '/zh/cli',
       },
     ],
   },
@@ -103,7 +135,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
   lang: 'zh-CN',
   link: '/zh/',
   title: 'Limina',
-  description: '让 TypeScript monorepo 从源码依赖到发布产物都保持一致。',
+  description: '让 TypeScript 单体仓库从源码依赖到发布产物都保持一致。',
   themeConfig: {
     nav: [
       {
@@ -111,8 +143,12 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/zh/getting-started',
       },
       {
-        text: '参考',
-        link: '/zh/reference',
+        text: '配置',
+        link: '/zh/config/',
+      },
+      {
+        text: 'CLI',
+        link: '/zh/cli',
       },
       {
         text: pkg.version,

@@ -41,7 +41,9 @@ export default defineConfig({
 });
 ```
 
-## `rules.<label>`
+## rules.\<label\>
+
+- **Type:** `Record<string, GraphRule>`
 
 The `rules` key must match an entry in `liminaOptions.graphRules` in a declaration leaf. A leaf can list multiple labels, and Limina merges the matching rules.
 
@@ -59,7 +61,17 @@ Pair the rule with labels in the declaration leaf:
 
 Source covered by that leaf now uses `graph.rules.runtime-client`.
 
-## `deny.refs`
+## allow.refs
+
+- **Type:** `Array<{ path: string; reason: string }>`
+
+`allow.refs` uses the same entry shape as `deny.refs`, but it only allows extra declared references that static import analysis cannot prove. It does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
+
+`limina graph sync` keeps currently declared extra references only when they match the merged `allow.refs` rules. It does not add unused allow entries.
+
+## deny.refs
+
+- **Type:** `Array<{ path: string; reason: string }>`
 
 `deny.refs` forbids a labeled project from referencing a specific declaration leaf. It is useful for boundaries such as "client runtime must not depend on server runtime" or "public API must not depend on internal tools".
 
@@ -105,15 +117,11 @@ When `pnpm exec limina graph check` runs, Limina starts from the checker entry, 
 
 The result is a graph check failure that points at the forbidden project reference and prints the configured `reason`. This means the problem is not just one import line; the TypeScript graph itself now says client runtime depends on Node runtime.
 
-## `allow.refs`
+## deny.deps
 
-`allow.refs` uses the same entry shape as `deny.refs`, but it only allows extra declared references that static import analysis cannot prove. It does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
+- **Type:** `Array<{ name: string; reason: string }>`
 
-`limina graph sync` keeps currently declared extra references only when they match the merged `allow.refs` rules. It does not add unused allow entries.
-
-## `deny.deps`
-
-`deny.deps` forbids source imports of selected packages, `#imports`, or Node builtins. `name` can be a package name, `#server/*`, `fs`, `node:fs`, or `node:*` for all Node builtins.
+`deny.deps` forbids source imports of selected packages, `#imports`, or Node builtins. `name` can be a package name, a `#subpath` such as `#server/*`, `fs`, `node:fs`, or `node:*` for all Node builtins.
 
 If source covered by the labeled leaf contains:
 

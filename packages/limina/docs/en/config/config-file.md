@@ -22,15 +22,16 @@ export default defineConfig(({ command, mode }) => ({
 }));
 ```
 
-`mode` comes from `--mode`, then `NODE_ENV`, then `default`.
-
-## `mode`
-
 Function configs are useful when local, CI, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
 
-Prefer `command` branching for package output entries that only matter to package and release commands. Reserve `mode` for broader environment-level differences.
+::: tip
+The bulk of a config lives under `config.checkers`. See [Checker Entries](./checkers.md) for the entries shared by graph, source, proof, and checker commands.
+:::
 
-## `strict`
+## strict
+
+- **Type:** `boolean`
+- **Default:** `false`
 
 `strict` is a top-level boolean. It defaults to `false` so existing projects keep the same behavior after upgrading.
 
@@ -50,9 +51,33 @@ export default defineConfig(({ mode }) => ({
 }));
 ```
 
-In strict mode, the existing command surface stays the same, but `graph:check`, `source:check`, `proof:check`, `package:check`, and `release:check` enforce extra modeling constraints. Typecheck leaves must have same-named declaration leaves, declaration leaves must extend their companions and keep the same file set except for declaration/build output options, build graph configs may only reference build aggregators or declaration leaves, source ownership must stay under the nearest `package.json`, workspace source imports must resolve to source graph-owned files, and built or packed package manifests must not expose `workspace:`, `link:`, `file:`, or `catalog:` dependency specifiers.
+Regardless of strict mode, graph check validates workspace package exports through the active checker profiles: public exports must resolve, and source-owned workspace imports must have matching project references.
 
-## `command`
+In strict mode, the existing command surface stays the same, but `graph:check`, `source:check`, `proof:check`, `package:check`, and `release:check` enforce extra modeling constraints. Typecheck leaves must have same-named declaration leaves, declaration leaves must extend their companions and keep the same file set except for declaration/build output options, build graph configs may only reference build aggregators or declaration leaves, source ownership must stay under the nearest `package.json`, and built or packed package manifests must not expose `workspace:`, `link:`, `file:`, or `catalog:` dependency specifiers.
+
+## mode
+
+- **Type:** `string`
+
+`mode` is resolved from `--mode`, then `NODE_ENV`, then `'default'`.
+
+Function configs are useful when local, CI, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
+
+Prefer `command` branching for package output entries that only matter to package and release commands. Reserve `mode` for broader environment-level differences.
+
+```js
+export default defineConfig(({ mode }) => ({
+  strict: mode === 'ci',
+  config: {
+    // return different entries for CI, local, or release usage
+  },
+}));
+```
+
+## command
+
+- **Type:** `'check' | 'graph' | 'nx' | 'package' | 'proof' | 'release' | 'source'`
+- **Related:** [Checker Entries](./checkers.md)
 
 `command` is the command family currently loading the config, such as `check`, `graph`, `source`, `package`, or `release`. Use it when expensive configuration only matters for one command family.
 

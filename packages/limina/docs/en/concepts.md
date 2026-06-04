@@ -4,7 +4,7 @@ Limina uses TypeScript concepts, but the model is small. The important idea is t
 
 ## Checker Entry
 
-A checker entry is the root config Limina starts from.
+A [checker entry](./config/checkers.md) is the root config Limina starts from.
 
 ```js
 export default defineConfig({
@@ -60,7 +60,11 @@ tsconfig.tools.dts.json  <->    tsconfig.tools.json
 tsconfig.test.dts.json   <->    tsconfig.test.json
 ```
 
-The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`. Current `vue-tsgo` support is second-class for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage.
+The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`.
+
+::: warning
+Current `vue-tsgo` support is second-class for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage.
+:::
 
 This split keeps build output settings out of the ordinary typecheck config.
 
@@ -76,11 +80,11 @@ If a config only groups several leaves, keep it as an aggregator. A root `tsconf
 
 ## Source Dependency
 
-A dependency declared with `workspace:*` is a source dependency. It means this workspace package should be represented by project references and source-facing resolution.
+A dependency declared with `workspace:*` links another package from the same workspace. A package can expose some public entries as source and other public entries as built artifacts.
 
-If TypeScript resolves a `workspace:*` import to `dist`, Limina reports it. You can fix that by exposing source entries in the source manifest or by removing the source graph edge.
+Limina pre-resolves every public `exports` subpath for workspace packages that declare `exports`. TypeScript resolution must find a stable type entry: `.d.ts` family declarations, source files such as `.ts` / `.tsx` / `.mts` / `.cts`, `.json`, or checker-supported source extensions such as `.vue`. If TypeScript only reaches runtime JavaScript, or if TypeScript or Oxc cannot resolve an export, graph checking reports the package export.
 
-When `@acme/app` declares `"@acme/core": "workspace:*"`, the edge says app should consume core as source, so it should also have the matching project reference and source-resolvable entry. Limina prevents this source dependency from quietly going through `dist`. Source manifests should expose `src` entries; built or published manifests should be rewritten to expose artifact entries.
+When `@acme/app` imports a public entry of `@acme/core`, graph references are required only when that resolved entry is owned by a `tsconfig*.dts.json` project. Built declaration artifacts such as `dist/*.d.ts` are already output, so they do not require a project reference. Nx checks cover the complementary case: if app actually imports a `workspace:*` entry that resolves into core's artifact directory, app's `project.json` should depend on core's build target.
 
 ## Artifact Dependency
 
@@ -92,7 +96,7 @@ If a package only wants to consume another package the way an outside user would
 
 ## Labels and Rules
 
-A declaration leaf can opt into one or more graph rules with `liminaOptions.graphRules`:
+A declaration leaf can opt into one or more [graph rules](./config/graph-rules.md) with `liminaOptions.graphRules`:
 
 ```jsonc
 {
