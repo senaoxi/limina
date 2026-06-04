@@ -28,10 +28,10 @@ const footerMessage = commitId
 
 const sidebar: DefaultTheme.SidebarItem[] = [
   {
-    text: 'Limina',
+    text: 'Introduction',
     items: [
       {
-        text: 'Overview',
+        text: 'What is Limina',
         link: '/limina',
       },
       {
@@ -42,54 +42,86 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: 'Getting Started',
         link: '/getting-started',
       },
+    ],
+  },
+  {
+    text: 'Guide',
+    items: [
       {
         text: 'Core Concepts',
         link: '/concepts',
-      },
-      {
-        text: 'Monorepo',
-        link: '/monorepo',
       },
       {
         text: 'Built-in Tasks',
         link: '/built-in-tasks',
       },
       {
-        text: 'Options',
-        items: [
-          {
-            text: 'Config File',
-            link: '/options/config',
-          },
-          {
-            text: 'Checker Entries',
-            link: '/options/checkers',
-          },
-          {
-            text: 'Source Coverage',
-            link: '/options/source',
-          },
-          {
-            text: 'Graph Rules',
-            link: '/options/graph-rules',
-          },
-          {
-            text: 'Proof Allowlist',
-            link: '/options/proof-allowlist',
-          },
-          {
-            text: 'Package Checks',
-            link: '/options/package-checks',
-          },
-          {
-            text: 'Pipelines',
-            link: '/options/pipelines',
-          },
-        ],
+        text: 'Workflows',
+        link: '/workflows',
+      },
+    ],
+  },
+  {
+    text: 'In Depth',
+    collapsed: true,
+    items: [
+      {
+        text: 'Architecture Conformance',
+        link: '/architecture-conformance',
+      },
+    ],
+  },
+  {
+    text: 'Config Reference',
+    items: [
+      {
+        text: 'Overview',
+        link: '/config/',
       },
       {
-        text: 'Reference',
-        link: '/reference',
+        text: 'Config File',
+        link: '/config/config-file',
+      },
+      {
+        text: 'Checker Entries',
+        link: '/config/checkers',
+      },
+      {
+        text: 'Source Boundary',
+        link: '/config/source-boundary',
+      },
+      {
+        text: 'Source Checks',
+        link: '/config/source-checks',
+      },
+      {
+        text: 'Graph Rules',
+        link: '/config/graph-rules',
+      },
+      {
+        text: 'Proof Allowlist',
+        link: '/config/proof-allowlist',
+      },
+      {
+        text: 'Package Checks',
+        link: '/config/package-checks',
+      },
+      {
+        text: 'Release Checks',
+        link: '/config/release-checks',
+      },
+      {
+        text: 'Pipelines',
+        link: '/config/pipelines',
+      },
+    ],
+  },
+  {
+    text: 'CLI Reference',
+    items: [
+      {
+        text: 'CLI Commands',
+        link: '/cli',
       },
     ],
   },
@@ -110,8 +142,12 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         link: '/getting-started',
       },
       {
-        text: 'Reference',
-        link: '/reference',
+        text: 'Config',
+        link: '/config/',
+      },
+      {
+        text: 'CLI',
+        link: '/cli',
       },
       {
         text: pkg.version,

@@ -12,6 +12,46 @@ As the repository grows, the same files begin to serve different jobs:
 
 Those jobs are related, but TypeScript does not automatically prove that they agree with each other. Limina exists for that gap.
 
+## How Limina Relates to Nx / Turborepo
+
+Limina, Nx, and Turborepo all belong to the category of monorepo tooling, but they operate at different layers of the problem.
+
+Nx and Turborepo primarily solve problems at the **task-execution layer**: which projects run which tasks, what order tasks run in, which tasks run in parallel, which results can be cached, and how CI runs faster. Limina solves problems at the **architecture-conformance layer**: before those tasks run, can the repository structure itself be trusted — do the TypeScript source graph, the package dependency graph, project references, package exports, runtime boundaries, and published artifacts all express the same facts?
+
+The two are not mutually exclusive. A project can use both together:
+
+```json [package.json]
+{
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "limina check typecheck",
+    "prepublishOnly": "limina check publish"
+  }
+}
+```
+
+Here Nx / Turborepo own task orchestration, affected execution, parallelism, caching, and CI acceleration. Limina owns whether workspace package exports resolve correctly, whether imports are authorized by the nearest `package.json`, whether project references match source-owned imports, whether `workspace:*` artifact imports are reflected in Nx build edges, whether `tsconfig*.dts.json` files have strict companions, whether source files are covered by checkers, whether client / shared / node runtime boundaries hold, and whether published `dist` artifacts are usable by consumers.
+
+Nx itself also offers module-boundary and conformance capabilities, for example declaring dependency constraints through project tags and enforcing them with an ESLint rule or Nx Conformance. The difference is that limina's rules are not generic tag-level project-dependency policies:
+
+```text
+Nx module boundaries are more like:
+  "Can a project tagged A depend on a project tagged B?"
+
+limina is more like:
+  "Is this dependency consistent across package.json, tsconfig references,
+   TypeScript module resolution, source file ownership, and dist package exports?"
+```
+
+That is also why monorepos need conformance even when `tsc`, Nx, and Turborepo are all in place: large TypeScript workspaces have a class of problems that are not execution-efficiency problems but structural-truth problems — is this dependency source or artifact, is this import authorized by `package.json`, does this project reference reflect a real import, does this declaration come from strictly checked source, is this file covered by any checker, does this runtime cross the client/node boundary, and is this `dist` output truly installable for consumers?
+
+> Nx makes monorepo tasks run more efficiently; limina makes the monorepo structure those tasks depend on more trustworthy.
+
+::: tip
+For concrete, worked scenarios of what limina checks, see [Architecture Conformance](./architecture-conformance.md). To wire limina into a repository, see [Getting Started](./getting-started.md).
+:::
+
 ## The Project Graph Can Drift
 
 Project references are supposed to describe which project depends on which other project. Real imports are the source of truth, though. If a file imports another workspace package but the declaration project does not reference the target project, the graph is stale.
@@ -22,13 +62,13 @@ For example, `@acme/app` imports `@acme/core`, but `packages/app/tsconfig.lib.dt
 
 ## Workspace Dependencies Need Clear Meaning
 
-`workspace:*` means "this package is part of the source workspace". That is different from `link:`, `file:`, `catalog:`, or a normal semver dependency, which usually means "consume this package as an artifact".
+`workspace:*` means "this package is linked from the same workspace". That relationship can expose source entries, artifact entries, or a deliberate mix of both through `package.json#exports`.
 
-That distinction matters because TypeScript project references do not rewrite package exports. If package A references package B but imports `@scope/b`, TypeScript still follows B's package exports. When those exports point to `dist`, the graph may silently consume build output instead of source.
+That distinction matters because TypeScript project references do not rewrite package exports. If package A references package B but imports `@scope/b`, TypeScript still follows B's package exports. Limina therefore resolves the public exports first and treats the resolved entry as the fact source for later checks.
 
-Limina detects this situation. It asks you to either expose source entries in the source manifest or stop modeling the edge as a source dependency.
+If the import resolves to a checker-owned source file, the consuming declaration leaf must reference the owner leaf. If the import resolves to a built declaration artifact such as `dist/*.d.ts`, graph references are not required. If the import resolves to `dist` through a `workspace:*` dependency, Nx checks require the consuming package's build target to depend on the producer's build target.
 
-For example, `@acme/app` depends on `@acme/core` with `workspace:*`, but `@acme/core`'s source manifest exports `./dist/index.js`. Limina reports that the source dependency resolved to build output. Fix the source manifest so `exports` points at `./src/index.ts`, then let the build or packaging step rewrite the published manifest to `./index.js` and `./index.d.ts`. If `app` intentionally consumes built output, use `link:`, `catalog:`, `file:`, or semver instead and remove the cross-package project reference.
+For example, `@acme/app` depends on `@acme/core` with `workspace:*`. If it imports `@acme/core` and that export resolves to `./src/index.ts`, graph check requires the matching project reference. If it imports `@acme/core/runtime` and that export resolves to `./dist/runtime.d.ts` or `./dist/runtime.js`, Nx check expects app's `project.json` to contain a build dependency on core.
 
 ## Source Ownership Should Be Boring
 

@@ -25,13 +25,17 @@ export default defineConfig({
 });
 ```
 
-## `<name>`
+## \<name\>
+
+- **Type:** `string` key of `config.checkers` (a `Record<string, CheckerConfig>`)
 
 The `checkers` key is the name of that checker entry, such as `typescript`, `vue`, or `svelte`. It appears in reports and debugging output so you can tell which source family a problem came from.
 
 One workspace can have several checker entries. A plain TypeScript graph can use `typescript`, a Vue app can add `vue`, and a Svelte package can add `svelte`.
 
-## `preset`
+## preset
+
+- **Type:** `'tsc' | 'tsgo' | 'vue-tsc' | 'vue-tsgo' | 'svelte-check'`
 
 `preset` chooses the checker runner Limina invokes:
 
@@ -58,7 +62,9 @@ export default defineConfig({
 });
 ```
 
+::: warning
 `vue-tsgo` uses KazariEX's `vue-tsgo` package with `@typescript/native-preview` and runs `vue-tsgo --project <entry>` through `limina checker typecheck`. It is intentionally second-class for execution in Limina: current `vue-tsgo --build` expands source imports into a transient virtual workspace, does not preserve TypeScript project-reference boundaries, and does not provide incremental build semantics. Limina still uses the configured `vue-tsgo` tsconfig entry for its own graph and proof coverage. Prefer `vue-tsc` for first-class Vue build checks.
+:::
 
 ```js
 export default defineConfig({
@@ -73,15 +79,19 @@ export default defineConfig({
 });
 ```
 
-## `entry`
+## entry
+
+- **Type:** `string`
 
 `entry` is the checker entry config, usually a build graph aggregator such as `tsconfig.build.json` or `tsconfig.vue.build.json`. Graph, proof, source, and checker commands all derive their scope from these entries.
 
 If the graph under `entry` includes `packages/app/tsconfig.lib.dts.json` and app source imports `@acme/core`, Limina follows this entry and checks whether app references core correctly.
 
-## `extensions`
+## extensions
 
-`extensions` is not a user option. Limina fixes extensions per built-in preset because they are part of the proof model:
+`extensions` is not a user option. Limina fixes extensions per built-in preset because they are part of the proof model. Configuring `extensions` is rejected.
+
+::: details Extensions fixed per built-in preset
 
 - `tsc`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`;
 - `tsgo`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`;
@@ -89,7 +99,7 @@ If the graph under `entry` includes `packages/app/tsconfig.lib.dts.json` and app
 - `vue-tsgo`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`, plus Vue extensions reported by `@vue/language-core`;
 - `svelte-check`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`, `.svelte`.
 
-Configuring `extensions` is rejected.
+:::
 
 After configuring a `vue` checker, a `.vue` source file is handled by that checker:
 

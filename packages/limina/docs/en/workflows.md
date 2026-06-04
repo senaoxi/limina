@@ -1,0 +1,120 @@
+# Workflows
+
+This page collects the day-to-day command sequences, a CI example, best practices, FAQ, and the maintainer release checklist. The commands here invoke the same checks documented in the [CLI Reference](./cli.md); start with [Getting Started](./getting-started.md) if you are new to Limina.
+
+## Recommended Workflows
+
+### Local Development
+
+```sh
+pnpm exec limina checker build
+pnpm exec limina checker typecheck
+pnpm exec limina graph check
+```
+
+Use these while changing TypeScript configs or package boundaries.
+
+When artifact consumption changes, sync the Nx target graph. Limina derives these edges from `link:` artifact dependencies and from actual imports of `workspace:*` exports that resolve into `dist`:
+
+```sh
+pnpm exec limina nx sync build docs:build
+pnpm exec limina nx check build docs:build
+```
+
+### Pull Requests
+
+```sh
+pnpm exec limina check
+```
+
+This proves graph, source ownership, Nx project sync, coverage, first-class checker builds, and second-class checker execution together.
+
+### Pre-publish
+
+```sh
+pnpm build
+pnpm exec limina package check
+pnpm exec limina release check --package <name>
+pnpm exec limina check publish
+```
+
+::: warning
+Build first so `package.entries[].outDir` contains the files consumers will install.
+:::
+
+## CI Example
+
+```yaml
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec limina check
+```
+
+## Best Practices
+
+::: tip
+
+- Keep `tsconfig.build.json` files as pure aggregators with `files: []` and `references`.
+- Keep declaration leaves close to local companions, and let declaration leaves add only declaration-output settings.
+- Keep workspace package exports intentional: source entries need references, artifact entries need build edges when consumed.
+- Run source, package, and release checks; they protect different layers.
+- Keep allowlists small and explain why each exception is safe.
+
+:::
+
+## FAQ
+
+### How do `limina checker build` and `checker typecheck` choose targets?
+
+`checker build` runs first-class build execution presets from their configured entries (`tsc -b`, `tsgo -b`, and `vue-tsc -b`). `tsgo` is backed by Microsoft's `@typescript/native-preview` package. `checker typecheck` runs second-class typecheck execution presets directly, currently `vue-tsgo --project <entry>` and `svelte-check --tsconfig <entry>`. Limina intentionally keeps `vue-tsgo` out of `checker build` because current `vue-tsgo --build` does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage. Prefer `vue-tsc` for first-class Vue build checks.
+
+### Why do package checks require a build first?
+
+::: warning
+They inspect the package output under `package.entries[].outDir`. That output must already contain the built `package.json`, exports, JavaScript, and declarations. `release:check` additionally expects the packed output to contain README/license files and no source maps.
+:::
+
+### Can workspace exports point to dist?
+
+Yes. Workspace package exports may point to source entries or built artifacts. Limina first requires TypeScript and Oxc to resolve every public export. Graph references are required for imports whose resolved entry is owned by a declaration project; built declarations such as `dist/*.d.ts` do not require project references. When a `workspace:*` import actually resolves into `dist`, `limina nx check` requires the consuming package to depend on the producer's build target.
+
+### Should Vue or Svelte files be placed in the TypeScript graph?
+
+Framework files should be covered by their framework checker entry. Limina can prove coverage through `vue-tsc`, `vue-tsgo`, or `svelte-check` without pretending those files are ordinary `tsc -b` declaration leaves.
+
+### What is `--mode` for?
+
+Use `--mode` when `limina.config.mjs` exports a function and returns different configuration for local, CI, or release workflows.
+
+## Maintainer Release Checklist
+
+Before publishing Limina itself or a package governed by Limina, check that:
+
+- normal tests pass;
+- `pnpm exec limina check` passes;
+- the package build has run;
+- `pnpm exec limina package check --package <name>` passes;
+- `pnpm exec limina release check --package <name>` passes.
+
+## See Also
+
+- [CLI Reference](./cli.md) — every command and flag.
+- [Pipelines](./config/pipelines.md) — compose named workflows from built-in tasks and external commands.
+- [Package Checks](./config/package-checks.md) — built-output entries and `publint` / `attw` / `boundary`.
+- [Release Checks](./config/release-checks.md) — tarball and publish hygiene.

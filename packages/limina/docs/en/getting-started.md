@@ -23,7 +23,7 @@ pnpm add -D limina typescript
 
 If your workspace does not yet have clear `tsconfig*.dts.json`, `tsconfig.build.json`, and project references, start with `limina init`. It infers the declaration graph it can safely generate from existing `tsconfig*.json` files and stops when the structure is ambiguous.
 
-If your repository already has a stable declaration build graph, write the minimal `limina.config.mjs` directly. In that case, Limina does not redesign the graph; it starts from the checker entry you provide and checks the structure that already exists.
+If your repository already has a stable declaration build graph, write the minimal `limina.config.mjs` directly. In that case, Limina does not redesign the graph; it starts from the checker entry you provide and checks the structure that already exists. See [Checker Entries](./config/checkers.md) and [Config File](./config/config-file.md) for the full shape of these settings.
 
 ## Initialize an Existing Workspace
 
@@ -49,7 +49,9 @@ Initialization can create:
 - a root `limina:check` script;
 - a missing root `limina` dev dependency.
 
+::: warning
 It refuses ambiguous inputs instead of guessing, including existing `tsconfig*.build.json` or `tsconfig*.dts.json` files and `tsconfig.json` files that mix source files with project references.
+:::
 
 When init stops this way, it usually means the repository already has a tsconfig convention. Read the files named in the error, then decide whether to keep the current layout and write config manually, or split that area into an aggregator, declaration leaf, and local companion.
 
@@ -60,7 +62,9 @@ pnpm i
 pnpm limina:check
 ```
 
+::: tip
 You only need `pnpm i` when init changed dependencies or created a root `package.json`.
+:::
 
 ## Minimal Manual Config
 
@@ -110,7 +114,7 @@ The first failure usually tells you which layer to inspect:
 
 - `graph:check` usually points to imports, project references, `workspace:*`, or label rules that are out of sync;
 - `source:check` usually points to file ownership, cross-package relative imports, dependency declarations, or `#imports`;
-- `nx:check` usually points to a missing or stale `project.json`; its `dependsOn` build edges are derived from `link:` artifact dependencies, so a fresh workspace must run `limina nx sync` first;
+- `nx:check` usually points to a missing or stale `project.json`; its `dependsOn` build edges are derived from `link:` artifact dependencies and actual imports of `workspace:*` exports that resolve to artifacts, so a fresh workspace must run `limina nx sync` first;
 - `proof:check` usually points to checker entries, declaration leaves, local companions, or allowlists that do not cover source files;
 - `checker:build` means a first-class build execution checker such as `tsc`, `tsgo`, or `vue-tsc` found type errors;
 - `checker:typecheck` means a second-class typecheck execution checker such as `vue-tsgo` or `svelte-check` found type errors.

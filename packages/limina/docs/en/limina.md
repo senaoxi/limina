@@ -1,6 +1,6 @@
-# Limina
+# What is Limina
 
-Limina keeps a TypeScript monorepo honest. It checks that the source graph, package ownership, typecheck coverage, source manifests, and built package outputs all describe the same project.
+Limina keeps a TypeScript monorepo honest. It checks that the source graph, package ownership, typecheck coverage, workspace exports, Nx build edges, and built package outputs all describe the same project.
 
 For a small package, `tsc --noEmit` may be enough. In a larger workspace, there are usually more moving parts:
 
@@ -19,7 +19,7 @@ Limina is built around a single config file, `limina.config.mjs`, and a few focu
 
 - **Graph checks** verify that real imports match TypeScript project references and workspace dependency rules.
 - **Source checks** keep files inside the package that owns them and make sure imports are declared where they are used.
-- **Nx checks** keep each package's `project.json` `dependsOn` build edges in sync with `link:` artifact dependencies.
+- **Nx checks** keep each package's `project.json` `dependsOn` build edges in sync with artifact consumption from `link:` dependencies and actually imported `workspace:*` exports that resolve to `dist`.
 - **Proof checks** show that declaration configs, local typecheck configs, checker entries, and allowlists cover the intended source files.
 - **Checker runs** call `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, or `svelte-check` against the right targets derived from the graph.
 - **Package checks** inspect built output the way consumers install it, using `publint`, Are The Types Wrong, and a runtime import boundary scan.
@@ -36,14 +36,16 @@ Limina is a good fit when your repository:
 - publishes packages and wants to validate the built output before release;
 - has framework-specific files that plain `tsc -b` does not typecheck by itself.
 
+::: tip
 Limina is not a bundler, test runner, package publisher, or hidden preset. The goal is to make monorepo rules explicit, reviewable, and runnable in CI.
+:::
 
 ## Common Situations
 
 - **A pull request changes a cross-package import**: `@acme/app` adds `import { createClient } from '@acme/core'`, but the app declaration leaf does not reference core. `limina check` reports the missing project reference or missing `workspace:*` dependency before the build graph drifts after merge.
 - **Browser code imports a Node-only dependency**: a `runtime-client` project accidentally imports `node:fs` or `@acme/internal-node`. A graph rule blocks that edge before the browser runtime fails in production.
 - **Source typechecks pass but publish output is broken**: local `tsc` passes, but `dist/package.json` points `exports` or `types` at the wrong files. `limina package check` inspects the built output from a consumer's point of view before npm publish.
-- **A workspace dependency still exports `dist`**: a package uses `workspace:*` to mean source dependency, but its source manifest exports still point to build output. Limina reports that the edge is not resolving as source, so the source manifest should expose `src` entries or the edge should become an artifact dependency.
+- **A workspace export mixes source and `dist` entries**: `@acme/core` exposes `.` from `src` and `./runtime` from `dist`. Limina accepts both entries after TypeScript and Oxc can resolve them. Imports of the source entry require the matching project reference; imports of the `dist` entry make Nx `dependsOn` core's build target.
 
 ## How It Fits Into Your Workflow
 
@@ -54,3 +56,7 @@ After adoption, Limina gives you checks that can live in local development, pull
 - before publishing, you can validate the actual `dist` output consumers install, including metadata, type entries, README, license, and runtime import boundaries.
 
 For a first-time user, the practical benefit is that you do not need to already be a monorepo expert to read the failure. The report usually points you toward the right category of fix: add a reference, declare a dependency, fix package exports, or repair package output.
+
+## Next steps
+
+Read [Why Limina](./why.md) for the motivation, or jump straight to [Getting Started](./getting-started.md).
