@@ -12,6 +12,28 @@ import { describe, expect, it } from 'vitest';
 import { runNx } from '../commands/nx';
 import type { ResolvedLiminaConfig } from '../config';
 
+const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
+  {
+    typescript: {
+      preset: 'tsc',
+      entry: 'tsconfig.build.json',
+    },
+  };
+const buildCompilerOptions = {
+  composite: true,
+  declaration: true,
+  emitDeclarationOnly: true,
+  incremental: true,
+  module: 'ESNext',
+  moduleResolution: 'bundler',
+  noEmit: false,
+  outDir: './.tsbuild',
+  resolveJsonModule: true,
+  strict: true,
+  target: 'ES2023',
+  types: [],
+};
+
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, text);
@@ -72,6 +94,7 @@ function createPackageJson(
     build?: boolean;
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
+    exports?: unknown;
   } = {},
 ): string {
   return stringifyConfig({
@@ -83,7 +106,35 @@ function createPackageJson(
       : undefined,
     dependencies: options.dependencies,
     devDependencies: options.devDependencies,
+    exports: options.exports,
   });
+}
+
+function rootBuildConfig(references: string[]): string {
+  return stringifyConfig({
+    references: references.map((reference) => ({
+      path: reference,
+    })),
+  });
+}
+
+function dtsBuildConfig(include: string[]): string {
+  return stringifyConfig({
+    compilerOptions: {
+      ...buildCompilerOptions,
+      rootDir: '.',
+      tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+    },
+    include,
+  });
+}
+
+function checkerFixtureConfig(): Partial<ResolvedLiminaConfig> {
+  return {
+    config: {
+      checkers: defaultCheckers,
+    },
+  };
 }
 
 async function readJson(filePath: string): Promise<Record<string, unknown>> {
@@ -155,6 +206,238 @@ describe('runNx', () => {
         targets: {
           build: {
             dependsOn: [],
+          },
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('syncs dependsOn for workspace imports that resolve to artifact exports', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts':
+          "import { runtimeValue } from '@example/b/runtime';\nexport const value = runtimeValue;\n",
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          build: true,
+          exports: {
+            '.': './src/index.ts',
+            './runtime': {
+              types: './dist/runtime.d.ts',
+              default: './dist/runtime.js',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/runtime.d.ts':
+          'export declare const runtimeValue = 1;\n',
+        'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
+    const aProjectJsonPath = path.join(
+      fixture.rootDir,
+      'packages/a/project.json',
+    );
+
+    try {
+      await expect(runNx(fixture.config, { check: true })).resolves.toEqual({
+        changed: true,
+        edgeCount: 1,
+        outputCount: 2,
+      });
+      await expect(readFile(aProjectJsonPath, 'utf8')).rejects.toThrow(
+        /ENOENT/u,
+      );
+
+      await expect(runNx(fixture.config)).resolves.toEqual({
+        changed: true,
+        edgeCount: 1,
+        outputCount: 2,
+      });
+
+      const projectJson = await readJson(aProjectJsonPath);
+
+      expect(projectJson).toMatchObject({
+        targets: {
+          build: {
+            dependsOn: [
+              {
+                projects: ['@example/b'],
+                target: 'build',
+              },
+            ],
+          },
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not add dependsOn for workspace imports that resolve to source exports', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts':
+          "import { sourceValue } from '@example/b';\nexport const value = sourceValue;\n",
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          build: true,
+          exports: {
+            '.': './src/index.ts',
+            './runtime': {
+              types: './dist/runtime.d.ts',
+              default: './dist/runtime.js',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/runtime.d.ts':
+          'export declare const runtimeValue = 1;\n',
+        'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
+
+    try {
+      await expect(runNx(fixture.config)).resolves.toEqual({
+        changed: true,
+        edgeCount: 0,
+        outputCount: 2,
+      });
+
+      await expect(
+        readJson(path.join(fixture.rootDir, 'packages/a/project.json')),
+      ).resolves.toMatchObject({
+        targets: {
+          build: {
+            dependsOn: [],
+          },
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not add dependsOn for unused workspace artifact exports', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts': 'export const value = 1;\n',
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          build: true,
+          exports: {
+            './runtime': {
+              types: './dist/runtime.d.ts',
+              default: './dist/runtime.js',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/runtime.d.ts':
+          'export declare const runtimeValue = 1;\n',
+        'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
+
+    try {
+      await expect(runNx(fixture.config)).resolves.toEqual({
+        changed: true,
+        edgeCount: 0,
+        outputCount: 2,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('syncs dependsOn for type-only workspace exports that resolve to dist declarations', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts':
+          "import type { RuntimeValue } from '@example/b/types';\nexport type Value = RuntimeValue;\n",
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          build: true,
+          exports: {
+            './types': {
+              types: './dist/types.d.ts',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/types.d.ts':
+          'export interface RuntimeValue { ready: true }\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
+
+    try {
+      await expect(runNx(fixture.config)).resolves.toEqual({
+        changed: true,
+        edgeCount: 1,
+        outputCount: 2,
+      });
+
+      await expect(
+        readJson(path.join(fixture.rootDir, 'packages/a/project.json')),
+      ).resolves.toMatchObject({
+        targets: {
+          build: {
+            dependsOn: [
+              {
+                projects: ['@example/b'],
+                target: 'build',
+              },
+            ],
           },
         },
       });
@@ -568,6 +851,48 @@ describe('runNx', () => {
     }
   });
 
+  it('fails when a consumed workspace artifact export target has no build script', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts':
+          "import { runtimeValue } from '@example/b/runtime';\nexport const value = runtimeValue;\n",
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          exports: {
+            './runtime': {
+              types: './dist/runtime.d.ts',
+              default: './dist/runtime.js',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/runtime.d.ts':
+          'export declare const runtimeValue = 1;\n',
+        'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
+
+    try {
+      await expect(runNx(fixture.config)).rejects.toThrow(
+        /target has no build script/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('fails on artifact build dependency cycles', async () => {
     const fixture = await createFixture({
       'packages/a/package.json': createPackageJson('@example/a', {
@@ -583,6 +908,52 @@ describe('runNx', () => {
         },
       }),
     });
+
+    try {
+      await expect(runNx(fixture.config)).rejects.toThrow(
+        /artifact build dependency cycle/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('fails when workspace export artifact edges participate in cycles with link edges', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts':
+          "import { runtimeValue } from '@example/b/runtime';\nexport const value = runtimeValue;\n",
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          build: true,
+          dependencies: {
+            '@example/a': 'link:../a/dist',
+          },
+          exports: {
+            './runtime': {
+              types: './dist/runtime.d.ts',
+              default: './dist/runtime.js',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/runtime.d.ts':
+          'export declare const runtimeValue = 1;\n',
+        'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
 
     try {
       await expect(runNx(fixture.config)).rejects.toThrow(
