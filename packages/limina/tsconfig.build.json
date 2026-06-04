@@ -10,6 +10,12 @@
     },
     {
       "path": "./tsconfig.test.dts.json"
+    },
+    {
+      "path": "./smoke/tsconfig.lib.dts.json"
+    },
+    {
+      "path": "./smoke/tsconfig.test.dts.json"
     }
   ]
 }

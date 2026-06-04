@@ -1,0 +1,13 @@
+{
+  // Smoke-local source/editor check. The runtime path is covered by tests.
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "allowJs": true,
+    "isolatedDeclarations": false,
+    "lib": ["ESNext"],
+    "types": ["node"]
+  },
+  "include": ["eslint.config.mjs", "package.json", "vitest.config.ts"],
+  "exclude": ["node_modules", "coverage"]
+}

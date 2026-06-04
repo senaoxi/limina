@@ -42,6 +42,7 @@
     "build:watch": "rolldown --config rolldown.config.ts --watch",
     "typecheck": "node bin/limina.js checker build",
     "test": "vitest run",
+    "smoke": "pnpm nx run limina:build && pnpm --dir ./smoke test",
     "lint": "eslint . --config ./eslint.config.mjs --fix --cache --cache-location ./node_modules/.cache/eslint/",
     "clean": "del-cli .tsbuild .eslintcache dist coverage node_modules"
   },

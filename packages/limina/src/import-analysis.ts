@@ -30,7 +30,7 @@ export interface CreateImportAnalysisContextOptions {
   isolated?: boolean;
 }
 
-type ImportResolveContextInput =
+export type ImportResolveContextInput =
   | CheckerProjectParseContext
   | Pick<CheckerProjectParseContext, 'checkerPresets' | 'extensions'>
   | string[];
@@ -714,6 +714,64 @@ export function clearImportAnalysisCache(): void {
   sharedImportAnalysisCaches.sourceTextCache.clear();
 }
 
+function resolveModuleNameWithOxcCaches(
+  caches: ImportAnalysisCaches,
+  options: {
+    compilerOptions: ts.CompilerOptions;
+    containingFile: string;
+    context: ResolvedImportContext;
+    specifier: string;
+  },
+): string | null {
+  const extensions = getResolverExtensions({
+    compilerOptions: options.compilerOptions,
+    context: options.context,
+  });
+  const resolverCacheKey = createResolverCacheKey({
+    compilerOptions: options.compilerOptions,
+    extensions,
+  });
+  const resolver =
+    caches.resolverCache.get(resolverCacheKey) ??
+    new ResolverFactory(
+      createResolverOptions({
+        compilerOptions: options.compilerOptions,
+        extensions,
+      }),
+    );
+
+  caches.resolverCache.set(resolverCacheKey, resolver);
+
+  let resolved: ReturnType<ResolverFactory['resolveFileSync']>;
+
+  try {
+    resolved = resolver.resolveFileSync(
+      options.containingFile,
+      options.specifier,
+    );
+  } catch {
+    return null;
+  }
+
+  return resolved.path
+    ? normalizeResolvedPathForImporter(resolved.path, options.containingFile)
+    : null;
+}
+
+export function resolveModuleNameWithOxc(options: {
+  compilerOptions: ts.CompilerOptions;
+  containingFile: string;
+  context?: ImportResolveContextInput;
+  specifier: string;
+}): string | null {
+  return resolveModuleNameWithOxcCaches(sharedImportAnalysisCaches, {
+    compilerOptions: options.compilerOptions,
+    containingFile: normalizeAbsolutePath(options.containingFile),
+    context: normalizeContextInput(options.context),
+    specifier: options.specifier,
+  });
+}
+
 export function createImportAnalysisContext(
   options: CreateImportAnalysisContextOptions = {},
 ): ImportAnalysisContext {
@@ -751,35 +809,6 @@ export function createImportAnalysisContext(
 
     caches.importsCache.set(normalizedFilePath, imports);
     return imports;
-  };
-
-  const resolveWithOxc = (options: {
-    compilerOptions: ts.CompilerOptions;
-    containingFile: string;
-    extensions: string[];
-    specifier: string;
-  }): string | null => {
-    const resolverCacheKey = createResolverCacheKey(options);
-    const resolver =
-      caches.resolverCache.get(resolverCacheKey) ??
-      new ResolverFactory(createResolverOptions(options));
-
-    caches.resolverCache.set(resolverCacheKey, resolver);
-
-    let resolved: ReturnType<ResolverFactory['resolveFileSync']>;
-
-    try {
-      resolved = resolver.resolveFileSync(
-        options.containingFile,
-        options.specifier,
-      );
-    } catch {
-      return null;
-    }
-
-    return resolved.path
-      ? normalizeResolvedPathForImporter(resolved.path, options.containingFile)
-      : null;
   };
 
   const resolveInternalImport = (
@@ -848,10 +877,10 @@ export function createImportAnalysisContext(
       }) ??
       (preferTypeScriptResolver
         ? null
-        : (resolveWithOxc({
+        : (resolveModuleNameWithOxcCaches(caches, {
             compilerOptions: options,
             containingFile: normalizedContainingFile,
-            extensions,
+            context,
             specifier,
           }) ??
           resolveModuleNameWithCheckers({

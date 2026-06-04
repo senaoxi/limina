@@ -1,0 +1,23 @@
+{
+  "name": "@docs-islands/limina-smoke",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "pnpm smoke",
+    "smoke": "vitest run",
+    "typecheck": "limina checker build",
+    "lint": "eslint . --config ./eslint.config.mjs --fix --cache",
+    "clean": "del-cli .tsbuild .eslintcache coverage node_modules"
+  },
+  "devDependencies": {
+    "@docs-islands/eslint-config": "workspace:*",
+    "@types/node": "catalog:dev",
+    "@typescript-eslint/parser": "catalog:lint",
+    "del-cli": "catalog:dev",
+    "eslint": "catalog:lint",
+    "globals": "catalog:test",
+    "limina": "workspace:*",
+    "typescript": "catalog:dev",
+    "vitest": "catalog:test"
+  }
+}
