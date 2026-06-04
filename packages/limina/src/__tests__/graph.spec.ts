@@ -115,6 +115,7 @@ const buildCompilerOptions = {
   moduleResolution: 'bundler',
   noEmit: false,
   outDir: './.tsbuild',
+  resolveJsonModule: true,
   strict: true,
   target: 'ES2023',
   types: [],
@@ -311,6 +312,59 @@ function createVueWorkspacePackageFiles(options: {
   };
 }
 
+function createVueExportWorkspacePackageFiles(
+  options: {
+    appReferences?: string[];
+  } = {},
+): Record<string, string> {
+  return {
+    'packages/app/package.json': stringifyConfig({
+      dependencies: {
+        '@example/internal': 'workspace:*',
+      },
+      name: '@example/app',
+      type: 'module',
+    }),
+    'packages/app/src/App.vue':
+      '<script setup lang="ts">\nimport Internal from \'@example/internal\';\nvoid Internal;\n</script>\n',
+    'packages/app/tsconfig.vue.dts.json': buildConfig({
+      include: ['src/**/*.vue'],
+      references: options.appReferences,
+      tsBuildInfoFile: './.tsbuild/vue.tsbuildinfo',
+    }),
+    'packages/app/tsconfig.vue.json': typecheckConfig(['src/**/*.vue']),
+    'packages/internal/package.json': stringifyConfig({
+      exports: {
+        '.': './src/Internal.vue',
+      },
+      name: '@example/internal',
+      type: 'module',
+    }),
+    'packages/internal/src/Internal.vue':
+      '<script setup lang="ts">\nconst value = 1;\nvoid value;\n</script>\n',
+    'packages/internal/tsconfig.lib.dts.json': buildConfig({
+      include: ['src/**/*.vue'],
+      tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+    }),
+    'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.vue']),
+    'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+    'tsconfig.vue.build.json': stringifyConfig({
+      files: [],
+      references: [
+        {
+          path: './packages/internal/tsconfig.lib.dts.json',
+        },
+        {
+          path: './packages/app/tsconfig.vue.dts.json',
+        },
+      ],
+    }),
+  };
+}
+
 function _createRootWorkspaceDependencyFiles(options: {
   rootDependencies?: Record<string, string>;
   rootSource: string;
@@ -432,10 +486,9 @@ packages:
     }
   });
 
-  it('rejects workspace imports that resolve through exports to dist', async () => {
+  it('allows workspace imports that resolve through exports to dist declarations', async () => {
     const fixture = await createFixture({
       ...createWorkspacePackageFiles({
-        appReferences: ['../internal/tsconfig.lib.dts.json'],
         appSource:
           "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
       }),
@@ -459,7 +512,233 @@ packages:
         '@example/internal',
       );
 
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports workspace package exports unresolved by TypeScript', async () => {
+    const fixture = await createFixture({
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './src/missing.ts',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports source package exports unresolved by Oxc', async () => {
+    const fixture = await createFixture({
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': {
+            types: './src/index.ts',
+          },
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses TypeScript declaration resolutions for type-only exports unresolved by Oxc', async () => {
+    const fixture = await createFixture({
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          './types': {
+            types: './src/index.d.ts',
+          },
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.d.ts':
+        'export declare const value: number;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.d.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.d.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports workspace package exports that TypeScript resolves to runtime JavaScript', async () => {
+    const fixture = await createFixture({
+      'packages/internal/dist/index.js': 'export const value = 1;\n',
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './dist/index.js',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.ts': 'export const value = 1;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './packages/internal/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('requires project references for source package exports selected by workspace imports', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource:
+          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      }),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts referenced source package exports selected by workspace imports', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
+        appSource:
+          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      }),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('expands wildcard package exports before graph reference checks', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
+        appSource:
+          "import { featureValue } from '@example/internal/features/a';\nexport const value = featureValue;\n",
+      }),
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          './features/*': './src/features/*.ts',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/features/a.ts': 'export const featureValue = 1;\n',
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -609,6 +888,45 @@ packages:
           strict: true,
         }),
       ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('requires project references for consumed json package exports', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appSource:
+          "import schema from '@example/internal/schema.json';\nexport const title = schema.title;\n",
+      }),
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': './src/index.ts',
+          './schema.json': './schemas/schema.json',
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/schemas/schema.json': '{ "title": "Internal" }\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts', 'schemas/schema.json'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig([
+        'src/**/*.ts',
+        'schemas/schema.json',
+      ]),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1208,6 +1526,62 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('requires project references for vue package exports selected by vue checker', async () => {
+    const fixture = await createFixture(
+      createVueExportWorkspacePackageFiles(),
+      undefined,
+      {
+        vue: {
+          preset: 'vue-tsc',
+          entry: 'tsconfig.vue.build.json',
+        },
+      },
+    );
+
+    try {
+      await linkCompilerSfc(fixture.rootDir);
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts referenced vue package exports selected by vue checker', async () => {
+    const fixture = await createFixture(
+      createVueExportWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
+      }),
+      undefined,
+      {
+        vue: {
+          preset: 'vue-tsc',
+          entry: 'tsconfig.vue.build.json',
+        },
+      },
+    );
+
+    try {
+      await linkCompilerSfc(fixture.rootDir);
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
       await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();

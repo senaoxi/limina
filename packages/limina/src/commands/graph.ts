@@ -62,6 +62,11 @@ import {
   type ImporterInfo,
   type WorkspacePackage,
 } from '../workspace';
+import {
+  createWorkspaceExportsResolutionIndex,
+  type WorkspaceExportsResolutionIndex,
+  type WorkspaceExportsResolutionProfile,
+} from '../workspace-exports';
 
 export interface RunGraphCheckOptions {
   clearScreen?: boolean;
@@ -602,6 +607,7 @@ function collectExpectedReferences(options: {
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
   selectedProjectPaths?: Set<string>;
+  workspaceExports: WorkspaceExportsResolutionIndex;
 }): Map<string, Map<string, ReferenceExpectation>> {
   const importAnalysis = createImportAnalysisContext();
   const expectedReferencesByProjectPath = new Map<
@@ -640,13 +646,6 @@ function collectExpectedReferences(options: {
           continue;
         }
 
-        const resolvedFilePath = resolveInternalImport(
-          importRecord.specifier,
-          filePath,
-          project.options,
-          project,
-          importAnalysis,
-        );
         const targetPackage = findPackageForSpecifier(
           importRecord.specifier,
           options.packages,
@@ -655,6 +654,23 @@ function collectExpectedReferences(options: {
           importRecord.filePath,
           options.importers,
         );
+        const workspaceExportResolution =
+          targetPackage &&
+          options.workspaceExports.hasExports(targetPackage.name)
+            ? options.workspaceExports.get(
+                project.configPath,
+                importRecord.specifier,
+              )
+            : null;
+        const resolvedFilePath =
+          workspaceExportResolution?.oxcResolvedFileName ??
+          resolveInternalImport(
+            importRecord.specifier,
+            filePath,
+            project.options,
+            project,
+            importAnalysis,
+          );
 
         if (!resolvedFilePath) {
           if (!targetPackage) {
@@ -674,8 +690,30 @@ function collectExpectedReferences(options: {
           continue;
         }
 
+        const graphResolvedFilePath =
+          workspaceExportResolution?.typeScriptResolvedFileName ??
+          resolvedFilePath;
+
+        if (!graphResolvedFilePath) {
+          if (!targetPackage) {
+            continue;
+          }
+
+          options.problems.push(
+            [
+              'Unresolved workspace import in TypeScript:',
+              `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
+              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  imported specifier: ${importRecord.specifier}`,
+              `  matched workspace package: ${targetPackage.name}`,
+              `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
+            ].join('\n'),
+          );
+          continue;
+        }
+
         const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
-          resolvedFilePath,
+          graphResolvedFilePath,
           options.packages,
         );
         const targetPackageForGraph = targetPackage;
@@ -705,6 +743,16 @@ function collectExpectedReferences(options: {
         if (
           targetPackageForGraph &&
           shouldResolveThroughGraph(importer, targetPackageForGraph) &&
+          workspaceExportResolution &&
+          !options.fileOwnerLookup.has(graphResolvedFilePath)
+        ) {
+          continue;
+        }
+
+        if (
+          targetPackageForGraph &&
+          shouldResolveThroughGraph(importer, targetPackageForGraph) &&
+          !workspaceExportResolution &&
           !options.fileOwnerLookup.has(resolvedFilePath)
         ) {
           const referencedProjectPath = inferPackageProject(
@@ -742,7 +790,7 @@ function collectExpectedReferences(options: {
           fileOwnerLookup: options.fileOwnerLookup,
           packages: options.packages,
           projectPaths: options.projectPaths,
-          resolvedFilePath,
+          resolvedFilePath: graphResolvedFilePath,
           specifier: importRecord.specifier,
         });
 
@@ -759,7 +807,7 @@ function collectExpectedReferences(options: {
                   `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
                   `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
                   `  imported specifier: ${importRecord.specifier}`,
-                  `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
+                  `  resolved file: ${toRelativePath(options.config.rootDir, graphResolvedFilePath)}`,
                   `  reason: workspace:* dependencies are source dependency edges and must resolve to files owned by the source graph; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
                 ].join('\n'),
               );
@@ -773,7 +821,7 @@ function collectExpectedReferences(options: {
               `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
               `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
               `  imported specifier: ${importRecord.specifier}`,
-              `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
+              `  resolved file: ${toRelativePath(options.config.rootDir, graphResolvedFilePath)}`,
               `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
             ].join('\n'),
           );
@@ -833,6 +881,17 @@ function collectExpectedReferences(options: {
   }
 
   return expectedReferencesByProjectPath;
+}
+
+function createWorkspaceExportsResolutionProfiles(
+  projects: ProjectInfo[],
+): WorkspaceExportsResolutionProfile[] {
+  return projects.map((project) => ({
+    checkerPresets: project.checkerPresets,
+    configPath: project.configPath,
+    extensions: project.extensions,
+    options: project.options,
+  }));
 }
 
 function getGraphSyncExtensions(config: ResolvedLiminaConfig): string[] {
@@ -1160,6 +1219,14 @@ async function runGraphCheckInternal(
   const packages = await collectWorkspacePackages(config);
   const importers = collectImporters(config, packages);
   const problems: string[] = [...graphRoute.problems];
+  const workspaceExports = await createWorkspaceExportsResolutionIndex({
+    config,
+    packages,
+    profiles: createWorkspaceExportsResolutionProfiles(projects),
+  });
+
+  problems.push(...workspaceExports.problems);
+
   const graphRules = normalizeGraphRules({
     config,
     include: {
@@ -1205,6 +1272,7 @@ async function runGraphCheckInternal(
     projectPaths,
     projects,
     projectsByPath,
+    workspaceExports,
   });
 
   addReferenceCompletenessProblems({
@@ -1255,6 +1323,14 @@ async function runGraphSyncInternal(
   const packages = await collectWorkspacePackages(config);
   const importers = collectImporters(config, packages);
   const problems: string[] = [...graphRoute.problems];
+  const workspaceExports = await createWorkspaceExportsResolutionIndex({
+    config,
+    packages,
+    profiles: createWorkspaceExportsResolutionProfiles(projects),
+  });
+
+  problems.push(...workspaceExports.problems);
+
   const graphRules = normalizeGraphRules({
     config,
     include: {
@@ -1304,6 +1380,7 @@ async function runGraphSyncInternal(
     projects,
     projectsByPath,
     selectedProjectPaths,
+    workspaceExports,
   });
 
   if (problems.length > 0) {

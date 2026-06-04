@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // Smoke-local source declaration leaf.
+  "extends": ["./tsconfig.lib.json", "../../../tsconfig.dts.base.json"],
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./.tsbuild",
+    "tsBuildInfoFile": "./.tsbuild/lib.tsbuildinfo"
+  }
+}
