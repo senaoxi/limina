@@ -1,6 +1,7 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
+import rawPicomatch from 'picomatch';
 import { glob } from 'tinyglobby';
 import type { CheckerProjectParseContext } from '../checkers';
 import {
@@ -30,6 +31,7 @@ import {
 import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
 import {
   collectSourceGraphProjectExtensions,
+  getRawReferencePaths,
   isOrdinaryTypecheckConfigPath,
   readJsonConfig,
 } from '../tsconfig';
@@ -58,6 +60,11 @@ export interface RunSourceCheckOptions {
 interface SourceProjectEntry {
   fileNames: string[];
   project: ProjectInfo;
+}
+
+interface TsconfigOwnershipIgnoreRule {
+  matcher: (filePath: string) => boolean;
+  owner: PackageOwner;
 }
 
 interface OwnerSourceModuleSet {
@@ -121,6 +128,11 @@ const dependencySectionNames: DependencySectionName[] = [
   'peerDependencies',
   'optionalDependencies',
 ];
+
+const picomatch = rawPicomatch as unknown as (
+  pattern: string,
+  options?: { dot?: boolean; posixSlashes?: boolean },
+) => (value: string) => boolean;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -976,6 +988,315 @@ function getSourceGovernanceContext(
   };
 }
 
+function findNearestBareTsconfigPath(options: {
+  filePath: string;
+  rootDir: string;
+}): string | null {
+  let currentDir = normalizeAbsolutePath(path.dirname(options.filePath));
+  const rootDir = normalizeAbsolutePath(options.rootDir);
+
+  while (isPathInsideDirectory(currentDir, rootDir)) {
+    const candidate = normalizeAbsolutePath(
+      path.join(currentDir, 'tsconfig.json'),
+    );
+
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+
+    if (currentDir === rootDir) {
+      return null;
+    }
+
+    const parentDir = normalizeAbsolutePath(path.dirname(currentDir));
+
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+
+  return null;
+}
+
+function collectReachableOrdinaryTypecheckConfigPaths(options: {
+  config: ResolvedLiminaConfig;
+  rootConfigPath: string;
+}): string[] {
+  const queue = getRawReferencePaths(options.config, options.rootConfigPath);
+  const reachablePaths: string[] = [];
+  const seen = new Set<string>();
+
+  for (const configPath of queue) {
+    const normalizedConfigPath = normalizeAbsolutePath(configPath);
+
+    if (seen.has(normalizedConfigPath)) {
+      continue;
+    }
+
+    seen.add(normalizedConfigPath);
+
+    if (
+      !existsSync(normalizedConfigPath) ||
+      !isOrdinaryTypecheckConfigPath(normalizedConfigPath)
+    ) {
+      continue;
+    }
+
+    reachablePaths.push(normalizedConfigPath);
+    queue.push(...getRawReferencePaths(options.config, normalizedConfigPath));
+  }
+
+  return reachablePaths;
+}
+
+function formatConfigPathList(
+  config: ResolvedLiminaConfig,
+  configPaths: string[],
+): string[] {
+  if (configPaths.length === 0) {
+    return ['    (none)'];
+  }
+
+  return configPaths
+    .sort((left, right) =>
+      toRelativePath(config.rootDir, left).localeCompare(
+        toRelativePath(config.rootDir, right),
+      ),
+    )
+    .map((configPath) => `    - ${toRelativePath(config.rootDir, configPath)}`);
+}
+
+function addNearestTsconfigOwnershipProblem(options: {
+  config: ResolvedLiminaConfig;
+  fileName: string;
+  matchedOwnerConfigPaths: string[];
+  nearestTsconfigPath: string | null;
+  problems: string[];
+  reason: string;
+}): void {
+  options.problems.push(
+    [
+      'Nearest tsconfig cannot determine module owner:',
+      `  file: ${toRelativePath(options.config.rootDir, options.fileName)}`,
+      ...(options.nearestTsconfigPath
+        ? [
+            `  nearest tsconfig: ${toRelativePath(options.config.rootDir, options.nearestTsconfigPath)}`,
+          ]
+        : []),
+      '  matched owner tsconfigs:',
+      ...formatConfigPathList(options.config, options.matchedOwnerConfigPaths),
+      `  reason: ${options.reason}`,
+      '  fix: make the nearest tsconfig.json include the module, make its ordinary typecheck references reach exactly one owner tsconfig, or add a scoped source.tsconfigOwnership.ignore entry with a reason.',
+    ].join('\n'),
+  );
+}
+
+function collectTsconfigOwnershipIgnoreRules(options: {
+  config: ResolvedLiminaConfig;
+  owners: PackageOwner[];
+  problems: string[];
+}): TsconfigOwnershipIgnoreRule[] {
+  const rawConfig = options.config.source?.tsconfigOwnership;
+  const rules: TsconfigOwnershipIgnoreRule[] = [];
+
+  if (rawConfig === undefined) {
+    return rules;
+  }
+
+  if (!isPlainRecord(rawConfig)) {
+    options.problems.push(
+      [
+        'Invalid tsconfig ownership config:',
+        '  field: source.tsconfigOwnership',
+        `  value: ${formatUnknownValue(rawConfig)}`,
+        '  reason: tsconfigOwnership must be an object.',
+      ].join('\n'),
+    );
+    return rules;
+  }
+
+  const rawIgnore = rawConfig.ignore;
+
+  if (rawIgnore === undefined) {
+    return rules;
+  }
+
+  if (!Array.isArray(rawIgnore)) {
+    options.problems.push(
+      [
+        'Invalid tsconfig ownership ignore config:',
+        '  field: source.tsconfigOwnership.ignore',
+        `  value: ${formatUnknownValue(rawIgnore)}`,
+        '  reason: ignore must be an array.',
+      ].join('\n'),
+    );
+    return rules;
+  }
+
+  const ownerByName = new Map(
+    options.owners
+      .filter((owner): owner is PackageOwner & { name: string } =>
+        Boolean(owner.name),
+      )
+      .map((owner) => [owner.name, owner]),
+  );
+
+  for (const [index, entry] of rawIgnore.entries()) {
+    const field = `source.tsconfigOwnership.ignore[${index}]`;
+
+    if (!isPlainRecord(entry)) {
+      options.problems.push(
+        [
+          'Invalid tsconfig ownership ignore config:',
+          `  field: ${field}`,
+          `  value: ${formatUnknownValue(entry)}`,
+          '  reason: ignore entries must be objects with non-empty owner, files, and reason fields.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    const ownerValue = entry.owner;
+    const filesValue = entry.files;
+    const reasonValue = entry.reason;
+
+    if (typeof ownerValue !== 'string' || ownerValue.trim().length === 0) {
+      options.problems.push(
+        [
+          'Invalid tsconfig ownership ignore config:',
+          `  field: ${field}.owner`,
+          `  value: ${formatUnknownValue(ownerValue)}`,
+          '  reason: owner must be a non-empty package owner name.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (!Array.isArray(filesValue) || filesValue.length === 0) {
+      options.problems.push(
+        [
+          'Invalid tsconfig ownership ignore config:',
+          `  field: ${field}.files`,
+          `  value: ${formatUnknownValue(filesValue)}`,
+          '  reason: files must be a non-empty array of workspace-root-relative glob patterns.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
+      options.problems.push(
+        [
+          'Invalid tsconfig ownership ignore config:',
+          `  field: ${field}.reason`,
+          `  value: ${formatUnknownValue(reasonValue)}`,
+          '  reason: reason must be a non-empty string.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    const ownerName = ownerValue.trim();
+    const owner = ownerByName.get(ownerName);
+
+    if (!owner) {
+      options.problems.push(
+        [
+          'Invalid tsconfig ownership ignore config:',
+          `  field: ${field}.owner`,
+          `  owner: ${ownerName}`,
+          '  reason: owner must name an existing package owner with a package.json name.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    for (const [fileIndex, fileValue] of filesValue.entries()) {
+      const fileField = `${field}.files[${fileIndex}]`;
+
+      if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
+        options.problems.push(
+          [
+            'Invalid tsconfig ownership ignore config:',
+            `  field: ${fileField}`,
+            `  value: ${formatUnknownValue(fileValue)}`,
+            '  reason: file patterns must be non-empty strings.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const pattern = normalizeWorkspacePattern(fileValue);
+
+      if (isInvalidWorkspacePattern(pattern)) {
+        options.problems.push(
+          [
+            'Invalid tsconfig ownership ignore config:',
+            `  field: ${fileField}`,
+            `  file: ${pattern}`,
+            '  reason: file patterns must be positive workspace-root-relative globs inside the workspace root.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (
+        !toOwnerRelativeEntryPattern({
+          config: options.config,
+          owner,
+          pattern,
+        })
+      ) {
+        options.problems.push(
+          [
+            'Invalid tsconfig ownership ignore config:',
+            `  field: ${fileField}`,
+            `  owner: ${ownerName}`,
+            `  file: ${pattern}`,
+            '  reason: file patterns must stay inside the owner package directory.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      rules.push({
+        matcher: picomatch(pattern, {
+          dot: true,
+          posixSlashes: true,
+        }),
+        owner,
+      });
+    }
+  }
+
+  return rules;
+}
+
+function isIgnoredTsconfigOwnershipModule(options: {
+  config: ResolvedLiminaConfig;
+  fileName: string;
+  fileOwner: PackageOwner | null;
+  ignoreRules: TsconfigOwnershipIgnoreRule[];
+}): boolean {
+  if (!options.fileOwner) {
+    return false;
+  }
+
+  const fileOwner = options.fileOwner;
+  const relativeFilePath = normalizeSlashes(
+    toRelativePath(options.config.rootDir, options.fileName),
+  );
+
+  return options.ignoreRules.some(
+    (rule) =>
+      rule.owner.packageJsonPath === fileOwner.packageJsonPath &&
+      isPathInsideDirectory(options.fileName, rule.owner.directory) &&
+      rule.matcher(relativeFilePath),
+  );
+}
+
 async function addTsconfigGovernanceProblems(options: {
   config: ResolvedLiminaConfig;
   owners: PackageOwner[];
@@ -989,6 +1310,27 @@ async function addTsconfigGovernanceProblems(options: {
     string,
     Map<string, { configPaths: string[]; owner: PackageOwner }>
   >();
+  const tsconfigOwnershipIgnoreRules = collectTsconfigOwnershipIgnoreRules({
+    config: options.config,
+    owners: options.owners,
+    problems: options.problems,
+  });
+  const projectFileSetsByConfigPath = new Map<string, Set<string>>();
+  const getProjectFileSet = (configPath: string): Set<string> => {
+    const normalizedConfigPath = normalizeAbsolutePath(configPath);
+    const cached = projectFileSetsByConfigPath.get(normalizedConfigPath);
+
+    if (cached) {
+      return cached;
+    }
+
+    const fileSet = new Set(
+      parseProject(options.config, normalizedConfigPath, context).fileNames,
+    );
+
+    projectFileSetsByConfigPath.set(normalizedConfigPath, fileSet);
+    return fileSet;
+  };
 
   for (const configPath of configPaths) {
     const configObject = readJsonConfig(options.config, configPath);
@@ -1012,6 +1354,7 @@ async function addTsconfigGovernanceProblems(options: {
 
     const project = parseProject(options.config, configPath, context);
     const unitKey = configPath;
+    projectFileSetsByConfigPath.set(configPath, new Set(project.fileNames));
 
     for (const fileName of project.fileNames) {
       const fileOwner = findOwnerForFile(fileName, options.owners);
@@ -1054,6 +1397,56 @@ async function addTsconfigGovernanceProblems(options: {
       toRelativePath(options.config.rootDir, right),
     ),
   )) {
+    const fileOwner = findOwnerForFile(fileName, options.owners);
+
+    if (
+      !isIgnoredTsconfigOwnershipModule({
+        config: options.config,
+        fileName,
+        fileOwner,
+        ignoreRules: tsconfigOwnershipIgnoreRules,
+      })
+    ) {
+      const nearestTsconfigPath = findNearestBareTsconfigPath({
+        filePath: fileName,
+        rootDir: options.config.rootDir,
+      });
+
+      if (!nearestTsconfigPath) {
+        addNearestTsconfigOwnershipProblem({
+          config: options.config,
+          fileName,
+          matchedOwnerConfigPaths: [],
+          nearestTsconfigPath,
+          problems: options.problems,
+          reason:
+            'every source module governed by an ordinary typecheck tsconfig must have a nearest tsconfig.json owner resolver.',
+        });
+      } else if (!getProjectFileSet(nearestTsconfigPath).has(fileName)) {
+        const matchedOwnerConfigPaths =
+          collectReachableOrdinaryTypecheckConfigPaths({
+            config: options.config,
+            rootConfigPath: nearestTsconfigPath,
+          }).filter((configPath) =>
+            getProjectFileSet(configPath).has(fileName),
+          );
+
+        if (matchedOwnerConfigPaths.length !== 1) {
+          addNearestTsconfigOwnershipProblem({
+            config: options.config,
+            fileName,
+            matchedOwnerConfigPaths,
+            nearestTsconfigPath,
+            problems: options.problems,
+            reason:
+              matchedOwnerConfigPaths.length === 0
+                ? 'nearest tsconfig.json neither includes the module nor reaches an ordinary typecheck config that includes it.'
+                : 'nearest tsconfig.json reaches multiple ordinary typecheck configs that include the module.',
+          });
+        }
+      }
+    }
+
     if (governanceUnits.size <= 1) {
       continue;
     }

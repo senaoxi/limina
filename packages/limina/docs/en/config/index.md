@@ -5,7 +5,7 @@ Limina configuration starts from `limina.config.mjs` inside the workspace. Read 
 - [Config File](./config-file.md): `defineConfig`, function config, `mode`, `command`, and `strict`.
 - [Checker Entries](./checkers.md): `config.checkers.<name>`, `preset`, `entry`, and fixed extensions.
 - [Source Boundary](./source-boundary.md): `config.source.include` / `exclude` — the governed-file boundary for proof coverage.
-- [Source Checks](./source-checks.md): top-level `source.unusedDependencies` / `additionalEntries` / `unusedModules` — Knip-driven dependency and module checks.
+- [Source Checks](./source-checks.md): top-level `source.additionalEntries` / `tsconfigOwnership` / `unusedDependencies` / `unusedModules` — dependency, module, and ordinary tsconfig ownership checks.
 - [Graph Rules](./graph-rules.md): `graph.rules.<label>`, `deny.refs`, `deny.deps`, `allow.refs`.
 - [Proof Allowlist](./proof-allowlist.md): source coverage exceptions (`file`, `reason`).
 - [Package Checks](./package-checks.md): built-output entries, `publint` / `attw` / `boundary`.

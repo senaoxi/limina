@@ -13,6 +13,7 @@ export default defineConfig({
   strict: true,
   source: {
     additionalEntries: [],
+    tsconfigOwnership: { ignore: [] },
     unusedDependencies: { ignore: [] },
     unusedModules: { ignore: [] },
   },
@@ -47,6 +48,36 @@ export default defineConfig({
 ```
 
 Additional entry configs must use a named package owner, positive workspace-root-relative glob patterns inside that owner directory, and a non-empty reason.
+
+## tsconfigOwnership.ignore
+
+- **Type:** `Array<{ owner: string; files: string[]; reason: string }>`
+
+`source check` expects the nearest bare `tsconfig.json` for each governed module to identify one ordinary typecheck owner. The nearest `tsconfig.json` may include the module directly, or it may reach exactly one ordinary typecheck config through transitive `references`.
+
+Limina only follows ordinary typecheck configs in this search. It does not treat `tsconfig*.dts.json`, `tsconfig*.build.json`, `tsconfig*.base.json`, or `tsconfig*.check.json` as ownership configs.
+
+Tests and fixtures may be loaded by tools in ways that do not fit this local tsconfig shape. Keep those modules governed, but skip only this ownership rule with a scoped ignore:
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  source: {
+    tsconfigOwnership: {
+      ignore: [
+        {
+          owner: '@acme/app',
+          files: ['packages/app/src/**/*.spec.ts'],
+          reason: 'Vitest loads test modules directly.',
+        },
+      ],
+    },
+  },
+});
+```
+
+Ignore entries must use a named package owner, positive workspace-root-relative glob patterns inside that owner directory, and a non-empty reason. They only skip nearest-`tsconfig.json` owner resolution; package ownership, import authority, proof coverage, and unused-module checks still run.
 
 ## unusedDependencies.ignore
 

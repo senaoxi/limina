@@ -149,6 +149,14 @@ function createPackageFixture(options: {
       ...options.manifest,
     }),
     'app/src/index.ts': options.source,
+    'app/tsconfig.json': stringifyConfig({
+      files: [],
+      references: [
+        {
+          path: './tsconfig.lib.json',
+        },
+      ],
+    }),
     'app/tsconfig.lib.dts.json': buildConfig({
       include: ['src/**/*.ts'],
       limina: options.graph?.limina,
@@ -226,6 +234,14 @@ function createWorkspacePackageFiles(options: {
       ...options.appManifest,
     }),
     'packages/app/src/index.ts': options.appSource,
+    'packages/app/tsconfig.json': stringifyConfig({
+      files: [],
+      references: [
+        {
+          path: './tsconfig.lib.json',
+        },
+      ],
+    }),
     'packages/app/tsconfig.lib.dts.json': buildConfig({
       include: ['src/**/*.ts'],
       tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
@@ -234,6 +250,14 @@ function createWorkspacePackageFiles(options: {
     'packages/internal/package.json': stringifyConfig(internalPackageManifest),
     'packages/internal/src/index.ts':
       'export type InternalValue = number;\nexport const internalValue = 1;\n',
+    'packages/internal/tsconfig.json': stringifyConfig({
+      files: [],
+      references: [
+        {
+          path: './tsconfig.lib.json',
+        },
+      ],
+    }),
     'packages/internal/tsconfig.lib.dts.json': buildConfig({
       include: ['src/**/*.ts'],
       tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
@@ -284,6 +308,14 @@ function createRootWorkspaceDependencyFiles(options: {
     }),
     'packages/internal/src/index.ts':
       'export type InternalValue = number;\nexport const internalValue = 1;\n',
+    'packages/internal/tsconfig.json': stringifyConfig({
+      files: [],
+      references: [
+        {
+          path: './tsconfig.lib.json',
+        },
+      ],
+    }),
     'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
     'pnpm-workspace.yaml': `
 packages:
@@ -933,6 +965,288 @@ packages:
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows nearest bare tsconfig files to own modules directly', async () => {
+    const fixture = await createFixture({
+      'app/package.json': stringifyConfig({
+        exports: {
+          '.': './src/index.ts',
+        },
+        name: '@example/app',
+        type: 'module',
+      }),
+      'app/src/index.ts': "export const value = 'checked';\n",
+      'app/tsconfig.json': typecheckConfig(['src/**/*.ts']),
+      'app/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.ts'],
+      }),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows nearest bare tsconfig files to resolve transitive typecheck owners', async () => {
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        source: "export const value = 'checked';\n",
+      }),
+      'app/tsconfig.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.solution.json',
+          },
+        ],
+      }),
+      'app/tsconfig.solution.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects modules whose nearest bare tsconfig reaches no owner', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        source: "export const value = 'checked';\n",
+      }),
+      'app/tsconfig.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.tools.json',
+          },
+        ],
+      }),
+      'app/tsconfig.tools.json': typecheckConfig(['tools/**/*.ts']),
+      'app/tools/build.ts': "export const tool = 'checked';\n",
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'Nearest tsconfig cannot determine module owner:',
+      );
+      expect(errors).toContain('nearest tsconfig: app/tsconfig.json');
+      expect(errors).toContain('matched owner tsconfigs:');
+      expect(errors).toContain('    (none)');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects modules whose nearest bare tsconfig reaches multiple owners', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        source: "export const value = 'checked';\n",
+      }),
+      'app/tsconfig.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+          {
+            path: './tsconfig.test.json',
+          },
+        ],
+      }),
+      'app/tsconfig.test.json': typecheckConfig(['src/index.ts']),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'nearest tsconfig.json reaches multiple ordinary typecheck configs that include the module',
+      );
+      expect(errors).toContain('    - app/tsconfig.lib.json');
+      expect(errors).toContain('    - app/tsconfig.test.json');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not traverse reserved tsconfig references for nearest owner resolution', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        source: "export const value = 'checked';\n",
+      }),
+      'app/tsconfig.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.build.json',
+          },
+        ],
+      }),
+      'app/tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'Nearest tsconfig cannot determine module owner:',
+      );
+      expect(errors).toContain('    (none)');
+      expect(errors).not.toContain('    - app/tsconfig.lib.json');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows scoped tsconfig ownership ignore globs', async () => {
+    const fixture = await createFixture(
+      {
+        'app/package.json': stringifyConfig({
+          name: '@example/app',
+          type: 'module',
+        }),
+        'app/src/index.spec.ts': "export const tested = 'checked';\n",
+        'app/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [],
+        }),
+        'app/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.spec.ts'],
+        }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/**/*.spec.ts']),
+        'tsconfig.build.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './app/tsconfig.lib.dts.json',
+            },
+          ],
+        }),
+      },
+      {
+        source: {
+          tsconfigOwnership: {
+            ignore: [
+              {
+                files: ['app/src/**/*.spec.ts'],
+                owner: '@example/app',
+                reason: 'Vitest loads test modules directly.',
+              },
+            ],
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects invalid tsconfig ownership ignore entries', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const ignore = [
+      {
+        files: ['app/src/**/*.spec.ts'],
+        owner: '@example/app',
+      },
+      {
+        files: ['app/src/**/*.spec.ts'],
+        owner: '@example/missing',
+        reason: 'Missing owner.',
+      },
+      {
+        files: [],
+        owner: '@example/app',
+        reason: 'Empty files.',
+      },
+      {
+        files: ['packages/internal/src/**/*.spec.ts'],
+        owner: '@example/app',
+        reason: 'Wrong owner directory.',
+      },
+    ] as unknown as NonNullable<
+      NonNullable<SourceCheckConfig['tsconfigOwnership']>['ignore']
+    >;
+    const fixture = await createFixture(
+      createPackageFixture({
+        source: "export const value = 'checked';\n",
+      }),
+      {
+        source: {
+          tsconfigOwnership: {
+            ignore,
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('reason must be a non-empty string');
+      expect(errors).toContain(
+        'owner must name an existing package owner with a package.json name',
+      );
+      expect(errors).toContain(
+        'files must be a non-empty array of workspace-root-relative glob patterns',
+      );
+      expect(errors).toContain(
+        'file patterns must stay inside the owner package directory',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });

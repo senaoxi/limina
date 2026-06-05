@@ -203,6 +203,36 @@ export interface SourceUnusedModulesConfig {
 }
 
 /**
+ * Explicit exception for a source module whose nearest bare tsconfig.json
+ * cannot identify a unique ordinary typecheck owner.
+ */
+export interface SourceTsconfigOwnershipIgnoreEntry {
+  /**
+   * Named package owner from package.json.
+   */
+  owner: string;
+  /**
+   * Workspace-root-relative file or glob patterns inside the owner package.
+   */
+  files: string[];
+  /**
+   * Why these modules may skip nearest-tsconfig ownership enforcement.
+   */
+  reason: string;
+}
+
+/**
+ * Nearest bare tsconfig ownership settings.
+ */
+export interface SourceTsconfigOwnershipConfig {
+  /**
+   * Package-owned source modules intentionally exempted from nearest bare
+   * tsconfig ownership enforcement.
+   */
+  ignore?: SourceTsconfigOwnershipIgnoreEntry[];
+}
+
+/**
  * Source-owned dependency usage check settings.
  */
 export interface SourceCheckConfig {
@@ -226,6 +256,11 @@ export interface SourceCheckConfig {
    * reachable from package entries, binaries, or scripts owned by that package.
    */
   unusedModules?: SourceUnusedModulesConfig;
+  /**
+   * Exceptions for source modules whose nearest bare tsconfig.json cannot
+   * resolve a unique ordinary typecheck owner.
+   */
+  tsconfigOwnership?: SourceTsconfigOwnershipConfig;
 }
 
 /**
@@ -755,6 +790,15 @@ const sharedLiminaConfigShapeSchema = z
         path: ['source', 'unusedModules', 'ignore'],
       });
     }
+
+    if (Object.hasOwn(sourceRecord, 'tsconfigOwnership')) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'source.tsconfigOwnership belongs at the top-level source config, not under config.source.',
+        path: ['source', 'tsconfigOwnership', 'ignore'],
+      });
+    }
   });
 
 const releaseContentHashShapeSchema = z
@@ -929,6 +973,15 @@ function formatLiminaConfigShapeIssue(
     return [
       'Invalid Limina source config:',
       '  field: config.source.unusedModules.ignore',
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
+    ].join('\n');
+  }
+
+  if (field === 'config.source.tsconfigOwnership.ignore') {
+    return [
+      'Invalid Limina source config:',
+      '  field: config.source.tsconfigOwnership.ignore',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       `  reason: ${issue.message}`,
     ].join('\n');

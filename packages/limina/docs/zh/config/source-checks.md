@@ -13,6 +13,7 @@ export default defineConfig({
   strict: true,
   source: {
     additionalEntries: [],
+    tsconfigOwnership: { ignore: [] },
     unusedDependencies: { ignore: [] },
     unusedModules: { ignore: [] },
   },
@@ -47,6 +48,36 @@ export default defineConfig({
 ```
 
 额外入口配置必须使用具名包归属方；`files` 必须是正向的工作区根目录相对 glob，并且位于该归属方包目录内；`reason` 必须是非空字符串。
+
+## tsconfigOwnership.ignore
+
+- **类型：** `Array<{ owner: string; files: string[]; reason: string }>`
+
+`source check` 期望每个被治理模块都能通过最近的裸名 `tsconfig.json` 找到唯一普通类型检查 owner。最近的 `tsconfig.json` 可以直接包含该模块，也可以通过 transitive `references` 唯一触达一个包含该模块的普通类型检查配置。
+
+Limina 只会沿普通类型检查配置继续搜索，不会把 `tsconfig*.dts.json`、`tsconfig*.build.json`、`tsconfig*.base.json` 或 `tsconfig*.check.json` 当成 owner 配置。
+
+测试和 fixture 模块经常由工具直接加载，不一定适合这种局部 tsconfig 形状。可以让这些模块继续被治理，但只跳过最近 `tsconfig.json` owner 规则：
+
+```js
+import { defineConfig } from 'limina';
+
+export default defineConfig({
+  source: {
+    tsconfigOwnership: {
+      ignore: [
+        {
+          owner: '@acme/app',
+          files: ['packages/app/src/**/*.spec.ts'],
+          reason: 'Vitest loads test modules directly.',
+        },
+      ],
+    },
+  },
+});
+```
+
+忽略条目必须使用具名包归属方；`files` 必须是正向的工作区根目录相对 glob，并且位于该归属方包目录内；`reason` 必须是非空字符串。它只跳过最近 `tsconfig.json` owner 解析；包归属、导入授权、覆盖证明和未使用模块检查仍会继续运行。
 
 ## unusedDependencies.ignore
 

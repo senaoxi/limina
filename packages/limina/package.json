@@ -30,7 +30,7 @@
   "bugs": {
     "url": "https://github.com/XiSenao/docs-islands/issues"
   },
-  "homepage": "https://docs.senao.me/docs-islands",
+  "homepage": "https://docs.senao.me/docs-islands/limina",
   "publishConfig": {
     "access": "public"
   },
@@ -67,6 +67,7 @@
     "zod": "catalog:dev"
   },
   "devDependencies": {
+    "@types/picomatch": "catalog:dev",
     "@docs-islands/eslint-config": "workspace:*",
     "@docs-islands/utils": "link:../../utils/dist",
     "@docs-islands/plugin-license": "link:../plugins/license/dist",
