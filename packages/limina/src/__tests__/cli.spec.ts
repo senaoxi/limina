@@ -101,6 +101,17 @@ describe('limina CLI', () => {
         }),
       );
       await writeText(
+        path.join(rootDir, 'app/tsconfig.json'),
+        stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+      );
+      await writeText(
         path.join(rootDir, 'app/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {

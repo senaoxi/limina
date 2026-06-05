@@ -43,6 +43,15 @@ describe('defineConfig', () => {
             },
           ],
         },
+        tsconfigOwnership: {
+          ignore: [
+            {
+              files: ['packages/core/src/**/*.spec.ts'],
+              owner: '@example/core',
+              reason: 'Vitest loads test modules directly.',
+            },
+          ],
+        },
         unusedModules: {
           ignore: [
             {
@@ -104,6 +113,9 @@ describe('defineConfig', () => {
       'packages/core/src/generated/runtime.ts',
     );
     expect(config.source?.additionalEntries?.[0]?.files).toEqual([
+      'packages/core/src/**/*.spec.ts',
+    ]);
+    expect(config.source?.tsconfigOwnership?.ignore?.[0]?.files).toEqual([
       'packages/core/src/**/*.spec.ts',
     ]);
     expect(config.release?.contentHash?.baselineTag).toBe('next');
@@ -436,6 +448,42 @@ export default {
           cwd: rootDir,
         }),
       ).rejects.toThrow('source.unusedModules.ignore');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects tsconfig ownership config nested under config.source', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    source: {
+      tsconfigOwnership: {
+        ignore: [],
+      },
+    },
+  },
+};
+`,
+      );
+
+      await expect(
+        loadConfig({
+          cwd: rootDir,
+        }),
+      ).rejects.toThrow('source.tsconfigOwnership.ignore');
     } finally {
       await rm(rootDir, {
         force: true,
