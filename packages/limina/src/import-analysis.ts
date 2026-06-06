@@ -30,12 +30,18 @@ export interface CreateImportAnalysisContextOptions {
   isolated?: boolean;
 }
 
-export type ImportResolveContextInput =
-  | CheckerProjectParseContext
-  | Pick<CheckerProjectParseContext, 'checkerPresets' | 'extensions'>
-  | string[];
+export interface ImportResolveContextFields
+  extends Pick<CheckerProjectParseContext, 'checkerPresets' | 'extensions'> {
+  configPath?: string;
+  resolverConfigPath?: string;
+}
 
-type ResolvedImportContext = CheckerProjectParseContext;
+export type ImportResolveContextInput = ImportResolveContextFields | string[];
+
+type ResolvedImportContext = CheckerProjectParseContext & {
+  configPath?: string;
+  resolverConfigPath?: string;
+};
 
 interface ImportAnalysisCaches {
   importsCache: Map<string, ImportRecord[]>;
@@ -615,7 +621,13 @@ function normalizeContextInput(
       }
     : {
         checkerPresets: contextOrExtensions.checkerPresets,
+        configPath: contextOrExtensions.configPath
+          ? normalizeAbsolutePath(contextOrExtensions.configPath)
+          : undefined,
         extensions: contextOrExtensions.extensions,
+        resolverConfigPath: contextOrExtensions.resolverConfigPath
+          ? normalizeAbsolutePath(contextOrExtensions.resolverConfigPath)
+          : undefined,
       };
 }
 
@@ -656,6 +668,7 @@ function hasTypeScriptOnlyResolutionOptions(
 
 function createResolverOptions(options: {
   compilerOptions: ts.CompilerOptions;
+  configPath: string;
   extensions: string[];
 }): NapiResolveOptions {
   return {
@@ -664,19 +677,46 @@ function createResolverOptions(options: {
     extensions: options.extensions,
     nodePath: false,
     symlinks: options.compilerOptions.preserveSymlinks !== true,
-    tsconfig: 'auto',
+    tsconfig: {
+      configFile: options.configPath,
+    },
   };
 }
 
 function createResolverCacheKey(options: {
   compilerOptions: ts.CompilerOptions;
+  configPath: string;
   extensions: string[];
 }): string {
   return JSON.stringify({
     conditions: getConditionNames(options.compilerOptions),
+    configPath: options.configPath,
     extensions: options.extensions,
     preserveSymlinks: options.compilerOptions.preserveSymlinks === true,
   });
+}
+
+function getRequiredOxcConfigPath(options: {
+  containingFile: string;
+  context: ResolvedImportContext;
+  specifier: string;
+}): string {
+  if (options.context.resolverConfigPath) {
+    return options.context.resolverConfigPath;
+  }
+
+  if (options.context.configPath) {
+    return options.context.configPath;
+  }
+
+  throw new Error(
+    [
+      'Unable to resolve module with Oxc:',
+      `  specifier: ${options.specifier}`,
+      `  containing file: ${options.containingFile}`,
+      '  reason: Oxc resolution requires the importer tsconfig configPath.',
+    ].join('\n'),
+  );
 }
 
 function normalizeResolvedPathForImporter(
@@ -723,12 +763,18 @@ function resolveModuleNameWithOxcCaches(
     specifier: string;
   },
 ): string | null {
+  const configPath = getRequiredOxcConfigPath({
+    containingFile: options.containingFile,
+    context: options.context,
+    specifier: options.specifier,
+  });
   const extensions = getResolverExtensions({
     compilerOptions: options.compilerOptions,
     context: options.context,
   });
   const resolverCacheKey = createResolverCacheKey({
     compilerOptions: options.compilerOptions,
+    configPath,
     extensions,
   });
   const resolver =
@@ -736,6 +782,7 @@ function resolveModuleNameWithOxcCaches(
     new ResolverFactory(
       createResolverOptions({
         compilerOptions: options.compilerOptions,
+        configPath,
         extensions,
       }),
     );
@@ -824,6 +871,7 @@ export function createImportAnalysisContext(
       context,
     });
     const cacheKey = JSON.stringify({
+      configPath: context.configPath ?? null,
       containingFile: normalizedContainingFile,
       extensions,
       options: {
@@ -840,6 +888,7 @@ export function createImportAnalysisContext(
         resolveJsonModule: options.resolveJsonModule,
         rootDirs: options.rootDirs,
       },
+      resolverConfigPath: context.resolverConfigPath ?? null,
       specifier,
     });
     const cached = caches.resolutionCache.get(cacheKey);

@@ -8,6 +8,7 @@ import {
   createImportAnalysisContext,
   resolveInternalImport,
 } from '../graph-context';
+import { resolveModuleNameWithOxc } from '../import-analysis';
 
 async function createTempDir(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), 'limina-import-analysis-'));
@@ -165,6 +166,13 @@ describe('import analysis', () => {
           type: 'module',
         }),
       );
+      const configPath = await writeText(
+        rootDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {},
+        }),
+      );
       await writeText(
         rootDir,
         'node_modules/shared/package.json',
@@ -189,6 +197,7 @@ describe('import analysis', () => {
       };
       const checkerContext = {
         checkerPresets: [],
+        configPath,
         extensions: ['.ts', '.tsx', '.js', '.jsx', '.vue'],
       };
 
@@ -270,6 +279,239 @@ describe('import analysis', () => {
     }
   });
 
+  it('uses compiler custom conditions when resolving package exports with Oxc', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { value } from 'conditional';\nvoid value;\n",
+      );
+      const sourcePath = await writeText(
+        rootDir,
+        'node_modules/conditional/src/index.ts',
+        'export const value = "source";\n',
+      );
+      const distPath = await writeText(
+        rootDir,
+        'node_modules/conditional/dist/index.js',
+        'export const value = "dist";\n',
+      );
+
+      await writeText(
+        rootDir,
+        'node_modules/conditional/package.json',
+        JSON.stringify({
+          exports: {
+            '.': {
+              source: './src/index.ts',
+              default: './dist/index.js',
+            },
+          },
+          name: 'conditional',
+          type: 'module',
+        }),
+      );
+      const configPath = await writeText(
+        rootDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {},
+        }),
+      );
+
+      const context = createImportAnalysisContext();
+      const checkerContext = {
+        checkerPresets: [],
+        configPath,
+        extensions: ['.ts', '.js'],
+      };
+
+      expect(
+        resolveInternalImport(
+          'conditional',
+          indexPath,
+          {},
+          checkerContext,
+          context,
+        ),
+      ).toBe(distPath);
+      expect(
+        resolveInternalImport(
+          'conditional',
+          indexPath,
+          { customConditions: ['source'] },
+          checkerContext,
+          context,
+        ),
+      ).toBe(sourcePath);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('uses explicit Oxc tsconfig paths without sharing resolver cache entries', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { value } from '@target';\nvoid value;\n",
+      );
+      const firstPath = await writeText(
+        rootDir,
+        'first.ts',
+        'export const value = "first";\n',
+      );
+      const secondPath = await writeText(
+        rootDir,
+        'second.ts',
+        'export const value = "second";\n',
+      );
+      const firstConfigPath = await writeText(
+        rootDir,
+        'tsconfig.first.json',
+        JSON.stringify({
+          compilerOptions: {
+            baseUrl: '.',
+            paths: {
+              '@target': ['./first.ts'],
+            },
+          },
+        }),
+      );
+      const secondConfigPath = await writeText(
+        rootDir,
+        'tsconfig.second.json',
+        JSON.stringify({
+          compilerOptions: {
+            baseUrl: '.',
+            paths: {
+              '@target': ['./second.ts'],
+            },
+          },
+        }),
+      );
+      const context = createImportAnalysisContext();
+
+      expect(
+        resolveInternalImport(
+          '@target',
+          indexPath,
+          {},
+          {
+            checkerPresets: [],
+            configPath: firstConfigPath,
+            extensions: ['.ts'],
+          },
+          context,
+        ),
+      ).toBe(firstPath);
+      expect(
+        resolveInternalImport(
+          '@target',
+          indexPath,
+          {},
+          {
+            checkerPresets: [],
+            configPath: secondConfigPath,
+            extensions: ['.ts'],
+          },
+          context,
+        ),
+      ).toBe(secondPath);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('prefers the resolver config path over the graph config path for Oxc', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { value } from '@target';\nvoid value;\n",
+      );
+      const companionPath = await writeText(
+        rootDir,
+        'companion.ts',
+        'export const value = "companion";\n',
+      );
+      await writeText(rootDir, 'dts.ts', 'export const value = "dts";\n');
+      const dtsConfigPath = await writeText(
+        rootDir,
+        'tsconfig.lib.dts.json',
+        JSON.stringify({
+          compilerOptions: {
+            baseUrl: '.',
+            paths: {
+              '@target': ['./dts.ts'],
+            },
+          },
+        }),
+      );
+      const companionConfigPath = await writeText(
+        rootDir,
+        'tsconfig.lib.json',
+        JSON.stringify({
+          compilerOptions: {
+            baseUrl: '.',
+            paths: {
+              '@target': ['./companion.ts'],
+            },
+          },
+        }),
+      );
+
+      expect(
+        resolveInternalImport(
+          '@target',
+          indexPath,
+          {},
+          {
+            checkerPresets: [],
+            configPath: dtsConfigPath,
+            extensions: ['.ts'],
+            resolverConfigPath: companionConfigPath,
+          },
+          createImportAnalysisContext(),
+        ),
+      ).toBe(companionPath);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('throws when Oxc resolution is missing an importer tsconfig configPath', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import { value } from 'missing';\nvoid value;\n",
+      );
+
+      expect(() =>
+        resolveModuleNameWithOxc({
+          compilerOptions: {},
+          containingFile: indexPath,
+          context: {
+            checkerPresets: [],
+            extensions: ['.ts'],
+          },
+          specifier: 'missing',
+        }),
+      ).toThrow(/Oxc resolution requires the importer tsconfig configPath/u);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('reuses shared import collection cache across default contexts', async () => {
     const rootDir = await createTempDir();
 
@@ -314,15 +556,26 @@ describe('import analysis', () => {
         'src/index.ts',
         "import { missing } from './missing';\nvoid missing;\n",
       );
+      const configPath = await writeText(
+        rootDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {},
+        }),
+      );
       const compilerOptions = {};
-      const extensions = ['.ts'];
+      const checkerContext = {
+        checkerPresets: [],
+        configPath,
+        extensions: ['.ts'],
+      };
 
       expect(
         resolveInternalImport(
           './missing',
           indexPath,
           compilerOptions,
-          extensions,
+          checkerContext,
         ),
       ).toBeNull();
 
@@ -337,7 +590,7 @@ describe('import analysis', () => {
           './missing',
           indexPath,
           compilerOptions,
-          extensions,
+          checkerContext,
         ),
       ).toBeNull();
 
@@ -348,7 +601,7 @@ describe('import analysis', () => {
           './missing',
           indexPath,
           compilerOptions,
-          extensions,
+          checkerContext,
         ),
       ).toBe(missingPath);
     } finally {

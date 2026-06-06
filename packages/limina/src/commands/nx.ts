@@ -111,6 +111,7 @@ function createWorkspaceExportsResolutionProfiles(
     configPath: project.configPath,
     extensions: project.extensions,
     options: project.options,
+    resolverConfigPath: project.resolverConfigPath,
   }));
 }
 

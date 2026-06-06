@@ -21,6 +21,7 @@ export interface WorkspaceExportsResolutionProfile {
   configPath: string;
   extensions: string[];
   options: ts.CompilerOptions;
+  resolverConfigPath: string;
 }
 
 export interface WorkspacePackageExportResolution {
@@ -283,10 +284,15 @@ async function collectPackageExportEntries(
 
 function getProfileContext(
   profile: WorkspaceExportsResolutionProfile,
-): CheckerProjectParseContext {
+): CheckerProjectParseContext & {
+  configPath: string;
+  resolverConfigPath: string;
+} {
   return {
     checkerPresets: profile.checkerPresets,
+    configPath: profile.configPath,
     extensions: profile.extensions,
+    resolverConfigPath: profile.resolverConfigPath,
   };
 }
 
