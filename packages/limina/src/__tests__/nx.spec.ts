@@ -129,6 +129,20 @@ function dtsBuildConfig(include: string[]): string {
   });
 }
 
+function typecheckBuildConfig(
+  include: string[],
+  compilerOptions: Record<string, unknown> = {},
+): string {
+  return stringifyConfig({
+    compilerOptions: {
+      ...buildCompilerOptions,
+      noEmit: true,
+      ...compilerOptions,
+    },
+    include,
+  });
+}
+
 function checkerFixtureConfig(): Partial<ResolvedLiminaConfig> {
   return {
     config: {
@@ -230,6 +244,7 @@ describe('runNx', () => {
         'packages/a/src/index.ts':
           "import { runtimeValue } from '@example/b/runtime';\nexport const value = runtimeValue;\n",
         'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/a/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
         'packages/b/package.json': createPackageJson('@example/b', {
           build: true,
           exports: {
@@ -245,6 +260,7 @@ describe('runNx', () => {
           'export declare const runtimeValue = 1;\n',
         'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
         'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
       },
       checkerFixtureConfig(),
     );
@@ -304,6 +320,7 @@ describe('runNx', () => {
         'packages/a/src/index.ts':
           "import { sourceValue } from '@example/b';\nexport const value = sourceValue;\n",
         'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/a/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
         'packages/b/package.json': createPackageJson('@example/b', {
           build: true,
           exports: {
@@ -319,6 +336,68 @@ describe('runNx', () => {
           'export declare const runtimeValue = 1;\n',
         'packages/b/dist/runtime.js': 'export const runtimeValue = 1;\n',
         'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      },
+      checkerFixtureConfig(),
+    );
+
+    try {
+      await expect(runNx(fixture.config)).resolves.toEqual({
+        changed: true,
+        edgeCount: 0,
+        outputCount: 2,
+      });
+
+      await expect(
+        readJson(path.join(fixture.rootDir, 'packages/a/project.json')),
+      ).resolves.toMatchObject({
+        targets: {
+          build: {
+            dependsOn: [],
+          },
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses typecheck companion paths when classifying workspace exports', async () => {
+    const fixture = await createFixture(
+      {
+        'tsconfig.build.json': rootBuildConfig([
+          './packages/b/tsconfig.lib.dts.json',
+          './packages/a/tsconfig.lib.dts.json',
+        ]),
+        'packages/a/package.json': createPackageJson('@example/a', {
+          build: true,
+          dependencies: {
+            '@example/b': 'workspace:*',
+          },
+        }),
+        'packages/a/src/index.ts':
+          "import { sourceValue } from '@example/b';\nexport const value = sourceValue;\n",
+        'packages/a/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/a/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts'], {
+          baseUrl: '.',
+          paths: {
+            '@example/b': ['../b/src/index.ts'],
+          },
+        }),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          build: true,
+          exports: {
+            '.': {
+              default: './dist/index.js',
+              types: './dist/index.d.ts',
+            },
+          },
+        }),
+        'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+        'packages/b/dist/index.d.ts': 'export declare const sourceValue = 1;\n',
+        'packages/b/dist/index.js': 'export const sourceValue = 1;\n',
+        'packages/b/tsconfig.lib.dts.json': dtsBuildConfig(['src/**/*.ts']),
+        'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
       },
       checkerFixtureConfig(),
     );

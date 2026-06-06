@@ -106,6 +106,7 @@ const comparableTypecheckOptions: (keyof ts.CompilerOptions)[] = [
   'allowImportingTsExtensions',
   'allowJs',
   'allowSyntheticDefaultImports',
+  'baseUrl',
   'checkJs',
   'customConditions',
   'esModuleInterop',
@@ -126,6 +127,7 @@ const comparableTypecheckOptions: (keyof ts.CompilerOptions)[] = [
   'noImplicitThis',
   'noPropertyAccessFromIndexSignature',
   'noUncheckedIndexedAccess',
+  'paths',
   'resolveJsonModule',
   'skipLibCheck',
   'strict',
@@ -891,6 +893,7 @@ function createWorkspaceExportsResolutionProfiles(
     configPath: project.configPath,
     extensions: project.extensions,
     options: project.options,
+    resolverConfigPath: project.resolverConfigPath,
   }));
 }
 

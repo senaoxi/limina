@@ -33,6 +33,7 @@ export interface ProjectInfo {
   labelProblem: string | null;
   options: ts.CompilerOptions;
   references: Set<string>;
+  resolverConfigPath: string;
 }
 
 export function isRelativeSpecifier(specifier: string): boolean {
@@ -180,10 +181,11 @@ export function parseProject(
   const labelInfo = readProjectGraphRules(config, configPath);
   const projectExtensions = parsed.extensions;
   const filePattern = createExtensionPattern(projectExtensions);
+  const normalizedConfigPath = normalizeAbsolutePath(configPath);
 
   return {
     checkerPresets: context.checkerPresets,
-    configPath: normalizeAbsolutePath(configPath),
+    configPath: normalizedConfigPath,
     extensions: projectExtensions,
     fileNames: parsed.fileNames
       .filter((fileName) => filePattern.test(fileName))
@@ -192,6 +194,9 @@ export function parseProject(
     labelProblem: labelInfo.labelProblem,
     options: parsed.options,
     references: new Set(getRawReferencePaths(config, configPath)),
+    resolverConfigPath: isDtsProjectConfig(normalizedConfigPath)
+      ? getTypecheckConfigPath(normalizedConfigPath)
+      : normalizedConfigPath,
   };
 }
 

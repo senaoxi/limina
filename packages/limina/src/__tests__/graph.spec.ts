@@ -405,6 +405,49 @@ packages:
 }
 
 describe('runGraphCheck checker entry', () => {
+  it('reports path mapping mismatches between declaration leaves and companions', async () => {
+    const fixture = await createFixture({
+      'app/src/index.ts': 'export const value = 1;\n',
+      'app/tsconfig.lib.dts.json': stringifyConfig({
+        compilerOptions: {
+          ...buildCompilerOptions,
+          baseUrl: '.',
+          paths: {
+            '@shared': ['./src/dts.ts'],
+          },
+          rootDir: '.',
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'app/tsconfig.lib.json': stringifyConfig({
+        compilerOptions: {
+          ...buildCompilerOptions,
+          baseUrl: '.',
+          noEmit: true,
+          paths: {
+            '@shared': ['./src/typecheck.ts'],
+          },
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('reports missing graph references from nested aggregators', async () => {
     const fixture = await createFixture({
       'app/src/index.ts': 'export const value = 1;\n',
