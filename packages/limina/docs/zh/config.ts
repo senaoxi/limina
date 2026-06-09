@@ -99,6 +99,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/zh/config/graph-rules',
       },
       {
+        text: '条件域',
+        link: '/zh/config/condition-domains',
+      },
+      {
         text: '覆盖证明允许清单',
         link: '/zh/config/proof-allowlist',
       },

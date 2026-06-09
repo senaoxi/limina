@@ -96,6 +96,8 @@ interface WorkspaceDependencyDeclaration {
   specifier: string;
 }
 
+type SourceKnipWorkspaceConfigRecord = Record<string, unknown>;
+
 interface NearestPackageInfo {
   directory: string;
   manifest: PackageManifest;
@@ -352,6 +354,91 @@ function createWorkspaceDependencyKey(
   return `${importerName}\0${dependencyName}`;
 }
 
+function formatSourceKnipWorkspaceField(packageName: string): string {
+  return `source.knip.workspaces[${JSON.stringify(packageName)}]`;
+}
+
+function collectSourceKnipWorkspaceConfigs(options: {
+  config: ResolvedLiminaConfig;
+  problems: string[];
+  workspacePackages: WorkspacePackage[];
+}): Map<string, SourceKnipWorkspaceConfigRecord> {
+  const workspaceConfigs = new Map<string, SourceKnipWorkspaceConfigRecord>();
+  const rawKnipConfig = options.config.source?.knip;
+
+  if (!isPlainRecord(rawKnipConfig)) {
+    return workspaceConfigs;
+  }
+
+  const rawWorkspaces = rawKnipConfig.workspaces;
+
+  if (rawWorkspaces === undefined) {
+    return workspaceConfigs;
+  }
+
+  if (!isPlainRecord(rawWorkspaces)) {
+    options.problems.push(
+      [
+        'Invalid source Knip workspace config:',
+        '  field: source.knip.workspaces',
+        `  value: ${formatUnknownValue(rawWorkspaces)}`,
+        '  reason: workspaces must be an object keyed by workspace package name.',
+      ].join('\n'),
+    );
+    return workspaceConfigs;
+  }
+
+  const workspacePackageNames = new Set(
+    options.workspacePackages.map((workspacePackage) => workspacePackage.name),
+  );
+
+  for (const [rawPackageName, rawWorkspaceConfig] of Object.entries(
+    rawWorkspaces,
+  )) {
+    const packageName = rawPackageName.trim();
+    const field = formatSourceKnipWorkspaceField(rawPackageName);
+
+    if (packageName.length === 0) {
+      options.problems.push(
+        [
+          'Invalid source Knip workspace config:',
+          `  field: ${field}`,
+          '  reason: workspace config keys must be non-empty package names.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (!workspacePackageNames.has(packageName)) {
+      options.problems.push(
+        [
+          'Invalid source Knip workspace config:',
+          `  field: ${field}`,
+          `  package: ${packageName}`,
+          '  reason: workspace config keys must name packages discovered in the pnpm workspace.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    if (!isPlainRecord(rawWorkspaceConfig)) {
+      options.problems.push(
+        [
+          'Invalid source Knip workspace config:',
+          `  field: ${field}`,
+          `  value: ${formatUnknownValue(rawWorkspaceConfig)}`,
+          '  reason: workspace config values must be objects.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
+    workspaceConfigs.set(packageName, rawWorkspaceConfig);
+  }
+
+  return workspaceConfigs;
+}
+
 function createPackageDependencyIssueKey(
   packageJsonPath: string,
   dependencyName: string,
@@ -431,48 +518,12 @@ function collectWorkspaceDependencyDeclarations(
 }
 
 function collectUnusedDependencyIgnore(options: {
-  config: ResolvedLiminaConfig;
   declarations: WorkspaceDependencyDeclaration[];
+  knipWorkspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
   problems: string[];
   workspacePackages: WorkspacePackage[];
 }): Set<string> {
   const ignoredKeys = new Set<string>();
-  const rawConfig = options.config.source?.unusedDependencies;
-
-  if (rawConfig === undefined) {
-    return ignoredKeys;
-  }
-
-  if (!isPlainRecord(rawConfig)) {
-    options.problems.push(
-      [
-        'Invalid unused dependency config:',
-        '  field: source.unusedDependencies',
-        `  value: ${formatUnknownValue(rawConfig)}`,
-        '  reason: source.unusedDependencies must be an object.',
-      ].join('\n'),
-    );
-    return ignoredKeys;
-  }
-
-  const rawIgnore = rawConfig.ignore;
-
-  if (rawIgnore === undefined) {
-    return ignoredKeys;
-  }
-
-  if (!Array.isArray(rawIgnore)) {
-    options.problems.push(
-      [
-        'Invalid unused dependency ignore config:',
-        '  field: source.unusedDependencies.ignore',
-        `  value: ${formatUnknownValue(rawIgnore)}`,
-        '  reason: ignore must be an array.',
-      ].join('\n'),
-    );
-    return ignoredKeys;
-  }
-
   const workspacePackageNames = new Set(
     options.workspacePackages.map((workspacePackage) => workspacePackage.name),
   );
@@ -485,112 +536,104 @@ function collectUnusedDependencyIgnore(options: {
     ),
   );
 
-  for (const [index, entry] of rawIgnore.entries()) {
-    const field = `source.unusedDependencies.ignore[${index}]`;
+  for (const [importerName, workspaceConfig] of options.knipWorkspaceConfigs) {
+    const rawIgnore = workspaceConfig.ignoreDependencies;
+    const workspaceField = formatSourceKnipWorkspaceField(importerName);
 
-    if (!isPlainRecord(entry)) {
+    if (rawIgnore === undefined) {
+      continue;
+    }
+
+    if (!Array.isArray(rawIgnore)) {
       options.problems.push(
         [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}`,
-          `  value: ${formatUnknownValue(entry)}`,
-          '  reason: ignore entries must be objects with non-empty importer, dependency, and reason fields.',
+          'Invalid source Knip dependency ignore config:',
+          `  field: ${workspaceField}.ignoreDependencies`,
+          `  value: ${formatUnknownValue(rawIgnore)}`,
+          '  reason: ignoreDependencies must be an array.',
         ].join('\n'),
       );
       continue;
     }
 
-    const importerValue = entry.importer;
-    const dependencyValue = entry.dependency;
-    const reasonValue = entry.reason;
+    for (const [index, entry] of rawIgnore.entries()) {
+      const field = `${workspaceField}.ignoreDependencies[${index}]`;
 
-    if (
-      typeof importerValue !== 'string' ||
-      importerValue.trim().length === 0
-    ) {
-      options.problems.push(
-        [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}.importer`,
-          `  value: ${formatUnknownValue(importerValue)}`,
-          '  reason: importer must be a non-empty workspace package name.',
-        ].join('\n'),
+      if (!isPlainRecord(entry)) {
+        options.problems.push(
+          [
+            'Invalid source Knip dependency ignore config:',
+            `  field: ${field}`,
+            `  value: ${formatUnknownValue(entry)}`,
+            '  reason: ignoreDependencies entries must be objects with non-empty dep and reason fields.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const dependencyValue = entry.dep;
+      const reasonValue = entry.reason;
+
+      if (
+        typeof dependencyValue !== 'string' ||
+        dependencyValue.trim().length === 0
+      ) {
+        options.problems.push(
+          [
+            'Invalid source Knip dependency ignore config:',
+            `  field: ${field}.dep`,
+            `  value: ${formatUnknownValue(dependencyValue)}`,
+            '  reason: dep must be a non-empty workspace package name.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
+        options.problems.push(
+          [
+            'Invalid source Knip dependency ignore config:',
+            `  field: ${field}.reason`,
+            `  value: ${formatUnknownValue(reasonValue)}`,
+            '  reason: reason must be a non-empty string.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const dependencyName = dependencyValue.trim();
+      const dependencyKey = createWorkspaceDependencyKey(
+        importerName,
+        dependencyName,
       );
-      continue;
+
+      if (!workspacePackageNames.has(dependencyName)) {
+        options.problems.push(
+          [
+            'Invalid source Knip dependency ignore config:',
+            `  field: ${field}.dep`,
+            `  dep: ${dependencyName}`,
+            '  reason: dep must name a package from the pnpm workspace.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (!declarationKeys.has(dependencyKey)) {
+        options.problems.push(
+          [
+            'Invalid source Knip dependency ignore config:',
+            `  field: ${field}`,
+            `  importer: ${importerName}`,
+            `  dep: ${dependencyName}`,
+            '  reason: ignoreDependencies entries must match a workspace dependency declared by the keyed importer package manifest.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      ignoredKeys.add(dependencyKey);
     }
-
-    if (
-      typeof dependencyValue !== 'string' ||
-      dependencyValue.trim().length === 0
-    ) {
-      options.problems.push(
-        [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}.dependency`,
-          `  value: ${formatUnknownValue(dependencyValue)}`,
-          '  reason: dependency must be a non-empty workspace package name.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
-      options.problems.push(
-        [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}.reason`,
-          `  value: ${formatUnknownValue(reasonValue)}`,
-          '  reason: reason must be a non-empty string.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    const importerName = importerValue.trim();
-    const dependencyName = dependencyValue.trim();
-    const dependencyKey = createWorkspaceDependencyKey(
-      importerName,
-      dependencyName,
-    );
-
-    if (!workspacePackageNames.has(importerName)) {
-      options.problems.push(
-        [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}.importer`,
-          `  importer: ${importerName}`,
-          '  reason: importer must name a package from the pnpm workspace.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (!workspacePackageNames.has(dependencyName)) {
-      options.problems.push(
-        [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}.dependency`,
-          `  dependency: ${dependencyName}`,
-          '  reason: dependency must name a package from the pnpm workspace.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (!declarationKeys.has(dependencyKey)) {
-      options.problems.push(
-        [
-          'Invalid unused dependency ignore config:',
-          `  field: ${field}`,
-          `  importer: ${importerName}`,
-          `  dependency: ${dependencyName}`,
-          '  reason: ignore entries must match a workspace dependency declared by the importer package manifest.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    ignoredKeys.add(dependencyKey);
   }
 
   return ignoredKeys;
@@ -1603,6 +1646,7 @@ function toOwnerRelativeEntryPattern(options: {
 
 function collectUnusedModuleConfig(options: {
   config: ResolvedLiminaConfig;
+  knipWorkspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
   ownerModuleSets: OwnerSourceModuleSet[];
   problems: string[];
 }): UnusedModuleConfig {
@@ -1620,135 +1664,123 @@ function collectUnusedModuleConfig(options: {
       new Set(moduleSet.files),
     ]),
   );
-  const rawEntries = options.config.source?.additionalEntries;
+  for (const [ownerName, workspaceConfig] of options.knipWorkspaceConfigs) {
+    const workspaceField = formatSourceKnipWorkspaceField(ownerName);
+    const moduleSet = moduleSetByOwnerName.get(ownerName);
+    const rawEntries = workspaceConfig.entry;
 
-  if (rawEntries !== undefined) {
-    if (Array.isArray(rawEntries)) {
-      for (const [index, entry] of rawEntries.entries()) {
-        const field = `source.additionalEntries[${index}]`;
-
-        if (!isPlainRecord(entry)) {
-          options.problems.push(
-            [
-              'Invalid additional source entry config:',
-              `  field: ${field}`,
-              `  value: ${formatUnknownValue(entry)}`,
-              '  reason: entry configs must be objects with non-empty owner, files, and reason fields.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        const ownerValue = entry.owner;
-        const filesValue = entry.files;
-        const reasonValue = entry.reason;
-
-        if (typeof ownerValue !== 'string' || ownerValue.trim().length === 0) {
-          options.problems.push(
-            [
-              'Invalid additional source entry config:',
-              `  field: ${field}.owner`,
-              `  value: ${formatUnknownValue(ownerValue)}`,
-              '  reason: owner must be a non-empty package owner name.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        if (!Array.isArray(filesValue) || filesValue.length === 0) {
-          options.problems.push(
-            [
-              'Invalid additional source entry config:',
-              `  field: ${field}.files`,
-              `  value: ${formatUnknownValue(filesValue)}`,
-              '  reason: files must be a non-empty array of workspace-root-relative glob patterns.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        if (
-          typeof reasonValue !== 'string' ||
-          reasonValue.trim().length === 0
-        ) {
-          options.problems.push(
-            [
-              'Invalid additional source entry config:',
-              `  field: ${field}.reason`,
-              `  value: ${formatUnknownValue(reasonValue)}`,
-              '  reason: reason must be a non-empty string.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        const ownerName = ownerValue.trim();
-        const moduleSet = moduleSetByOwnerName.get(ownerName);
-
-        if (!moduleSet) {
-          options.problems.push(
-            [
-              'Invalid additional source entry config:',
-              `  field: ${field}.owner`,
-              `  owner: ${ownerName}`,
-              '  reason: owner must name an existing package owner with a package.json name.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
+    if (rawEntries !== undefined) {
+      if (!Array.isArray(rawEntries)) {
+        options.problems.push(
+          [
+            'Invalid source Knip entry config:',
+            `  field: ${workspaceField}.entry`,
+            `  value: ${formatUnknownValue(rawEntries)}`,
+            '  reason: entry must be an array.',
+          ].join('\n'),
+        );
+      } else if (moduleSet) {
         const ownerRelativePatterns =
           entryPatternsByOwnerName.get(ownerName) ?? [];
 
-        for (const [fileIndex, fileValue] of filesValue.entries()) {
-          const fileField = `${field}.files[${fileIndex}]`;
+        for (const [index, entry] of rawEntries.entries()) {
+          const field = `${workspaceField}.entry[${index}]`;
 
-          if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
+          if (!isPlainRecord(entry)) {
             options.problems.push(
               [
-                'Invalid additional source entry config:',
-                `  field: ${fileField}`,
-                `  value: ${formatUnknownValue(fileValue)}`,
-                '  reason: file patterns must be non-empty strings.',
+                'Invalid source Knip entry config:',
+                `  field: ${field}`,
+                `  value: ${formatUnknownValue(entry)}`,
+                '  reason: entry configs must be objects with non-empty files and reason fields.',
               ].join('\n'),
             );
             continue;
           }
 
-          const pattern = normalizeWorkspacePattern(fileValue);
+          const filesValue = entry.files;
+          const reasonValue = entry.reason;
 
-          if (isInvalidWorkspacePattern(pattern)) {
+          if (!Array.isArray(filesValue) || filesValue.length === 0) {
             options.problems.push(
               [
-                'Invalid additional source entry config:',
-                `  field: ${fileField}`,
-                `  file: ${pattern}`,
-                '  reason: file patterns must be positive workspace-root-relative globs inside the workspace root.',
+                'Invalid source Knip entry config:',
+                `  field: ${field}.files`,
+                `  value: ${formatUnknownValue(filesValue)}`,
+                '  reason: files must be a non-empty array of workspace-root-relative glob patterns.',
               ].join('\n'),
             );
             continue;
           }
 
-          const ownerRelativePattern = toOwnerRelativeEntryPattern({
-            config: options.config,
-            owner: moduleSet.owner,
-            pattern,
-          });
-
-          if (!ownerRelativePattern) {
+          if (
+            typeof reasonValue !== 'string' ||
+            reasonValue.trim().length === 0
+          ) {
             options.problems.push(
               [
-                'Invalid additional source entry config:',
-                `  field: ${fileField}`,
-                `  owner: ${ownerName}`,
-                `  file: ${pattern}`,
-                '  reason: file patterns must stay inside the owner package directory.',
+                'Invalid source Knip entry config:',
+                `  field: ${field}.reason`,
+                `  value: ${formatUnknownValue(reasonValue)}`,
+                '  reason: reason must be a non-empty string.',
               ].join('\n'),
             );
             continue;
           }
 
-          ownerRelativePatterns.push(ownerRelativePattern);
+          for (const [fileIndex, fileValue] of filesValue.entries()) {
+            const fileField = `${field}.files[${fileIndex}]`;
+
+            if (
+              typeof fileValue !== 'string' ||
+              fileValue.trim().length === 0
+            ) {
+              options.problems.push(
+                [
+                  'Invalid source Knip entry config:',
+                  `  field: ${fileField}`,
+                  `  value: ${formatUnknownValue(fileValue)}`,
+                  '  reason: file patterns must be non-empty strings.',
+                ].join('\n'),
+              );
+              continue;
+            }
+
+            const pattern = normalizeWorkspacePattern(fileValue);
+
+            if (isInvalidWorkspacePattern(pattern)) {
+              options.problems.push(
+                [
+                  'Invalid source Knip entry config:',
+                  `  field: ${fileField}`,
+                  `  file: ${pattern}`,
+                  '  reason: file patterns must be positive workspace-root-relative globs inside the workspace root.',
+                ].join('\n'),
+              );
+              continue;
+            }
+
+            const ownerRelativePattern = toOwnerRelativeEntryPattern({
+              config: options.config,
+              owner: moduleSet.owner,
+              pattern,
+            });
+
+            if (!ownerRelativePattern) {
+              options.problems.push(
+                [
+                  'Invalid source Knip entry config:',
+                  `  field: ${fileField}`,
+                  `  package: ${ownerName}`,
+                  `  file: ${pattern}`,
+                  '  reason: file patterns must stay inside the keyed package directory.',
+                ].join('\n'),
+              );
+              continue;
+            }
+
+            ownerRelativePatterns.push(ownerRelativePattern);
+          }
         }
 
         if (ownerRelativePatterns.length > 0) {
@@ -1757,157 +1789,135 @@ function collectUnusedModuleConfig(options: {
             [...new Set(ownerRelativePatterns)].sort(),
           );
         }
+      } else {
+        options.problems.push(
+          [
+            'Invalid source Knip entry config:',
+            `  field: ${workspaceField}.entry`,
+            `  package: ${ownerName}`,
+            '  reason: package must own Limina-governed source modules.',
+          ].join('\n'),
+        );
       }
-    } else {
-      options.problems.push(
-        [
-          'Invalid additional source entry config:',
-          '  field: source.additionalEntries',
-          `  value: ${formatUnknownValue(rawEntries)}`,
-          '  reason: additionalEntries must be an array.',
-        ].join('\n'),
-      );
     }
-  }
 
-  const rawConfig = options.config.source?.unusedModules;
-  const rawIgnore = isPlainRecord(rawConfig) ? rawConfig.ignore : undefined;
+    const rawIgnore = workspaceConfig.ignoreFiles;
 
-  if (rawIgnore === undefined) {
-    return {
-      entryPatternsByOwnerName,
-      ignoredKeys,
-    };
-  }
+    if (rawIgnore === undefined) {
+      continue;
+    }
 
-  if (!Array.isArray(rawIgnore)) {
-    options.problems.push(
-      [
-        'Invalid unused module ignore config:',
-        '  field: source.unusedModules.ignore',
-        `  value: ${formatUnknownValue(rawIgnore)}`,
-        '  reason: ignore must be an array.',
-      ].join('\n'),
-    );
-    return {
-      entryPatternsByOwnerName,
-      ignoredKeys,
-    };
-  }
-
-  for (const [index, entry] of rawIgnore.entries()) {
-    const field = `source.unusedModules.ignore[${index}]`;
-
-    if (!isPlainRecord(entry)) {
+    if (!Array.isArray(rawIgnore)) {
       options.problems.push(
         [
-          'Invalid unused module ignore config:',
-          `  field: ${field}`,
-          `  value: ${formatUnknownValue(entry)}`,
-          '  reason: ignore entries must be objects with non-empty owner, file, and reason fields.',
+          'Invalid source Knip file ignore config:',
+          `  field: ${workspaceField}.ignoreFiles`,
+          `  value: ${formatUnknownValue(rawIgnore)}`,
+          '  reason: ignoreFiles must be an array.',
         ].join('\n'),
       );
       continue;
     }
-
-    const ownerValue = entry.owner;
-    const fileValue = entry.file;
-    const reasonValue = entry.reason;
-
-    if (typeof ownerValue !== 'string' || ownerValue.trim().length === 0) {
-      options.problems.push(
-        [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.owner`,
-          `  value: ${formatUnknownValue(ownerValue)}`,
-          '  reason: owner must be a non-empty package owner name.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
-      options.problems.push(
-        [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.file`,
-          `  value: ${formatUnknownValue(fileValue)}`,
-          '  reason: file must be a non-empty workspace-root-relative path.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
-      options.problems.push(
-        [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.reason`,
-          `  value: ${formatUnknownValue(reasonValue)}`,
-          '  reason: reason must be a non-empty string.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    const ownerName = ownerValue.trim();
-    const file = normalizeSlashes(fileValue.trim());
-    const moduleSet = moduleSetByOwnerName.get(ownerName);
 
     if (!moduleSet) {
       options.problems.push(
         [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.owner`,
-          `  owner: ${ownerName}`,
-          '  reason: owner must name an existing package owner with a package.json name.',
+          'Invalid source Knip file ignore config:',
+          `  field: ${workspaceField}.ignoreFiles`,
+          `  package: ${ownerName}`,
+          '  reason: package must own Limina-governed source modules.',
         ].join('\n'),
       );
       continue;
     }
 
-    if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/u.test(file)) {
-      options.problems.push(
-        [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.file`,
-          `  file: ${file}`,
-          '  reason: file must be relative to the workspace root.',
-        ].join('\n'),
+    for (const [index, entry] of rawIgnore.entries()) {
+      const field = `${workspaceField}.ignoreFiles[${index}]`;
+
+      if (!isPlainRecord(entry)) {
+        options.problems.push(
+          [
+            'Invalid source Knip file ignore config:',
+            `  field: ${field}`,
+            `  value: ${formatUnknownValue(entry)}`,
+            '  reason: ignoreFiles entries must be objects with non-empty file and reason fields.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const fileValue = entry.file;
+      const reasonValue = entry.reason;
+
+      if (typeof fileValue !== 'string' || fileValue.trim().length === 0) {
+        options.problems.push(
+          [
+            'Invalid source Knip file ignore config:',
+            `  field: ${field}.file`,
+            `  value: ${formatUnknownValue(fileValue)}`,
+            '  reason: file must be a non-empty workspace-root-relative path.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (typeof reasonValue !== 'string' || reasonValue.trim().length === 0) {
+        options.problems.push(
+          [
+            'Invalid source Knip file ignore config:',
+            `  field: ${field}.reason`,
+            `  value: ${formatUnknownValue(reasonValue)}`,
+            '  reason: reason must be a non-empty string.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const file = normalizeSlashes(fileValue.trim());
+
+      if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/u.test(file)) {
+        options.problems.push(
+          [
+            'Invalid source Knip file ignore config:',
+            `  field: ${field}.file`,
+            `  file: ${file}`,
+            '  reason: file must be relative to the workspace root.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const filePath = normalizeAbsolutePath(
+        path.resolve(options.config.rootDir, file),
       );
-      continue;
+
+      if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
+        options.problems.push(
+          [
+            'Invalid source Knip file ignore config:',
+            `  field: ${field}.file`,
+            `  file: ${file}`,
+            '  reason: file must resolve inside the workspace root.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (!moduleFilesByOwnerName.get(ownerName)?.has(filePath)) {
+        options.problems.push(
+          [
+            'Invalid source Knip file ignore config:',
+            `  field: ${field}.file`,
+            `  package: ${ownerName}`,
+            `  file: ${file}`,
+            '  reason: file must belong to the keyed package source module set known to Limina.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      ignoredKeys.add(createOwnerSourceFileKey(ownerName, filePath));
     }
-
-    const filePath = normalizeAbsolutePath(
-      path.resolve(options.config.rootDir, file),
-    );
-
-    if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
-      options.problems.push(
-        [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.file`,
-          `  file: ${file}`,
-          '  reason: file must resolve inside the workspace root.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (!moduleFilesByOwnerName.get(ownerName)?.has(filePath)) {
-      options.problems.push(
-        [
-          'Invalid unused module ignore config:',
-          `  field: ${field}.file`,
-          `  owner: ${ownerName}`,
-          `  file: ${file}`,
-          '  reason: file must belong to the owner source module set known to Limina.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    ignoredKeys.add(createOwnerSourceFileKey(ownerName, filePath));
   }
 
   return {
@@ -1992,7 +2002,7 @@ function addUnusedDependencyProblems(options: {
         `  section: ${declaration.sectionName}`,
         `  specifier: ${declaration.specifier}`,
         '  reason: workspace package dependencies should be reachable from package entries, binaries, scripts, or explicitly ignored when usage is not visible to Knip analysis.',
-        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, make it reachable from a default entry or source.additionalEntries owned by ${declaration.importer.name}, invoke one of its package binaries from scripts owned by ${declaration.importer.name}, or add source.unusedDependencies.ignore with importer "${declaration.importer.name}", dependency "${declaration.dependencyName}", and a reason.`,
+        `  fix: remove ${declaration.dependencyName} from ${declaration.sectionName}, make it reachable from a package manifest entry, source.knip.workspaces["${declaration.importer.name}"].entry, a package binary invoked from scripts owned by ${declaration.importer.name}, or add source.knip.workspaces["${declaration.importer.name}"].ignoreDependencies with dep "${declaration.dependencyName}" and a reason.`,
       ].join('\n'),
     );
   }
@@ -2041,7 +2051,7 @@ function addUnusedModuleProblems(options: {
         `  package manifest: ${toRelativePath(options.config.rootDir, moduleSet.owner.packageJsonPath)}`,
         `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
         '  reason: strict mode requires owner-governed source modules to be reachable from package entries, binaries, scripts, or Knip plugin entries.',
-        `  fix: delete ${toRelativePath(options.config.rootDir, filePath)}, make it reachable from a default entry or source.additionalEntries owned by ${moduleSet.owner.name}, or add source.unusedModules.ignore with owner "${moduleSet.owner.name}", file "${toRelativePath(options.config.rootDir, filePath)}", and a reason.`,
+        `  fix: delete ${toRelativePath(options.config.rootDir, filePath)}, make it reachable from a package manifest entry or source.knip.workspaces["${moduleSet.owner.name}"].entry, or add source.knip.workspaces["${moduleSet.owner.name}"].ignoreFiles with file "${toRelativePath(options.config.rootDir, filePath)}" and a reason.`,
       ].join('\n'),
     );
   }
@@ -2053,17 +2063,27 @@ async function addKnipBackedSourceProblems(options: {
   problems: string[];
   workspacePackages: WorkspacePackage[];
 }): Promise<void> {
+  if (options.config.source?.knip === false) {
+    return;
+  }
+
   const declarations = collectWorkspaceDependencyDeclarations(
     options.workspacePackages,
   );
-  const ignoredDependencies = collectUnusedDependencyIgnore({
+  const knipWorkspaceConfigs = collectSourceKnipWorkspaceConfigs({
     config: options.config,
+    problems: options.problems,
+    workspacePackages: options.workspacePackages,
+  });
+  const ignoredDependencies = collectUnusedDependencyIgnore({
     declarations,
+    knipWorkspaceConfigs,
     problems: options.problems,
     workspacePackages: options.workspacePackages,
   });
   const unusedModuleConfig = collectUnusedModuleConfig({
     config: options.config,
+    knipWorkspaceConfigs,
     ownerModuleSets: options.ownerModuleSets,
     problems: options.problems,
   });
@@ -2077,11 +2097,6 @@ async function addKnipBackedSourceProblems(options: {
     includeFiles,
     ownerModuleSets: options.ownerModuleSets,
   });
-  const hasOwnerProjectEntries = ownerProjects.some(
-    (ownerProject) =>
-      ownerProject.entryFiles.length > 0 ||
-      ownerProject.virtualEntrySourceFiles.length > 0,
-  );
 
   if (!needsDependencyAnalysis && !includeFiles) {
     return;
@@ -2091,10 +2106,7 @@ async function addKnipBackedSourceProblems(options: {
     config: options.config,
     ignoredKeys: ignoredDependencies,
     includeFiles,
-    ownerProjects:
-      includeFiles || (needsDependencyAnalysis && hasOwnerProjectEntries)
-        ? ownerProjects
-        : [],
+    ownerProjects: needsDependencyAnalysis || includeFiles ? ownerProjects : [],
     workspacePackages: options.workspacePackages,
   });
 

@@ -160,36 +160,43 @@ A dependency on another package in the pnpm workspace is declared in `package.js
 // limina.config.mjs
 export default defineConfig({
   source: {
-    unusedDependencies: {
-      ignore: [
-        {
-          importer: '@acme/app',
-          dependency: '@acme/codegen',
-          reason: 'Used only by a generate script.',
+    knip: {
+      workspaces: {
+        '@acme/app': {
+          ignoreDependencies: [
+            {
+              dep: '@acme/codegen',
+              reason: 'Used only by a generate script.',
+            },
+          ],
         },
-      ],
+      },
     },
   },
 });
 ```
 
-Reports `Unused workspace package dependency:`. If it is genuinely used through generated code or a runtime string, ignore it via `source.unusedDependencies.ignore`; otherwise remove the dependency.
+Reports `Unused workspace package dependency:`. If it is genuinely used through generated code or a runtime string, ignore it via `source.knip.workspaces[pkg].ignoreDependencies`; otherwise remove the dependency.
 
 ### Strict: source modules unreachable from exports (Knip)
 
-In strict mode, Limina also lets Knip check whether an owner's source module is unreachable from package `exports`, `bin`, scripts, Knip-supported plugin entries, and `source.additionalEntries` — in which case it is a dead module.
+In strict mode, Limina also lets Knip check whether an owner's source module is unreachable from package `exports`, `bin`, scripts, Knip-supported plugin entries, and `source.knip.workspaces[pkg].entry` — in which case it is a dead module.
 
 ```js
 source: {
-  unusedModules: {
-    ignore: [
-      { owner: '@acme/app', file: 'packages/app/src/generated/runtime.ts', reason: 'Loaded by the framework runtime.' },
-    ],
+  knip: {
+    workspaces: {
+      '@acme/app': {
+        ignoreFiles: [
+          { file: 'packages/app/src/generated/runtime.ts', reason: 'Loaded by the framework runtime.' },
+        ],
+      },
+    },
   },
 }
 ```
 
-Reports `Unused source module:`. If the module is a real extra entry, add it through `source.additionalEntries`; for something intentionally kept but invisible to Knip, ignore it via `source.unusedModules.ignore`.
+Reports `Unused source module:`. If the module is a real extra entry, add it through `source.knip.workspaces[pkg].entry`; for something intentionally kept but invisible to Knip, ignore it via `source.knip.workspaces[pkg].ignoreFiles`.
 
 ## `nx:check`
 

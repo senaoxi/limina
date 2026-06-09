@@ -117,15 +117,11 @@ export interface ResolvedCheckerConfig {
  * through generated code, runtime strings, or another path that Knip
  * dependency analysis cannot see.
  */
-export interface SourceUnusedDependencyIgnoreEntry {
-  /**
-   * Importing package name from package.json.
-   */
-  importer: string;
+export interface SourceKnipIgnoredDependencyConfig {
   /**
    * Declared workspace dependency package name.
    */
-  dependency: string;
+  dep: string;
   /**
    * Why the dependency is safe to keep even when Knip cannot prove it is
    * reachable from package entries, binaries, or scripts.
@@ -134,25 +130,10 @@ export interface SourceUnusedDependencyIgnoreEntry {
 }
 
 /**
- * Source dependency usage settings.
- */
-export interface SourceUnusedDependenciesConfig {
-  /**
-   * Declared workspace dependencies intentionally not visible through Knip's
-   * entry-reachable dependency graph.
-   */
-  ignore?: SourceUnusedDependencyIgnoreEntry[];
-}
-
-/**
  * Explicit exception for a source module that is owned by a package but is
  * intentionally not reachable from Knip's package entry graph.
  */
-export interface SourceUnusedModuleIgnoreEntry {
-  /**
-   * Named package owner from package.json.
-   */
-  owner: string;
+export interface SourceKnipIgnoredFileConfig {
   /**
    * Workspace-root-relative source module path.
    */
@@ -168,20 +149,16 @@ export interface SourceUnusedModuleIgnoreEntry {
  * Additional source module entries for Knip's source reachability graph.
  *
  * Default entries come from package exports, package binaries, package scripts,
- * and Knip-supported plugin entries. Owners without package.json#exports are
+ * and Knip-supported plugin entries. Packages without package.json#exports are
  * treated as application-style owners: Limina provides the full governed source
  * module set as the entry surface and skips unused-file coverage for that
- * owner. Use this only for extra entry modules loaded by test runners, local
+ * package. Use this only for extra entry modules loaded by test runners, local
  * tools, or build steps that should not become package exports.
  */
-export interface SourceAdditionalEntryConfig {
-  /**
-   * Named package owner from package.json.
-   */
-  owner: string;
+export interface SourceKnipEntryConfig {
   /**
    * Workspace-root-relative file or glob patterns that Knip should treat as
-   * additional entries for this owner.
+   * additional entries for the keyed package.
    */
   files: string[];
   /**
@@ -189,17 +166,6 @@ export interface SourceAdditionalEntryConfig {
    * exports, binaries, scripts, or plugin-discovered entries.
    */
   reason: string;
-}
-
-/**
- * Source module usage settings.
- */
-export interface SourceUnusedModulesConfig {
-  /**
-   * Package-owned source modules intentionally not visible through Knip's
-   * entry-reachable file graph.
-   */
-  ignore?: SourceUnusedModuleIgnoreEntry[];
 }
 
 /**
@@ -233,29 +199,53 @@ export interface SourceTsconfigOwnershipConfig {
 }
 
 /**
+ * Package-level Knip source analysis config interpreted by Limina.
+ */
+export interface SourceKnipWorkspaceConfig {
+  /**
+   * Additional package-owned source modules Knip should treat as reachable
+   * roots. Limina disables Knip's implicit index/main/cli entry guessing by
+   * default; package manifest entries, scripts, plugin-discovered entries, and
+   * Limina virtual entries remain enabled.
+   */
+  entry?: SourceKnipEntryConfig[];
+  /**
+   * Declared workspace dependencies intentionally not visible through Knip's
+   * entry-reachable dependency graph.
+   */
+  ignoreDependencies?: SourceKnipIgnoredDependencyConfig[];
+  /**
+   * Package-owned source modules intentionally not visible through Knip's
+   * entry-reachable file graph.
+   */
+  ignoreFiles?: SourceKnipIgnoredFileConfig[];
+}
+
+/**
+ * Knip-backed source analysis config interpreted by Limina.
+ */
+export interface SourceKnipCheckConfig {
+  /**
+   * Package-specific Knip source analysis config keyed by workspace package
+   * name, such as "@example/app". Unknown package names fail source checks.
+   */
+  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
+}
+
+/**
  * Source-owned dependency usage check settings.
  */
 export interface SourceCheckConfig {
   /**
-   * Additional entries are appended to Limina/Knip's default source entry
-   * surface. For owners with package.json exports, default entries come from
-   * package exports, bin, scripts, and Knip-supported plugin entries. For
-   * owners without exports, Limina treats the full governed source module set
-   * as an application-style entry surface and skips unused-file coverage for
-   * that owner. Use additionalEntries only for modules loaded directly by test
-   * runners, local tooling, or build steps that should not be package exports.
+   * Knip-backed unused dependency and unused source module analysis.
+   *
+   * `true` or omitted uses Limina's generated default config, `false` skips
+   * these Knip-backed checks, and an object configures Limina's semantic Knip
+   * source rules by workspace package name.
+   *
+   * @default true
    */
-  additionalEntries?: SourceAdditionalEntryConfig[];
-  /**
-   * Checks that workspace package dependencies declared in package.json are
-   * reachable from package entries, binaries, or scripts owned by that package.
-   */
-  unusedDependencies?: SourceUnusedDependenciesConfig;
-  /**
-   * Strict-mode exceptions for package-owned source modules that are not
-   * reachable from package entries, binaries, or scripts owned by that package.
-   */
-  unusedModules?: SourceUnusedModulesConfig;
+  knip?: boolean | SourceKnipCheckConfig;
   /**
    * Exceptions for source modules whose nearest bare tsconfig.json cannot
    * resolve a unique ordinary typecheck owner.
@@ -401,7 +391,27 @@ export interface GraphRule {
 /**
  * TypeScript project graph policy.
  */
+export interface GraphConditionDomain {
+  /**
+   * Human-readable domain name used in graph check reports.
+   */
+  name: string;
+  /**
+   * Domain entry `tsconfig*.dts.json` path, relative to the inferred workspace root.
+   */
+  entry: string;
+  /**
+   * Bundler/package condition names expected for this declaration reference tree.
+   */
+  customConditions: string[];
+}
+
 export interface GraphConfig {
+  /**
+   * Real declaration resolution domains whose project references should share
+   * the configured custom conditions.
+   */
+  conditionDomains?: GraphConditionDomain[];
   /**
    * Label-based package and build-boundary access rules.
    *
@@ -454,7 +464,13 @@ export type PackageAttwProfile = 'esm-only' | 'node16' | 'strict';
 /**
  * publint package check settings.
  */
+export type PackagePublintLevel = 'error' | 'suggestion' | 'warning';
+
 export interface PackagePublintCheckConfig {
+  /**
+   * Minimum publint message level to report.
+   */
+  level?: PackagePublintLevel;
   /**
    * Whether publint should run in strict mode.
    *
@@ -466,7 +482,50 @@ export interface PackagePublintCheckConfig {
 /**
  * Are The Types Wrong package check settings.
  */
+export type PackageAttwLevel = 'error' | 'warn';
+export type PackageAttwIgnoreRule =
+  | 'cjs-only-exports-default'
+  | 'cjs-resolves-to-esm'
+  | 'fallback-condition'
+  | 'false-cjs'
+  | 'false-esm'
+  | 'false-export-default'
+  | 'internal-resolution-error'
+  | 'missing-export-equals'
+  | 'named-exports'
+  | 'no-resolution'
+  | 'unexpected-module-syntax'
+  | 'untyped-resolution'
+  | (string & {});
+
 export interface PackageAttwCheckConfig {
+  /**
+   * Exhaustive list of package entrypoints to check. The package root is ".".
+   */
+  entrypoints?: string[];
+  /**
+   * Whether ATTW should consider all published files as entrypoints when no
+   * other entrypoints are detected or configured.
+   */
+  entrypointsLegacy?: boolean;
+  /**
+   * Entrypoints to exclude from checking.
+   */
+  excludeEntrypoints?: (string | RegExp)[];
+  /**
+   * Problem rule names to ignore.
+   */
+  ignoreRules?: PackageAttwIgnoreRule[];
+  /**
+   * Entrypoints to check in addition to automatically discovered ones.
+   */
+  includeEntrypoints?: string[];
+  /**
+   * Whether ATTW findings fail the package check or are logged as warnings.
+   *
+   * @default "error"
+   */
+  level?: PackageAttwLevel;
   /**
    * Problem profile to enforce.
    *
@@ -518,11 +577,11 @@ export interface PackageEntry {
   /**
    * publint settings for this package output.
    */
-  publint?: PackagePublintCheckConfig;
+  publint?: boolean | PackagePublintCheckConfig;
   /**
    * Are The Types Wrong settings for this package output.
    */
-  attw?: PackageAttwCheckConfig;
+  attw?: boolean | PackageAttwCheckConfig;
   /**
    * Built package import boundary settings.
    */
@@ -773,24 +832,6 @@ const sharedLiminaConfigShapeSchema = z
 
     const sourceRecord = source as Record<string, unknown>;
 
-    if (Object.hasOwn(sourceRecord, 'unusedDependencies')) {
-      ctx.addIssue({
-        code: 'custom',
-        message:
-          'source.unusedDependencies belongs at the top-level source config, not under config.source.',
-        path: ['source', 'unusedDependencies'],
-      });
-    }
-
-    if (Object.hasOwn(sourceRecord, 'unusedModules')) {
-      ctx.addIssue({
-        code: 'custom',
-        message:
-          'source.unusedModules belongs at the top-level source config, not under config.source.',
-        path: ['source', 'unusedModules', 'ignore'],
-      });
-    }
-
     if (Object.hasOwn(sourceRecord, 'tsconfigOwnership')) {
       ctx.addIssue({
         code: 'custom',
@@ -957,24 +998,6 @@ function formatLiminaConfigShapeIssue(
       '  field: config.checkers',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       '  reason: config.checkers must be an object keyed by checker name.',
-    ].join('\n');
-  }
-
-  if (field === 'config.source.unusedDependencies') {
-    return [
-      'Invalid Limina source config:',
-      '  field: config.source.unusedDependencies',
-      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-      `  reason: ${issue.message}`,
-    ].join('\n');
-  }
-
-  if (field === 'config.source.unusedModules.ignore') {
-    return [
-      'Invalid Limina source config:',
-      '  field: config.source.unusedModules.ignore',
-      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-      `  reason: ${issue.message}`,
     ].join('\n');
   }
 

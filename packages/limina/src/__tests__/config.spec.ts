@@ -27,21 +27,29 @@ describe('defineConfig', () => {
         },
       },
       source: {
-        additionalEntries: [
-          {
-            files: ['packages/core/src/**/*.spec.ts'],
-            owner: '@example/core',
-            reason: 'Vitest loads test modules directly.',
-          },
-        ],
-        unusedDependencies: {
-          ignore: [
-            {
-              dependency: '@example/generated',
-              importer: '@example/core',
-              reason: 'Loaded by generated code.',
+        knip: {
+          workspaces: {
+            '@example/core': {
+              entry: [
+                {
+                  files: ['packages/core/src/**/*.spec.ts'],
+                  reason: 'Vitest loads test modules directly.',
+                },
+              ],
+              ignoreDependencies: [
+                {
+                  dep: '@example/generated',
+                  reason: 'Loaded by generated code.',
+                },
+              ],
+              ignoreFiles: [
+                {
+                  file: 'packages/core/src/generated/runtime.ts',
+                  reason: 'Loaded by a framework runtime.',
+                },
+              ],
             },
-          ],
+          },
         },
         tsconfigOwnership: {
           ignore: [
@@ -49,15 +57,6 @@ describe('defineConfig', () => {
               files: ['packages/core/src/**/*.spec.ts'],
               owner: '@example/core',
               reason: 'Vitest loads test modules directly.',
-            },
-          ],
-        },
-        unusedModules: {
-          ignore: [
-            {
-              file: 'packages/core/src/generated/runtime.ts',
-              owner: '@example/core',
-              reason: 'Loaded by a framework runtime.',
             },
           ],
         },
@@ -70,6 +69,8 @@ describe('defineConfig', () => {
         entries: [
           {
             attw: {
+              ignoreRules: ['false-cjs'],
+              level: 'warn',
               profile: 'esm-only',
             },
             boundary: {
@@ -79,12 +80,21 @@ describe('defineConfig', () => {
             name: '@example/core',
             outDir: 'packages/core/dist',
             publint: {
+              level: 'warning',
               strict: true,
             },
           },
         ],
       },
-      graph: {},
+      graph: {
+        conditionDomains: [
+          {
+            customConditions: ['browser', 'source'],
+            entry: 'apps/web/tsconfig.dts.json',
+            name: 'web',
+          },
+        ],
+      },
       release: {
         contentHash: {
           baselineTag: 'next',
@@ -106,17 +116,41 @@ describe('defineConfig', () => {
       'attw',
       'boundary',
     ]);
-    expect(config.source?.unusedDependencies?.ignore?.[0]?.dependency).toBe(
-      '@example/generated',
-    );
-    expect(config.source?.unusedModules?.ignore?.[0]?.file).toBe(
-      'packages/core/src/generated/runtime.ts',
-    );
-    expect(config.source?.additionalEntries?.[0]?.files).toEqual([
-      'packages/core/src/**/*.spec.ts',
-    ]);
+    expect(
+      config.source?.knip && typeof config.source.knip === 'object'
+        ? config.source.knip.workspaces?.['@example/core']
+        : undefined,
+    ).toMatchObject({
+      entry: [
+        {
+          files: ['packages/core/src/**/*.spec.ts'],
+        },
+      ],
+      ignoreDependencies: [
+        {
+          dep: '@example/generated',
+        },
+      ],
+      ignoreFiles: [
+        {
+          file: 'packages/core/src/generated/runtime.ts',
+        },
+      ],
+    });
     expect(config.source?.tsconfigOwnership?.ignore?.[0]?.files).toEqual([
       'packages/core/src/**/*.spec.ts',
+    ]);
+    expect(config.package?.entries?.[0]?.attw).toMatchObject({
+      ignoreRules: ['false-cjs'],
+      level: 'warn',
+    });
+    expect(config.package?.entries?.[0]?.publint).toMatchObject({
+      level: 'warning',
+      strict: true,
+    });
+    expect(config.graph?.conditionDomains?.[0]?.customConditions).toEqual([
+      'browser',
+      'source',
     ]);
     expect(config.release?.contentHash?.baselineTag).toBe('next');
     expect(config.release?.contentHash?.builtinIgnore).toBe(false);
@@ -384,78 +418,6 @@ describe('defineConfig', () => {
 });
 
 describe('loadConfig', () => {
-  it('rejects unused dependency config nested under config.source', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
-
-    try {
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages: []\n',
-      );
-      await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
-        `
-export default {
-  config: {
-    source: {
-      unusedDependencies: {
-        ignore: [],
-      },
-    },
-  },
-};
-`,
-      );
-
-      await expect(
-        loadConfig({
-          cwd: rootDir,
-        }),
-      ).rejects.toThrow('source.unusedDependencies');
-    } finally {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
-    }
-  });
-
-  it('rejects unused module config nested under config.source', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
-
-    try {
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages: []\n',
-      );
-      await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
-        `
-export default {
-  config: {
-    source: {
-      unusedModules: {
-        ignore: [],
-      },
-    },
-  },
-};
-`,
-      );
-
-      await expect(
-        loadConfig({
-          cwd: rootDir,
-        }),
-      ).rejects.toThrow('source.unusedModules.ignore');
-    } finally {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
-    }
-  });
-
   it('rejects tsconfig ownership config nested under config.source', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 

@@ -47,24 +47,10 @@
     "clean": "del-cli .tsbuild .eslintcache dist coverage node_modules"
   },
   "dependencies": {
-    "@arethetypeswrong/core": "catalog:lint",
-    "@clack/prompts": "catalog:dev",
-    "logaria": "catalog:prod",
-    "@publint/pack": "catalog:lint",
-    "cac": "catalog:dev",
-    "es-module-lexer": "catalog:dev",
-    "ignore": "catalog:prod",
-    "knip": "catalog:lint",
-    "npm-package-json-lint": "catalog:lint",
-    "oxc-parser": "catalog:prod",
-    "oxc-resolver": "catalog:prod",
-    "pathe": "catalog:dev",
     "picomatch": "catalog:prod",
-    "publint": "catalog:lint",
-    "semver": "catalog:dev",
     "tinyglobby": "catalog:prod",
-    "yaml": "catalog:dev",
-    "zod": "catalog:dev"
+    "oxc-parser": "catalog:prod",
+    "oxc-resolver": "catalog:prod"
   },
   "devDependencies": {
     "@types/picomatch": "catalog:dev",
@@ -73,6 +59,20 @@
     "@docs-islands/plugin-license": "link:../plugins/license/dist",
     "@vue/compiler-sfc": "catalog:dev",
     "@types/node": "catalog:dev",
+    "@arethetypeswrong/core": "catalog:lint",
+    "@clack/prompts": "catalog:dev",
+    "logaria": "catalog:prod",
+    "@publint/pack": "catalog:lint",
+    "cac": "catalog:dev",
+    "es-module-lexer": "catalog:dev",
+    "pathe": "catalog:dev",
+    "ignore": "catalog:prod",
+    "knip": "catalog:lint",
+    "npm-package-json-lint": "catalog:lint",
+    "publint": "catalog:lint",
+    "semver": "catalog:dev",
+    "yaml": "catalog:dev",
+    "zod": "catalog:dev",
     "del-cli": "catalog:dev",
     "eslint": "catalog:lint",
     "rolldown": "catalog:dev",
@@ -82,18 +82,30 @@
     "vitest": "catalog:test"
   },
   "peerDependencies": {
-    "@typescript/native-preview": "catalog:dev",
-    "@vue/compiler-sfc": "catalog:dev",
-    "svelte-check": "catalog:dev",
-    "typescript": "catalog:dev",
-    "vue-tsc": "catalog:dev",
-    "vue-tsgo": "catalog:dev"
+    "@arethetypeswrong/core": "^0.18.2",
+    "@typescript/native-preview": "7.0.0-dev.20260527.1",
+    "@vue/compiler-sfc": "^3.5.28",
+    "knip": "^6.15.0",
+    "publint": "^0.3.17",
+    "svelte-check": "^4.4.7",
+    "typescript": "~5.9.3",
+    "vue-tsc": "~3.2.4",
+    "vue-tsgo": "0.2.2"
   },
   "peerDependenciesMeta": {
+    "@arethetypeswrong/core": {
+      "optional": true
+    },
     "@typescript/native-preview": {
       "optional": true
     },
     "@vue/compiler-sfc": {
+      "optional": true
+    },
+    "knip": {
+      "optional": true
+    },
+    "publint": {
       "optional": true
     },
     "svelte-check": {

@@ -6,6 +6,7 @@ import type { ResolvedLiminaConfig } from '../config';
 import { LiminaFlowReporter } from '../flow';
 
 const packageCheckMocks = vi.hoisted(() => ({
+  attwCheckOptions: [] as unknown[],
   attwProblems: [] as unknown[],
   attwRuns: 0,
   packedManifestOverrides: new Map<string, Record<string, unknown>>(),
@@ -19,6 +20,7 @@ const packageCheckMocks = vi.hoisted(() => ({
   packedTarballManifests: new Map<string, Record<string, unknown>>(),
   packCalls: [] as string[],
   publintCalls: [] as unknown[],
+  publintMessages: [] as unknown[],
   registryPackages: new Map<string, Record<string, unknown>>(),
   registryTarballs: new Map<string, Buffer>(),
 }));
@@ -130,7 +132,7 @@ vi.mock('publint', () => ({
     packageCheckMocks.publintCalls.push(options);
 
     return {
-      messages: [],
+      messages: packageCheckMocks.publintMessages,
       pkg: {},
     };
   }),
@@ -141,8 +143,9 @@ vi.mock('publint/utils', () => ({
 }));
 
 vi.mock('@arethetypeswrong/core', () => ({
-  checkPackage: vi.fn(async () => {
+  checkPackage: vi.fn(async (_pkg: unknown, options: unknown) => {
     packageCheckMocks.attwRuns += 1;
+    packageCheckMocks.attwCheckOptions.push(options);
 
     return {
       problems: packageCheckMocks.attwProblems,
@@ -429,6 +432,7 @@ function createFlow(): {
 }
 
 beforeEach(() => {
+  packageCheckMocks.attwCheckOptions = [];
   packageCheckMocks.attwProblems = [];
   packageCheckMocks.attwRuns = 0;
   packageCheckMocks.packedManifestOverrides.clear();
@@ -436,6 +440,7 @@ beforeEach(() => {
   packageCheckMocks.packedTarballManifests.clear();
   packageCheckMocks.packCalls = [];
   packageCheckMocks.publintCalls = [];
+  packageCheckMocks.publintMessages = [];
   packageCheckMocks.registryPackages.clear();
   packageCheckMocks.registryTarballs.clear();
   vi.stubGlobal(
@@ -2902,6 +2907,171 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('allows publint and attw to be disabled with boolean config', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': "import '@example/dep';\n",
+    });
+
+    try {
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.outDir, [
+            {
+              attw: false,
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+              publint: false,
+            },
+          ]),
+        }),
+      ).resolves.toBe(true);
+
+      expect(packageCheckMocks.packCalls).toEqual([]);
+      expect(packageCheckMocks.publintCalls).toHaveLength(0);
+      expect(packageCheckMocks.attwRuns).toBe(0);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('allows publint and attw boolean true to re-enable checks omitted by checks', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': "import '@example/dep';\n",
+    });
+
+    try {
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.outDir, [
+            {
+              attw: true,
+              checks: ['boundary'],
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+              publint: true,
+            },
+          ]),
+        }),
+      ).resolves.toBe(true);
+
+      expect(packageCheckMocks.packCalls).toEqual([pkg.outDir]);
+      expect(packageCheckMocks.publintCalls).toHaveLength(1);
+      expect(packageCheckMocks.attwRuns).toBe(1);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('passes publint object config to publint', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': 'export const value = 1;\n',
+    });
+
+    try {
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.outDir, [
+            {
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+              publint: {
+                level: 'error',
+                strict: false,
+              },
+            },
+          ]),
+          tool: 'publint',
+        }),
+      ).resolves.toBe(true);
+
+      expect(packageCheckMocks.publintCalls[0]).toMatchObject({
+        level: 'error',
+        strict: false,
+      });
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('passes attw object config to checkPackage and ignores configured rules', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': 'export const value = 1;\n',
+    });
+
+    try {
+      packageCheckMocks.attwProblems = [
+        {
+          implementationFileName: 'index.js',
+          kind: 'FalseCJS',
+          typesFileName: 'index.d.ts',
+        },
+      ];
+
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.outDir, [
+            {
+              attw: {
+                entrypoints: ['.'],
+                entrypointsLegacy: true,
+                excludeEntrypoints: ['./internal'],
+                ignoreRules: ['false-cjs'],
+                includeEntrypoints: ['./feature'],
+                profile: 'strict',
+              },
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+          tool: 'attw',
+        }),
+      ).resolves.toBe(true);
+
+      expect(packageCheckMocks.attwCheckOptions[0]).toEqual({
+        entrypoints: ['.'],
+        entrypointsLegacy: true,
+        excludeEntrypoints: ['./internal'],
+        includeEntrypoints: ['./feature'],
+      });
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('treats attw problems as warnings when attw.level is warn', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': 'export const value = 1;\n',
+    });
+
+    try {
+      packageCheckMocks.attwProblems = [
+        {
+          entrypoint: '.',
+          kind: 'NoResolution',
+          resolutionKind: 'node10',
+        },
+      ];
+
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.outDir, [
+            {
+              attw: {
+                level: 'warn',
+                profile: 'strict',
+              },
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+          tool: 'attw',
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
   it('prints the filtered checks in the package check plan', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const pkg = await createOutputPackage({
@@ -2972,6 +3142,99 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
     } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('reports a missing publint peer only when publint is enabled', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': "import '@example/dep';\n",
+    });
+
+    try {
+      vi.resetModules();
+      vi.doMock('publint', () => {
+        throw new Error('Cannot find package "publint"');
+      });
+
+      const { runPackageCheck: runPackageCheckWithMissingPublint } =
+        await import('../commands/package');
+
+      await expect(
+        runPackageCheckWithMissingPublint({
+          config: createConfig(pkg.outDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        runPackageCheckWithMissingPublint({
+          config: createConfig(pkg.outDir, [
+            {
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+          tool: 'publint',
+        }),
+      ).rejects.toThrow(
+        'Missing peer dependency "publint" required by limina package check.',
+      );
+    } finally {
+      vi.doUnmock('publint');
+      vi.resetModules();
+      await pkg.cleanup();
+    }
+  });
+
+  it('reports a missing attw peer only when attw is enabled', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': "import '@example/dep';\n",
+    });
+
+    try {
+      vi.resetModules();
+      vi.doMock('@arethetypeswrong/core', () => {
+        throw new Error('Cannot find package "@arethetypeswrong/core"');
+      });
+
+      const { runPackageCheck: runPackageCheckWithMissingAttw } = await import(
+        '../commands/package'
+      );
+
+      await expect(
+        runPackageCheckWithMissingAttw({
+          config: createConfig(pkg.outDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+        }),
+      ).resolves.toBe(true);
+
+      await expect(
+        runPackageCheckWithMissingAttw({
+          config: createConfig(pkg.outDir, [
+            {
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+          tool: 'attw',
+        }),
+      ).rejects.toThrow(
+        'Missing peer dependency "@arethetypeswrong/core" required by limina package check.',
+      );
+    } finally {
+      vi.doUnmock('@arethetypeswrong/core');
+      vi.resetModules();
       await pkg.cleanup();
     }
   });

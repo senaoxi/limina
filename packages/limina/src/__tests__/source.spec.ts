@@ -8,6 +8,7 @@ import type {
   ResolvedLiminaConfig,
   SourceBoundaryConfig,
   SourceCheckConfig,
+  SourceKnipWorkspaceConfig,
 } from '../config';
 import { SourceLogger } from '../logger';
 
@@ -1406,15 +1407,71 @@ packages:
       }),
       {
         source: {
-          unusedDependencies: {
-            ignore: [
-              {
-                dependency: '@example/internal',
-                importer: '@example/app',
-                reason: 'Loaded by a generated virtual module in tests.',
+          knip: {
+            workspaces: {
+              '@example/app': {
+                ignoreDependencies: [
+                  {
+                    dep: '@example/internal',
+                    reason: 'Loaded by a generated virtual module in tests.',
+                  },
+                ],
               },
-            ],
+            },
           },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not merge raw source.knip dependency ignore arrays', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+      {
+        source: {
+          knip: {
+            workspaces: {
+              '@example/app': {
+                ignoreDependencies: ['@example/internal'],
+              } as unknown as SourceKnipWorkspaceConfig,
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'ignoreDependencies entries must be objects with non-empty dep and reason fields',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('skips Knip-backed unused dependency checks when source.knip is false', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+      {
+        source: {
+          knip: false,
         },
       },
     );
@@ -1432,30 +1489,29 @@ packages:
       .mockImplementation(() => {});
     const ignore = [
       {
-        dependency: '@example/internal',
-        importer: '@example/app',
+        dep: '@example/internal',
       },
       {
-        dependency: 'zod',
-        importer: '@example/app',
+        dep: 'zod',
         reason: 'External packages are outside this rule.',
       },
       {
-        dependency: '@example/app',
-        importer: '@example/internal',
+        dep: '@example/app',
         reason: 'The dependency is not declared by this importer.',
       },
-    ] as unknown as NonNullable<
-      SourceCheckConfig['unusedDependencies']
-    >['ignore'];
+    ] as unknown as SourceKnipWorkspaceConfig['ignoreDependencies'];
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
       }),
       {
         source: {
-          unusedDependencies: {
-            ignore,
+          knip: {
+            workspaces: {
+              '@example/app': {
+                ignoreDependencies: ignore,
+              },
+            },
           },
         },
       },
@@ -1467,10 +1523,10 @@ packages:
 
       expect(errors).toContain('reason must be a non-empty string');
       expect(errors).toContain(
-        'dependency must name a package from the pnpm workspace',
+        'dep must name a package from the pnpm workspace',
       );
       expect(errors).toContain(
-        'ignore entries must match a workspace dependency declared by the importer package manifest',
+        'ignoreDependencies entries must match a workspace dependency declared by the keyed importer package manifest',
       );
     } finally {
       errorSpy.mockRestore();
@@ -1478,15 +1534,83 @@ packages:
     }
   });
 
-  it('rejects invalid unused dependency config even without workspace declarations', async () => {
+  it('rejects invalid source.knip workspaces config even without workspace declarations', async () => {
     const fixture = await createFixture(
       createPackageFixture({
         source: 'export const value = 1;\n',
       }),
       {
         source: {
-          unusedDependencies:
-            [] as unknown as SourceCheckConfig['unusedDependencies'],
+          knip: {
+            workspaces: [] as unknown as Record<
+              string,
+              SourceKnipWorkspaceConfig
+            >,
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects unknown source.knip workspace package names', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+      {
+        source: {
+          knip: {
+            workspaces: {
+              '@example/missing': {
+                ignoreDependencies: [
+                  {
+                    dep: '@example/internal',
+                    reason: 'Missing importer package.',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'workspace config keys must name packages discovered in the pnpm workspace',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('ignores raw source.knip fields instead of passing them through to Knip', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const value = 1;\n',
+      }),
+      {
+        source: {
+          knip: {
+            workspaces: {
+              '@example/app': {
+                project: ['packages/app/src/index.ts'],
+              } as unknown as SourceKnipWorkspaceConfig,
+            },
+          },
         },
       },
     );
@@ -1505,6 +1629,27 @@ packages:
       }),
       'packages/app/src/dead.ts':
         "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not use Knip implicit index entry guessing', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appManifest: {
+          exports: {
+            '.': './src/public.ts',
+          },
+        },
+        appSource:
+          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      }),
+      'packages/app/src/public.ts': 'export const publicValue = 1;\n',
     });
 
     try {
@@ -1701,13 +1846,18 @@ packages:
       },
       {
         source: {
-          additionalEntries: [
-            {
-              files: ['packages/app/src/**/*.spec.ts'],
-              owner: '@example/app',
-              reason: 'Vitest loads spec modules directly.',
+          knip: {
+            workspaces: {
+              '@example/app': {
+                entry: [
+                  {
+                    files: ['packages/app/src/**/*.spec.ts'],
+                    reason: 'Vitest loads spec modules directly.',
+                  },
+                ],
+              },
             },
-          ],
+          },
         },
       },
     );
@@ -1735,14 +1885,18 @@ packages:
       },
       {
         source: {
-          unusedModules: {
-            ignore: [
-              {
-                file: 'packages/app/src/generated/runtime.ts',
-                owner: '@example/app',
-                reason: 'Loaded by the framework runtime in generated code.',
+          knip: {
+            workspaces: {
+              '@example/app': {
+                ignoreFiles: [
+                  {
+                    file: 'packages/app/src/generated/runtime.ts',
+                    reason:
+                      'Loaded by the framework runtime in generated code.',
+                  },
+                ],
               },
-            ],
+            },
           },
         },
       },
@@ -1767,36 +1921,33 @@ packages:
     const entries = [
       {
         files: ['packages/app/src/**/*.spec.ts'],
-        owner: '@example/app',
-      },
-      {
-        files: ['packages/app/src/**/*.spec.ts'],
-        owner: '@example/missing',
-        reason: 'Missing owner.',
       },
       {
         files: [] as string[],
-        owner: '@example/app',
         reason: 'Empty files.',
       },
       {
         files: ['../outside.ts'],
-        owner: '@example/app',
         reason: 'Outside the repository.',
       },
       {
         files: ['packages/internal/src/**/*.ts'],
-        owner: '@example/app',
         reason: 'Wrong owner directory.',
       },
-    ] as unknown as SourceCheckConfig['additionalEntries'];
+    ] as unknown as SourceKnipWorkspaceConfig['entry'];
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: "export { internalValue } from '@example/internal';\n",
       }),
       {
         source: {
-          additionalEntries: entries,
+          knip: {
+            workspaces: {
+              '@example/app': {
+                entry: entries,
+              },
+            },
+          },
         },
       },
     );
@@ -1810,12 +1961,9 @@ packages:
       ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
-      expect(errors).toContain('Invalid additional source entry config:');
-      expect(errors).toContain('source.additionalEntries');
+      expect(errors).toContain('Invalid source Knip entry config:');
+      expect(errors).toContain('source.knip.workspaces["@example/app"].entry');
       expect(errors).toContain('reason must be a non-empty string');
-      expect(errors).toContain(
-        'owner must name an existing package owner with a package.json name',
-      );
       expect(errors).toContain(
         'files must be a non-empty array of workspace-root-relative glob patterns',
       );
@@ -1823,7 +1971,7 @@ packages:
         'file patterns must be positive workspace-root-relative globs inside the workspace root',
       );
       expect(errors).toContain(
-        'file patterns must stay inside the owner package directory',
+        'file patterns must stay inside the keyed package directory',
       );
     } finally {
       errorSpy.mockRestore();
@@ -1838,24 +1986,16 @@ packages:
     const ignore = [
       {
         file: 'packages/app/src/dead.ts',
-        owner: '@example/app',
-      },
-      {
-        file: 'packages/app/src/dead.ts',
-        owner: '@example/missing',
-        reason: 'Owner does not exist.',
       },
       {
         file: '../outside.ts',
-        owner: '@example/app',
         reason: 'Outside the repository.',
       },
       {
         file: 'packages/internal/src/index.ts',
-        owner: '@example/app',
         reason: 'Wrong package owner.',
       },
-    ] as unknown as NonNullable<SourceCheckConfig['unusedModules']>['ignore'];
+    ] as unknown as SourceKnipWorkspaceConfig['ignoreFiles'];
     const fixture = await createFixture(
       {
         ...createWorkspacePackageFiles({
@@ -1865,9 +2005,13 @@ packages:
       },
       {
         source: {
-          unusedModules: {
-            ignore,
-          } as unknown as SourceCheckConfig['unusedModules'],
+          knip: {
+            workspaces: {
+              '@example/app': {
+                ignoreFiles: ignore,
+              },
+            },
+          },
         },
       },
     );
@@ -1882,12 +2026,9 @@ packages:
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('reason must be a non-empty string');
-      expect(errors).toContain(
-        'owner must name an existing package owner with a package.json name',
-      );
       expect(errors).toContain('file must resolve inside the workspace root');
       expect(errors).toContain(
-        'file must belong to the owner source module set known to Limina',
+        'file must belong to the keyed package source module set known to Limina',
       );
     } finally {
       errorSpy.mockRestore();
