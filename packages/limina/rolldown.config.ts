@@ -3,10 +3,16 @@ import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import { defineConfig, type RolldownOptions } from 'rolldown';
 import { dts } from 'rolldown-plugin-dts';
+import pkg from './package.json' with { type: 'json' };
 import packagePlugin from './packagePlugin';
 
-const external = [/^[\w@][^:]/, /^node:/];
 const packageDir = fileURLToPath(new URL('.', import.meta.url));
+const packageExternalDeps = [
+  ...Object.keys(pkg.dependencies || {}),
+  ...Object.keys(pkg.peerDependencies || {}),
+  // @ts-expect-error No type checking is needed here.
+  ...Object.keys(pkg.optionalDependencies ?? {}),
+];
 
 const moduleConfig: RolldownOptions = defineConfig({
   input: {
@@ -17,7 +23,7 @@ const moduleConfig: RolldownOptions = defineConfig({
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',
-  external,
+  external: packageExternalDeps,
   plugins: [
     packagePlugin(),
     licensePlugin(
@@ -42,7 +48,7 @@ const dtsConfig: RolldownOptions = defineConfig({
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',
-  external,
+  external: packageExternalDeps,
   output: {
     dir: 'dist',
   },

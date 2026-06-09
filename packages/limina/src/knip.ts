@@ -35,6 +35,7 @@ interface KnipJsonDependencyItem {
 }
 
 interface KnipWorkspaceConfig {
+  [key: string]: unknown;
   entry?: string[];
   ignoreDependencies?: string[];
   ignoreFiles?: string[];
@@ -55,9 +56,13 @@ const knipJsonIssueFields = [
 
 type KnipSourceIssueType = 'dependencies' | 'files';
 
-function resolveKnipCliPath(): string {
+export function resolveKnipCliPath(
+  resolvePackage: (
+    specifier: string,
+  ) => string = requireFromLimina.resolve.bind(requireFromLimina),
+): string {
   try {
-    const knipEntryPath = requireFromLimina.resolve('knip');
+    const knipEntryPath = resolvePackage('knip');
 
     return normalizeAbsolutePath(
       path.resolve(path.dirname(knipEntryPath), '../bin/knip.js'),
@@ -65,9 +70,9 @@ function resolveKnipCliPath(): string {
   } catch (error) {
     throw new Error(
       [
-        'Failed to resolve the Knip CLI required by Limina source dependency checks.',
-        '  reason: Knip is a Limina runtime dependency and must be installed with the workspace dependencies.',
-        '  fix: reinstall dependencies, for example with `pnpm install`.',
+        'Missing peer dependency "knip" required by limina source check.',
+        '  reason: source.knip is enabled and Limina delegates unused source dependency and module detection to Knip.',
+        '  fix: install it in the workspace running Limina, for example with `pnpm add -D knip`.',
         `  error: ${error instanceof Error ? error.message : String(error)}`,
       ].join('\n'),
     );
@@ -311,9 +316,7 @@ function addOwnerProjectsToKnipConfig(options: {
       workspaceConfig.project = ownerProject.projectFiles;
     }
 
-    if (ownerProject.entryFiles.length > 0) {
-      workspaceConfig.entry = ownerProject.entryFiles;
-    }
+    workspaceConfig.entry = ownerProject.entryFiles;
 
     if (ownerProject.ignoreFiles.length > 0) {
       workspaceConfig.ignoreFiles = ownerProject.ignoreFiles;

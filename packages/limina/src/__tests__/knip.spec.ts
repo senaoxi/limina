@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { collectUnusedSourceFileIssues, parseKnipJsonReport } from '../knip';
+import {
+  collectUnusedSourceFileIssues,
+  parseKnipJsonReport,
+  resolveKnipCliPath,
+} from '../knip';
 
 describe('parseKnipJsonReport', () => {
   it('accepts Knip JSON reports with leading stdout noise', () => {
@@ -57,5 +61,17 @@ describe('collectUnusedSourceFileIssues', () => {
         filePath: '/repo/packages/app/src/dead.ts',
       },
     ]);
+  });
+});
+
+describe('resolveKnipCliPath', () => {
+  it('reports Knip as a missing peer dependency when resolution fails', () => {
+    expect(() =>
+      resolveKnipCliPath(() => {
+        throw new Error('Cannot find package "knip"');
+      }),
+    ).toThrow(
+      'Missing peer dependency "knip" required by limina source check.',
+    );
   });
 });

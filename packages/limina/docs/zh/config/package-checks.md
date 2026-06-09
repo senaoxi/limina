@@ -12,8 +12,13 @@ export default defineConfig({
         name: '@acme/core',
         outDir: 'packages/core/dist',
         checks: ['publint', 'attw', 'boundary'],
+        publint: {
+          strict: true,
+          level: 'warning',
+        },
         attw: {
           profile: 'esm-only',
+          ignoreRules: ['false-cjs'],
         },
         boundary: {
           environment: 'browser',
@@ -62,19 +67,58 @@ export default defineConfig({
 - `attw`：用 Are The Types Wrong 检查类型解析；
 - `boundary`：扫描构建后的 JavaScript 导入，检查运行时和依赖边界。
 
-## publint.strict
+`checks` 会继续兼容旧配置。`publint` 和 `attw` 也可以写成 `true`、`false` 或对象。Limina 会先应用 `checks`（或默认三项），再用 `publint` / `attw` 覆盖对应工具：`false` 表示关闭，`true` 或对象表示开启并使用默认或自定义配置。
+
+::: warning
+`publint` 和 `@arethetypeswrong/core` 是 Limina 的 optional peer dependencies。如果启用了对应检查，但运行 Limina 的工作区没有安装该包，`package check` 会直接报缺失 peer dependency。
+:::
+
+## publint
+
+- **类型：** `boolean | { strict?: boolean; level?: 'suggestion' | 'warning' | 'error' }`
+- **默认值：** `true`
+
+`publint: true` 使用 Limina 默认配置启用 publint。`publint: false` 会在这个包条目里关闭 publint。对象形式会启用 publint，并修改传给 publint 的选项。
+
+### publint.strict
 
 - **类型：** `boolean`
 - **默认值：** `true`
 
 `publint.strict` 控制 publint 是否使用严格模式，默认开启。
 
-## attw.profile
+### publint.level
+
+- **类型：** `'suggestion' | 'warning' | 'error'`
+
+`publint.level` 控制 publint 报告的最低消息级别。
+
+## attw
+
+- **类型：** `boolean | { profile?: 'esm-only' | 'node16' | 'strict'; level?: 'warn' | 'error'; ignoreRules?: string[]; entrypoints?: string[]; includeEntrypoints?: string[]; excludeEntrypoints?: (string | RegExp)[]; entrypointsLegacy?: boolean }`
+- **默认值：** `true`
+
+`attw: true` 使用 Limina 默认配置启用 Are The Types Wrong。`attw: false` 会在这个包条目里关闭它。对象形式会启用 ATTW，并修改 Limina 过滤选项和 `checkPackage` 入口选项。
+
+### attw.profile
 
 - **类型：** `'esm-only' | 'node16' | 'strict'`
 - **默认值：** `'esm-only'`
 
 `attw.profile` 控制 Are The Types Wrong 的检查配置档，常见值包括 `esm-only`、`node16` 和 `strict`。
+
+### attw.level
+
+- **类型：** `'warn' | 'error'`
+- **默认值：** `'error'`
+
+`attw.level: 'warn'` 会把剩余 ATTW 问题作为警告输出，但不让包检查失败。默认 `'error'` 保持发现问题即失败的行为。
+
+### attw.ignoreRules
+
+- **类型：** `string[]`
+
+`attw.ignoreRules` 按规则名忽略问题，比如 `false-cjs`、`cjs-resolves-to-esm`、`no-resolution` 或 `named-exports`。
 
 ## boundary.environment
 

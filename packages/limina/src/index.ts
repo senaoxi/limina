@@ -9,6 +9,7 @@ export {
   type CheckerConfig,
   type CheckerExecutionKind,
   type CheckerPreset,
+  type GraphConditionDomain,
   type GraphConfig,
   type GraphRule,
   type GraphRuleAllowConfig,
@@ -25,6 +26,8 @@ export {
   type LiminaConfigFnPromise,
   type LoadConfigOptions,
   type PackageAttwCheckConfig,
+  type PackageAttwIgnoreRule,
+  type PackageAttwLevel,
   type PackageAttwProfile,
   type PackageBoundaryCheckConfig,
   type PackageCheckTool,
@@ -32,6 +35,7 @@ export {
   type PackageConfig,
   type PackageEntry,
   type PackagePublintCheckConfig,
+  type PackagePublintLevel,
   type PipelineStep,
   type ProofAllowlistEntry,
   type ProofConfig,
@@ -41,8 +45,11 @@ export {
   type SharedLiminaConfig,
   type SourceBoundaryConfig,
   type SourceCheckConfig,
-  type SourceUnusedDependenciesConfig,
-  type SourceUnusedDependencyIgnoreEntry,
+  type SourceKnipCheckConfig,
+  type SourceKnipEntryConfig,
+  type SourceKnipIgnoredDependencyConfig,
+  type SourceKnipIgnoredFileConfig,
+  type SourceKnipWorkspaceConfig,
 } from './config';
 
 export {

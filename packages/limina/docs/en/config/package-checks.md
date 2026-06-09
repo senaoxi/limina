@@ -12,8 +12,13 @@ export default defineConfig({
         name: '@acme/core',
         outDir: 'packages/core/dist',
         checks: ['publint', 'attw', 'boundary'],
+        publint: {
+          strict: true,
+          level: 'warning',
+        },
         attw: {
           profile: 'esm-only',
+          ignoreRules: ['false-cjs'],
         },
         boundary: {
           environment: 'browser',
@@ -62,19 +67,58 @@ When top-level `strict: true` is enabled, each `outDir/package.json` must exist 
 - `attw`: type resolution through Are The Types Wrong;
 - `boundary`: emitted JavaScript imports, runtime boundaries, and dependency boundaries.
 
-## publint.strict
+`checks` remains supported for compatibility. `publint` and `attw` can also be `true`, `false`, or an object. Limina first applies `checks` (or the default list), then lets `publint` / `attw` override that tool: `false` disables it, while `true` or an object enables it with default or custom settings.
+
+::: warning
+`publint` and `@arethetypeswrong/core` are optional peer dependencies of Limina. If the corresponding check is enabled but the package is not installed in the workspace running Limina, `package check` fails with a missing peer dependency error.
+:::
+
+## publint
+
+- **Type:** `boolean | { strict?: boolean; level?: 'suggestion' | 'warning' | 'error' }`
+- **Default:** `true`
+
+`publint: true` enables publint with Limina's defaults. `publint: false` disables it for this package entry. The object form enables publint and customizes the options passed to publint.
+
+### publint.strict
 
 - **Type:** `boolean`
 - **Default:** `true`
 
 `publint.strict` controls whether publint runs in strict mode. It is enabled by default.
 
-## attw.profile
+### publint.level
+
+- **Type:** `'suggestion' | 'warning' | 'error'`
+
+`publint.level` controls the minimum message level reported by publint.
+
+## attw
+
+- **Type:** `boolean | { profile?: 'esm-only' | 'node16' | 'strict'; level?: 'warn' | 'error'; ignoreRules?: string[]; entrypoints?: string[]; includeEntrypoints?: string[]; excludeEntrypoints?: (string | RegExp)[]; entrypointsLegacy?: boolean }`
+- **Default:** `true`
+
+`attw: true` enables Are The Types Wrong with Limina's defaults. `attw: false` disables it for this package entry. The object form enables ATTW and customizes Limina filtering plus `checkPackage` entrypoint options.
+
+### attw.profile
 
 - **Type:** `'esm-only' | 'node16' | 'strict'`
 - **Default:** `'esm-only'`
 
 `attw.profile` controls the Are The Types Wrong profile. Common values are `esm-only`, `node16`, and `strict`.
+
+### attw.level
+
+- **Type:** `'warn' | 'error'`
+- **Default:** `'error'`
+
+`attw.level: 'warn'` logs remaining ATTW problems without failing the package check. The default `'error'` keeps the existing fail-on-problem behavior.
+
+### attw.ignoreRules
+
+- **Type:** `string[]`
+
+`attw.ignoreRules` suppresses problem kinds by rule name, such as `false-cjs`, `cjs-resolves-to-esm`, `no-resolution`, or `named-exports`.
 
 ## boundary.environment
 

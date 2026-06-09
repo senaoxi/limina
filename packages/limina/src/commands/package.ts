@@ -1,7 +1,8 @@
-import {
+import type {
   checkPackage,
+  CheckPackageOptions,
   createPackageFromTarballData,
-  type Problem,
+  Problem,
 } from '@arethetypeswrong/core';
 import { pack } from '@publint/pack';
 import { init, parse } from 'es-module-lexer';
@@ -11,13 +12,16 @@ import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'pathe';
-import { publint } from 'publint';
-import { formatMessage } from 'publint/utils';
+import type { publint } from 'publint';
+import type { formatMessage } from 'publint/utils';
 import type {
+  PackageAttwCheckConfig,
+  PackageAttwIgnoreRule,
   PackageAttwProfile,
   PackageCheckTool,
   PackageCheckToolSelection,
   PackageEntry,
+  PackagePublintCheckConfig,
   ResolvedLiminaConfig,
   RuntimeEnvironment,
 } from '../config';
@@ -112,6 +116,20 @@ const ATTW_PROFILE_IGNORED_RESOLUTIONS: Record<PackageAttwProfile, string[]> = {
   node16: [],
   'esm-only': ['node16-cjs'],
 };
+const ATTW_PROBLEM_RULE_NAMES = {
+  CJSOnlyExportsDefault: 'cjs-only-exports-default',
+  CJSResolvesToESM: 'cjs-resolves-to-esm',
+  FallbackCondition: 'fallback-condition',
+  FalseCJS: 'false-cjs',
+  FalseESM: 'false-esm',
+  FalseExportDefault: 'false-export-default',
+  InternalResolutionError: 'internal-resolution-error',
+  MissingExportEquals: 'missing-export-equals',
+  NamedExports: 'named-exports',
+  NoResolution: 'no-resolution',
+  UnexpectedModuleSyntax: 'unexpected-module-syntax',
+  UntypedResolution: 'untyped-resolution',
+} as const satisfies Record<string, PackageAttwIgnoreRule>;
 const nodeBuiltinSpecifiers = new Set(
   builtinModules.flatMap((specifier) =>
     specifier.startsWith('node:')
@@ -119,8 +137,106 @@ const nodeBuiltinSpecifiers = new Set(
       : [specifier, `node:${specifier}`],
   ),
 );
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function createMissingPeerDependencyError(options: {
+  command: string;
+  error: unknown;
+  packageName: string;
+}): Error {
+  return new Error(
+    [
+      `Missing peer dependency "${options.packageName}" required by limina ${options.command}.`,
+      `  fix: install it in the workspace running Limina, for example with \`pnpm add -D ${options.packageName}\`.`,
+      `  error: ${formatErrorMessage(options.error)}`,
+    ].join('\n'),
+  );
+}
+
+async function loadPublintPeer(): Promise<{
+  formatMessage: typeof formatMessage;
+  publint: typeof publint;
+}> {
+  try {
+    const [publintModule, publintUtilsModule] = await Promise.all([
+      import('publint'),
+      import('publint/utils'),
+    ]);
+
+    return {
+      formatMessage: publintUtilsModule.formatMessage,
+      publint: publintModule.publint,
+    };
+  } catch (error) {
+    throw createMissingPeerDependencyError({
+      command: 'package check',
+      error,
+      packageName: 'publint',
+    });
+  }
+}
+
+async function loadAttwPeer(): Promise<{
+  checkPackage: typeof checkPackage;
+  createPackageFromTarballData: typeof createPackageFromTarballData;
+}> {
+  try {
+    const attwModule = await import('@arethetypeswrong/core');
+
+    return {
+      checkPackage: attwModule.checkPackage,
+      createPackageFromTarballData: attwModule.createPackageFromTarballData,
+    };
+  } catch (error) {
+    throw createMissingPeerDependencyError({
+      command: 'package check',
+      error,
+      packageName: '@arethetypeswrong/core',
+    });
+  }
+}
+
+function isPackagePublintCheckConfig(
+  value: PackageEntry['publint'],
+): value is PackagePublintCheckConfig {
+  return isRecord(value);
+}
+
+function isPackageAttwCheckConfig(
+  value: PackageEntry['attw'],
+): value is PackageAttwCheckConfig {
+  return isRecord(value);
+}
+
+function getPackagePublintCheckConfig(
+  entry: PackageEntry,
+): PackagePublintCheckConfig {
+  return isPackagePublintCheckConfig(entry.publint) ? entry.publint : {};
+}
+
+function getPackageAttwCheckConfig(
+  entry: PackageEntry,
+): PackageAttwCheckConfig {
+  return isPackageAttwCheckConfig(entry.attw) ? entry.attw : {};
+}
+
+function applyPackageToolToggle(
+  checks: PackageCheckTool[],
+  tool: PackageCheckTool,
+  value: boolean | object | undefined,
+): PackageCheckTool[] {
+  if (value === undefined) {
+    return checks;
+  }
+
+  if (value === false) {
+    return checks.filter((check) => check !== tool);
+  }
+
+  return checks.includes(tool) ? checks : [...checks, tool];
 }
 
 function collectPackageDependencyEntries(
@@ -423,6 +539,14 @@ function formatAttwProblem(problem: Problem): string {
   }
 }
 
+function getAttwProblemRuleName(problem: Problem): PackageAttwIgnoreRule {
+  return (
+    ATTW_PROBLEM_RULE_NAMES[
+      problem.kind as keyof typeof ATTW_PROBLEM_RULE_NAMES
+    ] ?? problem.kind
+  );
+}
+
 function normalizeEntryChecks(entry: PackageEntry): PackageCheckTool[] {
   const checks = entry.checks ?? DEFAULT_PACKAGE_CHECKS;
   const normalizedChecks: PackageCheckTool[] = [];
@@ -439,7 +563,11 @@ function normalizeEntryChecks(entry: PackageEntry): PackageCheckTool[] {
     }
   }
 
-  return normalizedChecks;
+  return applyPackageToolToggle(
+    applyPackageToolToggle(normalizedChecks, 'publint', entry.publint),
+    'attw',
+    entry.attw,
+  );
 }
 
 function selectEntryChecks(
@@ -768,10 +896,10 @@ export async function readDistPackageJson(options: {
 }
 
 async function runPublintCheck(options: {
+  config: PackagePublintCheckConfig;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
   label: string;
-  strict: boolean;
   tarball: Buffer;
 }): Promise<boolean> {
   const task = options.flow?.start(`publint: ${options.label}`, {
@@ -780,9 +908,11 @@ async function runPublintCheck(options: {
 
   PackageLogger.info(`publint started: ${options.label}`);
   const publintElapsed = createElapsedTimer();
+  const { formatMessage, publint } = await loadPublintPeer();
   const { messages, pkg } = await publint({
+    level: options.config.level,
     pack: { tarball: toArrayBuffer(options.tarball) },
-    strict: options.strict,
+    strict: options.config.strict ?? true,
   });
 
   if (messages.length === 0) {
@@ -821,6 +951,7 @@ async function runPublintCheck(options: {
 }
 
 async function runAttwCheck(options: {
+  config: PackageAttwCheckConfig;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
   label: string;
@@ -835,8 +966,15 @@ async function runAttwCheck(options: {
     `attw started: ${options.label} (profile: ${options.profile})`,
   );
   const attwElapsed = createElapsedTimer();
+  const { checkPackage, createPackageFromTarballData } = await loadAttwPeer();
   const pkg = createPackageFromTarballData(options.tarball);
-  const result = await checkPackage(pkg);
+  const checkOptions: CheckPackageOptions = {
+    entrypoints: options.config.entrypoints,
+    entrypointsLegacy: options.config.entrypointsLegacy,
+    excludeEntrypoints: options.config.excludeEntrypoints,
+    includeEntrypoints: options.config.includeEntrypoints,
+  };
+  const result = await checkPackage(pkg, checkOptions);
 
   if (!result.types) {
     PackageLogger.error(`[${options.label}] [attw] package has no types`);
@@ -846,11 +984,15 @@ async function runAttwCheck(options: {
   }
 
   const ignoredResolutions = ATTW_PROFILE_IGNORED_RESOLUTIONS[options.profile];
+  const ignoredRuleNames = new Set(options.config.ignoreRules);
   const problems = result.problems.filter((problem) => {
     if ('resolutionKind' in problem) {
-      return !ignoredResolutions.includes(problem.resolutionKind);
+      if (ignoredResolutions.includes(problem.resolutionKind)) {
+        return false;
+      }
     }
-    return true;
+
+    return !ignoredRuleNames.has(getAttwProblemRuleName(problem));
   });
 
   if (problems.length === 0) {
@@ -863,9 +1005,22 @@ async function runAttwCheck(options: {
   }
 
   for (const problem of problems) {
-    PackageLogger.error(
-      `[${options.label}] [attw] ${formatAttwProblem(problem)}`,
+    const message = `[${options.label}] [attw] ${formatAttwProblem(problem)}`;
+
+    if (options.config.level === 'warn') {
+      PackageLogger.warn(message);
+    } else {
+      PackageLogger.error(message);
+    }
+  }
+
+  if (options.config.level === 'warn') {
+    PackageLogger.warn(
+      `attw found ${problems.length} problem(s): ${options.label}`,
+      attwElapsed(),
     );
+    task?.pass();
+    return true;
   }
 
   PackageLogger.error(
@@ -995,21 +1150,24 @@ async function runPackageCheckEntry(options: {
     if (options.checks.includes('publint')) {
       passed =
         (await runPublintCheck({
+          config: getPackagePublintCheckConfig(entry),
           flow: options.flow,
           flowDepth: (options.flowDepth ?? 0) + 1,
           label,
-          strict: entry.publint?.strict ?? true,
           tarball: packedDist!.tarball,
         })) && passed;
     }
 
     if (options.checks.includes('attw')) {
+      const attwConfig = getPackageAttwCheckConfig(entry);
+
       passed =
         (await runAttwCheck({
+          config: attwConfig,
           flow: options.flow,
           flowDepth: (options.flowDepth ?? 0) + 1,
           label,
-          profile: options.attwProfile ?? entry.attw?.profile ?? 'esm-only',
+          profile: options.attwProfile ?? attwConfig.profile ?? 'esm-only',
           tarball: packedDist!.tarball,
         })) && passed;
     }

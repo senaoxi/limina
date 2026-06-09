@@ -99,6 +99,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/config/graph-rules',
       },
       {
+        text: 'Condition Domains',
+        link: '/config/condition-domains',
+      },
+      {
         text: 'Proof Allowlist',
         link: '/config/proof-allowlist',
       },
