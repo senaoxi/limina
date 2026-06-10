@@ -1,7 +1,8 @@
 import { unpack } from '@publint/pack';
-import { createRequire } from 'node:module';
+import { NpmPackageJsonLint } from 'npm-package-json-lint';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
+import semver from 'semver';
 import {
   type PackedPackageTarball,
   packOutputTarball,
@@ -22,40 +23,11 @@ import {
   type WorkspacePackage,
 } from './workspace';
 
-interface SemverModule {
-  satisfies: (
-    version: string,
-    range: string,
-    options?: {
-      includePrerelease?: boolean;
-    },
-  ) => boolean;
-  valid: (version: string) => string | null;
-}
-
 interface NpmPackageJsonLintIssue {
   lintId: string;
   lintMessage: string;
   node: string;
   severity: string;
-}
-
-interface NpmPackageJsonLintResult {
-  results: {
-    errorCount: number;
-    issues: NpmPackageJsonLintIssue[];
-  }[];
-}
-
-interface NpmPackageJsonLintModule {
-  NpmPackageJsonLint: new (options: {
-    config: Record<string, unknown>;
-    cwd: string;
-    packageJsonFilePath: string;
-    packageJsonObject: PublishManifest;
-  }) => {
-    lint: () => NpmPackageJsonLintResult;
-  };
 }
 
 interface PublishDependencyEntry {
@@ -181,10 +153,6 @@ export class PackageReleaseConsistencyError extends Error {
   override readonly name = 'PackageReleaseConsistencyError';
 }
 
-const require = createRequire(import.meta.url);
-const semver = require('semver') as SemverModule;
-const { NpmPackageJsonLint } =
-  require('npm-package-json-lint') as NpmPackageJsonLintModule;
 const picomatch = rawPicomatch as unknown as (
   pattern: string | readonly string[],
   options?: {
