@@ -10,6 +10,7 @@
     "types": ["node"]
   },
   "include": [
+    "bin/limina.js",
     "eslint.config.mjs",
     "package.json",
     "packagePlugin.ts",

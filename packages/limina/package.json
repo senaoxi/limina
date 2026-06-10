@@ -55,7 +55,7 @@
   "devDependencies": {
     "@types/picomatch": "catalog:dev",
     "@docs-islands/eslint-config": "workspace:*",
-    "@docs-islands/utils": "link:../../utils/dist",
+    "@docs-islands/utils": "workspace:*",
     "@docs-islands/plugin-license": "link:../plugins/license/dist",
     "@vue/compiler-sfc": "catalog:dev",
     "@types/node": "catalog:dev",

@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "catalog:dev",
-    "@docs-islands/utils": "link:../../../utils/dist",
+    "@docs-islands/utils": "workspace:*",
     "limina": "workspace:*",
     "del-cli": "catalog:dev",
     "typescript": "catalog:dev",

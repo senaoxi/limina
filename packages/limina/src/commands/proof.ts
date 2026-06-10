@@ -945,16 +945,6 @@ function addDtsConfigProblems(options: {
       );
     }
 
-    if (dtsConfig.options.emitDeclarationOnly !== true) {
-      options.problems.push(
-        [
-          'DTS config is not valid for declaration emit:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: final compilerOptions.emitDeclarationOnly must be true.',
-        ].join('\n'),
-      );
-    }
-
     addDtsConfigSemanticProblems({
       config: options.config,
       dtsConfig,
