@@ -1740,6 +1740,45 @@ packages:
     }
   });
 
+  it('accepts strict source modules reachable from exported build artifacts through tsconfig source maps', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appManifest: {
+          exports: {
+            '.': './dist/src/index.js',
+          },
+        },
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      'packages/app/tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+      'packages/app/tsconfig.lib.dts.json': buildConfig({
+        compilerOptions: {
+          outDir: './dist',
+        },
+        include: ['src/**/*.ts'],
+        tsBuildInfoFile: './dist/.tsbuildinfo',
+      }),
+    });
+
+    try {
+      await expect(
+        runSourceCheck({
+          ...fixture.config,
+          strict: true,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('rejects strict source modules unreachable from package entries', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')

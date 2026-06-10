@@ -48,6 +48,7 @@ interface KnipConfig extends KnipWorkspaceConfig {
 }
 
 const requireFromLimina = createRequire(import.meta.url);
+const knipTypescriptConfigFileName = 'tsconfig.build.json';
 const knipJsonIssueFields = [
   'dependencies',
   'devDependencies',
@@ -83,6 +84,7 @@ function runKnipCli(options: {
   configPath: string;
   include: KnipSourceIssueType[];
   rootDir: string;
+  tsConfigFile?: string;
 }): Promise<string> {
   return new Promise((resolve, reject) => {
     const args = [
@@ -92,6 +94,7 @@ function runKnipCli(options: {
       '--config',
       options.configPath,
       ...options.include.flatMap((issueType) => ['--include', issueType]),
+      ...(options.tsConfigFile ? ['--tsConfig', options.tsConfigFile] : []),
       '--reporter',
       'json',
       '--no-exit-code',
@@ -324,6 +327,22 @@ function addOwnerProjectsToKnipConfig(options: {
   }
 }
 
+async function hasTypescriptBuildConfig(
+  workspacePackages: WorkspacePackage[],
+): Promise<boolean> {
+  for (const workspacePackage of workspacePackages) {
+    if (
+      await pathExists(
+        path.join(workspacePackage.directory, knipTypescriptConfigFileName),
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -544,19 +563,18 @@ export function collectUnusedSourceFileIssues(options: {
     }));
 }
 
-export async function collectKnipSourceIssues(options: {
-  config: ResolvedLiminaConfig;
+function createKnipConfigForSourceAnalysis(options: {
   ignoredKeys: Set<string>;
-  includeFiles: boolean;
   ownerProjects: KnipOwnerProject[];
+  rootDir: string;
   workspacePackages: WorkspacePackage[];
-}): Promise<KnipSourceIssues> {
+}): KnipConfig {
   const knipConfig: KnipConfig = {
     $schema: 'https://unpkg.com/knip@6/schema.json',
   };
   const workspaces = createIgnoredDependenciesByWorkspace({
     ignoredKeys: options.ignoredKeys,
-    rootDir: options.config.rootDir,
+    rootDir: options.rootDir,
     workspacePackages: options.workspacePackages,
   });
 
@@ -564,16 +582,38 @@ export async function collectKnipSourceIssues(options: {
     knipConfig.workspaces = workspaces;
   }
 
+  addOwnerProjectsToKnipConfig({
+    knipConfig,
+    ownerProjects: options.ownerProjects,
+    rootDir: options.rootDir,
+  });
+
+  return knipConfig;
+}
+
+export async function collectKnipSourceIssues(options: {
+  config: ResolvedLiminaConfig;
+  ignoredKeys: Set<string>;
+  includeFiles: boolean;
+  ownerProjects: KnipOwnerProject[];
+  workspacePackages: WorkspacePackage[];
+}): Promise<KnipSourceIssues> {
   const include: KnipSourceIssueType[] = options.includeFiles
     ? ['dependencies', 'files']
     : ['dependencies'];
+  const tsConfigFile = (await hasTypescriptBuildConfig(
+    options.workspacePackages,
+  ))
+    ? knipTypescriptConfigFileName
+    : undefined;
   const report = await withTemporaryVirtualEntries(
     options.ownerProjects,
     async (ownerProjects) => {
-      addOwnerProjectsToKnipConfig({
-        knipConfig,
+      const knipConfig = createKnipConfigForSourceAnalysis({
+        ignoredKeys: options.ignoredKeys,
         ownerProjects,
         rootDir: options.config.rootDir,
+        workspacePackages: options.workspacePackages,
       });
 
       return await withTemporaryKnipConfig(knipConfig, async (configPath) =>
@@ -582,6 +622,7 @@ export async function collectKnipSourceIssues(options: {
             configPath,
             include,
             rootDir: options.config.rootDir,
+            ...(tsConfigFile ? { tsConfigFile } : {}),
           }),
         ),
       );
