@@ -94,7 +94,6 @@ const requiredDtsCompilerOptions: [keyof ts.CompilerOptions, unknown][] = [
   ['incremental', true],
   ['noEmit', false],
   ['declaration', true],
-  ['emitDeclarationOnly', true],
 ];
 
 const requiredDtsPathOptions: (keyof ts.CompilerOptions)[] = [
