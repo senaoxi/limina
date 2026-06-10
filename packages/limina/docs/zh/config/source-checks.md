@@ -64,6 +64,35 @@ interface SourceKnipCheckConfig {
 
 Limina 会为受治理的 owner workspace 写入 `entry: []`，从而关闭 Knip 隐式的 `index` / `main` / `cli` 入口猜测。默认可达性仍然包含 package manifest 入口（`exports`、`main`、`module`、`browser`、`bin`、`types`、`typings`）、Knip 插件推断入口、package scripts，以及 Limina 为 application-style owner 生成的 virtual entries。
 
+当一个工作区根部存在 `tsconfig.build.json` 时，Limina 还会让 Knip 用这个文件作为该工作区的 TypeScript 建图入口。它的作用不是额外声明“哪些源码是入口”，而是告诉 Knip：如果 package manifest 暴露的是构建产物，应该怎样从 `dist` 产物路径反推回源码路径。
+
+这是一种通用的包设计方式：`package.json` 面向消费者，只暴露构建后的 `dist` 文件；`tsconfig.build.json` 面向工具，记录构建图，让 Knip 能从产物入口回到源码入口。例如 `@docs-islands/utils` 可以只写：
+
+```json
+{
+  "exports": {
+    "./env": "./dist/src/env.js"
+  }
+}
+```
+
+同时让 `utils/tsconfig.build.json` 引用会产出 `dist` 的构建配置：
+
+```json
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.lib.dts.json"
+    }
+  ]
+}
+```
+
+只要被引用的配置能说明源码目录和输出目录（例如 `rootDir: "."`、`outDir: "./dist"`），Knip 就能把 `utils/dist/src/env.js` 反推成 `utils/src/env.ts`。这样源码模块虽然没有出现在 `exports.source` 里，也仍然会被视为从包入口可达。
+
+反过来，如果 `tsconfig.build.json` 没有通过 `references` 引到真正产出 `dist` 的配置，或者被引用配置没有清楚说明 `outDir` / `rootDir`，Knip 只能看到 `dist` 入口，看不到对应的源码模块。在 `strict: true` 下，这类源码文件可能会被报告为未使用模块。遇到这种情况，优先修正构建引用图，而不是为了让 Knip 通过而给 `package.json` 补一份只给工具看的 `source` 条件。
+
 Knip 的 `project` 文件集合也由 Limina 根据受治理源码模块自动确定；用户不配置 `project`。
 
 ```js
