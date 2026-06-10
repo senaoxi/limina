@@ -5,6 +5,7 @@ import {
   parseCheckerProjectConfigForContext,
 } from './checkers';
 import type { ResolvedLiminaConfig } from './config';
+import type { ImportRecord } from './import-analysis';
 
 import {
   createExtensionPattern,
@@ -51,6 +52,13 @@ export function isDtsProjectConfig(configPath: string): boolean {
 
 export function getTypecheckConfigPath(dtsConfigPath: string): string {
   return getDtsCompanionConfigPath(dtsConfigPath);
+}
+
+export function formatImportRecordLocation(
+  rootDir: string,
+  importRecord: ImportRecord,
+): string {
+  return `${toRelativePath(rootDir, importRecord.filePath)}:${importRecord.line} (kind: ${importRecord.kind})`;
 }
 
 function formatUnknownValue(value: unknown): string {
@@ -339,4 +347,5 @@ export {
   type CreateImportAnalysisContextOptions,
   type ImportAnalysisContext,
   type ImportRecord,
+  type ImportRecordKind,
 } from './import-analysis';

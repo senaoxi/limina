@@ -10,8 +10,19 @@ import {
 } from './checkers';
 import { normalizeAbsolutePath } from './utils/path';
 
+export type ImportRecordKind =
+  | 'static'
+  | 'export'
+  | 'dynamic'
+  | 'import-type'
+  | 'commonjs'
+  | 'require-resolve'
+  | 'import-equals'
+  | 'comment';
+
 export interface ImportRecord {
   filePath: string;
+  kind: ImportRecordKind;
   line: number;
   specifier: string;
 }
@@ -50,7 +61,17 @@ interface ImportAnalysisCaches {
   sourceTextCache: Map<string, string>;
 }
 
-const importOrExportKeywordRE = /\b(?:import|export)\b/u;
+interface CollectedImportRecord extends ImportRecord {
+  pos: number;
+}
+
+const jsDocImportRE = /import\(\s*['"]([^'"]+)['"]\s*\)(?:\.\w+)?/gu;
+const jsDocImportTagRE =
+  /@import\s+(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/gu;
+const jsxImportSourceRE = /@jsxImportSource\s+([^\s*]+)/gu;
+const envPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/gu;
+const tripleSlashReferenceRE =
+  /\/\/\/\s*<reference\s+(?:types|path)\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
 const scriptExtractorRE =
   /<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script>/giu;
 const htmlAttrRE =
@@ -90,12 +111,46 @@ function stringLiteralValue(node: ts.Node | undefined): string | null {
   return node && ts.isStringLiteralLike(node) ? node.text : null;
 }
 
+function isTypeOnlyImportDeclaration(node: ts.ImportDeclaration): boolean {
+  if (node.importClause?.isTypeOnly) {
+    return true;
+  }
+
+  const namedBindings = node.importClause?.namedBindings;
+
+  return (
+    !node.importClause?.name &&
+    namedBindings !== undefined &&
+    ts.isNamedImports(namedBindings) &&
+    namedBindings.elements.length > 0 &&
+    namedBindings.elements.every((element) => element.isTypeOnly)
+  );
+}
+
+function finalizeImportRecords(
+  records: CollectedImportRecord[],
+): ImportRecord[] {
+  return records
+    .map((record, index) => ({ index, record }))
+    .sort(
+      (left, right) =>
+        left.record.pos - right.record.pos || left.index - right.index,
+    )
+    .map(({ record }) => ({
+      filePath: record.filePath,
+      kind: record.kind,
+      line: record.line,
+      specifier: record.specifier,
+    }));
+}
+
 function collectImportsFromSourceTextWithTypeScript(options: {
   filePath: string;
   lineOffset?: number;
   scriptKind: ts.ScriptKind;
+  sourceOffset?: number;
   sourceText: string;
-}): ImportRecord[] {
+}): CollectedImportRecord[] {
   const sourceFile = ts.createSourceFile(
     options.filePath,
     options.sourceText,
@@ -103,25 +158,45 @@ function collectImportsFromSourceTextWithTypeScript(options: {
     true,
     options.scriptKind,
   );
-  const imports: ImportRecord[] = [];
+  const imports: CollectedImportRecord[] = [];
+  const lineStarts = buildLineStarts(options.sourceText);
   const lineOffset = options.lineOffset ?? 0;
-  const addImport = (specifier: string, node: ts.Node): void => {
-    const location = sourceFile.getLineAndCharacterOfPosition(
-      node.getStart(sourceFile),
+  const sourceOffset = options.sourceOffset ?? 0;
+  const addImport = (
+    specifier: string,
+    node: ts.Node,
+    kind: ImportRecordKind,
+  ): void => {
+    imports.push(
+      createImportRecord({
+        filePath: options.filePath,
+        kind,
+        lineOffset,
+        lineStarts,
+        pos: node.getStart(sourceFile),
+        sourceOffset,
+        specifier,
+      }),
     );
-
-    imports.push({
-      filePath: options.filePath,
-      line: lineOffset + location.line + 1,
-      specifier,
-    });
   };
   const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      const specifier = stringLiteralValue(node.moduleSpecifier);
+    if (ts.isImportDeclaration(node)) {
+      const moduleSpecifier = node.moduleSpecifier;
+      const specifier = stringLiteralValue(moduleSpecifier);
 
       if (specifier) {
-        addImport(specifier, node);
+        addImport(
+          specifier,
+          moduleSpecifier,
+          isTypeOnlyImportDeclaration(node) ? 'import-type' : 'static',
+        );
+      }
+    } else if (ts.isExportDeclaration(node)) {
+      const moduleSpecifier = node.moduleSpecifier;
+      const specifier = stringLiteralValue(moduleSpecifier);
+
+      if (specifier && moduleSpecifier) {
+        addImport(specifier, moduleSpecifier, 'export');
       }
     } else if (ts.isImportTypeNode(node)) {
       const specifier = ts.isLiteralTypeNode(node.argument)
@@ -129,16 +204,50 @@ function collectImportsFromSourceTextWithTypeScript(options: {
         : null;
 
       if (specifier) {
-        addImport(specifier, node);
+        addImport(specifier, node.argument, 'import-type');
       }
     } else if (
       ts.isCallExpression(node) &&
       node.expression.kind === ts.SyntaxKind.ImportKeyword
     ) {
-      const specifier = stringLiteralValue(node.arguments[0]);
+      const argument = node.arguments[0];
+      const specifier = stringLiteralValue(argument);
+
+      if (specifier && argument) {
+        addImport(specifier, argument, 'dynamic');
+      }
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require'
+    ) {
+      const argument = node.arguments[0];
+      const specifier = stringLiteralValue(argument);
+
+      if (specifier && argument) {
+        addImport(specifier, argument, 'commonjs');
+      }
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isIdentifier(node.expression.expression) &&
+      node.expression.expression.text === 'require' &&
+      node.expression.name.text === 'resolve'
+    ) {
+      const argument = node.arguments[0];
+      const specifier = stringLiteralValue(argument);
+
+      if (specifier && argument) {
+        addImport(specifier, argument, 'require-resolve');
+      }
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference)
+    ) {
+      const specifier = stringLiteralValue(node.moduleReference.expression);
 
       if (specifier) {
-        addImport(specifier, node);
+        addImport(specifier, node.moduleReference.expression, 'import-equals');
       }
     }
 
@@ -181,14 +290,18 @@ function getLine(lineStarts: number[], pos: number): number {
 
 function createImportRecord(options: {
   filePath: string;
+  kind: ImportRecordKind;
   lineOffset: number;
   lineStarts: number[];
   pos: number;
+  sourceOffset: number;
   specifier: string;
-}): ImportRecord {
+}): CollectedImportRecord {
   return {
     filePath: options.filePath,
+    kind: options.kind,
     line: options.lineOffset + getLine(options.lineStarts, options.pos),
+    pos: options.sourceOffset + options.pos,
     specifier: options.specifier,
   };
 }
@@ -207,7 +320,8 @@ function getLiteralSpecifierFromSpan(
   if (
     text.length >= 2 &&
     quote === lastQuote &&
-    (quote === 34 || quote === 39)
+    (quote === 34 || quote === 39 || quote === 96) &&
+    !(quote === 96 && text.includes('${'))
   ) {
     return text.slice(1, -1);
   }
@@ -215,12 +329,185 @@ function getLiteralSpecifierFromSpan(
   return null;
 }
 
+function isTriviaSyntaxKind(kind: ts.SyntaxKind): boolean {
+  return (
+    kind === ts.SyntaxKind.WhitespaceTrivia ||
+    kind === ts.SyntaxKind.NewLineTrivia ||
+    kind === ts.SyntaxKind.SingleLineCommentTrivia ||
+    kind === ts.SyntaxKind.MultiLineCommentTrivia ||
+    kind === ts.SyntaxKind.ShebangTrivia ||
+    kind === ts.SyntaxKind.ConflictMarkerTrivia
+  );
+}
+
+function getFirstNonTriviaStart(sourceText: string): number {
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    false,
+    ts.LanguageVariant.Standard,
+    sourceText,
+  );
+
+  for (
+    let token = scanner.scan();
+    token !== ts.SyntaxKind.EndOfFileToken;
+    token = scanner.scan()
+  ) {
+    if (!isTriviaSyntaxKind(token)) {
+      return scanner.getTokenPos();
+    }
+  }
+
+  return sourceText.length;
+}
+
+function addCommentImportRecords(options: {
+  commentStart: number;
+  filePath: string;
+  lineOffset: number;
+  lineStarts: number[];
+  records: CollectedImportRecord[];
+  regex: RegExp;
+  resolveSpecifier?: (match: RegExpMatchArray) => string | null;
+  sourceOffset: number;
+  text: string;
+}): void {
+  options.regex.lastIndex = 0;
+
+  for (const match of options.text.matchAll(options.regex)) {
+    const specifier = options.resolveSpecifier
+      ? options.resolveSpecifier(match)
+      : (match[1] ?? null);
+
+    if (!specifier) {
+      continue;
+    }
+
+    const specifierOffset = match[0].indexOf(specifier);
+    const matchStart = match.index ?? 0;
+
+    options.records.push(
+      createImportRecord({
+        filePath: options.filePath,
+        kind: 'comment',
+        lineOffset: options.lineOffset,
+        lineStarts: options.lineStarts,
+        pos:
+          options.commentStart +
+          matchStart +
+          (specifierOffset === -1 ? 0 : specifierOffset),
+        sourceOffset: options.sourceOffset,
+        specifier,
+      }),
+    );
+  }
+}
+
+function resolveEnvironmentPragma(
+  tool: string,
+  environment: string,
+): string | null {
+  if (environment === 'node') {
+    return null;
+  }
+
+  if (tool === 'jest' && environment === 'jsdom') {
+    return 'jest-environment-jsdom';
+  }
+
+  if (tool === 'vitest' && environment === 'edge-runtime') {
+    return '@edge-runtime/vm';
+  }
+
+  return environment;
+}
+
+function collectCommentImportRecords(options: {
+  filePath: string;
+  lineOffset?: number;
+  sourceOffset?: number;
+  sourceText: string;
+}): CollectedImportRecord[] {
+  const records: CollectedImportRecord[] = [];
+  const lineStarts = buildLineStarts(options.sourceText);
+  const lineOffset = options.lineOffset ?? 0;
+  const sourceOffset = options.sourceOffset ?? 0;
+  const firstNonTriviaStart = getFirstNonTriviaStart(options.sourceText);
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    false,
+    ts.LanguageVariant.Standard,
+    options.sourceText,
+  );
+
+  for (
+    let token = scanner.scan();
+    token !== ts.SyntaxKind.EndOfFileToken;
+    token = scanner.scan()
+  ) {
+    if (
+      token !== ts.SyntaxKind.SingleLineCommentTrivia &&
+      token !== ts.SyntaxKind.MultiLineCommentTrivia
+    ) {
+      continue;
+    }
+
+    const commentStart = scanner.getTokenPos();
+    const commentEnd = scanner.getTextPos();
+    const text = scanner.getTokenText();
+    const commonOptions = {
+      commentStart,
+      filePath: options.filePath,
+      lineOffset,
+      lineStarts,
+      records,
+      sourceOffset,
+      text,
+    };
+
+    addCommentImportRecords({
+      ...commonOptions,
+      regex: jsDocImportRE,
+    });
+    addCommentImportRecords({
+      ...commonOptions,
+      regex: jsDocImportTagRE,
+    });
+    addCommentImportRecords({
+      ...commonOptions,
+      regex: jsxImportSourceRE,
+    });
+    addCommentImportRecords({
+      ...commonOptions,
+      regex: tripleSlashReferenceRE,
+    });
+
+    if (commentEnd <= firstNonTriviaStart) {
+      addCommentImportRecords({
+        ...commonOptions,
+        regex: envPragmaRE,
+        resolveSpecifier: (match) => {
+          const tool = match[1];
+          const environment = match[2];
+
+          return tool && environment
+            ? resolveEnvironmentPragma(tool, environment)
+            : null;
+        },
+      });
+    }
+  }
+
+  return records;
+}
+
 function collectImportTypeRecords(options: {
   filePath: string;
   lineOffset: number;
   lineStarts: number[];
   node: unknown;
-  records: ImportRecord[];
+  records: CollectedImportRecord[];
+  sourceOffset: number;
 }): void {
   if (!options.node || typeof options.node !== 'object') {
     return;
@@ -248,9 +535,11 @@ function collectImportTypeRecords(options: {
       options.records.push(
         createImportRecord({
           filePath: options.filePath,
+          kind: 'import-type',
           lineOffset: options.lineOffset,
           lineStarts: options.lineStarts,
           pos: source.start,
+          sourceOffset: options.sourceOffset,
           specifier: source.value,
         }),
       );
@@ -266,6 +555,176 @@ function collectImportTypeRecords(options: {
   }
 }
 
+function getRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function isOxcIdentifier(node: unknown, name: string): boolean {
+  const record = getRecord(node);
+
+  return record?.type === 'Identifier' && record.name === name;
+}
+
+function getOxcLiteralSpecifier(
+  node: unknown,
+): { pos: number; specifier: string } | null {
+  const record = getRecord(node);
+
+  if (!record) {
+    return null;
+  }
+
+  if (
+    (record.type === 'Literal' || record.type === 'StringLiteral') &&
+    typeof record.value === 'string' &&
+    typeof record.start === 'number'
+  ) {
+    return {
+      pos: record.start,
+      specifier: record.value,
+    };
+  }
+
+  if (record.type !== 'TemplateLiteral') {
+    return null;
+  }
+
+  const expressions = Array.isArray(record.expressions)
+    ? record.expressions
+    : [];
+  const quasis = Array.isArray(record.quasis) ? record.quasis : [];
+  const quasi = getRecord(quasis[0]);
+  const quasiValue = getRecord(quasi?.value);
+  const specifier =
+    typeof quasiValue?.cooked === 'string'
+      ? quasiValue.cooked
+      : typeof quasiValue?.raw === 'string'
+        ? quasiValue.raw
+        : null;
+
+  if (
+    expressions.length === 0 &&
+    quasis.length === 1 &&
+    specifier !== null &&
+    typeof record.start === 'number'
+  ) {
+    return {
+      pos: record.start,
+      specifier,
+    };
+  }
+
+  return null;
+}
+
+function getOxcCallFirstArgument(node: Record<string, unknown>): unknown {
+  return Array.isArray(node.arguments) ? node.arguments[0] : undefined;
+}
+
+function getOxcRequireResolveCallee(
+  callee: unknown,
+): Record<string, unknown> | null {
+  const record = getRecord(callee);
+
+  if (record?.type !== 'MemberExpression' || record.computed === true) {
+    return null;
+  }
+
+  return isOxcIdentifier(record.object, 'require') &&
+    isOxcIdentifier(record.property, 'resolve')
+    ? record
+    : null;
+}
+
+function collectOxcCommonJsRecords(options: {
+  filePath: string;
+  lineOffset: number;
+  lineStarts: number[];
+  node: unknown;
+  records: CollectedImportRecord[];
+  sourceOffset: number;
+}): void {
+  if (!options.node || typeof options.node !== 'object') {
+    return;
+  }
+
+  if (Array.isArray(options.node)) {
+    for (const item of options.node) {
+      collectOxcCommonJsRecords({ ...options, node: item });
+    }
+    return;
+  }
+
+  const node = options.node as Record<string, unknown>;
+
+  if (node.type === 'CallExpression') {
+    const argument = getOxcLiteralSpecifier(getOxcCallFirstArgument(node));
+    const requireResolveCallee = getOxcRequireResolveCallee(node.callee);
+    const kind: ImportRecordKind | null = requireResolveCallee
+      ? 'require-resolve'
+      : isOxcIdentifier(node.callee, 'require')
+        ? 'commonjs'
+        : null;
+
+    if (argument && kind) {
+      options.records.push(
+        createImportRecord({
+          filePath: options.filePath,
+          kind,
+          lineOffset: options.lineOffset,
+          lineStarts: options.lineStarts,
+          pos: argument.pos,
+          sourceOffset: options.sourceOffset,
+          specifier: argument.specifier,
+        }),
+      );
+    }
+  } else if (node.type === 'TSImportEqualsDeclaration') {
+    const moduleReference = getRecord(node.moduleReference);
+    const argument =
+      moduleReference?.type === 'TSExternalModuleReference'
+        ? getOxcLiteralSpecifier(moduleReference.expression)
+        : null;
+
+    if (argument) {
+      options.records.push(
+        createImportRecord({
+          filePath: options.filePath,
+          kind: 'import-equals',
+          lineOffset: options.lineOffset,
+          lineStarts: options.lineStarts,
+          pos: argument.pos,
+          sourceOffset: options.sourceOffset,
+          specifier: argument.specifier,
+        }),
+      );
+    }
+  }
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+
+    collectOxcCommonJsRecords({ ...options, node: value });
+  }
+}
+
+function getOxcStaticImportKind(staticImport: {
+  entries?: unknown;
+}): ImportRecordKind {
+  const entries = Array.isArray(staticImport.entries)
+    ? staticImport.entries
+    : [];
+
+  return entries.length > 0 &&
+    entries.every((entry) => getRecord(entry)?.isType === true)
+    ? 'import-type'
+    : 'static';
+}
+
 function getOxcParseFileName(filePath: string): string {
   const extension = path.extname(filePath);
 
@@ -275,12 +734,9 @@ function getOxcParseFileName(filePath: string): string {
 function collectImportsFromSourceTextWithOxc(options: {
   filePath: string;
   lineOffset?: number;
+  sourceOffset?: number;
   sourceText: string;
-}): ImportRecord[] | null {
-  if (!importOrExportKeywordRE.test(options.sourceText)) {
-    return [];
-  }
-
+}): CollectedImportRecord[] | null {
   let parseResult: ParseResult;
 
   try {
@@ -297,17 +753,20 @@ function collectImportsFromSourceTextWithOxc(options: {
     return null;
   }
 
-  const imports: ImportRecord[] = [];
+  const imports: CollectedImportRecord[] = [];
   const lineStarts = buildLineStarts(options.sourceText);
   const lineOffset = options.lineOffset ?? 0;
+  const sourceOffset = options.sourceOffset ?? 0;
 
   for (const staticImport of parseResult.module.staticImports) {
     imports.push(
       createImportRecord({
         filePath: options.filePath,
+        kind: getOxcStaticImportKind(staticImport),
         lineOffset,
         lineStarts,
         pos: staticImport.moduleRequest.start,
+        sourceOffset,
         specifier: staticImport.moduleRequest.value,
       }),
     );
@@ -322,9 +781,11 @@ function collectImportsFromSourceTextWithOxc(options: {
       imports.push(
         createImportRecord({
           filePath: options.filePath,
+          kind: 'export',
           lineOffset,
           lineStarts,
           pos: entry.moduleRequest.start,
+          sourceOffset,
           specifier: entry.moduleRequest.value,
         }),
       );
@@ -344,9 +805,11 @@ function collectImportsFromSourceTextWithOxc(options: {
     imports.push(
       createImportRecord({
         filePath: options.filePath,
+        kind: 'dynamic',
         lineOffset,
         lineStarts,
         pos: dynamicImport.moduleRequest.start,
+        sourceOffset,
         specifier,
       }),
     );
@@ -358,6 +821,16 @@ function collectImportsFromSourceTextWithOxc(options: {
     lineStarts,
     node: parseResult.program,
     records: imports,
+    sourceOffset,
+  });
+
+  collectOxcCommonJsRecords({
+    filePath: options.filePath,
+    lineOffset,
+    lineStarts,
+    node: parseResult.program,
+    records: imports,
+    sourceOffset,
   });
 
   return imports;
@@ -367,15 +840,15 @@ function collectImportsFromSourceText(options: {
   filePath: string;
   lineOffset?: number;
   scriptKind: ts.ScriptKind;
+  sourceOffset?: number;
   sourceText: string;
 }): ImportRecord[] {
   const oxcImports = collectImportsFromSourceTextWithOxc(options);
+  const syntaxImports =
+    oxcImports ?? collectImportsFromSourceTextWithTypeScript(options);
+  const commentImports = collectCommentImportRecords(options);
 
-  if (oxcImports) {
-    return oxcImports;
-  }
-
-  return collectImportsFromSourceTextWithTypeScript(options);
+  return finalizeImportRecords([...syntaxImports, ...commentImports]);
 }
 
 function getHtmlAttributeValue(attrs: string, name: string): string | null {
@@ -425,6 +898,7 @@ function collectVueImportsFromSourceText(options: {
         filePath: options.filePath,
         lineOffset,
         scriptKind: getVueScriptKind(attrs),
+        sourceOffset: contentStart,
         sourceText: content,
       }),
     );

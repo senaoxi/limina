@@ -69,6 +69,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: '架构一致性',
         link: '/zh/architecture-conformance',
       },
+      {
+        text: '模块解析',
+        link: '/zh/module-resolution',
+      },
     ],
   },
   {

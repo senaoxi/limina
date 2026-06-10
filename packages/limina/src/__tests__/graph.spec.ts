@@ -1100,6 +1100,40 @@ packages:
     }
   });
 
+  it('requires project references for CommonJS workspace imports', async () => {
+    const errorSpy = vi
+      .spyOn(GraphLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource:
+          "const internal = require('@example/internal');\nexport const value = internal.internalValue;\n",
+      }),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'Missing project reference for workspace import:',
+      );
+      expect(errors).toContain(
+        '    - packages/app/src/index.ts:1 (kind: commonjs) imports @example/internal',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
   it('accepts referenced source package exports selected by workspace imports', async () => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({

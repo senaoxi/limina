@@ -8,6 +8,7 @@ import {
   collectImportsFromFile,
   createImportAnalysisContext,
   findPackageForFile,
+  formatImportRecordLocation,
   parseProject,
   type ProjectInfo,
 } from '../graph-context';
@@ -367,6 +368,8 @@ async function collectWorkspaceExportArtifactDependencies(options: {
             [
               'Nx build dependency target has no build script:',
               `  dependency: ${dependencyLabel}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
+              `  imported specifier: ${importRecord.specifier}`,
               `  package: ${toRelativePath(options.config.rootDir, targetPackage.directory)}`,
               '  reason: workspace:* imports that resolve to build artifacts require the target package to define scripts.build.',
             ].join('\n'),
