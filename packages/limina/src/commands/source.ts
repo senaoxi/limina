@@ -14,6 +14,7 @@ import type { LiminaFlowReporter } from '../flow';
 import {
   collectImportsFromFile,
   createImportAnalysisContext,
+  formatImportRecordLocation,
   getTypecheckConfigPath,
   type ImportRecord,
   isDtsProjectConfig,
@@ -763,7 +764,7 @@ function addRelativeImportOwnerProblem(options: {
     [
       'Relative import escapes package owner scope:',
       `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
       ...(options.targetOwner
@@ -789,7 +790,7 @@ function addPackageImportAuthorizationProblem(options: {
     [
       'Unauthorized bare package import:',
       `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  package: ${options.packageName}`,
       ...(options.dependencySpecifier
@@ -814,7 +815,7 @@ function addResolvedPackageWithoutNameProblem(options: {
     [
       'Resolved package import has no package name:',
       `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  resolved package.json: ${toRelativePath(options.config.rootDir, options.packageInfo.packageJsonPath)}`,
       '  reason: source imports can only be authorized against a named package.json dependency.',
@@ -834,7 +835,7 @@ function addPackageImportOtherOwnerProblem(options: {
     [
       'Package import resolves to another package owner:',
       `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  target owner: ${toRelativePath(options.config.rootDir, options.targetOwner.packageJsonPath)}`,
       ...(options.workspacePackage
@@ -861,7 +862,7 @@ function addStrictWorkspaceDependencyProblem(options: {
     [
       'Workspace bare package import must use workspace: dependency:',
       `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  package: ${options.packageName}`,
       ...declarations.map(
@@ -892,7 +893,7 @@ function addPackageImportProblem(options: {
       [
         'Unauthorized package import specifier:',
         `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-        `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+        `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
         `  imported specifier: ${options.importRecord.specifier}`,
         '  reason: #... package imports must match the nearest package.json imports field.',
       ].join('\n'),
@@ -905,7 +906,7 @@ function addPackageImportProblem(options: {
       [
         'Unresolved package import specifier:',
         `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-        `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+        `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
         `  imported specifier: ${options.importRecord.specifier}`,
         '  reason: matched #... package imports must resolve to a file within the same package owner scope.',
       ].join('\n'),
@@ -970,7 +971,7 @@ function addPackageImportProblem(options: {
     [
       'Package import resolves outside package ownership:',
       `  package owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
       '  reason: #... package imports must resolve to the current package owner or to a named artifact package dependency.',

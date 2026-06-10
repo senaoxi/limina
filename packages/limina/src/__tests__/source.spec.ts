@@ -348,6 +348,30 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
+  it('reports comment imports with kind in package authority diagnostics', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPackageFixture({
+        source:
+          '/** @type {import("zod").ZodType} */\nexport const schema = 1;\n',
+      }),
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain('Unauthorized bare package import:');
+      expect(errors).toContain('file: app/src/index.ts:1 (kind: comment)');
+      expect(errors).toContain('imported specifier: zod');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
   it('allows resolved artifact bare imports declared in any dependency section', async () => {
     const fixture = await createFixture({
       ...createPackageFixture({

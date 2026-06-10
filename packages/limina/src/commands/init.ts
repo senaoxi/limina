@@ -12,6 +12,7 @@ import type { LiminaFlowReporter } from '../flow';
 import {
   collectImportsFromFile,
   createImportAnalysisContext,
+  formatImportRecordLocation,
   isRelativeSpecifier,
 } from '../graph-context';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
@@ -845,7 +846,7 @@ function inferProjectReferences(options: {
             [
               'Workspace dependency was not discovered by pnpm:',
               `  importing project: ${formatConfigPath(options.config.rootDir, project.dtsConfigPath)}`,
-              `  file: ${formatConfigPath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
               `  imported specifier: ${importRecord.specifier}`,
               `  package: ${packageName}`,
               '  reason: package.json declares this dependency with the workspace: protocol, but limina init could not find a matching workspace package.',
@@ -864,7 +865,7 @@ function inferProjectReferences(options: {
               [
                 'Unable to resolve workspace import with TypeScript:',
                 `  importing project: ${formatConfigPath(options.config.rootDir, project.dtsConfigPath)}`,
-                `  file: ${formatConfigPath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+                `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
                 `  imported specifier: ${importRecord.specifier}`,
                 `  package: ${targetPackage.name}`,
                 '  reason: workspace:* imports must resolve with the project TypeScript compilerOptions before limina init can generate project references.',
@@ -904,7 +905,7 @@ function inferProjectReferences(options: {
               [
                 'Unable to map workspace import to a generated declaration leaf:',
                 `  importing project: ${formatConfigPath(options.config.rootDir, project.dtsConfigPath)}`,
-                `  file: ${formatConfigPath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+                `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
                 `  imported specifier: ${importRecord.specifier}`,
                 `  resolved file: ${formatConfigPath(options.config.rootDir, resolvedFilePath)}`,
                 '  reason: TypeScript resolved this workspace import, but the resolved module is not covered by any ordinary tsconfig*.json leaf.',

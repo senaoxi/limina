@@ -69,6 +69,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: 'Architecture Conformance',
         link: '/architecture-conformance',
       },
+      {
+        text: 'Module Resolution',
+        link: '/module-resolution',
+      },
     ],
   },
   {

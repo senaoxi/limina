@@ -51,15 +51,106 @@ describe('import analysis', () => {
 
       expect(
         collectImportsFromFile(filePath, rootDir).map((item) => ({
+          kind: item.kind,
           line: item.line,
           specifier: item.specifier,
         })),
       ).toEqual([
-        { line: 1, specifier: './value' },
-        { line: 2, specifier: './types' },
-        { line: 3, specifier: './other' },
-        { line: 4, specifier: './lazy' },
-        { line: 5, specifier: './import-type' },
+        { kind: 'static', line: 1, specifier: './value' },
+        { kind: 'import-type', line: 2, specifier: './types' },
+        { kind: 'export', line: 3, specifier: './other' },
+        { kind: 'dynamic', line: 4, specifier: './lazy' },
+        { kind: 'import-type', line: 5, specifier: './import-type' },
+      ]);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('collects CommonJS, require.resolve, import-equals, and literal template dependencies', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const filePath = await writeText(
+        rootDir,
+        'src/commonjs.ts',
+        [
+          "import Equal = require('./equal');",
+          "const cjs = require('./cjs');",
+          'const cjsTemplate = require(`./cjs-template`);',
+          "const resolved = require.resolve('./resolved');",
+          'const resolvedTemplate = require.resolve(`./resolved-template`);',
+          'void import(`./lazy-template`);',
+          'void import(`./${name}`);',
+          'const computed = require(name);',
+          "const concatenated = require('./' + name);",
+          "const computedResolve = require['resolve']('./computed');",
+          'void [Equal, cjs, cjsTemplate, resolved, resolvedTemplate];',
+          'void [computed, concatenated, computedResolve];',
+        ].join('\n'),
+      );
+
+      expect(
+        collectImportsFromFile(filePath, rootDir).map((item) => ({
+          kind: item.kind,
+          line: item.line,
+          specifier: item.specifier,
+        })),
+      ).toEqual([
+        { kind: 'import-equals', line: 1, specifier: './equal' },
+        { kind: 'commonjs', line: 2, specifier: './cjs' },
+        { kind: 'commonjs', line: 3, specifier: './cjs-template' },
+        { kind: 'require-resolve', line: 4, specifier: './resolved' },
+        {
+          kind: 'require-resolve',
+          line: 5,
+          specifier: './resolved-template',
+        },
+        { kind: 'dynamic', line: 6, specifier: './lazy-template' },
+      ]);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('collects dependency pragmas from comments', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const filePath = await writeText(
+        rootDir,
+        'src/comments.ts',
+        [
+          '/**',
+          ' * @type {import("./jsdoc").Thing}',
+          ' * @import { Tagged } from "./tagged"',
+          ' * @jsxImportSource @emotion/react',
+          ' */',
+          '// @jest-environment jsdom',
+          '// @vitest-environment edge-runtime',
+          '// @jest-environment node',
+          '/// <reference types="vitest" />',
+          '/// <reference path="./ambient.d.ts" />',
+          'const value = 1;',
+          '// @vitest-environment happy-dom',
+          'export { value };',
+        ].join('\n'),
+      );
+
+      expect(
+        collectImportsFromFile(filePath, rootDir).map((item) => ({
+          kind: item.kind,
+          line: item.line,
+          specifier: item.specifier,
+        })),
+      ).toEqual([
+        { kind: 'comment', line: 2, specifier: './jsdoc' },
+        { kind: 'comment', line: 3, specifier: './tagged' },
+        { kind: 'comment', line: 4, specifier: '@emotion/react' },
+        { kind: 'comment', line: 6, specifier: 'jest-environment-jsdom' },
+        { kind: 'comment', line: 7, specifier: '@edge-runtime/vm' },
+        { kind: 'comment', line: 9, specifier: 'vitest' },
+        { kind: 'comment', line: 10, specifier: './ambient.d.ts' },
       ]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -77,6 +168,10 @@ describe('import analysis', () => {
           '<template><div /></template>',
           '<script setup lang="ts" generic="T extends Record<string, value>">',
           "import value from './value';",
+          "import Equal = require('./equal');",
+          "const cjs = require('./cjs');",
+          "const resolved = require.resolve('./resolved');",
+          '// @jsxImportSource @emotion/react',
           "type Imported = import('./types').Imported;",
           '</script>',
           '<script src="./external.ts"></script>',
@@ -89,14 +184,19 @@ describe('import analysis', () => {
 
       expect(
         collectImportsFromFile(filePath, rootDir).map((item) => ({
+          kind: item.kind,
           line: item.line,
           specifier: item.specifier,
         })),
       ).toEqual([
-        { line: 3, specifier: './value' },
-        { line: 4, specifier: './types' },
-        { line: 8, specifier: './Widget' },
-        { line: 9, specifier: './lazy' },
+        { kind: 'static', line: 3, specifier: './value' },
+        { kind: 'import-equals', line: 4, specifier: './equal' },
+        { kind: 'commonjs', line: 5, specifier: './cjs' },
+        { kind: 'require-resolve', line: 6, specifier: './resolved' },
+        { kind: 'comment', line: 7, specifier: '@emotion/react' },
+        { kind: 'import-type', line: 8, specifier: './types' },
+        { kind: 'export', line: 12, specifier: './Widget' },
+        { kind: 'dynamic', line: 13, specifier: './lazy' },
       ]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -110,12 +210,27 @@ describe('import analysis', () => {
       const filePath = await writeText(
         rootDir,
         'src/broken.ts',
-        "import value from './value';\nconst = ;\nexport const kept = value;\n",
+        [
+          "import value from './value';",
+          "const cjs = require('./cjs');",
+          "const resolved = require.resolve('./resolved');",
+          "import Equal = require('./equal');",
+          'const = ;',
+          'export const kept = value;',
+        ].join('\n'),
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => item.specifier),
-      ).toEqual(['./value']);
+        collectImportsFromFile(filePath, rootDir).map((item) => ({
+          kind: item.kind,
+          specifier: item.specifier,
+        })),
+      ).toEqual([
+        { kind: 'static', specifier: './value' },
+        { kind: 'commonjs', specifier: './cjs' },
+        { kind: 'require-resolve', specifier: './resolved' },
+        { kind: 'import-equals', specifier: './equal' },
+      ]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

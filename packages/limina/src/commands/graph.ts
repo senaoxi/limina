@@ -21,6 +21,7 @@ import {
   findPackageForFile,
   findTargetProject,
   formatArtifactDependencyPolicy,
+  formatImportRecordLocation,
   formatProjectLabels,
   getTypecheckConfigPath,
   type ImportRecord,
@@ -782,7 +783,7 @@ function addDeniedDepImportProblem(options: {
       'Denied graph access:',
       `  rules: ${formatProjectLabels(options.project.labels)}`,
       `  importing project: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  denied dependency: ${options.rule.name}`,
       `  reason: ${options.rule.reason}`,
@@ -803,7 +804,7 @@ function addDeniedRefImportProblem(options: {
       'Denied graph access:',
       `  rules: ${formatProjectLabels(options.project.labels)}`,
       `  importing project: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
-      `  file: ${toRelativePath(options.config.rootDir, options.importRecord.filePath)}:${options.importRecord.line}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  target project: ${toRelativePath(options.config.rootDir, options.targetProjectPath)}`,
       `  denied ref: ${toRelativePath(options.config.rootDir, options.rule.path)}`,
@@ -953,7 +954,7 @@ function formatImportRecordLines(
     .slice(0, 5)
     .map(
       (importRecord) =>
-        `    - ${toRelativePath(config.rootDir, importRecord.filePath)}:${importRecord.line} imports ${importRecord.specifier}`,
+        `    - ${formatImportRecordLocation(config.rootDir, importRecord)} imports ${importRecord.specifier}`,
     )
     .concat(
       importRecords.length > 5
@@ -1116,7 +1117,7 @@ function collectExpectedReferences(options: {
             [
               'Unresolved workspace import:',
               `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
               `  imported specifier: ${importRecord.specifier}`,
               `  matched workspace package: ${targetPackage.name}`,
               `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
@@ -1138,7 +1139,7 @@ function collectExpectedReferences(options: {
             [
               'Unresolved workspace import in TypeScript:',
               `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
               `  imported specifier: ${importRecord.specifier}`,
               `  matched workspace package: ${targetPackage.name}`,
               `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
@@ -1211,7 +1212,7 @@ function collectExpectedReferences(options: {
                     `  project reference present: ${hasProjectReference ? 'yes' : 'no'}`,
                   ]
                 : []),
-              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
               `  imported specifier: ${importRecord.specifier}`,
               `  resolved file: ${toRelativePath(options.config.rootDir, resolvedFilePath)}`,
               '  reason: workspace:* dependencies are source dependencies, but TypeScript resolved this package export to a file not owned by the source graph. tsc -b does not rewrite package exports through project references.',
@@ -1240,7 +1241,7 @@ function collectExpectedReferences(options: {
                 [
                   'Workspace source import resolved outside the workspace graph:',
                   `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
-                  `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+                  `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
                   `  imported specifier: ${importRecord.specifier}`,
                   `  resolved file: ${toRelativePath(options.config.rootDir, graphResolvedFilePath)}`,
                   `  reason: workspace:* dependencies are source dependency edges and must resolve to files owned by the source graph; ${formatArtifactDependencyPolicy(targetPackageForGraph)}`,
@@ -1254,7 +1255,7 @@ function collectExpectedReferences(options: {
             [
               'Unable to map workspace import to a graph project:',
               `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
               `  imported specifier: ${importRecord.specifier}`,
               `  resolved file: ${toRelativePath(options.config.rootDir, graphResolvedFilePath)}`,
               `  current references: ${formatReferences(options.config.rootDir, project.references)}`,
@@ -1297,7 +1298,7 @@ function collectExpectedReferences(options: {
             [
               'Expected graph target is not reachable from any checker entry:',
               `  importing project: ${toRelativePath(options.config.rootDir, project.configPath)}`,
-              `  file: ${toRelativePath(options.config.rootDir, importRecord.filePath)}:${importRecord.line}`,
+              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
               `  imported specifier: ${importRecord.specifier}`,
               `  expected graph project: ${toRelativePath(options.config.rootDir, targetProjectPath)}`,
             ].join('\n'),
