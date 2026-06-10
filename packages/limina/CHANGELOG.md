@@ -8,6 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-06-10
+
+### Features
+
+- feat(limina): expand configurable validation checks ([4fc5755](https://github.com/XiSenao/docs-islands/commit/4fc5755))
+- feat(limina): nearest barename tsconfig owner constraint ([169a441](https://github.com/XiSenao/docs-islands/commit/169a441))
+- feat(limina): workspace exports pre-parsing governance ([f931f9a](https://github.com/XiSenao/docs-islands/commit/f931f9a))
+
+### Documentation
+
+- docs: reorganize document layout and optimize document description ([406d321](https://github.com/XiSenao/docs-islands/commit/406d321))
+- docs: layout standardization ([6b50be2](https://github.com/XiSenao/docs-islands/commit/6b50be2))
+
+### Maintenance
+
+- chore(limina): respect knip for tsconfig.build.json ([86e0531](https://github.com/XiSenao/docs-islands/commit/86e0531))
+- chore(deps): bump deps ([fe4a98a](https://github.com/XiSenao/docs-islands/commit/fe4a98a))
+- chore(utils): build for tsc ([fb77b83](https://github.com/XiSenao/docs-islands/commit/fb77b83))
+- chore(limina): enhance static module dependency analysis capabilities ([52f5a22](https://github.com/XiSenao/docs-islands/commit/52f5a22))
+- chore(limina): oxc resolver explicit tsconfig ([0463eff](https://github.com/XiSenao/docs-islands/commit/0463eff))
+- chore(limina): nx checks workspace exports artifact edge ([e235080](https://github.com/XiSenao/docs-islands/commit/e235080))
+- chore(limina): workspace package must provide a name field ([0c453ca](https://github.com/XiSenao/docs-islands/commit/0c453ca))
+- chore(limina): redefine the default scope of source code ([8fbdfd9](https://github.com/XiSenao/docs-islands/commit/8fbdfd9))
+- chore: remove javaScriptConfigFilePattern fallback ([6a698a6](https://github.com/XiSenao/docs-islands/commit/6a698a6))
+- chore(limina): remove paths generation and relax workspace package exports conventions ([58db465](https://github.com/XiSenao/docs-islands/commit/58db465))
+
 ## [0.0.5] - 2026-06-03
 
 ### Features
