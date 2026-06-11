@@ -163,11 +163,11 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         items: [
           {
             text: '更新日志',
-            link: 'https://github.com/XiSenao/docs-islands/blob/main/packages/limina/CHANGELOG.md',
+            link: 'https://github.com/senaoxi/docs-islands/blob/main/packages/limina/CHANGELOG.md',
           },
           {
             text: '参与贡献',
-            link: 'https://github.com/XiSenao/docs-islands/blob/main/.github/CONTRIBUTING.md',
+            link: 'https://github.com/senaoxi/docs-islands/blob/main/.github/CONTRIBUTING.md',
           },
         ],
       },
