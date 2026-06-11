@@ -898,7 +898,7 @@ Repository: https://github.com/eventualbuddha/lines-and-columns.git
 
 License: MIT
 By: Senao Xi
-Repository: git+https://github.com/XiSenao/docs-islands.git
+Repository: git+https://github.com/senaoxi/docs-islands.git
 
 > <!-- markdownlint-disable MD003 MD009 MD025 MD035 MD026 -->
 > # logaria license

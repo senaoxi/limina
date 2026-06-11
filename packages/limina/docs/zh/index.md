@@ -17,7 +17,7 @@ hero:
       link: /zh/why
     - theme: alt
       text: 在 GitHub 查看
-      link: https://github.com/XiSenao/docs-islands/tree/main/packages/limina
+      link: https://github.com/senaoxi/docs-islands/tree/main/packages/limina
 
 features:
   - icon: 🔗
