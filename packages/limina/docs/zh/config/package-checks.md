@@ -66,7 +66,7 @@ export default defineConfig({
 - `attw`：用 Are The Types Wrong 检查类型解析；
 - `boundary`：扫描构建后的 JavaScript 导入，检查运行时和依赖边界。
 
-`checks` 会继续兼容旧配置。`publint` 和 `attw` 也可以写成 `true`、`false` 或对象。Limina 会先应用 `checks`（或默认三项），再用 `publint` / `attw` 覆盖对应工具：`false` 表示关闭，`true` 或对象表示开启并使用默认或自定义配置。
+`checks` 先决定基础工具集合。`publint` 和 `attw` 也可以写成 `true`、`false` 或对象，用来覆盖对应工具：`false` 表示关闭，`true` 或对象表示开启并使用默认或自定义配置。
 
 ::: warning
 `publint` 和 `@arethetypeswrong/core` 是 Limina 的 optional peer dependencies。如果启用了对应检查，但运行 Limina 的工作区没有安装该包，`package check` 会直接报缺失 peer dependency。

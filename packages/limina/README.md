@@ -1,10 +1,11 @@
 # limina
 
 <p align="center">
-  <a href="https://docs.senao.me/docs-islands/limina" target="_blank" rel="noopener noreferrer">
+  <a href="https://docs.senao.me/docs-islands/limina/" target="_blank" rel="noopener noreferrer">
     <img width="180" src="https://docs.senao.me/docs-islands/limina/logo.svg" alt="limina logo">
   </a>
 </p>
+
 <p align="center">
   <a href="https://npmjs.com/package/limina"><img src="https://img.shields.io/npm/v/limina.svg" alt="npm package"></a>
   <a href="https://nodejs.org/en/about/previous-releases"><img src="https://img.shields.io/node/v/limina.svg" alt="node compatibility"></a>
@@ -13,17 +14,23 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-> Architecture governance CLI for TypeScript monorepos
+> Architecture governance for TypeScript monorepos.
 
-- Keep source dependency graphs aligned with type build graphs
-- Guard package, runtime, and workspace boundaries
-- Cover TypeScript and framework-specific checkers
-- Keep source manifests and built package outputs aligned
-- Validate package outputs before release
-- Compose checks for local development, CI, and publishing
+Start with incremental type builds, then progressively enable architecture governance.
 
-Limina helps teams turn drifting TypeScript monorepo constraints into explicit, reviewable, runnable checks. It keeps source relationships, type coverage, build coordination, package metadata, and publishable outputs aligned across everyday development, code review, and pre-release workflows.
+Limina is designed for large TypeScript monorepos where project references, source boundaries, check coverage, and release artifacts can drift over time. It builds on existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration, then adds checks for dependency graphs, source boundaries, coverage, and release readiness.
 
-Limina is not a bundler, test runner, or release tool, and it does not replace TypeScript or framework checkers. It runs those existing tools and verifies that the monorepo structure they rely on is still trustworthy.
+## What Limina does
+
+- Adopts incremental type builds by generating reusable build configuration and deriving a build order from source dependencies.
+- Governs the dependency graph by checking project references, access boundaries, and dependency declarations.
+- Protects source boundaries by detecting cross-package relative imports, unauthorized imports, missing dependency declarations, and source ownership issues.
+- Verifies check coverage by finding source files that are uncovered, covered more than once, or covered by a scope that does not match the source boundary.
+- Composes check pipelines for local development, CI, and release workflows, with independent tasks running concurrently when dependencies allow.
+- Adds release checks for package metadata, type entry points, build output, and packed package contents.
+
+## Non-goals
+
+Limina is not a bundler, a test framework, or a publishing tool. It does not replace TypeScript or framework-specific checkers. Instead, it runs alongside existing tools and verifies that the monorepo structure they depend on remains consistent and reviewable.
 
 [Read the Docs to Learn More](https://docs.senao.me/docs-islands/limina/)

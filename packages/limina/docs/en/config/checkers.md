@@ -2,7 +2,7 @@
 
 Checker entries tell Limina which source `tsconfig.json` files each checker should handle. When `config.checkers` is omitted, Limina uses auto mode: it discovers ordinary `tsconfig.json` files, chooses `tsc` or `vue-tsc` from the files each one contains, and sends TypeScript projects that depend on Vue projects to `vue-tsc` as well, so initial setup does not need hand-written routing.
 
-Use an explicit checker object when you need `tsgo`, typecheck-only checkers, smaller Vue coverage, or migration-specific include / exclude rules. Limina starts from those entries, follows their solution references, and writes the declaration graph, checker build entries, declaration output directories, tsbuildinfo paths, and manifest under `.limina/`.
+Use an explicit checker object when you need `tsgo`, typecheck-only checkers, smaller Vue coverage, or more explicit include / exclude rules. Limina starts from those entries, follows their solution references, and writes the declaration graph, checker build entries, declaration output directories, tsbuildinfo paths, and manifest under `.limina/`.
 
 ```js
 import { defineConfig } from 'limina';
@@ -30,7 +30,7 @@ export default defineConfig({
 - **Type:** `{ mode: 'auto'; exclude?: string[] }`
 - **Default:** used when `config.checkers` is omitted
 
-Auto mode treats every ordinary `tsconfig.json` as a source entry. An entry with only TypeScript, JavaScript, and JSON files goes to `tsc`. An entry containing `.vue` files goes to `vue-tsc`. Solution-style `tsconfig.json` files are still accepted for compatibility; Limina classifies them from the referenced source configs.
+Auto mode treats every ordinary `tsconfig.json` as a source entry. An entry with only TypeScript, JavaScript, and JSON files goes to `tsc`. An entry containing `.vue` files goes to `vue-tsc`. Solution-style `tsconfig.json` files are handled as aggregators, and Limina classifies them from the referenced source configs.
 
 If a TypeScript entry imports a Vue entry, auto mode sends that TypeScript entry to `vue-tsc` too. This promotion continues through dependency chains, so the generated build graph avoids an incompatible `tsc` project depending on a `vue-tsc` project.
 
@@ -132,7 +132,7 @@ Potentially incompatible build checker combination:
         - packages/theme/tsconfig.json
 ```
 
-Read `reachable from` as the migration map. It tells you which checker and which entry `tsconfig.json` can reach the same generated config. To remove the warning, make that reachable area use cache-compatible build presets. Same-preset combinations are fine, and `tsc` with `vue-tsc` is treated as compatible. Combinations such as `tsgo` with `tsc` or `tsgo` with `vue-tsc` are warned because they do not safely share the same underlying build cache.
+Read `reachable from` as the reachability map. It tells you which checker and which entry `tsconfig.json` can reach the same generated config. To remove the warning, make that reachable area use cache-compatible build presets. Same-preset combinations are fine, and `tsc` with `vue-tsc` is treated as compatible. Combinations such as `tsgo` with `tsc` or `tsgo` with `vue-tsc` are warned because they do not safely share the same underlying build cache.
 
 ## exclude
 
@@ -142,27 +142,11 @@ Read `reachable from` as the migration map. It tells you which checker and which
 `exclude` removes entry selectors from `include`. Use it to keep entry ownership clear:
 
 ```js
-exclude: ['**/docs/**', 'packages/legacy/tsconfig.json'];
-```
-
-## Removed Fields
-
-`entry`, `routes`, and user-configured `extensions` are rejected. Migrate old entries such as `entry: 'tsconfig.build.json'` to source selectors:
-
-```js
-// before
-{ preset: 'tsc', entry: 'tsconfig.build.json' }
-
-// after
-{
-  preset: 'tsc',
-  include: ['packages/**/tsconfig.json'],
-  exclude: ['**/docs/**'],
-}
+exclude: ['**/docs/**', 'packages/playground/tsconfig.json'];
 ```
 
 ## Generated Graph
 
 Run `limina graph prepare` to materialize `.limina/manifest.json` and generated checker configs. Graph-consuming commands also prepare the graph automatically before they run.
 
-Source tsconfig paths are the canonical paths in user config and diagnostics. Generated `.limina/tsconfig/checkers/.../*.dts.json` paths are internal compatibility inputs.
+Source tsconfig paths are the canonical paths in user config and diagnostics. Generated `.limina/tsconfig/checkers/.../*.dts.json` paths are internal output and do not need to be written in user config.

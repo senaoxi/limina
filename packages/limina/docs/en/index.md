@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Limina
-  text: TypeScript project-reference graph compiler and architecture governance CLI
-  tagline: Start with incremental build, then turn on architecture governance.
+  text: Architecture governance for TypeScript monorepos
+  tagline: Start with incremental type builds, then progressively enable architecture governance
   image:
     src: /logo.svg
     alt: Limina
@@ -13,51 +13,59 @@ hero:
       text: Get Started
       link: /getting-started
     - theme: alt
-      text: Why Limina
-      link: /why
+      text: View Built-in Tasks
+      link: /built-in-tasks
     - theme: alt
       text: View on GitHub
       link: https://github.com/senaoxi/docs-islands/tree/main/packages/limina
 
 features:
-  - icon: 🧭
-    title: Low-friction incremental build
-    details: limina init adds limina:build and prepares a TypeScript build graph from existing tsconfig files and real imports, so the workspace gets tsc -b, tsgo, or vue-tsc incremental build value first.
+  - icon: ⚙️
+    title: Adopt incremental type builds
+    details: >
+      Reads existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration
+      and derive a reliable build order. Supports TypeScript and Vue checker workflows, so teams can adopt it gradually
+      without reshaping the repository.
     link: /getting-started
-    linkText: Start build-first
+    linkText: Get started
+
   - icon: 🕸️
-    title: Generate type graphs automatically
-    details: Bring TypeScript, Vue, Svelte, and other checkers into one type relationship graph, so builds, checks, and diagnostics work from the same facts.
-    link: /config/checkers
-    linkText: Configure checkers
+    title: Govern the dependency graph
+    details: >
+      Checks project references, access boundaries, and dependency declarations to find missing, redundant,
+      or invalid relationships. As the repository grows, code relationships remain explicit, reviewable, and maintainable.
+    link: /config/graph-rules
+    linkText: Configure graph rules
+
   - icon: 🧱
-    title: Govern project references
-    details: Use real imports to catch missing references, illegal dependencies, cross-runtime calls, and architecture rule violations before project relationships drift past declared boundaries.
-    link: /built-in-tasks
-    linkText: View graph checks
-  - icon: 🛡️
-    title: Protect package boundaries
-    details: Block cross-package relative imports, missing dependencies, private entry escapes, and internal dependencies that bypass declared package boundaries, ensuring each package is accessed only through public entry points.
-    link: /built-in-tasks
-    linkText: View source checks
+    title: Protect source boundaries
+    details: >
+      Detects cross-package relative imports, unauthorized imports, missing dependency declarations, and source ownership issues.
+      Package internals stay separated from intended public entry points, reducing boundary risks during refactors and releases.
+    link: /config/source-boundary
+    linkText: Configure source boundaries
+
   - icon: 🎯
     title: Verify check coverage
-    details: Align source files with TypeScript, Vue, Svelte, test, tools, docs, and other check scopes to find files that are uncovered, checked twice, or assigned to the wrong owner.
+    details: >
+      Finds files that are not covered by checks, covered more than once, or whose check scope does not match the source scope.
+      Teams can see which code is already guarded and where quality blind spots still remain.
     link: /config/checkers
-    linkText: Configure coverage
-  - icon: 📦
-    title: Validate published artifacts
-    details: Inspect the npm tarball consumers actually install, and verify that package metadata, exports, types, runtime entries, and type resolution stay consistent.
-    link: /config/package-checks
-    linkText: Configure package checks
+    linkText: Configure checker entries
+
   - icon: 🚦
-    title: Catch release risks early
-    details: Check README, license, bundled files, missing files, source maps, and registry baseline differences before publishing to confirm the release contents match expectations.
+    title: Compose check pipelines
+    details: >
+      Builds, dependency-graph checks, source-boundary checks, and coverage proof can all run as independent tasks.
+      Teams can compose workflows for local development, CI, or release gates, with tasks running concurrently when dependencies allow.
+    link: /config/pipelines
+    linkText: Configure pipelines
+
+  - icon: 📦
+    title: Add release checks
+    details: >
+      Before release, validate package metadata, type entry points, build output, and packed package contents to catch issues
+      that may affect consumers. These checks provide an additional guardrail for release and prerelease workflows.
     link: /config/release-checks
     linkText: Configure release checks
-  - icon: 🧩
-    title: Fit into existing workflows
-    details: Integrate with local development, PR, CI, and release pipelines, and export scoped dependency graphs for architecture review when needed.
-    link: /workflows
-    linkText: Configure workflows
 ---

@@ -74,7 +74,7 @@ import { renderRuntime } from '@acme/core/runtime';
 | Node 内建模块      | 运行时能力依赖                       |
 | 私有内部路径       | 可能绕过包边界                       |
 
-TypeScript 如果只看 `package.json`，很难安全判断哪一个入口应该变成 project reference。它还必须面对多套 tsconfig、条件导出、框架文件、编辑器模式、watch 模式和已有项目兼容性。
+TypeScript 如果只看 `package.json`，很难安全判断哪一个入口应该变成 project reference。它还必须面对多套 tsconfig、条件导出、框架文件、编辑器模式和 watch 模式。
 
 ## TypeScript 需要通用语义，Limina 可以要求仓库先说清楚
 

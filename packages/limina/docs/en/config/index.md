@@ -13,5 +13,6 @@ Limina configuration starts from `limina.config.mjs` inside the workspace. Read 
 - [Package Checks](./package-checks.md): built-output entries, `publint` / `attw` / `boundary`.
 - [Release Checks](./release-checks.md): `release.contentHash`, tarball and publish hygiene.
 - [Pipelines](./pipelines.md): named workflows of built-in tasks and external commands.
+- [Execution Concurrency](./execution.md): concurrency limits for `execution.tasks`, checkers, package checks, and release checks.
 
 If you only want the first check running, start with [Config File](./config-file.md) and [Checker Entries](./checkers.md). If you are preparing to publish packages, add [Package Checks](./package-checks.md).

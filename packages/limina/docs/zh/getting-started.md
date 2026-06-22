@@ -105,7 +105,7 @@ export default defineConfig({
 pnpm limina:build
 ```
 
-这个 build-first 入口会先准备 Limina 管理的检查器图，再运行支持构建模式的检查器。等这条 build 路径稳定后，再运行 `pnpm exec limina check` 接入完整检查流程。默认流水线会依次运行：
+这个 build-first 入口会先准备 Limina 管理的检查器图，再运行支持构建模式的检查器。等这条 build 路径稳定后，再运行 `pnpm exec limina check` 接入完整检查流程。默认检查包含这些任务；结果会按下面顺序展示和记录，实际调度会在并发额度和资源锁允许时并发执行：
 
 1. `graph:check`（会先 prepare 生成图）
 2. `source:check`
@@ -113,7 +113,7 @@ pnpm limina:build
 4. `checker:build`
 5. `checker:typecheck`
 
-第一次运行失败时，可以按类别判断下一步：
+运行失败时，可以按失败任务判断下一步。同一次输出可能包含多个失败任务：
 
 - `graph:check` 失败，多半是导入、生成项目引用、包依赖声明或标签规则没有对齐；
 - `source:check` 失败，多半是文件归属、跨包相对导入、依赖声明或 `#imports` 有问题；
@@ -121,7 +121,7 @@ pnpm limina:build
 - `checker:build` 失败，说明 `tsc`、`tsgo` 或 `vue-tsc` 这类支持构建模式的检查器发现类型错误；
 - `checker:typecheck` 失败，说明 `vue-tsgo`、`svelte-check` 这类只做类型检查的执行器发现类型错误。
 
-例如 `@acme/app` 新增了 `@acme/core` 导入，第一次跑 `pnpm exec limina check` 报图问题时，优先看提示里的导入文件和源码 tsconfig。修完后再跑同一个命令，确认图、源码归属、覆盖证明和检查器执行一起通过。
+例如 `@acme/app` 新增了 `@acme/core` 导入，`pnpm exec limina check` 报出 `graph:check` 问题时，优先看提示里的导入文件和源码 tsconfig。修完后再跑同一个命令，确认图、源码归属、覆盖证明和检查器执行一起通过。
 
 ## 添加框架检查器
 

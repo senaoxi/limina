@@ -27,7 +27,7 @@ references says: whose output should be trusted first during declaration builds
 
 `references` affect how TypeScript splits compilation units, reads upstream declarations, schedules build order, and performs incremental builds. They are neither an import-scan cache nor a mirror of `dependencies`.
 
-Therefore, once the TypeScript compiler natively auto-infers references, it is no longer merely **eliminating a bit of JSON boilerplate**. It is changing how the compiler and language service understand the entire repository.
+Therefore, native reference inference is not merely **eliminating a bit of JSON boilerplate**. It changes how the compiler and language service understand the entire repository.
 
 This is also the fundamental reason why the TypeScript community has discussed similar directions for a long time, yet has found them difficult to land directly: [infer project references from monorepo structure or tooling](https://github.com/microsoft/TypeScript/issues/25376).
 
@@ -74,7 +74,7 @@ Within the same workspace dependency, different entry points may express differe
 | Node built-in module     | Runtime capability dependency                                       |
 | Private internal path    | Possible package-boundary bypass                                    |
 
-If TypeScript only looks at `package.json`, it is difficult to safely determine which entry point should become a project reference. It must also deal with multiple tsconfig files, conditional exports, framework files, editor modes, watch mode, and compatibility with existing projects.
+If TypeScript only looks at `package.json`, it is difficult to safely determine which entry point should become a project reference. It must also deal with multiple tsconfig files, conditional exports, framework files, editor modes, and watch mode.
 
 ## TypeScript Needs General Semantics; Limina Can Require the Repository to Be Explicit First
 
@@ -436,7 +436,7 @@ When a repository satisfies the following conditions, Limina’s reference infer
 
 If a repository still heavily depends on cross-package relative paths, mixed tsconfig usage, unstable public entry points, or inconsistencies between build artifacts and source entry points, Limina will not automatically make it healthy. It is more likely to first expose a batch of structural issues.
 
-That process is not an integration failure. It is the process of turning **relationships that were previously maintained by convention and experience** into facts that the repository can check.
+That process is not an integration failure. It turns **relationships maintained by convention and experience** into facts that the repository can check.
 
 ## A More Accurate Conclusion
 

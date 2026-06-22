@@ -105,7 +105,7 @@ Run it:
 pnpm limina:build
 ```
 
-This build-first entry prepares Limina's checker graph and runs the checkers that support build mode. Once that build path is stable, run `pnpm exec limina check` to turn on the full check flow. The default pipeline runs:
+This build-first entry prepares Limina's checker graph and runs the checkers that support build mode. Once that build path is stable, run `pnpm exec limina check` to turn on the full check flow. The default check includes these tasks. Results are displayed and recorded in this order, while scheduling can run tasks concurrently when the concurrency budget and resource locks allow it:
 
 1. `graph:check` (which prepares the generated graph first)
 2. `source:check`
@@ -113,7 +113,7 @@ This build-first entry prepares Limina's checker graph and runs the checkers tha
 4. `checker:build`
 5. `checker:typecheck`
 
-The first failure usually tells you which layer to inspect:
+When the run fails, use the failed task to choose the next layer to inspect. The same output can contain multiple failed tasks:
 
 - `graph:check` usually points to imports, generated project references, package dependencies, or label rules that are out of sync;
 - `source:check` usually points to file ownership, cross-package relative imports, dependency declarations, or `#imports`;
@@ -121,7 +121,7 @@ The first failure usually tells you which layer to inspect:
 - `checker:build` means a build-capable checker such as `tsc`, `tsgo`, or `vue-tsc` found type errors;
 - `checker:typecheck` means a typecheck-only runner such as `vue-tsgo` or `svelte-check` found type errors.
 
-For example, if `@acme/app` adds an import from `@acme/core` and the first `pnpm exec limina check` fails in graph checking, start with the importing file and source tsconfig shown in the report. Re-run the same command after the fix to confirm graph, source ownership, coverage proof, and checker execution together.
+For example, if `@acme/app` adds an import from `@acme/core` and `pnpm exec limina check` reports a `graph:check` problem, start with the importing file and source tsconfig shown in the report. Re-run the same command after the fix to confirm graph, source ownership, coverage proof, and checker execution together.
 
 ## Add Framework Checkers
 

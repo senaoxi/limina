@@ -10,14 +10,14 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 每条任务具体检测什么、配什么例子，见 [内置任务](./built-in-tasks.md)。每条命令从 `limina.config.mjs` 读取哪些字段，见 [配置参考](./config/index.md)。
 :::
 
-## 初始化与默认流水线
+## 初始化与默认检查
 
 | 命令                      | 说明                                                                                      |
 | ------------------------- | ----------------------------------------------------------------------------------------- |
 | `limina init [--yes]`     | 生成 `limina.config.mjs`、确保忽略 `.limina/`，并为 pnpm 工作区添加 `limina:build` 脚本。 |
-| `limina check`            | 运行默认流水线：图、源码、覆盖证明、检查器构建和检查器类型检查。                          |
+| `limina check`            | 运行默认检查：调度图、源码、覆盖证明、检查器构建和检查器类型检查。                        |
 | `limina check --issues`   | 输出上一次已记录检查问题中可用的筛选值。                                                  |
-| `limina check <pipeline>` | 运行 `pipelines` 中的用户命名流水线。                                                     |
+| `limina check <pipeline>` | 运行 `pipelines` 中的有序命名流水线。                                                     |
 
 `limina check --issues` 会读取上一次记录下来的检查结果，并按 task、package、rule、scope、checker
 列出可用筛选值。可以组合 `--task <name>`、`--package <name>`、`--rule <code>`、

@@ -66,7 +66,7 @@ Each `outDir/package.json` must exist and look like a complete npm package manif
 - `attw`: type resolution through Are The Types Wrong;
 - `boundary`: emitted JavaScript imports, runtime boundaries, and dependency boundaries.
 
-`checks` remains supported for compatibility. `publint` and `attw` can also be `true`, `false`, or an object. Limina first applies `checks` (or the default list), then lets `publint` / `attw` override that tool: `false` disables it, while `true` or an object enables it with default or custom settings.
+`checks` selects the base tool set. `publint` and `attw` can also be `true`, `false`, or an object to override that tool: `false` disables it, while `true` or an object enables it with default or custom settings.
 
 ::: warning
 `publint` and `@arethetypeswrong/core` are optional peer dependencies of Limina. If the corresponding check is enabled but the package is not installed in the workspace running Limina, `package check` fails with a missing peer dependency error.

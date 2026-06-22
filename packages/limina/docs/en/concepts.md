@@ -131,4 +131,4 @@ export default defineConfig({
 
 Use labels for boundaries that matter to the architecture: browser vs Node, public API vs internal tools, production vs tests, or package-specific rules.
 
-When a group of source files has a real boundary, put one or more graph rule labels on the matching source tsconfig and define those rules in `limina.config.mjs`. For example, a browser runtime config can declare `"graphRules": ["runtime-client"]` under `liminaOptions` while the rule denies `node:*` and `@acme/internal-node`. The boundary no longer depends on convention alone; an import of `node:fs` from the browser project fails graph check with the rule's reason.
+When a group of source files has a real boundary, put one or more graph rule labels on the matching source tsconfig and define those rules in `limina.config.mjs`. For example, a browser runtime config can declare `"graphRules": ["runtime-client"]` under `liminaOptions` while the rule denies `node:*` and `@acme/internal-node`. The boundary is enforced by config and real source imports; an import of `node:fs` from the browser project fails graph check with the rule's reason.

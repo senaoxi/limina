@@ -2,7 +2,7 @@
 
 检查器入口用来告诉 Limina：哪些源码 `tsconfig.json` 交给哪个检查器处理。如果没有配置 `config.checkers`，Limina 会使用 auto 模式：自动发现普通 `tsconfig.json`，根据里面的文件选择 `tsc` 或 `vue-tsc`，并把依赖 Vue 项目的 TypeScript 项目一起交给 `vue-tsc`，让首次接入不需要手写路由。
 
-需要使用 `tsgo`、只做类型检查的 checker、更小的 Vue 覆盖范围，或迁移期 include / exclude 规则时，再改用显式 checker 对象。Limina 会从这些入口出发，继续跟随 solution references，并把构建所需的声明图、检查器入口、声明输出目录、tsbuildinfo 和清单写到 `.limina/`。
+需要使用 `tsgo`、只做类型检查的 checker、更小的 Vue 覆盖范围，或更明确的 include / exclude 规则时，再改用显式 checker 对象。Limina 会从这些入口出发，继续跟随 solution references，并把构建所需的声明图、检查器入口、声明输出目录、tsbuildinfo 和清单写到 `.limina/`。
 
 ```js
 import { defineConfig } from 'limina';
@@ -30,7 +30,7 @@ export default defineConfig({
 - **类型：** `{ mode: 'auto'; exclude?: string[] }`
 - **默认值：** 省略 `config.checkers` 时使用
 
-auto 模式会把每个普通 `tsconfig.json` 当作一个源码入口。只包含 TypeScript、JavaScript 和 JSON 的入口会交给 `tsc`；包含 `.vue` 文件的入口会交给 `vue-tsc`。solution-style `tsconfig.json` 仍然兼容，Limina 会根据它引用到的源码配置判断应该使用哪种能力。
+auto 模式会把每个普通 `tsconfig.json` 当作一个源码入口。只包含 TypeScript、JavaScript 和 JSON 的入口会交给 `tsc`；包含 `.vue` 文件的入口会交给 `vue-tsc`。solution-style `tsconfig.json` 会按聚合器处理，Limina 根据它引用到的源码配置判断应该使用哪种能力。
 
 如果 TypeScript 入口 import 到 Vue 入口，auto 模式会把这个 TypeScript 入口也交给 `vue-tsc`。这个提升会沿依赖链继续传播，避免生成的构建图里出现 `tsc` 项目依赖 `vue-tsc` 项目的不兼容关系。
 
@@ -132,7 +132,7 @@ Potentially incompatible build checker combination:
         - packages/theme/tsconfig.json
 ```
 
-可以把 `reachable from` 当成迁移地图看。它告诉你：同一个生成配置会被哪些 checker、哪些入口 `tsconfig.json` 触达。想消掉 warning，就要让这片可达区域使用 cache 兼容的构建 preset。同 preset 组合没问题，`tsc` 和 `vue-tsc` 也视为兼容；`tsgo` 和 `tsc`、`tsgo` 和 `vue-tsc` 这类组合会提示，因为它们不能安全共享同一套底层 build cache。
+可以把 `reachable from` 当成可达性地图看。它告诉你：同一个生成配置会被哪些 checker、哪些入口 `tsconfig.json` 触达。想消掉 warning，就要让这片可达区域使用 cache 兼容的构建 preset。同 preset 组合没问题，`tsc` 和 `vue-tsc` 也视为兼容；`tsgo` 和 `tsc`、`tsgo` 和 `vue-tsc` 这类组合会提示，因为它们不能安全共享同一套底层 build cache。
 
 ## exclude
 
@@ -142,27 +142,11 @@ Potentially incompatible build checker combination:
 `exclude` 从 `include` 结果里排除入口匹配项，用来让入口归属更清楚：
 
 ```js
-exclude: ['**/docs/**', 'packages/legacy/tsconfig.json'];
-```
-
-## 已移除字段
-
-`entry`、`routes` 和用户配置的 `extensions` 都会被拒绝。把旧的 `entry: 'tsconfig.build.json'` 迁移为源码选择器：
-
-```js
-// before
-{ preset: 'tsc', entry: 'tsconfig.build.json' }
-
-// after
-{
-  preset: 'tsc',
-  include: ['packages/**/tsconfig.json'],
-  exclude: ['**/docs/**'],
-}
+exclude: ['**/docs/**', 'packages/playground/tsconfig.json'];
 ```
 
 ## 生成图
 
 运行 `limina graph prepare` 会生成 `.limina/manifest.json` 和检查器作用域内的 tsconfig 图。消费图的命令也会在运行前自动 prepare。
 
-用户配置和诊断中的规范路径是源码 tsconfig 路径。`.limina/tsconfig/checkers/.../*.dts.json` 是内部生成路径，只作为兼容输入。
+用户配置和诊断中的规范路径是源码 tsconfig 路径。`.limina/tsconfig/checkers/.../*.dts.json` 是内部生成路径，不需要写进用户配置。

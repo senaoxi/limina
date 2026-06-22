@@ -91,7 +91,7 @@ The point is simple: once a package exposes a subpath, that subpath must be expl
 
 ## Type Relationships Come From Real Imports
 
-Limina manages the type graph from real source imports. If one package imports another package's source entry, the type graph should carry that relationship. If a relationship no longer has import evidence, it should not remain in the graph forever.
+Limina manages the type graph from real source imports. If one package imports another package's source entry, the type graph should carry that relationship. A graph edge without import evidence needs an explicit `implicitRefs` reason.
 
 ```ts
 // packages/app/src/main.ts
