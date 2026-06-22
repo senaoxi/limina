@@ -8,6 +8,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-22
+
+### Highlights
+
+Limina 0.1.0 lowers the cost of adding build capability to complex monorepos.
+It derives checker build graphs from source `tsconfig.json` scopes, imports,
+package boundaries, and `liminaOptions.implicitRefs`, so projects can keep the
+source graph as the main authored input instead of maintaining build graph state
+by hand.
+
+This release adds `limina checker build` for managed or raw builds with `tsc`,
+`tsgo`, and `vue-tsc`, including watch mode, dependency preflight,
+provider-aware ordering, and cache warnings. The same architecture model now
+powers graph, source, proof, checker, package, and release checks across
+ownership, import authority, public access, build dependencies, source
+reachability, and publishable output.
+
+`limina check` now provides summary-first reporting with shared preflight,
+resource-aware execution, stable issue codes, saved snapshots, and
+`limina check --issues`. `limina graph export --view source|artifact|all`
+exposes source and artifact relationships to external task tooling, and the
+docs/scripts were updated for the source-first build model.
+
+### Features
+
+- feat(limina)!: generate checker graphs and restructure check pipeline (#75) ([bb1a9c7](https://github.com/senaoxi/docs-islands/commit/bb1a9c7))
+
+### Bug Fixes
+
+- fix(limina): stabilize flow renderer spinner test ([a76f375](https://github.com/senaoxi/docs-islands/commit/a76f375))
+
+### Maintenance
+
+- chore: repository username change ([336faa4](https://github.com/senaoxi/docs-islands/commit/336faa4))
+
 ## [0.0.6] - 2026-06-10
 
 ### Features
