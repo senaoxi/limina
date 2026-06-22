@@ -126,6 +126,10 @@ async function createPassingCheckPipelineConfig(): Promise<{
   );
   await chmod(path.join(rootDir, 'node_modules/.bin/tsc'), 0o755);
   await writeText(
+    path.join(rootDir, 'node_modules/.bin/tsc.cmd'),
+    '@ECHO OFF\r\nEXIT /B 0\r\n',
+  );
+  await writeText(
     path.join(rootDir, 'packages/app/tsconfig.json'),
     stringifyJson({
       compilerOptions: buildCompilerOptions,
@@ -625,6 +629,10 @@ describe('runPipeline', () => {
         "writeFileSync(path.join(process.cwd(), 'stale-state.txt'), String(existsSync(stalePath)));",
         '',
       ].join('\n'),
+    );
+    await writeText(
+      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo.cmd'),
+      ['@ECHO OFF', 'node "%~dp0vue-tsgo.js" %*', ''].join('\r\n'),
     );
     await chmod(
       path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo'),

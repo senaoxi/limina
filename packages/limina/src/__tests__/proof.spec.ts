@@ -22,6 +22,68 @@ async function writeText(filePath: string, text: string): Promise<void> {
   await writeFile(filePath, text);
 }
 
+function stringifyConfig(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function getFixtureWorkspacePackageManifestPath(
+  relativePath: string,
+): string | null {
+  const segments = relativePath.split('/');
+
+  if (
+    segments[0] !== 'packages' ||
+    !segments[1] ||
+    segments.length < 3 ||
+    segments[2] === 'package.json'
+  ) {
+    return null;
+  }
+
+  return `packages/${segments[1]}/package.json`;
+}
+
+function createFixtureFiles(
+  files: Record<string, string>,
+): Record<string, string> {
+  const gitignore = [
+    'package.json',
+    'tsconfig*.json',
+    '**/tsconfig*.json',
+    files['.gitignore'] ?? '',
+  ].join('\n');
+  const packageManifests: Record<string, string> = {
+    'package.json': stringifyConfig({
+      name: 'fixture-root',
+      private: true,
+    }),
+  };
+
+  for (const relativePath of Object.keys(files)) {
+    const packageJsonPath =
+      getFixtureWorkspacePackageManifestPath(relativePath);
+
+    if (!packageJsonPath || Object.hasOwn(files, packageJsonPath)) {
+      continue;
+    }
+
+    const packageDirectory = path.posix.dirname(packageJsonPath);
+    const packageName = path.posix.basename(packageDirectory);
+
+    packageManifests[packageJsonPath] = stringifyConfig({
+      name: `@fixture/${packageName}`,
+      private: true,
+    });
+  }
+
+  return {
+    'pnpm-workspace.yaml': 'packages:\n  - app\n  - packages/*\n',
+    ...packageManifests,
+    ...files,
+    '.gitignore': gitignore,
+  };
+}
+
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
@@ -30,10 +92,7 @@ async function createFixture(files: Record<string, string>): Promise<{
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-proof-')),
   );
-  const fixtureFiles = {
-    'pnpm-workspace.yaml': 'packages:\n  - app\n  - packages/*\n',
-    ...files,
-  };
+  const fixtureFiles = createFixtureFiles(files);
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
     await writeText(path.join(rootDir, relativePath), text);

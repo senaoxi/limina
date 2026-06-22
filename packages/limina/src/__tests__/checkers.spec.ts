@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { toPortableRelativePaths } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -72,9 +73,7 @@ describe('checker project config parsing', () => {
 
       expect(parsed.extensions).toContain('.vue');
       expect(
-        parsed.fileNames.map((filePath) =>
-          path.relative(fixture.rootDir, filePath),
-        ),
+        toPortableRelativePaths(fixture.rootDir, parsed.fileNames),
       ).toEqual(['src/App.vue']);
     } finally {
       await fixture.cleanup();
@@ -112,8 +111,9 @@ describe('checker project config parsing', () => {
       first.fileNames.push(path.join(fixture.rootDir, 'src/mutated.ts'));
 
       expect(
-        parseCheckerProjectConfigForContext(parseOptions).fileNames.map(
-          (filePath) => path.relative(fixture.rootDir, filePath),
+        toPortableRelativePaths(
+          fixture.rootDir,
+          parseCheckerProjectConfigForContext(parseOptions).fileNames,
         ),
       ).toEqual(['src/a.ts']);
 
@@ -132,8 +132,9 @@ describe('checker project config parsing', () => {
       );
 
       expect(
-        parseCheckerProjectConfigForContext(parseOptions).fileNames.map(
-          (filePath) => path.relative(fixture.rootDir, filePath),
+        toPortableRelativePaths(
+          fixture.rootDir,
+          parseCheckerProjectConfigForContext(parseOptions).fileNames,
         ),
       ).toEqual(['src/b.ts']);
     } finally {

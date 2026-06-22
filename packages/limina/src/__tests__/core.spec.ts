@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runPipeline } from '../pipeline/runner';
+import { toPortablePath, toPortablePaths } from './helpers/path';
 
 const buildCompilerOptions = {
   composite: true,
@@ -154,17 +155,29 @@ describe('LiminaCore', () => {
     try {
       const project = await fixture.core.tsconfig.getProject(projectPath);
 
-      expect(project.configPath).toBe(projectPath);
-      expect(project.fileNames).toContain(filePath);
-      expect(project.ownedFileNames).toContain(filePath);
-      expect(project.resolverConfigPath).toBe(projectPath);
+      expect(toPortablePath(project.configPath)).toBe(
+        toPortablePath(projectPath),
+      );
+      expect(toPortablePaths(project.fileNames)).toContain(
+        toPortablePath(filePath),
+      );
+      expect(toPortablePaths(project.ownedFileNames)).toContain(
+        toPortablePath(filePath),
+      );
+      expect(toPortablePath(project.resolverConfigPath)).toBe(
+        toPortablePath(projectPath),
+      );
       expect(
-        fixture.core.imports.resolveImport({
-          containingFile: filePath,
-          project,
-          specifier: './dep',
-        }),
-      ).toBe(path.join(fixture.rootDir, 'packages/a/src/dep.ts'));
+        toPortablePath(
+          fixture.core.imports.resolveImport({
+            containingFile: filePath,
+            project,
+            specifier: './dep',
+          }) ?? '',
+        ),
+      ).toBe(
+        toPortablePath(path.join(fixture.rootDir, 'packages/a/src/dep.ts')),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -177,17 +190,18 @@ describe('LiminaCore', () => {
       const domain = await fixture.core.packages.getPackageDomain('@fixture/a');
 
       expect(domain.package.name).toBe('@fixture/a');
-      expect(domain.sourceConfigPaths).toContain(
-        path.join(fixture.rootDir, 'packages/a/tsconfig.lib.json'),
+      expect(toPortablePaths(domain.sourceConfigPaths)).toContain(
+        toPortablePath(
+          path.join(fixture.rootDir, 'packages/a/tsconfig.lib.json'),
+        ),
       );
-      expect(domain.sourceModulePaths).toContain(
-        path.join(fixture.rootDir, 'packages/a/src/index.ts'),
+      expect(toPortablePaths(domain.sourceModulePaths)).toContain(
+        toPortablePath(path.join(fixture.rootDir, 'packages/a/src/index.ts')),
       );
     } finally {
       await fixture.cleanup();
     }
   });
-
   it('invalidates the shared pipeline core after external commands', async () => {
     const fixture = await createCoreFixture();
     const core = fixture.core;

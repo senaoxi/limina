@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createLiminaCli } from '../cli';
 
 const execFileAsync = promisify(execFile);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -32,6 +33,29 @@ async function writeText(filePath: string, text: string): Promise<void> {
 
 function stringifyConfig(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+async function writeBinShim(
+  rootDir: string,
+  command: string,
+  script: string,
+): Promise<void> {
+  const scriptPath = path.join(rootDir, 'node_modules/.bin', `${command}.cjs`);
+
+  await writeText(scriptPath, script);
+  await writeText(
+    path.join(rootDir, 'node_modules/.bin', command),
+    [
+      '#!/usr/bin/env sh',
+      `exec node "$(dirname "$0")/${command}.cjs" "$@"`,
+      '',
+    ].join('\n'),
+  );
+  await chmod(path.join(rootDir, 'node_modules/.bin', command), 0o755);
+  await writeText(
+    path.join(rootDir, 'node_modules/.bin', `${command}.cmd`),
+    ['@ECHO OFF', `node "%~dp0${command}.cjs" %*`, ''].join('\r\n'),
+  );
 }
 
 const buildCompilerOptions = {
@@ -91,16 +115,16 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
       2,
     )};\n`,
   );
-  await writeText(
-    path.join(rootDir, 'node_modules/.bin/tsc'),
+  await writeBinShim(
+    rootDir,
+    'tsc',
     [
-      '#!/usr/bin/env sh',
-      'printf "%s\\n" "$@" > "$PWD/tsc-args.txt"',
-      'exit 0',
+      "const { writeFileSync } = require('node:fs');",
+      "const { join } = require('node:path');",
+      "writeFileSync(join(process.cwd(), 'tsc-args.txt'), `${process.argv.slice(2).join('\\n')}\\n`);",
       '',
     ].join('\n'),
   );
-  await chmod(path.join(rootDir, 'node_modules/.bin/tsc'), 0o755);
   await writeText(
     path.join(rootDir, 'node_modules/typescript/package.json'),
     stringifyConfig({
@@ -108,16 +132,16 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
       version: '0.0.0-test',
     }),
   );
-  await writeText(
-    path.join(rootDir, 'node_modules/.bin/vue-tsc'),
+  await writeBinShim(
+    rootDir,
+    'vue-tsc',
     [
-      '#!/usr/bin/env sh',
-      'printf "%s\\n" "$@" > "$PWD/vue-tsc-args.txt"',
-      'exit 0',
+      "const { writeFileSync } = require('node:fs');",
+      "const { join } = require('node:path');",
+      "writeFileSync(join(process.cwd(), 'vue-tsc-args.txt'), `${process.argv.slice(2).join('\\n')}\\n`);",
       '',
     ].join('\n'),
   );
-  await chmod(path.join(rootDir, 'node_modules/.bin/vue-tsc'), 0o755);
   await writeText(
     path.join(rootDir, 'node_modules/vue-tsc/package.json'),
     stringifyConfig({
@@ -179,24 +203,32 @@ async function withCliBuildFixture(
   }
 }
 
-describe('limina CLI', () => {
-  it('shows graph export options without the removed task orchestrator command', async () => {
-    const cliPath = fileURLToPath(
-      new URL('../../bin/limina.js', import.meta.url),
-    );
-    const rootHelp = await execFileAsync(process.execPath, [cliPath, '--help']);
-    const graphHelp = await execFileAsync(process.execPath, [
-      cliPath,
-      'graph',
-      '--help',
-    ]);
+function getHelpOutput(argv: string[]): string {
+  const output: string[] = [];
+  const consoleLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
+    output.push(args.map(String).join(' '));
+  });
 
-    expect(rootHelp.stdout).toContain('checker <action> [config]');
-    expect(rootHelp.stdout).not.toContain('build [config]');
-    expect(rootHelp.stdout).toContain('graph <action>');
-    expect(rootHelp.stdout).not.toContain('nx <action>');
-    expect(graphHelp.stdout).toContain('--view <view>');
-    expect(graphHelp.stdout).toContain('--output <path>');
+  try {
+    createLiminaCli().parse(argv, { run: false });
+  } finally {
+    consoleLog.mockRestore();
+  }
+
+  return output.join('\n');
+}
+
+describe('limina CLI', () => {
+  it('shows graph export options without the removed task orchestrator command', () => {
+    const rootHelp = getHelpOutput(['node', 'limina', '--help']);
+    const graphHelp = getHelpOutput(['node', 'limina', 'graph', '--help']);
+
+    expect(rootHelp).toContain('checker <action> [config]');
+    expect(rootHelp).not.toContain('build [config]');
+    expect(rootHelp).toContain('graph <action>');
+    expect(rootHelp).not.toContain('nx <action>');
+    expect(graphHelp).toContain('--view <view>');
+    expect(graphHelp).toContain('--output <path>');
   });
 
   it('runs checker build for a selected source config from the public command', async () => {
@@ -358,16 +390,15 @@ describe('limina CLI', () => {
           type: 'module',
         }),
       );
-      await writeText(
-        path.join(rootDir, 'node_modules/.bin/tsc'),
+      await writeBinShim(
+        rootDir,
+        'tsc',
         [
-          '#!/usr/bin/env sh',
-          `printf "%s\\n" "${secretError}" >&2`,
-          'exit 2',
+          `process.stderr.write(${JSON.stringify(`${secretError}\n`)});`,
+          'process.exit(2);',
           '',
         ].join('\n'),
       );
-      await chmod(path.join(rootDir, 'node_modules/.bin/tsc'), 0o755);
 
       let stdout = '';
       let stderr = '';
@@ -494,6 +525,20 @@ describe('limina CLI', () => {
         'packages:\n  - app\n',
       );
       await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({
+          name: 'root',
+          private: true,
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'app/package.json'),
+        stringifyConfig({
+          name: 'app',
+          private: true,
+        }),
+      );
+      await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
@@ -604,6 +649,20 @@ describe('limina CLI', () => {
       await writeText(
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({
+          name: 'root',
+          private: true,
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'app/package.json'),
+        stringifyConfig({
+          name: 'app',
+          private: true,
+        }),
       );
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
@@ -1857,6 +1916,20 @@ describe('limina CLI', () => {
       await writeText(
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({
+          name: 'root',
+          private: true,
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'app/package.json'),
+        stringifyConfig({
+          name: 'app',
+          private: true,
+        }),
       );
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),

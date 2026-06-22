@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -656,8 +657,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const dtsPath =
         '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json';
 
-      expect(result.manifestPath).toBe(
-        path.join(fixture.rootDir, '.limina/manifest.json'),
+      expect(toPortablePath(result.manifestPath)).toBe(
+        toPortablePath(path.join(fixture.rootDir, '.limina/manifest.json')),
       );
       expect(result.manifest.checkers.typescript?.sourceToDts).toMatchObject({
         [sourcePath]: dtsPath,
@@ -758,9 +759,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ],
         },
       ]);
-      expect(result.generatedKnipConfigs[0]?.configPath).toBe(
-        path.join(fixture.rootDir, generatedPath),
-      );
+      expect(
+        toPortablePath(result.generatedKnipConfigs[0]?.configPath ?? ''),
+      ).toBe(toPortablePath(path.join(fixture.rootDir, generatedPath)));
     } finally {
       await fixture.cleanup();
     }

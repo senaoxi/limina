@@ -9,6 +9,7 @@ import { getActiveCheckers, isAutoCheckerConfigMode } from '#config/runner';
 import type { LiminaCore } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { toRelativePath } from '#utils/path';
+import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'pathe';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
@@ -232,15 +233,13 @@ function createCommandStepEnvironment(
   cwd: string,
   step: Extract<PipelineStep, { type: 'command' }>,
 ): NodeJS.ProcessEnv {
-  const basePath = step.env?.PATH ?? process.env.PATH;
-
-  return {
-    ...process.env,
-    ...step.env,
-    PATH: [path.join(cwd, 'node_modules/.bin'), basePath]
-      .filter(Boolean)
-      .join(path.delimiter),
-  };
+  return prependPathEntry(
+    {
+      ...process.env,
+      ...step.env,
+    },
+    path.join(cwd, 'node_modules/.bin'),
+  );
 }
 
 function isVueTsgoCommand(command: string): boolean {
@@ -645,7 +644,7 @@ async function runCommandStep(
   const commandOptions = {
     cwd,
     env: createCommandStepEnvironment(cwd, step),
-    shell: process.platform === 'win32',
+    shell: shouldUseShellForCommand(step.command),
   };
 
   await prepareCommandStepCache(step, cwd);

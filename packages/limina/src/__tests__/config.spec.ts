@@ -10,10 +10,32 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { toPortablePath, toPortableRelativePaths } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, text);
+}
+
+async function writeWorkspaceMetadata(rootDir: string): Promise<void> {
+  await writeText(
+    path.join(rootDir, 'pnpm-workspace.yaml'),
+    'packages:\n  - packages/*\n',
+  );
+  await writeText(
+    path.join(rootDir, 'package.json'),
+    JSON.stringify({
+      name: 'root',
+      private: true,
+    }),
+  );
+  await writeText(
+    path.join(rootDir, 'packages/app/package.json'),
+    JSON.stringify({
+      name: 'app',
+      private: true,
+    }),
+  );
 }
 
 describe('defineConfig', () => {
@@ -209,6 +231,7 @@ describe('defineConfig', () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
+      await writeWorkspaceMetadata(rootDir);
       await writeText(
         path.join(rootDir, 'tsconfig.build.json'),
         JSON.stringify({
@@ -287,8 +310,9 @@ describe('defineConfig', () => {
       expect(graphRoutes.routes).toHaveLength(1);
       expect(graphRoutes.routes[0]?.checkerName).toBe('nativeTypescript');
       expect(
-        graphRoutes.routes[0]?.projectPaths.map((configPath) =>
-          path.relative(rootDir, configPath),
+        toPortableRelativePaths(
+          rootDir,
+          graphRoutes.routes[0]?.projectPaths ?? [],
         ),
       ).toEqual([
         '.limina/tsconfig/checkers/nativeTypescript/solutions/packages/app/tsconfig.build.json',
@@ -306,6 +330,7 @@ describe('defineConfig', () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
+      await writeWorkspaceMetadata(rootDir);
       await writeText(
         path.join(rootDir, 'tsconfig.vue.build.json'),
         JSON.stringify({
@@ -385,8 +410,9 @@ describe('defineConfig', () => {
       expect(graphRoutes.routes).toHaveLength(1);
       expect(graphRoutes.routes[0]?.checkerName).toBe('vue');
       expect(
-        graphRoutes.routes[0]?.projectPaths.map((configPath) =>
-          path.relative(rootDir, configPath),
+        toPortableRelativePaths(
+          rootDir,
+          graphRoutes.routes[0]?.projectPaths ?? [],
         ),
       ).toEqual([
         '.limina/tsconfig/checkers/vue/solutions/packages/app/tsconfig.build.json',
@@ -645,7 +671,7 @@ export default Promise.resolve({});
         cwd: rootDir,
       });
 
-      expect(config.rootDir).toBe(rootDir);
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
     } finally {
       await rm(rootDir, {
         force: true,
@@ -686,8 +712,10 @@ export default defineConfig(async ({ mode }) => ({
         mode: 'ci',
       });
 
-      expect(config.configPath).toBe(path.join(rootDir, 'limina.config.mjs'));
-      expect(config.rootDir).toBe(rootDir);
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'limina.config.mjs')),
+      );
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
       expect(
         config.config?.checkers &&
           !isAutoCheckerConfigMode(config.config.checkers)
@@ -722,8 +750,10 @@ export default {};
         cwd: path.join(rootDir, 'packages/core'),
       });
 
-      expect(config.configPath).toBe(path.join(rootDir, 'limina.config.mjs'));
-      expect(config.rootDir).toBe(rootDir);
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'limina.config.mjs')),
+      );
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
     } finally {
       await rm(rootDir, {
         force: true,
@@ -752,10 +782,10 @@ export default {};
         cwd: rootDir,
       });
 
-      expect(config.configPath).toBe(
-        path.join(rootDir, 'tools/limina.config.mjs'),
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'tools/limina.config.mjs')),
       );
-      expect(config.rootDir).toBe(rootDir);
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
     } finally {
       await rm(rootDir, {
         force: true,
@@ -785,8 +815,10 @@ export default {};
         cwd: path.join(rootDir, 'packages/core'),
       });
 
-      expect(config.configPath).toBe(configPath);
-      expect(config.rootDir).toBe(rootDir);
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(configPath),
+      );
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
     } finally {
       await rm(rootDir, {
         force: true,

@@ -7,6 +7,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { LiminaFlowReporter } from '../flow';
 
+const ANSI_ESCAPE = String.fromCodePoint(0x1b);
+const ANSI_PATTERN = new RegExp(
+  String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
+  'g',
+);
+
+function stripAnsi(value: string): string {
+  return value.replaceAll(ANSI_PATTERN, '');
+}
+
 const packageCheckMocks = vi.hoisted(() => ({
   attwCheckOptions: [] as unknown[],
   attwProblems: [] as unknown[],
@@ -1717,9 +1727,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
 
-      const output = logSpy.mock.calls
-        .map((call) => call.map(String).join(' '))
-        .join('\n');
+      const output = stripAnsi(
+        logSpy.mock.calls.map((call) => call.map(String).join(' ')).join('\n'),
+      );
 
       expect(output).toContain('[release-check] PASS @example/a -> @example/b');
       expect(output).toContain('Baseline: npm latest -> @example/b@1.0.0');
@@ -2095,9 +2105,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
 
-      const output = [...logSpy.mock.calls, ...errorSpy.mock.calls]
-        .map((call) => call.map(String).join(' '))
-        .join('\n');
+      const output = stripAnsi(
+        [...logSpy.mock.calls, ...errorSpy.mock.calls]
+          .map((call) => call.map(String).join(' '))
+          .join('\n'),
+      );
 
       expect(output).toContain('[release-check] FAIL @example/a -> @example/b');
       expect(output).toContain('Baseline: npm latest -> @example/b@1.0.0');

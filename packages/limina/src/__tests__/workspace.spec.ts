@@ -9,6 +9,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toPortableRelativePath } from './helpers/path';
 
 const execFileMock = vi.hoisted(() => vi.fn());
 
@@ -183,7 +184,10 @@ describe('collectWorkspacePackages', () => {
 
       expect(
         packages.map((workspacePackage) => ({
-          directory: path.relative(fixture.rootDir, workspacePackage.directory),
+          directory: toPortableRelativePath(
+            fixture.rootDir,
+            workspacePackage.directory,
+          ),
           name: workspacePackage.name,
         })),
       ).toEqual(
@@ -245,7 +249,10 @@ describe('collectWorkspacePackages', () => {
 
       expect(
         packages.map((workspacePackage) => ({
-          directory: path.relative(fixture.rootDir, workspacePackage.directory),
+          directory: toPortableRelativePath(
+            fixture.rootDir,
+            workspacePackage.directory,
+          ),
           name: workspacePackage.name,
         })),
       ).toEqual([
@@ -295,7 +302,10 @@ describe('collectWorkspacePackages', () => {
 
       expect(
         packages.map((workspacePackage) => ({
-          directory: path.relative(fixture.rootDir, workspacePackage.directory),
+          directory: toPortableRelativePath(
+            fixture.rootDir,
+            workspacePackage.directory,
+          ),
           name: workspacePackage.name,
         })),
       ).toEqual([
