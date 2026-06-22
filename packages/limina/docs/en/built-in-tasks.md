@@ -1,18 +1,27 @@
 # Built-in Tasks
 
-Built-in tasks are the check units `limina check` runs directly, and each one maps to a `limina <command>` subcommand. `limina check` (with no name) runs the first five below in a fixed order, stopping at the first failure and marking the rest as skipped. `package:check` and `release:check` are not in the default flow; they usually go into a publish [pipeline](./config/pipelines.md).
+Built-in tasks are the check units `limina check` can schedule directly, and each one maps to a `limina <command>` subcommand. `limina check` (with no name) includes `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck` by default. Their results are displayed and recorded in a stable order, but the tasks are scheduled independently: when the `execution.tasks` concurrency budget and resource locks allow it, they can run at the same time. A built-in task failure fails the run, but it does not prevent other built-in tasks from completing. `graph:prepare`, `package:check`, and `release:check` are not in the default check; add them to a named [pipeline](./config/pipelines.md) when you need an explicit graph-generation step or publish-time checks.
 
-| Task                | Command                    | Default `limina check` | Surface                                |
-| ------------------- | -------------------------- | ---------------------- | -------------------------------------- |
-| `graph:check`       | `limina graph check`       | Yes, step 1            | Declaration graph / project references |
-| `source:check`      | `limina source check`      | Yes, step 2            | Package ownership boundaries           |
-| `proof:check`       | `limina proof check`       | Yes, step 3            | Source coverage / tsconfig shape       |
-| `checker:build`     | `limina checker build`     | Yes, step 4            | Build-mode type checking               |
-| `checker:typecheck` | `limina checker typecheck` | Yes, step 5            | Type checking without emit             |
-| `package:check`     | `limina package check`     | No, publish-time       | Built output                           |
-| `release:check`     | `limina release check`     | No, publish-time       | Release hygiene                        |
+| Task                | Command                    | Default check       | Surface                                |
+| ------------------- | -------------------------- | ------------------- | -------------------------------------- |
+| `graph:check`       | `limina graph check`       | Yes, result order 1 | Declaration graph / project references |
+| `graph:prepare`     | `limina graph prepare`     | No, standalone      | Generated graph files                  |
+| `source:check`      | `limina source check`      | Yes, result order 2 | Package ownership boundaries           |
+| `proof:check`       | `limina proof check`       | Yes, result order 3 | Source coverage / tsconfig shape       |
+| `checker:build`     | `limina checker build`     | Yes, result order 4 | Build-mode type checking               |
+| `checker:typecheck` | `limina checker typecheck` | Yes, result order 5 | Type checking without emit             |
+| `package:check`     | `limina package check`     | No, publish-time    | Built output                           |
+| `release:check`     | `limina release check`     | No, publish-time    | Release hygiene                        |
 
 The first column is also the string name for each task inside a pipeline; you can also write it as an explicit object `{ type: 'task', name: 'graph:check' }`.
+
+The order above is the reporting and recording order, not a guarantee of serial execution for the default check. Use a named [pipeline](./config/pipelines.md) when you need a fixed sequence.
+
+## `graph:prepare`
+
+Maps to `limina graph prepare`. It only refreshes Limina's generated graph files: `.limina/manifest.json`, checker build entries, generated declaration configs, declaration output directories, and tsbuildinfo paths. It does not run graph-rule validation or checker processes.
+
+Tasks that consume the generated graph prepare it automatically before they run. Add `graph:prepare` to a named pipeline only when you want that materialization as an explicit step, for example to verify that generated files can be written or are up to date before later work.
 
 ## `graph:check`
 

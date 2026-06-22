@@ -131,4 +131,4 @@ export default defineConfig({
 
 适合用标签表达重要架构边界，例如浏览器与 Node、公开 API 与内部工具、生产代码与测试，或某个包自己的规则。
 
-当一组源码有明确边界时，可以在对应 `tsconfig*.dts.json` 的 `liminaOptions.graphRules` 里写一个或多个标签，并在 `limina.config.mjs` 中写规则。例如浏览器运行时叶子写 `"graphRules": ["runtime-client"]`，规则里禁止 `node:*` 和 `@acme/internal-node`。边界就不再只靠约定；只要有人在浏览器项目里导入 `node:fs`，图检查会直接失败，并显示规则里的 `reason`。
+当一组源码有明确边界时，可以在对应源码 tsconfig 的 `liminaOptions.graphRules` 里写一个或多个标签，并在 `limina.config.mjs` 中写规则。例如浏览器运行时配置写 `"graphRules": ["runtime-client"]`，规则里禁止 `node:*` 和 `@acme/internal-node`。边界由配置和真实源码导入一起验证；只要有人在浏览器项目里导入 `node:fs`，图检查会直接失败，并显示规则里的 `reason`。

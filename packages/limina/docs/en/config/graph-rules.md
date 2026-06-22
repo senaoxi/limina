@@ -64,9 +64,9 @@ Source covered by that config now uses `graph.rules.runtime-client`.
 
 - **Type:** `Array<{ path: string; reason: string }>`
 
-`allow.refs` uses the same entry shape as `deny.refs`, but it only allows legacy extra declared references that static import analysis cannot prove. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
+`allow.refs` uses the same entry shape as `deny.refs`, and acknowledges extra declared references that static import analysis cannot prove. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
 
-Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source tsconfig files. Use `implicitRefs` when a dynamic import, generated manifest, or virtual module creates a real source edge that static analysis cannot see. `allow.refs` remains available for compatibility diagnostics around already-declared references only.
+Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source tsconfig files. Use `implicitRefs` when a dynamic import, generated manifest, or virtual module creates a real source edge that static analysis cannot see. Use `allow.refs` only to explain extra declared references that already exist.
 
 ## deny.refs
 

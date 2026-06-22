@@ -64,9 +64,9 @@ export default defineConfig({
 
 - **类型：** `Array<{ path: string; reason: string }>`
 
-`allow.refs` 的条目形状和 `deny.refs` 相同，但它只用于兼容那些已经声明、静态导入分析无法证明的额外 `references`。它不会创建引用，也不会让被拒绝的引用合规；同一路径同时被 allow 和 deny 时，仍然以 `deny.refs` 为准。
+`allow.refs` 的条目形状和 `deny.refs` 相同，用来承认那些已经声明、但静态导入分析无法证明的额外 `references`。它不会创建引用，也不会让被拒绝的引用合规；同一路径同时被 allow 和 deny 时，仍然以 `deny.refs` 为准。
 
-生成引用会从源码导入和源码 tsconfig 上的 `liminaOptions.implicitRefs` 推导。动态导入、生成清单或虚拟模块确实形成源码边，但静态分析看不到时，使用 `implicitRefs` 补边。`allow.refs` 只保留给已声明引用的兼容诊断。
+生成引用会从源码导入和源码 tsconfig 上的 `liminaOptions.implicitRefs` 推导。动态导入、生成清单或虚拟模块确实形成源码边，但静态分析看不到时，使用 `implicitRefs` 补边。`allow.refs` 只用于解释已经存在的额外声明引用。
 
 ## deny.refs
 

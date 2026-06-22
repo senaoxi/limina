@@ -35,7 +35,7 @@ export default defineConfig({
 
 - **类型：** `Array<{ name: string; entry: string; customConditions: string[] }>`
 
-`entry` 应该指向被启用检查器选中的普通源码 tsconfig。生成的 `.limina/tsconfig/checkers/.../*.dts.json` 路径仍可作为兼容输入，但推荐写源码路径。`tsconfig.build.json` 这类构建聚合器不能作为条件域入口，因为条件域描述的是一棵具体的声明引用树。
+`entry` 应该指向被启用检查器选中的普通源码 tsconfig。`tsconfig.build.json` 这类构建聚合器不能作为条件域入口，因为条件域描述的是一棵具体的声明引用树。
 
 即使没有显式配置 `conditionDomains`，Limina 也会运行默认检查：每个受检查的声明项目，以及从它的 `references` 可达的所有声明项目，都必须拥有相同的有效 `customConditions`。显式配置 `conditionDomains` 后，你还可以把真实入口期望的条件集合写出来，让 Limina 一起校验。
 

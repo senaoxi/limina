@@ -52,10 +52,8 @@ Limina only compares the expected condition set with the actual project graph.
 - **Type:** `Array<{ name: string; entry: string; customConditions: string[] }>`
 
 `entry` should point to an ordinary source tsconfig selected by an active
-checker. Generated `.limina/tsconfig/checkers/.../*.dts.json` paths are accepted
-as compatibility input, but source paths are preferred. Build aggregators such
-as `tsconfig.build.json` are not valid entries because a condition domain
-describes one concrete declaration reference tree.
+checker. Build aggregators such as `tsconfig.build.json` are not valid entries
+because a condition domain describes one concrete declaration reference tree.
 
 Limina also runs a default check without explicit domains: for every checked
 declaration project, that project and all declaration projects reachable through

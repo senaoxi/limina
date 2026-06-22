@@ -1,18 +1,27 @@
 # 内置任务
 
-内置任务是 `limina check` 能直接调用的检查单元，每一个都对应一条 `limina <command>` 子命令。`limina check`（不带名字）会按固定顺序跑下表前五个，遇到第一个失败就停下，后续步骤标记为跳过。`package:check` 和 `release:check` 不在默认流程里，通常放进发布用的命名[流水线](./config/pipelines.md)。
+内置任务是 `limina check` 能直接调度的检查单元，每一个都对应一条 `limina <command>` 子命令。`limina check`（不带名字）默认包含 `graph:check`、`source:check`、`proof:check`、`checker:build`、`checker:typecheck`。这些任务的结果会按固定顺序展示和记录，但调度上是独立任务：在 `execution.tasks` 并发额度和资源锁允许时，它们可以同时运行。某个内置任务失败会让本次检查失败，但不会阻塞其他内置任务继续完成。`graph:prepare`、`package:check` 和 `release:check` 不在默认检查里；需要明确生成图步骤或发布期检查时，可以把它们放进命名[流水线](./config/pipelines.md)。
 
-| 任务                | 对应命令                   | 默认 `limina check` | 作用面                   |
-| ------------------- | -------------------------- | ------------------- | ------------------------ |
-| `graph:check`       | `limina graph check`       | 是，第 1 步         | 声明图 / 项目引用        |
-| `source:check`      | `limina source check`      | 是，第 2 步         | 包归属边界               |
-| `proof:check`       | `limina proof check`       | 是，第 3 步         | 源码覆盖 / tsconfig 形状 |
-| `checker:build`     | `limina checker build`     | 是，第 4 步         | 构建类类型检查           |
-| `checker:typecheck` | `limina checker typecheck` | 是，第 5 步         | 只检查不产出             |
-| `package:check`     | `limina package check`     | 否，发布期          | 构建产物                 |
-| `release:check`     | `limina release check`     | 否，发布期          | 发布卫生                 |
+| 任务                | 对应命令                   | 默认检查       | 作用面                   |
+| ------------------- | -------------------------- | -------------- | ------------------------ |
+| `graph:check`       | `limina graph check`       | 是，结果顺序 1 | 声明图 / 项目引用        |
+| `graph:prepare`     | `limina graph prepare`     | 否，独立任务   | 生成图文件               |
+| `source:check`      | `limina source check`      | 是，结果顺序 2 | 包归属边界               |
+| `proof:check`       | `limina proof check`       | 是，结果顺序 3 | 源码覆盖 / tsconfig 形状 |
+| `checker:build`     | `limina checker build`     | 是，结果顺序 4 | 构建类类型检查           |
+| `checker:typecheck` | `limina checker typecheck` | 是，结果顺序 5 | 只检查不产出             |
+| `package:check`     | `limina package check`     | 否，发布期     | 构建产物                 |
+| `release:check`     | `limina release check`     | 否，发布期     | 发布卫生                 |
 
 表格第一列就是这些任务在流水线里的字符串名，也可以写成显式对象 `{ type: 'task', name: 'graph:check' }`。
+
+这里的顺序是结果展示和记录顺序，不表示默认检查会串行执行。需要固定先后关系时，使用命名[流水线](./config/pipelines.md)。
+
+## `graph:prepare`
+
+对应 `limina graph prepare`，只刷新 Limina 生成的图文件：`.limina/manifest.json`、检查器构建入口、生成的声明配置、声明输出目录和 tsbuildinfo 路径。它不会执行图规则校验，也不会运行检查器。
+
+消费生成图的任务会在运行前自动 prepare。只有当你想在命名流水线里单独把生成图物化出来，或想先确认生成文件是否可写、是否最新时，才需要显式写 `graph:prepare`。
 
 ## `graph:check`
 

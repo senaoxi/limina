@@ -105,7 +105,7 @@ interface SourceKnipCheckConfig {
 
 `source.knip.workspaces` keys are package names discovered from the pnpm workspace, such as `@acme/app`. Unknown package names fail `source check`. Nameless workspace packages can still be source owners, but they cannot be configured under `source.knip.workspaces` because there is no stable package name key.
 
-`source.knip.workspaces[pkg]` only configures extra reachability and ignore rules. It does not accept `tsConfig`. If a package does not declare a static `limina checker build <config>` script, Limina runs Knip for that package without `--tsConfig`, so Knip uses its own default tsconfig behavior.
+`source.knip.workspaces[pkg]` only configures extra reachability and ignore rules. Package-specific Knip tsconfig selection comes from static `limina checker build <config>` scripts. If a package does not declare one, Limina runs Knip for that package without `--tsConfig`, so Knip uses its own default tsconfig behavior.
 
 A static package script can override that default and give Limina a package-specific Knip tsconfig source:
 
@@ -117,7 +117,7 @@ A static package script can override that default and give Limina a package-spec
 }
 ```
 
-The `<config>` path is resolved from the package directory. It must be a JSON file inside the workspace. Raw package-script configs must stay inside the owning package directory, and generated `.limina` configs are not valid script inputs. Limina supports static forms such as `limina checker build tsconfig.dts.json --preset tsgo`, `limina checker build tsconfig.json --preset vue-tsc`, `pnpm limina checker build tsconfig.dts.json`, and `pnpm exec limina checker build tsconfig.dts.json`. Dynamic shell scripts such as `limina checker build $CONFIG` are reported as unsupported instead of silently falling back to Knip defaults.
+The `<config>` path is resolved from the package directory. It must be a JSON file inside the workspace. Raw package-script configs must stay inside the owning package directory, and generated `.limina` configs are not valid script inputs. Limina supports static forms such as `limina checker build tsconfig.dts.json --preset tsgo`, `limina checker build tsconfig.json --preset vue-tsc`, `pnpm limina checker build tsconfig.dts.json`, and `pnpm exec limina checker build tsconfig.dts.json`. Dynamic shell scripts such as `limina checker build $CONFIG` are reported as unsupported.
 
 ::: warning
 `knip` is an optional peer dependency of Limina. If `source.knip` is enabled but `knip` is not installed in the workspace running Limina, `source check` fails with a missing peer dependency error.

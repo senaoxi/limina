@@ -105,7 +105,7 @@ interface SourceKnipCheckConfig {
 
 `source.knip.workspaces` 的 key 是 pnpm workspace 中发现的包名，例如 `@acme/app`。如果 key 对应不到工作区包名，`source check` 会直接失败。没有 `name` 的 workspace package 仍然可以成为 source owner，但不能放进 `source.knip.workspaces`，因为它没有稳定的包名 key。
 
-`source.knip.workspaces[pkg]` 只配置额外可达入口和忽略规则，不再接受 `tsConfig`。如果某个包没有声明静态的 `limina checker build <config>` 脚本，Limina 会在分析这个包时不传 `--tsConfig`，交给 Knip 使用自己的默认 tsconfig 行为。
+`source.knip.workspaces[pkg]` 只配置额外可达入口和忽略规则。包级 Knip tsconfig 来源来自静态的 `limina checker build <config>` 脚本；没有这类脚本时，Limina 不传 `--tsConfig`，交给 Knip 使用自己的默认 tsconfig 行为。
 
 静态 package script 可以覆盖这个默认行为，让 Limina 为这个包推导专用的 Knip tsconfig 来源：
 
@@ -117,7 +117,7 @@ interface SourceKnipCheckConfig {
 }
 ```
 
-`<config>` 会从这个包目录解析。它必须是工作区内的 JSON 文件；raw package script 配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 支持 `limina checker build tsconfig.dts.json --preset tsgo`、`limina checker build tsconfig.json --preset vue-tsc`、`pnpm limina checker build tsconfig.dts.json`、`pnpm exec limina checker build tsconfig.dts.json` 这类静态写法。像 `limina checker build $CONFIG` 这样的动态 shell 脚本会被报告为不支持，而不是静默退回 Knip 默认行为。
+`<config>` 会从这个包目录解析。它必须是工作区内的 JSON 文件；raw package script 配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 支持 `limina checker build tsconfig.dts.json --preset tsgo`、`limina checker build tsconfig.json --preset vue-tsc`、`pnpm limina checker build tsconfig.dts.json`、`pnpm exec limina checker build tsconfig.dts.json` 这类静态写法。像 `limina checker build $CONFIG` 这样的动态 shell 脚本会被报告为不支持。
 
 ::: warning
 `knip` 是 Limina 的 optional peer dependency。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，`source check` 会直接报缺失 peer dependency。

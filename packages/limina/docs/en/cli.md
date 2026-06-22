@@ -10,14 +10,14 @@ limina [--config limina.config.mjs] [--mode mode] <command>
 For what each task detects, with examples, see [Built-in Tasks](./built-in-tasks.md). For the fields each command reads from `limina.config.mjs`, see the [Config Reference](./config/index.md).
 :::
 
-## Setup and Default Pipeline
+## Setup and Default Check
 
 | Command                   | Description                                                                                                       |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `limina init [--yes]`     | Generate `limina.config.mjs`, ensure `.limina/` is ignored, and add a `limina:build` script for a pnpm workspace. |
-| `limina check`            | Run the default pipeline: graph, source, proof, checker build, and checker typecheck.                             |
+| `limina check`            | Run the default check: schedule graph, source, proof, checker build, and checker typecheck.                       |
 | `limina check --issues`   | Print filter values available from the last recorded check issues.                                                |
-| `limina check <pipeline>` | Run a named user pipeline from `pipelines`.                                                                       |
+| `limina check <pipeline>` | Run a named ordered pipeline from `pipelines`.                                                                    |
 
 `limina check --issues` reads the last recorded check result and lists filter
 values by task, package, rule, scope, and checker. Combine it
