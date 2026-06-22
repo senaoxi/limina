@@ -70,12 +70,17 @@ function callWriteCallback(args: unknown[]): void {
 
 export class FlowProcessRenderer {
   readonly #child: ChildProcess;
+  readonly #ready: Promise<boolean>;
   #restoreStreams: (() => void) | undefined;
   #active = true;
   #closeResolver: ((value: boolean) => void) | undefined;
+  #readyResolver: ((value: boolean) => void) | undefined;
 
   private constructor(child: ChildProcess) {
     this.#child = child;
+    this.#ready = new Promise((resolve) => {
+      this.#readyResolver = resolve;
+    });
     child.on('exit', () => {
       this.#deactivate(false);
     });
@@ -83,6 +88,11 @@ export class FlowProcessRenderer {
       this.#deactivate(false);
     });
     child.on('message', (message: FlowRendererParentMessage) => {
+      if (message.type === 'ready') {
+        this.#resolveReady(true);
+        return;
+      }
+
       if (message.type === 'closed' || message.type === 'failed') {
         this.#deactivate(message.type === 'closed');
       }
@@ -116,6 +126,10 @@ export class FlowProcessRenderer {
 
   get active(): boolean {
     return this.#active;
+  }
+
+  get ready(): Promise<boolean> {
+    return this.#ready;
   }
 
   close(snapshot: FlowRenderSnapshot): Promise<boolean> {
@@ -159,6 +173,7 @@ export class FlowProcessRenderer {
     }
 
     this.#active = false;
+    this.#resolveReady(false);
     this.#restoreStreams?.();
     if (
       !result &&
@@ -170,6 +185,11 @@ export class FlowProcessRenderer {
     }
     this.#closeResolver?.(result);
     this.#closeResolver = undefined;
+  }
+
+  #resolveReady(result: boolean): void {
+    this.#readyResolver?.(result);
+    this.#readyResolver = undefined;
   }
 
   #patchWriteStream(

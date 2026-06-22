@@ -226,6 +226,10 @@ export class LiminaFlowReporter {
     return this.#processRenderer ? 'process' : 'inline';
   }
 
+  waitForRendererReady(): Promise<boolean> {
+    return this.#processRenderer?.ready ?? Promise.resolve(false);
+  }
+
   #createProcessRenderer(
     options: LiminaFlowReporterOptions,
   ): FlowProcessRenderer | undefined {

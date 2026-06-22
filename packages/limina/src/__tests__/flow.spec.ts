@@ -154,8 +154,10 @@ describe('LiminaFlowReporter', () => {
 
       void (async () => {
         const flow = createLiminaCheckFlowReporter({ forceTty: true });
+        await flow.waitForRendererReady();
         flow.intro('limina check');
         const task = flow.start('default check', { collapseOnSuccess: false });
+        await new Promise((resolve) => setImmediate(resolve));
         const startedAt = Date.now();
 
         while (Date.now() - startedAt < 350) {}
