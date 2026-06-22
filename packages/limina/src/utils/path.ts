@@ -14,14 +14,6 @@ export function toRelativePath(rootDir: string, absolutePath: string): string {
   return relativePath.length === 0 ? '.' : relativePath;
 }
 
-export function toAbsolutePath(rootDir: string, workspacePath: string): string {
-  return resolve(rootDir, workspacePath);
-}
-
-export function normalizeWorkspacePath(rootDir: string, value: string): string {
-  return toRelativePath(rootDir, value);
-}
-
 export function normalizeSlashes(value: string): string {
   return value.replaceAll('\\', '/');
 }

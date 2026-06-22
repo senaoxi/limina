@@ -1,9 +1,9 @@
 # Condition Domains
 
-`graph.conditionDomains` tells Limina which condition set a real entry should
-use when resolving imports. Limina expands the entry project's `references` and
-checks that every reachable `tsconfig*.dts.json` project uses the configured
-`compilerOptions.customConditions`.
+`graph.conditionDomains` tells Limina which condition set a real source entry
+should use when resolving imports. Limina finds the declaration build graph for
+that entry, expands its references, and checks that every reachable project uses
+the configured `compilerOptions.customConditions`.
 
 ```js
 import { defineConfig } from 'limina';
@@ -13,12 +13,12 @@ export default defineConfig({
     conditionDomains: [
       {
         name: 'web',
-        entry: 'apps/web/tsconfig.dts.json',
+        entry: 'apps/web/tsconfig.json',
         customConditions: ['browser', 'source'],
       },
       {
         name: 'node',
-        entry: 'apps/node/tsconfig.dts.json',
+        entry: 'apps/node/tsconfig.json',
         customConditions: ['node', 'source'],
       },
     ],
@@ -29,9 +29,10 @@ export default defineConfig({
 ## Why This Exists
 
 `compilerOptions.customConditions` decides which branch of a package `exports`
-map TypeScript, Limina's Oxc resolver, and the real bundler choose. Conditions
-such as `browser`, `node`, and `source` usually mean "resolve this code for a
-different environment or build mode."
+map TypeScript and Limina's resolver use inside a governed tsconfig domain.
+Conditions such as `browser`, `node`, and `source` usually mean "resolve this
+code for a different environment or build mode." Other resolvers may instead
+use one global condition set, which is a different model.
 
 A declaration reference tree is only the project graph used by `tsc -b`. It does
 not say whether an entry should resolve as browser code, Node code, or source
@@ -50,33 +51,36 @@ Limina only compares the expected condition set with the actual project graph.
 
 - **Type:** `Array<{ name: string; entry: string; customConditions: string[] }>`
 
-`entry` must point to a `tsconfig*.dts.json` project reachable from the active
-checker entries. Build aggregators such as `tsconfig.build.json` are not valid
-entries because a condition domain describes a concrete declaration reference
-tree.
+`entry` should point to an ordinary source tsconfig selected by an active
+checker. Generated `.limina/tsconfig/checkers/.../*.dts.json` paths are accepted
+as compatibility input, but source paths are preferred. Build aggregators such
+as `tsconfig.build.json` are not valid entries because a condition domain
+describes one concrete declaration reference tree.
 
-Limina also runs a default check without explicit domains: for every governed
+Limina also runs a default check without explicit domains: for every checked
 declaration project, that project and all declaration projects reachable through
 its references must share the same effective `customConditions`. Explicit
-`conditionDomains` let you also write down the condition set expected by real
-entry projects.
+`conditionDomains` let you also write down the condition set expected by a real
+entry.
 
 ::: danger Note
 
 When you configure `conditionDomains` for an entry, make sure the
-`customConditions` listed here match the conditions used by the real bundler.
-Limina does not read or rewrite bundler config. If the bundler uses another
-condition set, a passing Limina check still cannot guarantee that runtime
-resolution chooses the same `exports` branch.
+`customConditions` listed here match the runtime conditions you actually intend
+for that entry. Limina does not read or rewrite other resolver configuration. If
+another resolver uses one global condition set while Limina checks several
+tsconfig domains, a passing Limina check still cannot guarantee that every
+runtime path chooses the same `exports` branch.
 
 :::
 
 ## How Limina Checks It
 
-Limina first collects every governed `tsconfig*.dts.json` project reachable from
-the active checker entries. The default check starts from each declaration
-project, expands declaration `references`, and requires the entire declaration
-subtree to share the same effective `customConditions`.
+Limina first prepares the generated graph and collects every governed generated
+declaration project reachable from the active checker entries. The default check
+starts from each declaration project, expands declaration `references`, and
+requires the entire declaration subtree to share the same effective
+`customConditions`.
 
 When `conditionDomains` is configured, Limina also validates each condition
 domain:
@@ -84,7 +88,7 @@ domain:
 - `name` and `entry` must be non-empty strings, and `customConditions` must be an
   array of strings.
 - `entry` must be workspace-root-relative, stay inside the workspace, and point
-  to an existing `tsconfig*.dts.json`.
+  to an existing source tsconfig or generated declaration project.
 - `entry` must already be governed by the active checker entries; a domain does
   not add otherwise unchecked projects to the graph.
 - Limina expands the entry's declaration reference subtree and reuses the
@@ -101,10 +105,9 @@ discover projects outside the checker graph.
 Explicit condition domains turn "does this entry resolve as web, node, or
 source?" into a rule Limina can check. If it is wrong, graph check fails early
 instead of letting a package `exports` map choose the wrong branch and later show
-up as a missing edge, a false positive, or an incorrect build order.
+up as a missing edge, a false positive, or an incorrect artifact classification.
 
 They also let multi-entry workspaces govern multiple resolution domains in
 parallel. For example, a browser entry can use `['browser', 'source']` while a
 Node entry uses `['node', 'source']`. Each entry's declaration reference tree
-stays internally consistent, and Limina's TypeScript/Oxc resolution is easier to
-keep aligned with the real bundler.
+stays internally consistent inside the condition domain Limina checks.

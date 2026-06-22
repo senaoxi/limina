@@ -1,6 +1,6 @@
 # Graph Rules
 
-Graph rules are keyed by labels declared in `tsconfig*.dts.json`.
+Graph rules are keyed by labels declared in source `tsconfig*.json` files. Limina carries those labels into the generated build configs and uses them during graph checks to decide which references or dependencies are not allowed.
 
 ```js
 import { defineConfig } from 'limina';
@@ -12,7 +12,7 @@ export default defineConfig({
         deny: {
           refs: [
             {
-              path: 'packages/app/src/node/tsconfig.lib.dts.json',
+              path: 'packages/app/src/node/tsconfig.lib.json',
               reason: 'client runtime must not depend on Node runtime',
             },
           ],
@@ -30,7 +30,7 @@ export default defineConfig({
         allow: {
           refs: [
             {
-              path: 'packages/app/src/generated/tsconfig.lib.dts.json',
+              path: 'packages/app/src/generated/tsconfig.lib.json',
               reason: 'generated declarations are wired by the build pipeline',
             },
           ],
@@ -45,75 +45,69 @@ export default defineConfig({
 
 - **Type:** `Record<string, GraphRule>`
 
-The `rules` key must match an entry in `liminaOptions.graphRules` in a declaration leaf. A leaf can list multiple labels, and Limina merges the matching rules.
+The `rules` key must match an entry in `liminaOptions.graphRules` in a source tsconfig. A source config can list multiple labels, and Limina merges the matching rules for that config.
 
-Pair the rule with labels in the declaration leaf:
+Pair the rule with labels in the source config:
 
 ```jsonc
 {
   "liminaOptions": {
     "graphRules": ["runtime-client"],
   },
-  "extends": ["./tsconfig.lib.json"],
-  "references": [],
+  "include": ["src/**/*.ts"],
 }
 ```
 
-Source covered by that leaf now uses `graph.rules.runtime-client`.
+Source covered by that config now uses `graph.rules.runtime-client`.
 
 ## allow.refs
 
 - **Type:** `Array<{ path: string; reason: string }>`
 
-`allow.refs` uses the same entry shape as `deny.refs`, but it only allows extra declared references that static import analysis cannot prove. It does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
+`allow.refs` uses the same entry shape as `deny.refs`, but it only allows legacy extra declared references that static import analysis cannot prove. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
 
-`limina graph sync` keeps currently declared extra references only when they match the merged `allow.refs` rules. It does not add unused allow entries.
+Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source tsconfig files. Use `implicitRefs` when a dynamic import, generated manifest, or virtual module creates a real source edge that static analysis cannot see. `allow.refs` remains available for compatibility diagnostics around already-declared references only.
 
 ## deny.refs
 
 - **Type:** `Array<{ path: string; reason: string }>`
 
-`deny.refs` forbids a labeled project from referencing a specific declaration leaf. It is useful for boundaries such as "client runtime must not depend on server runtime" or "public API must not depend on internal tools".
+`deny.refs` forbids a labeled project from referencing the declaration build config for a specific source tsconfig. It is useful for boundaries such as "client runtime must not depend on server runtime" or "public API must not depend on internal tools".
 
 For example, if the rule contains:
 
 ```jsonc
 {
-  "path": "packages/app/src/node/tsconfig.lib.dts.json",
+  "path": "packages/app/src/node/tsconfig.lib.json",
   "reason": "client runtime must not depend on Node runtime",
 }
 ```
 
-and a `runtime-client` leaf references that Node-only leaf, `limina graph check` fails and prints the configured reason.
+and a project labeled `runtime-client` references the generated Node-only config, `limina graph check` fails and prints the configured reason.
 
 In a fuller example, the repository can look like this:
 
 ```text
 packages/app/
-  src/client/tsconfig.lib.dts.json
-  src/node/tsconfig.lib.dts.json
+  src/client/tsconfig.lib.json
+  src/node/tsconfig.lib.json
   src/client/main.ts
   src/node/read-file.ts
 ```
 
-The client leaf is labeled `runtime-client`, but it incorrectly references the Node leaf:
+The client source config is labeled `runtime-client`; Limina generates the references:
 
 ```jsonc
-// packages/app/src/client/tsconfig.lib.dts.json
+// packages/app/src/client/tsconfig.lib.json
 {
   "liminaOptions": {
     "graphRules": ["runtime-client"],
   },
-  "extends": ["./tsconfig.lib.json"],
-  "references": [
-    {
-      "path": "../node/tsconfig.lib.dts.json",
-    },
-  ],
+  "include": ["main.ts"],
 }
 ```
 
-When `pnpm exec limina graph check` runs, Limina starts from the checker entry, finds reachable declaration leaves, and reads each leaf's `references`. When it sees the `runtime-client` leaf referencing `packages/app/src/node/tsconfig.lib.dts.json`, it compares that reference with `graph.rules.runtime-client.deny.refs`.
+When `pnpm exec limina graph check` runs, Limina prepares the generated graph and reads the relevant project `references`. When it sees a project labeled `runtime-client` referencing the generated config for `packages/app/src/node/tsconfig.lib.json`, it compares that source path with `graph.rules.runtime-client.deny.refs`.
 
 The result is a graph check failure that points at the forbidden project reference and prints the configured `reason`. This means the problem is not just one import line; the TypeScript graph itself now says client runtime depends on Node runtime.
 
@@ -137,7 +131,7 @@ The matching directory can look like this:
 
 ```text
 packages/app/
-  src/client/tsconfig.lib.dts.json
+  src/client/tsconfig.lib.json
   src/client/load.ts
 packages/internal-node/
   src/index.ts

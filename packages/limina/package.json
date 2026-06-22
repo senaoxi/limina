@@ -37,6 +37,15 @@
   "bin": {
     "limina": "./bin/limina.js"
   },
+  "imports": {
+    "#utils/*": "./src/utils/*.ts",
+    "#core": "./src/core/index.ts",
+    "#core/*/runner": "./src/core/*/runner.ts",
+    "#core/*/context": "./src/core/*/context.ts",
+    "#core/*/actions": "./src/core/*/actions.ts",
+    "#checkers": "./src/checkers.ts",
+    "#config/*": "./src/config/*.ts"
+  },
   "scripts": {
     "build": "rolldown --config rolldown.config.ts",
     "build:watch": "rolldown --config rolldown.config.ts --watch",
@@ -57,12 +66,13 @@
     "@types/semver": "catalog:dev",
     "@docs-islands/eslint-config": "workspace:*",
     "@docs-islands/utils": "workspace:*",
-    "@docs-islands/plugin-license": "link:../plugins/license/dist",
+    "@docs-islands/plugin-license": "workspace:*",
     "@vue/compiler-sfc": "catalog:dev",
     "@types/node": "catalog:dev",
     "@arethetypeswrong/core": "catalog:lint",
     "@clack/prompts": "catalog:dev",
-    "logaria": "catalog:prod",
+    "boxen": "catalog:dev",
+    "logaria": "workspace:*",
     "@publint/pack": "catalog:lint",
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",
@@ -83,15 +93,15 @@
     "vitest": "catalog:test"
   },
   "peerDependencies": {
-    "@arethetypeswrong/core": "^0.18.2",
-    "@typescript/native-preview": "7.0.0-dev.20260527.1",
-    "@vue/compiler-sfc": "^3.5.28",
+    "@arethetypeswrong/core": "^0.18.0",
+    "@typescript/native-preview": ">=7.0.0-dev.20260527.1 <7.0.0",
+    "@vue/compiler-sfc": "^3.5.0",
     "knip": "^6.15.0",
-    "publint": "^0.3.17",
-    "svelte-check": "^4.4.7",
-    "typescript": "~5.9.3",
-    "vue-tsc": "~3.2.4",
-    "vue-tsgo": "0.2.2"
+    "publint": "^0.3.0",
+    "svelte-check": "^4.4.0",
+    "typescript": "^5.9.0",
+    "vue-tsc": "^3.2.4",
+    "vue-tsgo": "^0.2.2"
   },
   "peerDependenciesMeta": {
     "@arethetypeswrong/core": {
@@ -122,10 +132,9 @@
       "optional": true
     }
   },
-  "types": "./src/index.ts",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./config": "./src/config.ts",
     "./schemas/tsconfig-schema.json": "./schemas/tsconfig-schema.json",
     "./package.json": "./package.json"
   },

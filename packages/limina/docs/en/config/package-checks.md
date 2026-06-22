@@ -13,7 +13,6 @@ export default defineConfig({
         outDir: 'packages/core/dist',
         checks: ['publint', 'attw', 'boundary'],
         publint: {
-          strict: true,
           level: 'warning',
         },
         attw: {
@@ -53,7 +52,7 @@ Package checks validate the resolver and runtime behavior of the directory consu
 `outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, JavaScript, and declarations. Release-only files and tarball hygiene are checked by `limina release check`.
 
 ::: info
-When top-level `strict: true` is enabled, each `outDir/package.json` must exist and look like a complete npm package manifest. Limina also rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and npm receive.
+Each `outDir/package.json` must exist and look like a complete npm package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and npm receive.
 :::
 
 ## checks
@@ -85,7 +84,7 @@ When top-level `strict: true` is enabled, each `outDir/package.json` must exist 
 - **Type:** `boolean`
 - **Default:** `true`
 
-`publint.strict` controls whether publint runs in strict mode. It is enabled by default.
+`publint.strict` controls publint's `strict` option. It is enabled by default.
 
 ### publint.level
 

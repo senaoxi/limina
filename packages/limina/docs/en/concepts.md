@@ -4,7 +4,7 @@ Limina uses TypeScript concepts, but the model is small. The important idea is t
 
 ## Checker Entry
 
-A [checker entry](./config/checkers.md) is the root config Limina starts from.
+A [checker entry](./config/checkers.md) selects source `tsconfig.json` entry files for one checker namespace.
 
 ```js
 export default defineConfig({
@@ -12,22 +12,22 @@ export default defineConfig({
     checkers: {
       typescript: {
         preset: 'tsc',
-        entry: 'tsconfig.build.json',
+        include: ['packages/**/tsconfig.json'],
       },
     },
   },
 });
 ```
 
-For TypeScript, this is usually a build graph aggregator. It points to declaration projects through `references`. Limina walks that graph to discover what should be checked.
+For TypeScript, this is usually a set of package or workspace entry selectors. Limina expands `include` minus `exclude`, follows solution references from those entries, then writes the executable declaration build graph under `.limina/`.
 
 For framework files, a checker entry can use `vue-tsc`, `vue-tsgo`, or `svelte-check`. These checkers cover files that normal `tsc` does not understand by itself.
 
-Any source family you want Limina to govern needs a checker entry in `limina.config.mjs`. Plain TypeScript packages usually point at the root `tsconfig.build.json`; Vue or Svelte projects add their framework checker entries. Graph, proof, source, and checker commands all start from these entries, so they define which projects are inside the governed surface.
+Any source family you want Limina to check needs a checker entry in `limina.config.mjs`. Plain TypeScript packages usually use a `typescript` checker with `tsconfig.json` entry globs; Vue or Svelte projects add framework checker entries for the `tsconfig.json` files that need those capabilities. Graph, proof, source, and checker commands all start from these entries.
 
-## Declaration Leaf
+## Declaration Build Configs
 
-A declaration leaf is a `tsconfig*.dts.json` project. It is the part of the graph that can be consumed by `tsc -b`.
+Limina writes declaration build configs under `.limina/tsconfig/checkers/<checker>/projects/.../*.dts.json`. These are the project nodes consumed by `tsc -b` or `vue-tsc -b`.
 
 It should emit declarations only, with build-mode options such as:
 
@@ -46,57 +46,59 @@ It should emit declarations only, with build-mode options such as:
 }
 ```
 
-The declaration leaf owns graph structure. It says which other declaration leaves this project references.
+These generated configs own the build graph structure. They extend the source config, force declaration-only emit, record `liminaOptions.sourceConfig`, and reference other generated configs inferred from source imports or declared through `liminaOptions.implicitRefs`.
 
-When a package, or one environment inside a package, belongs in the `tsc -b` graph, give it a declaration leaf. For example, `packages/core/tsconfig.lib.dts.json` can represent the library source boundary for `@acme/core`. That turns "which project depends on which" into a TypeScript-checkable reference graph. When `@acme/app` imports `@acme/core`, Limina can verify that app's leaf references core's leaf.
+When a package, or one environment inside a package, belongs in the checker graph, start from its `tsconfig.json` entry. If that entry references `packages/core/tsconfig.lib.json`, Limina can generate the declaration boundary for `@acme/core`. When `@acme/app` imports `@acme/core`, Limina can verify and generate the corresponding declaration reference.
 
-## Local Companion
+## Source Config
 
-Every declaration leaf should have a local companion for normal typechecking:
+The source config is the canonical user-facing config:
 
 ```text
-tsconfig.lib.dts.json    <->    tsconfig.lib.json
-tsconfig.tools.dts.json  <->    tsconfig.tools.json
-tsconfig.test.dts.json   <->    tsconfig.test.json
+packages/core/tsconfig.lib.json
+packages/core/tsconfig.tools.json
+packages/core/tsconfig.test.json
 ```
 
-The companion owns strict typecheck semantics such as `strict`, `lib`, `types`, `jsx`, and framework settings. Proof check verifies that declaration leaves and companions keep the same file set and typecheck-relevant compiler options, while checker build runs first-class entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`.
+The source config owns typecheck semantics such as `lib`, `types`, `jsx`, and framework settings. Proof check confirms that source is not missed, while checker build runs Limina's generated build entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`.
 
 ::: warning
-Current `vue-tsgo` support is second-class for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; its configured tsconfig entry still participates in Limina graph/proof coverage.
+Current `vue-tsgo` support is typecheck-only for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; selected source tsconfigs still participate in Limina graph and proof checks.
 :::
 
-This split keeps build output settings out of the ordinary typecheck config.
-
-In practice, let the declaration leaf handle buildable declaration output and let the local companion describe normal strict typechecking. For example, `tsconfig.lib.dts.json` can focus on declaration emit, while `tsconfig.lib.json` carries `strict`, DOM libs, test types, or JSX settings. Limina proves their semantic parity instead of running a separate companion no-emit pass, so the `tsc -b` graph stays clean without weakening everyday source checks.
+This split keeps generated declaration output settings out of the ordinary source config.
 
 ## Aggregator Config
 
 An aggregator is a tsconfig with only `files: []` and `references`. It groups other projects and does not own source files.
 
-Limina expects build graph configs such as `tsconfig.build.json` to be pure aggregators. If a default `tsconfig.json` has `references`, Limina expects it to be a pure IDE/typecheck aggregator too.
+Limina still expects default `tsconfig.json` files with `references` to be pure IDE/typecheck aggregators.
 
-If a config only groups several leaves, keep it as an aggregator. A root `tsconfig.build.json`, for example, can reference every package's `tsconfig*.dts.json` without owning files itself. That keeps graph entrypoints and leaf boundaries easier to review, and Proof check can catch configs that try to aggregate projects and include source at the same time.
+If a source config only groups several source projects, keep it as an aggregator. Generated build aggregators live under `.limina/` and are recreated by `limina graph prepare`.
 
-## Source Dependency
+## Source and Artifact Edges
 
-A dependency declared with `workspace:*` links another package from the same workspace. A package can expose some public entries as source and other public entries as built artifacts.
+A package can expose some public entries as source and other public entries as built artifacts. The dependency protocol in `package.json` authorizes package access, but it does not decide whether a relationship is source or artifact consumption. The resolved file decides.
 
 Limina pre-resolves every public `exports` subpath for workspace packages that declare `exports`. TypeScript resolution must find a stable type entry: `.d.ts` family declarations, source files such as `.ts` / `.tsx` / `.mts` / `.cts`, `.json`, or checker-supported source extensions such as `.vue`. If TypeScript only reaches runtime JavaScript, or if TypeScript or Oxc cannot resolve an export, graph checking reports the package export.
 
-When `@acme/app` imports a public entry of `@acme/core`, graph references are required only when that resolved entry is owned by a `tsconfig*.dts.json` project. Built declaration artifacts such as `dist/*.d.ts` are already output, so they do not require a project reference. Nx checks cover the complementary case: if app actually imports a `workspace:*` entry that resolves into core's artifact directory, app's `project.json` should depend on core's build target.
+When `@acme/app` imports a public entry of `@acme/core`, graph references are required only when that resolved entry lands on source managed by Limina. Built declaration artifacts such as `dist/*.d.ts` are already output, so they do not require a project reference. The complementary artifact relationship appears in `limina graph export --view artifact` as a scoped architecture fact.
 
-## Artifact Dependency
+## Dependency Graph Export
 
-A dependency declared with `link:`, `file:`, `catalog:`, or normal semver is treated as an artifact dependency. It usually should not be modeled as a source project reference.
+`limina graph export` emits package nodes and source/artifact edges as JSON:
 
-Artifact dependencies are checked at the package-output layer, not by pretending their source belongs to the current graph.
+```sh
+pnpm exec limina graph export --view all
+```
 
-If a package only wants to consume another package the way an outside user would, treat it as an artifact dependency. For example, a tooling package might use the published output of `@acme/core` through normal semver instead of joining core's source build graph. The source graph stays smaller, and output problems are handled by `limina package check`.
+Use `--view source` when you want only source graph relationships, or `--view artifact` when you want to inspect artifact-consumption facts. Each edge is resolved inside the tsconfig domain Limina governs, including that domain's `compilerOptions.customConditions`. The export is not an authoritative task graph or build-order source.
+
+Artifact outputs are still checked at the package-output layer by `limina package check`, not by pretending their source belongs to the current type graph.
 
 ## Labels and Rules
 
-A declaration leaf can opt into one or more [graph rules](./config/graph-rules.md) with `liminaOptions.graphRules`:
+A source tsconfig can opt into one or more [graph rules](./config/graph-rules.md) with `liminaOptions.graphRules`. Limina carries those labels onto the generated build config:
 
 ```jsonc
 {
@@ -129,4 +131,4 @@ export default defineConfig({
 
 Use labels for boundaries that matter to the architecture: browser vs Node, public API vs internal tools, production vs tests, or package-specific rules.
 
-When a group of source files has a real boundary, put one or more graph rule labels on the matching `tsconfig*.dts.json` and define those rules in `limina.config.mjs`. For example, a browser runtime leaf can declare `"graphRules": ["runtime-client"]` under `liminaOptions` while the rule denies `node:*` and `@acme/internal-node`. The boundary no longer depends on convention alone; an import of `node:fs` from the browser project fails Graph check with the rule's reason.
+When a group of source files has a real boundary, put one or more graph rule labels on the matching source tsconfig and define those rules in `limina.config.mjs`. For example, a browser runtime config can declare `"graphRules": ["runtime-client"]` under `liminaOptions` while the rule denies `node:*` and `@acme/internal-node`. The boundary no longer depends on convention alone; an import of `node:fs` from the browser project fails graph check with the rule's reason.

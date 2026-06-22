@@ -66,7 +66,6 @@ The directory can look like this:
 packages/core/
   src/index.ts
   src/generated/runtime.d.ts
-  tsconfig.lib.dts.json
   tsconfig.lib.json
 ```
 

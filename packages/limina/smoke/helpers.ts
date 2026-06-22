@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,8 +29,6 @@ interface PackedDistTarball {
   tarballPath: string;
 }
 
-const require = createRequire(import.meta.url);
-
 export const PACKAGE_ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 export const DIST_DIR = path.join(PACKAGE_ROOT_DIR, 'dist');
 const REQUIRED_DIST_FILES = [
@@ -40,8 +37,6 @@ const REQUIRED_DIST_FILES = [
   'cli.js',
   'index.js',
   'index.d.ts',
-  'config.js',
-  'config.d.ts',
   'schemas/tsconfig-schema.json',
 ] as const;
 
@@ -58,7 +53,7 @@ function getNpmCommand(): string {
 }
 
 function readJsonFile<T>(filePath: string): T {
-  return JSON.parse(readFileSync(filePath, 'utf8')) as T;
+  return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '')) as T;
 }
 
 function runCommand(
@@ -113,51 +108,19 @@ export function runNodeScript(options: {
   });
 }
 
-export function resolveInstalledPackageVersion(
+function getPeerDependencyRange(
+  manifest: DistPackageJson,
   packageName: string,
-  fallbackVersion?: string,
 ): string {
-  try {
-    let currentDir = path.dirname(require.resolve(packageName));
-    let packageJsonPath: string | undefined;
+  const range = manifest.peerDependencies?.[packageName];
 
-    for (;;) {
-      const candidatePath = path.join(currentDir, 'package.json');
-
-      if (existsSync(candidatePath)) {
-        packageJsonPath = candidatePath;
-        break;
-      }
-
-      const parentDir = path.dirname(currentDir);
-
-      if (parentDir === currentDir) {
-        break;
-      }
-
-      currentDir = parentDir;
-    }
-
-    if (!packageJsonPath) {
-      throw new Error(`Unable to locate package.json for "${packageName}".`);
-    }
-
-    const packageJson = readJsonFile<{ version?: string }>(packageJsonPath);
-
-    if (packageJson.version) {
-      return packageJson.version;
-    }
-  } catch {
-    // Fall back to the published peer dependency range when local resolution fails.
-  }
-
-  if (!fallbackVersion) {
+  if (!range) {
     throw new Error(
-      `Unable to resolve an installed version for "${packageName}".`,
+      `Expected dist package.json to declare peerDependencies.${packageName}.`,
     );
   }
 
-  return fallbackVersion;
+  return range;
 }
 
 export function readDistManifest(): DistPackageJson {
@@ -268,7 +231,10 @@ async function writeConsumerPackageManagerConfig(
   const trustPolicy = readCurrentPnpmConfig<string>('trust-policy');
   const trustPolicyExcludes =
     readCurrentPnpmConfig<string[]>('trust-policy-exclude') ?? [];
-  const lines: string[] = [];
+  const lines: string[] = [
+    'auto-install-peers=false',
+    'strict-peer-dependencies=true',
+  ];
 
   if (trustPolicy) {
     lines.push(`trust-policy=${trustPolicy}`);
@@ -323,28 +289,16 @@ export default defineConfig({
     checkers: {
       typescript: {
         preset: 'tsc',
-        entry: 'tsconfig.build.json',
+        include: ['app/tsconfig.json'],
       },
     },
     source: {
       include: ['**/*.ts'],
-      exclude: ['node_modules', '.tsbuild', 'dist'],
+      exclude: ['node_modules', '.limina', '.tsbuild', 'dist'],
     },
   },
 });
 `,
-    'utf8',
-  );
-  await writeFile(
-    path.join(fixtureDir, 'tsconfig.build.json'),
-    stringifyJson({
-      files: [],
-      references: [
-        {
-          path: './app/tsconfig.lib.dts.json',
-        },
-      ],
-    }),
     'utf8',
   );
   await writeFile(
@@ -361,21 +315,26 @@ export default defineConfig({
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'app', 'tsconfig.lib.dts.json'),
+    path.join(fixtureDir, 'app', 'tsconfig.json'),
+    stringifyJson({
+      files: [],
+      references: [
+        {
+          path: './tsconfig.lib.json',
+        },
+      ],
+    }),
+    'utf8',
+  );
+  await writeFile(
+    path.join(fixtureDir, 'app', 'tsconfig.lib.json'),
     stringifyJson({
       compilerOptions: {
-        composite: true,
-        declaration: true,
-        emitDeclarationOnly: true,
-        incremental: true,
         module: 'ESNext',
         moduleResolution: 'bundler',
-        noEmit: false,
-        outDir: './.tsbuild',
-        rootDir: '.',
+        noEmit: true,
         strict: true,
         target: 'ES2023',
-        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
         types: [],
       },
       include: ['src/**/*.ts'],
@@ -388,7 +347,6 @@ export default defineConfig({
 import { fileURLToPath } from 'node:url';
 
 const publicApi = await import('limina');
-const configApi = await import('limina/config');
 const schemaPath = fileURLToPath(import.meta.resolve('limina/schemas/tsconfig-schema.json'));
 const packageJsonPath = fileURLToPath(import.meta.resolve('limina/package.json'));
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
@@ -397,8 +355,30 @@ const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 if (typeof publicApi.defineConfig !== 'function') {
   throw new Error('limina root export did not expose defineConfig.');
 }
-if (typeof configApi.defineConfig !== 'function') {
-  throw new Error('limina/config export did not expose defineConfig.');
+for (const removedExport of [
+  'loadConfig',
+  'runGraphCheck',
+  'runSourceCheck',
+  'prepareGeneratedTsconfigGraph',
+  'collectDependencyGraph',
+  'createLiminaFlowReporter',
+]) {
+  if (removedExport in publicApi) {
+    throw new Error(\`limina root export should not expose \${removedExport}.\`);
+  }
+}
+let configExportRejected = false;
+try {
+  await import('limina/config');
+} catch (error) {
+  configExportRejected =
+    Boolean(error) &&
+    typeof error === 'object' &&
+    'code' in error &&
+    error.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
+}
+if (!configExportRejected) {
+  throw new Error('limina/config export should not be exposed.');
 }
 if (manifest.name !== 'limina') {
   throw new Error('limina/package.json did not resolve to the installed package.');
@@ -418,10 +398,11 @@ export function installConsumerDependencies(options: {
   manifest: DistPackageJson;
   tarballPath: string;
 }): void {
-  const typescriptVersion = resolveInstalledPackageVersion(
+  const typescriptRange = getPeerDependencyRange(
+    options.manifest,
     'typescript',
-    options.manifest.peerDependencies?.typescript,
   );
+  const knipRange = getPeerDependencyRange(options.manifest, 'knip');
 
   runPnpm(
     [
@@ -430,7 +411,8 @@ export function installConsumerDependencies(options: {
       '--prefer-offline',
       '--ignore-scripts',
       options.tarballPath,
-      `typescript@${typescriptVersion}`,
+      `typescript@${typescriptRange}`,
+      `knip@${knipRange}`,
     ],
     {
       cwd: options.fixtureDir,

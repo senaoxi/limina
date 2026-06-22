@@ -5,10 +5,5 @@
     "build": {
       "dependsOn": []
     }
-  },
-  "metadata": {
-    "limina": {
-      "generated": true
-    }
   }
 }

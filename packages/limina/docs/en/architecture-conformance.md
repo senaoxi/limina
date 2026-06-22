@@ -1,6 +1,6 @@
 # Architecture Conformance
 
-[Why Limina](./why.md) explains the positioning: Nx and Turborepo operate at the task-execution layer, while limina operates at the architecture-conformance layer — proving that the structure a monorepo depends on is trustworthy before any task runs.
+[Why Limina](./why.md) explains the positioning: limina operates at the architecture-conformance layer, proving whether the structure a monorepo depends on is trustworthy before downstream workflows run.
 
 This page is the practical companion. It walks through concrete scenarios where a pnpm + TypeScript monorepo looks healthy — commands succeed, CI is green — yet the underlying graphs already disagree with each other. Each scenario shows the symptom, how limina sees it, and how to fix it.
 
@@ -58,12 +58,12 @@ From pnpm's perspective, this is fine. `workspace:*` links the local workspace p
 }
 ```
 
-This is valid in limina's current model. Workspace package exports may point to source files or built artifacts, and the rule is not controlled by strict mode. What matters is the resolved entry:
+This is valid in limina's current model. Workspace package exports may point to source files or built artifacts. What matters is the resolved entry:
 
 - TypeScript must resolve every public export to a stable type entry or supported source entry;
 - Oxc must resolve every public export, with a declaration-only fallback when TypeScript resolves a pure `.d.ts` export;
 - imports that resolve to checker-owned source entries participate in project-reference governance;
-- imports that resolve to `dist` participate in Nx artifact build-edge governance.
+- imports that resolve to `dist` become artifact edges in the exported dependency graph.
 
 ### How limina sees this
 
@@ -75,10 +75,10 @@ For a source entry:
 import { createClient } from '@acme/core';
 ```
 
-If TypeScript resolves that entry to `packages/core/src/index.ts`, and that file is owned by `packages/core/tsconfig.lib.dts.json`, the app declaration leaf must reference core:
+If TypeScript resolves that entry to `packages/core/src/index.ts`, and that file is owned by `packages/core/tsconfig.lib.json`, Limina's generated app declaration build config must reference the generated core config:
 
 ```jsonc
-// packages/app/tsconfig.lib.dts.json
+// .limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json
 {
   "references": [{ "path": "../core/tsconfig.lib.dts.json" }],
 }
@@ -90,15 +90,13 @@ For an artifact entry:
 import { renderRuntime } from '@acme/core/runtime';
 ```
 
-If that entry resolves into `packages/core/dist`, graph references are not required. Instead, `limina nx check` expects `packages/app/project.json` to make app's build depend on core's build:
+If that entry resolves into `packages/core/dist`, graph references are not required. Instead, `limina graph export --view artifact` reports an artifact edge:
 
-```jsonc
+```json
 {
-  "targets": {
-    "build": {
-      "dependsOn": [{ "projects": ["@acme/core"], "target": "build" }],
-    },
-  },
+  "from": "pkg:@acme/app",
+  "to": "pkg:@acme/core",
+  "kind": "artifact"
 }
 ```
 
@@ -106,12 +104,9 @@ If that entry resolves into `packages/core/dist`, graph references are not requi
 
 The fix depends on the failing layer.
 
-- If export pre-resolution fails, fix the `exports` target, condition order, checker entry, or missing build output.
-- If a source entry is consumed but the declaration leaf lacks a reference, add the reference or run `limina graph sync`.
-- If an artifact entry is consumed through `workspace:*` but Nx `dependsOn` is stale, run `limina nx sync`.
-- If the artifact export belongs to a package without `scripts.build`, add a build target or stop exposing that entry as a build artifact.
-
-See [Built-in Tasks](./built-in-tasks.md#nxcheck) for the Nx side of artifact build edges.
+- If export pre-resolution fails, fix the `exports` target, condition order, `checker.include`, or missing build output.
+- If a source entry is consumed but the generated declaration graph lacks an edge, make sure both source tsconfigs are selected by `checker.include`, then run `limina graph prepare`.
+- If an artifact entry is consumed, inspect the artifact view as a Limina-scoped architecture fact. Do not treat it as an authoritative build-order source.
 
 ## `tsconfig.json` Has Too Many Responsibilities
 
@@ -151,12 +146,11 @@ limina recommends splitting these responsibilities:
 packages/app/
   tsconfig.json
   tsconfig.lib.json
-  tsconfig.lib.dts.json
   tsconfig.test.json
-  tsconfig.test.dts.json
   tsconfig.tools.json
-  tsconfig.tools.dts.json
 ```
+
+Limina mirrors those source configs into generated declaration leaves under `.limina/tsconfig/checkers/<checker>/projects/...`.
 
 In a single-environment directory, `tsconfig.json` can be a leaf directly:
 
@@ -165,7 +159,6 @@ In a single-environment directory, `tsconfig.json` can be a leaf directly:
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "strict": true,
   },
   "include": ["src/**/*.ts"],
 }
@@ -215,13 +208,13 @@ Traditionally, teams rely on code review to catch this. But in a monorepo, such 
 limina expresses architecture boundaries with labels.
 
 ```jsonc
-// packages/app/src/client/tsconfig.dts.json
+// packages/app/src/client/tsconfig.json
 {
   "liminaOptions": {
     "graphRules": ["runtime-client"],
   },
-  "extends": ["./tsconfig.json", "../../../tsconfig.dts.base.json"],
-  "references": [],
+  "extends": "../../../tsconfig.base.json",
+  "include": ["./**/*.ts"],
 }
 ```
 
@@ -253,7 +246,7 @@ limina reports this as an architecture violation, not an ordinary TypeScript err
 ```text
 Denied graph access:
   rules: runtime-client
-  importing project: packages/app/src/client/tsconfig.dts.json
+  importing project: packages/app/src/client/tsconfig.json
   file: packages/app/src/client/runtime.ts:1
   imported specifier: node:fs
   denied dependency: node:*
@@ -280,11 +273,11 @@ Suppose you have:
 
 ```text
 packages/core/src/index.ts
-packages/core/tsconfig.lib.dts.json
-packages/core/tsconfig.tools.dts.json
+packages/core/tsconfig.lib.json
+packages/core/tsconfig.tools.json
 ```
 
-Both dts configs include the same file:
+Both source configs include the same file:
 
 ```jsonc
 {
@@ -292,7 +285,7 @@ Both dts configs include the same file:
 }
 ```
 
-This means `src/index.ts` belongs to both the lib declaration graph and the tools declaration graph.
+This means `src/index.ts` would belong to both the generated lib declaration graph and the generated tools declaration graph.
 
 That causes several problems:
 
@@ -301,14 +294,14 @@ That causes several problems:
 3. The project reference graph cannot determine which leaf owns the file.
 4. Runtime boundary labels may conflict.
 
-limina requires each checker graph file to have exactly one declaration owner.
+limina requires each checker graph file to have exactly one source tsconfig owner per checker.
 
 ### How to fix it
 
 Give different leaves different file sets:
 
 ```jsonc
-// tsconfig.lib.dts.json
+// tsconfig.lib.json
 {
   "include": ["src/**/*.ts"],
   "exclude": ["src/tools/**"],
@@ -316,7 +309,7 @@ Give different leaves different file sets:
 ```
 
 ```jsonc
-// tsconfig.tools.dts.json
+// tsconfig.tools.json
 {
   "include": ["src/tools/**/*.ts"],
 }
@@ -330,7 +323,7 @@ src/
   tools/
 ```
 
-so that each declaration leaf has a more natural boundary.
+so that each generated declaration build config has a more natural boundary.
 
 ## Putting It Together
 
@@ -352,7 +345,7 @@ TypeScript / Oxc module resolution
 source-owned imports and artifact imports
         │
         ▼
-TypeScript project references and Nx build edges
+TypeScript project references and exported artifact edges
         │
         ▼
 source files covered by checkers
@@ -365,19 +358,19 @@ If any layer expresses a different fact, limina considers the monorepo unhealthy
 
 For example:
 
-| Symptom                                                  | limina's judgment                                                                |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| workspace export cannot be resolved by TypeScript/Oxc    | Public package contract is not resolvable in the active checker/runtime profiles |
-| `workspace:*` import resolves to source but no reference | Source entry is consumed without the matching TS project edge                    |
-| `workspace:*` import resolves to `dist` but no Nx edge   | Artifact entry is consumed without the required build dependency                 |
-| Cross-package relative import                            | Bypasses package exports and the package owner boundary                          |
-| Project reference crosses packages but no `workspace:*`  | TS graph declares a source dependency, but package graph does not                |
-| dts leaf has no companion                                | Declaration emit has no strict typecheck proof                                   |
-| Source file is not covered by any checker                | Green CI does not mean the file was checked                                      |
-| Browser runtime imports `node:fs`                        | Runtime boundary is violated                                                     |
-| dist manifest has broken exports/types                   | Source is healthy, but published artifact is unhealthy                           |
-| dist import has undeclared dependency                    | Consumers may miss dependencies after installation                               |
+| Symptom                                                     | limina's judgment                                                                |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| workspace export cannot be resolved by TypeScript/Oxc       | Public package contract is not resolvable in the active checker/runtime profiles |
+| Declared package import resolves to source but no reference | Source entry is consumed without the matching TS project edge                    |
+| Import resolves to `dist`                                   | Artifact entry is consumed and should appear in graph export                     |
+| Cross-package relative import                               | Bypasses package exports and the nearest package scope boundary                  |
+| Project reference crosses packages without a declaration    | TS graph declares a source dependency, but package graph does not                |
+| Generated declaration config has no source config           | Declaration emit has no checked source proof                                     |
+| Source file is not covered by any checker                   | Green CI does not mean the file was checked                                      |
+| Browser runtime imports `node:fs`                           | Runtime boundary is violated                                                     |
+| dist manifest has broken exports/types                      | Source is healthy, but published artifact is unhealthy                           |
+| dist import has undeclared dependency                       | Consumers may miss dependencies after installation                               |
 
 ::: tip
-The source-side scenarios above are enforced by graph and source checks, artifact build edges by Nx checks, and the `dist` output-health rows by [Package Checks](./config/package-checks.md). For the full set of commands that run these layers, see [Built-in Tasks](./built-in-tasks.md).
+The source-side scenarios above are enforced by graph and source checks, artifact edges are exported by `limina graph export`, and the `dist` output-health rows are enforced by [Package Checks](./config/package-checks.md). For the full set of commands that run these layers, see [Built-in Tasks](./built-in-tasks.md).
 :::

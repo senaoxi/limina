@@ -42,7 +42,6 @@ A string step can be a built-in Limina task:
 - `checker:build`
 - `checker:typecheck`
 - `graph:check`
-- `nx:check`
 - `package:check`
 - `proof:check`
 - `release:check`
@@ -70,7 +69,7 @@ Object form declares an external command explicitly:
 
 ## Object task step
 
-- **Type:** `{ type: 'task'; name: BuiltinTaskName }` where `BuiltinTaskName` is `'graph:check' | 'source:check' | 'proof:check' | 'checker:build' | 'checker:typecheck' | 'package:check' | 'release:check' | 'nx:check'`
+- **Type:** `{ type: 'task'; name: BuiltinTaskName }` where `BuiltinTaskName` is `'graph:check' | 'source:check' | 'proof:check' | 'checker:build' | 'checker:typecheck' | 'package:check' | 'release:check'`
 
 Built-in tasks can also be written explicitly:
 
@@ -107,7 +106,7 @@ The module imports across package folders with a relative path:
 import { createClient } from '../../core/src/index';
 ```
 
-When `pnpm exec limina check publish` runs, Limina executes pipeline steps in array order. `graph:check` first validates declaration edges, then `source:check` analyzes package owners and relative import boundaries.
+When `pnpm exec limina check publish` runs, Limina executes pipeline steps in array order. `graph:check` first validates declaration edges, then `source:check` analyzes source owners and relative import boundaries.
 
 The result is a failure during the source stage; `checker:build`, `package:check`, and `pnpm test` do not continue. The user can fix the closest cause first: replace the cross-package relative import with the `@acme/core` package export, then express the dependency through the manifest and project reference.
 :::

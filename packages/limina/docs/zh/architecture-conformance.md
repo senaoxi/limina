@@ -1,48 +1,34 @@
-# 架构一致性
+# 架构一致性：让约定、源码和产物互相对得上
 
-[为什么需要 Limina](./why.md) 解释了它的定位：Nx 和 Turborepo 工作在任务执行层，而 limina 工作在架构一致性层——在任何任务运行之前，证明单体仓库所依赖的结构是可信的。
+架构一致性不是“代码风格统一”，也不是“构建命令能跑完”。它关心的是另一件事：仓库里声明的关系，是否真的被源码导入、包配置、类型检查和发布产物共同证明。
 
-本页是它的实战篇。它通过一系列具体场景展示：一个 pnpm + TypeScript 单体仓库看起来很健康——命令能跑、CI 是绿的——但底层的各张图其实已经彼此矛盾。每个场景都给出现象、limina 怎么看，以及如何修复。
+> Limina 检查的不是某一条命令是否成功，而是仓库里的每一层是否在表达同一个架构事实。
 
-## 工作区导出可以混合源码和构建产物
-
-假设你有两个包：
+比如 `app` 依赖 `core`，这句话至少会出现在几个地方：源码里有 import，`package.json` 里有依赖，`core` 的 `exports` 暴露了入口，类型图能理解这条关系，发布后的包也仍然能被消费者正确安装和使用。只要其中一层说法对不上，仓库就已经开始漂移。
 
 ```text
-packages/
-  core/
-    src/index.ts
-    dist/runtime.js
-    dist/runtime.d.ts
-    dist/types.d.ts
-    dist/index.d.ts
-    package.json
-  app/
-    src/main.ts
-    package.json
+你希望的架构
+  │
+  ▼
+源码实际怎么 import
+  │
+  ▼
+package.json 怎么声明依赖和导出
+  │
+  ▼
+tsconfig 和检查器怎么覆盖文件
+  │
+  ▼
+构建产物和发布包是否仍然可用
 ```
 
-`app` 依赖 `core`：
+Limina 的价值就在这里：它把这些原本分散的事实连起来，让你知道问题到底是代码越界、配置漏写、类型图不完整，还是发布出来的包已经和源码不一致。
 
-```json
-{
-  "dependencies": {
-    "@acme/core": "workspace:*"
-  }
-}
-```
+## 依赖关系要一致
 
-在 `app/src/main.ts` 中：
+依赖声明很容易让人误会成“我一定在读另一个包的源码”。实际上，它只说明当前包被允许访问另一个包。真正决定导入落到哪里的，是被依赖包的 `exports` 解析结果。
 
-```ts
-import { createClient } from '@acme/core';
-```
-
-从 pnpm 的角度看，这没有问题。`workspace:*` 会把本地工作区包链接进来。
-
-`@acme/core/package.json` 可以有意同时暴露源码入口和构建产物入口：
-
-```json
+```json [packages/core/package.json]
 {
   "name": "@acme/core",
   "exports": {
@@ -50,130 +36,56 @@ import { createClient } from '@acme/core';
     "./runtime": {
       "types": "./dist/runtime.d.ts",
       "import": "./dist/runtime.js"
-    },
-    "./types": {
-      "types": "./dist/types.d.ts"
     }
   }
 }
 ```
 
-这在 Limina 当前模型里是合法的。工作区包导出可以指向源码，也可以指向构建产物，而且这条规则不受 strict 模式控制。真正重要的是解析后的入口：
-
-- TypeScript 必须能把每个公开导出解析到稳定类型入口或受支持的源码入口；
-- Oxc 也必须能解析每个公开导出；纯声明导出可以使用 TypeScript 的 `.d.ts` 结果作为有效 Oxc 结果；
-- 解析到检查器管辖源码入口的导入参与项目引用治理；
-- 解析到 `dist` 的导入参与 Nx 产物构建边治理。
-
-### limina 会怎么看
-
-Limina 会先按照当前检查器配置预解析导出。如果 `@acme/core/runtime` 没有出现在导出映射中、指向不存在的文件，或者 TypeScript 只能解析到运行时 JavaScript，图检查会先报告这个包导出，然后才进入引用分析。
-
-对于源码入口：
+当 `app` 导入默认入口：
 
 ```ts
 import { createClient } from '@acme/core';
 ```
 
-如果 TypeScript 把这个入口解析到 `packages/core/src/index.ts`，且这个文件由 `packages/core/tsconfig.lib.dts.json` 管辖，那么 app 的声明叶子必须引用 core：
+这个入口解析到 `core` 的源码。它表达的是“两个包在源码层协作”，所以 Limina 会要求类型图也能表达这条源码关系。
 
-```jsonc
-// packages/app/tsconfig.lib.dts.json
-{
-  "references": [{ "path": "../core/tsconfig.lib.dts.json" }],
-}
-```
-
-对于构建产物入口：
+当 `app` 导入运行时入口：
 
 ```ts
 import { renderRuntime } from '@acme/core/runtime';
 ```
 
-如果这个入口解析到 `packages/core/dist`，图引用不要求项目引用。相应地，`limina nx check` 会要求 `packages/app/project.json` 让 app 的构建通过 `dependsOn` 指向 core 的构建：
+这个入口解析到 `core` 的构建产物。它表达的是“`app` 消费 `core` 已经构建好的结果”，所以 Limina 不会把它当成源码项目引用，而是把对应的产物边导出为限定范围内的架构事实。
 
-```jsonc
-{
-  "targets": {
-    "build": {
-      "dependsOn": [{ "projects": ["@acme/core"], "target": "build" }],
-    },
-  },
-}
-```
+同一条包依赖声明，可能代表两种不同架构关系：
 
-### 修复方式
+| 真实入口 | 架构含义            | Limina 会确认什么          |
+| -------- | ------------------- | -------------------------- |
+| `src`    | 消费另一个包的源码  | 类型图能表达这条源码关系   |
+| `dist`   | 消费另一个包的产物  | 依赖图导出能表达这条产物边 |
+| 解析失败 | 公开 API 本身不可靠 | `exports` 或产物需要修正   |
 
-修复方式取决于失败发生在哪一层：
+这就是架构一致性的第一层：依赖不能只在代码里发生，它也要被包声明、导出入口和后续检查承认。
 
-- 如果导出预解析失败，修 `exports` target、condition 顺序、检查器入口，或补齐缺失的构建产物。
-- 如果实际消费了源码入口，但声明叶子缺引用，补上引用或运行 `limina graph sync`。
-- 如果通过 `workspace:*` 消费了产物入口，但 Nx `dependsOn` 过期，运行 `limina nx sync`。
-- 如果产物导出所属包没有 `scripts.build`，补构建目标，或不要把这个入口作为构建产物暴露。
+## 源码归属要一致
 
-产物构建边的 Nx 侧规则见[内置任务](./built-in-tasks.md)。
+架构越清楚，每个文件越应该知道自己属于哪里。生产源码、测试源码、工具脚本、Vue 文件、Svelte 文件，可能需要不同的检查器和不同的类型环境。
 
-## `tsconfig.json` 同时承担太多职责
+仓库变大后，一个 `tsconfig.json` 很容易同时给 IDE 用、给测试用、给生产源码用、给构建输出用，还顺手写 project references。短期省事，长期会让边界变模糊。
 
-很多项目会把 `tsconfig.json` 写成这样：
-
-```jsonc
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "composite": true,
-    "declaration": true,
-    "outDir": "dist",
-  },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "references": [{ "path": "../core" }],
-}
-```
-
-这个配置同时在做几件事：
-
-- IDE 默认入口；
-- 本地类型检查；
-- 声明产出；
-- 项目引用图；
-- lib + test 混合环境。
-
-短期看方便，长期看会导致几个问题：
-
-1. IDE 看到的类型环境和构建看到的不一致。
-2. 测试专用依赖可能进入生产声明图。
-3. 声明产出可能包含不该发布的文件。
-4. 项目引用无法表达 lib/test/tools 的不同边界。
-
-limina 更推荐拆开：
+更清楚的结构是：
 
 ```text
 packages/app/
   tsconfig.json
   tsconfig.lib.json
-  tsconfig.lib.dts.json
   tsconfig.test.json
-  tsconfig.test.dts.json
   tsconfig.tools.json
-  tsconfig.tools.dts.json
 ```
 
-单环境目录中，`tsconfig.json` 可以直接是叶子：
+如果目录里只有一种类型环境，`tsconfig.json` 可以直接负责源码。如果目录里有多种环境，`tsconfig.json` 更适合只做聚合入口：
 
-```jsonc
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "strict": true,
-  },
-  "include": ["src/**/*.ts"],
-}
-```
-
-多环境目录中，`tsconfig.json` 应该是纯聚合器：
-
-```jsonc
+```jsonc [packages/app/tsconfig.json]
 {
   "files": [],
   "references": [
@@ -184,50 +96,89 @@ packages/app/
 }
 ```
 
-### limina 会怎么看
+Limina 关心的不是你文件名怎么取，而是每份源码有没有明确负责人：哪些进入生产类型图，哪些只属于测试环境，哪些只是工具脚本。如果测试依赖悄悄进入生产图，或者工具脚本被当成库入口发布出去，架构就已经不一致了。
 
-如果一个带 `references` 的 `tsconfig.json` 还混入 `compilerOptions`、`include` 等字段，limina 会认为它不是纯聚合器。
+重复归属也会制造问题。例如两个配置都包含同一批源码：
 
-limina 的判断是：**有 `references` 的默认 `tsconfig.json` 应该只做聚合，不应该同时做叶子。**
-
-## 客户端运行时误用了 Node API
-
-假设你有一个浏览器端运行时：
-
-```text
-packages/app/src/client/runtime.ts
-```
-
-里面有人写了：
-
-```ts
-import fs from 'node:fs';
-
-export function loadConfig() {
-  return fs.readFileSync('config.json', 'utf8');
+```jsonc [packages/core/tsconfig.lib.json]
+{
+  "include": ["src/**/*.ts"],
 }
 ```
 
-这在 Node 环境下类型检查可能能过，但这段代码不能进入浏览器运行时。
+```jsonc [packages/core/tsconfig.tools.json]
+{
+  "include": ["src/**/*.ts"],
+}
+```
 
-传统方式通常靠代码审查发现。但在单体仓库里，这种边界很容易被破坏，尤其是 shared/client/server 目录互相引用时。
+这会让同一个文件同时落进两个边界。更好的做法是让它们负责不同文件：
 
-limina 用标签表达架构边界。
+```jsonc [packages/core/tsconfig.lib.json]
+{
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/tools/**"],
+}
+```
 
-```jsonc
-// packages/app/src/client/tsconfig.dts.json
+```jsonc [packages/core/tsconfig.tools.json]
+{
+  "include": ["src/tools/**/*.ts"],
+}
+```
+
+架构一致性的第二层就是源码归属：文件应该被检查，而且应该被正确的边界检查。
+
+## 包边界要一致
+
+单体仓库里最常见的架构漂移，是代码绕过包边界直接访问另一个包的内部文件：
+
+```ts
+import { Button } from '../../ui/src/Button';
+```
+
+这段代码可能能跑，但它没有尊重包架构。`app` 的 `package.json` 没有明确声明依赖，`ui` 的 `exports` 没有决定这个文件是不是公开 API，`ui` 内部目录一改，`app` 就可能坏掉。
+
+更一致的写法，是先在清单里声明关系：
+
+```json [packages/app/package.json]
+{
+  "dependencies": {
+    "@acme/ui": "workspace:*"
+  }
+}
+```
+
+再通过包名访问公开入口：
+
+```ts
+import { Button } from '@acme/ui';
+```
+
+Limina 会把这种关系看成一组必须对齐的事实：源码 import 了谁，source owner 或显式允许的 workspace root manifest 候选是否承认它，被依赖包是否真的公开了这个入口。`#imports` 也一样，它必须匹配当前 source owner 自己的 `imports` 字段，不能悄悄解析到别的包内部。
+
+## 运行时边界要一致
+
+有些边界不是包名能表达清楚的，比如“浏览器代码不能依赖 Node 能力”“公共 API 不能依赖内部实现”“插件运行时不能依赖 CLI 代码”。这些都属于运行时架构。
+
+如果浏览器入口里写了：
+
+```ts
+import fs from 'node:fs';
+```
+
+普通类型检查不一定会告诉你这是架构错误。Limina 可以用图规则把这条边界写成仓库能执行的约定：
+
+```jsonc [packages/app/src/client/tsconfig.json]
 {
   "liminaOptions": {
     "graphRules": ["runtime-client"],
   },
-  "extends": ["./tsconfig.json", "../../../tsconfig.dts.base.json"],
-  "references": [],
+  "include": ["./**/*.ts"],
 }
 ```
 
-然后在 `limina.config.mjs` 中声明规则：
-
-```js
+```js [limina.config.mjs]
 export default defineConfig({
   graph: {
     rules: {
@@ -246,138 +197,29 @@ export default defineConfig({
 });
 ```
 
-### limina 会怎么看
+这样，架构规则就不再只靠“大家记得别这么写”。真实导入命中规则时，Limina 会指出哪个文件越界、导入了什么、为什么不允许。
 
-它会把这类问题作为架构违规，而不是普通 TypeScript 错误：
+## 发布产物要一致
 
-```text
-Denied graph access:
-  rules: runtime-client
-  importing project: packages/app/src/client/tsconfig.dts.json
-  file: packages/app/src/client/runtime.ts:1
-  imported specifier: node:fs
-  denied dependency: node:*
-  reason: client runtime must stay free of Node builtin imports
-```
+源码层一致，不代表发布包也一致。用户安装到的不是你的源码目录，而是构建后的 npm 包。
 
-### 适用场景
+Limina 的包检查会在构建后看 `outDir`，必要时把它打成 tarball，再从消费者视角确认这些事实：`exports` 指向的文件存在，类型入口能解析，浏览器产物没有导入 Node 内置模块，输出 JS 没有导入未声明的外部包，包内自引用没有访问未导出的入口。
 
-这种规则特别适合：
+发布检查还会继续看 tarball 是否缺 README/license，是否带出 source map，是否泄漏 `workspace:`、`link:`、`file:` 或 `catalog:` 这类本地协议，以及工作区依赖相对已发布基线是否安全。
 
-- `runtime-client` 不能依赖 `runtime-node`；
-- `runtime-shared` 不能依赖仅客户端或仅 Node 实现；
-- 浏览器包不能导入 Node 内置模块；
-- 公开 API 层不能导入内部包；
-- 插件运行时不能依赖仅 CLI 代码。
+这一步检查的是架构一致性的最后一层：源码里说得通的关系，发布给消费者以后仍然要说得通。
 
-::: tip
-完整的标签与拒绝规则语法，参见[图规则](./config/graph-rules.md)。
-:::
+## 读诊断时，先找哪层不一致
 
-## 一个文件被多个声明叶子同时拥有
+Limina 的诊断通常不是在说“这个命令失败了”，而是在说“某一层架构事实和另一层对不上”。先判断是哪层不一致，再修代码或配置，效率会高很多。
 
-假设你有：
+| 诊断指向的问题           | 通常是哪层没有对齐                                                             |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| 公开导出解析失败         | `exports`、condition 分支或构建产物没有对上                                    |
+| 文件没人检查或被重复检查 | 源码归属和检查器覆盖没有对上                                                   |
+| 跨包相对导入             | 源码 import 绕过了包声明和公开 API                                             |
+| 裸包导入未授权           | 代码使用了依赖，但 source owner、允许的 root manifest 候选或显式规则没有承认它 |
+| 浏览器代码导入 Node 能力 | 真实导入违反了运行时架构规则                                                   |
+| 发布包检查失败           | 源码仓库里的关系没有延续到消费者真正安装的包                                   |
 
-```text
-packages/core/src/index.ts
-packages/core/tsconfig.lib.dts.json
-packages/core/tsconfig.tools.dts.json
-```
-
-两个 dts 配置都 include 了同一个文件：
-
-```jsonc
-{
-  "include": ["src/**/*.ts"],
-}
-```
-
-这样 `src/index.ts` 同时属于 lib 声明图和 tools 声明图。
-
-这会导致几个问题：
-
-1. 同一个文件可能被不同编译选项检查。
-2. 声明产出可能重复。
-3. 项目引用图中无法判断谁才是这个文件的归属方。
-4. 运行时边界标签可能冲突。
-
-limina 会认为一个检查器图文件必须只有一个声明归属方。
-
-### 修复方式
-
-让不同叶子拥有不同文件集合：
-
-```jsonc
-// tsconfig.lib.dts.json
-{
-  "include": ["src/**/*.ts"],
-  "exclude": ["src/tools/**"],
-}
-```
-
-```jsonc
-// tsconfig.tools.dts.json
-{
-  "include": ["src/tools/**/*.ts"],
-}
-```
-
-或者重新调整目录结构：
-
-```text
-src/
-  lib/
-  tools/
-```
-
-让每个声明叶子的边界更自然。
-
-## 把它们串起来
-
-limina 眼中的健康单体仓库，不是“所有命令能跑完”，而是下面几张图互相一致：
-
-```text
-pnpm workspace packages
-        │
-        ▼
-package.json dependencies
-        │
-        ▼
-workspace package exports
-        │
-        ▼
-TypeScript / Oxc module resolution
-        │
-        ▼
-source-owned imports and artifact imports
-        │
-        ▼
-TypeScript 项目引用和 Nx 构建边
-        │
-        ▼
-被检查器覆盖的源码文件
-        │
-        ▼
-built package outputs consumed by users
-```
-
-只要其中某一层表达了不同的事实，limina 就会认为单体仓库不健康。
-
-例如：
-
-| 现象                                         | limina 的判断                               |
-| -------------------------------------------- | ------------------------------------------- |
-| 工作区导出无法被 TypeScript/Oxc 解析         | 公开包契约在当前检查器/运行时配置下不可解析 |
-| `workspace:*` 导入解析到源码但没有引用       | 源码入口已被消费，但缺少对应 TS 项目边      |
-| `workspace:*` 导入解析到 `dist` 但没有 Nx 边 | 产物入口已被消费，但缺少必要构建依赖        |
-| 跨包相对导入                                 | 绕开包导出和包归属方边界                    |
-| 项目引用跨包但没有 `workspace:*`             | TS 图声明了源码依赖，但包图没有             |
-| dts 叶子没有本地配套配置                     | 声明产出没有严格类型检查证明                |
-| 源码文件没被任何检查器覆盖                   | CI 绿不代表文件被检查                       |
-| 浏览器运行时导入 `node:fs`                   | 运行时边界被破坏                            |
-| dist 清单 exports/types 错误                 | 源码健康但发布产物不健康                    |
-| dist 导入未声明依赖                          | 消费者安装后可能缺依赖                      |
-
-::: tip
-上面源码侧的场景由图检查和源码检查强制执行，产物构建边由 Nx 检查强制执行；`dist` 输出健康度相关行由[包检查](./config/package-checks.md)强制执行。运行这些层的完整命令，参见[内置任务](./built-in-tasks.md)。
-:::
+所以，“架构一致性”不是一个抽象口号。它是一条很具体的判断标准：你希望仓库长成什么样，源码是否真的这么写，配置是否承认这件事，类型图是否能证明它，发布产物是否还能兑现它。Limina 要做的，就是把这些层重新拉到同一张桌子上。

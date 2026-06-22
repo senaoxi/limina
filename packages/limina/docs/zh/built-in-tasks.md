@@ -1,15 +1,14 @@
 # 内置任务
 
-内置任务是 `limina check` 能直接调用的检查单元，每一个都对应一条 `limina <command>` 子命令。`limina check`（不带名字）会按固定顺序跑下表前六个，遇到第一个失败就停下，后续步骤标记为跳过。`package:check` 和 `release:check` 不在默认流程里，通常放进发布用的命名[流水线](./config/pipelines.md)。
+内置任务是 `limina check` 能直接调用的检查单元，每一个都对应一条 `limina <command>` 子命令。`limina check`（不带名字）会按固定顺序跑下表前五个，遇到第一个失败就停下，后续步骤标记为跳过。`package:check` 和 `release:check` 不在默认流程里，通常放进发布用的命名[流水线](./config/pipelines.md)。
 
 | 任务                | 对应命令                   | 默认 `limina check` | 作用面                   |
 | ------------------- | -------------------------- | ------------------- | ------------------------ |
 | `graph:check`       | `limina graph check`       | 是，第 1 步         | 声明图 / 项目引用        |
 | `source:check`      | `limina source check`      | 是，第 2 步         | 包归属边界               |
-| `nx:check`          | `limina nx check`          | 是，第 3 步         | Nx 构建边                |
-| `proof:check`       | `limina proof check`       | 是，第 4 步         | 源码覆盖 / tsconfig 形状 |
-| `checker:build`     | `limina checker build`     | 是，第 5 步         | 一等公民编译（产出声明） |
-| `checker:typecheck` | `limina checker typecheck` | 是，第 6 步         | 二等公民类型检查         |
+| `proof:check`       | `limina proof check`       | 是，第 3 步         | 源码覆盖 / tsconfig 形状 |
+| `checker:build`     | `limina checker build`     | 是，第 4 步         | 构建类类型检查           |
+| `checker:typecheck` | `limina checker typecheck` | 是，第 5 步         | 只检查不产出             |
 | `package:check`     | `limina package check`     | 否，发布期          | 构建产物                 |
 | `release:check`     | `limina release check`     | 否，发布期          | 发布卫生                 |
 
@@ -17,19 +16,20 @@
 
 ## `graph:check`
 
-对应 `limina graph check`，校验由声明叶子（`tsconfig*.dts.json`）组成的项目引用图。下面逐项说明它检测什么、为什么这么要求、以及一个典型例子。
+对应 `limina graph check`，校验 `.limina/` 下生成的声明构建图；用户可见的规范路径是被 `checker.include` 选中的源码 tsconfig。下面逐项说明它检测什么、为什么这么要求、以及一个典型例子。
 
 ::: tip
 这里提到的 deny/allow 规则在[图规则](./config/graph-rules.md)中定义。
 :::
 
-### 声明叶子的编译选项要齐全
+### 声明构建配置的编译选项要齐全
 
-声明叶子靠 `tsc -b` 增量地只产出 `.d.ts`。所以它必须打开 `composite`、`incremental`、`declaration`、`emitDeclarationOnly`，关掉 `noEmit`，并写明 `rootDir` / `outDir` / `tsBuildInfoFile`。少一个，增量构建就没法正确产出声明。
+生成的声明构建配置会通过 `tsc -b` 增量地产出 `.d.ts`。Limina 会在 `limina graph prepare` 时写出这些配置；每个配置都会打开 `composite`、`incremental`、`declaration`、`emitDeclarationOnly`，关掉 `noEmit`，并写明 `rootDir` / `outDir` / `tsBuildInfoFile`。
 
 ```jsonc
-// packages/core/tsconfig.lib.dts.json
+// .limina/tsconfig/checkers/typescript/projects/packages/core/tsconfig.lib.dts.json
 {
+  "extends": "../../../../../packages/core/tsconfig.lib.json",
   "compilerOptions": {
     "composite": true,
     "incremental": true,
@@ -43,34 +43,54 @@
 }
 ```
 
-漏了 `composite` 这类选项会报 `Invalid declaration leaf compiler option:`；漏了 `outDir` 这类输出项会报 `Missing declaration leaf output option:`。
+这些文件是生成产物，所以形状错误通常表示生成图过期或异常；运行 `limina graph prepare`，并查看诊断中映射回来的源码 tsconfig 路径。
 
 ### 每个叶子都要有配对的本地配置
 
-每个 `*.dts.json` 都要有一个同范围的普通 `tsconfig*.json`（本地配套配置）来管类型语义。两者的类型相关选项（如 `strict`、`module`、`target`）必须一致，且叶子纳入的文件不能超出本地配套配置——否则「产声明用的配置」和「类型检查用的配置」会对不上。
+每个生成的 `*.dts.json` 都要通过 `liminaOptions.sourceConfig` 指回负责类型语义的普通源码 `tsconfig*.json`。`module`、`target`、`lib` 等类型相关选项来自这个源码配置，生成配置纳入的文件也不能超出源码配置。
 
 ```text
 packages/core/
-  tsconfig.lib.json       # 本地配套配置：strict: true
-  tsconfig.lib.dts.json   # 叶子：也要 strict: true，文件集是本地配套配置的子集
+  tsconfig.lib.json       # 源码配置负责类型相关选项
+.limina/tsconfig/checkers/typescript/projects/packages/core/
+  tsconfig.lib.dts.json   # 生成叶子，sourceConfig -> packages/core/tsconfig.lib.json
 ```
 
-没有本地配套配置会报 `Missing typecheck companion config:`；选项不一致会报 `Typecheck option mismatch between declaration leaf and companion config:`。
+没有 `sourceConfig` 的生成配置会被拒绝。诊断涉及生成路径时，Limina 会尽量映射回源码 tsconfig 路径。
 
 ### 源码入口导入需要匹配引用
 
-叶子的 `references` 必须和真实导入到的、由其他声明项目拥有的源码入口对应。代码导入了别的包的源码入口，就必须有对应引用；否则增量构建拿不到上游声明。反过来，列了却没有导入证明的引用也会被指出来，避免无用边。
+生成配置里的 `references` 必须和真实源码边对应：静态导入到的、由其他声明项目负责的源码入口，以及写明原因的 `liminaOptions.implicitRefs`。代码导入了别的包的源码入口，就必须有对应引用；否则增量构建拿不到上游声明。反过来，既没有静态导入证明、也没有 `implicitRefs` 说明的引用也会被指出来，避免留下无用边。
 
 ```ts
 // packages/app/src/main.ts
 import { createClient } from '@acme/core'; // 引用了 core
 ```
 
-如果 `packages/app/tsconfig.lib.dts.json` 的 `references` 没列 core，报 `Missing project reference for workspace import:`；列了多余、无导入支撑的引用报 `Extra project reference not proven by static imports:`。解析到 `dist/*.d.ts` 这类构建声明产物的导入不要求项目引用。源码入口边的修复方式是补上或删掉引用，或直接 `limina graph sync` 自动对齐。
+生成的声明引用来自真实导入到的、由其他生成配置负责的源码文件。如果源码边缺失，确认两端源码 tsconfig 都被 `checker.include` 选中，然后运行 `limina graph prepare`。解析到 `dist/*.d.ts` 这类构建声明产物的导入不要求项目引用。
+
+如果真实边无法从静态导入里看出来，把它写在需要补边的源码 tsconfig 上：
+
+```jsonc
+{
+  "liminaOptions": {
+    "implicitRefs": [
+      {
+        "path": "../core/tsconfig.json",
+        "reason": "Loaded by generated route manifest.",
+      },
+    ],
+  },
+}
+```
+
+`implicitRefs.path` 相对声明它的配置指向另一份普通源码 tsconfig。Limina 会把它映射到生成的声明项目。不要在普通源码配置里手写 `references`；只有 solution-style 的 `tsconfig.json` 聚合器应该携带 TypeScript `references`。
 
 ### 工作区包导出必须可解析
 
-对于每个声明了 `exports` 的工作区包，图检查会使用当前检查器配置预解析每个公开子路径。TypeScript 解析必须到达稳定类型入口或源码入口：`.d.ts` 系列文件、TypeScript 源码、`.json`，或检查器支持的源码文件，例如 `.vue`。Oxc 解析也必须成功；纯声明导出可以把 TypeScript 的 `.d.ts` 结果作为有效 Oxc 结果。
+对于每个声明了 `exports` 的工作区包，图检查会使用当前检查器配置预解析每个真实公开子路径。`null` 导出表示这个包子路径被禁止访问，会被跳过。每个真实导出都必须能通过运行时解析器落到具体模块；纯声明导出可以把 TypeScript 的 `.d.ts` 结果作为有效运行时解析结果。
+
+当受管源码 import 了其中某个导出时，TypeScript 解析必须到达稳定类型入口或源码入口：`.d.ts` 系列文件、TypeScript 源码、`.json`，或检查器支持的源码文件，例如 `.vue`。没有被受管源码 import 的运行时导出可以指向 JavaScript artifact；一旦源码 import 它，就必须提供类型入口。
 
 ```jsonc
 // 被依赖的 packages/core/package.json
@@ -86,22 +106,22 @@ import { createClient } from '@acme/core'; // 引用了 core
 }
 ```
 
-无法解析时分别报 `Workspace package export is not resolvable by TypeScript:` 或 `Workspace package export is not resolvable by Oxc:`。如果 TypeScript 只能把导出解析到运行时 JavaScript，则报 `Workspace package export resolves to runtime JavaScript in TypeScript:`。
+无法解析时分别报 `Workspace package export is not resolvable by TypeScript:` 或 `Workspace package export is not resolvable by Oxc:`。如果受管源码 import 的导出只能解析到运行时 JavaScript，则报 `Workspace source import uses package export without a type entry:`。
 
 ### 命中 deny 规则的引用/依赖会被拒
 
-如果在 `graph.rules.<label>.deny` 里定义了架构红线（例如「客户端不准依赖 Node 运行时」），并让某个叶子通过 `liminaOptions.graphRules` 显式启用，那么命中红线的引用或依赖会被拒绝。
+如果在 `graph.rules.<label>.deny` 里定义了架构红线（例如「客户端不准依赖 Node 运行时」），并让某个源码 tsconfig 通过 `liminaOptions.graphRules` 显式启用，那么命中红线的引用或依赖会被拒绝。
 
 ```jsonc
-// tsconfig.lib.dts.json
+// packages/app/tsconfig.client.json
 { "liminaOptions": { "graphRules": ["runtime-client"] } }
 ```
 
-命中时报 `Denied graph access:`，并带上你在规则里写的 `reason`。
+`limina graph prepare` 会把规则标签带到生成的构建配置里。命中时报 `Denied graph access:`，并带上你在规则里写的 `reason`。
 
 ## `source:check`
 
-对应 `limina source check`，校验包归属边界——谁能导入谁、依赖有没有声明。
+对应 `limina source check`，校验 source ownership、package-scope 相对导入边界，以及依赖有没有声明。
 
 ### 不准跨包相对导入
 
@@ -112,11 +132,11 @@ import { createClient } from '@acme/core'; // 引用了 core
 import { helper } from '../../a/src/util';
 ```
 
-报 `Relative import escapes package owner scope:`。修复：在 `packages/b/package.json` 用 `workspace:*` 声明对 `@acme/a` 的依赖，并改成 `import { helper } from '@acme/a'`。
+报 `Relative import escapes package scope:`。修复：在 `packages/b/package.json` 声明对 `@acme/a` 的依赖，并改成 `import { helper } from '@acme/a'`。
 
 ### 裸包导入必须先声明
 
-按包名引入的依赖，必须出现在最近 `package.json` 的 `dependencies` / `devDependencies` / `peerDependencies` / `optionalDependencies` 任一中（Node 内置模块和包自身豁免），否则就是用了没声明的依赖。
+按包名引入的依赖，必须由最近的 pnpm workspace source owner 授权。匹配的 `source.importAuthority.allow` package rule 可以让 Limina 额外检查 workspace root `package.json`，但这个 root manifest 必须存在，并且要声明这个包。真正不应该由 manifest 声明的例外，可以用 `source.importAuthority.allow` specifier rule 表达。
 
 ```ts
 import pMap from 'p-map'; // 但 package.json 里没声明 p-map
@@ -133,24 +153,13 @@ import pMap from 'p-map'; // 但 package.json 里没声明 p-map
 { "imports": { "#utils/*": "./src/utils/*.ts" } }
 ```
 
-没匹配上报 `Unauthorized package import specifier:`；解析不了报 `Unresolved package import specifier:`；落到别的包报 `Package import resolves to another package owner:`。
-
-### strict：跨包要用 `workspace:` 协议
-
-strict 模式下，导入解析到另一个工作区包时，依赖声明必须用 `workspace:`，不能用 `link:` / `file:` / `catalog:` 或普通版本号——这样源码图才确定。
-
-```jsonc
-// package.json（不能写成 "link:../a"）
-{ "dependencies": { "@acme/a": "workspace:*" } }
-```
-
-不满足报 `Workspace bare package import must use workspace: dependency:`。
+没匹配上报 `Unauthorized package import specifier:`；解析不了报 `Unresolved package import specifier:`；落到别的 source owner 报 `Package import resolves to another source owner:`。
 
 ### 一个 tsconfig / 模块只能属于一个归属方
 
-治理用的 tsconfig，或一个源码模块，不能横跨多个包（即多个最近的 `package.json`），否则归属不清。
+治理用的 tsconfig，或一个源码模块，不能横跨多个 pnpm workspace source owner，否则归属不清。
 
-报 `Tsconfig source file set mixes package owners:` 或 `Source module belongs to multiple package owners:`。修复：拆分 tsconfig，让每个治理单元只覆盖单个包。
+报 `Tsconfig source file set mixes source owners:` 或 `Source module belongs to multiple source owners:`。修复：拆分 tsconfig，让每个治理单元只覆盖单个包。
 
 ### 声明了却没用到的工作区依赖（Knip）
 
@@ -173,9 +182,9 @@ export default defineConfig({
 
 报 `Unused workspace package dependency:`。若确实是经生成代码/运行时字符串使用，用 `source.knip.workspaces[pkg].ignoreDependencies` 豁免；否则删掉这条依赖。
 
-### strict：从 exports 不可达的源码模块（Knip）
+### 从 exports 不可达的源码模块（Knip）
 
-strict 模式下，Limina 还会让 Knip 检查：某个归属方的源码模块如果从包 `exports`、`bin`、scripts、Knip 支持的插件入口和 `source.knip.workspaces[pkg].entry` 都触达不到，就是死模块。
+Limina 会让 Knip 检查：某个归属方的源码模块如果从包 `exports`、`bin`、scripts、Knip 支持的插件入口和 `source.knip.workspaces[pkg].entry` 都触达不到，就是死模块。
 
 ```js
 source: {
@@ -193,41 +202,21 @@ source: {
 
 报 `Unused source module:`。如果它是真实的额外入口，写进 `source.knip.workspaces[pkg].entry`；确属有意保留但 Knip 看不见的，用 `source.knip.workspaces[pkg].ignoreFiles` 豁免。
 
-## `nx:check`
+## `graph export`
 
-对应 `limina nx check`，校验各包的 Nx `project.json` 构建边是否与产物消费保持同步。
+对应 `limina graph export`，导出 Limina 在被检查的 tsconfig 域内从真实导入和模块解析结果推导出的包依赖图。
 
-### 从产物依赖推导构建边
-
-每个包的 `link:<dep>/dist` 表示「我依赖这个包构建后的产物」。Limina 还会扫描检查器覆盖的源码文件：如果包 A 用 `workspace:*` 声明了包 B，并且实际导入了一个解析到 B 产物目录的公开导出，那么 A 也需要构建依赖指向 B。这包括 `dist/*.d.ts` 这类纯类型产物。
-
-```jsonc
-// packages/app/package.json
-{
-  "dependencies": {
-    "@acme/core": "workspace:*",
-    "@acme/ui": "link:../ui/dist",
-  },
-}
+```sh
+pnpm exec limina graph export --view all --output .limina/dependency-graph.json
 ```
 
-对应地，`app` 的 `project.json` 中 `build` 应当 `dependsOn` `ui` 的构建；当 app 实际导入了一个解析到 `core/dist` 的 core 导出时，也应当 `dependsOn` core 的构建。
+JSON 中包含 package 节点，以及 `source` / `artifact` 两类边。`source` 边表示导入解析到了类型图管辖的源码；`artifact` 边表示导入解析到了 `dist/*.js` 或 `dist/*.d.ts` 这类构建产物。依赖协议不决定边类型，解析到的文件才决定。
 
-### 缺 `project.json` 或 `dependsOn` 不一致就是过期
+每条边都会尊重导入方项目的 compiler options，包括 `compilerOptions.customConditions`。这是 Limina 管辖域里的架构视图，不是全局构建解析图；它适合用于架构检查和诊断，不应该作为权威任务图或构建顺序来源：
 
-非根工作区包没有 `project.json`，或它的 `dependsOn` 与推导结果对不上，都判为过期，`nx:check` 失败。
-
-报 `Nx project config state is stale; run \`limina nx sync build\`.`。修复：跑 `limina nx sync`。
-
-### 产物依赖目标必须合法
-
-`link:` 必须指向真实的工作区包、目标要有 `build` 脚本、要指向产物目录（如 `dist`），且不能成环。被消费到的 `workspace:*` 产物导出也要求目标包有 `build` 脚本。由 link 推导的边和由工作区导出推导的边会一起参与环检测。
-
-分别报 `Nx build dependency points at an unknown workspace package:`、`Nx build dependency target has no build script:`、`Nx build dependency does not point at an artifact directory:`、`Nx artifact build dependency cycle:`。
-
-::: warning
-`nx:check` 在默认 `limina check` 里，所以全新仓库要先 `limina nx sync` 生成 `project.json`，否则默认检查会卡在这一步。
-:::
+```sh
+pnpm exec limina graph export --view artifact
+```
 
 ## `proof:check`
 
@@ -249,26 +238,26 @@ packages/core/src/generated/runtime.ts  # 没被任何 checker entry 覆盖
 
 ### 同一文件不能被重复覆盖
 
-同一个源码文件被同一检查器的两个声明叶子同时纳入，会造成重复构建和归属歧义。
+同一个源码文件被同一检查器的两个源码 tsconfig 同时纳入，会造成重复的声明构建归属和归属歧义。
 
-报 `Duplicate checker graph coverage:`。修复：让每个文件只属于一个叶子。
+报 `Duplicate checker graph coverage:`。修复：让每个文件在同一检查器下只属于一个源码 tsconfig。
 
 ### 聚合器必须是纯聚合器
 
-`tsconfig*.build.json` 和带 `references` 的聚合 `tsconfig.json` 只能有 `$schema` / `files: []` / `references`，不能混入 `compilerOptions` 等。
+源码层带 `references` 的聚合 `tsconfig.json` 只能有 `$schema` / `files: []` / `references`，不能混入 `compilerOptions` 等。Limina 会在 `.limina/tsconfig/checkers/<checker>/tsconfig.build.json` 写出检查器根 build 聚合器，并在 `.limina/tsconfig/checkers/<checker>/solutions/.../tsconfig.build.json` 下写出源码 solution build 聚合器。
 
 ```jsonc
-// tsconfig.build.json
-{ "files": [], "references": [{ "path": "./tsconfig.lib.dts.json" }] }
+// tsconfig.json
+{ "files": [], "references": [{ "path": "./tsconfig.lib.json" }] }
 ```
 
-不满足报 `Build graph config is not a pure aggregator:` 或 `Default tsconfig.json is not a pure aggregator:`。
+不满足报 `Default tsconfig.json is not a pure aggregator:`。
 
-### 声明叶子的形状要对
+### 声明构建配置的形状要对
 
-每个 `*.dts.json` 要能被某检查器入口触达、有配对的本地配置、对 `tsc -b` 合法，且文件集和（非输出类）选项与本地配套配置对齐。
+每个生成的 `*.dts.json` 要能被生成的检查器 build 入口触达、有 `sourceConfig`、对 `tsc -b` 合法，且文件集和（非输出类）选项与源码配置对齐。
 
-分别报 `DTS config is not reachable from any checker entry:`、`DTS config is not valid for tsc -b:`、`DTS config file set does not match its strict local tsconfig:`、`DTS config overrides a typecheck compiler option from its strict local tsconfig:`。
+分别报 `DTS config is not reachable from any checker entry:`、`DTS config is not valid for tsc -b:`、`DTS config file set does not match its local typecheck config:`、`DTS config overrides a typecheck compiler option from its local typecheck config:`。
 
 ### 目录里 `tsconfig.json` 的角色
 
@@ -276,15 +265,15 @@ packages/core/src/generated/runtime.ts  # 没被任何 checker entry 覆盖
 
 报 `Single typecheck environment should use default tsconfig.json:` 或 `Directory with multiple typecheck environments must use tsconfig.json as an aggregator:`。
 
-### strict 追加约束
+### 类型检查形状约束
 
-strict 模式下还要求：叶子必须（传递地）`extends` 其本地配套配置、构建图只能引用 build/dts 项目、每个模块只属于一个类型检查配置。
+叶子必须传递地 `extends` 其本地配套配置、构建图只能引用 build/dts 项目、每个模块只属于一个类型检查配置。
 
-分别报 `Strict mode requires declaration leaves to transitively extend their companion typecheck config:`、`Strict mode build graph references a non-build project:`、`Strict mode source file belongs to multiple typecheck configs:`。
+分别报 `Declaration leaf does not transitively extend its companion typecheck config:`、`Build graph references a non-build project:`、`Source file belongs to multiple typecheck configs:`。
 
 ## `checker:build`
 
-对应 `limina checker build`，跑「一等公民」构建编译器，真正做类型检查并产出声明。
+对应 `limina checker build`，运行支持构建模式的检查器，真正做类型检查并产出声明。
 
 ### 先预检所有检查器的 peer 依赖
 
@@ -300,6 +289,28 @@ strict 模式下还要求：叶子必须（传递地）`extends` 其本地配套
 因为跑的是真实 `tsc -b`，默认 `limina check` 会产出声明文件和 `.tsbuildinfo`，并非无副作用。
 :::
 
+### 提示不兼容的构建检查器组合
+
+所有构建进程结束后，Limina 会检查：哪些构建类 checker preset 触达了同一个生成的声明构建配置。这个提示不会改变退出码；它只是提醒底层 build cache 语义可能不安全。
+
+如果触达它的 checker 全部是同一个 preset，不提示。只混用了 `tsc` 和 `vue-tsc`，也不提示。其他构建类 preset 混用，例如 `tsgo` 和 `tsc`、`tsgo` 和 `vue-tsc`，会被提示，因为它们不能安全共享同一套底层 build cache 语义。
+
+提示里会列出生成配置、它对应的源码配置，以及 `reachable from`：
+
+```text
+Potentially incompatible build checker combination:
+  source config: packages/core/tsconfig.lib.json
+  reachable from:
+    - config.checkers.typescript (tsgo)
+      entry tsconfigs:
+        - packages/app/tsconfig.json
+    - config.checkers.vue (vue-tsc)
+      entry tsconfigs:
+        - packages/theme/tsconfig.json
+```
+
+重点不只是 `source config` 本身。某个 checker 可能是通过另一个入口 import 到它，进而触达这个配置。想消掉提示，需要对齐 `entry tsconfigs` 里展示的这片可达入口，或者改用兼容组合，例如 `tsc` 和 `vue-tsc`。
+
 ### 任一编译失败就失败
 
 只要有一个编译进程非零退出（类型错误，或 tsconfig 缺失/非法），任务就失败。
@@ -308,11 +319,11 @@ strict 模式下还要求：叶子必须（传递地）`extends` 其本地配套
 
 ## `checker:typecheck`
 
-对应 `limina checker typecheck`，跑「二等公民」只检查不产出的检查器。
+对应 `limina checker typecheck`，运行只做类型检查、不产出文件的检查器。
 
-### 同样先做 peer 依赖预检
+### 只预检类型检查类 checker 的 peer 依赖
 
-和 `checker:build` 一样，先预检全部检查器的 peer 依赖。
+这一步只预检即将运行的只做类型检查的 checker entry，例如 `vue-tsgo` 和 `svelte-check`。执行构建的预设由 `checker:build` 处理。
 
 报 `Missing checker peer dependencies:`，并附 `Fix: pnpm add -D <包名>`。
 
@@ -322,14 +333,14 @@ strict 模式下还要求：叶子必须（传递地）`extends` 其本地配套
 
 ```js
 // limina.config.mjs（节选）
-checkers: { vue: { preset: 'vue-tsgo', entry: 'tsconfig.app.dts.json' } }
+checkers: { vue: { preset: 'vue-tsgo', include: ['apps/app/tsconfig.json'] } }
 ```
 
 有 `.vue` 类型错误时非零退出，报 `typecheck checks failed:`。修复：解决报出来的 `.vue` 类型错误。
 
-### 纯 `tsc` 仓库是空操作
+### 没有只做类型检查的检查器时是空操作
 
-如果没有配置二等公民检查器（纯 `tsc` / `tsgo` / `vue-tsc`），这一步直接通过，并打印 `No second-class checker entries configured.`；真正的类型检查在 `checker:build` 完成。
+如果没有显式配置只做类型检查的检查器，例如 auto 模式，或只有 `tsc` / `tsgo` / `vue-tsc`，这一步直接通过，并打印 `No second-class checker entries configured.`；真正的类型检查在 `checker:build` 完成。
 
 ## `package:check`
 
@@ -337,7 +348,7 @@ checkers: { vue: { preset: 'vue-tsgo', entry: 'tsconfig.app.dts.json' } }
 
 ### publint：打包是否规范
 
-对产物跑 publint（默认 strict），检查 `exports`、`main` / `module` / `types` 字段、发布文件是否齐全等打包规范问题。
+对产物跑 publint，检查 `exports`、`main` / `module` / `types` 字段、发布文件是否齐全等打包规范问题。
 
 报形如 `publint found N issue(s): <label>`。修复：按 publint 提示修 `package.json`。
 
@@ -357,11 +368,11 @@ checkers: { vue: { preset: 'vue-tsgo', entry: 'tsconfig.app.dts.json' } }
 
 检查的是 `outDir` 下的产物，所以必须先构建。没构建就跑会报 `outDir package.json not found`，并提示 `Run the package build first.`。修复：先 `pnpm build`。
 
-### strict：产物清单要可发布
+### 产物清单要可发布
 
-strict 模式下，产物 `package.json` 必须是完整 npm 清单，且不含 `workspace:` / `link:` / `file:` / `catalog:` 这类 pnpm 本地依赖。
+产物 `package.json` 必须是完整 npm 清单，且不含 `workspace:` / `link:` / `file:` / `catalog:` 这类 pnpm 本地依赖。
 
-报形如 `[<label>] [strict] output package.json ...`。
+报形如 `[<label>] output package.json ...`。
 
 ## `release:check`
 
@@ -369,7 +380,7 @@ strict 模式下，产物 `package.json` 必须是完整 npm 清单，且不含 
 
 ### 不能是 private（及本地依赖）
 
-产物清单若 `private: true`，npm 根本不会发布，直接拒绝；strict 模式下还拒绝产物里出现 `workspace:` / `link:` / `file:` / `catalog:` 依赖。
+产物清单若 `private: true`，npm 根本不会发布，直接拒绝；release check 也会拒绝产物里出现 `workspace:` / `link:` / `file:` / `catalog:` 依赖。
 
 private 时报 `selected release package has "private": true; npm publish would reject it`。
 
@@ -381,9 +392,9 @@ private 时报 `selected release package has "private": true; npm publish would 
 
 ### 发布清单不暴露本地依赖
 
-打包后的清单不能出现 `workspace:` / `link:` 这类本地说明符；工作区发布依赖必须指向真实且已发布的包。
+打包后的清单任一依赖区间都不能出现 `workspace:` / `link:` / `file:` / `catalog:` 这类本地说明符；工作区发布依赖必须指向真实且已发布的包。
 
-报形如 `packed package manifest must not expose workspace: or link: dependency specifiers`，或 `<dep> is not published to the npm registry`。
+报形如 `packed package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers in any dependency section`，或 `<dep> is not published to the npm registry`。
 
 ### 与 npm 上的内容做哈希对比
 

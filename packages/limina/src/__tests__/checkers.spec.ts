@@ -1,11 +1,11 @@
+import {
+  clearCheckerProjectConfigCache,
+  parseCheckerProjectConfigForContext,
+} from '#checkers';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  clearCheckerProjectConfigCache,
-  parseCheckerProjectConfigForContext,
-} from '../checkers';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });

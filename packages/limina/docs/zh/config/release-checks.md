@@ -8,8 +8,8 @@
 发布检查会拒绝私有输出（`private: true`）、缺失 README/license、源码映射文件（`.map`）、JavaScript `sourceMappingURL` 注释，以及不覆盖本地工作区版本的发布依赖范围。
 :::
 
-::: warning 严格模式
-开启顶层 `strict: true` 后，发布检查还会拒绝输出清单和打包清单所有依赖区间里泄露的 `workspace:`、`link:`、`file:`、`catalog:`。
+::: warning 本地依赖泄漏
+发布检查会拒绝输出清单和打包清单所有依赖区间里泄露的 `workspace:`、`link:`、`file:`、`catalog:`。
 :::
 
 ::: tip 选择条目

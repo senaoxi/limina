@@ -1,42 +1,21 @@
-import * as prompts from '@clack/prompts';
-import { createElapsedTimer } from 'logaria/helper';
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import path from 'pathe';
-import { glob } from 'tinyglobby';
-import ts from 'typescript';
-import { parse as parseYaml } from 'yaml';
-import type { ResolvedLiminaConfig } from '../config';
-import type { LiminaFlowReporter } from '../flow';
-import {
-  collectImportsFromFile,
-  createImportAnalysisContext,
-  formatImportRecordLocation,
-  isRelativeSpecifier,
-} from '../graph-context';
-import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
-import {
-  createLiminaTsconfigSchemaPath,
-  isOrdinaryTypecheckConfigPath,
-  type JsonObject,
-  readJsonConfig,
-} from '../tsconfig';
-import {
-  isPathInsideDirectory,
-  normalizeAbsolutePath,
-  toPosixPath,
-  toRelativePath,
-} from '../utils/path';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   collectWorkspacePackages,
-  getDependencySections,
-  getPackageRootSpecifier,
-  isWorkspaceDependencySpecifier,
   type PackageManifest,
   readJsonFile,
-  type WorkspacePackage,
-} from '../workspace';
+} from '#core/workspace/actions';
+import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import * as prompts from '@clack/prompts';
+import ignore from 'ignore';
+import { createElapsedTimer } from 'logaria/helper';
+import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'pathe';
+import { parse as parseYaml } from 'yaml';
+import type { LiminaFlowReporter } from '../flow';
+import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
 
 export interface RunInitOptions {
   clearScreen?: boolean;
@@ -47,31 +26,33 @@ export interface RunInitOptions {
 }
 
 export interface RunInitResult {
-  checkCommand: string;
+  buildCommand: string;
   installRequired: boolean;
+  removedPaths: string[];
   rootDir: string;
   skippedFiles: string[];
+  skillInstallStatus: InitSkillInstallStatus;
   workspacePackageCount: number;
   writtenFiles: string[];
 }
 
-interface TypecheckProject {
-  configPath: string;
-  dtsConfigPath: string;
-  fileNames: string[];
-  options: ts.CompilerOptions;
-  owner: WorkspacePackage | null;
-  references: string[];
-  scope: string;
-}
-
-interface ParsedTypeScriptConfig {
-  fileNames: string[];
-  options: ts.CompilerOptions;
-}
+export type InitSkillInstallStatus = 'failed' | 'installed' | 'skipped';
 
 interface InitPromptOptions {
   yes?: boolean;
+}
+
+type InitFlowStepStatus = 'pass' | 'skip';
+
+interface InitFlowStepResult<T> {
+  message: string;
+  status: InitFlowStepStatus;
+  value: T;
+}
+
+interface InitFileStepResult {
+  message: string;
+  status: InitFlowStepStatus;
 }
 
 interface LiminaPackageMetadata {
@@ -79,19 +60,31 @@ interface LiminaPackageMetadata {
   versionRange: string;
 }
 
+interface RootPackageJsonUpdateResult extends InitFileStepResult {
+  installRequired: boolean;
+}
+
+interface InitSkillInstallResult {
+  flowStatus: InitFlowStepStatus;
+  message: string;
+  status: InitSkillInstallStatus;
+}
+
 const pnpmWorkspaceFileName = 'pnpm-workspace.yaml';
 const liminaConfigFileName = 'limina.config.mjs';
-const liminaCheckScriptName = 'limina:check';
-const liminaCheckScriptValue = 'limina check';
-const ignoredGlobPatterns = [
-  '**/.git/**',
-  '**/.limina/**',
-  '**/.pnpm-store/**',
-  '**/.tsbuild/**',
-  '**/coverage/**',
-  '**/dist/**',
-  '**/node_modules/**',
-];
+const liminaBuildScriptName = 'limina:build';
+const liminaBuildScriptValue = 'limina checker build';
+const legacyLiminaCheckScriptName = 'limina:check';
+const legacyLiminaCheckScriptValue = 'limina check';
+const liminaSkillInstallCommand = [
+  'npx',
+  '--yes',
+  'skills',
+  'add',
+  'senaoxi/docs-islands',
+  '--skill',
+  'limina',
+] as const;
 
 function findPnpmWorkspaceRoot(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
@@ -122,329 +115,18 @@ function formatConfigPath(rootDir: string, configPath: string): string {
   return toRelativePath(rootDir, configPath);
 }
 
-function formatReferencePath(
-  fromConfigPath: string,
-  toConfigPath: string,
-): string {
-  const relativePath = toPosixPath(
-    path.relative(path.dirname(fromConfigPath), toConfigPath),
-  );
-
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
-}
-
 function stringifyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
-}
-
-function getProjectScope(configPath: string): string {
-  const fileName = path.basename(configPath);
-
-  if (fileName === 'tsconfig.json') {
-    return 'tsconfig';
-  }
-
-  const match = /^tsconfig\.(.+)\.json$/u.exec(fileName);
-
-  return match?.[1] ?? 'tsconfig';
-}
-
-function getDtsConfigPath(configPath: string): string {
-  const directory = path.dirname(configPath);
-  const fileName = path.basename(configPath);
-  const dtsFileName =
-    fileName === 'tsconfig.json'
-      ? 'tsconfig.dts.json'
-      : fileName.replace(/\.json$/u, '.dts.json');
-
-  return path.join(directory, dtsFileName);
-}
-
-function hasReferences(configObject: JsonObject): boolean {
-  return (
-    Array.isArray(configObject.references) && configObject.references.length > 0
-  );
-}
-
-function parseTypeScriptConfig(
-  rootDir: string,
-  configPath: string,
-): ParsedTypeScriptConfig {
-  const diagnostics: ts.Diagnostic[] = [];
-  const parsed = ts.getParsedCommandLineOfConfigFile(
-    configPath,
-    {},
-    {
-      ...ts.sys,
-      onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
-        diagnostics.push(diagnostic);
-      },
-    },
-  );
-
-  if (!parsed) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-        getCanonicalFileName: (fileName) => fileName,
-        getCurrentDirectory: () => rootDir,
-        getNewLine: () => '\n',
-      }),
-    );
-  }
-
-  if (parsed.errors.length > 0) {
-    throw new Error(
-      ts.formatDiagnosticsWithColorAndContext(parsed.errors, {
-        getCanonicalFileName: (fileName) => fileName,
-        getCurrentDirectory: () => rootDir,
-        getNewLine: () => '\n',
-      }),
-    );
-  }
-
-  return {
-    fileNames: parsed.fileNames.map(normalizeAbsolutePath),
-    options: parsed.options,
-  };
-}
-
-function findNearestWorkspacePackage(
-  filePath: string,
-  packages: WorkspacePackage[],
-): WorkspacePackage | null {
-  return (
-    [...packages]
-      .sort((left, right) => right.directory.length - left.directory.length)
-      .find((workspacePackage) =>
-        isPathInsideDirectory(filePath, workspacePackage.directory),
-      ) ?? null
-  );
-}
-
-function collectWorkspaceDependencyNames(
-  manifest: PackageManifest,
-): Set<string> {
-  const dependencyNames = new Set<string>();
-
-  for (const dependencies of getDependencySections(manifest)) {
-    for (const [dependencyName, specifier] of Object.entries(dependencies)) {
-      if (isWorkspaceDependencySpecifier(specifier)) {
-        dependencyNames.add(dependencyName);
-      }
-    }
-  }
-
-  return dependencyNames;
-}
-
-function findOwningProjectForFile(
-  filePath: string,
-  projects: TypecheckProject[],
-): TypecheckProject | null {
-  const normalizedFilePath = normalizeAbsolutePath(filePath);
-  const owners = projects.filter((project) =>
-    project.fileNames.includes(normalizedFilePath),
-  );
-
-  return (
-    owners.sort((left, right) => {
-      const depthDelta =
-        path.dirname(right.configPath).length -
-        path.dirname(left.configPath).length;
-
-      return depthDelta === 0
-        ? left.configPath.localeCompare(right.configPath)
-        : depthDelta;
-    })[0] ?? null
-  );
-}
-
-function isDirectory(filePath: string): boolean {
-  try {
-    return statSync(filePath).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function mapVirtualWorkspacePath(
-  filePath: string,
-  packageByName: Map<string, WorkspacePackage>,
-): string | null {
-  const normalizedPath = normalizeAbsolutePath(filePath);
-  const segments = normalizedPath.split('/');
-
-  for (let index = 0; index < segments.length; index += 1) {
-    if (segments[index] !== 'node_modules') {
-      continue;
-    }
-
-    const firstPackageSegment = segments[index + 1];
-
-    if (!firstPackageSegment) {
-      continue;
-    }
-
-    const isScopedPackage = firstPackageSegment.startsWith('@');
-    const packageName = isScopedPackage
-      ? `${firstPackageSegment}/${segments[index + 2] ?? ''}`
-      : firstPackageSegment;
-    const restStart = index + (isScopedPackage ? 3 : 2);
-    const workspacePackage = packageByName.get(packageName);
-
-    if (!workspacePackage) {
-      continue;
-    }
-
-    return path.join(workspacePackage.directory, ...segments.slice(restStart));
-  }
-
-  return null;
-}
-
-function isVirtualWorkspaceDirectory(
-  directoryPath: string,
-  packageByName: Map<string, WorkspacePackage>,
-): boolean {
-  const normalizedPath = normalizeAbsolutePath(directoryPath);
-  const segments = normalizedPath.split('/');
-
-  for (let index = 0; index < segments.length; index += 1) {
-    if (segments[index] !== 'node_modules') {
-      continue;
-    }
-
-    const firstPackageSegment = segments[index + 1];
-
-    if (!firstPackageSegment) {
-      return packageByName.size > 0;
-    }
-
-    if (
-      firstPackageSegment.startsWith('@') &&
-      segments[index + 2] === undefined
-    ) {
-      return [...packageByName.keys()].some((packageName) =>
-        packageName.startsWith(`${firstPackageSegment}/`),
-      );
-    }
-  }
-
-  const mappedPath = mapVirtualWorkspacePath(directoryPath, packageByName);
-
-  return mappedPath ? isDirectory(mappedPath) : false;
-}
-
-function createWorkspaceModuleResolutionHost(options: {
-  packageByName: Map<string, WorkspacePackage>;
-  rootDir: string;
-}): ts.ModuleResolutionHost {
-  const mapPath = (filePath: string): string =>
-    mapVirtualWorkspacePath(filePath, options.packageByName) ?? filePath;
-
-  return {
-    directoryExists: (directoryPath) =>
-      isVirtualWorkspaceDirectory(directoryPath, options.packageByName) ||
-      (ts.sys.directoryExists?.(directoryPath) ?? isDirectory(directoryPath)),
-    fileExists: (filePath) => {
-      const mappedPath = mapPath(filePath);
-
-      return existsSync(mappedPath) && !isDirectory(mappedPath);
-    },
-    getCurrentDirectory: () => options.rootDir,
-    readFile: (filePath) => ts.sys.readFile(mapPath(filePath)),
-    realpath: (filePath) => normalizeAbsolutePath(mapPath(filePath)),
-    useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
-  };
-}
-
-function resolveImportWithTypeScript(options: {
-  cache: ts.ModuleResolutionCache;
-  host: ts.ModuleResolutionHost;
-  importRecord: ReturnType<typeof collectImportsFromFile>[number];
-  packageByName: Map<string, WorkspacePackage>;
-  project: TypecheckProject;
-}): string | null {
-  const resolvedModule = ts.resolveModuleName(
-    options.importRecord.specifier,
-    options.importRecord.filePath,
-    options.project.options,
-    options.host,
-    options.cache,
-  ).resolvedModule;
-
-  if (!resolvedModule?.resolvedFileName) {
-    return null;
-  }
-
-  return normalizeAbsolutePath(
-    mapVirtualWorkspacePath(
-      resolvedModule.resolvedFileName,
-      options.packageByName,
-    ) ?? resolvedModule.resolvedFileName,
-  );
-}
-
-function isPackageImportSpecifier(specifier: string): boolean {
-  return specifier.startsWith('#');
-}
-
-function createDtsConfig(
-  rootDir: string,
-  project: TypecheckProject,
-): JsonObject {
-  const fileName = path.basename(project.configPath);
-  const scope = project.scope;
-  const output: JsonObject = {
-    $schema: createLiminaTsconfigSchemaPath(rootDir, project.dtsConfigPath),
-    extends: [`./${fileName}`],
-    compilerOptions: {
-      composite: true,
-      incremental: true,
-      noEmit: false,
-      declaration: true,
-      emitDeclarationOnly: true,
-      declarationMap: false,
-      rootDir: '.',
-      outDir: './.limina',
-      tsBuildInfoFile: `./.limina/${scope}.tsbuildinfo`,
-    },
-  };
-
-  if (project.references.length > 0) {
-    output.references = project.references.map((referencePath) => ({
-      path: referencePath,
-    }));
-  }
-
-  return output;
-}
-
-function createBuildAggregator(
-  rootDir: string,
-  configPath: string,
-  references: string[],
-): JsonObject {
-  return {
-    $schema: createLiminaTsconfigSchemaPath(rootDir, configPath),
-    files: [],
-    references: references.map((referencePath) => ({
-      path: referencePath,
-    })),
-  };
 }
 
 function createLiminaConfigContent(): string {
   return `import { defineConfig } from 'limina';
 
 export default defineConfig({
-  // Shared checker entries used by graph, proof, and typecheck checks.
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
-        entry: 'tsconfig.build.json',
-      },
+      mode: 'auto',
+      exclude: [],
     },
   },
 });
@@ -489,29 +171,37 @@ async function writeTextFile(
   writtenFiles.push(filePath);
 }
 
-async function writeBuildAggregatorFile(options: {
-  configPath: string;
-  references: string[];
-  rootDir: string;
-  writtenFiles: string[];
-}): Promise<boolean> {
-  if (options.references.length === 0) {
-    return false;
+function formatCommand(command: readonly string[]): string {
+  return command.join(' ');
+}
+
+async function runInitFlowStep<T>(options: {
+  action: () => Promise<InitFlowStepResult<T>>;
+  depth: number;
+  flow?: LiminaFlowReporter;
+  label: string;
+}): Promise<T> {
+  const task = options.flow?.start(options.label, {
+    collapseOnSuccess: false,
+    depth: options.depth,
+  });
+
+  try {
+    const result = await options.action();
+
+    if (result.status === 'skip') {
+      task?.skip(result.message);
+    } else {
+      task?.pass(result.message);
+    }
+
+    return result.value;
+  } catch (error) {
+    task?.fail(`${options.label} failed`, {
+      error,
+    });
+    throw error;
   }
-
-  await writeTextFile(
-    options.configPath,
-    stringifyJson(
-      createBuildAggregator(
-        options.rootDir,
-        options.configPath,
-        options.references,
-      ),
-    ),
-    options.writtenFiles,
-  );
-
-  return true;
 }
 
 function findPnpmWorkspacePath(startDir: string): string | null {
@@ -594,7 +284,7 @@ async function updateRootPackageJson(options: {
   rootDir: string;
   skippedFiles: string[];
   writtenFiles: string[];
-}): Promise<boolean> {
+}): Promise<RootPackageJsonUpdateResult> {
   const packageJsonPath = path.join(options.rootDir, 'package.json');
   let installRequired = false;
 
@@ -606,14 +296,18 @@ async function updateRootPackageJson(options: {
 
     if (!shouldCreate) {
       options.skippedFiles.push(packageJsonPath);
-      return false;
+      return {
+        installRequired: false,
+        message: 'package.json (skipped: creation declined)',
+        status: 'skip',
+      };
     }
 
     const manifest: PackageManifest = {
       private: true,
       type: 'module',
       scripts: {
-        [liminaCheckScriptName]: liminaCheckScriptValue,
+        [liminaBuildScriptName]: liminaBuildScriptValue,
       },
       devDependencies: {
         limina: options.metadata.versionRange,
@@ -627,7 +321,11 @@ async function updateRootPackageJson(options: {
       options.writtenFiles,
     );
 
-    return true;
+    return {
+      installRequired: true,
+      message: 'package.json created',
+      status: 'pass',
+    };
   }
 
   const manifest = readJsonFile<PackageManifest>(packageJsonPath);
@@ -636,21 +334,26 @@ async function updateRootPackageJson(options: {
   };
   let changed = false;
 
+  if (scripts[legacyLiminaCheckScriptName] === legacyLiminaCheckScriptValue) {
+    delete scripts[legacyLiminaCheckScriptName];
+    changed = true;
+  }
+
   if (
-    scripts[liminaCheckScriptName] &&
-    scripts[liminaCheckScriptName] !== liminaCheckScriptValue
+    scripts[liminaBuildScriptName] &&
+    scripts[liminaBuildScriptName] !== liminaBuildScriptValue
   ) {
     const shouldOverwrite = await confirmAction(
       options.prompt,
-      `Script "${liminaCheckScriptName}" already exists in package.json. Overwrite it?`,
+      `Script "${liminaBuildScriptName}" already exists in package.json. Overwrite it?`,
     );
 
     if (shouldOverwrite) {
-      scripts[liminaCheckScriptName] = liminaCheckScriptValue;
+      scripts[liminaBuildScriptName] = liminaBuildScriptValue;
       changed = true;
     }
-  } else if (!scripts[liminaCheckScriptName]) {
-    scripts[liminaCheckScriptName] = liminaCheckScriptValue;
+  } else if (!scripts[liminaBuildScriptName]) {
+    scripts[liminaBuildScriptName] = liminaBuildScriptValue;
     changed = true;
   }
 
@@ -658,6 +361,15 @@ async function updateRootPackageJson(options: {
     manifest.devDependencies = {
       ...manifest.devDependencies,
       limina: options.metadata.versionRange,
+    };
+    installRequired = true;
+    changed = true;
+  }
+
+  if (!hasDependency(manifest, 'typescript')) {
+    manifest.devDependencies = {
+      ...manifest.devDependencies,
+      typescript: options.metadata.typescriptRange,
     };
     installRequired = true;
     changed = true;
@@ -672,357 +384,19 @@ async function updateRootPackageJson(options: {
       }),
       options.writtenFiles,
     );
+    return {
+      installRequired,
+      message: 'package.json updated',
+      status: 'pass',
+    };
   }
 
-  return installRequired;
-}
-
-async function collectReservedConfigConflicts(
-  rootDir: string,
-): Promise<string[]> {
-  const conflicts = await glob(
-    [
-      'tsconfig*.build.json',
-      '**/tsconfig*.build.json',
-      'tsconfig*.dts.json',
-      '**/tsconfig*.dts.json',
-    ],
-    {
-      absolute: false,
-      cwd: rootDir,
-      ignore: ignoredGlobPatterns,
-    },
-  );
-
-  return [...new Set(conflicts)].sort();
-}
-
-async function collectOrdinaryTsconfigPaths(
-  rootDir: string,
-): Promise<string[]> {
-  const configPaths = await glob(['tsconfig*.json', '**/tsconfig*.json'], {
-    absolute: false,
-    cwd: rootDir,
-    ignore: ignoredGlobPatterns,
-  });
-
-  return [...new Set(configPaths)]
-    .map((configPath) => normalizeAbsolutePath(path.join(rootDir, configPath)))
-    .filter(isOrdinaryTypecheckConfigPath)
-    .sort();
-}
-
-function analyzeTypecheckProjects(options: {
-  config: ResolvedLiminaConfig;
-  configPaths: string[];
-  workspacePackages: WorkspacePackage[];
-}): { problems: string[]; projects: TypecheckProject[] } {
-  const problems: string[] = [];
-  const projects: TypecheckProject[] = [];
-
-  for (const configPath of options.configPaths) {
-    const configObject = readJsonConfig(options.config, configPath);
-    const parsed = parseTypeScriptConfig(options.config.rootDir, configPath);
-    const hasProjectReferences = hasReferences(configObject);
-    const fileName = path.basename(configPath);
-
-    if (
-      fileName === 'tsconfig.json' &&
-      hasProjectReferences &&
-      parsed.fileNames.length > 0
-    ) {
-      problems.push(
-        [
-          'Invalid tsconfig role:',
-          `  config: ${formatConfigPath(options.config.rootDir, configPath)}`,
-          '  reason: tsconfig.json must be either a pure aggregator with files: [] and references, or a typecheck leaf with source files, but not both.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (fileName !== 'tsconfig.json' && hasProjectReferences) {
-      problems.push(
-        [
-          'Invalid scoped tsconfig role:',
-          `  config: ${formatConfigPath(options.config.rootDir, configPath)}`,
-          '  reason: tsconfig.<scope>.json files may only be typecheck leaves; graph aggregation belongs in tsconfig*.build.json.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (fileName === 'tsconfig.json' && hasProjectReferences) {
-      continue;
-    }
-
-    projects.push({
-      configPath,
-      dtsConfigPath: getDtsConfigPath(configPath),
-      fileNames: parsed.fileNames,
-      options: parsed.options,
-      owner: findNearestWorkspacePackage(configPath, options.workspacePackages),
-      references: [],
-      scope: getProjectScope(configPath),
-    });
-  }
-
+  options.skippedFiles.push(packageJsonPath);
   return {
-    problems,
-    projects,
+    installRequired,
+    message: 'package.json (skipped: script and dependencies already present)',
+    status: 'skip',
   };
-}
-
-function inferProjectReferences(options: {
-  config: ResolvedLiminaConfig;
-  projects: TypecheckProject[];
-  workspacePackages: WorkspacePackage[];
-}): string[] {
-  const problems: string[] = [];
-  const packageByName = new Map(
-    options.workspacePackages.map((workspacePackage) => [
-      workspacePackage.name,
-      workspacePackage,
-    ]),
-  );
-  const host = createWorkspaceModuleResolutionHost({
-    packageByName,
-    rootDir: options.config.rootDir,
-  });
-  const importAnalysis = createImportAnalysisContext();
-
-  for (const project of options.projects) {
-    if (!project.owner) {
-      continue;
-    }
-
-    const workspaceDependencyNames = collectWorkspaceDependencyNames(
-      project.owner.manifest,
-    );
-    const resolutionCache = ts.createModuleResolutionCache(
-      path.dirname(project.configPath),
-      (fileName) => fileName,
-      project.options,
-    );
-    const referencePaths = new Set<string>();
-
-    for (const fileName of project.fileNames) {
-      if (!/\.(?:[cm]?tsx?|d\.[cm]?ts)$/u.test(fileName)) {
-        continue;
-      }
-
-      for (const importRecord of collectImportsFromFile(
-        fileName,
-        options.config.rootDir,
-        importAnalysis,
-      )) {
-        const resolvedFilePath = resolveImportWithTypeScript({
-          cache: resolutionCache,
-          host,
-          importRecord,
-          packageByName,
-          project,
-        });
-        const isGraphInternalSpecifier =
-          isRelativeSpecifier(importRecord.specifier) ||
-          isPackageImportSpecifier(importRecord.specifier);
-        const packageName = isGraphInternalSpecifier
-          ? null
-          : getPackageRootSpecifier(importRecord.specifier);
-        const targetPackage = packageName
-          ? packageByName.get(packageName)
-          : null;
-        const isWorkspaceGraphDependency =
-          targetPackage &&
-          (targetPackage.name === project.owner.name ||
-            workspaceDependencyNames.has(targetPackage.name));
-
-        if (
-          packageName &&
-          workspaceDependencyNames.has(packageName) &&
-          !targetPackage
-        ) {
-          problems.push(
-            [
-              'Workspace dependency was not discovered by pnpm:',
-              `  importing project: ${formatConfigPath(options.config.rootDir, project.dtsConfigPath)}`,
-              `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
-              `  imported specifier: ${importRecord.specifier}`,
-              `  package: ${packageName}`,
-              '  reason: package.json declares this dependency with the workspace: protocol, but limina init could not find a matching workspace package.',
-            ].join('\n'),
-          );
-          continue;
-        }
-
-        if (targetPackage && !isWorkspaceGraphDependency) {
-          continue;
-        }
-
-        if (!resolvedFilePath) {
-          if (targetPackage && isWorkspaceGraphDependency) {
-            problems.push(
-              [
-                'Unable to resolve workspace import with TypeScript:',
-                `  importing project: ${formatConfigPath(options.config.rootDir, project.dtsConfigPath)}`,
-                `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
-                `  imported specifier: ${importRecord.specifier}`,
-                `  package: ${targetPackage.name}`,
-                '  reason: workspace:* imports must resolve with the project TypeScript compilerOptions before limina init can generate project references.',
-              ].join('\n'),
-            );
-          }
-          continue;
-        }
-
-        if (isRelativeSpecifier(importRecord.specifier)) {
-          const sourcePackage = findNearestWorkspacePackage(
-            importRecord.filePath,
-            options.workspacePackages,
-          );
-          const resolvedPackage = findNearestWorkspacePackage(
-            resolvedFilePath,
-            options.workspacePackages,
-          );
-
-          if (
-            sourcePackage &&
-            resolvedPackage &&
-            sourcePackage.name !== resolvedPackage.name
-          ) {
-            continue;
-          }
-        }
-
-        const targetProject = findOwningProjectForFile(
-          resolvedFilePath,
-          options.projects,
-        );
-
-        if (!targetProject) {
-          if (targetPackage && isWorkspaceGraphDependency) {
-            problems.push(
-              [
-                'Unable to map workspace import to a generated declaration leaf:',
-                `  importing project: ${formatConfigPath(options.config.rootDir, project.dtsConfigPath)}`,
-                `  file: ${formatImportRecordLocation(options.config.rootDir, importRecord)}`,
-                `  imported specifier: ${importRecord.specifier}`,
-                `  resolved file: ${formatConfigPath(options.config.rootDir, resolvedFilePath)}`,
-                '  reason: TypeScript resolved this workspace import, but the resolved module is not covered by any ordinary tsconfig*.json leaf.',
-              ].join('\n'),
-            );
-          }
-          continue;
-        }
-
-        if (targetProject.dtsConfigPath !== project.dtsConfigPath) {
-          referencePaths.add(
-            formatReferencePath(
-              project.dtsConfigPath,
-              targetProject.dtsConfigPath,
-            ),
-          );
-        }
-      }
-    }
-
-    project.references = [...referencePaths].sort();
-  }
-
-  return problems;
-}
-
-function collectProjectReferencesForOwner(options: {
-  owner: WorkspacePackage | null;
-  projects: TypecheckProject[];
-  targetConfigPath: string;
-}): string[] {
-  return options.projects
-    .filter((project) => project.owner?.directory === options.owner?.directory)
-    .map((project) =>
-      formatReferencePath(options.targetConfigPath, project.dtsConfigPath),
-    )
-    .sort();
-}
-
-function collectRootBuildProjectReferences(options: {
-  projects: TypecheckProject[];
-  rootDir: string;
-  targetConfigPath: string;
-}): string[] {
-  return options.projects
-    .filter(
-      (project) =>
-        !project.owner ||
-        project.owner.directory === options.rootDir ||
-        path.dirname(project.configPath) === options.rootDir,
-    )
-    .map((project) =>
-      formatReferencePath(options.targetConfigPath, project.dtsConfigPath),
-    )
-    .sort();
-}
-
-async function writeGeneratedTsconfigs(options: {
-  projects: TypecheckProject[];
-  rootDir: string;
-  writtenFiles: string[];
-  workspacePackages: WorkspacePackage[];
-}): Promise<void> {
-  for (const project of options.projects) {
-    await writeTextFile(
-      project.dtsConfigPath,
-      stringifyJson(createDtsConfig(options.rootDir, project)),
-      options.writtenFiles,
-    );
-  }
-
-  const nonRootWorkspacePackages = options.workspacePackages.filter(
-    (workspacePackage) => workspacePackage.directory !== options.rootDir,
-  );
-  const workspaceBuildConfigPaths: string[] = [];
-
-  for (const workspacePackage of nonRootWorkspacePackages) {
-    const buildConfigPath = path.join(
-      workspacePackage.directory,
-      'tsconfig.build.json',
-    );
-    const references = collectProjectReferencesForOwner({
-      owner: workspacePackage,
-      projects: options.projects,
-      targetConfigPath: buildConfigPath,
-    });
-
-    if (
-      await writeBuildAggregatorFile({
-        configPath: buildConfigPath,
-        references,
-        rootDir: options.rootDir,
-        writtenFiles: options.writtenFiles,
-      })
-    ) {
-      workspaceBuildConfigPaths.push(buildConfigPath);
-    }
-  }
-
-  const rootBuildConfigPath = path.join(options.rootDir, 'tsconfig.build.json');
-  const rootReferences = [
-    ...collectRootBuildProjectReferences({
-      projects: options.projects,
-      rootDir: options.rootDir,
-      targetConfigPath: rootBuildConfigPath,
-    }),
-    ...workspaceBuildConfigPaths.map((buildConfigPath) =>
-      formatReferencePath(rootBuildConfigPath, buildConfigPath),
-    ),
-  ].sort();
-
-  await writeBuildAggregatorFile({
-    configPath: rootBuildConfigPath,
-    references: rootReferences,
-    rootDir: options.rootDir,
-    writtenFiles: options.writtenFiles,
-  });
 }
 
 async function writeLiminaConfig(options: {
@@ -1030,10 +404,19 @@ async function writeLiminaConfig(options: {
   rootDir: string;
   skippedFiles: string[];
   writtenFiles: string[];
-}): Promise<void> {
+}): Promise<InitFileStepResult> {
   const configPath = path.join(options.rootDir, liminaConfigFileName);
+  const content = createLiminaConfigContent();
 
   if (existsSync(configPath)) {
+    if (readFileSync(configPath, 'utf8') === content) {
+      options.skippedFiles.push(configPath);
+      return {
+        message: `${liminaConfigFileName} (skipped: already up to date)`,
+        status: 'skip',
+      };
+    }
+
     const shouldOverwrite = await confirmAction(
       options.prompt,
       `${liminaConfigFileName} already exists. Overwrite it?`,
@@ -1041,110 +424,329 @@ async function writeLiminaConfig(options: {
 
     if (!shouldOverwrite) {
       options.skippedFiles.push(configPath);
-      return;
+      return {
+        message: `${liminaConfigFileName} (skipped: existing file kept)`,
+        status: 'skip',
+      };
     }
   }
 
-  await writeTextFile(
-    configPath,
-    createLiminaConfigContent(),
-    options.writtenFiles,
-  );
+  await writeTextFile(configPath, content, options.writtenFiles);
+  return {
+    message: `${liminaConfigFileName} written`,
+    status: 'pass',
+  };
 }
 
-async function runInitInternal(
-  options: RunInitOptions,
-): Promise<RunInitResult> {
-  const cwd = normalizeAbsolutePath(options.cwd ?? process.cwd());
-  const rootDir = findPnpmWorkspaceRoot(cwd);
+async function ensureGeneratedGraphGitignore(options: {
+  rootDir: string;
+  skippedFiles: string[];
+  writtenFiles: string[];
+}): Promise<InitFileStepResult> {
+  const gitignorePath = path.join(options.rootDir, '.gitignore');
+  const entry = '.limina/';
 
-  if (!rootDir) {
-    throw new Error(
-      `Unable to run limina init from ${cwd}: no pnpm-workspace.yaml was found in this directory or its parents.`,
-    );
+  if (!existsSync(gitignorePath)) {
+    await writeTextFile(gitignorePath, `${entry}\n`, options.writtenFiles);
+    return {
+      message: '.gitignore created',
+      status: 'pass',
+    };
   }
 
-  const rootPackageJsonPath = path.join(rootDir, 'package.json');
-  const rootPackageName = existsSync(rootPackageJsonPath)
-    ? readJsonFile<PackageManifest>(rootPackageJsonPath).name
-    : undefined;
+  const content = readFileSync(gitignorePath, 'utf8');
+  const ig = ignore().add(content);
 
-  const shouldUseRoot = await confirmAction(
-    options,
-    `Use pnpm workspace ${rootPackageName ? `"${rootPackageName}" ` : ''}at ${rootDir}?`,
+  if (ig.ignores(entry)) {
+    options.skippedFiles.push(gitignorePath);
+    return {
+      message: '.gitignore (skipped: .limina/ already ignored)',
+      status: 'skip',
+    };
+  }
+
+  const separator = content.endsWith('\n') || content.length === 0 ? '' : '\n';
+
+  await writeTextFile(
+    gitignorePath,
+    `${content}${separator}${entry}\n`,
+    options.writtenFiles,
   );
 
-  if (!shouldUseRoot) {
-    throw new Error('limina init canceled.');
+  return {
+    message: '.gitignore updated',
+    status: 'pass',
+  };
+}
+
+async function removeRootGeneratedGraphDir(options: {
+  removedPaths: string[];
+  rootDir: string;
+}): Promise<InitFileStepResult> {
+  const generatedRootPath = path.join(options.rootDir, '.limina');
+
+  if (!existsSync(generatedRootPath)) {
+    return {
+      message: 'root .limina (skipped: not present)',
+      status: 'skip',
+    };
   }
 
-  const reservedConflicts = await collectReservedConfigConflicts(rootDir);
+  await rm(generatedRootPath, {
+    force: true,
+    recursive: true,
+  });
+  options.removedPaths.push(generatedRootPath);
+  return {
+    message: 'root .limina removed',
+    status: 'pass',
+  };
+}
 
-  if (reservedConflicts.length > 0) {
-    throw new Error(
+function runCommand(
+  command: readonly [string, ...string[]],
+  cwd: string,
+): Promise<void> {
+  const [bin, ...args] = command;
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      bin,
+      args,
+      {
+        cwd,
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      },
+    );
+  });
+}
+
+async function promptOptionalAction(
+  message: string,
+): Promise<'accepted' | 'rejected' | 'unavailable'> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return 'unavailable';
+  }
+
+  const result = await prompts.confirm({
+    initialValue: true,
+    message,
+  });
+
+  if (prompts.isCancel(result) || result !== true) {
+    return 'rejected';
+  }
+
+  return 'accepted';
+}
+
+async function installLiminaSkill(options: {
+  rootDir: string;
+  yes?: boolean;
+}): Promise<InitSkillInstallResult> {
+  const command = formatCommand(liminaSkillInstallCommand);
+
+  if (options.yes) {
+    InitLogger.info(`skill install skipped; run ${command} to install it.`);
+    return {
+      flowStatus: 'skip',
+      message: `limina skill (skipped: --yes; run ${command})`,
+      status: 'skipped',
+    };
+  }
+
+  const promptResult = await promptOptionalAction(
+    'Install the Limina agent skill for this project?',
+  );
+
+  if (promptResult !== 'accepted') {
+    InitLogger.info(`skill install skipped; run ${command} to install it.`);
+    return {
+      flowStatus: 'skip',
+      message:
+        promptResult === 'unavailable'
+          ? `limina skill (skipped: non-interactive; run ${command})`
+          : `limina skill (skipped: declined; run ${command})`,
+      status: 'skipped',
+    };
+  }
+
+  try {
+    await runCommand(liminaSkillInstallCommand, options.rootDir);
+    InitLogger.success('limina skill installed.');
+    return {
+      flowStatus: 'pass',
+      message: 'limina skill installed',
+      status: 'installed',
+    };
+  } catch (error) {
+    InitLogger.warn(
       [
-        'Unable to run limina init because reserved Limina tsconfig names already exist:',
-        ...reservedConflicts.map((configPath) => `  - ${configPath}`),
-        'reason: tsconfig*.build.json and tsconfig*.dts.json are Limina init output names; rename existing files before running init.',
+        `limina skill install failed: ${formatErrorMessage(error)}`,
+        `retry: ${command}`,
       ].join('\n'),
     );
+    return {
+      flowStatus: 'skip',
+      message: `limina skill (skipped: install failed; retry: ${command})`,
+      status: 'failed',
+    };
   }
+}
 
-  const config = createInitConfig(rootDir);
-  const workspacePackages = (await collectWorkspacePackages(config)).filter(
-    (workspacePackage) => workspacePackage.directory !== rootDir,
-  );
-  const configPaths = await collectOrdinaryTsconfigPaths(rootDir);
-  const projectAnalysis = analyzeTypecheckProjects({
-    config,
-    configPaths,
-    workspacePackages,
+async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
+  const cwd = normalizeAbsolutePath(options.cwd ?? process.cwd());
+  const stepDepth = (options.flowDepth ?? 0) + 1;
+  const { rootDir } = await runInitFlowStep({
+    action: async () => {
+      const rootDir = findPnpmWorkspaceRoot(cwd);
+
+      if (!rootDir) {
+        throw new Error(
+          `Unable to run limina init from ${cwd}: no pnpm-workspace.yaml was found in this directory or its parents.`,
+        );
+      }
+
+      const rootPackageJsonPath = path.join(rootDir, 'package.json');
+      const rootPackageName = existsSync(rootPackageJsonPath)
+        ? readJsonFile<PackageManifest>(rootPackageJsonPath).name
+        : undefined;
+      const shouldUseRoot = await confirmAction(
+        options,
+        `Use pnpm workspace ${rootPackageName ? `"${rootPackageName}" ` : ''}at ${rootDir}?`,
+      );
+
+      if (!shouldUseRoot) {
+        throw new Error('limina init canceled.');
+      }
+
+      return {
+        message: `workspace root confirmed: ${rootDir}`,
+        status: 'pass',
+        value: {
+          rootDir,
+        },
+      };
+    },
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'resolve workspace root',
   });
-  const problems = [...projectAnalysis.problems];
+  const config = createInitConfig(rootDir);
 
-  if (problems.length === 0) {
-    problems.push(
-      ...inferProjectReferences({
-        config,
-        projects: projectAnalysis.projects,
-        workspacePackages,
-      }),
-    );
-  }
+  const workspacePackages = await runInitFlowStep({
+    action: async () => {
+      const workspacePackages = (await collectWorkspacePackages(config)).filter(
+        (workspacePackage) => workspacePackage.directory !== rootDir,
+      );
 
-  if (problems.length > 0) {
-    throw new Error(problems.join('\n\n'));
-  }
+      return {
+        message: `workspace packages checked: ${workspacePackages.length}`,
+        status: 'pass',
+        value: workspacePackages,
+      };
+    },
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'validate workspace packages',
+  });
 
   const metadata = readLiminaPackageMetadata();
+  const removedPaths: string[] = [];
   const writtenFiles: string[] = [];
   const skippedFiles: string[] = [];
 
-  await writeGeneratedTsconfigs({
-    projects: projectAnalysis.projects,
-    rootDir,
-    workspacePackages,
-    writtenFiles,
+  await runInitFlowStep({
+    action: async () => ({
+      ...(await removeRootGeneratedGraphDir({
+        removedPaths,
+        rootDir,
+      })),
+      value: undefined,
+    }),
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'clean root .limina',
   });
-  await writeLiminaConfig({
-    prompt: options,
-    rootDir,
-    skippedFiles,
-    writtenFiles,
+  await runInitFlowStep({
+    action: async () => ({
+      ...(await writeLiminaConfig({
+        prompt: options,
+        rootDir,
+        skippedFiles,
+        writtenFiles,
+      })),
+      value: undefined,
+    }),
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'write limina.config.mjs',
   });
-  const installRequired = await updateRootPackageJson({
-    metadata,
-    prompt: options,
-    rootDir,
-    skippedFiles,
-    writtenFiles,
+  await runInitFlowStep({
+    action: async () => ({
+      ...(await ensureGeneratedGraphGitignore({
+        rootDir,
+        skippedFiles,
+        writtenFiles,
+      })),
+      value: undefined,
+    }),
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'ensure .gitignore',
+  });
+  const installRequired = await runInitFlowStep({
+    action: async () => {
+      const result = await updateRootPackageJson({
+        metadata,
+        prompt: options,
+        rootDir,
+        skippedFiles,
+        writtenFiles,
+      });
+
+      return {
+        message: result.message,
+        status: result.status,
+        value: result.installRequired,
+      };
+    },
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'update package.json',
+  });
+  const skillInstallStatus = await runInitFlowStep({
+    action: async () => {
+      const result = await installLiminaSkill({
+        rootDir,
+        yes: options.yes,
+      });
+
+      return {
+        message: result.message,
+        status: result.flowStatus,
+        value: result.status,
+      };
+    },
+    depth: stepDepth,
+    flow: options.flow,
+    label: 'install limina skill',
   });
 
   return {
-    checkCommand: 'pnpm limina:check',
+    buildCommand: 'pnpm limina:build',
     installRequired,
+    removedPaths,
     rootDir,
     skippedFiles,
+    skillInstallStatus,
     workspacePackageCount: workspacePackages.length,
     writtenFiles,
   };
@@ -1159,13 +761,14 @@ export async function runInit(
 
   const elapsed = createElapsedTimer();
   const task = options.flow?.start('init workspace', {
+    collapseOnSuccess: false,
     depth: options.flowDepth ?? 0,
   });
 
   InitLogger.info('init started');
 
   try {
-    const result = await runInitInternal(options);
+    const result = await runInitImpl(options);
 
     InitLogger.success(
       `init generated ${result.writtenFiles.length} files for ${result.workspacePackageCount} workspace packages.`,
@@ -1174,12 +777,12 @@ export async function runInit(
 
     if (result.installRequired) {
       InitLogger.info(
-        'limina was added to devDependencies; run pnpm i before checking.',
+        'limina dependencies were added to devDependencies; run pnpm i before building.',
       );
     }
 
     InitLogger.info(
-      `next: ${result.installRequired ? 'pnpm i && ' : ''}${result.checkCommand}`,
+      `next: ${result.installRequired ? 'pnpm i && ' : ''}${result.buildCommand}`,
     );
     task?.pass();
 
