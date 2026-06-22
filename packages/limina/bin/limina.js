@@ -30,7 +30,8 @@ if (existsSync(sourceCliPath)) {
 
   process.exit(result.status ?? 1);
 } else if (existsSync(distCliPath)) {
-  await import(pathToFileURL(distCliPath).href);
+  const { runCli } = await import(pathToFileURL(distCliPath).href);
+  await runCli(process.argv);
 } else {
   throw new Error(`Unable to find limina CLI entry. Expected ${distCliPath}.`);
 }

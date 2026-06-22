@@ -130,6 +130,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: 'Pipelines',
         link: '/config/pipelines',
       },
+      {
+        text: 'Execution Concurrency',
+        link: '/config/execution',
+      },
     ],
   },
   {

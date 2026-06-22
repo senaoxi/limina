@@ -18,6 +18,7 @@ import type {
 } from '#config/runner';
 import { collectGraphProjectRouteFromRoot } from '#core/tsconfig/actions';
 import { uniqueValues } from '#utils/collections';
+import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
 
 export interface TypecheckTarget {
   args: string[];
@@ -156,12 +157,10 @@ export function createCheckerTarget(options: {
 function createCheckerProcessEnvironment(
   target: TypecheckTarget,
 ): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    PATH: [path.join(target.cwd, 'node_modules/.bin'), process.env.PATH]
-      .filter(Boolean)
-      .join(path.delimiter),
-  };
+  return prependPathEntry(
+    process.env,
+    path.join(target.cwd, 'node_modules/.bin'),
+  );
 }
 
 function findNearestPackageDir(startDir: string): string | null {
@@ -276,7 +275,7 @@ export function createDefaultRunner(
       const child = spawn(target.command, target.args, {
         cwd: target.cwd,
         env: processEnvironment,
-        shell: process.platform === 'win32',
+        shell: shouldUseShellForCommand(target.command),
         stdio,
       });
 

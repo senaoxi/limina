@@ -28,6 +28,7 @@ import type {
   TypecheckTarget,
   TypecheckTargetResult,
 } from '../typecheck/targets';
+import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -814,8 +815,10 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(result.sourceConfigPath).toBe(
-        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      expect(toPortablePath(result.sourceConfigPath ?? '')).toBe(
+        toPortablePath(
+          path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+        ),
       );
       expect(calls.map((target) => target.args)).toEqual([
         [
@@ -1951,6 +1954,11 @@ describe('runCheckerTypecheck', () => {
         'exec node "$(dirname "$0")/vue-tsgo.js" "$@"',
         '',
       ].join('\n'),
+      'node_modules/.bin/vue-tsgo.cmd': [
+        '@ECHO OFF',
+        'node "%~dp0vue-tsgo.js" %*',
+        '',
+      ].join('\r\n'),
       'node_modules/.bin/vue-tsgo.js': [
         "import { createHash } from 'node:crypto';",
         "import { existsSync, writeFileSync } from 'node:fs';",

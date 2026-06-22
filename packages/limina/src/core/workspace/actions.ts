@@ -189,8 +189,12 @@ function runTextCommand(
         maxBuffer: 10 * 1024 * 1024,
         timeout: pnpmWorkspaceListTimeoutMs,
       },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         if (error) {
+          Object.assign(error, {
+            stderr,
+            stdout,
+          });
           reject(error);
           return;
         }
@@ -233,7 +237,42 @@ function getPnpmCommandCandidates(): {
 }
 
 function formatCommandError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (!error || typeof error !== 'object') {
+    return message;
+  }
+
+  const record = error as Record<string, unknown>;
+  const details: string[] = [];
+
+  if (record.code !== undefined) {
+    details.push(`exit code: ${String(record.code)}`);
+  }
+
+  if (record.signal !== undefined) {
+    details.push(`signal: ${String(record.signal)}`);
+  }
+
+  for (const streamName of ['stderr', 'stdout'] as const) {
+    const stream = record[streamName];
+
+    if (typeof stream !== 'string') {
+      continue;
+    }
+
+    const output = stream.trim();
+
+    if (output.length > 0) {
+      details.push(`${streamName}: ${output}`);
+    }
+  }
+
+  if (details.length === 0) {
+    return message;
+  }
+
+  return `${message} (${details.join('; ')})`;
 }
 
 async function collectPnpmListedPackages(

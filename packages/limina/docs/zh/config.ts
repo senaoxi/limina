@@ -130,6 +130,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: '流水线',
         link: '/zh/config/pipelines',
       },
+      {
+        text: '执行并发',
+        link: '/zh/config/execution',
+      },
     ],
   },
   {

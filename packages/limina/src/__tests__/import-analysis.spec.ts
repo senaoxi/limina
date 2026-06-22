@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -432,41 +433,49 @@ describe('import analysis', () => {
       };
 
       expect(
-        resolveInternalImport(
-          './App',
-          indexPath,
-          compilerOptions,
-          checkerContext,
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            './App',
+            indexPath,
+            compilerOptions,
+            checkerContext,
+            context,
+          ) ?? '',
         ),
-      ).toBe(appPath);
+      ).toBe(toPortablePath(appPath));
       expect(
-        resolveInternalImport(
-          '@internal/aliased',
-          indexPath,
-          compilerOptions,
-          checkerContext,
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            '@internal/aliased',
+            indexPath,
+            compilerOptions,
+            checkerContext,
+            context,
+          ) ?? '',
         ),
-      ).toBe(aliasedPath);
+      ).toBe(toPortablePath(aliasedPath));
       expect(
-        resolveInternalImport(
-          '#package-import',
-          indexPath,
-          compilerOptions,
-          checkerContext,
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            '#package-import',
+            indexPath,
+            compilerOptions,
+            checkerContext,
+            context,
+          ) ?? '',
         ),
-      ).toBe(packageImportPath);
+      ).toBe(toPortablePath(packageImportPath));
       expect(
-        resolveInternalImport(
-          'shared',
-          indexPath,
-          compilerOptions,
-          checkerContext,
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            'shared',
+            indexPath,
+            compilerOptions,
+            checkerContext,
+            context,
+          ) ?? '',
         ),
-      ).toBe(sharedPath);
+      ).toBe(toPortablePath(sharedPath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -493,17 +502,19 @@ describe('import analysis', () => {
       );
 
       expect(
-        resolveInternalImport(
-          './feature',
-          indexPath,
-          { moduleSuffixes: ['.native', ''] },
-          {
-            checkerPresets: [],
-            extensions: ['.ts'],
-          },
-          createImportAnalysisContext(),
+        toPortablePath(
+          resolveInternalImport(
+            './feature',
+            indexPath,
+            { moduleSuffixes: ['.native', ''] },
+            {
+              checkerPresets: [],
+              extensions: ['.ts'],
+            },
+            createImportAnalysisContext(),
+          ) ?? '',
         ),
-      ).toBe(nativeFeaturePath);
+      ).toBe(toPortablePath(nativeFeaturePath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -562,26 +573,30 @@ describe('import analysis', () => {
       };
 
       expect(
-        resolveInternalImport(
-          'conditional',
-          indexPath,
-          bundlerCompilerOptions,
-          checkerContext,
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            'conditional',
+            indexPath,
+            bundlerCompilerOptions,
+            checkerContext,
+            context,
+          ) ?? '',
         ),
-      ).toBe(distPath);
+      ).toBe(toPortablePath(distPath));
       expect(
-        resolveInternalImport(
-          'conditional',
-          indexPath,
-          {
-            ...bundlerCompilerOptions,
-            customConditions: ['source'],
-          },
-          checkerContext,
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            'conditional',
+            indexPath,
+            {
+              ...bundlerCompilerOptions,
+              customConditions: ['source'],
+            },
+            checkerContext,
+            context,
+          ) ?? '',
         ),
-      ).toBe(sourcePath);
+      ).toBe(toPortablePath(sourcePath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -647,23 +662,27 @@ describe('import analysis', () => {
       };
 
       expect(
-        resolveModuleNameWithOxc({
-          compilerOptions: node10CompilerOptions,
-          containingFile: indexPath,
-          context: checkerContext,
-          specifier: 'legacy-conditional',
-        }),
-      ).toBe(mainPath);
+        toPortablePath(
+          resolveModuleNameWithOxc({
+            compilerOptions: node10CompilerOptions,
+            containingFile: indexPath,
+            context: checkerContext,
+            specifier: 'legacy-conditional',
+          }) ?? '',
+        ),
+      ).toBe(toPortablePath(mainPath));
 
       expect(
-        resolveInternalImport(
-          'legacy-conditional',
-          indexPath,
-          node10CompilerOptions,
-          checkerContext,
-          createImportAnalysisContext(),
+        toPortablePath(
+          resolveInternalImport(
+            'legacy-conditional',
+            indexPath,
+            node10CompilerOptions,
+            checkerContext,
+            createImportAnalysisContext(),
+          ) ?? '',
         ),
-      ).toBe(mainPath);
+      ).toBe(toPortablePath(mainPath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -715,31 +734,35 @@ describe('import analysis', () => {
       const context = createImportAnalysisContext();
 
       expect(
-        resolveInternalImport(
-          '@target',
-          indexPath,
-          {},
-          {
-            checkerPresets: [],
-            configPath: firstConfigPath,
-            extensions: ['.ts'],
-          },
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            '@target',
+            indexPath,
+            {},
+            {
+              checkerPresets: [],
+              configPath: firstConfigPath,
+              extensions: ['.ts'],
+            },
+            context,
+          ) ?? '',
         ),
-      ).toBe(firstPath);
+      ).toBe(toPortablePath(firstPath));
       expect(
-        resolveInternalImport(
-          '@target',
-          indexPath,
-          {},
-          {
-            checkerPresets: [],
-            configPath: secondConfigPath,
-            extensions: ['.ts'],
-          },
-          context,
+        toPortablePath(
+          resolveInternalImport(
+            '@target',
+            indexPath,
+            {},
+            {
+              checkerPresets: [],
+              configPath: secondConfigPath,
+              extensions: ['.ts'],
+            },
+            context,
+          ) ?? '',
         ),
-      ).toBe(secondPath);
+      ).toBe(toPortablePath(secondPath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -786,19 +809,21 @@ describe('import analysis', () => {
       );
 
       expect(
-        resolveInternalImport(
-          '@target',
-          indexPath,
-          {},
-          {
-            checkerPresets: [],
-            configPath: dtsConfigPath,
-            extensions: ['.ts'],
-            resolverConfigPath: companionConfigPath,
-          },
-          createImportAnalysisContext(),
+        toPortablePath(
+          resolveInternalImport(
+            '@target',
+            indexPath,
+            {},
+            {
+              checkerPresets: [],
+              configPath: dtsConfigPath,
+              extensions: ['.ts'],
+              resolverConfigPath: companionConfigPath,
+            },
+            createImportAnalysisContext(),
+          ) ?? '',
         ),
-      ).toBe(companionPath);
+      ).toBe(toPortablePath(companionPath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -915,13 +940,15 @@ describe('import analysis', () => {
       clearImportAnalysisCache();
 
       expect(
-        resolveInternalImport(
-          './missing',
-          indexPath,
-          compilerOptions,
-          checkerContext,
+        toPortablePath(
+          resolveInternalImport(
+            './missing',
+            indexPath,
+            compilerOptions,
+            checkerContext,
+          ) ?? '',
         ),
-      ).toBe(missingPath);
+      ).toBe(toPortablePath(missingPath));
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

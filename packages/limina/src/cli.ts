@@ -12,6 +12,8 @@ import {
 import { resolveGeneratedGraphCheckers } from '#core/build-graph/runner';
 import { uniqueTrimmedNonEmptySortedStrings } from '#utils/collections';
 import { cac } from 'cac';
+import nodePath from 'node:path';
+import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import { isLiminaCheckIssueCode } from './check-reporting/codes';
 import {
@@ -582,7 +584,7 @@ async function printCheckIssueFilterHelpIfRequested(
   return true;
 }
 
-async function main(): Promise<void> {
+export function createLiminaCli(): ReturnType<typeof cac> {
   const cli = cac('limina');
 
   cli.option('--config <path>', 'Path to limina.config.mjs');
@@ -1083,12 +1085,18 @@ async function main(): Promise<void> {
       );
     });
 
+  return cli;
+}
+
+export async function runCli(argv: string[] = process.argv): Promise<void> {
+  const cli = createLiminaCli();
+
   try {
-    if (await printCheckIssueFilterHelpIfRequested(process.argv)) {
+    if (await printCheckIssueFilterHelpIfRequested(argv)) {
       return;
     }
 
-    cli.parse(process.argv, { run: false });
+    cli.parse(argv, { run: false });
 
     const commandName = cli.args[0];
 
@@ -1103,4 +1111,7 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+const cliModulePath = fileURLToPath(import.meta.url);
+if (process.argv[1] && nodePath.resolve(process.argv[1]) === cliModulePath) {
+  await runCli(process.argv);
+}

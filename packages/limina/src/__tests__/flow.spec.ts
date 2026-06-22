@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'pathe';
 import { describe, expect, it, vi } from 'vitest';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 
+const requireFromTest = createRequire(import.meta.url);
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
 const red = (message: string): string => `\u001B[31m${message}\u001B[0m`;
 const yellow = (message: string): string => `\u001B[33m${message}\u001B[0m`;
@@ -36,15 +37,8 @@ function createBufferedFlow(options: { forceTty?: boolean } = {}): {
   };
 }
 
-function resolveTsxBinary(): string {
-  const tsxBinName = process.platform === 'win32' ? 'tsx.cmd' : 'tsx';
-
-  return (
-    [
-      path.join(process.cwd(), 'node_modules/.bin', tsxBinName),
-      path.join(process.cwd(), '../../node_modules/.bin', tsxBinName),
-    ].find((candidate) => existsSync(candidate)) ?? 'tsx'
-  );
+function resolveTsxCliPath(): string {
+  return requireFromTest.resolve('tsx/cli');
 }
 
 async function runFlowFixture(
@@ -61,14 +55,18 @@ async function runFlowFixture(
 
   try {
     return await new Promise((resolve, reject) => {
-      const child = spawn(resolveTsxBinary(), [fixturePath], {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          ...options.env,
+      const child = spawn(
+        process.execPath,
+        [resolveTsxCliPath(), fixturePath],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            ...options.env,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
         },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      );
       const stdout: string[] = [];
       const stderr: string[] = [];
 
