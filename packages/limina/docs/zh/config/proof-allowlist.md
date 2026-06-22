@@ -66,7 +66,6 @@ declare const runtimeVersion: string;
 packages/core/
   src/index.ts
   src/generated/runtime.d.ts
-  tsconfig.lib.dts.json
   tsconfig.lib.json
 ```
 

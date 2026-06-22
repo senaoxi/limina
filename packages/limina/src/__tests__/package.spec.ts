@@ -1,8 +1,10 @@
+import type { ResolvedLiminaConfig } from '#config/runner';
+import type { LiminaCore } from '#core';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ResolvedLiminaConfig } from '../config';
+import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { LiminaFlowReporter } from '../flow';
 
 const packageCheckMocks = vi.hoisted(() => ({
@@ -157,10 +159,12 @@ vi.mock('@arethetypeswrong/core', () => ({
   })),
 }));
 
-const { auditPublishedPackageBoundaries, runPackageCheck } = await import(
-  '../commands/package'
+const { auditPublishedPackageBoundaries } = await import(
+  '../package-check/runner'
 );
+const { runPackageCheck } = await import('../commands/package');
 const { runReleaseCheck } = await import('../commands/release');
+const { LiminaPreflightManager } = await import('../preflight');
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -392,7 +396,6 @@ function createConfig(
   entries: NonNullable<NonNullable<ResolvedLiminaConfig['package']>['entries']>,
   options: {
     release?: ResolvedLiminaConfig['release'];
-    strict?: boolean;
   } = {},
 ): ResolvedLiminaConfig {
   return {
@@ -402,7 +405,6 @@ function createConfig(
     },
     release: options.release,
     rootDir,
-    strict: options.strict,
   };
 }
 
@@ -429,6 +431,24 @@ function createFlow(): {
       },
     }),
   };
+}
+
+function createGraphRejectingPreflight(
+  config: ResolvedLiminaConfig,
+  getGraph: () => Promise<never>,
+): InstanceType<typeof LiminaPreflightManager> {
+  return new LiminaPreflightManager({
+    config,
+    core: {
+      buildGraph: {
+        getGraph,
+      },
+      imports: {
+        context: {},
+      },
+      invalidateAll: vi.fn(),
+    } as unknown as LiminaCore,
+  });
 }
 
 beforeEach(() => {
@@ -548,6 +568,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     });
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-package-root-'));
     const { chunks, flow } = createFlow();
+    let stats: LiminaCheckRunTaskStats | undefined;
 
     try {
       await expect(
@@ -561,6 +582,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
             },
           ]),
           flow,
+          onStats: (nextStats) => {
+            stats = nextStats;
+          },
         }),
       ).resolves.toBe(true);
 
@@ -577,8 +601,100 @@ describe('runPackageCheck and runReleaseCheck', () => {
           chunk.includes('[pass] package boundary: @example/valid'),
         ),
       ).toBe(true);
+      expect(stats).toMatchObject({
+        items: [
+          {
+            name: '@example/valid (boundary)',
+            status: 'passed',
+          },
+        ],
+        passed: 1,
+        total: 1,
+      });
     } finally {
       await pkg.cleanup();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('does not read generated graph during package checks', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': "import '@example/dep';\n",
+    });
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-package-root-'));
+    const config = createConfig(rootDir, [
+      {
+        checks: ['boundary'],
+        name: '@example/valid',
+        outDir: pkg.outDir,
+      },
+    ]);
+    const getGraph = vi.fn(async () => {
+      throw new Error('package check should not read generated graph');
+    });
+
+    try {
+      await expect(
+        runPackageCheck({
+          clearScreen: false,
+          config,
+          preflight: createGraphRejectingPreflight(config, getGraph),
+        }),
+      ).resolves.toBe(true);
+
+      expect(getGraph).not.toHaveBeenCalled();
+    } finally {
+      await pkg.cleanup();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('does not read generated graph during release checks', async () => {
+    const rootDir = await createWorkspaceRoot();
+    const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+    const config = createConfig(rootDir, [
+      {
+        checks: ['boundary'],
+        name: '@example/a',
+        outDir,
+      },
+    ]);
+    const getGraph = vi.fn(async () => {
+      throw new Error('release check should not read generated graph');
+    });
+    let stats: LiminaCheckRunTaskStats | undefined;
+
+    try {
+      await expect(
+        runReleaseCheck({
+          clearScreen: false,
+          config,
+          onStats: (nextStats) => {
+            stats = nextStats;
+          },
+          packageNames: ['@example/a'],
+          preflight: createGraphRejectingPreflight(config, getGraph),
+        }),
+      ).resolves.toBe(true);
+
+      expect(getGraph).not.toHaveBeenCalled();
+      expect(stats).toMatchObject({
+        items: [
+          {
+            name: '@example/a',
+            status: 'passed',
+          },
+        ],
+        passed: 1,
+        total: 1,
+      });
+    } finally {
       await rm(rootDir, {
         force: true,
         recursive: true,
@@ -599,9 +715,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
             },
           ]),
         }),
-      ).rejects.toThrow(
-        /outDir package\.json not found for @example\/pkg at package\.json/u,
-      );
+      ).resolves.toBe(false);
 
       expect(packageCheckMocks.packCalls).toEqual([]);
       expect(packageCheckMocks.publintCalls).toHaveLength(0);
@@ -611,6 +725,35 @@ describe('runPackageCheck and runReleaseCheck', () => {
         force: true,
         recursive: true,
       });
+    }
+  });
+
+  it('rejects output package manifests without names', async () => {
+    const pkg = await createOutputPackage(
+      {
+        'index.js': 'export const value = 1;\n',
+      },
+      {
+        name: '',
+      },
+    );
+
+    try {
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.outDir, [
+            {
+              checks: ['boundary'],
+              outDir: pkg.outDir,
+              name: '@example/pkg',
+            },
+          ]),
+        }),
+      ).resolves.toBe(false);
+
+      expect(packageCheckMocks.packCalls).toEqual([]);
+    } finally {
+      await pkg.cleanup();
     }
   });
 
@@ -675,7 +818,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
-  it('rejects pnpm-local output manifest dependency specifiers in strict package checks', async () => {
+  it('rejects pnpm-local output manifest dependency specifiers', async () => {
     const pkg = await createOutputPackage(
       {
         'index.js': 'export const value = 1;\n',
@@ -690,19 +833,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(
-            pkg.outDir,
-            [
-              {
-                checks: ['boundary'],
-                name: '@example/pkg',
-                outDir: pkg.outDir,
-              },
-            ],
+          config: createConfig(pkg.outDir, [
             {
-              strict: true,
+              checks: ['boundary'],
+              name: '@example/pkg',
+              outDir: pkg.outDir,
             },
-          ),
+          ]),
         }),
       ).resolves.toBe(false);
     } finally {
@@ -777,6 +914,45 @@ describe('runPackageCheck and runReleaseCheck', () => {
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('allows unrelated nameless workspace packages during release checks', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      await writeText(
+        path.join(rootDir, 'packages/fixture/package.json'),
+        JSON.stringify({
+          private: true,
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/fixture/src/index.ts'),
+        'export const fixtureValue = 1;\n',
+      );
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+
+      expect(packageCheckMocks.packCalls).toEqual([outDir]);
     } finally {
       await rm(rootDir, {
         force: true,
@@ -1210,7 +1386,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
-  it('fails strict release checks when the packed manifest leaks local specifiers in devDependencies', async () => {
+  it('fails release checks when the packed manifest leaks local specifiers in devDependencies', async () => {
     const rootDir = await createWorkspaceRoot();
 
     try {
@@ -1231,19 +1407,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(
-            rootDir,
-            [
-              {
-                checks: ['boundary'],
-                name: '@example/a',
-                outDir,
-              },
-            ],
+          config: createConfig(rootDir, [
             {
-              strict: true,
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
             },
-          ),
+          ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
@@ -2564,7 +2734,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([outDirA, outDirB]);
+      expect(packageCheckMocks.packCalls).toHaveLength(2);
+      expect([...packageCheckMocks.packCalls].sort()).toEqual(
+        [outDirA, outDirB].sort(),
+      );
     } finally {
       await rm(rootDir, {
         force: true,
@@ -3182,9 +3355,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
           ]),
           tool: 'publint',
         }),
-      ).rejects.toThrow(
-        'Missing peer dependency "publint" required by limina package check.',
-      );
+      ).resolves.toBe(false);
     } finally {
       vi.doUnmock('publint');
       vi.resetModules();
@@ -3229,9 +3400,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
           ]),
           tool: 'attw',
         }),
-      ).rejects.toThrow(
-        'Missing peer dependency "@arethetypeswrong/core" required by limina package check.',
-      );
+      ).resolves.toBe(false);
     } finally {
       vi.doUnmock('@arethetypeswrong/core');
       vi.resetModules();

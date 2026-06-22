@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: Limina
-  text: TypeScript 单体仓库架构治理
-  tagline: 让工作区导出、项目引用、包边界、Nx 构建边和发布产物始终各说同一件事——在代码审查和 CI 阶段发现问题，而不是发布之后。
+  text: TypeScript 项目引用图编译器与架构治理 CLI
+  tagline: 先接入可增量的 build，再逐步打开完整架构治理。
   image:
     src: /logo.svg
     alt: Limina
@@ -20,34 +20,44 @@ hero:
       link: https://github.com/senaoxi/docs-islands/tree/main/packages/limina
 
 features:
-  - icon: 🔗
-    title: 看清真实依赖图
-    details: PR 新增跨包导入时，立即知道该补项目引用、工作区依赖、产物构建边，还是改架构规则——赶在图发生漂移之前。
-    link: /zh/built-in-tasks
-    linkText: 内置任务
-  - icon: 🚧
-    title: 让包边界清楚
-    details: '每一条跨包依赖都必须经由声明过的依赖和该包的公开导出解析。Limina 会标记跨包相对导入、漏写的依赖声明、逃出当前包的 #imports、混入多个归属方的 tsconfig、未被使用的工作区依赖和无人引用的源码模块，并在 strict 模式下标记绕过 workspace: 协议的跨包依赖。'
-    link: /zh/built-in-tasks
-    linkText: 源码检查
-  - icon: ✅
-    title: 证明每个文件都被检查
-    details: 把声明叶子与严格的本地配套配置、vue-tsc / svelte-check 等框架检查器对起来，证明没有源码文件漏过所有检查器。
+  - icon: 🧭
+    title: 低摩擦接入增量 build
+    details: limina init 会添加 limina:build，根据现有 tsconfig 和真实导入准备 TypeScript 构建图，让仓库先获得 tsc -b、tsgo 或 vue-tsc 的增量构建收益。
+    link: /zh/getting-started
+    linkText: 开始 build-first 接入
+  - icon: 🕸️
+    title: 自动生成类型图
+    details: 把 TypeScript、Vue、Svelte 等检查器纳入同一张类型关系图，让构建、检查和诊断使用同一组事实。
     link: /zh/config/checkers
-    linkText: 检查器入口
+    linkText: 配置检查器
+  - icon: 🧱
+    title: 治理项目引用关系
+    details: 根据真实导入检查缺失引用、非法依赖、跨运行时调用和架构规则违约，让项目关系留在声明过的边界内。
+    link: /zh/built-in-tasks
+    linkText: 查看图检查
+  - icon: 🛡️
+    title: 保护包边界
+    details: 阻止跨包相对导入、漏写依赖、私有入口逃逸和绕过声明包边界的内部依赖，确保每个包只能通过公开入口被访问。
+    link: /zh/built-in-tasks
+    linkText: 查看源码检查
+  - icon: 🎯
+    title: 确认检查覆盖
+    details: 对齐源码文件与 TypeScript、Vue、Svelte、test、tools、docs 等检查范围，找出没人检查、重复检查或归属不清的文件。
+    link: /zh/config/checkers
+    linkText: 配置覆盖范围
   - icon: 📦
-    title: 发布真正可用的产物
-    details: 用 publint、Are the Types Wrong 和运行时导入边界扫描，检查消费者真正安装的 dist：包元数据、导出和类型解析。
+    title: 验证发布产物
+    details: 检查消费者真正安装到的 npm tarball，确认 package metadata、exports、types、运行时入口和类型解析保持一致。
     link: /zh/config/package-checks
-    linkText: 包检查
-  - icon: 🚀
-    title: 安心发布
-    details: 打出 npm tarball 并检查发布卫生：README/license 是否齐全、是否误带源码映射，并与 npm registry 基线逐文件比对内容。
+    linkText: 配置包检查
+  - icon: 🚦
+    title: 发布前发现风险
+    details: 在发布前检查 README、license、误带文件、缺失文件、source map 和 registry 基线差异，确认发布内容符合预期。
     link: /zh/config/release-checks
-    linkText: 发布检查
+    linkText: 配置发布检查
   - icon: 🧩
-    title: 把检查编排成流水线
-    details: 把 Limina 任务和 shell 命令组合成本地、PR、发布等命名工作流。Limina 是对 Nx、Turborepo 这类任务运行器的补充，而非替代。
+    title: 融入现有工作流
+    details: 接入本地开发、PR、CI 和发布流程，并在需要时导出用于架构审查的限定依赖图。
     link: /zh/workflows
-    linkText: 工作流
+    linkText: 配置工作流
 ---

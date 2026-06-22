@@ -1,15 +1,20 @@
-import { existsSync, statSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'pathe';
-import ts from 'typescript';
 import type {
   BuiltinCheckerPreset,
   CheckerConfig,
   CheckerExecutionKind,
   CheckerPreset,
   ResolvedCheckerConfig,
-} from './config';
-import { normalizeAbsolutePath, toRelativePath } from './utils/path';
+} from '#config/runner';
+import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
+import {
+  resolvePathMappedModuleCandidate,
+  resolveRelativeModuleCandidate,
+} from '#utils/module-resolution';
+import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { statSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'pathe';
+import ts from 'typescript';
 
 type TypeScriptExtensionGroups = readonly (readonly string[])[];
 
@@ -78,6 +83,22 @@ function getNativeTypeScriptProjectExtensions(): string[] {
   );
 }
 
+export function getBuildCheckerSupportedExtensions(
+  preset: CheckerPreset,
+): string[] {
+  const adapter = getCheckerAdapter(preset);
+
+  if (!adapter || adapter.execution !== 'build') {
+    return [];
+  }
+
+  const nativeExtensions = getNativeTypeScriptProjectExtensions();
+
+  return preset === 'vue-tsc'
+    ? normalizeExtensions([...nativeExtensions, '.vue'])
+    : nativeExtensions;
+}
+
 function getSvelteCheckerExtensions(): string[] {
   return normalizeExtensions([...getTypeScriptCheckerExtensions(), '.svelte']);
 }
@@ -94,6 +115,7 @@ export interface CheckerCommandTargetOptions {
   configPath: string;
   executionKind: CheckerExecutionKind;
   projectRootDir: string;
+  watch?: boolean;
 }
 
 export interface CheckerProjectConfigParseOptions {
@@ -138,6 +160,7 @@ export interface CheckerAdapter {
 export interface MissingCheckerPeerDependency {
   checkerNames: string[];
   packageName: string;
+  reason?: string;
 }
 
 export type CheckerPackageResolver = (options: {
@@ -226,9 +249,7 @@ function resolveContextCheckerPresets(
   context: CheckerProjectParseContext,
 ): CheckerPreset[] {
   return context.checkerPresets.length > 0
-    ? [...new Set(context.checkerPresets)].sort((left, right) =>
-        left.localeCompare(right),
-      )
+    ? (uniqueSortedStrings(context.checkerPresets) as CheckerPreset[])
     : (['tsc'] satisfies CheckerPreset[]);
 }
 
@@ -547,153 +568,6 @@ function resolveVueProjectExtensionsForChecker(
   ]);
 }
 
-function isRelativeSpecifier(specifier: string): boolean {
-  return (
-    specifier === '.' ||
-    specifier === '..' ||
-    specifier.startsWith('./') ||
-    specifier.startsWith('../')
-  );
-}
-
-function pathHasExtension(value: string): boolean {
-  return path.extname(value).length > 0;
-}
-
-function candidatePathsForBasePath(
-  basePath: string,
-  extensions: string[],
-): string[] {
-  if (pathHasExtension(basePath)) {
-    return [basePath];
-  }
-
-  return extensions.flatMap((extension) => [
-    `${basePath}${extension}`,
-    path.join(basePath, `index${extension}`),
-  ]);
-}
-
-function resolveCandidatePath(candidatePath: string): string | null {
-  if (!existsSync(candidatePath)) {
-    return null;
-  }
-
-  if (!statSync(candidatePath).isFile()) {
-    return null;
-  }
-
-  return normalizeAbsolutePath(candidatePath);
-}
-
-function resolveRelativeModuleCandidate(options: {
-  containingFile: string;
-  extensions: string[];
-  specifier: string;
-}): string | null {
-  if (!isRelativeSpecifier(options.specifier)) {
-    return null;
-  }
-
-  const resolvedSpecifierPath = path.resolve(
-    path.dirname(options.containingFile),
-    options.specifier,
-  );
-
-  for (const candidatePath of candidatePathsForBasePath(
-    resolvedSpecifierPath,
-    options.extensions,
-  )) {
-    const resolvedPath = resolveCandidatePath(candidatePath);
-
-    if (resolvedPath) {
-      return resolvedPath;
-    }
-  }
-
-  return null;
-}
-
-function matchPathPattern(pattern: string, specifier: string): string | null {
-  const wildcardIndex = pattern.indexOf('*');
-
-  if (wildcardIndex === -1) {
-    return pattern === specifier ? '' : null;
-  }
-
-  const prefix = pattern.slice(0, wildcardIndex);
-  const suffix = pattern.slice(wildcardIndex + 1);
-
-  if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) {
-    return null;
-  }
-
-  return specifier.slice(prefix.length, specifier.length - suffix.length);
-}
-
-function applyPathPattern(pattern: string, matchedText: string): string {
-  return pattern.includes('*') ? pattern.replace('*', matchedText) : pattern;
-}
-
-function getPathsBasePath(compilerOptions: ts.CompilerOptions): string | null {
-  const pathsBasePath = (compilerOptions as { pathsBasePath?: unknown })
-    .pathsBasePath;
-
-  if (typeof pathsBasePath === 'string') {
-    return pathsBasePath;
-  }
-
-  return compilerOptions.baseUrl ?? null;
-}
-
-function resolvePathMappedModuleCandidate(options: {
-  compilerOptions: ts.CompilerOptions;
-  extensions: string[];
-  specifier: string;
-}): string | null {
-  const paths = options.compilerOptions.paths;
-  const pathsBasePath = getPathsBasePath(options.compilerOptions);
-
-  if (!paths || !pathsBasePath) {
-    return null;
-  }
-
-  const pathEntries = Object.entries(paths).sort(([left], [right]) => {
-    const leftPrefixLength = left.split('*')[0]?.length ?? left.length;
-    const rightPrefixLength = right.split('*')[0]?.length ?? right.length;
-
-    return rightPrefixLength - leftPrefixLength;
-  });
-
-  for (const [alias, targets] of pathEntries) {
-    const matchedText = matchPathPattern(alias, options.specifier);
-
-    if (matchedText === null) {
-      continue;
-    }
-
-    for (const target of targets) {
-      const resolvedTargetPath = path.resolve(
-        pathsBasePath,
-        applyPathPattern(target, matchedText),
-      );
-
-      for (const candidatePath of candidatePathsForBasePath(
-        resolvedTargetPath,
-        options.extensions,
-      )) {
-        const resolvedPath = resolveCandidatePath(candidatePath);
-
-        if (resolvedPath) {
-          return resolvedPath;
-        }
-      }
-    }
-  }
-
-  return null;
-}
-
 function resolveTypeScriptModuleName(
   options: CheckerModuleResolveOptions,
 ): string | null {
@@ -729,11 +603,9 @@ function mergeParsedProjectConfigs(
       ...extensions,
       ...parsedConfigs.flatMap((parsedConfig) => parsedConfig.extensions),
     ]),
-    fileNames: [
-      ...new Set(
-        parsedConfigs.flatMap((parsedConfig) => parsedConfig.fileNames),
-      ),
-    ].sort(),
+    fileNames: uniqueSortedStrings(
+      parsedConfigs.flatMap((parsedConfig) => parsedConfig.fileNames),
+    ),
     options: firstConfig.options,
   };
 }
@@ -841,9 +713,15 @@ function createTscCommandTarget(
   );
 
   return {
-    args: ['-b', relativeConfigPath, '--pretty', 'false'],
+    args: [
+      '-b',
+      relativeConfigPath,
+      '--pretty',
+      'false',
+      ...(options.watch ? ['--watch', '--preserveWatchOutput'] : []),
+    ],
     command: options.commandOverride ?? 'tsc',
-    label: `tsc -b ${relativeConfigPath}`,
+    label: `tsc -b ${relativeConfigPath}${options.watch ? ' --watch' : ''}`,
   };
 }
 
@@ -856,9 +734,15 @@ function createTsgoCommandTarget(
   );
 
   return {
-    args: ['-b', relativeConfigPath, '--pretty', 'false'],
+    args: [
+      '-b',
+      relativeConfigPath,
+      '--pretty',
+      'false',
+      ...(options.watch ? ['--watch', '--preserveWatchOutput'] : []),
+    ],
     command: 'tsgo',
-    label: `tsgo -b ${relativeConfigPath}`,
+    label: `tsgo -b ${relativeConfigPath}${options.watch ? ' --watch' : ''}`,
   };
 }
 
@@ -871,9 +755,15 @@ function createVueTscCommandTarget(
   );
 
   return {
-    args: ['-b', relativeConfigPath, '--pretty', 'false'],
+    args: [
+      '-b',
+      relativeConfigPath,
+      '--pretty',
+      'false',
+      ...(options.watch ? ['--watch', '--preserveWatchOutput'] : []),
+    ],
     command: 'vue-tsc',
-    label: `${options.checker.name}: vue-tsc -b ${relativeConfigPath}`,
+    label: `${options.checker.name}: vue-tsc -b ${relativeConfigPath}${options.watch ? ' --watch' : ''}`,
   };
 }
 
@@ -964,7 +854,7 @@ const builtinCheckerAdapters = {
     extensions: (options) =>
       resolveVueProjectExtensionsForChecker(options, 'vue-tsc'),
     execution: 'build',
-    packageNames: ['vue-tsc', '@vue/compiler-sfc'],
+    packageNames: ['vue-tsc'],
     parseProjectConfig: (options) => parseVueProjectConfig(options, 'vue-tsc'),
     preset: 'vue-tsc',
     resolveModuleName: resolveTypeScriptModuleName,
@@ -983,9 +873,7 @@ const builtinCheckerAdapters = {
   },
 } satisfies Record<BuiltinCheckerPreset, CheckerAdapter>;
 
-export function isBuiltinCheckerPreset(
-  value: string,
-): value is BuiltinCheckerPreset {
+function isBuiltinCheckerPreset(value: string): value is BuiltinCheckerPreset {
   return Object.hasOwn(builtinCheckerAdapters, value);
 }
 
@@ -997,7 +885,7 @@ function isVueCheckerPreset(preset: CheckerPreset): boolean {
   return preset === 'vue-tsc' || preset === 'vue-tsgo';
 }
 
-export function resolveCheckerPackageFromRoot(options: {
+function resolveCheckerPackageFromRoot(options: {
   packageName: string;
   projectRootDir: string;
 }): string | undefined {
@@ -1083,8 +971,9 @@ export function formatMissingCheckerPeerDependencies(
       const checkerList = dependency.checkerNames
         .map((checkerName) => `"${checkerName}"`)
         .join(', ');
+      const reason = dependency.reason ? `; ${dependency.reason}` : '';
 
-      return `  - ${dependency.packageName} (used by checker ${checkerList})`;
+      return `  - ${dependency.packageName} (used by checker ${checkerList}${reason})`;
     }),
     `Fix: pnpm add -D ${packageNames.join(' ')}`,
   ].join('\n');
@@ -1098,27 +987,12 @@ export function getCheckerExtensions(
 
   if (adapter) {
     if (isVueCheckerPreset(checker.preset)) {
-      if (!options.projectRootDir) {
-        throw new Error(
-          [
-            'Unable to resolve Vue checker extensions:',
-            `  preset: ${checker.preset}`,
-            '  reason: Vue checker extensions must be read from the checker API and require a resolved project root.',
-          ].join('\n'),
-        );
-      }
-
-      return adapter.extensions({
-        configPath: normalizeAbsolutePath(
-          path.resolve(options.projectRootDir, checker.entry),
-        ),
-        projectRootDir: options.projectRootDir,
-      });
+      return normalizeExtensions([...getTypeScriptCheckerExtensions(), '.vue']);
     }
 
     return adapter.extensions({
       configPath: normalizeAbsolutePath(
-        path.resolve(options.projectRootDir ?? '', checker.entry),
+        path.resolve(options.projectRootDir ?? '', 'tsconfig.json'),
       ),
       projectRootDir: options.projectRootDir ?? '',
     });
@@ -1128,21 +1002,28 @@ export function getCheckerExtensions(
 }
 
 export function getResolvedCheckers(config: {
-  config?: { checkers?: Record<string, CheckerConfig> };
+  config?: {
+    checkers?:
+      | { exclude?: string[]; mode: 'auto' }
+      | Record<string, CheckerConfig>;
+  };
   rootDir?: string;
 }): ResolvedCheckerConfig[] {
   const checkers = config.config?.checkers;
 
-  if (!checkers) {
+  if (!checkers || checkers.mode === 'auto') {
     return [];
   }
 
-  return Object.entries(checkers)
+  const checkerMap = checkers as Record<string, CheckerConfig>;
+
+  return Object.entries(checkerMap)
     .map(([name, checker]) => ({
-      entry: checker.entry.trim(),
+      exclude: (checker.exclude ?? []).map((value) => value.trim()),
       extensions: getCheckerExtensions(checker, {
         projectRootDir: config.rootDir,
       }),
+      include: checker.include.map((value) => value.trim()),
       name,
       preset: checker.preset,
     }))
@@ -1150,7 +1031,7 @@ export function getResolvedCheckers(config: {
 }
 
 export function normalizeExtensions(extensions: string[]): string[] {
-  return [...new Set(extensions)].sort((left, right) => {
+  return uniqueValues(extensions).sort((left, right) => {
     const lengthDelta = right.length - left.length;
 
     return lengthDelta === 0 ? left.localeCompare(right) : lengthDelta;

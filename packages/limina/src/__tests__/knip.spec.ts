@@ -3,7 +3,7 @@ import {
   collectUnusedSourceFileIssues,
   parseKnipJsonReport,
   resolveKnipCliPath,
-} from '../knip';
+} from '../source-check/knip';
 
 describe('parseKnipJsonReport', () => {
   it('accepts Knip JSON reports with leading stdout noise', () => {

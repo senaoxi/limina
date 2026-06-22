@@ -1,7 +1,22 @@
 import * as prompts from '@clack/prompts';
 import { formatErrorMessage } from 'logaria/helper';
-
-type FlowStatus = 'fail' | 'info' | 'pass' | 'skip' | 'start' | 'warn';
+import { FlowProcessRenderer } from './flow/process-renderer';
+import {
+  type FlowRenderSnapshot,
+  type FlowRenderTreeNode,
+  type FlowStatus,
+  type FlowTreeNodeStatus,
+  formatMessageWithElapsed,
+  formatInteractiveLine as formatRenderedInteractiveLine,
+  hasRunningSnapshotWork,
+  type FlowRenderHistoryEntry as InteractiveHistoryEntry,
+  type FlowRenderFlowLine as InteractiveHistoryFlowLine,
+  renderSnapshotLines,
+  SPINNER_FRAMES,
+  SPINNER_INTERVAL_MS,
+  toTreeFlowStatus,
+  toWritableText,
+} from './flow/render-model';
 
 interface ClackLogAdapter {
   error: (message: string) => void;
@@ -32,6 +47,7 @@ export interface LiminaFlowReporterOptions {
   env?: NodeJS.ProcessEnv;
   forceTty?: boolean;
   output?: FlowOutput;
+  renderer?: 'auto' | 'inline' | 'process';
   stderr?: FlowWriteStream;
   stdout?: FlowWriteStream;
 }
@@ -40,6 +56,7 @@ export interface LiminaFlowMessageOptions {
   collapseOnSuccess?: boolean;
   depth?: number;
   elapsedTimeMs?: number;
+  persistInteractive?: boolean;
 }
 
 export interface LiminaFlowFailureOptions extends LiminaFlowMessageOptions {
@@ -54,10 +71,26 @@ export interface LiminaFlowTask {
   warn: (message: string, options?: LiminaFlowMessageOptions) => void;
 }
 
+export interface LiminaFlowTreeNode {
+  child: (
+    message: string,
+    options?: LiminaFlowMessageOptions,
+  ) => LiminaFlowTreeNode;
+  children: (
+    messages: readonly string[],
+    options?: LiminaFlowMessageOptions,
+  ) => LiminaFlowTreeNode[];
+  fail: (message?: string, options?: LiminaFlowFailureOptions) => void;
+  pass: (message?: string, options?: LiminaFlowMessageOptions) => void;
+  skip: (message?: string, options?: LiminaFlowMessageOptions) => void;
+  start: (message?: string, options?: LiminaFlowMessageOptions) => void;
+}
+
 export interface LiminaFlowOutputOptions {
   stream?: 'stderr' | 'stdout';
 }
 
+const CHECK_FLOW_STATUS_ONLY_OPTION = Symbol('limina.checkFlowStatusOnly');
 const DEFAULT_CI_ENV_VALUES = new Set(['1', 'true']);
 const DEFAULT_TERMINAL_COLUMNS = 80;
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -65,39 +98,35 @@ const ANSI_PATTERN = new RegExp(
   String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
   'gu',
 );
-const ANSI_RESET = '\u001B[0m';
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_RED = '\u001B[31m';
-const ANSI_YELLOW = '\u001B[33m';
 
-const FLOW_SYMBOL_BY_STATUS: Record<FlowStatus, string> = {
-  fail: '■',
-  info: '│',
-  pass: '◆',
-  skip: '◇',
-  start: '◇',
-  warn: '▲',
-};
+interface FlowTreeNodeInternal {
+  children: FlowTreeNodeInternal[];
+  depth: number;
+  elapsedTimeMs?: number;
+  message: string;
+  parent?: FlowTreeNodeInternal;
+  startedAt?: number;
+  status: FlowTreeNodeStatus;
+}
+
+type InteractiveEntryReference =
+  | {
+      collection: 'history';
+      index: number;
+    }
+  | {
+      collection: 'transient';
+      id: number;
+    };
+
+interface ProcessTransientHistoryEntry {
+  entry: InteractiveHistoryEntry;
+  id: number;
+  taskId?: number;
+}
 
 function isCiEnvironment(env: NodeJS.ProcessEnv): boolean {
   return DEFAULT_CI_ENV_VALUES.has(String(env.CI).toLowerCase());
-}
-
-function formatElapsedTime(milliseconds: number): string {
-  if (milliseconds < 1000) {
-    return `${Math.round(milliseconds)}ms`;
-  }
-
-  return `${(milliseconds / 1000).toFixed(2)}s`;
-}
-
-function formatMessageWithElapsed(
-  message: string,
-  elapsedTimeMs: number | undefined,
-): string {
-  return typeof elapsedTimeMs === 'number'
-    ? `${message} (${formatElapsedTime(elapsedTimeMs)})`
-    : message;
 }
 
 function formatFailureMessage(message: string, error: unknown): string {
@@ -110,55 +139,48 @@ function formatFailureMessage(message: string, error: unknown): string {
   return detail ? `${message}: ${detail}` : message;
 }
 
-function indentMessage(message: string, depth: number): string {
-  if (depth <= 0) {
-    return message;
-  }
-
-  return `${'  '.repeat(depth)}${message}`;
-}
-
 function writeLine(output: FlowOutput, message: string): void {
   output.write(`${message}\n`);
-}
-
-function toWritableText(chunk: unknown): string {
-  if (chunk instanceof Uint8Array) {
-    return Buffer.from(chunk).toString();
-  }
-
-  return String(chunk);
 }
 
 function stripControlSequences(text: string): string {
   return text.replaceAll(ANSI_PATTERN, '').replaceAll('\r', '');
 }
 
-function colorInteractiveSymbol(status: FlowStatus, symbol: string): string {
-  if (status === 'pass') {
-    return `${ANSI_GREEN}${symbol}${ANSI_RESET}`;
-  }
+function isTreeNodeTerminal(node: FlowTreeNodeInternal): boolean {
+  return (
+    node.status === 'failed' ||
+    node.status === 'passed' ||
+    node.status === 'skipped'
+  );
+}
 
-  if (status === 'fail') {
-    return `${ANSI_RED}${symbol}${ANSI_RESET}`;
-  }
-
-  if (status === 'warn') {
-    return `${ANSI_YELLOW}${symbol}${ANSI_RESET}`;
-  }
-
-  return symbol;
+function areTreeNodeDescendantsTerminal(node: FlowTreeNodeInternal): boolean {
+  return node.children.every(
+    (child) =>
+      isTreeNodeTerminal(child) && areTreeNodeDescendantsTerminal(child),
+  );
 }
 
 export class LiminaFlowReporter {
   readonly #clack: ClackAdapter;
   readonly #interactive: boolean;
   readonly #output: FlowOutput;
+  readonly #statusOnly: boolean;
   readonly #stderr: FlowWriteStream | undefined;
   readonly #stdout: FlowWriteStream | undefined;
   readonly #tracksProcessWrites: boolean;
-  readonly #interactiveHistory: string[] = [];
+  readonly #interactiveHistory: InteractiveHistoryEntry[] = [];
+  readonly #treeRoots: FlowTreeNodeInternal[] = [];
+  #hasInteractiveTree = false;
+  #outroMessage: string | undefined;
+  #processRenderer: FlowProcessRenderer | undefined;
+  #processTransientHistory: ProcessTransientHistoryEntry[] = [];
+  #nextProcessTransientEntryId = 0;
+  #nextProcessTransientTaskId = 0;
   #restoreWriteStreams: (() => void) | undefined;
+  #spinnerFrameIndex = 0;
+  #spinnerTimer: NodeJS.Timeout | undefined;
   #trackedTaskCount = 0;
   #terminalColumn = 0;
   #terminalLineCount = 0;
@@ -166,7 +188,11 @@ export class LiminaFlowReporter {
   constructor(options: LiminaFlowReporterOptions = {}) {
     const env = options.env ?? process.env;
     const stdout = options.stdout ?? process.stdout;
+    const internalOptions = options as LiminaFlowReporterOptions & {
+      [CHECK_FLOW_STATUS_ONLY_OPTION]?: boolean;
+    };
 
+    this.#statusOnly = internalOptions[CHECK_FLOW_STATUS_ONLY_OPTION] === true;
     this.#interactive =
       options.forceTty ?? Boolean(stdout.isTTY && !isCiEnvironment(env));
     this.#clack = options.clack ?? prompts;
@@ -184,18 +210,95 @@ export class LiminaFlowReporter {
       } satisfies FlowOutput);
     this.#stdout = stdout;
     this.#stderr = options.stderr ?? process.stderr;
+    this.#processRenderer = this.#createProcessRenderer(options);
     this.#tracksProcessWrites =
-      this.#interactive && options.output === undefined;
+      this.#interactive &&
+      !this.#statusOnly &&
+      options.output === undefined &&
+      !this.#processRenderer;
   }
 
   get interactive(): boolean {
     return this.#interactive;
   }
 
+  get rendererBackend(): 'inline' | 'process' {
+    return this.#processRenderer ? 'process' : 'inline';
+  }
+
+  #createProcessRenderer(
+    options: LiminaFlowReporterOptions,
+  ): FlowProcessRenderer | undefined {
+    const rendererMode = options.renderer ?? 'auto';
+
+    if (
+      !this.#interactive ||
+      rendererMode === 'inline' ||
+      options.output !== undefined ||
+      options.stdout !== undefined ||
+      options.stderr !== undefined ||
+      options.clack !== undefined
+    ) {
+      return undefined;
+    }
+
+    return FlowProcessRenderer.start();
+  }
+
+  #cloneTreeNode(node: FlowTreeNodeInternal): FlowRenderTreeNode {
+    return {
+      children: node.children.map((child) => this.#cloneTreeNode(child)),
+      depth: node.depth,
+      elapsedTimeMs: node.elapsedTimeMs,
+      message: node.message,
+      status: node.status,
+    };
+  }
+
+  #createRenderSnapshot(): FlowRenderSnapshot {
+    return {
+      entries: [
+        ...this.#interactiveHistory,
+        ...this.#processTransientHistory.map(({ entry }) => entry),
+      ],
+      ...(this.#outroMessage === undefined
+        ? {}
+        : { outroMessage: this.#outroMessage }),
+      treeRoots: this.#treeRoots.map((root) => this.#cloneTreeNode(root)),
+    };
+  }
+
+  #sendProcessSnapshot(): void {
+    if (!this.#processRenderer?.active) {
+      return;
+    }
+
+    this.#processRenderer.sendSnapshot(this.#createRenderSnapshot());
+  }
+
+  #writeRenderSnapshotInline(snapshot: FlowRenderSnapshot): void {
+    for (const line of renderSnapshotLines(snapshot, this.#spinnerFrameIndex)) {
+      writeLine(this.#output, line);
+    }
+  }
+
   intro(message: string): void {
     if (this.#interactive) {
+      if (this.#processRenderer?.active) {
+        this.#interactiveHistory.push({
+          kind: 'line',
+          line: `┌  ${message}`,
+        });
+        this.#sendProcessSnapshot();
+        return;
+      }
+
       this.#clack.intro(message);
-      this.#interactiveHistory.push(`┌  ${message}`);
+      this.#interactiveHistory.push({
+        kind: 'line',
+        line: `┌  ${message}`,
+      });
+      this.#recordTerminalWrite(`${message}\n`);
       return;
     }
 
@@ -204,6 +307,12 @@ export class LiminaFlowReporter {
 
   outro(message: string): void {
     if (this.#interactive) {
+      if (this.#processRenderer?.active) {
+        this.#outroMessage = message;
+        this.#sendProcessSnapshot();
+        return;
+      }
+
       this.#clack.outro(message);
       return;
     }
@@ -216,11 +325,17 @@ export class LiminaFlowReporter {
     options: LiminaFlowMessageOptions = {},
   ): LiminaFlowTask {
     const depth = options.depth ?? 0;
-    const collapseOnSuccess = options.collapseOnSuccess ?? true;
+    const collapseOnSuccess = this.#statusOnly
+      ? false
+      : (options.collapseOnSuccess ?? true);
     const shouldTrackTask = this.#interactive && collapseOnSuccess;
     const persistStart = !shouldTrackTask && this.#trackedTaskCount === 0;
     const startLine = this.#terminalLineCount;
     const startTime = performance.now();
+    const processTransientTaskId =
+      shouldTrackTask && this.#processRenderer
+        ? this.#nextProcessTransientTaskId++
+        : undefined;
     let completed = false;
 
     if (shouldTrackTask) {
@@ -229,6 +344,7 @@ export class LiminaFlowReporter {
 
     const persistedStartIndex = this.#emit('start', message, options, {
       persistInteractive: persistStart,
+      transientTaskId: processTransientTaskId,
     });
 
     const finishTrackedTask = () => {
@@ -242,15 +358,36 @@ export class LiminaFlowReporter {
 
     return {
       fail: (nextMessage, nextOptions) => {
+        const failOptions = {
+          ...nextOptions,
+          depth,
+          elapsedTimeMs:
+            nextOptions?.elapsedTimeMs ?? performance.now() - startTime,
+        };
+        const failMessage = this.#statusOnly
+          ? message
+          : (nextMessage ?? message);
+
+        if (
+          !shouldTrackTask &&
+          this.#interactive &&
+          persistedStartIndex !== undefined
+        ) {
+          this.#replaceInteractiveHistoryLine(
+            persistedStartIndex,
+            'fail',
+            this.#formatFailureMessage(failMessage, nextOptions),
+            failOptions,
+          );
+          this.#redrawInteractiveHistory();
+          finishTrackedTask();
+          return;
+        }
+
         this.#emit(
           'fail',
-          formatFailureMessage(nextMessage ?? message, nextOptions?.error),
-          {
-            ...nextOptions,
-            depth,
-            elapsedTimeMs:
-              nextOptions?.elapsedTimeMs ?? performance.now() - startTime,
-          },
+          this.#formatFailureMessage(failMessage, nextOptions),
+          failOptions,
           {
             persistInteractive: true,
           },
@@ -279,9 +416,17 @@ export class LiminaFlowReporter {
           : this.#trackedTaskCount === 0;
 
         if (shouldTrackTask) {
-          this.#clearInteractiveTaskBlock(startLine, {
-            redrawHistory: persistInteractive && depth === 0,
-          });
+          if (this.#processRenderer?.active) {
+            this.#processTransientHistory =
+              this.#processTransientHistory.filter(
+                (entry) => entry.taskId !== processTransientTaskId,
+              );
+            this.#sendProcessSnapshot();
+          } else {
+            this.#clearInteractiveTaskBlock(startLine, {
+              redrawHistory: persistInteractive && depth === 0,
+            });
+          }
         }
 
         if (
@@ -343,13 +488,35 @@ export class LiminaFlowReporter {
     };
   }
 
+  tree(
+    message: string,
+    options: LiminaFlowMessageOptions = {},
+  ): LiminaFlowTreeNode {
+    const node: FlowTreeNodeInternal = {
+      children: [],
+      depth: options.depth ?? 0,
+      message,
+      status: 'planned',
+    };
+
+    this.#treeRoots.push(node);
+    this.#ensureInteractiveTree();
+    this.#renderTreeChange();
+
+    return this.#createTreeNodeHandle(node);
+  }
+
   fail(message: string, options: LiminaFlowFailureOptions = {}): void {
-    this.#emit('fail', formatFailureMessage(message, options.error), options, {
+    this.#emit('fail', this.#formatFailureMessage(message, options), options, {
       persistInteractive: true,
     });
   }
 
   info(message: string, options: LiminaFlowMessageOptions = {}): void {
+    if (this.#statusOnly) {
+      return;
+    }
+
     this.#emit('info', message, options);
   }
 
@@ -366,13 +533,31 @@ export class LiminaFlowReporter {
   }
 
   warn(message: string, options: LiminaFlowMessageOptions = {}): void {
-    this.#emit('warn', message, options);
+    if (this.#statusOnly) {
+      return;
+    }
+
+    this.#emit('warn', message, options, {
+      persistInteractive: options.persistInteractive,
+    });
   }
 
   writeOutput(
     message: string | Uint8Array,
     options: LiminaFlowOutputOptions = {},
   ): void {
+    if (this.#statusOnly) {
+      return;
+    }
+
+    if (this.#processRenderer?.active) {
+      this.#processRenderer.writeOutput({
+        stream: options.stream,
+        text: toWritableText(message),
+      });
+      return;
+    }
+
     const stream = options.stream === 'stderr' ? this.#stderr : this.#stdout;
 
     if (
@@ -380,6 +565,9 @@ export class LiminaFlowReporter {
       this.#tracksProcessWrites &&
       typeof stream?.write === 'function'
     ) {
+      if (this.#restoreWriteStreams === undefined) {
+        this.#recordTerminalWrite(message);
+      }
       (stream.write as (message: string | Uint8Array) => boolean)(message);
       return;
     }
@@ -387,33 +575,87 @@ export class LiminaFlowReporter {
     this.#writeTracked(toWritableText(message));
   }
 
+  async close(): Promise<void> {
+    if (this.#processRenderer) {
+      const snapshot = this.#createRenderSnapshot();
+      const completed = await this.#processRenderer.close(snapshot);
+
+      this.#processRenderer = undefined;
+      if (!completed) {
+        this.#writeRenderSnapshotInline(snapshot);
+      }
+      return;
+    }
+
+    if (this.#spinnerTimer) {
+      clearInterval(this.#spinnerTimer);
+      this.#spinnerTimer = undefined;
+    }
+  }
+
   #emit(
     status: FlowStatus,
     rawMessage: string,
     options: LiminaFlowMessageOptions,
-    meta: { persistInteractive?: boolean } = {},
-  ): number | undefined {
+    meta: { persistInteractive?: boolean; transientTaskId?: number } = {},
+  ): InteractiveEntryReference | undefined {
+    if (this.#statusOnly && (status === 'info' || status === 'warn')) {
+      return undefined;
+    }
+
     const message = formatMessageWithElapsed(rawMessage, options.elapsedTimeMs);
     const depth = options.depth ?? 0;
 
     if (this.#interactive) {
       const renderedLine = this.#formatInteractiveLine(status, message, depth);
-      let historyIndex: number | undefined;
+      const entry: InteractiveHistoryFlowLine = {
+        depth,
+        elapsedTimeMs: options.elapsedTimeMs,
+        kind: 'flow-line',
+        message: rawMessage,
+        status,
+      };
+      let historyReference: InteractiveEntryReference | undefined;
 
       if (meta.persistInteractive) {
-        historyIndex = this.#interactiveHistory.length;
-        this.#interactiveHistory.push(renderedLine);
+        historyReference = {
+          collection: 'history',
+          index: this.#interactiveHistory.length,
+        };
+        this.#interactiveHistory.push(entry);
+      }
+
+      if (this.#processRenderer?.active) {
+        if (!meta.persistInteractive) {
+          const transientId = this.#nextProcessTransientEntryId++;
+
+          historyReference = {
+            collection: 'transient',
+            id: transientId,
+          };
+          this.#processTransientHistory.push({
+            entry,
+            id: transientId,
+            taskId: meta.transientTaskId,
+          });
+        }
+
+        this.#sendProcessSnapshot();
+        return historyReference;
       }
 
       writeLine(
         {
           write: (nextMessage) => {
-            this.#writeTracked(nextMessage);
+            this.#writeTracked(nextMessage, {
+              forceRecord: this.#restoreWriteStreams === undefined,
+            });
           },
         },
         renderedLine,
       );
-      return historyIndex;
+      this.#syncSpinnerTimer();
+      return historyReference;
     }
 
     writeLine(this.#output, `${'  '.repeat(depth)}[${status}] ${message}`);
@@ -511,20 +753,47 @@ export class LiminaFlowReporter {
   }
 
   #redrawInteractiveHistory(): void {
-    this.#writeControl('\r\u001B[H\u001B[2J\u001B[3J');
+    if (this.#processRenderer?.active) {
+      this.#sendProcessSnapshot();
+      return;
+    }
+
+    if (this.#terminalLineCount > 0) {
+      this.#writeControl(`\r\u001B[${this.#terminalLineCount}A\u001B[J`);
+    }
+
     this.#terminalLineCount = 0;
     this.#terminalColumn = 0;
 
-    for (const line of this.#interactiveHistory) {
-      writeLine(
-        {
-          write: (message) => {
-            this.#writeTracked(message);
+    for (const entry of this.#interactiveHistory) {
+      const lines =
+        entry.kind === 'line'
+          ? [entry.line]
+          : entry.kind === 'flow-line'
+            ? [this.#renderInteractiveHistoryFlowLine(entry)]
+            : this.#renderTreeLines();
+
+      for (const line of lines) {
+        writeLine(
+          {
+            write: (message) => {
+              this.#writeTracked(message, {
+                forceRecord: this.#restoreWriteStreams === undefined,
+              });
+            },
           },
-        },
-        line,
-      );
+          line,
+        );
+      }
     }
+  }
+
+  #renderInteractiveHistoryFlowLine(entry: InteractiveHistoryFlowLine): string {
+    return this.#formatInteractiveLine(
+      entry.status,
+      formatMessageWithElapsed(entry.message, entry.elapsedTimeMs),
+      entry.depth,
+    );
   }
 
   #formatInteractiveLine(
@@ -532,33 +801,278 @@ export class LiminaFlowReporter {
     message: string,
     depth: number,
   ): string {
-    const renderedMessage = indentMessage(message, depth);
-
-    return `${colorInteractiveSymbol(
+    return formatRenderedInteractiveLine(
       status,
-      FLOW_SYMBOL_BY_STATUS[status],
-    )}    ${renderedMessage}`;
+      message,
+      depth,
+      this.#spinnerFrameIndex,
+    );
   }
 
   #replaceInteractiveHistoryLine(
-    index: number,
+    reference: InteractiveEntryReference,
     status: FlowStatus,
     rawMessage: string,
     options: LiminaFlowMessageOptions,
   ): void {
-    this.#interactiveHistory[index] = this.#formatInteractiveLine(
+    const entry: InteractiveHistoryFlowLine = {
+      depth: options.depth ?? 0,
+      elapsedTimeMs: options.elapsedTimeMs,
+      kind: 'flow-line',
+      message: rawMessage,
       status,
-      formatMessageWithElapsed(rawMessage, options.elapsedTimeMs),
-      options.depth ?? 0,
+    };
+
+    if (reference.collection === 'history') {
+      this.#interactiveHistory[reference.index] = entry;
+    } else {
+      const transientEntry = this.#processTransientHistory.find(
+        (candidate) => candidate.id === reference.id,
+      );
+
+      if (transientEntry) {
+        transientEntry.entry = entry;
+      }
+    }
+
+    if (this.#processRenderer?.active) {
+      this.#sendProcessSnapshot();
+      return;
+    }
+
+    this.#syncSpinnerTimer();
+  }
+
+  #createTreeNodeHandle(node: FlowTreeNodeInternal): LiminaFlowTreeNode {
+    return {
+      child: (message, options = {}) => {
+        return this.#createTreeNodeHandle(
+          this.#appendTreeChild(node, message, options, {
+            redraw: true,
+          }),
+        );
+      },
+      children: (messages, options = {}) => {
+        const childNodes = messages.map((message) =>
+          this.#appendTreeChild(node, message, options, {
+            redraw: false,
+          }),
+        );
+
+        if (childNodes.length > 0) {
+          this.#renderTreeChange();
+        }
+
+        return childNodes.map((childNode) =>
+          this.#createTreeNodeHandle(childNode),
+        );
+      },
+      fail: (message, options) => {
+        this.#finishTreeNode(node, 'failed', message, options);
+      },
+      pass: (message, options) => {
+        this.#finishTreeNode(node, 'passed', message, options);
+      },
+      skip: (message, options) => {
+        this.#finishTreeNode(node, 'skipped', message, options);
+      },
+      start: (message, options) => {
+        if (message) {
+          node.message = message;
+        }
+
+        if (options?.depth !== undefined) {
+          node.depth = options.depth;
+        }
+
+        node.status = 'running';
+        node.startedAt = performance.now();
+        node.elapsedTimeMs = undefined;
+
+        if (!this.#interactive) {
+          this.#emit('start', node.message, {
+            ...options,
+            depth: node.depth,
+          });
+          return;
+        }
+
+        this.#renderTreeChange();
+      },
+    };
+  }
+
+  #appendTreeChild(
+    parent: FlowTreeNodeInternal,
+    message: string,
+    options: LiminaFlowMessageOptions,
+    meta: { redraw: boolean },
+  ): FlowTreeNodeInternal {
+    const childNode: FlowTreeNodeInternal = {
+      children: [],
+      depth: options.depth ?? parent.depth + 1,
+      message,
+      parent,
+      status: 'planned',
+    };
+
+    parent.children.push(childNode);
+    if (meta.redraw) {
+      this.#renderTreeChange();
+    }
+
+    return childNode;
+  }
+
+  #ensureInteractiveTree(): void {
+    if (!this.#interactive || this.#hasInteractiveTree) {
+      return;
+    }
+
+    this.#interactiveHistory.push({
+      kind: 'tree',
+    });
+    this.#hasInteractiveTree = true;
+  }
+
+  #finishTreeNode(
+    node: FlowTreeNodeInternal,
+    status: Exclude<FlowTreeNodeStatus, 'planned' | 'running'>,
+    message: string | undefined,
+    options: LiminaFlowFailureOptions | LiminaFlowMessageOptions | undefined,
+  ): void {
+    this.#skipPlannedTreeDescendants(node);
+
+    if (message) {
+      node.message =
+        status === 'failed'
+          ? this.#formatFailureMessage(
+              message,
+              options as LiminaFlowFailureOptions | undefined,
+            )
+          : message;
+    } else if (status === 'failed') {
+      node.message = this.#formatFailureMessage(
+        node.message,
+        options as LiminaFlowFailureOptions | undefined,
+      );
+    }
+
+    if (options?.depth !== undefined) {
+      node.depth = options.depth;
+    }
+
+    node.status = status;
+    node.elapsedTimeMs =
+      options?.elapsedTimeMs ??
+      (node.startedAt === undefined
+        ? undefined
+        : performance.now() - node.startedAt);
+
+    const flowStatus = toTreeFlowStatus(status);
+
+    if (!this.#interactive) {
+      this.#emit(flowStatus, node.message, {
+        ...options,
+        depth: node.depth,
+        elapsedTimeMs: node.elapsedTimeMs,
+      });
+      return;
+    }
+
+    this.#renderTreeChange();
+  }
+
+  #skipPlannedTreeDescendants(node: FlowTreeNodeInternal): void {
+    for (const child of node.children) {
+      if (child.status === 'planned') {
+        child.status = 'skipped';
+      }
+
+      this.#skipPlannedTreeDescendants(child);
+    }
+  }
+
+  #renderTreeChange(): void {
+    if (!this.#interactive) {
+      return;
+    }
+
+    if (this.#processRenderer?.active) {
+      this.#sendProcessSnapshot();
+      return;
+    }
+
+    this.#syncSpinnerTimer();
+    this.#redrawInteractiveHistory();
+  }
+
+  #renderTreeLines(): string[] {
+    return this.#treeRoots.flatMap((root) => this.#renderTreeNodeLines(root));
+  }
+
+  #renderTreeNodeLines(node: FlowTreeNodeInternal): string[] {
+    const elapsedTimeMs =
+      isTreeNodeTerminal(node) && areTreeNodeDescendantsTerminal(node)
+        ? node.elapsedTimeMs
+        : undefined;
+    const line = this.#formatInteractiveLine(
+      toTreeFlowStatus(node.status),
+      formatMessageWithElapsed(node.message, elapsedTimeMs),
+      node.depth,
     );
+
+    return [
+      line,
+      ...node.children.flatMap((child) => this.#renderTreeNodeLines(child)),
+    ];
+  }
+
+  #hasRunningInteractiveWork(): boolean {
+    return hasRunningSnapshotWork(this.#createRenderSnapshot());
+  }
+
+  #syncSpinnerTimer(): void {
+    if (!this.#interactive || !this.#hasRunningInteractiveWork()) {
+      if (this.#spinnerTimer) {
+        clearInterval(this.#spinnerTimer);
+        this.#spinnerTimer = undefined;
+      }
+      return;
+    }
+
+    if (this.#spinnerTimer) {
+      return;
+    }
+
+    this.#spinnerTimer = setInterval(() => {
+      this.#spinnerFrameIndex =
+        (this.#spinnerFrameIndex + 1) % SPINNER_FRAMES.length;
+      this.#redrawInteractiveHistory();
+    }, SPINNER_INTERVAL_MS);
+    this.#spinnerTimer.unref?.();
+  }
+
+  #formatFailureMessage(
+    message: string,
+    options: LiminaFlowFailureOptions | undefined,
+  ): string {
+    if (this.#statusOnly) {
+      return message;
+    }
+
+    return formatFailureMessage(message, options?.error);
   }
 
   #writeControl(message: string): void {
     this.#output.write(message);
   }
 
-  #writeTracked(message: string): void {
-    if (!this.#tracksProcessWrites) {
+  #writeTracked(
+    message: string,
+    options: { forceRecord?: boolean } = {},
+  ): void {
+    if (options.forceRecord || !this.#tracksProcessWrites) {
       this.#recordTerminalWrite(message);
     }
 
@@ -570,4 +1084,13 @@ export function createLiminaFlowReporter(
   options: LiminaFlowReporterOptions = {},
 ): LiminaFlowReporter {
   return new LiminaFlowReporter(options);
+}
+
+export function createLiminaCheckFlowReporter(
+  options: LiminaFlowReporterOptions = {},
+): LiminaFlowReporter {
+  return new LiminaFlowReporter({
+    ...options,
+    [CHECK_FLOW_STATUS_ONLY_OPTION]: true,
+  } as LiminaFlowReporterOptions);
 }

@@ -1,9 +1,15 @@
+import {
+  defineConfig,
+  getActiveCheckers,
+  isAutoCheckerConfigMode,
+  loadConfig,
+} from '#config/runner';
+import { prepareGeneratedTsconfigGraph } from '#core/build-graph/runner';
+import { collectGraphProjectRoutes } from '#core/tsconfig/actions';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defineConfig, getActiveCheckers, loadConfig } from '../config';
-import { collectGraphProjectRoutes } from '../tsconfig';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -13,12 +19,11 @@ async function writeText(filePath: string, text: string): Promise<void> {
 describe('defineConfig', () => {
   it('returns the explicit user config unchanged', () => {
     const config = defineConfig({
-      strict: true,
       config: {
         checkers: {
           typescript: {
             preset: 'tsc',
-            entry: 'tsconfig.custom.build.json',
+            include: ['tsconfig.custom.json'],
           },
         },
         source: {
@@ -27,6 +32,15 @@ describe('defineConfig', () => {
         },
       },
       source: {
+        importAuthority: {
+          allow: [
+            {
+              files: ['packages/core/templates/**'],
+              packages: ['react'],
+              reason: 'Template files declare dependencies in generated apps.',
+            },
+          ],
+        },
         knip: {
           workspaces: {
             '@example/core': {
@@ -50,15 +64,6 @@ describe('defineConfig', () => {
               ],
             },
           },
-        },
-        tsconfigOwnership: {
-          ignore: [
-            {
-              files: ['packages/core/src/**/*.spec.ts'],
-              owner: '@example/core',
-              reason: 'Vitest loads test modules directly.',
-            },
-          ],
         },
       },
       pipelines: {
@@ -102,12 +107,22 @@ describe('defineConfig', () => {
           ignore: ['client/**'],
         },
       },
+      execution: {
+        checkerBuild: 'auto',
+        checkerTypecheck: 2,
+        failFast: false,
+        packageEntries: 'auto',
+        releaseEntries: 2,
+        tasks: 'auto',
+      },
     });
 
-    expect(config.strict).toBe(true);
-    expect(config.config?.checkers?.typescript?.entry).toBe(
-      'tsconfig.custom.build.json',
-    );
+    expect(
+      config.config?.checkers &&
+        !isAutoCheckerConfigMode(config.config.checkers)
+        ? config.config.checkers.typescript?.include
+        : undefined,
+    ).toEqual(['tsconfig.custom.json']);
     expect(config.config?.source?.include).toEqual(['src/**/*.ts']);
     expect(config.config?.source?.exclude).toEqual(['dist']);
     expect(config.pipelines?.package).toEqual(['package:check']);
@@ -137,9 +152,10 @@ describe('defineConfig', () => {
         },
       ],
     });
-    expect(config.source?.tsconfigOwnership?.ignore?.[0]?.files).toEqual([
-      'packages/core/src/**/*.spec.ts',
-    ]);
+    expect(config.source?.importAuthority?.allow?.[0]).toMatchObject({
+      files: ['packages/core/templates/**'],
+      packages: ['react'],
+    });
     expect(config.package?.entries?.[0]?.attw).toMatchObject({
       ignoreRules: ['false-cjs'],
       level: 'warn',
@@ -155,6 +171,8 @@ describe('defineConfig', () => {
     expect(config.release?.contentHash?.baselineTag).toBe('next');
     expect(config.release?.contentHash?.builtinIgnore).toBe(false);
     expect(config.release?.contentHash?.ignore).toEqual(['client/**']);
+    expect(config.execution?.checkerTypecheck).toBe(2);
+    expect(config.execution?.tasks).toBe('auto');
   });
 
   it('resolves built-in checker defaults', () => {
@@ -163,7 +181,7 @@ describe('defineConfig', () => {
         checkers: {
           typescript: {
             preset: 'tsc',
-            entry: 'tsconfig.build.json',
+            include: ['tsconfig.json'],
           },
         },
       },
@@ -183,7 +201,7 @@ describe('defineConfig', () => {
       ],
       name: 'typescript',
       preset: 'tsc',
-      entry: 'tsconfig.build.json',
+      include: ['tsconfig.json'],
     });
   });
 
@@ -215,13 +233,28 @@ describe('defineConfig', () => {
           files: ['src/index.ts'],
         }),
       );
+      await writeText(
+        path.join(rootDir, 'packages/app/tsconfig.json'),
+        JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/app/src/index.ts'),
+        'export const value = 1;\n',
+      );
 
       const config = {
         config: {
           checkers: {
             nativeTypescript: {
               preset: 'tsgo' as const,
-              entry: 'tsconfig.build.json',
+              include: ['packages/app/tsconfig.json'],
             },
           },
         },
@@ -229,11 +262,12 @@ describe('defineConfig', () => {
         rootDir,
       };
       const activeCheckers = getActiveCheckers(config);
-      const graphRoutes = collectGraphProjectRoutes(config);
+      const generatedGraph = await prepareGeneratedTsconfigGraph(config);
+      const graphRoutes = collectGraphProjectRoutes(config, generatedGraph);
 
       expect(activeCheckers).toEqual([
         {
-          entry: 'tsconfig.build.json',
+          exclude: [],
           extensions: [
             '.d.cts',
             '.d.mts',
@@ -244,6 +278,7 @@ describe('defineConfig', () => {
             '.tsx',
             '.ts',
           ],
+          include: ['packages/app/tsconfig.json'],
           name: 'nativeTypescript',
           preset: 'tsgo',
         },
@@ -255,7 +290,10 @@ describe('defineConfig', () => {
         graphRoutes.routes[0]?.projectPaths.map((configPath) =>
           path.relative(rootDir, configPath),
         ),
-      ).toEqual(['packages/app/tsconfig.lib.dts.json']);
+      ).toEqual([
+        '.limina/tsconfig/checkers/nativeTypescript/solutions/packages/app/tsconfig.build.json',
+        '.limina/tsconfig/checkers/nativeTypescript/projects/packages/app/tsconfig.lib.dts.json',
+      ]);
     } finally {
       await rm(rootDir, {
         force: true,
@@ -292,13 +330,28 @@ describe('defineConfig', () => {
           files: ['src/App.vue'],
         }),
       );
+      await writeText(
+        path.join(rootDir, 'packages/app/tsconfig.json'),
+        JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.vue.json',
+            },
+          ],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/app/src/App.vue'),
+        '<script setup lang="ts">const value = 1;</script>\n',
+      );
 
       const config = {
         config: {
           checkers: {
             vue: {
               preset: 'vue-tsgo' as const,
-              entry: 'tsconfig.vue.build.json',
+              include: ['packages/app/tsconfig.json'],
             },
           },
         },
@@ -306,11 +359,12 @@ describe('defineConfig', () => {
         rootDir,
       };
       const activeCheckers = getActiveCheckers(config);
-      const graphRoutes = collectGraphProjectRoutes(config);
+      const generatedGraph = await prepareGeneratedTsconfigGraph(config);
+      const graphRoutes = collectGraphProjectRoutes(config, generatedGraph);
 
       expect(activeCheckers).toEqual([
         {
-          entry: 'tsconfig.vue.build.json',
+          exclude: [],
           extensions: [
             '.d.cts',
             '.d.mts',
@@ -322,6 +376,7 @@ describe('defineConfig', () => {
             '.vue',
             '.ts',
           ],
+          include: ['packages/app/tsconfig.json'],
           name: 'vue',
           preset: 'vue-tsgo',
         },
@@ -333,7 +388,10 @@ describe('defineConfig', () => {
         graphRoutes.routes[0]?.projectPaths.map((configPath) =>
           path.relative(rootDir, configPath),
         ),
-      ).toEqual(['packages/app/tsconfig.vue.dts.json']);
+      ).toEqual([
+        '.limina/tsconfig/checkers/vue/solutions/packages/app/tsconfig.build.json',
+        '.limina/tsconfig/checkers/vue/projects/packages/app/tsconfig.vue.dts.json',
+      ]);
     } finally {
       await rm(rootDir, {
         force: true,
@@ -361,7 +419,7 @@ describe('defineConfig', () => {
           checkers: {
             vue: {
               preset: 'vue-tsc' as const,
-              entry: 'tsconfig.vue.build.json',
+              include: ['tsconfig.vue.json'],
             },
           },
         },
@@ -379,7 +437,6 @@ describe('defineConfig', () => {
         '.mts',
         '.tsx',
         '.vue',
-        '.md',
         '.ts',
       ]);
     } finally {
@@ -392,24 +449,22 @@ describe('defineConfig', () => {
 
   it('returns config factories unchanged', async () => {
     const config = defineConfig(async ({ mode }) => ({
-      strict: mode === 'ci',
       config: {
         checkers: {
           typescript: {
             preset: 'tsc' as const,
-            entry: `tsconfig.${mode}.build.json`,
+            include: [`tsconfig.${mode}.json`],
           },
         },
       },
     }));
 
     await expect(config({ command: 'graph', mode: 'ci' })).resolves.toEqual({
-      strict: true,
       config: {
         checkers: {
           typescript: {
             preset: 'tsc',
-            entry: 'tsconfig.ci.build.json',
+            include: ['tsconfig.ci.json'],
           },
         },
       },
@@ -418,7 +473,7 @@ describe('defineConfig', () => {
 });
 
 describe('loadConfig', () => {
-  it('rejects tsconfig ownership config nested under config.source', async () => {
+  it('rejects unknown source boundary config fields under config.source', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -445,7 +500,124 @@ export default {
         loadConfig({
           cwd: rootDir,
         }),
-      ).rejects.toThrow('source.tsconfigOwnership.ignore');
+      ).rejects.toThrow('unknown source boundary config field');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects unknown top-level source config fields', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  source: {
+    tsconfigOwnership: {
+      ignore: [],
+    },
+  },
+};
+`,
+      );
+
+      await expect(
+        loadConfig({
+          cwd: rootDir,
+        }),
+      ).rejects.toThrow('unknown source config field');
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects invalid source import authority config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  source: {
+    importAuthority: {
+      allow: [
+        {
+          files: [],
+          reason: '',
+        },
+      ],
+    },
+  },
+};
+`,
+      );
+
+      await expect(
+        loadConfig({
+          cwd: rootDir,
+        }),
+      ).rejects.toThrow(
+        'importAuthority allow entries must declare packages or specifiers',
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects package import authority rules when the workspace root package.json is missing', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  source: {
+    importAuthority: {
+      allow: [
+        {
+          files: ['packages/app/src/**'],
+          packages: ['zod'],
+          reason: 'The root manifest declares shared dependencies.',
+        },
+      ],
+    },
+  },
+};
+`,
+      );
+
+      await expect(
+        loadConfig({
+          cwd: rootDir,
+        }),
+      ).rejects.toThrow(
+        'package allow rules enable workspace root package.json as a dependency authority manifest',
+      );
     } finally {
       await rm(rootDir, {
         force: true,
@@ -493,15 +665,14 @@ export default Promise.resolve({});
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
-import { defineConfig } from '${new URL('../config.ts', import.meta.url).href}';
+import { defineConfig } from '${new URL('../config/runner.ts', import.meta.url).href}';
 
 export default defineConfig(async ({ mode }) => ({
-  strict: mode === 'ci',
   config: {
     checkers: {
       typescript: {
         preset: 'tsc',
-        entry: \`tsconfig.\${mode}.build.json\`,
+        include: [\`tsconfig.\${mode}.json\`],
       },
     },
   },
@@ -517,10 +688,12 @@ export default defineConfig(async ({ mode }) => ({
 
       expect(config.configPath).toBe(path.join(rootDir, 'limina.config.mjs'));
       expect(config.rootDir).toBe(rootDir);
-      expect(config.strict).toBe(true);
-      expect(config.config?.checkers?.typescript?.entry).toBe(
-        'tsconfig.ci.build.json',
-      );
+      expect(
+        config.config?.checkers &&
+          !isAutoCheckerConfigMode(config.config.checkers)
+          ? config.config.checkers.typescript?.include
+          : undefined,
+      ).toEqual(['tsconfig.ci.json']);
     } finally {
       await rm(rootDir, {
         force: true,
@@ -679,34 +852,6 @@ export default null;
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
         /limina config must export or return an object/u,
-      );
-    } finally {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
-    }
-  });
-
-  it('rejects non-boolean strict config values', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
-
-    try {
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages: []\n',
-      );
-      await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
-        `
-export default {
-  strict: 'yes',
-};
-`,
-      );
-
-      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /strict must be a boolean/u,
       );
     } finally {
       await rm(rootDir, {
@@ -911,7 +1056,310 @@ export default {
     }
   });
 
-  it('rejects non-object checker maps', async () => {
+  it('accepts canonical execution config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  execution: {
+    tasks: 'auto',
+    checkerBuild: 'auto',
+    checkerTypecheck: 2,
+    packageEntries: 3,
+    releaseEntries: 2,
+    failFast: false,
+  },
+};
+`,
+      );
+
+      const config = await loadConfig({ cwd: rootDir });
+
+      expect(config.execution).toEqual({
+        checkerBuild: 'auto',
+        checkerTypecheck: 2,
+        failFast: false,
+        packageEntries: 3,
+        releaseEntries: 2,
+        tasks: 'auto',
+      });
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects invalid execution concurrency config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  execution: {
+    checkerTypecheck: 0,
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /execution concurrency must be a positive integer or "auto"/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects unknown execution config fields', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  execution: {
+    legacy: true,
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /unknown execution config field/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('accepts auto checker mode', () => {
+    expect(
+      defineConfig({
+        config: {
+          checkers: {
+            exclude: ['packages/playground/tsconfig.json'],
+            mode: 'auto',
+          },
+        },
+      }),
+    ).toEqual({
+      config: {
+        checkers: {
+          exclude: ['packages/playground/tsconfig.json'],
+          mode: 'auto',
+        },
+      },
+    });
+  });
+
+  it('accepts Vue import analysis config', () => {
+    expect(
+      defineConfig({
+        config: {
+          imports: {
+            vue: 'compiler-sfc',
+          },
+        },
+      }),
+    ).toEqual({
+      config: {
+        imports: {
+          vue: 'compiler-sfc',
+        },
+      },
+    });
+  });
+
+  it('rejects invalid Vue import analysis config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    imports: {
+      vue: true,
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /config\.imports\.vue must be "heuristic" or "compiler-sfc"/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects string auto checker mode', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    checkers: 'auto',
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /checkers: "auto" has been removed/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects invalid auto checker exclude config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    checkers: {
+      mode: 'auto',
+      exclude: ['packages/playground/tsconfig.json', ''],
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /auto checker exclude entries must be non-empty string paths/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects invalid auto checker mode config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    checkers: {
+      mode: 'manual',
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /auto checker config requires mode: "auto"/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects mixed auto checker and named checker config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    checkers: {
+      mode: 'auto',
+      typescript: {
+        preset: 'tsc',
+        include: ['tsconfig.json'],
+      },
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /auto checker config must not be mixed with named checker entries/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects invalid checker maps', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -931,7 +1379,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /config\.checkers must be an object keyed by checker name/u,
+        /config\.checkers must be an object auto config or an object keyed by checker name/u,
       );
     } finally {
       await rm(rootDir, {
@@ -989,7 +1437,7 @@ export default {
     checkers: {
       typescript: {
         preset: 1,
-        entry: 'tsconfig.build.json',
+        include: ['tsconfig.json'],
       },
     },
   },
@@ -1033,7 +1481,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker entry must be a non-empty string path/u,
+        /checker\.entry has been removed; configure checker\.include/u,
       );
     } finally {
       await rm(rootDir, {
@@ -1059,7 +1507,7 @@ export default {
     checkers: {
       typescript: {
         preset: 'tsc',
-        entry: 'tsconfig.build.json',
+        include: ['tsconfig.json'],
         extensions: ['ts'],
       },
     },
@@ -1163,7 +1611,7 @@ export default {
     checkers: {
       custom: {
         preset: 'custom-checker',
-        entry: 'tsconfig.custom.json',
+        include: ['tsconfig.custom.json'],
       },
     },
   },
@@ -1172,7 +1620,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /configured checker entries require a built-in checker adapter/u,
+        /configured checkers require a built-in checker adapter/u,
       );
     } finally {
       await rm(rootDir, {
@@ -1199,7 +1647,7 @@ export default {
       custom: {
         preset: 'custom-checker',
         extensions: ['.custom'],
-        entry: 'tsconfig.custom.json',
+        include: ['tsconfig.custom.json'],
       },
     },
   },
@@ -1208,7 +1656,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker extensions are fixed by built-in presets and cannot be configured[\s\S]*configured checker entries require a built-in checker adapter/u,
+        /checker extensions are fixed by built-in presets and cannot be configured[\s\S]*configured checkers require a built-in checker adapter/u,
       );
     } finally {
       await rm(rootDir, {
@@ -1242,7 +1690,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker entry must be a non-empty string path/u,
+        /checker include must be a non-empty string array/u,
       );
     } finally {
       await rm(rootDir, {
@@ -1277,7 +1725,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker entry must be a non-empty string path/u,
+        /checker\.entry has been removed; configure checker\.include/u,
       );
     } finally {
       await rm(rootDir, {
@@ -1303,7 +1751,7 @@ export default {
     checkers: {
       typescript: {
         preset: 'tsc',
-        entry: 'tsconfig.build.json',
+        include: ['tsconfig.json'],
       },
     },
   },
@@ -1315,7 +1763,7 @@ export default {
         config: {
           checkers: {
             typescript: {
-              entry: 'tsconfig.build.json',
+              include: ['tsconfig.json'],
             },
           },
         },

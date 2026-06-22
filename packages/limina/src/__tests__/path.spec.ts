@@ -1,5 +1,5 @@
+import { normalizeAbsolutePathIdentity } from '#utils/path';
 import { describe, expect, it } from 'vitest';
-import { normalizeAbsolutePathIdentity } from '../utils/path';
 
 describe('normalizeAbsolutePathIdentity', () => {
   it('normalizes Windows separators and trailing separators', () => {

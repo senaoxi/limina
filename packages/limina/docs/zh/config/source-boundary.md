@@ -48,7 +48,7 @@ export default defineConfig({
 `exclude` 是不需要进入源码治理的目录或 glob。它适合排除 `dist`、`.tsbuild`、fixtures、生成缓存等不应该当作源码治理的内容。省略 `exclude` 时，Limina 会读取工作区根目录的 `.gitignore`，并且始终额外排除一组固定的目录和配置文件。
 
 ::: details 始终额外排除的条目（在 root `.gitignore` 之外）
-`nx.json`、`project.json`、`tsconfig.json`、`**/tsconfig.*.json`、`dist`、`.nx`、`.git`、`.tsbuild`、`coverage` 和 `node_modules`。
+TypeScript 配置文件、常见任务工具配置/缓存文件、`dist`、`.git`、`.tsbuild`、`coverage` 和 `node_modules`。
 :::
 
 例如 `include` 覆盖了 `packages/**/src/**/*.{ts,tsx,vue}` 后，新增这个文件：
@@ -66,7 +66,6 @@ export const runtimeName = 'core';
 packages/core/
   src/index.ts
   src/generated/runtime.ts
-  tsconfig.lib.dts.json
   tsconfig.lib.json
 ```
 

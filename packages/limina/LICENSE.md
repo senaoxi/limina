@@ -217,7 +217,33 @@ Repository: git+https://github.com/epoberezkin/json-schema-traverse.git
 
 ---------------------------------------
 
-## ansi-styles, array-union, callsites, chalk, globby, has-flag, irregular-plurals, parent-module, path-type, resolve-from, slash, supports-color
+## ansi-align
+
+License: ISC
+By: nexdrew
+Repository: git+https://github.com/nexdrew/ansi-align.git
+
+> Copyright (c) 2016, Contributors
+>
+> Permission to use, copy, modify, and/or distribute this software for any purpose
+> with or without fee is hereby granted, provided that the above copyright notice
+> and this permission notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+> REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+> FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+> INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+> OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+> TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+> THIS SOFTWARE.
+
+---------------------------------------
+
+## ansi-regex, ansi-styles, boxen, camelcase, chalk, cli-boxes, get-east-asian-width, import-fresh, is-plain-obj, is-unicode-supported, log-symbols, parse-json, plur, string-width, strip-ansi, strip-json-comments, widest-line, wrap-ansi
+
+License: MIT
+By: Sindre Sorhus
+Repository: chalk/ansi-regex
 
 License: MIT
 By: Sindre Sorhus
@@ -225,46 +251,84 @@ Repository: chalk/ansi-styles
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/array-union
+Repository: sindresorhus/boxen
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/callsites
+Repository: sindresorhus/camelcase
 
 License: MIT
 Repository: chalk/chalk
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/globby
+Repository: sindresorhus/cli-boxes
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/has-flag
+Repository: sindresorhus/get-east-asian-width
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/irregular-plurals
+Repository: sindresorhus/import-fresh
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/parent-module
+Repository: sindresorhus/is-plain-obj
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/path-type
+Repository: sindresorhus/is-unicode-supported
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/resolve-from
+Repository: sindresorhus/log-symbols
 
 License: MIT
 By: Sindre Sorhus
-Repository: sindresorhus/slash
+Repository: sindresorhus/parse-json
 
 License: MIT
 By: Sindre Sorhus
-Repository: chalk/supports-color
+Repository: sindresorhus/plur
+
+License: MIT
+By: Sindre Sorhus
+Repository: sindresorhus/string-width
+
+License: MIT
+By: Sindre Sorhus
+Repository: chalk/strip-ansi
+
+License: MIT
+By: Sindre Sorhus
+Repository: sindresorhus/strip-json-comments
+
+License: MIT
+By: Sindre Sorhus
+Repository: sindresorhus/widest-line
+
+License: MIT
+By: Sindre Sorhus
+Repository: chalk/wrap-ansi
+
+> MIT License
+>
+> Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------------------------
+
+## array-union, callsites, globby, has-flag, irregular-plurals, is-fullwidth-code-point, parent-module, path-type, resolve-from, slash, supports-color
+
+License: MIT
+By: Sindre Sorhus
+Repositories: sindresorhus/array-union, sindresorhus/callsites, sindresorhus/globby, sindresorhus/has-flag, sindresorhus/irregular-plurals, sindresorhus/is-fullwidth-code-point, sindresorhus/parent-module, sindresorhus/path-type, sindresorhus/resolve-from, sindresorhus/slash, chalk/supports-color
 
 > MIT License
 >
@@ -469,6 +533,35 @@ Repository: kevva/dir-glob
 > The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 >
 > THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------------------------
+
+## emoji-regex
+
+License: MIT
+By: Mathias Bynens
+Repository: https://github.com/mathiasbynens/emoji-regex.git
+
+> Copyright Mathias Bynens <https://mathiasbynens.be/>
+>
+> Permission is hereby granted, free of charge, to any person obtaining
+> a copy of this software and associated documentation files (the
+> "Software"), to deal in the Software without restriction, including
+> without limitation the rights to use, copy, modify, merge, publish,
+> distribute, sublicense, and/or sell copies of the Software, and to
+> permit persons to whom the Software is furnished to do so, subject to
+> the following conditions:
+>
+> The above copyright notice and this permission notice shall be
+> included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+> EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+> MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+> NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+> LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+> OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+> WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---------------------------------------
 
@@ -689,24 +782,6 @@ Repository: git@github.com:kaelzhang/node-ignore.git
 > LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 > OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 > WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
----------------------------------------
-
-## import-fresh, is-plain-obj, is-unicode-supported, log-symbols, parse-json, plur, strip-json-comments
-
-License: MIT
-By: Sindre Sorhus
-Repositories: sindresorhus/import-fresh, sindresorhus/is-plain-obj, sindresorhus/is-unicode-supported, sindresorhus/log-symbols, sindresorhus/parse-json, sindresorhus/plur, sindresorhus/strip-json-comments
-
-> MIT License
->
-> Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
->
-> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
->
-> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
->
-> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---------------------------------------
 

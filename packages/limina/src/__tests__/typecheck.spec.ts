@@ -1,4 +1,7 @@
+import type { CheckerPackageResolver } from '#checkers';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import {
   chmod,
   mkdir,
@@ -8,20 +11,23 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { CheckerPackageResolver } from '../checkers';
 import {
+  runBuild as runBuildCommand,
+  type RunBuildOptions,
   runCheckerBuild as runCheckerBuildCommand,
   type RunCheckerBuildOptions,
   runCheckerTypecheck as runCheckerTypecheckCommand,
   type RunCheckerTypecheckOptions,
-  type TypecheckTarget,
-  type TypecheckTargetResult,
 } from '../commands/typecheck';
-import type { ResolvedLiminaConfig } from '../config';
 import { TypecheckLogger } from '../logger';
+import type {
+  TypecheckRunner,
+  TypecheckTarget,
+  TypecheckTargetResult,
+} from '../typecheck/targets';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -35,8 +41,20 @@ async function createFixture(files: Record<string, string>): Promise<{
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-typecheck-')),
   );
+  const fixtureFiles = {
+    'package.json': `${JSON.stringify(
+      {
+        name: 'root',
+        private: true,
+      },
+      null,
+      2,
+    )}\n`,
+    'pnpm-workspace.yaml': 'packages:\n  - app\n  - packages/*\n',
+    ...files,
+  };
 
-  for (const [relativePath, text] of Object.entries(files)) {
+  for (const [relativePath, text] of Object.entries(fixtureFiles)) {
     await writeText(path.join(rootDir, relativePath), text);
   }
 
@@ -61,6 +79,13 @@ const installedCheckerPackageResolver: CheckerPackageResolver = ({
 
 function runCheckerBuild(options: RunCheckerBuildOptions) {
   return runCheckerBuildCommand({
+    checkerPackageResolver: installedCheckerPackageResolver,
+    ...options,
+  });
+}
+
+function runBuild(options: RunBuildOptions) {
+  return runBuildCommand({
     checkerPackageResolver: installedCheckerPackageResolver,
     ...options,
   });
@@ -95,20 +120,56 @@ function failingRunner(calls: TypecheckTarget[] = []) {
   };
 }
 
+function getExpectedDefaultBuildConcurrency(targetCount: number): number {
+  return Math.min(targetCount, availableParallelism() ?? 4);
+}
+
+function delayedRunner(options: {
+  calls: TypecheckTarget[];
+  delayMs?: (target: TypecheckTarget) => number;
+  status?: number;
+}): {
+  getMaxActive: () => number;
+  runner: TypecheckRunner;
+} {
+  let activeCount = 0;
+  let maxActiveCount = 0;
+
+  return {
+    getMaxActive: () => maxActiveCount,
+    runner: async (target): Promise<TypecheckTargetResult> => {
+      options.calls.push(target);
+      activeCount += 1;
+      maxActiveCount = Math.max(maxActiveCount, activeCount);
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, options.delayMs?.(target) ?? 10);
+      });
+
+      activeCount -= 1;
+
+      return {
+        configPath: target.configPath,
+        status: options.status ?? 0,
+      };
+    },
+  };
+}
+
 function createLiminaConfig(rootDir: string): ResolvedLiminaConfig {
   return {
     config: {
       checkers: {
         svelte: {
-          entry: 'tsconfig.svelte.build.json',
+          include: ['svelte/tsconfig.json'],
           preset: 'svelte-check',
         },
         typescript: {
-          entry: 'tsconfig.build.json',
+          include: ['tsconfig.json'],
           preset: 'tsc',
         },
         vue: {
-          entry: 'tsconfig.vue.build.json',
+          include: ['vue/tsconfig.json'],
           preset: 'vue-tsc',
         },
       },
@@ -137,10 +198,275 @@ describe('runCheckerBuild', () => {
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
       expect(calls.map((target) => target.args)).toEqual([
-        ['-b', 'tsconfig.build.json', '--pretty', 'false'],
-        ['-b', 'tsconfig.vue.build.json', '--pretty', 'false'],
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/tsconfig.build.json',
+          '--pretty',
+          'false',
+        ],
+        [
+          '-b',
+          '.limina/tsconfig/checkers/vue/tsconfig.build.json',
+          '--pretty',
+          'false',
+        ],
       ]);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('runs first-class build checker entries with default concurrency', async () => {
+    const calls: TypecheckTarget[] = [];
+    const delayed = delayedRunner({
+      calls,
+      delayMs: (target) => (target.command === 'tsc' ? 30 : 10),
+    });
+    const fixture = await createFixture({
+      'tsconfig.build.json': tsconfig({ files: [] }),
+      'tsconfig.vue.build.json': tsconfig({ files: [] }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['vue/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        runner: delayed.runner,
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
+      expect(delayed.getMaxActive()).toBe(
+        getExpectedDefaultBuildConcurrency(2),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('runs cyclic cross-checker provider entries in the same build layer', async () => {
+    const calls: TypecheckTarget[] = [];
+    const delayed = delayedRunner({
+      calls,
+      delayMs: () => 30,
+    });
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { themeValue } from '../../theme/src/index';\nexport const appValue = themeValue;\n",
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/index.ts':
+        "import { appValue } from '../../app/src/index';\nexport const themeValue = appValue;\n",
+      'packages/theme/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/app/tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['packages/theme/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        runner: delayed.runner,
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
+      expect(delayed.getMaxActive()).toBe(
+        getExpectedDefaultBuildConcurrency(2),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not warn when incompatible presets build separate generated dts configs for the same source config', async () => {
+    const calls: TypecheckTarget[] = [];
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/native/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/shared/src/index.ts': 'export const value = 1;\n',
+      'packages/shared/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/vue/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        config: {
+          config: {
+            checkers: {
+              nativeTypescript: {
+                include: ['packages/native/tsconfig.json'],
+                preset: 'tsgo',
+              },
+              vue: {
+                include: ['packages/vue/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual([
+        'tsgo',
+        'vue-tsc',
+      ]);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('warns after checker build when incompatible presets traverse the same generated dts project', async () => {
+    const calls: TypecheckTarget[] = [];
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/shared/src/index.ts': 'export const sharedValue = 1;\n',
+      'packages/shared/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/index.ts':
+        "import { sharedValue } from '../../shared/src/index';\nexport const themeValue = sharedValue;\n",
+      'packages/theme/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        config: {
+          config: {
+            checkers: {
+              nativeTypescript: {
+                include: ['packages/shared/tsconfig.json'],
+                preset: 'tsgo',
+              },
+              vue: {
+                include: ['packages/theme/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+      const warningText = warnSpy.mock.calls
+        .map(([message]) => String(message))
+        .join('\n');
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual([
+        'tsgo',
+        'vue-tsc',
+      ]);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warningText).toContain('packages/shared/tsconfig.json');
+      expect(warningText).toContain('reachable from:');
+      expect(warningText).toContain('config.checkers.nativeTypescript (tsgo)');
+      expect(warningText).toContain('entry tsconfigs:');
+      expect(warningText).toContain('        - packages/shared/tsconfig.json');
+      expect(warningText).toContain('config.checkers.vue (vue-tsc)');
+      expect(warningText).toContain('        - packages/theme/tsconfig.json');
+      expect(warningText).toContain(
+        '.limina/tsconfig/checkers/nativeTypescript/projects/packages/shared/tsconfig.dts.json',
+      );
+    } finally {
+      warnSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -157,7 +483,7 @@ describe('runCheckerBuild', () => {
           config: {
             checkers: {
               nativeTypescript: {
-                entry: 'tsconfig.build.json',
+                include: ['tsconfig.json'],
                 preset: 'tsgo',
               },
             },
@@ -172,10 +498,15 @@ describe('runCheckerBuild', () => {
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command)).toEqual(['tsgo']);
       expect(calls.map((target) => target.args)).toEqual([
-        ['-b', 'tsconfig.build.json', '--pretty', 'false'],
+        [
+          '-b',
+          '.limina/tsconfig/checkers/nativeTypescript/tsconfig.build.json',
+          '--pretty',
+          'false',
+        ],
       ]);
       expect(calls.map((target) => target.label)).toEqual([
-        'tsgo -b tsconfig.build.json',
+        'tsgo -b .limina/tsconfig/checkers/nativeTypescript/tsconfig.build.json',
       ]);
     } finally {
       await fixture.cleanup();
@@ -194,7 +525,7 @@ describe('runCheckerBuild', () => {
           config: {
             checkers: {
               vue: {
-                entry: 'tsconfig.vue.build.json',
+                include: ['vue/tsconfig.json'],
                 preset: 'vue-tsgo',
               },
             },
@@ -213,7 +544,7 @@ describe('runCheckerBuild', () => {
     }
   });
 
-  it('fails before running checker entries when a configured peer is missing', async () => {
+  it('does not require the Vue SFC compiler for vue-tsc by default', async () => {
     const calls: TypecheckTarget[] = [];
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
@@ -233,13 +564,61 @@ describe('runCheckerBuild', () => {
           config: {
             checkers: {
               typescript: {
-                entry: 'tsconfig.build.json',
+                include: ['tsconfig.json'],
                 preset: 'tsc',
               },
               vue: {
-                entry: 'tsconfig.vue.build.json',
+                include: ['vue/tsconfig.json'],
                 preset: 'vue-tsc',
               },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('requires the Vue SFC compiler when compiler-sfc import analysis is enabled', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'tsconfig.build.json': tsconfig({ files: [] }),
+      'tsconfig.vue.build.json': tsconfig({ files: [] }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        checkerPackageResolver: ({ packageName }) =>
+          packageName === 'typescript' || packageName === 'vue-tsc'
+            ? packageName
+            : undefined,
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['vue/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+            imports: {
+              vue: 'compiler-sfc',
             },
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
@@ -252,6 +631,8 @@ describe('runCheckerBuild', () => {
       expect(result.passed).toBe(false);
       expect(calls).toHaveLength(0);
       expect(errorSpy.mock.calls.join('\n')).toContain('@vue/compiler-sfc');
+      expect(errorSpy.mock.calls.join('\n')).toContain('config.imports.vue');
+      expect(errorSpy.mock.calls.join('\n')).toContain('"compiler-sfc"');
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Fix: pnpm add -D @vue/compiler-sfc',
       );
@@ -266,6 +647,9 @@ describe('runCheckerBuild', () => {
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
       .mockImplementation(() => {});
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
     const fixture = await createFixture({
       'tsconfig.build.json': tsconfig({ files: [] }),
     });
@@ -277,7 +661,7 @@ describe('runCheckerBuild', () => {
           config: {
             checkers: {
               nativeTypescript: {
-                entry: 'tsconfig.build.json',
+                include: ['tsconfig.json'],
                 preset: 'tsgo',
               },
             },
@@ -297,8 +681,10 @@ describe('runCheckerBuild', () => {
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Fix: pnpm add -D @typescript/native-preview',
       );
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
+      warnSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -324,6 +710,1127 @@ describe('runCheckerBuild', () => {
       await fixture.cleanup();
     }
   });
+
+  it('reports concurrent build checker failures in target order', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const delayed = delayedRunner({
+      calls,
+      delayMs: (target) => (target.command === 'tsc' ? 30 : 10),
+      status: 1,
+    });
+    const fixture = await createFixture({
+      'tsconfig.build.json': tsconfig({ files: [] }),
+      'tsconfig.vue.build.json': tsconfig({ files: [] }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['vue/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        runner: delayed.runner,
+      });
+      const errorText = errorSpy.mock.calls
+        .map(([message]) => String(message))
+        .join('\n');
+      const typescriptPath =
+        '.limina/tsconfig/checkers/typescript/tsconfig.build.json';
+      const vuePath = '.limina/tsconfig/checkers/vue/tsconfig.build.json';
+
+      expect(result.passed).toBe(false);
+      expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
+      expect(delayed.getMaxActive()).toBe(
+        getExpectedDefaultBuildConcurrency(2),
+      );
+      expect(errorText.indexOf(typescriptPath)).toBeGreaterThanOrEqual(0);
+      expect(errorText.indexOf(typescriptPath)).toBeLessThan(
+        errorText.indexOf(vuePath),
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+});
+
+describe('runBuild', () => {
+  it('builds the nearest solution tsconfig from cwd', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: path.join(fixture.rootDir, 'packages/pkg/src'),
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(result.sourceConfigPath).toBe(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/solutions/packages/pkg/tsconfig.build.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('builds a selected source leaf from an explicit config path', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('raw builds selected configs that are not governed by a checker', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/lib/src/index.ts': 'export const value = 1;\n',
+      'packages/lib/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/app/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'packages/lib/tsconfig.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsc']);
+      expect(calls.map((target) => target.args)).toEqual([
+        ['-b', 'packages/lib/tsconfig.json', '--pretty', 'false'],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('passes watch mode to raw build targets', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.raw.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/managed/src/index.ts': 'export const value = 1;\n',
+      'packages/managed/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/managed/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'packages/app/tsconfig.raw.json',
+        runner: passingRunner(calls),
+        watch: true,
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          'packages/app/tsconfig.raw.json',
+          '--pretty',
+          'false',
+          '--watch',
+          '--preserveWatchOutput',
+        ],
+      ]);
+      expect(calls.map((target) => target.label)).toEqual([
+        'tsc -b packages/app/tsconfig.raw.json --watch',
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('raw builds selected configs with the requested checker', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/app/src/index.vue': '<script setup lang="ts"></script>\n',
+      'packages/app/tsconfig.raw.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.vue'],
+      }),
+      'packages/managed/src/index.ts': 'export const value = 1;\n',
+      'packages/managed/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        checker: 'vue-tsc',
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/managed/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'packages/app/tsconfig.raw.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['vue-tsc']);
+      expect(calls.map((target) => target.args)).toEqual([
+        ['-b', 'packages/app/tsconfig.raw.json', '--pretty', 'false'],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports source configs governed only by typecheck-only checkers', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'svelte/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'svelte/src/index.ts': 'export const value = 1;\n',
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              svelte: {
+                include: ['svelte/tsconfig.json'],
+                preset: 'svelte-check',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'svelte/tsconfig.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(false);
+      expect(calls).toHaveLength(0);
+      expect(errorSpy.mock.calls.join('\n')).toContain('typecheck-only');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('builds every matching build-capable checker with different presets', async () => {
+    const calls: TypecheckTarget[] = [];
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const delayed = delayedRunner({
+      calls,
+      delayMs: (target) => (target.command === 'tsgo' ? 30 : 10),
+    });
+    const fixture = await createFixture({
+      'packages/native/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/ts/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/shared/src/index.ts': 'export const value = 1;\n',
+      'packages/shared/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              nativeTypescript: {
+                include: ['packages/native/tsconfig.json'],
+                preset: 'tsgo',
+              },
+              typescript: {
+                include: ['packages/ts/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'packages/shared/tsconfig.lib.json',
+        runner: delayed.runner,
+      });
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsgo', 'tsc']);
+      expect(delayed.getMaxActive()).toBe(
+        getExpectedDefaultBuildConcurrency(2),
+      );
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/nativeTypescript/projects/packages/shared/tsconfig.lib.dts.json',
+          '--pretty',
+          'false',
+        ],
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/projects/packages/shared/tsconfig.lib.dts.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('builds only the requested managed checker preset when it covers the config', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/native/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/ts/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/shared/src/index.ts': 'export const value = 1;\n',
+      'packages/shared/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        checker: 'tsc',
+        config: {
+          config: {
+            checkers: {
+              nativeTypescript: {
+                include: ['packages/native/tsconfig.json'],
+                preset: 'tsgo',
+              },
+              typescript: {
+                include: ['packages/ts/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        project: 'packages/shared/tsconfig.lib.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsc']);
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/projects/packages/shared/tsconfig.lib.dts.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports requested managed checker presets that do not cover the config', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        checker: 'vue-tsc',
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/app/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        configPath: 'packages/app/tsconfig.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(false);
+      expect(calls).toHaveLength(0);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Invalid Limina checker build preset',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not warn when tsc and vue-tsc build the same source config', async () => {
+    const calls: TypecheckTarget[] = [];
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/shared/src/index.ts': 'export const value = 1;\n',
+      'packages/shared/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/ts/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/vue/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/ts/tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['packages/vue/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        project: 'packages/shared/tsconfig.lib.json',
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('warns about incompatible presets after failed generated builds', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/shared/src/index.ts': 'export const sharedValue = 1;\n',
+      'packages/shared/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/index.ts':
+        "import { sharedValue } from '../../shared/src/index';\nexport const themeValue = sharedValue;\n",
+      'packages/theme/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              nativeTypescript: {
+                include: ['packages/shared/tsconfig.json'],
+                preset: 'tsgo',
+              },
+              vue: {
+                include: ['packages/theme/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        project: 'packages/theme/tsconfig.json',
+        runner: failingRunner(calls),
+      });
+      const warningText = warnSpy.mock.calls
+        .map(([message]) => String(message))
+        .join('\n');
+      const errorText = errorSpy.mock.calls
+        .map(([message]) => String(message))
+        .join('\n');
+
+      expect(result.passed).toBe(false);
+      expect(calls.map((target) => target.command)).toEqual([
+        'tsgo',
+        'vue-tsc',
+      ]);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warningText).toContain(
+        'Potentially incompatible build checker combination',
+      );
+      expect(warningText).toContain('packages/shared/tsconfig.json');
+      expect(warningText).toContain('reachable from:');
+      expect(warningText).toContain('config.checkers.nativeTypescript (tsgo)');
+      expect(warningText).toContain('entry tsconfigs:');
+      expect(warningText).toContain('        - packages/shared/tsconfig.json');
+      expect(warningText).toContain('config.checkers.vue (vue-tsc)');
+      expect(warningText).toContain('        - packages/theme/tsconfig.json');
+      expect(errorText).toContain('build failed:');
+      expect(errorText).toContain(
+        '.limina/tsconfig/checkers/nativeTypescript/projects/packages/shared/',
+      );
+      expect(errorText).toContain('tsconfig.dts.json');
+      expect(errorText).toContain(
+        '.limina/tsconfig/checkers/vue/projects/packages/theme/tsconfig.dts.json',
+      );
+      expect(errorText).toContain(
+        'Checker "nativeTypescript" failed. Exit code: 1.',
+      );
+      expect(errorText).toContain('Checker "vue" failed. Exit code: 1.');
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects cross-checker providers with unsupported root files before running builds', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/Theme.vue':
+        '<script setup lang="ts">const value = 1;</script>\n',
+      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+      'packages/theme/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts', 'src/**/*.vue'],
+      }),
+    });
+
+    try {
+      let thrown: unknown;
+
+      try {
+        await runBuild({
+          config: {
+            config: {
+              checkers: {
+                typescript: {
+                  include: ['packages/app/tsconfig.json'],
+                  preset: 'tsc',
+                },
+                vue: {
+                  include: ['packages/theme/tsconfig.json'],
+                  preset: 'vue-tsc',
+                },
+              },
+            },
+            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          cwd: fixture.rootDir,
+          project: 'packages/app',
+          runner: passingRunner(calls),
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(String(thrown)).toContain(
+        'Unsupported cross-checker declaration provider',
+      );
+      expect(String(thrown)).toContain('consumer checker: typescript (tsc)');
+      expect(String(thrown)).toContain('provider checker: vue (vue-tsc)');
+      expect(String(thrown)).toContain('extension: .vue');
+      expect(String(thrown)).toContain('packages/theme/src/Theme.vue');
+      expect(calls).toEqual([]);
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects unsupported files in cyclic provider reference closures', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+      'packages/theme/tsconfig.json': tsconfig({
+        liminaOptions: {
+          implicitRefs: [
+            {
+              path: '../widgets/tsconfig.json',
+              reason: 'Widgets are loaded by a generated theme manifest.',
+            },
+          ],
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/widgets/src/Widget.vue':
+        '<script setup lang="ts">const value = 1;</script>\n',
+      'packages/widgets/src/widget.ts': 'export const widgetValue = 1;\n',
+      'packages/widgets/tsconfig.json': tsconfig({
+        liminaOptions: {
+          implicitRefs: [
+            {
+              path: '../theme/tsconfig.json',
+              reason: 'Theme metadata is loaded by generated widgets.',
+            },
+          ],
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts', 'src/**/*.vue'],
+      }),
+    });
+
+    try {
+      let thrown: unknown;
+
+      try {
+        await runBuild({
+          config: {
+            config: {
+              checkers: {
+                typescript: {
+                  include: ['packages/app/tsconfig.json'],
+                  preset: 'tsc',
+                },
+                vue: {
+                  include: [
+                    'packages/theme/tsconfig.json',
+                    'packages/widgets/tsconfig.json',
+                  ],
+                  preset: 'vue-tsc',
+                },
+              },
+            },
+            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          cwd: fixture.rootDir,
+          project: 'packages/app',
+          runner: passingRunner(calls),
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(String(thrown)).toContain(
+        'Unsupported cross-checker declaration provider',
+      );
+      expect(String(thrown)).toContain(
+        '.limina/tsconfig/checkers/vue/projects/packages/widgets/tsconfig.dts.json',
+      );
+      expect(String(thrown)).toContain('extension: .vue');
+      expect(String(thrown)).toContain('packages/widgets/src/Widget.vue');
+      expect(calls).toEqual([]);
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('builds cross-checker providers before consumers', async () => {
+    const calls: TypecheckTarget[] = [];
+    const delayed = delayedRunner({
+      calls,
+      delayMs: (target) => (target.command === 'vue-tsc' ? 30 : 10),
+    });
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+      'packages/theme/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/app/tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['packages/theme/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        project: 'packages/app',
+        runner: delayed.runner,
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['vue-tsc', 'tsc']);
+      expect(delayed.getMaxActive()).toBe(1);
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/vue/projects/packages/theme/tsconfig.dts.json',
+          '--pretty',
+          'false',
+        ],
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('starts all managed targets concurrently in watch mode', async () => {
+    const calls: TypecheckTarget[] = [];
+    const delayed = delayedRunner({
+      calls,
+      delayMs: () => 30,
+    });
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+      'packages/theme/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/app/tsconfig.json'],
+                preset: 'tsc',
+              },
+              vue: {
+                include: ['packages/theme/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        cwd: fixture.rootDir,
+        project: 'packages/app',
+        runner: delayed.runner,
+        watch: true,
+      });
+      const argsByCommand = new Map(
+        calls.map((target) => [target.command, target.args]),
+      );
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command).sort()).toEqual([
+        'tsc',
+        'vue-tsc',
+      ]);
+      expect(delayed.getMaxActive()).toBe(2);
+      expect(argsByCommand.get('tsc')).toEqual([
+        '-b',
+        '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+        '--pretty',
+        'false',
+        '--watch',
+        '--preserveWatchOutput',
+      ]);
+      expect(argsByCommand.get('vue-tsc')).toEqual([
+        '-b',
+        '.limina/tsconfig/checkers/vue/projects/packages/theme/tsconfig.dts.json',
+        '--pretty',
+        'false',
+        '--watch',
+        '--preserveWatchOutput',
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });
 
 describe('runCheckerTypecheck', () => {
@@ -345,7 +1852,7 @@ describe('runCheckerTypecheck', () => {
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command)).toEqual(['svelte-check']);
       expect(calls.map((target) => target.args)).toEqual([
-        ['--tsconfig', 'tsconfig.svelte.build.json'],
+        ['--tsconfig', '.limina/tsconfig/checkers/svelte/tsconfig.build.json'],
       ]);
     } finally {
       await fixture.cleanup();
@@ -364,7 +1871,7 @@ describe('runCheckerTypecheck', () => {
           config: {
             checkers: {
               vue: {
-                entry: 'tsconfig.vue.build.json',
+                include: ['vue/tsconfig.json'],
                 preset: 'vue-tsgo',
               },
             },
@@ -379,10 +1886,10 @@ describe('runCheckerTypecheck', () => {
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command)).toEqual(['vue-tsgo']);
       expect(calls.map((target) => target.args)).toEqual([
-        ['--project', 'tsconfig.vue.build.json'],
+        ['--project', '.limina/tsconfig/checkers/vue/tsconfig.build.json'],
       ]);
       expect(calls.map((target) => target.label)).toEqual([
-        'vue: vue-tsgo --project tsconfig.vue.build.json',
+        'vue: vue-tsgo --project .limina/tsconfig/checkers/vue/tsconfig.build.json',
       ]);
     } finally {
       await fixture.cleanup();
@@ -406,7 +1913,7 @@ describe('runCheckerTypecheck', () => {
           config: {
             checkers: {
               vue: {
-                entry: 'tsconfig.vue.build.json',
+                include: ['vue/tsconfig.json'],
                 preset: 'vue-tsgo',
               },
             },
@@ -479,7 +1986,7 @@ describe('runCheckerTypecheck', () => {
           config: {
             checkers: {
               vue: {
-                entry: 'tsconfig.vue.build.json',
+                include: ['vue/tsconfig.json'],
                 preset: 'vue-tsgo',
               },
             },
@@ -501,8 +2008,11 @@ describe('runCheckerTypecheck', () => {
     }
   });
 
-  it('passes without running targets when no second-class checkers are configured', async () => {
+  it('skips graph preparation and build-only peer checks when no second-class checkers are configured', async () => {
     const calls: TypecheckTarget[] = [];
+    const generatedGraphProvider = vi.fn(async () => {
+      throw new Error('generated graph should not be read');
+    });
     const fixture = await createFixture({
       'tsconfig.build.json': tsconfig({ files: [] }),
       'tsconfig.vue.build.json': tsconfig({ files: [] }),
@@ -514,11 +2024,11 @@ describe('runCheckerTypecheck', () => {
           config: {
             checkers: {
               typescript: {
-                entry: 'tsconfig.build.json',
+                include: ['tsconfig.json'],
                 preset: 'tsc',
               },
               vue: {
-                entry: 'tsconfig.vue.build.json',
+                include: ['vue/tsconfig.json'],
                 preset: 'vue-tsc',
               },
             },
@@ -526,12 +2036,16 @@ describe('runCheckerTypecheck', () => {
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
         },
+        checkerPackageResolver: (): string | undefined => undefined,
         cwd: fixture.rootDir,
+        generatedGraphProvider,
         runner: passingRunner(calls),
       });
 
       expect(result.passed).toBe(true);
       expect(calls).toHaveLength(0);
+      expect(generatedGraphProvider).not.toHaveBeenCalled();
+      expect(existsSync(path.join(fixture.rootDir, '.limina'))).toBe(false);
     } finally {
       await fixture.cleanup();
     }

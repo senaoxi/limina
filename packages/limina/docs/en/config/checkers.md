@@ -1,138 +1,168 @@
 # Checker Entries
 
-Checker entries are shared by graph, source, proof, and checker commands.
+Checker entries tell Limina which source `tsconfig.json` files each checker should handle. When `config.checkers` is omitted, Limina uses auto mode: it discovers ordinary `tsconfig.json` files, chooses `tsc` or `vue-tsc` from the files each one contains, and sends TypeScript projects that depend on Vue projects to `vue-tsc` as well, so initial setup does not need hand-written routing.
+
+Use an explicit checker object when you need `tsgo`, typecheck-only checkers, smaller Vue coverage, or migration-specific include / exclude rules. Limina starts from those entries, follows their solution references, and writes the declaration graph, checker build entries, declaration output directories, tsbuildinfo paths, and manifest under `.limina/`.
 
 ```js
 import { defineConfig } from 'limina';
 
 export default defineConfig({
   config: {
+    // Optional. Omit this field for default auto discovery.
     checkers: {
       typescript: {
         preset: 'tsc',
-        entry: 'tsconfig.build.json',
+        include: ['tsconfig.json', 'packages/**/tsconfig.json'],
+        exclude: ['**/docs/**'],
       },
       vue: {
         preset: 'vue-tsc',
-        entry: 'tsconfig.vue.build.json',
-      },
-      svelte: {
-        preset: 'svelte-check',
-        entry: 'tsconfig.svelte.build.json',
+        include: ['packages/*/docs/tsconfig.json', 'packages/app/tsconfig.json'],
       },
     },
   },
 });
 ```
+
+## auto
+
+- **Type:** `{ mode: 'auto'; exclude?: string[] }`
+- **Default:** used when `config.checkers` is omitted
+
+Auto mode treats every ordinary `tsconfig.json` as a source entry. An entry with only TypeScript, JavaScript, and JSON files goes to `tsc`. An entry containing `.vue` files goes to `vue-tsc`. Solution-style `tsconfig.json` files are still accepted for compatibility; Limina classifies them from the referenced source configs.
+
+If a TypeScript entry imports a Vue entry, auto mode sends that TypeScript entry to `vue-tsc` too. This promotion continues through dependency chains, so the generated build graph avoids an incompatible `tsc` project depending on a `vue-tsc` project.
+
+Use the object form when automatic discovery should skip specific tsconfig scopes:
+
+```js
+export default defineConfig({
+  config: {
+    checkers: {
+      mode: 'auto',
+      exclude: ['packages/playground/tsconfig.json', '**/tsconfig.test.json'],
+    },
+  },
+});
+```
+
+`exclude` matches tsconfig paths relative to the workspace root. It is separate from `config.source.exclude`, which controls proof coverage over source files. Without `exclude`, auto mode scans every ordinary `tsconfig.json` it can discover and every ordinary source config reached through solution references.
+
+Auto mode only chooses between `tsc` and `vue-tsc`. Switch to an explicit checker object when you need another preset or a tighter split.
+
+## Vue Import Parsing
+
+- **Type:** `config.imports.vue?: 'heuristic' | 'compiler-sfc'`
+- **Default:** `'heuristic'`
+
+Limina extracts imports from Vue SFC `<script>` and `<script setup>` blocks when it builds the source graph. The default heuristic parser needs no extra package and is enough for ordinary inline script imports.
+
+Use `config.imports.vue: 'compiler-sfc'` when you want Limina to parse SFC blocks through Vue's compiler package:
+
+```js
+export default defineConfig({
+  config: {
+    imports: {
+      vue: 'compiler-sfc',
+    },
+  },
+});
+```
+
+When this mode is enabled, install `@vue/compiler-sfc` in the workspace running Limina. Missing `@vue/compiler-sfc` fails checker preflight before any checker process starts.
 
 ## \<name\>
 
 - **Type:** `string` key of `config.checkers` (a `Record<string, CheckerConfig>`)
 
-The `checkers` key is the name of that checker entry, such as `typescript`, `vue`, or `svelte`. It appears in reports and debugging output so you can tell which source family a problem came from.
-
-One workspace can have several checker entries. A plain TypeScript graph can use `typescript`, a Vue app can add `vue`, and a Svelte package can add `svelte`.
+The `checkers` key is the checker namespace, such as `typescript`, `vue`, or `svelte`. Generated files are scoped by this name under `.limina/tsconfig/checkers/<name>/`, so diagnostics can always say which checker produced or reached a config.
 
 ## preset
 
 - **Type:** `'tsc' | 'tsgo' | 'vue-tsc' | 'vue-tsgo' | 'svelte-check'`
 
-`preset` chooses the checker runner Limina invokes:
+`preset` chooses the parser and checker runner:
 
 - `tsc`: TypeScript and JSON;
 - `tsgo`: TypeScript and JSON through `@typescript/native-preview`;
-- `vue-tsc`: `.vue`;
-- `vue-tsgo`: `.vue` through `vue-tsgo` and `@typescript/native-preview`;
-- `svelte-check`: `.svelte`.
+- `vue-tsc`: TypeScript, JSON, and `.vue`;
+- `vue-tsgo`: Vue through `vue-tsgo` and `@typescript/native-preview`;
+- `svelte-check`: Svelte source coverage and typecheck-only execution.
 
-Only built-in presets are accepted. `tsc`, `tsgo`, and `vue-tsc` are first-class because their execution supports build mode. `vue-tsgo` and `svelte-check` are second-class because their execution is direct typecheck; `vue-tsgo` is still source-graph-aware, while `svelte-check` is not.
+Only built-in presets are accepted. Custom presets and custom `extensions` are rejected.
 
-`tsgo` uses Microsoft's preview package `@typescript/native-preview` and runs `tsgo -b <entry> --pretty false`. Use it when you want Limina's build checker to exercise the native TypeScript preview while keeping the same source graph model as `tsc`.
+## include
 
-```js
-export default defineConfig({
-  config: {
-    checkers: {
-      typescript: {
-        preset: 'tsgo',
-        entry: 'tsconfig.build.json',
-      },
-    },
-  },
-});
-```
+- **Type:** `string[]`
+- **Required:** yes
 
-::: warning
-`vue-tsgo` uses KazariEX's `vue-tsgo` package with `@typescript/native-preview` and runs `vue-tsgo --project <entry>` through `limina checker typecheck`. It is intentionally second-class for execution in Limina: current `vue-tsgo --build` expands source imports into a transient virtual workspace, does not preserve TypeScript project-reference boundaries, and does not provide incremental build semantics. Limina still uses the configured `vue-tsgo` tsconfig entry for its own graph and proof coverage. Prefer `vue-tsc` for first-class Vue build checks.
-:::
+`include` is a non-empty list of workspace-root-relative selectors for source entry files named exactly `tsconfig.json`. It must not select `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, generated `.limina` files, base configs, check configs, or other reserved TypeScript config files.
 
-```js
-export default defineConfig({
-  config: {
-    checkers: {
-      vue: {
-        preset: 'vue-tsgo',
-        entry: 'tsconfig.vue.build.json',
-      },
-    },
-  },
-});
-```
+During `graph prepare`, Limina expands `include` minus `exclude` to get the checker entry set. Each entry must belong to only one checker. From there, Limina follows TypeScript `references` on solution-style `tsconfig.json` files and brings the referenced source configs into governance.
 
-## entry
+Non-entry configs such as `tsconfig.lib.json`, `tsconfig.test.json`, or `tsconfig.tools.json` are therefore useful, but they are not selected directly by `checker.include`. They enter Limina's check scope only when a selected `tsconfig.json` entry references them. A standalone base, build-only, or helper config that is not reachable from an entry is not treated as a source check target.
 
-- **Type:** `string`
+For every source config in scope, Limina writes declaration build configs under `.limina/tsconfig/checkers/<checker>/projects/...`. Those configs extend the source config, force composite declaration emit options, write declaration output under `.limina/dts/checkers/<checker>/...`, and record the source-to-generated mapping. Source `tsconfig.json` solution aggregators are generated under `.limina/tsconfig/checkers/<checker>/solutions/...`.
 
-`entry` is the checker entry config, usually a build graph aggregator such as `tsconfig.build.json` or `tsconfig.vue.build.json`. Graph, proof, source, and checker commands all derive their scope from these entries.
+## Entry Uniqueness and Capability Coverage
 
-If the graph under `entry` includes `packages/app/tsconfig.lib.dts.json` and app source imports `@acme/core`, Limina follows this entry and checks whether app references core correctly.
+After `include` and `exclude` are applied, checker entry sets must not overlap. The same `tsconfig.json` entry cannot be listed under both `typescript` and `vue`, even if the presets are different. Choose one checker as the entry owner.
 
-## extensions
+This does not mean a referenced source config can only have one capability. Once entries expand through `references`, different presets may cover the same source config. This is how a repository can add Vue capability to a source config that also participates in a TypeScript graph. The duplicate case Limina rejects is narrower: two checkers with the same preset must not govern the same expanded source config.
 
-`extensions` is not a user option. Limina fixes extensions per built-in preset because they are part of the proof model. Configuring `extensions` is rejected.
+Limina also checks file capability after expansion. If a source config includes `.vue` files but is only covered by `tsc` or `tsgo`, graph preparation fails and points to a checker preset that can handle that extension. Add a matching checker entry that reaches the config, or move those files to a config owned by the right checker.
 
-::: details Extensions fixed per built-in preset
+## Cross-Checker Reachability
 
-- `tsc`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`;
-- `tsgo`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`;
-- `vue-tsc`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`, plus Vue extensions reported by `@vue/language-core`;
-- `vue-tsgo`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`, plus Vue extensions reported by `@vue/language-core`;
-- `svelte-check`: `.ts`, `.tsx`, `.cts`, `.mts`, `.d.ts`, `.d.cts`, `.d.mts`, `.json`, `.svelte`.
+Source imports may cross checker boundaries. For example, a TypeScript-only entry may import a project handled through a Vue checker entry. Limina records that dependency so build-capable checkers can build the provider side before the consumer side.
 
-:::
-
-After configuring a `vue` checker, a `.vue` source file is handled by that checker:
-
-```vue
-<!-- packages/app/src/App.vue -->
-<script setup lang="ts">
-const count: number = '1';
-</script>
-```
-
-`limina checker build` uses `vue-tsc -b` for first-class Vue entries instead of relying only on plain `tsc`/`tsgo`. `vue-tsgo` entries are second-class for execution and run later through `limina checker typecheck`, while still contributing their tsconfig route to Limina coverage proof. Without a checker entry for Vue source, `proof check` is also more likely to reveal that those files are not covered by any checker.
-
-In a fuller example, the directory usually looks like this:
+When build-capable presets with different cache behavior can reach the same generated declaration config, Limina prints a warning after the build:
 
 ```text
-packages/app/
-  tsconfig.vue.build.json
-  tsconfig.vue.dts.json
-  tsconfig.vue.json
-  src/App.vue
+Potentially incompatible build checker combination:
+  generated config: ...
+  source config: packages/core/tsconfig.lib.json
+  reachable from:
+    - config.checkers.typescript (tsgo)
+      entry tsconfigs:
+        - packages/app/tsconfig.json
+    - config.checkers.vue (vue-tsc)
+      entry tsconfigs:
+        - packages/theme/tsconfig.json
 ```
 
-The module is a Vue single-file component:
+Read `reachable from` as the migration map. It tells you which checker and which entry `tsconfig.json` can reach the same generated config. To remove the warning, make that reachable area use cache-compatible build presets. Same-preset combinations are fine, and `tsc` with `vue-tsc` is treated as compatible. Combinations such as `tsgo` with `tsc` or `tsgo` with `vue-tsc` are warned because they do not safely share the same underlying build cache.
 
-```vue
-<!-- packages/app/src/App.vue -->
-<script setup lang="ts">
-const count: number = '1';
-</script>
+## exclude
+
+- **Type:** `string[]`
+- **Default:** `[]`
+
+`exclude` removes entry selectors from `include`. Use it to keep entry ownership clear:
+
+```js
+exclude: ['**/docs/**', 'packages/legacy/tsconfig.json'];
 ```
 
-When `pnpm exec limina checker build` runs, Limina starts from `config.checkers.vue.entry` and runs `vue-tsc -b` for a first-class Vue checker. When the entry uses `vue-tsgo`, Limina keeps the entry in graph/proof coverage but runs the checker itself through `pnpm exec limina checker typecheck` as `vue-tsgo --project <entry>`.
+## Removed Fields
 
-The result is that this type error is reported by the configured Vue checker. The user can tell that `.vue` files are not accidentally covered by plain `tsc`; they enter Limina through a dedicated checker entry.
+`entry`, `routes`, and user-configured `extensions` are rejected. Migrate old entries such as `entry: 'tsconfig.build.json'` to source selectors:
 
-For `vue-tsgo` and `svelte-check`, Limina runs direct second-class checker commands through `limina checker typecheck`. `vue-tsgo` remains graph-aware for Limina's own tsconfig coverage proof, but it is not a first-class build runner.
+```js
+// before
+{ preset: 'tsc', entry: 'tsconfig.build.json' }
+
+// after
+{
+  preset: 'tsc',
+  include: ['packages/**/tsconfig.json'],
+  exclude: ['**/docs/**'],
+}
+```
+
+## Generated Graph
+
+Run `limina graph prepare` to materialize `.limina/manifest.json` and generated checker configs. Graph-consuming commands also prepare the graph automatically before they run.
+
+Source tsconfig paths are the canonical paths in user config and diagnostics. Generated `.limina/tsconfig/checkers/.../*.dts.json` paths are internal compatibility inputs.

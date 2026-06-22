@@ -1,4 +1,5 @@
 import licensePlugin from '@docs-islands/plugin-license';
+import { rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import { defineConfig, type RolldownOptions } from 'rolldown';
@@ -7,6 +8,7 @@ import pkg from './package.json' with { type: 'json' };
 import packagePlugin from './packagePlugin';
 
 const packageDir = fileURLToPath(new URL('.', import.meta.url));
+let hasCleanedDist = false;
 const packageExternalDeps = [
   ...Object.keys(pkg.dependencies || {}),
   ...Object.keys(pkg.peerDependencies || {}),
@@ -14,17 +16,33 @@ const packageExternalDeps = [
   ...Object.keys(pkg.optionalDependencies ?? {}),
 ];
 
+const cleanDistPlugin = (): NonNullable<RolldownOptions['plugins']> => ({
+  name: 'rolldown-plugin-clean-dist',
+  async buildStart() {
+    if (hasCleanedDist) {
+      return;
+    }
+
+    hasCleanedDist = true;
+    await rm(path.resolve(packageDir, 'dist'), {
+      force: true,
+      recursive: true,
+    });
+  },
+});
+
 const moduleConfig: RolldownOptions = defineConfig({
   input: {
     cli: 'src/cli.ts',
+    'flow-renderer-process': 'src/flow/renderer-process.ts',
     index: 'src/index.ts',
-    config: 'src/config.ts',
     'bin/limina': 'bin/limina.js',
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',
   external: packageExternalDeps,
   plugins: [
+    cleanDistPlugin(),
     packagePlugin(),
     licensePlugin(
       path.resolve(packageDir, 'LICENSE.md'),
@@ -44,7 +62,6 @@ const moduleConfig: RolldownOptions = defineConfig({
 const dtsConfig: RolldownOptions = defineConfig({
   input: {
     index: 'src/index.ts',
-    config: 'src/config.ts',
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',

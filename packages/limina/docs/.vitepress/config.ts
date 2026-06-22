@@ -8,7 +8,8 @@ const base = '/docs-islands/limina/';
 export default defineConfig({
   base,
   title: 'Limina',
-  description: 'Architecture governance CLI for TypeScript monorepos',
+  description:
+    'Project-reference graph compiler and architecture governance CLI for TypeScript monorepos',
   cleanUrls: true,
   lastUpdated: true,
   head: [

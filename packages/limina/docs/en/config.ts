@@ -70,8 +70,16 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/architecture-conformance',
       },
       {
-        text: 'Module Resolution',
-        link: '/module-resolution',
+        text: 'Monorepo Constraints',
+        link: '/monorepo-constraints',
+      },
+      {
+        text: 'From Import to References',
+        link: '/import-to-references',
+      },
+      {
+        text: 'From Resolution to Architecture Graph',
+        link: '/resolution-to-architecture-graph',
       },
     ],
   },
@@ -142,7 +150,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
   lang: 'en-US',
   title: 'Limina',
   description:
-    'Keep TypeScript monorepos consistent from source graph to published packages.',
+    'Project-reference graph compiler and architecture governance CLI for TypeScript monorepos.',
   themeConfig: {
     nav: [
       {

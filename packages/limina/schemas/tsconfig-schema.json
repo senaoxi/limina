@@ -28,6 +28,25 @@
       "description": "Limina-specific options for this TypeScript project.",
       "additionalProperties": true,
       "properties": {
+        "implicitRefs": {
+          "type": "array",
+          "description": "Additional source tsconfig references that Limina should map into the generated declaration graph when static import analysis cannot prove an edge.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["path", "reason"],
+            "properties": {
+              "path": {
+                "$ref": "#/definitions/nonEmptyString",
+                "description": "Path to another ordinary source tsconfig, relative to the tsconfig that declares this implicit reference."
+              },
+              "reason": {
+                "$ref": "#/definitions/nonEmptyString",
+                "description": "Human-readable reason for the implicit reference."
+              }
+            }
+          }
+        },
         "graphRules": {
           "type": "array",
           "description": "Graph rule labels from limina.config.mjs#graph.rules that apply to this declaration leaf.",
@@ -35,6 +54,18 @@
           "items": {
             "$ref": "#/definitions/nonEmptyString"
           }
+        },
+        "generated": {
+          "type": "boolean",
+          "description": "Internal Limina marker for generated tsconfig files."
+        },
+        "checker": {
+          "$ref": "#/definitions/nonEmptyString",
+          "description": "Internal Limina checker name for generated tsconfig files."
+        },
+        "sourceConfig": {
+          "$ref": "#/definitions/nonEmptyString",
+          "description": "Internal Limina source config pointer for generated declaration configs."
         }
       }
     }

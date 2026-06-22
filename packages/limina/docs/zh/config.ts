@@ -70,8 +70,16 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/zh/architecture-conformance',
       },
       {
-        text: '模块解析',
-        link: '/zh/module-resolution',
+        text: 'Monorepo 约束',
+        link: '/zh/monorepo-constraints',
+      },
+      {
+        text: '从 import 到 references',
+        link: '/zh/import-to-references',
+      },
+      {
+        text: '从解析到架构图',
+        link: '/zh/resolution-to-architecture-graph',
       },
     ],
   },
@@ -143,7 +151,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
   lang: 'zh-CN',
   link: '/zh/',
   title: 'Limina',
-  description: '让 TypeScript 单体仓库从源码依赖到发布产物都保持一致。',
+  description: '面向 TypeScript monorepo 的项目引用图编译器与架构治理 CLI。',
   themeConfig: {
     nav: [
       {

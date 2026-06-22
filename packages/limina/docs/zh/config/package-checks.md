@@ -13,7 +13,6 @@ export default defineConfig({
         outDir: 'packages/core/dist',
         checks: ['publint', 'attw', 'boundary'],
         publint: {
-          strict: true,
           level: 'warning',
         },
         attw: {
@@ -53,7 +52,7 @@ export default defineConfig({
 `outDir` 指向消费者实际安装到的构建后包目录，通常是 `packages/*/dist`。这个目录里应该有发布用的 `package.json`、JavaScript 和声明文件。README/license 与 tarball 卫生由 `limina release check` 校验。
 
 ::: info
-开启顶层 `strict: true` 后，每个 `outDir/package.json` 都必须存在，并且看起来像一个完整的 npm 包清单。Limina 还会拒绝 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中残留的 `workspace:`、`link:`、`file:`、`catalog:` 说明符，因为构建产物应该已经是消费者和 npm 实际看到的发布就绪清单。
+每个 `outDir/package.json` 都必须存在，并且看起来像一个完整的 npm 包清单。Limina 会拒绝 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中残留的 `workspace:`、`link:`、`file:`、`catalog:` 说明符，因为构建产物应该已经是消费者和 npm 实际看到的发布就绪清单。
 :::
 
 ## checks
@@ -85,7 +84,7 @@ export default defineConfig({
 - **类型：** `boolean`
 - **默认值：** `true`
 
-`publint.strict` 控制 publint 是否使用严格模式，默认开启。
+`publint.strict` 控制 publint 的 `strict` 选项，默认开启。
 
 ### publint.level
 

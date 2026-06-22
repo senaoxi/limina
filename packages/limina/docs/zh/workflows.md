@@ -14,11 +14,10 @@ pnpm exec limina graph check
 
 修改 TypeScript 配置或包边界时，可以先跑这两个。
 
-产物消费关系变化时，同步 Nx 目标图。Limina 会从 `link:` 制品依赖，以及实际导入到 `dist` 的 `workspace:*` 导出推导这些边：
+产物消费关系变化时，检查依赖图。Limina 会在被检查的 tsconfig 域内，从实际导入和解析结果里推导 artifact 边：
 
 ```sh
-pnpm exec limina nx sync build docs:build
-pnpm exec limina nx check build docs:build
+pnpm exec limina graph export --view artifact --output .limina/dependency-graph.json
 ```
 
 ### Pull Request
@@ -27,7 +26,7 @@ pnpm exec limina nx check build docs:build
 pnpm exec limina check
 ```
 
-它会一起证明图、源码归属、Nx 项目同步、覆盖情况、一等公民检查器构建和二等公民检查器执行。
+它会一起检查图关系、源码归属、覆盖情况、构建类检查器和只做类型检查的执行器。
 
 ### 发布前
 
@@ -70,9 +69,9 @@ jobs:
 
 ::: tip
 
-- 保持 `tsconfig.build.json` 为只包含 `files: []` 和 `references` 的纯聚合器。
-- 声明叶子应靠近本地配套配置，并只额外添加声明输出设置。
-- 工作区包导出要保持意图明确：源码入口被消费时需要引用，产物入口被消费时需要构建边。
+- 保持源码 `tsconfig.json` 聚合器只包含 `files: []` 和 `references`。
+- 保持源码 tsconfig 文件集合意图清晰，并让 Limina 管理 `.limina/` 下的声明构建配置。
+- 工作区包导出要保持意图明确：源码入口被消费时，需要由真实导入或 `implicitRefs` 补充出对应引用；产物入口被消费时，会作为限定架构事实出现在 `limina graph export --view artifact` 中。
 - 源码检查、包检查和发布检查都要跑，它们保护的是不同层。
 - 允许清单保持少而清楚，并解释每个例外为什么安全。
 
@@ -82,7 +81,7 @@ jobs:
 
 ### `limina checker build` 和 `checker typecheck` 如何选择目标？
 
-`checker build` 会从已配置入口运行一等公民构建执行预设（`tsc -b`、`tsgo -b` 和 `vue-tsc -b`）。`tsgo` 由 Microsoft 的 `@typescript/native-preview` 包提供。`checker typecheck` 会直接运行二等公民类型检查执行预设，目前是 `vue-tsgo --project <entry>` 和 `svelte-check --tsconfig <entry>`。Limina 有意不让 `vue-tsgo` 进入 `checker build`：当前 `vue-tsgo --build` 不能保持 TypeScript 项目引用边界，也不具备增量构建语义；但它配置的 tsconfig 入口仍会参与 Limina 图检查和覆盖证明。一等公民 Vue 构建检查优先使用 `vue-tsc`。
+`checker build` 会运行支持构建模式的预设，也就是 `tsc -b`、`tsgo -b` 和 `vue-tsc -b`。`tsgo` 由 Microsoft 的 `@typescript/native-preview` 包提供。`checker typecheck` 会运行只做类型检查的预设，目前是 `vue-tsgo --project <entry>` 和 `svelte-check --tsconfig <entry>`。Limina 有意不让 `vue-tsgo` 进入 `checker build`：当前 `vue-tsgo --build` 不能保持 TypeScript 项目引用边界，也不具备增量构建语义；但它配置的 tsconfig 入口仍会参与 Limina 图检查和覆盖证明。Vue 的构建类检查优先使用 `vue-tsc`。
 
 ### 为什么包检查需要先构建？
 
@@ -92,11 +91,11 @@ jobs:
 
 ### 工作区导出可以指向 dist 吗？
 
-可以。工作区包导出可以指向源码入口，也可以指向构建产物。Limina 会先要求 TypeScript 和 Oxc 能解析每个公开导出。只有实际导入的入口解析到声明项目管辖的文件时，图引用才要求项目引用；`dist/*.d.ts` 这类构建声明不要求项目引用。当某个 `workspace:*` 导入实际解析到 `dist` 时，`limina nx check` 会要求消费方包通过 `dependsOn` 指向生产方构建目标。
+可以。工作区包导出可以指向源码入口，也可以指向构建产物。Limina 会先要求当前解析 profile 能解析每个公开导出。只有实际导入的入口解析到声明项目管辖的文件时，生成图才要求对应引用；真实存在但静态导入无法证明的动态或虚拟边，可以用 `liminaOptions.implicitRefs` 补充。`dist/*.d.ts` 这类构建声明不要求项目引用。当某个导入实际解析到 `dist` 时，Limina 会在导入方 tsconfig 的条件域内报告 artifact 边。这条边可用于审查和诊断，但不是任务编排保证。
 
 ### Vue 或 Svelte 文件应该放进 TypeScript 图吗？
 
-框架文件应该由对应框架检查器入口覆盖。Limina 可以通过 `vue-tsc`、`vue-tsgo` 或 `svelte-check` 证明覆盖，不需要把这些文件假装成普通 `tsc -b` 声明叶子。
+框架文件应该由对应框架检查器入口覆盖。Limina 可以通过 `vue-tsc`、`vue-tsgo` 或 `svelte-check` 证明覆盖，不需要把这些文件假装成普通 `tsc -b` 声明构建项目。
 
 ### `--mode` 适合哪些配置？
 

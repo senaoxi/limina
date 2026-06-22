@@ -42,7 +42,6 @@ export default defineConfig({
 - `checker:build`
 - `checker:typecheck`
 - `graph:check`
-- `nx:check`
 - `package:check`
 - `proof:check`
 - `release:check`
@@ -70,7 +69,7 @@ export default defineConfig({
 
 ## 对象任务步骤
 
-- **类型：** `{ type: 'task'; name: BuiltinTaskName }`，其中 `BuiltinTaskName` 是 `'graph:check' | 'source:check' | 'proof:check' | 'checker:build' | 'checker:typecheck' | 'package:check' | 'release:check' | 'nx:check'`
+- **类型：** `{ type: 'task'; name: BuiltinTaskName }`，其中 `BuiltinTaskName` 是 `'graph:check' | 'source:check' | 'proof:check' | 'checker:build' | 'checker:typecheck' | 'package:check' | 'release:check'`
 
 如果你希望内置任务也保持显式形式，可以写：
 

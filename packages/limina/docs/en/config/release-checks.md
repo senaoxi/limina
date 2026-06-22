@@ -8,8 +8,8 @@ For workspace publish dependencies, Limina compares the local packed package out
 Release checks reject private outputs (`private: true`), missing README/license files, source map files (`.map`), JavaScript `sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
 :::
 
-::: warning Strict mode
-With top-level `strict: true`, release checks additionally reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from all dependency sections in both output and packed manifests.
+::: warning Local dependency leaks
+Release checks reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from all dependency sections in both output and packed manifests.
 :::
 
 ::: tip Selecting entries
