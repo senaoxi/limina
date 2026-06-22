@@ -154,3 +154,5 @@ process.on('message', (rawMessage: FlowRendererProcessMessage) => {
     });
   }
 });
+
+send({ type: 'ready' });

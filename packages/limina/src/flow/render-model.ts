@@ -71,6 +71,9 @@ export type FlowRendererProcessMessage =
 
 export type FlowRendererParentMessage =
   | {
+      type: 'ready';
+    }
+  | {
       type: 'closed';
     }
   | {
