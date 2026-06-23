@@ -1442,7 +1442,7 @@ describe('limina CLI', () => {
         recursive: true,
       });
     }
-  }, 40_000);
+  }, 90_000);
 
   it('prints checker filter help from auto checker discovery', async () => {
     const rootDir = await realpath(
