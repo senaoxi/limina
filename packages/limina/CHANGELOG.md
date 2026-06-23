@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-23
+
+### Bug Fixes
+
+- fix(limina): stabilize Windows unit tests ([f078b418](https://github.com/senaoxi/docs-islands/commit/f078b418))
+- fix(release): stabilize package publish validation ([d23b3702](https://github.com/senaoxi/docs-islands/commit/d23b3702))
+
+### Documentation
+
+- docs(limina): update user documentation and skills ([63abd91e](https://github.com/senaoxi/docs-islands/commit/63abd91e))
+
 ## [0.1.0] - 2026-06-22
 
 ### Highlights
