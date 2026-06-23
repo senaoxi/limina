@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import nodePath from 'node:path';
 import path from 'pathe';
 
 import {
@@ -181,19 +182,23 @@ function findNearestPackageDir(startDir: string): string | null {
   }
 }
 
-function createVueTsgoCachePath(configPath: string): string | null {
+function createVueTsgoCachePaths(configPath: string): string[] {
   const packageDir = findNearestPackageDir(path.dirname(configPath));
 
   if (!packageDir) {
-    return null;
+    return [];
   }
 
-  const configHash = createHash('sha256')
-    .update(configPath)
-    .digest('hex')
-    .slice(0, 8);
+  return uniqueValues([configPath, nodePath.resolve(configPath)]).map(
+    (candidate) => {
+      const configHash = createHash('sha256')
+        .update(candidate)
+        .digest('hex')
+        .slice(0, 8);
 
-  return path.join(packageDir, 'node_modules/.cache/vue-tsgo', configHash);
+      return path.join(packageDir, 'node_modules/.cache/vue-tsgo', configHash);
+    },
+  );
 }
 
 function collectVueTsgoConfigPaths(target: TypecheckTarget): string[] {
@@ -236,9 +241,9 @@ export async function prepareVueTsgoCache(
     return;
   }
 
-  const cachePaths = collectVueTsgoConfigPaths(target)
-    .map((configPath) => createVueTsgoCachePath(configPath))
-    .filter((cachePath): cachePath is string => Boolean(cachePath));
+  const cachePaths = collectVueTsgoConfigPaths(target).flatMap((configPath) =>
+    createVueTsgoCachePaths(configPath),
+  );
 
   await Promise.all(
     uniqueValues(cachePaths).map((cachePath) =>

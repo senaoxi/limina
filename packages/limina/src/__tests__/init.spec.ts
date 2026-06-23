@@ -9,10 +9,12 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { normalize as normalizePath } from 'pathe';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInit } from '../commands/init';
 import { LiminaFlowReporter } from '../flow';
 import { InitLogger } from '../logger';
+import { toPortablePath, toPortablePaths } from './helpers/path';
 
 const confirmMock = vi.hoisted(() => vi.fn());
 const execFileMock = vi.hoisted(() => vi.fn());
@@ -295,7 +297,7 @@ describe('runInit', () => {
           yes: true,
         }),
       ).resolves.toMatchObject({
-        rootDir: fixture.rootDir,
+        rootDir: normalizePath(fixture.rootDir),
       });
       expect(
         await fileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),
@@ -344,11 +346,11 @@ describe('runInit', () => {
         yes: true,
       });
 
-      expect(result.writtenFiles).toEqual(
+      expect(toPortablePaths(result.writtenFiles)).toEqual(
         expect.arrayContaining([
-          path.join(fixture.rootDir, 'limina.config.mjs'),
-          path.join(fixture.rootDir, '.gitignore'),
-          path.join(fixture.rootDir, 'package.json'),
+          toPortablePath(path.join(fixture.rootDir, 'limina.config.mjs')),
+          toPortablePath(path.join(fixture.rootDir, '.gitignore')),
+          toPortablePath(path.join(fixture.rootDir, 'package.json')),
         ]),
       );
     } finally {
@@ -560,8 +562,8 @@ describe('runInit', () => {
       }>(path.join(fixture.rootDir, 'package.json'));
 
       expect(result.installRequired).toBe(false);
-      expect(result.writtenFiles).not.toContain(
-        path.join(fixture.rootDir, 'package.json'),
+      expect(toPortablePaths(result.writtenFiles)).not.toContain(
+        toPortablePath(path.join(fixture.rootDir, 'package.json')),
       );
       expect(rootManifest.dependencies?.limina).toBe('workspace:*');
       expect(rootManifest.peerDependencies?.typescript).toBe('^5.8.0');
@@ -818,8 +820,8 @@ export default defineConfig({
         yes: true,
       });
 
-      expect(result.removedPaths).toEqual([
-        path.join(fixture.rootDir, '.limina'),
+      expect(toPortablePaths(result.removedPaths)).toEqual([
+        toPortablePath(path.join(fixture.rootDir, '.limina')),
       ]);
       await expect(
         fileExists(path.join(fixture.rootDir, '.limina/manifest.json')),
@@ -874,7 +876,9 @@ export default defineConfig({
         '--skill',
         'limina',
       ]);
-      expect(npxCall?.[2].cwd).toBe(fixture.rootDir);
+      expect(toPortablePath(npxCall?.[2].cwd ?? '')).toBe(
+        toPortablePath(fixture.rootDir),
+      );
     } finally {
       restoreTty();
       await fixture.cleanup();

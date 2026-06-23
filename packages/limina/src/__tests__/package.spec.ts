@@ -87,13 +87,16 @@ vi.mock('@publint/pack', async () => {
           destination: string;
         },
       ) => {
-        packageCheckMocks.packCalls.push(outDir);
+        const normalizedOutDir = pathModule.normalize(outDir);
+
+        packageCheckMocks.packCalls.push(normalizedOutDir);
         const tarballPath = pathModule.join(options.destination, 'package.tgz');
         const packageJson = JSON.parse(
           await fs.readFile(pathModule.join(outDir, 'package.json'), 'utf8'),
         ) as Record<string, unknown>;
         const packedManifest =
-          packageCheckMocks.packedManifestOverrides.get(outDir) ?? packageJson;
+          packageCheckMocks.packedManifestOverrides.get(normalizedOutDir) ??
+          packageJson;
         const tarballData = `mock tarball ${packageCheckMocks.packCalls.length}`;
         const packedFiles = await collectPackedFiles(outDir);
         const packageJsonIndex = packedFiles.findIndex(
