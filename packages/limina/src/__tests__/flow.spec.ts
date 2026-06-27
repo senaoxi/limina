@@ -6,6 +6,16 @@ import path from 'pathe';
 import { describe, expect, it, vi } from 'vitest';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 
+const ANSI_ESCAPE = String.fromCodePoint(0x1b);
+const ANSI_PATTERN = new RegExp(
+  String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
+  'gu',
+);
+const CURSOR_UP_PATTERN = new RegExp(String.raw`${ANSI_ESCAPE}\[(\d+)A`, 'gu');
+const CLEAR_FRAME_PATTERN = new RegExp(
+  String.raw`\r?${ANSI_ESCAPE}\[\d+A${ANSI_ESCAPE}\[J`,
+  'u',
+);
 const requireFromTest = createRequire(import.meta.url);
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
 const red = (message: string): string => `\u001B[31m${message}\u001B[0m`;
@@ -101,6 +111,23 @@ async function runFlowFixture(
   }
 }
 
+function getMaxCursorUpLineCount(output: string): number {
+  return Math.max(
+    0,
+    ...Array.from(output.matchAll(CURSOR_UP_PATTERN), (match) =>
+      Number(match[1]),
+    ),
+  );
+}
+
+function stripAnsi(output: string): string {
+  return output.replaceAll(ANSI_PATTERN, '');
+}
+
+function getLastRenderedFrame(output: string): string {
+  return stripAnsi(output.split(CLEAR_FRAME_PATTERN).at(-1) ?? '');
+}
+
 describe('LiminaFlowReporter', () => {
   it('writes stable plain text outside TTY mode', () => {
     const { chunks, flow } = createBufferedFlow();
@@ -122,6 +149,69 @@ describe('LiminaFlowReporter', () => {
       '  [fail] proof check: first line second line\n',
       '  [skip] checker:typecheck\n',
       '[done] limina check failed\n',
+    ]);
+  });
+
+  it('writes stable plain text for dumb TTY terminals', () => {
+    const chunks: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      env: {
+        TERM: 'dumb',
+      },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      stdout: {
+        isTTY: true,
+      },
+    });
+
+    flow.intro('limina check');
+    const task = flow.start('default check');
+    task.pass('default check', { elapsedTimeMs: 1000 });
+    flow.outro('limina check passed');
+
+    expect(flow.interactive).toBe(false);
+    expect(flow.rendererBackend).toBe('inline');
+    expect(chunks).toEqual([
+      '[start] limina check\n',
+      '[start] default check\n',
+      '[pass] default check (1.00s)\n',
+      '[done] limina check passed\n',
+    ]);
+  });
+
+  it('writes stable plain text for Codex captured terminals', () => {
+    const chunks: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      env: {
+        CODEX_CI: '1',
+        TERM: 'xterm-256color',
+      },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      stdout: {
+        isTTY: true,
+      },
+    });
+
+    flow.intro('limina check');
+    const task = flow.start('default check');
+    task.pass('default check', { elapsedTimeMs: 1000 });
+    flow.outro('limina check passed');
+
+    expect(flow.interactive).toBe(false);
+    expect(flow.rendererBackend).toBe('inline');
+    expect(chunks).toEqual([
+      '[start] limina check\n',
+      '[start] default check\n',
+      '[pass] default check (1.00s)\n',
+      '[done] limina check passed\n',
     ]);
   });
 
@@ -177,6 +267,416 @@ describe('LiminaFlowReporter', () => {
     expect(stdout.lastIndexOf('summary after close')).toBeGreaterThan(
       stdout.lastIndexOf('limina check passed'),
     );
+  });
+
+  it('keeps process-rendered live frames within the terminal height', async () => {
+    const flowModuleUrl = new URL('../flow.ts', import.meta.url).href;
+    const { stdout } = await runFlowFixture(
+      `
+        import { createLiminaCheckFlowReporter } from ${JSON.stringify(flowModuleUrl)};
+
+        void (async () => {
+          const flow = createLiminaCheckFlowReporter({ forceTty: true });
+          await flow.waitForRendererReady();
+          flow.intro('limina check');
+          const root = flow.tree('default check');
+          const [graph, source, proof, checkerBuild, checkerTypecheck] = root.children([
+            'graph check',
+            'source check',
+            'proof check',
+            'checker build',
+            'checker typecheck',
+          ]);
+          const [routes, references, conditions] = graph.children([
+            'source graph routes',
+            'project references',
+            'condition domains',
+          ]);
+          const [projectRoutes, checkerCoverage] = proof.children([
+            'project routes and configs',
+            'checker coverage targets',
+          ]);
+          const [typescriptEntry, vueEntry] = checkerBuild.children([
+            'typescript checker entry',
+            'vue checker entry',
+          ]);
+          const [secondClassEntries] = checkerTypecheck.children([
+            'second-class checker entries',
+          ]);
+
+          root.start();
+          graph.start();
+          routes.start();
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          routes.fail(undefined, { elapsedTimeMs: 30 });
+          references.pass(undefined, { elapsedTimeMs: 12 });
+          conditions.pass(undefined, { elapsedTimeMs: 0 });
+          graph.fail(undefined, { elapsedTimeMs: 200 });
+          source.start();
+          source.fail(undefined, { elapsedTimeMs: 300 });
+          proof.start();
+          projectRoutes.pass(undefined, { elapsedTimeMs: 36 });
+          checkerCoverage.pass(undefined, { elapsedTimeMs: 0 });
+          proof.pass(undefined, { elapsedTimeMs: 400 });
+          checkerBuild.start();
+          typescriptEntry.pass(undefined, { elapsedTimeMs: 427 });
+          vueEntry.pass(undefined, { elapsedTimeMs: 427 });
+          checkerBuild.pass(undefined, { elapsedTimeMs: 500 });
+          checkerTypecheck.start();
+          secondClassEntries.pass(undefined, { elapsedTimeMs: 0 });
+          checkerTypecheck.pass(undefined, { elapsedTimeMs: 1 });
+          root.fail(undefined, { elapsedTimeMs: 900 });
+          flow.outro('limina check failed');
+          await flow.close();
+        })();
+      `,
+      {
+        env: {
+          LIMINA_FLOW_RENDERER_TEST_ROWS: '9',
+        },
+      },
+    );
+
+    const lastFrame = getLastRenderedFrame(stdout);
+
+    expect(getMaxCursorUpLineCount(stdout)).toBeLessThanOrEqual(8);
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('✕    default check (900ms)\n');
+    expect(lastFrame).toContain('✕      graph check (200ms)\n');
+    expect(lastFrame).toContain('✕      source check (300ms)\n');
+    expect(lastFrame).toContain('◆      checker build (500ms)\n');
+    expect(lastFrame).toContain('└  limina check failed\n');
+    expect(lastFrame).not.toContain('project routes and configs');
+    expect(lastFrame).not.toContain('second-class checker entries');
+  });
+
+  it('compacts check-flow history to direct task states in short terminals', async () => {
+    const flowModuleUrl = new URL('../flow.ts', import.meta.url).href;
+    const { stdout } = await runFlowFixture(
+      `
+        import { createLiminaCheckFlowReporter } from ${JSON.stringify(flowModuleUrl)};
+
+        void (async () => {
+          const flow = createLiminaCheckFlowReporter({ forceTty: true });
+          await flow.waitForRendererReady();
+          flow.intro('limina check');
+
+          const defaultCheck = flow.start('default check');
+          const graph = flow.start('graph check', { depth: 1 });
+          const graphRoute = flow.start('source graph routes', { depth: 2 });
+          graphRoute.pass('source graph routes', { depth: 2, elapsedTimeMs: 35 });
+          const projectReferences = flow.start('project references', { depth: 2 });
+          projectReferences.pass('project references', { depth: 2, elapsedTimeMs: 14 });
+          graph.pass('graph check', { depth: 1, elapsedTimeMs: 6850 });
+
+          const source = flow.start('source check', { depth: 1 });
+          const sourceRoute = flow.start('source graph routes', { depth: 2 });
+          sourceRoute.pass('source graph routes', { depth: 2, elapsedTimeMs: 0 });
+          const knip = flow.start('knip source usage', { depth: 2 });
+          knip.pass('knip source usage', { depth: 2, elapsedTimeMs: 1260 });
+          source.pass('source check', { depth: 1, elapsedTimeMs: 9310 });
+
+          const proof = flow.start('proof check', { depth: 1 });
+          const projectRoutes = flow.start('project routes and configs', { depth: 2 });
+          projectRoutes.pass('project routes and configs', { depth: 2, elapsedTimeMs: 36 });
+          proof.pass('proof check', { depth: 1, elapsedTimeMs: 5780 });
+
+          const checkerBuild = flow.start('checker build', { depth: 1 });
+          const typescriptEntry = flow.start('typescript checker entry', { depth: 2 });
+          typescriptEntry.pass('typescript checker entry', { depth: 2, elapsedTimeMs: 8410 });
+          checkerBuild.pass('checker build', { depth: 1, elapsedTimeMs: 14010 });
+
+          const checkerTypecheck = flow.start('checker typecheck', { depth: 1 });
+          const secondClassEntries = flow.start('second-class checker entries', { depth: 2 });
+          secondClassEntries.pass('second-class checker entries', { depth: 2, elapsedTimeMs: 0 });
+          checkerTypecheck.pass('checker typecheck', { depth: 1, elapsedTimeMs: 1 });
+
+          defaultCheck.pass('default check', { elapsedTimeMs: 14120 });
+          flow.outro('limina check passed');
+          await flow.close();
+        })();
+      `,
+      {
+        env: {
+          LIMINA_FLOW_RENDERER_TEST_ROWS: '9',
+        },
+      },
+    );
+
+    const lastFrame = getLastRenderedFrame(stdout);
+
+    expect(getMaxCursorUpLineCount(stdout)).toBeLessThanOrEqual(8);
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('◆    default check (14.12s)\n');
+    expect(lastFrame).toContain('◆      graph check (6.85s)\n');
+    expect(lastFrame).toContain('◆      source check (9.31s)\n');
+    expect(lastFrame).toContain('◆      proof check (5.78s)\n');
+    expect(lastFrame).toContain('◆      checker build (14.01s)\n');
+    expect(lastFrame).toContain('│  ...\n');
+    expect(lastFrame).toContain('└  limina check passed\n');
+    expect(lastFrame).not.toContain('source graph routes');
+    expect(lastFrame).not.toContain('project routes and configs');
+    expect(lastFrame).not.toContain('second-class checker entries');
+  });
+
+  it('compacts process-rendered final check-flow frames when terminal rows are unavailable', async () => {
+    const flowModuleUrl = new URL('../flow.ts', import.meta.url).href;
+    const { stdout } = await runFlowFixture(`
+      import { createLiminaCheckFlowReporter } from ${JSON.stringify(flowModuleUrl)};
+
+      void (async () => {
+        const flow = createLiminaCheckFlowReporter({ forceTty: true });
+        await flow.waitForRendererReady();
+        flow.intro('limina check');
+
+        const defaultCheck = flow.start('default check');
+        const graph = flow.start('graph check', { depth: 1 });
+        const graphRoute = flow.start('source graph routes', { depth: 2 });
+        graphRoute.pass('source graph routes', { depth: 2, elapsedTimeMs: 489 });
+        graph.pass('graph check', { depth: 1, elapsedTimeMs: 3870 });
+
+        const source = flow.start('source check', { depth: 1 });
+        source.pass('source check', { depth: 1, elapsedTimeMs: 8840 });
+
+        defaultCheck.pass('default check', { elapsedTimeMs: 8870 });
+        flow.outro('limina check passed');
+        await flow.close();
+      })();
+    `);
+
+    const lastFrame = getLastRenderedFrame(stdout);
+
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('◆    default check (8.87s)\n');
+    expect(lastFrame).toContain('◆      graph check (3.87s)\n');
+    expect(lastFrame).toContain('◆      source check (8.84s)\n');
+    expect(lastFrame).toContain('│  ...\n');
+    expect(lastFrame).toContain('└  limina check passed\n');
+    expect(lastFrame).not.toContain('source graph routes');
+  });
+
+  it('compacts inline check-flow history with the outro in short terminals', () => {
+    const chunks: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      clack: {
+        intro: () => {},
+        log: {
+          error: () => {},
+          info: () => {},
+          step: () => {},
+          success: () => {},
+          warn: () => {},
+        },
+        outro: () => {},
+      },
+      env: {},
+      forceTty: true,
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      renderer: 'inline',
+      stdout: {
+        columns: 80,
+        isTTY: true,
+        rows: 9,
+      },
+    });
+
+    flow.intro('limina check');
+    const defaultCheck = flow.start('default check');
+    const graph = flow.start('graph check', { depth: 1 });
+    const graphRoute = flow.start('source graph routes', { depth: 2 });
+    graphRoute.pass('source graph routes', {
+      depth: 2,
+      elapsedTimeMs: 475,
+    });
+    const projectReferences = flow.start('project references', { depth: 2 });
+    projectReferences.pass('project references', {
+      depth: 2,
+      elapsedTimeMs: 21,
+    });
+    const conditionDomains = flow.start('condition domains', { depth: 2 });
+    conditionDomains.pass('condition domains', {
+      depth: 2,
+      elapsedTimeMs: 0,
+    });
+    const referenceCompleteness = flow.start('reference completeness', {
+      depth: 2,
+    });
+    referenceCompleteness.pass('reference completeness', {
+      depth: 2,
+      elapsedTimeMs: 687,
+    });
+    graph.pass('graph check', { depth: 1, elapsedTimeMs: 3630 });
+
+    const source = flow.start('source check', { depth: 1 });
+    source.pass('source check', { depth: 1, elapsedTimeMs: 8650 });
+    const proof = flow.start('proof check', { depth: 1 });
+    proof.pass('proof check', { depth: 1, elapsedTimeMs: 4280 });
+    const checkerBuild = flow.start('checker build', { depth: 1 });
+    checkerBuild.pass('checker build', { depth: 1, elapsedTimeMs: 2620 });
+    const checkerTypecheck = flow.start('checker typecheck', { depth: 1 });
+    checkerTypecheck.pass('checker typecheck', {
+      depth: 1,
+      elapsedTimeMs: 1,
+    });
+    defaultCheck.pass('default check', { elapsedTimeMs: 8680 });
+    flow.outro('limina check passed');
+
+    const lastFrame = getLastRenderedFrame(chunks.join(''));
+
+    expect(getMaxCursorUpLineCount(chunks.join(''))).toBeLessThanOrEqual(9);
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('◆    default check (8.68s)\n');
+    expect(lastFrame).toContain('◆      graph check (3.63s)\n');
+    expect(lastFrame).toContain('◆      source check (8.65s)\n');
+    expect(lastFrame).toContain('◆      proof check (4.28s)\n');
+    expect(lastFrame).toContain('◆      checker build (2.62s)\n');
+    expect(lastFrame).toContain('│  ...\n');
+    expect(lastFrame).toContain('└  limina check passed\n');
+    expect(lastFrame).not.toContain('source graph routes');
+    expect(lastFrame).not.toContain('project references');
+    expect(lastFrame).not.toContain('condition domains');
+    expect(lastFrame).not.toContain('reference completeness');
+    expect(lastFrame).not.toContain('\n│\n└  limina check passed');
+  });
+
+  it('marks height-clipped check-flow tree frames as omitted', () => {
+    const chunks: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      clack: {
+        intro: () => {},
+        log: {
+          error: () => {},
+          info: () => {},
+          step: () => {},
+          success: () => {},
+          warn: () => {},
+        },
+        outro: () => {},
+      },
+      env: {},
+      forceTty: true,
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      renderer: 'inline',
+      stdout: {
+        columns: 160,
+        isTTY: true,
+        rows: 9,
+      },
+    });
+
+    flow.intro('limina check');
+    const defaultCheck = flow.start('default check');
+    const graph = flow.tree('graph check', { depth: 1 });
+    const [
+      graphRoute,
+      projectReferences,
+      conditionDomains,
+      referenceCompleteness,
+    ] = graph.children([
+      'source graph routes',
+      'project references',
+      'condition domains',
+      'reference completeness',
+    ]);
+    const source = flow.tree('source check', { depth: 1 });
+    const [sourceRoute, tsconfigGovernance] = source.children([
+      'source graph routes',
+      'tsconfig governance',
+    ]);
+    const proof = flow.tree('proof check', { depth: 1 });
+    const checkerBuild = flow.tree('checker build', { depth: 1 });
+    const checkerTypecheck = flow.tree('checker typecheck', { depth: 1 });
+
+    graph.start();
+    graphRoute.pass(undefined, { elapsedTimeMs: 711 });
+    projectReferences.pass(undefined, { elapsedTimeMs: 12 });
+    conditionDomains.pass(undefined, { elapsedTimeMs: 0 });
+    referenceCompleteness.pass(undefined, { elapsedTimeMs: 760 });
+    graph.pass(undefined, { elapsedTimeMs: 4580 });
+    source.start();
+    sourceRoute.pass(undefined, { elapsedTimeMs: 0 });
+    tsconfigGovernance.pass(undefined, { elapsedTimeMs: 0 });
+    source.pass(undefined, { elapsedTimeMs: 9740 });
+    proof.start();
+    proof.pass(undefined, { elapsedTimeMs: 1230 });
+    checkerBuild.start();
+    checkerBuild.pass(undefined, { elapsedTimeMs: 2340 });
+    checkerTypecheck.start();
+    checkerTypecheck.pass(undefined, { elapsedTimeMs: 100 });
+    defaultCheck.pass('default check', { elapsedTimeMs: 9770 });
+    flow.outro('limina check passed');
+
+    const lastFrame = getLastRenderedFrame(chunks.join(''));
+
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('◆    default check (9.77s)\n');
+    expect(lastFrame).toContain('◆      graph check (4.58s)\n');
+    expect(lastFrame).toContain('│  ...\n');
+    expect(lastFrame).toContain('└  limina check passed\n');
+    expect(lastFrame.indexOf('│  ...')).toBeLessThan(
+      lastFrame.indexOf('└  limina check passed'),
+    );
+    expect(lastFrame).not.toContain('checker typecheck');
+  });
+
+  it('compacts the final check-flow frame when terminal rows are unavailable', () => {
+    const chunks: string[] = [];
+    const flow = createLiminaCheckFlowReporter({
+      clack: {
+        intro: () => {},
+        log: {
+          error: () => {},
+          info: () => {},
+          step: () => {},
+          success: () => {},
+          warn: () => {},
+        },
+        outro: () => {},
+      },
+      env: {},
+      forceTty: true,
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      renderer: 'inline',
+      stdout: {
+        columns: 80,
+        isTTY: true,
+      },
+    });
+
+    flow.intro('limina check');
+    const defaultCheck = flow.start('default check');
+    const graph = flow.start('graph check', { depth: 1 });
+    const graphRoute = flow.start('source graph routes', { depth: 2 });
+    graphRoute.pass('source graph routes', {
+      depth: 2,
+      elapsedTimeMs: 489,
+    });
+    graph.pass('graph check', { depth: 1, elapsedTimeMs: 3870 });
+    const source = flow.start('source check', { depth: 1 });
+    source.pass('source check', { depth: 1, elapsedTimeMs: 8840 });
+    defaultCheck.pass('default check', { elapsedTimeMs: 8870 });
+    flow.outro('limina check passed');
+
+    const lastFrame = getLastRenderedFrame(chunks.join(''));
+
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('◆    default check (8.87s)\n');
+    expect(lastFrame).toContain('◆      graph check (3.87s)\n');
+    expect(lastFrame).toContain('◆      source check (8.84s)\n');
+    expect(lastFrame).toContain('└  limina check passed\n');
+    expect(lastFrame).not.toContain('source graph routes');
   });
 
   it('falls back to inline final output when the process renderer exits', async () => {
@@ -258,8 +758,12 @@ describe('LiminaFlowReporter', () => {
     const stdout = {
       columns: 80,
       isTTY: true,
-      write: (message: string) => {
-        chunks.push(message);
+      write: (message: string | Uint8Array) => {
+        chunks.push(
+          message instanceof Uint8Array
+            ? Buffer.from(message).toString()
+            : message,
+        );
         return true;
       },
     };
@@ -353,6 +857,63 @@ describe('LiminaFlowReporter', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('keeps inline live frames within the terminal height', () => {
+    const chunks: string[] = [];
+    const flow = new LiminaFlowReporter({
+      clack: {
+        intro: () => {},
+        log: {
+          error: () => {},
+          info: () => {},
+          step: () => {},
+          success: () => {},
+          warn: () => {},
+        },
+        outro: () => {},
+      },
+      env: {},
+      forceTty: true,
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      renderer: 'inline',
+      stdout: {
+        columns: 80,
+        isTTY: true,
+        rows: 4,
+      },
+    });
+
+    flow.intro('limina check');
+    const root = flow.tree('default check');
+    const graph = root.child('graph check');
+    const [routes, references, conditions] = graph.children([
+      'source graph routes',
+      'project references',
+      'condition domains',
+    ]);
+
+    root.start();
+    graph.start();
+    routes.start();
+    routes.fail(undefined, { elapsedTimeMs: 30 });
+    references.pass(undefined, { elapsedTimeMs: 12 });
+    conditions.pass(undefined, { elapsedTimeMs: 0 });
+    graph.fail(undefined, { elapsedTimeMs: 200 });
+    root.fail(undefined, { elapsedTimeMs: 220 });
+
+    const output = chunks.join('');
+    const lastFrame = getLastRenderedFrame(output);
+
+    expect(getMaxCursorUpLineCount(output)).toBeLessThanOrEqual(3);
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('✕    default check (220ms)\n');
+    expect(lastFrame).toContain('│  ...\n');
+    expect(lastFrame).not.toContain('project references');
   });
 
   it('renders tree nodes with running and completed states', () => {

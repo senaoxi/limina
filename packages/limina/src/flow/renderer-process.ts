@@ -3,25 +3,20 @@ import {
   type FlowRendererProcessMessage,
   type FlowRenderSnapshot,
   hasRunningSnapshotWork,
-  renderSnapshotLines,
+  renderSnapshotLinesForTerminal,
   SPINNER_FRAMES,
   SPINNER_INTERVAL_MS,
-  toWritableText,
 } from './render-model';
-
-const DEFAULT_TERMINAL_COLUMNS = 80;
-const ANSI_ESCAPE = String.fromCodePoint(0x1b);
-const ANSI_PATTERN = new RegExp(
-  String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
-  'gu',
-);
+import {
+  DEFAULT_TERMINAL_COLUMNS,
+  TerminalFrameTracker,
+} from './terminal-frame';
 
 let snapshot: FlowRenderSnapshot = {
   entries: [],
   treeRoots: [],
 };
-let terminalColumn = 0;
-let terminalLineCount = 0;
+const terminalFrame = new TerminalFrameTracker(getTerminalColumns);
 let spinnerFrameIndex = 0;
 let spinnerTimer: NodeJS.Timeout | undefined;
 let closed = false;
@@ -32,52 +27,55 @@ function send(message: FlowRendererParentMessage): void {
   }
 }
 
-function stripControlSequences(text: string): string {
-  return text.replaceAll(ANSI_PATTERN, '').replaceAll('\r', '');
+function readPositiveInteger(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function recordTerminalWrite(chunk: unknown): void {
-  const text = stripControlSequences(toWritableText(chunk));
-  const columns = Math.max(
-    1,
-    process.stdout.columns ?? DEFAULT_TERMINAL_COLUMNS,
+function getTerminalColumns(): number {
+  return Math.max(1, process.stdout.columns ?? DEFAULT_TERMINAL_COLUMNS);
+}
+
+function getTerminalRows(): number | undefined {
+  return (
+    readPositiveInteger(process.env.LIMINA_FLOW_RENDERER_TEST_ROWS) ??
+    process.stdout.rows
   );
-
-  for (const char of text) {
-    if (char === '\n') {
-      terminalLineCount += 1;
-      terminalColumn = 0;
-      continue;
-    }
-
-    terminalColumn += 1;
-
-    if (terminalColumn >= columns) {
-      terminalLineCount += 1;
-      terminalColumn = 0;
-    }
-  }
 }
 
 function writeTracked(message: string, stream: NodeJS.WriteStream): void {
-  recordTerminalWrite(message);
+  terminalFrame.record(message);
   stream.write(message);
 }
 
 function clearRenderedFrame(): void {
-  if (terminalLineCount <= 0) {
+  if (terminalFrame.lineCount <= 0) {
     return;
   }
 
-  process.stdout.write(`\r\u001B[${terminalLineCount}A\u001B[J`);
-  terminalLineCount = 0;
-  terminalColumn = 0;
+  process.stdout.write(`\r\u001B[${terminalFrame.lineCount}A\u001B[J`);
+  terminalFrame.reset();
 }
 
 function render(): void {
   clearRenderedFrame();
 
-  for (const line of renderSnapshotLines(snapshot, spinnerFrameIndex)) {
+  const dimensions = {
+    columns: snapshot.terminalDimensions?.columns ?? getTerminalColumns(),
+    rows: snapshot.terminalDimensions?.rows ?? getTerminalRows(),
+  };
+  const renderedLines = renderSnapshotLinesForTerminal(
+    snapshot,
+    spinnerFrameIndex,
+    dimensions,
+  );
+
+  for (const line of renderedLines) {
     writeTracked(`${line}\n`, process.stdout);
   }
 }
@@ -107,8 +105,7 @@ function writeOutput(message: FlowRendererProcessMessage & { type: 'output' }) {
     message.output.text,
     message.output.stream === 'stderr' ? process.stderr : process.stdout,
   );
-  terminalLineCount = 0;
-  terminalColumn = 0;
+  terminalFrame.reset();
   render();
 }
 

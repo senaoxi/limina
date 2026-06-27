@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createWorkspaceLookupIndex } from '../core/workspace/lookup';
+import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -240,11 +241,15 @@ describe('WorkspaceLookupIndex', () => {
       });
 
       expect(
-        index.findNearestPackageScopeInfo(
-          path.join(fixture.rootDir, 'packages/app/src/feature/index.ts'),
-        )?.packageJsonPath,
+        toPortablePath(
+          index.findNearestPackageScopeInfo(
+            path.join(fixture.rootDir, 'packages/app/src/feature/index.ts'),
+          )?.packageJsonPath ?? '',
+        ),
       ).toBe(
-        path.join(fixture.rootDir, 'packages/app/src/feature/package.json'),
+        toPortablePath(
+          path.join(fixture.rootDir, 'packages/app/src/feature/package.json'),
+        ),
       );
       expect(
         index.findNearestPackageScopeInfo(
