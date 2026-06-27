@@ -9,6 +9,12 @@ import type {
   FlowRenderSnapshot,
 } from './render-model';
 import { toWritableText } from './render-model';
+import type {
+  FlowWrite,
+  FlowWriteArgs,
+  FlowWriteCallback,
+} from './terminal-frame';
+import { writeWithFlowArgs } from './terminal-frame';
 
 interface RendererEntry {
   args: string[];
@@ -60,11 +66,23 @@ function resolveRendererEntry(): RendererEntry | undefined {
   return undefined;
 }
 
-function callWriteCallback(args: unknown[]): void {
-  const callback = args.findLast((arg) => typeof arg === 'function');
+function getWriteCallback(args: FlowWriteArgs): FlowWriteCallback | undefined {
+  if (args.length === 3) {
+    return args[2];
+  }
 
-  if (typeof callback === 'function') {
-    queueMicrotask(callback as () => void);
+  if (typeof args[1] === 'function') {
+    return args[1];
+  }
+
+  return undefined;
+}
+
+function callWriteCallback(args: FlowWriteArgs): void {
+  const callback = getWriteCallback(args);
+
+  if (callback) {
+    queueMicrotask(callback);
   }
 }
 
@@ -113,6 +131,8 @@ export class FlowProcessRenderer {
     });
 
     const renderer = new FlowProcessRenderer(child);
+    // In real TTY sessions this keeps command output and live flow redraws from
+    // fighting over the same terminal frame.
     const restoreStdout = renderer.#patchWriteStream(process.stdout, 'stdout');
     const restoreStderr = renderer.#patchWriteStream(process.stderr, 'stderr');
 
@@ -198,7 +218,7 @@ export class FlowProcessRenderer {
   ): () => void {
     const originalWrite = stream.write;
 
-    stream.write = ((...args: unknown[]) => {
+    stream.write = ((...args: FlowWriteArgs) => {
       if (this.active) {
         this.writeOutput({
           stream: streamName,
@@ -208,7 +228,7 @@ export class FlowProcessRenderer {
         return true;
       }
 
-      return Reflect.apply(originalWrite, stream, args) as boolean;
+      return writeWithFlowArgs(originalWrite as FlowWrite, args);
     }) as NodeJS.WriteStream['write'];
 
     return () => {
