@@ -59,13 +59,11 @@ import {
   type PackageImportMatch,
   type WorkspaceDependencyDeclaration,
 } from '../core/packages/authority';
-import {
-  classifyResolvedPackageTarget,
-  findNearestPackageScopeInfo,
-  findOwnerForFile,
-  type NearestPackageInfo,
-  type ResolvedPackageTarget,
+import type {
+  NearestPackageInfo,
+  ResolvedPackageTarget,
 } from '../core/packages/owners';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { TaskProgressReporter } from '../execution/progress';
 import type { LiminaFlowReporter } from '../flow';
 import { isNodeBuiltinSpecifier } from '../graph-check/rules';
@@ -161,16 +159,16 @@ function addProjectOwnerProblems(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   fileNames: string[];
-  owners: PackageOwner[];
   problems: string[];
   role: 'declaration leaf' | 'typecheck companion';
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const ownerPaths = new Map<string, PackageOwner>();
   const missingOwnerFiles: string[] = [];
 
   for (const fileName of options.fileNames) {
     options.checks.add();
-    const owner = findOwnerForFile(fileName, options.owners);
+    const owner = options.workspaceLookup.findOwnerForFile(fileName);
 
     if (!owner) {
       missingOwnerFiles.push(fileName);
@@ -687,10 +685,12 @@ function addPackageImportRelativeScopeProblem(options: {
 function isResolvedInsidePackageScope(options: {
   packageScope: NearestPackageInfo;
   resolvedFilePath: string;
+  workspaceLookup: WorkspaceLookupIndex;
 }): boolean {
   return (
-    findNearestPackageScopeInfo(options.resolvedFilePath)?.packageJsonPath ===
-    options.packageScope.packageJsonPath
+    options.workspaceLookup.findNearestPackageScopeInfo(
+      options.resolvedFilePath,
+    )?.packageJsonPath === options.packageScope.packageJsonPath
   );
 }
 
@@ -770,14 +770,13 @@ function addPackageImportProblem(options: {
   config: ResolvedLiminaConfig;
   importRecord: ImportRecord;
   owner: PackageOwner;
-  owners: PackageOwner[];
-  packages: WorkspacePackage[];
   problems: string[];
   resolvedFilePath: string | null;
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   rootPackage: WorkspacePackage | null;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  const packageScope = findNearestPackageScopeInfo(
+  const packageScope = options.workspaceLookup.findNearestPackageScopeInfo(
     options.importRecord.filePath,
   );
   const match = findPackageImportMatch(
@@ -827,6 +826,7 @@ function addPackageImportProblem(options: {
     !isResolvedInsidePackageScope({
       packageScope,
       resolvedFilePath: options.resolvedFilePath,
+      workspaceLookup: options.workspaceLookup,
     })
   ) {
     addPackageImportRelativeScopeProblem({
@@ -836,15 +836,15 @@ function addPackageImportProblem(options: {
       packageScope,
       problems: options.problems,
       resolvedFilePath: options.resolvedFilePath,
-      targetPackageScope: findNearestPackageScopeInfo(options.resolvedFilePath),
+      targetPackageScope: options.workspaceLookup.findNearestPackageScopeInfo(
+        options.resolvedFilePath,
+      ),
     });
     return;
   }
 
-  const target = classifyResolvedPackageTarget({
+  const target = options.workspaceLookup.classifyResolvedPackageTarget({
     owner: options.owner,
-    owners: options.owners,
-    packages: options.packages,
     resolvedFilePath: options.resolvedFilePath,
   });
 
@@ -855,6 +855,7 @@ function addPackageImportProblem(options: {
       !isResolvedInsidePackageScope({
         packageScope,
         resolvedFilePath: options.resolvedFilePath,
+        workspaceLookup: options.workspaceLookup,
       })
     ) {
       addPackageImportRelativeScopeProblem({
@@ -864,7 +865,7 @@ function addPackageImportProblem(options: {
         packageScope,
         problems: options.problems,
         resolvedFilePath: options.resolvedFilePath,
-        targetPackageScope: findNearestPackageScopeInfo(
+        targetPackageScope: options.workspaceLookup.findNearestPackageScopeInfo(
           options.resolvedFilePath,
         ),
       });
@@ -1148,8 +1149,8 @@ async function addTsconfigGovernanceProblems(options: {
   config: ResolvedLiminaConfig;
   configPaths: string[];
   generatedGraph: GeneratedTsconfigGraphResult;
-  owners: PackageOwner[];
   problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): Promise<void> {
   const configPaths = options.configPaths;
   const context = getSourceGovernanceContext(
@@ -1186,7 +1187,7 @@ async function addTsconfigGovernanceProblems(options: {
 
     options.checks.add();
 
-    const owner = findOwnerForFile(configPath, options.owners);
+    const owner = options.workspaceLookup.findOwnerForFile(configPath);
 
     if (!owner) {
       options.problems.push(
@@ -1205,7 +1206,7 @@ async function addTsconfigGovernanceProblems(options: {
 
     for (const fileName of project.fileNames) {
       options.checks.add();
-      const fileOwner = findOwnerForFile(fileName, options.owners);
+      const fileOwner = options.workspaceLookup.findOwnerForFile(fileName);
 
       if (fileOwner?.packageJsonPath !== owner.packageJsonPath) {
         options.problems.push(
@@ -1604,9 +1605,9 @@ async function addSourceProjectOwnerProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   core: LiminaCore;
-  owners: PackageOwner[];
   problems: string[];
   projects: ProjectInfo[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): Promise<void> {
   for (const project of options.projects) {
     if (project.labelProblem) {
@@ -1622,9 +1623,9 @@ async function addSourceProjectOwnerProblems(options: {
       config: options.config,
       configPath: project.configPath,
       fileNames: project.fileNames,
-      owners: options.owners,
       problems: options.problems,
       role: 'declaration leaf',
+      workspaceLookup: options.workspaceLookup,
     });
 
     const typecheckConfigPath = getTypecheckConfigPath(project.configPath);
@@ -1640,9 +1641,9 @@ async function addSourceProjectOwnerProblems(options: {
       fileNames: (
         await options.core.tsconfig.getProject(typecheckConfigPath, project)
       ).fileNames,
-      owners: options.owners,
       problems: options.problems,
       role: 'typecheck companion',
+      workspaceLookup: options.workspaceLookup,
     });
   }
 }
@@ -1654,15 +1655,18 @@ function addRelativeImportProblems(options: {
   owner: PackageOwner;
   problems: string[];
   resolvedFilePath: string | null;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   if (!options.resolvedFilePath) {
     return;
   }
 
-  const sourcePackageScope = findNearestPackageScopeInfo(options.filePath);
-  const targetPackageScope = findNearestPackageScopeInfo(
-    options.resolvedFilePath,
-  );
+  const sourcePackageScope =
+    options.workspaceLookup.findNearestPackageScopeInfo(options.filePath);
+  const targetPackageScope =
+    options.workspaceLookup.findNearestPackageScopeInfo(
+      options.resolvedFilePath,
+    );
 
   if (
     sourcePackageScope?.packageJsonPath === targetPackageScope?.packageJsonPath
@@ -1819,16 +1823,13 @@ function addResolvedBarePackageImportProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
-  owners: PackageOwner[];
-  packages: WorkspacePackage[];
   problems: string[];
   resolvedFilePath: string;
   rootPackage: WorkspacePackage | null;
+  workspaceLookup: WorkspaceLookupIndex;
 }): boolean {
-  const target = classifyResolvedPackageTarget({
+  const target = options.workspaceLookup.classifyResolvedPackageTarget({
     owner: options.owner,
-    owners: options.owners,
-    packages: options.packages,
     resolvedFilePath: options.resolvedFilePath,
   });
 
@@ -1871,11 +1872,11 @@ function addBarePackageImportProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
-  owners: PackageOwner[];
   packages: WorkspacePackage[];
   problems: string[];
   resolvedFilePath: string | null;
   rootPackage: WorkspacePackage | null;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   if (options.owner.name === options.fallbackPackageName) {
     return;
@@ -1888,11 +1889,10 @@ function addBarePackageImportProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
-      owners: options.owners,
-      packages: options.packages,
       problems: options.problems,
       resolvedFilePath: options.resolvedFilePath,
       rootPackage: options.rootPackage,
+      workspaceLookup: options.workspaceLookup,
     })
   ) {
     return;
@@ -1941,11 +1941,11 @@ function addImportRecordProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
-  owners: PackageOwner[];
   packages: WorkspacePackage[];
   problems: string[];
   project: ProjectInfo;
   rootPackage: WorkspacePackage | null;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const resolvedFilePath = resolveInternalImport(
     options.importRecord.specifier,
@@ -1963,6 +1963,7 @@ function addImportRecordProblems(options: {
       owner: options.owner,
       problems: options.problems,
       resolvedFilePath,
+      workspaceLookup: options.workspaceLookup,
     });
     return;
   }
@@ -1972,12 +1973,11 @@ function addImportRecordProblems(options: {
       config: options.config,
       importRecord: options.importRecord,
       owner: options.owner,
-      owners: options.owners,
-      packages: options.packages,
       problems: options.problems,
       resolvedFilePath,
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       rootPackage: options.rootPackage,
+      workspaceLookup: options.workspaceLookup,
     });
     return;
   }
@@ -1994,11 +1994,11 @@ function addImportRecordProblems(options: {
     importAuthorityAllowRules: options.importAuthorityAllowRules,
     importRecord: options.importRecord,
     owner: options.owner,
-    owners: options.owners,
     packages: options.packages,
     problems: options.problems,
     resolvedFilePath,
     rootPackage: options.rootPackage,
+    workspaceLookup: options.workspaceLookup,
   });
 }
 
@@ -2007,15 +2007,15 @@ function addSourceImportProblems(options: {
   config: ResolvedLiminaConfig;
   importAnalysis: LiminaCore['imports']['context'];
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
-  owners: PackageOwner[];
   packages: WorkspacePackage[];
   problems: string[];
   rootPackage: WorkspacePackage | null;
   sourceProjectEntries: SourceProjectEntry[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   for (const { fileNames, project } of options.sourceProjectEntries) {
     for (const filePath of fileNames) {
-      const owner = findOwnerForFile(filePath, options.owners);
+      const owner = options.workspaceLookup.findOwnerForFile(filePath);
 
       if (!owner) {
         continue;
@@ -2034,11 +2034,11 @@ function addSourceImportProblems(options: {
           importAuthorityAllowRules: options.importAuthorityAllowRules,
           importRecord,
           owner,
-          owners: options.owners,
           packages: options.packages,
           problems: options.problems,
           project,
           rootPackage: options.rootPackage,
+          workspaceLookup: options.workspaceLookup,
         });
       }
     }
@@ -2255,6 +2255,7 @@ export async function runSourceCheckImpl(
   const sourceProjectEntries = await createSourceProjectEntries(core, projects);
   const packages = await preflight.ensureWorkspacePackages();
   const packageOwners = await preflight.ensurePackageOwners();
+  const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
   const workspaceDependencyDeclarations =
     await preflight.ensureWorkspaceDependencyDeclarations();
   const rootPackage = findWorkspaceRootPackage({
@@ -2278,8 +2279,8 @@ export async function runSourceCheckImpl(
     config,
     configPaths: collectGeneratedSourceConfigPaths(generatedGraph),
     generatedGraph,
-    owners: packageOwners,
     problems,
+    workspaceLookup,
   });
   checkItems.record('tsconfig governance');
 
@@ -2302,9 +2303,9 @@ export async function runSourceCheckImpl(
     checks,
     config,
     core,
-    owners: packageOwners,
     problems,
     projects,
+    workspaceLookup,
   });
   checkItems.record('source project ownership');
 
@@ -2326,11 +2327,11 @@ export async function runSourceCheckImpl(
     config,
     importAnalysis,
     importAuthorityAllowRules,
-    owners: packageOwners,
     packages,
     problems,
     rootPackage,
     sourceProjectEntries,
+    workspaceLookup,
   });
   checkItems.record('source import authority');
 
