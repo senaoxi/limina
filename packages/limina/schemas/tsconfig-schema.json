@@ -47,6 +47,29 @@
             }
           }
         },
+        "outputs": {
+          "type": "object",
+          "description": "User-facing artifact output build options for this ordinary source tsconfig.",
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "$ref": "#/definitions/nonEmptyString",
+              "description": "TypeScript target for generated artifact output builds."
+            },
+            "rootDir": {
+              "$ref": "#/definitions/nonEmptyString",
+              "description": "Artifact build rootDir, relative to this tsconfig."
+            },
+            "outDir": {
+              "$ref": "#/definitions/nonEmptyString",
+              "description": "Artifact build outDir, relative to this tsconfig."
+            },
+            "tsBuildInfoFile": {
+              "$ref": "#/definitions/nonEmptyString",
+              "description": "Artifact build tsBuildInfoFile, relative to this tsconfig."
+            }
+          }
+        },
         "graphRules": {
           "type": "array",
           "description": "Graph rule labels from limina.config.mjs#graph.rules that apply to this declaration leaf.",

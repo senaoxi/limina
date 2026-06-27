@@ -1,4 +1,4 @@
-import { normalize, relative, resolve } from 'pathe';
+import { isAbsolute, normalize, relative, resolve } from 'pathe';
 
 export function toPosixPath(value: string): string {
   return normalizeSlashes(value);
@@ -30,11 +30,21 @@ export function isPathInsideDirectory(
   filePath: string,
   directoryPath: string,
 ): boolean {
-  const normalizedFilePath = normalizeAbsolutePath(filePath);
-  const normalizedDirectoryPath = normalizeAbsolutePath(directoryPath);
+  const normalizedFilePath = normalizeComparableAbsolutePath(filePath);
+  const normalizedDirectoryPath =
+    normalizeComparableAbsolutePath(directoryPath);
+  const relativePath = relative(normalizedDirectoryPath, normalizedFilePath);
 
   return (
-    normalizedFilePath === normalizedDirectoryPath ||
-    normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)
+    relativePath.length === 0 ||
+    (relativePath !== '..' &&
+      !relativePath.startsWith('../') &&
+      !isAbsolute(relativePath))
+  );
+}
+
+function normalizeComparableAbsolutePath(value: string): string {
+  return normalizeAbsolutePathIdentity(
+    isAbsolute(value) ? value : resolve(value),
   );
 }

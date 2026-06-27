@@ -103,7 +103,7 @@ async function createPassingCheckPipelineConfig(): Promise<{
       },
       name: '@fixture/app',
       scripts: {
-        build: 'limina checker build tsconfig.json',
+        build: 'limina build tsconfig.json',
       },
       type: 'module',
       version: '1.0.0',
@@ -132,6 +132,9 @@ async function createPassingCheckPipelineConfig(): Promise<{
   await writeText(
     path.join(rootDir, 'packages/app/tsconfig.json'),
     stringifyJson({
+      liminaOptions: {
+        outputs: {},
+      },
       compilerOptions: buildCompilerOptions,
       include: ['src/**/*.ts'],
     }),

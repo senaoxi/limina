@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'pathe';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
@@ -14,11 +15,19 @@ import {
   isNonEmptyString,
   isPlainRecord,
 } from '#utils/values';
+import { createSourceConfigScope } from './paths';
 
 export interface ImplicitRef {
   path: string;
   reason: string;
   targetConfigPath: string;
+}
+
+export interface OutputOptions {
+  outDir: string;
+  rootDir: string;
+  target: string;
+  tsBuildInfoFile: string;
 }
 
 export function isDefaultTsconfigPath(configPath: string): boolean {
@@ -57,6 +66,266 @@ export function readGraphRules(
         ),
       ).map((label) => label.trim())
     : [];
+}
+
+function addOutputOptionsProblem(options: {
+  config: ResolvedLiminaConfig;
+  field: string;
+  problems: string[];
+  reason: string;
+  sourceConfigPath: string;
+  value?: unknown;
+}): void {
+  options.problems.push(
+    [
+      'Invalid Limina output options:',
+      `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
+      `  field: ${options.field}`,
+      ...(Object.hasOwn(options, 'value')
+        ? [`  value: ${formatUnknownValue(options.value)}`]
+        : []),
+      `  reason: ${options.reason}`,
+    ].join('\n'),
+  );
+}
+
+function normalizeExtendsConfigPath(
+  configPath: string,
+  extendsValue: string,
+): string | null {
+  const trimmedValue = extendsValue.trim();
+
+  if (trimmedValue.length === 0) {
+    return null;
+  }
+
+  if (
+    path.isAbsolute(trimmedValue) ||
+    trimmedValue.startsWith('./') ||
+    trimmedValue.startsWith('../')
+  ) {
+    const resolvedPath = path.resolve(path.dirname(configPath), trimmedValue);
+
+    return normalizeAbsolutePath(
+      path.extname(resolvedPath) ? resolvedPath : `${resolvedPath}.json`,
+    );
+  }
+
+  try {
+    const requireFromConfig = createRequire(configPath);
+
+    return normalizeAbsolutePath(requireFromConfig.resolve(trimmedValue));
+  } catch {
+    return null;
+  }
+}
+
+function readExplicitSourceCompilerTarget(options: {
+  config: ResolvedLiminaConfig;
+  configPath: string;
+  seenConfigPaths?: Set<string>;
+}): string | null {
+  const seenConfigPaths = options.seenConfigPaths ?? new Set<string>();
+  const configPath = normalizeAbsolutePath(options.configPath);
+
+  if (seenConfigPaths.has(configPath) || !existsSync(configPath)) {
+    return null;
+  }
+
+  seenConfigPaths.add(configPath);
+
+  const configObject = readJsonConfig(options.config, configPath);
+  const extendsValue = configObject.extends;
+  const extendsValues =
+    typeof extendsValue === 'string'
+      ? [extendsValue]
+      : Array.isArray(extendsValue)
+        ? extendsValue.filter(
+            (entry): entry is string => typeof entry === 'string',
+          )
+        : [];
+  let target: string | null = null;
+
+  for (const entry of extendsValues) {
+    const extendedConfigPath = normalizeExtendsConfigPath(configPath, entry);
+
+    if (!extendedConfigPath) {
+      continue;
+    }
+
+    target =
+      readExplicitSourceCompilerTarget({
+        config: options.config,
+        configPath: extendedConfigPath,
+        seenConfigPaths,
+      }) ?? target;
+  }
+
+  const compilerOptions = configObject.compilerOptions;
+
+  if (isPlainRecord(compilerOptions)) {
+    const targetValue = compilerOptions.target;
+
+    if (isNonEmptyString(targetValue)) {
+      target = targetValue.trim();
+    }
+  }
+
+  return target;
+}
+
+export function readOutputOptions(
+  config: ResolvedLiminaConfig,
+  sourceConfigPath: string,
+): { outputs: OutputOptions | null; problems: string[] } {
+  const configObject = readJsonConfig(config, sourceConfigPath);
+  const liminaOptions = configObject.liminaOptions;
+  const problems: string[] = [];
+
+  if (liminaOptions === undefined) {
+    return {
+      outputs: null,
+      problems,
+    };
+  }
+
+  if (!isPlainRecord(liminaOptions)) {
+    addOutputOptionsProblem({
+      config,
+      field: 'liminaOptions',
+      problems,
+      reason: 'liminaOptions must be an object before outputs can be read.',
+      sourceConfigPath,
+      value: liminaOptions,
+    });
+    return {
+      outputs: null,
+      problems,
+    };
+  }
+
+  const outputs = liminaOptions.outputs;
+
+  if (outputs === undefined) {
+    return {
+      outputs: null,
+      problems,
+    };
+  }
+
+  if (!isPlainRecord(outputs)) {
+    addOutputOptionsProblem({
+      config,
+      field: 'liminaOptions.outputs',
+      problems,
+      reason: 'outputs must be an object.',
+      sourceConfigPath,
+      value: outputs,
+    });
+    return {
+      outputs: null,
+      problems,
+    };
+  }
+
+  const allowedFields = new Set([
+    'outDir',
+    'rootDir',
+    'target',
+    'tsBuildInfoFile',
+  ]);
+
+  for (const fieldName of Object.keys(outputs)) {
+    if (!allowedFields.has(fieldName)) {
+      addOutputOptionsProblem({
+        config,
+        field: `liminaOptions.outputs.${fieldName}`,
+        problems,
+        reason:
+          'outputs only supports target, rootDir, outDir, and tsBuildInfoFile.',
+        sourceConfigPath,
+        value: outputs[fieldName],
+      });
+    }
+  }
+
+  const outputValues: Record<string, string> = {};
+
+  for (const fieldName of allowedFields) {
+    const fieldValue = outputs[fieldName];
+
+    if (fieldValue === undefined) {
+      continue;
+    }
+
+    if (!isNonEmptyString(fieldValue)) {
+      addOutputOptionsProblem({
+        config,
+        field: `liminaOptions.outputs.${fieldName}`,
+        problems,
+        reason: 'output option fields must be non-empty strings.',
+        sourceConfigPath,
+        value: fieldValue,
+      });
+      continue;
+    }
+
+    if (
+      (fieldName === 'rootDir' ||
+        fieldName === 'outDir' ||
+        fieldName === 'tsBuildInfoFile') &&
+      path.isAbsolute(fieldValue)
+    ) {
+      addOutputOptionsProblem({
+        config,
+        field: `liminaOptions.outputs.${fieldName}`,
+        problems,
+        reason:
+          'output path fields must be relative to the tsconfig that declares them.',
+        sourceConfigPath,
+        value: fieldValue,
+      });
+      continue;
+    }
+
+    outputValues[fieldName] = fieldValue.trim();
+  }
+
+  if (problems.length > 0) {
+    return {
+      outputs: null,
+      problems,
+    };
+  }
+
+  const sourceConfigDirectory = path.dirname(sourceConfigPath);
+  const scope = createSourceConfigScope(sourceConfigPath);
+  const target =
+    outputValues.target ??
+    readExplicitSourceCompilerTarget({
+      config,
+      configPath: sourceConfigPath,
+    }) ??
+    'ESNext';
+
+  return {
+    outputs: {
+      target,
+      rootDir: normalizeAbsolutePath(
+        path.resolve(sourceConfigDirectory, outputValues.rootDir ?? '.'),
+      ),
+      outDir: normalizeAbsolutePath(
+        path.resolve(sourceConfigDirectory, outputValues.outDir ?? './dist'),
+      ),
+      tsBuildInfoFile: normalizeAbsolutePath(
+        path.resolve(
+          sourceConfigDirectory,
+          outputValues.tsBuildInfoFile ?? `./dist/.${scope}_tsbuildinfo`,
+        ),
+      ),
+    },
+    problems,
+  };
 }
 
 function addImplicitRefProblem(options: {

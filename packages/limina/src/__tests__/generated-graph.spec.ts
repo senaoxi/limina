@@ -699,7 +699,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/pkg/package.json': json({
         name: '@example/pkg',
         scripts: {
-          build: 'limina checker build tsconfig.json',
+          build: 'limina build tsconfig.json',
         },
         type: 'module',
       }),
@@ -713,6 +713,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         ],
       }),
       'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -739,7 +742,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(generatedConfig.include).toBeUndefined();
       expect(generatedConfig.references).toEqual([
         {
-          path: '../../../../packages/pkg/tsconfig.json',
+          path: '../../../tsconfig/checkers/typescript/outputs/solutions/packages/pkg/tsconfig.output.json',
         },
       ]);
       expect(result.manifest.knip.packages).toEqual([
@@ -748,10 +751,12 @@ describe('prepareGeneratedTsconfigGraph', () => {
           packageDirectory: 'packages/pkg',
           packageJsonPath: 'packages/pkg/package.json',
           packageName: '@example/pkg',
-          references: ['packages/pkg/tsconfig.json'],
+          references: [
+            '.limina/tsconfig/checkers/typescript/outputs/solutions/packages/pkg/tsconfig.output.json',
+          ],
           scripts: [
             {
-              command: 'limina checker build tsconfig.json',
+              command: 'limina build tsconfig.json',
               configPath: 'packages/pkg/tsconfig.json',
               mode: 'managed',
               name: 'build',
@@ -777,7 +782,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/pkg/package.json': json({
         name: '@example/pkg',
         scripts: {
-          'build:watch': 'limina checker build tsconfig.json --preset tsgo -w',
+          'build:watch': 'limina build tsconfig.json --preset tsc -w',
         },
         type: 'module',
       }),
@@ -791,6 +796,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
         ],
       }),
       'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -808,11 +816,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(result.manifest.knip.diagnostics).toEqual([]);
       expect(result.manifest.knip.packages).toEqual([
         expect.objectContaining({
-          references: ['packages/pkg/tsconfig.json'],
+          references: [
+            '.limina/tsconfig/checkers/typescript/outputs/solutions/packages/pkg/tsconfig.output.json',
+          ],
           scripts: [
             {
-              checker: 'tsgo',
-              command: 'limina checker build tsconfig.json --preset tsgo -w',
+              checker: 'tsc',
+              command: 'limina build tsconfig.json --preset tsc -w',
               configPath: 'packages/pkg/tsconfig.json',
               mode: 'managed',
               name: 'build:watch',
@@ -861,7 +871,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/pkg/package.json': json({
         name: '@example/pkg',
         scripts: {
-          build: 'limina checker build $CONFIG',
+          build: 'limina build $CONFIG',
         },
         type: 'module',
       }),
@@ -873,21 +883,21 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(result.manifest.knip.packages).toEqual([]);
       expect(result.manifest.knip.diagnostics).toEqual([
         expect.objectContaining({
-          command: 'limina checker build $CONFIG',
+          command: 'limina build $CONFIG',
           packageJsonPath: 'packages/pkg/package.json',
           packageName: '@example/pkg',
           scriptName: 'build',
         }),
       ]);
       expect(result.manifest.knip.diagnostics[0]?.reason).toContain(
-        'static limina checker build scripts',
+        'static limina build scripts',
       );
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('records diagnostics for legacy package build scripts without generating Knip configs', async () => {
+  it('records diagnostics for unsupported package build scripts without generating Knip configs', async () => {
     const fixture = await createFixture({
       'package.json': json({
         name: '@example/root',
@@ -897,8 +907,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/pkg/package.json': json({
         name: '@example/pkg',
         scripts: {
-          build: 'limina build tsconfig.json',
-          'build:checker': 'limina checker build tsconfig.json --checker tsgo',
+          build: 'pnpm run limina build tsconfig.json',
+          'build:checker': 'limina build tsconfig.json --checker tsgo',
         },
         type: 'module',
       }),
@@ -910,19 +920,19 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(result.manifest.knip.packages).toEqual([]);
       expect(result.manifest.knip.diagnostics).toEqual([
         expect.objectContaining({
-          command: 'limina build tsconfig.json',
+          command: 'pnpm run limina build tsconfig.json',
           packageName: '@example/pkg',
           scriptName: 'build',
         }),
         expect.objectContaining({
-          command: 'limina checker build tsconfig.json --checker tsgo',
+          command: 'limina build tsconfig.json --checker tsgo',
           packageName: '@example/pkg',
           reason: 'Unknown option: --checker. Use --preset instead.',
           scriptName: 'build:checker',
         }),
       ]);
       expect(result.manifest.knip.diagnostics[0]?.reason).toContain(
-        'limina checker build',
+        'direct limina build',
       );
     } finally {
       await fixture.cleanup();
@@ -939,7 +949,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/app/package.json': json({
         name: '@example/app',
         scripts: {
-          build: 'limina checker build ../internal/tsconfig.raw.json',
+          build:
+            'limina build ../internal/tsconfig.raw.json --raw --preset tsc',
         },
         type: 'module',
       }),
@@ -957,7 +968,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       expect(result.manifest.knip.packages).toEqual([]);
       expect(result.manifest.knip.diagnostics[0]).toMatchObject({
-        command: 'limina checker build ../internal/tsconfig.raw.json',
+        command:
+          'limina build ../internal/tsconfig.raw.json --raw --preset tsc',
         packageJsonPath: 'packages/app/package.json',
         packageName: '@example/app',
         scriptName: 'build',
@@ -965,6 +977,430 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(result.manifest.knip.diagnostics[0]?.reason).toContain(
         'raw build configs from package scripts must resolve inside the owning package directory',
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('generates explicit output project configs with inherited explicit source target', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.base.json': json({
+        compilerOptions: {
+          target: 'ES2022',
+        },
+      }),
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        extends: './tsconfig.base.json',
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+            tsBuildInfoFile: './dist/.lib_tsbuildinfo',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourcePath = 'packages/pkg/tsconfig.lib.json';
+      const outputPath =
+        '.limina/tsconfig/checkers/typescript/outputs/projects/packages/pkg/tsconfig.lib.output.json';
+      const outputConfigPath = path.join(fixture.rootDir, outputPath);
+      const outputConfig = JSON.parse(
+        await readFile(outputConfigPath, 'utf8'),
+      ) as {
+        compilerOptions: Record<string, unknown>;
+        extends: string[];
+        files: string[];
+        liminaOptions: Record<string, unknown>;
+        references?: { path: string }[];
+      };
+
+      expect(result.manifest.version).toBe(2);
+      expect(
+        result.manifest.checkers.typescript?.configToOutputBuild,
+      ).toMatchObject({
+        [sourcePath]: {
+          kind: 'project',
+          path: outputPath,
+        },
+      });
+      expect(outputConfig.compilerOptions).toMatchObject({
+        composite: true,
+        declaration: true,
+        declarationDir: toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, 'packages/pkg/dist'),
+          ),
+        ),
+        emitDeclarationOnly: false,
+        incremental: true,
+        noEmit: false,
+        outDir: toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, 'packages/pkg/dist'),
+          ),
+        ),
+        rootDir: toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, 'packages/pkg/src'),
+          ),
+        ),
+        target: 'ES2022',
+        tsBuildInfoFile: toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, 'packages/pkg/dist/.lib_tsbuildinfo'),
+          ),
+        ),
+      });
+      expect(outputConfig.extends).toEqual([
+        toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, sourcePath),
+          ),
+        ),
+      ]);
+      expect(outputConfig.files).toEqual([
+        toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
+          ),
+        ),
+      ]);
+      expect(outputConfig.references).toEqual([]);
+      expect(outputConfig.liminaOptions.sourceConfig).toBe(
+        toPortablePath(
+          path.relative(
+            path.dirname(outputConfigPath),
+            path.join(fixture.rootDir, sourcePath),
+          ),
+        ),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('generates flattened output solution configs for output-enabled leaves', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/test/index.ts': 'export const testValue = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+          {
+            path: './tsconfig.test.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/pkg/tsconfig.test.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['test/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const solutionPath =
+        '.limina/tsconfig/checkers/typescript/outputs/solutions/packages/pkg/tsconfig.output.json';
+      const solutionConfig = JSON.parse(
+        await readFile(path.join(fixture.rootDir, solutionPath), 'utf8'),
+      ) as {
+        references: { path: string }[];
+      };
+
+      expect(
+        result.manifest.checkers.typescript?.configToOutputBuild,
+      ).toMatchObject({
+        'packages/pkg/tsconfig.json': {
+          kind: 'solution',
+          path: solutionPath,
+        },
+      });
+      expect(solutionConfig.references).toEqual([
+        {
+          path: '../../../projects/packages/pkg/tsconfig.lib.output.json',
+        },
+        {
+          path: '../../../projects/packages/pkg/tsconfig.test.output.json',
+        },
+      ]);
+      expect(JSON.stringify(solutionConfig)).not.toContain('.dts.json');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves checker-scoped output build mappings for shared source configs', async () => {
+    const fixture = await createFixture({
+      'packages/one/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/two/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: '../shared/tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/shared/src/index.ts': 'export const value = 1;\n',
+      'packages/shared/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            nativeTypescript: {
+              include: ['packages/one/tsconfig.json'],
+              preset: 'tsgo',
+            },
+            typescript: {
+              include: ['packages/two/tsconfig.json'],
+              preset: 'tsc',
+            },
+          },
+        },
+      });
+
+      expect(
+        result.manifest.checkers.nativeTypescript?.configToOutputBuild,
+      ).toMatchObject({
+        'packages/shared/tsconfig.lib.json': {
+          path: '.limina/tsconfig/checkers/nativeTypescript/outputs/projects/packages/shared/tsconfig.lib.output.json',
+        },
+      });
+      expect(
+        result.manifest.checkers.typescript?.configToOutputBuild,
+      ).toMatchObject({
+        'packages/shared/tsconfig.lib.json': {
+          path: '.limina/tsconfig/checkers/typescript/outputs/projects/packages/shared/tsconfig.lib.output.json',
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects invalid output options and outputs on solution configs', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        liminaOptions: {
+          outputs: {},
+        },
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {
+            unexpected: 'value',
+          },
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(
+        'liminaOptions.outputs is only allowed on ordinary source leaf configs',
+      );
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow('liminaOptions.outputs.unexpected');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects output-enabled managed project references without dependency outputs', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { coreValue } from '../../core/src/index';\nexport const value = coreValue;\n",
+      'packages/app/tsconfig.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/core/src/index.ts': 'export const coreValue = 1;\n',
+      'packages/core/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              typescript: {
+                include: [
+                  'packages/app/tsconfig.json',
+                  'packages/core/tsconfig.json',
+                ],
+                preset: 'tsc',
+              },
+            },
+          },
+        }),
+      ).rejects.toThrow(
+        'Missing Limina output options for referenced source project',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not require outputs for declaration provider boundaries', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { coreValue } from '../../core/src/index';\nexport const value = coreValue;\n",
+      'packages/app/tsconfig.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/core/src/index.d.ts':
+        'export declare const coreValue: number;\n',
+      'packages/core/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.d.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              typescript: {
+                include: [
+                  'packages/app/tsconfig.json',
+                  'packages/core/tsconfig.json',
+                ],
+                preset: 'tsc',
+              },
+            },
+          },
+        }),
+      ).resolves.toMatchObject({
+        manifest: {
+          checkers: {
+            typescript: {
+              configToOutputBuild: {
+                'packages/app/tsconfig.json': {
+                  kind: 'project',
+                },
+              },
+            },
+          },
+        },
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -1730,6 +2166,185 @@ describe('prepareGeneratedTsconfigGraph', () => {
           path: '../theme/tsconfig.dts.json',
         },
       ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not write references for TypeScript declaration providers', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { themeValue } from '../../theme/src/index';\nexport const value = themeValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/index.d.ts':
+        'export declare const themeValue: number;\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.d.ts'],
+      }),
+    });
+
+    try {
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/theme/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      const generatedConfig = JSON.parse(
+        await readFile(
+          path.join(
+            fixture.rootDir,
+            '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+          ),
+          'utf8',
+        ),
+      ) as {
+        references: { path: string }[];
+      };
+
+      expect(generatedConfig.references).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes references for Vue source providers governed by vue-tsc', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/App.vue':
+        '<script setup lang="ts">\nimport Theme from \'../../theme/src/Theme.vue\';\nvoid Theme;\n</script>\n',
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.vue'],
+      }),
+      'packages/theme/src/Theme.vue':
+        '<script setup lang="ts">const value = 1;</script>\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.vue'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            vue: {
+              preset: 'vue-tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/theme/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      expect(result.manifest.providerEdges).toEqual([]);
+
+      const generatedConfig = JSON.parse(
+        await readFile(
+          path.join(
+            fixture.rootDir,
+            '.limina/tsconfig/checkers/vue/projects/packages/app/tsconfig.dts.json',
+          ),
+          'utf8',
+        ),
+      ) as {
+        references: { path: string }[];
+      };
+
+      expect(generatedConfig.references).toEqual([
+        {
+          path: '../theme/tsconfig.dts.json',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports Oxc-only Vue providers under plain TypeScript checkers', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import Theme from '../../theme/src/Theme.vue';\nexport const value = Theme;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/Theme.vue':
+        '<script setup lang="ts">const value = 1;</script>\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.vue'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              typescript: {
+                preset: 'tsc',
+                include: ['packages/app/tsconfig.json'],
+              },
+            },
+          },
+        }),
+      ).rejects.toThrow(
+        'Oxc can resolve this specifier, but TypeScript cannot',
+      );
     } finally {
       await fixture.cleanup();
     }

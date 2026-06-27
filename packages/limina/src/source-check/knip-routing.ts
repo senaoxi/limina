@@ -94,8 +94,8 @@ export function collectSourceKnipWorkspaceConfigs(options: {
         [
           'Unsupported source Knip workspace config:',
           `  field: ${field}.tsConfig`,
-          '  reason: tsConfig is no longer supported. Limina uses Knip default tsconfig behavior unless a package has a static limina checker build script.',
-          '  fix: remove tsConfig, or add a static package script such as "build": "limina checker build tsconfig.json" when this package needs a specific Knip tsconfig source.',
+          '  reason: tsConfig is no longer supported. Limina uses Knip default tsconfig behavior unless a package has a static limina build script.',
+          '  fix: remove tsConfig, or add a static package script such as "build": "limina build tsconfig.json" when this package needs a specific Knip tsconfig source.',
         ].join('\n'),
       );
     }

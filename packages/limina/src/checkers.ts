@@ -7,11 +7,13 @@ import type {
 } from '#config/runner';
 import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
 import {
+  candidatePathsForBasePath,
+  resolveExistingFilePath,
   resolvePathMappedModuleCandidate,
   resolveRelativeModuleCandidate,
 } from '#utils/module-resolution';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
-import { statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import ts from 'typescript';
@@ -140,6 +142,12 @@ export interface CheckerModuleResolveOptions {
   containingFile: string;
   extensions: string[];
   specifier: string;
+}
+
+export interface ResolvedCheckerModuleName {
+  isExternalLibraryImport: boolean;
+  resolvedBy: 'checker-extension' | 'typescript';
+  resolvedFileName: string;
 }
 
 export interface CheckerAdapter {
@@ -571,6 +579,12 @@ function resolveVueProjectExtensionsForChecker(
 function resolveTypeScriptModuleName(
   options: CheckerModuleResolveOptions,
 ): string | null {
+  return resolveTypeScriptModuleNameDetailed(options)?.resolvedFileName ?? null;
+}
+
+function resolveTypeScriptModuleNameDetailed(
+  options: CheckerModuleResolveOptions,
+): ResolvedCheckerModuleName | null {
   const resolved = ts.resolveModuleName(
     options.specifier,
     options.containingFile,
@@ -579,13 +593,223 @@ function resolveTypeScriptModuleName(
   ).resolvedModule;
 
   if (resolved?.resolvedFileName) {
-    return normalizeAbsolutePath(resolved.resolvedFileName);
+    return {
+      isExternalLibraryImport: resolved.isExternalLibraryImport === true,
+      resolvedBy: 'typescript',
+      resolvedFileName: normalizeAbsolutePath(resolved.resolvedFileName),
+    };
   }
 
-  return (
-    resolveRelativeModuleCandidate(options) ??
-    resolvePathMappedModuleCandidate(options)
+  return resolveCheckerExtensionModuleName(options);
+}
+
+function resolveCheckerExtensionModuleName(
+  options: CheckerModuleResolveOptions,
+): ResolvedCheckerModuleName | null {
+  const typeScriptExtensions = new Set(getTypeScriptCheckerExtensions());
+  const checkerOnlyExtensions = options.extensions.filter(
+    (extension) => !typeScriptExtensions.has(extension),
   );
+
+  if (checkerOnlyExtensions.length === 0) {
+    return null;
+  }
+
+  const resolvedFileName =
+    resolveRelativeModuleCandidate({
+      containingFile: options.containingFile,
+      extensions: checkerOnlyExtensions,
+      specifier: options.specifier,
+    }) ??
+    resolvePathMappedModuleCandidate({
+      compilerOptions: options.compilerOptions,
+      extensions: checkerOnlyExtensions,
+      specifier: options.specifier,
+    }) ??
+    resolvePackageExportModuleCandidate({
+      containingFile: options.containingFile,
+      extensions: checkerOnlyExtensions,
+      specifier: options.specifier,
+    });
+
+  return resolvedFileName
+    ? {
+        isExternalLibraryImport: false,
+        resolvedBy: 'checker-extension',
+        resolvedFileName,
+      }
+    : null;
+}
+
+function resolvePackageExportModuleCandidate(options: {
+  containingFile: string;
+  extensions: readonly string[];
+  specifier: string;
+}): string | null {
+  const specifierParts = parsePackageSpecifier(options.specifier);
+
+  if (!specifierParts) {
+    return null;
+  }
+
+  const packageDirectory = findPackageDirectoryForImport({
+    containingFile: options.containingFile,
+    packageName: specifierParts.packageName,
+  });
+
+  if (!packageDirectory) {
+    return null;
+  }
+
+  const manifest = readPackageManifest(packageDirectory);
+  const targets = collectExportTargetsForSubpath(
+    manifest?.exports,
+    specifierParts.subpath,
+  );
+
+  for (const target of targets) {
+    if (!target.startsWith('./')) {
+      continue;
+    }
+
+    const targetPath = path.resolve(packageDirectory, target.slice(2));
+
+    for (const candidatePath of candidatePathsForBasePath(
+      targetPath,
+      options.extensions,
+    )) {
+      const resolvedPath = resolveExistingFilePath(candidatePath);
+
+      if (resolvedPath) {
+        return resolvedPath;
+      }
+    }
+  }
+
+  return null;
+}
+
+function parsePackageSpecifier(
+  specifier: string,
+): { packageName: string; subpath: string } | null {
+  if (
+    specifier.length === 0 ||
+    specifier.startsWith('.') ||
+    specifier.startsWith('/')
+  ) {
+    return null;
+  }
+
+  const parts = specifier.split('/');
+
+  if (specifier.startsWith('@')) {
+    const scope = parts[0];
+    const name = parts[1];
+
+    if (!scope || !name) {
+      return null;
+    }
+
+    return {
+      packageName: `${scope}/${name}`,
+      subpath: parts.length > 2 ? `./${parts.slice(2).join('/')}` : '.',
+    };
+  }
+
+  const packageName = parts[0];
+
+  return packageName
+    ? {
+        packageName,
+        subpath: parts.length > 1 ? `./${parts.slice(1).join('/')}` : '.',
+      }
+    : null;
+}
+
+function findPackageDirectoryForImport(options: {
+  containingFile: string;
+  packageName: string;
+}): string | null {
+  let currentDir = path.dirname(options.containingFile);
+
+  for (;;) {
+    const packageDirectory = path.join(
+      currentDir,
+      'node_modules',
+      options.packageName,
+    );
+
+    if (existsSync(path.join(packageDirectory, 'package.json'))) {
+      return packageDirectory;
+    }
+
+    const parentDir = path.dirname(currentDir);
+
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
+function readPackageManifest(
+  packageDirectory: string,
+): { exports?: unknown } | null {
+  try {
+    return JSON.parse(
+      readFileSync(path.join(packageDirectory, 'package.json'), 'utf8'),
+    ) as { exports?: unknown };
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function collectStringTargets(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return [value];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap(collectStringTargets);
+  }
+
+  if (isRecord(value)) {
+    return Object.values(value).flatMap(collectStringTargets);
+  }
+
+  return [];
+}
+
+function collectExportTargetsForSubpath(
+  exportsField: unknown,
+  subpath: string,
+): string[] {
+  if (exportsField === undefined) {
+    return subpath === '.' ? ['./index'] : [subpath];
+  }
+
+  if (typeof exportsField === 'string' || Array.isArray(exportsField)) {
+    return subpath === '.' ? collectStringTargets(exportsField) : [];
+  }
+
+  if (!isRecord(exportsField)) {
+    return [];
+  }
+
+  const isSubpathExportMap = Object.keys(exportsField).some(
+    (key) => key === '.' || key.startsWith('./'),
+  );
+
+  if (!isSubpathExportMap) {
+    return subpath === '.' ? collectStringTargets(exportsField) : [];
+  }
+
+  return collectStringTargets(exportsField[subpath]);
 }
 
 function mergeParsedProjectConfigs(
@@ -660,6 +884,17 @@ export function resolveModuleNameWithCheckers(options: {
   context: CheckerProjectParseContext;
   specifier: string;
 }): string | null {
+  return (
+    resolveModuleNameWithCheckersDetailed(options)?.resolvedFileName ?? null
+  );
+}
+
+export function resolveModuleNameWithCheckersDetailed(options: {
+  compilerOptions: ts.CompilerOptions;
+  containingFile: string;
+  context: CheckerProjectParseContext;
+  specifier: string;
+}): ResolvedCheckerModuleName | null {
   const checkerPresets =
     options.context.checkerPresets.length > 0
       ? options.context.checkerPresets
@@ -672,7 +907,7 @@ export function resolveModuleNameWithCheckers(options: {
       continue;
     }
 
-    const resolved = adapter.resolveModuleName({
+    const resolved = resolveTypeScriptModuleNameDetailed({
       compilerOptions: options.compilerOptions,
       containingFile: options.containingFile,
       extensions: options.context.extensions,

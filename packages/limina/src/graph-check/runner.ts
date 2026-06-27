@@ -15,7 +15,6 @@ import {
   inferPackageProject,
   isDtsProjectConfig,
   type ProjectInfo,
-  resolveInternalImport,
   shouldResolveThroughGraph,
 } from '#core/import-graph/context';
 import { formatReferences } from '#core/tsconfig/actions';
@@ -43,6 +42,10 @@ import {
   createCheckCounter,
   createCheckItemAccumulator,
 } from '../check-reporting/stats';
+import {
+  isDeclarationFileFamily,
+  resolveDeclarationProvider,
+} from '../core/import-graph/declaration-provider';
 import {
   createWorkspaceExportsResolutionIndex,
   type WorkspaceExportsResolutionIndex,
@@ -537,17 +540,6 @@ function getResolvedWorkspacePackage(
   return findPackageForFile(filePath, packages);
 }
 
-function shouldUseWorkspaceExportResolution(options: {
-  resolvedFilePath: string | null;
-  targetPackage: WorkspacePackage | null;
-}): boolean {
-  if (!options.targetPackage) {
-    return false;
-  }
-
-  return !options.resolvedFilePath;
-}
-
 function addWorkspaceReferenceDependencyProblems(
   config: ResolvedLiminaConfig,
   project: ProjectInfo,
@@ -967,6 +959,42 @@ function resolveImportForReferenceExpectation(options: {
     project: options.project,
     targetPackage,
   });
+  const declarationProvider = resolveDeclarationProvider({
+    compilerOptions: options.project.options,
+    containingFile: options.filePath,
+    fileOwnerLookup: options.context.fileOwnerLookup,
+    importAnalysis: options.context.importAnalysis,
+    importRecord: options.importRecord,
+    project: options.project,
+  });
+  const workspaceTypeScriptResolvedFilePath =
+    workspaceExportResolution?.typeScriptResolvedFileName ?? null;
+  const graphResolvedFilePath =
+    declarationProvider.kind === 'declaration' ||
+    declarationProvider.kind === 'source'
+      ? declarationProvider.typeScriptResolution.resolvedFileName
+      : workspaceTypeScriptResolvedFilePath;
+
+  if (!graphResolvedFilePath && declarationProvider.kind === 'oxc-only') {
+    addOxcOnlyDeclarationProviderProblem({
+      context: options.context,
+      importRecord: options.importRecord,
+      oxcResolvedFilePath: declarationProvider.oxcResolvedFilePath,
+      project: options.project,
+    });
+    return null;
+  }
+
+  if (!graphResolvedFilePath && declarationProvider.kind === 'unresolved') {
+    addUnresolvedWorkspaceImportProblem({
+      context: options.context,
+      importRecord: options.importRecord,
+      project: options.project,
+      targetPackage,
+      title: 'Unresolved workspace import:',
+    });
+    return null;
+  }
 
   if (
     workspaceExportResolution &&
@@ -981,48 +1009,11 @@ function resolveImportForReferenceExpectation(options: {
     return null;
   }
 
-  const internalResolvedFilePath = resolveInternalImport(
-    options.importRecord.specifier,
-    options.filePath,
-    options.project.options,
-    options.project,
-    options.context.importAnalysis,
-  );
-  const useWorkspaceExportResolution = shouldUseWorkspaceExportResolution({
-    resolvedFilePath: internalResolvedFilePath,
-    targetPackage,
-  });
-  const resolvedFilePath =
-    (useWorkspaceExportResolution
-      ? workspaceExportResolution?.oxcResolvedFileName
-      : null) ?? internalResolvedFilePath;
-
-  if (!resolvedFilePath) {
-    addUnresolvedWorkspaceImportProblem({
-      context: options.context,
-      importRecord: options.importRecord,
-      project: options.project,
-      targetPackage,
-      title: 'Unresolved workspace import:',
-    });
-    return null;
-  }
-
-  const graphResolvedFilePath =
-    (useWorkspaceExportResolution
-      ? workspaceExportResolution?.typeScriptResolvedFileName
-      : null) ?? resolvedFilePath;
-
   if (!graphResolvedFilePath) {
-    addUnresolvedWorkspaceImportProblem({
-      context: options.context,
-      importRecord: options.importRecord,
-      project: options.project,
-      targetPackage,
-      title: 'Unresolved workspace import in TypeScript:',
-    });
     return null;
   }
+
+  const resolvedFilePath = graphResolvedFilePath;
 
   const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
     graphResolvedFilePath,
@@ -1031,7 +1022,7 @@ function resolveImportForReferenceExpectation(options: {
   const targetPackageForGraph = getTargetPackageForGraph({
     targetPackage,
     targetWorkspacePackageForResolved,
-    useWorkspaceExportResolution,
+    useWorkspaceExportResolution: Boolean(workspaceExportResolution),
   });
   const deniedDepRule = getDeniedDepRuleForResolvedPackage({
     context: options.context,
@@ -1047,6 +1038,10 @@ function resolveImportForReferenceExpectation(options: {
       project: options.project,
       rule: deniedDepRule,
     });
+    return null;
+  }
+
+  if (isDeclarationFileFamily(graphResolvedFilePath)) {
     return null;
   }
 
@@ -1176,6 +1171,34 @@ function addUnresolvedWorkspaceImportProblem(options: {
       `  matched workspace package: ${options.targetPackage.name}`,
       `  current references: ${formatReferences(options.context.config.rootDir, options.project.references)}`,
     ].join('\n'),
+  );
+}
+
+function addOxcOnlyDeclarationProviderProblem(options: {
+  context: ExpectedReferenceCollectionContext;
+  importRecord: ImportRecord;
+  oxcResolvedFilePath: string;
+  project: ProjectInfo;
+}): void {
+  addGraphProblem(
+    options.context.problems,
+    [
+      'Oxc can resolve this specifier, but TypeScript cannot:',
+      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+      `  imported specifier: ${options.importRecord.specifier}`,
+      `  Oxc resolved file: ${toRelativePath(options.context.config.rootDir, options.oxcResolvedFilePath)}`,
+      '  reason: declaration references follow the checker-aware TypeScript declaration provider, not the Oxc runtime-like resolver.',
+      '  fix: check moduleResolution, exports.types/types conditions, paths, customConditions, and package boundaries.',
+    ],
+    {
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+      filePath: options.importRecord.filePath,
+      fix: 'Check moduleResolution, exports.types/types conditions, paths, customConditions, and package boundaries.',
+      reason:
+        'Oxc resolved this specifier, but TypeScript could not resolve a declaration provider.',
+      title: 'Oxc can resolve this specifier, but TypeScript cannot',
+    },
   );
 }
 

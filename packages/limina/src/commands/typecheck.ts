@@ -317,7 +317,7 @@ export async function runBuild(
         failedTargets: result.failedTargets,
         fallbackReason: 'Checker build finished with failures.',
         failureKind: result.failureKind,
-        fix: 'Inspect the checker build output above, then rerun `limina checker build`.',
+        fix: 'Inspect the build output above, then rerun `limina build <config>`.',
         projectRootDir: result.projectRootDir,
         problems: result.problems,
         task: 'checker:build',
@@ -349,7 +349,7 @@ export async function runBuild(
     const issue = createTaskFailureIssue({
       code: 'LIMINA_CHECKER_BUILD_FAILED',
       detailLines: [formatErrorMessage(error)],
-      fix: 'Inspect the build error above, then rerun `limina checker build`.',
+      fix: 'Inspect the build error above, then rerun `limina build <config>`.',
       reason: `Checker build failed: ${formatErrorMessage(error)}.`,
       rootDir: options.config.rootDir,
       task: 'checker:build',

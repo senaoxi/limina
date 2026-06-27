@@ -130,6 +130,9 @@ function typecheckConfig(
   compilerOptions?: Record<string, unknown>,
 ): string {
   return stringifyConfig({
+    liminaOptions: {
+      outputs: {},
+    },
     compilerOptions: {
       ...buildCompilerOptions,
       noEmit: true,
@@ -239,7 +242,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function withDefaultBuildScript(
   manifest: Record<string, unknown>,
-  command = 'limina checker build tsconfig.json',
+  command = 'limina build tsconfig.json',
 ): Record<string, unknown> {
   const scripts = isPlainRecord(manifest.scripts) ? manifest.scripts : {};
 
@@ -1310,7 +1313,7 @@ packages:
     }
   });
 
-  it('requires # package imports to be declared in owner package imports', async () => {
+  it('requires # package imports to be declared in the nearest package scope', async () => {
     const fixture = await createFixture(
       createPackageFixture({
         source:
@@ -1325,7 +1328,87 @@ packages:
     }
   });
 
-  it('rejects # package imports that resolve to another workspace package', async () => {
+  it('allows # package imports declared by the nearest package scope', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "export const rootValue = 'root';\n",
+        }),
+        'app/src/nested/file.ts':
+          "import { internalValue } from '#internal';\nexport const nestedValue = internalValue;\n",
+        'app/src/nested/internal.ts': 'export const internalValue = 1;\n',
+        'app/src/nested/package.json': stringifyConfig({
+          imports: {
+            '#internal': './internal.ts',
+          },
+          name: '@example/nested',
+          type: 'module',
+        }),
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects relative # package import targets outside the declaring package scope', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const pathOptions = {
+      baseUrl: '.',
+      paths: {
+        '#root': ['./src/index.ts'],
+      },
+    };
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "export const rootValue = 'root';\n",
+        }),
+        'app/src/nested/file.ts':
+          "import { rootValue } from '#root';\nexport const nestedValue = rootValue;\n",
+        'app/src/nested/local.ts': 'export const localValue = 1;\n',
+        'app/src/nested/package.json': stringifyConfig({
+          imports: {
+            '#root': './local.ts',
+          },
+          name: '@example/nested',
+          type: 'module',
+        }),
+        'app/tsconfig.lib.dts.json': buildConfig({
+          compilerOptions: pathOptions,
+          include: ['src/**/*.ts'],
+        }),
+        'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Package import relative target escapes package scope  1 issue',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects relative # package imports that resolve to another workspace package', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
@@ -1369,7 +1452,7 @@ packages:
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
       expect(errorSpy.mock.calls.join('\n')).toContain(
-        'Package import resolves to another source owner  1 issue',
+        'Package import relative target escapes package scope  1 issue',
       );
     } finally {
       errorSpy.mockRestore();
@@ -1378,27 +1461,16 @@ packages:
   });
 
   it('requires # package imports that resolve to artifact packages to be declared', async () => {
-    const pathOptions = {
-      baseUrl: '.',
-      paths: {
-        '#left-pad': ['./node_modules/left-pad/index.d.ts'],
-      },
-    };
     const fixture = await createFixture({
       ...createPackageFixture({
         manifest: {
           imports: {
-            '#left-pad': './src/declared-but-not-used.ts',
+            '#left-pad': 'left-pad',
           },
         },
         source:
           "import type { LeftPad } from '#left-pad';\nexport type T = LeftPad;\n",
       }),
-      'app/tsconfig.lib.dts.json': buildConfig({
-        compilerOptions: pathOptions,
-        include: ['src/**/*.ts'],
-      }),
-      'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
       ...createNodeModulePackage(
         'left-pad',
         'export interface LeftPad { value: string }\n',
@@ -1412,7 +1484,79 @@ packages:
     }
   });
 
-  it('allows # package imports that match owner package imports', async () => {
+  it('allows # package imports that resolve to declared artifact packages', async () => {
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            'left-pad': '^1.0.0',
+          },
+          imports: {
+            '#left-pad': 'left-pad',
+          },
+        },
+        source:
+          "import type { LeftPad } from '#left-pad';\nexport type T = LeftPad;\n",
+      }),
+      ...createNodeModulePackage(
+        'left-pad',
+        'export interface LeftPad { value: string }\n',
+      ),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows # package imports that resolve to declared workspace packages', async () => {
+    const pathOptions = {
+      baseUrl: '.',
+      paths: {
+        '#internal': ['../packages/internal/src/index.ts'],
+      },
+    };
+    const fixture = await createFixture({
+      ...createWorkspaceRootFiles(['app', 'packages/*']),
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            '@example/internal': 'workspace:*',
+          },
+          imports: {
+            '#internal': '@example/internal',
+          },
+        },
+        source:
+          "import { internalValue } from '#internal';\nexport const value = internalValue;\n",
+      }),
+      'app/tsconfig.lib.dts.json': buildConfig({
+        compilerOptions: pathOptions,
+        include: ['src/**/*.ts'],
+      }),
+      'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
+      'packages/internal/package.json': stringifyConfig({
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
+      'pnpm-workspace.yaml': `
+packages:
+  - app
+  - packages/*
+`,
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows # package imports that match nearest package scope imports', async () => {
     const fixture = await createFixture(
       createPackageFixture({
         manifest: {
@@ -1499,7 +1643,7 @@ packages:
         },
         name: '@example/app',
         scripts: {
-          build: 'limina checker build tsconfig.json',
+          build: 'limina build tsconfig.json',
         },
         type: 'module',
       }),
@@ -2289,7 +2433,7 @@ packages:
             '.': './dist/index.js',
           },
           scripts: {
-            build: 'limina checker build tsconfig.dts.json',
+            build: 'limina build tsconfig.dts.json --raw --preset tsc',
           },
         },
         appSource: "export { internalValue } from '@example/internal';\n",
@@ -2321,13 +2465,19 @@ packages:
         },
         appSource: "export { internalValue } from '@example/internal';\n",
       }),
-      'packages/app/tsconfig.json': buildConfig({
+      'packages/app/tsconfig.json': stringifyConfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+            tsBuildInfoFile: './dist/.tsbuildinfo',
+          },
+        },
         compilerOptions: {
-          outDir: './dist',
-          rootDir: './src',
+          ...buildCompilerOptions,
+          noEmit: true,
         },
         include: ['src/**/*.ts'],
-        tsBuildInfoFile: './dist/.tsbuildinfo',
       }),
     });
 
@@ -2383,7 +2533,7 @@ packages:
         },
         name: '@example/app',
         scripts: {
-          build: 'limina checker build $CONFIG',
+          build: 'limina build $CONFIG',
         },
         type: 'module',
       }),
@@ -2404,8 +2554,8 @@ packages:
       expect(errors).toContain(
         'Unsupported package build script for generated Knip tsconfig  1 issue',
       );
-      expect(errors).toContain('command: limina checker build $CONFIG');
-      expect(errors).toContain('static limina checker build scripts');
+      expect(errors).toContain('command: limina build $CONFIG');
+      expect(errors).toContain('static limina build scripts');
     } finally {
       errorSpy.mockRestore();
       await fixture.cleanup();
@@ -2422,7 +2572,7 @@ packages:
         },
         name: '@example/app',
         scripts: {
-          build: 'limina checker build tsconfig.dts.json',
+          build: 'limina build tsconfig.dts.json --raw --preset tsc',
         },
         type: 'module',
       }),
@@ -2530,7 +2680,7 @@ packages:
             '.': './dist/index.js',
           },
           scripts: {
-            build: 'limina checker build tsconfig.dts.json',
+            build: 'limina build tsconfig.dts.json --raw --preset tsc',
           },
         },
         appSource: "export { internalValue } from '@example/internal';\n",
@@ -2552,7 +2702,7 @@ packages:
         },
         name: '@example/tool',
         scripts: {
-          build: 'limina checker build tsconfig.custom.json',
+          build: 'limina build tsconfig.custom.json --raw --preset tsc',
         },
         type: 'module',
       }),

@@ -8,6 +8,7 @@ export interface PackageBuildScript {
   checker?: BuildCheckerPreset;
   command: string;
   configPath: string;
+  raw: boolean;
   name: string;
   packageJsonPath: string;
   packageName: string;
@@ -28,11 +29,7 @@ export interface PackageBuildScriptCollection {
 
 const supportedBuildCheckers = new Set(['tsc', 'vue-tsc', 'tsgo']);
 
-function hasLiminaCheckerBuildIntent(command: string): boolean {
-  return /\blimina\s+checker\s+build\b/u.test(command);
-}
-
-function hasLegacyLiminaBuildIntent(command: string): boolean {
+function hasLiminaBuildIntent(command: string): boolean {
   return /\blimina\s+build\b/u.test(command);
 }
 
@@ -84,32 +81,22 @@ function tokenizeStaticCommand(command: string): string[] | null {
   return tokens;
 }
 
-function getLiminaCheckerBuildArgumentOffset(tokens: string[]): number | null {
-  if (
-    tokens[0] === 'limina' &&
-    tokens[1] === 'checker' &&
-    tokens[2] === 'build'
-  ) {
-    return 3;
+function getLiminaBuildArgumentOffset(tokens: string[]): number | null {
+  if (tokens[0] === 'limina' && tokens[1] === 'build') {
+    return 2;
   }
 
-  if (
-    tokens[0] === 'pnpm' &&
-    tokens[1] === 'limina' &&
-    tokens[2] === 'checker' &&
-    tokens[3] === 'build'
-  ) {
-    return 4;
+  if (tokens[0] === 'pnpm' && tokens[1] === 'limina' && tokens[2] === 'build') {
+    return 3;
   }
 
   if (
     tokens[0] === 'pnpm' &&
     tokens[1] === 'exec' &&
     tokens[2] === 'limina' &&
-    tokens[3] === 'checker' &&
-    tokens[4] === 'build'
+    tokens[3] === 'build'
   ) {
-    return 5;
+    return 4;
   }
 
   return null;
@@ -138,10 +125,7 @@ function parsePackageBuildScript(options: {
   packageDirectory: string;
   scriptName: string;
 }): PackageBuildScript | PackageBuildScriptDiagnostic | null {
-  if (
-    !hasLiminaCheckerBuildIntent(options.command) &&
-    !hasLegacyLiminaBuildIntent(options.command)
-  ) {
+  if (!hasLiminaBuildIntent(options.command)) {
     return null;
   }
 
@@ -154,7 +138,7 @@ function parsePackageBuildScript(options: {
       packageJsonPath: options.packageJsonPath,
       packageName: options.packageName,
       reason:
-        'Limina only derives Knip source configs from static limina checker build scripts without shell control operators or dynamic expansion.',
+        'Limina only derives Knip source configs from static limina build scripts without shell control operators or dynamic expansion.',
       scriptName: options.scriptName,
     });
   }
@@ -171,7 +155,7 @@ function parsePackageBuildScript(options: {
     });
   }
 
-  const argumentOffset = getLiminaCheckerBuildArgumentOffset(tokens);
+  const argumentOffset = getLiminaBuildArgumentOffset(tokens);
 
   if (argumentOffset === null) {
     return createDiagnostic({
@@ -179,20 +163,24 @@ function parsePackageBuildScript(options: {
       packageJsonPath: options.packageJsonPath,
       packageName: options.packageName,
       reason:
-        'Limina only recognizes limina checker build, pnpm limina checker build, and pnpm exec limina checker build.',
+        'Limina only recognizes direct limina build, pnpm limina build, and pnpm exec limina build package scripts.',
       scriptName: options.scriptName,
     });
   }
 
   let checker: BuildCheckerPreset | undefined;
   let configPath: string | undefined;
-  let sawTargetOption = false;
+  let raw = false;
 
   for (let index = argumentOffset; index < tokens.length; index += 1) {
     const token = tokens[index]!;
 
     if (token === '-w' || token === '--watch') {
-      sawTargetOption = true;
+      continue;
+    }
+
+    if (token === '--raw') {
+      raw = true;
       continue;
     }
 
@@ -207,7 +195,6 @@ function parsePackageBuildScript(options: {
     }
 
     if (token === '--preset') {
-      sawTargetOption = true;
       const parsedChecker = parseChecker(tokens[index + 1]);
 
       if (!parsedChecker) {
@@ -226,7 +213,6 @@ function parsePackageBuildScript(options: {
     }
 
     if (token.startsWith('--preset=')) {
-      sawTargetOption = true;
       const parsedChecker = parseChecker(token.slice('--preset='.length));
 
       if (!parsedChecker) {
@@ -249,7 +235,7 @@ function parsePackageBuildScript(options: {
         packageJsonPath: options.packageJsonPath,
         packageName: options.packageName,
         reason:
-          'Limina checker build script analysis only supports --preset, -w/--watch, plus one config argument.',
+          'Limina build script analysis only supports --raw, --preset, -w/--watch, plus one literal config argument.',
         scriptName: options.scriptName,
       });
     }
@@ -259,8 +245,7 @@ function parsePackageBuildScript(options: {
         command: options.command,
         packageJsonPath: options.packageJsonPath,
         packageName: options.packageName,
-        reason:
-          'Limina checker build script analysis found multiple config arguments.',
+        reason: 'Limina build script analysis found multiple config arguments.',
         scriptName: options.scriptName,
       });
     }
@@ -269,16 +254,21 @@ function parsePackageBuildScript(options: {
   }
 
   if (!configPath) {
-    if (!sawTargetOption) {
-      return null;
-    }
-
     return createDiagnostic({
       command: options.command,
       packageJsonPath: options.packageJsonPath,
       packageName: options.packageName,
-      reason:
-        'Limina checker build script analysis requires a config argument.',
+      reason: 'Limina build script analysis requires a config argument.',
+      scriptName: options.scriptName,
+    });
+  }
+
+  if (raw && !checker) {
+    return createDiagnostic({
+      command: options.command,
+      packageJsonPath: options.packageJsonPath,
+      packageName: options.packageName,
+      reason: 'limina build --raw package scripts require --preset.',
       scriptName: options.scriptName,
     });
   }
@@ -289,6 +279,7 @@ function parsePackageBuildScript(options: {
     configPath: normalizeAbsolutePath(
       path.resolve(options.packageDirectory, configPath),
     ),
+    raw,
     name: options.scriptName,
     packageJsonPath: options.packageJsonPath,
     packageName: options.packageName,

@@ -33,7 +33,7 @@ function createDtsFileName(sourceFileName: string): string {
     : sourceFileName.replace(/\.json$/u, '.dts.json');
 }
 
-function createSourceConfigScope(sourceConfigPath: string): string {
+export function createSourceConfigScope(sourceConfigPath: string): string {
   const fileName = path.basename(sourceConfigPath);
 
   if (fileName === 'tsconfig.json') {
@@ -41,6 +41,12 @@ function createSourceConfigScope(sourceConfigPath: string): string {
   }
 
   return fileName.replace(/^tsconfig\./u, '').replace(/\.json$/u, '');
+}
+
+function createOutputFileName(sourceFileName: string): string {
+  return sourceFileName === 'tsconfig.json'
+    ? 'tsconfig.output.json'
+    : sourceFileName.replace(/\.json$/u, '.output.json');
 }
 
 export function getGeneratedDtsConfigPath(options: {
@@ -88,6 +94,59 @@ export function getGeneratedSolutionBuildConfigPath(options: {
       'solutions',
       relativeDir === '.' ? '' : relativeDir,
       'tsconfig.build.json',
+    ),
+  );
+}
+
+export function getGeneratedOutputProjectConfigPath(options: {
+  checkerName: string;
+  rootDir: string;
+  sourceConfigPath: string;
+}): string {
+  const relativeSourcePath = toRelativePath(
+    options.rootDir,
+    options.sourceConfigPath,
+  );
+  const relativeDir = path.dirname(relativeSourcePath);
+  const outputFileName = createOutputFileName(
+    path.basename(relativeSourcePath),
+  );
+
+  return normalizeAbsolutePath(
+    path.join(
+      options.rootDir,
+      generatedTsconfigDir,
+      'checkers',
+      options.checkerName,
+      'outputs',
+      'projects',
+      relativeDir === '.' ? '' : relativeDir,
+      outputFileName,
+    ),
+  );
+}
+
+export function getGeneratedOutputSolutionConfigPath(options: {
+  checkerName: string;
+  rootDir: string;
+  sourceConfigPath: string;
+}): string {
+  const relativeSourcePath = toRelativePath(
+    options.rootDir,
+    options.sourceConfigPath,
+  );
+  const relativeDir = path.dirname(relativeSourcePath);
+
+  return normalizeAbsolutePath(
+    path.join(
+      options.rootDir,
+      generatedTsconfigDir,
+      'checkers',
+      options.checkerName,
+      'outputs',
+      'solutions',
+      relativeDir === '.' ? '' : relativeDir,
+      'tsconfig.output.json',
     ),
   );
 }
