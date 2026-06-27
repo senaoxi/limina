@@ -1,0 +1,437 @@
+import {
+  getPackageRootSpecifier,
+  type ImporterInfo,
+  isNamedWorkspacePackage,
+  type NamedWorkspacePackage,
+  type PackageManifest,
+  type PackageOwner,
+  readJsonFile,
+  type WorkspacePackage,
+} from '#core/workspace/actions';
+import { normalizeAbsolutePath } from '#utils/path';
+import { existsSync } from 'node:fs';
+import path from 'pathe';
+
+import type {
+  NearestPackageInfo,
+  ResolvedPackageTarget,
+} from '../packages/owners';
+
+export interface WorkspaceLookupIndexOptions {
+  importers: ImporterInfo[];
+  owners: PackageOwner[];
+  packages: WorkspacePackage[];
+  rootDir: string;
+}
+
+interface NormalizedImporter {
+  directory: string;
+  importer: ImporterInfo;
+}
+
+interface NearestPackageLookupOptions {
+  requireNamedPackageOrNodeModulesPackage: boolean;
+}
+
+export class WorkspaceLookupIndex {
+  readonly rootDir: string;
+
+  readonly #importers: NormalizedImporter[];
+  readonly #namedPackagesByName = new Map<string, NamedWorkspacePackage>();
+  readonly #ownersByDirectory: Map<string, PackageOwner>;
+  readonly #packageInfoByPackageJsonPath = new Map<
+    string,
+    NearestPackageInfo
+  >();
+  readonly #packagesByDirectory: Map<string, WorkspacePackage>;
+  readonly #packagesByPackageJsonPath = new Map<string, WorkspacePackage>();
+
+  readonly #importerByFilePath = new Map<string, ImporterInfo | null>();
+  readonly #nearestNamedPackageInfoByDirectory = new Map<
+    string,
+    NearestPackageInfo | null
+  >();
+  readonly #nearestPackageScopeInfoByDirectory = new Map<
+    string,
+    NearestPackageInfo | null
+  >();
+  readonly #ownerByFilePath = new Map<string, PackageOwner | null>();
+  readonly #packageByFilePath = new Map<string, WorkspacePackage | null>();
+  readonly #resolvedPackageTargetByKey = new Map<
+    string,
+    ResolvedPackageTarget
+  >();
+
+  constructor(options: WorkspaceLookupIndexOptions) {
+    this.rootDir = normalizeAbsolutePath(options.rootDir);
+    this.#importers = options.importers.map((importer) => ({
+      directory: normalizeAbsolutePath(importer.directory),
+      importer,
+    }));
+    this.#ownersByDirectory = createDirectoryMap(options.owners);
+    this.#packagesByDirectory = createDirectoryMap(options.packages);
+
+    for (const workspacePackage of options.packages) {
+      const packageJsonPath = normalizeAbsolutePath(
+        path.join(workspacePackage.directory, 'package.json'),
+      );
+
+      this.#packagesByPackageJsonPath.set(packageJsonPath, workspacePackage);
+
+      if (
+        isNamedWorkspacePackage(workspacePackage) &&
+        !this.#namedPackagesByName.has(workspacePackage.name)
+      ) {
+        this.#namedPackagesByName.set(workspacePackage.name, workspacePackage);
+      }
+    }
+  }
+
+  findPackageForFile(filePath: string): WorkspacePackage | null {
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    const cached = this.#packageByFilePath.get(normalizedFilePath);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const workspacePackage = findNearestDirectoryItem(
+      normalizedFilePath,
+      this.#packagesByDirectory,
+    );
+
+    this.#packageByFilePath.set(normalizedFilePath, workspacePackage);
+    return workspacePackage;
+  }
+
+  findOwnerForFile(filePath: string): PackageOwner | null {
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    const cached = this.#ownerByFilePath.get(normalizedFilePath);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const owner = findNearestDirectoryItem(
+      normalizedFilePath,
+      this.#ownersByDirectory,
+    );
+
+    this.#ownerByFilePath.set(normalizedFilePath, owner);
+    return owner;
+  }
+
+  findImporterForFile(filePath: string): ImporterInfo | null {
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    const cached = this.#importerByFilePath.get(normalizedFilePath);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const importer =
+      this.#importers.find((candidate) =>
+        isPathInsideNormalizedDirectory(
+          normalizedFilePath,
+          candidate.directory,
+        ),
+      )?.importer ?? null;
+
+    this.#importerByFilePath.set(normalizedFilePath, importer);
+    return importer;
+  }
+
+  findNearestPackageScopeInfo(filePath: string): NearestPackageInfo | null {
+    const directory = normalizeAbsolutePath(
+      path.dirname(normalizeAbsolutePath(filePath)),
+    );
+
+    return this.#findNearestPackageInfoFromDirectory(directory, {
+      requireNamedPackageOrNodeModulesPackage: false,
+    });
+  }
+
+  findPackageForSpecifier(specifier: string): NamedWorkspacePackage | null {
+    return (
+      this.#namedPackagesByName.get(getPackageRootSpecifier(specifier)) ?? null
+    );
+  }
+
+  classifyResolvedPackageTarget(options: {
+    owner: PackageOwner;
+    resolvedFilePath: string;
+  }): ResolvedPackageTarget {
+    const normalizedResolvedFilePath = normalizeAbsolutePath(
+      options.resolvedFilePath,
+    );
+    const cacheKey = `${options.owner.packageJsonPath}\0${normalizedResolvedFilePath}`;
+    const cached = this.#resolvedPackageTargetByKey.get(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    const packageInfo = this.#findNearestPackageInfoFromDirectory(
+      normalizeAbsolutePath(path.dirname(normalizedResolvedFilePath)),
+      {
+        requireNamedPackageOrNodeModulesPackage: true,
+      },
+    );
+    const targetOwner = this.findOwnerForFile(normalizedResolvedFilePath);
+    const target = this.#classifyResolvedPackageTarget({
+      owner: options.owner,
+      packageInfo,
+      targetOwner,
+    });
+
+    this.#resolvedPackageTargetByKey.set(cacheKey, target);
+    return target;
+  }
+
+  #classifyResolvedPackageTarget(options: {
+    owner: PackageOwner;
+    packageInfo: NearestPackageInfo | null;
+    targetOwner: PackageOwner | null;
+  }): ResolvedPackageTarget {
+    if (!options.packageInfo) {
+      if (
+        options.targetOwner?.packageJsonPath === options.owner.packageJsonPath
+      ) {
+        return {
+          kind: 'current-owner',
+          packageInfo: {
+            directory: options.owner.directory,
+            manifest: options.owner.manifest,
+            ...(options.owner.name ? { name: options.owner.name } : {}),
+            packageJsonPath: options.owner.packageJsonPath,
+          },
+        };
+      }
+
+      return {
+        kind: 'unowned',
+      };
+    }
+
+    if (
+      options.targetOwner?.packageJsonPath === options.owner.packageJsonPath &&
+      !isPackageInfoInsideNodeModules(options.packageInfo)
+    ) {
+      return {
+        kind: 'current-owner',
+        packageInfo: options.packageInfo,
+      };
+    }
+
+    if (
+      options.targetOwner &&
+      options.targetOwner.packageJsonPath !== options.owner.packageJsonPath
+    ) {
+      return {
+        kind: 'other-owner',
+        packageInfo: options.packageInfo,
+        targetOwner: options.targetOwner,
+        workspacePackage: this.#findWorkspacePackageForPackageInfo(
+          options.packageInfo,
+        ),
+      };
+    }
+
+    return {
+      kind: 'artifact-package',
+      packageInfo: options.packageInfo,
+    };
+  }
+
+  #findNearestPackageInfoFromDirectory(
+    directory: string,
+    options: NearestPackageLookupOptions,
+  ): NearestPackageInfo | null {
+    const cache = options.requireNamedPackageOrNodeModulesPackage
+      ? this.#nearestNamedPackageInfoByDirectory
+      : this.#nearestPackageScopeInfoByDirectory;
+    const visitedDirectories: string[] = [];
+    let currentDir = normalizeAbsolutePath(directory);
+
+    while (true) {
+      const cached = cache.get(currentDir);
+
+      if (cached !== undefined) {
+        setCachedPackageInfo(cache, visitedDirectories, cached);
+        return cached;
+      }
+
+      visitedDirectories.push(currentDir);
+
+      const packageJsonPath = normalizeAbsolutePath(
+        path.join(currentDir, 'package.json'),
+      );
+
+      if (existsSync(packageJsonPath)) {
+        const packageInfo = this.#readPackageInfo(packageJsonPath);
+
+        if (
+          !options.requireNamedPackageOrNodeModulesPackage ||
+          packageInfo.name ||
+          isNodeModulesPackageRoot(currentDir)
+        ) {
+          setCachedPackageInfo(cache, visitedDirectories, packageInfo);
+          return packageInfo;
+        }
+      }
+
+      const parentDir = path.dirname(currentDir);
+
+      if (parentDir === currentDir) {
+        setCachedPackageInfo(cache, visitedDirectories, null);
+        return null;
+      }
+
+      currentDir = parentDir;
+    }
+  }
+
+  #findWorkspacePackageForPackageInfo(
+    packageInfo: NearestPackageInfo,
+  ): WorkspacePackage | null {
+    return (
+      this.#packagesByPackageJsonPath.get(packageInfo.packageJsonPath) ??
+      (packageInfo.name
+        ? this.#namedPackagesByName.get(packageInfo.name)
+        : undefined) ??
+      null
+    );
+  }
+
+  #readPackageInfo(packageJsonPath: string): NearestPackageInfo {
+    const normalizedPackageJsonPath = normalizeAbsolutePath(packageJsonPath);
+    const cached = this.#packageInfoByPackageJsonPath.get(
+      normalizedPackageJsonPath,
+    );
+
+    if (cached) {
+      return cached;
+    }
+
+    const directory = normalizeAbsolutePath(path.dirname(packageJsonPath));
+    const manifest = readJsonFile<PackageManifest>(normalizedPackageJsonPath);
+    const name = getManifestPackageName(manifest);
+    const packageInfo = {
+      directory,
+      manifest,
+      ...(name ? { name } : {}),
+      packageJsonPath: normalizedPackageJsonPath,
+    };
+
+    this.#packageInfoByPackageJsonPath.set(
+      normalizedPackageJsonPath,
+      packageInfo,
+    );
+    return packageInfo;
+  }
+}
+
+export function createWorkspaceLookupIndex(
+  options: WorkspaceLookupIndexOptions,
+): WorkspaceLookupIndex {
+  return new WorkspaceLookupIndex(options);
+}
+
+function createDirectoryMap<T extends { directory: string }>(
+  items: T[],
+): Map<string, T> {
+  const itemsByDirectory = new Map<string, T>();
+
+  for (const item of items) {
+    const directory = normalizeAbsolutePath(item.directory);
+
+    if (!itemsByDirectory.has(directory)) {
+      itemsByDirectory.set(directory, item);
+    }
+  }
+
+  return itemsByDirectory;
+}
+
+function findNearestDirectoryItem<T>(
+  filePath: string,
+  itemsByDirectory: Map<string, T>,
+): T | null {
+  let currentDir = normalizeAbsolutePath(filePath);
+  const exactMatch = itemsByDirectory.get(currentDir);
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  currentDir = normalizeAbsolutePath(path.dirname(currentDir));
+
+  while (true) {
+    const item = itemsByDirectory.get(currentDir);
+
+    if (item) {
+      return item;
+    }
+
+    const parentDir = path.dirname(currentDir);
+
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
+function getManifestPackageName(manifest: PackageManifest): string | undefined {
+  return typeof manifest.name === 'string' && manifest.name.trim().length > 0
+    ? manifest.name.trim()
+    : undefined;
+}
+
+function isNodeModulesPackageRoot(directory: string): boolean {
+  const parentDirectory = path.dirname(directory);
+  const parentName = path.basename(parentDirectory);
+
+  if (parentName === 'node_modules') {
+    return true;
+  }
+
+  if (parentName.startsWith('@')) {
+    return path.basename(path.dirname(parentDirectory)) === 'node_modules';
+  }
+
+  return false;
+}
+
+function isPackageInfoInsideNodeModules(
+  packageInfo: NearestPackageInfo,
+): boolean {
+  return normalizeAbsolutePath(packageInfo.directory)
+    .split('/')
+    .includes('node_modules');
+}
+
+function isPathInsideNormalizedDirectory(
+  normalizedFilePath: string,
+  normalizedDirectoryPath: string,
+): boolean {
+  const directoryPrefix = normalizedDirectoryPath.endsWith('/')
+    ? normalizedDirectoryPath
+    : `${normalizedDirectoryPath}/`;
+
+  return (
+    normalizedFilePath === normalizedDirectoryPath ||
+    normalizedFilePath.startsWith(directoryPrefix)
+  );
+}
+
+function setCachedPackageInfo(
+  cache: Map<string, NearestPackageInfo | null>,
+  directories: string[],
+  packageInfo: NearestPackageInfo | null,
+): void {
+  for (const directory of directories) {
+    cache.set(directory, packageInfo);
+  }
+}

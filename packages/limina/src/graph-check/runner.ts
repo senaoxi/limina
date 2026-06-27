@@ -5,8 +5,6 @@ import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import {
   collectImportsFromFile,
   createFileOwnerLookup,
-  findImporterForFile,
-  findPackageForFile,
   findTargetProject,
   formatArtifactDependencyPolicy,
   formatImportRecordLocation,
@@ -19,7 +17,6 @@ import {
 } from '#core/import-graph/context';
 import { formatReferences } from '#core/tsconfig/actions';
 import {
-  findPackageForSpecifier,
   type ImporterInfo,
   isNamedWorkspacePackage,
   type WorkspacePackage,
@@ -52,6 +49,7 @@ import {
   type WorkspaceExportsResolutionProfile,
   type WorkspacePackageExportResolution,
 } from '../core/workspace/exports';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   collectDependencyGraph,
   type DependencyGraphDocument,
@@ -161,7 +159,6 @@ interface ExpectedReferenceCollectionOptions {
   generatedGraph: GeneratedTsconfigGraphResult;
   graphRules: NormalizedGraphRules;
   importAnalysis: ImportAnalysisContext;
-  importers: ImporterInfo[];
   packages: WorkspacePackage[];
   problems: string[];
   projectPaths: string[];
@@ -169,6 +166,7 @@ interface ExpectedReferenceCollectionOptions {
   projectsByPath: Map<string, ProjectInfo>;
   selectedProjectPaths?: Set<string>;
   workspaceExports: WorkspaceExportsResolutionIndex;
+  workspaceLookup: WorkspaceLookupIndex;
 }
 
 interface ExpectedReferenceCollectionContext
@@ -346,11 +344,11 @@ function createGraphCheckIssues(options: {
 function addDeniedReferenceProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
-  packages: WorkspacePackage[];
   problems: string[];
   project: ProjectInfo;
   projectsByPath: Map<string, ProjectInfo>;
   rules: NormalizedGraphRules;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   if (options.project.labels.length === 0) {
     return;
@@ -368,7 +366,8 @@ function addDeniedReferenceProblems(options: {
       options.project.labels,
       referencePath,
     );
-    const targetPackage = findPackageForFile(referencePath, options.packages);
+    const targetPackage =
+      options.workspaceLookup.findPackageForFile(referencePath);
     const deniedDepRule = targetPackage?.name
       ? getDeniedDepRuleForPackage(
           options.rules,
@@ -487,11 +486,11 @@ function getNodeModulesPackageName(filePath: string): string | null {
 
 function getResolvedPackageName(
   filePath: string,
-  packages: WorkspacePackage[],
+  workspaceLookup: WorkspaceLookupIndex,
 ): string | null {
   return (
     getNodeModulesPackageName(filePath) ??
-    findPackageForFile(filePath, packages)?.name ??
+    workspaceLookup.findPackageForFile(filePath)?.name ??
     null
   );
 }
@@ -531,21 +530,20 @@ function addNamelessWorkspaceReferenceProblem(options: {
 
 function getResolvedWorkspacePackage(
   filePath: string,
-  packages: WorkspacePackage[],
+  workspaceLookup: WorkspaceLookupIndex,
 ): WorkspacePackage | null {
   if (getNodeModulesPackageName(filePath)) {
     return null;
   }
 
-  return findPackageForFile(filePath, packages);
+  return workspaceLookup.findPackageForFile(filePath);
 }
 
 function addWorkspaceReferenceDependencyProblems(
   config: ResolvedLiminaConfig,
   project: ProjectInfo,
   projectsByPath: Map<string, ProjectInfo>,
-  packages: WorkspacePackage[],
-  importers: ImporterInfo[],
+  workspaceLookup: WorkspaceLookupIndex,
   problems: string[],
   checks: CheckCounter,
 ): void {
@@ -553,9 +551,9 @@ function addWorkspaceReferenceDependencyProblems(
     return;
   }
 
-  const sourcePackage = findPackageForFile(project.configPath, packages);
+  const sourcePackage = workspaceLookup.findPackageForFile(project.configPath);
   const importer = sourcePackage
-    ? findImporterForFile(project.configPath, importers)
+    ? workspaceLookup.findImporterForFile(project.configPath)
     : null;
 
   if (!sourcePackage) {
@@ -569,7 +567,7 @@ function addWorkspaceReferenceDependencyProblems(
       continue;
     }
 
-    const targetPackage = findPackageForFile(referencePath, packages);
+    const targetPackage = workspaceLookup.findPackageForFile(referencePath);
 
     if (!targetPackage || targetPackage.directory === sourcePackage.directory) {
       continue;
@@ -945,13 +943,11 @@ function resolveImportForReferenceExpectation(options: {
   importRecord: ImportRecord;
   project: ProjectInfo;
 }): GraphImportResolution | null {
-  const targetPackage = findPackageForSpecifier(
+  const targetPackage = options.context.workspaceLookup.findPackageForSpecifier(
     options.importRecord.specifier,
-    options.context.packages,
   );
-  const importer = findImporterForFile(
+  const importer = options.context.workspaceLookup.findImporterForFile(
     options.importRecord.filePath,
-    options.context.importers,
   );
   const workspaceExportResolution = getWorkspaceExportResolution({
     context: options.context,
@@ -1017,7 +1013,7 @@ function resolveImportForReferenceExpectation(options: {
 
   const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
     graphResolvedFilePath,
-    options.context.packages,
+    options.context.workspaceLookup,
   );
   const targetPackageForGraph = getTargetPackageForGraph({
     targetPackage,
@@ -1137,7 +1133,7 @@ function getDeniedDepRuleForResolvedPackage(options: {
 }): GraphRuleDepDeny | null {
   const resolvedPackageName = getResolvedPackageName(
     options.resolvedFilePath,
-    options.context.packages,
+    options.context.workspaceLookup,
   );
 
   if (!resolvedPackageName) {
@@ -1530,7 +1526,7 @@ export async function runGraphCheckImpl(
   );
   const fileOwnerLookup = createFileOwnerLookup(projects);
   const packages = await preflight.ensureWorkspacePackages();
-  const importers = await preflight.ensureImporters();
+  const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
 
   checkItems.start('source graph routes');
   problems.push(...graphRoute.problems);
@@ -1568,18 +1564,17 @@ export async function runGraphCheckImpl(
     addDeniedReferenceProblems({
       checks,
       config,
-      packages,
       problems,
       project,
       projectsByPath,
       rules: graphRules,
+      workspaceLookup,
     });
     addWorkspaceReferenceDependencyProblems(
       config,
       project,
       projectsByPath,
-      packages,
-      importers,
+      workspaceLookup,
       problems,
       checks,
     );
@@ -1611,13 +1606,13 @@ export async function runGraphCheckImpl(
     generatedGraph,
     graphRules,
     importAnalysis: preflight.importAnalysis,
-    importers,
     packages,
     problems,
     projectPaths,
     projects,
     projectsByPath,
     workspaceExports,
+    workspaceLookup,
   });
 
   addReferenceCompletenessProblems({

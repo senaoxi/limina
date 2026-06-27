@@ -19,6 +19,10 @@ import type {
 } from '#core/workspace/actions';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
 import {
+  createWorkspaceLookupIndex,
+  type WorkspaceLookupIndex,
+} from '../core/workspace/lookup';
+import {
   createPackageEntrySelectionPlan,
   type PackageEntrySelectionPlan,
 } from '../package-check/entry-selection';
@@ -95,6 +99,17 @@ export class LiminaPreflightManager {
 
   ensureImporters(): Promise<ImporterInfo[]> {
     return this.#ensure('importers', () => this.core.workspace.getImporters());
+  }
+
+  ensureWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex> {
+    return this.#ensure('workspaceLookupIndex', async () =>
+      createWorkspaceLookupIndex({
+        importers: await this.ensureImporters(),
+        owners: await this.ensurePackageOwners(),
+        packages: await this.ensureWorkspacePackages(),
+        rootDir: this.config.rootDir,
+      }),
+    );
   }
 
   ensureWorkspaceDependencyDeclarations(): Promise<
