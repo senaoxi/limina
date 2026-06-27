@@ -66,7 +66,7 @@ import { Button } from '@acme/ui';
 
 Relative imports must stay inside the nearest `package.json` package scope. Bare package imports must also be acknowledged by the nearest pnpm workspace source owner: if source imports `p-map`, then the owner `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies` must declare it. A matching `source.importAuthority.allow` package rule may add the workspace root `package.json` as a second declaration candidate, and specifier rules can cover project templates and aliases whose dependencies are provided elsewhere. Self imports and Node built-ins are not treated as ordinary external dependency violations.
 
-`#imports` stay under the same boundary: `#utils/foo` must match the current source owner's own `package.json#imports`, and the resolved file must remain inside that owner or resolve to an authorized external package artifact.
+`#imports` use the nearest package scope of the importing file as their declaration source. A relative target such as `"#utils/*": "./src/utils/*.ts"` must resolve inside the package scope that declares it. A package target such as `"#dep": "p-map"` may resolve to a third-party package or workspace dependency, but that dependency must still be authorized by the importing file's pnpm workspace source owner or by a matching `source.importAuthority.allow` rule.
 
 ## Public Exports Must Really Resolve
 

@@ -45,18 +45,41 @@ check command to show the full list.
 `limina graph check`, `limina source check`, and `limina proof check` accept
 `--verbose` for full grouped issue details.
 
+## Build
+
+| Command                                    | Description                                                                |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `limina build <config>`                    | Build user-facing artifacts from Limina-managed output build configs.      |
+| `limina build <config> --preset <p>`       | Select the output build preset when multiple build-capable checkers match. |
+| `limina build <config> --watch`            | Watch input files and rebuild the managed output target.                   |
+| `limina build <config> --raw --preset <p>` | Directly run `tsc`, `tsgo`, or `vue-tsc` against a user-authored tsconfig. |
+
+Managed `limina build <config>` accepts only configs managed by Limina. The
+target source leaf must declare `liminaOptions.outputs`; a solution config can
+be used when at least one recursive referenced source leaf declares outputs.
+Managed builds generate and run output configs under
+`.limina/tsconfig/checkers/<checker>/outputs/`.
+
+Raw mode bypasses Limina's generated graph and inferred references. It requires
+`--preset`, supports only `tsc`, `tsgo`, and `vue-tsc`, and rejects generated
+configs under `.limina`.
+
 ## Checkers
 
-| Command                                      | Description                                                       |
-| -------------------------------------------- | ----------------------------------------------------------------- |
-| `limina checker build`                       | Run build execution for checker entries that support it.          |
-| `limina checker build <config>`              | Run checker build for one source or raw tsconfig.                 |
-| `limina checker build <config> --preset <p>` | Select the build preset: `tsc`, `vue-tsc`, or `tsgo`.             |
-| `limina checker build <config> --watch`      | Watch input files and rebuild one selected config.                |
-| `limina checker typecheck`                   | Run typecheck-only entries such as `vue-tsgo` and `svelte-check`. |
+| Command                                      | Description                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------ |
+| `limina checker build`                       | Build all generated internal declaration entries that support it.  |
+| `limina checker build <config>`              | Build the Limina-managed internal declaration target for a config. |
+| `limina checker build <config> --preset <p>` | Select the internal declaration build preset.                      |
+| `limina checker build <config> --watch`      | Watch input files and rebuild one internal declaration target.     |
+| `limina checker typecheck`                   | Run typecheck-only entries such as `vue-tsgo` and `svelte-check`.  |
 
 `limina checker build` and `limina checker typecheck` accept `--verbose` when
 they report checker failures.
+
+`limina checker build <config>` never raw-builds unmanaged configs and never
+reads `liminaOptions.outputs`. User-facing artifact output belongs to
+`limina build <config>`.
 
 ## Package and Release
 
