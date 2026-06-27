@@ -40,6 +40,8 @@ import { createClient } from '@acme/core';
 
 From pnpm's perspective, this is fine. `workspace:*` links the local workspace package.
 
+Package-private `#imports` have a similar split. A relative target is private to the package scope that declares it, so it must stay inside that scope. A package target may point at a third-party package or another workspace dependency, but the importing file's pnpm workspace source owner must still authorize that dependency.
+
 `@acme/core/package.json` may deliberately expose both source-facing and artifact-facing public entries:
 
 ```json

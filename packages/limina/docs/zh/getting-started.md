@@ -13,8 +13,16 @@ Limina 面向 pnpm 工作区，并要求配置文件使用 ESM。
 
 ::: code-group
 
-```sh [pnpm]
+```bash [pnpm]
 pnpm add -D limina typescript
+```
+
+```bash [npm]
+npm install -D limina typescript
+```
+
+```bash [yarn]
+yarn add -D limina typescript
 ```
 
 :::

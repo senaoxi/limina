@@ -155,7 +155,7 @@ import { Button } from '../../ui/src/Button';
 import { Button } from '@acme/ui';
 ```
 
-Limina 会把这种关系看成一组必须对齐的事实：源码 import 了谁，source owner 或显式允许的 workspace root manifest 候选是否承认它，被依赖包是否真的公开了这个入口。`#imports` 也一样，它必须匹配当前 source owner 自己的 `imports` 字段，不能悄悄解析到别的包内部。
+Limina 会把这种关系看成一组必须对齐的事实：源码 import 了谁，source owner 或显式允许的 workspace root manifest 候选是否承认它，被依赖包是否真的公开了这个入口。`#imports` 也一样，它会匹配导入文件最近 package scope 的 `imports` 字段；相对 target 必须留在声明它的 package scope 内，package target 可以指向三方包或 workspace dependency，但仍然要被导入文件所属的 source owner 授权。
 
 ## 运行时边界要一致
 

@@ -66,7 +66,7 @@ import { Button } from '@acme/ui';
 
 相对导入必须留在最近 `package.json` 形成的 package scope 内。裸包导入也必须被最近的 pnpm workspace source owner 承认。也就是说，源码里 import 了 `p-map`，当前 source owner 的 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 至少要有一处声明它。匹配的 `source.importAuthority.allow` package rule 可以把 workspace root `package.json` 加为第二个声明候选；项目模板、文档别名等由别处提供依赖的场景，可以用 specifier rule 说明。包自身导入和 Node 内置模块不按普通外部依赖处理。
 
-`#imports` 也遵守同样的边界：`#utils/foo` 必须匹配当前 source owner 自己的 `package.json#imports`，解析结果也必须留在当前 source owner 内，或者落到一个已经声明的外部产物包里。
+`#imports` 的声明来源是导入文件最近的 package scope。`"#utils/*": "./src/utils/*.ts"` 这类相对 target 必须解析在声明它的 package scope 内。`"#dep": "p-map"` 这类 package target 可以解析到三方包或 workspace dependency，但这个依赖仍然要被导入文件所属的 pnpm workspace source owner 授权，或命中匹配的 `source.importAuthority.allow` 规则。
 
 ## 公开导出必须真的可解析
 

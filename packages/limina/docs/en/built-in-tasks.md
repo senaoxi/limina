@@ -153,16 +153,18 @@ import pMap from 'p-map'; // but package.json does not declare p-map
 
 Reports `Unauthorized bare package import:`. Fix: add `p-map` to the right dependency section.
 
-### `#subpath` imports must match imports and stay in scope
+### `#subpath` imports follow package-scope imports
 
-A `#xxx` subpath import must be defined in the package's `package.json#imports`, and must still resolve inside the package.
+A `#xxx` subpath import is matched against the nearest package scope `package.json#imports` for the importing file. When that mapping uses a relative target, the resolved file must stay inside the package scope that declares the mapping.
 
 ```jsonc
 // package.json
 { "imports": { "#utils/*": "./src/utils/*.ts" } }
 ```
 
-No match reports `Unauthorized package import specifier:`; unresolvable reports `Unresolved package import specifier:`; resolving into another source owner reports `Package import resolves to another source owner:`.
+`imports` targets may also name a package, for example `{ "imports": { "#dep": "p-map" } }`. In that case Limina treats the result as an external package dependency: it may resolve to a third-party package or a workspace dependency, but the importing file's pnpm workspace source owner must authorize that dependency through its dependency sections or a matching `source.importAuthority.allow` rule.
+
+No match reports `Unauthorized package import specifier:` and points at the nearest package scope. Unresolvable matches report `Unresolved package import specifier:`. Relative targets that escape the declaring package scope report `Package import relative target escapes package scope:`. Package targets that are not authorized reuse the dependency authorization diagnostic.
 
 ### A tsconfig / module may belong to only one owner
 
