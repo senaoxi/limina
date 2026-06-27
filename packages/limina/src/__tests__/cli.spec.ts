@@ -163,6 +163,9 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
   await writeText(
     path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
     stringifyConfig({
+      liminaOptions: {
+        outputs: {},
+      },
       compilerOptions: {
         ...buildCompilerOptions,
         noEmit: true,
@@ -224,7 +227,7 @@ describe('limina CLI', () => {
     const graphHelp = getHelpOutput(['node', 'limina', 'graph', '--help']);
 
     expect(rootHelp).toContain('checker <action> [config]');
-    expect(rootHelp).not.toContain('build [config]');
+    expect(rootHelp).toContain('build <config>');
     expect(rootHelp).toContain('graph <action>');
     expect(rootHelp).not.toContain('nx <action>');
     expect(graphHelp).toContain('--view <view>');
@@ -295,7 +298,39 @@ describe('limina CLI', () => {
     });
   });
 
-  it('runs raw checker build with the requested preset from the public command', async () => {
+  it('runs managed output build from the public command', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const result = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'limina.config.mjs'),
+          'build',
+          'packages/pkg/tsconfig.lib.json',
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+          },
+        },
+      );
+      const tscArgs = await readFile(
+        path.join(rootDir, 'tsc-args.txt'),
+        'utf8',
+      );
+
+      expect(result.stdout).toContain('limina build');
+      expect(result.stdout).toContain('limina build passed');
+      expect(tscArgs).toContain(
+        '.limina/tsconfig/checkers/typescript/outputs/projects/packages/pkg/tsconfig.lib.output.json',
+      );
+    });
+  });
+
+  it('runs raw build with the requested preset from the public command', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
       await writeText(
         path.join(rootDir, 'packages/raw/src/index.vue'),
@@ -318,9 +353,9 @@ describe('limina CLI', () => {
           cliPath,
           '--config',
           path.join(rootDir, 'limina.config.mjs'),
-          'checker',
           'build',
           'packages/raw/tsconfig.raw.json',
+          '--raw',
           '--preset',
           'vue-tsc',
         ],
@@ -385,7 +420,7 @@ describe('limina CLI', () => {
           },
           name: '@example/pkg',
           scripts: {
-            build: 'limina checker build tsconfig.json',
+            build: 'limina build tsconfig.json',
           },
           type: 'module',
         }),
@@ -505,9 +540,40 @@ describe('limina CLI', () => {
         cliPath,
         'build',
         'packages/pkg/tsconfig.lib.json',
+        '--raw',
       ]),
     ).rejects.toMatchObject({
-      stderr: expect.stringContaining('Unknown command "build".'),
+      stderr: expect.stringContaining('limina build --raw requires --preset.'),
+    });
+
+    await expect(
+      execFileAsync(process.execPath, [
+        cliPath,
+        'build',
+        'packages/pkg/tsconfig.lib.json',
+        '--raw',
+        '--preset',
+        'vue-tsgo',
+      ]),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        'Invalid build --preset "vue-tsgo". Expected one of: tsc, vue-tsc, tsgo.',
+      ),
+    });
+
+    await expect(
+      execFileAsync(process.execPath, [
+        cliPath,
+        'build',
+        'packages/pkg/tsconfig.lib.json',
+        '--raw',
+        '--preset',
+        'svelte-check',
+      ]),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        'Invalid build --preset "svelte-check". Expected one of: tsc, vue-tsc, tsgo.',
+      ),
     });
   });
 
@@ -545,7 +611,7 @@ describe('limina CLI', () => {
             config: {
               checkers: {
                 typescript: {
-                  include: ['tsconfig.json'],
+                  include: ['app/tsconfig.json'],
                   preset: 'tsc',
                 },
               },
@@ -571,7 +637,7 @@ describe('limina CLI', () => {
         stringifyConfig({
           name: '@example/app',
           scripts: {
-            build: 'limina checker build tsconfig.json',
+            build: 'limina build tsconfig.json',
           },
           type: 'module',
         }),
@@ -601,6 +667,9 @@ describe('limina CLI', () => {
       await writeText(
         path.join(rootDir, 'app/tsconfig.lib.json'),
         stringifyConfig({
+          liminaOptions: {
+            outputs: {},
+          },
           compilerOptions: {
             ...buildCompilerOptions,
             noEmit: true,
@@ -689,7 +758,7 @@ describe('limina CLI', () => {
           },
           name: '@example/app',
           scripts: {
-            build: 'limina checker build tsconfig.json',
+            build: 'limina build tsconfig.json',
           },
           type: 'module',
         }),
@@ -723,6 +792,9 @@ describe('limina CLI', () => {
       await writeText(
         path.join(rootDir, 'app/tsconfig.lib.json'),
         stringifyConfig({
+          liminaOptions: {
+            outputs: {},
+          },
           compilerOptions: {
             ...buildCompilerOptions,
             noEmit: true,

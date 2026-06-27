@@ -1,7 +1,9 @@
 import {
   type CheckerProjectParseContext,
   normalizeExtensions,
+  type ResolvedCheckerModuleName,
   resolveModuleNameWithCheckers,
+  resolveModuleNameWithCheckersDetailed,
 } from '#checkers';
 import type { VueImportParser } from '#config/runner';
 import { uniqueValues } from '#utils/collections';
@@ -37,6 +39,18 @@ export interface ImportAnalysisContext {
     options: ts.CompilerOptions,
     contextOrExtensions?: ImportResolveContextInput,
   ) => string | null;
+  resolveOxcImport: (
+    specifier: string,
+    containingFile: string,
+    options: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ) => string | null;
+  resolveTypeScriptImport: (
+    specifier: string,
+    containingFile: string,
+    options: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ) => ResolvedCheckerModuleName | null;
 }
 
 export interface CreateImportAnalysisContextOptions {
@@ -1332,6 +1346,32 @@ export function createImportAnalysisContext(
     return imports;
   };
 
+  const resolveTypeScriptImport = (
+    specifier: string,
+    containingFile: string,
+    compilerOptions: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ): ResolvedCheckerModuleName | null =>
+    resolveModuleNameWithCheckersDetailed({
+      compilerOptions,
+      containingFile: normalizeAbsolutePath(containingFile),
+      context: normalizeContextInput(contextOrExtensions),
+      specifier,
+    });
+
+  const resolveOxcImport = (
+    specifier: string,
+    containingFile: string,
+    compilerOptions: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ): string | null =>
+    resolveModuleNameWithOxcCaches(caches, {
+      compilerOptions,
+      containingFile: normalizeAbsolutePath(containingFile),
+      context: normalizeContextInput(contextOrExtensions),
+      specifier,
+    });
+
   const resolveInternalImport = (
     specifier: string,
     containingFile: string,
@@ -1374,12 +1414,12 @@ export function createImportAnalysisContext(
     const preferTypeScriptResolver =
       hasTypeScriptOnlyResolutionOptions(options);
     const typeScriptResolved = preferTypeScriptResolver
-      ? resolveModuleNameWithCheckers({
-          compilerOptions: options,
-          containingFile: normalizedContainingFile,
-          context,
+      ? resolveTypeScriptImport(
           specifier,
-        })
+          normalizedContainingFile,
+          options,
+          context,
+        )?.resolvedFileName
       : null;
     const resolved =
       typeScriptResolved ??
@@ -1400,12 +1440,12 @@ export function createImportAnalysisContext(
       }) ??
       (preferTypeScriptResolver
         ? null
-        : (resolveModuleNameWithOxcCaches(caches, {
-            compilerOptions: options,
-            containingFile: normalizedContainingFile,
-            context,
+        : (resolveOxcImport(
             specifier,
-          }) ??
+            normalizedContainingFile,
+            options,
+            context,
+          ) ??
           resolveModuleNameWithCheckers({
             compilerOptions: options,
             containingFile: normalizedContainingFile,
@@ -1420,6 +1460,8 @@ export function createImportAnalysisContext(
   return {
     collectImportsFromFile,
     resolveInternalImport,
+    resolveOxcImport,
+    resolveTypeScriptImport,
   };
 }
 
@@ -1450,3 +1492,5 @@ export function resolveInternalImport(
     contextOrExtensions,
   );
 }
+
+export { type ResolvedCheckerModuleName } from '#checkers';

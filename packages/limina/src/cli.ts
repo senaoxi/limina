@@ -108,6 +108,15 @@ interface CheckerFlags extends GlobalFlags {
   watch?: boolean;
 }
 
+interface BuildFlags extends GlobalFlags {
+  '--'?: string[];
+  preset?: string;
+  raw?: boolean;
+  verbose?: boolean;
+  w?: boolean;
+  watch?: boolean;
+}
+
 interface GraphFlags extends GlobalFlags {
   output?: string;
   verbose?: boolean;
@@ -157,6 +166,7 @@ function parsePackageTool(
 
 function parseBuildPreset(
   preset: string | undefined,
+  commandLabel = 'checker build',
 ): BuildCheckerPreset | undefined {
   if (!preset) {
     return undefined;
@@ -167,7 +177,7 @@ function parseBuildPreset(
   }
 
   throw new Error(
-    `Invalid checker build --preset "${preset}". Expected one of: tsc, vue-tsc, tsgo.`,
+    `Invalid ${commandLabel} --preset "${preset}". Expected one of: tsc, vue-tsc, tsgo.`,
   );
 }
 
@@ -201,7 +211,30 @@ function rejectUnknownCheckerOptions(flags: CheckerFlags): void {
   }
 }
 
+function rejectUnknownBuildOptions(flags: BuildFlags): void {
+  const knownOptions = new Set([
+    '--',
+    'config',
+    'mode',
+    'preset',
+    'raw',
+    'verbose',
+    'w',
+    'watch',
+  ]);
+
+  for (const option of Object.keys(flags)) {
+    if (!knownOptions.has(option)) {
+      throw new Error(`Unknown option: --${option}.`);
+    }
+  }
+}
+
 function getCheckerWatchFlag(flags: CheckerFlags): boolean | undefined {
+  return flags.watch ?? flags.w;
+}
+
+function getBuildWatchFlag(flags: BuildFlags): boolean | undefined {
   return flags.watch ?? flags.w;
 }
 
@@ -884,6 +917,55 @@ export function createLiminaCli(): ReturnType<typeof cac> {
     });
 
   cli
+    .command('build <config>', 'Build user-facing artifacts')
+    .option('--preset <preset>', 'Build checker preset: tsc, vue-tsc, or tsgo')
+    .option('--raw', 'Run the selected checker directly against the config')
+    .option('-w, --watch', 'Watch input files and rebuild on changes')
+    .option('--verbose', 'Show full build issue details')
+    .allowUnknownOptions()
+    .action(async (configPath: string, flags: BuildFlags) => {
+      rejectUnknownBuildOptions(flags);
+
+      const watch = getBuildWatchFlag(flags);
+
+      if (flags.raw && !flags.preset) {
+        throw new Error('limina build --raw requires --preset.');
+      }
+
+      const checker = parseBuildPreset(flags.preset, 'build');
+      const flow = createCliFlow();
+      flow.intro('limina build');
+      const config = await load(flags, 'build');
+      await writeNotRunCheckIssueSnapshot({
+        command: 'limina build',
+        rootDir: config.rootDir,
+      });
+      const result = await runBuild({
+        checker,
+        clearScreen: false,
+        config,
+        configPath,
+        cwd: process.cwd(),
+        flow,
+        raw: flags.raw,
+        report: {
+          command: 'limina build',
+          verbose: flags.verbose,
+        },
+        watch,
+      });
+
+      if (!result.passed) {
+        process.exitCode = 1;
+      }
+
+      await closeCliFlow(
+        flow,
+        result.passed ? 'limina build passed' : 'limina build failed',
+      );
+    });
+
+  cli
     .command(
       'checker <action> [config]',
       'Run checker build or typecheck entries',
@@ -929,30 +1011,23 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             command: 'limina checker build',
             rootDir: config.rootDir,
           });
-          const result = configPath
-            ? await runBuild({
-                checker: parseBuildPreset(flags.preset),
-                clearScreen: false,
-                config,
-                configPath,
-                cwd: process.cwd(),
-                flow,
-                report: {
-                  command: 'limina checker build',
-                  verbose: flags.verbose,
-                },
-                watch,
-              })
-            : await runCheckerBuild({
-                clearScreen: false,
-                config,
-                cwd: process.cwd(),
-                flow,
-                report: {
-                  command: 'limina checker build',
-                  verbose: flags.verbose,
-                },
-              });
+          const result = await runCheckerBuild({
+            ...(configPath
+              ? {
+                  checker: parseBuildPreset(flags.preset),
+                  configPath,
+                  watch,
+                }
+              : {}),
+            clearScreen: false,
+            config,
+            cwd: process.cwd(),
+            flow,
+            report: {
+              command: 'limina checker build',
+              verbose: flags.verbose,
+            },
+          });
 
           if (!result.passed) {
             process.exitCode = 1;

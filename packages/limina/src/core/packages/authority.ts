@@ -4,6 +4,10 @@ import type {
   WorkspacePackage,
 } from '#core/workspace/actions';
 import { isNamedWorkspacePackage } from '#core/workspace/actions';
+import {
+  isBarePackageSpecifier,
+  isRelativeSpecifier,
+} from '#utils/module-specifier';
 import { isPlainRecord } from '#utils/values';
 import path from 'pathe';
 
@@ -16,6 +20,8 @@ export {
 
 export interface PackageImportMatch {
   key: string;
+  targetKind: PackageImportTargetKind;
+  value: unknown;
 }
 
 type DependencySectionName =
@@ -28,6 +34,12 @@ interface DependencyDeclaration {
   sectionName: DependencySectionName;
   specifier: string;
 }
+
+export type PackageImportTargetKind =
+  | 'mixed'
+  | 'package'
+  | 'relative'
+  | 'unknown';
 
 export interface WorkspaceDependencyDeclaration {
   dependencyName: string;
@@ -169,9 +181,13 @@ export function findPackageImportMatch(
   }
 
   for (const key of Object.keys(importsField)) {
+    const value = importsField[key];
+
     if (key === specifier) {
       return {
         key,
+        targetKind: classifyPackageImportTarget(value),
+        value,
       };
     }
 
@@ -187,9 +203,67 @@ export function findPackageImportMatch(
     if (specifier.startsWith(prefix) && specifier.endsWith(suffix)) {
       return {
         key,
+        targetKind: classifyPackageImportTarget(value),
+        value,
       };
     }
   }
 
   return null;
+}
+
+function classifyPackageImportTarget(value: unknown): PackageImportTargetKind {
+  const kinds = new Set<PackageImportTargetKind>();
+
+  collectPackageImportTargetKinds(value, kinds);
+
+  if (kinds.size === 0) {
+    return 'unknown';
+  }
+
+  if (kinds.size === 1) {
+    return kinds.values().next().value ?? 'unknown';
+  }
+
+  return 'mixed';
+}
+
+function collectPackageImportTargetKinds(
+  value: unknown,
+  kinds: Set<PackageImportTargetKind>,
+): void {
+  if (typeof value === 'string') {
+    const target = value.trim();
+
+    if (isRelativeSpecifier(target)) {
+      kinds.add('relative');
+      return;
+    }
+
+    if (isBarePackageSpecifier(target)) {
+      kinds.add('package');
+      return;
+    }
+
+    kinds.add('unknown');
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectPackageImportTargetKinds(item, kinds);
+    }
+    return;
+  }
+
+  if (isPlainRecord(value)) {
+    for (const item of Object.values(value)) {
+      collectPackageImportTargetKinds(item, kinds);
+    }
+    return;
+  }
+
+  if (value !== null && value !== undefined) {
+    kinds.add('unknown');
+  }
 }

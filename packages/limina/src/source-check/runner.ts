@@ -56,6 +56,7 @@ import {
   createWorkspaceDependencyKey,
   findPackageImportMatch,
   isDependencyAuthorized,
+  type PackageImportMatch,
   type WorkspaceDependencyDeclaration,
 } from '../core/packages/authority';
 import {
@@ -656,6 +657,115 @@ function addPackageImportOtherOwnerProblem(options: {
   );
 }
 
+function addPackageImportRelativeScopeProblem(options: {
+  config: ResolvedLiminaConfig;
+  importRecord: ImportRecord;
+  owner: PackageOwner;
+  packageScope: NearestPackageInfo;
+  problems: string[];
+  resolvedFilePath: string;
+  targetPackageScope: NearestPackageInfo | null;
+}): void {
+  options.problems.push(
+    [
+      'Package import relative target escapes package scope:',
+      `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+      `  package scope: ${toRelativePath(options.config.rootDir, options.packageScope.packageJsonPath)}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+      `  imported specifier: ${options.importRecord.specifier}`,
+      `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
+      ...(options.targetPackageScope
+        ? [
+            `  target package scope: ${toRelativePath(options.config.rootDir, options.targetPackageScope.packageJsonPath)}`,
+          ]
+        : []),
+      '  reason: #... package imports with relative targets must stay inside the declaring package scope.',
+    ].join('\n'),
+  );
+}
+
+function isResolvedInsidePackageScope(options: {
+  packageScope: NearestPackageInfo;
+  resolvedFilePath: string;
+}): boolean {
+  return (
+    findNearestPackageScopeInfo(options.resolvedFilePath)?.packageJsonPath ===
+    options.packageScope.packageJsonPath
+  );
+}
+
+function addPackageImportArtifactAuthorizationProblem(options: {
+  config: ResolvedLiminaConfig;
+  importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
+  importRecord: ImportRecord;
+  owner: PackageOwner;
+  packageInfo: NearestPackageInfo;
+  problems: string[];
+  rootPackage: WorkspacePackage | null;
+  workspacePackage: WorkspacePackage | null;
+}): void {
+  if (!options.packageInfo.name) {
+    addResolvedPackageWithoutNameProblem({
+      config: options.config,
+      importRecord: options.importRecord,
+      owner: options.owner,
+      packageInfo: options.packageInfo,
+      problems: options.problems,
+    });
+    return;
+  }
+
+  const packageName = getPackageNameForAuthorization({
+    importRecord: options.importRecord,
+    resolvedPackageName: options.packageInfo.name,
+  });
+
+  if (
+    isDependencyAuthorizedBySourceAuthority({
+      config: options.config,
+      importAuthorityAllowRules: options.importAuthorityAllowRules,
+      importRecord: options.importRecord,
+      owner: options.owner,
+      packageName,
+      rootPackage: options.rootPackage,
+    })
+  ) {
+    return;
+  }
+
+  addPackageImportAuthorizationProblem({
+    authorityManifestPaths: getDependencyAuthorityManifestPaths({
+      config: options.config,
+      importAuthorityAllowRules: options.importAuthorityAllowRules,
+      importRecord: options.importRecord,
+      owner: options.owner,
+      packageName,
+      rootPackage: options.rootPackage,
+    }),
+    config: options.config,
+    ...(packageName === options.packageInfo.name
+      ? {}
+      : { dependencySpecifier: options.packageInfo.name }),
+    importRecord: options.importRecord,
+    owner: options.owner,
+    packageName,
+    problems: options.problems,
+    workspacePackage: options.workspacePackage,
+  });
+}
+
+function shouldTreatPackageImportAsRelativeTarget(
+  match: PackageImportMatch,
+): boolean {
+  return match.targetKind === 'relative';
+}
+
+function shouldTreatPackageImportAsPackageTarget(
+  match: PackageImportMatch,
+): boolean {
+  return match.targetKind === 'package' || match.targetKind === 'mixed';
+}
+
 function addPackageImportProblem(options: {
   config: ResolvedLiminaConfig;
   importRecord: ImportRecord;
@@ -667,8 +777,11 @@ function addPackageImportProblem(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   rootPackage: WorkspacePackage | null;
 }): void {
+  const packageScope = findNearestPackageScopeInfo(
+    options.importRecord.filePath,
+  );
   const match = findPackageImportMatch(
-    options.owner.manifest.imports,
+    packageScope?.manifest.imports,
     options.importRecord.specifier,
   );
 
@@ -677,9 +790,14 @@ function addPackageImportProblem(options: {
       [
         'Unauthorized package import specifier:',
         `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+        ...(packageScope
+          ? [
+              `  package scope: ${toRelativePath(options.config.rootDir, packageScope.packageJsonPath)}`,
+            ]
+          : []),
         `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
         `  imported specifier: ${options.importRecord.specifier}`,
-        '  reason: #... package imports must match the source owner package.json imports field.',
+        '  reason: #... package imports must match the nearest package scope package.json imports field.',
       ].join('\n'),
     );
     return;
@@ -690,11 +808,36 @@ function addPackageImportProblem(options: {
       [
         'Unresolved package import specifier:',
         `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+        ...(packageScope
+          ? [
+              `  package scope: ${toRelativePath(options.config.rootDir, packageScope.packageJsonPath)}`,
+            ]
+          : []),
         `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
         `  imported specifier: ${options.importRecord.specifier}`,
-        '  reason: matched #... package imports must resolve to a file within the same source owner scope.',
+        '  reason: matched #... package imports must resolve from the nearest package scope package.json imports field.',
       ].join('\n'),
     );
+    return;
+  }
+
+  if (
+    packageScope &&
+    shouldTreatPackageImportAsRelativeTarget(match) &&
+    !isResolvedInsidePackageScope({
+      packageScope,
+      resolvedFilePath: options.resolvedFilePath,
+    })
+  ) {
+    addPackageImportRelativeScopeProblem({
+      config: options.config,
+      importRecord: options.importRecord,
+      owner: options.owner,
+      packageScope,
+      problems: options.problems,
+      resolvedFilePath: options.resolvedFilePath,
+      targetPackageScope: findNearestPackageScopeInfo(options.resolvedFilePath),
+    });
     return;
   }
 
@@ -706,10 +849,44 @@ function addPackageImportProblem(options: {
   });
 
   if (target.kind === 'current-owner') {
+    if (
+      packageScope &&
+      !shouldTreatPackageImportAsPackageTarget(match) &&
+      !isResolvedInsidePackageScope({
+        packageScope,
+        resolvedFilePath: options.resolvedFilePath,
+      })
+    ) {
+      addPackageImportRelativeScopeProblem({
+        config: options.config,
+        importRecord: options.importRecord,
+        owner: options.owner,
+        packageScope,
+        problems: options.problems,
+        resolvedFilePath: options.resolvedFilePath,
+        targetPackageScope: findNearestPackageScopeInfo(
+          options.resolvedFilePath,
+        ),
+      });
+    }
     return;
   }
 
   if (target.kind === 'other-owner') {
+    if (shouldTreatPackageImportAsPackageTarget(match)) {
+      addPackageImportArtifactAuthorizationProblem({
+        config: options.config,
+        importAuthorityAllowRules: options.importAuthorityAllowRules,
+        importRecord: options.importRecord,
+        owner: options.owner,
+        packageInfo: target.packageInfo,
+        problems: options.problems,
+        rootPackage: options.rootPackage,
+        workspacePackage: target.workspacePackage,
+      });
+      return;
+    }
+
     addPackageImportOtherOwnerProblem({
       config: options.config,
       importRecord: options.importRecord,
@@ -722,50 +899,14 @@ function addPackageImportProblem(options: {
   }
 
   if (target.kind === 'artifact-package') {
-    if (!target.packageInfo.name) {
-      addResolvedPackageWithoutNameProblem({
-        config: options.config,
-        importRecord: options.importRecord,
-        owner: options.owner,
-        packageInfo: target.packageInfo,
-        problems: options.problems,
-      });
-      return;
-    }
-
-    const packageName = getPackageNameForAuthorization({
-      importRecord: options.importRecord,
-      resolvedPackageName: target.packageInfo.name,
-    });
-
-    if (
-      isDependencyAuthorizedBySourceAuthority({
-        config: options.config,
-        importAuthorityAllowRules: options.importAuthorityAllowRules,
-        importRecord: options.importRecord,
-        owner: options.owner,
-        packageName,
-        rootPackage: options.rootPackage,
-      })
-    ) {
-      return;
-    }
-
-    addPackageImportAuthorizationProblem({
-      authorityManifestPaths: getDependencyAuthorityManifestPaths({
-        config: options.config,
-        importAuthorityAllowRules: options.importAuthorityAllowRules,
-        importRecord: options.importRecord,
-        owner: options.owner,
-        packageName,
-        rootPackage: options.rootPackage,
-      }),
+    addPackageImportArtifactAuthorizationProblem({
       config: options.config,
-      dependencySpecifier: target.packageInfo.name,
+      importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
-      packageName,
+      packageInfo: target.packageInfo,
       problems: options.problems,
+      rootPackage: options.rootPackage,
       workspacePackage: null,
     });
     return;

@@ -1009,6 +1009,44 @@ packages:
     }
   });
 
+  it('does not require project references for declaration-family package providers', async () => {
+    const fixture = await createFixture({
+      ...createWorkspacePackageFiles({
+        appSource:
+          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      }),
+      'packages/internal/package.json': stringifyConfig({
+        exports: {
+          '.': {
+            types: './src/index.d.ts',
+          },
+        },
+        name: '@example/internal',
+        type: 'module',
+      }),
+      'packages/internal/src/index.d.ts':
+        'export declare const internalValue: number;\n',
+      'packages/internal/tsconfig.lib.dts.json': buildConfig({
+        include: ['src/**/*.d.ts'],
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.d.ts']),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('reports workspace package exports unresolved by TypeScript', async () => {
     const fixture = await createFixture({
       'packages/internal/package.json': stringifyConfig({

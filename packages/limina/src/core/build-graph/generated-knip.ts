@@ -1,4 +1,7 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type {
+  ResolvedCheckerConfig,
+  ResolvedLiminaConfig,
+} from '#config/runner';
 import type { GeneratedBuildModule } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { isNamedWorkspacePackage } from '#core/workspace/actions';
@@ -77,17 +80,28 @@ function getGeneratedKnipConfigPath(options: {
   return normalizeAbsolutePath(path.join(options.rootDir, relativeOutputPath));
 }
 
-function isManagedBuildConfig(options: {
-  configPath: string;
-  sourceToBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
-}): boolean {
-  for (const sourceToBuild of options.sourceToBuildByChecker.values()) {
-    if (sourceToBuild.has(options.configPath)) {
-      return true;
+function resolveManagedBuildConfigPaths(options: {
+  checkers: ResolvedCheckerConfig[];
+  configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
+  script: PackageBuildScript;
+}): string[] {
+  const configPaths = new Set<string>();
+
+  for (const checker of options.checkers) {
+    if (options.script.checker && checker.preset !== options.script.checker) {
+      continue;
+    }
+
+    const outputModule = options.configToOutputBuildByChecker
+      .get(checker.name)
+      ?.get(options.script.configPath);
+
+    if (outputModule) {
+      configPaths.add(outputModule.path);
     }
   }
 
-  return false;
+  return [...configPaths].sort((left, right) => left.localeCompare(right));
 }
 
 function toPackageScriptDiagnostic(
@@ -259,8 +273,9 @@ export function resolveGeneratedKnipPackageDiagnostics(options: {
 }
 
 export function prepareGeneratedKnipPackageConfigs(options: {
+  checkers: ResolvedCheckerConfig[];
+  configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   config: ResolvedLiminaConfig;
-  sourceToBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   workspacePackages: WorkspacePackage[];
 }): PreparedGeneratedKnipPackageConfigs {
   const diagnostics: GeneratedKnipPackageDiagnostic[] = [];
@@ -292,12 +307,16 @@ export function prepareGeneratedKnipPackageConfigs(options: {
     const scripts: GeneratedKnipPackageBuildScript[] = [];
 
     for (const script of packageScripts) {
-      const mode: GeneratedKnipPackageBuildMode = isManagedBuildConfig({
-        configPath: script.configPath,
-        sourceToBuildByChecker: options.sourceToBuildByChecker,
-      })
-        ? 'managed'
-        : 'raw';
+      const managedConfigPaths = script.raw
+        ? []
+        : resolveManagedBuildConfigPaths({
+            checkers: options.checkers,
+            configToOutputBuildByChecker: options.configToOutputBuildByChecker,
+            script,
+          });
+      const mode: GeneratedKnipPackageBuildMode = script.raw
+        ? 'raw'
+        : 'managed';
       const diagnostic = validatePackageBuildScript({
         config: options.config,
         mode,
@@ -310,7 +329,23 @@ export function prepareGeneratedKnipPackageConfigs(options: {
         continue;
       }
 
-      references.add(script.configPath);
+      if (!script.raw && managedConfigPaths.length === 0) {
+        diagnostics.push({
+          command: script.command,
+          packageJsonPath: script.packageJsonPath,
+          packageName: script.packageName,
+          reason:
+            'managed limina build package scripts must point to a Limina-managed config with liminaOptions.outputs.',
+          scriptName: script.name,
+        });
+        continue;
+      }
+
+      for (const referencePath of script.raw
+        ? [script.configPath]
+        : managedConfigPaths) {
+        references.add(referencePath);
+      }
       scripts.push({
         ...(script.checker ? { checker: script.checker } : {}),
         command: script.command,

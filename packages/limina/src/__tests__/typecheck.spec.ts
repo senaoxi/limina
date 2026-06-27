@@ -785,6 +785,9 @@ describe('runBuild', () => {
         ],
       }),
       'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -823,7 +826,7 @@ describe('runBuild', () => {
       expect(calls.map((target) => target.args)).toEqual([
         [
           '-b',
-          '.limina/tsconfig/checkers/typescript/solutions/packages/pkg/tsconfig.build.json',
+          '.limina/tsconfig/checkers/typescript/outputs/solutions/packages/pkg/tsconfig.output.json',
           '--pretty',
           'false',
         ],
@@ -846,6 +849,9 @@ describe('runBuild', () => {
         ],
       }),
       'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -880,7 +886,7 @@ describe('runBuild', () => {
       expect(calls.map((target) => target.args)).toEqual([
         [
           '-b',
-          '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+          '.limina/tsconfig/checkers/typescript/outputs/projects/packages/pkg/tsconfig.lib.output.json',
           '--pretty',
           'false',
         ],
@@ -895,6 +901,9 @@ describe('runBuild', () => {
     const fixture = await createFixture({
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -919,6 +928,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
+        checker: 'tsc',
         config: {
           config: {
             checkers: {
@@ -933,6 +943,7 @@ describe('runBuild', () => {
         },
         cwd: fixture.rootDir,
         configPath: 'packages/lib/tsconfig.json',
+        raw: true,
         runner: passingRunner(calls),
       });
 
@@ -975,6 +986,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
+        checker: 'tsc',
         config: {
           config: {
             checkers: {
@@ -989,6 +1001,7 @@ describe('runBuild', () => {
         },
         cwd: fixture.rootDir,
         configPath: 'packages/app/tsconfig.raw.json',
+        raw: true,
         runner: passingRunner(calls),
         watch: true,
       });
@@ -1056,11 +1069,119 @@ describe('runBuild', () => {
         },
         cwd: fixture.rootDir,
         configPath: 'packages/app/tsconfig.raw.json',
+        raw: true,
         runner: passingRunner(calls),
       });
 
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command)).toEqual(['vue-tsc']);
+      expect(calls.map((target) => target.args)).toEqual([
+        ['-b', 'packages/app/tsconfig.raw.json', '--pretty', 'false'],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects raw builds for generated .limina configs', async () => {
+    const fixture = await createFixture({
+      '.limina/tsconfig/generated.json': tsconfig({
+        include: [],
+      }),
+      'packages/managed/src/index.ts': 'export const value = 1;\n',
+      'packages/managed/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        runBuild({
+          checker: 'tsc',
+          config: {
+            config: {
+              checkers: {
+                typescript: {
+                  include: ['packages/managed/tsconfig.json'],
+                  preset: 'tsc',
+                },
+              },
+            },
+            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          configPath: '.limina/tsconfig/generated.json',
+          cwd: fixture.rootDir,
+          raw: true,
+          runner: passingRunner(),
+        }),
+      ).rejects.toThrow('.limina generated configs');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('raw build ignores liminaOptions.outputs validation', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.raw.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            unknownFutureField: true,
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/managed/src/index.ts': 'export const value = 1;\n',
+      'packages/managed/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        checker: 'tsc',
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/managed/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/app/tsconfig.raw.json',
+        cwd: fixture.rootDir,
+        raw: true,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
       expect(calls.map((target) => target.args)).toEqual([
         ['-b', 'packages/app/tsconfig.raw.json', '--pretty', 'false'],
       ]);
@@ -1116,15 +1237,11 @@ describe('runBuild', () => {
     }
   });
 
-  it('builds every matching build-capable checker with different presets', async () => {
+  it('requires --preset when multiple output build checkers match', async () => {
     const calls: TypecheckTarget[] = [];
-    const warnSpy = vi
-      .spyOn(TypecheckLogger, 'warn')
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
       .mockImplementation(() => {});
-    const delayed = delayedRunner({
-      calls,
-      delayMs: (target) => (target.command === 'tsgo' ? 30 : 10),
-    });
     const fixture = await createFixture({
       'packages/native/tsconfig.json': tsconfig({
         files: [],
@@ -1144,6 +1261,9 @@ describe('runBuild', () => {
       }),
       'packages/shared/src/index.ts': 'export const value = 1;\n',
       'packages/shared/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1175,30 +1295,17 @@ describe('runBuild', () => {
         },
         cwd: fixture.rootDir,
         configPath: 'packages/shared/tsconfig.lib.json',
-        runner: delayed.runner,
+        runner: passingRunner(calls),
       });
-      expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['tsgo', 'tsc']);
-      expect(delayed.getMaxActive()).toBe(
-        getExpectedDefaultBuildConcurrency(2),
+      expect(result.passed).toBe(false);
+      expect(calls).toHaveLength(0);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Ambiguous Limina output build preset',
       );
-      expect(calls.map((target) => target.args)).toEqual([
-        [
-          '-b',
-          '.limina/tsconfig/checkers/nativeTypescript/projects/packages/shared/tsconfig.lib.dts.json',
-          '--pretty',
-          'false',
-        ],
-        [
-          '-b',
-          '.limina/tsconfig/checkers/typescript/projects/packages/shared/tsconfig.lib.dts.json',
-          '--pretty',
-          'false',
-        ],
-      ]);
-      expect(warnSpy).not.toHaveBeenCalled();
+      expect(errorSpy.mock.calls.join('\n')).toContain('tsgo');
+      expect(errorSpy.mock.calls.join('\n')).toContain('tsc');
     } finally {
-      warnSpy.mockRestore();
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -1224,6 +1331,9 @@ describe('runBuild', () => {
       }),
       'packages/shared/src/index.ts': 'export const value = 1;\n',
       'packages/shared/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1264,7 +1374,7 @@ describe('runBuild', () => {
       expect(calls.map((target) => target.args)).toEqual([
         [
           '-b',
-          '.limina/tsconfig/checkers/typescript/projects/packages/shared/tsconfig.lib.dts.json',
+          '.limina/tsconfig/checkers/typescript/outputs/projects/packages/shared/tsconfig.lib.output.json',
           '--pretty',
           'false',
         ],
@@ -1282,6 +1392,9 @@ describe('runBuild', () => {
     const fixture = await createFixture({
       'packages/app/src/index.ts': 'export const value = 1;\n',
       'packages/app/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1316,7 +1429,7 @@ describe('runBuild', () => {
       expect(result.passed).toBe(false);
       expect(calls).toHaveLength(0);
       expect(errorSpy.mock.calls.join('\n')).toContain(
-        'Invalid Limina checker build preset',
+        'Invalid Limina build preset',
       );
     } finally {
       errorSpy.mockRestore();
@@ -1324,14 +1437,17 @@ describe('runBuild', () => {
     }
   });
 
-  it('does not warn when tsc and vue-tsc build the same source config', async () => {
+  it('requires --preset when tsc and vue-tsc output-build the same source config', async () => {
     const calls: TypecheckTarget[] = [];
-    const warnSpy = vi
-      .spyOn(TypecheckLogger, 'warn')
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
       .mockImplementation(() => {});
     const fixture = await createFixture({
       'packages/shared/src/index.ts': 'export const value = 1;\n',
       'packages/shared/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1382,16 +1498,18 @@ describe('runBuild', () => {
         runner: passingRunner(calls),
       });
 
-      expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['tsc', 'vue-tsc']);
-      expect(warnSpy).not.toHaveBeenCalled();
+      expect(result.passed).toBe(false);
+      expect(calls).toHaveLength(0);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Ambiguous Limina output build preset',
+      );
     } finally {
-      warnSpy.mockRestore();
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
-  it('warns about incompatible presets after failed generated builds', async () => {
+  it('warns about incompatible presets after failed checker builds', async () => {
     const calls: TypecheckTarget[] = [];
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
@@ -1426,7 +1544,7 @@ describe('runBuild', () => {
     });
 
     try {
-      const result = await runBuild({
+      const result = await runCheckerBuild({
         config: {
           config: {
             checkers: {
@@ -1444,7 +1562,6 @@ describe('runBuild', () => {
           rootDir: fixture.rootDir,
         },
         cwd: fixture.rootDir,
-        project: 'packages/theme/tsconfig.json',
         runner: failingRunner(calls),
       });
       const warningText = warnSpy.mock.calls
@@ -1459,6 +1576,20 @@ describe('runBuild', () => {
         'tsgo',
         'vue-tsc',
       ]);
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/nativeTypescript/tsconfig.build.json',
+          '--pretty',
+          'false',
+        ],
+        [
+          '-b',
+          '.limina/tsconfig/checkers/vue/tsconfig.build.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warningText).toContain(
         'Potentially incompatible build checker combination',
@@ -1470,13 +1601,12 @@ describe('runBuild', () => {
       expect(warningText).toContain('        - packages/shared/tsconfig.json');
       expect(warningText).toContain('config.checkers.vue (vue-tsc)');
       expect(warningText).toContain('        - packages/theme/tsconfig.json');
-      expect(errorText).toContain('build failed:');
+      expect(errorText).toContain('build checks failed:');
       expect(errorText).toContain(
-        '.limina/tsconfig/checkers/nativeTypescript/projects/packages/shared/',
+        '.limina/tsconfig/checkers/nativeTypescript/tsconfig.build.json',
       );
-      expect(errorText).toContain('tsconfig.dts.json');
       expect(errorText).toContain(
-        '.limina/tsconfig/checkers/vue/projects/packages/theme/tsconfig.dts.json',
+        '.limina/tsconfig/checkers/vue/tsconfig.build.json',
       );
       expect(errorText).toContain(
         'Checker "nativeTypescript" failed. Exit code: 1.',
@@ -1498,6 +1628,9 @@ describe('runBuild', () => {
       'packages/app/src/index.ts':
         "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
       'packages/app/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1574,6 +1707,9 @@ describe('runBuild', () => {
       'packages/app/src/index.ts':
         "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
       'packages/app/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1682,6 +1818,9 @@ describe('runBuild', () => {
       'packages/app/src/index.ts':
         "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
       'packages/app/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1693,6 +1832,9 @@ describe('runBuild', () => {
       }),
       'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
       'packages/theme/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1733,13 +1875,13 @@ describe('runBuild', () => {
       expect(calls.map((target) => target.args)).toEqual([
         [
           '-b',
-          '.limina/tsconfig/checkers/vue/projects/packages/theme/tsconfig.dts.json',
+          '.limina/tsconfig/checkers/vue/outputs/projects/packages/theme/tsconfig.output.json',
           '--pretty',
           'false',
         ],
         [
           '-b',
-          '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+          '.limina/tsconfig/checkers/typescript/outputs/projects/packages/app/tsconfig.output.json',
           '--pretty',
           'false',
         ],
@@ -1759,6 +1901,9 @@ describe('runBuild', () => {
       'packages/app/src/index.ts':
         "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
       'packages/app/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1770,6 +1915,9 @@ describe('runBuild', () => {
       }),
       'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
       'packages/theme/tsconfig.json': tsconfig({
+        liminaOptions: {
+          outputs: {},
+        },
         compilerOptions: {
           module: 'ESNext',
           moduleResolution: 'bundler',
@@ -1816,7 +1964,7 @@ describe('runBuild', () => {
       expect(delayed.getMaxActive()).toBe(2);
       expect(argsByCommand.get('tsc')).toEqual([
         '-b',
-        '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+        '.limina/tsconfig/checkers/typescript/outputs/projects/packages/app/tsconfig.output.json',
         '--pretty',
         'false',
         '--watch',
@@ -1824,7 +1972,7 @@ describe('runBuild', () => {
       ]);
       expect(argsByCommand.get('vue-tsc')).toEqual([
         '-b',
-        '.limina/tsconfig/checkers/vue/projects/packages/theme/tsconfig.dts.json',
+        '.limina/tsconfig/checkers/vue/outputs/projects/packages/theme/tsconfig.output.json',
         '--pretty',
         'false',
         '--watch',
