@@ -119,6 +119,11 @@ const GRAPH_CHECK_ITEM_NAMES = [
   'reference completeness',
 ] as const;
 
+const GENERATED_REFERENCE_CYCLE_REASON =
+  'Generated declaration project references must be acyclic so build-mode checkers can order declaration builds.';
+const GENERATED_REFERENCE_CYCLE_FIX =
+  'Break the cycle by merging tightly coupled source scopes, extracting shared contracts, moving runtime wiring to a higher-level entry, or using an intentional declaration boundary.';
+
 function getGeneratedCheckerNamespace(configPath: string): string | null {
   const marker = '/.limina/tsconfig/checkers/';
   const markerIndex = configPath.indexOf(marker);
@@ -192,6 +197,11 @@ interface GraphProblemIssueHint {
   packageName?: string;
   reason?: string;
   title?: string;
+}
+
+interface GeneratedReferenceCycleEdge {
+  from: string;
+  to: string;
 }
 
 const graphProblemIssueHints = new Map<string, GraphProblemIssueHint>();
@@ -625,6 +635,165 @@ function addWorkspaceReferenceDependencyProblems(
       reason: `A cross-package project reference is a source dependency edge, so ${sourcePackage.name} must declare ${targetPackage.name}.`,
       title:
         'Project reference crosses workspace packages without a declared dependency',
+    });
+  }
+}
+
+function createGeneratedReferenceGraph(
+  projects: ProjectInfo[],
+): Map<string, Set<string>> {
+  const dtsProjects = projects.filter((project) =>
+    isDtsProjectConfig(project.configPath),
+  );
+  const dtsProjectPaths = new Set(
+    dtsProjects.map((project) => project.configPath),
+  );
+  const graph = new Map<string, Set<string>>();
+
+  for (const project of dtsProjects) {
+    graph.set(
+      project.configPath,
+      new Set(
+        [...project.references]
+          .filter((referencePath) => dtsProjectPaths.has(referencePath))
+          .sort(),
+      ),
+    );
+  }
+
+  return graph;
+}
+
+function collectGeneratedReferenceComponents(
+  graph: Map<string, Set<string>>,
+): string[][] {
+  const components: string[][] = [];
+  const indexByPath = new Map<string, number>();
+  const lowLinkByPath = new Map<string, number>();
+  const stack: string[] = [];
+  const pathsOnStack = new Set<string>();
+  let nextIndex = 0;
+
+  function visit(configPath: string): void {
+    indexByPath.set(configPath, nextIndex);
+    lowLinkByPath.set(configPath, nextIndex);
+    nextIndex += 1;
+    stack.push(configPath);
+    pathsOnStack.add(configPath);
+
+    for (const referencePath of graph.get(configPath) ?? []) {
+      if (!indexByPath.has(referencePath)) {
+        visit(referencePath);
+        lowLinkByPath.set(
+          configPath,
+          Math.min(
+            lowLinkByPath.get(configPath)!,
+            lowLinkByPath.get(referencePath)!,
+          ),
+        );
+        continue;
+      }
+
+      if (pathsOnStack.has(referencePath)) {
+        lowLinkByPath.set(
+          configPath,
+          Math.min(
+            lowLinkByPath.get(configPath)!,
+            indexByPath.get(referencePath)!,
+          ),
+        );
+      }
+    }
+
+    if (lowLinkByPath.get(configPath) !== indexByPath.get(configPath)) {
+      return;
+    }
+
+    const component: string[] = [];
+
+    while (stack.length > 0) {
+      const currentPath = stack.pop()!;
+
+      pathsOnStack.delete(currentPath);
+      component.push(currentPath);
+
+      if (currentPath === configPath) {
+        break;
+      }
+    }
+
+    components.push(component.sort());
+  }
+
+  for (const configPath of [...graph.keys()].sort()) {
+    if (!indexByPath.has(configPath)) {
+      visit(configPath);
+    }
+  }
+
+  return components.sort((left, right) => left[0]!.localeCompare(right[0]!));
+}
+
+function getGeneratedReferenceCycleEdges(
+  graph: Map<string, Set<string>>,
+  members: string[],
+): GeneratedReferenceCycleEdge[] {
+  const memberPaths = new Set(members);
+
+  return members
+    .flatMap((from) =>
+      [...(graph.get(from) ?? [])]
+        .filter((to) => memberPaths.has(to))
+        .map((to) => ({ from, to })),
+    )
+    .sort(
+      (left, right) =>
+        left.from.localeCompare(right.from) || left.to.localeCompare(right.to),
+    );
+}
+
+function addGeneratedReferenceCycleProblems(options: {
+  checks: CheckCounter;
+  config: ResolvedLiminaConfig;
+  problems: string[];
+  projects: ProjectInfo[];
+}): void {
+  const graph = createGeneratedReferenceGraph(options.projects);
+
+  options.checks.add(graph.size);
+
+  for (const component of collectGeneratedReferenceComponents(graph)) {
+    const hasSelfReference = Boolean(
+      component[0] && graph.get(component[0])?.has(component[0]),
+    );
+
+    if (component.length === 1 && !hasSelfReference) {
+      continue;
+    }
+
+    const members = [...component].sort();
+    const internalEdges = getGeneratedReferenceCycleEdges(graph, members);
+    const lines = [
+      'Generated project reference cycle:',
+      '  projects:',
+      ...members.map(
+        (member) => `    - ${toRelativePath(options.config.rootDir, member)}`,
+      ),
+      '  references in cycle:',
+      ...internalEdges.map(
+        (edge) =>
+          `    - ${toRelativePath(options.config.rootDir, edge.from)} -> ${toRelativePath(options.config.rootDir, edge.to)}`,
+      ),
+      `  reason: ${GENERATED_REFERENCE_CYCLE_REASON}`,
+      `  fix: ${GENERATED_REFERENCE_CYCLE_FIX}`,
+    ];
+
+    addGraphProblem(options.problems, lines, {
+      code: LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      filePath: members[0],
+      fix: GENERATED_REFERENCE_CYCLE_FIX,
+      reason: GENERATED_REFERENCE_CYCLE_REASON,
+      title: 'Generated project reference cycle',
     });
   }
 }
@@ -1579,6 +1748,12 @@ export async function runGraphCheckImpl(
       checks,
     );
   }
+  addGeneratedReferenceCycleProblems({
+    checks,
+    config,
+    problems,
+    projects,
+  });
   checkItems.record('project references');
 
   checkItems.start('condition domains');

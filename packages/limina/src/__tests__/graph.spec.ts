@@ -1,4 +1,5 @@
 import type { GraphConfig, ResolvedLiminaConfig } from '#config/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
   mkdir,
   mkdtemp,
@@ -11,6 +12,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readCheckIssueSnapshot } from '../check-reporting/snapshot';
 import { runGraphCheck, type RunGraphCheckOptions } from '../commands/graph';
 import { GraphLogger } from '../logger';
@@ -243,6 +245,95 @@ function buildConfig(options: {
         }
       : {}),
   });
+}
+
+function generatedDtsConfig(options: {
+  include: string[];
+  references?: string[];
+  sourceConfig: string;
+  tsBuildInfoFile: string;
+}): string {
+  return stringifyConfig({
+    compilerOptions: {
+      ...buildCompilerOptions,
+      rootDir: '.',
+      tsBuildInfoFile: options.tsBuildInfoFile,
+    },
+    include: options.include,
+    liminaOptions: {
+      sourceConfig: options.sourceConfig,
+    },
+    ...(options.references
+      ? {
+          references: options.references.map((reference) => ({
+            path: reference,
+          })),
+        }
+      : {}),
+  });
+}
+
+function createManualGeneratedGraph(
+  rootDir: string,
+  entryRelativePath = 'tsconfig.build.json',
+): GeneratedTsconfigGraphResult {
+  return {
+    changed: false,
+    checkerEntries: new Map([
+      ['typescript', path.join(rootDir, entryRelativePath)],
+    ]),
+    checkers: [
+      {
+        exclude: [],
+        extensions: [],
+        include: [entryRelativePath],
+        name: 'typescript',
+        preset: 'tsc',
+      },
+    ],
+    configToOutputBuild: new Map(),
+    dtsToSource: new Map(),
+    generatedKnipConfigs: [],
+    generatedKnipDiagnostics: [],
+    manifest: {
+      checkers: {},
+      generatedBy: 'limina',
+      knip: {
+        diagnostics: [],
+        packages: [],
+      },
+      providerEdges: [],
+      version: 2,
+    },
+    manifestPath: path.join(rootDir, '.limina/manifest.json'),
+    providerEdges: [],
+    sourceToBuild: new Map(),
+    sourceToDts: new Map(),
+  };
+}
+
+async function runGraphCheckWithIssues(
+  config: ResolvedLiminaConfig,
+  options: RunGraphCheckOptions = {},
+): Promise<{
+  issues: NonNullable<RunGraphCheckOptions['issues']>;
+  passed: boolean;
+}> {
+  const issues: NonNullable<RunGraphCheckOptions['issues']> = [];
+  const passed = await runGraphCheck(config, {
+    clearScreen: false,
+    deferSnapshot: true,
+    report: {
+      defer: true,
+    },
+    ...options,
+    issues,
+  });
+
+  return {
+    issues,
+    passed,
+  };
 }
 
 function createLocalBoundaryFiles(options: {
@@ -623,6 +714,198 @@ describe('runGraphCheck checker entry', () => {
 
     try {
       await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports generated reference cycles from mutual source imports', async () => {
+    const fixture = await createFixture({
+      'packages/a/package.json': stringifyConfig({
+        dependencies: {
+          '@example/b': 'workspace:*',
+        },
+        name: '@example/a',
+        type: 'module',
+      }),
+      'packages/a/src/index.ts':
+        "import { bValue } from '../../b/src/index';\nexport const aValue = bValue;\n",
+      'packages/a/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'packages/b/package.json': stringifyConfig({
+        dependencies: {
+          '@example/a': 'workspace:*',
+        },
+        name: '@example/b',
+        type: 'module',
+      }),
+      'packages/b/src/index.ts':
+        "import { aValue } from '../../a/src/index';\nexport const bValue = aValue;\n",
+      'packages/b/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+    });
+
+    try {
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+      const cycleIssues = issues.filter(
+        (issue) => issue.code === LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      );
+      const detailText = cycleIssues[0]?.detailLines?.join('\n') ?? '';
+
+      expect(passed).toBe(false);
+      expect(cycleIssues).toHaveLength(1);
+      expect(detailText).toContain('references in cycle:');
+      expect(detailText).toContain('packages/a/tsconfig.lib.dts.json');
+      expect(detailText).toContain('packages/b/tsconfig.lib.dts.json');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports self-cycles in generated declaration references', async () => {
+    const fixture = await createFixture({
+      'app/self.ts': 'export const self = 1;\n',
+      'app/tsconfig.self.dts.json': generatedDtsConfig({
+        include: ['self.ts'],
+        references: ['./tsconfig.self.dts.json'],
+        sourceConfig: './tsconfig.self.json',
+        tsBuildInfoFile: './.tsbuild/self.tsbuildinfo',
+      }),
+      'app/tsconfig.self.json': typecheckConfig(['self.ts']),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.self.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config, {
+        generatedGraphProvider: async () =>
+          createManualGeneratedGraph(fixture.rootDir),
+      });
+      const cycleIssues = issues.filter(
+        (issue) => issue.code === LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      );
+      const detailText = cycleIssues[0]?.detailLines?.join('\n') ?? '';
+
+      expect(passed).toBe(false);
+      expect(cycleIssues).toHaveLength(1);
+      expect(cycleIssues[0]?.filePath).toBe('app/tsconfig.self.dts.json');
+      expect(detailText).toContain(
+        'app/tsconfig.self.dts.json -> app/tsconfig.self.dts.json',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports each generated reference SCC once', async () => {
+    const fixture = await createFixture({
+      'app/a.ts': 'export const a = 1;\n',
+      'app/b.ts': 'export const b = 1;\n',
+      'app/c.ts': 'export const c = 1;\n',
+      'app/tsconfig.a.dts.json': generatedDtsConfig({
+        include: ['a.ts'],
+        references: ['./tsconfig.b.dts.json', './tsconfig.c.dts.json'],
+        sourceConfig: './tsconfig.a.json',
+        tsBuildInfoFile: './.tsbuild/a.tsbuildinfo',
+      }),
+      'app/tsconfig.a.json': typecheckConfig(['a.ts']),
+      'app/tsconfig.b.dts.json': generatedDtsConfig({
+        include: ['b.ts'],
+        references: ['./tsconfig.c.dts.json'],
+        sourceConfig: './tsconfig.b.json',
+        tsBuildInfoFile: './.tsbuild/b.tsbuildinfo',
+      }),
+      'app/tsconfig.b.json': typecheckConfig(['b.ts']),
+      'app/tsconfig.c.dts.json': generatedDtsConfig({
+        include: ['c.ts'],
+        references: ['./tsconfig.a.dts.json'],
+        sourceConfig: './tsconfig.c.json',
+        tsBuildInfoFile: './.tsbuild/c.tsbuildinfo',
+      }),
+      'app/tsconfig.c.json': typecheckConfig(['c.ts']),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.a.dts.json',
+          },
+          {
+            path: './app/tsconfig.b.dts.json',
+          },
+          {
+            path: './app/tsconfig.c.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config, {
+        generatedGraphProvider: async () =>
+          createManualGeneratedGraph(fixture.rootDir),
+      });
+      const cycleIssues = issues.filter(
+        (issue) => issue.code === LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      );
+      const detailText = cycleIssues[0]?.detailLines?.join('\n') ?? '';
+
+      expect(passed).toBe(false);
+      expect(cycleIssues).toHaveLength(1);
+      expect(detailText).toContain('app/tsconfig.a.dts.json');
+      expect(detailText).toContain('app/tsconfig.b.dts.json');
+      expect(detailText).toContain('app/tsconfig.c.dts.json');
+      expect(detailText).toContain(
+        'app/tsconfig.a.dts.json -> app/tsconfig.b.dts.json',
+      );
+      expect(detailText).toContain(
+        'app/tsconfig.a.dts.json -> app/tsconfig.c.dts.json',
+      );
+      expect(detailText).toContain(
+        'app/tsconfig.c.dts.json -> app/tsconfig.a.dts.json',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts acyclic generated declaration references', async () => {
+    const fixture = await createFixture({
+      'app/app.ts':
+        "import { core } from './core';\nexport const app = core;\n",
+      'app/core.ts':
+        "import { shared } from './shared';\nexport const core = shared;\n",
+      'app/shared.ts': 'export const shared = 1;\n',
+      'app/tsconfig.app.json': typecheckConfig(['app.ts']),
+      'app/tsconfig.core.json': typecheckConfig(['core.ts']),
+      'app/tsconfig.shared.json': typecheckConfig(['shared.ts']),
+      'tsconfig.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.app.json',
+          },
+          {
+            path: './app/tsconfig.core.json',
+          },
+          {
+            path: './app/tsconfig.shared.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+      const cycleIssues = issues.filter(
+        (issue) => issue.code === LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      );
+
+      expect(passed).toBe(true);
+      expect(cycleIssues).toHaveLength(0);
     } finally {
       await fixture.cleanup();
     }

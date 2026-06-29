@@ -232,6 +232,7 @@ describe('LiminaFlowReporter', () => {
     });
 
     expect(processFlow.rendererBackend).toBe('process');
+    await expect(processFlow.waitForRendererReady()).resolves.toBe(true);
     await processFlow.close();
   });
 
@@ -276,6 +277,11 @@ describe('LiminaFlowReporter', () => {
         import { createLiminaCheckFlowReporter } from ${JSON.stringify(flowModuleUrl)};
 
         void (async () => {
+          Object.defineProperty(process.stdout, 'columns', {
+            configurable: true,
+            value: 80,
+          });
+
           const flow = createLiminaCheckFlowReporter({ forceTty: true });
           await flow.waitForRendererReady();
           flow.intro('limina check');
@@ -332,6 +338,7 @@ describe('LiminaFlowReporter', () => {
       `,
       {
         env: {
+          LIMINA_FLOW_RENDERER_TEST_COLUMNS: '36',
           LIMINA_FLOW_RENDERER_TEST_ROWS: '9',
         },
       },
@@ -357,6 +364,11 @@ describe('LiminaFlowReporter', () => {
         import { createLiminaCheckFlowReporter } from ${JSON.stringify(flowModuleUrl)};
 
         void (async () => {
+          Object.defineProperty(process.stdout, 'columns', {
+            configurable: true,
+            value: 80,
+          });
+
           const flow = createLiminaCheckFlowReporter({ forceTty: true });
           await flow.waitForRendererReady();
           flow.intro('limina check');
@@ -398,6 +410,7 @@ describe('LiminaFlowReporter', () => {
       `,
       {
         env: {
+          LIMINA_FLOW_RENDERER_TEST_COLUMNS: '36',
           LIMINA_FLOW_RENDERER_TEST_ROWS: '9',
         },
       },

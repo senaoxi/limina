@@ -12,6 +12,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   graphConfigInvalid: 'LIMINA_GRAPH_CONFIG_INVALID',
   graphImportTargetUnmapped: 'LIMINA_GRAPH_IMPORT_TARGET_UNMAPPED',
   graphPrepareFailed: 'LIMINA_GRAPH_PREPARE_FAILED',
+  graphReferenceCycle: 'LIMINA_GRAPH_REFERENCE_CYCLE',
   graphReferenceExtra: 'LIMINA_GRAPH_REFERENCE_EXTRA',
   graphReferenceMissing: 'LIMINA_GRAPH_REFERENCE_MISSING',
   graphTargetUnreachable: 'LIMINA_GRAPH_TARGET_UNREACHABLE',
@@ -122,6 +123,11 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
     code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
     description: 'Generated graph preparation failed.',
     task: 'graph:prepare',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle]: {
+    code: LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+    description: 'Generated TypeScript project references contain a cycle.',
+    task: 'graph:check',
   },
   [LIMINA_CHECK_ISSUE_CODES.graphReferenceExtra]: {
     code: LIMINA_CHECK_ISSUE_CODES.graphReferenceExtra,
