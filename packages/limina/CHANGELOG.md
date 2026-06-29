@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-29
+
+### Features
+
+- feat(limina): detect generated reference cycles ([24bc1baa](https://github.com/senaoxi/docs-islands/commit/24bc1baa))
+- feat(limina): optimize flow output and flow logical reorganization ([2ba4b7cb](https://github.com/senaoxi/docs-islands/commit/2ba4b7cb))
+- feat(limina): split checker and output build surfaces ([ff75b328](https://github.com/senaoxi/docs-islands/commit/ff75b328))
+
+### Documentation
+
+- docs(limina): update user documentation ([17fada0b](https://github.com/senaoxi/docs-islands/commit/17fada0b))
+- docs(limina): document build command and refresh zh/en guides ([254b1683](https://github.com/senaoxi/docs-islands/commit/254b1683))
+
+### Other Changes
+
+- perf(limina): ownership lookup cache ([6002c6d7](https://github.com/senaoxi/docs-islands/commit/6002c6d7))
+
 ## [0.1.1] - 2026-06-23
 
 ### Bug Fixes
