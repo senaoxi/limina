@@ -1,6 +1,6 @@
 # Workflows
 
-This page collects the day-to-day command sequences, a CI example, best practices, FAQ, and the maintainer release checklist. The commands here invoke the same checks documented in the [CLI Reference](./cli.md); start with [Getting Started](./getting-started.md) if you are new to Limina.
+The day-to-day command sequences, a CI example, best practices, FAQ, and the maintainer release checklist are collected here, all invoking the same checks documented in the [CLI Reference](./cli.md). Start with [Getting Started](./getting-started.md) if you are new to Limina.
 
 ## Recommended Workflows
 

@@ -1,7 +1,7 @@
 # Source Boundary
 
 ::: warning
-This page documents `config.source` — the **managed source boundary** that source coverage checks use to decide which files must be covered by checker entries or an allowlist. It is different from the top-level `source` option, which configures source import authorization and Knip-driven source usage checks. For that option, see [Source Checks](./source-checks.md).
+`config.source` is the **managed source boundary** that source coverage checks use to decide which files must be covered by checker entries or an allowlist. It is different from the top-level `source` option, which configures source import authorization and Knip-driven source usage checks. For that option, see [Source Checks](./source-checks.md).
 :::
 
 `config.source` defines Limina's global source boundary for source coverage checks. `proof check` uses this boundary to decide which files must be covered by checker entries or an allowlist.

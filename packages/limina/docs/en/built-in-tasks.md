@@ -2,7 +2,7 @@
 
 Limina's built-in tasks are organized around one main line: in a TypeScript monorepo, turn source `tsconfig` files, TypeScript project references, real import relationships, and workspace package relationships into a checkable engineering graph, then run type builds, source-boundary checks, and release-phase checks on top of that graph.
 
-This document explains how the built-in tasks are divided and how users should understand their boundaries. It does not expand every configuration field, rule detail, or CLI option.
+The sections below explain how the built-in tasks are divided and how to understand their boundaries. For the full configuration fields, rule details, and CLI options, see the configuration docs.
 
 ## Understand the Default Check First
 
@@ -192,7 +192,7 @@ In a monorepo using TypeScript project references, a missing source file may not
 
 If a file truly should not enter the regular check scope, use an allowlist entry with a reason rather than letting it float naturally outside the engineering graph.
 
-This document does not list every diagnostic branch of `proof:check`. When reading diagnostics, understand it under one principle: every source file and every `tsconfig` should have a clear role; the same file should not produce duplicate or conflicting ownership inside the same check domain.
+`proof:check` has many diagnostic branches, not all listed here. When reading diagnostics, understand it under one principle: every source file and every `tsconfig` should have a clear role; the same file should not produce duplicate or conflicting ownership inside the same check domain.
 
 ## `checker:build`: Call Build-Capable Checkers
 

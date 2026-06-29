@@ -1,6 +1,6 @@
 # CLI Reference
 
-This page is for maintainers who have already adopted Limina in a TypeScript monorepo, or who are preparing to bring TypeScript project references into their regular check flow. The core concern is not memorizing every command. It is understanding which commands generate the project graph, which commands check whether that graph agrees with source import relationships, and which commands only add checks for already-built artifacts.
+If you have already adopted Limina in a TypeScript monorepo, or you are preparing to bring TypeScript project references into your regular check flow, the core concern is not memorizing every command. It is understanding which commands generate the project graph, which commands check whether that graph agrees with source import relationships, and which commands only add checks for already-built artifacts.
 
 Limina's CLI is centered on TypeScript project references. It generates a project graph under `.limina` from configuration and source, then checks file ownership, package dependencies, project references, checker entries, and source coverage based on that graph. Without automated checks, developers have to manually decide and maintain which source relationships should enter the `references` graph. Limina turns those decisions into repeatable commands and reports.
 
@@ -321,59 +321,3 @@ It also selects artifact directories based on `package.entries`, and requires th
 | `` `limina check --task`, `--checker`, and `--format` require --issues. `` | Snapshot query options were used on the rerun-check command        | Add `--issues`, or remove those filter options                                                                        |
 | `` `limina check --issues` does not accept a pipeline name. ``             | `--issues` reads the latest snapshot and does not run a pipeline   | Use `limina check --issues`; do not add a pipeline name                                                               |
 | `Invalid graph export --view`                                              | `--view` is outside the supported range                            | Use `all`, `source`, or `artifact`                                                                                    |
-
-## Migration Notes
-
-If an old script uses `limina checker build <config> --checker <name>`, change it to:
-
-```sh
-limina checker build <config> --preset tsc
-```
-
-If an old script uses `--project <config>`, change it to a positional argument:
-
-```sh
-limina checker build <config>
-```
-
-`limina init` writes or updates this in the root `package.json`:
-
-```json
-{
-  "scripts": {
-    "limina:build": "limina checker build"
-  }
-}
-```
-
-If the root `package.json` contains the old exact script `"limina:check": "limina check"`, initialization removes that exact legacy script. Other custom scripts are not inferred as equivalent legacy scripts.
-
-## Scope of This Page
-
-This page explains CLI usage paths and command semantics. It does not repeat the full configuration reference. Configuration items such as `graph.rules`, `source.importAuthority`, `proof.allowlist`, `package.entries`, and `release.contentHash` should be maintained in the configuration docs.
-
-This page also does not cover site-level capabilities such as search, edit links, `lastUpdated`, SEO, redirects, or LLM output formats. Those belong to documentation-site configuration, not Limina CLI runtime semantics.
-
-## Factual Boundary
-
-Limina's core checks are built on TypeScript project references, the generated project graph, static source import analysis, pnpm workspace package information, and configuration files. Dynamic runtime behavior, test coverage, bundler artifact semantics, and final registry publishing rules are not guaranteed by the CLI alone.
-
-`graph prepare` generates the project graph, but it does not mean the source structure is already correct; still run `graph check` or `check`. `package check` and `release check` read already-built artifacts, so they cannot replace build commands. `checker build` and `checker typecheck` call corresponding checker entries, so they still depend on those checkers' own capabilities, versions, and peer dependencies.
-
-If a capability depends on configuration or an external peer dependency, and the current repository has not configured or installed it, the corresponding command may skip, pass with no entries, or report the missing dependency. Command examples in this document only show invocation forms implemented by the source code; they do not imply that the default configuration covers every repository shape.
-
-## Source Evidence Summary
-
-- `packages/limina/src/cli.ts`: defines all CLI commands, global options, argument validation, `--issues` snapshot queries, and supported values for `--tool`, `--attw-profile`, `--preset`, and `--view`.
-- `packages/limina/src/config/runner.ts`: defines config loading, pnpm workspace root inference, functional config environment, built-in checker presets, package check tools, release config, and config field structure.
-- `packages/limina/src/pipeline/runner.ts`: defines the default `check` task group, built-in task names, named pipelines, external command steps, and execution behavior for default checks and named pipelines.
-- `packages/limina/src/commands/init.ts`: implements `limina init` handling for `limina.config.mjs`, `.gitignore`, root `package.json`, `.limina`, and optional skill installation.
-- `packages/limina/src/core/build-graph/runner.ts`: implements the generated project graph, checker entries, source-to-declaration config mapping, provider edges, and `.limina` generated artifacts.
-- `packages/limina/src/graph-check/runner.ts`: implements checks for project references, source graph routing, condition domains, reference completeness, workspace dependency declarations, and graph rules.
-- `packages/limina/src/dependency-graph/runner.ts`: implements package nodes, `source` / `artifact` edges, and JSON output for `graph export`.
-- `packages/limina/src/source-check/runner.ts`: implements file ownership, `tsconfig` checks, source package boundaries, import authorization, and Knip-backed source usage checks.
-- `packages/limina/src/proof/runner.ts`: implements project routes, checker coverage targets, proof allowlists, and source coverage checks.
-- `packages/limina/src/checkers.ts` and `packages/limina/src/typecheck/runner.ts`: implement checker presets, build and non-build checker entries, peer dependency checks, specified-config builds, and generated-entry builds.
-- `packages/limina/src/package-check/runner.ts`: implements manifest, publint, ATTW, and artifact import-boundary checks for built package artifacts.
-- `packages/limina/src/commands/release.ts`: implements pre-release artifact consistency checks, including local dependency declarations, `private` manifests, tarballs, and release consistency issue reporting.
-- `packages/limina/package.json`: provides the current package name, version, Node engine, bin entry, and peer dependency ranges.

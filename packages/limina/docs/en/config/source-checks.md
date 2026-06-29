@@ -1,7 +1,7 @@
 # Source Checks
 
 ::: warning
-This page documents the top-level `source` option. It configures two parts of `source:check`: `source.importAuthority` controls source import authorization, and `source.knip` controls Knip-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
+The top-level `source` option configures two parts of `source:check`: `source.importAuthority` controls source import authorization, and `source.knip` controls Knip-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
 :::
 
 `source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina treats pnpm workspace packages as source owners, including nameless workspace packages identified by path. Nested `package.json` files still affect package resolution and form package scopes for relative-import boundaries, but they do not create a separate source owner unless pnpm reports them as workspace packages.
