@@ -1,10 +1,10 @@
 # Source Boundary
 
 ::: warning
-This page documents `config.source` — the **governed-file boundary** that proof coverage uses to decide which files must be covered by checker entries or an allowlist. It is different from the top-level `source` option, which configures Knip-driven dependency and module reachability checks. For that option, see [Source Checks](./source-checks.md).
+This page documents `config.source` — the **managed source boundary** that source coverage checks use to decide which files must be covered by checker entries or an allowlist. It is different from the top-level `source` option, which configures source import authorization and Knip-driven source usage checks. For that option, see [Source Checks](./source-checks.md).
 :::
 
-`config.source` defines Limina's global source boundary for coverage proof. `proof check` uses this boundary to decide which files must be covered by checker entries or an allowlist.
+`config.source` defines Limina's global source boundary for source coverage checks. `proof check` uses this boundary to decide which files must be covered by checker entries or an allowlist.
 
 ```js
 import { defineConfig } from 'limina';
@@ -29,7 +29,7 @@ export default defineConfig({
 `**/*.ts`, `**/*.d.ts`, `**/*.tsx`, `**/*.cts`, `**/*.d.cts`, `**/*.mts`, `**/*.d.mts`, `**/*.mjs`, and `**/*.json`.
 :::
 
-If every TypeScript, TSX, and Vue file under `packages/**/src` should be governed, put those globs in `include`. New files then automatically become part of source and proof checks.
+If every TypeScript, TSX, and Vue file under `packages/**/src` should be managed by Limina, put those globs in `include`. New files then automatically become part of source and coverage checks.
 
 ```js
 export default defineConfig({
@@ -45,20 +45,20 @@ export default defineConfig({
 
 - **Type:** `string[]`
 
-`exclude` is the directory or glob set that should stay outside source governance. Use it for `dist`, `.tsbuild`, fixtures, generated caches, and other files that should not be treated as checked source. When `exclude` is omitted, Limina reads the workspace root `.gitignore` and always also excludes a fixed list of directories and config files.
+`exclude` is the directory or glob set that should stay outside the managed source set. Use it for `dist`, `.tsbuild`, fixtures, generated caches, and other files that should not be treated as checked source. When `exclude` is omitted, Limina reads the workspace root `.gitignore` and always also excludes a fixed list of directories and config files.
 
 ::: details Always-excluded entries (in addition to root `.gitignore`)
 TypeScript config files, known task-tool config/cache files, `dist`, `.git`, `.tsbuild`, `coverage`, and `node_modules`.
 :::
 
-For example, after `include` covers `packages/**/src/**/*.{ts,tsx,vue}`, adding this file makes it part of the proof boundary:
+For example, after `include` covers `packages/**/src/**/*.{ts,tsx,vue}`, adding this file makes it part of the source coverage boundary:
 
 ```ts
 // packages/core/src/generated/runtime.ts
 export const runtimeName = 'core';
 ```
 
-If the file is not covered by a project reachable from a checker entry and is not listed in `proof.allowlist`, `limina proof check` reports it as uncovered source. If a fixture directory should stay outside governance, exclude it explicitly instead of letting it escape by accident.
+If the file is not covered by a project reachable from a checker entry and is not listed in `proof.allowlist`, `limina proof check` reports it as uncovered source. If a fixture directory should stay outside the managed source set, exclude it explicitly instead of letting it escape by accident.
 
 In a fuller example, the directory can look like this:
 

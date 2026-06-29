@@ -34,7 +34,7 @@ export default defineConfig({
 { type: 'task', name: 'graph:check' }
 ```
 
-除内置任务外，流水线步骤也可以是外部命令。外部命令失败会阻塞后续步骤；内置任务是否阻塞后续步骤，取决于它所在的调度模式和流水线依赖关系。
+除内置任务外，流水线步骤也可以是外部命令。内置任务失败会让最终结果失败，但不会按失败策略阻塞后续步骤；命名流水线只保证后续步骤等待前一步完成。外部命令步骤失败会阻塞剩余步骤，并把它们记为 skipped。
 
 ## 任务总览
 
@@ -42,7 +42,7 @@ export default defineConfig({
 | ------------------- | -------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
 | `graph:prepare`     | 否       | 生成 `.limina` 下的工程图、声明构建配置和相关生成文件 | 物化生成图；不等同于检查图是否符合规则                             |
 | `graph:check`       | 是       | 项目引用、工作区导入、导出解析、图规则和条件域        | 检查 TypeScript 项目引用图是否和源码导入关系、配置规则一致         |
-| `source:check`      | 是       | 源码归属、包边界、依赖声明、Knip 支持的源码使用分析   | 检查源码依赖关系是否能被包归属和 manifest 解释                     |
+| `source:check`      | 是       | 源码归属、包边界、依赖声明、Knip 支持的源码使用分析   | 检查源码依赖关系是否能被包归属和清单文件解释                       |
 | `proof:check`       | 是       | 源码覆盖证明和 `tsconfig` 角色                        | 检查源码是否进入 Limina 管辖的类型检查范围；具体诊断以实现输出为准 |
 | `checker:build`     | 是       | 构建类检查器                                          | 调用底层检查器的构建模式，通常会产出声明文件和构建信息             |
 | `checker:typecheck` | 是       | 只检查不产出的检查器                                  | 调用不能作为构建图提供者的检查器，例如部分框架检查器               |
@@ -87,7 +87,7 @@ import { createClient } from '@acme/core';
     "implicitRefs": [
       {
         "path": "../core/tsconfig.json",
-        "reason": "Loaded by generated route manifest.",
+        "reason": "由生成的路由清单加载。",
       },
     ],
   },
@@ -116,13 +116,13 @@ import { createClient } from '@acme/core';
 
 这意味着：运行时产物导出可以存在，但如果受管源码直接导入某个导出，而该导出只解析到 JavaScript 产物、缺少类型入口，Limina 会把它视为需要修正的边界问题。
 
-这里的目的不是保证包一定能发布成功，而是让源码依赖图能被类型图解释。
+这里的目的不是判断包是否一定能发布成功，而是让源码依赖图能被类型图解释。
 
 ### 跨包引用是否有依赖声明
 
 跨工作区包的项目引用代表源码层依赖。引用方和被引用方都需要有明确的包身份；引用方还需要在自己的 `package.json` 依赖区中声明被引用包。
 
-这条规则的意义是把 TypeScript 项目引用图和包依赖图对齐。否则源码已经依赖另一个包，但 manifest 没有记录这条关系，后续构建、检查或发布影响都会变得不清晰。
+这条规则的意义是把 TypeScript 项目引用图和包依赖图对齐。否则源码已经依赖另一个包，但清单文件没有记录这条关系，后续构建、检查或发布影响都会变得不清晰。
 
 ### 图规则是否被违反
 
@@ -136,11 +136,11 @@ import { createClient } from '@acme/core';
 
 `source:check` 关注源码文件属于哪个工作区包，以及源码里的导入是否能被这个归属关系解释。
 
-这和上一节的问题相同：Limina 希望仓库里的依赖关系可追踪。`graph:check` 从 TypeScript 项目引用图看问题，`source:check` 从包归属、manifest 和源码导入看问题。
+这和上一节的问题相同：Limina 希望仓库里的依赖关系可追踪。`graph:check` 从 TypeScript 项目引用图看问题，`source:check` 从包归属、清单文件和源码导入看问题。
 
 ### 相对导入不能跨包边界
 
-相对导入只能在当前最近的 `package.json` 包边界内移动。跨进另一个包目录时，应改用包名导入，并在引用方 manifest 中声明依赖。
+相对导入只能在当前最近的 `package.json` 包边界内移动。跨进另一个包目录时，应改用包名导入，并在引用方清单文件中声明依赖。
 
 错误示例：
 
@@ -158,17 +158,17 @@ import { helper } from '@acme/core';
 
 ### 裸包导入需要授权
 
-裸包导入，例如 `import pMap from 'p-map'`，需要能被当前源码归属方的 `package.json` 解释。Limina 还支持通过 `source.importAuthority.allow` 增加有限的授权来源：可以让匹配规则的导入读取工作区根 manifest，或为特定 specifier 写明例外原因。
+裸包导入，例如 `import pMap from 'p-map'`，需要能被当前源码归属方的 `package.json` 解释。Limina 还支持通过 `source.importAuthority.allow` 增加有限的授权来源：可以让匹配规则的导入读取工作区根清单文件，或为特定导入说明符写明例外原因。
 
 这类例外应保持具体，不能把它当成“所有包都可以从根依赖里拿”的开关。否则源码归属会重新变得模糊。
 
-### `#` 子路径导入遵守 package scope
+### `#` 子路径导入遵守包作用域
 
-`#utils/*` 这类 package imports 会匹配导入文件最近 package scope 的 `package.json#imports`。如果这个映射使用相对 target，解析结果必须留在声明它的 package scope 内。
+`#utils/*` 这类 package imports 会匹配导入文件最近包作用域的 `package.json#imports`。如果这个映射使用相对 target，解析结果必须留在声明它的包作用域内。
 
-`imports` target 也可以写成包名，例如 `{ "imports": { "#dep": "p-map" } }`。这种写法表示外部依赖入口，可以解析到三方包或 workspace dependency；但授权仍然来自导入文件所属的 pnpm workspace source owner，需要在依赖字段里声明，或用匹配的 `source.importAuthority.allow` 规则说明例外。
+`imports` target 也可以写成包名，例如 `{ "imports": { "#dep": "p-map" } }`。这种写法表示外部依赖入口，可以解析到三方包或工作区依赖；但授权仍然来自导入文件所属的 pnpm 工作区源码归属方，需要在依赖字段里声明，或用匹配的 `source.importAuthority.allow` 规则说明例外。
 
-没有匹配会报告 `Unauthorized package import specifier:`，并指向最近的 package scope。匹配后无法解析会报告 `Unresolved package import specifier:`。相对 target 越过声明它的 package scope，会报告 `Package import relative target escapes package scope:`。package target 未授权时继续使用依赖授权诊断。
+没有匹配会报告 `Unauthorized package import specifier:`，并指向最近的包作用域。匹配后无法解析会报告 `Unresolved package import specifier:`。相对 target 越过声明它的包作用域，会报告 `Package import relative target escapes package scope:`。package target 未授权时继续使用依赖授权诊断。
 
 ### Knip 支持的使用分析是辅助信号
 
@@ -212,12 +212,12 @@ import { helper } from '@acme/core';
 
 ## `checker:typecheck`：调用只检查不产出的检查器
 
-`checker:typecheck` 面向执行类型为“只检查”的 preset。源码中内置的这类 preset 包括：
+`checker:typecheck` 面向执行类型为“只检查”的预设。源码中内置的这类预设包括：
 
 - `vue-tsgo`
 - `svelte-check`
 
-它们通过各自命令运行，例如 `vue-tsgo --project` 或 `svelte-check --tsconfig`。这类任务用于补充框架文件或二级检查器的诊断，但不会产出声明文件。
+它们通过各自命令运行，例如 `vue-tsgo --project` 或 `svelte-check --tsconfig`。`vue-tsgo` 的入口仍可参与源码图和覆盖证明；`svelte-check` 参与覆盖证明和类型检查执行，但当前不作为源码图提供者。二者都不会产出声明文件。
 
 如果项目只配置了构建类检查器，`checker:typecheck` 可能没有实际检查目标。此时它不应被理解为遗漏了 TypeScript 检查；类型构建已经由 `checker:build` 负责。
 
@@ -239,7 +239,7 @@ import { helper } from '@acme/core';
 
 因此它适合放在构建之后，用来补充检查包产物的打包形状、类型解析结果和产物导入边界。它不负责运行包构建，也不应被描述为发布安全保证。
 
-如果某个项目还没有产物目录或产物 manifest，应该先运行该项目自己的构建流程，再运行 `package:check`。
+如果某个项目还没有产物目录或产物清单文件，应该先运行该项目自己的构建流程，再运行 `package:check`。
 
 ## `release:check`：发布期补充检查
 

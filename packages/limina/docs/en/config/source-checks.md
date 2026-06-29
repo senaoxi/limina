@@ -1,12 +1,12 @@
 # Source Checks
 
 ::: warning
-This page documents the top-level `source` option — the **Knip-driven dependency and module reachability checks** run by `source:check`. It is different from `config.source`, which defines the governed-file boundary used by proof coverage. For that option, see [Source Boundary](./source-boundary.md).
+This page documents the top-level `source` option. It configures two parts of `source:check`: `source.importAuthority` controls source import authorization, and `source.knip` controls Knip-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
 :::
 
-`source check` owns package authority and ordinary typecheck ownership checks. Limina treats pnpm workspace packages as source owners, including nameless workspace packages identified by path. Nested `package.json` files still affect package resolution and form package scopes for relative-import boundaries, but they do not split a source owner unless pnpm reports them as workspace packages.
+`source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina treats pnpm workspace packages as source owners, including nameless workspace packages identified by path. Nested `package.json` files still affect package resolution and form package scopes for relative-import boundaries, but they do not create a separate source owner unless pnpm reports them as workspace packages.
 
-Its Knip-backed branch uses package entries instead of `include` / `exclude` to report unused workspace dependencies and unused source modules from Limina's source owner module sets.
+Its Knip-backed branch uses package entries instead of `include` / `exclude` to report unused workspace dependencies and unused source modules from Limina's workspace-package module sets.
 
 ```js
 import { defineConfig } from 'limina';
@@ -25,9 +25,11 @@ export default defineConfig({
 
 ## importAuthority
 
-`source.importAuthority` controls bare package imports that are not declared by the source owner manifest.
+`source.importAuthority` controls bare package imports that are not declared by the owning workspace package manifest.
 
-Runtime imports are strict by default: the nearest pnpm workspace source owner `package.json` must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. A rule with `packages` lets Limina also check the workspace root `package.json` for the matched package name. The root manifest must exist and must still declare that package in one of the same dependency sections.
+Source import authorization is strict by default: the nearest pnpm workspace package that owns the importing file must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. A rule with `packages` lets Limina also check the workspace root `package.json` for the matched package name. The root manifest must exist and must still declare that package in one of the same dependency sections.
+
+Here, “source import” includes static imports, type imports, and re-exports collected by Limina. Node builtins, virtual modules, URL/data/file specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
 
 For files whose dependencies are intentionally supplied somewhere else, add an explicit allow rule:
 
@@ -65,7 +67,7 @@ interface SourceImportAuthorityConfig {
 
 `files` are workspace-root-relative globs. `packages` match package names such as `react` or `@components/shared`; when they match, the workspace root `package.json` becomes an additional dependency declaration candidate for that package. `specifiers` match full import specifiers such as `react/jsx-runtime`; use them for true exceptions where no manifest should declare the import. Glob syntax is supported for all three. `owner` is optional; when present it matches a named source owner by package name, or a nameless source owner by workspace-root-relative package directory.
 
-Use this for source that is intentionally not governed by the importing owner manifest, such as project templates or documentation aliases. Prefer a manifest dependency whenever the import is part of the owner's real runtime.
+Use this for source that is intentionally not governed by the importing owner manifest, such as project templates or documentation aliases. Prefer a manifest dependency whenever the import is part of that owner's actual runtime.
 
 ## knip
 

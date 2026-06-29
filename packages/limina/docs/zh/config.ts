@@ -31,10 +31,6 @@ const sidebar: DefaultTheme.SidebarItem[] = [
     text: '入门',
     items: [
       {
-        text: '什么是 Limina',
-        link: '/zh/limina',
-      },
-      {
         text: '为什么需要 Limina',
         link: '/zh/why',
       },
@@ -66,20 +62,16 @@ const sidebar: DefaultTheme.SidebarItem[] = [
     collapsed: true,
     items: [
       {
-        text: '架构一致性',
-        link: '/zh/architecture-conformance',
-      },
-      {
-        text: 'Monorepo 约束',
+        text: '单体仓库约束',
         link: '/zh/monorepo-constraints',
       },
       {
-        text: '从 import 到 references',
-        link: '/zh/import-to-references',
+        text: '为什么导入不能直接等于引用',
+        link: '/zh/why-import-is-not-references.md',
       },
       {
-        text: '从解析到架构图',
-        link: '/zh/resolution-to-architecture-graph',
+        text: '从导入解析到声明构建图',
+        link: '/zh/import-resolution-to-declaration-build-graph',
       },
     ],
   },

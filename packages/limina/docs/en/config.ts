@@ -31,10 +31,6 @@ const sidebar: DefaultTheme.SidebarItem[] = [
     text: 'Introduction',
     items: [
       {
-        text: 'What is Limina',
-        link: '/limina',
-      },
-      {
         text: 'Why Limina',
         link: '/why',
       },
@@ -66,20 +62,16 @@ const sidebar: DefaultTheme.SidebarItem[] = [
     collapsed: true,
     items: [
       {
-        text: 'Architecture Conformance',
-        link: '/architecture-conformance',
-      },
-      {
         text: 'Monorepo Constraints',
         link: '/monorepo-constraints',
       },
       {
-        text: 'From Import to References',
-        link: '/import-to-references',
+        text: 'Why Import Is Not References',
+        link: '/why-import-is-not-references',
       },
       {
-        text: 'From Resolution to Architecture Graph',
-        link: '/resolution-to-architecture-graph',
+        text: 'Import Resolution to Declaration Build Graph',
+        link: '/import-resolution-to-declaration-build-graph',
       },
     ],
   },

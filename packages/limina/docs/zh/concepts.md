@@ -86,7 +86,7 @@ packages/core/tsconfig.test.json
 
 ## 依赖图导出
 
-`limina graph export` 会以 JSON 导出 package 节点和 source/artifact 边：
+`limina graph export` 会以 JSON 导出包节点、源码边和产物边：
 
 ```sh
 pnpm exec limina graph export --view all

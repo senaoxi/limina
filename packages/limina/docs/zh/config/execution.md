@@ -24,7 +24,7 @@ export default defineConfig({
 | ---------------------------- | -------- | -------------------------------------------------------------- |
 | `execution.tasks`            | `'auto'` | 顶层任务调度；默认检查可并发使用，命名流水线仍受步骤顺序约束。 |
 | `execution.checkerBuild`     | `'auto'` | `checker:build` 内部的 build-mode 检查器工作池。               |
-| `execution.checkerTypecheck` | `2`      | `checker:typecheck` 内部的 typecheck-only 检查器工作池。       |
+| `execution.checkerTypecheck` | `2`      | `checker:typecheck` 内部的非构建型检查器工作池。               |
 | `execution.packageEntries`   | `'auto'` | `package:check` 同时检查多少个包输出条目。                     |
 | `execution.releaseEntries`   | `2`      | `release:check --package <name>` 同时检查多少个发布条目。      |
 

@@ -1,84 +1,85 @@
 # Built-in Tasks
 
-Built-in tasks are the check units `limina check` can schedule directly, and each one maps to a `limina <command>` subcommand. `limina check` (with no name) includes `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck` by default. Their results are displayed and recorded in a stable order, but the tasks are scheduled independently: when the `execution.tasks` concurrency budget and resource locks allow it, they can run at the same time. A built-in task failure fails the run, but it does not prevent other built-in tasks from completing. `graph:prepare`, `package:check`, and `release:check` are not in the default check; add them to a named [pipeline](./config/pipelines.md) when you need an explicit graph-generation step or publish-time checks.
+Limina's built-in tasks are organized around one main line: in a TypeScript monorepo, turn source `tsconfig` files, TypeScript project references, real import relationships, and workspace package relationships into a checkable engineering graph, then run type builds, source-boundary checks, and release-phase checks on top of that graph.
 
-| Task                | Command                    | Default check       | Surface                                |
-| ------------------- | -------------------------- | ------------------- | -------------------------------------- |
-| `graph:check`       | `limina graph check`       | Yes, result order 1 | Declaration graph / project references |
-| `graph:prepare`     | `limina graph prepare`     | No, standalone      | Generated graph files                  |
-| `source:check`      | `limina source check`      | Yes, result order 2 | Package ownership boundaries           |
-| `proof:check`       | `limina proof check`       | Yes, result order 3 | Source coverage / tsconfig shape       |
-| `checker:build`     | `limina checker build`     | Yes, result order 4 | Build-mode type checking               |
-| `checker:typecheck` | `limina checker typecheck` | Yes, result order 5 | Type checking without emit             |
-| `package:check`     | `limina package check`     | No, publish-time    | Built output                           |
-| `release:check`     | `limina release check`     | No, publish-time    | Release hygiene                        |
+This document explains how the built-in tasks are divided and how users should understand their boundaries. It does not expand every configuration field, rule detail, or CLI option.
 
-The first column is also the string name for each task inside a pipeline; you can also write it as an explicit object `{ type: 'task', name: 'graph:check' }`.
+## Understand the Default Check First
 
-The order above is the reporting and recording order, not a guarantee of serial execution for the default check. Use a named [pipeline](./config/pipelines.md) when you need a fixed sequence.
+When `limina check` is run without a pipeline name, it runs five default tasks:
 
-## `graph:prepare`
+1. `graph:check`
+2. `source:check`
+3. `proof:check`
+4. `checker:build`
+5. `checker:typecheck`
 
-Maps to `limina graph prepare`. It only refreshes Limina's generated graph files: `.limina/manifest.json`, checker build entries, generated declaration configs, declaration output directories, and tsbuildinfo paths. It does not run graph-rule validation or checker processes.
+This order is the display and recording order for results. It does not mean the default check runs these tasks serially. The default check schedules them as independent tasks; when the concurrency budget and resource locks allow it, they may run concurrently. A failed task fails the current check, but it should not be understood as inherently blocking the remaining default tasks from continuing.
 
-Tasks that consume the generated graph prepare it automatically before they run. Add `graph:prepare` to a named pipeline only when you want that materialization as an explicit step, for example to verify that generated files can be written or are up to date before later work.
+Named pipelines are different. `limina check <name>` runs according to the configured pipeline step order and is used to express explicit sequencing, such as building first and then checking artifacts.
 
-## `graph:check`
+Built-in tasks can be written directly as strings:
 
-Maps to `limina graph check`. Validates the declaration build graph generated under `.limina/`, using the source tsconfigs selected by `checker.include` as the canonical user-facing paths. Each item below explains what it detects, why, and a typical example.
-
-::: tip
-The deny/allow rules referenced here are defined in [Graph Rules](./config/graph-rules.md).
-:::
-
-### Declaration build configs need the full set of compiler options
-
-A generated declaration build config emits only `.d.ts` incrementally through `tsc -b`. Limina writes these configs during `limina graph prepare`; each one turns on `composite`, `incremental`, `declaration`, `emitDeclarationOnly`, turns off `noEmit`, and sets `rootDir` / `outDir` / `tsBuildInfoFile`.
-
-```jsonc
-// .limina/tsconfig/checkers/typescript/projects/packages/core/tsconfig.lib.dts.json
-{
-  "extends": "../../../../../packages/core/tsconfig.lib.json",
-  "compilerOptions": {
-    "composite": true,
-    "incremental": true,
-    "declaration": true,
-    "emitDeclarationOnly": true,
-    "noEmit": false,
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+```js
+export default defineConfig({
+  pipelines: {
+    release: ['graph:prepare', 'checker:build', 'package:check', 'release:check'],
   },
-}
+});
 ```
 
-These files are generated, so a shape problem usually means the generated graph is stale or malformed; run `limina graph prepare` and check the reported source tsconfig path.
+They can also be written as explicit objects:
 
-### Every generated config needs a paired source config
-
-Each generated `*.dts.json` needs a `liminaOptions.sourceConfig` that points back to the ordinary source `tsconfig*.json` that owns type semantics. Type-affecting options such as `module`, `target`, and `lib` are inherited from that source config, and the generated config may not include files beyond the source config.
-
-```text
-packages/core/
-  tsconfig.lib.json       # source config owns type-affecting options
-.limina/tsconfig/checkers/typescript/projects/packages/core/
-  tsconfig.lib.dts.json   # generated config, sourceConfig -> packages/core/tsconfig.lib.json
+```js
+{ type: 'task', name: 'graph:check' }
 ```
 
-Generated configs without `sourceConfig` are rejected. When diagnostics mention a generated path, Limina maps it back to the source tsconfig path whenever possible.
+Besides built-in tasks, pipeline steps may also be external commands. External command failure blocks subsequent steps; whether a built-in task blocks subsequent steps depends on its scheduling mode and pipeline dependency relationships.
 
-### Source-owned imports need matching references
+## Task Overview
 
-A generated config's `references` must match real source edges: static imports that resolve to source files owned by another declaration project, plus any documented `liminaOptions.implicitRefs`. Code that imports another package's source entry must have a matching reference; otherwise the incremental build cannot get the upstream declarations. Conversely, a reference justified by neither static imports nor `implicitRefs` is flagged too, so there are no dead edges.
+| Task                | Default check | Main concern                                                                                            | How to understand it                                                                                                                |
+| ------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `graph:prepare`     | No            | Generates the engineering graph, declaration build configs, and related generated files under `.limina` | Materializes the generated graph; not the same as checking whether the graph satisfies rules                                        |
+| `graph:check`       | Yes           | Project references, workspace imports, export resolution, graph rules, and condition domains            | Checks whether the TypeScript project reference graph is consistent with source imports and configured rules                        |
+| `source:check`      | Yes           | Source ownership, package boundaries, dependency declarations, and Knip-backed source usage analysis    | Checks whether source dependency relationships can be explained by package ownership and manifests                                  |
+| `proof:check`       | Yes           | Source coverage proof and `tsconfig` roles                                                              | Checks whether source enters the type-check scope governed by Limina; concrete diagnostics are defined by the implementation output |
+| `checker:build`     | Yes           | Build-capable checkers                                                                                  | Calls build mode of underlying checkers, usually emitting declaration files and build info                                          |
+| `checker:typecheck` | Yes           | Typecheck-only checkers                                                                                 | Calls checkers that cannot act as build graph providers, such as some framework checkers                                            |
+| `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                                      |
+| `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                                      |
+
+The core tasks are `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `package:check` and `release:check` are supplemental release-phase tasks. They fit well in release pipelines, but should not be overstated as Limina's core capability.
+
+## The Generated Graph Is the Basis for Later Checks
+
+Limina's governance is built on the generated graph. The graph comes from ordinary source `tsconfig.json` entries, source `tsconfig` files referenced by those entries, source-file import relationships, and a small amount of explicit configuration.
+
+`checker.include` selects ordinary source-level `tsconfig.json` entries. Ordinary leaf configs should not hand-write TypeScript `references`; if a directory needs to aggregate multiple type-check environments, use the default `tsconfig.json` as an aggregator and let it point to leaf configs through `references`. Limina then generates its own declaration build graph from those source configs.
+
+`graph:prepare` writes these relationships under `.limina`, including:
+
+- checker build entries;
+- generated declaration build `tsconfig` files;
+- solution-style build aggregator configs;
+- the generated manifest;
+- generated configs used by source usage analysis.
+
+Generated declaration build configs inherit from their corresponding source configs and write options suitable for declaration builds, such as `composite`, `incremental`, `declaration`, `emitDeclarationOnly`, `noEmit: false`, `rootDir`, `outDir`, and `tsBuildInfoFile`.
+
+This is not an extension of TypeScript project references themselves. More precisely, Limina turns the question “which source relationships should enter the `references` graph” from manual judgment and handwritten maintenance into a generated result based on source imports, configuration entries, and explicit exceptions, and then verifies it through check tasks.
+
+### Static Imports and Explicit Reference Exceptions
+
+Most reference edges come from static imports in source. Suppose one package imports another managed source project:
 
 ```ts
-// packages/app/src/main.ts
-import { createClient } from '@acme/core'; // references core
+import { createClient } from '@acme/core';
 ```
 
-Generated declaration references come from real imports that resolve to source files owned by another generated config. If a source-owned edge is missing, make sure both source tsconfig files are selected by `checker.include`, then run `limina graph prepare`. Imports that resolve to built declarations such as `dist/*.d.ts` do not require a project reference.
+If this import resolves to source owned by another generated declaration project, the generated graph should include the corresponding project reference. That lets the underlying `tsc -b`, `vue-tsc -b`, or `tsgo -b` follow project references for incremental declaration builds.
 
-When a real edge cannot be seen from static imports, document it on the source tsconfig that needs the edge:
+Some relationships cannot be expressed by static imports, such as generated files, virtual modules, or runtime conventions. In those cases, write `liminaOptions.implicitRefs` in the source `tsconfig` that declares the relationship:
 
 ```jsonc
 {
@@ -93,327 +94,169 @@ When a real edge cannot be seen from static imports, document it on the source t
 }
 ```
 
-`implicitRefs.path` points to another ordinary source tsconfig relative to the declaring config. Limina maps it to the generated declaration project. Do not put `references` on source leaf configs; only solution-style `tsconfig.json` aggregators should carry TypeScript `references`.
+`path` points to another ordinary source `tsconfig`, and `reason` is required. This configuration explains why the edge should enter the generated graph. It does not bypass all checks.
 
-### Workspace package exports must resolve
+## `graph:check`: Keep the Project Reference Graph Aligned with Source Relationships
 
-For every workspace package that declares `exports`, graph check pre-resolves each real public subpath with the active checker profiles. `null` export entries are treated as denied package subpaths and skipped. Each real export must resolve to a concrete module through the runtime resolver; declaration-only exports may use TypeScript's `.d.ts` result as the effective runtime result.
+`graph:check` checks the generated graph. It does not directly replace the TypeScript compiler. It asks whether project references, source imports, workspace package relationships, and architecture rules in the current engineering graph can explain each other.
 
-When checked source imports one of these exports, TypeScript resolution must reach a stable type entry or source entry: `.d.ts` family files, TypeScript source files, `.json`, or checker-supported source files such as `.vue`. Runtime-only exports that are not imported by checked source may point at JavaScript artifacts, but once source imports them they need a type entry.
+It mainly covers the following categories.
 
-```jsonc
-// the dependency's packages/core/package.json
-{
-  "exports": {
-    ".": "./src/index.ts",
-    "./types": { "types": "./dist/types.d.ts" },
-    "./runtime": {
-      "types": "./dist/runtime.d.ts",
-      "default": "./dist/runtime.js",
-    },
-  },
-}
-```
+### Whether Project References Have Evidence
 
-Unresolved exports report `Workspace package export is not resolvable by TypeScript:` or `Workspace package export is not resolvable by Oxc:`. If checked source imports an export that only resolves to runtime JavaScript, it reports `Workspace source import uses package export without a type entry:`.
+When managed source uses a static import to access another managed source project, the generated declaration build config should have the corresponding project reference. A missing reference prevents incremental declaration builds from correctly seeing upstream declarations.
 
-### References/dependencies that hit a deny rule are rejected
+Conversely, if a generated config contains an extra reference that has no static-import evidence and is not allowed by a rule, `graph:check` reports it. This avoids keeping stale edges in the generated graph.
 
-If you define an architecture boundary under `graph.rules.<label>.deny` (for example, "client must not depend on the node runtime") and opt a source tsconfig in through `liminaOptions.graphRules`, then a reference or dependency that hits the boundary is rejected.
+If a real edge is invisible to static analysis, use `liminaOptions.implicitRefs` or an allowed graph-rule entry to explain the reason, rather than hand-writing `references` in an ordinary leaf `tsconfig`.
 
-```jsonc
-// packages/app/tsconfig.client.json
-{ "liminaOptions": { "graphRules": ["runtime-client"] } }
-```
+### Whether Workspace Package Exports Are Suitable for Source Imports
 
-`limina graph prepare` carries the rule labels into the generated build config. A hit reports `Denied graph access:`, along with the `reason` you wrote in the rule.
+When managed source imports a workspace package export by package name, Limina tries to resolve that export. For public entries imported by source, the resolution result needs to reach a stable type entry or a source entry supported by the checker.
 
-## `source:check`
+This means runtime artifact exports can exist. But if managed source directly imports an export that resolves only to JavaScript artifacts and has no type entry, Limina treats it as a boundary problem that needs correction.
 
-Maps to `limina source check`. Validates source ownership, package-scope relative import boundaries, and whether dependencies are declared.
+The goal here is not to guarantee that the package can be published successfully. It is to make the source dependency graph explainable by the type graph.
 
-### No cross-package relative imports
+### Whether Cross-Package References Have Dependency Declarations
 
-You cannot use `../` to reach into another package's directory; reaching another package must go through its package name, so the dependency stays explicit and traceable.
+Cross-workspace-package project references represent source-level dependencies. Both the referencing package and referenced package need clear package identities, and the referencing package must declare the referenced package in its own `package.json` dependency fields.
 
-```ts
-// packages/b/src/index.ts (wrong)
-import { helper } from '../../a/src/util';
-```
+This rule aligns the TypeScript project reference graph with the package dependency graph. Otherwise, source already depends on another package, but the manifest does not record that relationship, making later build, check, or release impact unclear.
 
-Reports `Relative import escapes package scope:`. Fix: declare a dependency on `@acme/a` in `packages/b/package.json` and change it to `import { helper } from '@acme/a'`.
+### Whether Graph Rules Are Violated
 
-### A bare import must be declared first
+If a source `tsconfig` enables a graph rule through `liminaOptions.graphRules`, `graph:check` checks prohibited references or dependencies according to that label.
 
-A dependency imported by package name must be authorized by the nearest pnpm workspace source owner. A matching `source.importAuthority.allow` package rule can also let Limina check the workspace root `package.json`, but that root manifest must exist and declare the package. True non-manifest exceptions can use `source.importAuthority.allow` specifier rules.
+For example, a browser-oriented project should not depend on Node runtime modules. You can express that constraint as a graph rule and enable it from the corresponding `tsconfig`. When the rule matches, diagnostics include the reason from the rule.
+
+Graph rules only cover relationships expressed by source and configuration. They are not a runtime sandbox and not a release security guarantee.
+
+## `source:check`: Ensure Source Imports Can Be Explained by Package Ownership
+
+`source:check` focuses on which workspace package a source file belongs to and whether imports in that source can be explained by that ownership relationship.
+
+This is the same theme as the previous section: Limina wants dependency relationships in the repository to be traceable. `graph:check` views the problem through the TypeScript project reference graph; `source:check` views it through package ownership, manifests, and source imports.
+
+### Relative Imports Must Not Cross Package Boundaries
+
+Relative imports may only move inside the current nearest `package.json` package boundary. If an import crosses into another package directory, it should be rewritten as a package-name import and declared in the referencing package manifest.
+
+Incorrect example:
 
 ```ts
-import pMap from 'p-map'; // but package.json does not declare p-map
+import { helper } from '../../core/src/helper';
 ```
 
-Reports `Unauthorized bare package import:`. Fix: add `p-map` to the right dependency section.
+A better form is:
 
-### `#subpath` imports follow package-scope imports
-
-A `#xxx` subpath import is matched against the nearest package scope `package.json#imports` for the importing file. When that mapping uses a relative target, the resolved file must stay inside the package scope that declares the mapping.
-
-```jsonc
-// package.json
-{ "imports": { "#utils/*": "./src/utils/*.ts" } }
+```ts
+import { helper } from '@acme/core';
 ```
 
-`imports` targets may also name a package, for example `{ "imports": { "#dep": "p-map" } }`. In that case Limina treats the result as an external package dependency: it may resolve to a third-party package or a workspace dependency, but the importing file's pnpm workspace source owner must authorize that dependency through its dependency sections or a matching `source.importAuthority.allow` rule.
+Then the dependency relationship appears in both source imports and `package.json`, rather than being hidden in directory-relative paths.
 
-No match reports `Unauthorized package import specifier:` and points at the nearest package scope. Unresolvable matches report `Unresolved package import specifier:`. Relative targets that escape the declaring package scope report `Package import relative target escapes package scope:`. Package targets that are not authorized reuse the dependency authorization diagnostic.
+### Bare Package Imports Need Authorization
 
-### A tsconfig / module may belong to only one owner
+A bare import such as `import pMap from 'p-map'` needs to be explained by the `package.json` of the current source owner. Limina also supports limited additional authorization through `source.importAuthority.allow`: matching rules can allow imports to read the workspace root manifest, or can provide an explicit reason for a specific specifier.
 
-A governing tsconfig, or a source module, must not span more than one pnpm workspace source owner, otherwise ownership is unclear.
+Such exceptions should stay specific. They should not become a switch that lets every package read dependencies from the root. Otherwise, source ownership becomes ambiguous again.
 
-Reports `Tsconfig source file set mixes source owners:` or `Source module belongs to multiple source owners:`. Fix: split the tsconfig so each governance unit covers a single package.
+### `#` Subpath Imports Follow Package Scope
 
-### Declared-but-unused workspace dependencies (Knip)
+Package imports such as `#utils/*` match `package.json#imports` from the importing file's nearest package scope. If the mapping uses a relative target, the resolved result must stay inside the declaring package scope.
 
-A dependency on another package in the pnpm workspace is declared in `package.json`, but no source file in the importing package actually imports it. Detection is by dependency name: any of the four sections (`dependencies` / `devDependencies` / `peerDependencies` / `optionalDependencies`) counts, regardless of the version protocol (`workspace:`, `link:`, `catalog:`, a plain version range, and so on). The reachability analysis is delegated to Knip.
+An `imports` target can also be a package name, for example `{ "imports": { "#dep": "p-map" } }`. That form represents an external dependency entry and may resolve to a third-party package or a workspace dependency. Authorization still comes from the pnpm workspace source owner of the importing file, so the dependency must be declared in dependency fields or explained through a matching `source.importAuthority.allow` rule.
 
-```js
-// limina.config.mjs
-export default defineConfig({
-  source: {
-    knip: {
-      workspaces: {
-        '@acme/app': {
-          ignoreDependencies: [
-            {
-              dep: '@acme/codegen',
-              reason: 'Used only by a generate script.',
-            },
-          ],
-        },
-      },
-    },
-  },
-});
-```
+No matching entry reports `Unauthorized package import specifier:` and points to the nearest package scope. A match that cannot resolve reports `Unresolved package import specifier:`. A relative target that escapes the declaring package scope reports `Package import relative target escapes package scope:`. If a package target is unauthorized, Limina continues to use the dependency authorization diagnostic.
 
-Reports `Unused workspace package dependency:`. If it is genuinely used through generated code or a runtime string, ignore it via `source.knip.workspaces[pkg].ignoreDependencies`; otherwise remove the dependency.
+### Knip-Backed Usage Analysis Is an Auxiliary Signal
 
-### Source modules unreachable from exports (Knip)
+`source:check` can use Knip-backed analysis results to report two categories:
 
-Limina lets Knip check whether an owner's source module is unreachable from package `exports`, `bin`, scripts, Knip-supported plugin entries, and `source.knip.workspaces[pkg].entry` — in which case it is a dead module.
+- workspace dependencies that are declared but not used by source;
+- source modules unreachable from package entries, binary entries, scripts, plugin entries, or explicitly configured extra entries.
 
-```js
-source: {
-  knip: {
-    workspaces: {
-      '@acme/app': {
-        ignoreFiles: [
-          { file: 'packages/app/src/generated/runtime.ts', reason: 'Loaded by the framework runtime.' },
-        ],
-      },
-    },
-  },
-}
-```
+These checks are useful for finding obvious stale dependencies and dead modules, but they should not be understood as a complete runtime reachability proof. For entries loaded through generated code, runtime strings, or external tools, declare exceptions with reasons.
 
-Reports `Unused source module:`. If the module is a real extra entry, add it through `source.knip.workspaces[pkg].entry`; for something intentionally kept but invisible to Knip, ignore it via `source.knip.workspaces[pkg].ignoreFiles`.
+## `proof:check`: Confirm Source Enters Managed Check Scope
 
-## `graph export`
+`proof:check` answers a basic question: are source files that should be governed by Limina actually covered by a checker entry, generated graph project, or allowlist?
 
-Maps to `limina graph export`. It exports the package dependency graph that Limina inferred from real imports and module resolution inside the governed tsconfig domains.
+It differs from `source:check` as follows:
 
-```sh
-pnpm exec limina graph export --view all --output .limina/dependency-graph.json
-```
+- `source:check` cares whether source imports and package ownership are clear;
+- `proof:check` cares whether source enters the managed type-check scope and whether `tsconfig` roles are clear.
 
-The JSON contains package nodes and `source` / `artifact` edges. A `source` edge means the import resolved to source governed by the type graph. An `artifact` edge means the import resolved to built output such as `dist/*.js` or `dist/*.d.ts`. Dependency protocols do not decide the edge kind; the resolved file does.
+In a monorepo using TypeScript project references, a missing source file may not immediately appear as a project-reference error. It may simply be unreachable from any checker entry. `proof:check` exposes these “unchecked” files.
 
-Each edge respects the importing project's compiler options, including `compilerOptions.customConditions`. Because this is a Limina-governed graph rather than a global build resolver graph, use it for architecture inspection and diagnostics, not as an authoritative task graph or build-order source:
+If a file truly should not enter the regular check scope, use an allowlist entry with a reason rather than letting it float naturally outside the engineering graph.
 
-```sh
-pnpm exec limina graph export --view artifact
-```
+This document does not list every diagnostic branch of `proof:check`. When reading diagnostics, understand it under one principle: every source file and every `tsconfig` should have a clear role; the same file should not produce duplicate or conflicting ownership inside the same check domain.
 
-## `proof:check`
+## `checker:build`: Call Build-Capable Checkers
 
-Maps to `limina proof check`. Proves that every source file is covered by some checker, and validates tsconfig shape and roles.
+`checker:build` calls build-capable checkers. Built-in build-capable presets in the source include:
 
-::: tip
-Files you intentionally leave uncovered go in the [Proof Allowlist](./config/proof-allowlist.md).
-:::
+- `tsc`
+- `tsgo`
+- `vue-tsc`
 
-### Every file in the boundary must be covered
+These checkers run in build mode, for example `tsc -b`, `tsgo -b`, or `vue-tsc -b`. The target is the checker build entry generated by Limina, not an arbitrary user-authored command.
 
-Every source file inside the `config.source` boundary must be covered by a checker entry, a graph project, or `proof.allowlist`; an unowned file is flagged.
+Because generated declaration build configs enable `emitDeclarationOnly` and disable `noEmit`, `checker:build` is not a side-effect-free check. It runs the real underlying checker and may write `.d.ts`, `.tsbuildinfo`, and related outputs.
 
-```text
-packages/core/src/generated/runtime.ts  # not covered by any checker entry
-```
+This is important: Limina does not replace TypeScript, Vue checkers, or native TypeScript build logic. It prepares and checks the engineering graph, then delegates the type build to the corresponding checker.
 
-Reports `Source files are not covered by typecheck proof:`. Fix: bring it into a tsconfig reachable from a checker entry; if it is generated code or a fixture, add it to `config.source.exclude`, or add a `proof.allowlist` entry with a reason.
+Before running, Limina checks whether peer dependencies required by configured checkers are resolvable. Missing dependencies fail before checker execution and include installation guidance.
 
-### The same file must not be covered twice
+## `checker:typecheck`: Call Check-Only Checkers
 
-A source file included by two source tsconfigs of the same checker causes duplicate generated declaration owners and ownership ambiguity.
+`checker:typecheck` targets presets whose execution kind is check-only. Built-in presets of this kind in the source include:
 
-Reports `Duplicate checker graph coverage:`. Fix: make each file belong to a single source tsconfig per checker.
+- `vue-tsgo`
+- `svelte-check`
 
-### Aggregators must be pure aggregators
+They run through their own commands, such as `vue-tsgo --project` or `svelte-check --tsconfig`. These tasks supplement diagnostics for framework files or secondary checkers, but do not emit declaration files.
 
-Source-level aggregator `tsconfig.json` files (those with `references`) may only carry `$schema` / `files: []` / `references`, with no `compilerOptions` and so on. Limina writes a checker root build aggregator under `.limina/tsconfig/checkers/<checker>/tsconfig.build.json`, and writes source solution build aggregators under `.limina/tsconfig/checkers/<checker>/solutions/.../tsconfig.build.json`.
+If a project configures only build-capable checkers, `checker:typecheck` may have no real target. That should not be interpreted as missing TypeScript checking; type builds are handled by `checker:build`.
 
-```jsonc
-// tsconfig.json
-{ "files": [], "references": [{ "path": "./tsconfig.lib.json" }] }
-```
+## `graph:prepare` and `graph export`
 
-Otherwise it reports `Default tsconfig.json is not a pure aggregator:`.
+`graph:prepare` only generates or refreshes Limina engineering graph files. Tasks that consume the generated graph obtain it through a preflight mechanism before running. You usually need to call it directly only when you want to materialize generated files explicitly, verify that generated files are writable, or prepare a later named pipeline.
 
-### Declaration build configs must have the right shape
+`graph export` exports the dependency graph collected by Limina within managed `tsconfig` scopes. It supports different views, such as source edges only, artifact edges only, or both. This graph is suitable for architecture diagnostics and external analysis, but should not be treated as the authoritative build-order source.
 
-Each generated `*.dts.json` must be reachable from a generated checker build entry, have a `sourceConfig`, be valid for `tsc -b`, and align its file set and (non-output) options with the source config.
+## `package:check`: Check Built Package Artifacts
 
-These report `DTS config is not reachable from any checker entry:`, `DTS config is not valid for tsc -b:`, `DTS config file set does not match its local typecheck config:`, and `DTS config overrides a typecheck compiler option from its local typecheck config:` respectively.
+`package:check` is not part of the default check. It targets built package output directories, not source directories.
 
-### The role of `tsconfig.json` per directory
+Check tool choices that can be confirmed from source include:
 
-When a directory has a single typecheck environment, use the default `tsconfig.json` as the leaf; with multiple environments, `tsconfig.json` should be a pure aggregator.
+- `publint`
+- `attw`
+- `boundary`
 
-Reports `Single typecheck environment should use default tsconfig.json:` or `Directory with multiple typecheck environments must use tsconfig.json as an aggregator:`.
+Therefore, it is suitable after a build as a supplemental check for package shape, type-resolution results, and artifact import boundaries. It does not run package builds and should not be described as a release security guarantee.
 
-### Typecheck shape constraints
+If a project does not yet have an artifact directory or artifact manifest, run that project's own build flow first, then run `package:check`.
 
-A leaf must transitively `extends` its companion, the build graph may reference only build/dts projects, and each module belongs to exactly one typecheck config.
+## `release:check`: Supplemental Release-Phase Checks
 
-These report `Declaration leaf does not transitively extend its companion typecheck config:`, `Build graph references a non-build project:`, and `Source file belongs to multiple typecheck configs:` respectively.
+`release:check` is also not part of the default check. It targets pre-release artifact consistency and fits at the end of a release pipeline.
 
-## `checker:build`
+The configuration boundaries visible from source show that `release:check` includes settings related to dependency artifact content-hash comparison, such as baseline tag, built-in ignore sets, and custom ignore rules. In other words, it focuses on reportable drift between release artifacts, not on replacing npm publish flow, version management, or human release review.
 
-Maps to `limina checker build`. Runs the checkers that support build mode, so they type-check and emit declarations.
+If you need to put `release:check` in CI, put it in the same named pipeline as the project's own build, tests, and package artifact checks, so execution order is explicit.
 
-### It preflights every checker's peer dependencies first
+## Recommended Mental Model
 
-Before running compilers, it confirms that the tool packages each configured checker needs are installed; a single missing one fails immediately with the install command.
+These tasks can be grouped into three layers:
 
-For example, using the `tsgo` preset without installing `@typescript/native-preview` reports `Missing checker peer dependencies:` with `Fix: pnpm add -D @typescript/native-preview`.
+The first layer is the engineering graph layer: `graph:prepare` and `graph:check`. They answer where the current TypeScript project reference graph comes from and whether it is consistent with source import relationships.
 
-### It runs the build compilers and emits declarations
+The second layer is the source governance layer: `source:check` and `proof:check`. They answer who owns source, who authorizes imports, and which files enter the check scope.
 
-It runs the build-execution presets: `tsc -b`, `tsgo -b`, `vue-tsc -b`. `-b` is an incremental project build that really emits `.d.ts` and `.tsbuildinfo`.
+The third layer is the execution and artifact layer: `checker:build`, `checker:typecheck`, `package:check`, and `release:check`. They answer whether underlying checkers pass, whether built artifacts expose detectable problems, and whether there are reportable inconsistencies before release.
 
-::: warning
-Because it runs a real `tsc -b`, the default `limina check` emits declarations and `.tsbuildinfo` — it is not side-effect-free.
-:::
-
-### It warns about incompatible build checker combinations
-
-After the build processes finish, Limina checks which build checker presets reached the same generated declaration config. This does not change the exit code; it is a warning about cache safety.
-
-No warning is printed when every reachable checker uses the same preset, or when the only mixed presets are `tsc` and `vue-tsc`. Other mixed build presets, such as `tsgo` with `tsc` or `tsgo` with `vue-tsc`, are reported because they do not safely share the same underlying build cache semantics.
-
-The warning includes the generated config, the source config behind it, and a `reachable from` section:
-
-```text
-Potentially incompatible build checker combination:
-  source config: packages/core/tsconfig.lib.json
-  reachable from:
-    - config.checkers.typescript (tsgo)
-      entry tsconfigs:
-        - packages/app/tsconfig.json
-    - config.checkers.vue (vue-tsc)
-      entry tsconfigs:
-        - packages/theme/tsconfig.json
-```
-
-The important part is not only the `source config`. A checker may reach that config through another entry that imports it. To remove the warning, align the reachable entry area shown in `entry tsconfigs`, or switch to a compatible preset combination such as `tsc` with `vue-tsc`.
-
-### Any compiler failure fails the task
-
-If any compiler process exits non-zero (a type error, or a missing/invalid tsconfig), the task fails.
-
-Reports `build checks failed:` followed by the failing entries. Fix: resolve the reported type errors.
-
-## `checker:typecheck`
-
-Maps to `limina checker typecheck`. Runs checkers that type-check without emitting files.
-
-### It preflights typecheck checker peer dependencies
-
-This step only preflights the configured typecheck-only checker entries it is about to run, such as `vue-tsgo` and `svelte-check`. Build-execution presets are handled by `checker:build`.
-
-Reports `Missing checker peer dependencies:` with `Fix: pnpm add -D <packages>`.
-
-### It runs the typecheck checkers (no emit)
-
-It runs the typecheck-execution presets: `vue-tsgo --project`, `svelte-check --tsconfig`. They only report type errors and emit nothing.
-
-```js
-// limina.config.mjs (excerpt)
-checkers: { vue: { preset: 'vue-tsgo', include: ['apps/app/tsconfig.json'] } }
-```
-
-A `.vue` type error makes it exit non-zero and report `typecheck checks failed:`. Fix: resolve the reported `.vue` type error.
-
-### Repositories without typecheck-only checkers are a no-op
-
-If no explicit typecheck-only checker is configured, for example auto mode or only `tsc` / `tsgo` / `vue-tsc`, this step passes and prints `No second-class checker entries configured.`; the actual type-check happens in `checker:build`.
-
-## `package:check`
-
-Maps to `limina package check`. Runs packaging-correctness checks against **built output** (not source), so it needs a prior build.
-
-### publint: is the package well-formed
-
-It runs publint against the output to check `exports`, the `main` / `module` / `types` fields, whether published files are complete, and other packaging-correctness issues.
-
-Reports something like `publint found N issue(s): <label>`. Fix: address the publint findings in `package.json`.
-
-### attw: do the types resolve correctly
-
-It uses `@arethetypeswrong/core` to check whether types resolve under the target mode (default profile `esm-only`, overridable with `--attw-profile`).
-
-Reports something like `attw found N problem(s): <label>`. Fix: complete or correct the `types` exports.
-
-### boundary: output may import only declared dependencies
-
-It parses the output's `.js` / `.cjs` / `.mjs`, and the packages they import must appear in the output manifest's `dependencies` / `peerDependencies` / `optionalDependencies`, or be the package's own exports.
-
-Reports something like `package boundary found N issue(s): <label>`. Fix: add the missing runtime dependency to `dependencies`.
-
-### It needs a prior build
-
-It checks the output under `outDir`, so you must build first. Running it without a build reports `outDir package.json not found` with `Run the package build first.`. Fix: run `pnpm build` first.
-
-### The output manifest must be publishable
-
-The output `package.json` must be a complete npm manifest with no `workspace:` / `link:` / `file:` / `catalog:` pnpm-local dependencies.
-
-Reports something like `[<label>] output package.json ...`.
-
-## `release:check`
-
-Maps to `limina release check`. Runs publish-time hygiene and consistency checks against built output.
-
-### It cannot be private (or carry local dependencies)
-
-If the output manifest is `private: true`, npm will not publish it, so it is rejected outright; release check also rejects `workspace:` / `link:` / `file:` / `catalog:` dependencies in the output.
-
-A private manifest reports `selected release package has "private": true; npm publish would reject it`.
-
-### The tarball must contain README/LICENSE and no source maps
-
-The packed tarball must contain `README.md` and `LICENSE.md`, and must not contain `.map` files or `sourceMappingURL` directives (so source maps are not shipped).
-
-A missing file reports `tarball is missing required file(s): LICENSE.md`. Fix: add the file and make sure it is included in the published files.
-
-### The published manifest must not expose local dependencies
-
-The packed manifest must not contain `workspace:` / `link:` / `file:` / `catalog:` local specifiers in any dependency section; workspace publish dependencies must point at real, published packages.
-
-Reports something like `packed package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers in any dependency section`, or `<dep> is not published to the npm registry`.
-
-### It compares content hashes against npm
-
-It compares the local output against the published content on the npm baseline dist-tag (default `latest`) by content hash, reporting drift (local-only, remote-only, or changed files).
-
-Drift reports `[release-check] FAIL <importer> -> <dep>`.
+Under this model, Limina's boundary is clearer: it is not a control plane that replaces TypeScript, framework checkers, bundlers, test frameworks, or publishing tools. It provides a set of check tasks on top of TypeScript project references and the generated engineering graph, making repository structure, dependency relationships, check scope, and release impact more predictable.

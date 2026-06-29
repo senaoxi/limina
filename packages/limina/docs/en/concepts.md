@@ -27,7 +27,7 @@ Any source family you want Limina to check needs a checker entry in `limina.conf
 
 ## Declaration Build Configs
 
-Limina writes declaration build configs under `.limina/tsconfig/checkers/<checker>/projects/.../*.dts.json`. These are the project nodes consumed by `tsc -b` or `vue-tsc -b`.
+Limina writes generated declaration build configs under `.limina/tsconfig/checkers/<checker>/projects/.../*.dts.json`. These are the project nodes consumed by `tsc -b` or `vue-tsc -b`.
 
 It should emit declarations only, with build-mode options such as:
 
@@ -63,7 +63,7 @@ packages/core/tsconfig.test.json
 The source config owns typecheck semantics such as `lib`, `types`, `jsx`, and framework settings. Proof check confirms that source is not missed, while checker build runs Limina's generated build entries through `tsc -b`, `tsgo -b`, or `vue-tsc -b`.
 
 ::: warning
-Current `vue-tsgo` support is typecheck-only for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; selected source tsconfigs still participate in Limina graph and proof checks.
+Current `vue-tsgo` support is check-only for execution because its build mode does not preserve TypeScript project-reference boundaries or provide incremental build semantics; selected source tsconfigs still participate in Limina graph and coverage checks.
 :::
 
 This split keeps generated declaration output settings out of the ordinary source config.
@@ -82,7 +82,7 @@ A package can expose some public entries as source and other public entries as b
 
 Limina pre-resolves every public `exports` subpath for workspace packages that declare `exports`. TypeScript resolution must find a stable type entry: `.d.ts` family declarations, source files such as `.ts` / `.tsx` / `.mts` / `.cts`, `.json`, or checker-supported source extensions such as `.vue`. If TypeScript only reaches runtime JavaScript, or if TypeScript or Oxc cannot resolve an export, graph checking reports the package export.
 
-When `@acme/app` imports a public entry of `@acme/core`, graph references are required only when that resolved entry lands on source managed by Limina. Built declaration artifacts such as `dist/*.d.ts` are already output, so they do not require a project reference. The complementary artifact relationship appears in `limina graph export --view artifact` as a scoped architecture fact.
+When `@acme/app` imports a public entry of `@acme/core`, graph references are required only when that resolved entry lands on source managed by Limina. Built declaration artifacts such as `dist/*.d.ts` are already output, so they do not require a project reference. The complementary artifact relationship appears in `limina graph export --view artifact` as a scoped artifact dependency.
 
 ## Dependency Graph Export
 

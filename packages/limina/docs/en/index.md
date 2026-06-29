@@ -23,7 +23,7 @@ features:
   - icon: ⚙️
     title: Adopt incremental type builds
     details: >
-      Reads existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration
+      Reads existing TypeScript configuration and source dependency relationships to generate reusable type build configuration
       and derive a reliable build order. Supports TypeScript and Vue checker workflows, so teams can adopt it gradually
       without reshaping the repository.
     link: /getting-started
@@ -40,7 +40,7 @@ features:
   - icon: 🧱
     title: Protect source boundaries
     details: >
-      Detects cross-package relative imports, unauthorized imports, missing dependency declarations, and source ownership issues.
+      Detects cross-package relative imports, unauthorized imports, missing dependency declarations, and file ownership issues.
       Package internals stay separated from intended public entry points, reducing boundary risks during refactors and releases.
     link: /config/source-boundary
     linkText: Configure source boundaries
@@ -48,7 +48,7 @@ features:
   - icon: 🎯
     title: Verify check coverage
     details: >
-      Finds files that are not covered by checks, covered more than once, or whose check scope does not match the source scope.
+      Finds files that are not covered by checks, covered more than once, or covered by the wrong check scope.
       Teams can see which code is already guarded and where quality blind spots still remain.
     link: /config/checkers
     linkText: Configure checker entries
@@ -56,7 +56,7 @@ features:
   - icon: 🚦
     title: Compose check pipelines
     details: >
-      Builds, dependency-graph checks, source-boundary checks, and coverage proof can all run as independent tasks.
+      Builds, dependency-graph checks, source-boundary checks, and source coverage checks can all run as independent tasks.
       Teams can compose workflows for local development, CI, or release gates, with tasks running concurrently when dependencies allow.
     link: /config/pipelines
     linkText: Configure pipelines

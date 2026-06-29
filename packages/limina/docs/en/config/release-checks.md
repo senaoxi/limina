@@ -5,7 +5,7 @@
 For workspace publish dependencies, Limina compares the local packed package output with an npm dist-tag baseline (`release.contentHash.baselineTag`, defaulting to `latest`) by package-relative content diffs. Diff reports classify files as `changed`, `local-only`, or `remote-only`, and failures list the release-relevant file names. If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish.
 
 ::: warning Tarball and publish hygiene
-Release checks reject private outputs (`private: true`), missing README/license files, source map files (`.map`), JavaScript `sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
+Release checks reject private outputs (`private: true`), missing `README.md` or `LICENSE.md`, source map files (`.map`), JavaScript `sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
 :::
 
 ::: warning Local dependency leaks

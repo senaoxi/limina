@@ -49,7 +49,7 @@ Package checks validate the resolver and runtime behavior of the directory consu
 
 - **Type:** `string`
 
-`outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, JavaScript, and declarations. Release-only files and tarball hygiene are checked by `limina release check`.
+`outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, JavaScript, and declarations. `README.md`, `LICENSE.md`, and tarball hygiene are checked by `limina release check`.
 
 ::: info
 Each `outDir/package.json` must exist and look like a complete npm package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and npm receive.
