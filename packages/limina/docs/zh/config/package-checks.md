@@ -49,7 +49,7 @@ export default defineConfig({
 
 - **类型：** `string`
 
-`outDir` 指向消费者实际安装到的构建后包目录，通常是 `packages/*/dist`。这个目录里应该有发布用的 `package.json`、JavaScript 和声明文件。README/license 与 tarball 卫生由 `limina release check` 校验。
+`outDir` 指向消费者实际安装到的构建后包目录，通常是 `packages/*/dist`。这个目录里应该有发布用的 `package.json`、JavaScript 和声明文件。`README.md`、`LICENSE.md` 与 tarball 卫生由 `limina release check` 校验。
 
 ::: info
 每个 `outDir/package.json` 都必须存在，并且看起来像一个完整的 npm 包清单。Limina 会拒绝 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中残留的 `workspace:`、`link:`、`file:`、`catalog:` 说明符，因为构建产物应该已经是消费者和 npm 实际看到的发布就绪清单。
@@ -69,7 +69,7 @@ export default defineConfig({
 `checks` 先决定基础工具集合。`publint` 和 `attw` 也可以写成 `true`、`false` 或对象，用来覆盖对应工具：`false` 表示关闭，`true` 或对象表示开启并使用默认或自定义配置。
 
 ::: warning
-`publint` 和 `@arethetypeswrong/core` 是 Limina 的 optional peer dependencies。如果启用了对应检查，但运行 Limina 的工作区没有安装该包，`package check` 会直接报缺失 peer dependency。
+`publint` 和 `@arethetypeswrong/core` 是 Limina 的可选 peer dependency。如果启用了对应检查，但运行 Limina 的工作区没有安装该包，`package check` 会直接报缺失 peer dependency。
 :::
 
 ## publint

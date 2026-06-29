@@ -24,7 +24,7 @@ A concurrency value can be a positive integer or `'auto'`. Explicit numbers are 
 | ---------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
 | `execution.tasks`            | `'auto'` | Top-level task scheduling. The default check can use it concurrently; named pipelines still follow step order. |
 | `execution.checkerBuild`     | `'auto'` | The build-mode checker pool inside `checker:build`.                                                            |
-| `execution.checkerTypecheck` | `2`      | The typecheck-only checker pool inside `checker:typecheck`.                                                    |
+| `execution.checkerTypecheck` | `2`      | The non-build checker pool inside `checker:typecheck`.                                                         |
 | `execution.packageEntries`   | `'auto'` | How many package output entries `package:check` checks at once.                                                |
 | `execution.releaseEntries`   | `2`      | How many release entries `release:check --package <name>` checks at once.                                      |
 

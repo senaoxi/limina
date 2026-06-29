@@ -5,7 +5,7 @@
 对于工作区发布依赖，Limina 会把本地打包产物和 npm dist-tag 基线（`release.contentHash.baselineTag`，默认 `latest`）做包相对内容差异对比。差异报告会把文件分成 `changed`、`local-only`、`remote-only` 三类；失败时会列出发布相关的具体文件名。如果按配置忽略后消费者可见包内容一致，就不会要求该依赖重新发布。
 
 ::: warning tarball 与发布卫生
-发布检查会拒绝私有输出（`private: true`）、缺失 README/license、源码映射文件（`.map`）、JavaScript `sourceMappingURL` 注释，以及不覆盖本地工作区版本的发布依赖范围。
+发布检查会拒绝私有输出（`private: true`）、缺失 `README.md` 或 `LICENSE.md`、源码映射文件（`.map`）、JavaScript `sourceMappingURL` 注释，以及不覆盖本地工作区版本的发布依赖范围。
 :::
 
 ::: warning 本地依赖泄漏
