@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import type {
@@ -23,21 +24,23 @@ interface RendererEntry {
 
 type WriteStreamName = 'stderr' | 'stdout';
 
-function findTsxBinary(packageDir: string): string {
-  const tsxBinName = process.platform === 'win32' ? 'tsx.cmd' : 'tsx';
+const requireFromRenderer = createRequire(import.meta.url);
 
-  return (
-    [
-      path.join(packageDir, 'node_modules/.bin', tsxBinName),
-      path.join(packageDir, '../../node_modules/.bin', tsxBinName),
-    ].find((candidate) => existsSync(candidate)) ?? 'tsx'
-  );
+function resolveTsxCliPath(packageDir: string): string | undefined {
+  try {
+    return requireFromRenderer.resolve('tsx/cli');
+  } catch {
+    return [
+      path.join(packageDir, 'node_modules/tsx/dist/cli.mjs'),
+      path.join(packageDir, '../../node_modules/tsx/dist/cli.mjs'),
+    ].find((candidate) => existsSync(candidate));
+  }
 }
 
 function resolveRendererEntry(): RendererEntry | undefined {
   const currentDir = fileURLToPath(new URL('.', import.meta.url));
   const sourceEntries = [
-    path.resolve(currentDir, 'flow/renderer-process.ts'),
+    path.resolve(currentDir, 'renderer-process.ts'),
     path.resolve(process.cwd(), 'src/flow/renderer-process.ts'),
   ];
   const distEntries = [
@@ -48,9 +51,17 @@ function resolveRendererEntry(): RendererEntry | undefined {
   const sourceEntry = sourceEntries.find((candidate) => existsSync(candidate));
 
   if (sourceEntry) {
+    const tsxCliPath = resolveTsxCliPath(
+      path.resolve(path.dirname(sourceEntry), '../..'),
+    );
+
+    if (!tsxCliPath) {
+      return undefined;
+    }
+
     return {
-      args: [sourceEntry],
-      command: findTsxBinary(path.resolve(path.dirname(sourceEntry), '../..')),
+      args: [tsxCliPath, sourceEntry],
+      command: process.execPath,
     };
   }
 
@@ -126,7 +137,6 @@ export class FlowProcessRenderer {
 
     const child = spawn(entry.command, entry.args, {
       env: process.env,
-      shell: process.platform === 'win32',
       stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
     });
 

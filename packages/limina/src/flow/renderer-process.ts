@@ -17,6 +17,7 @@ let snapshot: FlowRenderSnapshot = {
   treeRoots: [],
 };
 const terminalFrame = new TerminalFrameTracker(getTerminalColumns);
+const FLOW_RENDERER_TEST_COLUMNS_ENV = 'LIMINA_FLOW_RENDERER_TEST_COLUMNS';
 let spinnerFrameIndex = 0;
 let spinnerTimer: NodeJS.Timeout | undefined;
 let closed = false;
@@ -38,7 +39,13 @@ function readPositiveInteger(value: string | undefined): number | undefined {
 }
 
 function getTerminalColumns(): number {
-  return Math.max(1, process.stdout.columns ?? DEFAULT_TERMINAL_COLUMNS);
+  return Math.max(
+    1,
+    readPositiveInteger(process.env[FLOW_RENDERER_TEST_COLUMNS_ENV]) ??
+      process.stdout.columns ??
+      snapshot.terminalDimensions?.columns ??
+      DEFAULT_TERMINAL_COLUMNS,
+  );
 }
 
 function getTerminalRows(): number | undefined {
@@ -66,7 +73,7 @@ function render(): void {
   clearRenderedFrame();
 
   const dimensions = {
-    columns: snapshot.terminalDimensions?.columns ?? getTerminalColumns(),
+    columns: getTerminalColumns(),
     rows: snapshot.terminalDimensions?.rows ?? getTerminalRows(),
   };
   const renderedLines = renderSnapshotLinesForTerminal(
