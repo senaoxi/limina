@@ -1,7 +1,7 @@
 # 源码检查
 
 ::: warning
-本页描述顶层 `source` 选项。它配置 `source:check` 中的两类行为：`source.importAuthority` 用于源码导入授权，`source.knip` 用于 Knip 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
+顶层 `source` 选项配置 `source:check` 中的两类行为：`source.importAuthority` 用于源码导入授权，`source.knip` 用于 Knip 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
 :::
 
 `source check` 的主线是让源码导入能被包归属和依赖声明解释。Limina 把 pnpm 发现的工作区包作为源码归属方，包括没有 `name`、只能用路径标识的工作区包。嵌套 `package.json` 仍然影响包解析，也会形成相对导入要遵守的包作用域；但只有被 pnpm 识别为工作区包时才会切分源码归属方。

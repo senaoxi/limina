@@ -1,6 +1,6 @@
 # CLI 参考
 
-本文面向已经在 TypeScript 单体仓库中接入 Limina，或准备把 TypeScript 项目引用纳入日常检查流程的维护者。这里的核心问题不是记住所有命令，而是理解：哪些命令会生成工程图，哪些命令会检查工程图与源码事实是否一致，哪些命令只用于补充检查已构建产物。
+如果你已经在 TypeScript 单体仓库中接入 Limina，或准备把 TypeScript 项目引用纳入日常检查流程，核心问题不是记住所有命令，而是理解：哪些命令会生成工程图，哪些命令会检查工程图与源码事实是否一致，哪些命令只用于补充检查已构建产物。
 
 Limina 的 CLI 主线围绕 TypeScript 项目引用展开。它根据配置和源码生成 `.limina` 下的工程图，再基于这个工程图检查源码归属、包依赖、项目引用、检查器入口和源码覆盖。没有自动治理时，开发者需要手动判断并维护哪些源码关系应该进入 `references` 图；Limina 的作用是把这类判断转化为可重复运行的命令和报告。
 
@@ -321,59 +321,3 @@ pnpm exec limina release check --package @scope/pkg --verbose
 | `` `limina check --task`, `--checker`, and `--format` require --issues. `` | 把快照查询选项用于重新检查命令               | 添加 `--issues`，或移除这些过滤选项                                                                             |
 | `` `limina check --issues` does not accept a pipeline name. ``             | `--issues` 读取最近快照，不运行流水线        | 使用 `limina check --issues`，不要加流水线名                                                                    |
 | `Invalid graph export --view`                                              | `--view` 取值不在支持范围内                  | 使用 `all`、`source` 或 `artifact`                                                                              |
-
-## 迁移提示
-
-旧脚本如果使用 `limina checker build <config> --checker <name>`，应改为：
-
-```sh
-limina checker build <config> --preset tsc
-```
-
-旧脚本如果使用 `--project <config>`，应改为位置参数：
-
-```sh
-limina checker build <config>
-```
-
-`limina init` 会在根 `package.json` 中写入或更新：
-
-```json
-{
-  "scripts": {
-    "limina:build": "limina checker build"
-  }
-}
-```
-
-如果根 `package.json` 中存在旧的 `"limina:check": "limina check"`，初始化逻辑会删除这个精确匹配的旧脚本。其他自定义脚本不会被等价推断为旧脚本。
-
-## 本页边界
-
-本文只解释 CLI 的使用路径和命令语义，不重复完整配置参考。`graph.rules`、`source.importAuthority`、`proof.allowlist`、`package.entries`、`release.contentHash` 等配置项应在配置文档中维护。
-
-本文也不覆盖站点级能力，例如搜索、编辑链接、`lastUpdated`、SEO、重定向或 LLM 输出格式。这些属于文档站点配置，不属于 Limina CLI 的运行语义。
-
-## 事实边界说明
-
-Limina 的核心检查建立在 TypeScript 项目引用、生成工程图、源码静态导入分析、pnpm 工作区包信息和配置文件之上。动态运行时行为、测试覆盖、打包器产物语义和注册表最终发布规则不由 CLI 单独保证。
-
-`graph prepare` 会生成工程图，但它不代表源码结构已经正确；仍需运行 `graph check` 或 `check`。`package check` 和 `release check` 读取已构建产物，因此它们不能替代构建命令。`checker build` 和 `checker typecheck` 调用对应检查器入口，因此仍依赖这些检查器自身的能力、版本和 peer dependency。
-
-如果某个能力依赖配置或外部 peer dependency，而当前仓库没有配置或安装，对应命令可能跳过、通过无入口状态、或报告缺失依赖。文档中的命令示例只展示源码中已实现的调用方式，不暗示默认配置已经覆盖所有仓库结构。
-
-## 源码依据摘要
-
-- `packages/limina/src/cli.ts`：定义全部 CLI 命令、全局选项、参数校验、`--issues` 快照查询、`--tool`、`--attw-profile`、`--preset`、`--view` 的取值范围。
-- `packages/limina/src/config/runner.ts`：定义配置加载逻辑、pnpm 工作区根目录推断、函数式配置环境、内置检查器预设、包检查工具、发布配置和配置字段结构。
-- `packages/limina/src/pipeline/runner.ts`：定义默认 `check` 任务组合、内置任务名称、命名流水线、外部命令步骤、默认检查和命名流水线的执行方式。
-- `packages/limina/src/commands/init.ts`：实现 `limina init` 对 `limina.config.mjs`、`.gitignore`、根 `package.json`、`.limina` 和可选 skill 安装的处理。
-- `packages/limina/src/core/build-graph/runner.ts`：实现生成工程图、检查器入口、源码到声明配置映射、provider edges 和 `.limina` 生成产物。
-- `packages/limina/src/graph-check/runner.ts`：实现项目引用、源码图路由、条件域、引用完整性、工作区依赖声明和图规则检查。
-- `packages/limina/src/dependency-graph/runner.ts`：实现 `graph export` 的包节点、`source` / `artifact` 边和 JSON 输出。
-- `packages/limina/src/source-check/runner.ts`：实现源码归属、`tsconfig` 治理、源码包边界、导入授权和 Knip 支撑的源码使用检查。
-- `packages/limina/src/proof/runner.ts`：实现项目路由、检查器覆盖目标、证明白名单和源码覆盖检查。
-- `packages/limina/src/checkers.ts` 与 `packages/limina/src/typecheck/runner.ts`：实现检查器预设、构建型与非构建型检查器入口、peer dependency 检查、指定配置构建和生成入口构建。
-- `packages/limina/src/package-check/runner.ts`：实现已构建包产物的清单文件、publint、ATTW 和产物导入边界检查。
-- `packages/limina/src/commands/release.ts`：实现发布前产物一致性检查，包括本地依赖声明、`private` 清单、tarball 和发布一致性问题报告。
-- `packages/limina/package.json`：提供当前包名、版本、Node engine、bin 入口和 peer dependency 范围。
