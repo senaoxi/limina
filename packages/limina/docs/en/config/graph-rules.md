@@ -45,7 +45,7 @@ export default defineConfig({
 
 - **Type:** `Record<string, GraphRule>`
 
-The `rules` key must match an entry in `liminaOptions.graphRules` in a source tsconfig. A source config can list multiple labels, and Limina merges the matching rules for that config.
+The `rules` `key` must match an entry in `liminaOptions.graphRules` in a source `tsconfig`. A source config can list multiple labels, and Limina merges the matching rules for that config.
 
 Pair the rule with labels in the source config:
 
@@ -64,15 +64,15 @@ Source covered by that config now uses `graph.rules.runtime-client`.
 
 - **Type:** `Array<{ path: string; reason: string }>`
 
-`allow.refs` uses the same entry shape as `deny.refs`, and acknowledges extra declared references that static import analysis cannot prove. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path is both allowed and denied.
+`allow.refs` uses the same entry shape as `deny.refs`, and acknowledges extra declared references that static import analysis cannot prove. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path matches both `allow` and `deny`.
 
-Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source tsconfig files. Use `implicitRefs` when a dynamic import, generated manifest, or virtual module creates a real source edge that static analysis cannot see. Use `allow.refs` only to explain extra declared references that already exist.
+Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source `tsconfig` files. Use `implicitRefs` when a dynamic import, generated manifest, or virtual module creates a real source edge that static analysis cannot see. Use `allow.refs` only to explain extra declared references that already exist.
 
 ## deny.refs
 
 - **Type:** `Array<{ path: string; reason: string }>`
 
-`deny.refs` forbids a labeled project from referencing the declaration build config for a specific source tsconfig. It is useful for boundaries such as "client runtime must not depend on server runtime" or "public API must not depend on internal tools".
+`deny.refs` forbids a labeled project from referencing the declaration build config for a specific source `tsconfig`. It is useful for boundaries such as "client runtime must not depend on server runtime" or "public `API` must not depend on internal tools".
 
 For example, if the rule contains:
 
@@ -83,7 +83,7 @@ For example, if the rule contains:
 }
 ```
 
-and a project labeled `runtime-client` references the generated Node-only config, `limina graph check` fails and prints the configured reason.
+and a project labeled `runtime-client` references the generated `Node`-only config, `limina graph check` fails and prints the configured reason.
 
 In a fuller example, the repository can look like this:
 
@@ -109,13 +109,13 @@ The client source config is labeled `runtime-client`; Limina generates the refer
 
 When `pnpm exec limina graph check` runs, Limina prepares the generated graph and reads the relevant project `references`. When it sees a project labeled `runtime-client` referencing the generated config for `packages/app/src/node/tsconfig.lib.json`, it compares that source path with `graph.rules.runtime-client.deny.refs`.
 
-The result is a graph check failure that points at the forbidden project reference and prints the configured `reason`. This means the problem is not just one import line; the TypeScript graph itself now says client runtime depends on Node runtime.
+The result is a graph check failure that points at the forbidden project reference and prints the configured `reason`. This means the problem is not just one import line; the `TypeScript` graph itself now says client runtime depends on `Node` runtime.
 
 ## deny.deps
 
 - **Type:** `Array<{ name: string; reason: string }>`
 
-`deny.deps` forbids source imports of selected packages, `#imports`, or Node builtins. `name` can be a package name, a `#subpath` such as `#server/*`, `fs`, `node:fs`, or `node:*` for all Node builtins.
+`deny.deps` forbids source imports of selected packages, `#imports`, or `Node` builtins. `name` can be a package name, a `#subpath` such as `#server/*`, `fs`, `node:fs`, or `node:*` for all `Node` builtins.
 
 If source covered by the labeled leaf contains:
 
@@ -145,6 +145,6 @@ import { readFileSync } from 'node:fs';
 import { createServerClient } from '@acme/internal-node';
 ```
 
-When `pnpm exec limina graph check` runs, Limina parses imports from `src/client/load.ts` with TypeScript. Because the file belongs to a leaf configured with `liminaOptions.graphRules: ["runtime-client"]`, Limina compares each resolved specifier with `deny.deps`: `node:fs` matches `node:*`, and `@acme/internal-node` matches the package rule.
+When `pnpm exec limina graph check` runs, Limina parses imports from `src/client/load.ts` with `TypeScript`. Because the file belongs to a leaf configured with `liminaOptions.graphRules: ["runtime-client"]`, Limina compares each resolved specifier with `deny.deps`: `node:fs` matches `node:*`, and `@acme/internal-node` matches the package rule.
 
-The result is a graph check failure with the configured reason for each match. Reviewers can immediately see that browser runtime code imported Node-only capabilities instead of guessing whether those imports will break in the browser.
+The result is a graph check failure with the configured reason for each match. Reviewers can immediately see that browser runtime code imported `Node`-only capabilities instead of guessing whether those imports will break in the browser.

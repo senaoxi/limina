@@ -2,11 +2,11 @@
 
 ## 环境要求
 
-Limina 面向 pnpm 工作区，并要求配置文件使用 ESM。
+Limina 面向 `pnpm` 工作区，并要求配置文件使用 `ESM`。
 
-- Node.js `^20.19.0 || >=22.12.0`
+- `Node.js ^20.19.0 || >=22.12.0`
 - 工作区根目录存在 `pnpm-workspace.yaml`
-- 接入仓库已经安装 TypeScript
+- 接入仓库已经安装 `TypeScript`
 - `limina.config.mjs` 位于工作区内部
 
 ## 安装
@@ -29,13 +29,13 @@ yarn add -D limina typescript
 
 ## 选择接入方式
 
-如果工作区还没有 Limina 配置，优先使用 `limina init`。它会写入采用自动模式（`mode: 'auto'`）的 `limina.config.mjs`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina agent skill。
+如果工作区还没有 Limina 配置，优先使用 `limina init`。它会写入采用自动模式（`mode: 'auto'`）的 `limina.config.mjs`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina `agent skill`。
 
 如果仓库已经有清晰的 `tsconfig` 约定，直接写最小 `limina.config.mjs` 会更快。多数工作区只需要自动发现检查器；只有需要显式控制检查器路由时，才需要继续查看[检查器入口](./config/checkers.md)。
 
 ## 初始化已有工作区
 
-如果一个 pnpm 单体仓库还没有采用 Limina 的声明图结构，可以运行：
+如果一个 `pnpm` 单体仓库还没有采用 Limina 的声明图结构，可以运行：
 
 ```sh
 pnpm exec limina init
@@ -49,7 +49,7 @@ pnpm exec limina init
 pnpm exec limina init --yes
 ```
 
-`--yes` 只接受核心初始化确认，并会跳过可选的 skill 安装。之后如果要手动安装 skill，可以运行：
+`--yes` 只接受核心初始化确认，并会跳过可选的 `skill` 安装。之后如果要手动安装 `skill`，可以运行：
 
 ```sh
 npx --yes skills add senaoxi/docs-islands --skill limina
@@ -167,9 +167,9 @@ pnpm exec limina check --issues --task checker:typecheck
 
 常见判断方式如下：
 
-- `graph:check` 失败，通常说明源码导入关系与 Limina 生成或校验的 TypeScript 项目图没有对齐。优先检查由静态导入推导出的项目引用是否缺失或多余，跨工作区包引用是否有对应依赖声明，图规则或标签是否禁止了当前依赖边，以及工作区导入是否能稳定解析并映射到源码图。
-- `source:check` 失败，通常说明源码文件归属或源码导入授权没有通过。优先检查源码归属方、tsconfig 治理、相对导入是否越过最近的 `package.json` 包边界，`#...` 导入是否匹配当前源码归属方的 `package.json#imports`，裸包导入是否由依赖声明或 `source.importAuthority.allow` 授权，以及 Knip 发现的未使用源码或未使用依赖问题。
-- `proof:check` 失败，通常说明 Limina 无法证明实际源码已经被类型检查覆盖。优先检查检查器入口是否生成了对应 tsconfig，声明构建配置与配套类型检查配置是否一致，`config.source` 中的文件是否被检查器、图或 `proof.allowlist` 覆盖，以及是否存在同一源码文件被多个图或类型检查归属方覆盖的问题。
+- `graph:check` 失败，通常说明源码导入关系与 Limina 生成或校验的 `TypeScript` 项目图没有对齐。优先检查由静态导入推导出的项目引用是否缺失或多余，跨工作区包引用是否有对应依赖声明，图规则或标签是否禁止了当前依赖边，以及工作区导入是否能稳定解析并映射到源码图。
+- `source:check` 失败，通常说明源码文件归属或源码导入授权没有通过。优先检查源码归属方、`tsconfig` 治理、相对导入是否越过最近的 `package.json` 包边界，`#...` 导入是否匹配当前源码归属方的 `package.json#imports`，裸包导入是否由依赖声明或 `source.importAuthority.allow` 授权，以及 `Knip` 发现的未使用源码或未使用依赖问题。
+- `proof:check` 失败，通常说明 Limina 无法证明实际源码已经被类型检查覆盖。优先检查检查器入口是否生成了对应 `tsconfig`，声明构建配置与配套类型检查配置是否一致，`config.source` 中的文件是否被检查器、图或 `proof.allowlist` 覆盖，以及是否存在同一源码文件被多个图或类型检查归属方覆盖的问题。
 - `checker:build`（检查器构建）失败，说明构建型检查器没有通过。常见原因包括 `tsc`、`tsgo`、`vue-tsc` 外部命令返回错误，缺少对应检查器依赖，或者 Limina 无法为当前目标选择有效的构建目标。先看 Limina 汇总中的检查器、配置路径和退出码，再进入对应检查器的原始日志。
 - `checker:typecheck`（检查器类型检查）失败，说明类型检查型检查器没有通过。常见原因包括 `vue-tsgo`、`svelte-check` 外部命令返回错误，缺少对应检查器依赖，或生成的检查器入口无法正常执行。先根据 Limina 汇总定位执行器和配置路径，再查看对应问题或原始日志。
 
@@ -201,4 +201,4 @@ export default defineConfig({
 
 检查器入口始终是 `tsconfig.json`。如果包里还有 `tsconfig.lib.json` 或 `tsconfig.test.json`，应由这个包的 `tsconfig.json` 通过 `references` 配置声明项目引用；Limina 会继续跟随这些项目引用。
 
-内置预设包括 `tsc`、`tsgo`、`vue-tsc`、`vue-tsgo`、`svelte-check`。启用某个检查器时，请安装对应包；`tsgo` 和 `vue-tsgo` 需要 `@typescript/native-preview`。Limina 默认用内置启发式规则解析 Vue SFC 的导入；只有显式启用 `config.imports.vue: 'compiler-sfc'` 时，才需要再安装 `@vue/compiler-sfc`。
+内置预设包括 `tsc`、`tsgo`、`vue-tsc`、`vue-tsgo`、`svelte-check`。启用某个检查器时，请安装对应包；`tsgo` 和 `vue-tsgo` 需要 `@typescript/native-preview`。Limina 默认用内置启发式规则解析 `Vue SFC` 的导入；只有显式启用 `config.imports.vue: 'compiler-sfc'` 时，才需要再安装 `@vue/compiler-sfc`。

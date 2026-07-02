@@ -1,6 +1,6 @@
 # Why import Cannot Directly Equal references
 
-In a monorepo, `import`, `package.json` dependencies, and TypeScript `references` are often discussed together. They are related, but they are not the same kind of information.
+In a monorepo, `import`, `package.json` dependencies, and `TypeScript references` are often discussed together. They are related, but they are not the same kind of information.
 
 When a package declares a dependency in `package.json`, it only means that the package is allowed to use another package. When a source file contains an `import`, it only means that a file uses a certain module entry. `references` are concerned with something else:
 
@@ -8,7 +8,7 @@ When a package declares a dependency in `package.json`, it only means that the p
 During declaration builds, which upstream declaration build output should the current tsconfig consume first?
 ```
 
-This is why we cannot simply say “it has already been imported, so a reference should be generated automatically”. Limina’s job is not to copy an import list into `references`; it is to determine what type declarations this import actually needs in TypeScript declaration builds, and who provides those declarations.
+This is why we cannot simply say “it has already been imported, so a reference should be generated automatically”. Limina’s job is not to copy an import list into `references`; it is to determine what type declarations this import actually needs in `TypeScript` declaration builds, and who provides those declarations.
 
 ## references are not a regular dependency list
 
@@ -24,7 +24,7 @@ references: which upstream project output should be built first and consumed dur
 
 They affect each other, but they cannot replace each other.
 
-For example, declaring `@acme/core` in `dependencies` does not mean that every tsconfig importing `@acme/core` should reference the source build config of `core`. An entry of `@acme/core` may expose source code, already generated `.d.ts` files, or only runtime resources. For `references`, what really matters is how TypeScript, under the current tsconfig and checker semantics, obtains the type declarations for that entry.
+For example, declaring `@acme/core` in `dependencies` does not mean that every `tsconfig` importing `@acme/core` should reference the source build config of `core`. An entry of `@acme/core` may expose source code, already generated `.d.ts` files, or only runtime resources. For `references`, what really matters is how TypeScript, under the current `tsconfig` and checker semantics, obtains the type declarations for that entry.
 
 In other words, `references` do not mean “who I depend on”; they mean “which upstream declaration project my declaration build needs”.
 
@@ -51,7 +51,7 @@ Another package imports it:
 import { createClient } from '@acme/core';
 ```
 
-Here, we cannot only look at `default` pointing to `./src/index.ts`. For declaration builds, the more important question is whether TypeScript has already obtained `./dist/index.d.ts` through `types`. If TypeScript’s type resolution result under the current checker and tsconfig is already a `.d.ts` file, this edge is closer to declaration-file consumption. It should not be forced into a project reference merely to make the graph look more like a source dependency graph.
+Here, we cannot only look at `default` pointing to `./src/index.ts`. For declaration builds, the more important question is whether `TypeScript` has already obtained `./dist/index.d.ts` through `types`. If `TypeScript`'s type resolution result under the current checker and `tsconfig` is already a `.d.ts` file, this edge is closer to declaration-file consumption. It should not be forced into a project reference merely to make the graph look more like a source dependency graph.
 
 Now consider another import:
 
@@ -59,7 +59,7 @@ Now consider another import:
 import { createInternalClient } from '@acme/core/internal';
 ```
 
-If TypeScript resolves this to `packages/core/src/internal.ts`, and that file belongs to another Limina-managed source tsconfig, then this edge may become a declaration build `reference`. The reason is not that “the package name is the same”, nor that “this package exists in dependencies”. The reason is that the type declarations required by this import need to be provided by another source scope through declaration build output.
+If `TypeScript` resolves this to `packages/core/src/internal.ts`, and that file belongs to another Limina-managed source `tsconfig`, then this edge may become a declaration build `reference`. The reason is not that “the package name is the same”, nor that “this package exists in dependencies”. The reason is that the type declarations required by this import need to be provided by another source scope through declaration build output.
 
 These two examples show that under the same package and the same dependency declaration, different entries may correspond to different engineering relationships. This is why Limina now frames the problem as determining the “declaration provider”: first determine where the type declarations come from, then decide whether a project reference is needed.
 
@@ -67,7 +67,7 @@ For how each resolution result (`.d.ts`, source in the current scope, source in 
 
 ## Why Limina requires boundaries to be declared first
 
-TypeScript has to serve the entire ecosystem. It cannot assume that every monorepo uses the same package structure, the same tsconfig layout, or the same bundling strategy.
+`TypeScript` has to serve the entire ecosystem. It cannot assume that every monorepo uses the same package structure, the same tsconfig layout, or the same bundling strategy.
 
 A single package may contain several configs at the same time:
 
@@ -80,7 +80,7 @@ packages/app/
   tsconfig.server.json
 ```
 
-These configs should not necessarily all participate in declaration builds. Test configs, browser configs, Node configs, and framework checker configs may have different file sets and compiler options. If TypeScript inferred `references` from imports or `package.json` dependencies by default, it would have to decide build boundaries between these configs on behalf of the user. That decision is difficult to make safe as a default semantic for all projects.
+These configs should not necessarily all participate in declaration builds. Test configs, browser configs, `Node` configs, and framework checker configs may have different file sets and compiler options. If TypeScript inferred `references` from imports or `package.json` dependencies by default, it would have to decide build boundaries between these configs on behalf of the user. That decision is difficult to make safe as a default semantic for all projects.
 
 Limina narrows the scope instead. Users first declare which tsconfigs are source entries governed by Limina:
 

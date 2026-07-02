@@ -1,11 +1,11 @@
 # Release Checks
 
-`limina release check` is separate from `package check`. It uses the same `package.entries` selection, packs the npm tarball, and verifies publish hygiene plus workspace publish-dependency consistency against npm registry content.
+`limina release check` is separate from `package check`. It uses the same `package.entries` selection, packs the `npm tarball`, and verifies publish hygiene plus workspace publish-dependency consistency against `npm` registry content.
 
-For workspace publish dependencies, Limina compares the local packed package output with an npm dist-tag baseline (`release.contentHash.baselineTag`, defaulting to `latest`) by package-relative content diffs. Diff reports classify files as `changed`, `local-only`, or `remote-only`, and failures list the release-relevant file names. If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish.
+For workspace publish dependencies, Limina compares the local packed package output with an `npm dist-tag` baseline (`release.contentHash.baselineTag`, defaulting to `latest`) by package-relative content diffs. Diff reports classify files as `changed`, `local-only`, or `remote-only`, and failures list the release-relevant file names. If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish.
 
 ::: warning Tarball and publish hygiene
-Release checks reject private outputs (`private: true`), missing `README.md` or `LICENSE.md`, source map files (`.map`), JavaScript `sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
+Release checks reject private outputs (`private: true`), missing `README.md` or `LICENSE.md`, source map files (`.map`), `JavaScript sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
 :::
 
 ::: warning Local dependency leaks
@@ -21,7 +21,7 @@ Without `--package`, `limina release check` requires the nearest cwd `package.js
 - **Type:** `string | ((args: { importerName: string; dependencyName: string }) => string)`
 - **Default:** `'latest'`
 
-`contentHash.baselineTag` is the npm dist-tag used as the online baseline when comparing dependency package output. Pass a function to choose a different baseline per importer/dependency pair.
+`contentHash.baselineTag` is the `npm dist-tag` used as the online baseline when comparing dependency package output. Pass a function to choose a different baseline per importer/dependency pair.
 
 ## contentHash.builtinIgnore
 
@@ -40,7 +40,7 @@ An ignore function returning `[]` means that dependency ignores no files (the bu
 
 - **Type:** `string[] | ((args: { importerName: string; dependencyName: string }) => string[] | undefined)`
 
-`contentHash.ignore` can be a package-relative glob array such as `client/**` or `dist/*.wasm`, or a function that receives the importer and dependency package names and returns a glob array.
+`contentHash.ignore` can be a package-relative `glob` array such as `client/**` or `dist/*.wasm`, or a function that receives the importer and dependency package names and returns a `glob` array.
 
 Ignored reports are grouped by the matching rule and show counts for `changed`, `local-only`, and `remote-only`.
 
