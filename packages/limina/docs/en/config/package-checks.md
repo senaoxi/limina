@@ -43,16 +43,16 @@ Package checks validate the resolver and runtime behavior of the directory consu
 
 - **Type:** `string`
 
-`name` is the friendly name for this package entry. The CLI uses it for `--package <name>` and release cwd matching.
+`name` is the friendly name for this package entry. The `CLI` uses it for `--package <name>` and release cwd matching.
 
 ## outDir
 
 - **Type:** `string`
 
-`outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, JavaScript, and declarations. `README.md`, `LICENSE.md`, and tarball hygiene are checked by `limina release check`.
+`outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, `JavaScript`, and declarations. `README.md`, `LICENSE.md`, and `tarball` hygiene are checked by `limina release check`.
 
 ::: info
-Each `outDir/package.json` must exist and look like a complete npm package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and npm receive.
+Each `outDir/package.json` must exist and look like a complete `npm` package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and `npm` receive.
 :::
 
 ## checks
@@ -64,12 +64,12 @@ Each `outDir/package.json` must exist and look like a complete npm package manif
 
 - `publint`: consumer-facing package metadata and export issues;
 - `attw`: type resolution through Are The Types Wrong;
-- `boundary`: emitted JavaScript imports, runtime boundaries, and dependency boundaries.
+- `boundary`: emitted `JavaScript` imports, runtime boundaries, and dependency boundaries.
 
 `checks` selects the base tool set. `publint` and `attw` can also be `true`, `false`, or an object to override that tool: `false` disables it, while `true` or an object enables it with default or custom settings.
 
 ::: warning
-`publint` and `@arethetypeswrong/core` are optional peer dependencies of Limina. If the corresponding check is enabled but the package is not installed in the workspace running Limina, `package check` fails with a missing peer dependency error.
+`publint` and `@arethetypeswrong/core` are optional `peer dependency` packages of Limina. If the corresponding check is enabled but the package is not installed in the workspace running Limina, `package check` fails with a missing `peer dependency` error.
 :::
 
 ## publint
@@ -104,7 +104,7 @@ Each `outDir/package.json` must exist and look like a complete npm package manif
 - **Type:** `'esm-only' | 'node16' | 'strict'`
 - **Default:** `'esm-only'`
 
-`attw.profile` controls the Are The Types Wrong profile. Common values are `esm-only`, `node16`, and `strict`.
+`attw.profile` controls the `Are The Types Wrong` profile. Common values are `esm-only`, `node16`, and `strict`.
 
 ### attw.level
 

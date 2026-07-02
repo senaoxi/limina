@@ -31,10 +31,10 @@ export default defineConfig({
 
 `pipelines` maps a name to an ordered list of steps. `pnpm exec limina check <name>` schedules that pipeline's steps in array order, with each step depending on the previous one. This differs from the default `limina check`: the default check schedules built-in tasks as independent work that can run concurrently, while a named pipeline preserves the order you wrote.
 
-Ordered does not mean every failure stops the pipeline immediately. A built-in task failure makes the final pipeline result fail, but later steps are still attempted in order. An external command step failure blocks the remaining steps and records them as skipped.
+Ordered does not mean every failure stops the pipeline immediately. A built-in task failure makes the final pipeline result fail, but later steps are still attempted in order. An external command step failure blocks the remaining steps and records them as `skipped`.
 
 ::: tip
-Pipelines are a good place to fix team workflows as named commands. A `publish` pipeline can typecheck, build, and then inspect package output, so local scripts and CI share the same order instead of drifting apart.
+Pipelines are a good place to fix team workflows as named commands. A `publish` pipeline can typecheck, build, and then inspect package output, so local scripts and `CI` share the same order instead of drifting apart.
 :::
 
 ## String steps
@@ -52,7 +52,7 @@ A string step can be a built-in Limina task:
 
 It can also be a simple external command. Simple commands are split on whitespace; use object form when arguments contain spaces, or when the step needs `cwd` or environment variables.
 
-`graph:prepare` only generates graph files; it does not validate them. Most flows can use `graph:check` directly, because graph checking prepares the graph before it runs.
+`graph:prepare` only generates graph files; it does not validate them. Most flows can use `graph:check` directly, because graph checking automatically `prepare`s the graph before it runs.
 
 ## Object command step
 
@@ -115,5 +115,5 @@ When `pnpm exec limina check publish` runs, Limina executes pipeline steps in ar
 
 The result is a recorded failure during the source stage; `checker:build`, `package:check`, and `pnpm test` are still attempted in order. The user can fix the closest cause first: replace the cross-package relative import with the `@acme/core` package export, then express the dependency through the manifest and project reference.
 
-If a later external command step such as `pnpm test` fails, steps after it are blocked and recorded as skipped. That blocking behavior comes from external command steps, not built-in check tasks.
+If a later external command step such as `pnpm test` fails, steps after it are blocked and recorded as `skipped`. That blocking behavior comes from external command steps, not built-in check tasks.
 :::

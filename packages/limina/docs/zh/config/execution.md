@@ -23,7 +23,7 @@ export default defineConfig({
 | 字段                         | 默认值   | 控制范围                                                       |
 | ---------------------------- | -------- | -------------------------------------------------------------- |
 | `execution.tasks`            | `'auto'` | 顶层任务调度；默认检查可并发使用，命名流水线仍受步骤顺序约束。 |
-| `execution.checkerBuild`     | `'auto'` | `checker:build` 内部的 build-mode 检查器工作池。               |
+| `execution.checkerBuild`     | `'auto'` | `checker:build` 内部的构建模式检查器工作池。                   |
 | `execution.checkerTypecheck` | `2`      | `checker:typecheck` 内部的非构建型检查器工作池。               |
 | `execution.packageEntries`   | `'auto'` | `package:check` 同时检查多少个包输出条目。                     |
 | `execution.releaseEntries`   | `2`      | `release:check --package <name>` 同时检查多少个发布条目。      |
@@ -42,4 +42,4 @@ export default defineConfig({
 
 命名流水线始终按数组顺序调度。`execution.tasks` 不会把有顺序依赖的流水线步骤改成并发执行。
 
-并发配置不改变失败策略。内置任务失败会让最终结果失败，但不会阻塞其他内置任务或后续有序步骤；外部命令步骤失败会阻塞剩余步骤，并把它们记为 skipped。`execution.failFast` 是布尔字段，但顶层 `limina check` 的停止行为不由它控制。
+并发配置不改变失败策略。内置任务失败会让最终结果失败，但不会阻塞其他内置任务或后续有序步骤；外部命令步骤失败会阻塞剩余步骤，并把它们记为 `skipped`。`execution.failFast` 是布尔字段，但顶层 `limina check` 的停止行为不由它控制。

@@ -20,10 +20,10 @@ export default defineConfig(({ command, mode }) => ({
 }));
 ```
 
-本地、CI、发布前需要使用不同检查器、规则或包条目时，可以用函数配置返回不同内容。环境差异会留在一个可审查的配置文件里。
+本地、`CI`、发布前需要使用不同检查器、规则或包条目时，可以用函数配置返回不同内容。环境差异会留在一个可审查的配置文件里。
 
 ::: tip
-省略 `config.checkers` 时，Limina 会自动发现 checker。需要显式控制 checker 路由时，再看[检查器入口](./checkers.md)。
+省略 `config.checkers` 时，Limina 会自动发现 `checker`。需要显式控制 `checker` 路由时，再看[检查器入口](./checkers.md)。
 :::
 
 ## mode
@@ -32,9 +32,9 @@ export default defineConfig(({ command, mode }) => ({
 
 `mode` 的解析顺序是 `--mode`，然后是 `NODE_ENV`，最后回退到 `'default'`。
 
-本地、CI、发布前需要使用不同检查器、规则或包条目时，可以用函数配置根据 `mode` 返回不同内容。环境差异会留在一个可审查的配置文件里。
+本地、`CI`、发布前需要使用不同检查器、规则或包条目时，可以用函数配置根据 `mode` 返回不同内容。环境差异会留在一个可审查的配置文件里。
 
-如果包输出条目只服务于 package/release 命令，优先按 `command` 分支；`mode` 更适合表达更宽的环境差异。
+如果包输出条目只服务于 `package` / `release` 命令，优先按 `command` 分支；`mode` 更适合表达更宽的环境差异。
 
 ```js
 export default defineConfig(({ mode }) => ({

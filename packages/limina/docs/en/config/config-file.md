@@ -15,12 +15,12 @@ Config can also be a function:
 ```js
 export default defineConfig(({ command, mode }) => ({
   config: {
-    // return different entries for CI, local, or release usage
+    // return different entries for `CI`, local, or release usage
   },
 }));
 ```
 
-Function configs are useful when local, CI, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
+Function configs are useful when local, `CI`, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
 
 ::: tip
 If `config.checkers` is omitted, Limina uses auto checker discovery. See [Checker Entries](./checkers.md) when you need explicit checker routing.
@@ -32,14 +32,14 @@ If `config.checkers` is omitted, Limina uses auto checker discovery. See [Checke
 
 `mode` is resolved from `--mode`, then `NODE_ENV`, then `'default'`.
 
-Function configs are useful when local, CI, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
+Function configs are useful when local, `CI`, or release workflows need different checkers, rules, or package entries. The environment-specific differences stay in one reviewable config file.
 
-Prefer `command` branching for package output entries that only matter to package and release commands. Reserve `mode` for broader environment-level differences.
+Prefer `command` branching for package output entries that only matter to `package` and `release` commands. Reserve `mode` for broader environment-level differences.
 
 ```js
 export default defineConfig(({ mode }) => ({
   config: {
-    // return different entries for CI, local, or release usage
+    // return different entries for `CI`, local, or release usage
   },
 }));
 ```

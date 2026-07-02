@@ -38,7 +38,7 @@ proof: {
 
 - **Type:** `string`
 
-`file` is the allowed source file path, relative to the workspace root. It should point at a concrete file instead of using a broad glob.
+`file` is the allowed source file path, relative to the workspace root. It should point at a concrete file instead of using a broad `glob`.
 
 ## reason
 
@@ -47,7 +47,7 @@ proof: {
 `reason` explains why this file is safe to leave outside normal checker coverage.
 
 ::: warning
-`reason` must not be empty. Allowlist entries are reviewable architecture exceptions, not only a switch to turn CI green.
+`reason` must not be empty. Allowlist entries are reviewable architecture exceptions, not only a switch to turn `CI` green.
 :::
 
 For example, a declaration file may be produced only by a build step:

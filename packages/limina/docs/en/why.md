@@ -125,6 +125,26 @@ Then the code relationship appears in source imports, dependency declarations, p
 
 This is the same kind of problem as the earlier [cross-`tsconfig` relative import inside one package](#project-references-improve-builds-but-add-maintenance-cost): the fact that code resolves does not mean the structural relationship has been expressed correctly. Limina's checks help the team confirm whether the code is in a clear, reasonable, and predictable position in the overall repository structure.
 
+## AI Iteration Makes Structural Feedback More Important
+
+The scenarios above point to the same problem: as a repository grows more complex, source relationships and the engineering graph are more likely to drift apart. In the past, this drift was often caught by experienced maintainers during code review: whether an import bypassed a package entry point, whether a dependency should be declared, whether a source file was covered by the intended check scope, or whether a configuration change expanded a boundary that should have remained constrained.
+
+This process can work, but it continuously consumes maintainer attention. Once AI coding agents participate in development, code changes can happen faster and in larger volumes. If mechanically expressible architecture rules still depend mainly on experienced maintainers identifying them one by one, teams will spend substantial effort on repeated judgment calls.
+
+Developers can, of course, describe the rules an AI should follow in the current repository through documentation, task descriptions, project-level instructions such as `AGENTS.md`, `CLAUDE.md`, or `.cursor/rules`, or project conventions. These natural-language constraints are useful, but they still depend on model understanding and context retention. They cannot provide deterministic engineering guarantees. AI may miss constraints, misinterpret rules, or produce changes that look reasonable while still violating the repository structure.
+
+Working with AI therefore cannot rely only on “telling it what to do”. There also needs to be tooling that verifies whether the result actually did it. Type checkers, static analysis tools, formatters, and similar tools work well with AI because they provide clear, localizable, and repeatable feedback. AI can use that feedback to fix type errors, syntax issues, style problems, or common static-rule violations.
+
+Structural drift in a complex monorepo, however, often does not appear as a local error in a single file. Code may still pass the usual checks in the short term while bypassing package entry points, missing dependency declarations, or leaving some source files outside the intended check scope.
+
+This does not mean that `Limina` should determine whether business logic is correct. Business behavior still needs tests, review, and domain validation. `Limina` is better suited to infrastructure-level constraints: turning architecture rules that can be expressed generally into executable checks, so source ownership, project references, package boundaries, check coverage, and the build graph stay aligned during fast iteration.
+
+In that sense, `Limina` provides architecture-level feedback. It moves structural issues that previously depended on maintainers noticing them earlier into local commands, `CI`, and `Pull Request` workflows, so fixes do not only focus on the current file but can also be brought back to the repository structure itself.
+
+AI can use check results to fix ordinary violations, but changes involving allowlists, ignore rules, boundary exceptions, or a required `reason` are better confirmed by a developer. These changes are usually not ordinary fixes; they declare that the team accepts an architecture exception.
+
+AI makes the value of `Limina` more visible, but it does not change `Limina`’s responsibility boundary: tests validate business behavior, regular engineering tools provide local semantic, style, and static-rule feedback, and `Limina` validates monorepo infrastructure and architecture boundaries.
+
 ## The Final Goal: Reduce Structural Maintenance Cost
 
 Limina's goal is not to add more rules to the repository. It is to reduce the maintenance cost caused by complex structure.
@@ -144,8 +164,3 @@ After adopting Limina, teams can answer these questions more reliably:
 When these questions can be answered by automated checks, developers do not need to manually reconstruct the entire project reference graph for every change.
 
 That is Limina's core value: it builds a verifiable project-reference graph on top of TypeScript project references, so code structure in complex monorepos stays understandable, reviewable, and predictable.
-
-::: tip
-If you want to adopt it directly in a repository, start with [Getting Started](./getting-started.md).
-If you want to understand how specific rules are configured, continue with the [Configuration Reference](./config/).
-:::
