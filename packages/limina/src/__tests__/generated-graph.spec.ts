@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { prepareGeneratedTsconfigGraph } from '#core/build-graph/runner';
+import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import {
   mkdir,
@@ -1137,9 +1138,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
     try {
       const result = await prepareGeneratedTsconfigGraph(fixture.config);
-      const sourceConfigPath = path.join(
-        fixture.rootDir,
-        'packages/pkg/tsconfig.lib.json',
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.lib.json'),
       );
       const copyContexts = result.outputDeclarationCopies
         .get('typescript')
@@ -1147,8 +1147,12 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       expect(copyContexts).toHaveLength(1);
       expect(copyContexts?.[0]).toMatchObject({
-        outDir: path.join(fixture.rootDir, 'packages/pkg/dist'),
-        rootDir: path.join(fixture.rootDir, 'packages/pkg/src'),
+        outDir: normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/dist'),
+        ),
+        rootDir: normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/src'),
+        ),
         sourceConfigPath,
       });
       expect(
