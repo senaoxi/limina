@@ -239,6 +239,8 @@ pnpm exec limina build packages/app/tsconfig.raw.json --raw --preset vue-tsc
 
 托管模式会生成并运行 `.limina/tsconfig/checkers/<checker>/outputs/` 下的输出构建配置。多个构建型检查器同时匹配目标时，必须传 `--preset`。`--watch` 使用对应检查器适配器的监听能力；不支持时会明确失败。
 
+托管构建在非 `watch` 模式成功后，还会补充 TypeScript emit：把输出 `rootDir` 内的本地声明输入（`.d.ts`、`.d.cts`、`.d.mts`）按相对路径复制到 `outDir`。位于 `rootDir` 外或依赖包中的声明不会被复制；需要时把声明移入 `rootDir`、扩大 `liminaOptions.outputs.rootDir`，或添加显式复制步骤。
+
 `--raw` 用于直接运行 `tsc`、`tsgo` 或 `vue-tsc` 构建用户维护的 `tsconfig`。原始模式必须传 `--preset`，不会准备生成图，不读取 `liminaOptions.outputs`，不使用 Limina 推断引用，并拒绝 `.limina` 下的生成配置。
 
 ### limina checker build [config]

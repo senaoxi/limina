@@ -769,6 +769,76 @@ describe('runCheckerBuild', () => {
       await fixture.cleanup();
     }
   });
+
+  it('does not copy declaration inputs for internal checker builds', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/vite-env.d.ts':
+        '/// <reference types="vite/client" />\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+      }),
+    });
+
+    try {
+      const result = await runCheckerBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(
+        existsSync(
+          path.join(fixture.rootDir, 'packages/pkg/dist/vite-env.d.ts'),
+        ),
+      ).toBe(false);
+      expect(calls.map((target) => target.args)).toEqual([
+        [
+          '-b',
+          '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+          '--pretty',
+          'false',
+        ],
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });
 
 describe('runBuild', () => {
@@ -891,6 +961,499 @@ describe('runBuild', () => {
           'false',
         ],
       ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('copies local declaration inputs after managed output build', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/vite-env.d.ts':
+        '/// <reference types="vite/client" />\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts', 'src/**/*.d.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      await expect(
+        readFile(
+          path.join(fixture.rootDir, 'packages/pkg/dist/vite-env.d.ts'),
+          'utf8',
+        ),
+      ).resolves.toBe('/// <reference types="vite/client" />\n');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('copies .d.mts and .d.cts declaration inputs after managed output build', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/runtime.d.mts': 'declare const esmValue: 1;\n',
+      'packages/pkg/src/runtime.d.cts': 'declare const cjsValue: 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      await expect(
+        readFile(
+          path.join(fixture.rootDir, 'packages/pkg/dist/runtime.d.mts'),
+          'utf8',
+        ),
+      ).resolves.toBe('declare const esmValue: 1;\n');
+      await expect(
+        readFile(
+          path.join(fixture.rootDir, 'packages/pkg/dist/runtime.d.cts'),
+          'utf8',
+        ),
+      ).resolves.toBe('declare const cjsValue: 1;\n');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('surfaces warnings for outside-root local declaration inputs', async () => {
+    const calls: TypecheckTarget[] = [];
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/types/client.d.ts': 'declare const clientValue: 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        files: ['src/index.ts', 'types/client.d.ts'],
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(warnSpy.mock.calls.join('\n')).toContain(
+        'Output declaration inputs outside rootDir were not copied',
+      );
+      expect(warnSpy.mock.calls.join('\n')).toContain(
+        'packages/pkg/types/client.d.ts',
+      );
+    } finally {
+      warnSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not copy rootDir-external or node_modules declaration inputs', async () => {
+    const calls: TypecheckTarget[] = [];
+    const warnSpy = vi
+      .spyOn(TypecheckLogger, 'warn')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/types/client.d.ts': 'declare const clientValue: 1;\n',
+      'packages/pkg/node_modules/pkg/client.d.ts':
+        'declare const dependencyValue: 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        files: [
+          'src/index.ts',
+          'types/client.d.ts',
+          'node_modules/pkg/client.d.ts',
+        ],
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(
+        existsSync(path.join(fixture.rootDir, 'packages/pkg/dist/client.d.ts')),
+      ).toBe(false);
+      expect(warnSpy.mock.calls.join('\n')).toContain(
+        'packages/pkg/types/client.d.ts',
+      );
+      expect(warnSpy.mock.calls.join('\n')).not.toContain(
+        'node_modules/pkg/client.d.ts',
+      );
+    } finally {
+      warnSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('fails managed output build when declaration copy conflicts with existing output', async () => {
+    const calls: TypecheckTarget[] = [];
+    const errorSpy = vi
+      .spyOn(TypecheckLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      'packages/pkg/src/foo.ts': 'export const value = 1;\n',
+      'packages/pkg/src/foo.d.ts': 'declare const sourceValue: 1;\n',
+      'packages/pkg/dist/foo.d.ts': 'declare const emittedValue: 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        files: ['src/foo.ts', 'src/foo.d.ts'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(false);
+      expect(result.failureKind).toBe('process');
+      expect(result.problems?.join('\n')).toContain(
+        'Output declaration copy conflict',
+      );
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Output declaration copy conflict',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('copies declaration inputs for all output leaves in a solution build', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/lib-env.d.ts': 'declare const libEnv: 1;\n',
+      'packages/pkg/test/index.ts': 'export const testValue = 1;\n',
+      'packages/pkg/test/test-env.d.ts': 'declare const testEnv: 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+          {
+            path: './tsconfig.test.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist/lib',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+      }),
+      'packages/pkg/tsconfig.test.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist/test',
+            rootDir: './test',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['test/**/*'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      await expect(
+        readFile(
+          path.join(fixture.rootDir, 'packages/pkg/dist/lib/lib-env.d.ts'),
+          'utf8',
+        ),
+      ).resolves.toBe('declare const libEnv: 1;\n');
+      await expect(
+        readFile(
+          path.join(fixture.rootDir, 'packages/pkg/dist/test/test-env.d.ts'),
+          'utf8',
+        ),
+      ).resolves.toBe('declare const testEnv: 1;\n');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('skips declaration input copying in watch mode', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/vite-env.d.ts':
+        '/// <reference types="vite/client" />\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+        watch: true,
+      });
+
+      expect(result.passed).toBe(true);
+      expect(
+        existsSync(
+          path.join(fixture.rootDir, 'packages/pkg/dist/vite-env.d.ts'),
+        ),
+      ).toBe(false);
     } finally {
       await fixture.cleanup();
     }

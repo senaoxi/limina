@@ -306,6 +306,7 @@ function createManualGeneratedGraph(
       version: 2,
     },
     manifestPath: path.join(rootDir, '.limina/manifest.json'),
+    outputDeclarationCopies: new Map(),
     providerEdges: [],
     sourceToBuild: new Map(),
     sourceToDts: new Map(),

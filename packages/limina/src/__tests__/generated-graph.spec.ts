@@ -1104,6 +1104,66 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('exposes output declaration copy contexts without persisting them in the manifest', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/vite-env.d.ts':
+        '/// <reference types="vite/client" />\n',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts', 'src/**/*.d.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = path.join(
+        fixture.rootDir,
+        'packages/pkg/tsconfig.lib.json',
+      );
+      const copyContexts = result.outputDeclarationCopies
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(copyContexts).toHaveLength(1);
+      expect(copyContexts?.[0]).toMatchObject({
+        outDir: path.join(fixture.rootDir, 'packages/pkg/dist'),
+        rootDir: path.join(fixture.rootDir, 'packages/pkg/src'),
+        sourceConfigPath,
+      });
+      expect(
+        copyContexts?.[0]?.fileNames.map((fileName) =>
+          toPortablePath(path.relative(fixture.rootDir, fileName)),
+        ),
+      ).toContain('packages/pkg/src/vite-env.d.ts');
+      expect(JSON.stringify(result.manifest)).not.toContain(
+        'outputDeclarationCopies',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('generates flattened output solution configs for output-enabled leaves', async () => {
     const fixture = await createFixture({
       'packages/pkg/src/index.ts': 'export const value = 1;\n',

@@ -12,6 +12,7 @@ import {
 import { createLiminaCore, type LiminaCore } from '#core';
 import type {
   GeneratedBuildModule,
+  GeneratedOutputDeclarationCopyContext,
   GeneratedTsconfigGraphResult,
 } from '#core/build-graph/runner';
 import {
@@ -41,6 +42,14 @@ import { formatErrorMessage, TypecheckLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import { formatCheckIssueSummaryReport } from '../reporting';
 import { runBuildTargets } from './build-plan';
+import {
+  copyOutputDeclarationInputs,
+  createOutputDeclarationCopyPlan,
+  formatOutputDeclarationCopyErrors,
+  formatOutputDeclarationCopyWarnings,
+  mergeOutputDeclarationCopyPlans,
+  OutputDeclarationCopyError,
+} from './output-declarations';
 import {
   collectCheckerPeerDependencyProblems,
   createCheckerTarget,
@@ -905,6 +914,7 @@ function formatOutputBuildTargetResolutionProblem(options: {
 interface BuildTargetDescriptor {
   buildModule: GeneratedBuildModule;
   checker: ResolvedCheckerConfig;
+  outputDeclarationCopyContexts?: GeneratedOutputDeclarationCopyContext[];
   sourceConfigPath: string;
 }
 
@@ -1001,6 +1011,20 @@ function collectManagedDeclarationBuildTargets(options: {
   });
 }
 
+function getOutputDeclarationCopyContexts(options: {
+  checkerName: string;
+  generatedGraph: GeneratedTsconfigGraphResult;
+  sourceConfigPath: string;
+}): GeneratedOutputDeclarationCopyContext[] | undefined {
+  const copyContexts = options.generatedGraph.outputDeclarationCopies
+    .get(options.checkerName)
+    ?.get(options.sourceConfigPath);
+
+  return copyContexts && copyContexts.length > 0
+    ? copyContexts.map((copyContext) => ({ ...copyContext }))
+    : undefined;
+}
+
 function collectManagedOutputBuildTargets(options: {
   allCheckers: ResolvedCheckerConfig[];
   generatedGraph: GeneratedTsconfigGraphResult;
@@ -1019,6 +1043,11 @@ function collectManagedOutputBuildTargets(options: {
       {
         buildModule,
         checker,
+        outputDeclarationCopyContexts: getOutputDeclarationCopyContexts({
+          checkerName: checker.name,
+          generatedGraph: options.generatedGraph,
+          sourceConfigPath: options.sourceConfigPath,
+        }),
         sourceConfigPath: options.sourceConfigPath,
       },
     ];
@@ -1433,6 +1462,11 @@ function collectBuildTargetProviderClosure(options: {
       const descriptor: BuildTargetDescriptor = {
         buildModule,
         checker,
+        outputDeclarationCopyContexts: getOutputDeclarationCopyContexts({
+          checkerName: checker.name,
+          generatedGraph: options.generatedGraph,
+          sourceConfigPath: edge.toConfigPath,
+        }),
         sourceConfigPath: edge.toConfigPath,
       };
       const key = getBuildTargetDescriptorKey(descriptor);
@@ -1451,6 +1485,102 @@ function collectBuildTargetProviderClosure(options: {
       left.checker.name.localeCompare(right.checker.name) ||
       left.sourceConfigPath.localeCompare(right.sourceConfigPath),
   );
+}
+
+function collectOutputDeclarationCopyContexts(
+  descriptors: readonly BuildTargetDescriptor[],
+): GeneratedOutputDeclarationCopyContext[] {
+  const contextsByKey = new Map<
+    string,
+    GeneratedOutputDeclarationCopyContext
+  >();
+
+  for (const descriptor of descriptors) {
+    for (const copyContext of descriptor.outputDeclarationCopyContexts ?? []) {
+      const key = [
+        copyContext.sourceConfigPath,
+        copyContext.rootDir,
+        copyContext.outDir,
+      ].join('\0');
+
+      contextsByKey.set(key, copyContext);
+    }
+  }
+
+  return [...contextsByKey.values()].sort((left, right) =>
+    left.sourceConfigPath.localeCompare(right.sourceConfigPath),
+  );
+}
+
+async function runOutputDeclarationCopyPostBuild(options: {
+  buildTargetDescriptors: readonly BuildTargetDescriptor[];
+  flow?: LiminaFlowReporter;
+  flowDepth: number;
+  projectRootDir: string;
+  report?: CheckIssueReportOptions;
+}): Promise<string | null> {
+  const copyContexts = collectOutputDeclarationCopyContexts(
+    options.buildTargetDescriptors,
+  );
+
+  if (copyContexts.length === 0) {
+    return null;
+  }
+
+  const plan = mergeOutputDeclarationCopyPlans(
+    copyContexts.map((copyContext) =>
+      createOutputDeclarationCopyPlan({
+        fileNames: copyContext.fileNames,
+        outDir: copyContext.outDir,
+        projectRootDir: options.projectRootDir,
+        rootDir: copyContext.rootDir,
+      }),
+    ),
+  );
+  const warning = formatOutputDeclarationCopyWarnings({
+    problems: plan.problems,
+    projectRootDir: options.projectRootDir,
+  });
+
+  if (warning) {
+    options.flow?.warn(warning, {
+      depth: options.flowDepth + 1,
+      persistInteractive: true,
+    });
+
+    if (shouldLogCheckReport(options.report) && !options.flow?.interactive) {
+      TypecheckLogger.warn(warning);
+    }
+  }
+
+  try {
+    await copyOutputDeclarationInputs(plan, {
+      projectRootDir: options.projectRootDir,
+    });
+  } catch (error) {
+    const problem =
+      error instanceof OutputDeclarationCopyError
+        ? (formatOutputDeclarationCopyErrors({
+            problems: error.problems,
+            projectRootDir: options.projectRootDir,
+          }) ?? error.message)
+        : formatErrorMessage(error);
+
+    if (shouldLogCheckReport(options.report)) {
+      TypecheckLogger.error(
+        formatTypecheckProblemSummaryReport({
+          pluralIssueLabel: 'output declaration copy issues',
+          problems: [problem],
+          singularIssueLabel: 'output declaration copy issue',
+          title: 'Build summary',
+        }),
+      );
+    }
+
+    return problem;
+  }
+
+  return null;
 }
 
 export async function runBuildImpl(
@@ -1814,7 +1944,30 @@ export async function runBuildImpl(
         }),
       );
     }
-  } else if (
+  } else if (!options.watch) {
+    const copyProblem = await runOutputDeclarationCopyPostBuild({
+      buildTargetDescriptors,
+      flow: options.flow,
+      flowDepth,
+      projectRootDir,
+      report: options.report,
+    });
+
+    if (copyProblem) {
+      return {
+        failedTargets,
+        failureKind: 'process',
+        passed: false,
+        problems: [copyProblem],
+        projectRootDir,
+        rootConfigPaths,
+        sourceConfigPath: resolvedTarget.sourceConfigPath,
+      };
+    }
+  }
+
+  if (
+    passed &&
     shouldLogCheckReport(options.report) &&
     !options.flow?.interactive
   ) {

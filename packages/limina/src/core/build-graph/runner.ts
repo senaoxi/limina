@@ -138,6 +138,13 @@ export interface GeneratedBuildModule {
   path: string;
 }
 
+export interface GeneratedOutputDeclarationCopyContext {
+  fileNames: string[];
+  outDir: string;
+  rootDir: string;
+  sourceConfigPath: string;
+}
+
 export interface GeneratedTsconfigGraphManifest {
   version: 2;
   generatedBy: 'limina';
@@ -155,6 +162,10 @@ export interface GeneratedTsconfigGraphResult {
   manifestPath: string;
   checkerEntries: Map<string, string>;
   configToOutputBuild: Map<string, Map<string, GeneratedBuildModule>>;
+  outputDeclarationCopies: Map<
+    string,
+    Map<string, GeneratedOutputDeclarationCopyContext[]>
+  >;
   sourceToBuild: Map<string, Map<string, GeneratedBuildModule>>;
   sourceToDts: Map<string, Map<string, string>>;
   dtsToSource: Map<string, Map<string, string>>;
@@ -224,6 +235,7 @@ interface PreparedCheckerGraph {
 
 interface CheckerOutputGraph {
   configToOutputBuild: Map<string, GeneratedBuildModule>;
+  outputDeclarationCopies: Map<string, GeneratedOutputDeclarationCopyContext[]>;
   outputProjects: SourceProject[];
   outputSolutions: OutputSolutionProject[];
 }
@@ -1151,6 +1163,21 @@ function createOutputSolutionProject(options: {
   };
 }
 
+function createOutputDeclarationCopyContext(
+  project: SourceProject,
+): GeneratedOutputDeclarationCopyContext | null {
+  if (!project.outputOptions) {
+    return null;
+  }
+
+  return {
+    fileNames: [...project.fileNames],
+    outDir: project.outputOptions.outDir,
+    rootDir: project.outputOptions.rootDir,
+    sourceConfigPath: project.configPath,
+  };
+}
+
 function collectFlattenedOutputSolutionReferences(options: {
   collection: CheckerSourceConfigCollection;
   outputProjectModuleBySourcePath: Map<string, GeneratedBuildModule>;
@@ -1218,6 +1245,7 @@ function createCheckerOutputGraph(options: {
   if (getCheckerAdapter(options.checker.preset)?.execution !== 'build') {
     return {
       configToOutputBuild: new Map(),
+      outputDeclarationCopies: new Map(),
       outputProjects: [],
       outputSolutions: [],
     };
@@ -1239,6 +1267,23 @@ function createCheckerOutputGraph(options: {
   const configToOutputBuild = new Map<string, GeneratedBuildModule>(
     outputProjectModuleBySourcePath,
   );
+  const outputProjectByOutputConfigPath = new Map(
+    outputProjects.map((project) => [project.outputConfigPath, project]),
+  );
+  const outputDeclarationCopies = new Map<
+    string,
+    GeneratedOutputDeclarationCopyContext[]
+  >();
+
+  for (const project of outputProjects) {
+    const copyContext = createOutputDeclarationCopyContext(project);
+
+    if (!copyContext) {
+      continue;
+    }
+
+    outputDeclarationCopies.set(project.configPath, [copyContext]);
+  }
 
   for (const project of outputProjects) {
     for (const referencePath of project.references) {
@@ -1294,10 +1339,27 @@ function createCheckerOutputGraph(options: {
         sourceConfigPath,
       }),
     );
+    outputDeclarationCopies.set(
+      sourceConfigPath,
+      references
+        .map((referencePath) =>
+          outputProjectByOutputConfigPath.get(referencePath),
+        )
+        .filter((project): project is SourceProject => Boolean(project))
+        .map(createOutputDeclarationCopyContext)
+        .filter(
+          (copyContext): copyContext is GeneratedOutputDeclarationCopyContext =>
+            Boolean(copyContext),
+        )
+        .sort((left, right) =>
+          left.sourceConfigPath.localeCompare(right.sourceConfigPath),
+        ),
+    );
   }
 
   return {
     configToOutputBuild,
+    outputDeclarationCopies,
     outputProjects,
     outputSolutions,
   };
@@ -2254,6 +2316,10 @@ function createResult(options: {
   checkers: ResolvedCheckerConfig[];
   manifest: GeneratedTsconfigGraphManifest;
   manifestPath: string;
+  outputDeclarationCopiesByChecker: Map<
+    string,
+    Map<string, GeneratedOutputDeclarationCopyContext[]>
+  >;
   rootDir: string;
 }): GeneratedTsconfigGraphResult {
   const checkerEntries = new Map<string, string>();
@@ -2350,6 +2416,21 @@ function createResult(options: {
     manifestPath: options.manifestPath,
     checkerEntries,
     configToOutputBuild,
+    outputDeclarationCopies: new Map(
+      [...options.outputDeclarationCopiesByChecker.entries()].map(
+        ([checkerName, copyContextsBySourcePath]) => [
+          checkerName,
+          new Map(
+            [...copyContextsBySourcePath.entries()].map(
+              ([sourceConfigPath, copyContexts]) => [
+                sourceConfigPath,
+                copyContexts.map((copyContext) => ({ ...copyContext })),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
     sourceToBuild,
     sourceToDts,
     dtsToSource,
@@ -2388,6 +2469,10 @@ export async function prepareGeneratedTsconfigGraph(
   const configToOutputBuildByChecker = new Map<
     string,
     Map<string, GeneratedBuildModule>
+  >();
+  const outputDeclarationCopiesByChecker = new Map<
+    string,
+    Map<string, GeneratedOutputDeclarationCopyContext[]>
   >();
   const outputProjectsByChecker = new Map<string, SourceProject[]>();
   const outputSolutionsByChecker = new Map<string, OutputSolutionProject[]>();
@@ -2548,6 +2633,10 @@ export async function prepareGeneratedTsconfigGraph(
       checker.name,
       outputGraph.configToOutputBuild,
     );
+    outputDeclarationCopiesByChecker.set(
+      checker.name,
+      outputGraph.outputDeclarationCopies,
+    );
     outputProjectsByChecker.set(checker.name, outputGraph.outputProjects);
     outputSolutionsByChecker.set(checker.name, outputGraph.outputSolutions);
   }
@@ -2668,6 +2757,7 @@ export async function prepareGeneratedTsconfigGraph(
     checkers,
     manifest,
     manifestPath,
+    outputDeclarationCopiesByChecker,
     rootDir: config.rootDir,
   });
 }
