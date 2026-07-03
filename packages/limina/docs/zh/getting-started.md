@@ -4,7 +4,7 @@
 
 Limina 面向 `pnpm` 工作区，并要求配置文件使用 `ESM`。
 
-- `Node.js ^20.19.0 || >=22.12.0`
+- `Node.js ^22.18.0 || >=24.0.0`
 - 工作区根目录存在 `pnpm-workspace.yaml`
 - 接入仓库已经安装 `TypeScript`
 - `limina.config.mjs` 位于工作区内部

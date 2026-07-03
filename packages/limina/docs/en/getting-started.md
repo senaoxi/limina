@@ -4,7 +4,7 @@
 
 Limina expects a pnpm workspace and an ESM config file.
 
-- Node.js `^20.19.0 || >=22.12.0`
+- Node.js `^22.18.0 || >=24.0.0`
 - A `pnpm-workspace.yaml` exists at the workspace root
 - TypeScript is installed in the consuming repository
 - `limina.config.mjs` is inside the workspace

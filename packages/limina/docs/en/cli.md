@@ -8,7 +8,7 @@ Limina does not replace `TypeScript`, `Vue`, `Svelte`, bundlers, test frameworks
 
 ## Quick Start
 
-Limina must run inside a `pnpm` workspace. The current package configuration requires `Node.js ^20.19.0 || >=22.12.0`. For manual installation, use:
+Limina must run inside a `pnpm` workspace. The current package configuration requires `Node.js ^22.18.0 || >=24.0.0`. For manual installation, use:
 
 ```sh
 pnpm add -D limina@^0.1.1 typescript@^5.9.0
