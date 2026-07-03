@@ -239,6 +239,8 @@ pnpm exec limina build packages/app/tsconfig.raw.json --raw --preset vue-tsc
 
 Managed mode generates and runs output build configs under `.limina/tsconfig/checkers/<checker>/outputs/`. When multiple build-capable checkers match the target, `--preset` is required. `--watch` uses the corresponding checker adapter's watch capability and fails clearly when unsupported.
 
+After a successful non-watch managed build, Limina supplements TypeScript emit by copying local declaration inputs (`.d.ts`, `.d.cts`, `.d.mts`) that are under the configured output `rootDir` into `outDir` with the same relative path. Declaration inputs outside `rootDir` or from dependencies are not copied; move them under `rootDir`, widen `liminaOptions.outputs.rootDir`, or add an explicit copy step when needed.
+
 `--raw` directly runs `tsc`, `tsgo`, or `vue-tsc` against a user-maintained `tsconfig`. Raw mode requires `--preset`, does not prepare the generated graph, does not read `liminaOptions.outputs`, does not use Limina-inferred references, and rejects generated configs under `.limina`.
 
 ### limina checker build [config]
