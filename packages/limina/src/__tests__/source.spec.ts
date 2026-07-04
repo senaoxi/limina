@@ -2470,7 +2470,6 @@ packages:
           outputs: {
             outDir: './dist',
             rootDir: './src',
-            tsBuildInfoFile: './dist/.tsbuildinfo',
           },
         },
         compilerOptions: {

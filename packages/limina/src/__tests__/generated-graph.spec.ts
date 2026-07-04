@@ -1005,7 +1005,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
           outputs: {
             outDir: './dist',
             rootDir: './src',
-            tsBuildInfoFile: './dist/.lib_tsbuildinfo',
           },
         },
         compilerOptions: {
@@ -1046,6 +1045,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(outputConfig.compilerOptions).toMatchObject({
         composite: true,
         declaration: true,
+        declarationMap: false,
         declarationDir: toPortablePath(
           path.relative(
             path.dirname(outputConfigPath),
@@ -1071,7 +1071,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         tsBuildInfoFile: toPortablePath(
           path.relative(
             path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, 'packages/pkg/dist/.lib_tsbuildinfo'),
+            path.join(
+              fixture.rootDir,
+              '.limina/tsbuildinfo/build/packages/pkg/lib.tsbuildinfo',
+            ),
           ),
         ),
       });
@@ -1100,6 +1103,90 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ),
         ),
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects user-managed output build info files', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {
+            tsBuildInfoFile: './dist/.tsbuildinfo',
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow('liminaOptions.outputs.tsBuildInfoFile');
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(
+        'outputs only supports target, rootDir, outDir, and declarationMap',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('generates output project configs with declaration maps when requested', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {
+            declarationMap: true,
+          },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await prepareGeneratedTsconfigGraph(fixture.config);
+      const outputPath =
+        '.limina/tsconfig/checkers/typescript/outputs/projects/packages/pkg/tsconfig.lib.output.json';
+      const outputConfig = JSON.parse(
+        await readFile(path.join(fixture.rootDir, outputPath), 'utf8'),
+      ) as {
+        compilerOptions: Record<string, unknown>;
+      };
+
+      expect(outputConfig.compilerOptions.declarationMap).toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1330,6 +1417,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       'packages/pkg/tsconfig.lib.json': json({
         liminaOptions: {
           outputs: {
+            declarationMap: 'true',
             unexpected: 'value',
           },
         },
@@ -1346,6 +1434,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph(fixture.config),
       ).rejects.toThrow('liminaOptions.outputs.unexpected');
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow('liminaOptions.outputs.declarationMap');
     } finally {
       await fixture.cleanup();
     }

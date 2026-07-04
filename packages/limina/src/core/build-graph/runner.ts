@@ -78,6 +78,7 @@ import {
   getGeneratedOutDir,
   getGeneratedOutputProjectConfigPath,
   getGeneratedOutputSolutionConfigPath,
+  getGeneratedOutputTsBuildInfoPath,
   getGeneratedSolutionBuildConfigPath,
   getGeneratedTsBuildInfoPath,
 } from './generated/paths';
@@ -2048,6 +2049,7 @@ function createGeneratedOutputProjectConfig(
       incremental: true,
       noEmit: false,
       declaration: true,
+      declarationMap: outputOptions.declarationMap,
       emitDeclarationOnly: false,
       target: outputOptions.target,
       rootDir: createRelativePath(
@@ -2064,7 +2066,10 @@ function createGeneratedOutputProjectConfig(
       ),
       tsBuildInfoFile: createRelativePath(
         project.outputConfigPath,
-        outputOptions.tsBuildInfoFile,
+        getGeneratedOutputTsBuildInfoPath({
+          rootDir: config.rootDir,
+          sourceConfigPath: project.configPath,
+        }),
       ),
     },
     references: [...project.outputReferences].sort().map((referencePath) => ({
