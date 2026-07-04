@@ -15,7 +15,6 @@ import {
   isNonEmptyString,
   isPlainRecord,
 } from '#utils/values';
-import { createSourceConfigScope } from './paths';
 
 export interface ImplicitRef {
   path: string;
@@ -24,10 +23,10 @@ export interface ImplicitRef {
 }
 
 export interface OutputOptions {
+  declarationMap: boolean;
   outDir: string;
   rootDir: string;
   target: string;
-  tsBuildInfoFile: string;
 }
 
 export function isDefaultTsconfigPath(configPath: string): boolean {
@@ -228,12 +227,9 @@ export function readOutputOptions(
     };
   }
 
-  const allowedFields = new Set([
-    'outDir',
-    'rootDir',
-    'target',
-    'tsBuildInfoFile',
-  ]);
+  const stringFields = new Set(['outDir', 'rootDir', 'target']);
+  const booleanFields = new Set(['declarationMap']);
+  const allowedFields = new Set([...stringFields, ...booleanFields]);
 
   for (const fieldName of Object.keys(outputs)) {
     if (!allowedFields.has(fieldName)) {
@@ -242,7 +238,7 @@ export function readOutputOptions(
         field: `liminaOptions.outputs.${fieldName}`,
         problems,
         reason:
-          'outputs only supports target, rootDir, outDir, and tsBuildInfoFile.',
+          'outputs only supports target, rootDir, outDir, and declarationMap.',
         sourceConfigPath,
         value: outputs[fieldName],
       });
@@ -251,7 +247,7 @@ export function readOutputOptions(
 
   const outputValues: Record<string, string> = {};
 
-  for (const fieldName of allowedFields) {
+  for (const fieldName of stringFields) {
     const fieldValue = outputs[fieldName];
 
     if (fieldValue === undefined) {
@@ -271,9 +267,7 @@ export function readOutputOptions(
     }
 
     if (
-      (fieldName === 'rootDir' ||
-        fieldName === 'outDir' ||
-        fieldName === 'tsBuildInfoFile') &&
+      (fieldName === 'rootDir' || fieldName === 'outDir') &&
       path.isAbsolute(fieldValue)
     ) {
       addOutputOptionsProblem({
@@ -291,6 +285,24 @@ export function readOutputOptions(
     outputValues[fieldName] = fieldValue.trim();
   }
 
+  const declarationMapValue = outputs.declarationMap;
+  let declarationMap = false;
+
+  if (declarationMapValue !== undefined) {
+    if (typeof declarationMapValue === 'boolean') {
+      declarationMap = declarationMapValue;
+    } else {
+      addOutputOptionsProblem({
+        config,
+        field: 'liminaOptions.outputs.declarationMap',
+        problems,
+        reason: 'declarationMap must be a boolean.',
+        sourceConfigPath,
+        value: declarationMapValue,
+      });
+    }
+  }
+
   if (problems.length > 0) {
     return {
       outputs: null,
@@ -299,7 +311,6 @@ export function readOutputOptions(
   }
 
   const sourceConfigDirectory = path.dirname(sourceConfigPath);
-  const scope = createSourceConfigScope(sourceConfigPath);
   const target =
     outputValues.target ??
     readExplicitSourceCompilerTarget({
@@ -310,18 +321,13 @@ export function readOutputOptions(
 
   return {
     outputs: {
+      declarationMap,
       target,
       rootDir: normalizeAbsolutePath(
         path.resolve(sourceConfigDirectory, outputValues.rootDir ?? '.'),
       ),
       outDir: normalizeAbsolutePath(
         path.resolve(sourceConfigDirectory, outputValues.outDir ?? './dist'),
-      ),
-      tsBuildInfoFile: normalizeAbsolutePath(
-        path.resolve(
-          sourceConfigDirectory,
-          outputValues.tsBuildInfoFile ?? `./dist/.${scope}_tsbuildinfo`,
-        ),
       ),
     },
     problems,

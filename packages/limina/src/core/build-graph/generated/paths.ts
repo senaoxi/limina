@@ -211,3 +211,24 @@ export function getGeneratedTsBuildInfoPath(options: {
     ),
   );
 }
+
+export function getGeneratedOutputTsBuildInfoPath(options: {
+  rootDir: string;
+  sourceConfigPath: string;
+}): string {
+  const relativeSourcePath = toRelativePath(
+    options.rootDir,
+    options.sourceConfigPath,
+  );
+  const relativeDir = path.dirname(relativeSourcePath);
+
+  return normalizeAbsolutePath(
+    path.join(
+      options.rootDir,
+      generatedTsbuildinfoDir,
+      'build',
+      relativeDir === '.' ? '' : relativeDir,
+      `${createSourceConfigScope(options.sourceConfigPath)}.tsbuildinfo`,
+    ),
+  );
+}

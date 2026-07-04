@@ -134,7 +134,7 @@ When you want Limina to execute a user-facing artifact build, declare `liminaOpt
 pnpm exec limina build packages/core/tsconfig.lib.json
 ```
 
-`liminaOptions.outputs` supports only `target`, `rootDir`, `outDir`, and `tsBuildInfoFile`. Path fields are resolved relative to the source config that declares them. If not set explicitly, `outDir` defaults to `dist` under the config directory, and `target` inherits `compilerOptions.target` from the source config when present, otherwise it uses `ESNext`.
+`liminaOptions.outputs` supports `target`, `rootDir`, `outDir`, and `declarationMap`. Path fields are resolved relative to the source config that declares them. If not set explicitly, `outDir` defaults to `dist` under the config directory, `target` inherits `compilerOptions.target` from the source config when present, otherwise it uses `ESNext`, and `declarationMap` defaults to `false`.
 
 ```jsonc
 {
@@ -142,13 +142,13 @@ pnpm exec limina build packages/core/tsconfig.lib.json
     "outputs": {
       "rootDir": "src",
       "outDir": "dist",
-      "tsBuildInfoFile": "dist/.lib_tsbuildinfo",
+      "declarationMap": true,
     },
   },
 }
 ```
 
-Limina generates output build configs under `.limina/tsconfig/checkers/<checker>/outputs/...` and executes them with a build-capable checker. A source config without `liminaOptions.outputs` cannot be used as a managed artifact build target for `limina build <config>`. If you only want to invoke a checker directly on a raw config, use `limina build <config> --raw --preset <tsc|tsgo|vue-tsc>`.
+Limina generates output build configs under `.limina/tsconfig/checkers/<checker>/outputs/...` and executes them with a build-capable checker. Output build cache files are written under `.limina/tsbuildinfo/build/...` and are managed by Limina. A source config without `liminaOptions.outputs` cannot be used as a managed artifact build target for `limina build <config>`. If you only want to invoke a checker directly on a raw config, use `limina build <config> --raw --preset <tsc|tsgo|vue-tsc>`.
 
 ## Source Edges, Declaration Edges, and Artifact Edges
 

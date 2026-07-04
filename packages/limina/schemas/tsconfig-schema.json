@@ -56,6 +56,11 @@
               "$ref": "#/definitions/nonEmptyString",
               "description": "TypeScript target for generated artifact output builds."
             },
+            "declarationMap": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether generated artifact output builds should emit declaration maps."
+            },
             "rootDir": {
               "$ref": "#/definitions/nonEmptyString",
               "description": "Artifact build rootDir, relative to this tsconfig."
@@ -63,10 +68,6 @@
             "outDir": {
               "$ref": "#/definitions/nonEmptyString",
               "description": "Artifact build outDir, relative to this tsconfig."
-            },
-            "tsBuildInfoFile": {
-              "$ref": "#/definitions/nonEmptyString",
-              "description": "Artifact build tsBuildInfoFile, relative to this tsconfig."
             }
           }
         },

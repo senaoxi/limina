@@ -134,7 +134,7 @@ Limina 允许默认入口 `tsconfig.json` 作为聚合器。运行 `limina graph
 pnpm exec limina build packages/core/tsconfig.lib.json
 ```
 
-`liminaOptions.outputs` 只支持 `target`、`rootDir`、`outDir` 和 `tsBuildInfoFile`。路径字段相对声明它们的源码配置解析；没有显式设置时，`outDir` 默认指向该配置目录下的 `dist`，`target` 会优先继承源码配置中的 `compilerOptions.target`，否则使用 `ESNext`。
+`liminaOptions.outputs` 支持 `target`、`rootDir`、`outDir` 和 `declarationMap`。路径字段相对声明它们的源码配置解析；没有显式设置时，`outDir` 默认指向该配置目录下的 `dist`，`target` 会优先继承源码配置中的 `compilerOptions.target`，否则使用 `ESNext`，`declarationMap` 默认是 `false`。
 
 ```jsonc
 {
@@ -142,13 +142,13 @@ pnpm exec limina build packages/core/tsconfig.lib.json
     "outputs": {
       "rootDir": "src",
       "outDir": "dist",
-      "tsBuildInfoFile": "dist/.lib_tsbuildinfo",
+      "declarationMap": true,
     },
   },
 }
 ```
 
-Limina 会在 `.limina/tsconfig/checkers/<checker>/outputs/...` 下生成输出构建配置，并用构建类检查器执行它。没有声明 `liminaOptions.outputs` 的源码配置不能作为 `limina build <config>` 的受管产物构建目标；如果只是想直接调用检查器构建某个原始配置，应使用 `limina build <config> --raw --preset <tsc|tsgo|vue-tsc>`。
+Limina 会在 `.limina/tsconfig/checkers/<checker>/outputs/...` 下生成输出构建配置，并用构建类检查器执行它。输出构建缓存会写到 `.limina/tsbuildinfo/build/...`，并由 Limina 管理。没有声明 `liminaOptions.outputs` 的源码配置不能作为 `limina build <config>` 的受管产物构建目标；如果只是想直接调用检查器构建某个原始配置，应使用 `limina build <config> --raw --preset <tsc|tsgo|vue-tsc>`。
 
 ## 源码边、声明边与产物边
 
