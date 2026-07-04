@@ -267,6 +267,61 @@ describe('limina CLI', () => {
     });
   });
 
+  it('loads a TypeScript config through the public --config-loader flag', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const tsConfigPath = path.join(rootDir, 'limina.config.ts');
+
+      await writeText(
+        tsConfigPath,
+        `
+enum Preset {
+  Tsc = 'tsc',
+}
+
+export default {
+  config: {
+    checkers: {
+      typescript: {
+        include: ['packages/pkg/tsconfig.json'],
+        preset: Preset.Tsc,
+      },
+    },
+  },
+};
+`,
+      );
+
+      await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          tsConfigPath,
+          '--config-loader',
+          'tsx',
+          'checker',
+          'build',
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+          },
+        },
+      );
+
+      const tscArgs = await readFile(
+        path.join(rootDir, 'tsc-args.txt'),
+        'utf8',
+      );
+
+      expect(tscArgs).toContain(
+        '.limina/tsconfig/checkers/typescript/tsconfig.build.json',
+      );
+    });
+  });
+
   it('runs checker build globally from the public command', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
       await execFileAsync(
@@ -1181,6 +1236,8 @@ describe('limina CLI', () => {
           cliPath,
           '--config',
           path.join(rootDir, 'limina.config.mjs'),
+          '--config-loader',
+          'native',
           'check',
           '--issues',
           '--task',
@@ -2379,13 +2436,13 @@ describe('limina CLI', () => {
       expect(result.stdout).toContain('limina init');
       expect(result.stdout).toContain('limina init finished');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.mjs'), 'utf8'),
+        await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
       ).toContain("mode: 'auto'");
       expect(
-        await readFile(path.join(rootDir, 'limina.config.mjs'), 'utf8'),
+        await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
       ).toContain('exclude: []');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.mjs'), 'utf8'),
+        await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
       ).not.toContain('include:');
       expect(
         await readFile(path.join(rootDir, '.gitignore'), 'utf8'),
