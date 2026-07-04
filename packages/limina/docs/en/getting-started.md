@@ -7,7 +7,7 @@ Limina expects a pnpm workspace and an ESM config file.
 - Node.js `^22.18.0 || >=24.0.0`
 - A `pnpm-workspace.yaml` exists at the workspace root
 - TypeScript is installed in the consuming repository
-- `limina.config.mjs` is inside the workspace
+- `limina.config.ts` is inside the workspace
 
 ## Install
 
@@ -29,9 +29,9 @@ yarn add -D limina typescript
 
 ## Pick an Adoption Path
 
-If your workspace does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mjs` that uses automatic mode (`mode: 'auto'`), adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
+If your workspace does not yet have a Limina config, start with `limina init`. It writes a `limina.config.ts` that uses automatic mode (`mode: 'auto'`), adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
 
-If your repository already has a clear `tsconfig` convention, writing the minimal `limina.config.mjs` directly is faster. Automatic checker discovery is enough for many workspaces; use [Checker Entries](./config/checkers.md) only when you need explicit checker routing.
+If your repository already has a clear `tsconfig` convention, writing the minimal `limina.config.ts` directly is faster. Automatic checker discovery is enough for many workspaces; use [Checker Entries](./config/checkers.md) only when you need explicit checker routing.
 
 ## Initialize an Existing Workspace
 
@@ -57,7 +57,7 @@ npx --yes skills add senaoxi/docs-islands --skill limina
 
 Initialization can create or update:
 
-- a root `limina.config.mjs`;
+- a root `limina.config.ts`;
 - a root `.gitignore` entry for `.limina/`;
 - a root `limina:build` script;
 - missing root `limina` and `typescript` dev dependencies.
@@ -81,9 +81,9 @@ You only need `pnpm i` when `limina init` changed dependencies or created a root
 
 ## Minimal Manual Config
 
-Create `limina.config.mjs` at the workspace root:
+Create `limina.config.ts` at the workspace root:
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({

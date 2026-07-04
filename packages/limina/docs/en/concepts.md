@@ -190,7 +190,7 @@ A source config can bind a set of graph rule labels through `liminaOptions.graph
 }
 ```
 
-Rules are declared in `limina.config.mjs`:
+Rules are declared in `limina.config.ts`:
 
 ```js
 import { defineConfig } from 'limina';

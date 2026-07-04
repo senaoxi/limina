@@ -1,8 +1,8 @@
 # 配置文件
 
-Limina 从工作区内部的 `limina.config.mjs` 读取配置。这个文件通常放在工作区根目录：
+Limina 从工作区内部的 `limina.config.ts` 读取配置。这个文件通常放在工作区根目录：
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
@@ -10,9 +10,11 @@ export default defineConfig({
 });
 ```
 
+省略 `--config` 时，Limina 会从当前目录向上查找到 `pnpm` 工作区根目录。每一层目录都会依次检查 `limina.config.ts`、`limina.config.mts`、`limina.config.js`、`limina.config.mjs`。已有的 `limina.config.mjs` 仍然支持，新项目优先使用 `limina.config.ts`。
+
 配置也可以是函数：
 
-```js
+```ts
 export default defineConfig(({ command, mode }) => ({
   config: {
     // 可以按 CI、本地或发布模式返回不同配置
@@ -26,6 +28,14 @@ export default defineConfig(({ command, mode }) => ({
 省略 `config.checkers` 时，Limina 会自动发现 `checker`。需要显式控制 `checker` 路由时，再看[检查器入口](./checkers.md)。
 :::
 
+## config loader
+
+- **类型：** `'native' | 'tsx'`
+- **默认值：** `'native'`
+- **CLI：** `--config-loader native` 或 `--config-loader tsx`
+
+`native` loader 会通过当前运行时直接导入配置。当配置使用了当前运行时无法原生导入的 TypeScript 语法时，使用 `tsx`。`tsx` loader 使用 `tsx/esm/api`，因此使用前需要在接入工作区安装 `tsx`。
+
 ## mode
 
 - **类型：** `string`
@@ -36,7 +46,7 @@ export default defineConfig(({ command, mode }) => ({
 
 如果包输出条目只服务于 `package` / `release` 命令，优先按 `command` 分支；`mode` 更适合表达更宽的环境差异。
 
-```js
+```ts
 export default defineConfig(({ mode }) => ({
   config: {
     // 可以按 CI、本地或发布模式返回不同配置
@@ -53,7 +63,7 @@ export default defineConfig(({ mode }) => ({
 
 例如只在包感知命令里声明发布产物条目：
 
-```js
+```ts
 export default defineConfig(({ command }) => ({
   package:
     command === 'package' || command === 'release'
@@ -74,7 +84,7 @@ export default defineConfig(({ command }) => ({
 完整一点看，目录可以是：
 
 ```text
-limina.config.mjs
+limina.config.ts
 packages/core/
   src/index.ts
   dist/package.json
@@ -82,7 +92,7 @@ packages/core/
 
 配置里可以只为包感知命令声明包输出：
 
-```js
+```ts
 export default defineConfig(({ command }) => ({
   config: {
     checkers: {

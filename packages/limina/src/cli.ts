@@ -4,6 +4,7 @@ import {
   getActiveCheckers,
   isAutoCheckerConfigMode,
   type LiminaCommand,
+  type LiminaConfigLoader,
   loadConfig,
   type PackageAttwProfile,
   type PackageCheckToolSelection,
@@ -69,6 +70,7 @@ import { writeNotRunSourceIssueSnapshot } from './source-check/snapshot';
 
 interface GlobalFlags {
   config?: string;
+  configLoader?: string;
   mode?: string;
 }
 
@@ -137,10 +139,27 @@ async function load(
 ): Promise<ResolvedLiminaConfig> {
   return loadConfig({
     command,
+    configLoader: parseConfigLoader(flags.configLoader),
     configPath: flags.config,
     cwd: process.cwd(),
     mode: flags.mode,
   });
+}
+
+function parseConfigLoader(
+  configLoader: string | undefined,
+): LiminaConfigLoader | undefined {
+  if (!configLoader) {
+    return undefined;
+  }
+
+  if (configLoader === 'native' || configLoader === 'tsx') {
+    return configLoader;
+  }
+
+  throw new Error(
+    `Unsupported Limina config loader "${configLoader}". Expected one of: native, tsx.`,
+  );
 }
 
 function parsePackageTool(
@@ -195,6 +214,7 @@ function rejectUnknownCheckerOptions(flags: CheckerFlags): void {
   const knownOptions = new Set([
     '--',
     'config',
+    'configLoader',
     'mode',
     'preset',
     'w',
@@ -215,6 +235,7 @@ function rejectUnknownBuildOptions(flags: BuildFlags): void {
   const knownOptions = new Set([
     '--',
     'config',
+    'configLoader',
     'mode',
     'preset',
     'raw',
@@ -412,6 +433,22 @@ function readGlobalFlagsFromArgv(argv: readonly string[]): GlobalFlags {
       continue;
     }
 
+    if (arg === '--config-loader') {
+      const value = argv[index + 1];
+
+      if (value && !value.startsWith('-')) {
+        flags.configLoader = value;
+        index += 1;
+      }
+
+      continue;
+    }
+
+    if (arg?.startsWith('--config-loader=')) {
+      flags.configLoader = arg.slice('--config-loader='.length);
+      continue;
+    }
+
     if (arg === '--mode') {
       const value = argv[index + 1];
 
@@ -440,12 +477,16 @@ function parseCheckIssueFilterHelpKind(
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
 
-    if (arg === '--config' || arg === '--mode') {
+    if (arg === '--config' || arg === '--config-loader' || arg === '--mode') {
       index += 1;
       continue;
     }
 
-    if (arg?.startsWith('--config=') || arg?.startsWith('--mode=')) {
+    if (
+      arg?.startsWith('--config=') ||
+      arg?.startsWith('--config-loader=') ||
+      arg?.startsWith('--mode=')
+    ) {
       continue;
     }
 
@@ -620,7 +661,8 @@ async function printCheckIssueFilterHelpIfRequested(
 export function createLiminaCli(): ReturnType<typeof cac> {
   const cli = cac('limina');
 
-  cli.option('--config <path>', 'Path to limina.config.mjs');
+  cli.option('--config <path>', 'Path to limina.config.ts');
+  cli.option('--config-loader <loader>', 'Config loader to use: native, tsx');
   cli.option('--mode <mode>', 'Mode passed to limina config functions');
   cli.help();
 

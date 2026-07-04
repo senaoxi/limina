@@ -1,8 +1,8 @@
 # Config File
 
-Limina reads configuration from `limina.config.mjs` inside the workspace. It usually lives at the workspace root:
+Limina reads configuration from `limina.config.ts` inside the workspace. It usually lives at the workspace root:
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({
@@ -10,9 +10,11 @@ export default defineConfig({
 });
 ```
 
+When `--config` is omitted, Limina searches from the current directory upward to the `pnpm` workspace root. In each directory it checks `limina.config.ts`, `limina.config.mts`, `limina.config.js`, then `limina.config.mjs`. Existing `limina.config.mjs` files remain supported, but new projects should prefer `limina.config.ts`.
+
 Config can also be a function:
 
-```js
+```ts
 export default defineConfig(({ command, mode }) => ({
   config: {
     // return different entries for `CI`, local, or release usage
@@ -26,6 +28,14 @@ Function configs are useful when local, `CI`, or release workflows need differen
 If `config.checkers` is omitted, Limina uses auto checker discovery. See [Checker Entries](./checkers.md) when you need explicit checker routing.
 :::
 
+## config loader
+
+- **Type:** `'native' | 'tsx'`
+- **Default:** `'native'`
+- **CLI:** `--config-loader native` or `--config-loader tsx`
+
+The native loader imports the config through the current runtime. Use `tsx` when your config relies on TypeScript syntax that the runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the consuming workspace before using it.
+
 ## mode
 
 - **Type:** `string`
@@ -36,7 +46,7 @@ Function configs are useful when local, `CI`, or release workflows need differen
 
 Prefer `command` branching for package output entries that only matter to `package` and `release` commands. Reserve `mode` for broader environment-level differences.
 
-```js
+```ts
 export default defineConfig(({ mode }) => ({
   config: {
     // return different entries for `CI`, local, or release usage
@@ -53,7 +63,7 @@ export default defineConfig(({ mode }) => ({
 
 For example, declare package output entries only for package-aware commands:
 
-```js
+```ts
 export default defineConfig(({ command }) => ({
   package:
     command === 'package' || command === 'release'
@@ -74,7 +84,7 @@ Normal graph and proof checks then stay independent from package output configur
 In a fuller example, the directory can look like this:
 
 ```text
-limina.config.mjs
+limina.config.ts
 packages/core/
   src/index.ts
   dist/package.json
@@ -82,7 +92,7 @@ packages/core/
 
 The config can declare package output only for package-aware commands:
 
-```js
+```ts
 export default defineConfig(({ command }) => ({
   config: {
     checkers: {

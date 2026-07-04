@@ -84,7 +84,7 @@ packages/app/
 
 Limina 选择把范围收窄。用户先在配置里声明哪些 `tsconfig` 是 Limina 要治理的源码入口：
 
-```js [limina.config.mjs]
+```ts [limina.config.ts]
 export default defineConfig({
   config: {
     checkers: {

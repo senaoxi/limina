@@ -23,7 +23,7 @@ pnpm limina:build
 pnpm exec limina check
 ```
 
-`limina init --yes` 会使用默认确认流程，适合非交互环境。它会写入或更新 `limina.config.mjs`、根 `package.json` 中的 `limina:build` 脚本和必要依赖，并确保 `.gitignore` 忽略 `.limina/`。如果依赖已经存在，`pnpm i` 可能不产生变化；如果初始化过程新增了依赖，则需要先安装依赖再运行构建。
+`limina init --yes` 会使用默认确认流程，适合非交互环境。它会写入或更新 `limina.config.ts`、根 `package.json` 中的 `limina:build` 脚本和必要依赖，并确保 `.gitignore` 忽略 `.limina/`。如果依赖已经存在，`pnpm i` 可能不产生变化；如果初始化过程新增了依赖，则需要先安装依赖再运行构建。
 
 默认生成的配置只启用自动检查器发现：
 
@@ -40,22 +40,23 @@ export default defineConfig({
 });
 ```
 
-这只是起点。仓库如果需要自定义检查器入口、图规则、源码例外、包产物检查或发布一致性检查，应在 `limina.config.mjs` 中继续配置。
+这只是起点。仓库如果需要自定义检查器入口、图规则、源码例外、包产物检查或发布一致性检查，应在 `limina.config.ts` 中继续配置。
 
 ## 命令入口与全局选项
 
 基础格式：
 
 ```sh
-limina [--config <path>] [--mode <mode>] <command>
+limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 ```
 
-全局选项适用于需要加载 `limina.config.mjs` 的命令。`init` 直接面向当前 `pnpm` 工作区，不依赖已有配置。
+全局选项适用于需要加载 `limina.config.ts` 的命令。`init` 直接面向当前 `pnpm` 工作区，不依赖已有配置。
 
-| 选项              | 类型   | 默认行为                                                               | 相关配置                    | 示例                                        | 边界                                         |
-| ----------------- | ------ | ---------------------------------------------------------------------- | --------------------------- | ------------------------------------------- | -------------------------------------------- |
-| `--config <path>` | 路径   | 从当前目录向上查找最近的 `limina.config.mjs`，直到 `pnpm` 工作区根目录 | `limina.config.mjs`         | `limina --config ./limina.config.mjs check` | 配置文件必须位于当前 `pnpm` 工作区内         |
-| `--mode <mode>`   | 字符串 | `process.env.NODE_ENV`，否则为 `default`                               | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现 |
+| 选项                       | 类型             | 默认行为                                                                                                                          | 相关配置                    | 示例                                       | 边界                                         |
+| -------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------ | -------------------------------------------- |
+| `--config <path>`          | 路径             | 从当前目录向上依次查找 `limina.config.ts`、`limina.config.mts`、`limina.config.js`、`limina.config.mjs`，直到 `pnpm` 工作区根目录 | Limina 配置文件             | `limina --config ./limina.config.ts check` | 配置文件必须位于当前 `pnpm` 工作区内         |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                          | 配置模块加载器              | `limina --config-loader tsx check`         | `tsx` 需要接入工作区安装 `tsx`               |
+| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default`                                                                                          | 函数式配置接收的 `env.mode` | `limina --mode ci check`                   | 只把模式传给配置函数；具体差异由配置文件实现 |
 
 配置文件可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`command` 表示当前命令族，例如 `check`、`graph`、`source`、`package` 或 `release`。
 
@@ -127,7 +128,7 @@ pnpm exec limina init
 pnpm exec limina init --yes
 ```
 
-它会从当前目录向上查找 `pnpm-workspace.yaml`，确认工作区根目录，检查工作区包，然后执行以下操作：写入或更新 `limina.config.mjs`；确保 `.gitignore` 包含 `.limina/`；创建或更新根 `package.json` 中的 `limina:build` 脚本；在缺少 `limina` 或 `typescript` 时补充开发依赖；清理根目录下已有的 `.limina` 生成目录；在交互模式下询问是否安装 Limina `agent skill`。
+它会从当前目录向上查找 `pnpm-workspace.yaml`，确认工作区根目录，检查工作区包，然后执行以下操作：写入或更新 `limina.config.ts`；确保 `.gitignore` 包含 `.limina/`；创建或更新根 `package.json` 中的 `limina:build` 脚本；在缺少 `limina` 或 `typescript` 时补充开发依赖；清理根目录下已有的 `.limina` 生成目录；在交互模式下询问是否安装 Limina `agent skill`。
 
 `--yes` 会接受默认确认，并跳过交互式 `skill` 安装提示。非交互环境中如果不使用 `--yes`，需要用户确认的步骤会失败。
 
@@ -309,7 +310,7 @@ pnpm exec limina release check --package @scope/pkg --verbose
 | 症状或错误信息                                                         | 可能原因                                     | 处理方式                                                                                                |
 | ---------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `no pnpm-workspace.yaml was found`                                     | 当前目录不在 `pnpm` 工作区内                 | 在工作区内运行命令，或先创建 `pnpm-workspace.yaml`                                                      |
-| `Unable to find limina config`                                         | 未找到 `limina.config.mjs`                   | 运行 `limina init`，或用 `--config` 指定配置路径                                                        |
+| `Unable to find limina config`                                         | 未找到支持的 Limina 配置文件                 | 运行 `limina init`，或用 `--config` 指定配置路径                                                        |
 | `config file must be inside the governed pnpm workspace`               | `--config` 指向工作区外文件                  | 把配置文件放到当前 `pnpm` 工作区内                                                                      |
 | `checker build --preset requires a config argument`                    | `--preset` 只能选择某个配置的构建型检查器    | 改为 `limina checker build <config> --preset tsc`                                                       |
 | `checker build --watch requires a config argument`                     | 监听模式只支持指定配置                       | 改为 `limina checker build <config> --watch`                                                            |

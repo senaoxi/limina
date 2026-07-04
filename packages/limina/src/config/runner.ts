@@ -4,6 +4,7 @@ import { isPathInsideDirectory } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import path from 'pathe';
+import type * as tsxEsmApi from 'tsx/esm/api';
 import type { ExecutionConfig } from '../execution/config';
 
 export { validateLiminaConfig } from '#config/schema';
@@ -797,8 +798,17 @@ export interface ResolvedLiminaConfig extends LiminaConfig {
   rootDir: string;
 }
 
+export type LiminaConfigLoader = 'native' | 'tsx';
+
+export const DEFAULT_LIMINA_CONFIG_FILES = [
+  'limina.config.ts',
+  'limina.config.mts',
+  'limina.config.js',
+  'limina.config.mjs',
+] as const;
+
 /**
- * Type helper for limina.config.mjs.
+ * Type helper for limina.config.ts.
  *
  * Accepts a direct config object, a Promise, or a function that receives the
  * current {@link LiminaConfigEnv}.
@@ -845,11 +855,17 @@ export interface LoadConfigOptions {
    */
   command?: LiminaCommand;
   /**
-   * Config file path, resolved from `cwd`. When omitted, Limina searches for
-   * the nearest `limina.config.mjs` from `cwd` upward to the inferred pnpm
-   * workspace root.
+   * Loader used to import the config module.
    *
-   * @default nearest "limina.config.mjs" in `cwd` or workspace parents
+   * @default "native"
+   */
+  configLoader?: LiminaConfigLoader;
+  /**
+   * Config file path, resolved from `cwd`. When omitted, Limina searches for
+   * the nearest default Limina config file from `cwd` upward to the inferred
+   * pnpm workspace root.
+   *
+   * @default nearest default Limina config file in `cwd` or workspace parents
    */
   configPath?: string;
   /**
@@ -899,10 +915,12 @@ function findLiminaConfigPath(
   const workspaceRootDir = path.resolve(rootDir);
 
   while (isPathInsideDirectory(currentDir, workspaceRootDir)) {
-    const candidatePath = path.join(currentDir, 'limina.config.mjs');
+    for (const fileName of DEFAULT_LIMINA_CONFIG_FILES) {
+      const candidatePath = path.join(currentDir, fileName);
 
-    if (existsSync(candidatePath)) {
-      return candidatePath;
+      if (existsSync(candidatePath)) {
+        return candidatePath;
+      }
     }
 
     if (currentDir === workspaceRootDir) {
@@ -996,6 +1014,144 @@ function validateRootPackageImportAuthorityConfig(
   );
 }
 
+function resolveConfigLoader(configLoader: unknown): LiminaConfigLoader {
+  if (configLoader === undefined || configLoader === 'native') {
+    return 'native';
+  }
+
+  if (configLoader === 'tsx') {
+    return 'tsx';
+  }
+
+  throw new Error(
+    `Unsupported Limina config loader "${String(configLoader)}". Expected one of: native, tsx.`,
+  );
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getErrorCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null && 'code' in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
+function shouldSuggestTsxLoader(error: unknown): boolean {
+  const code = getErrorCode(error);
+  const message = getErrorMessage(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+
+  return (
+    code === 'ERR_UNKNOWN_FILE_EXTENSION' ||
+    code === 'ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX' ||
+    message.includes('Unknown file extension ".ts"') ||
+    message.includes('Unknown file extension ".mts"') ||
+    message.includes('Cannot find module') ||
+    (typeof stack === 'string' &&
+      stack.includes('node:internal/modules/esm/translators'))
+  );
+}
+
+function unwrapModuleDefault(module: unknown): unknown {
+  if (
+    typeof module === 'object' &&
+    module !== null &&
+    'default' in module &&
+    Object.prototype.toString.call(module) === '[object Module]'
+  ) {
+    return (module as { default: unknown }).default;
+  }
+
+  return module;
+}
+
+function unwrapTsxConfigExport(module: unknown): unknown {
+  const value = unwrapModuleDefault(module);
+
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'default' in value &&
+    Object.prototype.toString.call(value) === '[object Object]' &&
+    Object.keys(value).length === 1
+  ) {
+    return (value as { default: unknown }).default;
+  }
+
+  return value;
+}
+
+async function nativeImportConfig(configPath: string): Promise<unknown> {
+  const url = pathToFileURL(configPath);
+  url.searchParams.set('t', String(Date.now()));
+
+  try {
+    const module = (await import(url.href)) as {
+      default?: unknown;
+    };
+
+    return unwrapModuleDefault(module);
+  } catch (error) {
+    if (shouldSuggestTsxLoader(error)) {
+      throw new Error(
+        [
+          'Failed to load the Limina config file with the native loader.',
+          'Try setting the --config-loader CLI flag to `tsx`.',
+          '',
+          getErrorMessage(error),
+        ].join('\n'),
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
+}
+
+async function tsxImportConfig(configPath: string): Promise<unknown> {
+  let tsxApi: typeof tsxEsmApi;
+
+  try {
+    tsxApi = await import('tsx/esm/api');
+  } catch (error) {
+    throw new Error(
+      [
+        'Failed to load the Limina config file with the tsx loader.',
+        'Please install `tsx` in the current workspace before using --config-loader tsx.',
+      ].join('\n'),
+      { cause: error },
+    );
+  }
+
+  const module = (await tsxApi.tsImport(
+    pathToFileURL(configPath).href,
+    import.meta.url,
+  )) as {
+    default?: unknown;
+  };
+
+  return unwrapTsxConfigExport(module);
+}
+
+async function loadConfigModule(
+  configPath: string,
+  configLoader: unknown,
+): Promise<unknown> {
+  const loader = resolveConfigLoader(configLoader);
+
+  return loader === 'native'
+    ? nativeImportConfig(configPath)
+    : tsxImportConfig(configPath);
+}
+
+function formatDefaultConfigFileList(): string {
+  return DEFAULT_LIMINA_CONFIG_FILES.map((fileName) => `"${fileName}"`).join(
+    ', ',
+  );
+}
+
 export async function loadConfig(
   options: LoadConfigOptions = {},
 ): Promise<ResolvedLiminaConfig> {
@@ -1013,17 +1169,12 @@ export async function loadConfig(
     throw new Error(
       options.configPath
         ? `Unable to find limina config at ${configPath}`
-        : `Unable to find limina config. Searched for limina.config.mjs from ${cwd} up to the pnpm workspace root at ${rootDir}.`,
+        : `Unable to find limina config. Searched for ${formatDefaultConfigFileList()} from ${cwd} up to the pnpm workspace root at ${rootDir}.`,
     );
   }
 
-  const module = (await import(
-    `${pathToFileURL(configPath).href}?t=${Date.now()}`
-  )) as {
-    default?: unknown;
-  };
   const config = await resolveConfigExport(
-    module.default,
+    await loadConfigModule(configPath, options.configLoader),
     createConfigEnv(options),
   );
   validateRootPackageImportAuthorityConfig(config, rootDir);

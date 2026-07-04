@@ -7,7 +7,7 @@ Limina 面向 `pnpm` 工作区，并要求配置文件使用 `ESM`。
 - `Node.js ^22.18.0 || >=24.0.0`
 - 工作区根目录存在 `pnpm-workspace.yaml`
 - 接入仓库已经安装 `TypeScript`
-- `limina.config.mjs` 位于工作区内部
+- `limina.config.ts` 位于工作区内部
 
 ## 安装
 
@@ -29,9 +29,9 @@ yarn add -D limina typescript
 
 ## 选择接入方式
 
-如果工作区还没有 Limina 配置，优先使用 `limina init`。它会写入采用自动模式（`mode: 'auto'`）的 `limina.config.mjs`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina `agent skill`。
+如果工作区还没有 Limina 配置，优先使用 `limina init`。它会写入采用自动模式（`mode: 'auto'`）的 `limina.config.ts`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina `agent skill`。
 
-如果仓库已经有清晰的 `tsconfig` 约定，直接写最小 `limina.config.mjs` 会更快。多数工作区只需要自动发现检查器；只有需要显式控制检查器路由时，才需要继续查看[检查器入口](./config/checkers.md)。
+如果仓库已经有清晰的 `tsconfig` 约定，直接写最小 `limina.config.ts` 会更快。多数工作区只需要自动发现检查器；只有需要显式控制检查器路由时，才需要继续查看[检查器入口](./config/checkers.md)。
 
 ## 初始化已有工作区
 
@@ -57,7 +57,7 @@ npx --yes skills add senaoxi/docs-islands --skill limina
 
 初始化过程可能创建或更新：
 
-- 根目录 `limina.config.mjs`；
+- 根目录 `limina.config.ts`；
 - 根目录 `.gitignore` 中的 `.limina/`；
 - 根目录 `limina:build` 脚本；
 - 根目录缺失的 `limina` 和 `typescript` 开发依赖。
@@ -81,9 +81,9 @@ pnpm limina:build
 
 ## 最小手动配置
 
-在工作区根目录创建 `limina.config.mjs`：
+在工作区根目录创建 `limina.config.ts`：
 
-```js
+```ts
 import { defineConfig } from 'limina';
 
 export default defineConfig({

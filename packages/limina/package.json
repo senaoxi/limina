@@ -100,6 +100,7 @@
     "knip": "^6.15.0",
     "publint": "^0.3.0",
     "svelte-check": "^4.4.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.0",
     "vue-tsc": "^3.2.4",
     "vue-tsgo": "^0.2.2"
@@ -121,6 +122,9 @@
       "optional": true
     },
     "svelte-check": {
+      "optional": true
+    },
+    "tsx": {
       "optional": true
     },
     "typescript": {
