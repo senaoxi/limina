@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-04
+
+### Features
+
+- feat(limina)!: manage output build info and add declarationMap option ([67c92467](https://github.com/senaoxi/docs-islands/commit/67c92467))
+- feat(limina): copy local declaration inputs for managed output builds ([58c66341](https://github.com/senaoxi/docs-islands/commit/58c66341))
+
+### Documentation
+
+- docs(limina): clarify generated reference graph and governance model ([f40e441e](https://github.com/senaoxi/docs-islands/commit/f40e441e))
+- docs(limina): trim ceremonial framing and drop migration notes ([4c9d6aab](https://github.com/senaoxi/docs-islands/commit/4c9d6aab))
+
+### Maintenance
+
+- build: refresh toolchain and define Node and pnpm baselines ([54e66b2f](https://github.com/senaoxi/docs-islands/commit/54e66b2f))
+- chore(ci): migrate dependency updates to Renovate ([b98bee81](https://github.com/senaoxi/docs-islands/commit/b98bee81))
+
 ## [0.1.2] - 2026-06-29
 
 ### Features
