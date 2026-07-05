@@ -784,6 +784,9 @@ export async function runInit(
     InitLogger.info(
       `next: ${result.installRequired ? 'pnpm i && ' : ''}${result.buildCommand}`,
     );
+    InitLogger.info(
+      'migration: run npx limina migration to move tsconfig output settings under Limina governance.',
+    );
     task?.pass();
 
     return result;
