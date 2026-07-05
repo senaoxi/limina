@@ -8,6 +8,7 @@ import {
   readFile,
   realpath,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -67,6 +68,58 @@ async function createFixture(files: Record<string, string>): Promise<{
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+async function linkWorkspacePackage(
+  rootDir: string,
+  importer: string,
+  target: string,
+  packageName: string,
+): Promise<void> {
+  const [scope, name] = packageName.split('/');
+  const nodeModulesDir =
+    scope && name
+      ? path.join(rootDir, importer, 'node_modules', scope)
+      : path.join(rootDir, importer, 'node_modules');
+
+  await mkdir(nodeModulesDir, {
+    recursive: true,
+  });
+  await symlink(
+    path.relative(nodeModulesDir, path.join(rootDir, target)),
+    path.join(nodeModulesDir, name ?? packageName),
+  );
+}
+
+function managedOutputCompilerOptions(): Record<string, unknown> {
+  return {
+    module: 'ESNext',
+    moduleResolution: 'bundler',
+    strict: true,
+    target: 'ES2023',
+    types: [],
+  };
+}
+
+async function readGeneratedReferences(options: {
+  checkerName?: string;
+  projectRelativePath: string;
+  rootDir: string;
+}): Promise<{ path: string }[]> {
+  const checkerName = options.checkerName ?? 'typescript';
+  const generatedConfig = JSON.parse(
+    await readFile(
+      path.join(
+        options.rootDir,
+        `.limina/tsconfig/checkers/${checkerName}/projects/${options.projectRelativePath}/tsconfig.dts.json`,
+      ),
+      'utf8',
+    ),
+  ) as {
+    references?: { path: string }[];
+  };
+
+  return generatedConfig.references ?? [];
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
@@ -1877,7 +1930,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('expands default tsconfig.json references and leaves aggregator shape validation to proof', async () => {
+  it('rejects source tsconfig.json entries that still declare project references', async () => {
     const fixture = await createFixture({
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/tsconfig.json': json({
@@ -1908,31 +1961,19 @@ describe('prepareGeneratedTsconfigGraph', () => {
     });
 
     try {
-      const result = await prepareGeneratedTsconfigGraph({
-        ...fixture.config,
-        config: {
-          checkers: {
-            typescript: {
-              preset: 'tsc',
-              include: ['packages/pkg/tsconfig.json'],
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              typescript: {
+                preset: 'tsc',
+                include: ['packages/pkg/tsconfig.json'],
+              },
             },
           },
-        },
-      });
-
-      expect(result.manifest.checkers.typescript?.roots).toEqual([
-        'packages/pkg/tsconfig.lib.json',
-      ]);
-      expect(result.manifest.checkers.typescript?.sourceToDts).toEqual({
-        'packages/pkg/tsconfig.lib.json':
-          '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
-      });
-      expect(result.manifest.checkers.typescript?.sourceToBuild).toMatchObject({
-        'packages/pkg/tsconfig.json': {
-          kind: 'solution',
-          path: '.limina/tsconfig/checkers/typescript/solutions/packages/pkg/tsconfig.build.json',
-        },
-      });
+        }),
+      ).rejects.toThrow('Source typecheck config declares project references');
     } finally {
       await fixture.cleanup();
     }
@@ -2383,6 +2424,634 @@ describe('prepareGeneratedTsconfigGraph', () => {
       };
 
       expect(generatedConfig.references).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes same-checker references for managed output declaration providers', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([
+        {
+          path: '../provider/tsconfig.dts.json',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes output build references from managed output source refs', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      const outputConfig = JSON.parse(
+        await readFile(
+          path.join(
+            fixture.rootDir,
+            '.limina/tsconfig/checkers/typescript/outputs/projects/packages/app/tsconfig.output.json',
+          ),
+          'utf8',
+        ),
+      ) as {
+        references: { path: string }[];
+      };
+
+      expect(outputConfig.references).toEqual([
+        {
+          path: '../provider/tsconfig.output.json',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps unowned declarations under outDir as declaration boundaries', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/other.ts': 'export const otherValue = 1;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps source-owned declarations without outputs as declaration boundaries', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './src/index.d.ts',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.d.ts'],
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps ambiguous managed output declarations as declaration boundaries', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src-a/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/src-b/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/tsconfig.a.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src-a/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src-a',
+            outDir: 'dist',
+          },
+        },
+      }),
+      'packages/provider/tsconfig.b.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src-b/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src-b',
+            outDir: 'dist',
+          },
+        },
+      }),
+      'packages/provider/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.a.json',
+          },
+          {
+            path: './tsconfig.b.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('applies deny refs to managed output mapped source configs', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          graphRules: ['app'],
+        },
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        graph: {
+          rules: {
+            app: {
+              deny: {
+                refs: [
+                  {
+                    path: 'packages/provider/tsconfig.json',
+                    reason: 'blocked',
+                  },
+                ],
+              },
+            },
+          },
+        },
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses mapped sources for cross-checker managed output providers', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: ['packages/app/tsconfig.json'],
+            },
+            vue: {
+              preset: 'vue-tsc',
+              include: ['packages/provider/tsconfig.json'],
+            },
+          },
+        },
+      });
+
+      expect(result.manifest.providerEdges).toEqual([
+        {
+          file: 'packages/app/src/index.ts:1 (kind: static)',
+          fromChecker: 'typescript',
+          fromConfig: 'packages/app/tsconfig.json',
+          importedSpecifier: '@example/provider',
+          resolvedFile: 'packages/provider/dist/index.d.ts',
+          toChecker: 'vue',
+          toConfig: 'packages/provider/tsconfig.json',
+        },
+      ]);
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([
+        {
+          path: '../../../../vue/projects/packages/provider/tsconfig.dts.json',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('prefers same-checker refs for multi-checker managed output source identities', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import { providerValue } from '@example/provider';\nexport const value = providerValue;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+      'packages/provider/dist/index.d.ts':
+        'export declare const providerValue: number;\n',
+      'packages/provider/dist/index.js': 'export const providerValue = 1;\n',
+      'packages/provider/package.json': json({
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            default: './dist/index.js',
+          },
+        },
+        name: '@example/provider',
+        type: 'module',
+      }),
+      'packages/provider/src/index.ts': 'export const providerValue = 1;\n',
+      'packages/provider/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
+      'tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './packages/provider/tsconfig.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/provider',
+        '@example/provider',
+      );
+
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/provider/tsconfig.json',
+              ],
+            },
+            vue: {
+              preset: 'vue-tsc',
+              include: ['tsconfig.json'],
+            },
+          },
+        },
+      });
+
+      expect(result.manifest.providerEdges).toEqual([]);
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([
+        {
+          path: '../provider/tsconfig.dts.json',
+        },
+      ]);
     } finally {
       await fixture.cleanup();
     }

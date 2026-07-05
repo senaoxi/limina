@@ -7,16 +7,6 @@ import { runProofCheck } from '../commands/proof';
 import { ProofLogger } from '../logger';
 import { readCheckIssueSnapshot } from '../source-check/snapshot';
 
-const ANSI_ESCAPE = String.fromCodePoint(0x1b);
-const ANSI_PATTERN = new RegExp(
-  String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
-  'gu',
-);
-
-function stripAnsi(value: string): string {
-  return value.replaceAll(ANSI_PATTERN, '');
-}
-
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, text);
@@ -424,7 +414,7 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('rejects default tsconfig aggregators with source or compiler settings', async () => {
+  it('rejects default source tsconfig files that still declare project references', async () => {
     const fixture = await createFixture(
       createPassingFiles({
         'base.json': JSON.stringify({}),
@@ -444,23 +434,11 @@ describe('runProofCheck dts config semantics', () => {
       }),
     );
 
-    const errorSpy = vi
-      .spyOn(ProofLogger, 'error')
-      .mockImplementation(() => {});
-
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
-
-      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
-      const aggregatorReports =
-        errors.match(/Default tsconfig\.json is not a pure aggregator:/gu) ??
-        [];
-
-      expect(aggregatorReports).toHaveLength(1);
-      expect(errors).toContain('  - field: files');
-      expect(errors).toContain('  ... 3 more');
+      await expect(runProofCheck(fixture.config)).rejects.toThrow(
+        'Source typecheck config declares project references',
+      );
     } finally {
-      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -1500,7 +1478,9 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(runProofCheck(fixture.config)).rejects.toThrow(
+        'Source typecheck config declares project references',
+      );
     } finally {
       await fixture.cleanup();
     }
