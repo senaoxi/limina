@@ -23,7 +23,7 @@ pnpm limina:build
 pnpm exec limina check
 ```
 
-`limina init --yes` uses the default confirmation flow and is suitable for non-interactive environments. It writes or updates `limina.config.ts`, the `limina:build` script in the root `package.json`, and required dependencies, and ensures `.gitignore` ignores `.limina/`. If dependencies already exist, `pnpm i` may not change anything; if initialization added dependencies, install them before running the build.
+`limina init --yes` uses the default confirmation flow and is suitable for non-interactive environments. It writes or updates `limina.config.mts`, the `limina:build` script in the root `package.json`, and required dependencies, and ensures `.gitignore` ignores `.limina/`. If dependencies already exist, `pnpm i` may not change anything; if initialization added dependencies, install them before running the build.
 
 The default generated config only enables automatic checker discovery:
 
@@ -40,7 +40,7 @@ export default defineConfig({
 });
 ```
 
-This is only a starting point. If the repository needs custom checker entries, graph rules, source exceptions, package artifact checks, or release consistency checks, continue configuring them in `limina.config.ts`.
+This is only a starting point. If the repository needs custom checker entries, graph rules, source exceptions, package artifact checks, or release consistency checks, continue configuring them in `limina.config.mts`.
 
 ## Command Entry and Global Options
 
@@ -50,13 +50,13 @@ Basic form:
 limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 ```
 
-Global options apply to commands that need to load `limina.config.ts`. `init` operates directly on the current `pnpm` workspace and does not depend on an existing config.
+Global options apply to commands that need to load a Limina config file. `init` operates directly on the current `pnpm` workspace and does not depend on an existing config.
 
-| Option                     | Type             | Default behavior                                                                                                                                                   | Related configuration                   | Example                                    | Boundary                                                                                    |
-| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `--config <path>`          | path             | Searches upward from the current directory for `limina.config.ts`, `limina.config.mts`, `limina.config.js`, or `limina.config.mjs` until the `pnpm` workspace root | Limina config file                      | `limina --config ./limina.config.ts check` | The config file must be inside the current `pnpm` workspace                                 |
-| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                                                           | Config module loader                    | `limina --config-loader tsx check`         | `tsx` requires `tsx` to be installed in the consuming workspace                             |
-| `--mode <mode>`            | string           | `process.env.NODE_ENV`, otherwise `default`                                                                                                                        | `env.mode` passed to functional configs | `limina --mode ci check`                   | Only passes the mode to the config function; differences are implemented by the config file |
+| Option                     | Type             | Default behavior                                                                                                                                                   | Related configuration                   | Example                                     | Boundary                                                                                    |
+| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `--config <path>`          | path             | Searches upward from the current directory for `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, or `limina.config.js` until the `pnpm` workspace root | Limina config file                      | `limina --config ./limina.config.mts check` | The config file must be inside the current `pnpm` workspace                                 |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                                                           | Config module loader                    | `limina --config-loader tsx check`          | `tsx` requires `tsx` to be installed in the consuming workspace                             |
+| `--mode <mode>`            | string           | `process.env.NODE_ENV`, otherwise `default`                                                                                                                        | `env.mode` passed to functional configs | `limina --mode ci check`                    | Only passes the mode to the config function; differences are implemented by the config file |
 
 The config file can export an object, a `Promise`, or a function that receives `{ command, mode }`. `command` indicates the current command family, such as `check`, `graph`, `source`, `package`, or `release`.
 
@@ -128,7 +128,7 @@ pnpm exec limina init
 pnpm exec limina init --yes
 ```
 
-It searches upward from the current directory for `pnpm-workspace.yaml`, confirms the workspace root, checks workspace packages, and then performs the following actions: writes or updates `limina.config.ts`; ensures `.gitignore` contains `.limina/`; creates or updates the `limina:build` script in the root `package.json`; adds development dependencies if `limina` or `typescript` is missing; removes the existing generated `.limina` directory at the root; and, in interactive mode, asks whether to install the Limina `agent skill`.
+It searches upward from the current directory for `pnpm-workspace.yaml`, confirms the workspace root, checks workspace packages, and then performs the following actions: writes or updates `limina.config.mts`; ensures `.gitignore` contains `.limina/`; creates or updates the `limina:build` script in the root `package.json`; adds development dependencies if `limina` or `typescript` is missing; removes the existing generated `.limina` directory at the root; and, in interactive mode, asks whether to install the Limina `agent skill`.
 
 `--yes` accepts the default confirmation and skips the interactive `skill` installation prompt. In non-interactive environments, steps that require confirmation fail unless `--yes` is used.
 

@@ -303,10 +303,10 @@ describe('runInit', () => {
         await fileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),
       ).toBe(true);
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain("mode: 'auto'");
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain('exclude: []');
     } finally {
       await fixture.cleanup();
@@ -348,7 +348,7 @@ describe('runInit', () => {
 
       expect(toPortablePaths(result.writtenFiles)).toEqual(
         expect.arrayContaining([
-          toPortablePath(path.join(fixture.rootDir, 'limina.config.ts')),
+          toPortablePath(path.join(fixture.rootDir, 'limina.config.mts')),
           toPortablePath(path.join(fixture.rootDir, '.gitignore')),
           toPortablePath(path.join(fixture.rootDir, 'package.json')),
         ]),
@@ -609,13 +609,13 @@ describe('runInit', () => {
         ),
       ).toBe(false);
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain("mode: 'auto'");
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain('exclude: []');
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).not.toContain('include:');
       expect(
         await readFile(path.join(fixture.rootDir, '.gitignore'), 'utf8'),
@@ -657,16 +657,16 @@ describe('runInit', () => {
         ),
       ).resolves.toBe(false);
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain("mode: 'auto'");
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain('exclude: []');
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).not.toContain('include:');
       expect(
-        await readFile(path.join(fixture.rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
       ).not.toContain('entry:');
       expect(
         await readFile(path.join(fixture.rootDir, '.gitignore'), 'utf8'),
@@ -701,7 +701,7 @@ export default defineConfig({
 `;
     const fixture = await createFixture({
       '.gitignore': '.limina/\n',
-      'limina.config.ts': liminaConfig,
+      'limina.config.mts': liminaConfig,
       'package.json': stringifyConfig({
         devDependencies: {
           limina: '^1.0.0',
@@ -747,7 +747,7 @@ export default defineConfig({
 `;
     const fixture = await createFixture({
       '.gitignore': '.limina/\n',
-      'limina.config.ts': liminaConfig,
+      'limina.config.mts': liminaConfig,
       'package.json': stringifyConfig({
         devDependencies: {
           limina: '^1.0.0',
@@ -782,7 +782,7 @@ export default defineConfig({
         / {2}\[skip\] root \.limina \(skipped: not present\) \(\d+ms\)\n/u,
       );
       expect(output).toMatch(
-        / {2}\[skip\] limina\.config\.ts \(skipped: already up to date\) \(\d+ms\)\n/u,
+        / {2}\[skip\] limina\.config\.mts \(skipped: already up to date\) \(\d+ms\)\n/u,
       );
       expect(output).toMatch(
         / {2}\[skip\] \.gitignore \(skipped: \.limina\/ already ignored\) \(\d+ms\)\n/u,

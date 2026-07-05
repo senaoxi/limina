@@ -1,6 +1,6 @@
 # 配置文件
 
-Limina 从工作区内部的 `limina.config.ts` 读取配置。这个文件通常放在工作区根目录：
+Limina 从工作区内部的 `limina.config.mts` 读取配置。这个文件通常放在工作区根目录：
 
 ```ts
 import { defineConfig } from 'limina';
@@ -10,7 +10,7 @@ export default defineConfig({
 });
 ```
 
-省略 `--config` 时，Limina 会从当前目录向上查找到 `pnpm` 工作区根目录。每一层目录都会依次检查 `limina.config.ts`、`limina.config.mts`、`limina.config.js`、`limina.config.mjs`。已有的 `limina.config.mjs` 仍然支持，新项目优先使用 `limina.config.ts`。
+省略 `--config` 时，Limina 会从当前目录向上查找到 `pnpm` 工作区根目录。每一层目录都会依次检查 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`。已有的 `limina.config.ts` 和 `limina.config.mjs` 仍然支持，新项目优先使用 `limina.config.mts`。
 
 配置也可以是函数：
 
@@ -84,7 +84,7 @@ export default defineConfig(({ command }) => ({
 完整一点看，目录可以是：
 
 ```text
-limina.config.ts
+limina.config.mts
 packages/core/
   src/index.ts
   dist/package.json

@@ -99,7 +99,7 @@ Framework files should be covered by their framework checker entry. Limina can p
 
 ### What is `--mode` for?
 
-Use `--mode` when `limina.config.ts` exports a function and returns different configuration for local, `CI`, or release workflows.
+Use `--mode` when `limina.config.mts` exports a function and returns different configuration for local, `CI`, or release workflows.
 
 ## Maintainer Release Checklist
 

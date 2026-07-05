@@ -73,7 +73,7 @@
         },
         "graphRules": {
           "type": "array",
-          "description": "Graph rule labels from limina.config.mjs#graph.rules that apply to this declaration leaf.",
+          "description": "Graph rule labels from limina.config.mts#graph.rules that apply to this declaration leaf.",
           "uniqueItems": true,
           "items": {
             "$ref": "#/definitions/nonEmptyString"

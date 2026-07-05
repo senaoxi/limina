@@ -84,7 +84,7 @@ These configs should not necessarily all participate in declaration builds. Test
 
 Limina narrows the scope instead. Users first declare which tsconfigs are source entries governed by Limina:
 
-```ts [limina.config.ts]
+```ts [limina.config.mts]
 export default defineConfig({
   config: {
     checkers: {

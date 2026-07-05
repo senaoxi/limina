@@ -356,7 +356,7 @@ function createNoMigrationEntryError(
       `  candidate entries before exclude: ${collection.candidateEntryCount}`,
       '  active entries after exclude: 0',
       `  reason: ${modeReason}`,
-      '  fix: check limina.config.ts config.checkers include/exclude, or switch from auto mode to explicit checker includes for the tsconfig.json entries Limina should govern.',
+      '  fix: check Limina config.checkers include/exclude, or switch from auto mode to explicit checker includes for the tsconfig.json entries Limina should govern.',
     ].join('\n'),
   );
 }

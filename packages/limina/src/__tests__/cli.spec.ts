@@ -2438,13 +2438,13 @@ export default {
       expect(stdout).not.toContain('limina init finished');
       expect(stdout).not.toContain('[start]');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain("mode: 'auto'");
       expect(
-        await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain('exclude: []');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
+        await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
       ).not.toContain('include:');
       expect(
         await readFile(path.join(rootDir, '.gitignore'), 'utf8'),
