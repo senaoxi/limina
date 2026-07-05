@@ -1,8 +1,12 @@
 import type { GraphConfig, ResolvedLiminaConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import {
+  prepareGeneratedTsconfigGraph,
+  type GeneratedTsconfigGraphResult,
+} from '#core/build-graph/runner';
 import {
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -414,6 +418,91 @@ function createWorkspacePackageFiles(options: {
       tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
     }),
     'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+    'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+    'tsconfig.build.json': stringifyConfig({
+      files: [],
+      references: [
+        {
+          path: './packages/internal/tsconfig.lib.dts.json',
+        },
+        {
+          path: './packages/app/tsconfig.lib.dts.json',
+        },
+      ],
+    }),
+  };
+}
+
+function createManagedOutputWorkspacePackageFiles(
+  options: {
+    appReferences?: string[];
+    providerOwnedSource?: boolean;
+    providerOutputs?: boolean;
+  } = {},
+): Record<string, string> {
+  const providerOwnedSource = options.providerOwnedSource ?? true;
+  const providerOutputs = options.providerOutputs ?? true;
+
+  return {
+    'packages/app/package.json': stringifyConfig({
+      dependencies: {
+        '@example/internal': 'workspace:*',
+      },
+      name: '@example/app',
+      type: 'module',
+    }),
+    'packages/app/src/index.ts':
+      "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+    'packages/app/tsconfig.lib.dts.json': buildConfig({
+      include: ['src/**/*.ts'],
+      references: options.appReferences,
+      tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+    }),
+    'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+    'packages/internal/dist/index.d.ts':
+      'export declare const internalValue: number;\n',
+    'packages/internal/dist/index.js': 'export const internalValue = 1;\n',
+    'packages/internal/package.json': stringifyConfig({
+      exports: {
+        '.': {
+          types: './dist/index.d.ts',
+          default: './dist/index.js',
+        },
+      },
+      name: '@example/internal',
+      type: 'module',
+    }),
+    ...(providerOwnedSource
+      ? {
+          'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
+        }
+      : {
+          'packages/internal/src/other.ts': 'export const otherValue = 1;\n',
+        }),
+    'packages/internal/tsconfig.lib.dts.json': buildConfig({
+      include: ['src/**/*.ts'],
+      tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+    }),
+    'packages/internal/tsconfig.lib.json': stringifyConfig({
+      compilerOptions: {
+        ...buildCompilerOptions,
+        noEmit: true,
+      },
+      include: ['src/**/*.ts'],
+      ...(providerOutputs
+        ? {
+            liminaOptions: {
+              outputs: {
+                rootDir: 'src',
+                outDir: 'dist',
+              },
+            },
+          }
+        : {}),
+    }),
     'pnpm-workspace.yaml': `
 packages:
   - packages/*
@@ -1316,6 +1405,93 @@ packages:
       }),
       'packages/internal/tsconfig.lib.json': typecheckConfig(['src/**/*.d.ts']),
     });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts prepared refs for managed output declaration package providers', async () => {
+    const fixture = await createFixture(
+      createManagedOutputWorkspacePackageFiles(),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports missing prepared refs for managed output declaration package providers', async () => {
+    const fixture = await createFixture(
+      createManagedOutputWorkspacePackageFiles(),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      const generatedGraph = await prepareGeneratedTsconfigGraph(
+        fixture.config,
+      );
+      const appGeneratedConfigPath = path.join(
+        fixture.rootDir,
+        '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json',
+      );
+      const appGeneratedConfig = JSON.parse(
+        await readFile(appGeneratedConfigPath, 'utf8'),
+      ) as {
+        references?: { path: string }[];
+      };
+
+      await writeFile(
+        appGeneratedConfigPath,
+        stringifyConfig({
+          ...appGeneratedConfig,
+          references: [],
+        }),
+      );
+
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config, {
+        generatedGraphProvider: async () => generatedGraph,
+      });
+
+      expect(passed).toBe(false);
+      expect(issues.map((issue) => issue.code)).toContain(
+        LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves graph-check declaration boundaries for unattributed output declarations', async () => {
+    const fixture = await createFixture(
+      createManagedOutputWorkspacePackageFiles({
+        providerOwnedSource: false,
+      }),
+    );
 
     try {
       await linkWorkspacePackage(

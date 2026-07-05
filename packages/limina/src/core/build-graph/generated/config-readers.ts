@@ -40,6 +40,18 @@ export function isDefaultSourceTsconfigPath(configPath: string): boolean {
   );
 }
 
+export function isSolutionStyleTsconfig(
+  configPath: string,
+  configObject: Record<string, unknown>,
+): boolean {
+  return (
+    isDefaultTsconfigPath(configPath) &&
+    Array.isArray(configObject.files) &&
+    configObject.files.length === 0 &&
+    Object.hasOwn(configObject, 'references')
+  );
+}
+
 export function readGraphRules(
   config: ResolvedLiminaConfig,
   sourceConfigPath: string,
@@ -540,7 +552,7 @@ export function addSourceReferenceConfigProblems(options: {
     return;
   }
 
-  if (isDefaultTsconfigPath(options.sourceConfigPath)) {
+  if (isSolutionStyleTsconfig(options.sourceConfigPath, configObject)) {
     return;
   }
 
@@ -549,8 +561,8 @@ export function addSourceReferenceConfigProblems(options: {
       'Source typecheck config declares project references:',
       `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
       '  field: references',
-      '  reason: source typecheck leaf configs must not hand-maintain project references; Limina infers static source edges and liminaOptions.implicitRefs documents dynamic or virtual edges.',
-      '  fix: move IDE aggregation references to a solution-style tsconfig.json, or replace this source leaf reference with liminaOptions.implicitRefs.',
+      '  reason: source typecheck configs must not hand-maintain project references; Limina infers static source edges and liminaOptions.implicitRefs documents dynamic or virtual edges.',
+      '  fix: run limina migration to remove legacy tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
     ].join('\n'),
   );
 }

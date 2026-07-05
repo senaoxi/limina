@@ -47,6 +47,10 @@ import { LiminaStructuredError } from '../../check-reporting/errors';
 import { createTaskFailureIssue } from '../../check-reporting/snapshot';
 import { resolveDeclarationProvider } from '../import-graph/declaration-provider';
 import {
+  createManagedOutputDeclarationLookup,
+  type ManagedOutputProjectContext,
+} from '../import-graph/managed-output-provider';
+import {
   type GeneratedKnipPackageConfig,
   type GeneratedKnipPackageDiagnostic,
   prepareGeneratedKnipPackageConfigs,
@@ -57,7 +61,7 @@ import {
   addSourceReferenceConfigProblems,
   collectTypeRootCandidates,
   isDefaultSourceTsconfigPath,
-  isDefaultTsconfigPath,
+  isSolutionStyleTsconfig,
   type OutputOptions,
   readGraphRules,
   readImplicitRefs,
@@ -402,6 +406,10 @@ function collectCheckerSourceConfigModules(options: {
 
   const configObject = readJsonConfig(options.config, options.sourceConfigPath);
   const hasReferences = Object.hasOwn(configObject, 'references');
+  const isSolutionStyleConfig = isSolutionStyleTsconfig(
+    options.sourceConfigPath,
+    configObject,
+  );
   const outputOptions = readOutputOptions(
     options.config,
     options.sourceConfigPath,
@@ -409,7 +417,7 @@ function collectCheckerSourceConfigModules(options: {
 
   options.problems.push(...outputOptions.problems);
 
-  if (hasReferences && !isDefaultTsconfigPath(options.sourceConfigPath)) {
+  if (hasReferences && !isSolutionStyleConfig) {
     addSourceReferenceConfigProblems({
       config: options.config,
       problems: options.problems,
@@ -418,7 +426,7 @@ function collectCheckerSourceConfigModules(options: {
     return;
   }
 
-  if (hasReferences && isDefaultTsconfigPath(options.sourceConfigPath)) {
+  if (isSolutionStyleConfig) {
     if (outputOptions.outputs) {
       options.problems.push(
         [
@@ -1401,6 +1409,26 @@ function getDtsProjectsForSourcePath(options: {
   return options.dtsProjectsBySourcePath.get(options.sourceConfigPath) ?? [];
 }
 
+function createManagedOutputProjectContexts(
+  projects: SourceProject[],
+): ManagedOutputProjectContext[] {
+  return projects
+    .filter(
+      (project): project is SourceProject & { outputOptions: OutputOptions } =>
+        Boolean(project.outputOptions),
+    )
+    .map((project) => ({
+      checkerName: project.checkerName,
+      sourceConfigPath: project.configPath,
+      outputOptions: {
+        outDir: project.outputOptions.outDir,
+        rootDir: project.outputOptions.rootDir,
+      },
+      ownedFileNames: project.ownedFileNames,
+      extensions: project.context.extensions,
+    }));
+}
+
 function isBuildCapableProject(project: SourceProject): boolean {
   const preset = project.context.checkerPresets[0];
 
@@ -1408,14 +1436,14 @@ function isBuildCapableProject(project: SourceProject): boolean {
 }
 
 function selectProviderProject(options: {
-  resolvedFilePath: string;
+  providerSourceFilePath: string;
   sourceCheckerName: string;
   targetProjects: SourceProject[];
 }): SourceProject | null {
   const providerProjects = options.targetProjects
     .filter((project) => project.checkerName !== options.sourceCheckerName)
     .filter((project) =>
-      project.ownedFileNames.includes(options.resolvedFilePath),
+      project.ownedFileNames.includes(options.providerSourceFilePath),
     )
     .filter(isBuildCapableProject)
     .sort((left, right) => left.checkerName.localeCompare(right.checkerName));
@@ -1673,6 +1701,9 @@ function inferProjectReferences(
       resolverConfigPath: project.configPath,
     })),
   );
+  const managedOutputLookup = createManagedOutputDeclarationLookup(
+    createManagedOutputProjectContexts(ownerProjects),
+  );
   const localDtsProjectsBySourcePath = createDtsProjectsBySourcePath(projects);
   const dtsProjectsBySourcePath = createDtsProjectsBySourcePath(ownerProjects);
 
@@ -1732,10 +1763,6 @@ function inferProjectReferences(
           },
         });
 
-        if (declarationProvider.kind === 'declaration') {
-          continue;
-        }
-
         if (declarationProvider.kind === 'oxc-only') {
           problems.push(
             formatOxcOnlyDeclarationProviderProblem({
@@ -1754,22 +1781,42 @@ function inferProjectReferences(
 
         const resolvedFilePath =
           declarationProvider.typeScriptResolution.resolvedFileName;
-        const owners = declarationProvider.ownerProjectPaths;
+        let providerSourceFilePath = resolvedFilePath;
+        let targetSourceConfigPath: string | null = null;
 
-        if (!owners || owners.length === 0) {
-          continue;
+        if (declarationProvider.kind === 'declaration') {
+          const attribution = managedOutputLookup.resolve(
+            resolvedFilePath,
+            project.checkerName,
+          );
+
+          if (!attribution) {
+            continue;
+          }
+
+          providerSourceFilePath = attribution.mappedSourceFilePath;
+          targetSourceConfigPath = attribution.sourceConfigPath;
+        } else {
+          const owners = declarationProvider.ownerProjectPaths;
+
+          if (!owners || owners.length === 0) {
+            continue;
+          }
+
+          targetSourceConfigPath =
+            owners
+              .filter((owner) => owner !== project.configPath)
+              .sort(
+                (left, right) =>
+                  path.dirname(right).length - path.dirname(left).length ||
+                  left.localeCompare(right),
+              )[0] ?? null;
         }
 
-        const targetSourceConfigPath =
-          owners
-            .filter((owner) => owner !== project.configPath)
-            .sort(
-              (left, right) =>
-                path.dirname(right).length - path.dirname(left).length ||
-                left.localeCompare(right),
-            )[0] ?? null;
-
-        if (!targetSourceConfigPath) {
+        if (
+          !targetSourceConfigPath ||
+          targetSourceConfigPath === project.configPath
+        ) {
           continue;
         }
 
@@ -1790,7 +1837,7 @@ function inferProjectReferences(
 
           if (targetProjects.length > 0) {
             const providerProject = selectProviderProject({
-              resolvedFilePath,
+              providerSourceFilePath,
               sourceCheckerName: project.checkerName,
               targetProjects,
             });

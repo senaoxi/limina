@@ -39,10 +39,17 @@ import {
   createCheckCounter,
   createCheckItemAccumulator,
 } from '../check-reporting/stats';
+import { readOutputOptions } from '../core/build-graph/generated/config-readers';
 import {
   isDeclarationFileFamily,
   resolveDeclarationProvider,
 } from '../core/import-graph/declaration-provider';
+import {
+  createManagedOutputDeclarationLookup,
+  type ManagedOutputDeclarationLookup,
+  type ManagedOutputDeclarationProvider,
+  type ManagedOutputProjectContext,
+} from '../core/import-graph/managed-output-provider';
 import {
   createWorkspaceExportsResolutionIndex,
   type WorkspaceExportsResolutionIndex,
@@ -164,7 +171,9 @@ interface ExpectedReferenceCollectionOptions {
   generatedGraph: GeneratedTsconfigGraphResult;
   graphRules: NormalizedGraphRules;
   importAnalysis: ImportAnalysisContext;
+  managedOutputLookup: ManagedOutputDeclarationLookup;
   packages: WorkspacePackage[];
+  projectCheckerNamesByPath: Map<string, string>;
   problems: string[];
   projectPaths: string[];
   projects: ProjectInfo[];
@@ -182,6 +191,8 @@ interface ExpectedReferenceCollectionContext
 interface GraphImportResolution {
   graphResolvedFilePath: string;
   importer: ImporterInfo | null;
+  managedOutputAttribution: ManagedOutputDeclarationProvider | null;
+  managedOutputTargetProjectPath: string | null;
   resolvedFilePath: string;
   targetPackage: WorkspacePackage | null;
   targetPackageForGraph: WorkspacePackage | null;
@@ -1106,6 +1117,46 @@ function collectExpectedReferenceForImport(options: {
   });
 }
 
+function findManagedOutputTargetProjectPath(options: {
+  attribution: ManagedOutputDeclarationProvider;
+  context: ExpectedReferenceCollectionContext;
+  importingCheckerName: string;
+  importRecord: ImportRecord;
+  project: ProjectInfo;
+}): string | null {
+  const sameCheckerTargetProjectPath =
+    options.context.generatedGraph.sourceToDts
+      .get(options.importingCheckerName)
+      ?.get(options.attribution.sourceConfigPath) ?? null;
+
+  if (sameCheckerTargetProjectPath) {
+    return sameCheckerTargetProjectPath;
+  }
+
+  for (const edge of options.context.generatedGraph.providerEdges) {
+    if (
+      edge.fromChecker !== options.importingCheckerName ||
+      edge.fromConfigPath !== options.project.resolverConfigPath ||
+      edge.importedSpecifier !== options.importRecord.specifier ||
+      edge.resolvedFilePath !== options.attribution.declarationFilePath ||
+      edge.toConfigPath !== options.attribution.sourceConfigPath
+    ) {
+      continue;
+    }
+
+    const crossCheckerTargetProjectPath =
+      options.context.generatedGraph.sourceToDts
+        .get(edge.toChecker)
+        ?.get(edge.toConfigPath) ?? null;
+
+    if (crossCheckerTargetProjectPath) {
+      return crossCheckerTargetProjectPath;
+    }
+  }
+
+  return null;
+}
+
 function resolveImportForReferenceExpectation(options: {
   context: ExpectedReferenceCollectionContext;
   filePath: string;
@@ -1178,10 +1229,41 @@ function resolveImportForReferenceExpectation(options: {
     return null;
   }
 
-  const resolvedFilePath = graphResolvedFilePath;
+  let resolvedFilePath = graphResolvedFilePath;
+  let managedOutputAttribution: ManagedOutputDeclarationProvider | null = null;
+  let managedOutputTargetProjectPath: string | null = null;
+
+  if (isDeclarationFileFamily(graphResolvedFilePath)) {
+    const importingCheckerName = options.context.projectCheckerNamesByPath.get(
+      options.project.configPath,
+    );
+
+    managedOutputAttribution = options.context.managedOutputLookup.resolve(
+      graphResolvedFilePath,
+      importingCheckerName,
+    );
+
+    if (!managedOutputAttribution || !importingCheckerName) {
+      return null;
+    }
+
+    managedOutputTargetProjectPath = findManagedOutputTargetProjectPath({
+      attribution: managedOutputAttribution,
+      context: options.context,
+      importingCheckerName,
+      importRecord: options.importRecord,
+      project: options.project,
+    });
+
+    if (!managedOutputTargetProjectPath) {
+      return null;
+    }
+
+    resolvedFilePath = managedOutputAttribution.mappedSourceFilePath;
+  }
 
   const targetWorkspacePackageForResolved = getResolvedWorkspacePackage(
-    graphResolvedFilePath,
+    resolvedFilePath,
     options.context.workspaceLookup,
   );
   const targetPackageForGraph = getTargetPackageForGraph({
@@ -1206,13 +1288,11 @@ function resolveImportForReferenceExpectation(options: {
     return null;
   }
 
-  if (isDeclarationFileFamily(graphResolvedFilePath)) {
-    return null;
-  }
-
   return {
-    graphResolvedFilePath,
+    graphResolvedFilePath: resolvedFilePath,
     importer,
+    managedOutputAttribution,
+    managedOutputTargetProjectPath,
     resolvedFilePath,
     targetPackage,
     targetPackageForGraph,
@@ -1373,6 +1453,10 @@ function findExpectedReferenceTargetProjectPath(options: {
   project: ProjectInfo;
   resolution: GraphImportResolution;
 }): string | null {
+  if (options.resolution.managedOutputTargetProjectPath) {
+    return options.resolution.managedOutputTargetProjectPath;
+  }
+
   if (shouldSkipWorkspaceExportResolvedOutsideGraph(options)) {
     return null;
   }
@@ -1644,6 +1728,70 @@ function createWorkspaceExportsResolutionProfiles(
   }));
 }
 
+function createGeneratedProjectCheckerNamesByPath(
+  generatedGraph: GeneratedTsconfigGraphResult,
+): Map<string, string> {
+  const checkerNamesByPath = new Map<string, string>();
+
+  for (const [checkerName, sourceToDts] of generatedGraph.sourceToDts) {
+    for (const [sourceConfigPath, dtsConfigPath] of sourceToDts) {
+      checkerNamesByPath.set(sourceConfigPath, checkerName);
+      checkerNamesByPath.set(dtsConfigPath, checkerName);
+    }
+  }
+
+  return checkerNamesByPath;
+}
+
+function createGraphCheckManagedOutputProjectContexts(options: {
+  config: ResolvedLiminaConfig;
+  problems: string[];
+  projectCheckerNamesByPath: Map<string, string>;
+  projects: ProjectInfo[];
+}): ManagedOutputProjectContext[] {
+  const contextsByKey = new Map<string, ManagedOutputProjectContext>();
+
+  for (const project of options.projects) {
+    const checkerName = options.projectCheckerNamesByPath.get(
+      project.configPath,
+    );
+
+    if (!checkerName) {
+      continue;
+    }
+
+    const outputOptions = readOutputOptions(
+      options.config,
+      project.resolverConfigPath,
+    );
+
+    options.problems.push(...outputOptions.problems);
+
+    if (!outputOptions.outputs) {
+      continue;
+    }
+
+    const key = JSON.stringify([checkerName, project.resolverConfigPath]);
+
+    if (contextsByKey.has(key)) {
+      continue;
+    }
+
+    contextsByKey.set(key, {
+      checkerName,
+      sourceConfigPath: project.resolverConfigPath,
+      outputOptions: {
+        outDir: outputOptions.outputs.outDir,
+        rootDir: outputOptions.outputs.rootDir,
+      },
+      ownedFileNames: project.ownedFileNames,
+      extensions: project.extensions,
+    });
+  }
+
+  return [...contextsByKey.values()];
+}
+
 function createGeneratedGraphPathAliases(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): Map<string, string> {
@@ -1694,6 +1842,16 @@ export async function runGraphCheckImpl(
     projects.map((project) => [project.configPath, project]),
   );
   const fileOwnerLookup = createFileOwnerLookup(projects);
+  const projectCheckerNamesByPath =
+    createGeneratedProjectCheckerNamesByPath(generatedGraph);
+  const managedOutputLookup = createManagedOutputDeclarationLookup(
+    createGraphCheckManagedOutputProjectContexts({
+      config,
+      problems,
+      projectCheckerNamesByPath,
+      projects,
+    }),
+  );
   const packages = await preflight.ensureWorkspacePackages();
   const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
 
@@ -1781,7 +1939,9 @@ export async function runGraphCheckImpl(
     generatedGraph,
     graphRules,
     importAnalysis: preflight.importAnalysis,
+    managedOutputLookup,
     packages,
+    projectCheckerNamesByPath,
     problems,
     projectPaths,
     projects,
