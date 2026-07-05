@@ -3334,10 +3334,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
-  it('reports a missing publint peer only when publint is enabled', async () => {
+  it('skips a missing publint peer only when publint is enabled', async () => {
     const pkg = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
+    let stats: LiminaCheckRunTaskStats | undefined;
 
     try {
       vi.resetModules();
@@ -3368,9 +3369,19 @@ describe('runPackageCheck and runReleaseCheck', () => {
               outDir: pkg.outDir,
             },
           ]),
+          onStats: (nextStats) => {
+            stats = nextStats;
+          },
           tool: 'publint',
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
+
+      expect(stats?.items?.[0]).toMatchObject({
+        checksPassed: 0,
+        checksTotal: 0,
+        issues: 0,
+        status: 'skipped',
+      });
     } finally {
       vi.doUnmock('publint');
       vi.resetModules();
@@ -3378,10 +3389,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
-  it('reports a missing attw peer only when attw is enabled', async () => {
+  it('skips a missing attw peer only when attw is enabled', async () => {
     const pkg = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
+    let stats: LiminaCheckRunTaskStats | undefined;
 
     try {
       vi.resetModules();
@@ -3413,9 +3425,19 @@ describe('runPackageCheck and runReleaseCheck', () => {
               outDir: pkg.outDir,
             },
           ]),
+          onStats: (nextStats) => {
+            stats = nextStats;
+          },
           tool: 'attw',
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
+
+      expect(stats?.items?.[0]).toMatchObject({
+        checksPassed: 0,
+        checksTotal: 0,
+        issues: 0,
+        status: 'skipped',
+      });
     } finally {
       vi.doUnmock('@arethetypeswrong/core');
       vi.resetModules();

@@ -40,13 +40,21 @@ import {
   createTaskFailureIssue,
   type LiminaCheckIssue,
 } from '../check-reporting/snapshot';
-import { createCheckItemStats } from '../check-reporting/stats';
+import {
+  createCheckItemStats,
+  createSkippedCheckItemStats,
+} from '../check-reporting/stats';
 import { resolvePackageEntryConcurrency } from '../execution/config';
 import { runPool } from '../execution/pool';
 import type {
   TaskProgressItem,
   TaskProgressReporter,
 } from '../execution/progress';
+import {
+  formatMissingOptionalToolSkipMessage,
+  isLiminaOptionalToolMissingError,
+  LiminaOptionalToolMissingError,
+} from '../execution/tools';
 import type { LiminaFlowReporter } from '../flow';
 import { formatErrorMessage, PackageLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
@@ -105,12 +113,14 @@ export interface RunPackageCheckOptions {
 }
 
 interface PackageCheckEntryRunResult {
+  checkedToolCount: number;
   durationMs: number;
   issues: LiminaCheckIssue[];
   label: string;
   passed: boolean;
-  toolCount: number;
+  skippedToolCount: number;
 }
+type PackageToolCheckResult = 'failed' | 'passed' | 'skipped';
 const ATTW_PROFILE_IGNORED_RESOLUTIONS: Record<PackageAttwProfile, string[]> = {
   strict: [],
   node16: [],
@@ -142,14 +152,14 @@ function createMissingPeerDependencyError(options: {
   command: string;
   error: unknown;
   packageName: string;
+  toolName?: string;
 }): Error {
-  return new Error(
-    [
-      `Missing peer dependency "${options.packageName}" required by limina ${options.command}.`,
-      `  fix: install it in the workspace running Limina, for example with \`pnpm add -D ${options.packageName}\`.`,
-      `  error: ${formatErrorMessage(options.error)}`,
-    ].join('\n'),
-  );
+  return new LiminaOptionalToolMissingError({
+    command: options.command,
+    error: options.error,
+    packageName: options.packageName,
+    toolName: options.toolName,
+  });
 }
 
 function addPackageCheckIssue(options: {
@@ -234,6 +244,7 @@ async function loadAttwPeer(): Promise<{
       command: 'package check',
       error,
       packageName: '@arethetypeswrong/core',
+      toolName: 'attw',
     });
   }
 }
@@ -515,14 +526,30 @@ async function runPublintCheck(options: {
   packageName?: string;
   rootDir: string;
   tarball: Buffer;
-}): Promise<boolean> {
+}): Promise<PackageToolCheckResult> {
   const task = options.flow?.start(`publint: ${options.label}`, {
     depth: options.flowDepth ?? 0,
   });
 
-  PackageLogger.info(`publint started: ${options.label}`);
   const publintElapsed = createElapsedTimer();
-  const { formatMessage, publint } = await loadPublintPeer();
+  let publintPeer: Awaited<ReturnType<typeof loadPublintPeer>>;
+
+  try {
+    publintPeer = await loadPublintPeer();
+  } catch (error) {
+    if (!isLiminaOptionalToolMissingError(error)) {
+      throw error;
+    }
+
+    const message = formatMissingOptionalToolSkipMessage(error.toolName);
+
+    PackageLogger.warn(`${message}: ${options.label}`, publintElapsed());
+    task?.skip(message);
+    return 'skipped';
+  }
+
+  PackageLogger.info(`publint started: ${options.label}`);
+  const { formatMessage, publint } = publintPeer;
   const { messages, pkg } = await publint({
     level: options.config.level,
     pack: { tarball: toArrayBuffer(options.tarball) },
@@ -538,7 +565,7 @@ async function runPublintCheck(options: {
     }
 
     task?.pass();
-    return true;
+    return 'passed';
   }
 
   for (const message of messages) {
@@ -586,7 +613,7 @@ async function runPublintCheck(options: {
     publintElapsed(),
   );
   task?.fail(`publint found ${messages.length} issue(s): ${options.label}`);
-  return false;
+  return 'failed';
 }
 
 async function runAttwCheck(options: {
@@ -600,16 +627,32 @@ async function runAttwCheck(options: {
   profile: PackageAttwProfile;
   rootDir: string;
   tarball: Buffer;
-}): Promise<boolean> {
+}): Promise<PackageToolCheckResult> {
   const task = options.flow?.start(`attw: ${options.label}`, {
     depth: options.flowDepth ?? 0,
   });
 
+  const attwElapsed = createElapsedTimer();
+  let attwPeer: Awaited<ReturnType<typeof loadAttwPeer>>;
+
+  try {
+    attwPeer = await loadAttwPeer();
+  } catch (error) {
+    if (!isLiminaOptionalToolMissingError(error)) {
+      throw error;
+    }
+
+    const message = formatMissingOptionalToolSkipMessage(error.toolName);
+
+    PackageLogger.warn(`${message}: ${options.label}`, attwElapsed());
+    task?.skip(message);
+    return 'skipped';
+  }
+
   PackageLogger.info(
     `attw started: ${options.label} (profile: ${options.profile})`,
   );
-  const attwElapsed = createElapsedTimer();
-  const { checkPackage, createPackageFromTarballData } = await loadAttwPeer();
+  const { checkPackage, createPackageFromTarballData } = attwPeer;
   const pkg = createPackageFromTarballData(options.tarball);
   const checkOptions: CheckPackageOptions = {
     entrypoints: options.config.entrypoints,
@@ -641,7 +684,7 @@ async function runAttwCheck(options: {
     PackageLogger.error(`[${options.label}] [attw] package has no types`);
     PackageLogger.error(`attw failed: ${options.label}`, attwElapsed());
     task?.fail(`attw failed: ${options.label}`);
-    return false;
+    return 'failed';
   }
 
   const ignoredResolutions = ATTW_PROFILE_IGNORED_RESOLUTIONS[options.profile];
@@ -662,7 +705,7 @@ async function runAttwCheck(options: {
     }
 
     task?.pass();
-    return true;
+    return 'passed';
   }
 
   for (const problem of problems) {
@@ -708,7 +751,7 @@ async function runAttwCheck(options: {
       attwElapsed(),
     );
     task?.pass();
-    return true;
+    return 'passed';
   }
 
   PackageLogger.error(
@@ -716,7 +759,7 @@ async function runAttwCheck(options: {
     attwElapsed(),
   );
   task?.fail(`attw found ${problems.length} problem(s): ${options.label}`);
-  return false;
+  return 'failed';
 }
 
 async function runBoundaryCheck(
@@ -804,7 +847,11 @@ async function runPackageCheckEntry(options: {
   outDir: string;
   progressItem?: TaskProgressItem;
   rawEntry: PackageEntry;
-}): Promise<boolean> {
+}): Promise<{
+  checkedToolCount: number;
+  passed: boolean;
+  skippedToolCount: number;
+}> {
   const entry = {
     ...options.rawEntry,
     outDir: options.outDir,
@@ -865,6 +912,19 @@ async function runPackageCheckEntry(options: {
     }
 
     let passed = manifestProblems.length === 0;
+    let checkedToolCount = 0;
+    let skippedToolCount = 0;
+    const applyToolResult = (result: PackageToolCheckResult): void => {
+      if (result === 'skipped') {
+        skippedToolCount += 1;
+        return;
+      }
+
+      checkedToolCount += 1;
+      if (result === 'failed') {
+        passed = false;
+      }
+    };
 
     for (const problem of manifestProblems) {
       addPackageCheckIssue({
@@ -892,8 +952,8 @@ async function runPackageCheckEntry(options: {
     }
 
     if (options.checks.includes('publint')) {
-      passed =
-        (await runPublintCheck({
+      applyToolResult(
+        await runPublintCheck({
           config: getPackagePublintCheckConfig(entry),
           flow: options.flow,
           flowDepth: (options.flowDepth ?? 0) + 1,
@@ -903,14 +963,15 @@ async function runPackageCheckEntry(options: {
           packageName,
           rootDir: options.config.rootDir,
           tarball: packedDist!.tarball,
-        })) && passed;
+        }),
+      );
     }
 
     if (options.checks.includes('attw')) {
       const attwConfig = getPackageAttwCheckConfig(entry);
 
-      passed =
-        (await runAttwCheck({
+      applyToolResult(
+        await runAttwCheck({
           config: attwConfig,
           flow: options.flow,
           flowDepth: (options.flowDepth ?? 0) + 1,
@@ -921,11 +982,12 @@ async function runPackageCheckEntry(options: {
           profile: options.attwProfile ?? attwConfig.profile ?? 'esm-only',
           rootDir: options.config.rootDir,
           tarball: packedDist!.tarball,
-        })) && passed;
+        }),
+      );
     }
 
     if (options.checks.includes('boundary')) {
-      passed =
+      applyToolResult(
         (await runBoundaryCheck(
           {
             ...entry.boundary,
@@ -940,7 +1002,10 @@ async function runPackageCheckEntry(options: {
             packageName,
             rootDir: options.config.rootDir,
           },
-        )) && passed;
+        ))
+          ? 'passed'
+          : 'failed',
+      );
     }
 
     if (passed) {
@@ -954,7 +1019,11 @@ async function runPackageCheckEntry(options: {
       task?.fail(`package checks failed: ${label}`);
     }
 
-    return passed;
+    return {
+      checkedToolCount,
+      passed,
+      skippedToolCount,
+    };
   } catch (error) {
     PackageLogger.error(
       `package checks failed: ${label}: ${formatErrorMessage(error)}`,
@@ -1075,6 +1144,7 @@ export async function runPackageCheckImpl(
     }),
     items: runnableEntries,
     onError: (entry, error): PackageCheckEntryRunResult => ({
+      checkedToolCount: entry.checks.length,
       durationMs: 0,
       issues: [
         createTaskFailureIssue({
@@ -1092,7 +1162,7 @@ export async function runPackageCheckImpl(
       ],
       label: entry.label,
       passed: false,
-      toolCount: entry.checks.length,
+      skippedToolCount: 0,
     }),
     onResult: (entry, result) => {
       const progressItem = progressItems.get(entry.label);
@@ -1109,7 +1179,7 @@ export async function runPackageCheckImpl(
     run: async (entry): Promise<PackageCheckEntryRunResult> => {
       const issues: LiminaCheckIssue[] = [];
       const startedAt = performance.now();
-      const entryPassed = await runPackageCheckEntry({
+      const entryResult = await runPackageCheckEntry({
         attwProfile: options.attwProfile,
         checks: entry.checks,
         config: options.config,
@@ -1123,22 +1193,30 @@ export async function runPackageCheckImpl(
       });
 
       return {
+        checkedToolCount: entryResult.checkedToolCount,
         durationMs: performance.now() - startedAt,
         issues,
         label: `${entry.label} (${entry.checks.join(', ')})`,
-        passed: entryPassed,
-        toolCount: entry.checks.length,
+        passed: entryResult.passed,
+        skippedToolCount: entryResult.skippedToolCount,
       };
     },
   });
   const checkItems: LiminaCheckRunCheckItemSummary[] = entryResults.map(
     (result) =>
-      createCheckItemStats({
-        durationMs: result.durationMs,
-        issues: result.passed ? 0 : Math.max(1, result.issues.length),
-        name: result.label,
-        total: result.toolCount,
-      }),
+      result.passed &&
+      result.checkedToolCount === 0 &&
+      result.skippedToolCount > 0
+        ? createSkippedCheckItemStats({
+            durationMs: result.durationMs,
+            name: result.label,
+          })
+        : createCheckItemStats({
+            durationMs: result.durationMs,
+            issues: result.passed ? 0 : Math.max(1, result.issues.length),
+            name: result.label,
+            total: result.checkedToolCount,
+          }),
   );
   const passed = entryResults.every((result) => result.passed);
 
