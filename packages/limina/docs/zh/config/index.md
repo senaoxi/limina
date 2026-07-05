@@ -1,6 +1,6 @@
 # 配置参考
 
-Limina 的配置入口是工作区内部的 `limina.config.ts`。具体字段按主题拆开阅读：
+Limina 的配置入口是工作区内部的 `limina.config.mts`。具体字段按主题拆开阅读：
 
 - [配置文件](./config-file.md)：`defineConfig`、函数配置、`mode` 和 `command`。
 - [检查器入口](./checkers.md)：`auto` 模式、`config.checkers.<name>`、`preset`、`include`、`exclude` 和固定扩展名。

@@ -730,7 +730,138 @@ export default defineConfig(async ({ mode }) => ({
     }
   });
 
-  it('finds the nearest limina.config.ts from cwd parents by default', async () => {
+  it('finds the nearest limina.config.mts from cwd parents by default', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mts'),
+        `
+export default {};
+`,
+      );
+      await writeText(path.join(rootDir, 'packages/core/package.json'), '{}\n');
+
+      const config = await loadConfig({
+        cwd: path.join(rootDir, 'packages/core'),
+      });
+
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'limina.config.mts')),
+      );
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('prefers limina.config.mts over limina.config.ts', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.ts'),
+        `
+export default {
+  graph: {
+    rules: {
+      tsConfig: {},
+    },
+  },
+};
+`,
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mts'),
+        `
+export default {
+  graph: {
+    rules: {
+      mtsConfig: {},
+    },
+  },
+};
+`,
+      );
+
+      const config = await loadConfig({
+        cwd: rootDir,
+      });
+
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'limina.config.mts')),
+      );
+      expect(Object.keys(config.graph?.rules ?? {})).toEqual(['mtsConfig']);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('prefers limina.config.mjs over limina.config.ts', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.ts'),
+        `
+export default {
+  graph: {
+    rules: {
+      tsConfig: {},
+    },
+  },
+};
+`,
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  graph: {
+    rules: {
+      mjsConfig: {},
+    },
+  },
+};
+`,
+      );
+
+      const config = await loadConfig({
+        cwd: rootDir,
+      });
+
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'limina.config.mjs')),
+      );
+      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
+      expect(Object.keys(config.graph?.rules ?? {})).toEqual(['mjsConfig']);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('loads limina.config.ts when it is the only default config file', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -744,45 +875,13 @@ export default defineConfig(async ({ mode }) => ({
 export default {};
 `,
       );
-      await writeText(path.join(rootDir, 'packages/core/package.json'), '{}\n');
-
-      const config = await loadConfig({
-        cwd: path.join(rootDir, 'packages/core'),
-      });
-
-      expect(toPortablePath(config.configPath)).toBe(
-        toPortablePath(path.join(rootDir, 'limina.config.ts')),
-      );
-      expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
-    } finally {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
-    }
-  });
-
-  it('falls back to limina.config.mjs when no TypeScript config exists', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
-
-    try {
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages: []\n',
-      );
-      await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
-        `
-export default {};
-`,
-      );
 
       const config = await loadConfig({
         cwd: rootDir,
       });
 
       expect(toPortablePath(config.configPath)).toBe(
-        toPortablePath(path.join(rootDir, 'limina.config.mjs')),
+        toPortablePath(path.join(rootDir, 'limina.config.ts')),
       );
       expect(toPortablePath(config.rootDir)).toBe(toPortablePath(rootDir));
     } finally {
@@ -2058,7 +2157,7 @@ throw new Error('parent config should not be imported');
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /Searched for "limina\.config\.ts", "limina\.config\.mts", "limina\.config\.js", "limina\.config\.mjs" from/u,
+        /Searched for "limina\.config\.mts", "limina\.config\.mjs", "limina\.config\.ts", "limina\.config\.js" from/u,
       );
     } finally {
       await rm(rootDir, {

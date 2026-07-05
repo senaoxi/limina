@@ -71,7 +71,7 @@ interface InitSkillInstallResult {
 }
 
 const pnpmWorkspaceFileName = 'pnpm-workspace.yaml';
-const liminaConfigFileName = 'limina.config.ts';
+const liminaConfigFileName = 'limina.config.mts';
 const liminaBuildScriptName = 'limina:build';
 const liminaBuildScriptValue = 'limina checker build';
 const legacyLiminaCheckScriptName = 'limina:check';
@@ -687,7 +687,7 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
     }),
     depth: stepDepth,
     flow: options.flow,
-    label: 'write limina.config.ts',
+    label: `write ${liminaConfigFileName}`,
   });
   await runInitFlowStep({
     action: async () => ({

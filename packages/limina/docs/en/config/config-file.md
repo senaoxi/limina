@@ -1,6 +1,6 @@
 # Config File
 
-Limina reads configuration from `limina.config.ts` inside the workspace. It usually lives at the workspace root:
+Limina reads configuration from `limina.config.mts` inside the workspace. It usually lives at the workspace root:
 
 ```ts
 import { defineConfig } from 'limina';
@@ -10,7 +10,7 @@ export default defineConfig({
 });
 ```
 
-When `--config` is omitted, Limina searches from the current directory upward to the `pnpm` workspace root. In each directory it checks `limina.config.ts`, `limina.config.mts`, `limina.config.js`, then `limina.config.mjs`. Existing `limina.config.mjs` files remain supported, but new projects should prefer `limina.config.ts`.
+When `--config` is omitted, Limina searches from the current directory upward to the `pnpm` workspace root. In each directory it checks `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, then `limina.config.js`. Existing `limina.config.ts` and `limina.config.mjs` files remain supported, but new projects should prefer `limina.config.mts`.
 
 Config can also be a function:
 
@@ -84,7 +84,7 @@ Normal graph and proof checks then stay independent from package output configur
 In a fuller example, the directory can look like this:
 
 ```text
-limina.config.ts
+limina.config.mts
 packages/core/
   src/index.ts
   dist/package.json

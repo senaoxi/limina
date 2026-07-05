@@ -190,7 +190,7 @@ pnpm exec limina graph export --view all
 }
 ```
 
-规则在 `limina.config.ts` 中声明：
+规则在 `limina.config.mts` 中声明：
 
 ```js
 import { defineConfig } from 'limina';

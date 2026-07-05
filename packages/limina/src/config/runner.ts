@@ -801,14 +801,14 @@ export interface ResolvedLiminaConfig extends LiminaConfig {
 export type LiminaConfigLoader = 'native' | 'tsx';
 
 export const DEFAULT_LIMINA_CONFIG_FILES = [
-  'limina.config.ts',
   'limina.config.mts',
-  'limina.config.js',
   'limina.config.mjs',
+  'limina.config.ts',
+  'limina.config.js',
 ] as const;
 
 /**
- * Type helper for limina.config.ts.
+ * Type helper for Limina config files.
  *
  * Accepts a direct config object, a Promise, or a function that receives the
  * current {@link LiminaConfigEnv}.

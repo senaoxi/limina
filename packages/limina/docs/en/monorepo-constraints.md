@@ -242,7 +242,7 @@ Some architectural boundaries cannot be expressed by package names alone. For ex
 }
 ```
 
-```ts [limina.config.ts]
+```ts [limina.config.mts]
 export default defineConfig({
   graph: {
     rules: {

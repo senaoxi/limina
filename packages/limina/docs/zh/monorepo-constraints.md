@@ -242,7 +242,7 @@ import { createClient } from '@acme/core';
 }
 ```
 
-```ts [limina.config.ts]
+```ts [limina.config.mts]
 export default defineConfig({
   graph: {
     rules: {

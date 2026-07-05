@@ -1,6 +1,6 @@
 # Config Reference
 
-Limina configuration starts from `limina.config.ts` inside the workspace. Read the reference by topic:
+Limina configuration starts from `limina.config.mts` inside the workspace. Read the reference by topic:
 
 - [Config File](./config-file.md): `defineConfig`, function config, `mode`, and `command`.
 - [Checker Entries](./checkers.md): auto mode, `config.checkers.<name>`, `preset`, `include`, `exclude`, and fixed extensions.
