@@ -2432,9 +2432,11 @@ export default {
           },
         },
       );
+      const stdout = stripAnsi(result.stdout);
 
-      expect(result.stdout).toContain('limina init');
-      expect(result.stdout).toContain('limina init finished');
+      expect(stdout).not.toContain('limina init');
+      expect(stdout).not.toContain('limina init finished');
+      expect(stdout).not.toContain('[start]');
       expect(
         await readFile(path.join(rootDir, 'limina.config.ts'), 'utf8'),
       ).toContain("mode: 'auto'");

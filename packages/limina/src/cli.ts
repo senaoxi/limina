@@ -37,6 +37,7 @@ import {
   runGraphPrepare,
 } from './commands/graph';
 import { runInit } from './commands/init';
+import { runMigration } from './commands/migration';
 import { runPackageCheck } from './commands/package';
 import { runProofCheck } from './commands/proof';
 import { runReleaseCheck } from './commands/release';
@@ -132,6 +133,8 @@ interface ProofFlags extends GlobalFlags {
 interface InitFlags {
   yes?: boolean;
 }
+
+type MigrationFlags = GlobalFlags;
 
 async function load(
   flags: GlobalFlags,
@@ -389,6 +392,30 @@ function parseDependencyGraphView(
   throw new Error(
     `Invalid graph export --view "${view}". Expected one of: all, artifact, source.`,
   );
+}
+
+function isMissingLiminaConfigError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.toLowerCase().includes('unable to find limina config')
+  );
+}
+
+async function loadMigrationConfig(
+  flags: MigrationFlags,
+): Promise<ResolvedLiminaConfig> {
+  try {
+    return await load(flags, 'migration');
+  } catch (error) {
+    if (isMissingLiminaConfigError(error)) {
+      throw new Error(
+        'Run npx limina init first, then rerun npx limina migration.',
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
 }
 
 function createCliFlow(
@@ -670,15 +697,37 @@ export function createLiminaCli(): ReturnType<typeof cac> {
     .command('init', 'Initialize Limina files for a pnpm workspace')
     .option('--yes', 'Accept all init prompts')
     .action(async (flags: InitFlags) => {
-      const flow = createCliFlow();
-      flow.intro('limina init');
       await runInit({
-        clearScreen: false,
         cwd: process.cwd(),
-        flow,
         yes: flags.yes,
       });
-      await closeCliFlow(flow, 'limina init finished');
+    });
+
+  cli
+    .command('migration', 'Migrate TypeScript configs into Limina governance')
+    .action(async (flags: MigrationFlags) => {
+      const flow = createCliFlow();
+      flow.intro('limina migration');
+      let passed = false;
+
+      try {
+        const config = await loadMigrationConfig(flags);
+
+        await runMigration(config, {
+          flow,
+          flowDepth: 1,
+        });
+        passed = true;
+      } finally {
+        if (!passed) {
+          process.exitCode = 1;
+        }
+
+        await closeCliFlow(
+          flow,
+          passed ? 'limina migration passed' : 'limina migration failed',
+        );
+      }
     });
 
   cli
