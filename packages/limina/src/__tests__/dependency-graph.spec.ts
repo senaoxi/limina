@@ -270,6 +270,51 @@ describe('collectDependencyGraph', () => {
     }
   });
 
+  it('exports source edges for require.resolve imports', async () => {
+    const fixture = await createFixture({
+      'packages/a/package.json': createPackageJson('@example/a', {
+        dependencies: {
+          '@example/b': 'link:../b/dist',
+        },
+      }),
+      'packages/a/src/index.ts':
+        "export const sourcePath = require.resolve('@example/b');\n",
+      'packages/a/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/b/package.json': createPackageJson('@example/b', {
+        exports: {
+          '.': './src/index.ts',
+        },
+      }),
+      'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
+      'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+    });
+
+    try {
+      const graph = await collectDependencyGraph(fixture.config);
+      const edge = findEdge(
+        graph,
+        'pkg:@example/a',
+        'pkg:@example/b',
+        'source',
+      );
+
+      expect(edge).toMatchObject({
+        evidence: [
+          {
+            importer: 'packages/a/src/index.ts',
+            resolvedPath: 'packages/b/src/index.ts',
+            specifier: '@example/b',
+          },
+        ],
+      });
+      expect(
+        findEdge(graph, 'pkg:@example/a', 'pkg:@example/b', 'artifact'),
+      ).toBeUndefined();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('exports artifact edges when imports resolve to artifact entries', async () => {
     const fixture = await createFixture({
       'packages/a/package.json': createPackageJson('@example/a', {

@@ -44,6 +44,7 @@ import {
   isDeclarationFileFamily,
   resolveDeclarationProvider,
 } from '../core/import-graph/declaration-provider';
+import { shouldInferDeclarationReferenceFromImportRecord } from '../core/import-graph/declaration-reference-evidence';
 import {
   createManagedOutputDeclarationLookup,
   type ManagedOutputDeclarationLookup,
@@ -1088,6 +1089,10 @@ function collectExpectedReferenceForImport(options: {
       project: options.project,
       rule: rawDeniedDepRule,
     });
+    return;
+  }
+
+  if (!shouldInferDeclarationReferenceFromImportRecord(options.importRecord)) {
     return;
   }
 

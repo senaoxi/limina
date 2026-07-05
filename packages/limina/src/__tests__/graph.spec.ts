@@ -1794,6 +1794,35 @@ packages:
     }
   });
 
+  it('does not require project references for require.resolve workspace imports', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource:
+          "export const internalPath = require.resolve('@example/internal');\n",
+      }),
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+
+      expect(passed).toBe(true);
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          code: LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
+        }),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('accepts referenced source package exports selected by workspace imports', async () => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({
@@ -2808,6 +2837,43 @@ describe('runGraphCheck graph rules', () => {
       );
 
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('denies require.resolve workspace deps configured in deps', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource:
+          "export const internalPath = require.resolve('@example/internal');\n",
+      }),
+      denyInternalDep,
+    );
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/internal',
+        '@example/internal',
+      );
+
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+
+      expect(passed).toBe(false);
+      expect(issues).toContainEqual(
+        expect.objectContaining({
+          code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+          packageName: '@example/internal',
+          title: 'Denied graph access',
+        }),
+      );
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          code: LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
+        }),
+      );
     } finally {
       await fixture.cleanup();
     }

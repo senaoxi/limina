@@ -46,6 +46,7 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../../check-reporting/codes';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import { createTaskFailureIssue } from '../../check-reporting/snapshot';
 import { resolveDeclarationProvider } from '../import-graph/declaration-provider';
+import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import {
   createManagedOutputDeclarationLookup,
   type ManagedOutputProjectContext,
@@ -1750,6 +1751,10 @@ function inferProjectReferences(
         config.rootDir,
         importAnalysis,
       )) {
+        if (!shouldInferDeclarationReferenceFromImportRecord(importRecord)) {
+          continue;
+        }
+
         const declarationProvider = resolveDeclarationProvider({
           compilerOptions: project.options,
           containingFile: fileName,

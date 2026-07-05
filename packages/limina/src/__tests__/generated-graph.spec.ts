@@ -2302,6 +2302,63 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('does not infer declaration references or provider edges from require.resolve imports', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "export const themePath = require.resolve('../../theme/src/theme');\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              preset: 'tsc',
+              include: ['packages/app/tsconfig.json'],
+            },
+            vue: {
+              preset: 'vue-tsc',
+              include: ['packages/theme/tsconfig.json'],
+            },
+          },
+        },
+      });
+
+      expect(result.manifest.providerEdges).toEqual([]);
+      expect(result.providerEdges).toEqual([]);
+      await expect(
+        readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('writes same-checker declaration references for static imports', async () => {
     const fixture = await createFixture({
       'packages/app/src/index.ts':
