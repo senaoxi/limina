@@ -51,7 +51,7 @@ export type LiminaCheckRunTaskStatus =
   | 'planned'
   | 'running'
   | 'skipped';
-export type LiminaCheckRunCheckItemStatus = 'failed' | 'passed';
+export type LiminaCheckRunCheckItemStatus = 'failed' | 'passed' | 'skipped';
 
 export interface LiminaCheckRunBlockedBy {
   reason?: string;
@@ -227,7 +227,7 @@ function isLiminaCheckRunTaskKind(
 function isLiminaCheckRunCheckItemStatus(
   value: unknown,
 ): value is LiminaCheckRunCheckItemStatus {
-  return value === 'failed' || value === 'passed';
+  return value === 'failed' || value === 'passed' || value === 'skipped';
 }
 
 function isLiminaCheckRunTaskStatus(

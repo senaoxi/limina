@@ -8,6 +8,7 @@ import { access, mkdir, mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'pathe';
+import { LiminaOptionalToolMissingError } from '../execution/tools';
 
 interface KnipUnusedWorkspaceDependencyIssue {
   dependencyName: string;
@@ -84,14 +85,13 @@ export function resolveKnipCliPath(
       path.resolve(path.dirname(knipEntryPath), '../bin/knip.js'),
     );
   } catch (error) {
-    throw new Error(
-      [
-        'Missing peer dependency "knip" required by limina source check.',
-        '  reason: source.knip is enabled and Limina delegates unused source dependency and module detection to Knip.',
-        '  fix: install it in the workspace running Limina, for example with `pnpm add -D knip`.',
-        `  error: ${error instanceof Error ? error.message : String(error)}`,
-      ].join('\n'),
-    );
+    throw new LiminaOptionalToolMissingError({
+      command: 'source check',
+      error,
+      packageName: 'knip',
+      reason:
+        'source.knip is enabled and Limina delegates unused source dependency and module detection to Knip.',
+    });
   }
 }
 

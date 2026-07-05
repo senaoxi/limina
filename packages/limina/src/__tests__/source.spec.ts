@@ -9,7 +9,11 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { runSourceCheck } from '../commands/source';
+import { createTaskProgressReporter } from '../execution/progress';
+import { LiminaOptionalToolMissingError } from '../execution/tools';
+import { LiminaFlowReporter } from '../flow';
 import { SourceLogger } from '../logger';
 import type { KnipCliInvocation } from '../source-check/knip';
 import {
@@ -2124,6 +2128,67 @@ packages:
 
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('skips Knip-backed source usage when knip is not installed', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+    );
+    const chunks: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: {
+        CI: 'true',
+      },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
+      stdout: {
+        isTTY: false,
+      },
+    });
+    const sourceTask = flow.tree('source check');
+    let stats: LiminaCheckRunTaskStats | undefined;
+
+    sourceTask.start();
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          knipRunner: async () => {
+            throw new LiminaOptionalToolMissingError({
+              command: 'source check',
+              error: new Error('Cannot find package "knip"'),
+              packageName: 'knip',
+            });
+          },
+          onStats: (nextStats) => {
+            stats = nextStats;
+          },
+          progress: createTaskProgressReporter(sourceTask),
+          report: {
+            defer: true,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      expect(stripAnsi(chunks.join(''))).toContain(
+        '[skip] knip is not installed; skipping check',
+      );
+      expect(
+        stats?.items?.find((item) => item.name === 'knip source usage'),
+      ).toMatchObject({
+        checksPassed: 0,
+        checksTotal: 0,
+        issues: 0,
+        status: 'skipped',
+      });
     } finally {
       await fixture.cleanup();
     }

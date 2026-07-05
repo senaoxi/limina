@@ -17,7 +17,8 @@ const TASK_DISPLAY_LIMIT = 12;
 const ANSI_RESET = '\u001B[0m';
 const ANSI_GREEN = '\u001B[32m';
 const ANSI_RED = '\u001B[31m';
-const CHECK_STATS_LINE_PATTERN = /^(\s*)([✓✕]) (.*?)(\s{2}units\b.*)$/u;
+const ANSI_YELLOW = '\u001B[33m';
+const CHECK_STATS_LINE_PATTERN = /^(\s*)([✓✕◇]) (.*?)(\s{2}units\b.*)$/u;
 
 type AnsiColor = string;
 
@@ -560,7 +561,15 @@ function getCheckItemTotal(item: LiminaCheckRunCheckItemSummary): number {
 function formatCheckItemStatsMarker(
   item: LiminaCheckRunCheckItemSummary,
 ): string {
-  return item.status === 'passed' ? '✓' : '✕';
+  if (item.status === 'passed') {
+    return '✓';
+  }
+
+  if (item.status === 'skipped') {
+    return '◇';
+  }
+
+  return '✕';
 }
 
 function formatCheckItemStatsLabel(
@@ -577,7 +586,8 @@ function colorCheckStatsLine(line: string): string {
   }
 
   const [, indent = '', marker = '', name = '', rest = ''] = match;
-  const color = marker === '✓' ? ANSI_GREEN : ANSI_RED;
+  const color =
+    marker === '✓' ? ANSI_GREEN : marker === '◇' ? ANSI_YELLOW : ANSI_RED;
   const checkName = name.trimEnd();
   const padding = name.slice(checkName.length);
 

@@ -65,6 +65,10 @@ import type {
 } from '../core/packages/owners';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { TaskProgressReporter } from '../execution/progress';
+import {
+  formatMissingOptionalToolSkipMessage,
+  isLiminaOptionalToolMissingError,
+} from '../execution/tools';
 import type { LiminaFlowReporter } from '../flow';
 import { isNodeBuiltinSpecifier } from '../graph-check/rules';
 import { SourceLogger } from '../logger';
@@ -2285,18 +2289,29 @@ export async function runSourceCheckImpl(
   checkItems.record('tsconfig governance');
 
   checkItems.start('knip source usage');
-  await addKnipBackedSourceProblems({
-    checks,
-    config,
-    generatedGraph,
-    knipRunner: options.knipRunner,
-    ownerModuleSets,
-    problems,
-    sourceIssues,
-    workspaceDependencyDeclarations,
-    workspacePackages: packages,
-  });
-  checkItems.record('knip source usage');
+  try {
+    await addKnipBackedSourceProblems({
+      checks,
+      config,
+      generatedGraph,
+      knipRunner: options.knipRunner,
+      ownerModuleSets,
+      problems,
+      sourceIssues,
+      workspaceDependencyDeclarations,
+      workspacePackages: packages,
+    });
+    checkItems.record('knip source usage');
+  } catch (error) {
+    if (!isLiminaOptionalToolMissingError(error)) {
+      throw error;
+    }
+
+    checkItems.skip(
+      'knip source usage',
+      formatMissingOptionalToolSkipMessage(error.toolName),
+    );
+  }
 
   checkItems.start('source project ownership');
   await addSourceProjectOwnerProblems({

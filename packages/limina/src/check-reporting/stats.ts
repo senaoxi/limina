@@ -35,6 +35,7 @@ export function createCheckCounter(): CheckCounter {
 export interface CheckItemAccumulator {
   getItems(): LiminaCheckRunCheckItemSummary[];
   record(name: string): void;
+  skip(name: string, message?: string): void;
   start(name: string): void;
 }
 
@@ -64,6 +65,22 @@ export function createCheckItemStats(
     issues,
     name: options.name,
     status: issues === 0 && passed >= total ? 'passed' : 'failed',
+  };
+}
+
+export function createSkippedCheckItemStats(options: {
+  durationMs?: number;
+  name: string;
+}): LiminaCheckRunCheckItemSummary {
+  return {
+    checksPassed: 0,
+    checksTotal: 0,
+    ...(options.durationMs === undefined
+      ? {}
+      : { durationMs: Math.max(0, options.durationMs) }),
+    issues: 0,
+    name: options.name,
+    status: 'skipped',
   };
 }
 
@@ -141,6 +158,30 @@ export function createCheckItemAccumulator(
       activeItem = undefined;
       previousIssueCount = nextIssueCount;
       previousCheckCount = nextCheckCount;
+      previousRecordTime = now;
+    },
+    skip(name, message) {
+      if (!activeItem) {
+        startItem(name);
+      }
+      const currentItem = activeItem;
+
+      if (!currentItem) {
+        throw new Error(`Failed to start check item: ${name}`);
+      }
+      const now = performance.now();
+      const item = createSkippedCheckItemStats({
+        durationMs: now - previousRecordTime,
+        name,
+      });
+
+      items.push(item);
+      currentItem.progressItem?.skip(message, {
+        elapsedTimeMs: item.durationMs,
+      });
+      activeItem = undefined;
+      previousIssueCount = getIssueCount();
+      previousCheckCount = getCheckCount();
       previousRecordTime = now;
     },
     start(name) {
