@@ -1,8 +1,11 @@
 import {
+  type CheckerBuildEngine,
   type CheckerProjectParseContext,
   getBuildCheckerSupportedExtensions,
   getCheckerAdapter,
+  getCheckerBuildEngine,
   getCheckerExtensions,
+  isBuildCapablePreset,
   parseCheckerProjectConfigForContext,
   resolveCheckerProjectExtensions,
 } from '#checkers';
@@ -250,6 +253,28 @@ interface InferredProjectReferenceCollection {
   problems: string[];
   providerEdges: GeneratedProviderEdge[];
 }
+
+type ProviderSelectionResult =
+  | {
+      kind: 'selected';
+      project: SourceProject;
+      reason: string;
+    }
+  | {
+      candidates: SourceProject[];
+      kind: 'missing';
+      reason: string;
+    }
+  | {
+      candidates: SourceProject[];
+      kind: 'ambiguous';
+      reason: string;
+    }
+  | {
+      candidates: SourceProject[];
+      kind: 'unsafe-cross-engine';
+      reason: string;
+    };
 
 type AutoCheckerPreset = 'tsc' | 'vue-tsc';
 
@@ -1433,23 +1458,155 @@ function createManagedOutputProjectContexts(
 function isBuildCapableProject(project: SourceProject): boolean {
   const preset = project.context.checkerPresets[0];
 
-  return preset ? getCheckerAdapter(preset)?.execution === 'build' : false;
+  return preset ? isBuildCapablePreset(preset) : false;
+}
+
+function getSourceProjectPreset(project: SourceProject): string {
+  return project.context.checkerPresets[0] ?? 'unknown';
+}
+
+function getSourceProjectBuildEngine(
+  project: SourceProject,
+): CheckerBuildEngine {
+  const preset = project.context.checkerPresets[0];
+
+  return preset ? getCheckerBuildEngine(preset) : 'unknown';
+}
+
+function sortSourceProjectsByChecker(
+  projects: SourceProject[],
+): SourceProject[] {
+  return [...projects].sort(
+    (left, right) =>
+      left.checkerName.localeCompare(right.checkerName) ||
+      left.configPath.localeCompare(right.configPath),
+  );
+}
+
+function formatSourceProjectWithEngine(project: SourceProject): string {
+  return `${project.checkerName} (${getSourceProjectPreset(project)}, engine: ${getSourceProjectBuildEngine(project)})`;
+}
+
+function formatProviderCandidateLines(candidates: SourceProject[]): string[] {
+  return sortSourceProjectsByChecker(candidates).map(
+    (candidate) => `    - ${formatSourceProjectWithEngine(candidate)}`,
+  );
 }
 
 function selectProviderProject(options: {
+  consumerProject: SourceProject;
   providerSourceFilePath: string;
-  sourceCheckerName: string;
   targetProjects: SourceProject[];
-}): SourceProject | null {
+}): ProviderSelectionResult {
   const providerProjects = options.targetProjects
-    .filter((project) => project.checkerName !== options.sourceCheckerName)
+    .filter(
+      (project) => project.checkerName !== options.consumerProject.checkerName,
+    )
     .filter((project) =>
       project.ownedFileNames.includes(options.providerSourceFilePath),
     )
     .filter(isBuildCapableProject)
-    .sort((left, right) => left.checkerName.localeCompare(right.checkerName));
+    .sort(
+      (left, right) =>
+        left.checkerName.localeCompare(right.checkerName) ||
+        left.configPath.localeCompare(right.configPath),
+    );
 
-  return providerProjects[0] ?? null;
+  if (providerProjects.length === 0) {
+    return {
+      candidates: [],
+      kind: 'missing',
+      reason:
+        'no other build-capable checker owns the resolved provider source file.',
+    };
+  }
+
+  const projectsByEngine = new Map<CheckerBuildEngine, SourceProject[]>();
+
+  for (const providerProject of providerProjects) {
+    const engine = getSourceProjectBuildEngine(providerProject);
+
+    projectsByEngine.set(engine, [
+      ...(projectsByEngine.get(engine) ?? []),
+      providerProject,
+    ]);
+  }
+
+  const consumerEngine = getSourceProjectBuildEngine(options.consumerProject);
+  const sameEngineProjects = projectsByEngine.get(consumerEngine) ?? [];
+
+  if (sameEngineProjects.length === 1) {
+    return {
+      kind: 'selected',
+      project: sameEngineProjects[0]!,
+      reason:
+        'exactly one build-capable provider checker matches the consumer build engine.',
+    };
+  }
+
+  if (sameEngineProjects.length > 1) {
+    return {
+      candidates: providerProjects,
+      kind: 'ambiguous',
+      reason:
+        'multiple build-capable provider checkers match the consumer build engine.',
+    };
+  }
+
+  return {
+    candidates: providerProjects,
+    kind: 'unsafe-cross-engine',
+    reason:
+      'only different-engine build-capable provider checkers own the resolved provider source file.',
+  };
+}
+
+function addOutputBuildOwnerCollisionProblems(options: {
+  config: ResolvedLiminaConfig;
+  problems: string[];
+  projects: SourceProject[];
+}): void {
+  const outputOwnersBySourceConfigPath = new Map<string, SourceProject[]>();
+
+  for (const project of options.projects) {
+    if (!project.outputOptions || !isBuildCapableProject(project)) {
+      continue;
+    }
+
+    outputOwnersBySourceConfigPath.set(project.configPath, [
+      ...(outputOwnersBySourceConfigPath.get(project.configPath) ?? []),
+      project,
+    ]);
+  }
+
+  for (const [
+    sourceConfigPath,
+    outputBuildOwners,
+  ] of outputOwnersBySourceConfigPath) {
+    if (outputBuildOwners.length < 2) {
+      continue;
+    }
+
+    options.problems.push(
+      [
+        'Output build cache boundary conflict:',
+        `  config: ${toRelativePath(options.config.rootDir, sourceConfigPath)}`,
+        `  output tsbuildinfo: ${toRelativePath(
+          options.config.rootDir,
+          getGeneratedOutputTsBuildInfoPath({
+            rootDir: options.config.rootDir,
+            sourceConfigPath,
+          }),
+        )}`,
+        '  build owners:',
+        ...sortSourceProjectsByChecker(outputBuildOwners).map(
+          (project) => `    - ${formatSourceProjectWithEngine(project)}`,
+        ),
+        '  reason: generated output build info is keyed by source config path and is not checker-namespaced.',
+        '  fix: choose one output build checker owner for this config, or split output-enabled configs so each output build boundary has one owner.',
+      ].join('\n'),
+    );
+  }
 }
 
 interface UnsupportedCrossCheckerProviderFile {
@@ -1653,6 +1810,50 @@ function formatMissingCrossCheckerProviderProblem(options: {
   ].join('\n');
 }
 
+function formatAmbiguousCrossCheckerProviderProblem(options: {
+  candidates: SourceProject[];
+  config: ResolvedLiminaConfig;
+  importRecord: ReturnType<typeof collectImportsFromFile>[number];
+  project: SourceProject;
+  resolvedFilePath: string;
+  targetSourceConfigPath: string;
+}): string {
+  return [
+    'Ambiguous cross-checker declaration provider:',
+    `  consumer checker: ${options.project.checkerName} (${getSourceProjectPreset(options.project)})`,
+    `  consumer config: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
+    `  target config: ${toRelativePath(options.config.rootDir, options.targetSourceConfigPath)}`,
+    `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
+    '  candidates:',
+    ...formatProviderCandidateLines(options.candidates),
+    '  reason: multiple build-capable provider checkers can own the resolved file, and Limina cannot choose a stable generated declaration provider.',
+    '  fix: make checker ownership unambiguous with config.checkers.<checker>.include/exclude.',
+  ].join('\n');
+}
+
+function formatUnsafeCrossEngineProviderProblem(options: {
+  candidates: SourceProject[];
+  config: ResolvedLiminaConfig;
+  importRecord: ReturnType<typeof collectImportsFromFile>[number];
+  project: SourceProject;
+  resolvedFilePath: string;
+}): string {
+  return [
+    'Unsafe cross-engine declaration provider:',
+    `  consumer checker: ${options.project.checkerName} (${getSourceProjectPreset(options.project)}, engine: ${getSourceProjectBuildEngine(options.project)})`,
+    `  consumer config: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
+    '  provider candidates:',
+    ...formatProviderCandidateLines(options.candidates),
+    `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
+    '  reason: generated project references must not cross checker build-engine boundaries in V1 because they can make generated graph and cache ownership unstable.',
+    '  fix: make the target config owned by the consumer checker, choose one build checker owner, or split the dependency through an explicit declaration/artifact boundary.',
+  ].join('\n');
+}
+
 function formatOxcOnlyDeclarationProviderProblem(options: {
   config: ResolvedLiminaConfig;
   importRecord: ReturnType<typeof collectImportsFromFile>[number];
@@ -1841,13 +2042,13 @@ function inferProjectReferences(
           );
 
           if (targetProjects.length > 0) {
-            const providerProject = selectProviderProject({
+            const providerSelection = selectProviderProject({
+              consumerProject: project,
               providerSourceFilePath,
-              sourceCheckerName: project.checkerName,
               targetProjects,
             });
 
-            if (!providerProject) {
+            if (providerSelection.kind === 'missing') {
               problems.push(
                 formatMissingCrossCheckerProviderProblem({
                   config,
@@ -1856,6 +2057,33 @@ function inferProjectReferences(
                   resolvedFilePath,
                   targetProjects,
                   targetSourceConfigPath,
+                }),
+              );
+              continue;
+            }
+
+            if (providerSelection.kind === 'ambiguous') {
+              problems.push(
+                formatAmbiguousCrossCheckerProviderProblem({
+                  candidates: providerSelection.candidates,
+                  config,
+                  importRecord,
+                  project,
+                  resolvedFilePath,
+                  targetSourceConfigPath,
+                }),
+              );
+              continue;
+            }
+
+            if (providerSelection.kind === 'unsafe-cross-engine') {
+              problems.push(
+                formatUnsafeCrossEngineProviderProblem({
+                  candidates: providerSelection.candidates,
+                  config,
+                  importRecord,
+                  project,
+                  resolvedFilePath,
                 }),
               );
               continue;
@@ -1871,6 +2099,7 @@ function inferProjectReferences(
               continue;
             }
 
+            const providerProject = providerSelection.project;
             const providerEdge: GeneratedProviderEdge = {
               file: formatImportRecordLocation(config.rootDir, importRecord),
               fromChecker: project.checkerName,
@@ -2637,6 +2866,12 @@ export async function prepareGeneratedTsconfigGraph(
   });
 
   const allProjects = [...projectsByChecker.values()].flat();
+
+  addOutputBuildOwnerCollisionProblems({
+    config,
+    problems,
+    projects: allProjects,
+  });
 
   addUnsupportedSourceConfigExtensionProblems({
     config,
