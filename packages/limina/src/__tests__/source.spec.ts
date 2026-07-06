@@ -227,6 +227,23 @@ function createNodeModulePackage(
   };
 }
 
+function createAliasedNodeModulePackage(options: {
+  declarations: string;
+  packageName: string;
+  requestedName: string;
+}): Record<string, string> {
+  const packageDirectory = `app/node_modules/${options.requestedName}`;
+
+  return {
+    [`${packageDirectory}/index.d.ts`]: options.declarations,
+    [`${packageDirectory}/package.json`]: stringifyConfig({
+      name: options.packageName,
+      type: 'module',
+      types: './index.d.ts',
+    }),
+  };
+}
+
 function createWorkspaceRootFiles(
   workspaces: string[] = ['packages/*'],
 ): Record<string, string> {
@@ -814,6 +831,136 @@ packages:
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('authorizes npm alias dependencies by the imported package key', async () => {
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            execa: 'npm:safe-execa@0.3.0',
+          },
+        },
+        source:
+          "import type { ExecaResult } from 'execa';\nexport type T = ExecaResult;\n",
+      }),
+      ...createAliasedNodeModulePackage({
+        declarations: 'export interface ExecaResult { stdout: string }\n',
+        packageName: 'safe-execa',
+        requestedName: 'execa',
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('authorizes catalog alias dependencies by the imported package key', async () => {
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            execa: 'catalog:',
+          },
+        },
+        source:
+          "import type { ExecaResult } from 'execa';\nexport type T = ExecaResult;\n",
+      }),
+      ...createAliasedNodeModulePackage({
+        declarations: 'export interface ExecaResult { stdout: string }\n',
+        packageName: 'safe-execa',
+        requestedName: 'execa',
+      }),
+      'pnpm-workspace.yaml': `
+packages:
+  - app
+catalog:
+  execa: npm:safe-execa@0.3.0
+`,
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects alias imports declared only by the resolved package name', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            'safe-execa': '0.3.0',
+          },
+        },
+        source:
+          "import type { ExecaResult } from 'execa';\nexport type T = ExecaResult;\n",
+      }),
+      ...createAliasedNodeModulePackage({
+        declarations: 'export interface ExecaResult { stdout: string }\n',
+        packageName: 'safe-execa',
+        requestedName: 'execa',
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('Unauthorized bare package import');
+      expect(errors).toContain('imported specifier: execa');
+      expect(errors).toContain('package: execa');
+      expect(errors).toContain('resolved dependency specifier: safe-execa');
+      expect(errors).toContain('Declare "execa" in app/package.json');
+      expect(errors).not.toContain('Declare "safe-execa" in app/package.json');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not authorize resolved @types packages by @types manifest keys alone', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture({
+      ...createPackageFixture({
+        manifest: {
+          dependencies: {
+            '@types/etag': '^1.0.0',
+          },
+        },
+        source:
+          "import etag from 'etag';\nexport const value = etag('body');\n",
+      }),
+      'app/node_modules/@types/etag/index.d.ts':
+        'declare function etag(value: string): string;\nexport default etag;\n',
+      'app/node_modules/@types/etag/package.json': stringifyConfig({
+        name: '@types/etag',
+        types: './index.d.ts',
+      }),
+    });
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('package: etag');
+      expect(errors).toContain('resolved dependency specifier: @types/etag');
+      expect(errors).toContain(
+        '"@types/etag" only supplies declarations and does not authorize "etag".',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });

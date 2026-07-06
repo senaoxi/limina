@@ -405,22 +405,34 @@ function isDependencyAuthorizedBySourceAuthority(options: {
   });
 }
 
-function getPackageNameForAuthorization(options: {
+interface PackageImportAuthorityTarget {
+  requestedPackageName: string;
+  resolvedPackageName?: string;
+}
+
+function getBarePackageImportAuthorityTarget(options: {
   importRecord: ImportRecord;
   resolvedPackageName?: string;
-}): string {
-  const fallbackPackageName = getPackageRootSpecifier(
+}): PackageImportAuthorityTarget {
+  const requestedPackageName = getPackageRootSpecifier(
     options.importRecord.specifier,
   );
 
-  if (
-    options.resolvedPackageName?.startsWith('@types/') &&
-    fallbackPackageName !== options.resolvedPackageName
-  ) {
-    return fallbackPackageName;
-  }
+  return {
+    requestedPackageName,
+    ...(options.resolvedPackageName
+      ? { resolvedPackageName: options.resolvedPackageName }
+      : {}),
+  };
+}
 
-  return options.resolvedPackageName ?? fallbackPackageName;
+function getResolvedPackageNameDiagnostic(
+  authorityTarget: PackageImportAuthorityTarget,
+): string | undefined {
+  return authorityTarget.resolvedPackageName &&
+    authorityTarget.resolvedPackageName !== authorityTarget.requestedPackageName
+    ? authorityTarget.resolvedPackageName
+    : undefined;
 }
 
 function createValueMatcher(pattern: string): (value: string) => boolean {
@@ -719,10 +731,7 @@ function addPackageImportArtifactAuthorizationProblem(options: {
     return;
   }
 
-  const packageName = getPackageNameForAuthorization({
-    importRecord: options.importRecord,
-    resolvedPackageName: options.packageInfo.name,
-  });
+  const packageName = options.packageInfo.name;
 
   if (
     isDependencyAuthorizedBySourceAuthority({
@@ -747,9 +756,6 @@ function addPackageImportArtifactAuthorizationProblem(options: {
       rootPackage: options.rootPackage,
     }),
     config: options.config,
-    ...(packageName === options.packageInfo.name
-      ? {}
-      : { dependencySpecifier: options.packageInfo.name }),
     importRecord: options.importRecord,
     owner: options.owner,
     packageName,
@@ -1710,10 +1716,10 @@ function addResolvedOtherOwnerBarePackageProblems(options: {
   rootPackage: WorkspacePackage | null;
   target: Extract<ResolvedPackageTarget, { kind: 'other-owner' }>;
 }): void {
-  const packageName =
+  const resolvedPackageName =
     options.target.packageInfo.name ?? options.target.targetOwner.name;
 
-  if (!packageName) {
+  if (!resolvedPackageName) {
     addResolvedPackageWithoutNameProblem({
       config: options.config,
       importRecord: options.importRecord,
@@ -1724,10 +1730,12 @@ function addResolvedOtherOwnerBarePackageProblems(options: {
     return;
   }
 
-  const authorizedPackageName = getPackageNameForAuthorization({
+  const authorityTarget = getBarePackageImportAuthorityTarget({
     importRecord: options.importRecord,
-    resolvedPackageName: packageName,
+    resolvedPackageName,
   });
+  const resolvedPackageNameDiagnostic =
+    getResolvedPackageNameDiagnostic(authorityTarget);
 
   if (
     isDependencyAuthorizedBySourceAuthority({
@@ -1735,7 +1743,7 @@ function addResolvedOtherOwnerBarePackageProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
-      packageName: authorizedPackageName,
+      packageName: authorityTarget.requestedPackageName,
       rootPackage: options.rootPackage,
     })
   ) {
@@ -1748,16 +1756,16 @@ function addResolvedOtherOwnerBarePackageProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
-      packageName: authorizedPackageName,
+      packageName: authorityTarget.requestedPackageName,
       rootPackage: options.rootPackage,
     }),
     config: options.config,
-    ...(authorizedPackageName === packageName
-      ? {}
-      : { dependencySpecifier: packageName }),
+    ...(resolvedPackageNameDiagnostic
+      ? { dependencySpecifier: resolvedPackageNameDiagnostic }
+      : {}),
     importRecord: options.importRecord,
     owner: options.owner,
-    packageName: authorizedPackageName,
+    packageName: authorityTarget.requestedPackageName,
     problems: options.problems,
     workspacePackage: options.target.workspacePackage,
   });
@@ -1783,10 +1791,12 @@ function addResolvedArtifactBarePackageProblems(options: {
     return;
   }
 
-  const packageName = getPackageNameForAuthorization({
+  const authorityTarget = getBarePackageImportAuthorityTarget({
     importRecord: options.importRecord,
     resolvedPackageName: options.target.packageInfo.name,
   });
+  const resolvedPackageNameDiagnostic =
+    getResolvedPackageNameDiagnostic(authorityTarget);
 
   if (
     isDependencyAuthorizedBySourceAuthority({
@@ -1794,7 +1804,7 @@ function addResolvedArtifactBarePackageProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
-      packageName,
+      packageName: authorityTarget.requestedPackageName,
       rootPackage: options.rootPackage,
     })
   ) {
@@ -1807,16 +1817,16 @@ function addResolvedArtifactBarePackageProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
-      packageName,
+      packageName: authorityTarget.requestedPackageName,
       rootPackage: options.rootPackage,
     }),
     config: options.config,
-    ...(packageName === options.target.packageInfo.name
-      ? {}
-      : { dependencySpecifier: options.target.packageInfo.name }),
+    ...(resolvedPackageNameDiagnostic
+      ? { dependencySpecifier: resolvedPackageNameDiagnostic }
+      : {}),
     importRecord: options.importRecord,
     owner: options.owner,
-    packageName,
+    packageName: authorityTarget.requestedPackageName,
     problems: options.problems,
     workspacePackage: null,
   });
