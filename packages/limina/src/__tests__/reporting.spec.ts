@@ -187,6 +187,113 @@ describe('check reporting', () => {
     expect(plainReport).not.toContain('Show all details');
   });
 
+  it('keeps graph prepare raw detail lines behind verbose output', () => {
+    const issue = {
+      code: 'LIMINA_GRAPH_PREPARE_FAILED',
+      detector: 'graph-prepare',
+      detailLines: [
+        'Unsafe cross-engine declaration provider:',
+        '  raw verbose-only detail',
+      ],
+      evidence: [
+        { label: 'consumer', value: 'typescript (tsc, engine: tsc)' },
+        {
+          label: 'example',
+          lines: [
+            'file: packages/app/src/index.ts:1:1',
+            'imported specifier: ../../theme/src/theme',
+            'resolved file: packages/theme/src/theme.ts',
+          ],
+        },
+      ],
+      filePath: 'packages/app/src/index.ts',
+      fix: 'Make the target config owned by the consumer checker.',
+      reason:
+        'Generated project references must not cross checker build-engine boundaries in V1.',
+      summary:
+        'typescript cannot use provider candidates from different build engines.',
+      task: 'graph:prepare' as const,
+      title: 'Unsafe cross-engine declaration provider',
+      verifyCommands: ['limina graph prepare'],
+    };
+    const plainDefaultReport = stripAnsi(
+      formatCheckIssueHumanReport({
+        command: 'limina check',
+        issues: [issue],
+        title: 'Check issue details',
+      }),
+    );
+    const plainVerboseReport = stripAnsi(
+      formatCheckIssueHumanReport({
+        command: 'limina check',
+        issues: [issue],
+        title: 'Check issue details',
+        verbose: true,
+      }),
+    );
+
+    expect(plainDefaultReport).toContain('evidence:');
+    expect(plainDefaultReport).toContain(
+      'Show all details: limina check --verbose',
+    );
+    expect(plainDefaultReport).toContain(
+      'typescript cannot use provider candidates',
+    );
+    expect(plainDefaultReport).not.toContain('raw verbose-only detail');
+    expect(plainVerboseReport).toContain('raw verbose-only detail');
+    expect(plainVerboseReport).toContain('details:');
+  });
+
+  it('caps grouped graph prepare examples by default', () => {
+    const report = formatCheckIssueHumanReport({
+      command: 'limina check',
+      issues: Array.from({ length: 6 }, (_, index) => {
+        const file = `packages/app/src/file-${index.toString().padStart(2, '0')}.ts`;
+
+        return {
+          code: 'LIMINA_GRAPH_PREPARE_FAILED',
+          detector: 'graph-prepare',
+          detailLines: [
+            'Unsafe cross-engine declaration provider:',
+            `  file: ${file}:1:1`,
+            '  raw verbose-only detail',
+          ],
+          evidence: [
+            {
+              label: 'example',
+              lines: [
+                `file: ${file}:1:1`,
+                `imported specifier: ./dep-${index}`,
+              ],
+            },
+          ],
+          filePath: file,
+          fix: 'Make the target config owned by the consumer checker.',
+          reason:
+            'Generated project references must not cross checker build-engine boundaries in V1.',
+          summary:
+            'typescript cannot use provider candidates from different build engines.',
+          task: 'graph:prepare' as const,
+          title: 'Unsafe cross-engine declaration provider',
+          verifyCommands: ['limina graph prepare'],
+        };
+      }),
+      title: 'Check issue details',
+    });
+    const plainReport = stripAnsi(report);
+
+    expect(plainReport).toContain(
+      'Unsafe cross-engine declaration provider  6 issues',
+    );
+    expect(plainReport).toContain('examples:');
+    expect(plainReport).toContain('file: packages/app/src/file-00.ts:1:1');
+    expect(plainReport).toContain('file: packages/app/src/file-04.ts:1:1');
+    expect(plainReport).not.toContain('file: packages/app/src/file-05.ts:1:1');
+    expect(plainReport).toContain(
+      '... 1 more. Run with --verbose to show all details.',
+    );
+  });
+
   it('deduplicates detail lines that exactly match evidence lines', () => {
     const diagnosticLines = [
       'Tsconfig search cannot determine module owner:',

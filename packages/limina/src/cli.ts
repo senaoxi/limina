@@ -924,6 +924,10 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runGraphPrepare(config, {
         clearScreen: false,
         flow,
+        report: {
+          command: 'limina graph prepare',
+          verbose: flags.verbose,
+        },
       });
 
       if (!passed) {

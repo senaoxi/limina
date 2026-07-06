@@ -47,7 +47,12 @@ import { glob } from 'tinyglobby';
 import type ts from 'typescript';
 import { LIMINA_CHECK_ISSUE_CODES } from '../../check-reporting/codes';
 import { LiminaStructuredError } from '../../check-reporting/errors';
-import { createTaskFailureIssue } from '../../check-reporting/snapshot';
+import {
+  createTaskFailureIssue,
+  type LiminaCheckIssue,
+  type LiminaCheckIssueEvidence,
+  type LiminaCheckIssueLocation,
+} from '../../check-reporting/snapshot';
 import { resolveDeclarationProvider } from '../import-graph/declaration-provider';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import {
@@ -300,14 +305,22 @@ function stringifyJson(value: unknown): string {
 }
 
 function formatProblemList(problems: string[], fallback: string): string {
-  return problems.join('\n\n') || fallback;
+  if (problems.length === 0) {
+    return fallback;
+  }
+
+  if (problems.length === 1) {
+    return getGeneratedGraphProblemTitle(problems[0]!.split('\n'));
+  }
+
+  return `${problems.length} generated graph preparation problems.`;
 }
 
-function findGeneratedGraphProblemLineValue(
-  problem: string,
+function findGeneratedGraphProblemLineValueFromLines(
+  lines: readonly string[],
   labels: readonly string[],
 ): string | undefined {
-  for (const line of problem.split('\n')) {
+  for (const line of lines) {
     const trimmedLine = line.trimStart();
 
     for (const label of labels) {
@@ -324,6 +337,317 @@ function findGeneratedGraphProblemLineValue(
   return undefined;
 }
 
+function getGeneratedGraphProblemTitle(lines: readonly string[]): string {
+  return lines[0]?.replace(/:+$/u, '') || 'Generated graph preparation failed';
+}
+
+function collectGeneratedGraphProblemBlockLines(
+  lines: readonly string[],
+  label: string,
+): string[] {
+  const startIndex = lines.findIndex(
+    (line) => line.trimStart() === `${label}:`,
+  );
+
+  if (startIndex === -1) {
+    return [];
+  }
+
+  const blockLines: string[] = [];
+
+  for (const line of lines.slice(startIndex + 1)) {
+    if (/^ {2}[A-Za-z][A-Za-z ]*:/u.test(line)) {
+      break;
+    }
+
+    if (!line.trim()) {
+      continue;
+    }
+
+    blockLines.push(line.replace(/^ {4}/u, '').trimEnd());
+  }
+
+  return blockLines;
+}
+
+function isNonEmptyGeneratedGraphEvidence(
+  evidence: LiminaCheckIssueEvidence | undefined,
+): evidence is LiminaCheckIssueEvidence {
+  return Boolean(evidence?.value || evidence?.lines?.length);
+}
+
+function isNonEmptyGeneratedGraphLocation(
+  location: LiminaCheckIssueLocation | undefined,
+): location is LiminaCheckIssueLocation {
+  return Boolean(
+    location?.filePath || location?.packageManifestPath || location?.scope,
+  );
+}
+
+function getGeneratedGraphProblemLine(
+  lines: readonly string[],
+  label: string,
+): string | undefined {
+  const value = findGeneratedGraphProblemLineValueFromLines(lines, [label]);
+
+  return value ? `${label}: ${value}` : undefined;
+}
+
+function createImportExampleEvidence(
+  lines: readonly string[],
+  extraLabels: readonly string[] = [],
+): LiminaCheckIssueEvidence | undefined {
+  const exampleLines = ['file', 'imported specifier', 'resolved file']
+    .concat([...extraLabels])
+    .map((label) => getGeneratedGraphProblemLine(lines, label))
+    .filter((line): line is string => Boolean(line));
+
+  return exampleLines.length > 0
+    ? { label: 'example', lines: exampleLines }
+    : undefined;
+}
+
+function getCheckerDescriptorName(descriptor: string | undefined): string {
+  if (!descriptor) {
+    return 'Consumer checker';
+  }
+
+  const openParenthesisIndex = descriptor.indexOf('(');
+
+  if (openParenthesisIndex <= 0) {
+    return descriptor;
+  }
+
+  const descriptorPrefix = descriptor.slice(0, openParenthesisIndex);
+  const checkerName = descriptorPrefix.trimEnd();
+
+  return checkerName.length === descriptorPrefix.length
+    ? descriptor
+    : checkerName;
+}
+
+function createGraphPrepareIssue(options: {
+  config: ResolvedLiminaConfig;
+  detailLines: readonly string[];
+  evidence: readonly (LiminaCheckIssueEvidence | undefined)[];
+  filePath?: string;
+  fix: string;
+  locations?: readonly (LiminaCheckIssueLocation | undefined)[];
+  reason: string;
+  summary: string;
+  title: string;
+}): LiminaCheckIssue {
+  const locations = options.locations?.filter(isNonEmptyGeneratedGraphLocation);
+  const evidence = options.evidence.filter(isNonEmptyGeneratedGraphEvidence);
+
+  return createTaskFailureIssue({
+    code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
+    detailLines: options.detailLines,
+    detector: 'graph-prepare',
+    domain: 'graph',
+    evidence,
+    filePath: options.filePath,
+    fix: options.fix,
+    locations: locations && locations.length > 0 ? locations : undefined,
+    reason: options.reason,
+    rootDir: options.config.rootDir,
+    summary: options.summary,
+    task: 'graph:prepare',
+    title: options.title,
+    verifyCommands: ['limina graph prepare'],
+  });
+}
+
+function createUnsafeCrossEngineProviderIssue(options: {
+  config: ResolvedLiminaConfig;
+  lines: readonly string[];
+}): LiminaCheckIssue {
+  const consumer = findGeneratedGraphProblemLineValueFromLines(options.lines, [
+    'consumer checker',
+  ]);
+  const consumerConfig = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['consumer config'],
+  );
+  const targetConfig = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['target config'],
+  );
+  const filePath = findGeneratedGraphProblemLineValueFromLines(options.lines, [
+    'file',
+  ]);
+  const resolvedFile = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['resolved file'],
+  );
+  const providerCandidates = collectGeneratedGraphProblemBlockLines(
+    options.lines,
+    'provider candidates',
+  );
+
+  return createGraphPrepareIssue({
+    config: options.config,
+    detailLines: options.lines,
+    evidence: [
+      consumer ? { label: 'consumer', value: consumer } : undefined,
+      providerCandidates.length > 0
+        ? { label: 'provider candidates', lines: providerCandidates }
+        : undefined,
+      createImportExampleEvidence(options.lines, ['target config']),
+    ],
+    filePath,
+    fix: 'Make the target config owned by the consumer checker, choose one build checker owner, or split the dependency through an explicit declaration/artifact boundary.',
+    locations: [
+      { filePath: consumerConfig, label: 'consumer config' },
+      { filePath: targetConfig, label: 'target config' },
+      { filePath: resolvedFile, label: 'resolved file' },
+    ],
+    reason:
+      'Generated project references must not cross checker build-engine boundaries in V1.',
+    summary: `${getCheckerDescriptorName(
+      consumer,
+    )} cannot use provider candidates from different build engines.`,
+    title: 'Unsafe cross-engine declaration provider',
+  });
+}
+
+function createAmbiguousCrossCheckerProviderIssue(options: {
+  config: ResolvedLiminaConfig;
+  lines: readonly string[];
+}): LiminaCheckIssue {
+  const consumerConfig = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['consumer config'],
+  );
+  const targetConfig = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['target config'],
+  );
+  const filePath = findGeneratedGraphProblemLineValueFromLines(options.lines, [
+    'file',
+  ]);
+  const resolvedFile = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['resolved file'],
+  );
+  const candidates = collectGeneratedGraphProblemBlockLines(
+    options.lines,
+    'candidates',
+  );
+
+  return createGraphPrepareIssue({
+    config: options.config,
+    detailLines: options.lines,
+    evidence: [
+      candidates.length > 0
+        ? { label: 'candidates', lines: candidates }
+        : undefined,
+      createImportExampleEvidence(options.lines),
+    ],
+    filePath,
+    fix: 'Make checker ownership unambiguous with config.checkers.<checker>.include/exclude.',
+    locations: [
+      { filePath: consumerConfig, label: 'consumer config' },
+      { filePath: targetConfig, label: 'target config' },
+      { filePath: resolvedFile, label: 'resolved file' },
+    ],
+    reason: 'Limina cannot choose a stable generated declaration provider.',
+    summary:
+      'Multiple build-capable provider checkers can own the resolved file.',
+    title: 'Ambiguous cross-checker declaration provider',
+  });
+}
+
+function createOutputBuildCacheBoundaryConflictIssue(options: {
+  config: ResolvedLiminaConfig;
+  lines: readonly string[];
+}): LiminaCheckIssue {
+  const sourceConfig = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['config'],
+  );
+  const outputTsBuildInfo = findGeneratedGraphProblemLineValueFromLines(
+    options.lines,
+    ['output tsbuildinfo'],
+  );
+  const buildOwners = collectGeneratedGraphProblemBlockLines(
+    options.lines,
+    'build owners',
+  );
+
+  return createGraphPrepareIssue({
+    config: options.config,
+    detailLines: options.lines,
+    evidence: [
+      buildOwners.length > 0
+        ? { label: 'build owners', lines: buildOwners }
+        : undefined,
+    ],
+    filePath: sourceConfig,
+    fix: 'Choose one output build checker owner for this config, or split output-enabled configs so each output build boundary has one owner.',
+    locations: [
+      { filePath: sourceConfig, label: 'source config' },
+      { filePath: outputTsBuildInfo, label: 'output tsbuildinfo' },
+    ],
+    reason:
+      'Generated output build info is keyed by source config path and is not checker-namespaced.',
+    summary:
+      'Multiple checkers would generate output build configs for the same output-enabled source config.',
+    title: 'Output build cache boundary conflict',
+  });
+}
+
+function createGeneratedGraphProblemIssue(options: {
+  config: ResolvedLiminaConfig;
+  fallback: string;
+  problem: string;
+}): LiminaCheckIssue {
+  const lines = options.problem.split('\n');
+  const title = getGeneratedGraphProblemTitle(lines);
+
+  switch (title) {
+    case 'Unsafe cross-engine declaration provider': {
+      return createUnsafeCrossEngineProviderIssue({
+        config: options.config,
+        lines,
+      });
+    }
+    case 'Ambiguous cross-checker declaration provider': {
+      return createAmbiguousCrossCheckerProviderIssue({
+        config: options.config,
+        lines,
+      });
+    }
+    case 'Output build cache boundary conflict': {
+      return createOutputBuildCacheBoundaryConflictIssue({
+        config: options.config,
+        lines,
+      });
+    }
+    default: {
+      return createTaskFailureIssue({
+        code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
+        detailLines: lines,
+        filePath:
+          findGeneratedGraphProblemLineValueFromLines(lines, [
+            'config',
+            'file',
+            'project',
+            'source config',
+          ]) ?? options.config.configPath,
+        fix: 'Inspect the generated graph diagnostic, then update checker.include, tsconfig references, or generated graph configuration before rerunning `limina graph prepare`.',
+        reason:
+          findGeneratedGraphProblemLineValueFromLines(lines, ['reason']) ??
+          options.fallback,
+        rootDir: options.config.rootDir,
+        task: 'graph:prepare',
+        title,
+        verifyCommands: ['limina graph prepare'],
+      });
+    }
+  }
+}
+
 function createGeneratedGraphStructuredError(options: {
   config: ResolvedLiminaConfig;
   fallback: string;
@@ -334,26 +658,10 @@ function createGeneratedGraphStructuredError(options: {
   return new LiminaStructuredError(
     message,
     options.problems.map((problem) =>
-      createTaskFailureIssue({
-        code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
-        detailLines: problem.split('\n'),
-        filePath:
-          findGeneratedGraphProblemLineValue(problem, [
-            'config',
-            'file',
-            'project',
-            'source config',
-          ]) ?? options.config.configPath,
-        fix: 'Inspect the generated graph diagnostic, then update checker.include, tsconfig references, or generated graph configuration before rerunning `limina graph prepare`.',
-        reason:
-          findGeneratedGraphProblemLineValue(problem, ['reason']) ??
-          options.fallback,
-        rootDir: options.config.rootDir,
-        task: 'graph:prepare',
-        title:
-          problem.split('\n')[0]?.replace(/:+$/u, '') ||
-          'Generated graph preparation failed',
-        verifyCommands: ['limina graph prepare'],
+      createGeneratedGraphProblemIssue({
+        config: options.config,
+        fallback: options.fallback,
+        problem,
       }),
     ),
   );
@@ -1839,11 +2147,13 @@ function formatUnsafeCrossEngineProviderProblem(options: {
   importRecord: ReturnType<typeof collectImportsFromFile>[number];
   project: SourceProject;
   resolvedFilePath: string;
+  targetSourceConfigPath: string;
 }): string {
   return [
     'Unsafe cross-engine declaration provider:',
     `  consumer checker: ${options.project.checkerName} (${getSourceProjectPreset(options.project)}, engine: ${getSourceProjectBuildEngine(options.project)})`,
     `  consumer config: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
+    `  target config: ${toRelativePath(options.config.rootDir, options.targetSourceConfigPath)}`,
     '  provider candidates:',
     ...formatProviderCandidateLines(options.candidates),
     `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
@@ -2084,6 +2394,7 @@ function inferProjectReferences(
                   importRecord,
                   project,
                   resolvedFilePath,
+                  targetSourceConfigPath,
                 }),
               );
               continue;

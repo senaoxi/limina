@@ -101,11 +101,33 @@ export async function runGraphPrepare(
         rootDir: config.rootDir,
       });
     }
+
+    if (!options.report?.defer && error instanceof LiminaStructuredError) {
+      GraphLogger.error(
+        formatCheckIssueHumanReport({
+          command: options.report?.command ?? 'limina graph prepare',
+          issues,
+          title: 'Graph prepare summary',
+          verbose: options.report?.verbose,
+        }),
+      );
+    }
+
+    const errorMessage = formatErrorMessage(error);
+    const showRawStructuredError =
+      !(error instanceof LiminaStructuredError) || options.report?.verbose;
+
     GraphLogger.error(
-      `graph prepare failed: ${formatErrorMessage(error)}`,
+      showRawStructuredError
+        ? `graph prepare failed: ${errorMessage}`
+        : 'graph prepare failed',
       elapsed(),
     );
-    task?.fail('graph prepare failed', { error });
+    if (showRawStructuredError) {
+      task?.fail('graph prepare failed', { error });
+    } else {
+      task?.fail('graph prepare failed');
+    }
     throw error;
   }
 }

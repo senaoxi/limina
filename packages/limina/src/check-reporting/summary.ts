@@ -215,7 +215,15 @@ function severityRank(severity: string | undefined): number {
   return 1;
 }
 
+function isStructuredGraphPrepareIssue(issue: LiminaCheckIssue): boolean {
+  return issue.task === 'graph:prepare' && issue.detector === 'graph-prepare';
+}
+
 function getTopBlockerKey(issue: LiminaCheckIssue): string {
+  if (isStructuredGraphPrepareIssue(issue)) {
+    return `${issue.code}\0${issue.title}`;
+  }
+
   return issue.code;
 }
 
@@ -842,9 +850,12 @@ function formatTopBlockerLines(blockers: readonly CheckTopBlocker[]): string[] {
   }
 
   return blockers.flatMap((blocker, index) => [
-    `${index + 1}. ${blocker.code}  ${blocker.count} ${pluralIssue(blocker.count)}`,
+    `${index + 1}. ${blocker.title}  ${blocker.count} ${pluralIssue(blocker.count)}`,
+    `   Rule: ${blocker.code}`,
     `   ${blocker.summary ?? blocker.title}`,
-    `   Packages: ${formatTopCounts(blocker.packages, 5)}`,
+    ...(blocker.packages.length > 0
+      ? [`   Packages: ${formatTopCounts(blocker.packages, 5)}`]
+      : []),
   ]);
 }
 

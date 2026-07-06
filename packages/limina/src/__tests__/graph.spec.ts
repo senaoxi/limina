@@ -1,7 +1,7 @@
 import type { GraphConfig, ResolvedLiminaConfig } from '#config/runner';
 import {
-  prepareGeneratedTsconfigGraph,
   type GeneratedTsconfigGraphResult,
+  prepareGeneratedTsconfigGraph,
 } from '#core/build-graph/runner';
 import {
   mkdir,

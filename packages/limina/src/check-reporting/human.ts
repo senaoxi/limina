@@ -532,15 +532,27 @@ function hasMatchingEvidenceLines(
   );
 }
 
-function formatIssueDetailLines(issue: LiminaCheckIssue): string[] {
+function isStructuredGraphPrepareIssue(issue: LiminaCheckIssue): boolean {
+  return issue.task === 'graph:prepare' && issue.detector === 'graph-prepare';
+}
+
+function formatIssueDetailLines(
+  issue: LiminaCheckIssue,
+  options: { includeDetailLines?: boolean; includeSummary?: boolean } = {},
+): string[] {
+  const includeDetailLines = options.includeDetailLines ?? true;
+  const includeSummary = options.includeSummary ?? true;
   const detailLines =
+    includeDetailLines &&
     issue.detailLines?.length &&
     !hasMatchingEvidenceLines(issue.evidence, issue.detailLines)
       ? indentDetailLines(issue.detailLines)
       : [];
 
   return [
-    ...(issue.summary ? ['summary:', `    ${issue.summary}`] : []),
+    ...(includeSummary && issue.summary
+      ? ['summary:', `    ${issue.summary}`]
+      : []),
     ...(issue.evidence?.length
       ? ['evidence:', ...issue.evidence.flatMap(formatEvidenceLine)]
       : []),
@@ -575,6 +587,57 @@ function formatFixLines(group: IssueGroup): string[] {
   return group.fix ? ['suggested fix:', `  ${group.fix}`] : [];
 }
 
+function getGraphPrepareExampleLines(issue: LiminaCheckIssue): string[] {
+  const example = issue.evidence?.find(
+    (evidence) => evidence.label === 'example' && evidence.lines?.length,
+  );
+
+  if (example?.lines?.length) {
+    return example.lines;
+  }
+
+  const location = getIssueLocation(issue);
+
+  return location ? [`location: ${location}`] : [];
+}
+
+function formatGraphPrepareGroupExamples(
+  group: IssueGroup,
+  detailLimit: number,
+): string[] | null {
+  if (!group.issues.every(isStructuredGraphPrepareIssue)) {
+    return null;
+  }
+
+  const examples = group.issues
+    .map(getGraphPrepareExampleLines)
+    .filter((lines) => lines.length > 0);
+
+  if (examples.length <= 1) {
+    return null;
+  }
+
+  const visibleExamples = examples.slice(0, detailLimit);
+  const remainingExampleCount = examples.length - visibleExamples.length;
+
+  return [
+    'examples:',
+    ...visibleExamples.flatMap((lines) => {
+      const [firstLine, ...restLines] = lines;
+
+      return [
+        `  - ${firstLine ?? ''}`,
+        ...restLines.map((line) => `    ${line}`),
+      ];
+    }),
+    ...(remainingExampleCount > 0
+      ? [
+          `  ... ${remainingExampleCount} more. Run with --verbose to show all details.`,
+        ]
+      : []),
+  ];
+}
+
 function formatGroupDetails(
   group: IssueGroup,
   options: { detailLimit: number; verbose: boolean },
@@ -596,6 +659,14 @@ function formatGroupDetails(
   const visibleLocations = locations.slice(0, options.detailLimit);
   const remainingLocationCount = locations.length - visibleLocations.length;
   const onlyIssue = group.issues.length === 1 ? group.issues[0] : undefined;
+  const graphPrepareExamples = formatGraphPrepareGroupExamples(
+    group,
+    options.detailLimit,
+  );
+
+  if (graphPrepareExamples) {
+    return graphPrepareExamples;
+  }
 
   if (locations.length > 0 && (group.issues.length > 1 || !onlyIssue)) {
     return [
@@ -607,7 +678,12 @@ function formatGroupDetails(
     ];
   }
 
-  const onlyIssueDetails = onlyIssue ? formatIssueDetailLines(onlyIssue) : [];
+  const onlyIssueDetails = onlyIssue
+    ? formatIssueDetailLines(onlyIssue, {
+        includeDetailLines: !isStructuredGraphPrepareIssue(onlyIssue),
+        includeSummary: !isStructuredGraphPrepareIssue(onlyIssue),
+      })
+    : [];
 
   if (onlyIssueDetails.length > 0) {
     const visibleLines = onlyIssueDetails.slice(0, options.detailLimit);
@@ -675,6 +751,15 @@ function hasTruncatedGroups(
   return groups.some((group) => {
     const locations = getGroupLocations(group);
 
+    if (
+      group.issues.some(
+        (issue) =>
+          isStructuredGraphPrepareIssue(issue) && issue.detailLines?.length,
+      )
+    ) {
+      return true;
+    }
+
     if (locations.length > detailLimit) {
       return true;
     }
@@ -684,7 +769,10 @@ function hasTruncatedGroups(
     }
 
     return group.issues[0]
-      ? formatIssueDetailLines(group.issues[0]).length > detailLimit
+      ? formatIssueDetailLines(group.issues[0], {
+          includeDetailLines: !isStructuredGraphPrepareIssue(group.issues[0]),
+          includeSummary: !isStructuredGraphPrepareIssue(group.issues[0]),
+        }).length > detailLimit
       : false;
   });
 }
