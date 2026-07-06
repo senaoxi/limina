@@ -33,6 +33,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   proofCheckerCoverageInvalid: 'LIMINA_PROOF_CHECKER_COVERAGE_INVALID',
   proofCheckFailed: 'LIMINA_PROOF_CHECK_FAILED',
   proofDefaultTsconfigInvalid: 'LIMINA_PROOF_DEFAULT_TSCONFIG_INVALID',
+  proofDuplicateGraphCoverage: 'LIMINA_PROOF_DUPLICATE_GRAPH_COVERAGE',
   proofDuplicateSourceOwner: 'LIMINA_PROOF_DUPLICATE_SOURCE_OWNER',
   proofSourceBoundaryMismatch: 'LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH',
   proofUncoveredSourceFile: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
@@ -222,9 +223,16 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
       'A default tsconfig does not satisfy proof-check requirements.',
     task: 'proof:check',
   },
+  [LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage]: {
+    code: LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage,
+    description:
+      'A declaration-emitting source file is covered by multiple generated dts graph entries.',
+    task: 'proof:check',
+  },
   [LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner]: {
     code: LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner,
-    description: 'Multiple checker entries govern the same source owner.',
+    description:
+      'An implementation source file is owned by multiple ordinary typecheck configs.',
     task: 'proof:check',
   },
   [LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch]: {
