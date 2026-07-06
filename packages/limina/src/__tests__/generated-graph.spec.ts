@@ -14,6 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -2512,8 +2513,57 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(String(thrown)).toContain(
         'consumer checker: typescript (tsc, engine: tsc)',
       );
+      expect(String(thrown)).toContain(
+        'target config: packages/theme/tsconfig.json',
+      );
       expect(String(thrown)).toContain('vue (vue-tsc, engine: vue-tsc)');
       expect(String(thrown)).toContain('packages/theme/src/theme.ts');
+      expect(thrown).toBeInstanceOf(LiminaStructuredError);
+
+      const issue = (thrown as LiminaStructuredError).issues.find(
+        (item) => item.title === 'Unsafe cross-engine declaration provider',
+      );
+
+      expect(issue).toMatchObject({
+        detector: 'graph-prepare',
+        filePath: 'packages/app/src/index.ts',
+        fix: 'Make the target config owned by the consumer checker, choose one build checker owner, or split the dependency through an explicit declaration/artifact boundary.',
+        reason:
+          'Generated project references must not cross checker build-engine boundaries in V1.',
+        summary:
+          'typescript cannot use provider candidates from different build engines.',
+        title: 'Unsafe cross-engine declaration provider',
+      });
+      expect(issue?.locations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            filePath: 'packages/app/tsconfig.json',
+            label: 'consumer config',
+          }),
+          expect.objectContaining({
+            filePath: 'packages/theme/tsconfig.json',
+            label: 'target config',
+          }),
+          expect.objectContaining({
+            filePath: 'packages/theme/src/theme.ts',
+            label: 'resolved file',
+          }),
+        ]),
+      );
+      expect(issue?.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'provider candidates',
+            lines: ['- vue (vue-tsc, engine: vue-tsc)'],
+          }),
+          expect.objectContaining({
+            label: 'example',
+            lines: expect.arrayContaining([
+              'target config: packages/theme/tsconfig.json',
+            ]),
+          }),
+        ]),
+      );
       expect(
         existsSync(
           path.join(
@@ -2602,6 +2652,31 @@ describe('prepareGeneratedTsconfigGraph', () => {
       );
       expect(String(thrown)).toContain('themeOne (tsc, engine: tsc)');
       expect(String(thrown)).toContain('themeTwo (tsc, engine: tsc)');
+      expect(thrown).toBeInstanceOf(LiminaStructuredError);
+
+      const issue = (thrown as LiminaStructuredError).issues.find(
+        (item) => item.title === 'Ambiguous cross-checker declaration provider',
+      );
+
+      expect(issue).toMatchObject({
+        detector: 'graph-prepare',
+        fix: 'Make checker ownership unambiguous with config.checkers.<checker>.include/exclude.',
+        reason: 'Limina cannot choose a stable generated declaration provider.',
+        summary:
+          'Multiple build-capable provider checkers can own the resolved file.',
+        title: 'Ambiguous cross-checker declaration provider',
+      });
+      expect(issue?.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'candidates',
+            lines: expect.arrayContaining([
+              '- themeOne (tsc, engine: tsc)',
+              '- themeTwo (tsc, engine: tsc)',
+            ]),
+          }),
+        ]),
+      );
       expect(
         existsSync(
           path.join(
@@ -3422,6 +3497,33 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(String(thrown)).toContain('packages/provider/tsconfig.json');
       expect(String(thrown)).toContain(
         '.limina/tsbuildinfo/build/packages/provider/tsconfig.tsbuildinfo',
+      );
+      expect(thrown).toBeInstanceOf(LiminaStructuredError);
+
+      const issue = (thrown as LiminaStructuredError).issues.find(
+        (item) => item.title === 'Output build cache boundary conflict',
+      );
+
+      expect(issue).toMatchObject({
+        detector: 'graph-prepare',
+        filePath: 'packages/provider/tsconfig.json',
+        fix: 'Choose one output build checker owner for this config, or split output-enabled configs so each output build boundary has one owner.',
+        reason:
+          'Generated output build info is keyed by source config path and is not checker-namespaced.',
+        summary:
+          'Multiple checkers would generate output build configs for the same output-enabled source config.',
+        title: 'Output build cache boundary conflict',
+      });
+      expect(issue?.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            label: 'build owners',
+            lines: expect.arrayContaining([
+              '- typescript (tsc, engine: tsc)',
+              '- vue (vue-tsc, engine: vue-tsc)',
+            ]),
+          }),
+        ]),
       );
     } finally {
       await fixture.cleanup();

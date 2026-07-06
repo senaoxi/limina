@@ -12,6 +12,7 @@ import { toRelativePath } from '#utils/path';
 import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'pathe';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
 import type {
   CheckRunRecorder,
@@ -425,6 +426,7 @@ async function runBuiltinTask(
           issues,
           preflight: options.preflight,
           progress: options.progress,
+          report: options.checkIssueReport,
         });
 
         return { issues, passed, stats };
@@ -559,20 +561,26 @@ async function runBuiltinTask(
     }
   } catch (error) {
     if (issues.length === 0) {
-      issues.push(
-        createTaskFailureIssue({
-          code: `LIMINA_${taskName.replaceAll(':', '_').toUpperCase()}_FAILED`,
-          detailLines: [error instanceof Error ? error.message : String(error)],
-          filePath: config.configPath,
-          fix: `Inspect the ${taskName} error above, then rerun limina check.`,
-          reason: `${taskName} failed: ${
-            error instanceof Error ? error.message : String(error)
-          }.`,
-          rootDir: config.rootDir,
-          task: taskName,
-          title: `${taskName} failed`,
-        }),
-      );
+      if (error instanceof LiminaStructuredError) {
+        issues.push(...error.issues);
+      } else {
+        issues.push(
+          createTaskFailureIssue({
+            code: `LIMINA_${taskName.replaceAll(':', '_').toUpperCase()}_FAILED`,
+            detailLines: [
+              error instanceof Error ? error.message : String(error),
+            ],
+            filePath: config.configPath,
+            fix: `Inspect the ${taskName} error above, then rerun limina check.`,
+            reason: `${taskName} failed: ${
+              error instanceof Error ? error.message : String(error)
+            }.`,
+            rootDir: config.rootDir,
+            task: taskName,
+            title: `${taskName} failed`,
+          }),
+        );
+      }
     }
 
     return {

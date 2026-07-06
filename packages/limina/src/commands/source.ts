@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createElapsedTimer } from 'logaria/helper';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
 import {
   runSourceCheckImpl,
@@ -117,17 +118,20 @@ export async function runSourceCheck(
 
     return passed;
   } catch (error) {
-    const issues = [
-      createTaskFailureIssue({
-        code: 'LIMINA_SOURCE_CHECK_FAILED',
-        filePath: config.configPath,
-        fix: 'Inspect the source check error above, then rerun `limina source check` or `limina check`.',
-        reason: `Source check failed: ${formatErrorMessage(error)}.`,
-        rootDir: config.rootDir,
-        task: 'source:check',
-        title: 'Source check failed',
-      }),
-    ];
+    const issues =
+      error instanceof LiminaStructuredError
+        ? error.issues
+        : [
+            createTaskFailureIssue({
+              code: 'LIMINA_SOURCE_CHECK_FAILED',
+              filePath: config.configPath,
+              fix: 'Inspect the source check error above, then rerun `limina source check` or `limina check`.',
+              reason: `Source check failed: ${formatErrorMessage(error)}.`,
+              rootDir: config.rootDir,
+              task: 'source:check',
+              title: 'Source check failed',
+            }),
+          ];
 
     if (options.deferSnapshot) {
       options.issues?.push(...issues);
@@ -137,13 +141,18 @@ export async function runSourceCheck(
         rootDir: config.rootDir,
       });
     }
-    if (!options.report?.defer) {
+    if (!options.report?.defer && !(error instanceof LiminaStructuredError)) {
       SourceLogger.error(
         `source check failed: ${formatErrorMessage(error)}`,
         elapsed(),
       );
     }
-    task?.fail('source check failed', { error });
+    task?.fail('source check failed');
+
+    if (error instanceof LiminaStructuredError) {
+      return false;
+    }
+
     throw error;
   }
 }

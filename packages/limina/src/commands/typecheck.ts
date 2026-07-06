@@ -1,5 +1,6 @@
 import { createElapsedTimer } from 'logaria/helper';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
 import {
   appendCheckIssues,
@@ -245,38 +246,54 @@ export async function runCheckerBuild(
     }
     return result;
   } catch (error) {
-    const errorMessage = formatErrorMessage(error);
-    const issue = createTaskFailureIssue({
-      code: 'LIMINA_CHECKER_BUILD_FAILED',
-      ...(options.report?.defer ? {} : { detailLines: [errorMessage] }),
-      fix: 'Inspect the checker build error above, then rerun `limina checker build` or `limina check`.',
-      reason: options.report?.defer
-        ? 'Checker build failed.'
-        : `Checker build failed: ${errorMessage}.`,
-      rootDir: options.config.rootDir,
-      ...(options.report?.defer ? { summary: 'Checker build failed' } : {}),
-      task: 'checker:build',
-      title: 'Checker build failed',
-    });
+    const issues =
+      error instanceof LiminaStructuredError
+        ? error.issues
+        : [
+            createTaskFailureIssue({
+              code: 'LIMINA_CHECKER_BUILD_FAILED',
+              ...(options.report?.defer
+                ? {}
+                : { detailLines: [formatErrorMessage(error)] }),
+              fix: 'Inspect the checker build error above, then rerun `limina checker build` or `limina check`.',
+              reason: options.report?.defer
+                ? 'Checker build failed.'
+                : `Checker build failed: ${formatErrorMessage(error)}.`,
+              rootDir: options.config.rootDir,
+              ...(options.report?.defer
+                ? { summary: 'Checker build failed' }
+                : {}),
+              task: 'checker:build',
+              title: 'Checker build failed',
+            }),
+          ];
 
     await collectCheckIssues({
       deferSnapshot: options.deferSnapshot,
       issueSink: options.issues,
-      issues: [issue],
+      issues,
       rootDir: options.config.rootDir,
     });
     if (!options.report?.defer) {
       TypecheckLogger.error(
         formatCheckerIssueReport({
           command: options.report?.command ?? 'limina checker build',
-          issues: [issue],
+          issues,
           title: 'Checker build summary',
           verbose: options.report?.verbose,
         }),
         elapsed(),
       );
     }
-    task?.fail('checker build failed', { error });
+    task?.fail(
+      'checker build failed',
+      error instanceof LiminaStructuredError ? undefined : { error },
+    );
+
+    if (error instanceof LiminaStructuredError) {
+      throw error;
+    }
+
     throw error;
   }
 }

@@ -112,6 +112,7 @@ export interface RunGraphPrepareOptions {
   issues?: LiminaCheckIssue[];
   preflight?: LiminaPreflightManager;
   progress?: TaskProgressReporter;
+  report?: CheckIssueReportOptions;
 }
 
 export interface RunGraphExportOptions {

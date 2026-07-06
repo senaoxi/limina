@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createElapsedTimer } from 'logaria/helper';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
 import {
   appendCheckIssues,
@@ -97,37 +98,50 @@ export async function runProofCheck(
 
     return passed;
   } catch (error) {
-    const issue = createTaskFailureIssue({
-      code: 'LIMINA_PROOF_CHECK_FAILED',
-      detailLines: [formatErrorMessage(error)],
-      filePath: config.configPath,
-      fix: 'Inspect the proof check error above, then rerun `limina proof check` or `limina check`.',
-      reason: `Proof check failed: ${formatErrorMessage(error)}.`,
-      rootDir: config.rootDir,
-      task: 'proof:check',
-      title: 'Proof check failed',
-    });
+    const issues =
+      error instanceof LiminaStructuredError
+        ? error.issues
+        : [
+            createTaskFailureIssue({
+              code: 'LIMINA_PROOF_CHECK_FAILED',
+              detailLines: [formatErrorMessage(error)],
+              filePath: config.configPath,
+              fix: 'Inspect the proof check error above, then rerun `limina proof check` or `limina check`.',
+              reason: `Proof check failed: ${formatErrorMessage(error)}.`,
+              rootDir: config.rootDir,
+              task: 'proof:check',
+              title: 'Proof check failed',
+            }),
+          ];
 
     if (options.deferSnapshot) {
-      options.issues?.push(issue);
+      options.issues?.push(...issues);
     } else {
       await appendCheckIssues({
-        issues: [issue],
+        issues,
         rootDir: config.rootDir,
       });
     }
-    if (!options.report?.defer) {
+    if (!options.report?.defer && !(error instanceof LiminaStructuredError)) {
       ProofLogger.error(
         formatCheckIssueHumanReport({
           command: options.report?.command ?? 'limina proof check',
-          issues: [issue],
+          issues,
           title: 'Proof check summary',
           verbose: options.report?.verbose,
         }),
         elapsed(),
       );
     }
-    task?.fail('proof check failed', { error });
+    task?.fail(
+      'proof check failed',
+      error instanceof LiminaStructuredError ? undefined : { error },
+    );
+
+    if (error instanceof LiminaStructuredError) {
+      throw error;
+    }
+
     throw error;
   }
 }
