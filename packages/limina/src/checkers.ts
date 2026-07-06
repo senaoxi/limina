@@ -1116,6 +1116,51 @@ export function getCheckerAdapter(preset: string): CheckerAdapter | null {
   return isBuiltinCheckerPreset(preset) ? builtinCheckerAdapters[preset] : null;
 }
 
+export type CheckerBuildEngine =
+  | 'tsc'
+  | 'tsgo'
+  | 'vue-tsc'
+  | 'typecheck-only'
+  | 'unknown';
+
+export type CheckerCapabilityFamily =
+  | 'typescript-native'
+  | 'vue'
+  | 'svelte'
+  | 'unknown';
+
+const checkerBuildEngines = {
+  'svelte-check': 'typecheck-only',
+  tsc: 'tsc',
+  tsgo: 'tsgo',
+  'vue-tsc': 'vue-tsc',
+  'vue-tsgo': 'typecheck-only',
+} satisfies Record<BuiltinCheckerPreset, CheckerBuildEngine>;
+
+const checkerCapabilityFamilies = {
+  'svelte-check': 'svelte',
+  tsc: 'typescript-native',
+  tsgo: 'typescript-native',
+  'vue-tsc': 'vue',
+  'vue-tsgo': 'vue',
+} satisfies Record<BuiltinCheckerPreset, CheckerCapabilityFamily>;
+
+export function getCheckerBuildEngine(
+  preset: CheckerPreset,
+): CheckerBuildEngine {
+  return checkerBuildEngines[preset] ?? 'unknown';
+}
+
+export function getCheckerCapabilityFamily(
+  preset: CheckerPreset,
+): CheckerCapabilityFamily {
+  return checkerCapabilityFamilies[preset] ?? 'unknown';
+}
+
+export function isBuildCapablePreset(preset: CheckerPreset): boolean {
+  return getCheckerAdapter(preset)?.execution === 'build';
+}
+
 function isVueCheckerPreset(preset: CheckerPreset): boolean {
   return preset === 'vue-tsc' || preset === 'vue-tsgo';
 }

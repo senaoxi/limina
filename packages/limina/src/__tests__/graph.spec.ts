@@ -1846,7 +1846,7 @@ packages:
     }
   });
 
-  it('accepts cross-checker provider edges without TypeScript project references', async () => {
+  it('accepts same-engine cross-checker provider edges without TypeScript project references', async () => {
     const fixture = await createFixture(
       {
         'packages/app/src/index.ts':
@@ -1869,9 +1869,9 @@ packages:
           include: ['packages/app/tsconfig.json'],
           preset: 'tsc',
         },
-        vue: {
+        themeTypescript: {
           include: ['packages/theme/tsconfig.json'],
-          preset: 'vue-tsc',
+          preset: 'tsc',
         },
       },
     );
