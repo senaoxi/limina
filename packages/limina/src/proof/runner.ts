@@ -106,15 +106,24 @@ function getProofProblemTitle(problem: string): string {
 
 function getProofProblemCode(title: string): string {
   if (title.startsWith('Source files are not covered')) {
-    return 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE';
+    return LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile;
   }
 
   if (title.startsWith('Typecheck proof source boundary')) {
-    return 'LIMINA_PROOF_SOURCE_BOUNDARY_MISMATCH';
+    return LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch;
   }
 
-  if (title.includes('duplicate') || title.includes('Duplicate')) {
-    return 'LIMINA_PROOF_DUPLICATE_SOURCE_OWNER';
+  if (
+    title.startsWith('Source file belongs to multiple typecheck configs') ||
+    title.startsWith(
+      'Implementation source file belongs to multiple typecheck configs',
+    )
+  ) {
+    return LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner;
+  }
+
+  if (title.startsWith('Duplicate checker graph coverage')) {
+    return LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage;
   }
 
   if (
@@ -122,21 +131,21 @@ function getProofProblemCode(title: string): string {
     title.includes('Allowlist') ||
     title.includes('proof.allowlist')
   ) {
-    return 'LIMINA_PROOF_ALLOWLIST_INVALID';
+    return LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid;
   }
 
   if (
     title.includes('default tsconfig') ||
     title.includes('Default tsconfig')
   ) {
-    return 'LIMINA_PROOF_DEFAULT_TSCONFIG_INVALID';
+    return LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid;
   }
 
   if (title.includes('checker') || title.includes('Checker')) {
-    return 'LIMINA_PROOF_CHECKER_COVERAGE_INVALID';
+    return LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid;
   }
 
-  return 'LIMINA_PROOF_CHECK_FAILED';
+  return LIMINA_CHECK_ISSUE_CODES.proofCheckFailed;
 }
 
 function getProblemLineValue(
@@ -1300,6 +1309,15 @@ function collectConfigFileOwners(
           continue;
         }
 
+        if (
+          !isCheckerGraphDeclarationOwnerCandidate(
+            filePath,
+            projectContext.extensions,
+          )
+        ) {
+          continue;
+        }
+
         const owners = ownersByFile.get(filePath) ?? [];
 
         owners.push({
@@ -1358,11 +1376,46 @@ function addDuplicateGraphCoverageProblems(options: {
               (configPath) =>
                 `    - ${toRelativePath(options.config.rootDir, configPath)}`,
             ),
-          '  reason: a checker graph file must have a single declaration owner; move the file to one dts leaf or narrow include/exclude patterns.',
+          '  reason: a declaration-emitting source file must have a single generated dts owner; move the file to one dts leaf or narrow include/exclude patterns.',
         ].join('\n'),
       );
     }
   }
+}
+
+function isDeclarationInputFile(fileName: string): boolean {
+  return (
+    fileName.endsWith('.d.ts') ||
+    fileName.endsWith('.d.mts') ||
+    fileName.endsWith('.d.cts')
+  );
+}
+
+function isOrdinarySourceOwnershipCandidate(fileName: string): boolean {
+  return (
+    !isDeclarationInputFile(fileName) &&
+    (fileName.endsWith('.ts') ||
+      fileName.endsWith('.tsx') ||
+      fileName.endsWith('.mts') ||
+      fileName.endsWith('.cts'))
+  );
+}
+
+function isCheckerGraphDeclarationOwnerCandidate(
+  fileName: string,
+  extensions: readonly string[],
+): boolean {
+  if (isDeclarationInputFile(fileName)) {
+    return false;
+  }
+
+  return extensions.some((extension) => {
+    const normalizedExtension = extension.startsWith('.')
+      ? extension
+      : `.${extension}`;
+
+    return fileName.endsWith(normalizedExtension);
+  });
 }
 
 function addDuplicateTypecheckOwnershipProblems(options: {
@@ -1389,6 +1442,10 @@ function addDuplicateTypecheckOwnershipProblems(options: {
 
     for (const fileName of parseConfig(options.config, configPath, context)
       .fileNames) {
+      if (!isOrdinarySourceOwnershipCandidate(fileName)) {
+        continue;
+      }
+
       const owners = fileOwners.get(fileName) ?? [];
 
       owners.push(configPath);
@@ -1422,7 +1479,7 @@ function addDuplicateTypecheckOwnershipProblems(options: {
           .map(
             (owner) => `    - ${toRelativePath(options.config.rootDir, owner)}`,
           ),
-        '  reason: each source module must belong to exactly one tsconfig*.json typecheck leaf.',
+        '  reason: each implementation source file must belong to exactly one tsconfig*.json typecheck leaf.',
       ].join('\n'),
     );
   }

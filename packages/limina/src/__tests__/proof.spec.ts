@@ -1,11 +1,15 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { runProofCheck } from '../commands/proof';
 import { ProofLogger } from '../logger';
-import { readCheckIssueSnapshot } from '../source-check/snapshot';
+import {
+  readCheckIssueSnapshot,
+  type LiminaCheckIssue,
+} from '../source-check/snapshot';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -208,6 +212,48 @@ function createMultiEnvironmentFiles(
   });
 }
 
+function createCheckerGraphCoverageProofGeneratedGraph(
+  rootDir: string,
+): GeneratedTsconfigGraphResult {
+  const checkerEntryPath = path.join(
+    rootDir,
+    '.limina/tsconfig.typescript.build.json',
+  );
+
+  return {
+    changed: false,
+    checkerEntries: new Map([['typescript', checkerEntryPath]]),
+    checkers: [
+      {
+        exclude: [],
+        extensions: [],
+        include: ['tsconfig.json', '**/tsconfig.json'],
+        name: 'typescript',
+        preset: 'tsc',
+      },
+    ],
+    configToOutputBuild: new Map(),
+    dtsToSource: new Map(),
+    generatedKnipConfigs: [],
+    generatedKnipDiagnostics: [],
+    manifest: {
+      checkers: {},
+      generatedBy: 'limina',
+      knip: {
+        diagnostics: [],
+        packages: [],
+      },
+      providerEdges: [],
+      version: 2,
+    },
+    manifestPath: path.join(rootDir, '.limina/manifest.json'),
+    outputDeclarationCopies: new Map(),
+    providerEdges: [],
+    sourceToBuild: new Map(),
+    sourceToDts: new Map(),
+  };
+}
+
 describe('runProofCheck dts config semantics', () => {
   it('accepts a single-environment dts leaf paired with default tsconfig.json', async () => {
     const fixture = await createFixture(createPassingFiles());
@@ -309,11 +355,406 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
-  it('rejects duplicate ordinary typecheck ownership', async () => {
+  it('rejects duplicate ordinary typecheck ownership for implementation sources', async () => {
     const fixture = await createFixture(createMultiEnvironmentFiles());
 
     try {
       await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports duplicate checker graph coverage for implementation sources with its own issue code', async () => {
+    const fixture = await createFixture({
+      '.limina/tsconfig.typescript.build.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: '../packages/pkg/tsconfig.alpha.dts.json',
+          },
+          {
+            path: '../packages/pkg/tsconfig.beta.dts.json',
+          },
+        ],
+      }),
+      'packages/pkg/src/shared.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.alpha.dts.json': JSON.stringify({
+        extends: './tsconfig.alpha.json',
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir: './.tsbuild/alpha',
+          tsBuildInfoFile: './.tsbuild/alpha.tsbuildinfo',
+        },
+        liminaOptions: {
+          sourceConfig: './tsconfig.alpha.json',
+        },
+      }),
+      'packages/pkg/tsconfig.alpha.json': JSON.stringify({
+        compilerOptions: {
+          lib: ['ES2023'],
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/shared.ts'],
+      }),
+      'packages/pkg/tsconfig.beta.dts.json': JSON.stringify({
+        extends: './tsconfig.beta.json',
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir: './.tsbuild/beta',
+          tsBuildInfoFile: './.tsbuild/beta.tsbuildinfo',
+        },
+        liminaOptions: {
+          sourceConfig: './tsconfig.beta.json',
+        },
+      }),
+      'packages/pkg/tsconfig.beta.json': JSON.stringify({
+        compilerOptions: {
+          lib: ['ES2023'],
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/shared.ts'],
+      }),
+      'packages/pkg/tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.alpha.json',
+          },
+          {
+            path: './tsconfig.beta.json',
+          },
+        ],
+      }),
+      'tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: './packages/pkg/tsconfig.json',
+          },
+        ],
+      }),
+    });
+    const issues: LiminaCheckIssue[] = [];
+
+    try {
+      await expect(
+        runProofCheck(fixture.config, {
+          deferSnapshot: true,
+          generatedGraphProvider: async () =>
+            createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+          issues,
+          report: {
+            defer: true,
+          },
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues).toContainEqual(
+        expect.objectContaining({
+          code: 'LIMINA_PROOF_DUPLICATE_GRAPH_COVERAGE',
+          filePath: 'packages/pkg/src/shared.ts',
+          task: 'proof:check',
+          title: 'Duplicate checker graph coverage',
+        }),
+      );
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          code: 'LIMINA_PROOF_DUPLICATE_SOURCE_OWNER',
+          title: 'Duplicate checker graph coverage',
+        }),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows shared declaration input files across generated checker graph dts configs', async () => {
+    const fixture = await createFixture({
+      '.limina/tsconfig.typescript.build.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: '../packages/pkg/tsconfig.lib.dts.json',
+          },
+          {
+            path: '../packages/pkg/tsconfig.test.dts.json',
+          },
+        ],
+      }),
+      'packages/pkg/src/lib.ts': 'export const lib = 1;\n',
+      'packages/pkg/src/shared.d.cts':
+        'declare const sharedCommonJsDeclaration: string;\n',
+      'packages/pkg/src/shared.d.mts':
+        'declare const sharedModuleDeclaration: string;\n',
+      'packages/pkg/src/shared.d.ts':
+        'declare const sharedGlobalDeclaration: string;\n',
+      'packages/pkg/test/index.ts': 'export const test = 1;\n',
+      'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+        extends: './tsconfig.lib.json',
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir: './.tsbuild/lib',
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        },
+        liminaOptions: {
+          sourceConfig: './tsconfig.lib.json',
+        },
+      }),
+      'packages/pkg/tsconfig.lib.json': JSON.stringify({
+        compilerOptions: {
+          lib: ['ES2023'],
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: [
+          'src/lib.ts',
+          'src/shared.d.cts',
+          'src/shared.d.mts',
+          'src/shared.d.ts',
+        ],
+      }),
+      'packages/pkg/tsconfig.test.dts.json': JSON.stringify({
+        extends: './tsconfig.test.json',
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir: './.tsbuild/test',
+          tsBuildInfoFile: './.tsbuild/test.tsbuildinfo',
+        },
+        liminaOptions: {
+          sourceConfig: './tsconfig.test.json',
+        },
+      }),
+      'packages/pkg/tsconfig.test.json': JSON.stringify({
+        compilerOptions: {
+          lib: ['ES2023'],
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: [
+          'test/index.ts',
+          'src/shared.d.cts',
+          'src/shared.d.mts',
+          'src/shared.d.ts',
+        ],
+      }),
+      'packages/pkg/tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+          {
+            path: './tsconfig.test.json',
+          },
+        ],
+      }),
+      'tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: './packages/pkg/tsconfig.json',
+          },
+        ],
+      }),
+    });
+    const issues: LiminaCheckIssue[] = [];
+
+    try {
+      await expect(
+        runProofCheck(fixture.config, {
+          deferSnapshot: true,
+          generatedGraphProvider: async () =>
+            createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+          issues,
+          report: {
+            defer: true,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          code: 'LIMINA_PROOF_DUPLICATE_GRAPH_COVERAGE',
+        }),
+      );
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          filePath: 'packages/pkg/src/shared.d.cts',
+          title: 'Duplicate checker graph coverage',
+        }),
+      );
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          filePath: 'packages/pkg/src/shared.d.mts',
+          title: 'Duplicate checker graph coverage',
+        }),
+      );
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          filePath: 'packages/pkg/src/shared.d.ts',
+          title: 'Duplicate checker graph coverage',
+        }),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows pnpm-like shared typings across generated checker graph dts configs', async () => {
+    const fixture = await createFixture({
+      '.limina/tsconfig.typescript.build.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: '../packages/pkg/tsconfig.lib.dts.json',
+          },
+          {
+            path: '../packages/pkg/tsconfig.test.dts.json',
+          },
+        ],
+      }),
+      'packages/pkg/__typings__/index.d.ts':
+        'export interface SharedIndexTyping { value: string; }\n',
+      'packages/pkg/__typings__/local.d.ts':
+        'export interface SharedLocalTyping { value: string; }\n',
+      'packages/pkg/__typings__/typed.d.ts':
+        'export interface SharedTypedTyping { value: string; }\n',
+      'packages/pkg/src/lib.ts': 'export const lib = 1;\n',
+      'packages/pkg/test/index.ts': 'export const test = 1;\n',
+      'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+        extends: './tsconfig.lib.json',
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir: './.tsbuild/lib',
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        },
+        liminaOptions: {
+          sourceConfig: './tsconfig.lib.json',
+        },
+      }),
+      'packages/pkg/tsconfig.lib.json': JSON.stringify({
+        compilerOptions: {
+          lib: ['ES2023'],
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: [
+          '__typings__/index.d.ts',
+          '__typings__/local.d.ts',
+          '__typings__/typed.d.ts',
+          'src/lib.ts',
+        ],
+      }),
+      'packages/pkg/tsconfig.test.dts.json': JSON.stringify({
+        extends: './tsconfig.test.json',
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          noEmit: false,
+          outDir: './.tsbuild/test',
+          tsBuildInfoFile: './.tsbuild/test.tsbuildinfo',
+        },
+        liminaOptions: {
+          sourceConfig: './tsconfig.test.json',
+        },
+      }),
+      'packages/pkg/tsconfig.test.json': JSON.stringify({
+        compilerOptions: {
+          lib: ['ES2023'],
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: [
+          '__typings__/index.d.ts',
+          '__typings__/local.d.ts',
+          '__typings__/typed.d.ts',
+          'test/index.ts',
+        ],
+      }),
+      'packages/pkg/tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+          {
+            path: './tsconfig.test.json',
+          },
+        ],
+      }),
+      'tsconfig.json': JSON.stringify({
+        files: [],
+        references: [
+          {
+            path: './packages/pkg/tsconfig.json',
+          },
+        ],
+      }),
+    });
+    const issues: LiminaCheckIssue[] = [];
+
+    try {
+      await expect(
+        runProofCheck(fixture.config, {
+          deferSnapshot: true,
+          generatedGraphProvider: async () =>
+            createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+          issues,
+          report: {
+            defer: true,
+          },
+        }),
+      ).resolves.toBe(true);
+
+      for (const filePath of [
+        'packages/pkg/__typings__/index.d.ts',
+        'packages/pkg/__typings__/local.d.ts',
+        'packages/pkg/__typings__/typed.d.ts',
+      ]) {
+        expect(issues).not.toContainEqual(
+          expect.objectContaining({
+            filePath,
+            title: 'Duplicate checker graph coverage',
+          }),
+        );
+      }
     } finally {
       await fixture.cleanup();
     }
