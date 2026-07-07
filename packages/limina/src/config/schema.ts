@@ -124,6 +124,52 @@ function isPlainConfigRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function validateSourcePatternConfig(options: {
+  ctx: z.RefinementCtx;
+  field: 'exclude' | 'include';
+  source: Record<string, unknown>;
+}): void {
+  const patterns = options.source[options.field];
+
+  if (patterns === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(patterns) || patterns.length === 0) {
+    options.ctx.addIssue({
+      code: 'custom',
+      message: `config.source.${options.field} must be a non-empty string array.`,
+      path: ['source', options.field],
+    });
+    return;
+  }
+
+  let defaultTokenCount = 0;
+
+  for (const [index, value] of patterns.entries()) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      options.ctx.addIssue({
+        code: 'custom',
+        message: `config.source.${options.field} entries must be non-empty strings.`,
+        path: ['source', options.field, index],
+      });
+      continue;
+    }
+
+    if (value === '...') {
+      defaultTokenCount += 1;
+    }
+  }
+
+  if (defaultTokenCount > 1) {
+    options.ctx.addIssue({
+      code: 'custom',
+      message: `config.source.${options.field} may contain "..." at most once.`,
+      path: ['source', options.field],
+    });
+  }
+}
+
 const sharedLiminaConfigShapeSchema = z
   .looseObject({})
   .superRefine((sharedConfig, ctx) => {
@@ -248,6 +294,17 @@ const sharedLiminaConfigShapeSchema = z
         path: ['source', key],
       });
     }
+
+    validateSourcePatternConfig({
+      ctx,
+      field: 'include',
+      source,
+    });
+    validateSourcePatternConfig({
+      ctx,
+      field: 'exclude',
+      source,
+    });
   });
 
 const releaseContentHashShapeSchema = z

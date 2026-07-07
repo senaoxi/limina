@@ -3,45 +3,76 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
 import { glob } from 'tinyglobby';
 
-import { getCheckerExtensions, normalizeExtensions } from '#checkers';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import {
-  getActiveCheckers,
-  isAutoCheckerConfigMode,
-  type ResolvedLiminaConfig,
-} from '#config/runner';
-import { createExtensionPattern } from '#core/tsconfig/actions';
+  collectGeneratedSourceConfigPaths,
+  type GeneratedTsconfigGraphResult,
+} from '#core/build-graph/runner';
+import { readJsonConfig } from '#core/tsconfig/actions';
 import {
   normalizeAbsolutePath,
   toPosixPath,
   toRelativePath,
 } from '#utils/path';
+import { isPlainRecord } from '#utils/values';
 
-const defaultSourceIncludeExtensions = [
-  '.ts',
-  '.d.ts',
-  '.tsx',
-  '.cts',
-  '.d.cts',
-  '.mts',
-  '.d.mts',
-  '.mjs',
-  '.json',
-];
-const defaultSourceIncludeExtensionSet = new Set<string>(
-  defaultSourceIncludeExtensions,
-);
+const DEFAULT_SOURCE_TOKEN = '...' as const;
+
+const defaultSourceInclude = [
+  '**/*.ts',
+  '**/*.tsx',
+  '**/*.d.ts',
+  '**/*.cts',
+  '**/*.d.cts',
+  '**/*.mts',
+  '**/*.d.mts',
+] as const;
+
 const defaultSourceExclude = [
-  'nx.json',
-  'project.json',
-  'tsconfig.json',
-  '**/tsconfig.*.json',
-  'dist',
-  '.nx',
-  '.git',
-  '.tsbuild',
-  'coverage',
   'node_modules',
-];
+  'bower_components',
+  'jspm_packages',
+] as const;
+
+interface ExpandedSourcePatterns {
+  patterns: string[];
+  usesDefaultBundle: boolean;
+}
+
+function uniquePatterns(patterns: readonly string[]): string[] {
+  const seen = new Set<string>();
+
+  return patterns.filter((pattern) => {
+    if (seen.has(pattern)) {
+      return false;
+    }
+
+    seen.add(pattern);
+    return true;
+  });
+}
+
+function expandDefaultToken(options: {
+  configured: readonly string[] | undefined;
+  defaults: readonly string[];
+}): ExpandedSourcePatterns {
+  if (options.configured === undefined) {
+    return {
+      patterns: [...options.defaults],
+      usesDefaultBundle: true,
+    };
+  }
+
+  const usesDefaultBundle = options.configured.includes(DEFAULT_SOURCE_TOKEN);
+  const expanded = options.configured.flatMap((pattern) =>
+    pattern === DEFAULT_SOURCE_TOKEN ? options.defaults : [pattern],
+  );
+
+  return {
+    patterns: uniquePatterns(expanded),
+    usesDefaultBundle,
+  };
+}
 
 function hasGlobSyntax(pattern: string): boolean {
   return /[*?[\]{}()!+@]/u.test(pattern);
@@ -75,50 +106,98 @@ function normalizeSourceExcludePattern(pattern: string): string[] {
   return [normalized, `**/${normalized}`];
 }
 
-function defaultSourceExtensions(config: ResolvedLiminaConfig): string[] {
-  const activeCheckers = getActiveCheckers(config);
-  const autoCheckerExtensions =
-    config.config?.checkers === undefined ||
-    isAutoCheckerConfigMode(config.config.checkers)
-      ? getCheckerExtensions(
-          {
-            include: [],
-            preset: 'vue-tsc',
-          },
-          {
-            projectRootDir: config.rootDir,
-          },
-        )
-      : [];
-  const checkerExtensions = normalizeExtensions([
-    ...activeCheckers.flatMap((checker) => checker.extensions),
-    ...autoCheckerExtensions,
-  ]).filter((extension) => !defaultSourceIncludeExtensionSet.has(extension));
+function normalizeExactDirectoryExcludePattern(pattern: string): string[] {
+  const normalized = pattern.replaceAll('\\', '/').replace(/\/+$/u, '');
 
-  return [...defaultSourceIncludeExtensions, ...checkerExtensions];
+  return normalized ? [normalized, `${normalized}/**`] : [];
 }
 
-function sourceIncludePatterns(config: ResolvedLiminaConfig): string[] {
-  if (config.config?.source?.include) {
-    return config.config.source.include;
+function readExplicitOutputOutDir(options: {
+  config: ResolvedLiminaConfig;
+  sourceConfigPath: string;
+}): string | null {
+  const configObject = readJsonConfig(options.config, options.sourceConfigPath);
+  const liminaOptions = configObject.liminaOptions;
+
+  if (!isPlainRecord(liminaOptions)) {
+    return null;
   }
 
-  return defaultSourceExtensions(config).map((extension) => `**/*${extension}`);
+  const outputs = liminaOptions.outputs;
+
+  if (!isPlainRecord(outputs)) {
+    return null;
+  }
+
+  const outDir = outputs.outDir;
+
+  if (typeof outDir !== 'string' || outDir.trim().length === 0) {
+    return null;
+  }
+
+  if (path.isAbsolute(outDir)) {
+    return null;
+  }
+
+  return normalizeAbsolutePath(
+    path.resolve(path.dirname(options.sourceConfigPath), outDir.trim()),
+  );
 }
 
-function sourceExcludePatterns(config: ResolvedLiminaConfig): string[] {
-  return (config.config?.source?.exclude ?? defaultSourceExclude).flatMap(
+function collectDefaultSourceExcludePatterns(options: {
+  config: ResolvedLiminaConfig;
+  generatedGraph: GeneratedTsconfigGraphResult;
+}): string[] {
+  const staticExcludes = defaultSourceExclude.flatMap(
     normalizeSourceExcludePattern,
   );
+  const outputExcludes = collectGeneratedSourceConfigPaths(
+    options.generatedGraph,
+  ).flatMap((sourceConfigPath) => {
+    const outDir = readExplicitOutputOutDir({
+      config: options.config,
+      sourceConfigPath,
+    });
+
+    if (!outDir) {
+      return [];
+    }
+
+    return normalizeExactDirectoryExcludePattern(
+      toPosixPath(toRelativePath(options.config.rootDir, outDir)),
+    );
+  });
+
+  return uniquePatterns([...staticExcludes, ...outputExcludes]);
+}
+
+function expandSourceExcludePatterns(options: {
+  configured: readonly string[] | undefined;
+  defaults: readonly string[];
+}): ExpandedSourcePatterns {
+  if (options.configured === undefined) {
+    return {
+      patterns: [...options.defaults],
+      usesDefaultBundle: true,
+    };
+  }
+
+  const usesDefaultBundle = options.configured.includes(DEFAULT_SOURCE_TOKEN);
+  const expanded = options.configured.flatMap((pattern) =>
+    pattern === DEFAULT_SOURCE_TOKEN
+      ? options.defaults
+      : normalizeSourceExcludePattern(pattern),
+  );
+
+  return {
+    patterns: uniquePatterns(expanded),
+    usesDefaultBundle,
+  };
 }
 
 function createGitignoreFilter(
   config: ResolvedLiminaConfig,
 ): ((filePath: string) => boolean) | null {
-  if (config.config?.source?.exclude !== undefined) {
-    return null;
-  }
-
   const gitignorePath = path.join(config.rootDir, '.gitignore');
 
   if (!existsSync(gitignorePath)) {
@@ -133,23 +212,32 @@ function createGitignoreFilter(
 
 export async function collectExpectedSourceFiles(
   config: ResolvedLiminaConfig,
+  generatedGraph: GeneratedTsconfigGraphResult,
 ): Promise<Set<string>> {
-  const explicitInclude = config.config?.source?.include !== undefined;
-  const proofFilePattern = explicitInclude
-    ? null
-    : createExtensionPattern(defaultSourceExtensions(config));
-  const gitignoreFilter = createGitignoreFilter(config);
-  const files = await glob(sourceIncludePatterns(config), {
+  const include = expandDefaultToken({
+    configured: config.config?.source?.include,
+    defaults: defaultSourceInclude,
+  });
+  const exclude = expandSourceExcludePatterns({
+    configured: config.config?.source?.exclude,
+    defaults: collectDefaultSourceExcludePatterns({
+      config,
+      generatedGraph,
+    }),
+  });
+  const gitignoreFilter = exclude.usesDefaultBundle
+    ? createGitignoreFilter(config)
+    : null;
+  const files = await glob(include.patterns, {
     cwd: config.rootDir,
     absolute: true,
-    ignore: sourceExcludePatterns(config),
+    ignore: exclude.patterns,
     onlyFiles: true,
   });
 
   return new Set(
     files
       .map(normalizeAbsolutePath)
-      .filter((filePath) => proofFilePattern?.test(filePath) ?? true)
       .filter((filePath) => !gitignoreFilter?.(filePath))
       .sort(),
   );

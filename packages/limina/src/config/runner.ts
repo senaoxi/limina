@@ -305,28 +305,38 @@ export interface SourceBoundaryConfig {
   /**
    * Glob patterns for source files that Limina should govern.
    *
-   * When omitted, Limina uses TypeScript/JSON source defaults and adds
-   * framework extensions from configured checkers, such as `.vue` or
-   * `.svelte`.
+   * When omitted, Limina uses TypeScript-neutral source defaults:
+   * `**\/*.ts`, `**\/*.tsx`, `**\/*.d.ts`, `**\/*.cts`, `**\/*.d.cts`,
+   * `**\/*.mts`, and `**\/*.d.mts`.
+   *
+   * When configured, these patterns replace the defaults. Include the exact
+   * string `"..."` to expand the default source patterns at that position,
+   * for example `["...", "**\/*.vue"]`.
+   *
+   * Checker extensions such as `.vue` and `.svelte` are not included by
+   * default.
    */
   include?: string[];
   /**
    * Glob patterns or directory shorthands to omit from source governance.
    *
-   * When omitted, Limina reads the workspace root `.gitignore` and combines it
-   * with the built-in excludes below.
+   * When omitted, Limina uses the default exclude bundle: `node_modules`,
+   * `bower_components`, `jspm_packages`, paths corresponding to explicit
+   * `liminaOptions.outputs.outDir` declarations in relevant source configs,
+   * and the workspace root `.gitignore`.
+   *
+   * When configured, these patterns replace the default exclude bundle and the
+   * root `.gitignore` is not used. Include the exact string `"..."` to expand
+   * the default exclude bundle, including root `.gitignore`, at that position.
+   * An explicit `exclude` array without `"..."` disables every default exclude
+   * entry.
    *
    * @default: [
-   *   "nx.json",
-   *   "project.json",
-   *   "tsconfig.json",
-   *   "**\/tsconfig.*.json",
-   *   "dist",
-   *   ".nx",
-   *   ".git",
-   *   ".tsbuild",
-   *   "coverage",
    *   "node_modules",
+   *   "bower_components",
+   *   "jspm_packages",
+   *   "<explicit liminaOptions.outputs.outDir paths>",
+   *   "<root .gitignore>",
    * ]
    */
   exclude?: string[];
