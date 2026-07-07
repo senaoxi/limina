@@ -1510,8 +1510,10 @@ packages:
   it('reports workspace package exports unresolved by TypeScript', async () => {
     const fixture = await createFixture({
       'packages/internal/package.json': stringifyConfig({
+        main: 'lib/index.js',
+        types: 'lib/index.d.ts',
         exports: {
-          '.': './src/missing.ts',
+          '.': './lib/index.js',
         },
         name: '@example/internal',
         type: 'module',
@@ -1537,7 +1539,55 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+      const declarationIssue = issues.find(
+        (issue) =>
+          issue.title ===
+          'Workspace package export has no TypeScript declaration-context resolution',
+      );
+      const runtimeIssue = issues.find(
+        (issue) =>
+          issue.title ===
+          'Workspace package export points to an unresolved public entry',
+      );
+
+      expect(passed).toBe(false);
+      expect(declarationIssue).toEqual(
+        expect.objectContaining({
+          packageManifestPath: 'packages/internal/package.json',
+          packageName: '@example/internal',
+          task: 'graph:check',
+        }),
+      );
+      expect(declarationIssue?.detailLines).toEqual(
+        expect.arrayContaining([
+          '  check: graph:check workspace exports preflight',
+          '  package: @example/internal',
+          '  package.json: packages/internal/package.json',
+          '  export: .',
+          '  specifier: @example/internal',
+          '  declared targets:',
+          '    - ./lib/index.js',
+          '  resolver: TypeScript declaration resolver',
+          '  expected declaration candidates:',
+          '    - packages/internal/lib/index.d.ts',
+          '  reason: package.json#exports/types/main do not resolve to a declaration entry for any active checker profile.',
+          '  fix: either create the missing exported entry, or update/remove package.json main/types/exports so the package public surface matches the files that are actually built.',
+        ]),
+      );
+      expect(
+        declarationIssue?.detailLines?.some((line) =>
+          line.startsWith('    - .limina/tsconfig/checkers/typescript/'),
+        ),
+      ).toBe(true);
+      expect(runtimeIssue?.detailLines).toEqual(
+        expect.arrayContaining([
+          '  resolver: Oxc runtime resolver',
+          '  expected runtime candidates:',
+          '    - packages/internal/lib/index.js',
+          '  reason: package.json#exports declares this public entry, but no active checker profile can resolve it.',
+        ]),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -1575,7 +1625,34 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+      const issue = issues.find(
+        (item) =>
+          item.title ===
+          'Workspace package export points to an unresolved public entry',
+      );
+
+      expect(passed).toBe(false);
+      expect(issue).toEqual(
+        expect.objectContaining({
+          packageManifestPath: 'packages/internal/package.json',
+          packageName: '@example/internal',
+          task: 'graph:check',
+        }),
+      );
+      expect(issue?.detailLines).toEqual(
+        expect.arrayContaining([
+          '  check: graph:check workspace exports preflight',
+          '  package: @example/internal',
+          '  package.json: packages/internal/package.json',
+          '  export: .',
+          '  specifier: @example/internal',
+          '  declared targets:',
+          '    - ./src/index.ts',
+          '  resolver: Oxc runtime resolver',
+          '  reason: package.json#exports declares this public entry, but no active checker profile can resolve it.',
+        ]),
+      );
     } finally {
       await fixture.cleanup();
     }

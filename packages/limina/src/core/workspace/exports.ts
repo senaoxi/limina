@@ -48,10 +48,11 @@ export interface WorkspaceExportsResolutionIndex {
 
 interface PackageExportEntry {
   packageDirectory: string;
+  packageJsonPath: string;
   packageName: string;
   specifier: string;
   subpath: string;
-  targets: string[];
+  targets: readonly string[];
 }
 
 interface CollectedPackageExportEntries {
@@ -197,6 +198,7 @@ async function expandWildcardExportEntry(options: {
 
       entries.set(specifier, {
         packageDirectory: options.packageDirectory,
+        packageJsonPath: path.join(options.packageDirectory, 'package.json'),
         packageName: options.packageName,
         specifier,
         subpath,
@@ -273,6 +275,7 @@ async function collectPackageExportEntries(
 
     entries.push({
       packageDirectory: workspacePackage.directory,
+      packageJsonPath: path.join(workspacePackage.directory, 'package.json'),
       packageName: workspacePackage.name,
       specifier: getSpecifierForSubpath(
         workspacePackage.name,
@@ -401,10 +404,184 @@ function getEffectiveOxcResolvedFileName(options: {
   return null;
 }
 
+function getDisplayPath(
+  config: ResolvedLiminaConfig,
+  filePath: string,
+): string {
+  const relativePath = toPosixPath(path.relative(config.rootDir, filePath));
+
+  if (
+    relativePath &&
+    relativePath !== '..' &&
+    !relativePath.startsWith('../') &&
+    !path.isAbsolute(relativePath)
+  ) {
+    return relativePath;
+  }
+
+  return toPosixPath(filePath);
+}
+
+function uniqueValues(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function formatExportTargets(targets: readonly string[]): string[] {
+  return uniqueValues(targets);
+}
+
+function getRuntimeCandidatePaths(options: {
+  config: ResolvedLiminaConfig;
+  entry: PackageExportEntry;
+}): string[] {
+  return uniqueValues(
+    options.entry.targets.flatMap((target) => {
+      if (!target.startsWith('./') || !/\.(?:cjs|mjs|js)$/u.test(target)) {
+        return [];
+      }
+
+      return [
+        getDisplayPath(
+          options.config,
+          path.resolve(options.entry.packageDirectory, stripDotSlash(target)),
+        ),
+      ];
+    }),
+  );
+}
+
+function getDeclarationCandidateForRuntimeTarget(
+  target: string,
+): string | null {
+  if (target.endsWith('.mjs')) {
+    return `${target.slice(0, -'.mjs'.length)}.d.mts`;
+  }
+
+  if (target.endsWith('.cjs')) {
+    return `${target.slice(0, -'.cjs'.length)}.d.cts`;
+  }
+
+  if (target.endsWith('.js')) {
+    return `${target.slice(0, -'.js'.length)}.d.ts`;
+  }
+
+  if (typeScriptDeclarationModulePattern.test(target)) {
+    return target;
+  }
+
+  return null;
+}
+
+function getDeclarationCandidatePaths(options: {
+  config: ResolvedLiminaConfig;
+  entry: PackageExportEntry;
+}): string[] {
+  return uniqueValues(
+    options.entry.targets.flatMap((target) => {
+      if (!target.startsWith('./')) {
+        return [];
+      }
+
+      const declarationTarget = getDeclarationCandidateForRuntimeTarget(target);
+
+      if (!declarationTarget) {
+        return [];
+      }
+
+      return [
+        getDisplayPath(
+          options.config,
+          path.resolve(
+            options.entry.packageDirectory,
+            stripDotSlash(declarationTarget),
+          ),
+        ),
+      ];
+    }),
+  );
+}
+
+function addProblemList(
+  lines: string[],
+  label: string,
+  values: readonly string[],
+): void {
+  lines.push(`  ${label}:`);
+
+  for (const value of values.length > 0 ? values : ['<none>']) {
+    lines.push(`    - ${value}`);
+  }
+}
+
+function formatCheckedProfile(
+  config: ResolvedLiminaConfig,
+  profile: WorkspaceExportsResolutionProfile,
+): string {
+  const configPath = getDisplayPath(config, profile.configPath);
+  const checkerPresets = profile.checkerPresets.join(', ');
+
+  return checkerPresets ? `${configPath} (${checkerPresets})` : configPath;
+}
+
+function getWorkspaceExportFix(): string {
+  return 'either create the missing exported entry, or update/remove package.json main/types/exports so the package public surface matches the files that are actually built.';
+}
+
+function createWorkspaceExportProblem(options: {
+  config: ResolvedLiminaConfig;
+  entry: PackageExportEntry;
+  expectedCandidates: readonly string[];
+  expectedCandidatesLabel: string;
+  profiles: readonly WorkspaceExportsResolutionProfile[];
+  reason: string;
+  resolver: string;
+  title: string;
+}): string {
+  const lines = [
+    options.title,
+    '  check: graph:check workspace exports preflight',
+    `  package: ${options.entry.packageName}`,
+    `  package.json: ${getDisplayPath(options.config, options.entry.packageJsonPath)}`,
+    `  export: ${options.entry.subpath}`,
+    `  specifier: ${options.entry.specifier}`,
+  ];
+
+  addProblemList(
+    lines,
+    'declared targets',
+    formatExportTargets(options.entry.targets),
+  );
+  lines.push(`  resolver: ${options.resolver}`);
+  addProblemList(
+    lines,
+    'checked profiles',
+    options.profiles.map((profile) =>
+      formatCheckedProfile(options.config, profile),
+    ),
+  );
+
+  if (options.expectedCandidates.length > 0) {
+    addProblemList(
+      lines,
+      options.expectedCandidatesLabel,
+      options.expectedCandidates,
+    );
+  }
+
+  lines.push(
+    `  reason: ${options.reason}`,
+    `  fix: ${getWorkspaceExportFix()}`,
+  );
+
+  return lines.join('\n');
+}
+
 function addEntryProblems(options: {
+  config: ResolvedLiminaConfig;
   entry: PackageExportEntry;
   oxcResolvedPaths: string[];
   problems: string[];
+  profiles: readonly WorkspaceExportsResolutionProfile[];
   typeScriptResolvedPaths: string[];
 }): void {
   if (
@@ -412,25 +589,40 @@ function addEntryProblems(options: {
     options.oxcResolvedPaths.length === 0
   ) {
     options.problems.push(
-      [
-        'Workspace package export is not resolvable by TypeScript:',
-        `  package: ${options.entry.packageName}`,
-        `  export: ${options.entry.subpath}`,
-        `  specifier: ${options.entry.specifier}`,
-        '  reason: no active checker profile could resolve this package export in the TypeScript declaration context.',
-      ].join('\n'),
+      createWorkspaceExportProblem({
+        config: options.config,
+        entry: options.entry,
+        expectedCandidates: getDeclarationCandidatePaths({
+          config: options.config,
+          entry: options.entry,
+        }),
+        expectedCandidatesLabel: 'expected declaration candidates',
+        profiles: options.profiles,
+        reason:
+          'package.json#exports/types/main do not resolve to a declaration entry for any active checker profile.',
+        resolver: 'TypeScript declaration resolver',
+        title:
+          'Workspace package export has no TypeScript declaration-context resolution',
+      }),
     );
   }
 
   if (options.oxcResolvedPaths.length === 0) {
     options.problems.push(
-      [
-        'Workspace package export is not resolvable by Oxc:',
-        `  package: ${options.entry.packageName}`,
-        `  export: ${options.entry.subpath}`,
-        `  specifier: ${options.entry.specifier}`,
-        '  reason: no active checker profile could resolve this package export through the runtime resolver.',
-      ].join('\n'),
+      createWorkspaceExportProblem({
+        config: options.config,
+        entry: options.entry,
+        expectedCandidates: getRuntimeCandidatePaths({
+          config: options.config,
+          entry: options.entry,
+        }),
+        expectedCandidatesLabel: 'expected runtime candidates',
+        profiles: options.profiles,
+        reason:
+          'package.json#exports declares this public entry, but no active checker profile can resolve it.',
+        resolver: 'Oxc runtime resolver',
+        title: 'Workspace package export points to an unresolved public entry',
+      }),
     );
   }
 }
@@ -506,9 +698,11 @@ export async function createWorkspaceExportsResolutionIndex(options: {
       }
 
       addEntryProblems({
+        config: options.config,
         entry,
         oxcResolvedPaths,
         problems,
+        profiles: options.profiles,
         typeScriptResolvedPaths,
       });
     }
