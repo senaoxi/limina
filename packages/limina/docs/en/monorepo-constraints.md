@@ -143,9 +143,9 @@ This import bypasses both `ui`’s public entry point and `app`’s dependency d
 import { Button } from '@acme/ui';
 ```
 
-Limina checks whether relative imports cross the nearest `package.json` package scope. For bare package imports, it also checks whether the current workspace package scope acknowledges the dependency through `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. Matching `source.importAuthority.allow` rules can make the workspace root `package.json` an additional dependency-declaration candidate, or explain cases involving templates, aliases, or runtime-provided dependencies through import-specifier rules.
+Limina checks whether relative imports cross the nearest `package.json` package scope. For bare package imports, it also checks whether the current workspace package scope acknowledges the dependency through `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. Matching `source.importAuthority.allow` grants can make selected workspace root dependency declarations available to a specific source owner.
 
-`#imports` follows a similar boundary. Its declaration source is the nearest package scope of the importing file. Relative targets should remain inside the package scope that declares them. If the target points to a third-party package or a workspace dependency, that dependency still needs to be authorized by the workspace package scope that owns the importing file, or it must match an explicit `source.importAuthority.allow` rule.
+`#imports` follows a similar boundary. Its declaration source is the nearest package scope of the importing file. Relative targets should remain inside the package scope that declares them. If the target points to a third-party package or a workspace dependency, that dependency still needs to be authorized by the workspace package scope that owns the importing file, or it must be covered by a matching workspace root dependency grant.
 
 Limina does not prohibit cross-package collaboration. It requires cross-package collaboration to go through paths that can be explained by package manifests and public entry points.
 

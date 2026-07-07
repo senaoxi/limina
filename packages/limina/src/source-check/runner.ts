@@ -151,11 +151,19 @@ const picomatch = rawPicomatch as unknown as (
 ) => (value: string) => boolean;
 
 interface CompiledImportAuthorityAllowRule {
-  fileMatchers: ((value: string) => boolean)[];
-  ownerIdentity?: string;
+  appliesToAllGovernedOwnerSources: boolean;
+  grantIndex: number;
+  includeMatchers: ((value: string) => boolean)[];
+  ownerIdentity: string;
   packageMatchers: ((value: string) => boolean)[];
   reason: string;
-  specifierMatchers: ((value: string) => boolean)[];
+}
+
+interface PackageImportAuthorizationResolution {
+  authorityManifestPaths: string[];
+  authorized: boolean;
+  intermediateDependencyPackage?: WorkspacePackage;
+  matchedGrant?: CompiledImportAuthorityAllowRule;
 }
 
 function addProjectOwnerProblems(options: {
@@ -252,7 +260,7 @@ function addRelativeImportOwnerProblem(options: {
 }
 
 function addPackageImportAuthorizationProblem(options: {
-  authorityManifestPaths: string[];
+  authorization: PackageImportAuthorizationResolution;
   config: ResolvedLiminaConfig;
   dependencySpecifier?: string;
   importRecord: ImportRecord;
@@ -261,12 +269,34 @@ function addPackageImportAuthorizationProblem(options: {
   problems: string[];
   workspacePackage: WorkspacePackage | null;
 }): void {
-  const fix = formatPackageImportAuthorizationFix(options);
+  const ownerIdentity = getSourceOwnerIdentity({
+    config: options.config,
+    owner: options.owner,
+  });
+  const fix = formatPackageImportAuthorizationFix({
+    ...options,
+    authorization: options.authorization,
+    ownerIdentity,
+  });
+  const matchedGrantPath = options.authorization.matchedGrant
+    ? formatImportAuthorityGrantPath(options.authorization.matchedGrant)
+    : undefined;
+  const rootPackageJsonPath = normalizeAbsolutePath(
+    path.join(options.config.rootDir, 'package.json'),
+  );
+  const rootManifestDoesNotDeclarePackage =
+    options.authorization.matchedGrant &&
+    existsSync(rootPackageJsonPath) &&
+    options.authorization.authorityManifestPaths.includes(
+      rootPackageJsonPath,
+    ) &&
+    !options.authorization.intermediateDependencyPackage;
 
   options.problems.push(
     [
       'Unauthorized bare package import:',
       `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+      `  owner identity: ${ownerIdentity}`,
       `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
       `  imported specifier: ${options.importRecord.specifier}`,
       `  package: ${options.packageName}`,
@@ -277,22 +307,43 @@ function addPackageImportAuthorizationProblem(options: {
         ? [`  workspace package: ${options.workspacePackage.name}`]
         : []),
       '  dependency authority manifests:',
-      ...options.authorityManifestPaths.map(
+      ...options.authorization.authorityManifestPaths.map(
         (manifestPath) =>
           `    - ${toRelativePath(options.config.rootDir, manifestPath)}`,
       ),
-      '  reason: source imports must be declared by the nearest pnpm workspace source owner, by the workspace root manifest when a matching source.importAuthority.allow package rule makes it a candidate, or by an explicit source.importAuthority.allow specifier rule.',
+      ...(matchedGrantPath
+        ? ['  matched import authority grant:', `    ${matchedGrantPath}`]
+        : []),
+      ...(options.authorization.intermediateDependencyPackage
+        ? [
+            `  reason: source import authority can only use the owner package.json or an explicitly configured workspace root dependency grant. An intermediate workspace package declares "${options.packageName}", so the workspace root grant must not bypass it.`,
+            '  intermediate dependency declaration:',
+            `    package.json: ${toRelativePath(
+              options.config.rootDir,
+              getWorkspacePackageJsonPath(
+                options.authorization.intermediateDependencyPackage,
+              ),
+            )}`,
+          ]
+        : rootManifestDoesNotDeclarePackage
+          ? [
+              `  reason: the grant allows workspace root dependency authority, but the workspace root package.json does not declare "${options.packageName}".`,
+            ]
+          : [
+              '  reason: source imports must be declared by the nearest pnpm workspace source owner or by an explicitly configured workspace root dependency grant.',
+            ]),
       `  fix: ${fix}`,
     ].join('\n'),
   );
 }
 
 function formatPackageImportAuthorizationFix(options: {
-  authorityManifestPaths: string[];
+  authorization: PackageImportAuthorizationResolution;
   config: ResolvedLiminaConfig;
   dependencySpecifier?: string;
   importRecord: ImportRecord;
   owner: PackageOwner;
+  ownerIdentity: string;
   packageName: string;
   workspacePackage: WorkspacePackage | null;
 }): string {
@@ -300,22 +351,20 @@ function formatPackageImportAuthorizationFix(options: {
     options.config.rootDir,
     options.owner.packageJsonPath,
   );
-  const rootManifestPath = options.authorityManifestPaths.find(
-    (manifestPath) => manifestPath !== options.owner.packageJsonPath,
-  );
-  const rootManifestFix = rootManifestPath
-    ? ` Because a source.importAuthority.allow package rule matches this import, declaring "${options.packageName}" in ${toRelativePath(options.config.rootDir, rootManifestPath)} dependencies, devDependencies, peerDependencies, or optionalDependencies is also accepted.`
+  const rootAuthorityFix = ` If this package is intentionally declared by the workspace root, add source.importAuthority.allow["${options.ownerIdentity}"] with workspaceRootDependencies: ["${options.packageName}"] and a reason.`;
+  const intermediateAuthorityFix = options.authorization
+    .intermediateDependencyPackage
+    ? ` Remove or relocate the intermediate declaration if it is not the intended authority, or avoid relying on workspace root dependency authority for this import.`
     : '';
   const typeDeclarationFix =
     options.dependencySpecifier?.startsWith('@types/') &&
     options.dependencySpecifier !== options.packageName
       ? ` "${options.dependencySpecifier}" only supplies declarations and does not authorize "${options.packageName}".`
       : '';
-  const explicitAuthorityFix = ` If "${options.packageName}" is supplied by a runtime, template, or alias instead of a dependency manifest, add a source.importAuthority.allow specifier rule for this import with a reason.`;
   return [
     `Declare "${options.packageName}" in ${ownerManifestPath} dependencies, devDependencies, peerDependencies, or optionalDependencies.`,
-    rootManifestFix,
-    explicitAuthorityFix,
+    rootAuthorityFix,
+    intermediateAuthorityFix,
     typeDeclarationFix,
   ]
     .filter(Boolean)
@@ -328,6 +377,139 @@ function getWorkspacePackageJsonPath(
   return normalizeAbsolutePath(
     path.join(workspacePackage.directory, 'package.json'),
   );
+}
+
+function formatImportAuthorityGrantPath(
+  rule: CompiledImportAuthorityAllowRule,
+): string {
+  return `source.importAuthority.allow[${JSON.stringify(rule.ownerIdentity)}][${rule.grantIndex}]`;
+}
+
+function collectIntermediateWorkspacePackages(options: {
+  config: ResolvedLiminaConfig;
+  owner: PackageOwner;
+  packages: WorkspacePackage[];
+}): WorkspacePackage[] {
+  const ownerDirectory = normalizeAbsolutePath(options.owner.directory);
+  const rootDirectory = normalizeAbsolutePath(options.config.rootDir);
+
+  return options.packages
+    .filter((workspacePackage) => {
+      const packageDirectory = normalizeAbsolutePath(
+        workspacePackage.directory,
+      );
+
+      return (
+        packageDirectory !== ownerDirectory &&
+        packageDirectory !== rootDirectory &&
+        isPathInsideDirectory(ownerDirectory, packageDirectory)
+      );
+    })
+    .sort(
+      (left, right) =>
+        normalizeAbsolutePath(right.directory).length -
+        normalizeAbsolutePath(left.directory).length,
+    );
+}
+
+function getImportAuthorityOwnerKeyReason(ownerKey: string): string {
+  if (ownerKey.trim().length === 0) {
+    return 'source.importAuthority.allow keys must be non-empty source owner identities.';
+  }
+
+  if (ownerKey === '*' || ownerKey === '<root>' || ownerKey === '<workspace>') {
+    return 'global source import authority owner keys are not supported.';
+  }
+
+  if (/[*?[\]{}()!+]/u.test(ownerKey)) {
+    return 'owner glob keys are not supported; keys must match known workspace source owners.';
+  }
+
+  return 'source.importAuthority.allow keys must match known workspace source owners.';
+}
+
+function getClosestOwnerSuggestion(
+  ownerKey: string,
+  ownerIdentities: string[],
+): string | undefined {
+  let bestSuggestion: string | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const ownerIdentity of ownerIdentities) {
+    const distance = getEditDistance(ownerKey, ownerIdentity);
+
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestSuggestion = ownerIdentity;
+    }
+  }
+
+  const threshold = Math.max(3, Math.floor(ownerKey.length / 3));
+
+  return bestDistance <= threshold ? bestSuggestion : undefined;
+}
+
+function getEditDistance(left: string, right: string): number {
+  const previous = Array.from(
+    { length: right.length + 1 },
+    (_, index) => index,
+  );
+
+  for (const [leftIndex, element] of left.entries()) {
+    const current = [leftIndex + 1];
+
+    for (const [rightIndex, element_] of right.entries()) {
+      const substitutionCost = element === element_ ? 0 : 1;
+      current[rightIndex + 1] = Math.min(
+        current[rightIndex]! + 1,
+        previous[rightIndex + 1]! + 1,
+        previous[rightIndex]! + substitutionCost,
+      );
+    }
+
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[right.length] ?? Number.POSITIVE_INFINITY;
+}
+
+function addImportAuthorityOwnerConfigProblems(options: {
+  checks: CheckCounter;
+  config: ResolvedLiminaConfig;
+  ownerIdentities: Set<string>;
+  problems: string[];
+}): void {
+  const rawAllow = options.config.source?.importAuthority?.allow;
+
+  if (!rawAllow || Array.isArray(rawAllow) || !isPlainConfigRecord(rawAllow)) {
+    return;
+  }
+
+  const sortedOwnerIdentities = [...options.ownerIdentities].sort();
+
+  for (const ownerKey of Object.keys(rawAllow)) {
+    options.checks.add();
+
+    if (options.ownerIdentities.has(ownerKey)) {
+      continue;
+    }
+
+    const suggestion = getClosestOwnerSuggestion(
+      ownerKey,
+      sortedOwnerIdentities,
+    );
+
+    options.problems.push(
+      [
+        'Invalid source import authority config:',
+        `  field: source.importAuthority.allow[${JSON.stringify(ownerKey)}]`,
+        `  owner: ${ownerKey}`,
+        `  reason: ${getImportAuthorityOwnerKeyReason(ownerKey)}`,
+        '  fix: use an existing workspace package name, or the workspace-root-relative owner directory for nameless owners.',
+        ...(suggestion ? ['  did you mean:', `    - ${suggestion}`] : []),
+      ].join('\n'),
+    );
+  }
 }
 
 function findWorkspaceRootPackage(options: {
@@ -343,66 +525,86 @@ function findWorkspaceRootPackage(options: {
   );
 }
 
-function getDependencyAuthorityManifestPaths(options: {
+function resolvePackageImportAuthorization(options: {
   config: ResolvedLiminaConfig;
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
   packageName: string;
+  packages: WorkspacePackage[];
   rootPackage: WorkspacePackage | null;
-}): string[] {
+}): PackageImportAuthorizationResolution {
   const manifestPaths = [options.owner.packageJsonPath];
 
-  if (
-    options.rootPackage &&
-    options.rootPackage.directory !== options.owner.directory &&
-    isRootManifestDependencyAuthorityCandidate({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: options.packageName,
-    })
-  ) {
-    manifestPaths.push(getWorkspacePackageJsonPath(options.rootPackage));
-  }
-
-  return manifestPaths;
-}
-
-function isDependencyAuthorizedBySourceAuthority(options: {
-  config: ResolvedLiminaConfig;
-  importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
-  importRecord: ImportRecord;
-  owner: PackageOwner;
-  packageName: string;
-  rootPackage: WorkspacePackage | null;
-}): boolean {
   if (isDependencyAuthorized(options.owner.manifest, options.packageName)) {
-    return true;
+    return {
+      authorityManifestPaths: manifestPaths,
+      authorized: true,
+    };
   }
 
-  if (
-    options.rootPackage &&
-    options.rootPackage.directory !== options.owner.directory &&
-    isRootManifestDependencyAuthorityCandidate({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: options.packageName,
-    }) &&
-    isDependencyAuthorized(options.rootPackage.manifest, options.packageName)
-  ) {
-    return true;
-  }
-
-  return isImportAuthorizedByExplicitAuthority({
+  const matchedGrant = findMatchingWorkspaceRootDependencyGrant({
     config: options.config,
+    importAuthorityAllowRules: options.importAuthorityAllowRules,
     importRecord: options.importRecord,
     owner: options.owner,
-    rules: options.importAuthorityAllowRules,
+    packageName: options.packageName,
   });
+
+  if (
+    !matchedGrant ||
+    !options.rootPackage ||
+    normalizeAbsolutePath(options.rootPackage.directory) ===
+      normalizeAbsolutePath(options.owner.directory)
+  ) {
+    return {
+      authorityManifestPaths: manifestPaths,
+      authorized: false,
+      ...(matchedGrant ? { matchedGrant } : {}),
+    };
+  }
+
+  const intermediatePackages = collectIntermediateWorkspacePackages({
+    config: options.config,
+    owner: options.owner,
+    packages: options.packages,
+  });
+  const rootPackageJsonPath = getWorkspacePackageJsonPath(options.rootPackage);
+  manifestPaths.push(
+    ...intermediatePackages.map((workspacePackage) =>
+      getWorkspacePackageJsonPath(workspacePackage),
+    ),
+    rootPackageJsonPath,
+  );
+  const intermediateDependencyPackage = intermediatePackages.find(
+    (workspacePackage) =>
+      isDependencyAuthorized(workspacePackage.manifest, options.packageName),
+  );
+
+  if (intermediateDependencyPackage) {
+    return {
+      authorityManifestPaths: manifestPaths,
+      authorized: false,
+      intermediateDependencyPackage,
+      matchedGrant,
+    };
+  }
+
+  if (
+    isDependencyAuthorized(options.rootPackage.manifest, options.packageName)
+  ) {
+    return {
+      authorityManifestPaths: manifestPaths,
+      authorized: true,
+      matchedGrant,
+    };
+  }
+
+  return {
+    authorityManifestPaths: manifestPaths,
+    authorized: false,
+    matchedGrant,
+  };
 }
 
 interface PackageImportAuthorityTarget {
@@ -446,6 +648,10 @@ function createValueMatcher(pattern: string): (value: string) => boolean {
   return (value) => value === pattern;
 }
 
+function isPlainConfigRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function getSourceOwnerIdentity(options: {
   config: ResolvedLiminaConfig;
   owner: PackageOwner;
@@ -463,55 +669,140 @@ function collectImportAuthorityAllowRules(options: {
   config: ResolvedLiminaConfig;
   problems: string[];
 }): CompiledImportAuthorityAllowRule[] {
-  const rawRules = options.config.source?.importAuthority?.allow;
+  const rawAllow = options.config.source?.importAuthority?.allow;
 
-  if (rawRules === undefined) {
+  if (rawAllow === undefined) {
+    return [];
+  }
+
+  if (Array.isArray(rawAllow) || !isPlainConfigRecord(rawAllow)) {
+    options.checks.add();
+    options.problems.push(
+      [
+        'Invalid source import authority config:',
+        '  field: source.importAuthority.allow',
+        '  reason: allow must be an object keyed by source owner identity.',
+        '  fix: use allow: { "@scope/package": [{ include: ["test/**/*.ts"], workspaceRootDependencies: ["@example/fixture"], reason: "..." }] }.',
+      ].join('\n'),
+    );
     return [];
   }
 
   const rules: CompiledImportAuthorityAllowRule[] = [];
 
-  for (const [index, rule] of rawRules.entries()) {
+  for (const [ownerIdentity, grants] of Object.entries(rawAllow)) {
     options.checks.add();
-    const field = `source.importAuthority.allow[${index}]`;
-    const files = rule.files
-      .map((file) => normalizeWorkspacePattern(file))
-      .filter((file) => file.length > 0);
-    const invalidFile = files.find(isInvalidWorkspacePattern);
 
-    if (files.length === 0 || invalidFile) {
+    if (!Array.isArray(grants)) {
       options.problems.push(
         [
           'Invalid source import authority config:',
-          `  field: ${field}.files`,
-          ...(invalidFile ? [`  file: ${invalidFile}`] : []),
-          '  reason: files must be positive workspace-root-relative globs inside the workspace root.',
+          `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}]`,
+          '  reason: allow owner entries must be arrays of grants.',
         ].join('\n'),
       );
       continue;
     }
 
-    const packages = rule.packages?.map((value) => value.trim()) ?? [];
-    const specifiers = rule.specifiers?.map((value) => value.trim()) ?? [];
+    for (const [grantIndex, grant] of grants.entries()) {
+      options.checks.add();
 
-    rules.push({
-      fileMatchers: files.map((file) =>
-        picomatch(file, {
-          dot: true,
-          posixSlashes: true,
-        }),
-      ),
-      ...(rule.owner ? { ownerIdentity: rule.owner.trim() } : {}),
-      packageMatchers: packages.map(createValueMatcher),
-      reason: rule.reason.trim(),
-      specifierMatchers: specifiers.map(createValueMatcher),
-    });
+      if (!isPlainConfigRecord(grant)) {
+        options.problems.push(
+          [
+            'Invalid source import authority config:',
+            `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}][${grantIndex}]`,
+            '  reason: importAuthority allow grants must be objects with workspaceRootDependencies and reason fields.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      const include = Array.isArray(grant.include)
+        ? grant.include
+            .map((file) =>
+              typeof file === 'string' ? normalizeWorkspacePattern(file) : '',
+            )
+            .filter((file) => file.length > 0)
+        : [];
+      const invalidInclude = include.find(isInvalidWorkspacePattern);
+
+      if (grant.include !== undefined && include.length === 0) {
+        options.problems.push(
+          [
+            'Invalid source import authority config:',
+            `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}][${grantIndex}].include`,
+            '  reason: include must be a non-empty string array when configured.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (invalidInclude) {
+        options.problems.push(
+          [
+            'Invalid source import authority config:',
+            `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}][${grantIndex}].include`,
+            `  file: ${invalidInclude}`,
+            '  reason: include must use positive owner-root-relative globs.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (
+        !Array.isArray(grant.workspaceRootDependencies) ||
+        grant.workspaceRootDependencies.length === 0 ||
+        grant.workspaceRootDependencies.some(
+          (value) => typeof value !== 'string' || value.trim().length === 0,
+        )
+      ) {
+        options.problems.push(
+          [
+            'Invalid source import authority config:',
+            `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}][${grantIndex}].workspaceRootDependencies`,
+            '  reason: workspaceRootDependencies must be a non-empty string array.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      if (
+        typeof grant.reason !== 'string' ||
+        grant.reason.trim().length === 0
+      ) {
+        options.problems.push(
+          [
+            'Invalid source import authority config:',
+            `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}][${grantIndex}].reason`,
+            '  reason: reason must be a non-empty string.',
+          ].join('\n'),
+        );
+        continue;
+      }
+
+      rules.push({
+        appliesToAllGovernedOwnerSources: grant.include === undefined,
+        grantIndex,
+        includeMatchers: include.map((file) =>
+          picomatch(file, {
+            dot: true,
+            posixSlashes: true,
+          }),
+        ),
+        ownerIdentity,
+        packageMatchers: grant.workspaceRootDependencies.map((value) =>
+          createValueMatcher(value.trim()),
+        ),
+        reason: grant.reason.trim(),
+      });
+    }
   }
 
   return rules;
 }
 
-function hasImportAuthorityPackageRules(
+function hasImportAuthorityWorkspaceRootDependencyGrants(
   rules: CompiledImportAuthorityAllowRule[],
 ): boolean {
   return rules.some((rule) => rule.packageMatchers.length > 0);
@@ -525,7 +816,11 @@ function addImportAuthorityRootManifestConfigProblems(options: {
 }): void {
   options.checks.add();
 
-  if (!hasImportAuthorityPackageRules(options.importAuthorityAllowRules)) {
+  if (
+    !hasImportAuthorityWorkspaceRootDependencyGrants(
+      options.importAuthorityAllowRules,
+    )
+  ) {
     return;
   }
 
@@ -538,9 +833,9 @@ function addImportAuthorityRootManifestConfigProblems(options: {
   options.problems.push(
     [
       'Invalid source import authority config:',
-      '  field: source.importAuthority.allow[].packages',
-      '  reason: package allow rules enable workspace root package.json as a dependency authority manifest, but no package.json exists at the workspace root.',
-      '  fix: create a workspace root package.json or remove package entries from source.importAuthority.allow rules.',
+      '  field: source.importAuthority.allow',
+      '  reason: workspaceRootDependencies grants require a workspace root package.json.',
+      '  fix: create a workspace root package.json, or remove workspaceRootDependencies grants.',
     ].join('\n'),
   );
 }
@@ -550,12 +845,12 @@ function getImportAuthorityRuleContext(options: {
   importRecord: ImportRecord;
   owner: PackageOwner;
 }): {
-  filePath: string;
+  ownerRelativeFilePath: string;
   ownerIdentity: string;
 } {
   return {
-    filePath: normalizeSlashes(
-      toRelativePath(options.config.rootDir, options.importRecord.filePath),
+    ownerRelativeFilePath: normalizeSlashes(
+      toRelativePath(options.owner.directory, options.importRecord.filePath),
     ),
     ownerIdentity: getSourceOwnerIdentity({
       config: options.config,
@@ -567,26 +862,32 @@ function getImportAuthorityRuleContext(options: {
 function isImportAuthorityRuleInScope(
   rule: CompiledImportAuthorityAllowRule,
   context: {
-    filePath: string;
+    ownerRelativeFilePath: string;
     ownerIdentity: string;
   },
 ): boolean {
-  if (rule.ownerIdentity && rule.ownerIdentity !== context.ownerIdentity) {
+  if (rule.ownerIdentity !== context.ownerIdentity) {
     return false;
   }
 
-  return rule.fileMatchers.some((matches) => matches(context.filePath));
+  if (rule.appliesToAllGovernedOwnerSources) {
+    return true;
+  }
+
+  return rule.includeMatchers.some((matches) =>
+    matches(context.ownerRelativeFilePath),
+  );
 }
 
-function isRootManifestDependencyAuthorityCandidate(options: {
+function findMatchingWorkspaceRootDependencyGrant(options: {
   config: ResolvedLiminaConfig;
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
   packageName: string;
-}): boolean {
+}): CompiledImportAuthorityAllowRule | undefined {
   if (options.importAuthorityAllowRules.length === 0) {
-    return false;
+    return undefined;
   }
 
   const context = getImportAuthorityRuleContext({
@@ -595,36 +896,10 @@ function isRootManifestDependencyAuthorityCandidate(options: {
     owner: options.owner,
   });
 
-  return options.importAuthorityAllowRules.some((rule) => {
+  return options.importAuthorityAllowRules.find((rule) => {
     return (
       isImportAuthorityRuleInScope(rule, context) &&
       rule.packageMatchers.some((matches) => matches(options.packageName))
-    );
-  });
-}
-
-function isImportAuthorizedByExplicitAuthority(options: {
-  config: ResolvedLiminaConfig;
-  importRecord: ImportRecord;
-  owner: PackageOwner;
-  rules: CompiledImportAuthorityAllowRule[];
-}): boolean {
-  if (options.rules.length === 0) {
-    return false;
-  }
-
-  const context = getImportAuthorityRuleContext({
-    config: options.config,
-    importRecord: options.importRecord,
-    owner: options.owner,
-  });
-
-  return options.rules.some((rule) => {
-    return (
-      isImportAuthorityRuleInScope(rule, context) &&
-      rule.specifierMatchers.some((matches) =>
-        matches(options.importRecord.specifier),
-      )
     );
   });
 }
@@ -715,6 +990,7 @@ function addPackageImportArtifactAuthorizationProblem(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
+  packages: WorkspacePackage[];
   packageInfo: NearestPackageInfo;
   problems: string[];
   rootPackage: WorkspacePackage | null;
@@ -732,29 +1008,22 @@ function addPackageImportArtifactAuthorizationProblem(options: {
   }
 
   const packageName = options.packageInfo.name;
+  const authorization = resolvePackageImportAuthorization({
+    config: options.config,
+    importAuthorityAllowRules: options.importAuthorityAllowRules,
+    importRecord: options.importRecord,
+    owner: options.owner,
+    packageName,
+    packages: options.packages,
+    rootPackage: options.rootPackage,
+  });
 
-  if (
-    isDependencyAuthorizedBySourceAuthority({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName,
-      rootPackage: options.rootPackage,
-    })
-  ) {
+  if (authorization.authorized) {
     return;
   }
 
   addPackageImportAuthorizationProblem({
-    authorityManifestPaths: getDependencyAuthorityManifestPaths({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName,
-      rootPackage: options.rootPackage,
-    }),
+    authorization,
     config: options.config,
     importRecord: options.importRecord,
     owner: options.owner,
@@ -780,6 +1049,7 @@ function addPackageImportProblem(options: {
   config: ResolvedLiminaConfig;
   importRecord: ImportRecord;
   owner: PackageOwner;
+  packages: WorkspacePackage[];
   problems: string[];
   resolvedFilePath: string | null;
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
@@ -890,6 +1160,7 @@ function addPackageImportProblem(options: {
         importAuthorityAllowRules: options.importAuthorityAllowRules,
         importRecord: options.importRecord,
         owner: options.owner,
+        packages: options.packages,
         packageInfo: target.packageInfo,
         problems: options.problems,
         rootPackage: options.rootPackage,
@@ -915,6 +1186,7 @@ function addPackageImportProblem(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
+      packages: options.packages,
       packageInfo: target.packageInfo,
       problems: options.problems,
       rootPackage: options.rootPackage,
@@ -1712,6 +1984,7 @@ function addResolvedOtherOwnerBarePackageProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
+  packages: WorkspacePackage[];
   problems: string[];
   rootPackage: WorkspacePackage | null;
   target: Extract<ResolvedPackageTarget, { kind: 'other-owner' }>;
@@ -1736,29 +2009,22 @@ function addResolvedOtherOwnerBarePackageProblems(options: {
   });
   const resolvedPackageNameDiagnostic =
     getResolvedPackageNameDiagnostic(authorityTarget);
+  const authorization = resolvePackageImportAuthorization({
+    config: options.config,
+    importAuthorityAllowRules: options.importAuthorityAllowRules,
+    importRecord: options.importRecord,
+    owner: options.owner,
+    packageName: authorityTarget.requestedPackageName,
+    packages: options.packages,
+    rootPackage: options.rootPackage,
+  });
 
-  if (
-    isDependencyAuthorizedBySourceAuthority({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: authorityTarget.requestedPackageName,
-      rootPackage: options.rootPackage,
-    })
-  ) {
+  if (authorization.authorized) {
     return;
   }
 
   addPackageImportAuthorizationProblem({
-    authorityManifestPaths: getDependencyAuthorityManifestPaths({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: authorityTarget.requestedPackageName,
-      rootPackage: options.rootPackage,
-    }),
+    authorization,
     config: options.config,
     ...(resolvedPackageNameDiagnostic
       ? { dependencySpecifier: resolvedPackageNameDiagnostic }
@@ -1776,6 +2042,7 @@ function addResolvedArtifactBarePackageProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
+  packages: WorkspacePackage[];
   problems: string[];
   rootPackage: WorkspacePackage | null;
   target: Extract<ResolvedPackageTarget, { kind: 'artifact-package' }>;
@@ -1797,29 +2064,22 @@ function addResolvedArtifactBarePackageProblems(options: {
   });
   const resolvedPackageNameDiagnostic =
     getResolvedPackageNameDiagnostic(authorityTarget);
+  const authorization = resolvePackageImportAuthorization({
+    config: options.config,
+    importAuthorityAllowRules: options.importAuthorityAllowRules,
+    importRecord: options.importRecord,
+    owner: options.owner,
+    packageName: authorityTarget.requestedPackageName,
+    packages: options.packages,
+    rootPackage: options.rootPackage,
+  });
 
-  if (
-    isDependencyAuthorizedBySourceAuthority({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: authorityTarget.requestedPackageName,
-      rootPackage: options.rootPackage,
-    })
-  ) {
+  if (authorization.authorized) {
     return;
   }
 
   addPackageImportAuthorizationProblem({
-    authorityManifestPaths: getDependencyAuthorityManifestPaths({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: authorityTarget.requestedPackageName,
-      rootPackage: options.rootPackage,
-    }),
+    authorization,
     config: options.config,
     ...(resolvedPackageNameDiagnostic
       ? { dependencySpecifier: resolvedPackageNameDiagnostic }
@@ -1837,6 +2097,7 @@ function addResolvedBarePackageImportProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
+  packages: WorkspacePackage[];
   problems: string[];
   resolvedFilePath: string;
   rootPackage: WorkspacePackage | null;
@@ -1857,6 +2118,7 @@ function addResolvedBarePackageImportProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
+      packages: options.packages,
       problems: options.problems,
       rootPackage: options.rootPackage,
       target,
@@ -1870,6 +2132,7 @@ function addResolvedBarePackageImportProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
+      packages: options.packages,
       problems: options.problems,
       rootPackage: options.rootPackage,
       target,
@@ -1903,6 +2166,7 @@ function addBarePackageImportProblems(options: {
       importAuthorityAllowRules: options.importAuthorityAllowRules,
       importRecord: options.importRecord,
       owner: options.owner,
+      packages: options.packages,
       problems: options.problems,
       resolvedFilePath: options.resolvedFilePath,
       rootPackage: options.rootPackage,
@@ -1916,29 +2180,22 @@ function addBarePackageImportProblems(options: {
     options.packages.find(
       (candidate) => candidate.name === options.fallbackPackageName,
     ) ?? null;
+  const authorization = resolvePackageImportAuthorization({
+    config: options.config,
+    importAuthorityAllowRules: options.importAuthorityAllowRules,
+    importRecord: options.importRecord,
+    owner: options.owner,
+    packageName: options.fallbackPackageName,
+    packages: options.packages,
+    rootPackage: options.rootPackage,
+  });
 
-  if (
-    isDependencyAuthorizedBySourceAuthority({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: options.fallbackPackageName,
-      rootPackage: options.rootPackage,
-    })
-  ) {
+  if (authorization.authorized) {
     return;
   }
 
   addPackageImportAuthorizationProblem({
-    authorityManifestPaths: getDependencyAuthorityManifestPaths({
-      config: options.config,
-      importAuthorityAllowRules: options.importAuthorityAllowRules,
-      importRecord: options.importRecord,
-      owner: options.owner,
-      packageName: options.fallbackPackageName,
-      rootPackage: options.rootPackage,
-    }),
+    authorization,
     config: options.config,
     importRecord: options.importRecord,
     owner: options.owner,
@@ -1987,6 +2244,7 @@ function addImportRecordProblems(options: {
       config: options.config,
       importRecord: options.importRecord,
       owner: options.owner,
+      packages: options.packages,
       problems: options.problems,
       resolvedFilePath,
       importAuthorityAllowRules: options.importAuthorityAllowRules,
@@ -2338,6 +2596,19 @@ export async function runSourceCheckImpl(
   const importAuthorityAllowRules = collectImportAuthorityAllowRules({
     checks,
     config,
+    problems,
+  });
+  addImportAuthorityOwnerConfigProblems({
+    checks,
+    config,
+    ownerIdentities: new Set(
+      packageOwners.map((owner) =>
+        getSourceOwnerIdentity({
+          config,
+          owner,
+        }),
+      ),
+    ),
     problems,
   });
   addImportAuthorityRootManifestConfigProblems({

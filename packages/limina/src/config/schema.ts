@@ -444,74 +444,109 @@ function validateSourceImportAuthorityConfig(
     return;
   }
 
-  if (!Array.isArray(allow)) {
+  if (Array.isArray(allow) || !isPlainConfigRecord(allow)) {
     ctx.addIssue({
       code: 'custom',
-      message: 'importAuthority.allow must be an array.',
+      message:
+        'allow must be an object keyed by source owner identity.\n  fix: use allow: { "@scope/package": [{ include: ["test/**/*.ts"], workspaceRootDependencies: ["@example/fixture"], reason: "..." }] }.',
       path: ['source', 'importAuthority', 'allow'],
     });
     return;
   }
 
-  for (const [index, entry] of allow.entries()) {
-    const path = ['source', 'importAuthority', 'allow', index];
+  for (const [ownerIdentity, grants] of Object.entries(allow)) {
+    const ownerPath = ['source', 'importAuthority', 'allow', ownerIdentity];
 
-    if (!isPlainConfigRecord(entry)) {
+    if (ownerIdentity.trim().length === 0) {
       ctx.addIssue({
         code: 'custom',
-        message:
-          'importAuthority allow entries must be objects with files, packages or specifiers, and reason fields.',
-        path,
+        message: 'allow keys must be non-empty source owner identities.',
+        path: ownerPath,
+      });
+    }
+
+    if (!Array.isArray(grants)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'allow owner entries must be arrays of grants.',
+        path: ownerPath,
       });
       continue;
     }
 
-    validateStringArrayField({
-      ctx,
-      path: [...path, 'files'],
-      required: true,
-      value: entry.files,
-      valueName: 'files',
-    });
+    for (const [index, grant] of grants.entries()) {
+      const grantPath = [...ownerPath, index];
 
-    const hasPackages = validateStringArrayField({
-      ctx,
-      path: [...path, 'packages'],
-      value: entry.packages,
-      valueName: 'packages',
-    });
-    const hasSpecifiers = validateStringArrayField({
-      ctx,
-      path: [...path, 'specifiers'],
-      value: entry.specifiers,
-      valueName: 'specifiers',
-    });
-
-    if (!hasPackages && !hasSpecifiers) {
-      ctx.addIssue({
-        code: 'custom',
-        message:
-          'importAuthority allow entries must declare packages or specifiers.',
-        path,
-      });
-    }
-
-    if (entry.owner !== undefined) {
-      if (typeof entry.owner !== 'string' || entry.owner.trim().length === 0) {
+      if (!isPlainConfigRecord(grant)) {
         ctx.addIssue({
           code: 'custom',
-          message: 'owner must be a non-empty string when configured.',
-          path: [...path, 'owner'],
+          message:
+            'importAuthority allow grants must be objects with workspaceRootDependencies and reason fields.',
+          path: grantPath,
+        });
+        continue;
+      }
+
+      if (Object.hasOwn(grant, 'files')) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'files has been replaced by owner-root-relative include.\n  fix: move the source owner into the allow object key and replace workspace-root-relative files with owner-root-relative include.',
+          path: [...grantPath, 'files'],
         });
       }
-    }
 
-    if (typeof entry.reason !== 'string' || entry.reason.trim().length === 0) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'reason must be a non-empty string.',
-        path: [...path, 'reason'],
+      if (Object.hasOwn(grant, 'packages')) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'packages has been replaced by workspaceRootDependencies.\n  fix: rename packages to workspaceRootDependencies.',
+          path: [...grantPath, 'packages'],
+        });
+      }
+
+      if (Object.hasOwn(grant, 'specifiers')) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'direct specifier authority is not part of the workspace root dependency authority model.',
+          path: [...grantPath, 'specifiers'],
+        });
+      }
+
+      if (Object.hasOwn(grant, 'owner')) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'owner is now expressed by the allow object key.',
+          path: [...grantPath, 'owner'],
+        });
+      }
+
+      validateStringArrayField({
+        ctx,
+        path: [...grantPath, 'workspaceRootDependencies'],
+        required: true,
+        value: grant.workspaceRootDependencies,
+        valueName: 'workspaceRootDependencies',
       });
+
+      validateStringArrayField({
+        ctx,
+        path: [...grantPath, 'include'],
+        value: grant.include,
+        valueName: 'include',
+      });
+
+      if (
+        typeof grant.reason !== 'string' ||
+        grant.reason.trim().length === 0
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'reason must be a non-empty string.',
+          path: [...grantPath, 'reason'],
+        });
+      }
     }
   }
 }
@@ -565,7 +600,11 @@ const liminaConfigShapeSchema = z
 function formatZodPath(pathSegments: readonly PropertyKey[]): string {
   return pathSegments
     .map((segment) =>
-      typeof segment === 'number' ? `[${segment}]` : `.${String(segment)}`,
+      typeof segment === 'number'
+        ? `[${segment}]`
+        : /^[A-Za-z_$][\w$]*$/u.test(String(segment))
+          ? `.${String(segment)}`
+          : `[${JSON.stringify(String(segment))}]`,
     )
     .join('')
     .replace(/^\./u, '');
@@ -683,6 +722,18 @@ function formatLiminaConfigShapeIssue(
   if (field === 'config.source' || field.startsWith('config.source.')) {
     return [
       'Invalid Limina source boundary config:',
+      `  field: ${field}`,
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
+    ].join('\n');
+  }
+
+  if (
+    field === 'source.importAuthority' ||
+    field.startsWith('source.importAuthority.')
+  ) {
+    return [
+      'Invalid source import authority config:',
       `  field: ${field}`,
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       `  reason: ${issue.message}`,

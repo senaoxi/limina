@@ -14,7 +14,7 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   source: {
     importAuthority: {
-      allow: [],
+      allow: {},
     },
     knip: {
       workspaces: {},
@@ -27,11 +27,11 @@ export default defineConfig({
 
 `source.importAuthority` controls bare package imports that are not declared by the owning workspace package manifest.
 
-Source import authorization is strict by default: the nearest `pnpm` workspace package that owns the importing file must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. A rule with `packages` lets Limina also check the workspace root `package.json` for the matched package name. The root manifest must exist and must still declare that package in one of the same dependency sections.
+Source import authorization is strict by default: the nearest `pnpm` workspace package that owns the importing file must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. An owner-keyed grant can let that same source owner use dependency declarations from the workspace root `package.json` for selected packages. The root manifest must exist and must still declare the package in one of the same dependency sections.
 
 Here, “source import” includes static imports, type imports, and re-exports collected by Limina. `Node` builtins, virtual modules, `URL` / `data` / `file` specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
 
-For files whose dependencies are intentionally supplied somewhere else, add an explicit allow rule:
+Use `allow` when a workspace root dependency declaration is intentionally shared with a specific source owner:
 
 ```js
 import { defineConfig } from 'limina';
@@ -39,35 +39,37 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   source: {
     importAuthority: {
-      allow: [
-        {
-          files: ['packages/create-app/templates/react/**'],
-          specifiers: ['react', 'react-dom'],
-          reason: 'Template files declare these dependencies in generated apps.',
-        },
-      ],
+      allow: {
+        '@example/create-app': [
+          {
+            include: ['templates/react/**'],
+            workspaceRootDependencies: ['react', 'react-dom'],
+            reason: 'React template sources use dependencies declared by the workspace root.',
+          },
+        ],
+      },
     },
   },
 });
 ```
 
 ```ts
-interface SourceImportAuthorityAllowRule {
-  files: string[];
-  packages?: string[];
-  specifiers?: string[];
-  owner?: string;
-  reason: string;
+interface SourceImportAuthorityConfig {
+  allow?: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
 }
 
-interface SourceImportAuthorityConfig {
-  allow?: SourceImportAuthorityAllowRule[];
+interface SourceImportAuthorityWorkspaceRootGrant {
+  include?: string[];
+  workspaceRootDependencies: string[];
+  reason: string;
 }
 ```
 
-`files` are workspace-root-relative `glob`s. `packages` match package names such as `react` or `@components/shared`; when they match, the workspace root `package.json` becomes an additional dependency declaration candidate for that package. `specifiers` match full import specifiers such as `react/jsx-runtime`; use them for true exceptions where no manifest should declare the import. `glob` syntax is supported for all three. `owner` is optional; when present it matches a named source owner by package name, or a nameless source owner by workspace-root-relative package directory.
+`allow` keys must match known source owner identities. Named workspace packages use their package name, and nameless source owners use their workspace-root-relative package directory. `include` is optional and owner-root-relative; when omitted, the grant applies to all governed source modules owned by that source owner.
 
-Use this for source that is intentionally not governed by the importing owner manifest, such as project templates or documentation aliases. Prefer a manifest dependency whenever the import is part of that owner's actual runtime.
+`workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, and it will not bypass an intermediate workspace package manifest between the source owner and the workspace root.
+
+Prefer an owner manifest dependency whenever the import is part of that owner's actual runtime.
 
 ## knip
 

@@ -158,7 +158,7 @@ Then the dependency relationship appears in both source imports and `package.jso
 
 ### Bare Package Imports Need Authorization
 
-A bare import such as `import pMap from 'p-map'` needs to be explained by the `package.json` of the current source owner. Limina also supports limited additional authorization through `source.importAuthority.allow`: matching rules can allow imports to read the workspace root manifest, or can provide an explicit reason for a specific specifier.
+A bare import such as `import pMap from 'p-map'` needs to be explained by the `package.json` of the current source owner. Limina also supports limited additional authorization through `source.importAuthority.allow`: owner-keyed grants can allow matching imports to read selected dependency declarations from the workspace root manifest.
 
 Such exceptions should stay specific. They should not become a switch that lets every package read dependencies from the root. Otherwise, source ownership becomes ambiguous again.
 
@@ -166,7 +166,7 @@ Such exceptions should stay specific. They should not become a switch that lets 
 
 `package imports` such as `#utils/*` match `package.json#imports` from the importing file's nearest package scope. If the mapping uses a relative target, the resolved result must stay inside the declaring package scope.
 
-An `imports target` can also be a package name, for example `{ "imports": { "#dep": "p-map" } }`. That form represents an external dependency entry and may resolve to a third-party package or a workspace dependency. Authorization still comes from the `pnpm` workspace source owner of the importing file, so the dependency must be declared in dependency fields or explained through a matching `source.importAuthority.allow` rule.
+An `imports target` can also be a package name, for example `{ "imports": { "#dep": "p-map" } }`. That form represents an external dependency entry and may resolve to a third-party package or a workspace dependency. Authorization still comes from the `pnpm` workspace source owner of the importing file, so the dependency must be declared in dependency fields or covered by a matching workspace root dependency grant.
 
 No matching entry reports `Unauthorized package import specifier:` and points to the nearest package scope. A match that cannot resolve reports `Unresolved package import specifier:`. A relative `target` that escapes the declaring package scope reports `Package import relative target escapes package scope:`. If a `package target` is unauthorized, Limina continues to use the dependency authorization diagnostic.
 

@@ -158,7 +158,7 @@ import { helper } from '@acme/core';
 
 ### 裸包导入需要授权
 
-裸包导入，例如 `import pMap from 'p-map'`，需要能被当前源码归属方的 `package.json` 解释。Limina 还支持通过 `source.importAuthority.allow` 增加有限的授权来源：可以让匹配规则的导入读取工作区根清单文件，或为特定导入说明符写明例外原因。
+裸包导入，例如 `import pMap from 'p-map'`，需要能被当前源码归属方的 `package.json` 解释。Limina 还支持通过 `source.importAuthority.allow` 增加有限的授权来源：按源码归属方分组的授权可以让匹配导入读取工作区根清单中的指定依赖声明。
 
 这类例外应保持具体，不能把它当成“所有包都可以从根依赖里拿”的开关。否则源码归属会重新变得模糊。
 
@@ -166,7 +166,7 @@ import { helper } from '@acme/core';
 
 `#utils/*` 这类 `package imports` 会匹配导入文件最近包作用域的 `package.json#imports`。如果这个映射使用相对 `target`，解析结果必须留在声明它的包作用域内。
 
-`imports target` 也可以写成包名，例如 `{ "imports": { "#dep": "p-map" } }`。这种写法表示外部依赖入口，可以解析到三方包或工作区依赖；但授权仍然来自导入文件所属的 `pnpm` 工作区源码归属方，需要在依赖字段里声明，或用匹配的 `source.importAuthority.allow` 规则说明例外。
+`imports target` 也可以写成包名，例如 `{ "imports": { "#dep": "p-map" } }`。这种写法表示外部依赖入口，可以解析到三方包或工作区依赖；但授权仍然来自导入文件所属的 `pnpm` 工作区源码归属方，需要在依赖字段里声明，或命中匹配的工作区根依赖授权。
 
 没有匹配会报告 `Unauthorized package import specifier:`，并指向最近的包作用域。匹配后无法解析会报告 `Unresolved package import specifier:`。相对 `target` 越过声明它的包作用域，会报告 `Package import relative target escapes package scope:`。`package target` 未授权时继续使用依赖授权诊断。
 
