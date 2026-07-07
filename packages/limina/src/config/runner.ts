@@ -250,44 +250,32 @@ export interface SourceKnipCheckConfig {
 }
 
 /**
- * Explicit bare-import authority rule for imports not fully authorized by the
- * owning source package manifest.
- */
-export interface SourceImportAuthorityAllowRule {
-  /**
-   * Workspace-root-relative source file globs where this authorization applies.
-   */
-  files: string[];
-  /**
-   * Package names or package-name globs whose declarations may also be read
-   * from the workspace root package.json when this rule matches.
-   */
-  packages?: string[];
-  /**
-   * Full import specifiers or specifier globs authorized by this rule.
-   */
-  specifiers?: string[];
-  /**
-   * Optional source owner identity. Named owners use their package name;
-   * nameless owners use their workspace-root-relative package directory.
-   */
-  owner?: string;
-  /**
-   * Why this import may use the matched authority rule.
-   */
-  reason: string;
-}
-
-/**
  * Bare package import authority settings interpreted by source checks.
  */
 export interface SourceImportAuthorityConfig {
   /**
-   * Explicit import authority rules. `packages` makes the workspace root
-   * package.json an additional declaration candidate; `specifiers` authorizes
-   * exact import specifier exceptions.
+   * Workspace root dependency authority grants keyed by source owner identity.
    */
-  allow?: SourceImportAuthorityAllowRule[];
+  allow?: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
+}
+
+export interface SourceImportAuthorityWorkspaceRootGrant {
+  /**
+   * Owner-root-relative source globs where this grant applies.
+   *
+   * When omitted, the grant applies to all governed source modules owned by
+   * this source owner.
+   */
+  include?: string[];
+  /**
+   * Package names or package-name globs whose dependency declarations may be
+   * read from the workspace root package.json when this grant matches.
+   */
+  workspaceRootDependencies: string[];
+  /**
+   * Why this owner may use these workspace-root dependency declarations.
+   */
+  reason: string;
 }
 
 /**
@@ -982,10 +970,22 @@ async function resolveConfigExport(
   return normalizeConfig(config);
 }
 
-function hasSourceImportAuthorityPackageRules(config: LiminaConfig): boolean {
+function hasSourceImportAuthorityWorkspaceRootGrants(
+  config: LiminaConfig,
+): boolean {
+  const allow = config.source?.importAuthority?.allow;
+
+  if (!allow) {
+    return false;
+  }
+
   return Boolean(
-    config.source?.importAuthority?.allow?.some((rule) =>
-      rule.packages?.some((packageName) => packageName.trim().length > 0),
+    Object.values(allow).some((grants) =>
+      grants.some((grant) =>
+        grant.workspaceRootDependencies.some(
+          (packageName) => packageName.trim().length > 0,
+        ),
+      ),
     ),
   );
 }
@@ -994,7 +994,7 @@ function validateRootPackageImportAuthorityConfig(
   config: LiminaConfig,
   rootDir: string,
 ): void {
-  if (!hasSourceImportAuthorityPackageRules(config)) {
+  if (!hasSourceImportAuthorityWorkspaceRootGrants(config)) {
     return;
   }
 
@@ -1006,10 +1006,10 @@ function validateRootPackageImportAuthorityConfig(
 
   throw new Error(
     [
-      'Invalid Limina source config:',
-      '  field: source.importAuthority.allow[].packages',
-      `  value: ${JSON.stringify(config.source?.importAuthority?.allow)}`,
-      '  reason: package allow rules enable workspace root package.json as a dependency authority manifest, but no package.json exists at the workspace root.',
+      'Invalid source import authority config:',
+      '  field: source.importAuthority.allow',
+      '  reason: workspaceRootDependencies grants require a workspace root package.json.',
+      '  fix: create a workspace root package.json, or remove workspaceRootDependencies grants.',
     ].join('\n'),
   );
 }

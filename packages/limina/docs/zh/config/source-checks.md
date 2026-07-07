@@ -14,7 +14,7 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   source: {
     importAuthority: {
-      allow: [],
+      allow: {},
     },
     knip: {
       workspaces: {},
@@ -27,11 +27,11 @@ export default defineConfig({
 
 `source.importAuthority` 控制那些没有写在源码归属方清单文件里的裸包导入。
 
-源码导入授权默认严格：最近的 `pnpm` 工作区源码归属方 `package.json` 必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明这个包。带 `packages` 的规则可以让 Limina 额外检查工作区根目录 `package.json` 中是否声明了匹配到的包名。根清单文件必须存在，并且仍然要在同样的依赖区里声明这个包。
+源码导入授权默认严格：最近的 `pnpm` 工作区源码归属方 `package.json` 必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明这个包。按源码归属方分组的授权可以让同一个源码归属方在指定范围内使用工作区根目录 `package.json` 的依赖声明。根清单文件必须存在，并且仍然要在同样的依赖区里声明这个包。
 
 这里的“源码导入”包括 Limina 能收集到的静态导入、类型导入和再导出。`Node` 内置模块、虚拟模块、`URL` / `data` / `file` 说明符和注释中的说明符不按普通裸包依赖处理。
 
-如果某些文件的依赖确实由别的地方提供，可以写显式授权规则：
+当某个源码归属方确实要使用工作区根目录声明的依赖时，可以写 `allow` 授权：
 
 ```js
 import { defineConfig } from 'limina';
@@ -39,35 +39,37 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   source: {
     importAuthority: {
-      allow: [
-        {
-          files: ['packages/create-app/templates/react/**'],
-          specifiers: ['react', 'react-dom'],
-          reason: '模板文件会在生成后的应用里声明这些依赖。',
-        },
-      ],
+      allow: {
+        '@example/create-app': [
+          {
+            include: ['templates/react/**'],
+            workspaceRootDependencies: ['react', 'react-dom'],
+            reason: 'React 模板源码使用工作区根目录声明的依赖。',
+          },
+        ],
+      },
     },
   },
 });
 ```
 
 ```ts
-interface SourceImportAuthorityAllowRule {
-  files: string[];
-  packages?: string[];
-  specifiers?: string[];
-  owner?: string;
-  reason: string;
+interface SourceImportAuthorityConfig {
+  allow?: Record<string, SourceImportAuthorityWorkspaceRootGrant[]>;
 }
 
-interface SourceImportAuthorityConfig {
-  allow?: SourceImportAuthorityAllowRule[];
+interface SourceImportAuthorityWorkspaceRootGrant {
+  include?: string[];
+  workspaceRootDependencies: string[];
+  reason: string;
 }
 ```
 
-`files` 是工作区根目录相对 `glob`。`packages` 匹配 `react`、`@components/shared` 这样的包名；匹配后，工作区根目录 `package.json` 会成为这个包的额外依赖声明候选清单文件。`specifiers` 匹配 `react/jsx-runtime` 这样的完整导入说明符；只有确实不应该由任何清单文件声明的例外才使用它。三者都支持 `glob`。`owner` 可选；有值时，具名源码归属方用包名匹配，无名源码归属方用工作区根目录相对包目录匹配。
+`allow` 的 key 必须匹配已知源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用工作区根目录相对包目录。`include` 可选，写的是源码归属方目录相对 `glob`；省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
 
-这个配置适合项目模板、文档别名等依赖不由导入方清单文件管理的源码。真正属于这个源码归属方运行时的导入，仍然优先写进清单文件。
+`workspaceRootDependencies` 不是直接导入白名单。它只说明当源码归属方和 `include` 范围都匹配时，哪些包名可以读取工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包；如果源码归属方和根目录之间存在中间工作区包清单声明了同一个包，根目录授权不会绕过这个中间清单。
+
+真正属于这个源码归属方运行时的导入，仍然优先写进归属方自己的清单文件。
 
 ## knip
 

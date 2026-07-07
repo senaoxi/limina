@@ -461,7 +461,7 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
-  it('rejects test file bare imports declared only by root devDependencies without a package rule', async () => {
+  it('rejects test file bare imports declared only by root devDependencies without a workspace root dependency grant', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -497,7 +497,7 @@ describe('runSourceCheck package authority', () => {
     'peerDependencies',
     'optionalDependencies',
   ] as const)(
-    'allows package rules to authorize root %s declarations',
+    'allows owner-keyed grants to authorize root %s declarations',
     async (section) => {
       const fixture = await createFixture(
         {
@@ -516,13 +516,15 @@ describe('runSourceCheck package authority', () => {
         {
           source: {
             importAuthority: {
-              allow: [
-                {
-                  files: ['app/src/**'],
-                  packages: ['zod'],
-                  reason: 'The workspace root declares shared test fixtures.',
-                },
-              ],
+              allow: {
+                '@example/app': [
+                  {
+                    include: ['src/**'],
+                    workspaceRootDependencies: ['zod'],
+                    reason: 'The workspace root declares shared test fixtures.',
+                  },
+                ],
+              },
             },
             knip: false,
           },
@@ -537,7 +539,7 @@ describe('runSourceCheck package authority', () => {
     },
   );
 
-  it('matches root package rules by package name for subpath imports', async () => {
+  it('matches workspace root dependency grants by package name for subpath imports', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -555,13 +557,15 @@ describe('runSourceCheck package authority', () => {
       {
         source: {
           importAuthority: {
-            allow: [
-              {
-                files: ['app/src/**'],
-                packages: ['lodash'],
-                reason: 'The workspace root declares shared test fixtures.',
-              },
-            ],
+            allow: {
+              '@example/app': [
+                {
+                  include: ['src/**'],
+                  workspaceRootDependencies: ['lodash'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
           },
           knip: false,
         },
@@ -575,7 +579,7 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
-  it('rejects package rules when the root manifest does not declare the package', async () => {
+  it('rejects owner-keyed grants when the root manifest does not declare the package', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
@@ -586,13 +590,15 @@ describe('runSourceCheck package authority', () => {
       {
         source: {
           importAuthority: {
-            allow: [
-              {
-                files: ['app/src/**'],
-                packages: ['zod'],
-                reason: 'The workspace root declares shared test fixtures.',
-              },
-            ],
+            allow: {
+              '@example/app': [
+                {
+                  include: ['src/**'],
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
           },
           knip: false,
         },
@@ -612,7 +618,7 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
-  it('rejects root declarations when no package rule matches', async () => {
+  it('rejects root declarations when no workspace root dependency grant matches', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -630,13 +636,15 @@ describe('runSourceCheck package authority', () => {
       {
         source: {
           importAuthority: {
-            allow: [
-              {
-                files: ['app/src/**'],
-                packages: ['react'],
-                reason: 'The workspace root declares shared test fixtures.',
-              },
-            ],
+            allow: {
+              '@example/app': [
+                {
+                  include: ['src/**'],
+                  workspaceRootDependencies: ['react'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
           },
           knip: false,
         },
@@ -646,6 +654,221 @@ describe('runSourceCheck package authority', () => {
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows omitted include to match all governed source modules for the owner', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import { z } from 'zod';\nexport const schema = z.string();\n",
+        }),
+        'package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/app': [
+                {
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects root declarations when owner-relative include does not match', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import { z } from 'zod';\nexport const schema = z.string();\n",
+        }),
+        'package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/app': [
+                {
+                  include: ['test/**'],
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not let a grant for one owner affect another owner', async () => {
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource:
+            "import { z } from 'zod';\nexport const schema = z.string();\n",
+        }),
+        'package.json': stringifyConfig(
+          withDefaultBuildScript({
+            dependencies: {
+              zod: '^1.0.0',
+            },
+            name: '@example/root',
+            private: true,
+            type: 'module',
+            workspaces: ['packages/*'],
+          }),
+        ),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/internal': [
+                {
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports unknown owner keys with a close suggestion', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import { z } from 'zod';\nexport const schema = z.string();\n",
+        }),
+        'package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/ap': [
+                {
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('Invalid source import authority config');
+      expect(errors).toContain('owner: @example/ap');
+      expect(errors).toContain('did you mean:');
+      expect(errors).toContain('- @example/app');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it.each([
+    ['@example/*', 'owner glob keys are not supported'],
+    ['*', 'global source import authority owner keys are not supported'],
+    ['<root>', 'global source import authority owner keys are not supported'],
+    [
+      '<workspace>',
+      'global source import authority owner keys are not supported',
+    ],
+  ])('rejects unsupported owner key %s', async (ownerKey, reason) => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createPackageFixture({
+        source: 'export const value = 1;\n',
+      }),
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              [ownerKey]: [
+                {
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain(reason);
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -671,7 +894,7 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
-  it('allows explicit source import authority rules', async () => {
+  it('rejects legacy explicit source import authority rules', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -693,18 +916,20 @@ describe('runSourceCheck package authority', () => {
             ],
           },
           knip: false,
-        },
+        } as unknown as SourceCheckConfig,
       },
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(runSourceCheck(fixture.config)).rejects.toThrow(
+        'allow must be an object keyed by source owner identity',
+      );
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('rejects type-only bare imports declared only by root devDependencies without a package rule', async () => {
+  it('rejects type-only bare imports declared only by root devDependencies without a workspace root dependency grant', async () => {
     const fixture = await createFixture({
       ...createPackageFixture({
         source:
@@ -805,6 +1030,172 @@ packages:
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows root workspace dependency grants when no intermediate workspace package declares the package', async () => {
+    const fixture = await createFixture(
+      {
+        'pnpm-workspace.yaml': `
+packages:
+  - packages
+  - packages/*
+`,
+        'package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+        'packages/package.json': stringifyConfig({
+          name: '@example/group',
+          private: true,
+          type: 'module',
+        }),
+        'packages/app/package.json': stringifyConfig(
+          withDefaultBuildScript({
+            exports: {
+              '.': './src/index.ts',
+            },
+            name: '@example/app',
+            type: 'module',
+          }),
+        ),
+        'packages/app/src/index.ts':
+          "import { z } from 'zod';\nexport const schema = z.string();\n",
+        'packages/app/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/app/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+        }),
+        'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+        'tsconfig.build.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './packages/app/tsconfig.lib.dts.json',
+            },
+          ],
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/app': [
+                {
+                  include: ['src/**'],
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects root workspace dependency grants when an intermediate workspace package declares the package', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      {
+        'pnpm-workspace.yaml': `
+packages:
+  - packages
+  - packages/*
+`,
+        'package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+        'packages/package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: '@example/group',
+          private: true,
+          type: 'module',
+        }),
+        'packages/app/package.json': stringifyConfig(
+          withDefaultBuildScript({
+            exports: {
+              '.': './src/index.ts',
+            },
+            name: '@example/app',
+            type: 'module',
+          }),
+        ),
+        'packages/app/src/index.ts':
+          "import { z } from 'zod';\nexport const schema = z.string();\n",
+        'packages/app/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/app/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+        }),
+        'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+        'tsconfig.build.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './packages/app/tsconfig.lib.dts.json',
+            },
+          ],
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/app': [
+                {
+                  include: ['src/**'],
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('workspace package declares "zod"');
+      expect(errors).toContain('intermediate dependency declaration:');
+      expect(errors).toContain('package.json: packages/package.json');
+    } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
@@ -928,6 +1319,104 @@ catalog:
     }
   });
 
+  it('matches workspace root grants by the imported alias package key', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import type { ExecaResult } from 'execa';\nexport type T = ExecaResult;\n",
+        }),
+        ...createAliasedNodeModulePackage({
+          declarations: 'export interface ExecaResult { stdout: string }\n',
+          packageName: 'safe-execa',
+          requestedName: 'execa',
+        }),
+        'package.json': stringifyConfig({
+          dependencies: {
+            execa: 'npm:safe-execa@0.3.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/app': [
+                {
+                  workspaceRootDependencies: ['execa'],
+                  reason:
+                    'The workspace root declares shared alias dependencies.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not match workspace root grants by the resolved alias package name', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import type { ExecaResult } from 'execa';\nexport type T = ExecaResult;\n",
+        }),
+        ...createAliasedNodeModulePackage({
+          declarations: 'export interface ExecaResult { stdout: string }\n',
+          packageName: 'safe-execa',
+          requestedName: 'execa',
+        }),
+        'package.json': stringifyConfig({
+          dependencies: {
+            'safe-execa': '0.3.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              '@example/app': [
+                {
+                  workspaceRootDependencies: ['safe-execa'],
+                  reason:
+                    'The workspace root declares shared alias dependencies.',
+                },
+              ],
+            },
+          },
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('package: execa');
+      expect(errors).toContain('resolved dependency specifier: safe-execa');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
   it('does not authorize resolved @types packages by @types manifest keys alone', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
@@ -956,9 +1445,8 @@ catalog:
 
       expect(errors).toContain('package: etag');
       expect(errors).toContain('resolved dependency specifier: @types/etag');
-      expect(errors).toContain(
-        '"@types/etag" only supplies declarations and does not authorize "etag".',
-      );
+      expect(errors).toContain('"@types/etag" only supplies declarations');
+      expect(errors).toContain('authorize "etag".');
     } finally {
       errorSpy.mockRestore();
       await fixture.cleanup();
@@ -1046,6 +1534,74 @@ packages:
       },
       {
         source: {
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('allows workspace root grants keyed by nameless owner directory', async () => {
+    const fixture = await createFixture(
+      {
+        'package.json': stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: '@example/root',
+          private: true,
+          type: 'module',
+          workspaces: ['packages/*'],
+        }),
+        'packages/fixture/package.json': stringifyConfig({
+          private: true,
+          type: 'module',
+        }),
+        'packages/fixture/src/index.ts':
+          "import { z } from 'zod';\nexport const schema = z.string();\n",
+        'packages/fixture/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/fixture/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+        }),
+        'packages/fixture/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+        'pnpm-workspace.yaml': `
+packages:
+  - packages/*
+`,
+        'tsconfig.build.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './packages/fixture/tsconfig.lib.dts.json',
+            },
+          ],
+        }),
+      },
+      {
+        source: {
+          importAuthority: {
+            allow: {
+              'packages/fixture': [
+                {
+                  include: ['src/**'],
+                  workspaceRootDependencies: ['zod'],
+                  reason: 'The workspace root declares shared test fixtures.',
+                },
+              ],
+            },
+          },
           knip: false,
         },
       },
@@ -3033,8 +3589,8 @@ packages:
         `  file: docs/.vitepress/theme/landing/file-${index.toString().padStart(2, '0')}.vue:2 (kind: static)`,
         `  imported specifier: @components/shared/File${index}.vue`,
         '  package: @components/shared',
-        '  reason: source imports must be declared by the nearest pnpm workspace source owner, by the workspace root manifest when a matching source.importAuthority.allow package rule makes it a candidate, or by an explicit source.importAuthority.allow specifier rule.',
-        '  fix: Declare "@components/shared" in docs/package.json dependencies, devDependencies, peerDependencies, or optionalDependencies. If "@components/shared" is supplied by a runtime, template, or alias instead of a dependency manifest, add a source.importAuthority.allow specifier rule for this import with a reason.',
+        '  reason: source imports must be declared by the nearest pnpm workspace source owner or by an explicitly configured workspace root dependency grant.',
+        '  fix: Declare "@components/shared" in docs/package.json dependencies, devDependencies, peerDependencies, or optionalDependencies. If this package is intentionally declared by the workspace root, add source.importAuthority.allow["@example/docs"] with workspaceRootDependencies: ["@components/shared"] and a reason.',
       ].join('\n'),
     );
 

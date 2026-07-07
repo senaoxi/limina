@@ -38,6 +38,10 @@ async function writeWorkspaceMetadata(rootDir: string): Promise<void> {
   );
 }
 
+function stringifyConfig(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 describe('defineConfig', () => {
   it('returns the explicit user config unchanged', () => {
     const config = defineConfig({
@@ -55,13 +59,16 @@ describe('defineConfig', () => {
       },
       source: {
         importAuthority: {
-          allow: [
-            {
-              files: ['packages/core/templates/**'],
-              packages: ['react'],
-              reason: 'Template files declare dependencies in generated apps.',
-            },
-          ],
+          allow: {
+            '@example/core': [
+              {
+                include: ['templates/**'],
+                workspaceRootDependencies: ['react'],
+                reason:
+                  'Template files declare dependencies in generated apps.',
+              },
+            ],
+          },
         },
         knip: {
           workspaces: {
@@ -174,9 +181,11 @@ describe('defineConfig', () => {
         },
       ],
     });
-    expect(config.source?.importAuthority?.allow?.[0]).toMatchObject({
-      files: ['packages/core/templates/**'],
-      packages: ['react'],
+    expect(
+      config.source?.importAuthority?.allow?.['@example/core']?.[0],
+    ).toMatchObject({
+      include: ['templates/**'],
+      workspaceRootDependencies: ['react'],
     });
     expect(config.package?.entries?.[0]?.attw).toMatchObject({
       ignoreRules: ['false-cjs'],
@@ -569,7 +578,7 @@ export default {
     }
   });
 
-  it('rejects invalid source import authority config', async () => {
+  it('loads owner-keyed source import authority config', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -578,30 +587,46 @@ export default {
         'packages: []\n',
       );
       await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({
+          dependencies: {
+            zod: '^1.0.0',
+          },
+          name: 'root',
+          private: true,
+        }),
+      );
+      await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
 export default {
   source: {
     importAuthority: {
-      allow: [
-        {
-          files: [],
-          reason: '',
-        },
-      ],
+      allow: {
+        "@example/app": [
+          {
+            include: ["test/**/*.ts"],
+            workspaceRootDependencies: ["zod"],
+            reason: "The root manifest declares shared test fixtures.",
+          },
+        ],
+      },
     },
   },
 };
 `,
       );
 
-      await expect(
-        loadConfig({
-          cwd: rootDir,
-        }),
-      ).rejects.toThrow(
-        'importAuthority allow entries must declare packages or specifiers',
-      );
+      const config = await loadConfig({
+        cwd: rootDir,
+      });
+
+      expect(
+        config.source?.importAuthority?.allow?.['@example/app']?.[0],
+      ).toMatchObject({
+        include: ['test/**/*.ts'],
+        workspaceRootDependencies: ['zod'],
+      });
     } finally {
       await rm(rootDir, {
         force: true,
@@ -610,7 +635,142 @@ export default {
     }
   });
 
-  it('rejects package import authority rules when the workspace root package.json is missing', async () => {
+  it.each([
+    {
+      config:
+        'allow: [{ files: ["packages/app/test/**/*.ts"], packages: ["zod"], reason: "legacy" }]',
+      expected: 'allow must be an object keyed by source owner identity',
+      name: 'allow array',
+    },
+    {
+      config:
+        'allow: { "": [{ workspaceRootDependencies: ["zod"], reason: "empty key" }] }',
+      expected: 'allow keys must be non-empty source owner identities',
+      name: 'empty owner key',
+    },
+    {
+      config:
+        'allow: { "@example/app": { workspaceRootDependencies: ["zod"], reason: "not an array" } }',
+      expected: 'allow owner entries must be arrays of grants',
+      name: 'non-array grant list',
+    },
+    {
+      config: 'allow: { "@example/app": ["not an object"] }',
+      expected:
+        'importAuthority allow grants must be objects with workspaceRootDependencies and reason fields',
+      name: 'non-object grant',
+    },
+    {
+      config: 'allow: { "@example/app": [{ reason: "missing dependencies" }] }',
+      expected: 'workspaceRootDependencies must be a non-empty string array',
+      name: 'missing workspaceRootDependencies',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ workspaceRootDependencies: [], reason: "empty dependencies" }] }',
+      expected: 'workspaceRootDependencies must be a non-empty string array',
+      name: 'empty workspaceRootDependencies',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ workspaceRootDependencies: [""], reason: "empty dependency" }] }',
+      expected: 'workspaceRootDependencies entries must be non-empty strings',
+      name: 'empty workspaceRootDependencies entry',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ workspaceRootDependencies: ["zod"] }] }',
+      expected: 'reason must be a non-empty string',
+      name: 'missing reason',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ workspaceRootDependencies: ["zod"], reason: "" }] }',
+      expected: 'reason must be a non-empty string',
+      name: 'empty reason',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ include: [], workspaceRootDependencies: ["zod"], reason: "empty include" }] }',
+      expected: 'include must be a non-empty string array',
+      name: 'empty include',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ include: [""], workspaceRootDependencies: ["zod"], reason: "empty include entry" }] }',
+      expected: 'include entries must be non-empty strings',
+      name: 'empty include entry',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ files: ["packages/app/test/**/*.ts"], workspaceRootDependencies: ["zod"], reason: "legacy files" }] }',
+      expected: 'files has been replaced by owner-root-relative include',
+      name: 'legacy files',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ packages: ["zod"], reason: "legacy packages" }] }',
+      expected: 'packages has been replaced by workspaceRootDependencies',
+      name: 'legacy packages',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ specifiers: ["zod"], workspaceRootDependencies: ["zod"], reason: "legacy specifiers" }] }',
+      expected:
+        'direct specifier authority is not part of the workspace root dependency authority model',
+      name: 'legacy specifiers',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ owner: "@example/app", workspaceRootDependencies: ["zod"], reason: "legacy owner" }] }',
+      expected: 'owner is now expressed by the allow object key',
+      name: 'legacy owner',
+    },
+  ])(
+    'rejects invalid source import authority config: $name',
+    async (testCase) => {
+      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+      try {
+        await writeText(
+          path.join(rootDir, 'pnpm-workspace.yaml'),
+          'packages: []\n',
+        );
+        await writeText(
+          path.join(rootDir, 'package.json'),
+          stringifyConfig({
+            name: 'root',
+            private: true,
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'limina.config.mjs'),
+          `
+export default {
+  source: {
+    importAuthority: {
+      ${testCase.config},
+    },
+  },
+};
+`,
+        );
+
+        await expect(
+          loadConfig({
+            cwd: rootDir,
+          }),
+        ).rejects.toThrow(testCase.expected);
+      } finally {
+        await rm(rootDir, {
+          force: true,
+          recursive: true,
+        });
+      }
+    },
+  );
+
+  it('rejects workspace root dependency grants when the workspace root package.json is missing', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -624,13 +784,15 @@ export default {
 export default {
   source: {
     importAuthority: {
-      allow: [
-        {
-          files: ['packages/app/src/**'],
-          packages: ['zod'],
-          reason: 'The root manifest declares shared dependencies.',
-        },
-      ],
+      allow: {
+        "@example/app": [
+          {
+            include: ["src/**"],
+            workspaceRootDependencies: ["zod"],
+            reason: "The root manifest declares shared dependencies.",
+          },
+        ],
+      },
     },
   },
 };
@@ -642,7 +804,7 @@ export default {
           cwd: rootDir,
         }),
       ).rejects.toThrow(
-        'package allow rules enable workspace root package.json as a dependency authority manifest',
+        'workspaceRootDependencies grants require a workspace root package.json',
       );
     } finally {
       await rm(rootDir, {

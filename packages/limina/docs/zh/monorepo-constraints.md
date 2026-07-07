@@ -143,9 +143,9 @@ import { Button } from '../../ui/src/Button';
 import { Button } from '@acme/ui';
 ```
 
-Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。对于裸包导入，它还会检查当前工作区包作用域是否通过 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 承认了这个依赖。匹配的 `source.importAuthority.allow` 规则可以让工作区根 `package.json` 成为额外的依赖声明候选，也可以用导入说明符规则解释模板、别名或运行时提供依赖的场景。
+Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。对于裸包导入，它还会检查当前工作区包作用域是否通过 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 承认了这个依赖。匹配的 `source.importAuthority.allow` 授权可以让特定源码归属方使用工作区根清单中的指定依赖声明。
 
-`#imports` 也遵循类似边界。它的声明来源是导入文件最近的包作用域：相对目标应该留在声明它的包作用域内；如果目标指向三方包或工作区依赖，这个依赖仍然需要被导入文件所属的工作区包作用域授权，或者命中明确的 `source.importAuthority.allow` 规则。
+`#imports` 也遵循类似边界。它的声明来源是导入文件最近的包作用域：相对目标应该留在声明它的包作用域内；如果目标指向三方包或工作区依赖，这个依赖仍然需要被导入文件所属的工作区包作用域授权，或者命中匹配的工作区根依赖授权。
 
 Limina 并不是禁止跨包协作，而是要求跨包协作走能被包清单和公开入口解释的路径。
 
