@@ -450,15 +450,17 @@ function getClosestOwnerSuggestion(
 }
 
 function getEditDistance(left: string, right: string): number {
+  const leftCharacters = Array.from(left);
+  const rightCharacters = Array.from(right);
   const previous = Array.from(
-    { length: right.length + 1 },
+    { length: rightCharacters.length + 1 },
     (_, index) => index,
   );
 
-  for (const [leftIndex, element] of left.entries()) {
+  for (const [leftIndex, element] of leftCharacters.entries()) {
     const current = [leftIndex + 1];
 
-    for (const [rightIndex, element_] of right.entries()) {
+    for (const [rightIndex, element_] of rightCharacters.entries()) {
       const substitutionCost = element === element_ ? 0 : 1;
       current[rightIndex + 1] = Math.min(
         current[rightIndex]! + 1,
@@ -470,7 +472,7 @@ function getEditDistance(left: string, right: string): number {
     previous.splice(0, previous.length, ...current);
   }
 
-  return previous[right.length] ?? Number.POSITIVE_INFINITY;
+  return previous[rightCharacters.length] ?? Number.POSITIVE_INFINITY;
 }
 
 function addImportAuthorityOwnerConfigProblems(options: {

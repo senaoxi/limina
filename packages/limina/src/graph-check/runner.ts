@@ -339,6 +339,7 @@ function createGraphCheckIssue(options: {
     fix: hint?.fix ?? getProblemLineValue(options.problem, 'fix'),
     packageManifestPath:
       hint?.packageManifestPath ??
+      getProblemLineValue(options.problem, 'package.json') ??
       getProblemLineValue(options.problem, 'package manifest'),
     packageName:
       hint?.packageName ??

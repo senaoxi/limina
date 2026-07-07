@@ -7,8 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { runProofCheck } from '../commands/proof';
 import { ProofLogger } from '../logger';
 import {
-  readCheckIssueSnapshot,
   type LiminaCheckIssue,
+  readCheckIssueSnapshot,
 } from '../source-check/snapshot';
 
 async function writeText(filePath: string, text: string): Promise<void> {
