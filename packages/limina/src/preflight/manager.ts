@@ -145,8 +145,11 @@ export class LiminaPreflightManager {
   }
 
   ensureExpectedSourceFiles(): Promise<Set<string>> {
-    return this.#ensure('expectedSourceFiles', () =>
-      collectExpectedSourceFiles(this.config),
+    return this.#ensure('expectedSourceFiles', async () =>
+      collectExpectedSourceFiles(
+        this.config,
+        await this.ensureGeneratedGraph(),
+      ),
     );
   }
 

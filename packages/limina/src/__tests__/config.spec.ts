@@ -544,6 +544,119 @@ export default {
     }
   });
 
+  it.each([
+    {
+      error: /config\.source\.include must be a non-empty string array/u,
+      name: 'empty include',
+      source: {
+        include: [],
+      },
+    },
+    {
+      error: /config\.source\.exclude must be a non-empty string array/u,
+      name: 'empty exclude',
+      source: {
+        exclude: [],
+      },
+    },
+    {
+      error: /config\.source\.include entries must be non-empty strings/u,
+      name: 'empty include entry',
+      source: {
+        include: [''],
+      },
+    },
+    {
+      error: /config\.source\.exclude entries must be non-empty strings/u,
+      name: 'empty exclude entry',
+      source: {
+        exclude: [''],
+      },
+    },
+    {
+      error: /config\.source\.include may contain "\.\.\." at most once/u,
+      name: 'duplicate include default token',
+      source: {
+        include: ['...', '...'],
+      },
+    },
+    {
+      error: /config\.source\.exclude may contain "\.\.\." at most once/u,
+      name: 'duplicate exclude default token',
+      source: {
+        exclude: ['...', '...'],
+      },
+    },
+  ])(
+    'rejects invalid source boundary config: $name',
+    async ({ error, source }) => {
+      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+      try {
+        await writeText(
+          path.join(rootDir, 'pnpm-workspace.yaml'),
+          'packages: []\n',
+        );
+        await writeText(
+          path.join(rootDir, 'limina.config.mjs'),
+          `export default ${stringifyConfig({
+            config: {
+              source,
+            },
+          })}`,
+        );
+
+        await expect(
+          loadConfig({
+            cwd: rootDir,
+          }),
+        ).rejects.toThrow(error);
+      } finally {
+        await rm(rootDir, {
+          force: true,
+          recursive: true,
+        });
+      }
+    },
+  );
+
+  it('accepts source default tokens and embedded default-like glob segments', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `export default ${stringifyConfig({
+          config: {
+            source: {
+              exclude: ['...', 'generated/.../**'],
+              include: ['...', 'src/.../*.ts'],
+            },
+          },
+        })}`,
+      );
+
+      const config = await loadConfig({
+        cwd: rootDir,
+      });
+
+      expect(config.config?.source?.include).toEqual(['...', 'src/.../*.ts']);
+      expect(config.config?.source?.exclude).toEqual([
+        '...',
+        'generated/.../**',
+      ]);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it('rejects unknown top-level source config fields', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 

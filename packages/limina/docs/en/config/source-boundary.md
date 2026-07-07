@@ -12,8 +12,8 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     source: {
-      include: ['packages/**/src/**/*.{ts,tsx,vue}'],
-      exclude: ['node_modules', 'dist', '.tsbuild', 'coverage'],
+      include: ['...', 'packages/**/src/**/*.vue'],
+      exclude: ['...', 'packages/**/src/generated/**'],
     },
   },
 });
@@ -23,19 +23,19 @@ export default defineConfig({
 
 - **Type:** `string[]`
 
-`include` is the global source `glob` set that Limina should inspect. When it is omitted, Limina starts with a default `glob` set, then adds framework extensions from active checkers such as `**/*.vue` or `**/*.svelte`. It then applies the default exclude list.
+`include` is the global source `glob` set that Limina should inspect. When it is omitted, Limina uses the default TypeScript source glob set. When it is configured, it replaces that default set. Use the exact string `...` to expand the default include set at that position.
 
 ::: details Default include glob set
-`**/*.ts`, `**/*.d.ts`, `**/*.tsx`, `**/*.cts`, `**/*.d.cts`, `**/*.mts`, `**/*.d.mts`, `**/*.mjs`, and `**/*.json`.
+`**/*.ts`, `**/*.tsx`, `**/*.d.ts`, `**/*.cts`, `**/*.d.cts`, `**/*.mts`, and `**/*.d.mts`.
 :::
 
-If every `TypeScript`, `TSX`, and `Vue` file under `packages/**/src` should be managed by Limina, put those globs in `include`. New files then automatically become part of source and coverage checks.
+Checker extensions are not added automatically. If every default TypeScript source file and every `Vue` file under `packages/**/src` should be managed by Limina, expand the defaults and add the `Vue` glob explicitly. New matching files then automatically become part of source and coverage checks.
 
 ```js
 export default defineConfig({
   config: {
     source: {
-      include: ['packages/**/src/**/*.{ts,tsx,vue}'],
+      include: ['...', 'packages/**/src/**/*.vue'],
     },
   },
 });
@@ -45,11 +45,15 @@ export default defineConfig({
 
 - **Type:** `string[]`
 
-`exclude` is the directory or `glob` set that should stay outside the managed source set. Use it for `dist`, `.tsbuild`, fixtures, generated caches, and other files that should not be treated as checked source. When `exclude` is omitted, Limina reads the workspace root `.gitignore` and always also excludes a fixed list of directories and config files.
+`exclude` is the directory or `glob` set that should stay outside the managed source set. Use it for fixtures, generated caches, and other files that should not be treated as checked source. When `exclude` is omitted, Limina uses the default exclude bundle.
 
-::: details Always-excluded entries (in addition to root `.gitignore`)
-`TypeScript` config files, known task-tool config/cache files, `dist`, `.git`, `.tsbuild`, `coverage`, and `node_modules`.
+When `exclude` is configured, it replaces the default exclude bundle and the root `.gitignore` is not used. Use the exact string `...` to expand the default exclude bundle, including root `.gitignore`, at that position. An explicit `exclude` array without `...` disables every default exclude entry.
+
+::: details Default exclude bundle
+`node_modules`, `bower_components`, `jspm_packages`, paths corresponding to explicit `liminaOptions.outputs.outDir` declarations in relevant source configs, and the workspace root `.gitignore`.
 :::
+
+Only explicitly declared `liminaOptions.outputs.outDir` paths are part of this bundle. Limina does not infer `./dist` as a source exclude unless that source config declares it, and an output directory name is scoped to the config that declares it rather than expanded as a global directory-name exclude.
 
 For example, after `include` covers `packages/**/src/**/*.{ts,tsx,vue}`, adding this file makes it part of the source coverage boundary:
 
