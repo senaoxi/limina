@@ -124,6 +124,68 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it('rejects explicit checker entries inside excluded exact-overlap packages', async () => {
+    const fixture = await createFixture({
+      'packages/app/package.json': json({
+        name: '@example/app',
+        private: true,
+        scripts: {
+          build: 'limina build tsconfig.lib.dts.json',
+        },
+      }),
+      'packages/app/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+      'packages/app/tsconfig.lib.dts.json': json({
+        compilerOptions: {
+          composite: true,
+          declaration: true,
+          emitDeclarationOnly: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          outDir: './dist',
+          rootDir: '.',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: '.',
+          },
+        },
+      }),
+    });
+
+    try {
+      fixture.config.regions = {
+        exclude: [
+          {
+            include: ['packages/app/**'],
+            reason: 'Nested app workspace is checked separately.',
+          },
+        ],
+      };
+
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(
+        /Checker include matched source config outside activated workspace package regions[\s\S]*packages\/app\/tsconfig\.json/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('uses auto checkers when config.checkers is omitted', async () => {
     const fixture = await createFixture({
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
@@ -157,6 +219,156 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'packages/pkg/tsconfig.json':
           '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.dts.json',
       });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports explicit checker includes that select nested region tsconfigs', async () => {
+    const fixture = await createFixture({
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/a/fixture/src/index.ts': 'export const nested = 1;\n',
+      'packages/a/fixture/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/a/src/index.ts': 'export const value = 1;\n',
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              typescript: {
+                include: ['**/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          regions: {
+            exclude: [
+              {
+                include: ['packages/a/fixture/**'],
+                reason: 'Fixture workspace.',
+              },
+            ],
+          },
+        }),
+      ).rejects.toThrow(
+        /Checker include matched source config outside activated workspace package regions[\s\S]*packages\/a\/fixture\/tsconfig\.json/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not let auto checker discovery select nested region tsconfig files', async () => {
+    const fixture = await createFixture({
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/a/fixture/src/index.ts': 'export const nested = 1;\n',
+      'packages/a/fixture/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/a/src/index.ts': 'export const value = 1;\n',
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {},
+        regions: {
+          exclude: [
+            {
+              include: ['packages/a/fixture/**'],
+              reason: 'Fixture workspace.',
+            },
+          ],
+        },
+      });
+
+      expect(result.checkers).toMatchObject([
+        {
+          include: ['packages/a/tsconfig.json'],
+          name: 'typescript',
+          preset: 'tsc',
+        },
+      ]);
+      expect(JSON.stringify(result.manifest)).not.toContain(
+        'packages/a/fixture',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects generated graph imports across governance boundaries', async () => {
+    const fixture = await createFixture({
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/a/fixture/src/index.ts': 'export const nested = 1;\n',
+      'packages/a/src/index.ts':
+        "import { nested } from '../fixture/src/index';\nexport const value = nested;\n",
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {},
+          regions: {
+            exclude: [
+              {
+                include: ['packages/a/fixture/**'],
+                reason: 'Fixture workspace.',
+              },
+            ],
+          },
+        }),
+      ).rejects.toThrow('Generated graph import crosses governance boundary');
     } finally {
       await fixture.cleanup();
     }

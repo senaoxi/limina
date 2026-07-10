@@ -19,7 +19,7 @@ import {
   createWorkspaceDependencyKey,
   type WorkspaceDependencyDeclaration,
 } from '../core/packages/authority';
-import { findOwnerForFile } from '../core/packages/owners';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   formatSourceKnipWorkspaceField,
   type SourceKnipWorkspaceConfigRecord,
@@ -322,8 +322,8 @@ export function collectManifestSourceEntryPatterns(
 }
 
 export function collectOwnerSourceModuleSets(options: {
-  owners: PackageOwner[];
   sourceProjectEntries: { fileNames: string[] }[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): OwnerSourceModuleSet[] {
   const filesByOwner = new Map<
     string,
@@ -333,7 +333,7 @@ export function collectOwnerSourceModuleSets(options: {
   for (const sourceProjectEntry of options.sourceProjectEntries) {
     for (const fileName of sourceProjectEntry.fileNames) {
       const filePath = normalizeAbsolutePath(fileName);
-      const owner = findOwnerForFile(filePath, options.owners);
+      const owner = options.workspaceLookup.findOwnerForFile(filePath);
 
       if (!owner?.name) {
         continue;

@@ -4,6 +4,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
+import { collectWorkspaceRegionTopology } from './regions';
 
 const pnpmWorkspaceListTimeoutMs = 120_000;
 
@@ -373,10 +374,23 @@ function mergeWorkspacePackages(
   });
 }
 
-export async function collectWorkspacePackages(
+export async function collectRawWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
   return mergeWorkspacePackages(await collectPnpmListedPackages(config));
+}
+
+export async function collectWorkspacePackages(
+  config: ResolvedLiminaConfig,
+): Promise<WorkspacePackage[]> {
+  const rawPackages = await collectRawWorkspacePackages(config);
+
+  return (
+    await collectWorkspaceRegionTopology(config, {
+      provider: collectRawWorkspacePackages,
+      rawPackages,
+    })
+  ).packages;
 }
 
 export async function collectPackageOwners(

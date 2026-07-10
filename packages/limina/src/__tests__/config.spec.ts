@@ -294,7 +294,18 @@ describe('defineConfig', () => {
         rootDir,
       };
       const activeCheckers = getActiveCheckers(config);
-      const generatedGraph = await prepareGeneratedTsconfigGraph(config);
+      const generatedGraph = await prepareGeneratedTsconfigGraph(config, {
+        workspacePackagesProvider: async () => [
+          {
+            directory: path.join(rootDir, 'packages/app'),
+            manifest: {
+              name: 'app',
+              private: true,
+            },
+            name: 'app',
+          },
+        ],
+      });
       const graphRoutes = collectGraphProjectRoutes(config, generatedGraph);
 
       expect(activeCheckers).toEqual([
@@ -393,7 +404,18 @@ describe('defineConfig', () => {
         rootDir,
       };
       const activeCheckers = getActiveCheckers(config);
-      const generatedGraph = await prepareGeneratedTsconfigGraph(config);
+      const generatedGraph = await prepareGeneratedTsconfigGraph(config, {
+        workspacePackagesProvider: async () => [
+          {
+            directory: path.join(rootDir, 'packages/app'),
+            manifest: {
+              name: 'app',
+              private: true,
+            },
+            name: 'app',
+          },
+        ],
+      });
       const graphRoutes = collectGraphProjectRoutes(config, generatedGraph);
 
       expect(activeCheckers).toEqual([
@@ -740,6 +762,231 @@ export default {
         include: ['test/**/*.ts'],
         workspaceRootDependencies: ['zod'],
       });
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('loads region extension and explicit region exclusions', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeWorkspaceMetadata(rootDir);
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  regions: {
+    extendNestedPackageScopes: true,
+    exclude: [
+      {
+        include: [
+          'packages/app/test/fixtures/**',
+          'packages/app/vendor/**',
+        ],
+        reason: 'Fixture workspaces are checked independently.',
+      },
+    ],
+  },
+};
+`,
+      );
+
+      const config = await loadConfig({ cwd: rootDir });
+
+      expect(config.regions?.extendNestedPackageScopes).toBe(true);
+      expect(config.regions?.exclude?.[0]?.include).toEqual([
+        'packages/app/test/fixtures/**',
+        'packages/app/vendor/**',
+      ]);
+      expect(config.regions?.exclude?.[0]?.reason).toBe(
+        'Fixture workspaces are checked independently.',
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('treats nested package scope extension as disabled when omitted', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeWorkspaceMetadata(rootDir);
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  regions: {},
+};
+`,
+      );
+
+      const config = await loadConfig({ cwd: rootDir });
+
+      expect(config.regions?.extendNestedPackageScopes ?? false).toBe(false);
+      expect(config.regions?.exclude ?? []).toEqual([]);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('accepts an explicitly empty region exclusion list', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeWorkspaceMetadata(rootDir);
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  regions: {
+    exclude: [],
+  },
+};
+`,
+      );
+
+      const config = await loadConfig({ cwd: rootDir });
+
+      expect(config.regions?.exclude).toEqual([]);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects non-boolean nested package scope extension config', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeWorkspaceMetadata(rootDir);
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  regions: {
+    extendNestedPackageScopes: 'yes',
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        'regions.extendNestedPackageScopes must be a boolean',
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects unknown region config fields', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeWorkspaceMetadata(rootDir);
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  regions: {
+    nestedPackages: true,
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        'unknown regions config field',
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it.each([
+    {
+      entry: `{ include: [], reason: 'Checked separately.' }`,
+      expected: 'regions.exclude.include must be a non-empty string array',
+      name: 'empty include',
+    },
+    {
+      entry: `{ include: ['packages/app/vendor'], reason: '' }`,
+      expected: 'reason must be a non-empty string',
+      name: 'empty reason',
+    },
+    {
+      entry: `{ include: ['packages/app/vendor'], reason: 'Checked separately.', unexpected: true }`,
+      expected: 'unknown regions.exclude entry field',
+      name: 'unknown exclude field',
+    },
+  ])(
+    'rejects invalid region exclusions: $name',
+    async ({ entry, expected }) => {
+      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+      try {
+        await writeWorkspaceMetadata(rootDir);
+        await writeText(
+          path.join(rootDir, 'limina.config.mjs'),
+          `
+export default {
+  regions: {
+    exclude: [${entry}],
+  },
+};
+`,
+        );
+
+        await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(expected);
+      } finally {
+        await rm(rootDir, {
+          force: true,
+          recursive: true,
+        });
+      }
+    },
+  );
+
+  it('rejects region boundary exclusions without a reason', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeWorkspaceMetadata(rootDir);
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  regions: {
+    exclude: [
+      {
+        include: ['packages/app/test/fixtures/**'],
+      },
+    ],
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        'reason must be a non-empty string',
+      );
     } finally {
       await rm(rootDir, {
         force: true,
@@ -1249,6 +1496,44 @@ export default {};
     }
   });
 
+  it('infers the pnpm workspace root from an explicit config path', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      );
+      await writeText(
+        path.join(rootDir, 'packages/child/pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'packages/child/limina.config.mjs'),
+        `
+export default {};
+`,
+      );
+
+      const config = await loadConfig({
+        configPath: 'packages/child/limina.config.mjs',
+        cwd: rootDir,
+      });
+
+      expect(toPortablePath(config.rootDir)).toBe(
+        toPortablePath(path.join(rootDir, 'packages/child')),
+      );
+      expect(toPortablePath(config.configPath)).toBe(
+        toPortablePath(path.join(rootDir, 'packages/child/limina.config.mjs')),
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it('accepts an absolute config path', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
@@ -1412,7 +1697,7 @@ export default {};
     }
   });
 
-  it('rejects explicit config paths outside the governed workspace', async () => {
+  it('rejects explicit config paths without an owning pnpm workspace', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
     const externalDir = await mkdtemp(
       path.join(tmpdir(), 'limina-external-config-'),
@@ -1437,7 +1722,7 @@ throw new Error('external config should not be imported');
           configPath: externalConfigPath,
           cwd: rootDir,
         }),
-      ).rejects.toThrow(/must be inside the governed pnpm workspace/u);
+      ).rejects.toThrow(/no pnpm-workspace\.yaml was found/u);
     } finally {
       await Promise.all([
         rm(rootDir, {

@@ -88,6 +88,21 @@ import {
   normalizeGraphRules,
 } from './rules';
 
+function filterProjectInfoToActivatedRegion(
+  project: ProjectInfo,
+  workspaceLookup: WorkspaceLookupIndex,
+): ProjectInfo {
+  return {
+    ...project,
+    fileNames: project.fileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+    ownedFileNames: project.ownedFileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+  };
+}
+
 export interface RunGraphCheckOptions {
   clearScreen?: boolean;
   core?: LiminaCore;
@@ -1837,13 +1852,18 @@ export async function runGraphCheckImpl(
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
   const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
-  const projects = await Promise.all(
-    projectPaths.map((projectPath) =>
-      core.tsconfig.getProject(
-        projectPath,
-        graphRoute.projectContextsByPath.get(projectPath),
+  const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
+  const projects = (
+    await Promise.all(
+      projectPaths.map((projectPath) =>
+        core.tsconfig.getProject(
+          projectPath,
+          graphRoute.projectContextsByPath.get(projectPath),
+        ),
       ),
-    ),
+    )
+  ).map((project) =>
+    filterProjectInfoToActivatedRegion(project, workspaceLookup),
   );
   const projectsByPath = new Map(
     projects.map((project) => [project.configPath, project]),
@@ -1860,7 +1880,6 @@ export async function runGraphCheckImpl(
     }),
   );
   const packages = await preflight.ensureWorkspacePackages();
-  const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
 
   checkItems.start('source graph routes');
   problems.push(...graphRoute.problems);

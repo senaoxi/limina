@@ -15,6 +15,12 @@ import {
   toRelativePath,
 } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
+import type { WorkspacePackage } from '../core/workspace/actions';
+import {
+  createWorkspaceRegionBoundaryIgnorePatterns,
+  isVisibleCurrentRegionSourcePath,
+  type WorkspaceRegionBoundary,
+} from '../core/workspace/regions';
 
 const DEFAULT_SOURCE_TOKEN = '...' as const;
 
@@ -213,6 +219,8 @@ function createGitignoreFilter(
 export async function collectExpectedSourceFiles(
   config: ResolvedLiminaConfig,
   generatedGraph: GeneratedTsconfigGraphResult,
+  workspacePackages: readonly WorkspacePackage[],
+  regionBoundaries: readonly WorkspaceRegionBoundary[],
 ): Promise<Set<string>> {
   const include = expandDefaultToken({
     configured: config.config?.source?.include,
@@ -231,7 +239,14 @@ export async function collectExpectedSourceFiles(
   const files = await glob(include.patterns, {
     cwd: config.rootDir,
     absolute: true,
-    ignore: exclude.patterns,
+    ignore: [
+      ...exclude.patterns,
+      ...createWorkspaceRegionBoundaryIgnorePatterns(
+        config,
+        regionBoundaries,
+        workspacePackages,
+      ),
+    ],
     onlyFiles: true,
   });
 
@@ -239,6 +254,14 @@ export async function collectExpectedSourceFiles(
     files
       .map(normalizeAbsolutePath)
       .filter((filePath) => !gitignoreFilter?.(filePath))
+      .filter((filePath) =>
+        isVisibleCurrentRegionSourcePath({
+          boundaries: regionBoundaries,
+          filePath,
+          packages: workspacePackages,
+          rootDir: config.rootDir,
+        }),
+      )
       .sort(),
   );
 }

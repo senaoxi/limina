@@ -95,6 +95,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/config/source-boundary',
       },
       {
+        text: 'Regions',
+        link: '/config/regions',
+      },
+      {
         text: 'Source Checks',
         link: '/config/source-checks',
       },

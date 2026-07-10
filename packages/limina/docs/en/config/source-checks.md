@@ -4,7 +4,9 @@
 The top-level `source` option configures two parts of `source:check`: `source.importAuthority` controls source import authorization, and `source.knip` controls `Knip`-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
 :::
 
-`source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina treats `pnpm` workspace packages as source owners, including nameless workspace packages identified by path. Nested `package.json` files still affect package resolution and form package scopes for relative-import boundaries, but they do not create a separate source owner unless `pnpm` reports them as workspace packages.
+`source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina starts from the packages activated by the current `pnpm` workspace, including nameless workspace packages identified by path. Each workspace package root manifest is its source owner.
+
+A nested `package.json` stops the current governed region by default, and a nested `pnpm-workspace.yaml` is always a hard boundary. With [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), an eligible nameless nested manifest can remain inside the surrounding region: its source inherits the outer workspace owner and dependency authority, while the nested manifest remains the package scope for relative imports and `#imports`. [`regions.exclude`](./regions.md#exclude) can then remove recognized units or boundary roots from the current run. Imports into any stopped or excluded region are treated as cross-boundary access.
 
 Its `Knip`-backed branch uses package entries instead of `include` / `exclude` to report unused workspace dependencies and unused source modules from Limina's workspace-package module sets.
 
@@ -65,7 +67,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` keys must match known source owner identities. Named workspace packages use their package name, and nameless source owners use their workspace-root-relative package directory. `include` is optional and owner-root-relative; when omitted, the grant applies to all governed source modules owned by that source owner.
+`allow` keys must match source owner identities that remain in the current governed region after `regions` is applied. Named workspace packages use their package name, and nameless source owners use their workspace-root-relative package directory. `include` is optional and owner-root-relative; when omitted, the grant applies to all governed source modules owned by that source owner.
 
 `workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, and it will not bypass an intermediate workspace package manifest between the source owner and the workspace root.
 
@@ -107,7 +109,7 @@ interface SourceKnipCheckConfig {
 }
 ```
 
-`source.knip.workspaces` keys are package names discovered from the `pnpm` workspace, such as `@acme/app`. Unknown package names fail `source check`. Nameless workspace packages can still be source owners, but they cannot be configured under `source.knip.workspaces` because there is no stable package name `key`.
+`source.knip.workspaces` keys are named source owners that remain in the current governed region, such as `@acme/app`. Unknown or excluded package names fail `source check`. Nameless workspace packages can still be source owners, but they cannot be configured under `source.knip.workspaces` because there is no stable package name `key`.
 
 `source.knip.workspaces[pkg]` only configures extra reachability and ignore rules. Package-specific `Knip tsconfig` selection comes from static direct `limina build <config>` scripts. If a package does not declare one, Limina runs Knip for that package without `--tsConfig`, so `Knip` uses its own default `tsconfig` behavior.
 

@@ -64,6 +64,12 @@ import type {
   ResolvedPackageTarget,
 } from '../core/packages/owners';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import {
+  createWorkspaceRegionBoundaryIndex,
+  findContainingWorkspacePackage,
+  type WorkspaceRegionBoundary,
+  type WorkspaceRegionBoundaryIndex,
+} from '../core/workspace/regions';
 import type { TaskProgressReporter } from '../execution/progress';
 import {
   formatMissingOptionalToolSkipMessage,
@@ -126,6 +132,7 @@ export interface RunSourceCheckOptions {
 }
 
 const SOURCE_CHECK_ITEM_NAMES = [
+  'workspace regions',
   'source graph routes',
   'tsconfig governance',
   'knip source usage',
@@ -136,6 +143,21 @@ const SOURCE_CHECK_ITEM_NAMES = [
 interface SourceProjectEntry {
   fileNames: string[];
   project: ProjectInfo;
+}
+
+function filterProjectInfoToActivatedRegion(
+  project: ProjectInfo,
+  workspaceLookup: WorkspaceLookupIndex,
+): ProjectInfo {
+  return {
+    ...project,
+    fileNames: project.fileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+    ownedFileNames: project.ownedFileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+  };
 }
 
 interface TsconfigOwnershipResolution {
@@ -255,6 +277,216 @@ function addRelativeImportOwnerProblem(options: {
           ]
         : []),
       '  reason: relative source imports must not cross the nearest package.json package boundary.',
+    ].join('\n'),
+  );
+}
+
+function addWorkspaceRegionOverlapProblems(options: {
+  boundaries: readonly WorkspaceRegionBoundary[];
+  checks: CheckCounter;
+  config: ResolvedLiminaConfig;
+  packages: readonly WorkspacePackage[];
+  problems: string[];
+}): void {
+  for (const boundary of options.boundaries) {
+    if (boundary.kind !== 'pnpm-workspace') {
+      continue;
+    }
+
+    options.checks.add();
+
+    if (boundary.excluded) {
+      continue;
+    }
+
+    const workspacePackage = findContainingWorkspacePackage({
+      boundaryRootDir: boundary.rootDir,
+      packages: options.packages,
+      rootDir: options.config.rootDir,
+    });
+
+    if (!workspacePackage) {
+      continue;
+    }
+
+    const isExactOverlap =
+      normalizeAbsolutePath(workspacePackage.directory) ===
+      normalizeAbsolutePath(boundary.rootDir);
+    const packageLabel =
+      workspacePackage.name ??
+      normalizeSlashes(
+        toRelativePath(options.config.rootDir, workspacePackage.directory),
+      );
+
+    options.problems.push(
+      [
+        isExactOverlap
+          ? 'Nested pnpm workspace root exactly overlaps a current workspace package:'
+          : 'Nested pnpm workspace root is inside a current workspace package:',
+        `  current region: ${toRelativePath(options.config.rootDir, path.join(options.config.rootDir, 'pnpm-workspace.yaml'))}`,
+        `  current workspace package: ${toRelativePath(options.config.rootDir, workspacePackage.directory)}`,
+        ...(workspacePackage.name
+          ? [`  workspace package: ${workspacePackage.name}`]
+          : [`  package: ${packageLabel}`]),
+        `  nested workspace: ${toRelativePath(options.config.rootDir, boundary.rootDir)}`,
+        `  nested workspace config: ${toRelativePath(options.config.rootDir, boundary.workspaceYamlPath)}`,
+        '  reason: Limina requires source ownership and dependency authority to belong to one pnpm workspace region during a single run.',
+        '  fix: add regions.exclude with include patterns and a reason, move the nested workspace outside the package, or run Limina from the nested workspace root if it should be governed independently.',
+      ].join('\n'),
+    );
+  }
+}
+
+interface WorkspaceRegionPackageOwner {
+  packageDirectory: string;
+  packageName?: string;
+  regionRootDir: string;
+}
+
+function addPackageOwner(
+  ownersByDirectory: Map<string, WorkspaceRegionPackageOwner[]>,
+  owner: WorkspaceRegionPackageOwner,
+): void {
+  const existingOwners = ownersByDirectory.get(owner.packageDirectory) ?? [];
+
+  if (
+    existingOwners.some(
+      (existingOwner) => existingOwner.regionRootDir === owner.regionRootDir,
+    )
+  ) {
+    return;
+  }
+
+  ownersByDirectory.set(owner.packageDirectory, [...existingOwners, owner]);
+}
+
+async function addWorkspaceRegionDuplicatePackageOwnershipProblems(options: {
+  boundaries: readonly WorkspaceRegionBoundary[];
+  checks: CheckCounter;
+  config: ResolvedLiminaConfig;
+  packages: readonly WorkspacePackage[];
+  problems: string[];
+}): Promise<void> {
+  const ownersByDirectory = new Map<string, WorkspaceRegionPackageOwner[]>();
+  const currentRegionRootDir = normalizeAbsolutePath(options.config.rootDir);
+
+  for (const workspacePackage of options.packages) {
+    const packageDirectory = normalizeAbsolutePath(workspacePackage.directory);
+
+    if (packageDirectory === currentRegionRootDir) {
+      continue;
+    }
+
+    addPackageOwner(ownersByDirectory, {
+      packageDirectory,
+      ...(workspacePackage.name ? { packageName: workspacePackage.name } : {}),
+      regionRootDir: currentRegionRootDir,
+    });
+  }
+
+  for (const boundary of options.boundaries) {
+    if (boundary.kind !== 'pnpm-workspace' || boundary.excluded) {
+      continue;
+    }
+
+    const nestedRegionRootDir = normalizeAbsolutePath(boundary.rootDir);
+
+    for (const workspacePackage of boundary.workspacePackages) {
+      const packageDirectory = normalizeAbsolutePath(
+        workspacePackage.directory,
+      );
+
+      if (packageDirectory === nestedRegionRootDir) {
+        continue;
+      }
+
+      addPackageOwner(ownersByDirectory, {
+        packageDirectory,
+        ...(workspacePackage.name
+          ? { packageName: workspacePackage.name }
+          : {}),
+        regionRootDir: nestedRegionRootDir,
+      });
+    }
+  }
+
+  for (const [packageDirectory, owners] of ownersByDirectory) {
+    if (owners.length < 2) {
+      continue;
+    }
+
+    options.checks.add();
+    options.problems.push(
+      [
+        'Duplicate pnpm workspace package ownership across workspace regions:',
+        `  package: ${toRelativePath(options.config.rootDir, packageDirectory)}`,
+        ...owners
+          .sort((left, right) =>
+            left.regionRootDir.localeCompare(right.regionRootDir),
+          )
+          .flatMap((owner) => [
+            `  owning region: ${toRelativePath(options.config.rootDir, owner.regionRootDir)}`,
+            ...(owner.packageName
+              ? [`  workspace package: ${owner.packageName}`]
+              : []),
+          ]),
+        '  reason: one physical non-root package directory is reported by more than one non-excluded pnpm workspace region.',
+        '  fix: remove the duplicate workspace package pattern from one region, exclude the nested region with regions.exclude, or run Limina separately from the nested workspace root.',
+      ].join('\n'),
+    );
+  }
+}
+
+function addSourceCrossGovernanceBoundaryProblem(options: {
+  boundary: WorkspaceRegionBoundary;
+  config: ResolvedLiminaConfig;
+  importRecord: ImportRecord;
+  owner: PackageOwner;
+  problems: string[];
+  resolvedFilePath: string;
+}): void {
+  options.problems.push(
+    [
+      'Source import crosses governance boundary:',
+      `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+      `  imported specifier: ${options.importRecord.specifier}`,
+      `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
+      `  current region: ${toRelativePath(options.config.rootDir, path.join(options.config.rootDir, 'pnpm-workspace.yaml'))}`,
+      `  boundary kind: ${options.boundary.kind}`,
+      `  boundary root: ${toRelativePath(options.config.rootDir, options.boundary.rootDir)}`,
+      ...(options.boundary.kind === 'pnpm-workspace'
+        ? [
+            `  boundary config: ${toRelativePath(options.config.rootDir, options.boundary.workspaceYamlPath)}`,
+          ]
+        : [
+            `  boundary manifest: ${toRelativePath(options.config.rootDir, options.boundary.packageJsonPath)}`,
+          ]),
+      ...(options.boundary.excluded && options.boundary.exclusionReason
+        ? [`  excluded boundary reason: ${options.boundary.exclusionReason}`]
+        : []),
+      '  reason: current-region source must not import source files beyond a stopped or excluded governance boundary during a single Limina run.',
+      '  fix: remove the cross-boundary source import, activate an eligible package scope, or consume a published package artifact instead of local source.',
+    ].join('\n'),
+  );
+}
+
+function addSourceImportOutsideActivatedRegionProblem(options: {
+  config: ResolvedLiminaConfig;
+  importRecord: ImportRecord;
+  owner: PackageOwner;
+  problems: string[];
+  resolvedFilePath: string;
+}): void {
+  options.problems.push(
+    [
+      'Source import resolves outside activated workspace package regions:',
+      `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+      `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+      `  imported specifier: ${options.importRecord.specifier}`,
+      `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
+      '  reason: current-run source governance is bounded by activated workspace packages; local repo files outside those packages cannot be imported as governed source.',
+      '  fix: move the target into an activated workspace package, activate the owning package for this run, or consume it as a package artifact instead of a local source file.',
     ].join('\n'),
   );
 }
@@ -1861,6 +2093,7 @@ async function addKnipBackedSourceProblems(options: {
 async function createSourceProjectEntries(
   core: LiminaCore,
   projects: ProjectInfo[],
+  workspaceLookup: WorkspaceLookupIndex,
 ): Promise<SourceProjectEntry[]> {
   return Promise.all(
     projects
@@ -1878,7 +2111,11 @@ async function createSourceProjectEntries(
         }
 
         return {
-          fileNames: [...fileNames].sort(),
+          fileNames: [...fileNames]
+            .filter((fileName) =>
+              workspaceLookup.isInsideActivatedRegion(fileName),
+            )
+            .sort(),
           project,
         };
       }),
@@ -2217,6 +2454,7 @@ function addImportRecordProblems(options: {
   packages: WorkspacePackage[];
   problems: string[];
   project: ProjectInfo;
+  regionBoundaries: WorkspaceRegionBoundaryIndex;
   rootPackage: WorkspacePackage | null;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
@@ -2227,6 +2465,35 @@ function addImportRecordProblems(options: {
     options.project,
     options.importAnalysis,
   );
+  const targetRegionBoundary = resolvedFilePath
+    ? options.regionBoundaries.findBoundaryForPath(resolvedFilePath)
+    : null;
+
+  if (resolvedFilePath && targetRegionBoundary) {
+    addSourceCrossGovernanceBoundaryProblem({
+      boundary: targetRegionBoundary,
+      config: options.config,
+      importRecord: options.importRecord,
+      owner: options.owner,
+      problems: options.problems,
+      resolvedFilePath,
+    });
+    return;
+  }
+
+  if (
+    resolvedFilePath &&
+    options.workspaceLookup.isLocalPathOutsideActivatedRegion(resolvedFilePath)
+  ) {
+    addSourceImportOutsideActivatedRegionProblem({
+      config: options.config,
+      importRecord: options.importRecord,
+      owner: options.owner,
+      problems: options.problems,
+      resolvedFilePath,
+    });
+    return;
+  }
 
   if (isRelativeSpecifier(options.importRecord.specifier)) {
     addRelativeImportProblems({
@@ -2283,6 +2550,7 @@ function addSourceImportProblems(options: {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   packages: WorkspacePackage[];
   problems: string[];
+  regionBoundaries: WorkspaceRegionBoundaryIndex;
   rootPackage: WorkspacePackage | null;
   sourceProjectEntries: SourceProjectEntry[];
   workspaceLookup: WorkspaceLookupIndex;
@@ -2311,6 +2579,7 @@ function addSourceImportProblems(options: {
           packages: options.packages,
           problems: options.problems,
           project,
+          regionBoundaries: options.regionBoundaries,
           rootPackage: options.rootPackage,
           workspaceLookup: options.workspaceLookup,
         });
@@ -2346,6 +2615,25 @@ function stripProblemLocationSuffix(filePath: string): string {
 }
 
 function getSourceProblemCode(title: string): string {
+  if (title.startsWith('Source import crosses governance boundary')) {
+    return LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary;
+  }
+
+  if (
+    title.startsWith(
+      'Source import resolves outside activated workspace package regions',
+    )
+  ) {
+    return LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid;
+  }
+
+  if (
+    title.startsWith('Nested pnpm workspace root') ||
+    title.includes('workspace region')
+  ) {
+    return LIMINA_CHECK_ISSUE_CODES.workspaceRegionOverlap;
+  }
+
   if (title.includes('Knip') || title.includes('knip')) {
     if (title.includes('build script')) {
       return LIMINA_CHECK_ISSUE_CODES.sourceKnipBuildScriptUnsupported;
@@ -2518,18 +2806,32 @@ export async function runSourceCheckImpl(
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
   const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
-  const projects = await Promise.all(
-    projectPaths.map((projectPath) =>
-      core.tsconfig.getProject(
-        projectPath,
-        graphRoute.projectContextsByPath.get(projectPath),
-      ),
-    ),
-  );
-  const sourceProjectEntries = await createSourceProjectEntries(core, projects);
-  const packages = await preflight.ensureWorkspacePackages();
-  const packageOwners = await preflight.ensurePackageOwners();
   const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
+  const projects = (
+    await Promise.all(
+      projectPaths.map((projectPath) =>
+        core.tsconfig.getProject(
+          projectPath,
+          graphRoute.projectContextsByPath.get(projectPath),
+        ),
+      ),
+    )
+  ).map((project) =>
+    filterProjectInfoToActivatedRegion(project, workspaceLookup),
+  );
+  const sourceProjectEntries = await createSourceProjectEntries(
+    core,
+    projects,
+    workspaceLookup,
+  );
+  const packages = await preflight.ensureWorkspacePackages();
+  const rawPackages = await preflight.ensureRawWorkspacePackages();
+  const packageOwners = await preflight.ensurePackageOwners();
+  const regionBoundaries = await preflight.ensureWorkspaceRegionBoundaries();
+  const regionBoundaryIndex = createWorkspaceRegionBoundaryIndex(
+    regionBoundaries,
+    packages,
+  );
   const workspaceDependencyDeclarations =
     await preflight.ensureWorkspaceDependencyDeclarations();
   const rootPackage = findWorkspaceRootPackage({
@@ -2537,10 +2839,27 @@ export async function runSourceCheckImpl(
     packages,
   });
   const ownerModuleSets = collectOwnerSourceModuleSets({
-    owners: packageOwners,
     sourceProjectEntries,
+    workspaceLookup,
   });
   const importAnalysis = preflight.importAnalysis;
+
+  checkItems.start('workspace regions');
+  addWorkspaceRegionOverlapProblems({
+    boundaries: regionBoundaries,
+    checks,
+    config,
+    packages: rawPackages,
+    problems,
+  });
+  await addWorkspaceRegionDuplicatePackageOwnershipProblems({
+    boundaries: regionBoundaries,
+    checks,
+    config,
+    packages: rawPackages,
+    problems,
+  });
+  checkItems.record('workspace regions');
 
   checkItems.start('source graph routes');
   problems.push(...graphRoute.problems);
@@ -2627,6 +2946,7 @@ export async function runSourceCheckImpl(
     importAuthorityAllowRules,
     packages,
     problems,
+    regionBoundaries: regionBoundaryIndex,
     rootPackage,
     sourceProjectEntries,
     workspaceLookup,

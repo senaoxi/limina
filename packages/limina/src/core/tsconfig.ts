@@ -13,6 +13,11 @@ import {
 } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
+import type { WorkspaceCore } from './workspace';
+import {
+  createWorkspaceLookupIndex,
+  type WorkspaceLookupIndex,
+} from './workspace/lookup';
 
 export interface SourceGraphProjects {
   problems: string[];
@@ -22,6 +27,7 @@ export interface SourceGraphProjects {
 export class TsconfigCore {
   readonly #config: ResolvedLiminaConfig;
   readonly #generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>;
+  readonly #workspace: WorkspaceCore | undefined;
   #projectCache = new Map<string, Promise<ProjectInfo>>();
   #referenceGraphCache = new Map<
     string,
@@ -32,9 +38,11 @@ export class TsconfigCore {
   constructor(
     config: ResolvedLiminaConfig,
     generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>,
+    workspace?: WorkspaceCore,
   ) {
     this.#config = config;
     this.#generatedGraphProvider = generatedGraphProvider;
+    this.#workspace = workspace;
   }
 
   invalidate(): void {
@@ -91,13 +99,20 @@ export class TsconfigCore {
         const projectPaths = [
           ...graphRoute.projectExtensionsByPath.keys(),
         ].sort();
-        const projects = await Promise.all(
-          projectPaths.map((projectPath) =>
-            this.getProject(
-              projectPath,
-              graphRoute.projectContextsByPath.get(projectPath),
+        const workspaceLookup = await this.#createWorkspaceLookupIndex();
+        const projects = (
+          await Promise.all(
+            projectPaths.map((projectPath) =>
+              this.getProject(
+                projectPath,
+                graphRoute.projectContextsByPath.get(projectPath),
+              ),
             ),
-          ),
+          )
+        ).map((project) =>
+          workspaceLookup
+            ? filterProjectInfoToActivatedRegion(project, workspaceLookup)
+            : project,
         );
 
         return {
@@ -134,8 +149,48 @@ export class TsconfigCore {
         : directoryDepthDelta;
     });
 
-    return projectPath ? this.getProject(projectPath) : null;
+    return (
+      (projectPath
+        ? projects.find((project) => project.configPath === projectPath)
+        : null) ?? null
+    );
   }
+
+  async #createWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex | null> {
+    if (!this.#workspace) {
+      return null;
+    }
+
+    const [importers, owners, packages, regionBoundaries] = await Promise.all([
+      this.#workspace.getImporters(),
+      this.#workspace.getPackageOwners(),
+      this.#workspace.getPackages(),
+      this.#workspace.getRegionBoundaries(),
+    ]);
+
+    return createWorkspaceLookupIndex({
+      importers,
+      owners,
+      packages,
+      regionBoundaries,
+      rootDir: this.#config.rootDir,
+    });
+  }
+}
+
+function filterProjectInfoToActivatedRegion(
+  project: ProjectInfo,
+  workspaceLookup: WorkspaceLookupIndex,
+): ProjectInfo {
+  return {
+    ...project,
+    fileNames: project.fileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+    ownedFileNames: project.ownedFileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+  };
 }
 
 function createProjectCacheKey(

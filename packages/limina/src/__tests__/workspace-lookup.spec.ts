@@ -189,6 +189,16 @@ describe('WorkspaceLookupIndex', () => {
     });
 
     try {
+      const rootPackage = createWorkspacePackage(fixture.rootDir, '.', {
+        name: 'root',
+      });
+      const appPackage = createWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        {
+          name: '@acme/app',
+        },
+      );
       const rootImporter = createImporter({
         dependencies: ['@acme/app'],
         name: 'root',
@@ -203,7 +213,7 @@ describe('WorkspaceLookupIndex', () => {
       const index = createWorkspaceLookupIndex({
         importers: [rootImporter, appImporter],
         owners: [],
-        packages: [],
+        packages: [rootPackage, appPackage],
         rootDir: fixture.rootDir,
       });
 
@@ -233,10 +243,17 @@ describe('WorkspaceLookupIndex', () => {
     });
 
     try {
+      const appPackage = createWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        {
+          name: '@acme/app',
+        },
+      );
       const index = createWorkspaceLookupIndex({
         importers: [],
         owners: [],
-        packages: [],
+        packages: [appPackage],
         rootDir: fixture.rootDir,
       });
 
@@ -272,6 +289,7 @@ describe('WorkspaceLookupIndex', () => {
       'packages/app/node_modules/external/package.json': stringifyConfig({
         name: 'external',
       }),
+      'tools/loose/package.json': stringifyConfig({ name: '@acme/loose' }),
     });
 
     try {
@@ -332,6 +350,12 @@ describe('WorkspaceLookupIndex', () => {
           name: 'external',
         },
       });
+      expect(
+        index.classifyResolvedPackageTarget({
+          owner: appOwner,
+          resolvedFilePath: path.join(fixture.rootDir, 'tools/loose/index.ts'),
+        }).kind,
+      ).toBe('unowned');
     } finally {
       await fixture.cleanup();
     }

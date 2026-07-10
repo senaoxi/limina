@@ -1605,6 +1605,13 @@ export default {
         'export const value = 1;\n',
       );
       await writeText(
+        path.join(rootDir, 'app/package.json'),
+        stringifyConfig({
+          name: 'app',
+          private: true,
+        }),
+      );
+      await writeText(
         path.join(rootDir, 'app/tsconfig.json'),
         stringifyConfig({
           compilerOptions: {
