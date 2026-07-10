@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'pathe';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
@@ -7,7 +8,7 @@ import {
   isDtsProjectConfig,
   type ProjectInfo,
 } from '#core/import-graph/context';
-import { uniqueValues } from '#utils/collections';
+import { uniqueSortedStrings } from '#utils/collections';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
@@ -37,7 +38,7 @@ function normalizeCustomConditions(
     return [];
   }
 
-  return uniqueValues(value);
+  return uniqueSortedStrings(value);
 }
 
 function getProjectCustomConditions(project: ProjectInfo): string[] {
@@ -52,7 +53,7 @@ function customConditionsEqual(
   left: readonly string[],
   right: readonly string[],
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function createGeneratedGraphPathAliases(

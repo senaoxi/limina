@@ -180,17 +180,19 @@ export function findPackageImportMatch(
     return null;
   }
 
+  if (Object.hasOwn(importsField, specifier)) {
+    const value = importsField[specifier];
+
+    return {
+      key: specifier,
+      targetKind: classifyPackageImportTarget(value),
+      value,
+    };
+  }
+
+  const matchingPatterns: { key: string; wildcardIndex: number }[] = [];
+
   for (const key of Object.keys(importsField)) {
-    const value = importsField[key];
-
-    if (key === specifier) {
-      return {
-        key,
-        targetKind: classifyPackageImportTarget(value),
-        value,
-      };
-    }
-
     const wildcardIndex = key.indexOf('*');
 
     if (wildcardIndex === -1) {
@@ -201,15 +203,33 @@ export function findPackageImportMatch(
     const suffix = key.slice(wildcardIndex + 1);
 
     if (specifier.startsWith(prefix) && specifier.endsWith(suffix)) {
-      return {
-        key,
-        targetKind: classifyPackageImportTarget(value),
-        value,
-      };
+      matchingPatterns.push({ key, wildcardIndex });
     }
   }
 
-  return null;
+  matchingPatterns.sort((left, right) => {
+    const baseLengthDifference = right.wildcardIndex - left.wildcardIndex;
+
+    if (baseLengthDifference !== 0) {
+      return baseLengthDifference;
+    }
+
+    return right.key.length - left.key.length;
+  });
+
+  const selectedPattern = matchingPatterns[0];
+
+  if (!selectedPattern) {
+    return null;
+  }
+
+  const value = importsField[selectedPattern.key];
+
+  return {
+    key: selectedPattern.key,
+    targetKind: classifyPackageImportTarget(value),
+    value,
+  };
 }
 
 function classifyPackageImportTarget(value: unknown): PackageImportTargetKind {

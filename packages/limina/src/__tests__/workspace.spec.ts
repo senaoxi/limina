@@ -2,19 +2,24 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { createLiminaCore } from '#core';
 import type {
   PackageManifest,
-  PnpmWorkspaceListEntry,
   WorkspacePackage,
 } from '#core/workspace/actions';
 import {
-  collectPnpmWorkspacePatterns,
+  collectPackageOwners,
   collectRawWorkspacePackages,
   collectWorkspacePackages,
-  parsePnpmWorkspaceListJson,
 } from '#core/workspace/actions';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   collectWorkspaceRegionBoundaries,
   collectWorkspaceRegionTopology,
@@ -24,12 +29,6 @@ import {
   createFixturePathResolver,
   toPortableRelativePath,
 } from './helpers/path';
-
-const execFileMock = vi.hoisted(() => vi.fn());
-
-vi.mock('node:child_process', () => ({
-  execFile: execFileMock,
-}));
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -52,52 +51,6 @@ function createWorkspacePackageFixture(
       ? { name: manifest.name.trim() }
       : {}),
   };
-}
-
-function mockPnpmListResult(entries: PnpmWorkspaceListEntry[]): void {
-  execFileMock.mockImplementation(
-    (
-      _command: string,
-      _args: string[],
-      _options: unknown,
-      callback: (error: Error | null, stdout: string) => void,
-    ) => {
-      callback(null, JSON.stringify(entries));
-      return {};
-    },
-  );
-}
-
-function mockPnpmListFailure(error: Error): void {
-  execFileMock.mockImplementation(
-    (
-      _command: string,
-      _args: string[],
-      _options: unknown,
-      callback: (error: Error | null, stdout: string) => void,
-    ) => {
-      callback(error, '');
-      return {};
-    },
-  );
-}
-
-function expectPnpmListCommand(rootDir: string): void {
-  const [, args, options] = execFileMock.mock.calls[0] as [
-    command: string,
-    args: string[],
-    options: { cwd?: string },
-    callback: unknown,
-  ];
-
-  expect(args.slice(-5)).toEqual([
-    'recursive',
-    'list',
-    '--depth',
-    '-1',
-    '--json',
-  ]);
-  expect(options).toEqual(expect.objectContaining({ cwd: rootDir }));
 }
 
 async function createFixture(files: Record<string, string>): Promise<{
@@ -131,63 +84,6 @@ async function createFixture(files: Record<string, string>): Promise<{
   };
 }
 
-beforeEach(() => {
-  execFileMock.mockReset();
-});
-
-describe('collectPnpmWorkspacePatterns', () => {
-  it('reads package globs from the pnpm workspace packages section', () => {
-    expect(
-      collectPnpmWorkspacePatterns(`
-packages:
-  - packages/*
-  - 'docs'
-  - "!**/dist"
-
-catalogs:
-  dev:
-    typescript: 5.9.3
-`),
-    ).toEqual(['packages/*', 'docs', '!**/dist']);
-  });
-});
-
-describe('parsePnpmWorkspaceListJson', () => {
-  it('reads package paths from pnpm recursive list json', () => {
-    expect(
-      parsePnpmWorkspaceListJson(
-        JSON.stringify([
-          {
-            name: 'root',
-            path: '/repo',
-            private: true,
-          },
-          {
-            name: '@example/a',
-            path: '/repo/packages/a',
-            version: '1.0.0',
-          },
-          {
-            path: '/repo/packages/unnamed',
-          },
-        ]),
-      ),
-    ).toEqual([
-      {
-        name: 'root',
-        path: '/repo',
-      },
-      {
-        name: '@example/a',
-        path: '/repo/packages/a',
-      },
-      {
-        path: '/repo/packages/unnamed',
-      },
-    ]);
-  });
-});
-
 describe('collectWorkspacePackages', () => {
   it('collects workspace packages without names', async () => {
     const fixture = await createFixture({
@@ -199,18 +95,10 @@ describe('collectWorkspacePackages', () => {
       'packages/a/package.json': stringifyConfig({
         private: true,
       }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
     });
 
     try {
-      mockPnpmListResult([
-        {
-          path: fixture.rootDir,
-        },
-        {
-          path: path.join(fixture.rootDir, 'packages/a'),
-        },
-      ]);
-
       const packages = await collectWorkspacePackages(fixture.config);
 
       expect(
@@ -233,7 +121,6 @@ describe('collectWorkspacePackages', () => {
           },
         ]),
       );
-      expectPnpmListCommand(fixture.rootDir);
     } finally {
       await fixture.cleanup();
     }
@@ -258,24 +145,10 @@ describe('collectWorkspacePackages', () => {
         name: '@example/z',
         private: true,
       }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
     });
 
     try {
-      mockPnpmListResult([
-        {
-          path: fixture.rootDir,
-        },
-        {
-          path: path.join(fixture.rootDir, 'packages/z'),
-        },
-        {
-          path: path.join(fixture.rootDir, 'packages/b'),
-        },
-        {
-          path: path.join(fixture.rootDir, 'packages/a'),
-        },
-      ]);
-
       const packages = await collectWorkspacePackages(fixture.config);
 
       expect(
@@ -309,66 +182,85 @@ describe('collectWorkspacePackages', () => {
     }
   });
 
-  it('does not fall back to workspace globs when pnpm list omits a package', async () => {
+  it('discovers only package.json manifests selected by workspace patterns', async () => {
     const fixture = await createFixture({
-      'package.json': stringifyConfig({
-        name: 'root',
-        private: true,
-        workspaces: ['packages/*'],
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/excluded/package.json': stringifyConfig({
+        name: '@example/excluded',
       }),
-      'packages/a/package.json': stringifyConfig({
-        name: '@example/a',
-        private: true,
+      'packages/json/package.json': stringifyConfig({
+        name: '@example/json',
       }),
+      'packages/json/package.json5': "{ name: '@example/json5-shadow' }\n",
+      'packages/json/package.yaml': 'name: @example/yaml-shadow\n',
+      'packages/json5/package.json5': "{ name: '@example/json5' }\n",
+      'packages/yaml/package.yaml': 'name: @example/yaml\n',
+      'pnpm-workspace.yaml': [
+        'packages:',
+        '  - packages/*',
+        '  - "!packages/excluded"',
+        '',
+      ].join('\n'),
     });
 
     try {
-      mockPnpmListResult([
-        {
-          path: fixture.rootDir,
-        },
-      ]);
+      const packages = await collectRawWorkspacePackages(fixture.config);
+      const owners = await collectPackageOwners(fixture.config);
 
-      const packages = await collectWorkspacePackages(fixture.config);
+      await Promise.all(owners.map((owner) => access(owner.packageJsonPath)));
 
+      expect(packages.map((workspacePackage) => workspacePackage.name)).toEqual(
+        ['@example/json', 'root'],
+      );
       expect(
-        packages.map((workspacePackage) => ({
-          directory: toPortableRelativePath(
-            fixture.rootDir,
-            workspacePackage.directory,
-          ),
-          name: workspacePackage.name,
-        })),
-      ).toEqual([
-        {
-          directory: '',
-          name: 'root',
-        },
-      ]);
+        owners.map((owner) =>
+          toPortableRelativePath(fixture.rootDir, owner.packageJsonPath),
+        ),
+      ).toEqual(
+        expect.arrayContaining(['package.json', 'packages/json/package.json']),
+      );
+      expect(
+        owners.every((owner) => owner.packageJsonPath.endsWith('package.json')),
+      ).toBe(true);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('reports pnpm list failures instead of falling back to workspace globs', async () => {
+  it('uses pnpm default ignores for invalid test fixture manifests', async () => {
     const fixture = await createFixture({
-      'package.json': stringifyConfig({
-        name: 'root',
-        private: true,
-        workspaces: ['packages/*'],
-      }),
+      'package.json': stringifyConfig({ name: 'root', private: true }),
       'packages/a/package.json': stringifyConfig({
         name: '@example/a',
         private: true,
       }),
+      'packages/a/test/fixture/package.json': '{\n',
+      'pnpm-workspace.yaml': 'packages:\n  - packages/**\n',
     });
 
     try {
-      mockPnpmListFailure(new Error('pnpm list unavailable'));
+      const packages = await collectWorkspacePackages(fixture.config);
 
-      await expect(collectWorkspacePackages(fixture.config)).rejects.toThrow(
-        /Failed to collect workspace packages via pnpm recursive list\.[\s\S]*pnpm list unavailable/u,
+      expect(packages.map((workspacePackage) => workspacePackage.name)).toEqual(
+        ['@example/a', 'root'],
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('validates the root workspace manifest with the pnpm reader', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'pnpm-workspace.yaml': 'packages: []\ncatalogs: []\n',
+    });
+
+    try {
+      await expect(
+        collectRawWorkspacePackages(fixture.config),
+      ).rejects.toMatchObject({
+        code: 'ERR_PNPM_INVALID_WORKSPACE_CONFIGURATION',
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -392,17 +284,6 @@ describe('collectWorkspacePackages', () => {
     });
 
     try {
-      mockPnpmListResult([
-        {
-          name: 'root',
-          path: fixture.rootDir,
-        },
-        {
-          name: '@example/app',
-          path: path.join(fixture.rootDir, 'app'),
-        },
-      ]);
-
       fixture.config.regions = {
         exclude: [
           {
@@ -434,65 +315,6 @@ describe('collectWorkspacePackages', () => {
       await fixture.cleanup();
     }
   });
-
-  it('caches one package enumeration per discovered workspace until invalidated', async () => {
-    const fixture = await createFixture({
-      'app/fixture/package.json': stringifyConfig({
-        name: '@example/fixture',
-        private: true,
-      }),
-      'app/fixture/pnpm-workspace.yaml': 'packages: []\n',
-      'app/package.json': stringifyConfig({
-        name: '@example/app',
-        private: true,
-      }),
-      'package.json': stringifyConfig({ name: 'root', private: true }),
-      'pnpm-workspace.yaml': 'packages:\n  - app\n',
-    });
-
-    try {
-      const nestedRootDir = path.join(fixture.rootDir, 'app/fixture');
-
-      execFileMock.mockImplementation(
-        (
-          _command: string,
-          _args: string[],
-          options: { cwd: string },
-          callback: (error: Error | null, stdout: string) => void,
-        ) => {
-          const entries =
-            options.cwd === nestedRootDir
-              ? [{ name: '@example/fixture', path: nestedRootDir }]
-              : [
-                  { name: 'root', path: fixture.rootDir },
-                  {
-                    name: '@example/app',
-                    path: path.join(fixture.rootDir, 'app'),
-                  },
-                ];
-
-          callback(null, JSON.stringify(entries));
-          return {};
-        },
-      );
-
-      const core = createLiminaCore(fixture.config);
-
-      await core.workspace.getRawPackages();
-      await core.workspace.getPackages();
-      await core.workspace.getRegionBoundaries();
-      await core.workspace.getPackageOwners();
-
-      expect(execFileMock).toHaveBeenCalledTimes(2);
-
-      core.invalidateAll();
-      await core.workspace.getPackages();
-
-      expect(execFileMock).toHaveBeenCalledTimes(4);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
 });
 
 describe('collectWorkspaceRegionBoundaries', () => {
@@ -514,8 +336,6 @@ describe('collectWorkspaceRegionBoundaries', () => {
     });
 
     try {
-      mockPnpmListResult([]);
-
       const boundaries = await collectWorkspaceRegionBoundaries(
         {
           ...fixture.config,
@@ -544,6 +364,32 @@ describe('collectWorkspaceRegionBoundaries', () => {
           root: 'packages/a/fixture',
         },
       ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('ignores nested pnpm workspace manifests rejected by pnpm validation', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({
+        name: 'root',
+        private: true,
+      }),
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\ncatalogs: []\n',
+      'packages/a/package.json': stringifyConfig({
+        name: '@example/a',
+        private: true,
+      }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionBoundaries(
+          fixture.config,
+          collectRawWorkspacePackages,
+        ),
+      ).resolves.toEqual([]);
     } finally {
       await fixture.cleanup();
     }
@@ -579,8 +425,6 @@ describe('collectWorkspaceRegionBoundaries', () => {
     });
 
     try {
-      mockPnpmListResult([]);
-
       await expect(
         collectWorkspaceRegionBoundaries(
           fixture.config,
@@ -622,8 +466,6 @@ describe('collectWorkspaceRegionBoundaries', () => {
     });
 
     try {
-      mockPnpmListResult([]);
-
       const boundaries = await collectWorkspaceRegionBoundaries(
         fixture.config,
         collectRawWorkspacePackages,

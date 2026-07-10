@@ -8,7 +8,9 @@ import {
   toRelativePath,
 } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
+import { readWorkspaceManifest } from '@pnpm/workspace.read-manifest';
 import { readFileSync } from 'node:fs';
+import { types as utilTypes } from 'node:util';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
 import { glob } from 'tinyglobby';
@@ -287,13 +289,20 @@ async function collectConfiguredOutputDirectoryIgnorePatterns(options: {
   ];
 }
 
+function isInvalidPnpmWorkspaceManifestError(error: unknown): boolean {
+  return (
+    isPlainRecord(error) &&
+    error.code === 'ERR_PNPM_INVALID_WORKSPACE_CONFIGURATION'
+  );
+}
+
 async function collectNestedWorkspaceYamlPaths(
   config: ResolvedLiminaConfig,
 ): Promise<{ outputIgnorePatterns: string[]; workspaceYamlPaths: string[] }> {
   const currentWorkspaceYamlPath = normalizeAbsolutePath(
     path.join(config.rootDir, 'pnpm-workspace.yaml'),
   );
-  const rawWorkspaceYamlPaths = (
+  const discoveredWorkspaceYamlPaths = (
     await glob('**/pnpm-workspace.yaml', {
       absolute: true,
       cwd: config.rootDir,
@@ -305,6 +314,24 @@ async function collectNestedWorkspaceYamlPaths(
     .filter(
       (workspaceYamlPath) => workspaceYamlPath !== currentWorkspaceYamlPath,
     );
+  const rawWorkspaceYamlPaths = (
+    await Promise.all(
+      discoveredWorkspaceYamlPaths.map(async (workspaceYamlPath) => {
+        try {
+          await readWorkspaceManifest(path.dirname(workspaceYamlPath));
+          return workspaceYamlPath;
+        } catch (error) {
+          if (isInvalidPnpmWorkspaceManifestError(error)) {
+            return null;
+          }
+
+          throw error;
+        }
+      }),
+    )
+  ).filter((workspaceYamlPath): workspaceYamlPath is string =>
+    Boolean(workspaceYamlPath),
+  );
   const rawRegionBoundaries = rawWorkspaceYamlPaths.map(
     (workspaceYamlPath): PnpmWorkspaceRegionBoundary => ({
       excluded: false,
@@ -428,10 +455,18 @@ function findNearestWorkspacePackage(
   );
 }
 
-function readPackageManifest(packageJsonPath: string): PackageManifest {
-  return JSON.parse(
-    readFileSync(packageJsonPath, 'utf8').replace(/^\uFEFF/u, ''),
-  ) as PackageManifest;
+function readPackageManifest(packageJsonPath: string): PackageManifest | null {
+  try {
+    return JSON.parse(
+      readFileSync(packageJsonPath, 'utf8').replace(/^\uFEFF/u, ''),
+    ) as PackageManifest;
+  } catch (error) {
+    if (utilTypes.isNativeError(error) && error.name === 'SyntaxError') {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 async function collectPackageScopeTopology(options: {
@@ -500,6 +535,11 @@ async function collectPackageScopeTopology(options: {
     }
 
     const manifest = readPackageManifest(packageJsonPath);
+
+    if (!manifest) {
+      continue;
+    }
+
     const isExpandable =
       options.config.regions?.extendNestedPackageScopes === true &&
       !Object.hasOwn(manifest, 'name') &&

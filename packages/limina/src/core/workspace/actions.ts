@@ -1,12 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { uniqueBy } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
-import { execFile } from 'node:child_process';
+import { readWorkspaceManifest } from '@pnpm/workspace.read-manifest';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
+import { glob } from 'tinyglobby';
 import { collectWorkspaceRegionTopology } from './regions';
-
-const pnpmWorkspaceListTimeoutMs = 120_000;
 
 export interface PackageManifest {
   bin?: Record<string, string> | string;
@@ -41,11 +39,6 @@ export interface PackageOwner {
   packageJsonPath: string;
 }
 
-export interface PnpmWorkspaceListEntry {
-  name?: string;
-  path?: string;
-}
-
 export interface ImporterInfo {
   declaredWorkspaceDependencies: Set<string>;
   directory: string;
@@ -66,88 +59,6 @@ export function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '')) as T;
 }
 
-function stripYamlQuotes(value: string): string {
-  const trimmed = value.trim();
-
-  if (
-    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-    (trimmed.startsWith('"') && trimmed.endsWith('"'))
-  ) {
-    return trimmed.slice(1, -1);
-  }
-
-  return trimmed;
-}
-
-export function collectPnpmWorkspacePatterns(source: string): string[] {
-  const patterns: string[] = [];
-  const lines = source.split(/\r?\n/u);
-  let isInsidePackagesSection = false;
-
-  for (const rawLine of lines) {
-    const line = rawLine.replaceAll('\t', '    ');
-    const trimmedLine = line.trim();
-
-    if (!isInsidePackagesSection) {
-      if (trimmedLine === 'packages:') {
-        isInsidePackagesSection = true;
-      }
-      continue;
-    }
-
-    if (trimmedLine.length === 0 || trimmedLine.startsWith('#')) {
-      continue;
-    }
-
-    const indent = line.length - line.trimStart().length;
-
-    if (indent === 0) {
-      break;
-    }
-
-    if (trimmedLine.startsWith('- ')) {
-      patterns.push(stripYamlQuotes(trimmedLine.slice(2)));
-    }
-  }
-
-  return patterns;
-}
-
-export function parsePnpmWorkspaceListJson(
-  source: string,
-): PnpmWorkspaceListEntry[] {
-  const trimmedSource = source.trim();
-
-  if (trimmedSource.length === 0) {
-    return [];
-  }
-
-  const parsed = JSON.parse(trimmedSource) as unknown;
-
-  if (!Array.isArray(parsed)) {
-    return [];
-  }
-
-  return parsed.flatMap((entry) => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-      return [];
-    }
-
-    const record = entry as Record<string, unknown>;
-
-    if (typeof record.path !== 'string') {
-      return [];
-    }
-
-    return [
-      {
-        ...(typeof record.name === 'string' ? { name: record.name } : {}),
-        path: record.path,
-      },
-    ];
-  });
-}
-
 function getManifestPackageName(manifest: PackageManifest): string | null {
   return typeof manifest.name === 'string' && manifest.name.trim().length > 0
     ? manifest.name.trim()
@@ -160,191 +71,70 @@ export function isNamedWorkspacePackage(
   return Boolean(workspacePackage.name);
 }
 
-function readWorkspacePackage(options: {
-  config: ResolvedLiminaConfig;
-  packageJsonPath: string;
-}): WorkspacePackage {
-  const packageJsonPath = normalizeAbsolutePath(options.packageJsonPath);
-  const manifest = readJsonFile<PackageManifest>(packageJsonPath);
-  const name = getManifestPackageName(manifest);
+const workspacePackageDiscoveryIgnore = [
+  '**/node_modules/**',
+  '**/bower_components/**',
+  '**/test/**',
+  '**/tests/**',
+] as const;
 
-  return {
-    directory: normalizeAbsolutePath(path.dirname(packageJsonPath)),
-    manifest,
-    ...(name ? { name } : {}),
-  };
-}
-
-function runTextCommand(
-  command: string,
-  args: string[],
-  cwd: string,
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      command,
-      args,
-      {
-        cwd,
-        encoding: 'utf8',
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: pnpmWorkspaceListTimeoutMs,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          Object.assign(error, {
-            stderr,
-            stdout,
-          });
-          reject(error);
-          return;
-        }
-
-        resolve(stdout);
-      },
-    );
-  });
-}
-
-function getPnpmCommandCandidates(): {
-  argsPrefix: string[];
-  command: string;
-}[] {
-  const candidates: { argsPrefix: string[]; command: string }[] = [];
-  const npmExecPath = process.env.npm_execpath;
-
-  if (npmExecPath?.includes('pnpm')) {
-    candidates.push({
-      argsPrefix: [npmExecPath],
-      command: process.execPath,
-    });
-  }
-
-  candidates.push(
-    {
-      argsPrefix: ['pnpm'],
-      command: 'corepack',
-    },
-    {
-      argsPrefix: [],
-      command: 'pnpm',
-    },
+function toPackageJsonPattern(pattern: string): string {
+  const negated = pattern.startsWith('!');
+  const directoryPattern = (negated ? pattern.slice(1) : pattern).replace(
+    /\/+$/u,
+    '',
   );
+  const packageJsonPattern =
+    directoryPattern === '.' || directoryPattern.length === 0
+      ? 'package.json'
+      : `${directoryPattern}/package.json`;
 
-  return uniqueBy(
-    candidates,
-    (candidate) => `${candidate.command}\0${candidate.argsPrefix.join('\0')}`,
-  );
+  return negated ? `!${packageJsonPattern}` : packageJsonPattern;
 }
 
-function formatCommandError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-
-  if (!error || typeof error !== 'object') {
-    return message;
-  }
-
-  const record = error as Record<string, unknown>;
-  const details: string[] = [];
-
-  if (record.code !== undefined) {
-    details.push(`exit code: ${String(record.code)}`);
-  }
-
-  if (record.signal !== undefined) {
-    details.push(`signal: ${String(record.signal)}`);
-  }
-
-  for (const streamName of ['stderr', 'stdout'] as const) {
-    const stream = record[streamName];
-
-    if (typeof stream !== 'string') {
-      continue;
-    }
-
-    const output = stream.trim();
-
-    if (output.length > 0) {
-      details.push(`${streamName}: ${output}`);
-    }
-  }
-
-  if (details.length === 0) {
-    return message;
-  }
-
-  return `${message} (${details.join('; ')})`;
-}
-
-async function collectPnpmListedPackages(
+async function collectPnpmWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
-  const args = ['recursive', 'list', '--depth', '-1', '--json'];
-  const failures: string[] = [];
-  let hasSuccessfulListCommand = false;
+  const workspaceManifest = await readWorkspaceManifest(config.rootDir);
+  const packageJsonPatterns = (workspaceManifest?.packages ?? []).map(
+    toPackageJsonPattern,
+  );
+  const [rootPackageJsonPaths, workspacePackageJsonPaths] = await Promise.all([
+    glob('package.json', {
+      absolute: true,
+      cwd: config.rootDir,
+      expandDirectories: false,
+      ignore: [...workspacePackageDiscoveryIgnore],
+      onlyFiles: true,
+    }),
+    packageJsonPatterns.length > 0
+      ? glob(packageJsonPatterns, {
+          absolute: true,
+          cwd: config.rootDir,
+          expandDirectories: false,
+          ignore: [...workspacePackageDiscoveryIgnore],
+          onlyFiles: true,
+        })
+      : [],
+  ]);
+  const packageJsonPaths = [
+    ...new Set(
+      [...rootPackageJsonPaths, ...workspacePackageJsonPaths].map(
+        normalizeAbsolutePath,
+      ),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
 
-  for (const candidate of getPnpmCommandCandidates()) {
-    let entries: PnpmWorkspaceListEntry[];
-    const commandLabel = [
-      candidate.command,
-      ...candidate.argsPrefix,
-      ...args,
-    ].join(' ');
+  return packageJsonPaths.map((packageJsonPath) => {
+    const manifest = readJsonFile<PackageManifest>(packageJsonPath);
+    const name = getManifestPackageName(manifest);
 
-    try {
-      const source = await runTextCommand(
-        candidate.command,
-        [...candidate.argsPrefix, ...args],
-        config.rootDir,
-      );
-      entries = parsePnpmWorkspaceListJson(source);
-      hasSuccessfulListCommand = true;
-    } catch (error) {
-      failures.push(`${commandLabel}: ${formatCommandError(error)}`);
-      continue;
-    }
-
-    const packages: WorkspacePackage[] = [];
-
-    for (const entry of entries) {
-      if (!entry.path) {
-        continue;
-      }
-
-      const directory = normalizeAbsolutePath(entry.path);
-      const packageJsonPath = path.join(directory, 'package.json');
-
-      if (!existsSync(packageJsonPath)) {
-        continue;
-      }
-
-      packages.push(
-        readWorkspacePackage({
-          config,
-          packageJsonPath,
-        }),
-      );
-    }
-
-    if (packages.length > 0) {
-      return packages;
-    }
-  }
-
-  if (hasSuccessfulListCommand) {
-    return [];
-  }
-
-  if (failures.length > 0) {
-    throw new Error(
-      [
-        'Failed to collect workspace packages via pnpm recursive list.',
-        ...failures.map((failure) => `  - ${failure}`),
-      ].join('\n'),
-    );
-  }
-
-  return [];
+    return {
+      directory: normalizeAbsolutePath(path.dirname(packageJsonPath)),
+      manifest,
+      ...(name ? { name } : {}),
+    };
+  });
 }
 
 function mergeWorkspacePackages(
@@ -377,7 +167,7 @@ function mergeWorkspacePackages(
 export async function collectRawWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
-  return mergeWorkspacePackages(await collectPnpmListedPackages(config));
+  return mergeWorkspacePackages(await collectPnpmWorkspacePackages(config));
 }
 
 export async function collectWorkspacePackages(
