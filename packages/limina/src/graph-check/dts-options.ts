@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import type ts from 'typescript';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
@@ -8,6 +9,7 @@ import {
   parseProject,
   type ProjectInfo,
 } from '#core/import-graph/context';
+import { uniqueSortedStrings } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 
 import type { CheckCounter } from '../check-reporting/stats';
@@ -72,8 +74,30 @@ function formatCompilerOptionValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function compilerOptionEquals(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function normalizeComparableCompilerOption(
+  optionName: keyof ts.CompilerOptions,
+  value: unknown,
+): unknown {
+  if (
+    optionName === 'customConditions' &&
+    Array.isArray(value) &&
+    value.every((entry): entry is string => typeof entry === 'string')
+  ) {
+    return uniqueSortedStrings(value);
+  }
+
+  return value;
+}
+
+function compilerOptionEquals(
+  optionName: keyof ts.CompilerOptions,
+  left: unknown,
+  right: unknown,
+): boolean {
+  return isDeepStrictEqual(
+    normalizeComparableCompilerOption(optionName, left),
+    normalizeComparableCompilerOption(optionName, right),
+  );
 }
 
 export function addDtsOptionProblems(
@@ -161,7 +185,7 @@ export function addTypecheckParityProblems(
     const buildValue = dtsProject.options[optionName];
     const typecheckValue = typecheckProject.options[optionName];
 
-    if (compilerOptionEquals(buildValue, typecheckValue)) {
+    if (compilerOptionEquals(optionName, buildValue, typecheckValue)) {
       continue;
     }
 

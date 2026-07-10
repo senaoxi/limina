@@ -39,7 +39,7 @@ async function createFixture(files: Record<string, string>): Promise<{
 }
 
 describe('collectWorkspacePackages pnpm integration', () => {
-  it('respects failIfNoMatch instead of falling back to workspace globs', async () => {
+  it('does not apply pnpm CLI failIfNoMatch semantics during enumeration', async () => {
     const fixture = await createFixture({
       'pnpm-workspace.yaml': [
         'packages:',
@@ -51,8 +51,8 @@ describe('collectWorkspacePackages pnpm integration', () => {
     });
 
     try {
-      await expect(collectWorkspacePackages(fixture.config)).rejects.toThrow(
-        /Failed to collect workspace packages via pnpm recursive list\.[\s\S]*exit code: 1/u,
+      await expect(collectWorkspacePackages(fixture.config)).resolves.toEqual(
+        [],
       );
     } finally {
       await fixture.cleanup();

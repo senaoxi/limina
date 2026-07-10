@@ -6,6 +6,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { LiminaFlowReporter } from '../flow';
+import { ReleaseLogger } from '../logger';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(
@@ -34,6 +35,16 @@ const packageCheckMocks = vi.hoisted(() => ({
   publintCalls: [] as unknown[],
   publintMessages: [] as unknown[],
   registryPackages: new Map<string, Record<string, unknown>>(),
+  registryResponses: new Map<
+    string,
+    {
+      body?: unknown;
+      fetchError?: Error;
+      jsonError?: Error;
+      status: number;
+      statusText: string;
+    }
+  >(),
   registryTarballs: new Map<string, Buffer>(),
 }));
 
@@ -404,6 +415,33 @@ function registerPackageMetadata(
   packageCheckMocks.registryPackages.set(packageName, metadata);
 }
 
+async function createWorkspaceDependencyReleaseFixture(): Promise<{
+  outDir: string;
+  rootDir: string;
+}> {
+  const rootDir = await createWorkspaceRoot();
+  const outDir = await createWorkspacePackage(
+    rootDir,
+    '@example/a',
+    {
+      dependencies: {
+        '@example/b': 'workspace:*',
+      },
+    },
+    {
+      dependencies: {
+        '@example/b': '^1.0.0',
+      },
+    },
+  );
+
+  await createWorkspacePackage(rootDir, '@example/b', {
+    version: '1.0.0',
+  });
+
+  return { outDir, rootDir };
+}
+
 function createConfig(
   rootDir: string,
   entries: NonNullable<NonNullable<ResolvedLiminaConfig['package']>['entries']>,
@@ -475,6 +513,7 @@ beforeEach(() => {
   packageCheckMocks.publintCalls = [];
   packageCheckMocks.publintMessages = [];
   packageCheckMocks.registryPackages.clear();
+  packageCheckMocks.registryResponses.clear();
   packageCheckMocks.registryTarballs.clear();
   vi.stubGlobal(
     'fetch',
@@ -503,6 +542,29 @@ beforeEach(() => {
       const packageName = decodeURIComponent(
         new URL(urlString).pathname.slice(1),
       );
+      const configuredResponse =
+        packageCheckMocks.registryResponses.get(packageName);
+
+      if (configuredResponse) {
+        if (configuredResponse.fetchError) {
+          throw configuredResponse.fetchError;
+        }
+
+        return {
+          json: async () => {
+            if (configuredResponse.jsonError) {
+              throw configuredResponse.jsonError;
+            }
+
+            return configuredResponse.body;
+          },
+          ok:
+            configuredResponse.status >= 200 && configuredResponse.status < 300,
+          status: configuredResponse.status,
+          statusText: configuredResponse.statusText,
+        };
+      }
+
       const metadata = packageCheckMocks.registryPackages.get(packageName);
 
       if (!metadata) {
@@ -2196,8 +2258,161 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('adds a workspace dependency to publish order when registry metadata returns 404', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+
+    try {
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+
+      const errorText = errorSpy.mock.calls.join('\n');
+
+      expect(errorText).toContain(
+        '@example/b is not published to the npm registry',
+      );
+      expect(errorText).toContain(
+        'Suggested publish order: @example/b -> @example/a',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it.each([
+    [401, 'Unauthorized'],
+    [403, 'Forbidden'],
+    [429, 'Too Many Requests'],
+    [500, 'Internal Server Error'],
+    [503, 'Service Unavailable'],
+  ])(
+    'reports registry HTTP %s without inferring publish order',
+    async (status, statusText) => {
+      const { outDir, rootDir } =
+        await createWorkspaceDependencyReleaseFixture();
+      const errorSpy = vi
+        .spyOn(ReleaseLogger, 'error')
+        .mockImplementation(() => {});
+      packageCheckMocks.registryResponses.set('@example/b', {
+        status,
+        statusText,
+      });
+
+      try {
+        await expect(
+          runReleaseCheck({
+            config: createConfig(rootDir, [
+              {
+                checks: ['boundary'],
+                name: '@example/a',
+                outDir,
+              },
+            ]),
+            packageNames: ['@example/a'],
+          }),
+        ).resolves.toBe(false);
+
+        const errorText = errorSpy.mock.calls.join('\n');
+
+        expect(errorText).toContain(`${status} ${statusText}`);
+        expect(errorText).not.toContain('Suggested publish order:');
+      } finally {
+        errorSpy.mockRestore();
+        await rm(rootDir, {
+          force: true,
+          recursive: true,
+        });
+      }
+    },
+  );
+
+  it.each([
+    [
+      'network failure',
+      {
+        fetchError: new Error('network unavailable'),
+        status: 0,
+        statusText: '',
+      },
+      'network unavailable',
+    ],
+    [
+      'invalid JSON',
+      {
+        jsonError: new SyntaxError('invalid registry JSON'),
+        status: 200,
+        statusText: 'OK',
+      },
+      'invalid registry JSON',
+    ],
+    [
+      'non-object metadata',
+      {
+        body: [],
+        status: 200,
+        statusText: 'OK',
+      },
+      'registry metadata response must be a JSON object',
+    ],
+  ])(
+    'reports %s without inferring publish order',
+    async (_label, response, expectedMessage) => {
+      const { outDir, rootDir } =
+        await createWorkspaceDependencyReleaseFixture();
+      const errorSpy = vi
+        .spyOn(ReleaseLogger, 'error')
+        .mockImplementation(() => {});
+      packageCheckMocks.registryResponses.set('@example/b', response);
+
+      try {
+        await expect(
+          runReleaseCheck({
+            config: createConfig(rootDir, [
+              {
+                checks: ['boundary'],
+                name: '@example/a',
+                outDir,
+              },
+            ]),
+            packageNames: ['@example/a'],
+          }),
+        ).resolves.toBe(false);
+
+        const errorText = errorSpy.mock.calls.join('\n');
+
+        expect(errorText).toContain(expectedMessage);
+        expect(errorText).not.toContain('Suggested publish order:');
+      } finally {
+        errorSpy.mockRestore();
+        await rm(rootDir, {
+          force: true,
+          recursive: true,
+        });
+      }
+    },
+  );
+
   it('fails when workspace dependency registry metadata has no latest dist-tag', async () => {
     const rootDir = await createWorkspaceRoot();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
 
     try {
       const outDir = await createWorkspacePackage(
@@ -2234,7 +2449,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
+
+      expect(errorSpy.mock.calls.join('\n')).not.toContain(
+        'Suggested publish order:',
+      );
     } finally {
+      errorSpy.mockRestore();
       await rm(rootDir, {
         force: true,
         recursive: true,
@@ -2572,6 +2792,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
   it('reports recursive workspace dependency publish order', async () => {
     const rootDir = await createWorkspaceRoot();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
 
     try {
       const outDir = await createWorkspacePackage(
@@ -2629,7 +2852,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
+
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'Suggested publish order: @example/c -> @example/b -> @example/a',
+      );
     } finally {
+      errorSpy.mockRestore();
       await rm(rootDir, {
         force: true,
         recursive: true,

@@ -3,6 +3,7 @@ import {
   type GeneratedTsconfigGraphResult,
   prepareGeneratedTsconfigGraph,
 } from '#core/build-graph/runner';
+import { parseProject } from '#core/import-graph/context';
 import {
   mkdir,
   mkdtemp,
@@ -18,7 +19,9 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readCheckIssueSnapshot } from '../check-reporting/snapshot';
+import { createCheckCounter } from '../check-reporting/stats';
 import { runGraphCheck, type RunGraphCheckOptions } from '../commands/graph';
+import { addTypecheckParityProblems } from '../graph-check/dts-options';
 import { GraphLogger } from '../logger';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -252,6 +255,7 @@ function buildConfig(options: {
 }
 
 function generatedDtsConfig(options: {
+  compilerOptions?: Record<string, unknown>;
   include: string[];
   references?: string[];
   sourceConfig: string;
@@ -262,6 +266,7 @@ function generatedDtsConfig(options: {
       ...buildCompilerOptions,
       rootDir: '.',
       tsBuildInfoFile: options.tsBuildInfoFile,
+      ...options.compilerOptions,
     },
     include: options.include,
     liminaOptions: {
@@ -730,6 +735,108 @@ packages:
 }
 
 describe('runGraphCheck checker entry', () => {
+  it('accepts reordered object keys and custom condition sets in companion configs', async () => {
+    const fixture = await createFixture({
+      'app/src/index.ts': 'export const value = 1;\n',
+      'app/tsconfig.lib.dts.json': generatedDtsConfig({
+        compilerOptions: {
+          baseUrl: '.',
+          customConditions: ['source', 'browser', 'source'],
+          paths: {
+            '@example/first': ['./src/first.ts'],
+            '@example/second': ['./src/second.ts'],
+          },
+        },
+        include: ['src/**/*.ts'],
+        sourceConfig: './tsconfig.lib.json',
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], {
+        baseUrl: '.',
+        customConditions: ['browser', 'source'],
+        paths: {
+          '@example/second': ['./src/second.ts'],
+          '@example/first': ['./src/first.ts'],
+        },
+      }),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const problems: string[] = [];
+
+      addTypecheckParityProblems(
+        fixture.config,
+        parseProject(
+          fixture.config,
+          path.join(fixture.rootDir, 'app/tsconfig.lib.dts.json'),
+        ),
+        problems,
+        createCheckCounter(),
+      );
+
+      expect(problems).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps compiler option target arrays order-sensitive', async () => {
+    const fixture = await createFixture({
+      'app/src/index.ts': 'export const value = 1;\n',
+      'app/tsconfig.lib.dts.json': generatedDtsConfig({
+        compilerOptions: {
+          baseUrl: '.',
+          paths: {
+            '@example/shared': ['./src/first.ts', './src/second.ts'],
+          },
+        },
+        include: ['src/**/*.ts'],
+        sourceConfig: './tsconfig.lib.json',
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], {
+        baseUrl: '.',
+        paths: {
+          '@example/shared': ['./src/second.ts', './src/first.ts'],
+        },
+      }),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [
+          {
+            path: './app/tsconfig.lib.dts.json',
+          },
+        ],
+      }),
+    });
+
+    try {
+      const problems: string[] = [];
+
+      addTypecheckParityProblems(
+        fixture.config,
+        parseProject(
+          fixture.config,
+          path.join(fixture.rootDir, 'app/tsconfig.lib.dts.json'),
+        ),
+        problems,
+        createCheckCounter(),
+      );
+
+      expect(problems.join('\n')).toContain('option: compilerOptions.paths');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.skip('reports path mapping mismatches between declaration leaves and companions', async () => {
     const fixture = await createFixture({
       'app/src/index.ts': 'export const value = 1;\n',
@@ -1048,6 +1155,39 @@ describe('runGraphCheck checker entry', () => {
           customConditions,
         },
       ]),
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('treats custom conditions as sets across references and domains', async () => {
+    const fixture = await createFixture(
+      createConditionDomainFiles([
+        {
+          name: 'dep',
+          source: 'export const dep = 1;\n',
+          customConditions: ['source', 'browser', 'source'],
+        },
+        {
+          name: 'web',
+          references: ['dep'],
+          source: "import { dep } from './dep';\nexport const value = dep;\n",
+          customConditions: ['browser', 'source'],
+        },
+      ]),
+      {
+        conditionDomains: [
+          {
+            customConditions: ['source', 'browser', 'source'],
+            entry: 'app/tsconfig.web.json',
+            name: 'web',
+          },
+        ],
+      },
     );
 
     try {

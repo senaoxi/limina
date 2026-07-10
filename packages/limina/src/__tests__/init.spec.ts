@@ -9,7 +9,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { normalize as normalizePath } from 'pathe';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInit } from '../commands/init';
 import { LiminaFlowReporter } from '../flow';
@@ -297,7 +296,7 @@ describe('runInit', () => {
           yes: true,
         }),
       ).resolves.toMatchObject({
-        rootDir: normalizePath(fixture.rootDir),
+        rootDir: toPortablePath(fixture.rootDir),
       });
       expect(
         await fileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),

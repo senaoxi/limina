@@ -110,6 +110,22 @@ interface RegistryPackageMetadata {
   versions?: unknown;
 }
 
+type RegistryMetadataResult =
+  | {
+      kind: 'found';
+      metadata: RegistryPackageMetadata;
+    }
+  | {
+      kind: 'missing';
+    }
+  | {
+      cause?: unknown;
+      kind: 'failure';
+      statusCode?: number;
+      statusText?: string;
+      url: string;
+    };
+
 interface DirectWorkspaceDependency {
   dependencyName: string;
   sectionName: PublishDependencySectionName;
@@ -126,6 +142,7 @@ interface ReleaseConsistencyProblem {
 }
 
 interface ReleaseConsistencyState {
+  changedPackageNames: Set<string>;
   directWorkspaceDependencies: DirectWorkspaceDependency[];
   edges: Map<string, Set<string>>;
   missingWorkspaceDependencies: ReleaseConsistencyProblem[];
@@ -133,7 +150,7 @@ interface ReleaseConsistencyState {
   packedManifestProblems: ReleaseConsistencyProblem[];
   privateWorkspaceDependencies: ReleaseConsistencyProblem[];
   releaseHygieneProblems: ReleaseConsistencyProblem[];
-  registryMetadataCache: Map<string, RegistryPackageMetadata | null>;
+  registryMetadataCache: Map<string, RegistryMetadataResult>;
   registryProblems: ReleaseConsistencyProblem[];
   sourceLinkDependencies: ReleaseConsistencyProblem[];
   unpublishedPackageNames: Set<string>;
@@ -226,6 +243,7 @@ function isLinkDependencySpecifier(specifier: string): boolean {
 
 function createReleaseConsistencyState(): ReleaseConsistencyState {
   return {
+    changedPackageNames: new Set<string>(),
     directWorkspaceDependencies: [],
     edges: new Map<string, Set<string>>(),
     missingWorkspaceDependencies: [],
@@ -233,7 +251,7 @@ function createReleaseConsistencyState(): ReleaseConsistencyState {
     packedManifestProblems: [],
     privateWorkspaceDependencies: [],
     releaseHygieneProblems: [],
-    registryMetadataCache: new Map<string, RegistryPackageMetadata | null>(),
+    registryMetadataCache: new Map<string, RegistryMetadataResult>(),
     registryProblems: [],
     sourceLinkDependencies: [],
     unpublishedPackageNames: new Set<string>(),
@@ -362,29 +380,107 @@ function getNpmPackageMetadataUrl(packageName: string): string {
 async function fetchRegistryPackageMetadata(
   packageName: string,
   state: ReleaseConsistencyState,
-): Promise<RegistryPackageMetadata | null> {
-  if (state.registryMetadataCache.has(packageName)) {
-    return state.registryMetadataCache.get(packageName) ?? null;
+): Promise<RegistryMetadataResult> {
+  const cachedResult = state.registryMetadataCache.get(packageName);
+
+  if (cachedResult) {
+    return cachedResult;
   }
 
-  const response = await fetch(getNpmPackageMetadataUrl(packageName), {
-    headers: {
-      accept: 'application/json',
-    },
-  });
+  const url = getNpmPackageMetadataUrl(packageName);
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    const result: RegistryMetadataResult = {
+      cause: error,
+      kind: 'failure',
+      url,
+    };
+
+    state.registryMetadataCache.set(packageName, result);
+    return result;
+  }
+
+  if (response.status === 404) {
+    const result: RegistryMetadataResult = {
+      kind: 'missing',
+    };
+
+    state.registryMetadataCache.set(packageName, result);
+    return result;
+  }
 
   if (!response.ok) {
-    state.registryMetadataCache.set(packageName, null);
-    return null;
+    const result: RegistryMetadataResult = {
+      kind: 'failure',
+      statusCode: response.status,
+      statusText: response.statusText,
+      url,
+    };
+
+    state.registryMetadataCache.set(packageName, result);
+    return result;
   }
 
-  const metadata = (await response.json()) as unknown;
-  const registryMetadata = isPlainRecord(metadata)
-    ? (metadata as RegistryPackageMetadata)
-    : null;
+  let metadata: unknown;
 
-  state.registryMetadataCache.set(packageName, registryMetadata);
-  return registryMetadata;
+  try {
+    metadata = await response.json();
+  } catch (error) {
+    const result: RegistryMetadataResult = {
+      cause: error,
+      kind: 'failure',
+      statusCode: response.status,
+      statusText: response.statusText,
+      url,
+    };
+
+    state.registryMetadataCache.set(packageName, result);
+    return result;
+  }
+
+  if (!isPlainRecord(metadata)) {
+    const result: RegistryMetadataResult = {
+      cause: new TypeError('registry metadata response must be a JSON object'),
+      kind: 'failure',
+      statusCode: response.status,
+      statusText: response.statusText,
+      url,
+    };
+
+    state.registryMetadataCache.set(packageName, result);
+    return result;
+  }
+
+  const result: RegistryMetadataResult = {
+    kind: 'found',
+    metadata: metadata as RegistryPackageMetadata,
+  };
+
+  state.registryMetadataCache.set(packageName, result);
+  return result;
+}
+
+function formatRegistryMetadataFailure(
+  packageName: string,
+  failure: Extract<RegistryMetadataResult, { kind: 'failure' }>,
+): string {
+  const status =
+    failure.statusCode === undefined
+      ? ''
+      : ` (${failure.statusCode}${
+          failure.statusText ? ` ${failure.statusText}` : ''
+        })`;
+  const cause =
+    failure.cause === undefined ? '' : `: ${formatErrorMessage(failure.cause)}`;
+
+  return `unable to read npm registry metadata for ${packageName} from ${failure.url}${status}${cause}`;
 }
 
 function findRegistryVersionMetadata(
@@ -873,7 +969,6 @@ async function verifyWorkspacePackagePublished(options: {
       contentHashArgs,
     );
   } catch (error) {
-    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
       message: [
@@ -884,23 +979,20 @@ async function verifyWorkspacePackagePublished(options: {
     return;
   }
 
-  let metadata: RegistryPackageMetadata | null;
+  const metadataResult = await fetchRegistryPackageMetadata(
+    dependencyName,
+    state,
+  );
 
-  try {
-    metadata = await fetchRegistryPackageMetadata(dependencyName, state);
-  } catch (error) {
-    state.unpublishedPackageNames.add(dependencyName);
+  if (metadataResult.kind === 'failure') {
     state.registryProblems.push({
       ...problemBase,
-      message: [
-        `unable to read npm registry metadata for ${dependencyName}:`,
-        formatErrorMessage(error),
-      ].join(' '),
+      message: formatRegistryMetadataFailure(dependencyName, metadataResult),
     });
     return;
   }
 
-  if (!metadata) {
+  if (metadataResult.kind === 'missing') {
     state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
@@ -909,10 +1001,11 @@ async function verifyWorkspacePackagePublished(options: {
     return;
   }
 
+  const metadata = metadataResult.metadata;
+
   const baselineVersion = findRegistryDistTagVersion(metadata, baselineTag);
 
   if (!baselineVersion) {
-    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
       message: `${dependencyName} registry metadata has no "${baselineTag}" dist-tag`,
@@ -926,7 +1019,6 @@ async function verifyWorkspacePackagePublished(options: {
   );
 
   if (!versionMetadata) {
-    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
       message: `${dependencyName}@${baselineVersion} is not published to the npm registry`,
@@ -937,7 +1029,6 @@ async function verifyWorkspacePackagePublished(options: {
   const tarballUrl = getRegistryTarballUrl(versionMetadata);
 
   if (!tarballUrl) {
-    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
       message: `${dependencyName}@${baselineVersion} registry metadata has no dist.tarball`,
@@ -955,7 +1046,6 @@ async function verifyWorkspacePackagePublished(options: {
       workspacePackage,
     });
   } catch (error) {
-    state.unpublishedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
       message: [
@@ -977,7 +1067,7 @@ async function verifyWorkspacePackagePublished(options: {
   });
 
   if (!comparison.matchesBaseline) {
-    state.unpublishedPackageNames.add(dependencyName);
+    state.changedPackageNames.add(dependencyName);
     state.registryProblems.push({
       ...problemBase,
       message: comparisonReport,
@@ -1333,7 +1423,8 @@ function createPublishOrder(
 
     if (
       packageName === rootPackageName ||
-      state.unpublishedPackageNames.has(packageName)
+      state.unpublishedPackageNames.has(packageName) ||
+      state.changedPackageNames.has(packageName)
     ) {
       publishOrder.push(packageName);
     }
@@ -1385,7 +1476,7 @@ function createReleaseConsistencyError(options: {
       state.missingWorkspaceDependencies,
     ),
     ...formatProblemLines(
-      'Workspace packages must be published before this package:',
+      'Workspace package registry/content checks failed:',
       state.registryProblems,
     ),
     ...formatProblemLines(

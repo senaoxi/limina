@@ -83,6 +83,7 @@
     "npm-package-json-lint": "catalog:lint",
     "publint": "catalog:lint",
     "semver": "catalog:dev",
+    "@pnpm/workspace.read-manifest": "catalog:dev",
     "yaml": "catalog:dev",
     "zod": "catalog:dev",
     "del-cli": "catalog:dev",
