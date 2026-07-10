@@ -1,5 +1,12 @@
-import { normalizeSlashes } from '#utils/path';
+import { normalizeAbsolutePath, normalizeSlashes } from '#utils/path';
 import path from 'node:path';
+
+export function createFixturePathResolver(
+  rootDir: string,
+): (...segments: string[]) => string {
+  return (...segments) =>
+    normalizeAbsolutePath(path.join(rootDir, ...segments));
+}
 
 export function toPortablePath(value: string): string {
   return normalizeSlashes(value);
