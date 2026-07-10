@@ -20,7 +20,10 @@ import {
   collectWorkspaceRegionTopology,
   createWorkspaceRegionBoundaryIndex,
 } from '../core/workspace/regions';
-import { toPortableRelativePath } from './helpers/path';
+import {
+  createFixturePathResolver,
+  toPortableRelativePath,
+} from './helpers/path';
 
 const execFileMock = vi.hoisted(() => vi.fn());
 
@@ -100,11 +103,13 @@ function expectPnpmListCommand(rootDir: string): void {
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
+  path: (...segments: string[]) => string;
   rootDir: string;
 }> {
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-workspace-')),
   );
+  const fixturePath = createFixturePathResolver(rootDir);
 
   for (const [relativePath, text] of Object.entries(files)) {
     await writeText(path.join(rootDir, relativePath), text);
@@ -118,9 +123,10 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: {
-      configPath: path.join(rootDir, 'limina.config.mjs'),
+      configPath: fixturePath('limina.config.mjs'),
       rootDir,
     },
+    path: fixturePath,
     rootDir,
   };
 }
@@ -624,7 +630,7 @@ describe('collectWorkspaceRegionBoundaries', () => {
       );
 
       expect(boundaries.map((boundary) => boundary.rootDir)).toEqual([
-        path.join(fixture.rootDir, 'packages/a/fixture'),
+        fixture.path('packages/a/fixture'),
       ]);
     } finally {
       await fixture.cleanup();
@@ -762,9 +768,7 @@ describe('collectWorkspaceRegionTopology', () => {
         },
         {
           provider: async (config) =>
-            config.rootDir === path.join(fixture.rootDir, 'tools')
-              ? [claimedPackage]
-              : [],
+            config.rootDir === fixture.path('tools') ? [claimedPackage] : [],
           rawPackages: [
             createWorkspacePackageFixture(fixture.rootDir, 'packages/a', {
               name: '@example/a',
@@ -779,7 +783,7 @@ describe('collectWorkspaceRegionTopology', () => {
           (boundary) =>
             boundary.kind === 'package-scope' &&
             boundary.packageJsonPath ===
-              path.join(fixture.rootDir, 'packages/a/src/claimed/package.json'),
+              fixture.path('packages/a/src/claimed/package.json'),
         ),
       ).toBe(true);
     } finally {
@@ -822,7 +826,7 @@ describe('collectWorkspaceRegionTopology', () => {
       expect(topology.boundaries).toEqual([
         expect.objectContaining({
           kind: 'pnpm-workspace',
-          rootDir: path.join(fixture.rootDir, 'packages/a/fixture'),
+          rootDir: fixture.path('packages/a/fixture'),
         }),
       ]);
     } finally {
@@ -917,7 +921,7 @@ describe('collectWorkspaceRegionTopology', () => {
           excluded: true,
           exclusionReason: 'Nested fixture scope is not part of this run.',
           kind: 'package-scope',
-          rootDir: path.join(fixture.rootDir, 'packages/a/src/nested'),
+          rootDir: fixture.path('packages/a/src/nested'),
         }),
       ]);
     } finally {
@@ -967,16 +971,13 @@ describe('collectWorkspaceRegionTopology', () => {
             excluded: true,
             exclusionReason: 'Nested fixtures are checked separately.',
             kind: 'package-scope',
-            rootDir: path.join(fixture.rootDir, 'packages/a/src/nested'),
+            rootDir: fixture.path('packages/a/src/nested'),
           }),
           expect.objectContaining({
             excluded: true,
             exclusionReason: 'Nested fixtures are checked separately.',
             kind: 'pnpm-workspace',
-            rootDir: path.join(
-              fixture.rootDir,
-              'packages/a/src/nested/fixture',
-            ),
+            rootDir: fixture.path('packages/a/src/nested/fixture'),
           }),
         ]),
       );
@@ -1046,7 +1047,7 @@ describe('collectWorkspaceRegionTopology', () => {
           allowWorkspacePackageReentry: true,
           excluded: true,
           exclusionReason: 'Fixture container is an accepted package boundary.',
-          rootDir: path.join(fixture.rootDir, 'packages/a/fixtures'),
+          rootDir: fixture.path('packages/a/fixtures'),
         }),
       ]);
       expect(
@@ -1115,22 +1116,22 @@ describe('collectWorkspaceRegionTopology', () => {
             allowWorkspacePackageReentry: true,
             excluded: true,
             exclusionReason: 'Root tooling is checked separately.',
-            rootDir: fixture.rootDir,
+            rootDir: fixture.path(),
           }),
           expect.objectContaining({
             excluded: true,
             exclusionReason: 'Root tooling is checked separately.',
-            rootDir: path.join(fixture.rootDir, 'tools/fixture'),
+            rootDir: fixture.path('tools/fixture'),
           }),
           expect.objectContaining({
             excluded: false,
-            rootDir: path.join(fixture.rootDir, 'packages/child/src/nested'),
+            rootDir: fixture.path('packages/child/src/nested'),
           }),
           expect.objectContaining({
             allowWorkspacePackageReentry: true,
             excluded: true,
             exclusionReason: 'Root tooling is checked separately.',
-            rootDir: path.join(fixture.rootDir, 'packages'),
+            rootDir: fixture.path('packages'),
           }),
         ]),
       );

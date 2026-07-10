@@ -3,6 +3,7 @@ import {
   baseTestFileRules,
   testFilePatterns,
 } from '@docs-islands/eslint-config/config';
+import { portablePathPlugin } from '@docs-islands/eslint-config/plugins';
 import { defineConfig } from 'eslint/config';
 
 export default defineConfig([
@@ -25,8 +26,12 @@ export default defineConfig([
   },
   {
     files: testFilePatterns,
+    plugins: {
+      '@docs-islands/portable-path': portablePathPlugin,
+    },
     rules: {
       ...baseTestFileRules,
+      '@docs-islands/portable-path/portable-path-comparison': 'error',
       'unicorn/better-regex': 'off',
     },
   },
