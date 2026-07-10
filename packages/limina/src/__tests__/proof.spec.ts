@@ -6,6 +6,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { runProofCheck } from '../commands/proof';
 import { ProofLogger } from '../logger';
+import { collectExpectedSourceFiles } from '../proof/source-files';
 import {
   type LiminaCheckIssue,
   readCheckIssueSnapshot,
@@ -1405,7 +1406,17 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(
+        runProofCheck({
+          ...fixture.config,
+          config: {
+            ...fixture.config.config,
+            source: {
+              include: ['ignored-default/*.ts'],
+            },
+          },
+        }),
+      ).resolves.toBe(false);
       const output = errorSpy.mock.calls.join('\n');
 
       expect(output).toContain('ignored-default/keep.ts');
@@ -1878,6 +1889,117 @@ describe('runProofCheck dts config semantics', () => {
           },
         }),
       ).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not let source include pull files from nested workspace regions', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'packages/pkg/fixture/pnpm-workspace.yaml': 'packages: []\n',
+        'packages/pkg/fixture/src/uncovered.ts': 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      const result = await collectProofIssues({
+        ...fixture.config,
+        config: {
+          ...fixture.config.config,
+          source: {
+            include: [
+              'packages/pkg/src/**/*.ts',
+              'packages/pkg/fixture/**/*.ts',
+            ],
+          },
+        },
+      });
+
+      expect(result.passed).toBe(true);
+      expect(collectUncoveredSourceIssueFiles(result.issues)).not.toContain(
+        'packages/pkg/fixture/src/uncovered.ts',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('governs root source files when the root package is activated', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'random/unowned.ts': 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      const result = await collectProofIssues(fixture.config);
+
+      expect(result.passed).toBe(false);
+      expect(collectUncoveredSourceIssueFiles(result.issues)).toContain(
+        'random/unowned.ts',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not govern root source files when the current package set excludes the root package', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'random/unowned.ts': 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      const sourceFiles = await collectExpectedSourceFiles(
+        fixture.config,
+        createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+        [
+          {
+            directory: path.join(fixture.rootDir, 'packages/pkg'),
+            manifest: {
+              name: '@fixture/pkg',
+              private: true,
+            },
+            name: '@fixture/pkg',
+          },
+        ],
+        [],
+      );
+
+      expect(
+        [...sourceFiles].map((filePath) =>
+          path.relative(fixture.rootDir, filePath),
+        ),
+      ).not.toContain('random/unowned.ts');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps explicit root source include inside the activated root package', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'random/unowned.ts': 'export const value = 1;\n',
+      }),
+    );
+
+    try {
+      const result = await collectProofIssues({
+        ...fixture.config,
+        config: {
+          ...fixture.config.config,
+          source: {
+            include: ['random/**/*.ts'],
+          },
+        },
+      });
+
+      expect(result.passed).toBe(false);
+      expect(collectUncoveredSourceIssueFiles(result.issues)).toContain(
+        'random/unowned.ts',
+      );
     } finally {
       await fixture.cleanup();
     }

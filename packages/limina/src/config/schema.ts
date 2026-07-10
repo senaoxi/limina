@@ -608,10 +608,109 @@ function validateSourceImportAuthorityConfig(
   }
 }
 
+function validateRegionsConfig(
+  value: unknown,
+  ctx: ConfigValidationContext,
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  if (!isPlainConfigRecord(value)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'regions config must be an object.',
+      path: ['regions'],
+    });
+    return;
+  }
+
+  for (const key of Object.keys(value)) {
+    if (key === 'exclude' || key === 'extendNestedPackageScopes') {
+      continue;
+    }
+
+    ctx.addIssue({
+      code: 'custom',
+      message: 'unknown regions config field.',
+      path: ['regions', key],
+    });
+  }
+
+  if (
+    value.extendNestedPackageScopes !== undefined &&
+    typeof value.extendNestedPackageScopes !== 'boolean'
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'regions.extendNestedPackageScopes must be a boolean.',
+      path: ['regions', 'extendNestedPackageScopes'],
+    });
+  }
+
+  const exclude = value.exclude;
+
+  if (exclude === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(exclude)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'regions.exclude must be an array.',
+      path: ['regions', 'exclude'],
+    });
+    return;
+  }
+
+  for (const [index, entry] of exclude.entries()) {
+    const entryPath = ['regions', 'exclude', index];
+
+    if (!isPlainConfigRecord(entry)) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'regions.exclude entries must be objects with include and reason fields.',
+        path: entryPath,
+      });
+      continue;
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (key === 'include' || key === 'reason') {
+        continue;
+      }
+
+      ctx.addIssue({
+        code: 'custom',
+        message: 'unknown regions.exclude entry field.',
+        path: [...entryPath, key],
+      });
+    }
+
+    validateStringArrayField({
+      ctx,
+      path: [...entryPath, 'include'],
+      required: true,
+      value: entry.include,
+      valueName: 'regions.exclude.include',
+    });
+
+    if (typeof entry.reason !== 'string' || entry.reason.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'reason must be a non-empty string.',
+        path: [...entryPath, 'reason'],
+      });
+    }
+  }
+}
+
 const liminaConfigShapeSchema = z
   .looseObject({
     config: sharedLiminaConfigShapeSchema.optional(),
     execution: executionConfigShapeSchema.optional(),
+    regions: z.unknown().optional(),
     release: releaseConfigShapeSchema.optional(),
   })
   .superRefine((config, ctx) => {
@@ -623,6 +722,8 @@ const liminaConfigShapeSchema = z
         path: ['paths'],
       });
     }
+
+    validateRegionsConfig(config.regions, ctx);
 
     const source = config.source;
 

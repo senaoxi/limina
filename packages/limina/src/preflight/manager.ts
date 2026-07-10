@@ -22,6 +22,7 @@ import {
   createWorkspaceLookupIndex,
   type WorkspaceLookupIndex,
 } from '../core/workspace/lookup';
+import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
 import {
   createPackageEntrySelectionPlan,
   type PackageEntrySelectionPlan,
@@ -91,6 +92,12 @@ export class LiminaPreflightManager {
     );
   }
 
+  ensureRawWorkspacePackages(): Promise<WorkspacePackage[]> {
+    return this.#ensure('rawWorkspacePackages', () =>
+      this.core.workspace.getRawPackages(),
+    );
+  }
+
   ensurePackageOwners(): Promise<PackageOwner[]> {
     return this.#ensure('packageOwners', () =>
       this.core.workspace.getPackageOwners(),
@@ -107,6 +114,7 @@ export class LiminaPreflightManager {
         importers: await this.ensureImporters(),
         owners: await this.ensurePackageOwners(),
         packages: await this.ensureWorkspacePackages(),
+        regionBoundaries: await this.ensureWorkspaceRegionBoundaries(),
         rootDir: this.config.rootDir,
       }),
     );
@@ -117,6 +125,12 @@ export class LiminaPreflightManager {
   > {
     return this.#ensure('workspaceDependencyDeclarations', () =>
       this.core.workspace.getWorkspaceDependencyDeclarations(),
+    );
+  }
+
+  ensureWorkspaceRegionBoundaries(): Promise<WorkspaceRegionBoundary[]> {
+    return this.#ensure('workspaceRegionBoundaries', () =>
+      this.core.workspace.getRegionBoundaries(),
     );
   }
 
@@ -149,6 +163,8 @@ export class LiminaPreflightManager {
       collectExpectedSourceFiles(
         this.config,
         await this.ensureGeneratedGraph(),
+        await this.ensureWorkspacePackages(),
+        await this.ensureWorkspaceRegionBoundaries(),
       ),
     );
   }

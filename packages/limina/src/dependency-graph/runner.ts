@@ -3,7 +3,6 @@ import { createLiminaCore, type LiminaCore } from '#core';
 import {
   collectImportsFromFile,
   createFileOwnerLookup,
-  findPackageForFile,
   type ProjectInfo,
   resolveInternalImport,
 } from '#core/import-graph/context';
@@ -22,6 +21,10 @@ import {
   createWorkspaceExportsResolutionIndex,
   type WorkspaceExportsResolutionProfile,
 } from '../core/workspace/exports';
+import {
+  createWorkspaceLookupIndex,
+  type WorkspaceLookupIndex,
+} from '../core/workspace/lookup';
 
 export type DependencyGraphView = 'all' | 'artifact' | 'source';
 export type DependencyGraphEdgeKind = 'artifact' | 'source';
@@ -57,6 +60,21 @@ export interface DependencyGraphDocument {
 export interface CollectDependencyGraphOptions {
   core?: LiminaCore;
   view?: DependencyGraphView;
+}
+
+function filterProjectInfoToActivatedRegion(
+  project: ProjectInfo,
+  workspaceLookup: WorkspaceLookupIndex,
+): ProjectInfo {
+  return {
+    ...project,
+    fileNames: project.fileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+    ownedFileNames: project.ownedFileNames.filter((fileName) =>
+      workspaceLookup.isInsideActivatedRegion(fileName),
+    ),
+  };
 }
 
 const defaultArtifactDirectories = ['dist'];
@@ -184,15 +202,17 @@ function sortEdges(edges: DependencyGraphEdge[]): DependencyGraphEdge[] {
 function resolveTargetPackage(options: {
   declaredTargetPackage: WorkspacePackage | null;
   graphResolvedFilePath: string | null;
-  packages: WorkspacePackage[];
   resolvedFilePath: string;
+  workspaceLookup: WorkspaceLookupIndex;
 }): WorkspacePackage | null {
   return (
     options.declaredTargetPackage ??
     (options.graphResolvedFilePath
-      ? findPackageForFile(options.graphResolvedFilePath, options.packages)
+      ? options.workspaceLookup.findPackageForFile(
+          options.graphResolvedFilePath,
+        )
       : null) ??
-    findPackageForFile(options.resolvedFilePath, options.packages)
+    options.workspaceLookup.findPackageForFile(options.resolvedFilePath)
   );
 }
 
@@ -264,12 +284,20 @@ export async function collectDependencyGraph(
   const checkerProjects = await collectDependencyGraphProjects(core);
   const problems = [...checkerProjects.problems];
   const workspacePackages = await core.workspace.getPackages();
+  const workspaceLookup = createWorkspaceLookupIndex({
+    importers: [],
+    owners: [],
+    packages: workspacePackages,
+    regionBoundaries: await core.workspace.getRegionBoundaries(),
+    rootDir: config.rootDir,
+  });
+  const projects = checkerProjects.projects.map((project) =>
+    filterProjectInfoToActivatedRegion(project, workspaceLookup),
+  );
   const workspaceExports = await createWorkspaceExportsResolutionIndex({
     config,
     packages: workspacePackages,
-    profiles: createWorkspaceExportsResolutionProfiles(
-      checkerProjects.projects,
-    ),
+    profiles: createWorkspaceExportsResolutionProfiles(projects),
   });
 
   problems.push(...workspaceExports.problems);
@@ -278,13 +306,13 @@ export async function collectDependencyGraph(
     throw new Error(problems.join('\n\n'));
   }
 
-  const fileOwnerLookup = createFileOwnerLookup(checkerProjects.projects);
+  const fileOwnerLookup = createFileOwnerLookup(projects);
   const importAnalysis = core.imports.context;
   const edgesByKey = new Map<string, DependencyGraphEdge>();
 
-  for (const project of checkerProjects.projects) {
+  for (const project of projects) {
     for (const fileName of project.ownedFileNames) {
-      const importerPackage = findPackageForFile(fileName, workspacePackages);
+      const importerPackage = workspaceLookup.findPackageForFile(fileName);
 
       if (!importerPackage) {
         continue;
@@ -335,8 +363,8 @@ export async function collectDependencyGraph(
             ? declaredTargetPackage
             : null,
           graphResolvedFilePath,
-          packages: workspacePackages,
           resolvedFilePath,
+          workspaceLookup,
         });
 
         if (

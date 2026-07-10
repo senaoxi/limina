@@ -705,6 +705,44 @@ export interface ReleaseConfig {
 }
 
 /**
+ * Explicitly documented governance unit or boundary root excluded from the
+ * current Limina run.
+ */
+export interface RegionExcludeConfig {
+  /**
+   * Workspace-root-relative glob patterns that match recognized governance
+   * units or boundary roots intentionally outside the current region.
+   */
+  include: string[];
+  /**
+   * Why these regions are intentionally checked independently.
+   */
+  reason: string;
+}
+
+/**
+ * Pnpm workspace region boundary settings.
+ */
+export interface RegionsConfig {
+  /**
+   * Continue governance through eligible nested package scopes that have no
+   * package name and are not claimed by a discovered pnpm workspace.
+   *
+   * Nested pnpm workspaces remain hard boundaries.
+   *
+   * @default false
+   */
+  extendNestedPackageScopes?: boolean;
+  /**
+   * Governance units or boundary roots intentionally excluded from the
+   * current region.
+   *
+   * @default []
+   */
+  exclude?: RegionExcludeConfig[];
+}
+
+/**
  * Limina user config.
  */
 export interface LiminaConfig {
@@ -736,6 +774,10 @@ export interface LiminaConfig {
    * Rules for release dependency artifact comparisons.
    */
   release?: ReleaseConfig;
+  /**
+   * Pnpm workspace region boundary configuration for a single Limina run.
+   */
+  regions?: RegionsConfig;
   /**
    * Rules for source-owned dependency usage checks.
    */
@@ -791,7 +833,7 @@ export interface ResolvedLiminaConfig extends LiminaConfig {
    */
   configPath: string;
   /**
-   * Absolute workspace root inferred from `cwd` and its parent directories.
+   * Absolute pnpm workspace root associated with the loaded Limina config.
    */
   rootDir: string;
 }
@@ -862,6 +904,9 @@ export interface LoadConfigOptions {
    * Config file path, resolved from `cwd`. When omitted, Limina searches for
    * the nearest default Limina config file from `cwd` upward to the inferred
    * pnpm workspace root.
+   *
+   * When configured explicitly, the governed workspace root is inferred from
+   * the config file directory, not from the command cwd.
    *
    * @default nearest default Limina config file in `cwd` or workspace parents
    */
@@ -1166,32 +1211,35 @@ export async function loadConfig(
   options: LoadConfigOptions = {},
 ): Promise<ResolvedLiminaConfig> {
   const cwd = options.cwd ? path.resolve(options.cwd) : process.cwd();
-  const rootDir = inferWorkspaceRoot(cwd);
   const configPath = options.configPath
     ? path.resolve(cwd, options.configPath)
-    : findLiminaConfigPath(cwd, rootDir);
+    : undefined;
+  const rootDir = configPath
+    ? inferWorkspaceRoot(path.dirname(configPath))
+    : inferWorkspaceRoot(cwd);
+  const resolvedConfigPath = configPath ?? findLiminaConfigPath(cwd, rootDir);
 
-  if (configPath) {
-    validateConfigPathInsideWorkspace(configPath, rootDir);
+  if (resolvedConfigPath) {
+    validateConfigPathInsideWorkspace(resolvedConfigPath, rootDir);
   }
 
-  if (!configPath || !existsSync(configPath)) {
+  if (!resolvedConfigPath || !existsSync(resolvedConfigPath)) {
     throw new Error(
       options.configPath
-        ? `Unable to find limina config at ${configPath}`
+        ? `Unable to find limina config at ${resolvedConfigPath}`
         : `Unable to find limina config. Searched for ${formatDefaultConfigFileList()} from ${cwd} up to the pnpm workspace root at ${rootDir}.`,
     );
   }
 
   const config = await resolveConfigExport(
-    await loadConfigModule(configPath, options.configLoader),
+    await loadConfigModule(resolvedConfigPath, options.configLoader),
     createConfigEnv(options),
   );
   validateRootPackageImportAuthorityConfig(config, rootDir);
 
   return {
     ...config,
-    configPath,
+    configPath: resolvedConfigPath,
     rootDir,
   };
 }

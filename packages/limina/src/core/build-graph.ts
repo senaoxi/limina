@@ -32,10 +32,15 @@ export class BuildGraphCore {
   }
 
   getGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#graphPromise ??= prepareGeneratedTsconfigGraph(this.#config, {
-      importAnalysisContext: this.#imports.context,
-      workspacePackagesProvider: () => this.#workspace.getPackages(),
-    });
+    this.#graphPromise ??= this.#workspace
+      .getRegionTopology()
+      .then((topology) =>
+        prepareGeneratedTsconfigGraph(this.#config, {
+          importAnalysisContext: this.#imports.context,
+          workspacePackagesProvider: () => Promise.resolve(topology.packages),
+          workspaceRegionBoundaries: topology.boundaries,
+        }),
+      );
 
     return this.#graphPromise;
   }

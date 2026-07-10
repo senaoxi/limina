@@ -44,6 +44,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   releaseRegistry: 'LIMINA_RELEASE_REGISTRY',
   releaseTarballHygiene: 'LIMINA_RELEASE_TARBALL_HYGIENE',
   sourceCheckFailed: 'LIMINA_SOURCE_CHECK_FAILED',
+  sourceCrossGovernanceBoundary: 'LIMINA_SOURCE_CROSS_GOVERNANCE_BOUNDARY',
   sourceImportAuthorityInvalid: 'LIMINA_SOURCE_IMPORT_AUTHORITY_INVALID',
   sourceKnipBuildScriptUnsupported:
     'LIMINA_SOURCE_KNIP_BUILD_SCRIPT_UNSUPPORTED',
@@ -56,6 +57,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   sourceTsconfigGovernance: 'LIMINA_SOURCE_TSCONFIG_GOVERNANCE',
   sourceUnusedModule: 'LIMINA_SOURCE_UNUSED_MODULE',
   sourceUnusedWorkspaceDependency: 'LIMINA_SOURCE_UNUSED_WORKSPACE_DEPENDENCY',
+  workspaceRegionOverlap: 'LIMINA_WORKSPACE_REGION_OVERLAP',
 } as const;
 
 export type LiminaCheckIssueCode =
@@ -282,6 +284,12 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
       'Source check failed before a more specific rule was recorded.',
     task: 'source:check',
   },
+  [LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary]: {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary,
+    description:
+      'A current-region source import resolves beyond a stopped or excluded governance boundary.',
+    task: 'source:check',
+  },
   [LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid]: {
     code: LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid,
     description: 'Source import authority configuration is invalid.',
@@ -331,6 +339,12 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
   [LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency]: {
     code: LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency,
     description: 'A workspace dependency is not visible to source analysis.',
+    task: 'source:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.workspaceRegionOverlap]: {
+    code: LIMINA_CHECK_ISSUE_CODES.workspaceRegionOverlap,
+    description:
+      'A nested pnpm workspace root overlaps a current-region workspace package.',
     task: 'source:check',
   },
 } satisfies Record<LiminaCheckIssueCode, LiminaCheckIssueRuleMetadata>;

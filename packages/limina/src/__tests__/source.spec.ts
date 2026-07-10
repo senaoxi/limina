@@ -1,5 +1,6 @@
 import type {
   GraphConfig,
+  RegionsConfig,
   ResolvedLiminaConfig,
   SourceBoundaryConfig,
   SourceCheckConfig,
@@ -22,6 +23,7 @@ import {
   type SourceCheckIssue,
 } from '../source-check/report';
 import {
+  type LiminaCheckIssue,
   readCheckIssueSnapshot,
   readSourceIssueSnapshot,
 } from '../source-check/snapshot';
@@ -47,6 +49,7 @@ async function createFixture(
     | GraphConfig
     | {
         graph?: GraphConfig;
+        regions?: RegionsConfig;
         source?: SourceCheckConfig;
         sourceBoundary?: SourceBoundaryConfig;
       } = {},
@@ -73,6 +76,7 @@ async function createFixture(
 
   const hasOptionsShape =
     Object.hasOwn(options, 'graph') ||
+    Object.hasOwn(options, 'regions') ||
     Object.hasOwn(options, 'source') ||
     Object.hasOwn(options, 'sourceBoundary');
   const graph = hasOptionsShape
@@ -80,6 +84,9 @@ async function createFixture(
     : (options as GraphConfig);
   const source = hasOptionsShape
     ? (options as { source?: SourceCheckConfig }).source
+    : undefined;
+  const regions = hasOptionsShape
+    ? (options as { regions?: RegionsConfig }).regions
     : undefined;
   const sourceBoundary = hasOptionsShape
     ? (options as { sourceBoundary?: SourceBoundaryConfig }).sourceBoundary
@@ -104,6 +111,7 @@ async function createFixture(
       },
       configPath: path.join(rootDir, 'limina.config.mjs'),
       graph,
+      regions,
       rootDir,
       source,
     },
@@ -1701,7 +1709,7 @@ packages:
     }
   });
 
-  it('allows source configs that include nested non-workspace package scopes', async () => {
+  it('stops source governance at nested package scopes by default', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -1714,6 +1722,34 @@ packages:
         'app/src/nested/value.ts': "export const nestedValue = 'nested';\n",
       },
       {
+        source: {
+          knip: false,
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('extends eligible nameless nested package scopes when configured', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "export const rootValue = 'root';\n",
+        }),
+        'app/src/nested/package.json': stringifyConfig({
+          type: 'module',
+        }),
+        'app/src/nested/value.ts': "export const nestedValue = 'nested';\n",
+      },
+      {
+        regions: {
+          extendNestedPackageScopes: true,
+        },
         source: {
           knip: false,
         },
@@ -1776,13 +1812,15 @@ packages:
           source: "export const rootValue = 'root';\n",
         }),
         'app/src/nested/package.json': stringifyConfig({
-          name: '@example/nested',
           type: 'module',
         }),
         'app/src/nested/value.ts':
           "import { z } from 'zod';\nexport const nestedValue = z.string();\n",
       },
       {
+        regions: {
+          extendNestedPackageScopes: true,
+        },
         source: {
           knip: false,
         },
@@ -1803,12 +1841,14 @@ packages:
           source: "export const rootValue = 'root';\n",
         }),
         'app/src/nested/package.json': stringifyConfig({
-          name: '@example/nested',
           type: 'module',
         }),
         'app/src/nested/value.ts': "export const nestedValue = 'nested';\n",
       },
       {
+        regions: {
+          extendNestedPackageScopes: true,
+        },
         source: {
           knip: false,
         },
@@ -1829,13 +1869,15 @@ packages:
           source: "export const rootValue = 'root';\n",
         }),
         'app/src/nested/package.json': stringifyConfig({
-          name: '@example/nested',
           type: 'module',
         }),
         'app/src/nested/value.ts':
           "import { rootValue } from '../index';\nexport const nestedValue = rootValue;\n",
       },
       {
+        regions: {
+          extendNestedPackageScopes: true,
+        },
         source: {
           knip: false,
         },
@@ -2048,11 +2090,13 @@ packages:
           imports: {
             '#internal': './internal.ts',
           },
-          name: '@example/nested',
           type: 'module',
         }),
       },
       {
+        regions: {
+          extendNestedPackageScopes: true,
+        },
         source: {
           knip: false,
         },
@@ -2088,7 +2132,6 @@ packages:
           imports: {
             '#root': './local.ts',
           },
-          name: '@example/nested',
           type: 'module',
         }),
         'app/tsconfig.lib.dts.json': buildConfig({
@@ -2098,6 +2141,9 @@ packages:
         'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], pathOptions),
       },
       {
+        regions: {
+          extendNestedPackageScopes: true,
+        },
         source: {
           knip: false,
         },
@@ -4275,6 +4321,410 @@ packages:
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+describe('runSourceCheck workspace regions', () => {
+  function getDiagnosticLines(
+    issues: SourceCheckIssue[],
+    code: string,
+  ): string[] | undefined {
+    const issue = issues.find((candidate) => candidate.code === code);
+
+    return issue && 'evidence' in issue
+      ? issue.evidence?.[0]?.lines
+      : undefined;
+  }
+
+  function getDiagnosticLineGroups(
+    issues: SourceCheckIssue[],
+    code: string,
+  ): string[][] {
+    return issues
+      .filter((candidate) => candidate.code === code)
+      .flatMap((issue) =>
+        'evidence' in issue && issue.evidence?.[0]?.lines
+          ? [issue.evidence[0].lines]
+          : [],
+      );
+  }
+
+  it('reports nested pnpm workspace roots inside current packages', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'app/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+
+      expect(sourceIssues.map((issue) => issue.code)).toContain(
+        'LIMINA_WORKSPACE_REGION_OVERLAP',
+      );
+      expect(
+        getDiagnosticLines(sourceIssues, 'LIMINA_WORKSPACE_REGION_OVERLAP'),
+      ).toEqual(expect.arrayContaining(['  nested workspace: app/fixture']));
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('suppresses nested pnpm workspace overlap with explicit region exclusion', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'app/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      fixture.config.regions = {
+        exclude: [
+          {
+            include: ['app/fixture/**'],
+            reason: 'Fixture workspace.',
+          },
+        ],
+      };
+
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects explicit checker entries at an exact nested workspace overlap', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'app/pnpm-workspace.yaml': 'packages: []\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const issues: LiminaCheckIssue[] = [];
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          issues,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues.map((issue) => issue.code)).toContain(
+        'LIMINA_GRAPH_PREPARE_FAILED',
+      );
+      expect(issues[0]?.detailLines).toEqual(
+        expect.arrayContaining([
+          'Checker include matched source config outside activated workspace package regions:',
+          '  config: app/tsconfig.json',
+        ]),
+      );
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not let exclusion authorize an explicit checker entry', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'app/pnpm-workspace.yaml': 'packages: []\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const issues: LiminaCheckIssue[] = [];
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      fixture.config.regions = {
+        exclude: [
+          {
+            include: ['app/**'],
+            reason: 'Nested app workspace is checked separately.',
+          },
+        ],
+      };
+
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          issues,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues.map((issue) => issue.code)).toContain(
+        'LIMINA_GRAPH_PREPARE_FAILED',
+      );
+      expect(issues[0]?.detailLines).toEqual(
+        expect.arrayContaining([
+          'Checker include matched source config outside activated workspace package regions:',
+          '  config: app/tsconfig.json',
+        ]),
+      );
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports duplicate non-root package ownership across workspace regions', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'packages/a/inner/x/package.json': stringifyConfig({
+          name: '@example/x',
+          private: true,
+        }),
+        'packages/a/package.json': stringifyConfig({
+          name: '@example/a',
+          private: true,
+        }),
+        'packages/a/pnpm-workspace.yaml': 'packages:\n  - inner/*\n',
+        'pnpm-workspace.yaml':
+          'packages:\n  - app\n  - packages/a\n  - packages/a/inner/*\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+
+      expect(
+        getDiagnosticLineGroups(
+          sourceIssues,
+          'LIMINA_WORKSPACE_REGION_OVERLAP',
+        ),
+      ).toContainEqual(
+        expect.arrayContaining([
+          'Duplicate pnpm workspace package ownership across workspace regions:',
+          '  package: packages/a/inner/x',
+          '  owning region: .',
+          '  owning region: packages/a',
+        ]),
+      );
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('suppresses duplicate package ownership for explicitly excluded nested regions', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'packages/a/inner/x/package.json': stringifyConfig({
+          name: '@example/x',
+          private: true,
+        }),
+        'packages/a/package.json': stringifyConfig({
+          name: '@example/a',
+          private: true,
+        }),
+        'packages/a/pnpm-workspace.yaml': 'packages:\n  - inner/*\n',
+        'pnpm-workspace.yaml':
+          'packages:\n  - app\n  - packages/a\n  - packages/a/inner/*\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      fixture.config.regions = {
+        exclude: [
+          {
+            include: ['packages/a/**'],
+            reason: 'Nested workspace is checked separately.',
+          },
+        ],
+      };
+
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(true);
+
+      expect(
+        getDiagnosticLineGroups(
+          sourceIssues,
+          'LIMINA_WORKSPACE_REGION_OVERLAP',
+        ).some((lines) =>
+          lines.includes(
+            'Duplicate pnpm workspace package ownership across workspace regions:',
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('terminates when a non-excluded nested workspace cannot be inspected', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: 'export const value = 1;\n',
+        }),
+        'app/fixture/package.json': '{\n',
+        'app/fixture/pnpm-workspace.yaml': 'packages:\n  - .\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          report: { defer: true },
+        }),
+      ).rejects.toThrow(
+        /Failed to inspect nested pnpm workspace region[\s\S]*app\/fixture/u,
+      );
+    } finally {
+      infoSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('fails source check when graph preparation sees imports into excluded nested regions', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import { fixtureValue } from '../fixture/pkg/src/value';\nexport const value = fixtureValue;\n",
+        }),
+        'app/fixture/pkg/src/value.ts': 'export const fixtureValue = 1;\n',
+        'app/fixture/pnpm-workspace.yaml': 'packages:\n  - pkg\n',
+      },
+      {
+        source: {
+          knip: false,
+        },
+      },
+    );
+    const issues: LiminaCheckIssue[] = [];
+    const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
+
+    try {
+      fixture.config.regions = {
+        exclude: [
+          {
+            include: ['app/fixture/**'],
+            reason: 'Fixture workspace.',
+          },
+        ],
+      };
+
+      await expect(
+        runSourceCheck(fixture.config, {
+          clearScreen: false,
+          deferSnapshot: true,
+          issues,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues.map((issue) => issue.code)).toContain(
+        'LIMINA_GRAPH_PREPARE_FAILED',
+      );
+      expect(issues[0]?.detailLines).toEqual(
+        expect.arrayContaining([
+          'Generated graph import crosses governance boundary:',
+          '  resolved file: app/fixture/pkg/src/value.ts',
+          '  boundary kind: pnpm-workspace',
+          '  boundary root: app/fixture',
+          '  excluded boundary reason: Fixture workspace.',
+        ]),
+      );
+    } finally {
+      infoSpy.mockRestore();
       await fixture.cleanup();
     }
   });

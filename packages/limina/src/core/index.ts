@@ -29,7 +29,11 @@ export class LiminaCore {
     this.config = config;
     this.workspace = new WorkspaceCore(config);
     this.imports = new ImportCore(config);
-    this.tsconfig = new TsconfigCore(config, () => buildGraph.getGraph());
+    this.tsconfig = new TsconfigCore(
+      config,
+      () => buildGraph.getGraph(),
+      this.workspace,
+    );
     buildGraph = new BuildGraphCore({
       config,
       imports: this.imports,

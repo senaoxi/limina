@@ -39,6 +39,8 @@ export type {
   PipelineStep,
   ProofAllowlistEntry,
   ProofConfig,
+  RegionExcludeConfig,
+  RegionsConfig,
   ReleaseConfig,
   ReleaseContentHashConfig,
   ReleaseContentHashConfigArgs,

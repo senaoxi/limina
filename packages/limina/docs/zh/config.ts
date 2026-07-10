@@ -95,6 +95,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         link: '/zh/config/source-boundary',
       },
       {
+        text: '治理区域',
+        link: '/zh/config/regions',
+      },
+      {
         text: '源码检查',
         link: '/zh/config/source-checks',
       },

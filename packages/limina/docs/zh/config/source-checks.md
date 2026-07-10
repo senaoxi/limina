@@ -4,7 +4,9 @@
 顶层 `source` 选项配置 `source:check` 中的两类行为：`source.importAuthority` 用于源码导入授权，`source.knip` 用于 `Knip` 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
 :::
 
-`source check` 的主线是让源码导入能被包归属和依赖声明解释。Limina 把 `pnpm` 发现的工作区包作为源码归属方，包括没有 `name`、只能用路径标识的工作区包。嵌套 `package.json` 仍然影响包解析，也会形成相对导入要遵守的包作用域；但只有被 `pnpm` 识别为工作区包时才会切分源码归属方。
+`source check` 的主线是让源码导入能被包归属和依赖声明解释。Limina 从当前 `pnpm` 工作区激活的包开始治理，包括没有 `name`、只能用路径标识的工作区包；每个工作区包根目录的清单是它的源码 owner。
+
+默认情况下，嵌套 `package.json` 会停止当前治理区域，嵌套 `pnpm-workspace.yaml` 则永远是硬边界。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，满足条件的无名嵌套清单可以继续留在外层区域：其中源码继承外层工作区 owner 和依赖授权，这份嵌套清单仍负责相对导入和 `#imports` 的包作用域。[`regions.exclude`](./regions.md#exclude) 随后可以从当前运行中裁剪已识别治理单元或边界根；导入任何已停止或被排除的区域都会按跨边界访问处理。
 
 `Knip` 驱动分支使用包入口而不是 `include` / `exclude`，报告未使用工作区依赖，以及基于 Limina 源码归属方模块集合识别出的未使用源码模块。
 
@@ -65,7 +67,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` 的 key 必须匹配已知源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用工作区根目录相对包目录。`include` 可选，写的是源码归属方目录相对 `glob`；省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
+`allow` 的 key 必须匹配应用 `regions` 后仍留在当前治理区域内的源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用工作区根目录相对包目录。`include` 可选，写的是源码归属方目录相对 `glob`；省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
 
 `workspaceRootDependencies` 不是直接导入白名单。它只说明当源码归属方和 `include` 范围都匹配时，哪些包名可以读取工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包；如果源码归属方和根目录之间存在中间工作区包清单声明了同一个包，根目录授权不会绕过这个中间清单。
 
@@ -107,7 +109,7 @@ interface SourceKnipCheckConfig {
 }
 ```
 
-`source.knip.workspaces` 的 `key` 是 `pnpm` 工作区中发现的包名，例如 `@acme/app`。如果 `key` 对应不到工作区包名，`source check` 会直接失败。没有 `name` 的工作区包仍然可以成为源码归属方，但不能放进 `source.knip.workspaces`，因为它没有稳定的包名 `key`。
+`source.knip.workspaces` 的 `key` 是当前治理区域内的具名源码归属方，例如 `@acme/app`。未知或已排除的包名会让 `source check` 失败。没有 `name` 的工作区包仍然可以成为源码归属方，但不能放进 `source.knip.workspaces`，因为它没有稳定的包名 `key`。
 
 `source.knip.workspaces[pkg]` 只配置额外可达入口和忽略规则。包级 `Knip tsconfig` 来源来自静态、直接的 `limina build <config>` 脚本；没有这类脚本时，Limina 不传 `--tsConfig`，交给 `Knip` 使用自己的默认 `tsconfig` 行为。
 

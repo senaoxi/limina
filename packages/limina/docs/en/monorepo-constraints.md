@@ -56,9 +56,15 @@ packages/core/tsconfig.browser.json   also includes src/index.ts
 
 A more robust approach is to ensure that the same implementation file is owned by exactly one leaf type-checking module. If multi-environment aggregation is needed, use an aggregate `tsconfig.json` that references multiple leaf configs, instead of allowing multiple leaf configs to own the same implementation files.
 
-## Files Must Have Clear Package Ownership First
+## Files Must Have a Governed Region and Clear Package Ownership First
 
-Limina’s source checks interpret checked files within `pnpm` workspace package scopes. Here, “source owner” means the `pnpm` workspace package scope, not an arbitrary nearest nested `package.json`. If a checked source file cannot be associated with a workspace package scope, Limina reports it as a problem. If an ordinary source `tsconfig*.json` covers files from multiple workspace package scopes, Limina also reports that the boundary is too broad.
+Limina starts from the packages activated by the nearest `pnpm-workspace.yaml` at its workspace root. Each activated workspace package is a base governed unit, and its root `package.json` is the owner manifest. A checked source file must first belong to one of these units. If it does not, Limina reports it as outside the activated region; if an ordinary source `tsconfig*.json` covers files owned by multiple workspace packages, Limina reports that the boundary is too broad.
+
+Governance does not automatically continue through every directory below a workspace package. A nested `package.json` stops the region by default, and a nested `pnpm-workspace.yaml` is always a hard boundary. The latter cannot be merged into the current run by configuration.
+
+`regions.extendNestedPackageScopes` can keep an eligible nested package scope inside the current region. The nested manifest must have no `name` field, no discovered workspace may identify its directory as a workspace package, and it must not be inside a nested workspace boundary. The source keeps the surrounding workspace package owner and dependency authority, while the nested manifest remains its package scope for relative imports and `#imports`.
+
+After those units and boundaries are recognized, `regions.exclude` can remove a recognized workspace package, extended package scope, stopped package-scope root, or nested workspace root. Every exclusion needs a reason; arbitrary ordinary directories are not valid targets. The excluded root and its descendants do not belong to the current run, so imports from governed source into them are treated as cross-boundary access. See [Regions](./config/regions.md) for the complete configuration rules.
 
 For example:
 
@@ -77,7 +83,7 @@ If `packages/app/tsconfig.lib.json` also includes `packages/ui/src/Button.ts`, t
 
 The default `tsconfig.json` should also have a clear shape. If it only serves as an aggregator, it can keep `references` and an empty `files` array. Concrete source inputs should live in leaf configs. Ordinary source leaf configs should not hand-write `TypeScript` project references: static source edges are inferred by Limina from TypeScript declaration providers, while real engineering edges that static analysis cannot observe should be declared explicitly through `liminaOptions.implicitRefs`.
 
-The point of this constraint is simple: each source file must first be able to answer “which workspace package scope do I belong to?” Only then can import relationships, type graphs, and artifact checks have a stable foundation.
+The point of this constraint is simple: each source file must first be able to answer “does my package scope belong to this run, and which workspace package owns it?” Only then can import relationships, type graphs, and artifact checks have a stable foundation.
 
 ## Type-Checking Modules Should Not Patch Declaration Build Edges
 
@@ -144,6 +150,8 @@ import { Button } from '@acme/ui';
 ```
 
 Limina checks whether relative imports cross the nearest `package.json` package scope. For bare package imports, it also checks whether the current workspace package scope acknowledges the dependency through `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. Matching `source.importAuthority.allow` grants can make selected workspace root dependency declarations available to a specific source owner.
+
+This distinction matters for an extended nested package scope: it inherits dependency authority from the surrounding workspace owner, but relative imports still cannot escape the nearest nested `package.json` scope. If the nested scope was not extended, or was removed with `regions.exclude`, importing it from governed source crosses the region boundary before ordinary package access rules are considered.
 
 `#imports` follows a similar boundary. Its declaration source is the nearest package scope of the importing file. Relative targets should remain inside the package scope that declares them. If the target points to a third-party package or a workspace dependency, that dependency still needs to be authorized by the workspace package scope that owns the importing file, or it must be covered by a matching workspace root dependency grant.
 
@@ -310,7 +318,7 @@ These checks do not replace the npm publishing process, package-manager validati
 | -------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | A source module belongs to exactly one type-checking module    | The same implementation file having multiple declaration-output providers               |
 | Declaration-output modules are managed by `.limina`            | User source configuration being mixed with declaration build configuration              |
-| Source files have a clear workspace package scope              | A single `tsconfig` mixing source files from multiple packages                          |
+| Source files remain in the current region and have an owner    | A `tsconfig` crossing stopped regions or mixing source from multiple owners             |
 | Ordinary source leaf configs do not hand-write `references`    | Manual edge patches being confused with generated project references                    |
 | Cross-package access goes through public entry points          | Relative paths bypassing dependency declarations and `exports`                          |
 | Bare package imports are acknowledged by manifests             | Code using a dependency that the current package does not declare                       |
@@ -327,9 +335,9 @@ These checks do not replace the npm publishing process, package-manager validati
 When Limina reports an issue, inspect it in this order:
 
 ```text
-1. Which pnpm workspace package scope does this file belong to?
+1. Does this package scope belong to the current run, and which pnpm workspace package owns it?
 2. Is the current source file owned by exactly one ordinary type-checking module?
-3. Does the current tsconfig only cover source files inside this workspace package scope?
+3. Does the current tsconfig stay inside the current governed region and one workspace owner?
 4. Does an ordinary source leaf config hand-write references?
 5. Does this cross-package import go through a package name and public entry point?
 6. Does the current package.json declare this bare package dependency?

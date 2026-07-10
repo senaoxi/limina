@@ -3,13 +3,10 @@ import { uniqueSortedStrings } from '#utils/collections';
 import { isPathInsideDirectory } from '#utils/path';
 import type { BuildGraphCore } from './build-graph';
 import type { WorkspaceDependencyDeclaration } from './packages/authority';
-import {
-  classifyResolvedPackageTarget,
-  findOwnerForFile,
-  type ResolvedPackageTarget,
-} from './packages/owners';
+import type { ResolvedPackageTarget } from './packages/owners';
 import type { TsconfigCore } from './tsconfig';
 import type { WorkspaceCore } from './workspace';
+import { createWorkspaceLookupIndex } from './workspace/lookup';
 
 export interface PackageDomain {
   owner: PackageOwner | null;
@@ -53,9 +50,8 @@ export class PackageDomainCore {
   }
 
   async findOwner(filePath: string): Promise<PackageOwner | null> {
-    const owner = findOwnerForFile(
+    const owner = (await this.#createWorkspaceLookupIndex()).findOwnerForFile(
       filePath,
-      await this.#workspace.getPackageOwners(),
     );
 
     return owner ? clonePackageOwner(owner) : null;
@@ -65,16 +61,33 @@ export class PackageDomainCore {
     owner: PackageOwner;
     resolvedFilePath: string;
   }): Promise<ResolvedPackageTarget> {
-    return classifyResolvedPackageTarget({
+    return (
+      await this.#createWorkspaceLookupIndex()
+    ).classifyResolvedPackageTarget({
       owner: options.owner,
-      owners: await this.#workspace.getPackageOwners(),
-      packages: await this.#workspace.getPackages(),
       resolvedFilePath: options.resolvedFilePath,
     });
   }
 
   getDependencyDeclarations(): Promise<WorkspaceDependencyDeclaration[]> {
     return this.#workspace.getWorkspaceDependencyDeclarations();
+  }
+
+  async #createWorkspaceLookupIndex() {
+    const [importers, owners, packages, regionBoundaries] = await Promise.all([
+      this.#workspace.getImporters(),
+      this.#workspace.getPackageOwners(),
+      this.#workspace.getPackages(),
+      this.#workspace.getRegionBoundaries(),
+    ]);
+
+    return createWorkspaceLookupIndex({
+      importers,
+      owners,
+      packages,
+      regionBoundaries,
+      rootDir: this.#workspace.rootDir,
+    });
   }
 
   async #createPackageDomain(packageName: string): Promise<PackageDomain> {
