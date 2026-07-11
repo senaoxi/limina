@@ -145,7 +145,15 @@ function cloneWorkspaceRegionBoundary(
   return boundary.kind === 'pnpm-workspace'
     ? {
         ...boundary,
-        workspacePackages: cloneWorkspacePackages(boundary.workspacePackages),
+        inspection:
+          boundary.inspection.status === 'completed'
+            ? {
+                status: 'completed',
+                workspacePackages: cloneWorkspacePackages(
+                  boundary.inspection.workspacePackages,
+                ),
+              }
+            : { ...boundary.inspection },
       }
     : { ...boundary };
 }

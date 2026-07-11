@@ -64,7 +64,7 @@ Governance does not automatically continue through every directory below a works
 
 `regions.extendNestedPackageScopes` can keep an eligible nested package scope inside the current region. The nested manifest must have no `name` field, no discovered workspace may identify its directory as a workspace package, and it must not be inside a nested workspace boundary. The source keeps the surrounding workspace package owner and dependency authority, while the nested manifest remains its package scope for relative imports and `#imports`.
 
-After those units and boundaries are recognized, `regions.exclude` can remove a recognized workspace package, extended package scope, stopped package-scope root, or nested workspace root. Every exclusion needs a reason; arbitrary ordinary directories are not valid targets. The excluded root and its descendants do not belong to the current run, so imports from governed source into them are treated as cross-boundary access. See [Regions](./config/regions.md) for the complete configuration rules.
+`regions.exclude` requires every rule to name one governance-root kind: `workspace-package`, `package-scope`, or `pnpm-workspace`. Its path globs match only candidate root directories of that kind, never package names or descriptor paths. Nested workspace exclusions are decided before Limina reads the nested manifest; every other nested workspace is inspected strictly. The excluded root and its descendants do not belong to the current run, so imports from governed source into them are treated as cross-boundary access. See [Regions](./config/regions.md) for the complete matching and validation rules.
 
 For example:
 

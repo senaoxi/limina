@@ -67,6 +67,8 @@ import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   createWorkspaceRegionBoundaryIndex,
   findContainingWorkspacePackage,
+  getWorkspaceRegionBoundaryExclusionReason,
+  isWorkspaceRegionBoundaryExcluded,
   type WorkspaceRegionBoundary,
   type WorkspaceRegionBoundaryIndex,
 } from '../core/workspace/regions';
@@ -295,7 +297,7 @@ function addWorkspaceRegionOverlapProblems(options: {
 
     options.checks.add();
 
-    if (boundary.excluded) {
+    if (isWorkspaceRegionBoundaryExcluded(boundary)) {
       continue;
     }
 
@@ -331,7 +333,7 @@ function addWorkspaceRegionOverlapProblems(options: {
         `  nested workspace: ${toRelativePath(options.config.rootDir, boundary.rootDir)}`,
         `  nested workspace config: ${toRelativePath(options.config.rootDir, boundary.workspaceYamlPath)}`,
         '  reason: Limina requires source ownership and dependency authority to belong to one pnpm workspace region during a single run.',
-        '  fix: add regions.exclude with include patterns and a reason, move the nested workspace outside the package, or run Limina from the nested workspace root if it should be governed independently.',
+        '  fix: add a regions.exclude rule with kind "pnpm-workspace", root-directory include patterns, and a reason; move the nested workspace outside the package; or run Limina from the nested workspace root if it should be governed independently.',
       ].join('\n'),
     );
   }
@@ -385,13 +387,16 @@ async function addWorkspaceRegionDuplicatePackageOwnershipProblems(options: {
   }
 
   for (const boundary of options.boundaries) {
-    if (boundary.kind !== 'pnpm-workspace' || boundary.excluded) {
+    if (
+      boundary.kind !== 'pnpm-workspace' ||
+      boundary.inspection.status === 'excluded'
+    ) {
       continue;
     }
 
     const nestedRegionRootDir = normalizeAbsolutePath(boundary.rootDir);
 
-    for (const workspacePackage of boundary.workspacePackages) {
+    for (const workspacePackage of boundary.inspection.workspacePackages) {
       const packageDirectory = normalizeAbsolutePath(
         workspacePackage.directory,
       );
@@ -431,7 +436,7 @@ async function addWorkspaceRegionDuplicatePackageOwnershipProblems(options: {
               : []),
           ]),
         '  reason: one physical non-root package directory is reported by more than one non-excluded pnpm workspace region.',
-        '  fix: remove the duplicate workspace package pattern from one region, exclude the nested region with regions.exclude, or run Limina separately from the nested workspace root.',
+        '  fix: remove the duplicate workspace package pattern from one region, exclude the nested root with a regions.exclude rule whose kind is "pnpm-workspace", or run Limina separately from the nested workspace root.',
       ].join('\n'),
     );
   }
@@ -445,6 +450,10 @@ function addSourceCrossGovernanceBoundaryProblem(options: {
   problems: string[];
   resolvedFilePath: string;
 }): void {
+  const exclusionReason = getWorkspaceRegionBoundaryExclusionReason(
+    options.boundary,
+  );
+
   options.problems.push(
     [
       'Source import crosses governance boundary:',
@@ -462,8 +471,8 @@ function addSourceCrossGovernanceBoundaryProblem(options: {
         : [
             `  boundary manifest: ${toRelativePath(options.config.rootDir, options.boundary.packageJsonPath)}`,
           ]),
-      ...(options.boundary.excluded && options.boundary.exclusionReason
-        ? [`  excluded boundary reason: ${options.boundary.exclusionReason}`]
+      ...(exclusionReason
+        ? [`  excluded boundary reason: ${exclusionReason}`]
         : []),
       '  reason: current-region source must not import source files beyond a stopped or excluded governance boundary during a single Limina run.',
       '  fix: remove the cross-boundary source import, activate an eligible package scope, or consume a published package artifact instead of local source.',

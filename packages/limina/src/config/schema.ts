@@ -608,6 +608,12 @@ function validateSourceImportAuthorityConfig(
   }
 }
 
+const regionExcludeKinds = [
+  'workspace-package',
+  'package-scope',
+  'pnpm-workspace',
+] as const;
+
 function validateRegionsConfig(
   value: unknown,
   ctx: ConfigValidationContext,
@@ -670,14 +676,14 @@ function validateRegionsConfig(
       ctx.addIssue({
         code: 'custom',
         message:
-          'regions.exclude entries must be objects with include and reason fields.',
+          'regions.exclude entries must be objects with kind, include, and reason fields.',
         path: entryPath,
       });
       continue;
     }
 
     for (const key of Object.keys(entry)) {
-      if (key === 'include' || key === 'reason') {
+      if (key === 'include' || key === 'kind' || key === 'reason') {
         continue;
       }
 
@@ -685,6 +691,28 @@ function validateRegionsConfig(
         code: 'custom',
         message: 'unknown regions.exclude entry field.',
         path: [...entryPath, key],
+      });
+    }
+
+    if (!Object.hasOwn(entry, 'kind')) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `regions.exclude[${index}].kind is required.`,
+        path: [...entryPath, 'kind'],
+      });
+    } else if (
+      typeof entry.kind !== 'string' ||
+      !regionExcludeKinds.includes(
+        entry.kind as (typeof regionExcludeKinds)[number],
+      )
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        message: [
+          `regions.exclude[${index}].kind must be one of:`,
+          ...regionExcludeKinds.map((kind) => `  ${kind}`),
+        ].join('\n'),
+        path: [...entryPath, 'kind'],
       });
     }
 

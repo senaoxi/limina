@@ -787,7 +787,18 @@ export default {
           'packages/app/test/fixtures/**',
           'packages/app/vendor/**',
         ],
+        kind: 'pnpm-workspace',
         reason: 'Fixture workspaces are checked independently.',
+      },
+      {
+        include: ['packages/legacy'],
+        kind: 'workspace-package',
+        reason: 'Legacy package.',
+      },
+      {
+        include: ['packages/app/fixtures/parser'],
+        kind: 'package-scope',
+        reason: 'Parser fixture.',
       },
     ],
   },
@@ -801,6 +812,12 @@ export default {
       expect(config.regions?.exclude?.[0]?.include).toEqual([
         'packages/app/test/fixtures/**',
         'packages/app/vendor/**',
+      ]);
+      expect(config.regions?.exclude?.[0]?.kind).toBe('pnpm-workspace');
+      expect(config.regions?.exclude?.map((entry) => entry.kind)).toEqual([
+        'pnpm-workspace',
+        'workspace-package',
+        'package-scope',
       ]);
       expect(config.regions?.exclude?.[0]?.reason).toBe(
         'Fixture workspaces are checked independently.',
@@ -922,19 +939,34 @@ export default {
 
   it.each([
     {
-      entry: `{ include: [], reason: 'Checked separately.' }`,
+      entry: `{ kind: 'workspace-package', include: [], reason: 'Checked separately.' }`,
       expected: 'regions.exclude.include must be a non-empty string array',
       name: 'empty include',
     },
     {
-      entry: `{ include: ['packages/app/vendor'], reason: '' }`,
+      entry: `{ kind: 'workspace-package', include: ['packages/app/vendor'], reason: '' }`,
       expected: 'reason must be a non-empty string',
       name: 'empty reason',
     },
     {
-      entry: `{ include: ['packages/app/vendor'], reason: 'Checked separately.', unexpected: true }`,
+      entry: `{ kind: 'workspace-package', include: ['packages/app/vendor'], reason: 'Checked separately.', unexpected: true }`,
       expected: 'unknown regions.exclude entry field',
       name: 'unknown exclude field',
+    },
+    {
+      entry: `{ include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
+      expected: 'regions.exclude[0].kind is required',
+      name: 'missing kind',
+    },
+    {
+      entry: `{ kind: 'unknown', include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
+      expected: 'regions.exclude[0].kind must be one of',
+      name: 'unknown kind',
+    },
+    {
+      entry: `{ kind: 1, include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
+      expected: 'regions.exclude[0].kind must be one of',
+      name: 'non-string kind',
     },
   ])(
     'rejects invalid region exclusions: $name',
@@ -976,6 +1008,7 @@ export default {
   regions: {
     exclude: [
       {
+        kind: 'pnpm-workspace',
         include: ['packages/app/test/fixtures/**'],
       },
     ],

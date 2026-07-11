@@ -13,6 +13,7 @@ interface RegionsConfig {
 }
 
 interface RegionExcludeConfig {
+  kind: 'workspace-package' | 'package-scope' | 'pnpm-workspace';
   include: string[];
   reason: string;
 }
@@ -26,8 +27,9 @@ export default defineConfig({
     extendNestedPackageScopes: true,
     exclude: [
       {
-        include: ['packages/app/fixtures'],
-        reason: 'Fixtures are checked by their own validation workflow.',
+        kind: 'pnpm-workspace',
+        include: ['packages/app/fixtures/workspace-a'],
+        reason: 'This fixture workspace is validated independently.',
       },
     ],
   },
@@ -81,21 +83,20 @@ An extended package scope does not become a new source owner. Its source continu
 - **Type:** `RegionExcludeConfig[]`
 - **Default:** `[]`
 
-`regions.exclude` is applied after Limina recognizes the default units, eligible extended package scopes, and stopped boundaries. Each `include` entry contains workspace-root-relative glob patterns, and each entry must provide a non-empty `reason`.
+Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason`. There is no kind inference or legacy kind-less form.
 
-An exclude pattern may match only a recognized root:
+`include` patterns match only workspace-root-relative candidate root directories. They do not match package names, `package.json` paths, `pnpm-workspace.yaml` paths, or arbitrary files. For a manifest at `packages/app/fixtures/workspace-a/pnpm-workspace.yaml`, select the root with `packages/app/fixtures/workspace-a` or a root glob such as `packages/**/fixtures/**`; `**/pnpm-workspace.yaml` does not select it.
 
-- an activated workspace package root;
-- an extended nested package-scope root;
-- a nested package-scope boundary root that was not extended; or
-- a nested workspace root.
+Each kind has one candidate set:
 
-It cannot point at an arbitrary ordinary directory. Each exclude entry must match at least one recognized root; a pattern that matches no recognized root is a configuration error. If more than one entry matches the same root, the first matching entry supplies its reason.
+- `workspace-package` selects packages activated by the root `pnpm-workspace.yaml`. It removes the package from ownership, dependency authority, checker discovery, and generated graphs. Use `include: ['.']` to exclude only the root package when it is an activated workspace package; this does not exclude the root workspace or other activated packages.
+- `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
+- `pnpm-workspace` selects directories containing nested `pnpm-workspace.yaml` files. Limina applies this exclusion before reading the nested manifest or discovering its packages. The excluded directory remains a hard boundary. The root `pnpm-workspace.yaml` defines the governance origin and cannot be excluded.
 
-If the workspace root itself is an activated package, use `.` or a pattern matching its root `package.json` to select it. Excluding that root package does not exclude the other activated workspace packages.
+A rule is matched only against candidates of the same kind. The same directory may therefore be both a `workspace-package` and a `pnpm-workspace` candidate without the two identities being merged.
 
-Excluding a governed unit removes that root and its descendants from the current run. Package ownership, dependency authority, checker discovery, and source analysis do not continue inside it. Excluding an already-stopped package or workspace boundary records why that boundary is intentional; it does not make the boundary governable.
+After discovery, every rule must have matched at least one candidate of its declared kind. Descriptor paths, fixed discovery ignores such as `node_modules`, `.git`, `.limina`, and configured output directories, and paths belonging only to another kind cannot satisfy a rule. Multiple rules may not match the same candidate; make their patterns non-overlapping instead of relying on array order.
 
-A nested `pnpm-workspace.yaml` remains a hard boundary in every case. `exclude` cannot merge its workspace into the current region.
+Nested workspaces that are not excluded are inspected strictly. Invalid YAML, invalid pnpm workspace or catalog configuration, unreadable package manifests, package-discovery failures, and missing package identity stop the run. Repair the nested workspace or add a deliberate `pnpm-workspace` exclusion for its root.
 
 Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Diagnostics identify the boundary root and include the configured reason when one is available. If the intent is only to omit selected files while keeping the containing package governed, use a file-level source or checker exclusion instead.

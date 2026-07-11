@@ -19,11 +19,13 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   collectWorkspaceRegionBoundaries,
   collectWorkspaceRegionTopology,
   createWorkspaceRegionBoundaryIndex,
+  getWorkspaceRegionBoundaryExclusionReason,
+  isWorkspaceRegionBoundaryExcluded,
 } from '../core/workspace/regions';
 import {
   createFixturePathResolver,
@@ -288,6 +290,7 @@ describe('collectWorkspacePackages', () => {
         exclude: [
           {
             include: ['app/**'],
+            kind: 'workspace-package',
             reason: 'Nested app workspace is checked separately.',
           },
         ],
@@ -343,6 +346,7 @@ describe('collectWorkspaceRegionBoundaries', () => {
             exclude: [
               {
                 include: ['packages/a/fixture/**'],
+                kind: 'pnpm-workspace',
                 reason: 'Fixture workspace.',
               },
             ],
@@ -353,8 +357,8 @@ describe('collectWorkspaceRegionBoundaries', () => {
 
       expect(
         boundaries.map((boundary) => ({
-          excluded: boundary.excluded,
-          reason: boundary.exclusionReason,
+          excluded: isWorkspaceRegionBoundaryExcluded(boundary),
+          reason: getWorkspaceRegionBoundaryExclusionReason(boundary),
           root: toPortableRelativePath(fixture.rootDir, boundary.rootDir),
         })),
       ).toEqual([
@@ -369,7 +373,7 @@ describe('collectWorkspaceRegionBoundaries', () => {
     }
   });
 
-  it('ignores nested pnpm workspace manifests rejected by pnpm validation', async () => {
+  it('fails strictly when a nested pnpm workspace manifest is invalid', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({
         name: 'root',
@@ -389,7 +393,69 @@ describe('collectWorkspaceRegionBoundaries', () => {
           fixture.config,
           collectRawWorkspacePackages,
         ),
-      ).resolves.toEqual([]);
+      ).rejects.toThrow(
+        /Failed to inspect nested pnpm workspace region[\s\S]*phase: manifest-validation/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not inspect an explicitly excluded invalid nested workspace', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/a/fixture/deeper/pnpm-workspace.yaml':
+        'packages: []\ncatalogs: []\n',
+      'packages/a/fixture/package.json': '{\n',
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\ncatalogs: []\n',
+      'packages/a/package.json': stringifyConfig({
+        name: '@example/a',
+        private: true,
+      }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    });
+    const provider = vi.fn(async () => {
+      throw new Error('excluded workspace provider must not run');
+    });
+
+    try {
+      const topology = await collectWorkspaceRegionTopology(
+        {
+          ...fixture.config,
+          regions: {
+            exclude: [
+              {
+                include: ['packages/a/fixture'],
+                kind: 'pnpm-workspace',
+                reason: 'Invalid fixture workspace.',
+              },
+            ],
+          },
+        },
+        { provider, rawPackages: [] },
+      );
+
+      expect(provider).not.toHaveBeenCalled();
+      expect(topology.boundaries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            inspection: {
+              reason: 'Invalid fixture workspace.',
+              status: 'excluded',
+            },
+            kind: 'pnpm-workspace',
+            rootDir: fixture.path('packages/a/fixture'),
+          }),
+          expect.objectContaining({
+            inspection: {
+              reason: 'Invalid fixture workspace.',
+              status: 'excluded',
+            },
+            kind: 'pnpm-workspace',
+            rootDir: fixture.path('packages/a/fixture/deeper'),
+          }),
+        ]),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -696,6 +762,7 @@ describe('collectWorkspaceRegionTopology', () => {
               exclude: [
                 {
                   include: ['packages/a/src/**'],
+                  kind: 'workspace-package',
                   reason: 'Ordinary directories are not governance roots.',
                 },
               ],
@@ -711,7 +778,178 @@ describe('collectWorkspaceRegionTopology', () => {
             ],
           },
         ),
-      ).rejects.toThrow(/does not match a recognized governance unit/u);
+      ).rejects.toThrow(/does not match a recognized governance root/u);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not match descriptor paths or a different candidate kind', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/a/package.json': stringifyConfig({
+        name: '@example/a',
+        private: true,
+      }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    });
+    const workspacePackage = createWorkspacePackageFixture(
+      fixture.rootDir,
+      'packages/a',
+      { name: '@example/a', private: true },
+    );
+
+    try {
+      for (const rule of [
+        {
+          include: ['packages/a/package.json'],
+          kind: 'workspace-package' as const,
+          reason: 'Descriptor paths are not selectors.',
+        },
+        {
+          include: ['@example/a'],
+          kind: 'workspace-package' as const,
+          reason: 'Package names are not selectors.',
+        },
+        {
+          include: ['packages/a'],
+          kind: 'pnpm-workspace' as const,
+          reason: 'Kinds must match.',
+        },
+      ]) {
+        await expect(
+          collectWorkspaceRegionTopology(
+            { ...fixture.config, regions: { exclude: [rule] } },
+            { provider: async () => [], rawPackages: [workspacePackage] },
+          ),
+        ).rejects.toThrow(/does not match a recognized governance root/u);
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects multiple rules that match the same candidate', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/a/package.json': stringifyConfig({
+        name: '@example/a',
+        private: true,
+      }),
+      'packages/a/src/nested/package.json': stringifyConfig({ private: true }),
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionTopology(
+          {
+            ...fixture.config,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/a/src/**'],
+                  kind: 'package-scope',
+                  reason: 'All nested scopes.',
+                },
+                {
+                  include: ['packages/a/src/nested'],
+                  kind: 'package-scope',
+                  reason: 'The nested scope.',
+                },
+              ],
+            },
+          },
+          {
+            provider: async () => [],
+            rawPackages: [
+              createWorkspacePackageFixture(fixture.rootDir, 'packages/a', {
+                name: '@example/a',
+                private: true,
+              }),
+            ],
+          },
+        ),
+      ).rejects.toThrow(
+        /Multiple regions\.exclude rules match the same governance root[\s\S]*rule 1: regions\.exclude\[0\][\s\S]*rule 2: regions\.exclude\[1\]/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects attempts to exclude the root pnpm workspace', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'pnpm-workspace.yaml': 'packages: []\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionTopology(
+          {
+            ...fixture.config,
+            regions: {
+              exclude: [
+                {
+                  include: ['.'],
+                  kind: 'pnpm-workspace',
+                  reason: 'Invalid root exclusion.',
+                },
+              ],
+            },
+          },
+          { provider: async () => [], rawPackages: [] },
+        ),
+      ).rejects.toThrow(/cannot exclude the root pnpm workspace/u);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps same-path candidates independent across kinds', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/app/package.json': stringifyConfig({
+        name: '@example/app',
+        private: true,
+      }),
+      'packages/app/pnpm-workspace.yaml': 'packages: []\n',
+      'pnpm-workspace.yaml': 'packages:\n  - packages/app\n',
+    });
+
+    try {
+      const topology = await collectWorkspaceRegionTopology(
+        {
+          ...fixture.config,
+          regions: {
+            exclude: [
+              {
+                include: ['packages/app'],
+                kind: 'pnpm-workspace',
+                reason: 'Nested workspace is outside this run.',
+              },
+              {
+                include: ['packages/app'],
+                kind: 'workspace-package',
+                reason: 'Workspace package is outside this run.',
+              },
+            ],
+          },
+        },
+        {
+          provider: async () => [],
+          rawPackages: [
+            createWorkspacePackageFixture(fixture.rootDir, 'packages/app', {
+              name: '@example/app',
+              private: true,
+            }),
+          ],
+        },
+      );
+
+      expect(topology.boundaries).toHaveLength(2);
+      expect(topology.packages).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
@@ -736,11 +974,8 @@ describe('collectWorkspaceRegionTopology', () => {
             exclude: [
               {
                 include: ['packages/a/src/nested/**'],
+                kind: 'package-scope',
                 reason: 'Nested fixture scope is not part of this run.',
-              },
-              {
-                include: ['packages/a/src/nested/package.json'],
-                reason: 'Later matching reasons must not replace the first.',
               },
             ],
             extendNestedPackageScopes: true,
@@ -757,7 +992,7 @@ describe('collectWorkspaceRegionTopology', () => {
         },
       );
 
-      expect(topology.extendedPackageScopes).toHaveLength(1);
+      expect(topology.extendedPackageScopes).toEqual([]);
       expect(topology.boundaries).toEqual([
         expect.objectContaining({
           excluded: true,
@@ -771,7 +1006,7 @@ describe('collectWorkspaceRegionTopology', () => {
     }
   });
 
-  it('propagates an excluded boundary to recognized descendant boundaries', async () => {
+  it('keeps package-scope and pnpm-workspace candidate identities isolated', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({ name: 'root', private: true }),
       'packages/a/package.json': stringifyConfig({
@@ -791,6 +1026,7 @@ describe('collectWorkspaceRegionTopology', () => {
             exclude: [
               {
                 include: ['packages/a/src/nested'],
+                kind: 'package-scope',
                 reason: 'Nested fixtures are checked separately.',
               },
             ],
@@ -816,8 +1052,10 @@ describe('collectWorkspaceRegionTopology', () => {
             rootDir: fixture.path('packages/a/src/nested'),
           }),
           expect.objectContaining({
-            excluded: true,
-            exclusionReason: 'Nested fixtures are checked separately.',
+            inspection: {
+              status: 'completed',
+              workspacePackages: [],
+            },
             kind: 'pnpm-workspace',
             rootDir: fixture.path('packages/a/src/nested/fixture'),
           }),
@@ -828,7 +1066,7 @@ describe('collectWorkspaceRegionTopology', () => {
     }
   });
 
-  it('records an excluded package boundary without hiding a nested active package', async () => {
+  it('keeps descendants outside an excluded package-scope boundary', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({ name: 'root', private: true }),
       'packages/a/fixtures/child/package.json': stringifyConfig({
@@ -866,6 +1104,7 @@ describe('collectWorkspaceRegionTopology', () => {
             exclude: [
               {
                 include: ['packages/a/fixtures'],
+                kind: 'package-scope',
                 reason: 'Fixture container is an accepted package boundary.',
               },
             ],
@@ -883,10 +1122,9 @@ describe('collectWorkspaceRegionTopology', () => {
 
       expect(
         topology.packages.map((workspacePackage) => workspacePackage.name),
-      ).toEqual(['@example/a', '@example/child']);
+      ).toEqual(['@example/a']);
       expect(topology.boundaries).toEqual([
         expect.objectContaining({
-          allowWorkspacePackageReentry: true,
           excluded: true,
           exclusionReason: 'Fixture container is an accepted package boundary.',
           rootDir: fixture.path('packages/a/fixtures'),
@@ -896,7 +1134,7 @@ describe('collectWorkspaceRegionTopology', () => {
         boundaryIndex.isInsideBoundary(
           path.join(fixture.rootDir, 'packages/a/fixtures/child/src/index.ts'),
         ),
-      ).toBe(false);
+      ).toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -933,7 +1171,8 @@ describe('collectWorkspaceRegionTopology', () => {
           regions: {
             exclude: [
               {
-                include: ['package.json'],
+                include: ['.'],
+                kind: 'workspace-package',
                 reason: 'Root tooling is checked separately.',
               },
             ],
@@ -961,8 +1200,7 @@ describe('collectWorkspaceRegionTopology', () => {
             rootDir: fixture.path(),
           }),
           expect.objectContaining({
-            excluded: true,
-            exclusionReason: 'Root tooling is checked separately.',
+            excluded: false,
             rootDir: fixture.path('tools/fixture'),
           }),
           expect.objectContaining({
@@ -970,9 +1208,7 @@ describe('collectWorkspaceRegionTopology', () => {
             rootDir: fixture.path('packages/child/src/nested'),
           }),
           expect.objectContaining({
-            allowWorkspacePackageReentry: true,
-            excluded: true,
-            exclusionReason: 'Root tooling is checked separately.',
+            excluded: false,
             rootDir: fixture.path('packages'),
           }),
         ]),

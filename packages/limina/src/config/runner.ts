@@ -704,18 +704,24 @@ export interface ReleaseConfig {
   contentHash?: ReleaseContentHashConfig;
 }
 
-/**
- * Explicitly documented governance unit or boundary root excluded from the
- * current Limina run.
- */
+export type RegionExcludeKind =
+  | 'package-scope'
+  | 'pnpm-workspace'
+  | 'workspace-package';
+
+/** A governance root excluded from the current Limina run. */
 export interface RegionExcludeConfig {
   /**
-   * Workspace-root-relative glob patterns that match recognized governance
-   * units or boundary roots intentionally outside the current region.
+   * The kind of governance root excluded by this rule.
+   */
+  kind: RegionExcludeKind;
+  /**
+   * Workspace-root-relative glob patterns matched against candidate root
+   * directories.
    */
   include: string[];
   /**
-   * Why these regions are intentionally checked independently.
+   * Why the matched governance roots are outside the current Limina run.
    */
   reason: string;
 }

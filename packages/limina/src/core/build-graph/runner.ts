@@ -66,6 +66,7 @@ import {
   createWorkspaceActivatedRegionIndex,
   createWorkspaceRegionBoundaryIgnorePatterns,
   createWorkspaceRegionBoundaryIndex,
+  getWorkspaceRegionBoundaryExclusionReason,
   type WorkspaceActivatedRegionIndex,
   type WorkspaceRegionBoundary,
   type WorkspaceRegionBoundaryIndex,
@@ -2537,10 +2538,11 @@ function inferProjectReferences(
                       : [
                           `  boundary manifest: ${toRelativePath(config.rootDir, targetBoundary.packageJsonPath)}`,
                         ]),
-                    ...(targetBoundary.excluded &&
-                    targetBoundary.exclusionReason
+                    ...(getWorkspaceRegionBoundaryExclusionReason(
+                      targetBoundary,
+                    )
                       ? [
-                          `  excluded boundary reason: ${targetBoundary.exclusionReason}`,
+                          `  excluded boundary reason: ${getWorkspaceRegionBoundaryExclusionReason(targetBoundary)}`,
                         ]
                       : []),
                     '  reason: generated graph provider inference cannot cross a stopped or excluded governance boundary.',
