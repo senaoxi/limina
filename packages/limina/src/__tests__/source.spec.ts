@@ -4411,6 +4411,7 @@ describe('runSourceCheck workspace regions', () => {
         exclude: [
           {
             include: ['app/fixture/**'],
+            kind: 'pnpm-workspace',
             reason: 'Fixture workspace.',
           },
         ],
@@ -4493,6 +4494,7 @@ describe('runSourceCheck workspace regions', () => {
         exclude: [
           {
             include: ['app/**'],
+            kind: 'pnpm-workspace',
             reason: 'Nested app workspace is checked separately.',
           },
         ],
@@ -4610,6 +4612,7 @@ describe('runSourceCheck workspace regions', () => {
         exclude: [
           {
             include: ['packages/a/**'],
+            kind: 'pnpm-workspace',
             reason: 'Nested workspace is checked separately.',
           },
         ],
@@ -4697,6 +4700,7 @@ describe('runSourceCheck workspace regions', () => {
         exclude: [
           {
             include: ['app/fixture/**'],
+            kind: 'pnpm-workspace',
             reason: 'Fixture workspace.',
           },
         ],

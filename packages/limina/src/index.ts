@@ -40,6 +40,7 @@ export type {
   ProofAllowlistEntry,
   ProofConfig,
   RegionExcludeConfig,
+  RegionExcludeKind,
   RegionsConfig,
   ReleaseConfig,
   ReleaseContentHashConfig,

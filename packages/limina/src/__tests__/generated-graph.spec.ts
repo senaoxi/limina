@@ -171,6 +171,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         exclude: [
           {
             include: ['packages/app/**'],
+            kind: 'workspace-package',
             reason: 'Nested app workspace is checked separately.',
           },
         ],
@@ -267,6 +268,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             exclude: [
               {
                 include: ['packages/a/fixture/**'],
+                kind: 'pnpm-workspace',
                 reason: 'Fixture workspace.',
               },
             ],
@@ -315,6 +317,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           exclude: [
             {
               include: ['packages/a/fixture/**'],
+              kind: 'pnpm-workspace',
               reason: 'Fixture workspace.',
             },
           ],
@@ -363,6 +366,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             exclude: [
               {
                 include: ['packages/a/fixture/**'],
+                kind: 'pnpm-workspace',
                 reason: 'Fixture workspace.',
               },
             ],

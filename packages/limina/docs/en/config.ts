@@ -55,6 +55,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: 'Workflows',
         link: '/workflows',
       },
+      {
+        text: 'Troubleshooting',
+        link: '/troubleshooting',
+      },
     ],
   },
   {

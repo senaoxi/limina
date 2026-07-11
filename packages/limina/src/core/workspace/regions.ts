@@ -1,4 +1,8 @@
-import type { RegionExcludeConfig, ResolvedLiminaConfig } from '#config/runner';
+import type {
+  RegionExcludeConfig,
+  RegionExcludeKind,
+  ResolvedLiminaConfig,
+} from '#config/runner';
 import { readJsonConfig } from '#core/tsconfig/actions';
 import {
   isPathInsideDirectory,
@@ -18,28 +22,62 @@ import { generatedRootDirName } from '../build-graph/generated/paths';
 import type { PackageManifest, WorkspacePackage } from './actions';
 
 interface WorkspaceRegionBoundaryBase {
-  excluded: boolean;
-  exclusionReason?: string;
   rootDir: string;
 }
 
-export interface PackageScopeRegionBoundary
+interface ExcludableWorkspaceRegionBoundaryBase
   extends WorkspaceRegionBoundaryBase {
+  excluded: boolean;
+  exclusionReason?: string;
+}
+
+export interface PackageScopeRegionBoundary
+  extends ExcludableWorkspaceRegionBoundaryBase {
   allowWorkspacePackageReentry?: boolean;
   kind: 'package-scope';
   packageJsonPath: string;
 }
 
+export type PnpmWorkspaceInspection =
+  | {
+      status: 'completed';
+      workspacePackages: WorkspacePackage[];
+    }
+  | {
+      reason: string;
+      status: 'excluded';
+    };
+
 export interface PnpmWorkspaceRegionBoundary
   extends WorkspaceRegionBoundaryBase {
+  inspection: PnpmWorkspaceInspection;
   kind: 'pnpm-workspace';
-  workspacePackages: WorkspacePackage[];
   workspaceYamlPath: string;
 }
 
 export type WorkspaceRegionBoundary =
   | PackageScopeRegionBoundary
   | PnpmWorkspaceRegionBoundary;
+
+export function getWorkspaceRegionBoundaryExclusionReason(
+  boundary: WorkspaceRegionBoundary,
+): string | null {
+  if (boundary.kind === 'pnpm-workspace') {
+    return boundary.inspection.status === 'excluded'
+      ? boundary.inspection.reason
+      : null;
+  }
+
+  return boundary.excluded ? (boundary.exclusionReason ?? null) : null;
+}
+
+export function isWorkspaceRegionBoundaryExcluded(
+  boundary: WorkspaceRegionBoundary,
+): boolean {
+  return boundary.kind === 'pnpm-workspace'
+    ? boundary.inspection.status === 'excluded'
+    : boundary.excluded;
+}
 
 export interface ExtendedPackageScope {
   ownerDirectory: string;
@@ -58,21 +96,26 @@ export type WorkspacePackagesProvider = (
   config: ResolvedLiminaConfig,
 ) => Promise<WorkspacePackage[]>;
 
-interface CompiledRegionExclude {
-  entry: RegionExcludeConfig;
+interface CompiledRegionExcludeRule {
+  include: string[];
+  index: number;
+  kind: RegionExcludeKind;
   matchers: ((value: string) => boolean)[];
-  matchedRoots: Set<string>;
+  matchedCandidateKeys: Set<string>;
+  reason: string;
 }
 
 interface RegionRootCandidate {
   descriptorPath: string;
   key: string;
-  kind:
-    | 'extended-package-scope'
-    | 'package-scope-boundary'
-    | 'pnpm-workspace-boundary'
-    | 'workspace-package';
+  kind: RegionExcludeKind;
   rootDir: string;
+}
+
+interface ResolvedRegionExclusion {
+  candidateKey: string;
+  reason: string;
+  ruleIndex: number;
 }
 
 const picomatch = rawPicomatch as unknown as (
@@ -101,80 +144,114 @@ function isInsideNodeModulesPath(filePath: string): boolean {
   return normalizeAbsolutePath(filePath).split('/').includes('node_modules');
 }
 
-function compileRegionExcludes(
-  config: ResolvedLiminaConfig,
-): CompiledRegionExclude[] {
-  return (config.regions?.exclude ?? []).map((entry) => ({
-    entry,
+function compileRegionExclusionRules(
+  entries: readonly RegionExcludeConfig[] | undefined,
+): CompiledRegionExcludeRule[] {
+  return (entries ?? []).map((entry, index) => ({
+    include: [...entry.include],
+    index,
+    kind: entry.kind,
     matchers: entry.include.map((pattern) =>
       picomatch(normalizeRegionPattern(pattern), {
         dot: true,
         posixSlashes: true,
       }),
     ),
-    matchedRoots: new Set(),
+    matchedCandidateKeys: new Set(),
+    reason: entry.reason.trim(),
   }));
 }
 
-function collectRegionRootMatchCandidates(options: {
-  config: ResolvedLiminaConfig;
-  descriptorPath: string;
-  rootDir: string;
-}): string[] {
-  const relativeRoot = normalizeSlashes(
-    toRelativePath(options.config.rootDir, options.rootDir),
-  );
-  const relativeDescriptor = normalizeSlashes(
-    toRelativePath(options.config.rootDir, options.descriptorPath),
-  );
-
-  return [
-    ...new Set([relativeRoot, `${relativeRoot}/`, relativeDescriptor]),
-  ].filter((candidate) => candidate.length > 0);
+function createRegionCandidateKey(
+  kind: RegionExcludeKind,
+  rootDir: string,
+): string {
+  return `${kind}:${normalizeAbsolutePath(rootDir)}`;
 }
 
-function findRegionRootExclusion(options: {
+function resolveCandidateExclusion(options: {
   candidate: RegionRootCandidate;
   config: ResolvedLiminaConfig;
-  excludes: CompiledRegionExclude[];
-}): RegionExcludeConfig | null {
-  const candidates = collectRegionRootMatchCandidates({
-    config: options.config,
-    descriptorPath: options.candidate.descriptorPath,
-    rootDir: options.candidate.rootDir,
-  });
+  rules: CompiledRegionExcludeRule[];
+}): ResolvedRegionExclusion | null {
+  const relativeRoot = normalizeSlashes(
+    toRelativePath(options.config.rootDir, options.candidate.rootDir),
+  );
+  const matchingRules = options.rules.filter(
+    (rule) =>
+      rule.kind === options.candidate.kind &&
+      rule.matchers.some((matches) => matches(relativeRoot)),
+  );
 
-  let selectedExclusion: RegionExcludeConfig | null = null;
-
-  for (const exclude of options.excludes) {
-    if (
-      exclude.matchers.some((matches) =>
-        candidates.some((candidate) => matches(candidate)),
-      )
-    ) {
-      exclude.matchedRoots.add(options.candidate.key);
-      selectedExclusion ??= exclude.entry;
-    }
+  if (matchingRules.length > 1) {
+    throw new Error(
+      [
+        'Multiple regions.exclude rules match the same governance root.',
+        `  kind: ${options.candidate.kind}`,
+        `  root: ${relativeRoot}`,
+        `  rule 1: regions.exclude[${matchingRules[0]?.index}]`,
+        `  rule 2: regions.exclude[${matchingRules[1]?.index}]`,
+        '  fix: Make exclusion patterns non-overlapping.',
+      ].join('\n'),
+    );
   }
 
-  return selectedExclusion;
+  const rule = matchingRules[0];
+
+  if (!rule) {
+    return null;
+  }
+
+  rule.matchedCandidateKeys.add(options.candidate.key);
+
+  return {
+    candidateKey: options.candidate.key,
+    reason: rule.reason,
+    ruleIndex: rule.index,
+  };
 }
 
-function validateRegionExcludes(options: {
+function validateRootPnpmWorkspaceExclusion(options: {
   config: ResolvedLiminaConfig;
-  excludes: readonly CompiledRegionExclude[];
+  rules: readonly CompiledRegionExcludeRule[];
 }): void {
-  for (const exclude of options.excludes) {
-    if (exclude.matchedRoots.size > 0) {
+  const rule = options.rules.find(
+    (candidate) =>
+      candidate.kind === 'pnpm-workspace' &&
+      candidate.matchers.some((matches) => matches('.')),
+  );
+
+  if (!rule) {
+    return;
+  }
+
+  throw new Error(
+    [
+      'regions.exclude cannot exclude the root pnpm workspace.',
+      `  rule: regions.exclude[${rule.index}]`,
+      '  root: .',
+      '  reason: the root pnpm-workspace.yaml defines the current governance origin.',
+    ].join('\n'),
+  );
+}
+
+function validateRegionExclusionRules(options: {
+  config: ResolvedLiminaConfig;
+  rules: readonly CompiledRegionExcludeRule[];
+}): void {
+  for (const rule of options.rules) {
+    if (rule.matchedCandidateKeys.size > 0) {
       continue;
     }
 
     throw new Error(
       [
-        'regions.exclude does not match a recognized governance unit or boundary root.',
-        `  include: ${exclude.entry.include.join(', ')}`,
+        'regions.exclude rule does not match a recognized governance root.',
+        `  rule: regions.exclude[${rule.index}]`,
+        `  kind: ${rule.kind}`,
+        `  include: ${rule.include.join(', ')}`,
         `  workspace: ${options.config.rootDir}`,
-        '  reason: regions.exclude can only crop workspace package roots, extended package scopes, stopped package scopes, or nested pnpm workspace roots.',
+        `  fix: Match the root directory of a ${rule.kind} governance root.`,
       ].join('\n'),
     );
   }
@@ -230,7 +307,7 @@ function readExplicitOutputOutDir(options: {
 
 async function collectConfiguredOutputDirectoryIgnorePatterns(options: {
   config: ResolvedLiminaConfig;
-  rawRegionBoundaries: readonly WorkspaceRegionBoundary[];
+  rawBoundaryRoots: readonly string[];
 }): Promise<string[]> {
   const sourceConfigPaths = await glob('**/tsconfig.json', {
     absolute: true,
@@ -238,16 +315,16 @@ async function collectConfiguredOutputDirectoryIgnorePatterns(options: {
     ignore: [...workspaceRegionDiscoveryIgnore],
     onlyFiles: true,
   });
-  const rawRegionBoundaryIndex = createWorkspaceRegionBoundaryIndex(
-    options.rawRegionBoundaries,
-  );
-
   const sourceConfigOutputPatterns = sourceConfigPaths.flatMap(
     (sourceConfigPath) => {
       const normalizedSourceConfigPath =
         normalizeAbsolutePath(sourceConfigPath);
 
-      if (rawRegionBoundaryIndex.isInsideBoundary(normalizedSourceConfigPath)) {
+      if (
+        options.rawBoundaryRoots.some((rootDir) =>
+          isPathInsideDirectory(normalizedSourceConfigPath, rootDir),
+        )
+      ) {
         return [];
       }
 
@@ -289,13 +366,6 @@ async function collectConfiguredOutputDirectoryIgnorePatterns(options: {
   ];
 }
 
-function isInvalidPnpmWorkspaceManifestError(error: unknown): boolean {
-  return (
-    isPlainRecord(error) &&
-    error.code === 'ERR_PNPM_INVALID_WORKSPACE_CONFIGURATION'
-  );
-}
-
 async function collectNestedWorkspaceYamlPaths(
   config: ResolvedLiminaConfig,
 ): Promise<{ outputIgnorePatterns: string[]; workspaceYamlPaths: string[] }> {
@@ -314,37 +384,12 @@ async function collectNestedWorkspaceYamlPaths(
     .filter(
       (workspaceYamlPath) => workspaceYamlPath !== currentWorkspaceYamlPath,
     );
-  const rawWorkspaceYamlPaths = (
-    await Promise.all(
-      discoveredWorkspaceYamlPaths.map(async (workspaceYamlPath) => {
-        try {
-          await readWorkspaceManifest(path.dirname(workspaceYamlPath));
-          return workspaceYamlPath;
-        } catch (error) {
-          if (isInvalidPnpmWorkspaceManifestError(error)) {
-            return null;
-          }
-
-          throw error;
-        }
-      }),
-    )
-  ).filter((workspaceYamlPath): workspaceYamlPath is string =>
-    Boolean(workspaceYamlPath),
-  );
-  const rawRegionBoundaries = rawWorkspaceYamlPaths.map(
-    (workspaceYamlPath): PnpmWorkspaceRegionBoundary => ({
-      excluded: false,
-      kind: 'pnpm-workspace',
-      rootDir: normalizeAbsolutePath(path.dirname(workspaceYamlPath)),
-      workspacePackages: [],
-      workspaceYamlPath,
-    }),
-  );
   const outputIgnorePatterns =
     await collectConfiguredOutputDirectoryIgnorePatterns({
       config,
-      rawRegionBoundaries,
+      rawBoundaryRoots: discoveredWorkspaceYamlPaths.map((workspaceYamlPath) =>
+        normalizeAbsolutePath(path.dirname(workspaceYamlPath)),
+      ),
     });
   const outputIgnoreMatchers = outputIgnorePatterns.map((pattern) =>
     picomatch(pattern, {
@@ -352,7 +397,7 @@ async function collectNestedWorkspaceYamlPaths(
       posixSlashes: true,
     }),
   );
-  const workspaceYamlPaths = rawWorkspaceYamlPaths.filter(
+  const workspaceYamlPaths = discoveredWorkspaceYamlPaths.filter(
     (workspaceYamlPath) => {
       const relativeWorkspaceYamlPath = normalizeSlashes(
         toRelativePath(config.rootDir, workspaceYamlPath),
@@ -389,42 +434,124 @@ function createNestedWorkspaceConfig(options: {
 async function collectPnpmWorkspaceBoundaries(options: {
   config: ResolvedLiminaConfig;
   provider: WorkspacePackagesProvider;
+  rules: CompiledRegionExcludeRule[];
   workspaceYamlPaths: readonly string[];
 }): Promise<PnpmWorkspaceRegionBoundary[]> {
-  return Promise.all(
-    options.workspaceYamlPaths.map(async (workspaceYamlPath) => {
-      const rootDir = normalizeAbsolutePath(path.dirname(workspaceYamlPath));
-      let workspacePackages: WorkspacePackage[];
+  const boundaries: PnpmWorkspaceRegionBoundary[] = [];
+  const excludedRoots: { reason: string; rootDir: string }[] = [];
+  const workspaceYamlPaths = [...options.workspaceYamlPaths].sort(
+    (left, right) =>
+      normalizeAbsolutePath(path.dirname(left)).length -
+        normalizeAbsolutePath(path.dirname(right)).length ||
+      left.localeCompare(right),
+  );
 
-      try {
-        workspacePackages = await options.provider(
-          createNestedWorkspaceConfig({
-            config: options.config,
-            rootDir,
-          }),
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+  for (const workspaceYamlPath of workspaceYamlPaths) {
+    const rootDir = normalizeAbsolutePath(path.dirname(workspaceYamlPath));
+    const excludedAncestor = excludedRoots.find((excludedRoot) =>
+      isPathInsideDirectory(rootDir, excludedRoot.rootDir),
+    );
+    const candidate = createRegionRootCandidate({
+      descriptorPath: workspaceYamlPath,
+      kind: 'pnpm-workspace',
+      rootDir,
+    });
+    const exclusion = resolveCandidateExclusion({
+      candidate,
+      config: options.config,
+      rules: options.rules,
+    });
 
-        throw new Error(
-          [
-            'Failed to inspect nested pnpm workspace region.',
-            `  nested workspace: ${toRelativePath(options.config.rootDir, rootDir)}`,
-            `  nested workspace config: ${toRelativePath(options.config.rootDir, workspaceYamlPath)}`,
-            `  error: ${message}`,
-          ].join('\n'),
-          { cause: error },
-        );
+    if (exclusion || excludedAncestor) {
+      const reason = exclusion?.reason ?? excludedAncestor?.reason;
+
+      if (!reason) {
+        throw new Error('Expected an exclusion reason for nested workspace.');
       }
 
-      return {
-        excluded: false,
+      if (exclusion) {
+        excludedRoots.push({ reason, rootDir });
+      }
+
+      boundaries.push({
+        inspection: {
+          reason,
+          status: 'excluded',
+        },
         kind: 'pnpm-workspace',
         rootDir,
-        workspacePackages,
         workspaceYamlPath,
-      } satisfies PnpmWorkspaceRegionBoundary;
-    }),
+      });
+      continue;
+    }
+
+    try {
+      await readWorkspaceManifest(rootDir);
+    } catch (error) {
+      throw createNestedWorkspaceInspectionError({
+        config: options.config,
+        error,
+        phase: 'manifest-validation',
+        rootDir,
+        workspaceYamlPath,
+      });
+    }
+
+    let workspacePackages: WorkspacePackage[];
+
+    try {
+      workspacePackages = await options.provider(
+        createNestedWorkspaceConfig({
+          config: options.config,
+          rootDir,
+        }),
+      );
+    } catch (error) {
+      throw createNestedWorkspaceInspectionError({
+        config: options.config,
+        error,
+        phase: 'package-discovery',
+        rootDir,
+        workspaceYamlPath,
+      });
+    }
+
+    boundaries.push({
+      inspection: {
+        status: 'completed',
+        workspacePackages,
+      },
+      kind: 'pnpm-workspace',
+      rootDir,
+      workspaceYamlPath,
+    });
+  }
+
+  return boundaries;
+}
+
+function createNestedWorkspaceInspectionError(options: {
+  config: ResolvedLiminaConfig;
+  error: unknown;
+  phase: 'manifest-validation' | 'package-discovery';
+  rootDir: string;
+  workspaceYamlPath: string;
+}): Error {
+  const message =
+    options.error instanceof Error
+      ? options.error.message
+      : String(options.error);
+
+  return new Error(
+    [
+      'Failed to inspect nested pnpm workspace region.',
+      `  nested workspace: ${toRelativePath(options.config.rootDir, options.rootDir)}`,
+      `  manifest: ${toRelativePath(options.config.rootDir, options.workspaceYamlPath)}`,
+      `  phase: ${options.phase}`,
+      `  error: ${message}`,
+      '  fix: Repair the nested workspace, or add an explicit regions.exclude rule with kind "pnpm-workspace".',
+    ].join('\n'),
+    { cause: options.error },
   );
 }
 
@@ -435,8 +562,10 @@ function collectWorkspaceClaimDirectories(options: {
   return new Set(
     [
       ...options.rawPackages,
-      ...options.nestedBoundaries.flatMap(
-        (boundary) => boundary.workspacePackages,
+      ...options.nestedBoundaries.flatMap((boundary) =>
+        boundary.inspection.status === 'completed'
+          ? boundary.inspection.workspacePackages
+          : [],
       ),
     ].map((workspacePackage) =>
       normalizeAbsolutePath(workspacePackage.directory),
@@ -575,22 +704,23 @@ function createRegionRootCandidate(options: {
 }): RegionRootCandidate {
   return {
     ...options,
-    key: `${options.kind}\0${normalizeAbsolutePath(options.rootDir)}`,
+    key: createRegionCandidateKey(options.kind, options.rootDir),
   };
 }
 
-function applyRegionExcludes(options: {
-  activeBasePackages: readonly WorkspacePackage[];
+function applyPackageRegionExclusions(options: {
   config: ResolvedLiminaConfig;
   extendedPackageScopes: readonly ExtendedPackageScope[];
   packageScopeBoundaries: readonly PackageScopeRegionBoundary[];
   pnpmWorkspaceBoundaries: readonly PnpmWorkspaceRegionBoundary[];
+  rules: CompiledRegionExcludeRule[];
+  workspacePackages: readonly WorkspacePackage[];
 }): {
   boundaries: WorkspaceRegionBoundary[];
+  extendedPackageScopes: ExtendedPackageScope[];
   packages: WorkspacePackage[];
 } {
-  const excludes = compileRegionExcludes(options.config);
-  const packageCandidates = options.activeBasePackages.map((workspacePackage) =>
+  const packageCandidates = options.workspacePackages.map((workspacePackage) =>
     createRegionRootCandidate({
       descriptorPath: path.join(workspacePackage.directory, 'package.json'),
       kind: 'workspace-package',
@@ -600,7 +730,7 @@ function applyRegionExcludes(options: {
   const extendedCandidates = options.extendedPackageScopes.map((scope) =>
     createRegionRootCandidate({
       descriptorPath: scope.packageJsonPath,
-      kind: 'extended-package-scope',
+      kind: 'package-scope',
       rootDir: scope.rootDir,
     }),
   );
@@ -608,30 +738,21 @@ function applyRegionExcludes(options: {
     (boundary) =>
       createRegionRootCandidate({
         descriptorPath: boundary.packageJsonPath,
-        kind: 'package-scope-boundary',
+        kind: 'package-scope',
         rootDir: boundary.rootDir,
       }),
   );
-  const workspaceBoundaryCandidates = options.pnpmWorkspaceBoundaries.map(
-    (boundary) =>
-      createRegionRootCandidate({
-        descriptorPath: boundary.workspaceYamlPath,
-        kind: 'pnpm-workspace-boundary',
-        rootDir: boundary.rootDir,
-      }),
-  );
-  const exclusionsByCandidateKey = new Map<string, RegionExcludeConfig>();
+  const exclusionsByCandidateKey = new Map<string, ResolvedRegionExclusion>();
 
   for (const candidate of [
     ...packageCandidates,
     ...extendedCandidates,
     ...packageBoundaryCandidates,
-    ...workspaceBoundaryCandidates,
   ]) {
-    const exclusion = findRegionRootExclusion({
+    const exclusion = resolveCandidateExclusion({
       candidate,
       config: options.config,
-      excludes,
+      rules: options.rules,
     });
 
     if (exclusion) {
@@ -639,20 +760,8 @@ function applyRegionExcludes(options: {
     }
   }
 
-  validateRegionExcludes({ config: options.config, excludes });
-
-  let boundaries: WorkspaceRegionBoundary[] = [
-    ...options.pnpmWorkspaceBoundaries.map((boundary, index) => {
-      const exclusion = exclusionsByCandidateKey.get(
-        workspaceBoundaryCandidates[index]?.key ?? '',
-      );
-
-      return {
-        ...boundary,
-        excluded: Boolean(exclusion),
-        ...(exclusion ? { exclusionReason: exclusion.reason.trim() } : {}),
-      };
-    }),
+  const boundaries: WorkspaceRegionBoundary[] = [
+    ...options.pnpmWorkspaceBoundaries,
     ...options.packageScopeBoundaries.map((boundary, index) => {
       const exclusion = exclusionsByCandidateKey.get(
         packageBoundaryCandidates[index]?.key ?? '',
@@ -663,8 +772,7 @@ function applyRegionExcludes(options: {
         excluded: Boolean(exclusion),
         ...(exclusion
           ? {
-              allowWorkspacePackageReentry: true,
-              exclusionReason: exclusion.reason.trim(),
+              exclusionReason: exclusion.reason,
             }
           : {}),
       };
@@ -682,17 +790,14 @@ function applyRegionExcludes(options: {
 
     boundaries.push({
       excluded: true,
-      exclusionReason: exclusion.reason.trim(),
+      exclusionReason: exclusion.reason,
       kind: 'package-scope',
       packageJsonPath: scope.packageJsonPath,
       rootDir: scope.rootDir,
     });
   }
 
-  for (const [
-    index,
-    workspacePackage,
-  ] of options.activeBasePackages.entries()) {
+  for (const [index, workspacePackage] of options.workspacePackages.entries()) {
     const exclusion = exclusionsByCandidateKey.get(
       packageCandidates[index]?.key ?? '',
     );
@@ -706,7 +811,7 @@ function applyRegionExcludes(options: {
         normalizeAbsolutePath(workspacePackage.directory) ===
         normalizeAbsolutePath(options.config.rootDir),
       excluded: true,
-      exclusionReason: exclusion.reason.trim(),
+      exclusionReason: exclusion.reason,
       kind: 'package-scope',
       packageJsonPath: normalizeAbsolutePath(
         path.join(workspacePackage.directory, 'package.json'),
@@ -716,83 +821,14 @@ function applyRegionExcludes(options: {
   }
 
   const configRootDir = normalizeAbsolutePath(options.config.rootDir);
-  const activeBasePackages = [...options.activeBasePackages].sort(
-    (left, right) =>
-      normalizeAbsolutePath(right.directory).length -
-      normalizeAbsolutePath(left.directory).length,
-  );
-  const directlyExcludedBoundaries = boundaries
-    .filter((boundary) => boundary.excluded)
-    .sort(
-      (left, right) =>
-        normalizeAbsolutePath(right.rootDir).length -
-        normalizeAbsolutePath(left.rootDir).length,
-    );
-
-  boundaries = boundaries.map((boundary) => {
-    if (boundary.excluded) {
-      return boundary;
-    }
-
-    const excludedAncestor = directlyExcludedBoundaries.find((candidate) => {
-      if (
-        normalizeAbsolutePath(candidate.rootDir) ===
-          normalizeAbsolutePath(boundary.rootDir) ||
-        !isPathInsideDirectory(boundary.rootDir, candidate.rootDir)
-      ) {
-        return false;
-      }
-
-      if (
-        candidate.kind !== 'package-scope' ||
-        !candidate.allowWorkspacePackageReentry
-      ) {
-        return true;
-      }
-
-      const ancestorBasePackage = findNearestWorkspacePackage(
-        candidate.rootDir,
-        activeBasePackages,
-      );
-      const boundaryBasePackage = findNearestWorkspacePackage(
-        boundary.rootDir,
-        activeBasePackages,
-      );
-
-      return (
-        ancestorBasePackage !== null &&
-        boundaryBasePackage !== null &&
-        normalizeAbsolutePath(ancestorBasePackage.directory) ===
-          normalizeAbsolutePath(boundaryBasePackage.directory)
-      );
-    });
-
-    if (!excludedAncestor) {
-      return boundary;
-    }
-
-    return {
-      ...boundary,
-      excluded: true,
-      ...(boundary.kind === 'package-scope' &&
-      excludedAncestor.kind === 'package-scope' &&
-      excludedAncestor.allowWorkspacePackageReentry
-        ? { allowWorkspacePackageReentry: true }
-        : {}),
-      ...(excludedAncestor.exclusionReason
-        ? { exclusionReason: excludedAncestor.exclusionReason }
-        : {}),
-    };
-  });
-
   const boundaryIndex = createWorkspaceRegionBoundaryIndex(boundaries);
-  const excludedPackageRoots = options.activeBasePackages.flatMap(
+  const excludedPackageRoots = options.workspacePackages.flatMap(
     (workspacePackage, index) =>
       exclusionsByCandidateKey.has(packageCandidates[index]?.key ?? '')
         ? [normalizeAbsolutePath(workspacePackage.directory)]
         : [],
   );
-  const packages = options.activeBasePackages.filter((workspacePackage) => {
+  const packages = options.workspacePackages.filter((workspacePackage) => {
     const packageDirectory = normalizeAbsolutePath(workspacePackage.directory);
 
     if (boundaryIndex.isInsideHardBoundary(packageDirectory)) {
@@ -817,6 +853,10 @@ function applyRegionExcludes(options: {
         toRelativePath(options.config.rootDir, right.rootDir),
       ),
     ),
+    extendedPackageScopes: options.extendedPackageScopes.filter(
+      (_scope, index) =>
+        !exclusionsByCandidateKey.has(extendedCandidates[index]?.key ?? ''),
+    ),
     packages,
   };
 }
@@ -828,16 +868,24 @@ export async function collectWorkspaceRegionTopology(
     rawPackages?: readonly WorkspacePackage[];
   },
 ): Promise<WorkspaceRegionTopology> {
-  const rawPackages = options.rawPackages
-    ? [...options.rawPackages]
-    : await options.provider(config);
+  const exclusionRules = compileRegionExclusionRules(config.regions?.exclude);
+
+  validateRootPnpmWorkspaceExclusion({
+    config,
+    rules: exclusionRules,
+  });
+
   const { outputIgnorePatterns, workspaceYamlPaths } =
     await collectNestedWorkspaceYamlPaths(config);
   const pnpmWorkspaceBoundaries = await collectPnpmWorkspaceBoundaries({
     config,
     provider: options.provider,
+    rules: exclusionRules,
     workspaceYamlPaths,
   });
+  const rawPackages = options.rawPackages
+    ? [...options.rawPackages]
+    : await options.provider(config);
   const hardBoundaryIndex = createWorkspaceRegionBoundaryIndex(
     pnpmWorkspaceBoundaries,
   );
@@ -856,17 +904,20 @@ export async function collectWorkspaceRegionTopology(
     outputIgnorePatterns,
     workspaceClaimDirectories,
   });
-  const excludedTopology = applyRegionExcludes({
-    activeBasePackages,
+  const excludedTopology = applyPackageRegionExclusions({
     config,
     extendedPackageScopes: packageScopeTopology.extendedPackageScopes,
     packageScopeBoundaries: packageScopeTopology.boundaries,
     pnpmWorkspaceBoundaries,
+    rules: exclusionRules,
+    workspacePackages: rawPackages,
   });
+
+  validateRegionExclusionRules({ config, rules: exclusionRules });
 
   return {
     boundaries: excludedTopology.boundaries,
-    extendedPackageScopes: packageScopeTopology.extendedPackageScopes,
+    extendedPackageScopes: excludedTopology.extendedPackageScopes,
     packages: excludedTopology.packages,
     rawPackages,
   };

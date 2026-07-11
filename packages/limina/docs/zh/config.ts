@@ -55,6 +55,10 @@ const sidebar: DefaultTheme.SidebarItem[] = [
         text: '工作流',
         link: '/zh/workflows',
       },
+      {
+        text: '故障排查',
+        link: '/zh/troubleshooting',
+      },
     ],
   },
   {

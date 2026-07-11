@@ -13,6 +13,7 @@ interface RegionsConfig {
 }
 
 interface RegionExcludeConfig {
+  kind: 'workspace-package' | 'package-scope' | 'pnpm-workspace';
   include: string[];
   reason: string;
 }
@@ -26,8 +27,9 @@ export default defineConfig({
     extendNestedPackageScopes: true,
     exclude: [
       {
-        include: ['packages/app/fixtures'],
-        reason: 'fixture 由独立的验证流程检查。',
+        kind: 'pnpm-workspace',
+        include: ['packages/app/fixtures/workspace-a'],
+        reason: '这个 fixture 工作区由独立流程验证。',
       },
     ],
   },
@@ -81,21 +83,20 @@ packages/app/vendor/pkg/              不属于当前区域
 - **类型：** `RegionExcludeConfig[]`
 - **默认值：** `[]`
 
-Limina 会先识别默认治理单元、可扩展的嵌套包作用域和已经停止的边界，再应用 `regions.exclude`。每个 `include` 使用工作区根目录相对的 `glob`，每条配置都必须带有非空 `reason`。
+每条规则都必须提供 `kind`、非空 `include` 数组和非空 `reason`。Limina 不会推断 `kind`，也不接受省略 `kind` 的旧写法。
 
-`exclude` 模式只能命中已识别的根：
+`include` 只匹配相对于工作区根目录的 candidate 根目录，不匹配包名、`package.json` 路径、`pnpm-workspace.yaml` 路径或任意普通文件。例如，清单位于 `packages/app/fixtures/workspace-a/pnpm-workspace.yaml` 时，应使用 `packages/app/fixtures/workspace-a`，也可以使用 `packages/**/fixtures/**` 这类根目录 glob；`**/pnpm-workspace.yaml` 不会命中。
 
-- 被激活的工作区包根目录；
-- 已扩展的嵌套包作用域根目录；
-- 未扩展的嵌套包作用域边界根目录；
-- 嵌套工作区根目录。
+三种 `kind` 各自只对应一种 candidate：
 
-它不能指向任意普通目录。每条 `exclude` 配置必须至少命中一个已识别根；完全没有命中时属于配置错误。如果多条配置命中同一个根，使用排在最前面的那条 `reason`。
+- `workspace-package` 选择根 `pnpm-workspace.yaml` 激活的工作区包。命中后，该包不再参与源码归属、依赖授权、检查器发现和生成图。如果工作区根目录本身也是被激活的包，可以用 `include: ['.']` 只排除根包；根工作区和其他已激活包不会因此被排除。
+- `package-scope` 选择嵌套 `package.json` 的根目录。它同时覆盖已扩展的包作用域和原本已经停止治理的包作用域。排除后，该根目录及其后代都位于当前运行之外。
+- `pnpm-workspace` 选择包含嵌套 `pnpm-workspace.yaml` 的目录。Limina 会在读取该清单和发现其中包之前应用排除；被排除目录仍然是硬边界。根 `pnpm-workspace.yaml` 定义当前治理起点，不能被排除。
 
-如果工作区根目录本身也是被激活的包，可以使用 `.` 或匹配根 `package.json` 的模式选中它。排除这个根包不会连带排除其他已激活的工作区包。
+规则只与同 `kind` 的 candidate 匹配。因此，同一个目录可以同时是 `workspace-package` 和 `pnpm-workspace` candidate，两种 identity 不会合并。
 
-排除一个治理单元，会让该根目录及其所有后代离开当前运行，包归属、依赖授权、检查器发现和源码分析都不会继续进入其中。排除一个原本就已停止的包或工作区边界，只是记录该边界为什么被有意留在当前运行之外，并不会让它变成可治理区域。
+发现完成后，每条规则都必须至少命中一个同 `kind` candidate。descriptor 路径、`node_modules`、`.git`、`.limina`、明确配置的输出目录等固定 discovery ignore，以及只属于其他 `kind` 的路径，都不能让规则通过匹配验证。同一个 candidate 也不能被多条规则命中；应让模式互不重叠，而不是依赖数组顺序。
 
-嵌套 `pnpm-workspace.yaml` 在任何情况下都是硬边界；`exclude` 不能把它代表的工作区合并进当前区域。
+没有被排除的嵌套工作区会接受严格检查。YAML 错误、pnpm 工作区或 catalog 配置错误、包清单读取失败、包发现失败或无法建立包 identity，都会终止当前运行。应修复嵌套工作区，或为它的根目录配置明确的 `pnpm-workspace` 排除规则。
 
 当前治理源码如果导入被排除或已经停止的区域，Limina 会按跨边界访问处理。诊断会指出边界根目录，并在可用时附上配置的原因。如果本意只是忽略少量文件、同时继续治理其所在的包，应改用源码或检查器的文件级排除配置。
