@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runBuildTargets } from '../typecheck/build-plan';
 import { disposeCheckerProcessHostForTesting } from '../typecheck/process-host';
@@ -84,7 +85,7 @@ describe('createDefaultRunner duration measurement', () => {
 
     const result = await runner({
       args: [],
-      command: 'limina-missing-command-xyz',
+      command: path.join(process.cwd(), 'limina-missing-command-xyz'),
       configPath: '/virtual/missing/tsconfig.json',
       cwd: process.cwd(),
       id: createCheckerTargetId(['test', 'missing']),

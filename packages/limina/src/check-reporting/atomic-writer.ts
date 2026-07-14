@@ -3,7 +3,10 @@ import { open, rename, rm } from 'node:fs/promises';
 import path from 'pathe';
 
 const RETRYABLE_REPLACE_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
-const REPLACE_RETRY_DELAYS_MS = [10, 25, 50, 100] as const;
+// Windows can temporarily deny replacement while readers, indexers, or
+// antivirus scanners still hold the destination. Keep retrying long enough
+// for those short-lived handles to drain without ever removing the old file.
+const REPLACE_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400, 800] as const;
 const TEMP_CREATE_ATTEMPTS = 8;
 
 type AtomicFileHandle = Pick<
