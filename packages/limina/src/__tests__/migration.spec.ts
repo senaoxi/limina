@@ -1,11 +1,14 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { execFile } from 'node:child_process';
 import {
+  link,
   mkdir,
   mkdtemp,
   readFile,
   realpath,
   rm,
+  stat,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -195,6 +198,102 @@ describe('runMigration', () => {
 
       await expect(runMigration(config)).rejects.toThrow(
         /found no tsconfig\.json entries to migrate/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('plans every transform before writing any target', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/a/src/index.ts': 'export const a = 1;\n',
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          outDir: './dist',
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/z/src/index.ts': 'export const z = 1;\n',
+      'packages/z/tsconfig.json': json({
+        compilerOptions: [],
+        include: ['src/**/*.ts'],
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        typescript: {
+          include: ['packages/*/tsconfig.json'],
+          preset: 'tsc',
+        },
+      },
+    });
+    const firstPath = path.join(fixture.rootDir, 'packages/a/tsconfig.json');
+    const secondPath = path.join(fixture.rootDir, 'packages/z/tsconfig.json');
+    const firstBefore = await readFile(firstPath, 'utf8');
+    const secondBefore = await readFile(secondPath, 'utf8');
+
+    try {
+      await commitFixture(fixture.rootDir);
+
+      await expect(runMigration(config)).rejects.toThrow(
+        /compilerOptions[\s\S]*must be an object/u,
+      );
+      await expect(readFile(firstPath, 'utf8')).resolves.toBe(firstBefore);
+      await expect(readFile(secondPath, 'utf8')).resolves.toBe(secondBefore);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reads and skips already-migrated symlink and hardlink configs', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'storage/tsconfig.json': json({
+        $schema: nestedPackageSchemaPath,
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+          },
+        },
+      }),
+    });
+    const sourcePath = path.join(fixture.rootDir, 'storage/tsconfig.json');
+    const symlinkPath = path.join(
+      fixture.rootDir,
+      'packages/symlink/tsconfig.json',
+    );
+    const hardlinkPath = path.join(
+      fixture.rootDir,
+      'packages/hardlink/tsconfig.json',
+    );
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        typescript: {
+          include: [
+            'packages/symlink/tsconfig.json',
+            'packages/hardlink/tsconfig.json',
+          ],
+          preset: 'tsc',
+        },
+      },
+    });
+
+    try {
+      await mkdir(path.dirname(symlinkPath), { recursive: true });
+      await mkdir(path.dirname(hardlinkPath), { recursive: true });
+      await symlink(sourcePath, symlinkPath);
+      await link(sourcePath, hardlinkPath);
+      await commitFixture(fixture.rootDir);
+      const beforeMtime = (await stat(sourcePath, { bigint: true })).mtimeNs;
+
+      const result = await runMigration(config);
+
+      expect(result.modifiedFiles).toEqual([]);
+      expect(result.skippedFiles).toEqual([hardlinkPath, symlinkPath]);
+      expect((await stat(sourcePath, { bigint: true })).mtimeNs).toBe(
+        beforeMtime,
       );
     } finally {
       await fixture.cleanup();

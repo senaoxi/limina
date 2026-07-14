@@ -30,7 +30,7 @@ export default defineConfig({
 });
 ```
 
-`include` and `exclude` match entry `tsconfig.json` files relative to the workspace root. Do not list `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, or generated configs under `.limina` directly in `checker.include`. These non-entry source configs enter Limina's managed scope only when they are reached through `references` from a selected `tsconfig.json` entry.
+Entry selection is region-scoped: Limina first limits discovery to activated workspace package regions, applies `include`, and then subtracts `exclude`. Paths below an excluded or inaccessible region are therefore outside `include` by construction and do not need a duplicate checker exclusion. Do not list `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, or generated configs under `.limina` directly in `checker.include`. These non-entry source configs enter Limina's managed scope only when they are reached through `references` from a selected `tsconfig.json` entry. References are not filtered by checker `exclude`; an existing ordinary source config reached outside the activated regions is reported as a cross-region reference.
 
 Checker presets have different capabilities:
 

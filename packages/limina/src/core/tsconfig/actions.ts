@@ -132,8 +132,9 @@ function readJsonConfigFile(
 export function readJsonConfig(
   config: ResolvedLiminaConfig,
   configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {
-  return readJsonConfigFile(config.rootDir, configPath);
+  return readJsonConfigFile(config.rootDir, configPath, virtualFiles);
 }
 
 export function resolveProjectConfigPath(

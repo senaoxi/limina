@@ -3,7 +3,7 @@
 `regions` defines which package scopes belong to the current Limina run. It is a structural boundary: it decides where package ownership, checker discovery, source analysis, generated graphs, and dependency authority apply.
 
 ::: warning
-`regions.exclude` does not replace `config.source.exclude` or checker-level `exclude`. Use those options to omit files from a known governed unit. Use `regions` only when an entire recognized package scope or workspace boundary must stay outside the current run.
+`regions.exclude` does not replace `config.source.exclude`. Checker-level `exclude` is still required for individual checker entries inside an activated region. Paths belonging to an excluded or inaccessible region are outside checker `include` discovery by construction, so do not duplicate those paths in checker `exclude`. Use `regions` when an entire recognized package scope or workspace boundary must stay outside the current run.
 :::
 
 ```ts
@@ -99,4 +99,4 @@ After discovery, every rule must have matched at least one candidate of its decl
 
 Nested workspaces that are not excluded are inspected strictly. Invalid YAML, invalid pnpm workspace or catalog configuration, unreadable package manifests, package-discovery failures, and missing package identity stop the run. Repair the nested workspace or add a deliberate `pnpm-workspace` exclusion for its root.
 
-Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Diagnostics identify the boundary root and include the configured reason when one is available. If the intent is only to omit selected files while keeping the containing package governed, use a file-level source or checker exclusion instead.
+Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. If the intent is only to omit selected files while keeping the containing package governed, use a file-level source exclusion or checker entry exclusion instead.

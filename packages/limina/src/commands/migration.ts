@@ -1,7 +1,6 @@
 import {
   getActiveCheckers,
   isAutoCheckerConfigMode,
-  type ResolvedCheckerConfig,
   type ResolvedLiminaConfig,
 } from '#config/runner';
 import {
@@ -11,23 +10,33 @@ import {
   type JsonObject,
   readJsonConfig,
 } from '#core/tsconfig/actions';
-import {
-  normalizeAbsolutePath,
-  toPosixPath,
-  toRelativePath,
-} from '#utils/path';
+import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import { createElapsedTimer } from 'logaria/helper';
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
-import { glob } from 'tinyglobby';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { isSolutionStyleTsconfig } from '../core/build-graph/generated/config-readers';
 import {
-  isDefaultSourceTsconfigPath,
-  isSolutionStyleTsconfig,
-} from '../core/build-graph/generated/config-readers';
+  createCheckerEntrySelectionOptions,
+  resolveCheckerEntrySelection,
+} from '../core/checkers/entry-selection';
+import { WorkspaceCore } from '../core/workspace';
+import {
+  createWorkspaceActivatedRegionIndex,
+  createWorkspaceRegionBoundaryIndex,
+  getWorkspaceRegionBoundaryExclusionReason,
+  type WorkspaceActivatedRegionIndex,
+  type WorkspaceRegionBoundary,
+  type WorkspaceRegionBoundaryIndex,
+} from '../core/workspace/regions';
 import type { LiminaFlowReporter } from '../flow';
 import { formatErrorMessage, MigrationLogger } from '../logger';
+import {
+  executeMigrationWritePlan,
+  type MigrationCleanupWarning,
+  type MigrationWritePlanItem,
+} from './migration-transaction';
 
 export interface RunMigrationOptions {
   flow?: LiminaFlowReporter;
@@ -44,7 +53,6 @@ export interface RunMigrationResult {
 
 interface MigrationEntry {
   configPath: string;
-  excludedConfigPaths: Set<string>;
 }
 
 interface MigrationEntryCollection {
@@ -60,6 +68,8 @@ interface MigrationTarget {
   configObject: JsonObject;
   configPath: string;
   isSolutionStyle: boolean;
+  originalBytes: Buffer;
+  originalContent: string;
 }
 
 interface MigrationTargetCollection {
@@ -70,14 +80,6 @@ interface MigrationTargetCollection {
 
 type CompilerOutputField = 'declarationMap' | 'outDir' | 'rootDir' | 'target';
 
-const sourceDiscoveryIgnore = [
-  '**/.git/**',
-  '**/.limina/**',
-  '**/.tsbuild/**',
-  '**/coverage/**',
-  '**/dist/**',
-  '**/node_modules/**',
-];
 const compilerOutputFields: CompilerOutputField[] = [
   'outDir',
   'rootDir',
@@ -93,10 +95,6 @@ const governedCompilerOptionFields = [
   'tsBuildInfoFile',
 ];
 
-function normalizeWorkspaceGlob(value: string): string {
-  return toPosixPath(value.trim());
-}
-
 function stringifyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -110,15 +108,6 @@ function isAutoCheckerMode(config: ResolvedLiminaConfig): boolean {
 
 function formatConfigPath(config: ResolvedLiminaConfig, configPath: string) {
   return toRelativePath(config.rootDir, configPath);
-}
-
-function formatConfigPaths(
-  config: ResolvedLiminaConfig,
-  configPaths: readonly string[],
-): string[] {
-  return configPaths.map(
-    (configPath) => `  - ${formatConfigPath(config, configPath)}`,
-  );
 }
 
 function runGitStatus(rootDir: string): Promise<string> {
@@ -192,83 +181,33 @@ async function assertCleanGitWorkspace(rootDir: string): Promise<void> {
   );
 }
 
-async function collectExcludedSourceConfigs(
-  config: ResolvedLiminaConfig,
-  exclude: readonly string[],
-): Promise<Set<string>> {
-  if (exclude.length === 0) {
-    return new Set();
-  }
-
-  const paths = await glob(exclude.map(normalizeWorkspaceGlob), {
-    absolute: true,
-    cwd: config.rootDir,
-    ignore: sourceDiscoveryIgnore,
-    onlyFiles: true,
-  });
-
-  return new Set(paths.map(normalizeAbsolutePath));
-}
-
-async function collectExplicitCheckerIncludes(
-  config: ResolvedLiminaConfig,
-  checker: ResolvedCheckerConfig,
-): Promise<string[]> {
-  const paths = await glob(checker.include.map(normalizeWorkspaceGlob), {
-    absolute: true,
-    cwd: config.rootDir,
-    ignore: sourceDiscoveryIgnore,
-    onlyFiles: true,
-  });
-  const includedPaths = paths.map(normalizeAbsolutePath).sort();
-  const invalidEntryPaths = includedPaths.filter(
-    (configPath) => !isDefaultSourceTsconfigPath(configPath),
-  );
-
-  if (invalidEntryPaths.length > 0) {
-    throw new Error(
-      [
-        'Checker include matched non-entry tsconfig files:',
-        `  checker: ${checker.name}`,
-        ...formatConfigPaths(config, invalidEntryPaths),
-        '  reason: limina migration only starts from user-side tsconfig.json entry files; non-standard tsconfig.*.json files are migrated only when referenced by a managed solution-style tsconfig.json.',
-      ].join('\n'),
-    );
-  }
-
-  return includedPaths;
-}
-
 async function collectAutoMigrationEntries(
   config: ResolvedLiminaConfig,
+  activatedRegions: WorkspaceActivatedRegionIndex,
+  regionBoundaries: readonly WorkspaceRegionBoundary[],
 ): Promise<MigrationEntryCollection> {
   const excludePatterns = isAutoCheckerConfigMode(config.config?.checkers)
     ? (config.config.checkers.exclude ?? [])
     : [];
-  const excludedConfigPaths = await collectExcludedSourceConfigs(
-    config,
-    excludePatterns,
+  const selection = await resolveCheckerEntrySelection(
+    {
+      activatedRegions,
+      config,
+      regionBoundaries,
+    },
+    {
+      checkerName: '__auto__',
+      exclude: excludePatterns,
+      include: ['**/tsconfig.json'],
+    },
   );
-  const paths = await glob('**/tsconfig.json', {
-    absolute: true,
-    cwd: config.rootDir,
-    ignore: sourceDiscoveryIgnore,
-    onlyFiles: true,
-  });
-  const candidates = paths
-    .map(normalizeAbsolutePath)
-    .filter(isDefaultSourceTsconfigPath)
-    .sort((left, right) => left.localeCompare(right));
-  const entries = candidates
-    .filter((configPath) => !excludedConfigPaths.has(configPath))
-    .map((configPath) => ({
-      configPath,
-      excludedConfigPaths,
-    }));
+  const entries = selection.effectiveEntryPaths.map((configPath) => ({
+    configPath,
+  }));
 
   return {
     activeCheckerCount: entries.length > 0 ? 1 : 0,
-    candidateEntryCount: candidates.length,
+    candidateEntryCount: selection.includedEntryPaths.length,
     entries,
     excludePatterns,
     includePatterns: ['**/tsconfig.json'],
@@ -278,6 +217,8 @@ async function collectAutoMigrationEntries(
 
 async function collectExplicitMigrationEntries(
   config: ResolvedLiminaConfig,
+  activatedRegions: WorkspaceActivatedRegionIndex,
+  regionBoundaries: readonly WorkspaceRegionBoundary[],
 ): Promise<MigrationEntryCollection> {
   const checkers = getActiveCheckers(config);
   const entries: MigrationEntry[] = [];
@@ -294,23 +235,19 @@ async function collectExplicitMigrationEntries(
       excludePatterns.add(exclude);
     }
 
-    const excludedConfigPaths = await collectExcludedSourceConfigs(
-      config,
-      checker.exclude,
+    const selection = await resolveCheckerEntrySelection(
+      {
+        activatedRegions,
+        config,
+        regionBoundaries,
+      },
+      createCheckerEntrySelectionOptions(checker),
     );
-    const includedPaths = await collectExplicitCheckerIncludes(config, checker);
 
-    candidateEntryCount += includedPaths.length;
+    candidateEntryCount += selection.includedEntryPaths.length;
 
-    for (const configPath of includedPaths) {
-      if (excludedConfigPaths.has(configPath)) {
-        continue;
-      }
-
-      entries.push({
-        configPath,
-        excludedConfigPaths,
-      });
+    for (const configPath of selection.effectiveEntryPaths) {
+      entries.push({ configPath });
     }
   }
 
@@ -326,10 +263,16 @@ async function collectExplicitMigrationEntries(
 
 async function collectMigrationEntries(
   config: ResolvedLiminaConfig,
+  activatedRegions: WorkspaceActivatedRegionIndex,
+  regionBoundaries: readonly WorkspaceRegionBoundary[],
 ): Promise<MigrationEntryCollection> {
   return isAutoCheckerMode(config)
-    ? collectAutoMigrationEntries(config)
-    : collectExplicitMigrationEntries(config);
+    ? collectAutoMigrationEntries(config, activatedRegions, regionBoundaries)
+    : collectExplicitMigrationEntries(
+        config,
+        activatedRegions,
+        regionBoundaries,
+      );
 }
 
 function formatPatternList(patterns: readonly string[]): string {
@@ -342,8 +285,8 @@ function createNoMigrationEntryError(
 ): Error {
   const modeReason =
     collection.mode === 'auto'
-      ? 'auto mode scans user-side **/tsconfig.json entries, then applies config.checkers.exclude.'
-      : 'explicit checker mode expands config.checkers.<name>.include, then applies each checker exclude.';
+      ? 'auto mode scans user-side **/tsconfig.json entries inside activated regions, then applies config.checkers.exclude.'
+      : 'explicit checker mode expands config.checkers.<name>.include inside activated regions, then applies each checker exclude.';
 
   return new Error(
     [
@@ -361,60 +304,121 @@ function createNoMigrationEntryError(
   );
 }
 
-function createExpansionKey(
-  configPath: string,
-  excludedConfigPaths: Set<string>,
-): string {
-  return [
-    configPath,
-    ...[...excludedConfigPaths].sort((left, right) =>
-      left.localeCompare(right),
-    ),
-  ].join('\0');
-}
-
-function readMigrationTarget(
+async function readMigrationTarget(
   config: ResolvedLiminaConfig,
   configPath: string,
-): MigrationTarget {
-  const configObject = readJsonConfig(config, configPath);
+  planningVirtualFiles: Map<string, string>,
+): Promise<MigrationTarget> {
+  const normalizedConfigPath = normalizeAbsolutePath(configPath);
+  let originalContent = planningVirtualFiles.get(normalizedConfigPath);
+  let originalBytes: Buffer;
+
+  if (originalContent === undefined) {
+    originalBytes = await readFile(normalizedConfigPath);
+    originalContent = originalBytes.toString('utf8');
+    planningVirtualFiles.set(normalizedConfigPath, originalContent);
+  } else {
+    originalBytes = Buffer.from(originalContent);
+  }
+
+  const configObject = readJsonConfig(
+    config,
+    normalizedConfigPath,
+    planningVirtualFiles,
+  );
 
   return {
     configObject,
-    configPath,
-    isSolutionStyle: isSolutionStyleTsconfig(configPath, configObject),
+    configPath: normalizedConfigPath,
+    isSolutionStyle: isSolutionStyleTsconfig(
+      normalizedConfigPath,
+      configObject,
+    ),
+    originalBytes,
+    originalContent,
   };
 }
 
 function collectReferenceTargets(options: {
+  activatedRegions: WorkspaceActivatedRegionIndex;
   config: ResolvedLiminaConfig;
-  excludedConfigPaths: Set<string>;
+  planningVirtualFiles: ReadonlyMap<string, string>;
+  regionBoundaries: WorkspaceRegionBoundaryIndex;
   sourceConfigPath: string;
 }): string[] {
   const referenceCollection = collectReferencePathInfosForConfig(
     options.config.rootDir,
     options.sourceConfigPath,
+    options.planningVirtualFiles,
   );
 
   if (referenceCollection.problems.length > 0) {
     throw new Error(referenceCollection.problems.join('\n\n'));
   }
 
-  return referenceCollection.references
-    .map((reference) => reference.resolvedPath)
-    .filter((referencePath) => {
-      return (
-        existsSync(referencePath) &&
-        isOrdinarySourceTypecheckConfigPath(referencePath) &&
-        !options.excludedConfigPaths.has(referencePath)
+  const referencePaths: string[] = [];
+
+  for (const reference of referenceCollection.references) {
+    const referencePath = reference.resolvedPath;
+
+    if (!existsSync(referencePath)) {
+      continue;
+    }
+
+    if (!isOrdinarySourceTypecheckConfigPath(referencePath)) {
+      continue;
+    }
+
+    if (!options.activatedRegions.isInsideActivatedRegion(referencePath)) {
+      const boundary =
+        options.regionBoundaries.findBoundaryForPath(referencePath);
+      const reason = boundary
+        ? getWorkspaceRegionBoundaryExclusionReason(boundary)
+        : null;
+
+      throw new Error(
+        [
+          'Referenced checker source config is outside activated workspace package regions:',
+          `  from config: ${formatConfigPath(options.config, options.sourceConfigPath)}`,
+          `  referenced config: ${formatConfigPath(options.config, referencePath)}`,
+          ...(boundary
+            ? [
+                `  boundary kind: ${boundary.kind}`,
+                `  boundary root: ${formatConfigPath(options.config, boundary.rootDir)}`,
+                ...(reason ? [`  boundary exclusion reason: ${reason}`] : []),
+                '  reason: the referenced config is outside the current activated workspace package region.',
+              ]
+            : [
+                '  reason: the referenced config is not owned by any current-run activated workspace package.',
+              ]),
+        ].join('\n'),
       );
-    });
+    }
+
+    referencePaths.push(referencePath);
+  }
+
+  return referencePaths;
 }
 
 async function collectMigrationTargets(
   config: ResolvedLiminaConfig,
 ): Promise<MigrationTargetCollection> {
-  const entryCollection = await collectMigrationEntries(config);
+  const topology = await new WorkspaceCore(config).getRegionTopology();
+  const activatedRegions = createWorkspaceActivatedRegionIndex({
+    boundaries: topology.boundaries,
+    packages: topology.packages,
+    rootDir: config.rootDir,
+  });
+  const regionBoundaries = createWorkspaceRegionBoundaryIndex(
+    topology.boundaries,
+    topology.packages,
+  );
+  const entryCollection = await collectMigrationEntries(
+    config,
+    activatedRegions,
+    topology.boundaries,
+  );
   const entries = entryCollection.entries;
 
   if (entries.length === 0) {
@@ -424,14 +428,20 @@ async function collectMigrationTargets(
   const entryConfigPaths = new Set(entries.map((entry) => entry.configPath));
   const queued = [...entries];
   const expandedSolutions = new Set<string>();
+  const queuedConfigPaths = new Set(entries.map((entry) => entry.configPath));
   const recursiveReferencePaths = new Set<string>();
   const targetsByPath = new Map<string, MigrationTarget>();
+  const planningVirtualFiles = new Map<string, string>();
 
   for (const entry of queued) {
     let target = targetsByPath.get(entry.configPath);
 
     if (!target) {
-      target = readMigrationTarget(config, entry.configPath);
+      target = await readMigrationTarget(
+        config,
+        entry.configPath,
+        planningVirtualFiles,
+      );
       targetsByPath.set(entry.configPath, target);
     }
 
@@ -439,30 +449,27 @@ async function collectMigrationTargets(
       continue;
     }
 
-    const expansionKey = createExpansionKey(
-      entry.configPath,
-      entry.excludedConfigPaths,
-    );
-
-    if (expandedSolutions.has(expansionKey)) {
+    if (expandedSolutions.has(entry.configPath)) {
       continue;
     }
 
-    expandedSolutions.add(expansionKey);
+    expandedSolutions.add(entry.configPath);
 
     for (const referencePath of collectReferenceTargets({
+      activatedRegions,
       config,
-      excludedConfigPaths: entry.excludedConfigPaths,
+      planningVirtualFiles,
+      regionBoundaries,
       sourceConfigPath: entry.configPath,
     })) {
       if (!entryConfigPaths.has(referencePath)) {
         recursiveReferencePaths.add(referencePath);
       }
 
-      queued.push({
-        configPath: referencePath,
-        excludedConfigPaths: entry.excludedConfigPaths,
-      });
+      if (!queuedConfigPaths.has(referencePath)) {
+        queuedConfigPaths.add(referencePath);
+        queued.push({ configPath: referencePath });
+      }
     }
   }
 
@@ -610,10 +617,10 @@ function migrateTsconfigObject(options: {
   };
 }
 
-async function writeMigratedTsconfig(options: {
+function createMigrationWritePlanItem(options: {
   config: ResolvedLiminaConfig;
   target: MigrationTarget;
-}): Promise<'modified' | 'skipped'> {
+}): MigrationWritePlanItem {
   const nextConfig = migrateTsconfigObject({
     configObject: options.target.configObject,
     configPath: options.target.configPath,
@@ -621,53 +628,60 @@ async function writeMigratedTsconfig(options: {
     rootDir: options.config.rootDir,
   });
   const nextContent = stringifyJson(nextConfig);
-  const currentContent = readFileSync(options.target.configPath, 'utf8');
 
-  if (currentContent === nextContent) {
-    return 'skipped';
-  }
+  return {
+    configPath: options.target.configPath,
+    nextContent,
+    originalBytes: options.target.originalBytes,
+    originalContent: options.target.originalContent,
+    status:
+      options.target.originalContent === nextContent ? 'skipped' : 'modified',
+  };
+}
 
-  await writeFile(options.target.configPath, nextContent);
-  return 'modified';
+interface RunMigrationImplResult {
+  cleanupWarnings: MigrationCleanupWarning[];
+  result: RunMigrationResult;
 }
 
 async function runMigrationImpl(
   config: ResolvedLiminaConfig,
-): Promise<RunMigrationResult> {
+): Promise<RunMigrationImplResult> {
   await assertCleanGitWorkspace(config.rootDir);
 
   const targetCollection = await collectMigrationTargets(config);
-  const modifiedFiles: string[] = [];
-  const skippedFiles: string[] = [];
-
-  for (const target of targetCollection.targets) {
-    const status = await writeMigratedTsconfig({
+  const writePlan = targetCollection.targets.map((target) =>
+    createMigrationWritePlanItem({
       config,
       target,
-    });
-
-    if (status === 'modified') {
-      modifiedFiles.push(target.configPath);
-    } else {
-      skippedFiles.push(target.configPath);
-    }
-  }
+    }),
+  );
+  const execution = await executeMigrationWritePlan(config.rootDir, writePlan);
 
   return {
-    checkerEntryCount: targetCollection.checkerEntryCount,
-    modifiedFiles,
-    recursiveReferenceCount: targetCollection.recursiveReferenceCount,
-    rootDir: config.rootDir,
-    skippedFiles,
+    cleanupWarnings: execution.cleanupWarnings,
+    result: {
+      checkerEntryCount: targetCollection.checkerEntryCount,
+      modifiedFiles: execution.modifiedFiles,
+      recursiveReferenceCount: targetCollection.recursiveReferenceCount,
+      rootDir: config.rootDir,
+      skippedFiles: execution.skippedFiles,
+    },
   };
 }
 
-function formatMigrationSummary(result: RunMigrationResult): string {
+function formatMigrationSummary(
+  result: RunMigrationResult,
+  cleanupWarningCount = 0,
+): string {
   return [
     `checker entries: ${result.checkerEntryCount}`,
     `recursive references: ${result.recursiveReferenceCount}`,
     `modified files: ${result.modifiedFiles.length}`,
     `skipped files: ${result.skippedFiles.length}`,
+    ...(cleanupWarningCount > 0
+      ? [`cleanup warnings: ${cleanupWarningCount}`]
+      : []),
   ].join(', ');
 }
 
@@ -684,8 +698,21 @@ export async function runMigration(
   MigrationLogger.info('migration started');
 
   try {
-    const result = await runMigrationImpl(config);
-    const summary = formatMigrationSummary(result);
+    const execution = await runMigrationImpl(config);
+    const result = execution.result;
+
+    for (const warning of execution.cleanupWarnings) {
+      const message = `${warning.message}\n  recovery path: ${warning.path}`;
+      MigrationLogger.warn(message);
+      options.flow?.warn(message, {
+        depth: options.flowDepth ?? 0,
+      });
+    }
+
+    const summary = formatMigrationSummary(
+      result,
+      execution.cleanupWarnings.length,
+    );
 
     MigrationLogger.success(`migration finished: ${summary}`, elapsed());
     task?.pass(summary);

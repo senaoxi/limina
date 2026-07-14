@@ -1,6 +1,6 @@
 # Checker Entries
 
-Checker entries tell Limina which source `tsconfig.json` files each checker should handle. When `config.checkers` is omitted, Limina uses `auto` mode: it discovers ordinary `tsconfig.json` files, chooses `tsc` or `vue-tsc` from the files each one contains, and sends `TypeScript` projects that depend on `Vue` projects to `vue-tsc` as well, so initial setup does not need hand-written routing.
+Checker entries tell Limina which source `tsconfig.json` files each checker should handle. Entry discovery is limited to activated [regions](./regions.md). When `config.checkers` is omitted, Limina uses `auto` mode: it discovers ordinary `tsconfig.json` files in those regions, chooses `tsc` or `vue-tsc` from the files each one contains, and sends `TypeScript` projects that depend on `Vue` projects to `vue-tsc` as well, so initial setup does not need hand-written routing.
 
 Use an explicit checker object when you need `tsgo`, check-only checkers, smaller `Vue` coverage, or more explicit `include` / `exclude` rules. Limina starts from those entries, follows `references` from aggregator configs, and writes the declaration graph, checker build entries, declaration output directories, `.tsbuildinfo` paths, and manifest under `.limina/`.
 
@@ -47,7 +47,7 @@ export default defineConfig({
 });
 ```
 
-`exclude` matches tsconfig paths relative to the workspace root. It is separate from `config.source.exclude`, which controls source coverage checks. Without `exclude`, `auto` mode scans every ordinary `tsconfig.json` it can discover and every ordinary source config reached through aggregator `references`.
+`exclude` filters entry paths inside activated regions. It is separate from `config.source.exclude`, which controls source coverage checks. After entry selection, Limina follows aggregator `references` independently of `exclude`; use `exclude` to remove an entry, not to hide a referenced source config.
 
 `auto` mode only chooses between `tsc` and `vue-tsc`. Switch to an explicit checker object when you need another preset or a tighter split.
 
@@ -99,7 +99,14 @@ Only built-in presets are accepted. Custom presets and custom `extensions` are r
 
 `include` is a non-empty list of workspace-root-relative selectors for source entry files named exactly `tsconfig.json`. It must not select `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, generated `.limina` files, base configs, check configs, or other reserved `tsconfig` files.
 
-During `graph prepare`, Limina expands `include` minus `exclude` to get the checker entry set. Each entry must belong to only one checker. From there, Limina follows `TypeScript references` on `solution-style tsconfig.json` files and brings the referenced source configs into the managed scope.
+During `graph prepare`, Limina uses this model:
+
+```text
+included entries = activated-region entries matching include
+effective entries = included entries minus exclude
+```
+
+An `include` match outside every activated workspace package, or below an excluded or inaccessible region boundary, is not an included entry. Each effective entry must belong to only one checker. From there, Limina follows `TypeScript references` on `solution-style tsconfig.json` files and brings existing ordinary source configs into the managed scope. A reference outside the activated regions is a cross-region error; `exclude` does not suppress that reference.
 
 Non-entry configs such as `tsconfig.lib.json`, `tsconfig.test.json`, or `tsconfig.tools.json` are therefore useful, but they are not selected directly by `checker.include`. They enter Limina's managed scope only when a selected `tsconfig.json` entry references them. A standalone base, build-only, or helper config that is not reachable from an entry is not treated as a source check target.
 
@@ -139,11 +146,23 @@ Read `reachable from` as the reachability map. It tells you which checker and wh
 - **Type:** `string[]`
 - **Default:** `[]`
 
-`exclude` removes entry selectors from `include`. Use it to keep entry ownership clear:
+`exclude` removes entry selectors from the included entry set. Use it for individual entries that are still inside an activated region:
 
 ```js
 exclude: ['**/docs/**', 'packages/playground/tsconfig.json'];
 ```
+
+The list keeps tinyglobby pattern-list semantics. An entry is excluded when it matches at least one positive pattern and no negative pattern. Negative patterns subtract from the excluded set globally; a negative-only list excludes nothing, and array order does not re-include a path.
+
+Leading `!` is classified as follows:
+
+- a pattern without a leading `!`, or an extglob beginning with `!(`, is positive;
+- a single leading `!` is removed to form a negative pattern; `!!(...)` is handled this way because the second `!` starts an extglob;
+- other double- or triple-bang forms such as `!!path` and `!!!path` are ignored.
+
+Patterns retain tinyglobby-compatible absolute and parent-relative normalization, directory expansion, trailing-slash, escaped metacharacter, dot-path, brace, extglob, globstar, and case behavior. Paths must still resolve to entries inside the workspace's activated regions.
+
+Do not repeat whole-region exclusions here. Paths in an excluded or inaccessible region are already outside `include` discovery by construction. Also do not use `exclude` to block `references`: once an effective entry is selected, Limina follows its valid references even when their paths match an exclude pattern.
 
 ## Generated Graph
 

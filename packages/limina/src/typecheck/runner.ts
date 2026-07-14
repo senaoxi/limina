@@ -9,7 +9,7 @@ import {
   type ResolvedCheckerConfig,
   type ResolvedLiminaConfig,
 } from '#config/runner';
-import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import type {
   GeneratedBuildModule,
   GeneratedOutputDeclarationCopyContext,
@@ -117,6 +117,8 @@ export interface RunBuildOptions {
   cwd?: string;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
+  generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
+  preflight?: LiminaPreflightManager;
   report?: CheckIssueReportOptions;
   checkerPackageResolver?: CheckerPackageResolver;
   project?: string;
@@ -977,6 +979,8 @@ interface ResolveBuildTargetOptions {
   configPath?: string;
   providers?: AnalysisProviderSet;
   cwd: string;
+  generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
+  preflight?: LiminaPreflightManager;
   project?: string;
   raw?: boolean;
 }
@@ -1139,9 +1143,12 @@ async function resolveBuildTarget(
     };
   }
 
-  const generatedGraph = await (
-    options.providers ?? createAnalysisProviders(options.config)
-  ).buildGraph.getGraph();
+  const generatedGraph = (
+    await resolvePreflight(
+      options.config,
+      options,
+    ).ensureGeneratedArtifactsMaterialized()
+  ).graph;
   const allCheckers = generatedGraph.checkers;
   const declarationTargets = isOrdinarySourceTypecheckConfigPath(
     targetConfigPath,
@@ -1640,6 +1647,8 @@ export async function runBuildImpl(
     configPath: options.configPath,
     providers: options.providers,
     cwd,
+    generatedGraphProvider: options.generatedGraphProvider,
+    preflight: options.preflight,
     project: options.project,
     raw: options.raw,
   });

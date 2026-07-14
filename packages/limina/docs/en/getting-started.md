@@ -95,7 +95,7 @@ export default defineConfig({
 });
 ```
 
-Writing `mode: 'auto'` explicitly makes the config state Limina's behavior directly: Limina will find source `tsconfig.json` files and send each one to `tsc` or `vue-tsc` based on its contents. If some `tsconfig.json` files should stay out of that scan for now, put them in `exclude`.
+Writing `mode: 'auto'` explicitly makes the config state Limina's behavior directly: Limina will find source `tsconfig.json` files inside activated workspace package regions and send each one to `tsc` or `vue-tsc` based on its contents. If individual entries inside those regions should stay out of that scan for now, put them in `exclude`. Entire excluded or inaccessible regions are already outside discovery and do not need duplicate exclude patterns.
 
 ```js
 import { defineConfig } from 'limina';
@@ -199,6 +199,6 @@ export default defineConfig({
 });
 ```
 
-Checker entries are always `tsconfig.json` files. If a package has `tsconfig.lib.json` or `tsconfig.test.json`, declare those project references through `references` from that package's `tsconfig.json`; Limina will follow the project references.
+Checker entries are always `tsconfig.json` files. If a package has `tsconfig.lib.json` or `tsconfig.test.json`, declare those project references through `references` from that package's `tsconfig.json`; Limina will follow the project references even when a referenced path matches checker `exclude`. Keep every referenced ordinary source config inside an activated region.
 
 Built-in presets are `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, and `svelte-check`. Install the matching package when you enable a checker; `tsgo` and `vue-tsgo` require `@typescript/native-preview`. Limina parses Vue SFC imports with its built-in heuristic rules by default. If you opt into `config.imports.vue: 'compiler-sfc'`, also install `@vue/compiler-sfc`.

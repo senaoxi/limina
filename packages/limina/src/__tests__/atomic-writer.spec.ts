@@ -9,13 +9,74 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { writeJsonAtomically } from '../check-reporting/atomic-writer';
+import {
+  replaceFileWithRetry,
+  ReplacementDriftError,
+  RetryableReplacementValidationIoError,
+  writeJsonAtomically,
+} from '../check-reporting/atomic-writer';
 
 function retryableError(code: 'EACCES' | 'EBUSY' | 'EPERM'): Error {
   return Object.assign(new Error(code), { code });
 }
 
 describe('atomic snapshot writer', () => {
+  it('shares one retry budget between validation and replacement failures', async () => {
+    const events: string[] = [];
+    let validationCount = 0;
+    let replaceCount = 0;
+
+    await replaceFileWithRetry('/tmp/source', '/tmp/target', {
+      beforeAttempt: async ({ attempt }) => {
+        events.push(`validate:${attempt}`);
+        validationCount += 1;
+
+        if (attempt === 1) {
+          throw new RetryableReplacementValidationIoError(
+            'EBUSY',
+            'target is temporarily busy',
+          );
+        }
+      },
+      replace: async () => {
+        events.push(`replace:${replaceCount}`);
+        replaceCount += 1;
+
+        if (replaceCount === 1) {
+          throw retryableError('EBUSY');
+        }
+      },
+      retryDelaysMs: [0, 0],
+    });
+
+    expect(validationCount).toBe(3);
+    expect(replaceCount).toBe(2);
+    expect(events).toEqual([
+      'validate:0',
+      'replace:0',
+      'validate:1',
+      'validate:2',
+      'replace:1',
+    ]);
+  });
+
+  it('does not retry terminal validation drift', async () => {
+    const validate = vi.fn(async () => {
+      throw new ReplacementDriftError('content changed');
+    });
+    const replace = vi.fn(async () => {});
+
+    await expect(
+      replaceFileWithRetry('/tmp/source', '/tmp/target', {
+        beforeAttempt: validate,
+        replace,
+        retryDelaysMs: [0, 0, 0],
+      }),
+    ).rejects.toThrow(/content changed/u);
+    expect(validate).toHaveBeenCalledOnce();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it('uses exclusive temp creation and retries filename collisions', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
     const targetPath = path.join(rootDir, 'snapshot.json');

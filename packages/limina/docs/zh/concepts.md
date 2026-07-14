@@ -30,7 +30,7 @@ export default defineConfig({
 });
 ```
 
-`include` 和 `exclude` 匹配的是工作区根目录下的入口 `tsconfig.json`。不要把 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json` 或 `.limina` 下的生成配置直接写进 `checker.include`。这些非入口源码配置只有在被已选中的 `tsconfig.json` 通过 `references` 触达时，才会进入 Limina 的检查范围。
+入口选择受治理区域约束：Limina 先把发现范围限制在已激活工作区包区域内，再应用 `include`，最后减去 `exclude`。因此，被排除或不可访问区域下的路径按定义已经不属于 `include`，不需要再写一份 checker exclusion。不要把 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json` 或 `.limina` 下的生成配置直接写进 `checker.include`。这些非入口源码配置只有在被已选中的 `tsconfig.json` 通过 `references` 触达时，才会进入 Limina 的检查范围。checker `exclude` 不会过滤 `references`；如果引用触达已激活区域之外的现有普通源码配置，Limina 会报告跨区域引用。
 
 检查器预设的能力不同：
 

@@ -1,6 +1,6 @@
 # 检查器入口
 
-检查器入口用来告诉 Limina：哪些源码 `tsconfig.json` 交给哪个检查器处理。如果没有配置 `config.checkers`，Limina 会使用 `auto` 模式：自动发现普通 `tsconfig.json`，根据里面的文件选择 `tsc` 或 `vue-tsc`，并把依赖 `Vue` 项目的 `TypeScript` 项目一起交给 `vue-tsc`，让首次接入不需要手写路由。
+检查器入口用来告诉 Limina：哪些源码 `tsconfig.json` 交给哪个检查器处理。入口发现只会发生在已激活的[治理区域](./regions.md)内。如果没有配置 `config.checkers`，Limina 会使用 `auto` 模式：在这些区域中自动发现普通 `tsconfig.json`，根据里面的文件选择 `tsc` 或 `vue-tsc`，并把依赖 `Vue` 项目的 `TypeScript` 项目一起交给 `vue-tsc`，让首次接入不需要手写路由。
 
 需要使用 `tsgo`、只做类型检查的检查器、更小的 `Vue` 覆盖范围，或更明确的 `include` / `exclude` 规则时，再改用显式检查器对象。Limina 会从这些入口出发，继续跟随聚合配置里的 `references`，并把构建所需的声明图、检查器入口、声明输出目录、`.tsbuildinfo` 和清单写到 `.limina/`。
 
@@ -47,7 +47,7 @@ export default defineConfig({
 });
 ```
 
-`exclude` 匹配的是相对工作区根目录的 `tsconfig` 路径。它和 `config.source.exclude` 分开，后者控制的是覆盖证明里的源码文件边界。没有写 `exclude` 时，`auto` 模式仍会扫描能发现的每个普通 `tsconfig.json`，以及聚合配置里的 `references` 触达的每个普通源码配置。
+`exclude` 过滤的是已激活区域内的入口路径。它和 `config.source.exclude` 分开，后者控制的是覆盖证明里的源码文件边界。入口选定后，Limina 会独立跟随聚合器的 `references`；`exclude` 只用来移除入口，不能用来隐藏被引用的源码配置。
 
 `auto` 模式只会在 `tsc` 和 `vue-tsc` 之间选择。需要其他预设或更细的拆分时，改用显式检查器对象。
 
@@ -99,7 +99,14 @@ export default defineConfig({
 
 `include` 是非空的、相对工作区根目录的选择器列表，只能选中文件名正好为 `tsconfig.json` 的源码入口。不要让它选中 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json`、`.limina` 里的生成文件、基础配置、检查配置或其他保留 `tsconfig`。
 
-`limina graph prepare` 会展开 `include` 减去 `exclude`，得到这个检查器的入口集合。每个入口只能属于一个检查器。之后 Limina 会跟随 `solution-style tsconfig.json` 上的 `TypeScript references`，把被引用到的源码配置也纳入治理。
+`limina graph prepare` 使用下面的模型：
+
+```text
+included entries = 已激活区域内匹配 include 的入口
+effective entries = included entries 减去 exclude
+```
+
+如果一个 `include` 匹配项不属于任何已激活工作区包，或者位于已排除、不可访问的区域边界之下，它就不会进入 included entries。每个 effective entry 只能属于一个检查器。之后 Limina 会跟随 `solution-style tsconfig.json` 上的 `TypeScript references`，把存在的普通源码配置纳入治理。引用越过已激活区域时会报告跨区域错误；`exclude` 不会屏蔽这条引用。
 
 因此，`tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.tools.json` 这类非入口配置依然有用，但不要直接写进 `checker.include`。它们只有在被某个已选中的 `tsconfig.json` 入口 `reference` 到时，才会进入 Limina 的检查范围。单独存在的基础配置、仅构建配置或工具辅助配置，如果没有从入口可达，Limina 不会把它当成源码检查目标。
 
@@ -139,11 +146,23 @@ Potentially incompatible build checker combination:
 - **类型：** `string[]`
 - **默认值：** `[]`
 
-`exclude` 从 `include` 结果里排除入口匹配项，用来让入口归属更清楚：
+`exclude` 从 included entries 中排除入口匹配项。它适合处理仍位于已激活区域内的个别入口：
 
 ```js
 exclude: ['**/docs/**', 'packages/playground/tsconfig.json'];
 ```
+
+模式列表保留 tinyglobby 的 pattern-list 语义：入口至少匹配一个 positive pattern，并且不匹配任何 negative pattern 时，才会被排除。negative pattern 会从整个 excluded set 中减去匹配项；只有 negative pattern 的列表不会排除任何入口，数组顺序也不会重新包含路径。
+
+前导 `!` 按以下规则分类：
+
+- 没有前导 `!` 的模式，以及以 `!(` 开头的 extglob，属于 positive pattern；
+- 单个前导 `!` 会被移除，剩余部分成为 negative pattern；`!!(...)` 也按这条规则处理，因为第二个 `!` 开始了 extglob；
+- `!!path`、`!!!path` 等其他双叹号或三叹号形式会被忽略。
+
+absolute、parent-relative、directory expansion、trailing slash、escaped metacharacter、dot path、brace、extglob、globstar 和大小写行为都保持 tinyglobby 兼容。最终路径仍必须落在工作区的已激活区域内。
+
+不要在这里重复整个区域的排除。被排除或不可访问区域中的路径按定义已经不参与 `include` 发现。也不要用 `exclude` 阻止 `references`：effective entry 选定后，即使引用路径匹配 exclude pattern，Limina 仍会继续跟随有效引用。
 
 ## 生成图
 

@@ -62,6 +62,12 @@ import {
   createArtifactPlan,
   type GeneratedArtifact,
 } from '../../domain/artifacts/plan';
+import {
+  type CheckerEntryDiscovery,
+  type CheckerEntrySelection,
+  createCheckerEntrySelectionOptions,
+  resolveCheckerEntrySelection,
+} from '../checkers/entry-selection';
 import { resolveDeclarationProvider } from '../import-graph/declaration-provider';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import {
@@ -71,7 +77,6 @@ import {
 import {
   collectWorkspaceRegionBoundaries,
   createWorkspaceActivatedRegionIndex,
-  createWorkspaceRegionBoundaryIgnorePatterns,
   createWorkspaceRegionBoundaryIndex,
   getWorkspaceRegionBoundaryExclusionReason,
   type WorkspaceActivatedRegionIndex,
@@ -88,7 +93,6 @@ import {
 import {
   addSourceReferenceConfigProblems,
   collectTypeRootCandidates,
-  isDefaultSourceTsconfigPath,
   isSolutionStyleTsconfig,
   type OutputOptions,
   readGraphRules,
@@ -119,30 +123,6 @@ import {
   addOverlappingCheckerEntryProblems,
   addUnsupportedSourceConfigExtensionProblems,
 } from './generated/validation';
-
-const sourceDiscoveryIgnore = [
-  '**/.git/**',
-  '**/.limina/**',
-  '**/.tsbuild/**',
-  '**/coverage/**',
-  '**/dist/**',
-  '**/node_modules/**',
-];
-
-function createSourceDiscoveryIgnore(options: {
-  config: ResolvedLiminaConfig;
-  packages?: readonly WorkspacePackage[];
-  regionBoundaries: readonly WorkspaceRegionBoundary[];
-}): string[] {
-  return [
-    ...sourceDiscoveryIgnore,
-    ...createWorkspaceRegionBoundaryIgnorePatterns(
-      options.config,
-      options.regionBoundaries,
-      options.packages,
-    ),
-  ];
-}
 
 interface GeneratedCheckerManifest {
   configToOutputBuild: Record<string, GeneratedBuildModuleManifest>;
@@ -226,6 +206,8 @@ export interface GeneratedTsconfigGraphResult {
 }
 
 export interface PrepareGeneratedTsconfigGraphOptions {
+  /** Test seam for proving checker entry discovery cardinality. */
+  checkerEntryDiscovery?: CheckerEntryDiscovery;
   importAnalysisContext?: ImportAnalysisContext;
   workspaceRegionBoundaries?: readonly WorkspaceRegionBoundary[];
   workspacePackagesProvider?: () => Promise<WorkspacePackage[]>;
@@ -286,6 +268,11 @@ interface PreparedCheckerGraph {
   solutions: SolutionProject[];
 }
 
+interface ResolvedCheckerEntrySelection {
+  checker: ResolvedCheckerConfig;
+  selection: CheckerEntrySelection;
+}
+
 interface CheckerOutputGraph {
   configToOutputBuild: Map<string, GeneratedBuildModule>;
   outputDeclarationCopies: Map<string, GeneratedOutputDeclarationCopyContext[]>;
@@ -333,10 +320,6 @@ interface AutoScope {
   collection: CheckerSourceConfigCollection;
   entryConfigPath: string;
   projects: AutoScopeProject[];
-}
-
-function normalizeWorkspaceGlob(value: string): string {
-  return toPosixPath(value.trim());
 }
 
 function stringifyJson(value: unknown): string {
@@ -763,24 +746,46 @@ function collectCheckerSourceConfigModules(options: {
   checkerName: string;
   collection: CheckerSourceConfigCollection;
   config: ResolvedLiminaConfig;
-  excludedConfigPaths: Set<string>;
   problems: string[];
+  referencedFromConfigPath?: string;
+  regionBoundaries: WorkspaceRegionBoundaryIndex;
   sourceConfigPath: string;
   seenConfigs: Set<string>;
 }): void {
-  if (options.excludedConfigPaths.has(options.sourceConfigPath)) {
-    return;
-  }
-
   if (
     !options.activatedRegions.isInsideActivatedRegion(options.sourceConfigPath)
   ) {
+    const boundary = options.regionBoundaries.findBoundaryForPath(
+      options.sourceConfigPath,
+    );
+    const reason = boundary
+      ? getWorkspaceRegionBoundaryExclusionReason(boundary)
+      : null;
+
     options.problems.push(
       [
-        'Checker source config is outside activated workspace package regions:',
+        options.referencedFromConfigPath
+          ? 'Referenced checker source config is outside activated workspace package regions:'
+          : 'Checker source config is outside activated workspace package regions:',
         `  checker: ${options.checkerName}`,
-        `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
-        '  reason: checker source configs must be selected from current-run workspace packages.',
+        ...(options.referencedFromConfigPath
+          ? [
+              `  from config: ${toRelativePath(options.config.rootDir, options.referencedFromConfigPath)}`,
+              `  referenced config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
+            ]
+          : [
+              `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
+            ]),
+        ...(boundary
+          ? [
+              `  boundary kind: ${boundary.kind}`,
+              `  boundary root: ${toRelativePath(options.config.rootDir, boundary.rootDir)}`,
+              ...(reason ? [`  boundary exclusion reason: ${reason}`] : []),
+              '  reason: the referenced config is outside the current activated workspace package region.',
+            ]
+          : [
+              '  reason: the referenced config is not owned by any current-run activated workspace package.',
+            ]),
       ].join('\n'),
     );
     return;
@@ -860,8 +865,9 @@ function collectCheckerSourceConfigModules(options: {
         checkerName: options.checkerName,
         collection: options.collection,
         config: options.config,
-        excludedConfigPaths: options.excludedConfigPaths,
         problems: options.problems,
+        referencedFromConfigPath: options.sourceConfigPath,
+        regionBoundaries: options.regionBoundaries,
         sourceConfigPath: referencePath,
         seenConfigs: options.seenConfigs,
       });
@@ -930,85 +936,20 @@ function createGeneratedCompilerOptionOverrides(
   return output;
 }
 
-async function collectCheckerExcludedSourceConfigs(
-  config: ResolvedLiminaConfig,
-  exclude: string[],
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
-  packages: readonly WorkspacePackage[],
-  ignoreRegionBoundaries: boolean,
-): Promise<Set<string>> {
-  if (exclude.length === 0) {
-    return new Set();
-  }
-
-  const paths = await glob(exclude.map(normalizeWorkspaceGlob), {
-    absolute: true,
-    cwd: config.rootDir,
-    ignore: ignoreRegionBoundaries
-      ? createSourceDiscoveryIgnore({
-          config,
-          packages,
-          regionBoundaries,
-        })
-      : sourceDiscoveryIgnore,
-    onlyFiles: true,
-  });
-
-  return new Set(paths.map(normalizeAbsolutePath));
-}
-
-async function collectCheckerSourceConfigs(
+function collectCheckerSourceConfigs(
   config: ResolvedLiminaConfig,
   checkerName: string,
-  include: string[],
-  exclude: string[],
+  entryConfigPaths: readonly string[],
   activatedRegions: WorkspaceActivatedRegionIndex,
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
-): Promise<CheckerSourceConfigCollection> {
-  const includedPaths = await glob(include.map(normalizeWorkspaceGlob), {
-    absolute: true,
-    cwd: config.rootDir,
-    ignore: sourceDiscoveryIgnore,
-    onlyFiles: true,
-  });
-  const includedSourcePaths = includedPaths.map(normalizeAbsolutePath).sort();
-  const invalidEntryPaths = includedSourcePaths.filter(
-    (sourcePath) => !isDefaultSourceTsconfigPath(sourcePath),
-  );
-
-  if (invalidEntryPaths.length > 0) {
-    throw new Error(
-      [
-        'Checker include matched non-entry tsconfig files:',
-        `  checker: ${checkerName}`,
-        ...invalidEntryPaths.map(
-          (sourcePath) => `  - ${toRelativePath(config.rootDir, sourcePath)}`,
-        ),
-        '  reason: checker.include may only match tsconfig.json entry files; non-standard tsconfig.*.json files become Limina-managed only when referenced from a managed tsconfig.json entry.',
-      ].join('\n'),
-    );
-  }
-
+  regionBoundaries: WorkspaceRegionBoundaryIndex,
+): CheckerSourceConfigCollection {
   const problems: string[] = [];
-  const excludedConfigPaths = await collectCheckerExcludedSourceConfigs(
-    config,
-    exclude,
-    regionBoundaries,
-    activatedRegions.packages,
-    false,
-  );
-  const sourcePaths = includedSourcePaths.filter(
-    (sourcePath) => !excludedConfigPaths.has(sourcePath),
-  );
-  const outOfActivatedSourcePaths = sourcePaths.filter(
-    (sourcePath) => !activatedRegions.isInsideActivatedRegion(sourcePath),
-  );
-  const activatedSourcePaths = sourcePaths.filter((sourcePath) =>
-    activatedRegions.isInsideActivatedRegion(sourcePath),
+  const normalizedEntryConfigPaths = uniqueSortedStrings(
+    entryConfigPaths.map(normalizeAbsolutePath),
   );
   const collection: CheckerSourceConfigCollection = {
     buildModulesBySourcePath: new Map(),
-    entryConfigPaths: new Set(activatedSourcePaths),
+    entryConfigPaths: new Set(normalizedEntryConfigPaths),
     projectConfigPaths: new Set(),
     rootConfigPaths: [],
     solutionConfigPaths: new Set(),
@@ -1016,25 +957,14 @@ async function collectCheckerSourceConfigs(
   };
   const seenConfigs = new Set<string>();
 
-  for (const sourcePath of outOfActivatedSourcePaths) {
-    problems.push(
-      [
-        'Checker include matched source config outside activated workspace package regions:',
-        `  checker: ${checkerName}`,
-        `  config: ${toRelativePath(config.rootDir, sourcePath)}`,
-        '  reason: checker.include may only govern source configs from current-run workspace packages.',
-      ].join('\n'),
-    );
-  }
-
-  for (const sourcePath of activatedSourcePaths) {
+  for (const sourcePath of normalizedEntryConfigPaths) {
     collectCheckerSourceConfigModules({
       activatedRegions,
       checkerName,
       collection,
       config,
-      excludedConfigPaths,
       problems,
+      regionBoundaries,
       sourceConfigPath: sourcePath,
       seenConfigs,
     });
@@ -1049,7 +979,7 @@ async function collectCheckerSourceConfigs(
   }
 
   collection.rootConfigPaths = uniqueSortedStrings(
-    activatedSourcePaths.filter((sourcePath) =>
+    normalizedEntryConfigPaths.filter((sourcePath) =>
       collection.buildModulesBySourcePath.has(sourcePath),
     ),
   );
@@ -1094,33 +1024,6 @@ function createResolvedChecker(options: {
   };
 }
 
-async function collectAutoEntryConfigPaths(
-  config: ResolvedLiminaConfig,
-  activatedRegions: WorkspaceActivatedRegionIndex,
-  excludedConfigPaths: Set<string>,
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
-): Promise<string[]> {
-  const paths = await glob('**/tsconfig.json', {
-    absolute: true,
-    cwd: config.rootDir,
-    ignore: createSourceDiscoveryIgnore({
-      config,
-      packages: activatedRegions.packages,
-      regionBoundaries,
-    }),
-    onlyFiles: true,
-  });
-
-  return paths
-    .map(normalizeAbsolutePath)
-    .filter((configPath) =>
-      activatedRegions.isInsideActivatedRegion(configPath),
-    )
-    .filter(isDefaultSourceTsconfigPath)
-    .filter((configPath) => !excludedConfigPaths.has(configPath))
-    .sort((left, right) => left.localeCompare(right));
-}
-
 function createAutoScopeProject(
   config: ResolvedLiminaConfig,
   configPath: string,
@@ -1147,7 +1050,7 @@ function collectAutoScope(
   config: ResolvedLiminaConfig,
   activatedRegions: WorkspaceActivatedRegionIndex,
   entryConfigPath: string,
-  excludedConfigPaths: Set<string>,
+  regionBoundaries: WorkspaceRegionBoundaryIndex,
 ): AutoScope | null {
   const collection: CheckerSourceConfigCollection = {
     buildModulesBySourcePath: new Map(),
@@ -1164,8 +1067,8 @@ function collectAutoScope(
     checkerName: '__auto__',
     collection,
     config,
-    excludedConfigPaths,
     problems,
+    regionBoundaries,
     sourceConfigPath: entryConfigPath,
     seenConfigs: new Set(),
   });
@@ -1410,36 +1313,41 @@ function promoteAutoScopes(
   }
 }
 
-async function resolveAutoCheckers(
+async function resolveAutoCheckerSelections(
   config: ResolvedLiminaConfig,
   activatedRegions: WorkspaceActivatedRegionIndex,
   regionBoundaries: readonly WorkspaceRegionBoundary[],
   options: Pick<
     PrepareGeneratedTsconfigGraphOptions,
-    'importAnalysisContext'
+    'checkerEntryDiscovery' | 'importAnalysisContext'
   > = {},
-): Promise<ResolvedCheckerConfig[]> {
+): Promise<ResolvedCheckerEntrySelection[]> {
   const autoExclude = getAutoCheckerExclude(config);
-  const excludedConfigPaths = await collectCheckerExcludedSourceConfigs(
-    config,
-    autoExclude,
+  const autoSelection = await resolveCheckerEntrySelection(
+    {
+      activatedRegions,
+      config,
+      discover: options.checkerEntryDiscovery,
+      regionBoundaries,
+    },
+    {
+      checkerName: '__auto__',
+      exclude: autoExclude,
+      include: ['**/tsconfig.json'],
+    },
+  );
+  const regionBoundaryIndex = createWorkspaceRegionBoundaryIndex(
     regionBoundaries,
     activatedRegions.packages,
-    true,
   );
-  const entryConfigPaths = await collectAutoEntryConfigPaths(
-    config,
-    activatedRegions,
-    excludedConfigPaths,
-    regionBoundaries,
-  );
+  const entryConfigPaths = autoSelection.effectiveEntryPaths;
   const scopes = entryConfigPaths
     .map((entryConfigPath) =>
       collectAutoScope(
         config,
         activatedRegions,
         entryConfigPath,
-        excludedConfigPaths,
+        regionBoundaryIndex,
       ),
     )
     .filter((scope): scope is AutoScope => Boolean(scope));
@@ -1460,54 +1368,63 @@ async function resolveAutoCheckers(
   for (const [entryConfigPath, preset] of kindsByEntry) {
     entriesByPreset.set(preset, [
       ...(entriesByPreset.get(preset) ?? []),
-      toPosixPath(toRelativePath(config.rootDir, entryConfigPath)),
+      entryConfigPath,
     ]);
   }
 
-  const checkers: ResolvedCheckerConfig[] = [];
+  const selections: ResolvedCheckerEntrySelection[] = [];
   const typescriptEntries = entriesByPreset.get('tsc')?.sort() ?? [];
   const vueEntries = entriesByPreset.get('vue-tsc')?.sort() ?? [];
 
   if (typescriptEntries.length > 0) {
-    checkers.push(
-      createResolvedChecker({
+    selections.push({
+      checker: createResolvedChecker({
         exclude: autoExclude,
-        include: typescriptEntries,
+        include: typescriptEntries.map((entryConfigPath) =>
+          toPosixPath(toRelativePath(config.rootDir, entryConfigPath)),
+        ),
         name: 'typescript',
         preset: 'tsc',
         rootDir: config.rootDir,
       }),
-    );
+      selection: {
+        effectiveEntryPaths: typescriptEntries,
+        includedEntryPaths: typescriptEntries,
+      },
+    });
   }
 
   if (vueEntries.length > 0) {
-    checkers.push(
-      createResolvedChecker({
+    selections.push({
+      checker: createResolvedChecker({
         exclude: autoExclude,
-        include: vueEntries,
+        include: vueEntries.map((entryConfigPath) =>
+          toPosixPath(toRelativePath(config.rootDir, entryConfigPath)),
+        ),
         name: 'vue',
         preset: 'vue-tsc',
         rootDir: config.rootDir,
       }),
-    );
+      selection: {
+        effectiveEntryPaths: vueEntries,
+        includedEntryPaths: vueEntries,
+      },
+    });
   }
 
-  return checkers;
+  return selections;
 }
 
-export async function resolveGeneratedGraphCheckers(
+async function resolveGeneratedGraphCheckerSelections(
   config: ResolvedLiminaConfig,
   options: Pick<
     PrepareGeneratedTsconfigGraphOptions,
     | 'importAnalysisContext'
+    | 'checkerEntryDiscovery'
     | 'workspacePackagesProvider'
     | 'workspaceRegionBoundaries'
   > & { workspacePackages?: readonly WorkspacePackage[] } = {},
-): Promise<ResolvedCheckerConfig[]> {
-  if (!isAutoCheckerMode(config)) {
-    return getActiveCheckers(config);
-  }
-
+): Promise<ResolvedCheckerEntrySelection[]> {
   const regionBoundaries =
     options.workspaceRegionBoundaries ??
     (await collectWorkspaceRegionBoundaries(
@@ -1525,11 +1442,42 @@ export async function resolveGeneratedGraphCheckers(
     rootDir: config.rootDir,
   });
 
-  return resolveAutoCheckers(
-    config,
-    activatedRegions,
-    regionBoundaries,
-    options,
+  if (isAutoCheckerMode(config)) {
+    return resolveAutoCheckerSelections(
+      config,
+      activatedRegions,
+      regionBoundaries,
+      options,
+    );
+  }
+
+  return Promise.all(
+    getActiveCheckers(config).map(async (checker) => ({
+      checker,
+      selection: await resolveCheckerEntrySelection(
+        {
+          activatedRegions,
+          config,
+          discover: options.checkerEntryDiscovery,
+          regionBoundaries,
+        },
+        createCheckerEntrySelectionOptions(checker),
+      ),
+    })),
+  );
+}
+
+export async function resolveGeneratedGraphCheckers(
+  config: ResolvedLiminaConfig,
+  options: Pick<
+    PrepareGeneratedTsconfigGraphOptions,
+    | 'importAnalysisContext'
+    | 'workspacePackagesProvider'
+    | 'workspaceRegionBoundaries'
+  > & { workspacePackages?: readonly WorkspacePackage[] } = {},
+): Promise<ResolvedCheckerConfig[]> {
+  return (await resolveGeneratedGraphCheckerSelections(config, options)).map(
+    ({ checker }) => checker,
   );
 }
 
@@ -3367,11 +3315,15 @@ export async function prepareGeneratedTsconfigGraph(
     regionBoundaries,
     workspacePackages,
   );
-  const checkers = await resolveGeneratedGraphCheckers(config, {
-    ...options,
-    workspacePackages,
-    workspaceRegionBoundaries: regionBoundaries,
-  });
+  const checkerSelections = await resolveGeneratedGraphCheckerSelections(
+    config,
+    {
+      ...options,
+      workspacePackages,
+      workspaceRegionBoundaries: regionBoundaries,
+    },
+  );
+  const checkers = checkerSelections.map(({ checker }) => checker);
   const checkerCollectionsByName = new Map<
     string,
     CheckerSourceConfigCollection
@@ -3405,55 +3357,56 @@ export async function prepareGeneratedTsconfigGraph(
   const problems: string[] = [];
 
   const preparedCheckers = await Promise.all(
-    checkers.map(async (checker): Promise<PreparedCheckerGraph> => {
-      const collection = await collectCheckerSourceConfigs(
-        config,
-        checker.name,
-        checker.include,
-        checker.exclude,
-        activatedRegions,
-        regionBoundaries,
-      );
-      const projects = [...collection.projectConfigPaths]
-        .sort()
-        .map((sourceConfigPath) =>
-          createSourceProject({
-            checkerName: checker.name,
-            checkerPreset: checker.preset,
-            config,
-            sourceConfigPath,
-          }),
+    checkerSelections.map(
+      async ({ checker, selection }): Promise<PreparedCheckerGraph> => {
+        const collection = collectCheckerSourceConfigs(
+          config,
+          checker.name,
+          selection.effectiveEntryPaths,
+          activatedRegions,
+          regionBoundaryIndex,
         );
-      const solutions = [...collection.solutionConfigPaths]
-        .sort()
-        .map((sourceConfigPath) =>
-          createSolutionProject({
+        const projects = [...collection.projectConfigPaths]
+          .sort()
+          .map((sourceConfigPath) =>
+            createSourceProject({
+              checkerName: checker.name,
+              checkerPreset: checker.preset,
+              config,
+              sourceConfigPath,
+            }),
+          );
+        const solutions = [...collection.solutionConfigPaths]
+          .sort()
+          .map((sourceConfigPath) =>
+            createSolutionProject({
+              checkerName: checker.name,
+              collection,
+              config,
+              sourceConfigPath,
+            }),
+          );
+
+        const rootBuildPaths = collection.rootConfigPaths
+          .map(
+            (sourceConfigPath) =>
+              collection.buildModulesBySourcePath.get(sourceConfigPath)?.path,
+          )
+          .filter((buildPath): buildPath is string => Boolean(buildPath));
+
+        return {
+          checker,
+          collection,
+          entryPath: getGeneratedCheckerEntryPath({
             checkerName: checker.name,
-            collection,
-            config,
-            sourceConfigPath,
+            rootDir: config.rootDir,
           }),
-        );
-
-      const rootBuildPaths = collection.rootConfigPaths
-        .map(
-          (sourceConfigPath) =>
-            collection.buildModulesBySourcePath.get(sourceConfigPath)?.path,
-        )
-        .filter((buildPath): buildPath is string => Boolean(buildPath));
-
-      return {
-        checker,
-        collection,
-        entryPath: getGeneratedCheckerEntryPath({
-          checkerName: checker.name,
-          rootDir: config.rootDir,
-        }),
-        projects,
-        rootBuildPaths,
-        solutions,
-      };
-    }),
+          projects,
+          rootBuildPaths,
+          solutions,
+        };
+      },
+    ),
   );
 
   for (const preparedChecker of preparedCheckers) {
