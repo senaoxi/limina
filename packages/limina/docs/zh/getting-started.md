@@ -95,7 +95,7 @@ export default defineConfig({
 });
 ```
 
-这里显式写出 `mode: 'auto'`，是为了让配置直接表达 Limina 的行为：自动寻找源码用的 `tsconfig.json`，再按文件内容交给 `tsc` 或 `vue-tsc`。如果某些 `tsconfig.json` 暂时不想交给 Limina，可以写到 `exclude` 中。
+这里显式写出 `mode: 'auto'`，是为了让配置直接表达 Limina 的行为：在已激活工作区包区域内自动寻找源码用的 `tsconfig.json`，再按文件内容交给 `tsc` 或 `vue-tsc`。如果这些区域内的个别入口暂时不想交给 Limina，可以写到 `exclude` 中。整个被排除或不可访问的区域本来就不参与发现，不需要再重复写 exclude pattern。
 
 ```js
 import { defineConfig } from 'limina';
@@ -199,6 +199,6 @@ export default defineConfig({
 });
 ```
 
-检查器入口始终是 `tsconfig.json`。如果包里还有 `tsconfig.lib.json` 或 `tsconfig.test.json`，应由这个包的 `tsconfig.json` 通过 `references` 配置声明项目引用；Limina 会继续跟随这些项目引用。
+检查器入口始终是 `tsconfig.json`。如果包里还有 `tsconfig.lib.json` 或 `tsconfig.test.json`，应由这个包的 `tsconfig.json` 通过 `references` 配置声明项目引用；即使引用路径匹配 checker `exclude`，Limina 仍会继续跟随这些项目引用。所有被引用的普通源码配置都应位于已激活区域内。
 
 内置预设包括 `tsc`、`tsgo`、`vue-tsc`、`vue-tsgo`、`svelte-check`。启用某个检查器时，请安装对应包；`tsgo` 和 `vue-tsgo` 需要 `@typescript/native-preview`。Limina 默认用内置启发式规则解析 `Vue SFC` 的导入；只有显式启用 `config.imports.vue: 'compiler-sfc'` 时，才需要再安装 `@vue/compiler-sfc`。

@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { resolveGeneratedGraphCheckers } from '#core/build-graph/runner';
 import { parseProject } from '#core/import-graph/context';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
@@ -13,8 +14,10 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { glob } from 'tinyglobby';
+import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import type { CheckerEntryDiscovery } from '../core/checkers/entry-selection';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { toPortablePath } from './helpers/path';
 
@@ -125,7 +128,7 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
-  it('rejects explicit checker entries inside excluded exact-overlap packages', async () => {
+  it('does not select explicit checker entries inside excluded exact-overlap packages', async () => {
     const fixture = await createFixture({
       'packages/app/package.json': json({
         name: '@example/app',
@@ -178,11 +181,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         ],
       };
 
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toThrow(
-        /Checker include matched source config outside activated workspace package regions[\s\S]*packages\/app\/tsconfig\.json/u,
-      );
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(result.manifest.checkers.typescript?.roots).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
@@ -226,7 +226,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('reports explicit checker includes that select nested region tsconfigs', async () => {
+  it('does not let explicit checker discovery select nested region tsconfigs', async () => {
     const fixture = await createFixture({
       'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
       'packages/a/fixture/src/index.ts': 'export const nested = 1;\n',
@@ -254,30 +254,29 @@ describe('prepareGeneratedTsconfigGraph', () => {
     });
 
     try {
-      await expect(
-        prepareGeneratedTsconfigGraph({
-          ...fixture.config,
-          config: {
-            checkers: {
-              typescript: {
-                include: ['**/tsconfig.json'],
-                preset: 'tsc',
-              },
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            typescript: {
+              include: ['**/tsconfig.json'],
+              preset: 'tsc',
             },
           },
-          regions: {
-            exclude: [
-              {
-                include: ['packages/a/fixture/**'],
-                kind: 'pnpm-workspace',
-                reason: 'Fixture workspace.',
-              },
-            ],
-          },
-        }),
-      ).rejects.toThrow(
-        /Checker include matched source config outside activated workspace package regions[\s\S]*packages\/a\/fixture\/tsconfig\.json/u,
-      );
+        },
+        regions: {
+          exclude: [
+            {
+              include: ['packages/a/fixture/**'],
+              kind: 'pnpm-workspace',
+              reason: 'Fixture workspace.',
+            },
+          ],
+        },
+      });
+      expect(result.manifest.checkers.typescript?.roots).toEqual([
+        'packages/a/tsconfig.json',
+      ]);
     } finally {
       await fixture.cleanup();
     }
@@ -334,6 +333,118 @@ describe('prepareGeneratedTsconfigGraph', () => {
       ]);
       expect(JSON.stringify(result.manifest)).not.toContain(
         'packages/a/fixture',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('resolves region-scoped auto checkers directly for checker-help discovery', async () => {
+    const fixture = await createFixture({
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/a/fixture/src/index.ts': 'export const nested = 1;\n',
+      'packages/a/fixture/tsconfig.json': json({
+        include: ['src/**/*.ts'],
+      }),
+      'packages/a/src/index.ts': 'export const value = 1;\n',
+      'packages/a/tsconfig.json': json({
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const checkers = await resolveGeneratedGraphCheckers({
+        ...fixture.config,
+        config: {},
+      });
+      expect(checkers).toMatchObject([
+        {
+          include: ['packages/a/tsconfig.json'],
+          name: 'typescript',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not rediscover checker entries during graph collection', async () => {
+    const fixture = await createFixture({
+      'packages/a/src/index.ts': 'export const value = 1;\n',
+      'packages/a/tsconfig.json': json({
+        include: ['src/**/*.ts'],
+      }),
+    });
+    const discover = vi.fn<CheckerEntryDiscovery>(async (patterns, options) =>
+      glob(patterns as string[], options),
+    );
+
+    try {
+      await prepareGeneratedTsconfigGraph(fixture.config, {
+        checkerEntryDiscovery: discover,
+      });
+      expect(discover).toHaveBeenCalledOnce();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports cross-region references with boundary details', async () => {
+    const fixture = await createFixture({
+      'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/a/fixture/tsconfig.lib.json': json({
+        include: ['src/**/*.ts'],
+      }),
+      'packages/a/tsconfig.json': json({
+        files: [],
+        references: [{ path: './fixture/tsconfig.lib.json' }],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(
+        /Referenced checker source config is outside activated workspace package regions:[\s\S]*boundary kind: pnpm-workspace[\s\S]*packages\/a\/fixture/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports cross-region references with no matching boundary', async () => {
+    const fixture = await createFixture({
+      'outside/src/index.ts': 'export const outside = 1;\n',
+      'outside/tsconfig.lib.json': json({
+        include: ['src/**/*.ts'],
+      }),
+      'packages/a/package.json': json({
+        name: '@example/a',
+        private: true,
+      }),
+      'packages/a/tsconfig.json': json({
+        files: [],
+        references: [{ path: '../../outside/tsconfig.lib.json' }],
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config, {
+          workspacePackagesProvider: async () => [
+            {
+              directory: path.join(fixture.rootDir, 'packages/a'),
+              manifest: {
+                name: '@example/a',
+                private: true,
+              },
+              name: '@example/a',
+            },
+          ],
+          workspaceRegionBoundaries: [],
+        }),
+      ).rejects.toThrow(
+        /Referenced checker source config is outside activated workspace package regions:[\s\S]*not owned by any current-run activated workspace package/u,
       );
     } finally {
       await fixture.cleanup();
@@ -712,7 +823,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('respects auto checker exclude when expanding solution references', async () => {
+  it('does not apply auto checker entry exclude to solution references', async () => {
     const fixture = await createFixture({
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/test/index.ts': 'export const testValue = 1;\n',
@@ -762,17 +873,20 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       expect(result.manifest.checkers.typescript?.roots).toEqual([
         'packages/pkg/tsconfig.lib.json',
+        'packages/pkg/tsconfig.test.json',
       ]);
       expect(result.manifest.checkers.typescript?.sourceToDts).toEqual({
         'packages/pkg/tsconfig.lib.json':
           '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+        'packages/pkg/tsconfig.test.json':
+          '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.test.dts.json',
       });
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('drops auto scopes when all referenced leaves are excluded', async () => {
+  it('keeps auto scopes whose referenced leaves match entry exclude', async () => {
     const fixture = await createFixture({
       'packages/pkg/test/index.ts': 'export const testValue = 1;\n',
       'packages/pkg/tsconfig.json': json({
@@ -806,8 +920,15 @@ describe('prepareGeneratedTsconfigGraph', () => {
         },
       });
 
-      expect(result.checkers).toEqual([]);
-      expect(result.manifest.checkers).toEqual({});
+      expect(result.checkers).toMatchObject([
+        {
+          include: ['packages/pkg/tsconfig.json'],
+          name: 'typescript',
+        },
+      ]);
+      expect(result.manifest.checkers.typescript?.roots).toEqual([
+        'packages/pkg/tsconfig.test.json',
+      ]);
     } finally {
       await fixture.cleanup();
     }
@@ -2233,7 +2354,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('respects checker exclude when expanding solution tsconfig references', async () => {
+  it('does not apply checker entry exclude to solution references', async () => {
     const fixture = await createFixture({
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
       'packages/pkg/vue/index.ts': 'export const vueValue = 1;\n',
@@ -2286,10 +2407,13 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       expect(result.manifest.checkers.typescript?.roots).toEqual([
         'packages/pkg/tsconfig.lib.json',
+        'packages/pkg/vue/tsconfig.json',
       ]);
       expect(result.manifest.checkers.typescript?.sourceToDts).toEqual({
         'packages/pkg/tsconfig.lib.json':
           '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+        'packages/pkg/vue/tsconfig.json':
+          '.limina/tsconfig/checkers/typescript/projects/packages/pkg/vue/tsconfig.dts.json',
       });
     } finally {
       await fixture.cleanup();

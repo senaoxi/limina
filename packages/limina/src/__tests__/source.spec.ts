@@ -4374,7 +4374,7 @@ describe('runSourceCheck workspace regions', () => {
     }
   });
 
-  it('rejects explicit checker entries at an exact nested workspace overlap', async () => {
+  it('does not add a checker-entry error at an exact nested workspace overlap', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4401,22 +4401,16 @@ describe('runSourceCheck workspace regions', () => {
         }),
       ).resolves.toBe(false);
 
-      expect(issues.map((issue) => issue.code)).toContain(
-        'LIMINA_GRAPH_PREPARE_FAILED',
-      );
-      expect(issues[0]?.detailLines).toEqual(
-        expect.arrayContaining([
-          'Checker include matched source config outside activated workspace package regions:',
-          '  config: app/tsconfig.json',
-        ]),
-      );
+      expect(issues.map((issue) => issue.code)).toEqual([
+        'LIMINA_WORKSPACE_REGION_OVERLAP',
+      ]);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
-  it('does not let exclusion authorize an explicit checker entry', async () => {
+  it('does not require a checker exclusion for a region-excluded entry', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4451,17 +4445,9 @@ describe('runSourceCheck workspace regions', () => {
           issues,
           report: { defer: true },
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
 
-      expect(issues.map((issue) => issue.code)).toContain(
-        'LIMINA_GRAPH_PREPARE_FAILED',
-      );
-      expect(issues[0]?.detailLines).toEqual(
-        expect.arrayContaining([
-          'Checker include matched source config outside activated workspace package regions:',
-          '  config: app/tsconfig.json',
-        ]),
-      );
+      expect(issues).toEqual([]);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();

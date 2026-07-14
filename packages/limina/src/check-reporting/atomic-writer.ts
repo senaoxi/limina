@@ -22,6 +22,38 @@ export interface AtomicWriteOptions {
 
 const writesByTargetPath = new Map<string, Promise<void>>();
 
+export interface ReplaceFileWithRetryOptions {
+  beforeAttempt?: (context: {
+    attempt: number;
+    sourcePath: string;
+    targetPath: string;
+  }) => Promise<void>;
+  replace?: (sourcePath: string, targetPath: string) => Promise<void>;
+  retryDelaysMs?: readonly number[];
+}
+
+export class ReplacementDriftError extends Error {
+  override readonly name = 'ReplacementDriftError';
+}
+
+export class RetryableReplacementValidationIoError extends Error {
+  override readonly name = 'RetryableReplacementValidationIoError';
+  readonly code: 'EACCES' | 'EBUSY' | 'EPERM';
+
+  constructor(
+    code: 'EACCES' | 'EBUSY' | 'EPERM',
+    message: string,
+    options: ErrorOptions = {},
+  ) {
+    super(message, options);
+    this.code = code;
+  }
+}
+
+export class TerminalReplacementValidationError extends Error {
+  override readonly name = 'TerminalReplacementValidationError';
+}
+
 function isRetryableReplaceError(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -32,6 +64,46 @@ function isRetryableReplaceError(error: unknown): boolean {
 
 async function delay(ms: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+export async function replaceFileWithRetry(
+  sourcePath: string,
+  targetPath: string,
+  options: ReplaceFileWithRetryOptions = {},
+): Promise<void> {
+  const retryDelays = options.retryDelaysMs ?? REPLACE_RETRY_DELAYS_MS;
+  const replace = options.replace ?? rename;
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await options.beforeAttempt?.({
+        attempt,
+        sourcePath,
+        targetPath,
+      });
+    } catch (error) {
+      if (
+        !(error instanceof RetryableReplacementValidationIoError) ||
+        attempt >= retryDelays.length
+      ) {
+        throw error;
+      }
+
+      await delay(retryDelays[attempt]!);
+      continue;
+    }
+
+    try {
+      await replace(sourcePath, targetPath);
+      return;
+    } catch (error) {
+      if (!isRetryableReplaceError(error) || attempt >= retryDelays.length) {
+        throw error;
+      }
+
+      await delay(retryDelays[attempt]!);
+    }
+  }
 }
 
 function ignoreError(error: unknown): void {
@@ -91,21 +163,10 @@ async function performAtomicJsonWrite(
     await handle.close();
     handle = undefined;
 
-    const retryDelays = options.retryDelaysMs ?? REPLACE_RETRY_DELAYS_MS;
-    let attempt = 0;
-    while (true) {
-      try {
-        await (options.rename ?? rename)(tempPath, targetPath);
-        return;
-      } catch (error) {
-        if (!isRetryableReplaceError(error) || attempt >= retryDelays.length) {
-          throw error;
-        }
-
-        await delay(retryDelays[attempt]!);
-        attempt += 1;
-      }
-    }
+    await replaceFileWithRetry(tempPath, targetPath, {
+      replace: options.rename,
+      retryDelaysMs: options.retryDelaysMs,
+    });
   } catch (error) {
     await handle?.close().catch(ignoreError);
     await (

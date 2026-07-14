@@ -868,7 +868,15 @@ describe('runBuild', () => {
           rootDir: fixture.rootDir,
         },
         cwd: path.join(fixture.rootDir, 'packages/pkg/src'),
-        runner: passingRunner(calls),
+        runner: async (target) => {
+          expect(existsSync(target.configPath)).toBe(true);
+          calls.push(target);
+
+          return {
+            configPath: target.configPath,
+            status: 0,
+          };
+        },
       });
 
       expect(result.passed).toBe(true);
