@@ -1,8 +1,9 @@
 import { normalizeSlashes, toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'pathe';
+import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
@@ -20,15 +21,15 @@ import type {
 } from './report';
 
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 1;
-export const CHECK_ISSUE_SNAPSHOT_VERSION = 4;
-
-const SUPPORTED_CHECK_ISSUE_SNAPSHOT_VERSIONS = new Set([1, 2, 3, 4]);
+export const CHECK_ISSUE_SNAPSHOT_VERSION = 6;
+const LEGACY_CHECK_ISSUE_SNAPSHOT_VERSION = 5;
 
 export type LiminaCheckTaskName =
   | 'checker:build'
   | 'checker:typecheck'
   | 'command'
   | 'graph:check'
+  | 'graph:materialize'
   | 'graph:prepare'
   | 'package:check'
   | 'proof:check'
@@ -44,21 +45,26 @@ export type LiminaCheckRunResult =
   | 'not-run'
   | 'passed'
   | 'running';
-export type LiminaCheckRunTaskKind = 'command' | 'task';
+export type LiminaCheckRunTaskKind = 'command' | 'preparation' | 'task';
 export type LiminaCheckRunTaskStatus =
+  | 'blocked'
   | 'failed'
   | 'passed'
   | 'planned'
   | 'running'
   | 'skipped';
-export type LiminaCheckRunCheckItemStatus = 'failed' | 'passed' | 'skipped';
+export type LiminaCheckRunCheckItemStatus =
+  | 'blocked'
+  | 'failed'
+  | 'passed'
+  | 'skipped';
 
 export interface LiminaCheckRunBlockedBy {
-  reason?: string;
-  task: string;
+  id: string;
+  label: string;
 }
 
-export interface LiminaCheckRunCheckItemSummary {
+interface CheckItemStatistics {
   checksPassed?: number;
   checksTotal?: number;
   durationMs?: number;
@@ -67,18 +73,35 @@ export interface LiminaCheckRunCheckItemSummary {
   status: LiminaCheckRunCheckItemStatus;
 }
 
+export interface ValidationCheckItemSnapshot extends CheckItemStatistics {
+  itemKind: 'check';
+}
+
+export interface CheckerTargetCheckItemSnapshot extends CheckItemStatistics {
+  blockedBy?: readonly { id: string; name: string }[];
+  id: string;
+  itemKind: 'checker-target';
+}
+
+export type LiminaCheckRunCheckItemSummary =
+  | ValidationCheckItemSnapshot
+  | CheckerTargetCheckItemSnapshot;
+
 export interface LiminaCheckRunTaskSummary {
-  blockedBy?: string;
+  blockedBy?: { id: string; label: string };
   checkItems?: LiminaCheckRunCheckItemSummary[];
   checksPassed?: number;
   checksTotal?: number;
   completedAt?: string;
   durationMs?: number;
+  generation: number;
+  id: string;
+  issueTask: LiminaCheckTaskName;
   kind: LiminaCheckRunTaskKind;
-  name: string;
+  label: string;
   reason?: string;
   startedAt?: string;
-  status: LiminaCheckRunTaskStatus;
+  state: LiminaCheckRunTaskStatus;
 }
 
 export interface LiminaCheckRunSummary {
@@ -147,7 +170,7 @@ export interface CheckIssueSnapshot {
   issues: LiminaCheckIssue[];
   run?: LiminaCheckRunSummary;
   status: CheckIssueSnapshotStatus;
-  version: 1 | 2 | 3 | typeof CHECK_ISSUE_SNAPSHOT_VERSION;
+  version: typeof CHECK_ISSUE_SNAPSHOT_VERSION;
 }
 
 export interface CheckIssueInventoryFilters {
@@ -179,7 +202,6 @@ export interface SourceIssueSnapshot {
   command: string;
   createdAt: string;
   issues: SourceIssueSnapshotIssue[];
-  legacyProblemCount: number;
   status: SourceIssueSnapshotStatus;
   version: typeof SOURCE_ISSUE_SNAPSHOT_VERSION;
 }
@@ -221,13 +243,18 @@ function isLiminaCheckRunResult(value: unknown): value is LiminaCheckRunResult {
 function isLiminaCheckRunTaskKind(
   value: unknown,
 ): value is LiminaCheckRunTaskKind {
-  return value === 'command' || value === 'task';
+  return value === 'command' || value === 'preparation' || value === 'task';
 }
 
 function isLiminaCheckRunCheckItemStatus(
   value: unknown,
 ): value is LiminaCheckRunCheckItemStatus {
-  return value === 'failed' || value === 'passed' || value === 'skipped';
+  return (
+    value === 'blocked' ||
+    value === 'failed' ||
+    value === 'passed' ||
+    value === 'skipped'
+  );
 }
 
 function isLiminaCheckRunTaskStatus(
@@ -235,6 +262,7 @@ function isLiminaCheckRunTaskStatus(
 ): value is LiminaCheckRunTaskStatus {
   return (
     value === 'failed' ||
+    value === 'blocked' ||
     value === 'passed' ||
     value === 'planned' ||
     value === 'running' ||
@@ -247,25 +275,88 @@ function isLiminaCheckRunBlockedBy(
 ): value is LiminaCheckRunBlockedBy {
   return (
     isPlainRecord(value) &&
-    typeof value.task === 'string' &&
-    (value.reason === undefined || typeof value.reason === 'string')
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    typeof value.label === 'string' &&
+    value.label.length > 0 &&
+    hasOnlyKeys(value, ['id', 'label'])
+  );
+}
+
+const CHECKER_TARGET_ID_PATTERN = /^checker-target:[a-f0-9]{64}$/u;
+
+function isFiniteNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isOptionalFiniteNonNegativeNumber(value: unknown): boolean {
+  return value === undefined || isFiniteNonNegativeNumber(value);
+}
+
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function hasValidCheckItemStatistics(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.name === 'string' &&
+    value.name.length > 0 &&
+    isLiminaCheckRunCheckItemStatus(value.status) &&
+    isOptionalFiniteNonNegativeNumber(value.checksPassed) &&
+    isOptionalFiniteNonNegativeNumber(value.checksTotal) &&
+    isOptionalFiniteNonNegativeNumber(value.durationMs) &&
+    isOptionalFiniteNonNegativeNumber(value.issues)
   );
 }
 
 function isLiminaCheckRunCheckItemSummary(
   value: unknown,
 ): value is LiminaCheckRunCheckItemSummary {
-  return (
-    isPlainRecord(value) &&
-    typeof value.name === 'string' &&
-    isLiminaCheckRunCheckItemStatus(value.status) &&
-    (value.checksPassed === undefined ||
-      typeof value.checksPassed === 'number') &&
-    (value.checksTotal === undefined ||
-      typeof value.checksTotal === 'number') &&
-    (value.durationMs === undefined || typeof value.durationMs === 'number') &&
-    (value.issues === undefined || typeof value.issues === 'number')
-  );
+  if (!isPlainRecord(value) || !hasValidCheckItemStatistics(value)) {
+    return false;
+  }
+
+  const statisticKeys = [
+    'checksPassed',
+    'checksTotal',
+    'durationMs',
+    'issues',
+    'itemKind',
+    'name',
+    'status',
+  ];
+  if (value.itemKind === 'check') {
+    return hasOnlyKeys(value, statisticKeys);
+  }
+  if (value.itemKind !== 'checker-target') return false;
+  if (
+    !hasOnlyKeys(value, [...statisticKeys, 'blockedBy', 'id']) ||
+    typeof value.id !== 'string' ||
+    !CHECKER_TARGET_ID_PATTERN.test(value.id)
+  ) {
+    return false;
+  }
+  const validBlockedBy =
+    value.blockedBy === undefined ||
+    (Array.isArray(value.blockedBy) &&
+      value.blockedBy.every(
+        (entry) =>
+          isPlainRecord(entry) &&
+          hasOnlyKeys(entry, ['id', 'name']) &&
+          typeof entry.id === 'string' &&
+          CHECKER_TARGET_ID_PATTERN.test(entry.id) &&
+          typeof entry.name === 'string' &&
+          entry.name.length > 0,
+      ));
+  if (!validBlockedBy) return false;
+
+  return value.status === 'blocked'
+    ? Array.isArray(value.blockedBy) && value.blockedBy.length > 0
+    : value.blockedBy === undefined;
 }
 
 function isLiminaCheckRunTaskSummary(
@@ -273,21 +364,43 @@ function isLiminaCheckRunTaskSummary(
 ): value is LiminaCheckRunTaskSummary {
   return (
     isPlainRecord(value) &&
-    typeof value.name === 'string' &&
+    hasOnlyKeys(value, [
+      'blockedBy',
+      'checkItems',
+      'checksPassed',
+      'checksTotal',
+      'completedAt',
+      'durationMs',
+      'generation',
+      'id',
+      'issueTask',
+      'kind',
+      'label',
+      'reason',
+      'startedAt',
+      'state',
+    ]) &&
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    typeof value.label === 'string' &&
+    value.label.length > 0 &&
+    typeof value.issueTask === 'string' &&
+    isKnownIssueTask(value.issueTask) &&
     isLiminaCheckRunTaskKind(value.kind) &&
-    isLiminaCheckRunTaskStatus(value.status) &&
+    isLiminaCheckRunTaskStatus(value.state) &&
+    Number.isInteger(value.generation) &&
+    (value.generation as number) >= 0 &&
     (value.startedAt === undefined || typeof value.startedAt === 'string') &&
     (value.completedAt === undefined ||
       typeof value.completedAt === 'string') &&
-    (value.checksPassed === undefined ||
-      typeof value.checksPassed === 'number') &&
-    (value.checksTotal === undefined ||
-      typeof value.checksTotal === 'number') &&
+    isOptionalFiniteNonNegativeNumber(value.checksPassed) &&
+    isOptionalFiniteNonNegativeNumber(value.checksTotal) &&
     (value.checkItems === undefined ||
       (Array.isArray(value.checkItems) &&
         value.checkItems.every(isLiminaCheckRunCheckItemSummary))) &&
-    (value.durationMs === undefined || typeof value.durationMs === 'number') &&
-    (value.blockedBy === undefined || typeof value.blockedBy === 'string') &&
+    isOptionalFiniteNonNegativeNumber(value.durationMs) &&
+    (value.blockedBy === undefined ||
+      isLiminaCheckRunBlockedBy(value.blockedBy)) &&
     (value.reason === undefined || typeof value.reason === 'string')
   );
 }
@@ -297,6 +410,18 @@ function isLiminaCheckRunSummary(
 ): value is LiminaCheckRunSummary {
   return (
     isPlainRecord(value) &&
+    hasOnlyKeys(value, [
+      'blockedBy',
+      'command',
+      'completedAt',
+      'configPath',
+      'createdAt',
+      'durationMs',
+      'pipeline',
+      'result',
+      'startedAt',
+      'tasks',
+    ]) &&
     typeof value.command === 'string' &&
     typeof value.createdAt === 'string' &&
     isLiminaCheckRunResult(value.result) &&
@@ -305,7 +430,7 @@ function isLiminaCheckRunSummary(
     (value.startedAt === undefined || typeof value.startedAt === 'string') &&
     (value.completedAt === undefined ||
       typeof value.completedAt === 'string') &&
-    (value.durationMs === undefined || typeof value.durationMs === 'number') &&
+    isOptionalFiniteNonNegativeNumber(value.durationMs) &&
     (value.configPath === undefined || typeof value.configPath === 'string') &&
     (value.pipeline === undefined || typeof value.pipeline === 'string') &&
     (value.blockedBy === undefined ||
@@ -383,7 +508,6 @@ function isSourceIssueSnapshot(value: unknown): value is SourceIssueSnapshot {
     typeof value.command === 'string' &&
     typeof value.createdAt === 'string' &&
     isSourceIssueSnapshotStatus(value.status) &&
-    typeof value.legacyProblemCount === 'number' &&
     Array.isArray(value.issues) &&
     value.issues.every(isSourceIssueSnapshotIssue)
   );
@@ -394,6 +518,7 @@ function hasLiminaCheckIssueBaseFields(
 ): boolean {
   return (
     typeof value.task === 'string' &&
+    isKnownIssueTask(value.task) &&
     typeof value.code === 'string' &&
     typeof value.title === 'string' &&
     typeof value.reason === 'string'
@@ -423,7 +548,7 @@ function hasLiminaCheckIssueStructuredFields(
   );
 }
 
-function hasLiminaCheckIssueLegacyFields(
+function hasLiminaCheckIssuePresentationFields(
   value: Record<string, unknown>,
 ): boolean {
   return (
@@ -446,15 +571,24 @@ function isLiminaCheckIssue(value: unknown): value is LiminaCheckIssue {
     isPlainRecord(value) &&
     hasLiminaCheckIssueBaseFields(value) &&
     hasLiminaCheckIssueStructuredFields(value) &&
-    hasLiminaCheckIssueLegacyFields(value)
+    hasLiminaCheckIssuePresentationFields(value)
   );
 }
 
-function isCheckIssueSnapshot(value: unknown): value is CheckIssueSnapshot {
+function isCurrentV6CheckIssueSnapshotStructure(
+  value: unknown,
+): value is CheckIssueSnapshot {
   return (
     isPlainRecord(value) &&
-    typeof value.version === 'number' &&
-    SUPPORTED_CHECK_ISSUE_SNAPSHOT_VERSIONS.has(value.version) &&
+    hasOnlyKeys(value, [
+      'command',
+      'createdAt',
+      'issues',
+      'run',
+      'status',
+      'version',
+    ]) &&
+    value.version === CHECK_ISSUE_SNAPSHOT_VERSION &&
     typeof value.command === 'string' &&
     typeof value.createdAt === 'string' &&
     isCheckIssueSnapshotStatus(value.status) &&
@@ -462,6 +596,414 @@ function isCheckIssueSnapshot(value: unknown): value is CheckIssueSnapshot {
     value.issues.every(isLiminaCheckIssue) &&
     (value.run === undefined || isLiminaCheckRunSummary(value.run))
   );
+}
+
+function isKnownIssueTask(value: string): value is LiminaCheckTaskName {
+  return [
+    'checker:build',
+    'checker:typecheck',
+    'command',
+    'graph:check',
+    'graph:materialize',
+    'graph:prepare',
+    'package:check',
+    'proof:check',
+    'release:check',
+    'source:check',
+  ].includes(value);
+}
+
+function getCheckerTargetRelationProblem(
+  task: LiminaCheckRunTaskSummary,
+): string | null {
+  const targetItems = (task.checkItems ?? []).filter(
+    (item): item is CheckerTargetCheckItemSnapshot =>
+      item.itemKind === 'checker-target',
+  );
+  const targetById = new Map<string, CheckerTargetCheckItemSnapshot>();
+  const targetIndexById = new Map<string, number>();
+
+  for (const [index, item] of targetItems.entries()) {
+    if (targetById.has(item.id)) {
+      return `Task "${task.label}" contains duplicate checker target id "${item.id}".`;
+    }
+    targetById.set(item.id, item);
+    targetIndexById.set(item.id, index);
+  }
+
+  for (const item of targetItems) {
+    if (item.status !== 'blocked') continue;
+    const seenRoots = new Set<string>();
+    let previousRootIndex = -1;
+    for (const blocker of item.blockedBy ?? []) {
+      if (blocker.id === item.id) {
+        return `Checker target "${item.name}" cannot block itself.`;
+      }
+      if (seenRoots.has(blocker.id)) {
+        return `Checker target "${item.name}" contains duplicate blocker "${blocker.id}".`;
+      }
+      seenRoots.add(blocker.id);
+      const root = targetById.get(blocker.id);
+      if (!root) {
+        return `Checker target "${item.name}" references unknown blocker "${blocker.id}".`;
+      }
+      if (root.status !== 'failed') {
+        return `Checker target "${item.name}" blocker "${root.name}" is not failed.`;
+      }
+      if (root.name !== blocker.name) {
+        return `Checker target blocker label mismatch for "${blocker.id}".`;
+      }
+      const rootIndex = targetIndexById.get(blocker.id)!;
+      if (rootIndex <= previousRootIndex) {
+        return `Checker target "${item.name}" blockers are not in canonical item order.`;
+      }
+      previousRootIndex = rootIndex;
+    }
+  }
+
+  return null;
+}
+
+function getCompletedTaskSemanticProblem(
+  task: LiminaCheckRunTaskSummary,
+): string | null {
+  if (task.id.startsWith('checker-target:')) {
+    return `Execution task id "${task.id}" uses the checker-target namespace.`;
+  }
+  if (!Number.isInteger(task.generation) || task.generation < 0) {
+    return `Task "${task.label}" has invalid generation.`;
+  }
+  if (task.state === 'planned' || task.state === 'running') {
+    return `Completed run contains non-terminal task "${task.label}".`;
+  }
+
+  const hasRunnerStatistics =
+    task.checkItems !== undefined ||
+    task.checksPassed !== undefined ||
+    task.checksTotal !== undefined;
+  if (task.state === 'passed' || task.state === 'failed') {
+    if (
+      !task.startedAt ||
+      !task.completedAt ||
+      !isFiniteNonNegativeNumber(task.durationMs)
+    ) {
+      return `Started task "${task.label}" has incomplete timing.`;
+    }
+    if (task.blockedBy !== undefined) {
+      return `Started task "${task.label}" must not carry blockedBy.`;
+    }
+    if (task.state === 'passed' && task.reason !== undefined) {
+      return `Passed task "${task.label}" must not carry reason.`;
+    }
+  } else {
+    if (
+      task.startedAt !== undefined ||
+      task.completedAt !== undefined ||
+      task.durationMs !== undefined ||
+      hasRunnerStatistics
+    ) {
+      return `Synthetic task "${task.label}" carries runner data.`;
+    }
+    if (
+      task.state === 'blocked' &&
+      (!task.blockedBy || task.reason !== undefined)
+    ) {
+      return `Blocked task "${task.label}" is missing its blocker or carries reason.`;
+    }
+    if (
+      task.state === 'skipped' &&
+      (!task.reason || task.blockedBy !== undefined)
+    ) {
+      return `Skipped task "${task.label}" is missing reason or carries blockedBy.`;
+    }
+  }
+
+  return getCheckerTargetRelationProblem(task);
+}
+
+function getTaskBlockerProblem(
+  task: LiminaCheckRunTaskSummary,
+  taskById: ReadonlyMap<string, LiminaCheckRunTaskSummary>,
+): string | null {
+  if (!task.blockedBy) return null;
+  if (task.blockedBy.id === task.id) {
+    return `Task "${task.label}" cannot block itself.`;
+  }
+  const root = taskById.get(task.blockedBy.id);
+  if (!root || root.state !== 'failed') {
+    return `Task "${task.label}" blocker is not an actual failed task.`;
+  }
+  return root.label === task.blockedBy.label
+    ? null
+    : `Task blocker label mismatch for "${task.blockedBy.id}".`;
+}
+
+function getRunResultProblem(
+  run: LiminaCheckRunSummary,
+  taskById: ReadonlyMap<string, LiminaCheckRunTaskSummary>,
+): string | null {
+  const taskStates = run.tasks.map((task) => task.state);
+  if (run.result === 'passed') {
+    return run.blockedBy || taskStates.some((state) => state !== 'passed')
+      ? 'Passed run must contain only passed tasks and no blocker.'
+      : null;
+  }
+  if (run.result === 'failed') {
+    return run.blockedBy ||
+      !taskStates.includes('failed') ||
+      taskStates.some((state) => state === 'blocked' || state === 'skipped')
+      ? 'Failed run must contain a failed task and no blocked or skipped tasks.'
+      : null;
+  }
+  if (
+    !run.blockedBy ||
+    !taskStates.some((state) => state === 'blocked' || state === 'skipped')
+  ) {
+    return 'Blocked run must contain a synthetic task and a run blocker.';
+  }
+  const root = taskById.get(run.blockedBy.id);
+  if (!root || root.state !== 'failed') {
+    return 'Blocked run blocker is not an actual failed task.';
+  }
+  return root.label === run.blockedBy.label
+    ? null
+    : `Run blocker label mismatch for "${run.blockedBy.id}".`;
+}
+
+export function getCompletedRunSemanticProblem(
+  run: LiminaCheckRunSummary,
+): string | null {
+  if (
+    run.result !== 'passed' &&
+    run.result !== 'failed' &&
+    run.result !== 'blocked'
+  ) {
+    return `Completed run has non-terminal result "${run.result}".`;
+  }
+  if (!run.startedAt || !run.completedAt) {
+    return 'Completed run is missing startedAt or completedAt.';
+  }
+  if (!isFiniteNonNegativeNumber(run.durationMs)) {
+    return 'Completed run has invalid durationMs.';
+  }
+  if (run.tasks.length === 0) {
+    return 'Completed run must contain at least one task.';
+  }
+
+  const taskById = new Map<string, LiminaCheckRunTaskSummary>();
+  for (const task of run.tasks) {
+    if (taskById.has(task.id)) {
+      return `Completed run contains duplicate task id "${task.id}".`;
+    }
+    const problem = getCompletedTaskSemanticProblem(task);
+    if (problem) return problem;
+    taskById.set(task.id, task);
+  }
+  for (const task of run.tasks) {
+    const problem = getTaskBlockerProblem(task, taskById);
+    if (problem) return problem;
+  }
+  return getRunResultProblem(run, taskById);
+}
+
+export function assertCompletedRunSummary(run: LiminaCheckRunSummary): void {
+  if (run.tasks.some((task) => task.id.startsWith('legacy-v5:'))) {
+    throw new Error('New v6 snapshots must not use legacy-v5 task ids.');
+  }
+  const problem = getCompletedRunSemanticProblem(run);
+  if (problem) {
+    throw new Error(`Invalid completed check run summary: ${problem}`);
+  }
+}
+
+function getNotRunSummaryProblem(run: LiminaCheckRunSummary): string | null {
+  if (
+    run.result !== 'not-run' ||
+    run.startedAt !== undefined ||
+    run.completedAt !== undefined ||
+    run.durationMs !== undefined ||
+    run.blockedBy !== undefined
+  ) {
+    return 'Not-run summary carries execution state.';
+  }
+  for (const task of run.tasks) {
+    if (
+      task.state !== 'planned' ||
+      task.startedAt !== undefined ||
+      task.completedAt !== undefined ||
+      task.durationMs !== undefined ||
+      task.blockedBy !== undefined ||
+      task.reason !== undefined ||
+      task.checkItems !== undefined ||
+      task.checksPassed !== undefined ||
+      task.checksTotal !== undefined
+    ) {
+      return `Planned task "${task.label}" carries execution data.`;
+    }
+  }
+  return null;
+}
+
+function migrateLegacyV5CheckItem(
+  value: unknown,
+): ValidationCheckItemSnapshot | null {
+  if (
+    !isPlainRecord(value) ||
+    typeof value.name !== 'string' ||
+    value.name.length === 0 ||
+    (value.status !== 'passed' &&
+      value.status !== 'failed' &&
+      value.status !== 'skipped')
+  ) {
+    return null;
+  }
+
+  const item: ValidationCheckItemSnapshot = {
+    itemKind: 'check',
+    name: value.name,
+    status: value.status,
+  };
+  for (const field of [
+    'checksPassed',
+    'checksTotal',
+    'durationMs',
+    'issues',
+  ] as const) {
+    if (isFiniteNonNegativeNumber(value[field])) {
+      item[field] = value[field];
+    }
+  }
+  return item;
+}
+
+function migrateLegacyV5CheckIssueSnapshot(
+  value: Record<string, unknown>,
+): CheckIssueSnapshot | null {
+  if (
+    value.version !== LEGACY_CHECK_ISSUE_SNAPSHOT_VERSION ||
+    typeof value.command !== 'string' ||
+    typeof value.createdAt !== 'string' ||
+    !isCheckIssueSnapshotStatus(value.status) ||
+    !Array.isArray(value.issues) ||
+    !value.issues.every(isLiminaCheckIssue)
+  ) {
+    return null;
+  }
+
+  const legacyRun = isPlainRecord(value.run) ? value.run : undefined;
+  const legacyTasks = Array.isArray(legacyRun?.tasks) ? legacyRun.tasks : [];
+  const tasks: LiminaCheckRunTaskSummary[] = legacyTasks.flatMap(
+    (legacyTask, index) => {
+      if (
+        !isPlainRecord(legacyTask) ||
+        typeof legacyTask.name !== 'string' ||
+        !isLiminaCheckRunTaskStatus(legacyTask.status) ||
+        (legacyTask.kind !== 'command' && legacyTask.kind !== 'task')
+      ) {
+        return [];
+      }
+
+      const legacyBlockedBy =
+        typeof legacyTask.blockedBy === 'string'
+          ? legacyTask.blockedBy
+          : undefined;
+      const state =
+        legacyTask.status === 'blocked' ? 'failed' : legacyTask.status;
+      const issueTask = isKnownIssueTask(legacyTask.name)
+        ? legacyTask.name
+        : legacyTask.kind === 'command'
+          ? 'command'
+          : 'command';
+
+      return [
+        {
+          ...(Array.isArray(legacyTask.checkItems)
+            ? {
+                checkItems: legacyTask.checkItems.flatMap((item) => {
+                  const migratedItem = migrateLegacyV5CheckItem(item);
+                  return migratedItem ? [migratedItem] : [];
+                }),
+              }
+            : {}),
+          ...(typeof legacyTask.checksPassed === 'number'
+            ? { checksPassed: legacyTask.checksPassed }
+            : {}),
+          ...(typeof legacyTask.checksTotal === 'number'
+            ? { checksTotal: legacyTask.checksTotal }
+            : {}),
+          ...(typeof legacyTask.completedAt === 'string'
+            ? { completedAt: legacyTask.completedAt }
+            : {}),
+          ...(typeof legacyTask.durationMs === 'number'
+            ? { durationMs: legacyTask.durationMs }
+            : {}),
+          id: `legacy-v5:${index}`,
+          // Legacy v5 snapshots did not record repository generations.
+          // Generation 0 is a schema compatibility normalization only and
+          // must not be interpreted as reconstructed historical execution data.
+          generation: 0,
+          issueTask,
+          kind: legacyTask.kind,
+          label: legacyTask.name,
+          reason:
+            state === 'skipped'
+              ? legacyBlockedBy
+                ? `Legacy v5 run: skipped after "${legacyBlockedBy}"`
+                : typeof legacyTask.reason === 'string'
+                  ? legacyTask.reason
+                  : 'Legacy v5 run: skipped'
+              : typeof legacyTask.reason === 'string'
+                ? legacyTask.reason
+                : undefined,
+          ...(typeof legacyTask.startedAt === 'string'
+            ? { startedAt: legacyTask.startedAt }
+            : {}),
+          state,
+        },
+      ];
+    },
+  );
+
+  const run: LiminaCheckRunSummary | undefined = legacyRun
+    ? {
+        command:
+          typeof legacyRun.command === 'string'
+            ? legacyRun.command
+            : value.command,
+        ...(typeof legacyRun.completedAt === 'string'
+          ? { completedAt: legacyRun.completedAt }
+          : {}),
+        ...(typeof legacyRun.configPath === 'string'
+          ? { configPath: legacyRun.configPath }
+          : {}),
+        createdAt:
+          typeof legacyRun.createdAt === 'string'
+            ? legacyRun.createdAt
+            : value.createdAt,
+        ...(typeof legacyRun.durationMs === 'number'
+          ? { durationMs: legacyRun.durationMs }
+          : {}),
+        ...(typeof legacyRun.pipeline === 'string'
+          ? { pipeline: legacyRun.pipeline }
+          : {}),
+        result: isLiminaCheckRunResult(legacyRun.result)
+          ? legacyRun.result
+          : 'not-run',
+        ...(typeof legacyRun.startedAt === 'string'
+          ? { startedAt: legacyRun.startedAt }
+          : {}),
+        tasks,
+      }
+    : undefined;
+
+  return {
+    command: value.command,
+    createdAt: value.createdAt,
+    issues: value.issues,
+    ...(run ? { run } : {}),
+    status: value.status,
+    version: CHECK_ISSUE_SNAPSHOT_VERSION,
+  };
 }
 
 function pluralIssue(count: number): string {
@@ -581,17 +1123,35 @@ function issueMatchesFilters(
 function createSnapshot(options: {
   command: string;
   issues: SourceIssueSnapshotIssue[];
-  legacyProblemCount: number;
   status: SourceIssueSnapshotStatus;
 }): SourceIssueSnapshot {
   return {
     command: options.command,
     createdAt: new Date().toISOString(),
     issues: options.issues,
-    legacyProblemCount: options.legacyProblemCount,
     status: options.status,
     version: SOURCE_ISSUE_SNAPSHOT_VERSION,
   };
+}
+
+export function createCompletedSourceIssueSnapshot(options: {
+  command: string;
+  issues: readonly SourceCheckIssue[];
+  rootDir: string;
+}): SourceIssueSnapshot {
+  return createSnapshot({
+    command: options.command,
+    issues: options.issues.map((issue) =>
+      toSnapshotIssue(options.rootDir, issue),
+    ),
+    status: 'completed',
+  });
+}
+
+export function createNotRunSourceIssueSnapshot(
+  command: string,
+): SourceIssueSnapshot {
+  return createSnapshot({ command, issues: [], status: 'not-run' });
 }
 
 function toSnapshotIssue(
@@ -622,32 +1182,48 @@ export function getCheckIssueSnapshotPath(rootDir: string): string {
   return path.join(rootDir, generatedRootDirName, 'check', 'last-run.json');
 }
 
-export async function writeSourceIssueSnapshot(
+export async function writeSourceIssueSnapshotOnly(
   rootDir: string,
   snapshot: SourceIssueSnapshot,
 ): Promise<void> {
   const snapshotPath = getSourceIssueSnapshotPath(rootDir);
 
   await mkdir(path.dirname(snapshotPath), { recursive: true });
-  await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
+  await writeJsonAtomically(snapshotPath, snapshot);
 }
 
-export async function writeCheckIssueSnapshot(
+export async function writeCheckIssueSnapshotOnly(
   rootDir: string,
   snapshot: CheckIssueSnapshot,
 ): Promise<void> {
+  if (!isCurrentV6CheckIssueSnapshotStructure(snapshot)) {
+    throw new Error('Invalid v6 check snapshot wire model.');
+  }
+  if (snapshot.status === 'completed' && snapshot.run) {
+    assertCompletedRunSummary(snapshot.run);
+  }
+  if (snapshot.status === 'not-run' && snapshot.run) {
+    if (getNotRunSummaryProblem(snapshot.run)) {
+      throw new Error('Invalid not-run check snapshot model.');
+    }
+  }
   const snapshotPath = getCheckIssueSnapshotPath(rootDir);
 
   await mkdir(path.dirname(snapshotPath), { recursive: true });
-  await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
+  await writeJsonAtomically(snapshotPath, snapshot);
 }
+
+export const writeSourceIssueSnapshot: typeof writeSourceIssueSnapshotOnly =
+  writeSourceIssueSnapshotOnly;
+export const writeCheckIssueSnapshot: typeof writeCheckIssueSnapshotOnly =
+  writeCheckIssueSnapshotOnly;
 
 export async function writeNotRunCheckIssueSnapshot(options: {
   command: string;
   rootDir: string;
   run?: LiminaCheckRunSummary;
 }): Promise<void> {
-  await writeCheckIssueSnapshot(options.rootDir, {
+  await writeCheckIssueSnapshotOnly(options.rootDir, {
     command: options.command,
     createdAt: new Date().toISOString(),
     issues: [],
@@ -663,7 +1239,7 @@ export async function writeCompletedCheckIssueSnapshot(options: {
   rootDir: string;
   run?: LiminaCheckRunSummary;
 }): Promise<void> {
-  await writeCheckIssueSnapshot(options.rootDir, {
+  await writeCheckIssueSnapshotOnly(options.rootDir, {
     command: options.command,
     createdAt: new Date().toISOString(),
     issues: [...(options.issues ?? [])],
@@ -703,12 +1279,15 @@ export async function appendCheckIssues(options: {
 
   const current = await readCheckIssueSnapshot(options.rootDir);
 
-  await writeCompletedCheckIssueSnapshot({
+  const snapshot = {
     command: options.command ?? current?.command ?? 'limina check',
+    createdAt: new Date().toISOString(),
     issues: [...(current?.issues ?? []), ...options.issues],
-    rootDir: options.rootDir,
     run: current?.run,
-  });
+    status: current?.status ?? ('completed' as const),
+    version: CHECK_ISSUE_SNAPSHOT_VERSION,
+  } satisfies CheckIssueSnapshot;
+  await writeCheckIssueSnapshotOnly(options.rootDir, snapshot);
 }
 
 export async function appendTaskFailureIssueIfMissing(options: {
@@ -733,48 +1312,31 @@ export async function writeNotRunSourceIssueSnapshot(options: {
   command: string;
   rootDir: string;
 }): Promise<void> {
-  await writeSourceIssueSnapshot(
+  await writeSourceIssueSnapshotOnly(
     options.rootDir,
-    createSnapshot({
-      command: options.command,
-      issues: [],
-      legacyProblemCount: 0,
-      status: 'not-run',
-    }),
+    createNotRunSourceIssueSnapshot(options.command),
   );
 }
 
-export async function writeCompletedSourceIssueSnapshot(options: {
-  appendCheckIssues?: boolean;
+export async function writeCompletedStandaloneSourceCheckSnapshots(options: {
   command: string;
   issues: readonly SourceCheckIssue[];
-  legacyProblems: readonly string[];
   rootDir: string;
 }): Promise<void> {
-  await writeSourceIssueSnapshot(
-    options.rootDir,
-    createSnapshot({
-      command: options.command,
-      issues: options.issues.map((issue) =>
-        toSnapshotIssue(options.rootDir, issue),
-      ),
-      legacyProblemCount: options.legacyProblems.length,
-      status: 'completed',
-    }),
+  const checkIssues = options.issues.map((issue) =>
+    createSourceCheckIssue({ issue, rootDir: options.rootDir }),
   );
-
-  if (options.appendCheckIssues ?? true) {
-    await appendCheckIssues({
-      command: options.command,
-      issues: options.issues.map((issue) =>
-        createSourceCheckIssue({
-          issue,
-          rootDir: options.rootDir,
-        }),
-      ),
-      rootDir: options.rootDir,
-    });
-  }
+  await writeSourceIssueSnapshotOnly(
+    options.rootDir,
+    createCompletedSourceIssueSnapshot(options),
+  );
+  await writeCheckIssueSnapshotOnly(options.rootDir, {
+    command: options.command,
+    createdAt: new Date().toISOString(),
+    issues: checkIssues,
+    status: 'completed',
+    version: CHECK_ISSUE_SNAPSHOT_VERSION,
+  });
 }
 
 export async function readSourceIssueSnapshot(
@@ -811,7 +1373,33 @@ export async function readCheckIssueSnapshot(
   try {
     const parsed = JSON.parse(await readFile(snapshotPath, 'utf8')) as unknown;
 
-    return isCheckIssueSnapshot(parsed) ? parsed : null;
+    if (
+      isPlainRecord(parsed) &&
+      parsed.version === CHECK_ISSUE_SNAPSHOT_VERSION
+    ) {
+      if (!isCurrentV6CheckIssueSnapshotStructure(parsed)) return null;
+      if (
+        parsed.status === 'completed' &&
+        parsed.run &&
+        getCompletedRunSemanticProblem(parsed.run)
+      ) {
+        return null;
+      }
+      if (
+        parsed.status === 'not-run' &&
+        parsed.run &&
+        getNotRunSummaryProblem(parsed.run)
+      ) {
+        return null;
+      }
+      return parsed;
+    }
+
+    if (!isPlainRecord(parsed) || parsed.version !== 5) return null;
+    const migrated = migrateLegacyV5CheckIssueSnapshot(parsed);
+    return migrated && isCurrentV6CheckIssueSnapshotStructure(migrated)
+      ? migrated
+      : null;
   } catch {
     return null;
   }
@@ -1094,9 +1682,7 @@ export function formatSourceIssueSnapshotInventory(
   if (snapshot.issues.length === 0) {
     return [
       'No source issue filters are available from the last run.',
-      snapshot.legacyProblemCount > 0
-        ? `The last source check reported ${snapshot.legacyProblemCount} unfilterable ${pluralIssue(snapshot.legacyProblemCount)}.`
-        : 'The last source check completed without structured source issues.',
+      'The last source check completed without structured source issues.',
       'If `limina check` failed later, that failure came from another task and cannot be filtered with source issue flags.',
     ].join('\n');
   }

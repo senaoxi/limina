@@ -3,7 +3,7 @@ import {
   normalizeExtensions,
 } from '#checkers';
 import { getActiveCheckers, type ResolvedLiminaConfig } from '#config/runner';
-import type { LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import {
   collectGeneratedSourceConfigPaths,
   type GeneratedTsconfigGraphResult,
@@ -11,7 +11,6 @@ import {
 import {
   collectImportsFromFile,
   formatImportRecordLocation,
-  getTypecheckConfigPath,
   type ImportRecord,
   isDtsProjectConfig,
   parseProject,
@@ -92,6 +91,7 @@ import {
   createKnipSourceAnalysisGroups,
 } from './knip-routing';
 import {
+  collectGeneratedArtifactSourceEntryPatterns,
   collectManifestSourceEntryPatterns,
   collectOwnerSourceModuleSets,
   collectUnusedDependencyIgnore,
@@ -109,7 +109,7 @@ import {
 } from './report';
 import {
   type LiminaCheckIssue,
-  writeCompletedSourceIssueSnapshot,
+  writeCompletedStandaloneSourceCheckSnapshots,
 } from './snapshot';
 import {
   isInvalidWorkspacePattern,
@@ -118,15 +118,15 @@ import {
 
 export interface RunSourceCheckOptions {
   clearScreen?: boolean;
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   deferSnapshot?: boolean;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
   generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
   issues?: LiminaCheckIssue[];
   knipRunner?: KnipCliRunner;
-  legacyProblems?: string[];
   onStats?: (stats: LiminaCheckRunTaskStats) => void;
+  onSourceSnapshot?: (issues: readonly SourceCheckIssue[]) => void;
   preflight?: LiminaPreflightManager;
   progress?: TaskProgressReporter;
   report?: SourceIssueReportOptions;
@@ -2059,7 +2059,29 @@ async function addKnipBackedSourceProblems(options: {
   const needsDependencyAnalysis =
     options.workspacePackages.length > 0 && declarations.length > 0;
   const ownerProjects = createKnipOwnerProjects({
-    entryPatternsByOwnerName: unusedModuleConfig.entryPatternsByOwnerName,
+    entryPatternsByOwnerName: new Map(
+      options.ownerModuleSets.flatMap((moduleSet) => {
+        const ownerName = moduleSet.owner.name;
+
+        if (!ownerName) {
+          return [];
+        }
+
+        return [
+          [
+            ownerName,
+            uniqueSortedStrings([
+              ...(unusedModuleConfig.entryPatternsByOwnerName.get(ownerName) ??
+                []),
+              ...collectGeneratedArtifactSourceEntryPatterns({
+                generatedGraph: options.generatedGraph,
+                moduleSet,
+              }),
+            ]),
+          ] as const,
+        ];
+      }),
+    ),
     ignoredModuleKeys: unusedModuleConfig.ignoredKeys,
     includeFiles,
     ownerModuleSets: options.ownerModuleSets,
@@ -2100,7 +2122,7 @@ async function addKnipBackedSourceProblems(options: {
 }
 
 async function createSourceProjectEntries(
-  core: LiminaCore,
+  core: AnalysisProviderSet,
   projects: ProjectInfo[],
   workspaceLookup: WorkspaceLookupIndex,
 ): Promise<SourceProjectEntry[]> {
@@ -2108,7 +2130,7 @@ async function createSourceProjectEntries(
     projects
       .filter((project) => isDtsProjectConfig(project.configPath))
       .map(async (project) => {
-        const typecheckConfigPath = getTypecheckConfigPath(project.configPath);
+        const typecheckConfigPath = project.resolverConfigPath;
         const fileNames = new Set(project.fileNames);
 
         if (existsSync(typecheckConfigPath)) {
@@ -2134,7 +2156,7 @@ async function createSourceProjectEntries(
 async function addSourceProjectOwnerProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
-  core: LiminaCore;
+  providers: AnalysisProviderSet;
   problems: string[];
   projects: ProjectInfo[];
   workspaceLookup: WorkspaceLookupIndex;
@@ -2158,7 +2180,7 @@ async function addSourceProjectOwnerProblems(options: {
       workspaceLookup: options.workspaceLookup,
     });
 
-    const typecheckConfigPath = getTypecheckConfigPath(project.configPath);
+    const typecheckConfigPath = project.resolverConfigPath;
 
     if (!existsSync(typecheckConfigPath)) {
       continue;
@@ -2169,7 +2191,10 @@ async function addSourceProjectOwnerProblems(options: {
       config: options.config,
       configPath: typecheckConfigPath,
       fileNames: (
-        await options.core.tsconfig.getProject(typecheckConfigPath, project)
+        await options.providers.tsconfig.getProject(
+          typecheckConfigPath,
+          project,
+        )
       ).fileNames,
       problems: options.problems,
       role: 'typecheck companion',
@@ -2456,7 +2481,7 @@ function addBarePackageImportProblems(options: {
 function addImportRecordProblems(options: {
   config: ResolvedLiminaConfig;
   filePath: string;
-  importAnalysis: LiminaCore['imports']['context'];
+  importAnalysis: AnalysisProviderSet['imports']['context'];
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
@@ -2555,7 +2580,7 @@ function addImportRecordProblems(options: {
 function addSourceImportProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
-  importAnalysis: LiminaCore['imports']['context'];
+  importAnalysis: AnalysisProviderSet['imports']['context'];
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   packages: WorkspacePackage[];
   problems: string[];
@@ -2786,13 +2811,13 @@ function createStructuredSourceIssueFromProblem(options: {
 export async function runSourceCheckImpl(
   config: ResolvedLiminaConfig,
   options: {
-    core?: LiminaCore;
+    providers?: AnalysisProviderSet;
     generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
     knipRunner?: KnipCliRunner;
     deferSnapshot?: boolean;
-    legacyProblems?: string[];
     logSuccess?: boolean;
     onStats?: (stats: LiminaCheckRunTaskStats) => void;
+    onSourceSnapshot?: (issues: readonly SourceCheckIssue[]) => void;
     preflight?: LiminaPreflightManager;
     progress?: TaskProgressReporter;
     report?: SourceIssueReportOptions;
@@ -2811,7 +2836,7 @@ export async function runSourceCheckImpl(
     },
   );
   const preflight = resolvePreflight(config, options);
-  const core = preflight.core;
+  const core = preflight.providers;
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
   const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
@@ -2915,7 +2940,7 @@ export async function runSourceCheckImpl(
   await addSourceProjectOwnerProblems({
     checks,
     config,
-    core,
+    providers: core,
     problems,
     projects,
     workspaceLookup,
@@ -2975,12 +3000,12 @@ export async function runSourceCheckImpl(
   ];
 
   options.sourceIssues?.push(...structuredSourceIssues);
+  options.onSourceSnapshot?.(structuredSourceIssues);
 
   if (!options.deferSnapshot) {
-    await writeCompletedSourceIssueSnapshot({
+    await writeCompletedStandaloneSourceCheckSnapshots({
       command: options.report?.command ?? 'limina source check',
       issues: structuredSourceIssues,
-      legacyProblems: [],
       rootDir: config.rootDir,
     });
   }
@@ -3000,7 +3025,6 @@ export async function runSourceCheckImpl(
       formatSourceCheckHumanReport({
         config,
         issues: structuredSourceIssues,
-        legacyProblems: [],
         report: options.report,
       }),
     );

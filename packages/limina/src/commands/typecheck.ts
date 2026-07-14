@@ -33,6 +33,8 @@ export type {
   RunCheckerTypecheckResult,
 } from '../typecheck/runner';
 export type {
+  CheckerTargetId,
+  CheckerTargetOutcome,
   TypecheckRunner,
   TypecheckTarget,
   TypecheckTargetResult,

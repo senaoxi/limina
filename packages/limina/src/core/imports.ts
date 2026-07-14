@@ -33,13 +33,8 @@ export class ImportCore {
     return this.#context;
   }
 
-  invalidate(): void {
-    this.#context = this.#createContext();
-  }
-
   #createContext(): ImportAnalysisContext {
     return createImportAnalysisContext({
-      isolated: true,
       projectRootDir: this.#config.rootDir,
       vueParser: this.#config.config?.imports?.vue,
     });

@@ -36,7 +36,7 @@ export async function runProofCheck(
     const logSuccess = !options.report?.defer && !options.flow?.interactive;
     const issues = options.issues ?? [];
     const passed = await runProofCheckImpl(config, {
-      core: options.core,
+      providers: options.providers,
       deferSnapshot: options.deferSnapshot,
       generatedGraphProvider: options.generatedGraphProvider,
       issues,

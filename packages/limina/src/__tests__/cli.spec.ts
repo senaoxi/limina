@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
-import { createLiminaCli } from '../cli';
+import { createLiminaCli, runCheckWithCliFlowCleanup } from '../cli';
 
 const execFileAsync = promisify(execFile);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -222,6 +222,165 @@ function getHelpOutput(argv: string[]): string {
 }
 
 describe('limina CLI', () => {
+  it('closes the check flow without replacing a primary infrastructure error', async () => {
+    const primaryError = new Error('snapshot writer failed');
+    const closeError = new Error('flow close failed');
+    const outro = vi.fn();
+    const close = vi.fn().mockRejectedValue(closeError);
+
+    await expect(
+      runCheckWithCliFlowCleanup({ close, outro }, async () => {
+        throw primaryError;
+      }),
+    ).rejects.toBe(primaryError);
+
+    expect(outro).toHaveBeenCalledWith('limina check failed');
+    expect(close).toHaveBeenCalledOnce();
+    expect(
+      (primaryError as Error & { flowCloseError?: unknown }).flowCloseError,
+    ).toBe(closeError);
+  });
+
+  it('propagates a check flow close error when execution succeeded', async () => {
+    const closeError = new Error('flow close failed');
+    const outro = vi.fn();
+    const close = vi.fn().mockRejectedValue(closeError);
+
+    await expect(
+      runCheckWithCliFlowCleanup({ close, outro }, async () => true),
+    ).rejects.toBe(closeError);
+
+    expect(outro).toHaveBeenCalledWith('limina check passed');
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('closes the check flow and reports a snapshot writer error once', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-writer-failure-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({ name: 'root', private: true }),
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `export default ${JSON.stringify({
+          pipelines: {
+            demo: [
+              {
+                args: ['-e', 'process.exit(0)'],
+                command: process.execPath,
+                type: 'command',
+              },
+            ],
+          },
+        })};\n`,
+      );
+      await mkdir(path.join(rootDir, '.limina/check/last-run.json'), {
+        recursive: true,
+      });
+
+      let stdout = '';
+      let stderr = '';
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'check',
+            'demo',
+          ],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        );
+        throw new Error('Expected snapshot writer failure.');
+      } catch (error) {
+        expect(error).toMatchObject({ code: 1 });
+        stdout = String((error as { stdout?: unknown }).stdout ?? '');
+        stderr = String((error as { stderr?: unknown }).stderr ?? '');
+      }
+
+      const output = stripAnsi(`${stdout}\n${stderr}`);
+      expect(output).toContain('limina check failed');
+      expect(output.match(/limina failed:/gu)).toHaveLength(1);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  }, 15_000);
+
+  it('rejects an empty named pipeline before flow and snapshot creation', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-empty-pipeline-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+    const snapshotPath = path.join(rootDir, '.limina/check/last-run.json');
+    const previousSnapshot = '{"sentinel":"unchanged"}\n';
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({ name: 'root', private: true }),
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default { pipelines: { demo: [] } };\n',
+      );
+      await writeText(snapshotPath, previousSnapshot);
+
+      let stdout = '';
+      let stderr = '';
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'check',
+            'demo',
+          ],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        );
+        throw new Error('Expected empty pipeline planning failure.');
+      } catch (error) {
+        expect(error).toMatchObject({ code: 1 });
+        stdout = String((error as { stdout?: unknown }).stdout ?? '');
+        stderr = String((error as { stderr?: unknown }).stderr ?? '');
+      }
+
+      const output = stripAnsi(`${stdout}\n${stderr}`);
+      expect(output).toContain(
+        'Pipeline "demo" must contain at least one step.',
+      );
+      expect(output).not.toContain('limina check failed');
+      expect(await readFile(snapshotPath, 'utf8')).toBe(previousSnapshot);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  }, 15_000);
+
   it('shows graph export options without the removed task orchestrator command', () => {
     const rootHelp = getHelpOutput(['node', 'limina', '--help']);
     const graphHelp = getHelpOutput(['node', 'limina', 'graph', '--help']);
@@ -1226,7 +1385,7 @@ export default {
             ],
           },
           status: 'completed',
-          version: 4,
+          version: 5,
         }),
       );
 
@@ -1365,7 +1524,7 @@ export default {
             },
           ],
           status: 'completed',
-          version: 4,
+          version: 5,
         }),
       );
 

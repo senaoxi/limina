@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import { isLocalPackageDependencySpecifier } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { createElapsedTimer } from 'logaria/helper';
@@ -42,7 +42,7 @@ import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 export interface RunReleaseCheckOptions {
   clearScreen?: boolean;
   config: ResolvedLiminaConfig;
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   cwd?: string;
   deferSnapshot?: boolean;
   flow?: LiminaFlowReporter;

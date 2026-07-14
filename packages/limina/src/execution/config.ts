@@ -6,7 +6,6 @@ export type ExecutionConcurrency = number | 'auto';
 export interface ExecutionConfig {
   checkerBuild?: ExecutionConcurrency;
   checkerTypecheck?: ExecutionConcurrency;
-  failFast?: boolean;
   packageEntries?: ExecutionConcurrency;
   releaseEntries?: ExecutionConcurrency;
   tasks?: ExecutionConcurrency;
@@ -15,7 +14,6 @@ export interface ExecutionConfig {
 export interface ResolvedExecutionConfig {
   checkerBuild: ExecutionConcurrency;
   checkerTypecheck: ExecutionConcurrency;
-  failFast: boolean;
   packageEntries: ExecutionConcurrency;
   releaseEntries: ExecutionConcurrency;
   tasks: ExecutionConcurrency;
@@ -24,7 +22,6 @@ export interface ResolvedExecutionConfig {
 export const defaultExecutionConfig: ResolvedExecutionConfig = {
   checkerBuild: 'auto',
   checkerTypecheck: 2,
-  failFast: false,
   packageEntries: 'auto',
   releaseEntries: 2,
   tasks: 'auto',
@@ -66,7 +63,6 @@ function resolveExecutionConfig(
     checkerTypecheck:
       config.execution?.checkerTypecheck ??
       defaultExecutionConfig.checkerTypecheck,
-    failFast: config.execution?.failFast ?? defaultExecutionConfig.failFast,
     packageEntries:
       config.execution?.packageEntries ?? defaultExecutionConfig.packageEntries,
     releaseEntries:

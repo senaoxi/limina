@@ -562,7 +562,7 @@ export function addSourceReferenceConfigProblems(options: {
       `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
       '  field: references',
       '  reason: source typecheck configs must not hand-maintain project references; Limina infers static source edges and liminaOptions.implicitRefs documents dynamic or virtual edges.',
-      '  fix: run limina migration to remove legacy tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
+      '  fix: remove obsolete tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
     ].join('\n'),
   );
 }

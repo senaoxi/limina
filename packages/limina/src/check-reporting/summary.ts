@@ -390,11 +390,11 @@ function getTaskIssueCount(
     return issueCounts.get('command') ?? 0;
   }
 
-  return issueCounts.get(task.name) ?? 0;
+  return issueCounts.get(task.issueTask) ?? 0;
 }
 
 function isExecutedTask(task: LiminaCheckRunTaskSummary): boolean {
-  return task.status === 'failed' || task.status === 'passed';
+  return task.state === 'failed' || task.state === 'passed';
 }
 
 function getCheckRunExecutionStats(
@@ -409,13 +409,16 @@ function getCheckRunExecutionStats(
     };
   }
 
-  const executed = run.tasks.filter(isExecutedTask).length;
-  const passed = run.tasks.filter((task) => task.status === 'passed').length;
+  const visibleTasks = run.tasks.filter(
+    (task) => task.kind !== 'preparation' || task.state !== 'passed',
+  );
+  const executed = visibleTasks.filter(isExecutedTask).length;
+  const passed = visibleTasks.filter((task) => task.state === 'passed').length;
 
   return {
     executed,
-    notReached: Math.max(0, run.tasks.length - executed),
-    planned: run.tasks.length,
+    notReached: Math.max(0, visibleTasks.length - executed),
+    planned: visibleTasks.length,
     passed,
   };
 }
@@ -432,18 +435,21 @@ function createTaskExecutionStats(
   const stats = new Map<string, CheckRunTaskExecutionStats>();
 
   for (const task of run.tasks) {
+    if (task.kind === 'preparation' && task.state === 'passed') {
+      continue;
+    }
     const checkItems = task.checkItems ?? [];
     const hasCheckItems = checkItems.length > 0;
     const itemTotal = hasCheckItems
       ? checkItems.reduce((total, item) => total + getCheckItemTotal(item), 0)
       : 0;
     const taskTotal = hasCheckItems ? itemTotal : (task.checksTotal ?? 1);
-    const existing = stats.get(task.name) ?? {
+    const existing: CheckRunTaskExecutionStats = stats.get(task.label) ?? {
       checkItems: [],
       failed: 0,
       issues: getTaskIssueCount(task, issueCounts),
       kind: task.kind,
-      name: task.name,
+      name: task.label,
       planned: 0,
       reached: 0,
       total: 0,
@@ -451,10 +457,10 @@ function createTaskExecutionStats(
 
     existing.planned += 1;
 
-    if (task.status === 'passed') {
+    if (task.state === 'passed') {
       existing.reached += 1;
       existing.total += taskTotal;
-    } else if (task.status === 'failed') {
+    } else if (task.state === 'failed') {
       existing.failed += 1;
       existing.reached += 1;
       existing.total += taskTotal;
@@ -468,7 +474,7 @@ function createTaskExecutionStats(
       existing.durationMs = (existing.durationMs ?? 0) + task.durationMs;
     }
 
-    stats.set(task.name, existing);
+    stats.set(task.label, existing);
   }
 
   return [...stats.values()].filter((stat) => stat.reached > 0);
@@ -700,9 +706,9 @@ function formatRunExecutionLines(options: {
     `Executed tasks: ${stats.executed} / ${stats.planned}`,
     `Passed tasks: ${stats.passed} / ${stats.executed}`,
     `Open issues: ${options.issueCount}`,
-    ...(stats.notReached > 0 && options.run?.blockedBy?.task
+    ...(stats.notReached > 0 && options.run?.blockedBy?.label
       ? [
-          `Not reached after: ${options.run.blockedBy.task} (${stats.notReached} ${plural(
+          `Not reached after: ${options.run.blockedBy.label} (${stats.notReached} ${plural(
             stats.notReached,
             'task',
             'tasks',
@@ -860,14 +866,14 @@ function formatTopBlockerLines(blockers: readonly CheckTopBlocker[]): string[] {
 }
 
 function getFailedTask(run: LiminaCheckRunSummary | undefined): string | null {
-  if (run?.blockedBy?.task) {
-    return run.blockedBy.task;
+  if (run?.blockedBy?.label) {
+    return run.blockedBy.label;
   }
 
   const failedTasks = uniqueValues(
     run?.tasks
-      .filter((task) => task.status === 'failed')
-      .map((task) => task.name) ?? [],
+      .filter((task) => task.state === 'failed')
+      .map((task) => task.label) ?? [],
   );
 
   return failedTasks.length === 1 ? failedTasks[0] : null;
@@ -949,7 +955,7 @@ export function formatCheckRunSummaryHuman(
             ...(shouldShowBlockedAt
               ? [
                   `Blocked at: ${
-                    run?.blockedBy?.task ?? failedTask ?? '(none)'
+                    run?.blockedBy?.label ?? failedTask ?? '(none)'
                   }`,
                 ]
               : []),

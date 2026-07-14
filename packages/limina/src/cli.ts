@@ -61,8 +61,8 @@ import {
 } from './flow';
 import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 import {
-  describeDefaultCheckPipeline,
-  describePipeline,
+  createDefaultExecutionPlan,
+  createExecutionPlan,
   runDefaultCheck,
   runPipeline,
 } from './pipeline/runner';
@@ -430,12 +430,85 @@ function createCliFlow(
     : createLiminaFlowReporter();
 }
 
+interface CliFlowBoundary {
+  close(): Promise<void>;
+  outro(message: string): void;
+}
+
 async function closeCliFlow(
-  flow: ReturnType<typeof createCliFlow>,
+  flow: CliFlowBoundary,
   message: string,
 ): Promise<void> {
-  flow.outro(message);
-  await flow.close();
+  let outroError: unknown;
+  let closeError: unknown;
+
+  try {
+    flow.outro(message);
+  } catch (error) {
+    outroError = error;
+  }
+  try {
+    await flow.close();
+  } catch (error) {
+    closeError = error;
+  }
+
+  if (outroError !== undefined) {
+    if (outroError instanceof Error && closeError !== undefined) {
+      Object.defineProperty(outroError, 'flowCloseError', {
+        configurable: true,
+        value: closeError,
+      });
+    }
+    throw outroError;
+  }
+  if (closeError !== undefined) throw closeError;
+}
+
+async function runCliFlowWithCleanup(
+  flow: CliFlowBoundary,
+  messages: { failed: string; passed: string },
+  execute: () => Promise<boolean>,
+): Promise<boolean> {
+  let passed = false;
+  let primaryError: unknown;
+  let closeError: unknown;
+
+  try {
+    passed = await execute();
+  } catch (error) {
+    primaryError = error;
+  }
+
+  try {
+    await closeCliFlow(flow, passed ? messages.passed : messages.failed);
+  } catch (error) {
+    closeError = error;
+  }
+
+  if (primaryError !== undefined) {
+    if (primaryError instanceof Error && closeError !== undefined) {
+      Object.defineProperty(primaryError, 'flowCloseError', {
+        configurable: true,
+        value: closeError,
+      });
+    }
+    throw primaryError;
+  }
+
+  if (closeError !== undefined) throw closeError;
+  return passed;
+}
+
+export function runCheckWithCliFlowCleanup(
+  flow: CliFlowBoundary,
+  execute: () => Promise<boolean>,
+): Promise<boolean> {
+  return runCliFlowWithCleanup(
+    flow,
+    { failed: 'limina check failed', passed: 'limina check passed' },
+    execute,
+  );
 }
 
 function readGlobalFlagsFromArgv(argv: readonly string[]): GlobalFlags {
@@ -589,8 +662,13 @@ function getCheckIssueTaskHelpValues(
   snapshot: Awaited<ReturnType<typeof readCheckIssueSnapshot>>,
 ): CheckIssueFilterHelpValue[] {
   return uniqueSortedValues([
-    ...describeDefaultCheckPipeline().map((task) => task.name),
-    ...(snapshot?.run?.tasks.map((task) => task.name) ?? []),
+    'checker:build',
+    'checker:typecheck',
+    'graph:check',
+    'graph:materialize',
+    'proof:check',
+    'source:check',
+    ...(snapshot?.run?.tasks.map((task) => task.issueTask) ?? []),
     ...(snapshot?.issues.map((issue) => issue.task) ?? []),
   ]);
 }
@@ -707,27 +785,24 @@ export function createLiminaCli(): ReturnType<typeof cac> {
     .command('migration', 'Migrate TypeScript configs into Limina governance')
     .action(async (flags: MigrationFlags) => {
       const flow = createCliFlow();
-      flow.intro('limina migration');
-      let passed = false;
+      const passed = await runCliFlowWithCleanup(
+        flow,
+        {
+          failed: 'limina migration failed',
+          passed: 'limina migration passed',
+        },
+        async () => {
+          flow.intro('limina migration');
+          const config = await loadMigrationConfig(flags);
 
-      try {
-        const config = await loadMigrationConfig(flags);
-
-        await runMigration(config, {
-          flow,
-          flowDepth: 1,
-        });
-        passed = true;
-      } finally {
-        if (!passed) {
-          process.exitCode = 1;
-        }
-
-        await closeCliFlow(
-          flow,
-          passed ? 'limina migration passed' : 'limina migration failed',
-        );
-      }
+          await runMigration(config, {
+            flow,
+            flowDepth: 1,
+          });
+          return true;
+        },
+      );
+      if (!passed) process.exitCode = 1;
     });
 
   cli
@@ -776,24 +851,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         return;
       }
 
-      const flow = createCliFlow({
-        check: true,
-        clearScreen: false,
-      });
-      flow.intro('limina check');
       const config = await load(flags, 'check');
       const packageNames = parsePackageNames(flags.package);
       const command = pipeline ? `limina check ${pipeline}` : 'limina check';
-      const plannedTasks = pipeline
-        ? describePipeline(config, pipeline)
-        : describeDefaultCheckPipeline();
-      const checkRunRecorder = createCheckRunRecorder({
-        command,
-        configPath: config.configPath,
-        pipeline: pipeline ?? 'default',
-        plannedTasks,
-        rootDir: config.rootDir,
-      });
       const sourceIssueReport = {
         ...createSourceIssueReportOptions(flags, command),
         defer: true,
@@ -803,45 +863,51 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         defer: true,
         verbose: flags.verbose,
       };
-
-      await writeNotRunCheckIssueSnapshot({
-        command: sourceIssueReport.command ?? command,
-        rootDir: config.rootDir,
-        run: checkRunRecorder.getRunSummary(),
+      const planOptions = {
+        checkIssueReport,
+        cwd: process.cwd(),
+        packageNames,
+        sourceIssueReport,
+      };
+      const plan = pipeline
+        ? createExecutionPlan(config, pipeline, planOptions)
+        : createDefaultExecutionPlan(config, planOptions);
+      const flow = createCliFlow({
+        check: true,
+        clearScreen: false,
       });
-
-      let passed = false;
-
-      try {
-        passed = pipeline
+      const passed = await runCheckWithCliFlowCleanup(flow, async () => {
+        flow.intro('limina check');
+        const checkRunRecorder = createCheckRunRecorder({
+          command,
+          configPath: config.configPath,
+          pipeline: pipeline ?? 'default',
+          plannedTasks: plan.tasks,
+          rootDir: config.rootDir,
+        });
+        await writeNotRunCheckIssueSnapshot({
+          command: sourceIssueReport.command ?? command,
+          rootDir: config.rootDir,
+          run: checkRunRecorder.getRunSummary(),
+        });
+        return pipeline
           ? await runPipeline(config, pipeline, {
-              checkIssueReport,
+              ...planOptions,
               checkRunRecorder,
-              cwd: process.cwd(),
+              executionPlan: plan,
               flow,
-              packageNames,
-              sourceIssueReport,
             })
           : await runDefaultCheck(config, {
-              checkIssueReport,
+              ...planOptions,
               checkRunRecorder,
-              cwd: process.cwd(),
+              executionPlan: plan,
               flow,
-              packageNames,
-              sourceIssueReport,
             });
-      } catch {
-        passed = false;
-      }
+      });
 
       if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        passed ? 'limina check passed' : 'limina check failed',
-      );
 
       const snapshot = await readCheckIssueSnapshot(config.rootDir);
       if (snapshot) {
@@ -887,57 +953,36 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       }
 
       const flow = createCliFlow();
-      flow.intro(`limina graph ${action}`);
-      const config = await load(flags, 'graph');
-
-      if (action === 'check') {
-        await writeNotRunCheckIssueSnapshot({
-          command: 'limina graph check',
-          rootDir: config.rootDir,
-        });
-
-        const passed = await runGraphCheck(config, {
-          clearScreen: false,
-          flow,
-          report: {
-            command: 'limina graph check',
-            verbose: flags.verbose,
-          },
-        });
-
-        if (!passed) {
-          process.exitCode = 1;
-        }
-
-        await closeCliFlow(
-          flow,
-          passed ? 'limina graph passed' : 'limina graph failed',
-        );
-        return;
-      }
-
-      await writeNotRunCheckIssueSnapshot({
-        command: 'limina graph prepare',
-        rootDir: config.rootDir,
-      });
-
-      const passed = await runGraphPrepare(config, {
-        clearScreen: false,
+      const passed = await runCliFlowWithCleanup(
         flow,
-        report: {
-          command: 'limina graph prepare',
-          verbose: flags.verbose,
+        { failed: 'limina graph failed', passed: 'limina graph passed' },
+        async () => {
+          flow.intro(`limina graph ${action}`);
+          const config = await load(flags, 'graph');
+          const command =
+            action === 'check' ? 'limina graph check' : 'limina graph prepare';
+          await writeNotRunCheckIssueSnapshot({
+            command,
+            rootDir: config.rootDir,
+          });
+
+          return action === 'check'
+            ? runGraphCheck(config, {
+                clearScreen: false,
+                flow,
+                report: { command, verbose: flags.verbose },
+              })
+            : runGraphPrepare(config, {
+                clearScreen: false,
+                flow,
+                report: { command, verbose: flags.verbose },
+              });
         },
-      });
+      );
 
       if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        passed ? 'limina graph passed' : 'limina graph failed',
-      );
     });
 
   cli
@@ -948,29 +993,30 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown proof action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      flow.intro('limina proof check');
-      const config = await load(flags, 'proof');
-      await writeNotRunCheckIssueSnapshot({
-        command: 'limina proof check',
-        rootDir: config.rootDir,
-      });
-      const passed = await runProofCheck(config, {
-        clearScreen: false,
+      const passed = await runCliFlowWithCleanup(
         flow,
-        report: {
-          command: 'limina proof check',
-          verbose: flags.verbose,
+        { failed: 'limina proof failed', passed: 'limina proof passed' },
+        async () => {
+          flow.intro('limina proof check');
+          const config = await load(flags, 'proof');
+          await writeNotRunCheckIssueSnapshot({
+            command: 'limina proof check',
+            rootDir: config.rootDir,
+          });
+          return runProofCheck(config, {
+            clearScreen: false,
+            flow,
+            report: {
+              command: 'limina proof check',
+              verbose: flags.verbose,
+            },
+          });
         },
-      });
+      );
 
       if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        passed ? 'limina proof passed' : 'limina proof failed',
-      );
     });
 
   cli
@@ -985,30 +1031,34 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown source action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      flow.intro('limina source check');
-      const config = await load(flags, 'source');
-      await writeNotRunCheckIssueSnapshot({
-        command: 'limina source check',
-        rootDir: config.rootDir,
-      });
-      await writeNotRunSourceIssueSnapshot({
-        command: 'limina source check',
-        rootDir: config.rootDir,
-      });
-      const passed = await runSourceCheck(config, {
-        clearScreen: false,
+      const passed = await runCliFlowWithCleanup(
         flow,
-        report: createSourceIssueReportOptions(flags, 'limina source check'),
-      });
+        { failed: 'limina source failed', passed: 'limina source passed' },
+        async () => {
+          flow.intro('limina source check');
+          const config = await load(flags, 'source');
+          await writeNotRunCheckIssueSnapshot({
+            command: 'limina source check',
+            rootDir: config.rootDir,
+          });
+          await writeNotRunSourceIssueSnapshot({
+            command: 'limina source check',
+            rootDir: config.rootDir,
+          });
+          return runSourceCheck(config, {
+            clearScreen: false,
+            flow,
+            report: createSourceIssueReportOptions(
+              flags,
+              'limina source check',
+            ),
+          });
+        },
+      );
 
       if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        passed ? 'limina source passed' : 'limina source failed',
-      );
     });
 
   cli
@@ -1029,35 +1079,37 @@ export function createLiminaCli(): ReturnType<typeof cac> {
 
       const checker = parseBuildPreset(flags.preset, 'build');
       const flow = createCliFlow();
-      flow.intro('limina build');
-      const config = await load(flags, 'build');
-      await writeNotRunCheckIssueSnapshot({
-        command: 'limina build',
-        rootDir: config.rootDir,
-      });
-      const result = await runBuild({
-        checker,
-        clearScreen: false,
-        config,
-        configPath,
-        cwd: process.cwd(),
+      const passed = await runCliFlowWithCleanup(
         flow,
-        raw: flags.raw,
-        report: {
-          command: 'limina build',
-          verbose: flags.verbose,
+        { failed: 'limina build failed', passed: 'limina build passed' },
+        async () => {
+          flow.intro('limina build');
+          const config = await load(flags, 'build');
+          await writeNotRunCheckIssueSnapshot({
+            command: 'limina build',
+            rootDir: config.rootDir,
+          });
+          const result = await runBuild({
+            checker,
+            clearScreen: false,
+            config,
+            configPath,
+            cwd: process.cwd(),
+            flow,
+            raw: flags.raw,
+            report: {
+              command: 'limina build',
+              verbose: flags.verbose,
+            },
+            watch,
+          });
+          return result.passed;
         },
-        watch,
-      });
+      );
 
-      if (!result.passed) {
+      if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        result.passed ? 'limina build passed' : 'limina build failed',
-      );
     });
 
   cli
@@ -1084,96 +1136,86 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         }
 
         const flow = createCliFlow();
-        flow.intro(`limina checker ${action}`);
-
-        if (action === 'build') {
-          const watch = getCheckerWatchFlag(flags);
-
-          if (!configPath && flags.preset) {
-            throw new Error(
-              'checker build --preset requires a config argument.',
-            );
-          }
-
-          if (!configPath && watch) {
-            throw new Error(
-              'checker build --watch requires a config argument.',
-            );
-          }
-
-          const config = await load(flags, configPath ? 'build' : 'check');
-          await writeNotRunCheckIssueSnapshot({
-            command: 'limina checker build',
-            rootDir: config.rootDir,
-          });
-          const result = await runCheckerBuild({
-            ...(configPath
-              ? {
-                  checker: parseBuildPreset(flags.preset),
-                  configPath,
-                  watch,
-                }
-              : {}),
-            clearScreen: false,
-            config,
-            cwd: process.cwd(),
-            flow,
-            report: {
-              command: 'limina checker build',
-              verbose: flags.verbose,
-            },
-          });
-
-          if (!result.passed) {
-            process.exitCode = 1;
-          }
-
-          await closeCliFlow(
-            flow,
-            result.passed ? 'limina checker passed' : 'limina checker failed',
-          );
-
-          return;
-        }
-
-        if (configPath) {
-          throw new Error(
-            'checker typecheck does not accept a config argument.',
-          );
-        }
-
-        if (flags.preset) {
-          throw new Error('checker typecheck does not accept --preset.');
-        }
-
-        if (getCheckerWatchFlag(flags)) {
-          throw new Error('checker typecheck does not accept --watch.');
-        }
-
-        const config = await load(flags, 'check');
-        await writeNotRunCheckIssueSnapshot({
-          command: 'limina checker typecheck',
-          rootDir: config.rootDir,
-        });
-        const result = await runCheckerTypecheck({
-          clearScreen: false,
-          config,
-          cwd: process.cwd(),
+        const passed = await runCliFlowWithCleanup(
           flow,
-          report: {
-            command: 'limina checker typecheck',
-            verbose: flags.verbose,
+          {
+            failed: 'limina checker failed',
+            passed: 'limina checker passed',
           },
-        });
+          async () => {
+            flow.intro(`limina checker ${action}`);
 
-        if (!result.passed) {
-          process.exitCode = 1;
-        }
+            if (action === 'build') {
+              const watch = getCheckerWatchFlag(flags);
 
-        await closeCliFlow(
-          flow,
-          result.passed ? 'limina checker passed' : 'limina checker failed',
+              if (!configPath && flags.preset) {
+                throw new Error(
+                  'checker build --preset requires a config argument.',
+                );
+              }
+
+              if (!configPath && watch) {
+                throw new Error(
+                  'checker build --watch requires a config argument.',
+                );
+              }
+
+              const config = await load(flags, configPath ? 'build' : 'check');
+              await writeNotRunCheckIssueSnapshot({
+                command: 'limina checker build',
+                rootDir: config.rootDir,
+              });
+              const result = await runCheckerBuild({
+                ...(configPath
+                  ? {
+                      checker: parseBuildPreset(flags.preset),
+                      configPath,
+                      watch,
+                    }
+                  : {}),
+                clearScreen: false,
+                config,
+                cwd: process.cwd(),
+                flow,
+                report: {
+                  command: 'limina checker build',
+                  verbose: flags.verbose,
+                },
+              });
+              return result.passed;
+            }
+
+            if (configPath) {
+              throw new Error(
+                'checker typecheck does not accept a config argument.',
+              );
+            }
+            if (flags.preset) {
+              throw new Error('checker typecheck does not accept --preset.');
+            }
+            if (getCheckerWatchFlag(flags)) {
+              throw new Error('checker typecheck does not accept --watch.');
+            }
+
+            const config = await load(flags, 'check');
+            await writeNotRunCheckIssueSnapshot({
+              command: 'limina checker typecheck',
+              rootDir: config.rootDir,
+            });
+            const result = await runCheckerTypecheck({
+              clearScreen: false,
+              config,
+              cwd: process.cwd(),
+              flow,
+              report: {
+                command: 'limina checker typecheck',
+                verbose: flags.verbose,
+              },
+            });
+            return result.passed;
+          },
         );
+        if (!passed) process.exitCode = 1;
       },
     );
 
@@ -1188,34 +1230,35 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown package action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      flow.intro('limina package check');
-      const config = await load(flags, 'package');
-      await writeNotRunCheckIssueSnapshot({
-        command: 'limina package check',
-        rootDir: config.rootDir,
-      });
-      const passed = await runPackageCheck({
-        attwProfile: parsePackageAttwProfile(flags.attwProfile),
-        clearScreen: false,
-        config,
-        cwd: process.cwd(),
+      const passed = await runCliFlowWithCleanup(
         flow,
-        packageNames: parsePackageNames(flags.package),
-        report: {
-          command: 'limina package check',
-          verbose: flags.verbose,
+        { failed: 'limina package failed', passed: 'limina package passed' },
+        async () => {
+          flow.intro('limina package check');
+          const config = await load(flags, 'package');
+          await writeNotRunCheckIssueSnapshot({
+            command: 'limina package check',
+            rootDir: config.rootDir,
+          });
+          return runPackageCheck({
+            attwProfile: parsePackageAttwProfile(flags.attwProfile),
+            clearScreen: false,
+            config,
+            cwd: process.cwd(),
+            flow,
+            packageNames: parsePackageNames(flags.package),
+            report: {
+              command: 'limina package check',
+              verbose: flags.verbose,
+            },
+            tool: parsePackageTool(flags.tool),
+          });
         },
-        tool: parsePackageTool(flags.tool),
-      });
+      );
 
       if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        passed ? 'limina package passed' : 'limina package failed',
-      );
     });
 
   cli
@@ -1227,32 +1270,33 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown release action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      flow.intro('limina release check');
-      const config = await load(flags, 'release');
-      await writeNotRunCheckIssueSnapshot({
-        command: 'limina release check',
-        rootDir: config.rootDir,
-      });
-      const passed = await runReleaseCheck({
-        clearScreen: false,
-        config,
-        cwd: process.cwd(),
+      const passed = await runCliFlowWithCleanup(
         flow,
-        packageNames: parsePackageNames(flags.package),
-        report: {
-          command: 'limina release check',
-          verbose: flags.verbose,
+        { failed: 'limina release failed', passed: 'limina release passed' },
+        async () => {
+          flow.intro('limina release check');
+          const config = await load(flags, 'release');
+          await writeNotRunCheckIssueSnapshot({
+            command: 'limina release check',
+            rootDir: config.rootDir,
+          });
+          return runReleaseCheck({
+            clearScreen: false,
+            config,
+            cwd: process.cwd(),
+            flow,
+            packageNames: parsePackageNames(flags.package),
+            report: {
+              command: 'limina release check',
+              verbose: flags.verbose,
+            },
+          });
         },
-      });
+      );
 
       if (!passed) {
         process.exitCode = 1;
       }
-
-      await closeCliFlow(
-        flow,
-        passed ? 'limina release passed' : 'limina release failed',
-      );
     });
 
   return cli;

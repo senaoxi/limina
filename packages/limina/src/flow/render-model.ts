@@ -1,4 +1,5 @@
 export type FlowStatus =
+  | 'block'
   | 'fail'
   | 'info'
   | 'pass'
@@ -8,6 +9,7 @@ export type FlowStatus =
   | 'warn';
 
 export type FlowTreeNodeStatus =
+  | 'blocked'
   | 'failed'
   | 'passed'
   | 'planned'
@@ -119,6 +121,7 @@ export const SPINNER_FRAMES = [
 export const SPINNER_INTERVAL_MS = 80;
 
 const FLOW_SYMBOL_BY_STATUS: Record<FlowStatus, string> = {
+  block: '⊘',
   fail: '✕',
   info: '│',
   pass: '◆',
@@ -137,7 +140,7 @@ function colorInteractiveSymbol(status: FlowStatus, symbol: string): string {
     return `${ANSI_RED}${symbol}${ANSI_RESET}`;
   }
 
-  if (status === 'warn') {
+  if (status === 'warn' || status === 'block') {
     return `${ANSI_YELLOW}${symbol}${ANSI_RESET}`;
   }
 
@@ -186,6 +189,9 @@ export function formatInteractiveLine(
 
 export function toTreeFlowStatus(status: FlowTreeNodeStatus): FlowStatus {
   switch (status) {
+    case 'blocked': {
+      return 'block';
+    }
     case 'failed': {
       return 'fail';
     }
@@ -209,6 +215,7 @@ export function toTreeFlowStatus(status: FlowTreeNodeStatus): FlowStatus {
 function isTreeNodeTerminal(node: FlowRenderTreeNode): boolean {
   return (
     node.status === 'failed' ||
+    node.status === 'blocked' ||
     node.status === 'passed' ||
     node.status === 'skipped'
   );

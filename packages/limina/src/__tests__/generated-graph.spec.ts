@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { prepareGeneratedTsconfigGraph } from '#core/build-graph/runner';
+import { parseProject } from '#core/import-graph/context';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import {
@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -942,11 +943,31 @@ describe('prepareGeneratedTsconfigGraph', () => {
         await readFile(path.join(fixture.rootDir, dtsPath), 'utf8'),
       ) as {
         compilerOptions: Record<string, unknown>;
+        extends: string[];
+        files: string[];
+        include: unknown[];
         liminaOptions: Record<string, unknown>;
       };
 
       expect(generatedConfig.compilerOptions.composite).toBe(true);
       expect(generatedConfig.compilerOptions.emitDeclarationOnly).toBe(true);
+      expect(generatedConfig.extends).toEqual([
+        toPortablePath(
+          path.relative(
+            path.dirname(path.join(fixture.rootDir, dtsPath)),
+            path.join(fixture.rootDir, sourcePath),
+          ),
+        ),
+      ]);
+      expect(generatedConfig.files).toEqual([
+        toPortablePath(
+          path.relative(
+            path.dirname(path.join(fixture.rootDir, dtsPath)),
+            path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
+          ),
+        ),
+      ]);
+      expect(generatedConfig.include).toEqual([]);
       expect(generatedConfig.liminaOptions).toMatchObject({
         checker: 'typescript',
         generated: true,
@@ -1299,6 +1320,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         compilerOptions: Record<string, unknown>;
         extends: string[];
         files: string[];
+        include: unknown[];
         liminaOptions: Record<string, unknown>;
         references?: { path: string }[];
       };
@@ -1364,6 +1386,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ),
         ),
       ]);
+      expect(outputConfig.include).toEqual([]);
       expect(outputConfig.references).toEqual([]);
       expect(outputConfig.liminaOptions.sourceConfig).toBe(
         toPortablePath(
@@ -1373,6 +1396,76 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ),
         ),
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps generated project root files fixed to the generation snapshot', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [
+          {
+            path: './tsconfig.lib.json',
+          },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        liminaOptions: {
+          outputs: {},
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await prepareGeneratedTsconfigGraph(fixture.config);
+      await writeText(
+        path.join(fixture.rootDir, 'packages/pkg/src/late.ts'),
+        'export const late = true;\n',
+      );
+
+      const sourceConfigPath = path.join(
+        fixture.rootDir,
+        'packages/pkg/tsconfig.lib.json',
+      );
+      const dtsConfigPath = path.join(
+        fixture.rootDir,
+        '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+      );
+      const outputConfigPath = path.join(
+        fixture.rootDir,
+        '.limina/tsconfig/checkers/typescript/outputs/projects/packages/pkg/tsconfig.lib.output.json',
+      );
+      const toFixturePaths = (fileNames: string[]): string[] =>
+        fileNames
+          .map((fileName) =>
+            toPortablePath(path.relative(fixture.rootDir, fileName)),
+          )
+          .sort();
+
+      expect(
+        toFixturePaths(
+          parseProject(fixture.config, sourceConfigPath).fileNames,
+        ),
+      ).toEqual(['packages/pkg/src/index.ts', 'packages/pkg/src/late.ts']);
+      expect(
+        toFixturePaths(parseProject(fixture.config, dtsConfigPath).fileNames),
+      ).toEqual(['packages/pkg/src/index.ts']);
+      expect(
+        toFixturePaths(
+          parseProject(fixture.config, outputConfigPath).fileNames,
+        ),
+      ).toEqual(['packages/pkg/src/index.ts']);
     } finally {
       await fixture.cleanup();
     }

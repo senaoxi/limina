@@ -9,7 +9,7 @@ import type {
   ResolvedLiminaConfig,
   RuntimeEnvironment,
 } from '#config/runner';
-import type { LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import { getPackageRootSpecifier } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
@@ -98,7 +98,7 @@ export interface RunPackageCheckOptions {
   attwProfile?: PackageAttwProfile;
   clearScreen?: boolean;
   config: ResolvedLiminaConfig;
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   cwd?: string;
   deferSnapshot?: boolean;
   flow?: LiminaFlowReporter;

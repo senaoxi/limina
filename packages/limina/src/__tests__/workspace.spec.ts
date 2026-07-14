@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { createLiminaCore } from '#core';
+import { createAnalysisProviders } from '#core';
 import type {
   PackageManifest,
   WorkspacePackage,
@@ -296,7 +296,7 @@ describe('collectWorkspacePackages', () => {
         ],
       };
 
-      const core = createLiminaCore(fixture.config);
+      const core = createAnalysisProviders(fixture.config);
       const rawPackages = await core.workspace.getRawPackages();
       const currentPackages = await core.workspace.getPackages();
       const declarations =

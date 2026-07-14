@@ -4,7 +4,6 @@ import type ts from 'typescript';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
-  getTypecheckConfigPath,
   isDtsProjectConfig,
   parseProject,
   type ProjectInfo,
@@ -158,7 +157,7 @@ export function addTypecheckParityProblems(
     return;
   }
 
-  const typecheckConfigPath = getTypecheckConfigPath(dtsProject.configPath);
+  const typecheckConfigPath = dtsProject.resolverConfigPath;
 
   checks.add();
 

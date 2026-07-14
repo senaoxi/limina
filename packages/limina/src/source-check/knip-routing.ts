@@ -2,8 +2,9 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { isNamedWorkspacePackage } from '#core/workspace/actions';
-import { toRelativePath } from '#utils/path';
+import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
+import path from 'pathe';
 import type { KnipSourceAnalysisGroup } from './knip';
 
 export type SourceKnipWorkspaceConfigRecord = Record<string, unknown>;
@@ -140,13 +141,15 @@ export function createKnipSourceAnalysisGroups(options: {
       continue;
     }
 
-    groups.push({
-      tsConfigFile: toRelativePath(
-        workspacePackage.directory,
-        generatedConfig.configPath,
-      ),
-      workspaceNames: [workspacePackage.name],
-    });
+    groups.push(
+      ...collectRealKnipConfigReferences(
+        generatedConfig.references,
+        options.generatedGraph.generatedFiles,
+      ).map((reference) => ({
+        tsConfigFile: toRelativePath(workspacePackage.directory, reference),
+        workspaceNames: [workspacePackage.name],
+      })),
+    );
   }
 
   return [
@@ -159,4 +162,52 @@ export function createKnipSourceAnalysisGroups(options: {
       : []),
     ...groups,
   ];
+}
+
+function collectRealKnipConfigReferences(
+  references: readonly string[],
+  virtualFiles: ReadonlyMap<string, string>,
+): string[] {
+  const realReferences = new Set<string>();
+  const seen = new Set<string>();
+  const pending = references.map(normalizeAbsolutePath);
+
+  for (const configPath of pending) {
+    if (seen.has(configPath)) {
+      continue;
+    }
+
+    seen.add(configPath);
+    const content = virtualFiles.get(configPath);
+
+    if (!content) {
+      realReferences.add(configPath);
+      continue;
+    }
+
+    const config = JSON.parse(content) as {
+      extends?: unknown;
+      references?: readonly { readonly path?: unknown }[];
+    };
+
+    if (typeof config.extends === 'string') {
+      pending.push(
+        normalizeAbsolutePath(
+          path.resolve(path.dirname(configPath), config.extends),
+        ),
+      );
+    }
+
+    for (const reference of config.references ?? []) {
+      if (typeof reference.path === 'string') {
+        pending.push(
+          normalizeAbsolutePath(
+            path.resolve(path.dirname(configPath), reference.path),
+          ),
+        );
+      }
+    }
+  }
+
+  return [...realReferences].sort();
 }

@@ -63,6 +63,7 @@ export function createCheckItemStats(
       ? {}
       : { durationMs: Math.max(0, options.durationMs) }),
     issues,
+    itemKind: 'check',
     name: options.name,
     status: issues === 0 && passed >= total ? 'passed' : 'failed',
   };
@@ -79,6 +80,7 @@ export function createSkippedCheckItemStats(options: {
       ? {}
       : { durationMs: Math.max(0, options.durationMs) }),
     issues: 0,
+    itemKind: 'check',
     name: options.name,
     status: 'skipped',
   };

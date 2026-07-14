@@ -108,8 +108,17 @@ export function createExtensionPattern(extensions: string[]): RegExp {
   );
 }
 
-function readJsonConfigFile(rootDir: string, configPath: string): JsonObject {
-  const result = ts.readConfigFile(configPath, ts.sys.readFile);
+function readJsonConfigFile(
+  rootDir: string,
+  configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
+): JsonObject {
+  const result = ts.readConfigFile(
+    configPath,
+    (fileName) =>
+      virtualFiles?.get(normalizeAbsolutePath(fileName)) ??
+      ts.sys.readFile(fileName),
+  );
 
   if (result.error) {
     throw new Error(
@@ -179,8 +188,9 @@ export function getRawReferencePathsForConfig(
 export function collectReferencePathInfosForConfig(
   rootDir: string,
   configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
 ): ReferencePathCollection {
-  const configObject = readJsonConfigFile(rootDir, configPath);
+  const configObject = readJsonConfigFile(rootDir, configPath, virtualFiles);
 
   return collectReferencePathInfosFromConfigObject(
     rootDir,
@@ -338,6 +348,7 @@ export function isOrdinarySourceTypecheckConfigPath(
 export function collectGraphProjectRouteFromRoot(options: {
   rootConfigPath: string;
   rootDir: string;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): CollectGraphProjectPathsResult {
   const rootGraphConfigPath = normalizeAbsolutePath(options.rootConfigPath);
   const seen = new Set<string>();
@@ -346,6 +357,7 @@ export function collectGraphProjectRouteFromRoot(options: {
   const rootReferences = collectReferencePathInfosForConfig(
     options.rootDir,
     rootGraphConfigPath,
+    options.virtualFiles,
   );
   const queue = rootReferences.references.map((reference) => ({
     projectPath: reference.resolvedPath,
@@ -384,7 +396,10 @@ export function collectGraphProjectRouteFromRoot(options: {
       continue;
     }
 
-    if (!existsSync(projectPath)) {
+    if (
+      !existsSync(projectPath) &&
+      !options.virtualFiles?.has(normalizeAbsolutePath(projectPath))
+    ) {
       problems.push(
         [
           'Checker entry references a missing tsconfig:',
@@ -415,6 +430,7 @@ export function collectGraphProjectRouteFromRoot(options: {
     const referenceCollection = collectReferencePathInfosForConfig(
       options.rootDir,
       projectPath,
+      options.virtualFiles,
     );
 
     problems.push(...referenceCollection.problems);
@@ -468,7 +484,10 @@ export function collectGraphProjectRoutes(
       continue;
     }
 
-    if (!existsSync(rootConfigPath)) {
+    if (
+      !existsSync(rootConfigPath) &&
+      !generatedGraph?.generatedFiles.has(normalizeAbsolutePath(rootConfigPath))
+    ) {
       problems.push(
         [
           'Checker graph entry references a missing tsconfig:',
@@ -482,6 +501,7 @@ export function collectGraphProjectRoutes(
     const routeCollection = collectGraphProjectRouteFromRoot({
       rootConfigPath,
       rootDir: config.rootDir,
+      virtualFiles: generatedGraph?.generatedFiles,
     });
 
     problems.push(...routeCollection.problems);
@@ -521,7 +541,10 @@ export function collectCheckerEntryProjectRoutes(
       continue;
     }
 
-    if (!existsSync(rootConfigPath)) {
+    if (
+      !existsSync(rootConfigPath) &&
+      !generatedGraph?.generatedFiles.has(normalizeAbsolutePath(rootConfigPath))
+    ) {
       problems.push(
         [
           'Checker entry references a missing tsconfig:',
@@ -535,6 +558,7 @@ export function collectCheckerEntryProjectRoutes(
     const routeCollection = collectGraphProjectRouteFromRoot({
       rootConfigPath,
       rootDir: config.rootDir,
+      virtualFiles: generatedGraph?.generatedFiles,
     });
 
     problems.push(...routeCollection.problems);
@@ -570,6 +594,7 @@ export function collectSourceGraphProjectExtensions(
         configPath: projectPath,
         preset: route.checkerPreset,
         projectRootDir: config.rootDir,
+        virtualFiles: generatedGraph?.generatedFiles,
       });
       const routeExtensions = normalizeExtensions(adapterExtensions);
       const projectContext = projectContextsByPath.get(projectPath) ?? {

@@ -36,13 +36,6 @@ export class WorkspaceCore {
     return this.#config.rootDir;
   }
 
-  invalidate(): void {
-    this.#importersPromise = undefined;
-    this.#ownersPromise = undefined;
-    this.#topologyPromise = undefined;
-    this.#workspaceDependenciesPromise = undefined;
-  }
-
   getRawPackages(): Promise<WorkspacePackage[]> {
     return this.getRegionTopology().then((topology) =>
       cloneWorkspacePackages(topology.rawPackages),

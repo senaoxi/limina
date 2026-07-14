@@ -5,6 +5,7 @@ const config: ViteUserConfig = defineConfig({
     environment: 'node',
     globals: true,
     include: ['src/**/__tests__/**/*.spec.ts'],
+    setupFiles: ['src/__tests__/helpers/checker-host-cleanup.ts'],
     testTimeout: 30_000,
     clearMocks: true,
     restoreMocks: true,

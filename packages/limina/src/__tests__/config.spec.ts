@@ -139,7 +139,6 @@ describe('defineConfig', () => {
       execution: {
         checkerBuild: 'auto',
         checkerTypecheck: 2,
-        failFast: false,
         packageEntries: 'auto',
         releaseEntries: 2,
         tasks: 'auto',
@@ -2009,7 +2008,6 @@ export default {
     checkerTypecheck: 2,
     packageEntries: 3,
     releaseEntries: 2,
-    failFast: false,
   },
 };
 `,
@@ -2020,7 +2018,6 @@ export default {
       expect(config.execution).toEqual({
         checkerBuild: 'auto',
         checkerTypecheck: 2,
-        failFast: false,
         packageEntries: 3,
         releaseEntries: 2,
         tasks: 'auto',
@@ -2030,6 +2027,27 @@ export default {
         force: true,
         recursive: true,
       });
+    }
+  });
+
+  it('reports the 0.2.0 failFast migration error', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default { execution: { failFast: false } };\n',
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /execution\.failFast was removed in Limina 0\.2\.0/u,
+      );
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
     }
   });
 

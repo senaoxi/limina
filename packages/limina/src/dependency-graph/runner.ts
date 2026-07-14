@@ -1,9 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { createLiminaCore, type LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
+import { createAnalysisProviders } from '#core';
+import type { ProjectInfo } from '#core/import-graph/context';
 import {
   collectImportsFromFile,
   createFileOwnerLookup,
-  type ProjectInfo,
   resolveInternalImport,
 } from '#core/import-graph/context';
 import {
@@ -58,7 +59,7 @@ export interface DependencyGraphDocument {
 }
 
 export interface CollectDependencyGraphOptions {
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   view?: DependencyGraphView;
 }
 
@@ -112,7 +113,9 @@ function createWorkspaceExportsResolutionProfiles(
   }));
 }
 
-async function collectDependencyGraphProjects(core: LiminaCore): Promise<{
+async function collectDependencyGraphProjects(
+  core: AnalysisProviderSet,
+): Promise<{
   problems: string[];
   projects: ProjectInfo[];
 }> {
@@ -279,7 +282,7 @@ export async function collectDependencyGraph(
   config: ResolvedLiminaConfig,
   options: CollectDependencyGraphOptions = {},
 ): Promise<DependencyGraphDocument> {
-  const core = options.core ?? createLiminaCore(config);
+  const core = options.providers ?? createAnalysisProviders(config);
   const view = normalizeDependencyGraphView(options.view);
   const checkerProjects = await collectDependencyGraphProjects(core);
   const problems = [...checkerProjects.problems];

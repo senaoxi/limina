@@ -124,6 +124,7 @@ export interface CheckerProjectConfigParseOptions {
   configPath: string;
   extensions?: string[];
   projectRootDir: string;
+  virtualFiles?: ReadonlyMap<string, string>;
 }
 
 export interface ParsedCheckerProjectConfig {
@@ -190,6 +191,30 @@ interface VueLanguageCore {
 
 const parsedProjectConfigCache = new Map<string, ParsedCheckerProjectConfig>();
 
+function createProjectParseHost(
+  virtualFiles: ReadonlyMap<string, string> | undefined,
+): typeof ts.sys {
+  if (!virtualFiles) {
+    return ts.sys;
+  }
+
+  return {
+    ...ts.sys,
+    fileExists(fileName): boolean {
+      return (
+        virtualFiles.has(normalizeAbsolutePath(fileName)) ||
+        ts.sys.fileExists(fileName)
+      );
+    },
+    readFile(fileName, encoding): string | undefined {
+      return (
+        virtualFiles.get(normalizeAbsolutePath(fileName)) ??
+        ts.sys.readFile(fileName, encoding)
+      );
+    },
+  };
+}
+
 function createFormatHost(rootDir: string): ts.FormatDiagnosticsHost {
   return {
     getCanonicalFileName: (fileName) => fileName,
@@ -205,11 +230,12 @@ function readTypeScriptProjectConfig(
   parsed: ts.ParsedCommandLine;
 } {
   const diagnostics: ts.Diagnostic[] = [];
+  const host = createProjectParseHost(options.virtualFiles);
   const parsed = ts.getParsedCommandLineOfConfigFile(
     options.configPath,
     {},
     {
-      ...ts.sys,
+      ...host,
       onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
         diagnostics.push(diagnostic);
       },
@@ -266,14 +292,18 @@ function createParsedProjectConfigCacheKey(options: {
   configPath: string;
   extensions: string[];
   projectRootDir: string;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): string {
-  const configStat = statSync(options.configPath);
+  const normalizedConfigPath = normalizeAbsolutePath(options.configPath);
+  const virtualContent = options.virtualFiles?.get(normalizedConfigPath);
+  const configStat =
+    virtualContent === undefined ? statSync(options.configPath) : null;
 
   return JSON.stringify({
     checkerPresets: options.checkerPresets,
-    configPath: normalizeAbsolutePath(options.configPath),
-    configSize: configStat.size,
-    configTime: configStat.mtimeMs,
+    configPath: normalizedConfigPath,
+    configSize: virtualContent?.length ?? configStat?.size,
+    configTime: virtualContent ?? configStat?.mtimeMs,
     extensions: normalizeExtensions(options.extensions),
     projectRootDir: normalizeAbsolutePath(options.projectRootDir),
   });
@@ -304,11 +334,12 @@ function parseProjectConfigWithExtraFileExtensions(
   extensions: string[],
 ): ParsedCheckerProjectConfig {
   const diagnostics: ts.Diagnostic[] = [];
+  const host = createProjectParseHost(options.virtualFiles);
   const parsed = ts.getParsedCommandLineOfConfigFile(
     options.configPath,
     {},
     {
-      ...ts.sys,
+      ...host,
       onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
         diagnostics.push(diagnostic);
       },
@@ -449,6 +480,7 @@ function createVueParsedCommandLine(options: {
   configPath: string;
   packageName: string;
   projectRootDir: string;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): {
   commandLine: ReturnType<VueLanguageCore['createParsedCommandLine']>;
   configPath: string;
@@ -463,7 +495,7 @@ function createVueParsedCommandLine(options: {
   return {
     commandLine: vueLanguageCore.createParsedCommandLine(
       ts,
-      ts.sys,
+      createProjectParseHost(options.virtualFiles),
       configPath,
     ),
     configPath,
@@ -479,6 +511,7 @@ function resolveVueProjectExtensions(
     configPath: options.configPath,
     packageName,
     projectRootDir: options.projectRootDir,
+    virtualFiles: options.virtualFiles,
   });
 
   try {
@@ -521,16 +554,18 @@ function parseVueProjectConfig(
       configPath: options.configPath,
       packageName,
       projectRootDir: options.projectRootDir,
+      virtualFiles: options.virtualFiles,
     });
   const extensions = normalizeExtensions([
     ...(options.extensions ?? []),
     ...getTypeScriptCheckerExtensions(),
     ...vueLanguageCore.getAllExtensions(commandLine.vueOptions),
   ]);
-  const configFile = ts.readJsonConfigFile(configPath, ts.sys.readFile);
+  const host = createProjectParseHost(options.virtualFiles);
+  const configFile = ts.readJsonConfigFile(configPath, host.readFile);
   const parsed = ts.parseJsonSourceFileConfigFileContent(
     configFile,
-    ts.sys,
+    host,
     path.dirname(configPath),
     {},
     configPath,
@@ -838,6 +873,7 @@ export function parseCheckerProjectConfigForContext(options: {
   configPath: string;
   context: CheckerProjectParseContext;
   projectRootDir: string;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): ParsedCheckerProjectConfig {
   const checkerPresets = resolveContextCheckerPresets(options.context);
   const cacheKey = createParsedProjectConfigCacheKey({
@@ -845,6 +881,7 @@ export function parseCheckerProjectConfigForContext(options: {
     configPath: options.configPath,
     extensions: options.context.extensions,
     projectRootDir: options.projectRootDir,
+    virtualFiles: options.virtualFiles,
   });
   const cached = parsedProjectConfigCache.get(cacheKey);
 
@@ -863,6 +900,7 @@ export function parseCheckerProjectConfigForContext(options: {
       configPath: options.configPath,
       extensions: options.context.extensions,
       projectRootDir: options.projectRootDir,
+      virtualFiles: options.virtualFiles,
     });
   });
   const parsedConfig = mergeParsedProjectConfigs(
@@ -926,6 +964,7 @@ export function resolveCheckerProjectExtensions(options: {
   configPath: string;
   preset: CheckerPreset;
   projectRootDir: string;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): string[] {
   const adapter = getCheckerAdapter(options.preset);
 
@@ -936,6 +975,7 @@ export function resolveCheckerProjectExtensions(options: {
   return adapter.extensions({
     configPath: options.configPath,
     projectRootDir: options.projectRootDir,
+    virtualFiles: options.virtualFiles,
   });
 }
 

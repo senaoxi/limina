@@ -54,7 +54,6 @@ export interface ImportAnalysisContext {
 }
 
 export interface CreateImportAnalysisContextOptions {
-  isolated?: boolean;
   projectRootDir?: string;
   vueParser?: VueImportParser;
 }
@@ -1215,15 +1214,6 @@ function createImportAnalysisCaches(): ImportAnalysisCaches {
   };
 }
 
-const sharedImportAnalysisCaches = createImportAnalysisCaches();
-
-export function clearImportAnalysisCache(): void {
-  sharedImportAnalysisCaches.importsCache.clear();
-  sharedImportAnalysisCaches.resolutionCache.clear();
-  sharedImportAnalysisCaches.resolverCache.clear();
-  sharedImportAnalysisCaches.sourceTextCache.clear();
-}
-
 function resolveModuleNameWithOxcCaches(
   caches: ImportAnalysisCaches,
   options: {
@@ -1281,7 +1271,7 @@ export function resolveModuleNameWithOxc(options: {
   context?: ImportResolveContextInput;
   specifier: string;
 }): string | null {
-  return resolveModuleNameWithOxcCaches(sharedImportAnalysisCaches, {
+  return resolveModuleNameWithOxcCaches(createImportAnalysisCaches(), {
     compilerOptions: options.compilerOptions,
     containingFile: normalizeAbsolutePath(options.containingFile),
     context: normalizeContextInput(options.context),
@@ -1292,9 +1282,7 @@ export function resolveModuleNameWithOxc(options: {
 export function createImportAnalysisContext(
   options: CreateImportAnalysisContextOptions = {},
 ): ImportAnalysisContext {
-  const caches = options.isolated
-    ? createImportAnalysisCaches()
-    : sharedImportAnalysisCaches;
+  const caches = createImportAnalysisCaches();
   const vueParser = options.vueParser ?? 'heuristic';
 
   const readSourceText = (filePath: string): string => {

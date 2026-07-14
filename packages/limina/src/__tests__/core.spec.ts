@@ -1,10 +1,12 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { createLiminaCore, type LiminaCore } from '#core';
+import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runPipeline } from '../pipeline/runner';
+import { LiminaPreflightManager } from '../preflight';
 import { toPortablePath, toPortablePaths } from './helpers/path';
 
 const buildCompilerOptions = {
@@ -34,7 +36,7 @@ function stringifyJson(value: unknown): string {
 async function createCoreFixture(): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
-  core: LiminaCore;
+  core: AnalysisProviderSet;
   rootDir: string;
 }> {
   const rootDir = await realpath(
@@ -103,13 +105,33 @@ async function createCoreFixture(): Promise<{
       });
     },
     config,
-    core: createLiminaCore(config),
+    core: createAnalysisProviders(config),
     rootDir,
   };
 }
 
-describe('LiminaCore', () => {
-  it('caches import records until invalidated', async () => {
+describe('AnalysisProviderSet', () => {
+  it('keeps graph analysis read-only until explicit preparation', async () => {
+    const fixture = await createCoreFixture();
+    const generatedDirectory = path.join(fixture.rootDir, '.limina');
+
+    try {
+      const analysis = await fixture.core.buildGraph.getGraph();
+
+      expect(analysis.changed).toBe(true);
+      expect(existsSync(generatedDirectory)).toBe(false);
+
+      await new LiminaPreflightManager({
+        config: fixture.config,
+        providers: fixture.core,
+      }).ensureGeneratedArtifactsMaterialized();
+      expect(existsSync(generatedDirectory)).toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('scopes import records to a provider generation', async () => {
     const fixture = await createCoreFixture();
     const filePath = path.join(fixture.rootDir, 'packages/a/src/index.ts');
 
@@ -132,10 +154,10 @@ describe('LiminaCore', () => {
           .map((record) => record.specifier),
       ).toEqual(['./dep']);
 
-      fixture.core.invalidateAll();
+      const nextGeneration = createAnalysisProviders(fixture.config);
 
       expect(
-        fixture.core.imports
+        nextGeneration.imports
           .getImports(filePath)
           .map((record) => record.specifier),
       ).toEqual(['./other']);
@@ -202,16 +224,14 @@ describe('LiminaCore', () => {
       await fixture.cleanup();
     }
   });
-  it('invalidates the shared pipeline core after external commands', async () => {
+  it('starts a new analysis generation after external commands', async () => {
     const fixture = await createCoreFixture();
     const core = fixture.core;
-    const originalInvalidateAll = core.invalidateAll.bind(core);
-    let invalidateCount = 0;
-
-    core.invalidateAll = () => {
-      invalidateCount += 1;
-      originalInvalidateAll();
-    };
+    const preflight = new LiminaPreflightManager({
+      config: fixture.config,
+      providers: core,
+    });
+    const initialRunId = preflight.run.id;
     fixture.config.pipelines = {
       demo: [
         {
@@ -225,10 +245,13 @@ describe('LiminaCore', () => {
     try {
       await expect(
         runPipeline(fixture.config, 'demo', {
-          core,
+          preflight,
+          providers: core,
         }),
       ).resolves.toBe(true);
-      expect(invalidateCount).toBe(1);
+      expect(preflight.run.generation).toBe('1');
+      expect(preflight.run.id).not.toBe(initialRunId);
+      expect(preflight.providers).not.toBe(core);
     } finally {
       await fixture.cleanup();
     }

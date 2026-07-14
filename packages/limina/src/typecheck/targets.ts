@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
@@ -19,7 +18,29 @@ import type {
 } from '#config/runner';
 import { collectGraphProjectRouteFromRoot } from '#core/tsconfig/actions';
 import { uniqueValues } from '#utils/collections';
+import { normalizeSlashes, toRelativePath } from '#utils/path';
 import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
+import { runCheckerSpawnMeasured } from './process-host';
+
+declare const checkerTargetIdBrand: unique symbol;
+export type CheckerTargetId = string & {
+  readonly [checkerTargetIdBrand]: 'CheckerTargetId';
+};
+
+export function checkerTargetId(value: string): CheckerTargetId {
+  if (!/^checker-target:[a-f0-9]{64}$/u.test(value)) {
+    throw new Error(`Invalid checker target id: ${value}.`);
+  }
+  return value as CheckerTargetId;
+}
+
+export function createCheckerTargetId(
+  identity: readonly string[],
+): CheckerTargetId {
+  return checkerTargetId(
+    `checker-target:${createHash('sha256').update(identity.join('\0')).digest('hex')}`,
+  );
+}
 
 export interface TypecheckTarget {
   args: string[];
@@ -28,20 +49,73 @@ export interface TypecheckTarget {
   cwd: string;
   command: string;
   executionKind?: CheckerExecutionKind;
+  id: CheckerTargetId;
   label?: string;
   sourceConfigPath?: string;
 }
 
 export interface TypecheckTargetResult {
+  blockedBy?: readonly CheckerTargetId[];
   configPath: string;
-  durationMs?: number;
+  durationMs: number;
   error?: Error;
+  id: CheckerTargetId;
   status: number;
+}
+
+export type TypecheckRunnerResult = Omit<
+  TypecheckTargetResult,
+  'durationMs' | 'id'
+> &
+  Partial<Pick<TypecheckTargetResult, 'durationMs' | 'id'>>;
+
+export type CheckerTargetOutcome =
+  | {
+      durationMs: number;
+      id: CheckerTargetId;
+      status: 'passed';
+    }
+  | {
+      durationMs: number;
+      error?: Error;
+      exitCode: number;
+      id: CheckerTargetId;
+      status: 'failed';
+    }
+  | {
+      blockedBy: readonly CheckerTargetId[];
+      id: CheckerTargetId;
+      status: 'blocked';
+    };
+
+export function toCheckerTargetOutcome(
+  target: TypecheckTarget,
+  result: TypecheckTargetResult,
+): CheckerTargetOutcome {
+  if (result.id !== target.id) {
+    throw new Error(
+      `Checker target result identity mismatch for ${target.id}.`,
+    );
+  }
+  if (result.blockedBy) {
+    return { blockedBy: result.blockedBy, id: result.id, status: 'blocked' };
+  }
+
+  const durationMs = result.durationMs;
+  return result.status === 0
+    ? { durationMs, id: result.id, status: 'passed' }
+    : {
+        durationMs,
+        error: result.error,
+        exitCode: result.status,
+        id: result.id,
+        status: 'failed',
+      };
 }
 
 export type TypecheckRunner = (
   target: TypecheckTarget,
-) => Promise<TypecheckTargetResult> | TypecheckTargetResult;
+) => Promise<TypecheckRunnerResult> | TypecheckRunnerResult;
 
 type CheckerProcessStdio = 'ignore' | 'inherit';
 
@@ -134,6 +208,7 @@ export function createCheckerTarget(options: {
   configPath: string;
   executionKind: CheckerExecutionKind;
   projectRootDir: string;
+  sourceConfigPath?: string;
   watch?: boolean;
 }): TypecheckTarget {
   const adapter = getCheckerAdapter(options.checker.preset);
@@ -146,12 +221,28 @@ export function createCheckerTarget(options: {
 
   const commandTarget = adapter.createCommandTarget(options);
 
+  const sourceConfigPath = options.sourceConfigPath ?? options.configPath;
+  const portableSourceConfigPath = normalizeSlashes(
+    toRelativePath(options.projectRootDir, sourceConfigPath),
+  );
+  const portableConfigPath = normalizeSlashes(
+    toRelativePath(options.projectRootDir, options.configPath),
+  );
+
   return {
     ...commandTarget,
     checkerName: options.checker.name,
     configPath: options.configPath,
     cwd: options.projectRootDir,
     executionKind: options.executionKind,
+    id: createCheckerTargetId([
+      'checker-target',
+      options.executionKind,
+      options.checker.name,
+      portableSourceConfigPath,
+      portableConfigPath,
+    ]),
+    sourceConfigPath,
   };
 }
 
@@ -201,7 +292,9 @@ function createVueTsgoCachePaths(configPath: string): string[] {
   );
 }
 
-function collectVueTsgoConfigPaths(target: TypecheckTarget): string[] {
+function collectVueTsgoConfigPaths(
+  target: Pick<TypecheckTarget, 'configPath' | 'cwd'>,
+): string[] {
   const configPaths = new Set([target.configPath]);
 
   try {
@@ -235,7 +328,7 @@ function isVueTsgoCommand(command: string): boolean {
  * ENOENT, so Limina clears reachable vue-tsgo workspaces before launching it.
  */
 export async function prepareVueTsgoCache(
-  target: TypecheckTarget,
+  target: Pick<TypecheckTarget, 'args' | 'command' | 'configPath' | 'cwd'>,
 ): Promise<void> {
   if (!isVueTsgoCommand(target.command)) {
     return;
@@ -258,46 +351,51 @@ export async function prepareVueTsgoCache(
 }
 
 export function createDefaultRunner(
-  options: { stdio?: CheckerProcessStdio } = {},
+  options: {
+    onDegraded?: (reason: string) => void;
+    stdio?: CheckerProcessStdio;
+  } = {},
 ): TypecheckRunner {
   return async (target) => {
     await prepareVueTsgoCache(target);
 
-    const processEnvironment = createCheckerProcessEnvironment(target);
-    const stdio = options.stdio ?? 'inherit';
-
-    return await new Promise<TypecheckTargetResult>((resolve) => {
-      let settled = false;
-      const finalize = (result: TypecheckTargetResult): void => {
-        if (settled) {
-          return;
-        }
-
-        settled = true;
-        resolve(result);
-      };
-
-      const child = spawn(target.command, target.args, {
+    const measurement = await runCheckerSpawnMeasured(
+      {
+        args: target.args,
+        command: target.command,
         cwd: target.cwd,
-        env: processEnvironment,
+        env: createCheckerProcessEnvironment(target),
         shell: shouldUseShellForCommand(target.command),
-        stdio,
-      });
+        stdio: options.stdio ?? 'inherit',
+      },
+      { onDegraded: options.onDegraded },
+    );
 
-      child.on('error', (error) => {
-        finalize({
-          configPath: target.configPath,
-          error,
-          status: 1,
-        });
-      });
+    return {
+      configPath: target.configPath,
+      durationMs: measurement.durationMs,
+      ...(measurement.error ? { error: measurement.error } : {}),
+      status: measurement.status,
+    };
+  };
+}
 
-      child.on('close', (code) => {
-        finalize({
-          configPath: target.configPath,
-          status: code ?? 1,
-        });
-      });
-    });
+/**
+ * Wraps one runner invocation so its result always carries a duration. A
+ * runner-reported duration wins because it can be measured next to the
+ * checker process; the wall-clock fallback only covers custom runners and is
+ * inflated by event-loop delay whenever the parent thread is blocked.
+ */
+export async function runTargetWithMeasuredDuration(
+  runner: TypecheckRunner,
+  target: TypecheckTarget,
+): Promise<TypecheckTargetResult> {
+  const startedAt = performance.now();
+  const result = await runner(target);
+
+  return {
+    ...result,
+    id: target.id,
+    durationMs: result.durationMs ?? performance.now() - startedAt,
   };
 }
