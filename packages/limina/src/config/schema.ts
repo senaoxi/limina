@@ -2,6 +2,7 @@ import { getCheckerAdapter } from '#checkers';
 import type { LiminaConfig } from '#config/runner';
 import { formatUnknownValue } from '#utils/values';
 import { z } from 'zod';
+import { ConfigurationError } from '../domain/validation/errors';
 
 const checkerExtensionsConfigReason =
   'checker extensions are fixed by built-in presets and cannot be configured.';
@@ -385,8 +386,17 @@ const executionConfigShapeSchema = z
   .looseObject({})
   .superRefine((execution, ctx) => {
     for (const key of Object.keys(execution)) {
+      if (key === 'failFast') {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'execution.failFast was removed in Limina 0.2.0; remove this field and use pipeline dependency/stop-policy semantics.',
+          path: [key],
+        });
+        continue;
+      }
+
       if (
-        key === 'failFast' ||
         executionConcurrencyFields.includes(
           key as (typeof executionConcurrencyFields)[number],
         )
@@ -412,17 +422,6 @@ const executionConfigShapeSchema = z
         code: 'custom',
         message: 'execution concurrency must be a positive integer or "auto".',
         path: [key],
-      });
-    }
-
-    if (
-      execution.failFast !== undefined &&
-      typeof execution.failFast !== 'boolean'
-    ) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'execution failFast must be a boolean.',
-        path: ['failFast'],
       });
     }
   });
@@ -856,7 +855,7 @@ function formatLiminaConfigShapeIssue(
       'Invalid Limina execution config:',
       '  field: execution.failFast',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-      '  reason: execution failFast must be a boolean.',
+      `  reason: ${issue.message}`,
     ].join('\n');
   }
 
@@ -1080,6 +1079,9 @@ export function validateLiminaConfig(config: LiminaConfig): void {
   const problems = collectLiminaConfigShapeProblems(config);
 
   if (problems.length > 0) {
-    throw new Error(problems.join('\n\n'));
+    throw new ConfigurationError(
+      problems.join('\n\n'),
+      problems.map((message) => ({ message, path: [] })),
+    );
   }
 }

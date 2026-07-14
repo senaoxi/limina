@@ -3474,7 +3474,7 @@ packages:
 
       expect(invocations).toHaveLength(2);
       expect(generatedInvocation?.workspaceNames).toEqual(['@example/app']);
-      expect(generatedInvocation?.tsConfigFile).toContain('tsconfig.knip.json');
+      expect(generatedInvocation?.tsConfigFile).toBe('tsconfig.dts.json');
       expect(defaultInvocation?.tsConfigFile).toBeUndefined();
       expect([...(defaultInvocation?.workspaceNames ?? [])].sort()).toEqual([
         '@example/cli',
@@ -3604,7 +3604,6 @@ packages:
       const report = formatSourceCheckHumanReport({
         config: fixture.config,
         issues,
-        legacyProblems: [],
         report: {
           command: 'limina check',
         },
@@ -3621,59 +3620,6 @@ packages:
         /│ Found 1 unused workspace package dependency in 1 package\.\s+│/u,
       );
       expect(summaryLines.map((line) => line.indexOf('Found'))).toEqual([2, 2]);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('groups and truncates legacy source check problems by owner and package', async () => {
-    const fixture = await createFixture({});
-    const legacyProblems = Array.from({ length: 6 }, (_, index) =>
-      [
-        'Unauthorized bare package import:',
-        '  source owner: docs/package.json',
-        `  file: docs/.vitepress/theme/landing/file-${index.toString().padStart(2, '0')}.vue:2 (kind: static)`,
-        `  imported specifier: @components/shared/File${index}.vue`,
-        '  package: @components/shared',
-        '  reason: source imports must be declared by the nearest pnpm workspace source owner or by an explicitly configured workspace root dependency grant.',
-        '  fix: Declare "@components/shared" in docs/package.json dependencies, devDependencies, peerDependencies, or optionalDependencies. If this package is intentionally declared by the workspace root, add source.importAuthority.allow["@example/docs"] with workspaceRootDependencies: ["@components/shared"] and a reason.',
-      ].join('\n'),
-    );
-
-    try {
-      const report = formatSourceCheckHumanReport({
-        config: fixture.config,
-        issues: [],
-        legacyProblems: [...legacyProblems, legacyProblems[0]!],
-        report: {
-          command: 'limina source check',
-        },
-      });
-
-      expect(report).toContain('Found 6 source check issues.');
-      expect(report).toContain('Unauthorized bare package import  6 issues');
-      expect(report).toContain('source owner: docs/package.json');
-      expect(report).toContain('package: @components/shared');
-      expect(report).toContain('suggested fix:');
-      expect(report).toContain(
-        'Declare "@components/shared" in docs/package.json',
-      );
-      expect(report).toContain('files:');
-      expect(report).toContain(
-        'docs/.vitepress/theme/landing/file-00.vue:2 (kind: static)',
-      );
-      expect(report).toContain(
-        'docs/.vitepress/theme/landing/file-04.vue:2 (kind: static)',
-      );
-      expect(report).not.toContain(
-        'docs/.vitepress/theme/landing/file-05.vue:2 (kind: static)',
-      );
-      expect(report).toContain('... 1 more');
-      expect(report).toContain('Show all files:');
-      expect(report).toContain('limina source check --verbose');
-      expect(
-        report.match(/Unauthorized bare package import:/gu) ?? [],
-      ).toHaveLength(0);
     } finally {
       await fixture.cleanup();
     }
@@ -3703,7 +3649,6 @@ packages:
 
       expect(snapshot).toMatchObject({
         command: 'limina check',
-        legacyProblemCount: 0,
         status: 'completed',
       });
       expect(snapshot?.issues).toEqual([
@@ -3754,7 +3699,6 @@ packages:
       expect(snapshot).toMatchObject({
         command: 'limina source check',
         issues: [],
-        legacyProblemCount: 0,
         status: 'completed',
       });
     } finally {

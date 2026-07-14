@@ -1,6 +1,5 @@
 import { resolveModuleNameWithOxc } from '#core/import-analysis/runner';
 import {
-  clearImportAnalysisCache,
   collectImportsFromFile,
   createImportAnalysisContext,
   resolveInternalImport,
@@ -10,7 +9,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -43,14 +42,6 @@ async function linkCompilerSfc(rootDir: string): Promise<void> {
     'dir',
   );
 }
-
-beforeEach(() => {
-  clearImportAnalysisCache();
-});
-
-afterEach(() => {
-  clearImportAnalysisCache();
-});
 
 describe('import analysis', () => {
   it('collects static, type, export-from, dynamic, and import-type dependencies', async () => {
@@ -246,7 +237,6 @@ describe('import analysis', () => {
         ].join('\n'),
       );
       const context = createImportAnalysisContext({
-        isolated: true,
         projectRootDir: rootDir,
         vueParser: 'compiler-sfc',
       });
@@ -279,7 +269,6 @@ describe('import analysis', () => {
         '<script setup lang="ts">import value from "./value";</script>\n',
       );
       const context = createImportAnalysisContext({
-        isolated: true,
         projectRootDir: rootDir,
         vueParser: 'compiler-sfc',
       });
@@ -306,7 +295,6 @@ describe('import analysis', () => {
         ].join('\n'),
       );
       const context = createImportAnalysisContext({
-        isolated: true,
         projectRootDir: rootDir,
         vueParser: 'compiler-sfc',
       });
@@ -855,7 +843,7 @@ describe('import analysis', () => {
     }
   });
 
-  it('reuses shared import collection cache across default contexts', async () => {
+  it('keeps import collection caches private to an analysis context', async () => {
     const rootDir = await createTempDir();
 
     try {
@@ -865,8 +853,12 @@ describe('import analysis', () => {
         "import { first } from './first';\nvoid first;\n",
       );
 
+      const context = createImportAnalysisContext();
+
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => item.specifier),
+        context
+          .collectImportsFromFile(filePath, rootDir)
+          .map((item) => item.specifier),
       ).toEqual(['./first']);
 
       await writeText(
@@ -876,12 +868,12 @@ describe('import analysis', () => {
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => item.specifier),
+        context
+          .collectImportsFromFile(filePath, rootDir)
+          .map((item) => item.specifier),
       ).toEqual(['./first']);
       expect(
-        createImportAnalysisContext({
-          isolated: true,
-        })
+        createImportAnalysisContext()
           .collectImportsFromFile(filePath, rootDir)
           .map((item) => item.specifier),
       ).toEqual(['./second']);
@@ -890,7 +882,7 @@ describe('import analysis', () => {
     }
   });
 
-  it('reuses shared module resolution cache across default contexts', async () => {
+  it('keeps module resolution caches private to an analysis context', async () => {
     const rootDir = await createTempDir();
 
     try {
@@ -912,9 +904,10 @@ describe('import analysis', () => {
         configPath,
         extensions: ['.ts'],
       };
+      const context = createImportAnalysisContext();
 
       expect(
-        resolveInternalImport(
+        context.resolveInternalImport(
           './missing',
           indexPath,
           compilerOptions,
@@ -929,15 +922,13 @@ describe('import analysis', () => {
       );
 
       expect(
-        resolveInternalImport(
+        context.resolveInternalImport(
           './missing',
           indexPath,
           compilerOptions,
           checkerContext,
         ),
       ).toBeNull();
-
-      clearImportAnalysisCache();
 
       expect(
         toPortablePath(

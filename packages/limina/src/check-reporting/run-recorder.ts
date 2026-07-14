@@ -1,19 +1,17 @@
-import {
-  CHECK_ISSUE_SNAPSHOT_VERSION,
-  type CheckIssueSnapshotStatus,
-  type LiminaCheckRunCheckItemSummary,
-  type LiminaCheckRunResult,
-  type LiminaCheckRunSummary,
-  type LiminaCheckRunTaskKind,
-  type LiminaCheckRunTaskSummary,
-  readCheckIssueSnapshot,
-  writeCheckIssueSnapshot,
+import { transitionTask } from '../execution/state-store';
+import type {
+  CompletedRunOutcome,
+  ExecutionTaskIdentity,
+  TaskLifecycleEvent,
+  TaskReference,
+} from '../execution/tasks';
+import type {
+  LiminaCheckRunCheckItemSummary,
+  LiminaCheckRunSummary,
+  LiminaCheckRunTaskSummary,
 } from './snapshot';
 
-export interface LiminaCheckRunTaskPlan {
-  kind: LiminaCheckRunTaskKind;
-  name: string;
-}
+export type LiminaCheckRunTaskPlan = ExecutionTaskIdentity;
 
 export interface LiminaCheckRunTaskStats {
   items?: readonly LiminaCheckRunCheckItemSummary[];
@@ -22,30 +20,36 @@ export interface LiminaCheckRunTaskStats {
 }
 
 export interface CheckRunRecorder {
-  block(
-    taskName: string,
-    reason?: string,
-    stats?: LiminaCheckRunTaskStats,
-  ): Promise<void>;
+  block(task: ExecutionTaskIdentity, blockedBy: TaskReference): void;
   fail(
-    taskName: string,
-    reason?: string,
-    stats?: LiminaCheckRunTaskStats,
-  ): Promise<void>;
-  finish(
-    result: Extract<LiminaCheckRunResult, 'blocked' | 'failed' | 'passed'>,
-  ): Promise<void>;
+    task: ExecutionTaskIdentity,
+    result: {
+      completedAt: string;
+      durationMs: number;
+      reason?: string;
+      stats?: LiminaCheckRunTaskStats;
+    },
+  ): void;
+  finish(outcome: CompletedRunOutcome, completedAt?: string): void;
   getRunSummary(): LiminaCheckRunSummary;
-  pass(taskName: string, stats?: LiminaCheckRunTaskStats): Promise<void>;
-  skip(taskName: string, blockedBy: string): Promise<void>;
-  start(taskName: string): Promise<void>;
+  pass(
+    task: ExecutionTaskIdentity,
+    result: {
+      completedAt: string;
+      durationMs: number;
+      stats?: LiminaCheckRunTaskStats;
+    },
+  ): void;
+  project(task: ExecutionTaskIdentity, event: TaskLifecycleEvent): void;
+  skip(task: ExecutionTaskIdentity, reason: string): void;
+  start(task: ExecutionTaskIdentity, startedAt: string): void;
 }
 
 export interface CreateCheckRunRecorderOptions {
   command: string;
   configPath?: string;
   pipeline?: string;
-  plannedTasks: readonly LiminaCheckRunTaskPlan[];
+  plannedTasks: readonly ExecutionTaskIdentity[];
   rootDir: string;
 }
 
@@ -55,197 +59,185 @@ function cloneRun(run: LiminaCheckRunSummary): LiminaCheckRunSummary {
     blockedBy: run.blockedBy ? { ...run.blockedBy } : undefined,
     tasks: run.tasks.map((task) => ({
       ...task,
-      checkItems: task.checkItems
-        ? task.checkItems.map((item) => ({ ...item }))
-        : undefined,
+      blockedBy: task.blockedBy ? { ...task.blockedBy } : undefined,
+      checkItems: task.checkItems?.map((item) =>
+        item.itemKind === 'checker-target'
+          ? {
+              ...item,
+              blockedBy: item.blockedBy?.map((reference) => ({
+                ...reference,
+              })),
+            }
+          : { ...item },
+      ),
     })),
   };
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
 }
 
 function durationBetween(
   startedAt: string | undefined,
   completedAt: string,
 ): number | undefined {
-  if (!startedAt) {
-    return undefined;
-  }
-
+  if (!startedAt) return undefined;
   return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
-}
-
-function getFinalSnapshotStatus(
-  result: LiminaCheckRunResult,
-  currentStatus: CheckIssueSnapshotStatus | undefined,
-): CheckIssueSnapshotStatus {
-  if (result === 'blocked' || result === 'failed' || result === 'passed') {
-    return 'completed';
-  }
-
-  return currentStatus ?? 'not-run';
 }
 
 function applyTaskStats(
   task: LiminaCheckRunTaskSummary,
   stats: LiminaCheckRunTaskStats | undefined,
 ): void {
-  if (!stats) {
-    return;
-  }
+  if (!stats) return;
 
   task.checksPassed = Math.max(0, stats.passed);
   task.checksTotal = Math.max(0, stats.total);
-  task.checkItems = stats.items?.map((item) => ({
-    checksPassed:
-      item.checksPassed === undefined
-        ? undefined
-        : Math.max(0, item.checksPassed),
-    checksTotal:
-      item.checksTotal === undefined
-        ? undefined
-        : Math.max(0, item.checksTotal),
-    durationMs:
-      item.durationMs === undefined ? undefined : Math.max(0, item.durationMs),
-    issues: item.issues === undefined ? undefined : Math.max(0, item.issues),
-    name: item.name,
-    status: item.status,
-  }));
+  task.checkItems = stats.items?.map((item) => {
+    const normalized = {
+      ...item,
+      checksPassed:
+        item.checksPassed === undefined
+          ? undefined
+          : Math.max(0, item.checksPassed),
+      checksTotal:
+        item.checksTotal === undefined
+          ? undefined
+          : Math.max(0, item.checksTotal),
+      durationMs:
+        item.durationMs === undefined
+          ? undefined
+          : Math.max(0, item.durationMs),
+      issues: item.issues === undefined ? undefined : Math.max(0, item.issues),
+    };
+    return item.itemKind === 'checker-target'
+      ? {
+          ...normalized,
+          blockedBy: item.blockedBy?.map((reference) => ({ ...reference })),
+        }
+      : normalized;
+  });
 }
 
 export function createCheckRunRecorder(
   options: CreateCheckRunRecorderOptions,
 ): CheckRunRecorder {
-  const createdAt = nowIso();
+  const createdAt = new Date().toISOString();
+  const taskById = new Map(
+    options.plannedTasks.map((task) => [
+      task.id,
+      {
+        generation: task.generation,
+        id: task.id,
+        issueTask: task.issueTask,
+        kind: task.kind,
+        label: task.label,
+        state: 'planned' as const,
+      } satisfies LiminaCheckRunTaskSummary,
+    ]),
+  );
+
+  if (taskById.size !== options.plannedTasks.length) {
+    throw new Error('Recorder planned tasks contain duplicate task ids.');
+  }
+
   const run: LiminaCheckRunSummary = {
     command: options.command,
     configPath: options.configPath,
     createdAt,
     pipeline: options.pipeline,
     result: 'not-run',
-    tasks: options.plannedTasks.map(
-      (task): LiminaCheckRunTaskSummary => ({
-        kind: task.kind,
-        name: task.name,
-        status: 'planned',
-      }),
-    ),
+    tasks: options.plannedTasks.map((task) => taskById.get(task.id)!),
   };
 
-  function findOrCreateTask(
-    taskName: string,
-    kind: LiminaCheckRunTaskKind = 'task',
-  ): LiminaCheckRunTaskSummary {
-    const existing = run.tasks.find((task) => task.name === taskName);
+  function getTask(identity: ExecutionTaskIdentity): LiminaCheckRunTaskSummary {
+    const task = taskById.get(identity.id);
 
-    if (existing) {
-      return existing;
+    if (!task) {
+      throw new Error(`Recorder received unknown task id: ${identity.id}.`);
     }
 
-    const task: LiminaCheckRunTaskSummary = {
-      kind,
-      name: taskName,
-      status: 'planned',
-    };
-
-    run.tasks.push(task);
+    if (
+      task.label !== identity.label ||
+      task.kind !== identity.kind ||
+      task.issueTask !== identity.issueTask ||
+      task.generation !== identity.generation
+    ) {
+      throw new Error(
+        `Recorder task identity mismatch for id: ${identity.id}.`,
+      );
+    }
 
     return task;
   }
 
-  async function persist(): Promise<void> {
-    const current = await readCheckIssueSnapshot(options.rootDir);
+  function project(
+    identity: ExecutionTaskIdentity,
+    event: TaskLifecycleEvent,
+  ): void {
+    const task = getTask(identity);
+    const nextState = transitionTask(task.state, event);
 
-    await writeCheckIssueSnapshot(options.rootDir, {
-      command: current?.command ?? options.command,
-      createdAt: current?.createdAt ?? createdAt,
-      issues: current?.issues ?? [],
-      run: cloneRun(run),
-      status: getFinalSnapshotStatus(run.result, current?.status),
-      version: CHECK_ISSUE_SNAPSHOT_VERSION,
-    });
+    switch (event.type) {
+      case 'start': {
+        run.startedAt ??= event.startedAt;
+        run.result = 'running';
+        task.startedAt = event.startedAt;
+        task.state = nextState;
+        return;
+      }
+      case 'pass': {
+        task.completedAt = event.completedAt;
+        task.durationMs = event.durationMs;
+        task.state = nextState;
+        applyTaskStats(task, event.stats);
+        return;
+      }
+      case 'fail': {
+        task.completedAt = event.completedAt;
+        task.durationMs = event.durationMs;
+        task.reason = event.reason;
+        task.state = nextState;
+        applyTaskStats(task, event.stats);
+        return;
+      }
+      case 'block': {
+        task.blockedBy = { ...event.blockedBy };
+        task.state = nextState;
+        return;
+      }
+      case 'skip': {
+        task.reason = event.reason;
+        task.state = nextState;
+      }
+    }
   }
 
   return {
-    async block(taskName, reason, stats) {
-      const completedAt = nowIso();
-      const task = findOrCreateTask(taskName);
-
-      task.completedAt = completedAt;
-      task.durationMs = durationBetween(task.startedAt, completedAt);
-      task.reason = reason;
-      task.status = 'failed';
-      applyTaskStats(task, stats);
-      run.blockedBy = {
-        reason,
-        task: taskName,
-      };
-      run.completedAt = completedAt;
-      run.durationMs = durationBetween(
-        run.startedAt ?? run.createdAt,
-        completedAt,
-      );
-      run.result = 'blocked';
-      await persist();
+    block(task, blockedBy) {
+      project(task, { blockedBy, type: 'block' });
     },
-    async fail(taskName, reason, stats) {
-      const completedAt = nowIso();
-      const task = findOrCreateTask(taskName);
-
-      task.completedAt = completedAt;
-      task.durationMs = durationBetween(task.startedAt, completedAt);
-      task.reason = reason;
-      task.status = 'failed';
-      applyTaskStats(task, stats);
-      await persist();
+    fail(task, result) {
+      project(task, { ...result, type: 'fail' });
     },
-    async finish(result) {
-      const completedAt = nowIso();
-
+    finish(outcome, completedAt = new Date().toISOString()) {
       run.completedAt = completedAt;
-      run.durationMs = durationBetween(
-        run.startedAt ?? run.createdAt,
-        completedAt,
-      );
-      run.result = result;
-
-      if (result === 'failed' || result === 'passed') {
-        run.blockedBy = undefined;
-      }
-
-      await persist();
+      run.durationMs = durationBetween(run.startedAt, completedAt);
+      run.result = outcome.state;
+      run.blockedBy =
+        outcome.state === 'blocked' && outcome.blocker
+          ? { ...outcome.blocker }
+          : undefined;
     },
     getRunSummary() {
       return cloneRun(run);
     },
-    async pass(taskName, stats) {
-      const completedAt = nowIso();
-      const task = findOrCreateTask(taskName);
-
-      task.completedAt = completedAt;
-      task.durationMs = durationBetween(task.startedAt, completedAt);
-      task.status = 'passed';
-      applyTaskStats(task, stats);
-      await persist();
+    pass(task, result) {
+      project(task, { ...result, type: 'pass' });
     },
-    async skip(taskName, blockedBy) {
-      const task = findOrCreateTask(taskName);
-
-      task.blockedBy = blockedBy;
-      task.status = 'skipped';
-      await persist();
+    project,
+    skip(task, reason) {
+      project(task, { reason, type: 'skip' });
     },
-    async start(taskName) {
-      const startedAt = nowIso();
-      const task = findOrCreateTask(taskName);
-
-      run.startedAt ??= startedAt;
-      run.result = 'running';
-      task.startedAt = startedAt;
-      task.status = 'running';
-      await persist();
+    start(task, startedAt) {
+      project(task, { startedAt, type: 'start' });
     },
   };
 }

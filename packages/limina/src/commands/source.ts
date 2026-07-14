@@ -47,7 +47,7 @@ export async function runSourceCheck(
     const logSuccess = !options.report?.defer && !options.flow?.interactive;
     const sourceIssues = options.sourceIssues ?? [];
     const passed = await runSourceCheckImpl(config, {
-      core: options.core,
+      providers: options.providers,
       deferSnapshot: options.deferSnapshot,
       generatedGraphProvider: options.generatedGraphProvider,
       knipRunner: options.knipRunner,
@@ -86,7 +86,7 @@ export async function runSourceCheck(
                 filePath: config.configPath,
                 fix: 'Inspect the source check report above, then rerun `limina source check` or `limina check`.',
                 reason:
-                  'Source check finished with unfilterable legacy failures.',
+                  'Source check finished without structured issue details.',
                 rootDir: config.rootDir,
                 task: 'source:check',
                 title: 'Source check failed',
@@ -101,7 +101,7 @@ export async function runSourceCheck(
             code: 'LIMINA_SOURCE_CHECK_FAILED',
             filePath: config.configPath,
             fix: 'Inspect the source check report above, then rerun `limina source check` or `limina check`.',
-            reason: 'Source check finished with unfilterable legacy failures.',
+            reason: 'Source check finished without structured issue details.',
             rootDir: config.rootDir,
             task: 'source:check',
             title: 'Source check failed',

@@ -31,10 +31,6 @@ export class PackageDomainCore {
     this.#workspace = options.workspace;
   }
 
-  invalidate(): void {
-    this.#domainCache.clear();
-  }
-
   async getPackageDomain(packageName: string): Promise<PackageDomain> {
     const cached = this.#domainCache.get(packageName);
 

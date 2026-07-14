@@ -25,8 +25,8 @@ import {
 import { TypecheckLogger } from '../logger';
 import type {
   TypecheckRunner,
+  TypecheckRunnerResult,
   TypecheckTarget,
-  TypecheckTargetResult,
 } from '../typecheck/targets';
 import { toPortablePath } from './helpers/path';
 
@@ -100,7 +100,7 @@ function runCheckerTypecheck(options: RunCheckerTypecheckOptions) {
 }
 
 function passingRunner(calls: TypecheckTarget[] = []) {
-  return async (target: TypecheckTarget): Promise<TypecheckTargetResult> => {
+  return async (target: TypecheckTarget): Promise<TypecheckRunnerResult> => {
     calls.push(target);
 
     return {
@@ -111,7 +111,7 @@ function passingRunner(calls: TypecheckTarget[] = []) {
 }
 
 function failingRunner(calls: TypecheckTarget[] = []) {
-  return async (target: TypecheckTarget): Promise<TypecheckTargetResult> => {
+  return async (target: TypecheckTarget): Promise<TypecheckRunnerResult> => {
     calls.push(target);
 
     return {
@@ -138,7 +138,7 @@ function delayedRunner(options: {
 
   return {
     getMaxActive: () => maxActiveCount,
-    runner: async (target): Promise<TypecheckTargetResult> => {
+    runner: async (target): Promise<TypecheckRunnerResult> => {
       options.calls.push(target);
       activeCount += 1;
       maxActiveCount = Math.max(maxActiveCount, activeCount);

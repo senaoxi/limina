@@ -74,8 +74,6 @@ const pnpmWorkspaceFileName = 'pnpm-workspace.yaml';
 const liminaConfigFileName = 'limina.config.mts';
 const liminaBuildScriptName = 'limina:build';
 const liminaBuildScriptValue = 'limina checker build';
-const legacyLiminaCheckScriptName = 'limina:check';
-const legacyLiminaCheckScriptValue = 'limina check';
 const liminaSkillInstallCommand = [
   'npx',
   '--yes',
@@ -333,11 +331,6 @@ async function updateRootPackageJson(options: {
     ...manifest.scripts,
   };
   let changed = false;
-
-  if (scripts[legacyLiminaCheckScriptName] === legacyLiminaCheckScriptValue) {
-    delete scripts[legacyLiminaCheckScriptName];
-    changed = true;
-  }
 
   if (
     scripts[liminaBuildScriptName] &&

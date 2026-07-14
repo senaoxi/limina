@@ -155,7 +155,7 @@ export async function runGraphCheck(
     const logSuccess = !options.report?.defer && !options.flow?.interactive;
     const issues: LiminaCheckIssue[] = [];
     const passed = await runGraphCheckImpl(config, {
-      core: options.core,
+      providers: options.providers,
       generatedGraphProvider: options.generatedGraphProvider,
       issues,
       logSuccess,

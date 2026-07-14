@@ -120,6 +120,66 @@ Repository: mrmlnc/fast-glob
 
 ---------------------------------------
 
+## @pnpm/constants
+
+License: MIT
+Repository: https://github.com/pnpm/pnpm/blob/main/packages/constants
+
+> The MIT License (MIT)
+>
+> Copyright (c) 2015-2016 Rico Sta. Cruz and other contributors
+> Copyright (c) 2016-2025 Zoltan Kochan and other contributors
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+---------------------------------------
+
+## @pnpm/error, @pnpm/workspace.read-manifest
+
+License: MIT
+Repositories: https://github.com/pnpm/pnpm/tree/main/packages/error, https://github.com/pnpm/pnpm/tree/main/workspace/read-manifest
+
+> The MIT License (MIT)
+>
+> Copyright (c) 2015-2016 Rico Sta. Cruz and other contributors
+> Copyright (c) 2016-2026 Zoltan Kochan and other contributors
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+---------------------------------------
+
 ## @publint/pack, publint
 
 License: MIT
@@ -324,11 +384,11 @@ Repository: chalk/wrap-ansi
 
 ---------------------------------------
 
-## array-union, callsites, globby, has-flag, irregular-plurals, is-fullwidth-code-point, parent-module, path-type, resolve-from, slash, supports-color
+## array-union, callsites, globby, has-flag, irregular-plurals, is-fullwidth-code-point, parent-module, path-type, resolve-from, slash, strip-bom, supports-color
 
 License: MIT
 By: Sindre Sorhus
-Repositories: sindresorhus/array-union, sindresorhus/callsites, sindresorhus/globby, sindresorhus/has-flag, sindresorhus/irregular-plurals, sindresorhus/is-fullwidth-code-point, sindresorhus/parent-module, sindresorhus/path-type, sindresorhus/resolve-from, sindresorhus/slash, chalk/supports-color
+Repositories: sindresorhus/array-union, sindresorhus/callsites, sindresorhus/globby, sindresorhus/has-flag, sindresorhus/irregular-plurals, sindresorhus/is-fullwidth-code-point, sindresorhus/parent-module, sindresorhus/path-type, sindresorhus/resolve-from, sindresorhus/slash, sindresorhus/strip-bom, chalk/supports-color
 
 > MIT License
 >
@@ -1285,6 +1345,36 @@ Repositories: git://github.com/feross/queue-microtask.git, git://github.com/fero
 > COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 > IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 > CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------------------------
+
+## read-yaml-file
+
+License: MIT
+By: Zoltan Kochan
+Repository: https://github.com/zkochan/packages/tree/master/read-yaml-file
+
+> MIT License
+>
+> Copyright (c) 2018-2021 Zoltan Kochan <z@kochan.io>
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
 
 ---------------------------------------
 

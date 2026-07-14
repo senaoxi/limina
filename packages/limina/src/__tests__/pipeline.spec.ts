@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { createLiminaCore } from '#core';
+import { createAnalysisProviders } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { createHash } from 'node:crypto';
 import {
@@ -19,8 +19,11 @@ import {
   readCheckIssueSnapshot,
   writeNotRunCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
+import { ResourceLockSet } from '../execution/resources';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 import {
+  createDefaultExecutionPlan,
+  createExecutionPlan,
   describePipeline,
   normalizePipelineStep,
   runDefaultCheck,
@@ -28,6 +31,154 @@ import {
 } from '../pipeline/runner';
 
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
+
+describe('ExecutionPlan construction', () => {
+  it('inserts one generation-specific materializer per filesystem segment', async () => {
+    const fixture = await createConfig();
+    fixture.config.pipelines = {
+      demo: [
+        'checker:build',
+        { command: 'command-a', type: 'command' },
+        'checker:typecheck',
+        { command: 'command-b', type: 'command' },
+        'checker:build',
+      ],
+    };
+
+    try {
+      const plan = createExecutionPlan(fixture.config, 'demo');
+      expect(
+        plan.tasks.map(({ generation, kind, label }) => ({
+          generation,
+          kind,
+          label,
+        })),
+      ).toEqual([
+        { generation: 0, kind: 'preparation', label: 'graph:materialize' },
+        { generation: 0, kind: 'task', label: 'checker:build' },
+        { generation: 0, kind: 'command', label: 'command-a' },
+        { generation: 1, kind: 'preparation', label: 'graph:materialize' },
+        { generation: 1, kind: 'task', label: 'checker:typecheck' },
+        { generation: 1, kind: 'command', label: 'command-b' },
+        { generation: 2, kind: 'preparation', label: 'graph:materialize' },
+        { generation: 2, kind: 'task', label: 'checker:build' },
+      ]);
+      const materializers = plan.tasks.filter(
+        (task) => task.issueTask === 'graph:materialize',
+      );
+      expect(new Set(materializers.map((task) => task.id)).size).toBe(3);
+      for (const checker of plan.tasks.filter((task) =>
+        task.issueTask.startsWith('checker:'),
+      )) {
+        expect(checker.requiresSuccessOf).toHaveLength(1);
+        expect(
+          plan.tasks.find((task) => task.id === checker.requiresSuccessOf?.[0])
+            ?.generation,
+        ).toBe(checker.generation);
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('shares one materializer across default build and typecheck tasks', async () => {
+    const fixture = await createConfig();
+    try {
+      const plan = createDefaultExecutionPlan(fixture.config);
+      const materializer = plan.tasks.filter(
+        (task) => task.issueTask === 'graph:materialize',
+      );
+      expect(materializer).toHaveLength(1);
+      expect(
+        plan.tasks
+          .filter((task) => task.issueTask.startsWith('checker:'))
+          .map((task) => task.requiresSuccessOf),
+      ).toEqual([[materializer[0]!.id], [materializer[0]!.id]]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects empty named pipelines before any execution object exists', async () => {
+    const fixture = await createConfig();
+    fixture.config.pipelines = { demo: [] };
+    try {
+      expect(() => createExecutionPlan(fixture.config, 'demo')).toThrow(
+        'Pipeline "demo" must contain at least one step.',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps labels separate from stable task and issue identities', async () => {
+    const fixture = await createConfig();
+    fixture.config.pipelines = {
+      demo: [
+        { args: ['--flag'], command: 'custom-script', type: 'command' },
+        { args: ['--flag'], command: 'custom-script', type: 'command' },
+      ],
+    };
+    try {
+      const commands = createExecutionPlan(fixture.config, 'demo').tasks;
+      expect(commands.map((task) => task.label)).toEqual([
+        'custom-script --flag',
+        'custom-script --flag',
+      ]);
+      expect(commands.map((task) => task.issueTask)).toEqual([
+        'command',
+        'command',
+      ]);
+      expect(commands[0]!.id).not.toBe(commands[1]!.id);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('uses repository and manifest barriers conservatively', async () => {
+    const fixture = await createConfig();
+    fixture.config.pipelines = {
+      demo: [
+        'source:check',
+        'checker:build',
+        'graph:prepare',
+        'package:check',
+        { command: 'unknown-command', type: 'command' },
+      ],
+    };
+    try {
+      const plan = createExecutionPlan(fixture.config, 'demo');
+      const source = plan.tasks.find(
+        (task) => task.issueTask === 'source:check',
+      )!;
+      const otherRepositoryTasks = plan.tasks.filter(
+        (task) => task.kind !== 'command' && task.issueTask !== 'source:check',
+      );
+      expect(source.resources.read).toContain('repository:snapshot');
+      expect(source.resources.write).toContain('workspace:manifest');
+      for (const task of otherRepositoryTasks) {
+        expect(task.resources.read).toContain('repository:snapshot');
+        expect(task.resources.read).toContain('workspace:manifest');
+      }
+      const graphPrepare = plan.tasks.find(
+        (task) => task.issueTask === 'graph:prepare',
+      )!;
+      expect(graphPrepare.resources.write ?? []).not.toContain(
+        'workspace:generated-files',
+      );
+
+      const locks = new ResourceLockSet();
+      locks.acquire(source.id, source.resources);
+      for (const task of otherRepositoryTasks) {
+        expect(locks.canAcquire(task.resources)).toBe(false);
+      }
+      const command = plan.tasks.find((task) => task.kind === 'command')!;
+      expect(locks.canAcquire(command.resources)).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
 
 async function createConfig(): Promise<{
   cleanup: () => Promise<void>;
@@ -453,7 +604,11 @@ describe('runPipeline', () => {
   it('shares generated graph preflight between built-in tasks', async () => {
     const fixture = await createConfig();
     const generatedGraphProvider = vi.fn(
-      async () => ({ changed: false }) as GeneratedTsconfigGraphResult,
+      async () =>
+        ({
+          artifactPlan: { changes: [], ownedPaths: [] },
+          changed: false,
+        }) as unknown as GeneratedTsconfigGraphResult,
     );
 
     fixture.config.pipelines = {
@@ -475,13 +630,14 @@ describe('runPipeline', () => {
 
   it('shares generated graph preflight across graph, source, proof, and checker tasks', async () => {
     const fixture = await createPassingCheckPipelineConfig();
-    const core = createLiminaCore(fixture.config);
+    const core = createAnalysisProviders(fixture.config);
     const generatedGraphProvider = vi.fn(() => core.buildGraph.getGraph());
+    const plan = createExecutionPlan(fixture.config, 'demo');
     const recorder = createCheckRunRecorder({
       command: 'limina check demo',
       configPath: fixture.config.configPath,
       pipeline: 'demo',
-      plannedTasks: describePipeline(fixture.config, 'demo'),
+      plannedTasks: plan.tasks,
       rootDir: fixture.config.rootDir,
     });
 
@@ -495,7 +651,8 @@ describe('runPipeline', () => {
       await expect(
         runPipeline(fixture.config, 'demo', {
           checkRunRecorder: recorder,
-          core,
+          executionPlan: plan,
+          providers: core,
           generatedGraphProvider,
         }),
       ).resolves.toBe(true);
@@ -508,13 +665,18 @@ describe('runPipeline', () => {
           result: 'passed',
           tasks: [
             {
+              issueTask: 'graph:materialize',
+              kind: 'preparation',
+              state: 'passed',
+            },
+            {
               checkItems: expect.arrayContaining([
                 expect.objectContaining({
                   name: 'reference completeness',
                   status: 'passed',
                 }),
               ]),
-              name: 'graph:check',
+              label: 'graph:check',
             },
             {
               checkItems: expect.arrayContaining([
@@ -523,7 +685,7 @@ describe('runPipeline', () => {
                   status: 'passed',
                 }),
               ]),
-              name: 'source:check',
+              label: 'source:check',
             },
             {
               checkItems: expect.arrayContaining([
@@ -532,7 +694,7 @@ describe('runPipeline', () => {
                   status: 'passed',
                 }),
               ]),
-              name: 'proof:check',
+              label: 'proof:check',
             },
             {
               checkItems: expect.arrayContaining([
@@ -541,14 +703,14 @@ describe('runPipeline', () => {
                   status: 'passed',
                 }),
               ]),
-              name: 'checker:build',
+              label: 'checker:build',
             },
           ],
         },
       });
 
       const proofTask = snapshot?.run?.tasks.find(
-        (task) => task.name === 'proof:check',
+        (task) => task.label === 'proof:check',
       );
 
       if (!proofTask?.checkItems) {
@@ -570,7 +732,11 @@ describe('runPipeline', () => {
   it('invalidates generated graph preflight after command steps', async () => {
     const fixture = await createConfig();
     const generatedGraphProvider = vi.fn(
-      async () => ({ changed: false }) as GeneratedTsconfigGraphResult,
+      async () =>
+        ({
+          artifactPlan: { changes: [], ownedPaths: [] },
+          changed: false,
+        }) as unknown as GeneratedTsconfigGraphResult,
     );
 
     fixture.config.pipelines = {
@@ -826,7 +992,9 @@ describe('runPipeline', () => {
       expect(chunks.some((chunk) => chunk.includes('[skip] command:'))).toBe(
         true,
       );
-      expect(chunks.some((chunk) => chunk.includes('blocked by'))).toBe(true);
+      expect(chunks.some((chunk) => chunk.includes('skipped after'))).toBe(
+        true,
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -850,12 +1018,13 @@ describe('runPipeline', () => {
       ],
     };
 
-    const plannedTasks = describePipeline(fixture.config, 'demo');
+    const plan = createExecutionPlan(fixture.config, 'demo');
+    const plannedTasks = describePipeline(plan);
     const recorder = createCheckRunRecorder({
       command: 'limina check demo',
       configPath: fixture.config.configPath,
       pipeline: 'demo',
-      plannedTasks,
+      plannedTasks: plan.tasks,
       rootDir: fixture.config.rootDir,
     });
 
@@ -869,6 +1038,7 @@ describe('runPipeline', () => {
       await expect(
         runPipeline(fixture.config, 'demo', {
           checkRunRecorder: recorder,
+          executionPlan: plan,
         }),
       ).resolves.toBe(false);
 
@@ -881,18 +1051,17 @@ describe('runPipeline', () => {
       });
       expect(snapshot?.run).toMatchObject({
         blockedBy: {
-          task: plannedTasks[0]?.name,
+          label: plannedTasks[0]?.label,
         },
         result: 'blocked',
         tasks: [
           {
-            name: plannedTasks[0]?.name,
-            status: 'failed',
+            label: plannedTasks[0]?.label,
+            state: 'failed',
           },
           {
-            blockedBy: plannedTasks[0]?.name,
-            name: plannedTasks[1]?.name,
-            status: 'skipped',
+            label: plannedTasks[1]?.label,
+            state: 'skipped',
           },
         ],
       });
@@ -900,4 +1069,107 @@ describe('runPipeline', () => {
       await fixture.cleanup();
     }
   });
+
+  it.each([
+    {
+      expected: true,
+      result: 'passed',
+      steps: [
+        {
+          args: ['-e', 'process.exit(0)'],
+          command: process.execPath,
+          type: 'command' as const,
+        },
+      ],
+    },
+    {
+      expected: false,
+      result: 'blocked',
+      steps: [
+        {
+          args: ['-e', 'process.exit(1)'],
+          command: process.execPath,
+          type: 'command' as const,
+        },
+        {
+          args: ['-e', 'process.exit(0)'],
+          command: process.execPath,
+          type: 'command' as const,
+        },
+      ],
+    },
+  ])(
+    'keeps committed $result authoritative when parent projection and warning fail',
+    async ({ expected, result, steps }) => {
+      const fixture = await createConfig();
+      fixture.config.pipelines = { demo: steps };
+      const plan = createExecutionPlan(fixture.config, 'demo');
+      const recorder = createCheckRunRecorder({
+        command: 'limina check demo',
+        plannedTasks: plan.tasks,
+        rootDir: fixture.config.rootDir,
+      });
+      const finish = vi.spyOn(recorder, 'finish');
+      const taskNode = {
+        block() {},
+        child() {
+          return taskNode;
+        },
+        children() {
+          return [];
+        },
+        fail() {},
+        pass() {},
+        skip() {},
+        start() {},
+      };
+      const parentNode = {
+        fail() {
+          throw new Error('parent projection failed');
+        },
+        pass() {
+          throw new Error('parent projection failed');
+        },
+      };
+      const flow = {
+        start: () => parentNode,
+        tree: () => taskNode,
+      } as unknown as LiminaFlowReporter;
+      const warning = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => {
+          throw new Error('warning reporter failed');
+        });
+      const previousExitCode = process.exitCode;
+      process.exitCode = 23;
+
+      try {
+        await writeNotRunCheckIssueSnapshot({
+          command: 'limina check demo',
+          rootDir: fixture.config.rootDir,
+          run: recorder.getRunSummary(),
+        });
+        await expect(
+          runPipeline(fixture.config, 'demo', {
+            checkRunRecorder: recorder,
+            executionPlan: plan,
+            flow,
+          }),
+        ).resolves.toBe(expected);
+
+        expect(
+          await readCheckIssueSnapshot(fixture.config.rootDir),
+        ).toMatchObject({
+          run: { result },
+          status: 'completed',
+        });
+        expect(finish).toHaveBeenCalledTimes(1);
+        expect(process.exitCode).toBe(23);
+      } finally {
+        process.exitCode = previousExitCode;
+        warning.mockRestore();
+        await fixture.cleanup();
+      }
+    },
+  );
 });

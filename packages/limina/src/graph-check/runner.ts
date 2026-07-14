@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import {
@@ -105,7 +105,7 @@ function filterProjectInfoToActivatedRegion(
 
 export interface RunGraphCheckOptions {
   clearScreen?: boolean;
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   deferSnapshot?: boolean;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
@@ -119,7 +119,7 @@ export interface RunGraphCheckOptions {
 
 export interface RunGraphPrepareOptions {
   clearScreen?: boolean;
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   deferSnapshot?: boolean;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
@@ -131,7 +131,7 @@ export interface RunGraphPrepareOptions {
 }
 
 export interface RunGraphExportOptions {
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   outputPath?: string;
   view?: DependencyGraphView;
 }
@@ -1827,7 +1827,7 @@ function createGeneratedGraphPathAliases(
 export async function runGraphCheckImpl(
   config: ResolvedLiminaConfig,
   options: {
-    core?: LiminaCore;
+    providers?: AnalysisProviderSet;
     generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
     issues?: LiminaCheckIssue[];
     logSuccess?: boolean;
@@ -1848,7 +1848,7 @@ export async function runGraphCheckImpl(
     },
   );
   const preflight = resolvePreflight(config, options);
-  const core = preflight.core;
+  const core = preflight.providers;
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
   const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
@@ -2033,10 +2033,7 @@ export async function runGraphPrepareImpl(
   options: RunGraphPrepareOptions = {},
 ): Promise<GeneratedTsconfigGraphResult> {
   const preflight = resolvePreflight(config, options);
-
-  return options.preflight || options.generatedGraphProvider
-    ? await preflight.ensureGeneratedGraph()
-    : await preflight.core.buildGraph.prepareGraph({ write: true });
+  return (await preflight.ensureGeneratedArtifactsMaterialized()).graph;
 }
 
 export async function runGraphExportImpl(
@@ -2044,7 +2041,7 @@ export async function runGraphExportImpl(
   options: RunGraphExportOptions = {},
 ): Promise<DependencyGraphDocument> {
   const graph = await collectDependencyGraph(config, {
-    core: options.core,
+    providers: options.providers,
     view: options.view,
   });
 

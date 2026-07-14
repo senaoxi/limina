@@ -254,6 +254,7 @@ function createCheckerGraphCoverageProofGeneratedGraph(
   );
 
   return {
+    artifactPlan: { changes: [], ownedPaths: [] },
     changed: false,
     checkerEntries: new Map([['typescript', checkerEntryPath]]),
     checkers: [
@@ -269,6 +270,7 @@ function createCheckerGraphCoverageProofGeneratedGraph(
     dtsToSource: new Map(),
     generatedKnipConfigs: [],
     generatedKnipDiagnostics: [],
+    generatedFiles: new Map(),
     manifest: {
       checkers: {},
       generatedBy: 'limina',

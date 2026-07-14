@@ -80,6 +80,7 @@ export interface LiminaFlowTask {
 }
 
 export interface LiminaFlowTreeNode {
+  block: (message?: string, options?: LiminaFlowMessageOptions) => void;
   child: (
     message: string,
     options?: LiminaFlowMessageOptions,
@@ -830,6 +831,9 @@ export class LiminaFlowReporter {
 
   #createTreeNodeHandle(node: FlowTreeNodeInternal): LiminaFlowTreeNode {
     return {
+      block: (message, options) => {
+        this.#finishTreeNode(node, 'blocked', message, options);
+      },
       child: (message, options = {}) => {
         const childNode = appendFlowTreeChild(
           node,

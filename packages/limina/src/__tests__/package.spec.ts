@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -490,15 +490,14 @@ function createGraphRejectingPreflight(
 ): InstanceType<typeof LiminaPreflightManager> {
   return new LiminaPreflightManager({
     config,
-    core: {
+    providers: {
       buildGraph: {
         getGraph,
       },
       imports: {
         context: {},
       },
-      invalidateAll: vi.fn(),
-    } as unknown as LiminaCore,
+    } as unknown as AnalysisProviderSet,
   });
 }
 

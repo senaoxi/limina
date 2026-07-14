@@ -386,7 +386,12 @@ export function addConditionDomainProblems(options: {
       continue;
     }
 
-    if (!existsSync(configuredEntryPath)) {
+    if (
+      !existsSync(configuredEntryPath) &&
+      !options.generatedGraph.generatedFiles.has(
+        normalizeAbsolutePath(configuredEntryPath),
+      )
+    ) {
       options.problems.push(
         [
           'Graph condition domain entry does not exist:',

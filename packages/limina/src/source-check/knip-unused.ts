@@ -1,6 +1,7 @@
 import path from 'pathe';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type {
   PackageManifest,
   PackageOwner,
@@ -319,6 +320,145 @@ export function collectManifestSourceEntryPatterns(
   }
 
   return [...patterns].sort();
+}
+
+export function collectGeneratedArtifactSourceEntryPatterns(options: {
+  generatedGraph: GeneratedTsconfigGraphResult;
+  moduleSet: OwnerSourceModuleSet;
+}): string[] {
+  const ownerName = options.moduleSet.owner.name;
+
+  if (!ownerName) {
+    return [];
+  }
+
+  const sourceFiles = new Set(
+    options.moduleSet.files.map(normalizeAbsolutePath),
+  );
+  const entryTargets = collectPackageManifestEntryTargets(
+    options.moduleSet.owner.manifest,
+  )
+    .map(normalizeManifestTargetPath)
+    .filter((target): target is string => target !== null);
+  const entryPatterns = new Set<string>();
+  const generatedConfig = options.generatedGraph.generatedKnipConfigs.find(
+    (candidate) => candidate.packageName === ownerName,
+  );
+
+  if (!generatedConfig) {
+    return [];
+  }
+
+  for (const configPath of collectVirtualProjectConfigs(
+    generatedConfig.references,
+    options.generatedGraph.generatedFiles,
+  )) {
+    const content = options.generatedGraph.generatedFiles.get(configPath);
+
+    if (!content) {
+      continue;
+    }
+
+    const config = JSON.parse(content) as {
+      compilerOptions?: { outDir?: unknown; rootDir?: unknown };
+    };
+    const outDir = resolveConfigDirectory(
+      config.compilerOptions?.outDir,
+      configPath,
+    );
+    const rootDir = resolveConfigDirectory(
+      config.compilerOptions?.rootDir,
+      configPath,
+    );
+
+    if (!outDir || !rootDir) {
+      continue;
+    }
+
+    for (const target of entryTargets) {
+      const outputPath = normalizeAbsolutePath(
+        path.resolve(options.moduleSet.owner.directory, target),
+      );
+
+      if (!isPathInsideDirectory(outputPath, outDir)) {
+        continue;
+      }
+
+      const relativeOutputPath = normalizeSlashes(
+        path.relative(outDir, outputPath),
+      );
+
+      for (const candidate of collectSourceCandidatesForManifestTarget(
+        relativeOutputPath,
+      )) {
+        const sourcePath = normalizeAbsolutePath(
+          path.resolve(rootDir, candidate),
+        );
+
+        if (sourceFiles.has(sourcePath)) {
+          entryPatterns.add(
+            normalizeSlashes(
+              toRelativePath(options.moduleSet.owner.directory, sourcePath),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  return [...entryPatterns].sort();
+}
+
+function collectVirtualProjectConfigs(
+  references: readonly string[],
+  generatedFiles: ReadonlyMap<string, string>,
+): string[] {
+  const projects = new Set<string>();
+  const visited = new Set<string>();
+  const pending = references.map(normalizeAbsolutePath);
+
+  for (const configPath of pending) {
+    if (visited.has(configPath)) {
+      continue;
+    }
+
+    visited.add(configPath);
+    const content = generatedFiles.get(configPath);
+
+    if (!content) {
+      continue;
+    }
+
+    const config = JSON.parse(content) as {
+      compilerOptions?: unknown;
+      references?: readonly { path?: unknown }[];
+    };
+
+    if (isPlainRecord(config.compilerOptions)) {
+      projects.add(configPath);
+    }
+
+    for (const reference of config.references ?? []) {
+      if (typeof reference.path === 'string') {
+        pending.push(
+          normalizeAbsolutePath(
+            path.resolve(path.dirname(configPath), reference.path),
+          ),
+        );
+      }
+    }
+  }
+
+  return [...projects].sort();
+}
+
+function resolveConfigDirectory(
+  value: unknown,
+  configPath: string,
+): string | null {
+  return typeof value === 'string'
+    ? normalizeAbsolutePath(path.resolve(path.dirname(configPath), value))
+    : null;
 }
 
 export function collectOwnerSourceModuleSets(options: {

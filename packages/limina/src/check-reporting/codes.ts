@@ -11,6 +11,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   graphConditionDomainMismatch: 'LIMINA_GRAPH_CONDITION_DOMAIN_MISMATCH',
   graphConfigInvalid: 'LIMINA_GRAPH_CONFIG_INVALID',
   graphImportTargetUnmapped: 'LIMINA_GRAPH_IMPORT_TARGET_UNMAPPED',
+  graphMaterializeFailed: 'LIMINA_GRAPH_MATERIALIZE_FAILED',
   graphPrepareFailed: 'LIMINA_GRAPH_PREPARE_FAILED',
   graphReferenceCycle: 'LIMINA_GRAPH_REFERENCE_CYCLE',
   graphReferenceExtra: 'LIMINA_GRAPH_REFERENCE_EXTRA',
@@ -121,6 +122,11 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
     description:
       'A governed import target is not mapped into the source graph.',
     task: 'graph:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.graphMaterializeFailed]: {
+    code: LIMINA_CHECK_ISSUE_CODES.graphMaterializeFailed,
+    description: 'Generated graph artifacts could not be materialized.',
+    task: 'graph:materialize',
   },
   [LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed]: {
     code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,

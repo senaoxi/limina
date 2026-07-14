@@ -2,10 +2,12 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedProviderEdge } from '#core/build-graph/runner';
 import { resolveCheckerBuildConcurrency } from '../execution/config';
 import { runPool } from '../execution/pool';
-import type {
-  TypecheckRunner,
-  TypecheckTarget,
-  TypecheckTargetResult,
+import {
+  type CheckerTargetId,
+  runTargetWithMeasuredDuration,
+  type TypecheckRunner,
+  type TypecheckTarget,
+  type TypecheckTargetResult,
 } from './targets';
 
 function getBuildTargetDependencyKey(target: TypecheckTarget): string {
@@ -114,10 +116,14 @@ function collectStronglyConnectedBuildTargetKeys(
     );
 }
 
-function createBuildDependencyLayers(
+function createBuildDependencyPlan(
   targets: TypecheckTarget[],
   providerEdges: GeneratedProviderEdge[],
-): TypecheckTarget[][] {
+): {
+  components: TypecheckTarget[][];
+  dependenciesByComponentIndex: Map<number, Set<number>>;
+  layers: number[][];
+} {
   const targetKeyByTarget = new Map<TypecheckTarget, string>(
     targets.map((target) => [target, getBuildTargetDependencyKey(target)]),
   );
@@ -171,7 +177,6 @@ function createBuildDependencyLayers(
   const dependenciesByComponentIndex = new Map<number, Set<number>>(
     components.map((_, index) => [index, new Set<number>()]),
   );
-
   for (const key of orderedKeys) {
     const componentIndex = componentIndexByKey.get(key);
 
@@ -195,11 +200,17 @@ function createBuildDependencyLayers(
     }
   }
 
+  const componentTargets = components.map((component) =>
+    component
+      .map((key) => targetByKey.get(key))
+      .filter((target): target is TypecheckTarget => Boolean(target)),
+  );
+
   const remainingComponentIndexes = new Set(
     components.map((_, index) => index),
   );
   const completedComponentIndexes = new Set<number>();
-  const layers: TypecheckTarget[][] = [];
+  const layers: number[][] = [];
 
   while (remainingComponentIndexes.size > 0) {
     const readyComponentIndexes = components
@@ -221,12 +232,7 @@ function createBuildDependencyLayers(
       break;
     }
 
-    layers.push(
-      readyComponentIndexes
-        .flatMap((componentIndex) => components[componentIndex] ?? [])
-        .map((key) => targetByKey.get(key))
-        .filter((target): target is TypecheckTarget => Boolean(target)),
-    );
+    layers.push(readyComponentIndexes);
 
     for (const componentIndex of readyComponentIndexes) {
       remainingComponentIndexes.delete(componentIndex);
@@ -235,15 +241,14 @@ function createBuildDependencyLayers(
   }
 
   if (remainingComponentIndexes.size > 0) {
-    layers.push(
-      [...remainingComponentIndexes]
-        .flatMap((componentIndex) => components[componentIndex] ?? [])
-        .map((key) => targetByKey.get(key))
-        .filter((target): target is TypecheckTarget => Boolean(target)),
-    );
+    layers.push([...remainingComponentIndexes]);
   }
 
-  return layers;
+  return {
+    components: componentTargets,
+    dependenciesByComponentIndex,
+    layers,
+  };
 }
 
 export async function runBuildTargets(
@@ -260,44 +265,108 @@ export async function runBuildTargets(
     watch?: boolean;
   },
 ): Promise<TypecheckTargetResult[]> {
-  const results: TypecheckTargetResult[] = [];
-  const layers = options.watch
-    ? [targets]
-    : createBuildDependencyLayers(targets, providerEdges);
+  const resultsByTargetId = new Map<CheckerTargetId, TypecheckTargetResult>();
+  const targetOrderById = new Map(
+    targets.map((target, index) => [target.id, index]),
+  );
+  const buildPlan = options.watch
+    ? {
+        components: [targets],
+        dependenciesByComponentIndex: new Map([[0, new Set<number>()]]),
+        layers: [[0]],
+      }
+    : createBuildDependencyPlan(targets, providerEdges);
+  const failureRootsByComponentIndex = new Map<
+    number,
+    readonly CheckerTargetId[]
+  >();
+  const stableRoots = (roots: Iterable<CheckerTargetId>): CheckerTargetId[] =>
+    [...new Set(roots)].sort(
+      (left, right) =>
+        (targetOrderById.get(left) ?? Number.MAX_SAFE_INTEGER) -
+        (targetOrderById.get(right) ?? Number.MAX_SAFE_INTEGER),
+    );
 
-  for (const layer of layers) {
+  for (const layer of buildPlan.layers) {
     if (layer.length === 0) {
       continue;
     }
 
-    results.push(
-      ...(await runPool<TypecheckTarget, TypecheckTargetResult>({
-        concurrency: options.watch
-          ? layer.length
-          : resolveCheckerBuildConcurrency({
-              config: options.config,
-              itemCount: layer.length,
-            }),
-        items: layer,
-        onError: (target, error) => ({
+    const runnableComponentIndexes: number[] = [];
+    const runnableTargets: TypecheckTarget[] = [];
+    for (const componentIndex of layer) {
+      const componentTargets = buildPlan.components[componentIndex] ?? [];
+      const upstreamRoots = stableRoots(
+        [
+          ...(buildPlan.dependenciesByComponentIndex.get(componentIndex) ?? []),
+        ].flatMap(
+          (dependencyIndex) =>
+            failureRootsByComponentIndex.get(dependencyIndex) ?? [],
+        ),
+      );
+      if (upstreamRoots.length === 0 || options.watch) {
+        runnableComponentIndexes.push(componentIndex);
+        runnableTargets.push(...componentTargets);
+        continue;
+      }
+
+      failureRootsByComponentIndex.set(componentIndex, upstreamRoots);
+      for (const target of componentTargets) {
+        const blockedResult: TypecheckTargetResult = {
+          blockedBy: upstreamRoots,
           configPath: target.configPath,
           durationMs: 0,
-          error: error instanceof Error ? error : new Error(String(error)),
+          id: target.id,
           status: 1,
-        }),
-        onResult: options.onTargetResult,
-        onStart: options.onTargetStart,
-        run: async (target) => {
-          const startedAt = performance.now();
+        };
+        resultsByTargetId.set(target.id, blockedResult);
+        options.onTargetResult?.(target, blockedResult);
+      }
+    }
 
-          return {
-            ...(await runner(target)),
-            durationMs: performance.now() - startedAt,
-          };
-        },
-      })),
-    );
+    const layerResults =
+      runnableTargets.length === 0
+        ? []
+        : await runPool<TypecheckTarget, TypecheckTargetResult>({
+            concurrency: options.watch
+              ? runnableTargets.length
+              : resolveCheckerBuildConcurrency({
+                  config: options.config,
+                  itemCount: runnableTargets.length,
+                }),
+            items: runnableTargets,
+            onError: (target, error) => ({
+              configPath: target.configPath,
+              durationMs: 0,
+              error: error instanceof Error ? error : new Error(String(error)),
+              id: target.id,
+              status: 1,
+            }),
+            onResult: options.onTargetResult,
+            onStart: options.onTargetStart,
+            run: (target) => runTargetWithMeasuredDuration(runner, target),
+          });
+    for (const result of layerResults) {
+      resultsByTargetId.set(result.id, result);
+    }
+    for (const componentIndex of runnableComponentIndexes) {
+      const componentTargets = buildPlan.components[componentIndex] ?? [];
+      failureRootsByComponentIndex.set(
+        componentIndex,
+        stableRoots(
+          componentTargets
+            .filter((target) => resultsByTargetId.get(target.id)?.status !== 0)
+            .map((target) => target.id),
+        ),
+      );
+    }
   }
 
-  return results;
+  return targets.map((target) => {
+    const result = resultsByTargetId.get(target.id);
+    if (!result) {
+      throw new Error(`Missing checker target result for ${target.id}.`);
+    }
+    return result;
+  });
 }

@@ -1,8 +1,5 @@
 import type { GraphConfig, ResolvedLiminaConfig } from '#config/runner';
-import {
-  type GeneratedTsconfigGraphResult,
-  prepareGeneratedTsconfigGraph,
-} from '#core/build-graph/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { parseProject } from '#core/import-graph/context';
 import {
   mkdir,
@@ -23,6 +20,7 @@ import { createCheckCounter } from '../check-reporting/stats';
 import { runGraphCheck, type RunGraphCheckOptions } from '../commands/graph';
 import { addTypecheckParityProblems } from '../graph-check/dts-options';
 import { GraphLogger } from '../logger';
+import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 
 const requireFromTest = createRequire(import.meta.url);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -287,6 +285,7 @@ function createManualGeneratedGraph(
   entryRelativePath = 'tsconfig.build.json',
 ): GeneratedTsconfigGraphResult {
   return {
+    artifactPlan: { changes: [], ownedPaths: [] },
     changed: false,
     checkerEntries: new Map([
       ['typescript', path.join(rootDir, entryRelativePath)],
@@ -304,6 +303,7 @@ function createManualGeneratedGraph(
     dtsToSource: new Map(),
     generatedKnipConfigs: [],
     generatedKnipDiagnostics: [],
+    generatedFiles: new Map(),
     manifest: {
       checkers: {},
       generatedBy: 'limina',
@@ -1579,7 +1579,7 @@ packages:
     }
   });
 
-  it('reports missing prepared refs for managed output declaration package providers', async () => {
+  it('validates the graph snapshot instead of mutable generated files', async () => {
     const fixture = await createFixture(
       createManagedOutputWorkspacePackageFiles(),
     );
@@ -1617,10 +1617,8 @@ packages:
         generatedGraphProvider: async () => generatedGraph,
       });
 
-      expect(passed).toBe(false);
-      expect(issues.map((issue) => issue.code)).toContain(
-        LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
-      );
+      expect(passed).toBe(true);
+      expect(issues).toEqual([]);
     } finally {
       await fixture.cleanup();
     }

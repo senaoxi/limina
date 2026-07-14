@@ -1,4 +1,3 @@
-import { clearCheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { BuildGraphCore } from './build-graph';
 import { ImportCore } from './imports';
@@ -15,7 +14,7 @@ export { TsconfigCore } from './tsconfig';
 export type { SourceGraphProjects } from './tsconfig';
 export { WorkspaceCore } from './workspace';
 
-export class LiminaCore {
+export class AnalysisProviderSet {
   readonly buildGraph: BuildGraphCore;
   readonly config: ResolvedLiminaConfig;
   readonly imports: ImportCore;
@@ -46,17 +45,10 @@ export class LiminaCore {
       workspace: this.workspace,
     });
   }
-
-  invalidateAll(): void {
-    this.workspace.invalidate();
-    this.imports.invalidate();
-    this.buildGraph.invalidate();
-    this.tsconfig.invalidate();
-    this.packages.invalidate();
-    clearCheckerProjectConfigCache();
-  }
 }
 
-export function createLiminaCore(config: ResolvedLiminaConfig): LiminaCore {
-  return new LiminaCore(config);
+export function createAnalysisProviders(
+  config: ResolvedLiminaConfig,
+): AnalysisProviderSet {
+  return new AnalysisProviderSet(config);
 }

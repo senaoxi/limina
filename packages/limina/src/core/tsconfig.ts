@@ -45,12 +45,6 @@ export class TsconfigCore {
     this.#workspace = workspace;
   }
 
-  invalidate(): void {
-    this.#projectCache.clear();
-    this.#referenceGraphCache.clear();
-    this.#sourceGraphProjectsPromise = undefined;
-  }
-
   async getProject(
     configPath: string,
     contextOrExtensions?: CheckerProjectParseContext | string[],
@@ -58,11 +52,12 @@ export class TsconfigCore {
     const cacheKey = createProjectCacheKey(configPath, contextOrExtensions);
     const projectPromise =
       this.#projectCache.get(cacheKey) ??
-      Promise.resolve(
+      this.#generatedGraphProvider().then((generatedGraph) =>
         parseProject(
           this.#config,
           normalizeAbsolutePath(configPath),
           contextOrExtensions,
+          generatedGraph.generatedFiles,
         ),
       );
 

@@ -7,10 +7,6 @@ import {
 import type { ImportCore } from './imports';
 import type { WorkspaceCore } from './workspace';
 
-export interface PrepareGraphOptions {
-  write?: true;
-}
-
 export class BuildGraphCore {
   readonly #config: ResolvedLiminaConfig;
   readonly #imports: ImportCore;
@@ -27,33 +23,20 @@ export class BuildGraphCore {
     this.#workspace = options.workspace;
   }
 
-  invalidate(): void {
-    this.#graphPromise = undefined;
-  }
-
   getGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#graphPromise ??= this.#workspace
-      .getRegionTopology()
-      .then((topology) =>
-        prepareGeneratedTsconfigGraph(this.#config, {
-          importAnalysisContext: this.#imports.context,
-          workspacePackagesProvider: () => Promise.resolve(topology.packages),
-          workspaceRegionBoundaries: topology.boundaries,
-        }),
-      );
+    this.#graphPromise ??= this.#prepareGraph();
 
     return this.#graphPromise;
   }
 
-  prepareGraph(
-    options: PrepareGraphOptions = { write: true },
-  ): Promise<GeneratedTsconfigGraphResult> {
-    const shouldWrite = options.write ?? true;
-
-    if (!shouldWrite) {
-      return this.getGraph();
-    }
-    return this.getGraph();
+  #prepareGraph(): Promise<GeneratedTsconfigGraphResult> {
+    return this.#workspace.getRegionTopology().then((topology) =>
+      prepareGeneratedTsconfigGraph(this.#config, {
+        importAnalysisContext: this.#imports.context,
+        workspacePackagesProvider: () => Promise.resolve(topology.packages),
+        workspaceRegionBoundaries: topology.boundaries,
+      }),
+    );
   }
 
   async getSourceToDts(checkerName: string): Promise<Map<string, string>> {

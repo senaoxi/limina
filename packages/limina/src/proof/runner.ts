@@ -9,7 +9,7 @@ import {
   type ResolvedCheckerConfig,
   type ResolvedLiminaConfig,
 } from '#config/runner';
-import type { LiminaCore } from '#core';
+import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { collectGeneratedSourceConfigPaths } from '#core/build-graph/runner';
 import {
@@ -253,7 +253,7 @@ function formatProofProblemReport(options: {
 
 export interface RunProofCheckOptions {
   clearScreen?: boolean;
-  core?: LiminaCore;
+  providers?: AnalysisProviderSet;
   deferSnapshot?: boolean;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
@@ -342,11 +342,13 @@ function createCheckerProjectContext(options: {
   configPath: string;
   extensions: string[];
   preset: ResolvedCheckerConfig['preset'];
+  virtualFiles?: ReadonlyMap<string, string>;
 }): CheckerProjectParseContext {
   const adapterExtensions = resolveCheckerProjectExtensions({
     configPath: options.configPath,
     preset: options.preset,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.virtualFiles,
   });
 
   return {
@@ -385,7 +387,10 @@ function collectCheckerCoverageTargets(
       continue;
     }
 
-    if (!existsSync(configPath)) {
+    if (
+      !existsSync(configPath) &&
+      !generatedGraph.generatedFiles.has(normalizeAbsolutePath(configPath))
+    ) {
       addProofProblem(
         problems,
         [
@@ -407,6 +412,7 @@ function collectCheckerCoverageTargets(
     const routeCollection = collectGraphProjectRouteFromRoot({
       rootConfigPath: configPath,
       rootDir: config.rootDir,
+      virtualFiles: generatedGraph.generatedFiles,
     });
 
     problems.push(...routeCollection.problems);
@@ -428,11 +434,13 @@ function parseProjectCoverageFileNames(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   context: CheckerProjectParseContext;
+  virtualFiles: ReadonlyMap<string, string>;
 }): string[] {
   return parseCheckerProjectConfigForContext({
     configPath: options.configPath,
     context: options.context,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.virtualFiles,
   }).fileNames;
 }
 
@@ -440,15 +448,20 @@ function parseProjectCoverage(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   context: CheckerProjectParseContext;
+  virtualFiles: ReadonlyMap<string, string>;
 }): { fileNames: string[]; ownerRootDir: string } {
   const parsed = parseCheckerProjectConfigForContext({
     configPath: options.configPath,
     context: options.context,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.virtualFiles,
   });
   const coverageParsed = isDtsConfigPath(options.configPath)
     ? parseCheckerProjectConfigForContext({
-        configPath: getDtsCompanionConfigPath(options.configPath),
+        configPath: getProofCompanionConfigPath(
+          options.configPath,
+          options.virtualFiles,
+        ),
         context: options.context,
         projectRootDir: options.config.rootDir,
       })
@@ -469,6 +482,7 @@ function collectCoverage(options: {
   checkerTargets: CheckerCoverageTarget[];
   outsideSourceCoverageByFile?: Map<string, CoverageSource[]>;
   sourceFiles: Set<string>;
+  virtualFiles: ReadonlyMap<string, string>;
 }): Map<string, CoverageSource[]> {
   const coverageByFile = new Map<string, CoverageSource[]>();
 
@@ -483,12 +497,14 @@ function collectCoverage(options: {
         configPath: graphProjectPath,
         extensions: route.extensions,
         preset: route.checkerPreset,
+        virtualFiles: options.virtualFiles,
       });
 
       const projectCoverage = parseProjectCoverage({
         config: options.config,
         configPath: graphProjectPath,
         context: projectContext,
+        virtualFiles: options.virtualFiles,
       });
 
       for (const filePath of projectCoverage.fileNames) {
@@ -529,12 +545,14 @@ function collectCoverage(options: {
         configPath,
         extensions: getCheckerCoverageExtensions(checkerTarget.checker),
         preset: checkerTarget.checker.preset,
+        virtualFiles: options.virtualFiles,
       });
 
       for (const filePath of parseProjectCoverageFileNames({
         config: options.config,
         configPath,
         context: projectContext,
+        virtualFiles: options.virtualFiles,
       })) {
         const coverageSource: CoverageSource = {
           label: `${toRelativePath(
@@ -610,17 +628,52 @@ function parseConfig(
     checkerPresets: [],
     extensions: [],
   },
+  virtualFiles?: ReadonlyMap<string, string>,
 ): ParsedConfig {
   const parsed = parseCheckerProjectConfigForContext({
     configPath,
     context,
     projectRootDir: config.rootDir,
+    virtualFiles,
   });
 
   return {
     fileNames: parsed.fileNames.map(normalizeAbsolutePath).sort(),
     options: parsed.options,
   };
+}
+
+function readProofConfig(
+  config: ResolvedLiminaConfig,
+  configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
+): JsonObject {
+  const content = virtualFiles?.get(normalizeAbsolutePath(configPath));
+  return content
+    ? (JSON.parse(content) as JsonObject)
+    : readJsonConfig(config, configPath);
+}
+
+function getProofCompanionConfigPath(
+  configPath: string,
+  virtualFiles: ReadonlyMap<string, string>,
+): string {
+  const configObject = readProofConfig(
+    { rootDir: path.dirname(configPath) } as ResolvedLiminaConfig,
+    configPath,
+    virtualFiles,
+  );
+  const liminaOptions = configObject.liminaOptions;
+  const sourceConfig =
+    liminaOptions &&
+    typeof liminaOptions === 'object' &&
+    !Array.isArray(liminaOptions)
+      ? (liminaOptions as { sourceConfig?: unknown }).sourceConfig
+      : undefined;
+
+  return typeof sourceConfig === 'string'
+    ? resolveReferencePath(configPath, sourceConfig)
+    : getDtsCompanionConfigPath(configPath);
 }
 
 function readRelativeTypeFiles(
@@ -887,9 +940,14 @@ function addDtsConfigProblems(options: {
   problems: string[];
   dtsConfigPaths: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
+  virtualFiles: ReadonlyMap<string, string>;
 }): void {
   for (const configPath of options.dtsConfigPaths) {
-    const configObject = readJsonConfig(options.config, configPath);
+    const configObject = readProofConfig(
+      options.config,
+      configPath,
+      options.virtualFiles,
+    );
 
     if (!options.graphProjectPaths.has(configPath)) {
       options.problems.push(
@@ -902,7 +960,10 @@ function addDtsConfigProblems(options: {
       continue;
     }
 
-    const localConfigPath = getDtsCompanionConfigPath(configPath);
+    const localConfigPath = getProofCompanionConfigPath(
+      configPath,
+      options.virtualFiles,
+    );
 
     if (!existsSync(localConfigPath)) {
       options.problems.push(
@@ -924,7 +985,12 @@ function addDtsConfigProblems(options: {
     });
 
     const context = options.projectContextsByPath.get(configPath);
-    const dtsConfig = parseConfig(options.config, configPath, context);
+    const dtsConfig = parseConfig(
+      options.config,
+      configPath,
+      context,
+      options.virtualFiles,
+    );
     const localConfig = parseConfig(options.config, localConfigPath, context);
 
     if (dtsConfig.options.composite !== true) {
@@ -1071,7 +1137,7 @@ function addSourceReferenceRoleProblems(options: {
           `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
           '  field: references',
           '  reason: source typecheck configs must not hand-maintain project references; Limina infers static source edges and liminaOptions.implicitRefs documents dynamic or virtual edges.',
-          '  fix: run limina migration to remove legacy tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
+          '  fix: remove obsolete tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
         ].join('\n'),
       );
       continue;
@@ -1094,9 +1160,14 @@ function addBuildGraphConfigProblems(options: {
   buildGraphConfigPaths: string[];
   config: ResolvedLiminaConfig;
   problems: string[];
+  virtualFiles: ReadonlyMap<string, string>;
 }): void {
   for (const configPath of options.buildGraphConfigPaths) {
-    const configObject = readJsonConfig(options.config, configPath);
+    const configObject = readProofConfig(
+      options.config,
+      configPath,
+      options.virtualFiles,
+    );
 
     if (!configPath.includes('/.limina/')) {
       options.problems.push(
@@ -1274,6 +1345,7 @@ function collectConfigFileOwners(
   config: ResolvedLiminaConfig,
   graphRoutes: CheckerGraphProjectRoute[],
   sourceFiles: Set<string>,
+  virtualFiles: ReadonlyMap<string, string>,
 ): ConfigFileOwners {
   const ownersByFile: ConfigFileOwners = new Map();
 
@@ -1283,7 +1355,10 @@ function collectConfigFileOwners(
         continue;
       }
 
-      if (!existsSync(configPath)) {
+      if (
+        !existsSync(configPath) &&
+        !virtualFiles.has(normalizeAbsolutePath(configPath))
+      ) {
         continue;
       }
 
@@ -1292,12 +1367,14 @@ function collectConfigFileOwners(
         configPath,
         extensions: route.extensions,
         preset: route.checkerPreset,
+        virtualFiles,
       });
 
       const projectCoverage = parseProjectCoverage({
         config,
         configPath,
         context: projectContext,
+        virtualFiles,
       });
 
       for (const filePath of projectCoverage.fileNames) {
@@ -1585,7 +1662,7 @@ function addSourceBoundaryMismatchProblems(options: {
 export async function runProofCheckImpl(
   config: ResolvedLiminaConfig,
   options: {
-    core?: LiminaCore;
+    providers?: AnalysisProviderSet;
     deferSnapshot?: boolean;
     generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
     issues?: LiminaCheckIssue[];
@@ -1657,11 +1734,13 @@ export async function runProofCheckImpl(
     graphProjectPaths: entryProjectPathSet,
     problems,
     projectContextsByPath: entryProjectContextsByPath,
+    virtualFiles: generatedGraph.generatedFiles,
   });
   addBuildGraphConfigProblems({
     buildGraphConfigPaths,
     config,
     problems,
+    virtualFiles: generatedGraph.generatedFiles,
   });
   addDefaultTsconfigShapeProblems({
     config,
@@ -1766,6 +1845,7 @@ export async function runProofCheckImpl(
     graphRoutes: graphRouteCollection.routes,
     outsideSourceCoverageByFile,
     sourceFiles,
+    virtualFiles: generatedGraph.generatedFiles,
   });
   const coverageByFile = cloneCoverageByFile(baseCoverageByFile);
 
@@ -1778,6 +1858,7 @@ export async function runProofCheckImpl(
     config,
     graphRouteCollection.routes,
     sourceFiles,
+    generatedGraph.generatedFiles,
   );
 
   addDuplicateGraphCoverageProblems({

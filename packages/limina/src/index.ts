@@ -1,4 +1,18 @@
 export { defineConfig } from '#config/runner';
+export {
+  CancelledFailure,
+  ConfigurationError,
+  ExecutionFailure,
+} from './domain/validation/errors';
+
+export type {
+  GovernanceIssue,
+  GovernanceIssueEvidence,
+  GovernanceIssueLocation,
+  GovernanceIssueOrigin,
+} from './domain/validation/issues';
+
+export type { IssueSeverity } from './domain/validation/contracts';
 
 export type {
   AutoCheckerConfig,

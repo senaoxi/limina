@@ -9,6 +9,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInit } from '../commands/init';
 import { LiminaFlowReporter } from '../flow';
@@ -17,6 +18,10 @@ import { toPortablePath, toPortablePaths } from './helpers/path';
 
 const confirmMock = vi.hoisted(() => vi.fn());
 const execFileMock = vi.hoisted(() => vi.fn());
+const liminaPackageManifestPath = fileURLToPath(
+  new URL('../../package.json', import.meta.url),
+);
+const releasedTypeScriptPeerRange = '^5.4.0 || ^6.0.0';
 
 vi.mock('@clack/prompts', () => ({
   confirm: confirmMock,
@@ -34,6 +39,14 @@ async function writeText(filePath: string, text: string): Promise<void> {
 
 async function readJson<T>(filePath: string): Promise<T> {
   return JSON.parse(await readFile(filePath, 'utf8')) as T;
+}
+
+async function readLiminaTypeScriptPeerRange(): Promise<string | undefined> {
+  const manifest = await readJson<{
+    peerDependencies?: Record<string, string>;
+  }>(liminaPackageManifestPath);
+
+  return manifest.peerDependencies?.typescript;
 }
 
 async function createFixture(files: Record<string, string>): Promise<{
@@ -248,6 +261,12 @@ function createWorkspaceFixture(): Record<string, string> {
 }
 
 describe('runInit', () => {
+  it('declares the released TypeScript peer range', async () => {
+    await expect(readLiminaTypeScriptPeerRange()).resolves.toBe(
+      releasedTypeScriptPeerRange,
+    );
+  });
+
   beforeEach(() => {
     confirmMock.mockReset();
     execFileMock.mockReset();
@@ -450,7 +469,9 @@ describe('runInit', () => {
         type: 'module',
       });
       expect(rootManifest.devDependencies?.limina).toMatch(/^\^/u);
-      expect(rootManifest.devDependencies?.typescript).toBe('^5.9.0');
+      expect(rootManifest.devDependencies?.typescript).toBe(
+        await readLiminaTypeScriptPeerRange(),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -486,44 +507,9 @@ describe('runInit', () => {
       expect(result.installRequired).toBe(true);
       expect(rootManifest.dependencies?.limina).toBe('workspace:*');
       expect(rootManifest.devDependencies?.limina).toBeUndefined();
-      expect(rootManifest.devDependencies?.typescript).toBe('^5.9.0');
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('migrates the legacy default check script to the build script', async () => {
-    const fixture = await createFixture({
-      'package.json': stringifyConfig({
-        devDependencies: {
-          limina: '^1.0.0',
-          typescript: '^5.9.0',
-        },
-        name: 'root',
-        private: true,
-        scripts: {
-          'limina:check': 'limina check',
-        },
-        type: 'module',
-      }),
-      'pnpm-workspace.yaml': 'packages: []\n',
-    });
-
-    try {
-      const result = await runInit({
-        clearScreen: false,
-        cwd: fixture.rootDir,
-        yes: true,
-      });
-      const rootManifest = await readJson<{
-        scripts?: Record<string, string>;
-      }>(path.join(fixture.rootDir, 'package.json'));
-
-      expect(result.installRequired).toBe(false);
-      expect(rootManifest.scripts).toMatchObject({
-        'limina:build': 'limina checker build',
-      });
-      expect(rootManifest.scripts?.['limina:check']).toBeUndefined();
+      expect(rootManifest.devDependencies?.typescript).toBe(
+        await readLiminaTypeScriptPeerRange(),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -680,7 +666,9 @@ describe('runInit', () => {
         'limina checker build',
       );
       expect(rootManifest.devDependencies?.limina).toMatch(/^\^/u);
-      expect(rootManifest.devDependencies?.typescript).toBe('^5.9.0');
+      expect(rootManifest.devDependencies?.typescript).toBe(
+        await readLiminaTypeScriptPeerRange(),
+      );
     } finally {
       await fixture.cleanup();
     }

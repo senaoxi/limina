@@ -43,7 +43,7 @@ import {
   toRelativePath,
 } from '#utils/path';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'pathe';
 import { glob } from 'tinyglobby';
 import type ts from 'typescript';
@@ -55,6 +55,13 @@ import {
   type LiminaCheckIssueEvidence,
   type LiminaCheckIssueLocation,
 } from '../../check-reporting/snapshot';
+import {
+  type ArtifactChange,
+  type ArtifactKind,
+  type ArtifactPlan,
+  createArtifactPlan,
+  type GeneratedArtifact,
+} from '../../domain/artifacts/plan';
 import { resolveDeclarationProvider } from '../import-graph/declaration-provider';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import {
@@ -198,6 +205,7 @@ export interface GeneratedTsconfigGraphManifest {
 }
 
 export interface GeneratedTsconfigGraphResult {
+  artifactPlan: ArtifactPlan;
   changed: boolean;
   checkers: ResolvedCheckerConfig[];
   manifestPath: string;
@@ -214,6 +222,7 @@ export interface GeneratedTsconfigGraphResult {
   generatedKnipDiagnostics: GeneratedKnipPackageDiagnostic[];
   providerEdges: GeneratedProviderEdge[];
   manifest: GeneratedTsconfigGraphManifest;
+  generatedFiles: ReadonlyMap<string, string>;
 }
 
 export interface PrepareGeneratedTsconfigGraphOptions {
@@ -261,8 +270,10 @@ interface CheckerSourceConfigCollection {
 }
 
 interface GeneratedGraphWriteContext {
+  changes: ArtifactChange[];
   changed: boolean;
   expectedFiles: Set<string>;
+  files: Map<string, string>;
   rootDir: string;
 }
 
@@ -1302,7 +1313,6 @@ function collectAutoScopeDependencies(
   const importAnalysis =
     options.importAnalysisContext ??
     createImportAnalysisContext({
-      isolated: true,
       projectRootDir: config.rootDir,
       vueParser: config.config?.imports?.vue,
     });
@@ -2405,7 +2415,6 @@ function inferProjectReferences(
   const importAnalysis =
     options.importAnalysisContext ??
     createImportAnalysisContext({
-      isolated: true,
       projectRootDir: config.rootDir,
       vueParser: config.config?.imports?.vue,
     });
@@ -2837,6 +2846,7 @@ function createGeneratedDtsConfig(
     files: project.fileNames.map((fileName) =>
       createRelativePath(project.dtsConfigPath, fileName),
     ),
+    include: [],
     compilerOptions: {
       ...createGeneratedCompilerOptionOverrides(config, project),
       composite: true,
@@ -2894,6 +2904,7 @@ function createGeneratedOutputProjectConfig(
     files: project.fileNames.map((fileName) =>
       createRelativePath(project.outputConfigPath, fileName),
     ),
+    include: [],
     compilerOptions: {
       composite: true,
       incremental: true,
@@ -3009,20 +3020,38 @@ async function writeGeneratedJson(
   value: unknown,
 ): Promise<void> {
   const content = stringifyJson(value);
+  const artifact: GeneratedArtifact = {
+    content,
+    kind: getGeneratedArtifactKind(filePath),
+    origin: { domain: 'declaration-build' },
+    path: filePath,
+  };
 
   context.expectedFiles.add(filePath);
+  context.files.set(filePath, content);
 
   if (existsSync(filePath)) {
     const previousContent = await readFile(filePath, 'utf8');
 
     if (previousContent === content) {
+      context.changes.push({ artifact, status: 'unchanged' });
       return;
     }
   }
 
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
+  context.changes.push({
+    artifact,
+    status: existsSync(filePath) ? 'update' : 'create',
+  });
   context.changed = true;
+}
+
+function getGeneratedArtifactKind(filePath: string): ArtifactKind {
+  if (filePath.endsWith(generatedManifestPath)) {
+    return 'generated-manifest';
+  }
+
+  return filePath.includes('/knip/') ? 'tool-config' : 'generated-config';
 }
 
 async function removeStaleGeneratedFiles(
@@ -3046,7 +3075,7 @@ async function removeStaleGeneratedFiles(
       continue;
     }
 
-    await rm(filePath, { force: true });
+    context.changes.push({ path: filePath, status: 'delete' });
     context.changed = true;
   }
 }
@@ -3167,6 +3196,7 @@ function createManifest(options: {
 }
 
 function createResult(options: {
+  artifactPlan: ArtifactPlan;
   changed: boolean;
   checkers: ResolvedCheckerConfig[];
   manifest: GeneratedTsconfigGraphManifest;
@@ -3176,6 +3206,7 @@ function createResult(options: {
     Map<string, GeneratedOutputDeclarationCopyContext[]>
   >;
   rootDir: string;
+  generatedFiles: ReadonlyMap<string, string>;
 }): GeneratedTsconfigGraphResult {
   const checkerEntries = new Map<string, string>();
   const configToOutputBuild = new Map<
@@ -3266,6 +3297,7 @@ function createResult(options: {
   }
 
   return {
+    artifactPlan: options.artifactPlan,
     changed: options.changed,
     checkers: options.checkers,
     manifestPath: options.manifestPath,
@@ -3299,6 +3331,7 @@ function createResult(options: {
     }),
     providerEdges,
     manifest: options.manifest,
+    generatedFiles: new Map(options.generatedFiles),
   };
 }
 
@@ -3363,8 +3396,10 @@ export async function prepareGeneratedTsconfigGraph(
   >();
   const providerEdges: GeneratedProviderEdge[] = [];
   const writeContext: GeneratedGraphWriteContext = {
+    changes: [],
     changed: false,
     expectedFiles: new Set(),
+    files: new Map(),
     rootDir: config.rootDir,
   };
   const problems: string[] = [];
@@ -3645,13 +3680,18 @@ export async function prepareGeneratedTsconfigGraph(
 
   await writeGeneratedJson(writeContext, manifestPath, manifest);
   await removeStaleGeneratedFiles(writeContext);
+  const artifactPlan = createArtifactPlan(writeContext.changes, [
+    ...writeContext.expectedFiles,
+  ]);
 
   return createResult({
+    artifactPlan,
     changed: writeContext.changed,
     checkers,
     manifest,
     manifestPath,
     outputDeclarationCopiesByChecker,
     rootDir: config.rootDir,
+    generatedFiles: writeContext.files,
   });
 }

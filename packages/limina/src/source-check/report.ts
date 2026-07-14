@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
+import { uniqueSortedStrings } from '#utils/collections';
 import {
   normalizeAbsolutePath,
   normalizeSlashes,
@@ -851,303 +851,6 @@ function formatNoMatchedIssues(
   ];
 }
 
-interface LegacyProblem {
-  fields: Map<string, string[]>;
-  raw: string;
-  title: string;
-}
-
-interface LegacyProblemGroup {
-  fields: Map<string, string[]>;
-  items: LegacyProblem[];
-  title: string;
-}
-
-const LEGACY_GROUP_FIELD_LABELS = [
-  'source owner',
-  'package owner',
-  'package',
-  'package manifest',
-  'script',
-  'command',
-  'target source owner',
-  'target owner',
-  'workspace package',
-  'imported specifier',
-  'resolved package.json',
-  'resolved dependency specifier',
-  'resolver tsconfig',
-  'field',
-  'dep',
-  'importer',
-] as const;
-
-function normalizeLegacyFieldLabel(label: string): string {
-  return label.trim().toLowerCase().replaceAll(/\s+/gu, ' ');
-}
-
-function isLegacyFieldLabel(label: string): boolean {
-  if (label.length === 0) {
-    return false;
-  }
-
-  for (const [index, character] of [...label].entries()) {
-    const codePoint = character.codePointAt(0);
-    const isAsciiLetter =
-      codePoint !== undefined &&
-      ((codePoint >= 65 && codePoint <= 90) ||
-        (codePoint >= 97 && codePoint <= 122));
-
-    if (!isAsciiLetter && (index === 0 || ![' ', '.'].includes(character))) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function getLegacyFieldValues(problem: LegacyProblem, label: string): string[] {
-  return problem.fields.get(label) ?? [];
-}
-
-function getLegacyFieldValue(problem: LegacyProblem, label: string): string {
-  return getLegacyFieldValues(problem, label)[0] ?? '';
-}
-
-function getCommonLegacyFieldValue(
-  group: LegacyProblemGroup,
-  label: string,
-): string | undefined {
-  const values = group.fields.get(label) ?? [];
-
-  return values.length === 1 ? values[0] : undefined;
-}
-
-function parseLegacyProblem(rawProblem: string): LegacyProblem {
-  const lines = rawProblem.split('\n');
-  const title = (lines[0]?.trim() || 'Source check issue').replace(/:+$/u, '');
-  const fields = new Map<string, string[]>();
-
-  for (const line of lines.slice(1)) {
-    const trimmedLine = line.trimStart();
-
-    if (trimmedLine === line) {
-      continue;
-    }
-
-    const separatorIndex = trimmedLine.indexOf(':');
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const rawLabel = trimmedLine.slice(0, separatorIndex);
-
-    if (!isLegacyFieldLabel(rawLabel)) {
-      continue;
-    }
-
-    const rawValue = trimmedLine.slice(separatorIndex + 1);
-    const label = normalizeLegacyFieldLabel(rawLabel);
-    const values = fields.get(label) ?? [];
-
-    values.push(rawValue.trim());
-    fields.set(label, values);
-  }
-
-  return {
-    fields,
-    raw: rawProblem,
-    title,
-  };
-}
-
-function getLegacyGroupKey(problem: LegacyProblem): string {
-  const sourceOwner =
-    getLegacyFieldValue(problem, 'source owner') ||
-    getLegacyFieldValue(problem, 'package owner');
-  const targetSourceOwner =
-    getLegacyFieldValue(problem, 'target source owner') ||
-    getLegacyFieldValue(problem, 'target owner');
-
-  return [
-    problem.title,
-    sourceOwner,
-    getLegacyFieldValue(problem, 'package'),
-    targetSourceOwner,
-    getLegacyFieldValue(problem, 'workspace package'),
-    getLegacyFieldValue(problem, 'resolved package.json'),
-    getLegacyFieldValue(problem, 'reason'),
-    getLegacyFieldValue(problem, 'fix'),
-  ].join('\0');
-}
-
-function groupLegacyProblems(
-  legacyProblems: readonly string[],
-): LegacyProblemGroup[] {
-  const uniqueProblems = uniqueValues(legacyProblems);
-  const groups = new Map<string, LegacyProblemGroup>();
-
-  for (const rawProblem of uniqueProblems) {
-    const problem = parseLegacyProblem(rawProblem);
-    const key = getLegacyGroupKey(problem);
-    const group = groups.get(key) ?? {
-      fields: new Map<string, string[]>(),
-      items: [],
-      title: problem.title,
-    };
-
-    group.items.push(problem);
-    groups.set(key, group);
-  }
-
-  for (const group of groups.values()) {
-    const fieldValues = new Map<string, Set<string>>();
-
-    for (const problem of group.items) {
-      for (const [label, values] of problem.fields.entries()) {
-        const collectedValues = fieldValues.get(label) ?? new Set<string>();
-
-        for (const value of values) {
-          if (value) {
-            collectedValues.add(value);
-          }
-        }
-
-        fieldValues.set(label, collectedValues);
-      }
-    }
-
-    group.fields = new Map(
-      [...fieldValues.entries()].map(([label, values]) => [
-        label,
-        [...values].sort((left, right) => left.localeCompare(right)),
-      ]),
-    );
-    group.items.sort((left, right) =>
-      getLegacyProblemPrimaryLocation(left).localeCompare(
-        getLegacyProblemPrimaryLocation(right),
-      ),
-    );
-  }
-
-  return [...groups.values()].sort(
-    (left, right) =>
-      left.title.localeCompare(right.title) ||
-      (
-        getCommonLegacyFieldValue(left, 'source owner') ??
-        getCommonLegacyFieldValue(left, 'package owner') ??
-        ''
-      ).localeCompare(
-        getCommonLegacyFieldValue(right, 'source owner') ??
-          getCommonLegacyFieldValue(right, 'package owner') ??
-          '',
-      ) ||
-      (getCommonLegacyFieldValue(left, 'package') ?? '').localeCompare(
-        getCommonLegacyFieldValue(right, 'package') ?? '',
-      ),
-  );
-}
-
-function countLegacyProblemGroups(
-  groups: readonly LegacyProblemGroup[],
-): number {
-  return groups.reduce((count, group) => count + group.items.length, 0);
-}
-
-function getLegacyProblemPrimaryLocation(problem: LegacyProblem): string {
-  return (
-    getLegacyFieldValue(problem, 'file') ||
-    getLegacyFieldValue(problem, 'project') ||
-    getLegacyFieldValue(problem, 'config') ||
-    getLegacyFieldValue(problem, 'field') ||
-    getLegacyFieldValue(problem, 'package manifest') ||
-    getLegacyFieldValue(problem, 'resolver tsconfig') ||
-    getLegacyFieldValue(problem, 'command') ||
-    problem.title
-  );
-}
-
-function getLegacyProblemLocations(group: LegacyProblemGroup): string[] {
-  return uniqueSortedStrings(group.items.map(getLegacyProblemPrimaryLocation));
-}
-
-function formatLegacyGroupHeader(group: LegacyProblemGroup): string[] {
-  return [
-    `${group.title}  ${group.items.length} ${plural(
-      group.items.length,
-      'issue',
-      'issues',
-    )}`,
-    ...LEGACY_GROUP_FIELD_LABELS.flatMap((label) => {
-      const value = getCommonLegacyFieldValue(group, label);
-
-      return value ? [`${label}: ${value}`] : [];
-    }),
-    ...(getCommonLegacyFieldValue(group, 'reason')
-      ? ['', 'reason:', `  ${getCommonLegacyFieldValue(group, 'reason')}`]
-      : []),
-    ...(getCommonLegacyFieldValue(group, 'fix')
-      ? ['', 'suggested fix:', `  ${getCommonLegacyFieldValue(group, 'fix')}`]
-      : []),
-  ];
-}
-
-function indentLegacyProblem(rawProblem: string): string[] {
-  return rawProblem.split('\n').map((line) => (line ? `    ${line}` : ''));
-}
-
-function formatLegacyProblemGroup(
-  group: LegacyProblemGroup,
-  options: SourceIssueReportOptions,
-): string[] {
-  if (options.verbose) {
-    return [
-      ...formatLegacyGroupHeader(group),
-      '',
-      'details:',
-      ...group.items.flatMap((problem, index) => [
-        ...(index === 0 ? [] : ['']),
-        `  - ${getLegacyProblemPrimaryLocation(problem)}`,
-        ...indentLegacyProblem(problem.raw),
-      ]),
-    ];
-  }
-
-  const locations = getLegacyProblemLocations(group);
-  const visibleLocations = locations.slice(0, DEFAULT_DETAIL_LIMIT);
-  const remainingCount = locations.length - visibleLocations.length;
-
-  return [
-    ...formatLegacyGroupHeader(group),
-    '',
-    'files:',
-    ...visibleLocations.map((location) => `  - ${location}`),
-    ...(remainingCount > 0 ? [`  ... ${remainingCount} more`] : []),
-    ...(remainingCount > 0
-      ? ['', 'Show all files:', `  ${createVerboseCommand(options)}`]
-      : []),
-  ];
-}
-
-function formatLegacyProblemGroups(
-  groups: readonly LegacyProblemGroup[],
-  options: SourceIssueReportOptions & { heading?: string },
-): string[] {
-  if (groups.length === 0) {
-    return [];
-  }
-
-  return [
-    options.heading ?? 'Other source check issues:',
-    '',
-    ...groups.flatMap((group, index) => [
-      ...(index === 0 ? [] : ['']),
-      ...formatIssueBlock(formatLegacyProblemGroup(group, options)),
-    ]),
-  ];
-}
-
 function getLineWrapPrefix(line: string): {
   content: string;
   firstPrefix: string;
@@ -1342,7 +1045,6 @@ function formatSummaryBlock(summaryLines: readonly string[]): string[] {
 export function formatSourceCheckHumanReport(options: {
   config: ResolvedLiminaConfig;
   issues: readonly SourceCheckIssue[];
-  legacyProblems: readonly string[];
   report?: SourceIssueReportOptions;
 }): string {
   const report = options.report ?? {};
@@ -1354,8 +1056,6 @@ export function formatSourceCheckHumanReport(options: {
     issueMatchesFilters(options.config, issue, report),
   );
   const activeFilters = hasFilters(report);
-  const legacyProblemGroups = groupLegacyProblems(options.legacyProblems);
-  const legacyProblemCount = countLegacyProblemGroups(legacyProblemGroups);
   const lines = [...unknownRuleLines];
 
   if (unknownRuleLines.length > 0) {
@@ -1364,10 +1064,6 @@ export function formatSourceCheckHumanReport(options: {
 
   if (activeFilters && filteredIssues.length === 0) {
     lines.push(...formatNoMatchedIssues(options.issues, report));
-
-    if (legacyProblemGroups.length > 0) {
-      lines.push('', ...formatLegacyProblemGroups(legacyProblemGroups, report));
-    }
 
     return lines.join('\n');
   }
@@ -1442,19 +1138,6 @@ export function formatSourceCheckHumanReport(options: {
     }
   }
 
-  if (
-    !report.verbose &&
-    unusedModuleIssueCount === 0 &&
-    unusedDependencyIssueCount === 0 &&
-    genericIssueCount === 0 &&
-    legacyProblemCount > 0
-  ) {
-    lines.push(
-      `Found ${legacyProblemCount} source check ${plural(legacyProblemCount, 'issue', 'issues')}.`,
-      '',
-    );
-  }
-
   for (const [index, group] of unusedModuleGroups.entries()) {
     if (index > 0) {
       lines.push('');
@@ -1488,16 +1171,6 @@ export function formatSourceCheckHumanReport(options: {
 
     lines.push(
       ...formatIssueBlock(formatGenericSourceIssueGroup(group, report)),
-    );
-  }
-
-  const displayedLegacyProblemGroups =
-    activeFilters && !report.verbose ? [] : legacyProblemGroups;
-
-  if (displayedLegacyProblemGroups.length > 0) {
-    lines.push(
-      ...(lines.length > 0 ? ['', ''] : []),
-      ...formatLegacyProblemGroups(displayedLegacyProblemGroups, report),
     );
   }
 

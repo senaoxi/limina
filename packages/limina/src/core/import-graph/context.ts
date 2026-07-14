@@ -13,6 +13,7 @@ import {
   getRawReferencePaths,
   isDtsConfigPath,
   readJsonConfig,
+  resolveReferencePath,
 } from '#core/tsconfig/actions';
 import {
   findPackageForSpecifier,
@@ -59,6 +60,7 @@ export function formatImportRecordLocation(
 function readProjectGraphRules(
   config: ResolvedLiminaConfig,
   configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
 ): Pick<ProjectInfo, 'labels' | 'labelProblem'> {
   if (!isDtsProjectConfig(configPath)) {
     return {
@@ -67,7 +69,10 @@ function readProjectGraphRules(
     };
   }
 
-  const configObject = readJsonConfig(config, configPath);
+  const virtualContent = virtualFiles?.get(normalizeAbsolutePath(configPath));
+  const configObject = virtualContent
+    ? (JSON.parse(virtualContent) as Record<string, unknown>)
+    : readJsonConfig(config, configPath);
 
   if (!Object.hasOwn(configObject, 'liminaOptions')) {
     return {
@@ -158,6 +163,7 @@ export function parseProject(
   config: ResolvedLiminaConfig,
   configPath: string,
   contextOrExtensions?: CheckerProjectParseContext | string[],
+  virtualFiles?: ReadonlyMap<string, string>,
 ): ProjectInfo {
   const context = Array.isArray(contextOrExtensions)
     ? {
@@ -172,13 +178,14 @@ export function parseProject(
     configPath,
     context,
     projectRootDir: config.rootDir,
+    virtualFiles,
   });
-  const labelInfo = readProjectGraphRules(config, configPath);
+  const labelInfo = readProjectGraphRules(config, configPath, virtualFiles);
   const projectExtensions = parsed.extensions;
   const filePattern = createExtensionPattern(projectExtensions);
   const normalizedConfigPath = normalizeAbsolutePath(configPath);
   const resolverConfigPath = isDtsProjectConfig(normalizedConfigPath)
-    ? getTypecheckConfigPath(normalizedConfigPath)
+    ? getProjectResolverConfigPath(normalizedConfigPath, virtualFiles)
     : normalizedConfigPath;
   const ownedParsed =
     resolverConfigPath === normalizedConfigPath
@@ -187,6 +194,7 @@ export function parseProject(
           configPath: resolverConfigPath,
           context,
           projectRootDir: config.rootDir,
+          virtualFiles,
         });
   const normalizeFileNames = (fileNames: string[]): string[] =>
     fileNames
@@ -202,9 +210,61 @@ export function parseProject(
     labelProblem: labelInfo.labelProblem,
     ownedFileNames: normalizeFileNames(ownedParsed.fileNames),
     options: parsed.options,
-    references: new Set(getRawReferencePaths(config, configPath)),
+    references: new Set(
+      getProjectReferencePaths(config, configPath, virtualFiles),
+    ),
     resolverConfigPath,
   };
+}
+
+function getProjectResolverConfigPath(
+  configPath: string,
+  virtualFiles: ReadonlyMap<string, string> | undefined,
+): string {
+  const virtualContent = virtualFiles?.get(configPath);
+
+  if (!virtualContent) {
+    return getTypecheckConfigPath(configPath);
+  }
+
+  const configObject = JSON.parse(virtualContent) as {
+    liminaOptions?: { readonly sourceConfig?: unknown };
+  };
+  const sourceConfig = configObject.liminaOptions?.sourceConfig;
+
+  if (typeof sourceConfig !== 'string' || sourceConfig.length === 0) {
+    throw new Error(
+      `Generated declaration config "${configPath}" has no sourceConfig.`,
+    );
+  }
+
+  return resolveReferencePath(configPath, sourceConfig);
+}
+
+function getProjectReferencePaths(
+  config: ResolvedLiminaConfig,
+  configPath: string,
+  virtualFiles: ReadonlyMap<string, string> | undefined,
+): string[] {
+  const virtualContent = virtualFiles?.get(normalizeAbsolutePath(configPath));
+
+  if (!virtualContent) {
+    return getRawReferencePaths(config, configPath);
+  }
+
+  const configObject = JSON.parse(virtualContent) as {
+    references?: readonly { readonly path?: unknown }[];
+  };
+
+  return (configObject.references ?? []).flatMap((reference) =>
+    typeof reference.path === 'string'
+      ? [
+          normalizeAbsolutePath(
+            path.resolve(path.dirname(configPath), reference.path),
+          ),
+        ]
+      : [],
+  );
 }
 
 function chooseOwningProject(projectPaths: string[]): string {
@@ -338,7 +398,6 @@ export function findTargetProject(options: {
 }
 
 export {
-  clearImportAnalysisCache,
   collectImportsFromFile,
   createImportAnalysisContext,
   resolveInternalImport,
