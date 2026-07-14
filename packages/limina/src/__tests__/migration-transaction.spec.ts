@@ -23,6 +23,7 @@ import {
   MigrationTransactionError,
   type MigrationWritePlanItem,
 } from '../commands/migration-transaction';
+import { toPortablePath } from './helpers/path';
 
 const fixtureRoots = new Set<string>();
 
@@ -771,8 +772,12 @@ describe('migration transaction', () => {
 
   it('allows one case alias but rejects duplicate aliases on insensitive filesystems', async () => {
     const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'Package/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'package/tsconfig.json');
+    const targetPath = toPortablePath(
+      path.join(rootDir, 'Package/tsconfig.json'),
+    );
+    const aliasPath = toPortablePath(
+      path.join(rootDir, 'package/tsconfig.json'),
+    );
     await writeText(targetPath, 'original\n');
 
     let aliasCanonicalPath: string;

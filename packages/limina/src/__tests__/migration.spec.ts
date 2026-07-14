@@ -17,6 +17,7 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createLiminaCli } from '../cli';
 import { runMigration } from '../commands/migration';
+import { toPortablePaths } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
 const nestedPackageSchemaPath =
@@ -291,7 +292,9 @@ describe('runMigration', () => {
       const result = await runMigration(config);
 
       expect(result.modifiedFiles).toEqual([]);
-      expect(result.skippedFiles).toEqual([hardlinkPath, symlinkPath]);
+      expect(result.skippedFiles).toEqual(
+        toPortablePaths([hardlinkPath, symlinkPath]),
+      );
       expect((await stat(sourcePath, { bigint: true })).mtimeNs).toBe(
         beforeMtime,
       );

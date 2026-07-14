@@ -60,6 +60,30 @@ describe('atomic snapshot writer', () => {
     ]);
   });
 
+  it('keeps retrying through sustained default replacement contention', async () => {
+    vi.useFakeTimers();
+    const replace = vi
+      .fn<(from: string, to: string) => Promise<void>>()
+      .mockRejectedValueOnce(retryableError('EPERM'))
+      .mockRejectedValueOnce(retryableError('EPERM'))
+      .mockRejectedValueOnce(retryableError('EPERM'))
+      .mockRejectedValueOnce(retryableError('EPERM'))
+      .mockRejectedValueOnce(retryableError('EPERM'))
+      .mockResolvedValue();
+
+    try {
+      const replacement = replaceFileWithRetry('/tmp/source', '/tmp/target', {
+        replace,
+      });
+
+      await vi.runAllTimersAsync();
+      await expect(replacement).resolves.toBeUndefined();
+      expect(replace).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not retry terminal validation drift', async () => {
     const validate = vi.fn(async () => {
       throw new ReplacementDriftError('content changed');
@@ -203,13 +227,16 @@ describe('atomic snapshot writer', () => {
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
       })();
-      for (let sequence = 0; sequence < 20; sequence += 1) {
-        await writeJsonAtomically(targetPath, {
-          payload: 'x'.repeat(16_384),
-          sequence,
-        });
-      }
-      await reader;
+      const writer = (async () => {
+        for (let sequence = 0; sequence < 20; sequence += 1) {
+          await writeJsonAtomically(targetPath, {
+            payload: 'x'.repeat(16_384),
+            sequence,
+          });
+        }
+      })();
+
+      await Promise.all([reader, writer]);
 
       expect(observations.length).toBeGreaterThan(0);
       expect(
