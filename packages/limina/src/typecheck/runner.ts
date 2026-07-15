@@ -1641,6 +1641,8 @@ export async function runBuildImpl(
 ): Promise<RunBuildResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
+  const preflight = resolvePreflight(options.config, options);
+  await preflight.ensureWorkspaceValidated();
   const resolvedTarget = await resolveBuildTarget({
     checker: options.checker,
     config: options.config,
@@ -1648,7 +1650,7 @@ export async function runBuildImpl(
     providers: options.providers,
     cwd,
     generatedGraphProvider: options.generatedGraphProvider,
-    preflight: options.preflight,
+    preflight,
     project: options.project,
     raw: options.raw,
   });
@@ -2029,6 +2031,8 @@ export async function runCheckerTypecheckImpl(
 ): Promise<RunCheckerTypecheckResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
+  const preflight = resolvePreflight(options.config, options);
+  await preflight.ensureWorkspaceValidated();
   const allCheckers = getActiveCheckers(options.config);
   const checkers = getExecutionCheckers({
     checkers: allCheckers,
@@ -2100,10 +2104,7 @@ export async function runCheckerTypecheckImpl(
   }
 
   const generatedGraph = (
-    await resolvePreflight(
-      options.config,
-      options,
-    ).ensureGeneratedArtifactsMaterialized()
+    await preflight.ensureGeneratedArtifactsMaterialized()
   ).graph;
   const targets = checkers.map((checker) => {
     const configPath = generatedGraph.checkerEntries.get(checker.name);

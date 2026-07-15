@@ -3,12 +3,8 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { glob } from 'tinyglobby';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  type CheckerEntryDiscovery,
-  resolveCheckerEntrySelection,
-} from '../core/checkers/entry-selection';
-import { createWorkspaceActivatedRegionIndex } from '../core/workspace/regions';
+import { afterEach, describe, expect, it } from 'vitest';
+import { resolveCheckerEntrySelection } from '../core/checkers/entry-selection';
 
 const roots = new Set<string>();
 const baseIgnore = [
@@ -53,33 +49,29 @@ async function createFixture(): Promise<{
 }
 
 async function resolveSelection(options: {
-  discover?: CheckerEntryDiscovery;
   exclude: string[];
   include?: string[];
   rootDir: string;
+  sourceConfigPaths?: string[];
 }) {
   const config: ResolvedLiminaConfig = {
     config: {},
     configPath: path.join(options.rootDir, 'limina.config.mjs'),
     rootDir: options.rootDir,
   };
-  const activatedRegions = createWorkspaceActivatedRegionIndex({
-    packages: [
-      {
-        directory: options.rootDir,
-        manifest: { name: 'root', private: true },
-        name: 'root',
-      },
-    ],
-    rootDir: options.rootDir,
-  });
+  const sourceConfigPaths =
+    options.sourceConfigPaths ??
+    (await glob('**/tsconfig*.json', {
+      absolute: true,
+      cwd: options.rootDir,
+      ignore: baseIgnore,
+      onlyFiles: true,
+    }));
 
   return resolveCheckerEntrySelection(
     {
-      activatedRegions,
       config,
-      discover: options.discover,
-      regionBoundaries: [],
+      sourceConfigPaths,
     },
     {
       checkerName: 'typescript',
@@ -158,25 +150,19 @@ describe('checker entry selection', () => {
     expect(selection.effectiveEntryPaths).toEqual(oracle);
   });
 
-  it('matches absolute and parent-relative patterns that resolve into the workspace', async () => {
+  it('matches parent-relative patterns in config-root coordinates', async () => {
     const fixture = await createFixture();
-    const absolutePattern = path.join(
-      fixture.rootDir,
-      'packages/a/tsconfig.json',
-    );
     const parentPattern = `../${path.basename(fixture.rootDir)}/packages/a/test/tsconfig.json`;
 
-    for (const exclude of [[absolutePattern], [parentPattern]]) {
-      const selection = await resolveSelection({
-        exclude,
-        rootDir: fixture.rootDir,
-      });
-      const oracle = await collectOracleEffectivePaths({
-        exclude,
-        rootDir: fixture.rootDir,
-      });
-      expect(selection.effectiveEntryPaths).toEqual(oracle);
-    }
+    const selection = await resolveSelection({
+      exclude: [parentPattern],
+      rootDir: fixture.rootDir,
+    });
+    const oracle = await collectOracleEffectivePaths({
+      exclude: [parentPattern],
+      rootDir: fixture.rootDir,
+    });
+    expect(selection.effectiveEntryPaths).toEqual(oracle);
   });
 
   it('validates non-entry matches before applying exclude', async () => {
@@ -196,18 +182,45 @@ describe('checker entry selection', () => {
     ).rejects.toThrow(/Checker include matched non-entry/u);
   });
 
-  it('performs one include discovery per selector invocation', async () => {
+  it('only filters descriptor candidates supplied by activated package islands', async () => {
     const fixture = await createFixture();
-    const discover = vi.fn<CheckerEntryDiscovery>(async (patterns, options) =>
-      glob(patterns as string[], options),
+    const onlyCandidate = path.join(
+      fixture.rootDir,
+      'packages/a/tsconfig.json',
     );
 
-    await resolveSelection({
-      discover,
-      exclude: ['packages/a/test/**'],
+    const selection = await resolveSelection({
+      exclude: [],
       rootDir: fixture.rootDir,
+      sourceConfigPaths: [onlyCandidate],
     });
 
-    expect(discover).toHaveBeenCalledOnce();
+    expect(selection.includedEntryPaths).toEqual([onlyCandidate]);
+  });
+
+  it('matches external activated-island candidates in config-root coordinates', async () => {
+    const fixture = await createFixture();
+    const externalRoot = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-entry-external-')),
+    );
+    roots.add(externalRoot);
+    const externalConfigPath = path.join(externalRoot, 'tsconfig.json');
+    await writeFile(externalConfigPath, '{}\n');
+    const include = [
+      path
+        .relative(fixture.rootDir, externalConfigPath)
+        .split(path.sep)
+        .join('/'),
+    ];
+
+    const selection = await resolveSelection({
+      exclude: [],
+      include,
+      rootDir: fixture.rootDir,
+      sourceConfigPaths: [externalConfigPath],
+    });
+
+    expect(selection.includedEntryPaths).toEqual([externalConfigPath]);
+    expect(selection.effectiveEntryPaths).toEqual([externalConfigPath]);
   });
 });

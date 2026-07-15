@@ -259,7 +259,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 6,
+      version: 7,
     };
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
@@ -380,7 +380,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 6,
+      version: 7,
     };
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
@@ -495,7 +495,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 6,
+      version: 7,
     };
     const output = formatCheckRunSummaryHuman({
       issues,
@@ -569,7 +569,7 @@ describe('check run summary reporting', () => {
         ],
       },
       status: 'completed',
-      version: 6,
+      version: 7,
     };
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,

@@ -1,7 +1,7 @@
 import { normalizeSlashes, toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'pathe';
 import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -13,6 +13,10 @@ import {
   selectTopBlockers,
 } from '../check-reporting/summary';
 import { generatedRootDirName } from '../core/build-graph/generated/paths';
+import {
+  type LiminaArtifactNamespace,
+  resolveArtifactNamespacePath,
+} from '../domain/artifacts/namespace';
 import type {
   SourceCheckIssue,
   SourceIssueCode,
@@ -21,8 +25,9 @@ import type {
 } from './report';
 
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 1;
-export const CHECK_ISSUE_SNAPSHOT_VERSION = 6;
+export const CHECK_ISSUE_SNAPSHOT_VERSION = 7;
 const LEGACY_CHECK_ISSUE_SNAPSHOT_VERSION = 5;
+const LEGACY_V6_CHECK_ISSUE_SNAPSHOT_VERSION = 6;
 
 export type LiminaCheckTaskName =
   | 'checker:build'
@@ -34,7 +39,8 @@ export type LiminaCheckTaskName =
   | 'package:check'
   | 'proof:check'
   | 'release:check'
-  | 'source:check';
+  | 'source:check'
+  | 'workspace:validate';
 
 export type SourceIssueSnapshotStatus = 'completed' | 'not-run';
 export type CheckIssueSnapshotStatus = 'completed' | 'not-run';
@@ -575,7 +581,7 @@ function isLiminaCheckIssue(value: unknown): value is LiminaCheckIssue {
   );
 }
 
-function isCurrentV6CheckIssueSnapshotStructure(
+function isCurrentV7CheckIssueSnapshotStructure(
   value: unknown,
 ): value is CheckIssueSnapshot {
   return (
@@ -610,6 +616,7 @@ function isKnownIssueTask(value: string): value is LiminaCheckTaskName {
     'proof:check',
     'release:check',
     'source:check',
+    'workspace:validate',
   ].includes(value);
 }
 
@@ -808,7 +815,7 @@ export function getCompletedRunSemanticProblem(
 
 export function assertCompletedRunSummary(run: LiminaCheckRunSummary): void {
   if (run.tasks.some((task) => task.id.startsWith('legacy-v5:'))) {
-    throw new Error('New v6 snapshots must not use legacy-v5 task ids.');
+    throw new Error('New v7 snapshots must not use legacy-v5 task ids.');
   }
   const problem = getCompletedRunSemanticProblem(run);
   if (problem) {
@@ -1183,21 +1190,23 @@ export function getCheckIssueSnapshotPath(rootDir: string): string {
 }
 
 export async function writeSourceIssueSnapshotOnly(
-  rootDir: string,
+  namespace: LiminaArtifactNamespace,
   snapshot: SourceIssueSnapshot,
 ): Promise<void> {
-  const snapshotPath = getSourceIssueSnapshotPath(rootDir);
-
-  await mkdir(path.dirname(snapshotPath), { recursive: true });
-  await writeJsonAtomically(snapshotPath, snapshot);
+  const snapshotPath = resolveArtifactNamespacePath(
+    namespace,
+    'source-check',
+    'last-run.json',
+  );
+  await writeJsonAtomically(namespace, snapshotPath, snapshot);
 }
 
 export async function writeCheckIssueSnapshotOnly(
-  rootDir: string,
+  namespace: LiminaArtifactNamespace,
   snapshot: CheckIssueSnapshot,
 ): Promise<void> {
-  if (!isCurrentV6CheckIssueSnapshotStructure(snapshot)) {
-    throw new Error('Invalid v6 check snapshot wire model.');
+  if (!isCurrentV7CheckIssueSnapshotStructure(snapshot)) {
+    throw new Error('Invalid v7 check snapshot wire model.');
   }
   if (snapshot.status === 'completed' && snapshot.run) {
     assertCompletedRunSummary(snapshot.run);
@@ -1207,10 +1216,12 @@ export async function writeCheckIssueSnapshotOnly(
       throw new Error('Invalid not-run check snapshot model.');
     }
   }
-  const snapshotPath = getCheckIssueSnapshotPath(rootDir);
-
-  await mkdir(path.dirname(snapshotPath), { recursive: true });
-  await writeJsonAtomically(snapshotPath, snapshot);
+  const snapshotPath = resolveArtifactNamespacePath(
+    namespace,
+    'check',
+    'last-run.json',
+  );
+  await writeJsonAtomically(namespace, snapshotPath, snapshot);
 }
 
 export const writeSourceIssueSnapshot: typeof writeSourceIssueSnapshotOnly =
@@ -1219,11 +1230,12 @@ export const writeCheckIssueSnapshot: typeof writeCheckIssueSnapshotOnly =
   writeCheckIssueSnapshotOnly;
 
 export async function writeNotRunCheckIssueSnapshot(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command: string;
   rootDir: string;
   run?: LiminaCheckRunSummary;
 }): Promise<void> {
-  await writeCheckIssueSnapshotOnly(options.rootDir, {
+  await writeCheckIssueSnapshotOnly(options.artifactNamespace, {
     command: options.command,
     createdAt: new Date().toISOString(),
     issues: [],
@@ -1234,12 +1246,13 @@ export async function writeNotRunCheckIssueSnapshot(options: {
 }
 
 export async function writeCompletedCheckIssueSnapshot(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command: string;
   issues?: readonly LiminaCheckIssue[];
   rootDir: string;
   run?: LiminaCheckRunSummary;
 }): Promise<void> {
-  await writeCheckIssueSnapshotOnly(options.rootDir, {
+  await writeCheckIssueSnapshotOnly(options.artifactNamespace, {
     command: options.command,
     createdAt: new Date().toISOString(),
     issues: [...(options.issues ?? [])],
@@ -1250,6 +1263,7 @@ export async function writeCompletedCheckIssueSnapshot(options: {
 }
 
 export async function completeCheckIssueSnapshot(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command?: string;
   rootDir: string;
   run?: LiminaCheckRunSummary;
@@ -1261,6 +1275,7 @@ export async function completeCheckIssueSnapshot(options: {
   }
 
   await writeCompletedCheckIssueSnapshot({
+    artifactNamespace: options.artifactNamespace,
     command: options.command ?? current?.command ?? 'limina check',
     issues: current?.issues ?? [],
     rootDir: options.rootDir,
@@ -1269,6 +1284,7 @@ export async function completeCheckIssueSnapshot(options: {
 }
 
 export async function appendCheckIssues(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command?: string;
   issues: readonly LiminaCheckIssue[];
   rootDir: string;
@@ -1287,10 +1303,11 @@ export async function appendCheckIssues(options: {
     status: current?.status ?? ('completed' as const),
     version: CHECK_ISSUE_SNAPSHOT_VERSION,
   } satisfies CheckIssueSnapshot;
-  await writeCheckIssueSnapshotOnly(options.rootDir, snapshot);
+  await writeCheckIssueSnapshotOnly(options.artifactNamespace, snapshot);
 }
 
 export async function appendTaskFailureIssueIfMissing(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command?: string;
   issue: LiminaCheckIssue;
   rootDir: string;
@@ -1302,6 +1319,7 @@ export async function appendTaskFailureIssueIfMissing(options: {
   }
 
   await appendCheckIssues({
+    artifactNamespace: options.artifactNamespace,
     command: options.command,
     issues: [options.issue],
     rootDir: options.rootDir,
@@ -1309,16 +1327,18 @@ export async function appendTaskFailureIssueIfMissing(options: {
 }
 
 export async function writeNotRunSourceIssueSnapshot(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command: string;
   rootDir: string;
 }): Promise<void> {
   await writeSourceIssueSnapshotOnly(
-    options.rootDir,
+    options.artifactNamespace,
     createNotRunSourceIssueSnapshot(options.command),
   );
 }
 
 export async function writeCompletedStandaloneSourceCheckSnapshots(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   command: string;
   issues: readonly SourceCheckIssue[];
   rootDir: string;
@@ -1327,10 +1347,10 @@ export async function writeCompletedStandaloneSourceCheckSnapshots(options: {
     createSourceCheckIssue({ issue, rootDir: options.rootDir }),
   );
   await writeSourceIssueSnapshotOnly(
-    options.rootDir,
+    options.artifactNamespace,
     createCompletedSourceIssueSnapshot(options),
   );
-  await writeCheckIssueSnapshotOnly(options.rootDir, {
+  await writeCheckIssueSnapshotOnly(options.artifactNamespace, {
     command: options.command,
     createdAt: new Date().toISOString(),
     issues: checkIssues,
@@ -1377,7 +1397,7 @@ export async function readCheckIssueSnapshot(
       isPlainRecord(parsed) &&
       parsed.version === CHECK_ISSUE_SNAPSHOT_VERSION
     ) {
-      if (!isCurrentV6CheckIssueSnapshotStructure(parsed)) return null;
+      if (!isCurrentV7CheckIssueSnapshotStructure(parsed)) return null;
       if (
         parsed.status === 'completed' &&
         parsed.run &&
@@ -1395,9 +1415,19 @@ export async function readCheckIssueSnapshot(
       return parsed;
     }
 
+    if (
+      isPlainRecord(parsed) &&
+      parsed.version === LEGACY_V6_CHECK_ISSUE_SNAPSHOT_VERSION
+    ) {
+      const migrated = {
+        ...parsed,
+        version: CHECK_ISSUE_SNAPSHOT_VERSION,
+      };
+      return isCurrentV7CheckIssueSnapshotStructure(migrated) ? migrated : null;
+    }
     if (!isPlainRecord(parsed) || parsed.version !== 5) return null;
     const migrated = migrateLegacyV5CheckIssueSnapshot(parsed);
-    return migrated && isCurrentV6CheckIssueSnapshotStructure(migrated)
+    return migrated && isCurrentV7CheckIssueSnapshotStructure(migrated)
       ? migrated
       : null;
   } catch {

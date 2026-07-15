@@ -76,6 +76,8 @@ interface PreparedFileIdentity extends FileContentIdentity {
 }
 
 interface ModifiedTargetSnapshot extends PreparedFileIdentity {
+  allowedCanonicalRootDir: string;
+  allowedRootDir: string;
   canonicalPath: string;
   item: MigrationWritePlanItem;
 }
@@ -425,6 +427,8 @@ async function collectModifiedSnapshot(
 
   return {
     ...createPreparedIdentity(bytes, targetStat),
+    allowedCanonicalRootDir: normalizeAbsolutePath(canonicalRootDir),
+    allowedRootDir: normalizeAbsolutePath(rootDir),
     canonicalPath: normalizeAbsolutePath(canonicalPath),
     item,
   };
@@ -713,13 +717,11 @@ async function verifyWithRetry(
 }
 
 async function rollbackItem(options: {
-  canonicalRootDir: string;
   item: TransactionItem;
   openFile: NonNullable<MigrationTransactionOptions['openFile']>;
   readFileBytes: NonNullable<MigrationTransactionOptions['readFileBytes']>;
   replace?: MigrationTransactionOptions['replace'];
   retryDelaysMs: readonly number[];
-  rootDir: string;
   trackedHandles: Set<FileHandle>;
 }): Promise<void> {
   const item = options.item;
@@ -747,8 +749,8 @@ async function rollbackItem(options: {
   await replaceFileWithRetry(item.rollbackPath, item.snapshot.item.configPath, {
     beforeAttempt: async () => {
       await validateCanonicalTarget(
-        options.rootDir,
-        options.canonicalRootDir,
+        item.snapshot.allowedRootDir,
+        item.snapshot.allowedCanonicalRootDir,
         item.snapshot,
       );
       await validateFile(
@@ -776,8 +778,8 @@ async function rollbackItem(options: {
   try {
     await verifyWithRetry(async () => {
       await validateCanonicalTarget(
-        options.rootDir,
-        options.canonicalRootDir,
+        item.snapshot.allowedRootDir,
+        item.snapshot.allowedCanonicalRootDir,
         item.snapshot,
       );
       const restoredStat = normalizeStat(
@@ -834,7 +836,7 @@ function defaultRemovePath(filePath: string): Promise<void> {
 }
 
 export async function executeMigrationWritePlan(
-  rootDir: string,
+  allowedRootDirs: string | readonly string[],
   plan: readonly MigrationWritePlanItem[],
   transactionOptions: MigrationTransactionOptions = {},
 ): Promise<MigrationTransactionExecutionResult> {
@@ -860,12 +862,45 @@ export async function executeMigrationWritePlan(
     retryDelaysMs:
       transactionOptions.retryDelaysMs ?? verificationRetryDelaysMs,
   };
-  const canonicalRootDir = await realpath(rootDir);
+  const normalizedAllowedRootDirs = [
+    ...new Set(
+      (typeof allowedRootDirs === 'string'
+        ? [allowedRootDirs]
+        : allowedRootDirs
+      ).map(normalizeAbsolutePath),
+    ),
+  ].sort((left, right) => right.length - left.length);
+  if (normalizedAllowedRootDirs.length === 0) {
+    throw new TerminalReplacementValidationError(
+      'Migration requires at least one canonical allowed Git worktree root.',
+    );
+  }
+  const allowedRoots = await Promise.all(
+    normalizedAllowedRootDirs.map(async (rootDir) => ({
+      canonicalRootDir: normalizeAbsolutePath(await realpath(rootDir)),
+      rootDir,
+    })),
+  );
   const snapshots: ModifiedTargetSnapshot[] = [];
 
   for (const item of modifiedItems) {
+    const allowedRoot = allowedRoots.find(
+      (candidate) =>
+        normalizeAbsolutePath(item.configPath) === candidate.rootDir ||
+        isPathInsideDirectory(item.configPath, candidate.rootDir),
+    );
+    if (!allowedRoot) {
+      throw new TerminalReplacementValidationError(
+        `Migration target is outside every allowed Git worktree root: ${item.configPath}`,
+      );
+    }
     snapshots.push(
-      await collectModifiedSnapshot(rootDir, canonicalRootDir, item, options),
+      await collectModifiedSnapshot(
+        allowedRoot.rootDir,
+        allowedRoot.canonicalRootDir,
+        item,
+        options,
+      ),
     );
   }
 
@@ -953,8 +988,8 @@ export async function executeMigrationWritePlan(
       await replaceFileWithRetry(item.nextPath, item.snapshot.item.configPath, {
         beforeAttempt: async () => {
           await validateOriginalTarget(
-            rootDir,
-            canonicalRootDir,
+            item.snapshot.allowedRootDir,
+            item.snapshot.allowedCanonicalRootDir,
             item.snapshot,
             options,
           );
@@ -979,13 +1014,11 @@ export async function executeMigrationWritePlan(
 
       try {
         await rollbackItem({
-          canonicalRootDir,
           item,
           openFile: options.openFile,
           readFileBytes: options.readFileBytes,
           replace: transactionOptions.replace,
           retryDelaysMs: options.retryDelaysMs,
-          rootDir,
           trackedHandles,
         });
       } catch (error) {
@@ -1045,7 +1078,7 @@ export async function executeMigrationWritePlan(
       path:
         transactionItems.find((item) =>
           failure.message.includes(item.transactionDirectory),
-        )?.transactionDirectory ?? rootDir,
+        )?.transactionDirectory ?? normalizedAllowedRootDirs[0]!,
     })),
     modifiedFiles: modifiedItems.map((item) => item.configPath),
     skippedFiles,

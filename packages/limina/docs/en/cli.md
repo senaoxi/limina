@@ -64,6 +64,8 @@ The config file can export an object, a `Promise`, or a function that receives `
 
 Daily use usually starts with `limina check`. It runs the default check group: `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. Together, these tasks check whether the generated graph, source boundaries, coverage relationships, and checker entries remain consistent.
 
+Before those tasks, Limina runs the shared `workspace:validate` preparation. The same validated activated-package index gates standalone source, proof, graph, build, checker, migration, package, and release commands. Workspace issues use config-root-relative lexical paths, including `../` for external activated packages.
+
 When you change `tsconfig`, `references`, checker include ranges, or source structure that affects the generated graph, run:
 
 ```sh
@@ -75,6 +77,7 @@ When you only need to locate the reason for the previous failure, you do not nee
 
 ```sh
 pnpm exec limina check --issues
+pnpm exec limina check --issues --task workspace:validate
 pnpm exec limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING --verbose
 pnpm exec limina check --issues --format json
 ```
@@ -102,6 +105,7 @@ These two commands read the already-built `outDir`. They do not build artifacts 
 | Goal                                                               | Recommended command                        | Basis for choosing it                                                                                                                     |
 | ------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Initialize Limina files in a `pnpm` workspace                      | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
+| Migrate governed source `tsconfig` files                           | `limina migration`                         | Moves compiler output settings into `liminaOptions` after workspace validation                                                            |
 | Daily repository-structure and type build entry checks             | `limina check`                             | Default group covers graph, source, coverage, and checker entries                                                                         |
 | Run a custom ordered check group                                   | `limina check <name>`                      | `<name>` comes from configured `pipelines`                                                                                                |
 | Generate or refresh the `.limina` project graph                    | `limina graph prepare`                     | After changing `tsconfig`, checker ranges, or source structure                                                                            |
@@ -133,6 +137,18 @@ It searches upward from the current directory for `pnpm-workspace.yaml`, confirm
 `--yes` accepts the default confirmation and skips the interactive `skill` installation prompt. In non-interactive environments, steps that require confirmation fail unless `--yes` is used.
 
 `init` does not infer graph rules from business structure, and it does not decide which package boundaries should be allowed or denied. Maintain the initialized config according to the real repository structure.
+
+### limina migration
+
+`migration` rewrites the source `tsconfig` entries selected from the validated activated package islands.
+
+```sh
+pnpm exec limina migration
+```
+
+External activated packages are supported, including a migration whose targets belong to several Git worktrees. Before writing anything, Limina resolves every target's canonical Git worktree root and requires every involved worktree to be clean. It then executes one transaction with those canonical roots as the complete write allowlist. A dirty external worktree blocks all writes; every target must belong to a Git worktree.
+
+Migration selection follows the same package-island visibility and checker selectors as graph preparation. It never reads or edits a config behind an owner-local boundary merely because an ancestor pattern could match it.
 
 ### limina check [pipeline]
 
@@ -170,7 +186,9 @@ Common options:
 | `--issues`             | boolean                   | Rerun checks                | `limina check --issues`                                       | Reads the latest check snapshot; cannot be used with a pipeline name |
 | `--format <format>`    | `human`, `json`, `ndjson` | `human`                     | `limina check --issues --format json`                         | Must be used with `--issues`                                         |
 
-`--issues` does not rerun checks. It reads the snapshot written by the previous check and is used to locate failed tasks, rules, packages, files, or checkers. Before using it the first time, run `limina check` and let the check reach a recordable state.
+`--issues` does not rerun checks. It reads the snapshot written by the previous check and is used to locate failed tasks, rules, packages, files, or checkers. Workspace validation failures are recordable too: the trusted `.limina` snapshot namespace is created before validation, so a structural failure can still appear under task `workspace:validate`. Before using issue inventory the first time, run `limina check` and let it reach a recordable state.
+
+New snapshots use schema version 7. The reader still accepts version 5 and version 6 snapshots so an upgrade can inspect the previous run; the next recorded check rewrites the file in version 7.
 
 Helper queries:
 

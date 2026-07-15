@@ -1,6 +1,7 @@
 import { getCheckerAdapter } from '#checkers';
 import type { LiminaConfig } from '#config/runner';
 import { formatUnknownValue } from '#utils/values';
+import path from 'pathe';
 import { z } from 'zod';
 import { ConfigurationError } from '../domain/validation/errors';
 
@@ -33,6 +34,11 @@ const importAnalysisConfigReason =
 
 const vueImportParserConfigReason =
   'config.imports.vue must be "heuristic" or "compiler-sfc".';
+
+function isAbsolutePublicSelector(value: string): boolean {
+  const selector = value.trim().replace(/^!+/u, '');
+  return path.isAbsolute(selector) || /^[A-Za-z]:[\\/]/u.test(selector);
+}
 
 const checkerConfigShapeSchema = z
   .looseObject({})
@@ -93,6 +99,13 @@ const checkerConfigShapeSchema = z
             message: 'checker include entries must be non-empty string paths.',
             path: ['include', index],
           });
+        } else if (isAbsolutePublicSelector(value)) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'checker include entries must be config.rootDir-relative paths; ../ is allowed.',
+            path: ['include', index],
+          });
         }
       }
     }
@@ -115,6 +128,13 @@ const checkerConfigShapeSchema = z
         ctx.addIssue({
           code: 'custom',
           message: 'checker exclude entries must be non-empty string paths.',
+          path: ['exclude', index],
+        });
+      } else if (isAbsolutePublicSelector(value)) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'checker exclude entries must be config.rootDir-relative paths; ../ is allowed.',
           path: ['exclude', index],
         });
       }
@@ -152,6 +172,15 @@ function validateSourcePatternConfig(options: {
       options.ctx.addIssue({
         code: 'custom',
         message: `config.source.${options.field} entries must be non-empty strings.`,
+        path: ['source', options.field, index],
+      });
+      continue;
+    }
+
+    if (value !== '...' && isAbsolutePublicSelector(value)) {
+      options.ctx.addIssue({
+        code: 'custom',
+        message: `config.source.${options.field} entries must be config.rootDir-relative paths; ../ is allowed.`,
         path: ['source', options.field, index],
       });
       continue;
@@ -218,6 +247,13 @@ const sharedLiminaConfigShapeSchema = z
                   'auto checker exclude entries must be non-empty string paths.',
                 path: ['checkers', 'exclude', index],
               });
+            } else if (isAbsolutePublicSelector(value)) {
+              ctx.addIssue({
+                code: 'custom',
+                message:
+                  'auto checker exclude entries must be config.rootDir-relative paths; ../ is allowed.',
+                path: ['checkers', 'exclude', index],
+              });
             }
           }
         }
@@ -235,6 +271,21 @@ const sharedLiminaConfigShapeSchema = z
         }
       } else {
         for (const [checkerName, checker] of Object.entries(checkers)) {
+          if (
+            checkerName.length === 0 ||
+            checkerName === '.' ||
+            checkerName === '..' ||
+            checkerName.includes('/') ||
+            checkerName.includes('\\')
+          ) {
+            ctx.addIssue({
+              code: 'custom',
+              message:
+                'checker names must be non-empty path-safe identifiers without slash segments.',
+              path: ['checkers', checkerName],
+            });
+            continue;
+          }
           const result = checkerConfigShapeSchema.safeParse(checker);
 
           if (result.success) {
@@ -547,7 +598,7 @@ function validateSourceImportAuthorityConfig(
         ctx.addIssue({
           code: 'custom',
           message:
-            'files has been replaced by owner-root-relative include.\n  fix: move the source owner into the allow object key and replace workspace-root-relative files with owner-root-relative include.',
+            'files has been replaced by config-root-relative include.\n  fix: move the source owner into the allow object key and keep file selectors relative to config.rootDir.',
           path: [...grantPath, 'files'],
         });
       }
@@ -809,6 +860,22 @@ function validateRegionsConfig(
       value: entry.include,
       valueName: 'regions.exclude.include',
     });
+    if (Array.isArray(entry.include)) {
+      for (const [includeIndex, include] of entry.include.entries()) {
+        if (
+          typeof include === 'string' &&
+          include.trim().length > 0 &&
+          isAbsolutePublicSelector(include)
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'regions.exclude.include entries must be config.rootDir-relative paths; ../ is allowed.',
+            path: [...entryPath, 'include', includeIndex],
+          });
+        }
+      }
+    }
 
     if (typeof entry.reason !== 'string' || entry.reason.trim().length === 0) {
       ctx.addIssue({

@@ -30,7 +30,7 @@ export default defineConfig({
 - **Type:** `{ mode: 'auto'; exclude?: string[] }`
 - **Default:** used when `config.checkers` is omitted
 
-`auto` mode treats every ordinary `tsconfig.json` as a source entry. An entry with only `TypeScript`, `JavaScript`, and `JSON` files goes to `tsc`. An entry containing `.vue` files goes to `vue-tsc`. `solution-style tsconfig.json` files are handled as aggregators, and Limina classifies them from the referenced source configs.
+`auto` mode discovers ordinary `tsconfig.json` entries independently in every activated package island, including external packages. An entry with only `TypeScript`, `JavaScript`, and `JSON` files goes to `tsc`. An entry containing `.vue` files goes to `vue-tsc`. `solution-style tsconfig.json` files are handled as aggregators, and Limina classifies them from the referenced source configs. Parent discovery never reads through an activated child root or an owner-local nested workspace boundary; an activated child starts its own discovery job.
 
 If a `TypeScript` entry imports a `Vue` entry, `auto` mode sends that `TypeScript` entry to `vue-tsc` too. This promotion continues through dependency chains, so the generated build graph avoids an incompatible `tsc` project depending on a `vue-tsc` project.
 
@@ -97,7 +97,7 @@ Only built-in presets are accepted. Custom presets and custom `extensions` are r
 - **Type:** `string[]`
 - **Required:** yes
 
-`include` is a non-empty list of workspace-root-relative selectors for source entry files named exactly `tsconfig.json`. It must not select `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, generated `.limina` files, base configs, check configs, or other reserved `tsconfig` files.
+`include` is a non-empty list of config-root-relative selectors for source entry files named exactly `tsconfig.json`. It may contain `../` for external activated packages. Selectors only filter candidates already produced by activated package islands; they cannot pull an unactivated path or a descriptor behind an owner-local boundary into the graph. It must not select `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, generated `.limina` files, base configs, check configs, or other reserved `tsconfig` files.
 
 During `graph prepare`, Limina uses this model:
 
@@ -110,7 +110,7 @@ An `include` match outside every activated workspace package, or below an exclud
 
 Non-entry configs such as `tsconfig.lib.json`, `tsconfig.test.json`, or `tsconfig.tools.json` are therefore useful, but they are not selected directly by `checker.include`. They enter Limina's managed scope only when a selected `tsconfig.json` entry references them. A standalone base, build-only, or helper config that is not reachable from an entry is not treated as a source check target.
 
-For every source config in scope, Limina writes declaration build configs under `.limina/tsconfig/checkers/<checker>/projects/...`. Those configs extend the source config, force declaration emit options, write declaration output under `.limina/dts/checkers/<checker>/...`, and record the source-to-generated mapping. Source `tsconfig.json` solution aggregators are generated under `.limina/tsconfig/checkers/<checker>/solutions/...`.
+For every source config in scope, Limina writes declaration build configs inside its trusted `.limina` namespace. Internal packages keep the readable checker/project layout; external packages are routed through an internal `external/<stable-id>/...` namespace instead of embedding `../`. Those configs extend the source config, force declaration emit options, write declaration output inside the same trusted namespace, and record the source-to-generated mapping.
 
 ## Entry Uniqueness and Capability Coverage
 
@@ -160,7 +160,7 @@ Leading `!` is classified as follows:
 - a single leading `!` is removed to form a negative pattern; `!!(...)` is handled this way because the second `!` starts an extglob;
 - other double- or triple-bang forms such as `!!path` and `!!!path` are ignored.
 
-Patterns retain tinyglobby-compatible absolute and parent-relative normalization, directory expansion, trailing-slash, escaped metacharacter, dot-path, brace, extglob, globstar, and case behavior. Paths must still resolve to entries inside the workspace's activated regions.
+Patterns retain tinyglobby-compatible absolute and parent-relative normalization, directory expansion, trailing-slash, escaped metacharacter, dot-path, brace, extglob, globstar, and case behavior. Public selectors are interpreted from `config.rootDir`; paths must still resolve to entries inside the validated activated package index.
 
 Do not repeat whole-region exclusions here. Paths in an excluded or inaccessible region are already outside `include` discovery by construction. Also do not use `exclude` to block `references`: once an effective entry is selected, Limina follows its valid references even when their paths match an exclude pattern.
 

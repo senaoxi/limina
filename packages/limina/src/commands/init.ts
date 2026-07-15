@@ -10,10 +10,15 @@ import ignore from 'ignore';
 import { createElapsedTimer } from 'logaria/helper';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import { parse as parseYaml } from 'yaml';
+import {
+  assertArtifactPathOperationSafe,
+  createLiminaArtifactNamespace,
+  type LiminaArtifactNamespace,
+} from '../domain/artifacts/namespace';
 import type { LiminaFlowReporter } from '../flow';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
 
@@ -473,18 +478,28 @@ async function ensureGeneratedGraphGitignore(options: {
 }
 
 async function removeRootGeneratedGraphDir(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   removedPaths: string[];
-  rootDir: string;
 }): Promise<InitFileStepResult> {
-  const generatedRootPath = path.join(options.rootDir, '.limina');
+  const generatedRootPath = options.artifactNamespace.rootDir;
 
-  if (!existsSync(generatedRootPath)) {
-    return {
-      message: 'root .limina (skipped: not present)',
-      status: 'skip',
-    };
+  try {
+    await lstat(generatedRootPath);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return {
+        message: 'root .limina (skipped: not present)',
+        status: 'skip',
+      };
+    }
+    throw error;
   }
 
+  await assertArtifactPathOperationSafe(
+    options.artifactNamespace,
+    generatedRootPath,
+    { targetKind: 'directory' },
+  );
   await rm(generatedRootPath, {
     force: true,
     recursive: true,
@@ -633,6 +648,10 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
     label: 'resolve workspace root',
   });
   const config = createInitConfig(rootDir);
+  const artifactNamespace = createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir,
+  });
 
   const workspacePackages = await runInitFlowStep({
     action: async () => {
@@ -659,8 +678,8 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
   await runInitFlowStep({
     action: async () => ({
       ...(await removeRootGeneratedGraphDir({
+        artifactNamespace,
         removedPaths,
-        rootDir,
       })),
       value: undefined,
     }),

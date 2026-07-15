@@ -38,11 +38,11 @@ export type PipelineStep =
       /**
        * Executable name, for example `pnpm`, `tsc`, `tsgo`, `vue-tsc`, or `vue-tsgo`.
        *
-       * The command runs from the inferred workspace root unless `cwd` is set.
+       * The command runs from config.rootDir unless `cwd` is set.
        */
       command: string;
       /**
-       * Working directory for this step, relative to the inferred workspace root.
+       * Working directory for this step, relative to config.rootDir.
        */
       cwd?: string;
       /**
@@ -182,7 +182,8 @@ export interface SourceKnipIgnoredDependencyConfig {
  */
 export interface SourceKnipIgnoredFileConfig {
   /**
-   * Workspace-root-relative source module path.
+   * Source module path relative to config.rootDir. Parent-relative paths are
+   * allowed for external activated packages.
    */
   file: string;
   /**
@@ -204,7 +205,7 @@ export interface SourceKnipIgnoredFileConfig {
  */
 export interface SourceKnipEntryConfig {
   /**
-   * Workspace-root-relative file or glob patterns that Knip should treat as
+   * File or glob patterns relative to config.rootDir that Knip should treat as
    * additional entries for the keyed package.
    */
   files: string[];
@@ -261,7 +262,7 @@ export interface SourceImportAuthorityConfig {
 
 export interface SourceImportAuthorityWorkspaceRootGrant {
   /**
-   * Owner-root-relative source globs where this grant applies.
+   * Config-root-relative source globs where this grant applies.
    *
    * When omitted, the grant applies to all governed source modules owned by
    * this source owner.
@@ -394,7 +395,7 @@ export interface SharedLiminaConfig {
  */
 export interface GraphRuleRefDenyEntry {
   /**
-   * Target `tsconfig*.dts.json` path, relative to the inferred workspace root.
+   * Target source config path, relative to config.rootDir.
    */
   path: string;
   /**
@@ -409,7 +410,7 @@ export interface GraphRuleRefDenyEntry {
  */
 export interface GraphRuleRefAllowEntry {
   /**
-   * Target `tsconfig*.dts.json` path, relative to the inferred workspace root.
+   * Target source config path, relative to config.rootDir.
    */
   path: string;
   /**
@@ -485,7 +486,7 @@ export interface GraphConditionDomain {
    */
   name: string;
   /**
-   * Domain entry `tsconfig*.dts.json` path, relative to the inferred workspace root.
+   * Domain entry source config path, relative to config.rootDir.
    */
   entry: string;
   /**
@@ -515,7 +516,7 @@ export interface GraphConfig {
  */
 export interface ProofAllowlistEntry {
   /**
-   * File path to allow, relative to the inferred workspace root.
+   * Source file path to allow, relative to config.rootDir.
    */
   file: string;
   /**
@@ -653,7 +654,7 @@ export interface PackageEntry {
    */
   name: string;
   /**
-   * Built package directory to scan, relative to the inferred workspace root.
+   * Built package directory to scan, relative to config.rootDir.
    */
   outDir: string;
   /**
@@ -733,10 +734,7 @@ export interface ReleaseConfig {
   contentHash?: ReleaseContentHashConfig;
 }
 
-export type RegionExcludeKind =
-  | 'package-scope'
-  | 'pnpm-workspace'
-  | 'workspace-package';
+export type RegionExcludeKind = 'package-scope' | 'workspace-package';
 
 /** A governance root excluded from the current Limina run. */
 export interface RegionExcludeConfig {

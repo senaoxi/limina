@@ -15,30 +15,32 @@ import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import { createElapsedTimer } from 'logaria/helper';
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
+import path from 'pathe';
 import { isSolutionStyleTsconfig } from '../core/build-graph/generated/config-readers';
 import {
   createCheckerEntrySelectionOptions,
   resolveCheckerEntrySelection,
 } from '../core/checkers/entry-selection';
-import { WorkspaceCore } from '../core/workspace';
+import { getWorkspaceRegionBoundaryExclusionReason } from '../core/workspace/regions';
 import {
-  createWorkspaceActivatedRegionIndex,
-  createWorkspaceRegionBoundaryIndex,
-  getWorkspaceRegionBoundaryExclusionReason,
-  type WorkspaceActivatedRegionIndex,
-  type WorkspaceRegionBoundary,
-  type WorkspaceRegionBoundaryIndex,
-} from '../core/workspace/regions';
+  type ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from '../core/workspace/validated-context';
 import type { LiminaFlowReporter } from '../flow';
 import { formatErrorMessage, MigrationLogger } from '../logger';
+import {
+  type LiminaPreflightManager,
+  type PreflightCapableOptions,
+  resolvePreflight,
+} from '../preflight';
 import {
   executeMigrationWritePlan,
   type MigrationCleanupWarning,
   type MigrationWritePlanItem,
 } from './migration-transaction';
 
-export interface RunMigrationOptions {
+export interface RunMigrationOptions extends PreflightCapableOptions {
   flow?: LiminaFlowReporter;
   flowDepth?: number;
 }
@@ -142,6 +144,50 @@ function runGitStatus(rootDir: string): Promise<string> {
   });
 }
 
+function findGitWorktreeRoot(targetPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const cwd = path.dirname(targetPath);
+    execFile(
+      'git',
+      ['rev-parse', '--show-toplevel'],
+      { cwd, encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(
+            new Error(
+              [
+                `Unable to resolve the Git worktree for ${targetPath}.`,
+                stderr.trim() ? `stderr: ${stderr.trim()}` : undefined,
+                error.message ? `reason: ${error.message}` : undefined,
+                'fix: every migration target must belong to a Git worktree.',
+              ]
+                .filter(Boolean)
+                .join('\n'),
+              { cause: error },
+            ),
+          );
+          return;
+        }
+        resolve(normalizeAbsolutePath(stdout.trim()));
+      },
+    );
+  });
+}
+
+async function collectMigrationWorktreeRoots(
+  targets: readonly MigrationTarget[],
+): Promise<string[]> {
+  const rootsByCanonicalIdentity = new Map<string, string>();
+  for (const target of targets) {
+    const rootDir = await findGitWorktreeRoot(target.configPath);
+    const canonicalRootDir = normalizeAbsolutePath(await realpath(rootDir));
+    rootsByCanonicalIdentity.set(canonicalRootDir, rootDir);
+  }
+  return [...rootsByCanonicalIdentity.values()].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
 async function assertCleanGitWorkspace(rootDir: string): Promise<void> {
   let statusOutput: string;
 
@@ -183,17 +229,15 @@ async function assertCleanGitWorkspace(rootDir: string): Promise<void> {
 
 async function collectAutoMigrationEntries(
   config: ResolvedLiminaConfig,
-  activatedRegions: WorkspaceActivatedRegionIndex,
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
+  sourceConfigPaths: readonly string[],
 ): Promise<MigrationEntryCollection> {
   const excludePatterns = isAutoCheckerConfigMode(config.config?.checkers)
     ? (config.config.checkers.exclude ?? [])
     : [];
   const selection = await resolveCheckerEntrySelection(
     {
-      activatedRegions,
       config,
-      regionBoundaries,
+      sourceConfigPaths,
     },
     {
       checkerName: '__auto__',
@@ -217,8 +261,7 @@ async function collectAutoMigrationEntries(
 
 async function collectExplicitMigrationEntries(
   config: ResolvedLiminaConfig,
-  activatedRegions: WorkspaceActivatedRegionIndex,
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
+  sourceConfigPaths: readonly string[],
 ): Promise<MigrationEntryCollection> {
   const checkers = getActiveCheckers(config);
   const entries: MigrationEntry[] = [];
@@ -237,9 +280,8 @@ async function collectExplicitMigrationEntries(
 
     const selection = await resolveCheckerEntrySelection(
       {
-        activatedRegions,
         config,
-        regionBoundaries,
+        sourceConfigPaths,
       },
       createCheckerEntrySelectionOptions(checker),
     );
@@ -263,16 +305,11 @@ async function collectExplicitMigrationEntries(
 
 async function collectMigrationEntries(
   config: ResolvedLiminaConfig,
-  activatedRegions: WorkspaceActivatedRegionIndex,
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
+  sourceConfigPaths: readonly string[],
 ): Promise<MigrationEntryCollection> {
   return isAutoCheckerMode(config)
-    ? collectAutoMigrationEntries(config, activatedRegions, regionBoundaries)
-    : collectExplicitMigrationEntries(
-        config,
-        activatedRegions,
-        regionBoundaries,
-      );
+    ? collectAutoMigrationEntries(config, sourceConfigPaths)
+    : collectExplicitMigrationEntries(config, sourceConfigPaths);
 }
 
 function formatPatternList(patterns: readonly string[]): string {
@@ -340,10 +377,9 @@ async function readMigrationTarget(
 }
 
 function collectReferenceTargets(options: {
-  activatedRegions: WorkspaceActivatedRegionIndex;
   config: ResolvedLiminaConfig;
+  pathIndex: WorkspaceRegionPathIndex;
   planningVirtualFiles: ReadonlyMap<string, string>;
-  regionBoundaries: WorkspaceRegionBoundaryIndex;
   sourceConfigPath: string;
 }): string[] {
   const referenceCollection = collectReferencePathInfosForConfig(
@@ -369,9 +405,8 @@ function collectReferenceTargets(options: {
       continue;
     }
 
-    if (!options.activatedRegions.isInsideActivatedRegion(referencePath)) {
-      const boundary =
-        options.regionBoundaries.findBoundaryForPath(referencePath);
+    if (!options.pathIndex.isSourceConfigPath(referencePath)) {
+      const boundary = options.pathIndex.findBoundaryForPath(referencePath);
       const reason = boundary
         ? getWorkspaceRegionBoundaryExclusionReason(boundary)
         : null;
@@ -403,21 +438,12 @@ function collectReferenceTargets(options: {
 
 async function collectMigrationTargets(
   config: ResolvedLiminaConfig,
+  context: ValidatedWorkspaceContext,
 ): Promise<MigrationTargetCollection> {
-  const topology = await new WorkspaceCore(config).getRegionTopology();
-  const activatedRegions = createWorkspaceActivatedRegionIndex({
-    boundaries: topology.boundaries,
-    packages: topology.packages,
-    rootDir: config.rootDir,
-  });
-  const regionBoundaries = createWorkspaceRegionBoundaryIndex(
-    topology.boundaries,
-    topology.packages,
-  );
+  const pathIndex = new WorkspaceRegionPathIndex(context);
   const entryCollection = await collectMigrationEntries(
     config,
-    activatedRegions,
-    topology.boundaries,
+    context.sourceConfigPaths,
   );
   const entries = entryCollection.entries;
 
@@ -456,10 +482,9 @@ async function collectMigrationTargets(
     expandedSolutions.add(entry.configPath);
 
     for (const referencePath of collectReferenceTargets({
-      activatedRegions,
       config,
+      pathIndex,
       planningVirtualFiles,
-      regionBoundaries,
       sourceConfigPath: entry.configPath,
     })) {
       if (!entryConfigPaths.has(referencePath)) {
@@ -646,17 +671,21 @@ interface RunMigrationImplResult {
 
 async function runMigrationImpl(
   config: ResolvedLiminaConfig,
+  preflight: LiminaPreflightManager,
 ): Promise<RunMigrationImplResult> {
-  await assertCleanGitWorkspace(config.rootDir);
-
-  const targetCollection = await collectMigrationTargets(config);
+  const context = await preflight.ensureWorkspaceValidated();
+  const targetCollection = await collectMigrationTargets(config, context);
+  const worktreeRoots = await collectMigrationWorktreeRoots(
+    targetCollection.targets,
+  );
+  await Promise.all(worktreeRoots.map(assertCleanGitWorkspace));
   const writePlan = targetCollection.targets.map((target) =>
     createMigrationWritePlanItem({
       config,
       target,
     }),
   );
-  const execution = await executeMigrationWritePlan(config.rootDir, writePlan);
+  const execution = await executeMigrationWritePlan(worktreeRoots, writePlan);
 
   return {
     cleanupWarnings: execution.cleanupWarnings,
@@ -689,6 +718,7 @@ export async function runMigration(
   config: ResolvedLiminaConfig,
   options: RunMigrationOptions = {},
 ): Promise<RunMigrationResult> {
+  const preflight = resolvePreflight(config, options);
   const elapsed = createElapsedTimer();
   const task = options.flow?.start('migrate tsconfig files', {
     collapseOnSuccess: false,
@@ -698,7 +728,7 @@ export async function runMigration(
   MigrationLogger.info('migration started');
 
   try {
-    const execution = await runMigrationImpl(config);
+    const execution = await runMigrationImpl(config, preflight);
     const result = execution.result;
 
     for (const warning of execution.cleanupWarnings) {

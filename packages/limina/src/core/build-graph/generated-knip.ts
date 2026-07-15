@@ -13,6 +13,7 @@ import {
 } from '#utils/path';
 import { existsSync, statSync } from 'node:fs';
 import path from 'pathe';
+import { createExternalArtifactStableId } from '../../domain/artifacts/namespace';
 import {
   collectPackageBuildScripts,
   type PackageBuildScript,
@@ -71,11 +72,20 @@ function getGeneratedKnipConfigPath(options: {
   const relativeOutputPath =
     relativePackageDirectory === '.'
       ? path.join('.limina/knip', 'tsconfig.knip.json')
-      : path.join(
-          '.limina/knip',
-          relativePackageDirectory,
-          'tsconfig.knip.json',
-        );
+      : relativePackageDirectory === '..' ||
+          relativePackageDirectory.startsWith(`..${path.sep}`)
+        ? path.join(
+            '.limina/knip/external',
+            createExternalArtifactStableId(
+              toPosixPath(relativePackageDirectory),
+            ),
+            'tsconfig.knip.json',
+          )
+        : path.join(
+            '.limina/knip',
+            relativePackageDirectory,
+            'tsconfig.knip.json',
+          );
 
   return normalizeAbsolutePath(path.join(options.rootDir, relativeOutputPath));
 }
@@ -150,16 +160,6 @@ function validatePackageBuildScript(options: {
       packageJsonPath: options.script.packageJsonPath,
       packageName: options.script.packageName,
       reason: `build config must be a JSON file: ${toRelativePath(options.config.rootDir, configPath)}`,
-      scriptName: options.script.name,
-    };
-  }
-
-  if (!isPathInsideDirectory(configPath, options.config.rootDir)) {
-    return {
-      command: options.script.command,
-      packageJsonPath: options.script.packageJsonPath,
-      packageName: options.script.packageName,
-      reason: `build config must stay inside the workspace root: ${configPath}`,
       scriptName: options.script.name,
     };
   }

@@ -9,6 +9,7 @@ import {
   createTaskFailureIssue,
 } from '../check-reporting/snapshot';
 import { clearCliScreen, formatErrorMessage, ProofLogger } from '../logger';
+import { resolvePreflight } from '../preflight';
 import { runProofCheckImpl, type RunProofCheckOptions } from '../proof/runner';
 
 export type { RunProofCheckOptions } from '../proof/runner';
@@ -17,6 +18,7 @@ export async function runProofCheck(
   config: ResolvedLiminaConfig,
   options: RunProofCheckOptions = {},
 ): Promise<boolean> {
+  const preflight = resolvePreflight(config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -42,7 +44,7 @@ export async function runProofCheck(
       issues,
       logSuccess,
       onStats: options.onStats,
-      preflight: options.preflight,
+      preflight,
       progress: options.progress,
       report: options.report,
     });
@@ -50,6 +52,7 @@ export async function runProofCheck(
     if (passed) {
       if (!options.deferSnapshot) {
         await completeCheckIssueSnapshot({
+          artifactNamespace: preflight.artifactNamespace,
           rootDir: config.rootDir,
         });
       }
@@ -77,6 +80,7 @@ export async function runProofCheck(
         }
       } else {
         await appendTaskFailureIssueIfMissing({
+          artifactNamespace: preflight.artifactNamespace,
           issue: createTaskFailureIssue({
             code: 'LIMINA_PROOF_CHECK_FAILED',
             filePath: config.configPath,
@@ -118,6 +122,7 @@ export async function runProofCheck(
       options.issues?.push(...issues);
     } else {
       await appendCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         issues,
         rootDir: config.rootDir,
       });

@@ -85,8 +85,9 @@ domain:
 
 - `name` and `entry` must be non-empty strings, and `customConditions` must be an
   array of strings.
-- `entry` must be workspace-root-relative, stay inside the workspace, and point
-  to an existing source tsconfig or generated declaration project.
+- `entry` must be config-root-relative and point to an existing source
+  `tsconfig` governed by an activated package island. It may contain `../` for
+  an external activated package.
 - `entry` must already be governed by the active checker entries; a domain does
   not add otherwise unchecked projects to the graph.
 - Limina expands the entry's declaration reference subtree and reuses the

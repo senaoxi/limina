@@ -2,6 +2,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { createElapsedTimer } from 'logaria/helper';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
+import { resolvePreflight } from '../preflight';
 import {
   runSourceCheckImpl,
   type RunSourceCheckOptions,
@@ -21,8 +22,10 @@ export async function runSourceCheck(
   config: ResolvedLiminaConfig,
   options: RunSourceCheckOptions = {},
 ): Promise<boolean> {
+  const preflight = resolvePreflight(config, options);
   if (!options.deferSnapshot) {
     await writeNotRunSourceIssueSnapshot({
+      artifactNamespace: preflight.artifactNamespace,
       command: options.report?.command ?? 'limina source check',
       rootDir: config.rootDir,
     });
@@ -53,7 +56,7 @@ export async function runSourceCheck(
       knipRunner: options.knipRunner,
       logSuccess,
       onStats: options.onStats,
-      preflight: options.preflight,
+      preflight,
       progress: options.progress,
       report: options.report,
       sourceIssues,
@@ -62,6 +65,7 @@ export async function runSourceCheck(
     if (passed) {
       if (!options.deferSnapshot) {
         await completeCheckIssueSnapshot({
+          artifactNamespace: preflight.artifactNamespace,
           rootDir: config.rootDir,
         });
       }
@@ -97,6 +101,7 @@ export async function runSourceCheck(
         options.issues?.push(...issues);
       } else {
         await appendTaskFailureIssueIfMissing({
+          artifactNamespace: preflight.artifactNamespace,
           issue: createTaskFailureIssue({
             code: 'LIMINA_SOURCE_CHECK_FAILED',
             filePath: config.configPath,
@@ -137,6 +142,7 @@ export async function runSourceCheck(
       options.issues?.push(...issues);
     } else {
       await appendCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         issues,
         rootDir: config.rootDir,
       });

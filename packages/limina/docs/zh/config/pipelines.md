@@ -31,6 +31,8 @@ export default defineConfig({
 
 `pipelines` 把名称映射到一组有序步骤。`pnpm exec limina check <name>` 会按数组顺序调度该流水线的步骤，每一步都依赖前一步完成。它和默认 `limina check` 不同：默认检查会把内置任务作为可并发的独立任务调度；命名流水线会保留你写下来的顺序。
 
+Limina 会在每个依赖工作区拓扑的内置步骤前插入共享 preparation `workspace:validate`。不要把它写进 `pipelines`，它也不是可配置的 `BuiltinTaskName`。验证失败时，依赖的源码、证明、图、检查器、包、发布或产物生成步骤会在读取或写入拓扑状态前被阻塞。
+
 有序不等于所有失败都会立刻停止。内置任务失败会让最终流水线结果失败，但后续步骤仍会按顺序继续尝试；外部命令步骤失败会阻塞剩余步骤，并把它们记为 `skipped`。
 
 ::: tip
@@ -71,6 +73,8 @@ export default defineConfig({
   },
 }
 ```
+
+`cwd` 相对于 `config.rootDir`。
 
 ## 对象任务步骤
 

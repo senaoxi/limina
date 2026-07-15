@@ -4,6 +4,7 @@ import {
   type GeneratedTsconfigGraphResult,
   prepareGeneratedTsconfigGraph,
 } from '#core/build-graph/runner';
+import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { ImportCore } from './imports';
 import type { WorkspaceCore } from './workspace';
 
@@ -11,13 +12,16 @@ export class BuildGraphCore {
   readonly #config: ResolvedLiminaConfig;
   readonly #imports: ImportCore;
   readonly #workspace: WorkspaceCore;
+  readonly #artifactNamespace: LiminaArtifactNamespace;
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
 
   constructor(options: {
+    artifactNamespace: LiminaArtifactNamespace;
     config: ResolvedLiminaConfig;
     imports: ImportCore;
     workspace: WorkspaceCore;
   }) {
+    this.#artifactNamespace = options.artifactNamespace;
     this.#config = options.config;
     this.#imports = options.imports;
     this.#workspace = options.workspace;
@@ -30,11 +34,11 @@ export class BuildGraphCore {
   }
 
   #prepareGraph(): Promise<GeneratedTsconfigGraphResult> {
-    return this.#workspace.getRegionTopology().then((topology) =>
+    return this.#workspace.getValidatedContext().then((topology) =>
       prepareGeneratedTsconfigGraph(this.#config, {
+        artifactNamespace: this.#artifactNamespace,
         importAnalysisContext: this.#imports.context,
-        workspacePackagesProvider: () => Promise.resolve(topology.packages),
-        workspaceRegionBoundaries: topology.boundaries,
+        workspaceContext: topology,
       }),
     );
   }

@@ -37,19 +37,23 @@ export default defineConfig({
 
 - **类型：** `PackageEntry[]`
 
-`entries` 列出要检查的构建后包输出。每个条目描述一个包目录以及要对它运行的工具。
+`entries` 列出要检查的构建后包输出。每个条目都是独立的输出产物：多个条目可以同名，一个源码包可以产出多个条目，条目名称也不必等于源码包名。Limina 不会从这段配置推断或校验源码与输出之间的绑定关系。
+
+`--package <name>` 会选择所有同名配置条目。没有 `--package` 时，从激活包内部运行命令会通过已验证的激活包索引选择条目；位于 `config.rootDir` 外的词法路径仍然可以选择。附近未激活的 `package.json` 不会成为包 selector。
 
 ## name
 
 - **类型：** `string`
 
-`name` 是这个包条目的友好名称。`CLI` 的 `--package <name>` 和发布检查的当前目录匹配都会用它。
+`name` 是这个输出产物的 selector 名称。`CLI` 的 `--package <name>` 会使用它；重复名称会有意选中多个产物。
 
 ## outDir
 
 - **类型：** `string`
 
-`outDir` 指向消费者实际安装到的构建后包目录，通常是 `packages/*/dist`。这个目录里应该有发布用的 `package.json`、`JavaScript` 和声明文件。`README.md`、`LICENSE.md` 与 `tarball` 卫生由 `limina release check` 校验。
+`outDir` 相对于 `config.rootDir`，指向消费者实际安装到的构建后包目录，通常是 `packages/*/dist`。它可以包含 `../`，并指向外部激活包的输出。这个目录里应该有发布用的 `package.json`、`JavaScript` 和声明文件。`README.md`、`LICENSE.md` 与 `tarball` 卫生由 `limina release check` 校验。
+
+这个输出在工作区发现期间是无条件 output root。它必须是专用的严格后代输出目录：不能等于或包含 `config.rootDir` 或任何激活包根目录，也不能与 Limina 的 `.limina` namespace 发生任一方向的包含。输出归属无效时，`workspace:validate` 会在包选择或产物操作开始前失败。
 
 ::: info
 每个 `outDir/package.json` 都必须存在，并且看起来像一个完整的 `npm` 包清单。Limina 会拒绝 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中残留的 `workspace:`、`link:`、`file:`、`catalog:` 说明符，因为构建产物应该已经是消费者和 `npm` 实际看到的发布就绪清单。

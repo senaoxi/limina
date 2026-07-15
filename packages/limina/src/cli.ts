@@ -66,6 +66,7 @@ import {
   runDefaultCheck,
   runPipeline,
 } from './pipeline/runner';
+import { LiminaPreflightManager } from './preflight';
 import type { SourceIssueReportOptions } from './source-check/report';
 import { writeNotRunSourceIssueSnapshot } from './source-check/snapshot';
 
@@ -668,6 +669,7 @@ function getCheckIssueTaskHelpValues(
     'graph:materialize',
     'proof:check',
     'source:check',
+    'workspace:validate',
     ...(snapshot?.run?.tasks.map((task) => task.issueTask) ?? []),
     ...(snapshot?.issues.map((issue) => issue.task) ?? []),
   ]);
@@ -852,6 +854,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       }
 
       const config = await load(flags, 'check');
+      const preflight = new LiminaPreflightManager({ config });
       const packageNames = parsePackageNames(flags.package);
       const command = pipeline ? `limina check ${pipeline}` : 'limina check';
       const sourceIssueReport = {
@@ -867,6 +870,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         checkIssueReport,
         cwd: process.cwd(),
         packageNames,
+        preflight,
         sourceIssueReport,
       };
       const plan = pipeline
@@ -886,6 +890,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
           rootDir: config.rootDir,
         });
         await writeNotRunCheckIssueSnapshot({
+          artifactNamespace: preflight.artifactNamespace,
           command: sourceIssueReport.command ?? command,
           rootDir: config.rootDir,
           run: checkRunRecorder.getRunSummary(),
@@ -959,9 +964,11 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         async () => {
           flow.intro(`limina graph ${action}`);
           const config = await load(flags, 'graph');
+          const preflight = new LiminaPreflightManager({ config });
           const command =
             action === 'check' ? 'limina graph check' : 'limina graph prepare';
           await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command,
             rootDir: config.rootDir,
           });
@@ -970,11 +977,13 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             ? runGraphCheck(config, {
                 clearScreen: false,
                 flow,
+                preflight,
                 report: { command, verbose: flags.verbose },
               })
             : runGraphPrepare(config, {
                 clearScreen: false,
                 flow,
+                preflight,
                 report: { command, verbose: flags.verbose },
               });
         },
@@ -999,13 +1008,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         async () => {
           flow.intro('limina proof check');
           const config = await load(flags, 'proof');
+          const preflight = new LiminaPreflightManager({ config });
           await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command: 'limina proof check',
             rootDir: config.rootDir,
           });
           return runProofCheck(config, {
             clearScreen: false,
             flow,
+            preflight,
             report: {
               command: 'limina proof check',
               verbose: flags.verbose,
@@ -1037,17 +1049,21 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         async () => {
           flow.intro('limina source check');
           const config = await load(flags, 'source');
+          const preflight = new LiminaPreflightManager({ config });
           await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command: 'limina source check',
             rootDir: config.rootDir,
           });
           await writeNotRunSourceIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command: 'limina source check',
             rootDir: config.rootDir,
           });
           return runSourceCheck(config, {
             clearScreen: false,
             flow,
+            preflight,
             report: createSourceIssueReportOptions(
               flags,
               'limina source check',
@@ -1085,7 +1101,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         async () => {
           flow.intro('limina build');
           const config = await load(flags, 'build');
+          const preflight = new LiminaPreflightManager({ config });
           await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command: 'limina build',
             rootDir: config.rootDir,
           });
@@ -1096,6 +1114,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             configPath,
             cwd: process.cwd(),
             flow,
+            preflight,
             raw: flags.raw,
             report: {
               command: 'limina build',
@@ -1161,7 +1180,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
               }
 
               const config = await load(flags, configPath ? 'build' : 'check');
+              const preflight = new LiminaPreflightManager({ config });
               await writeNotRunCheckIssueSnapshot({
+                artifactNamespace: preflight.artifactNamespace,
                 command: 'limina checker build',
                 rootDir: config.rootDir,
               });
@@ -1177,6 +1198,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
                 config,
                 cwd: process.cwd(),
                 flow,
+                preflight,
                 report: {
                   command: 'limina checker build',
                   verbose: flags.verbose,
@@ -1198,7 +1220,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             }
 
             const config = await load(flags, 'check');
+            const preflight = new LiminaPreflightManager({ config });
             await writeNotRunCheckIssueSnapshot({
+              artifactNamespace: preflight.artifactNamespace,
               command: 'limina checker typecheck',
               rootDir: config.rootDir,
             });
@@ -1207,6 +1231,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
               config,
               cwd: process.cwd(),
               flow,
+              preflight,
               report: {
                 command: 'limina checker typecheck',
                 verbose: flags.verbose,
@@ -1236,7 +1261,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         async () => {
           flow.intro('limina package check');
           const config = await load(flags, 'package');
+          const preflight = new LiminaPreflightManager({ config });
           await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command: 'limina package check',
             rootDir: config.rootDir,
           });
@@ -1246,6 +1273,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             config,
             cwd: process.cwd(),
             flow,
+            preflight,
             packageNames: parsePackageNames(flags.package),
             report: {
               command: 'limina package check',
@@ -1276,7 +1304,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         async () => {
           flow.intro('limina release check');
           const config = await load(flags, 'release');
+          const preflight = new LiminaPreflightManager({ config });
           await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
             command: 'limina release check',
             rootDir: config.rootDir,
           });
@@ -1285,6 +1315,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             config,
             cwd: process.cwd(),
             flow,
+            preflight,
             packageNames: parsePackageNames(flags.package),
             report: {
               command: 'limina release check',

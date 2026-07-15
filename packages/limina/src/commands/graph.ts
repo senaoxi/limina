@@ -18,6 +18,7 @@ import {
   type RunGraphPrepareOptions,
 } from '../graph-check/runner';
 import { clearCliScreen, formatErrorMessage, GraphLogger } from '../logger';
+import { resolvePreflight } from '../preflight';
 
 export type {
   RunGraphCheckOptions,
@@ -45,6 +46,7 @@ export async function runGraphPrepare(
   config: ResolvedLiminaConfig,
   options: RunGraphPrepareOptions = {},
 ): Promise<boolean> {
+  const preflight = resolvePreflight(config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -59,7 +61,7 @@ export async function runGraphPrepare(
   GraphLogger.info('graph prepare started');
 
   try {
-    const result = await runGraphPrepareImpl(config, options);
+    const result = await runGraphPrepareImpl(config, { ...options, preflight });
 
     if (!options.flow?.interactive) {
       GraphLogger.success(
@@ -73,6 +75,7 @@ export async function runGraphPrepare(
     task?.pass();
     if (!options.deferSnapshot) {
       await completeCheckIssueSnapshot({
+        artifactNamespace: preflight.artifactNamespace,
         rootDir: config.rootDir,
       });
     }
@@ -97,6 +100,7 @@ export async function runGraphPrepare(
       options.issues?.push(...issues);
     } else {
       await appendCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         issues,
         rootDir: config.rootDir,
       });
@@ -136,6 +140,7 @@ export async function runGraphCheck(
   config: ResolvedLiminaConfig,
   options: RunGraphCheckOptions = {},
 ): Promise<boolean> {
+  const preflight = resolvePreflight(config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -160,7 +165,7 @@ export async function runGraphCheck(
       issues,
       logSuccess,
       onStats: options.onStats,
-      preflight: options.preflight,
+      preflight,
       progress: options.progress,
       report: options.report,
     });
@@ -168,6 +173,7 @@ export async function runGraphCheck(
     if (passed) {
       if (!options.deferSnapshot) {
         await completeCheckIssueSnapshot({
+          artifactNamespace: preflight.artifactNamespace,
           rootDir: config.rootDir,
         });
       }
@@ -198,6 +204,7 @@ export async function runGraphCheck(
         options.issues?.push(...reportIssues);
       } else {
         await appendCheckIssues({
+          artifactNamespace: preflight.artifactNamespace,
           issues: reportIssues,
           rootDir: config.rootDir,
         });
@@ -220,6 +227,7 @@ export async function runGraphCheck(
       options.issues?.push(...issues);
     } else {
       await appendCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         issues,
         rootDir: config.rootDir,
       });

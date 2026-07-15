@@ -131,6 +131,7 @@ export interface RunGraphPrepareOptions {
 }
 
 export interface RunGraphExportOptions {
+  preflight?: LiminaPreflightManager;
   providers?: AnalysisProviderSet;
   outputPath?: string;
   view?: DependencyGraphView;
@@ -2040,8 +2041,10 @@ export async function runGraphExportImpl(
   config: ResolvedLiminaConfig,
   options: RunGraphExportOptions = {},
 ): Promise<DependencyGraphDocument> {
+  const preflight = resolvePreflight(config, options);
+  await preflight.ensureWorkspaceValidated();
   const graph = await collectDependencyGraph(config, {
-    providers: options.providers,
+    providers: preflight.providers,
     view: options.view,
   });
 

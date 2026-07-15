@@ -9,7 +9,9 @@ import {
   type LiminaCheckIssue,
   type LiminaCheckTaskName,
 } from '../check-reporting/snapshot';
+import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { clearCliScreen, formatErrorMessage, TypecheckLogger } from '../logger';
+import { resolvePreflight } from '../preflight';
 import {
   type CheckerFailureKind,
   type CheckerFailureTarget,
@@ -46,6 +48,7 @@ interface DeferredCheckIssueOptions {
 }
 
 async function collectCheckIssues(options: {
+  artifactNamespace: LiminaArtifactNamespace;
   deferSnapshot?: boolean;
   issueSink?: LiminaCheckIssue[];
   issues: readonly LiminaCheckIssue[];
@@ -57,19 +60,24 @@ async function collectCheckIssues(options: {
   }
 
   await appendCheckIssues({
+    artifactNamespace: options.artifactNamespace,
     issues: options.issues,
     rootDir: options.rootDir,
   });
 }
 
 async function completeCheckSnapshotIfNeeded(
-  options: DeferredCheckIssueOptions & { rootDir: string },
+  options: DeferredCheckIssueOptions & {
+    artifactNamespace: LiminaArtifactNamespace;
+    rootDir: string;
+  },
 ): Promise<void> {
   if (options.deferSnapshot) {
     return;
   }
 
   await completeCheckIssueSnapshot({
+    artifactNamespace: options.artifactNamespace,
     rootDir: options.rootDir,
   });
 }
@@ -184,6 +192,7 @@ function formatCheckerIssueReport(options: {
 export async function runCheckerBuild(
   options: RunCheckerBuildOptions & DeferredCheckIssueOptions,
 ): Promise<RunCheckerBuildResult> {
+  const preflight = resolvePreflight(options.config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -200,10 +209,11 @@ export async function runCheckerBuild(
   }
 
   try {
-    const result = await runCheckerBuildImpl(options);
+    const result = await runCheckerBuildImpl({ ...options, preflight });
 
     if (result.passed) {
       await completeCheckSnapshotIfNeeded({
+        artifactNamespace: preflight.artifactNamespace,
         deferSnapshot: options.deferSnapshot,
         issues: options.issues,
         rootDir: options.config.rootDir,
@@ -228,6 +238,7 @@ export async function runCheckerBuild(
       });
 
       await collectCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         deferSnapshot: options.deferSnapshot,
         issueSink: options.issues,
         issues,
@@ -271,6 +282,7 @@ export async function runCheckerBuild(
           ];
 
     await collectCheckIssues({
+      artifactNamespace: preflight.artifactNamespace,
       deferSnapshot: options.deferSnapshot,
       issueSink: options.issues,
       issues,
@@ -303,6 +315,7 @@ export async function runCheckerBuild(
 export async function runBuild(
   options: RunBuildOptions & DeferredCheckIssueOptions,
 ): Promise<RunBuildResult> {
+  const preflight = resolvePreflight(options.config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -317,10 +330,11 @@ export async function runBuild(
   }
 
   try {
-    const result = await runBuildImpl(options);
+    const result = await runBuildImpl({ ...options, preflight });
 
     if (result.passed) {
       await completeCheckSnapshotIfNeeded({
+        artifactNamespace: preflight.artifactNamespace,
         deferSnapshot: options.deferSnapshot,
         issues: options.issues,
         rootDir: options.config.rootDir,
@@ -344,6 +358,7 @@ export async function runBuild(
       });
 
       await collectCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         deferSnapshot: options.deferSnapshot,
         issueSink: options.issues,
         issues,
@@ -365,34 +380,43 @@ export async function runBuild(
 
     return result;
   } catch (error) {
-    const issue = createTaskFailureIssue({
-      code: 'LIMINA_CHECKER_BUILD_FAILED',
-      detailLines: [formatErrorMessage(error)],
-      fix: 'Inspect the build error above, then rerun `limina build <config>`.',
-      reason: `Checker build failed: ${formatErrorMessage(error)}.`,
-      rootDir: options.config.rootDir,
-      task: 'checker:build',
-      title: 'Checker build failed',
-    });
+    const issues =
+      error instanceof LiminaStructuredError
+        ? error.issues
+        : [
+            createTaskFailureIssue({
+              code: 'LIMINA_CHECKER_BUILD_FAILED',
+              detailLines: [formatErrorMessage(error)],
+              fix: 'Inspect the build error above, then rerun `limina build <config>`.',
+              reason: `Checker build failed: ${formatErrorMessage(error)}.`,
+              rootDir: options.config.rootDir,
+              task: 'checker:build',
+              title: 'Checker build failed',
+            }),
+          ];
 
     await collectCheckIssues({
+      artifactNamespace: preflight.artifactNamespace,
       deferSnapshot: options.deferSnapshot,
       issueSink: options.issues,
-      issues: [issue],
+      issues,
       rootDir: options.config.rootDir,
     });
     if (!options.report?.defer) {
       TypecheckLogger.error(
         formatCheckerIssueReport({
           command: options.report?.command ?? 'limina checker build',
-          issues: [issue],
+          issues,
           title: 'Build summary',
           verbose: options.report?.verbose,
         }),
         elapsed(),
       );
     }
-    task?.fail('build failed', { error });
+    task?.fail(
+      'build failed',
+      error instanceof LiminaStructuredError ? undefined : { error },
+    );
     throw error;
   }
 }
@@ -400,6 +424,7 @@ export async function runBuild(
 export async function runCheckerTypecheck(
   options: RunCheckerTypecheckOptions & DeferredCheckIssueOptions,
 ): Promise<RunCheckerTypecheckResult> {
+  const preflight = resolvePreflight(options.config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -416,10 +441,11 @@ export async function runCheckerTypecheck(
   }
 
   try {
-    const result = await runCheckerTypecheckImpl(options);
+    const result = await runCheckerTypecheckImpl({ ...options, preflight });
 
     if (result.passed) {
       await completeCheckSnapshotIfNeeded({
+        artifactNamespace: preflight.artifactNamespace,
         deferSnapshot: options.deferSnapshot,
         issues: options.issues,
         rootDir: options.config.rootDir,
@@ -443,6 +469,7 @@ export async function runCheckerTypecheck(
       });
 
       await collectCheckIssues({
+        artifactNamespace: preflight.artifactNamespace,
         deferSnapshot: options.deferSnapshot,
         issueSink: options.issues,
         issues,
@@ -464,34 +491,43 @@ export async function runCheckerTypecheck(
 
     return result;
   } catch (error) {
-    const issue = createTaskFailureIssue({
-      code: 'LIMINA_CHECKER_TYPECHECK_FAILED',
-      detailLines: [formatErrorMessage(error)],
-      fix: 'Inspect the checker typecheck error above, then rerun `limina checker typecheck` or `limina check`.',
-      reason: `Checker typecheck failed: ${formatErrorMessage(error)}.`,
-      rootDir: options.config.rootDir,
-      task: 'checker:typecheck',
-      title: 'Checker typecheck failed',
-    });
+    const issues =
+      error instanceof LiminaStructuredError
+        ? error.issues
+        : [
+            createTaskFailureIssue({
+              code: 'LIMINA_CHECKER_TYPECHECK_FAILED',
+              detailLines: [formatErrorMessage(error)],
+              fix: 'Inspect the checker typecheck error above, then rerun `limina checker typecheck` or `limina check`.',
+              reason: `Checker typecheck failed: ${formatErrorMessage(error)}.`,
+              rootDir: options.config.rootDir,
+              task: 'checker:typecheck',
+              title: 'Checker typecheck failed',
+            }),
+          ];
 
     await collectCheckIssues({
+      artifactNamespace: preflight.artifactNamespace,
       deferSnapshot: options.deferSnapshot,
       issueSink: options.issues,
-      issues: [issue],
+      issues,
       rootDir: options.config.rootDir,
     });
     if (!options.report?.defer) {
       TypecheckLogger.error(
         formatCheckerIssueReport({
           command: options.report?.command ?? 'limina checker typecheck',
-          issues: [issue],
+          issues,
           title: 'Checker typecheck summary',
           verbose: options.report?.verbose,
         }),
         elapsed(),
       );
     }
-    task?.fail('checker typecheck failed', { error });
+    task?.fail(
+      'checker typecheck failed',
+      error instanceof LiminaStructuredError ? undefined : { error },
+    );
     throw error;
   }
 }

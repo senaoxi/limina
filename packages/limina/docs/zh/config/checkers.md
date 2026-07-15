@@ -30,7 +30,7 @@ export default defineConfig({
 - **类型：** `{ mode: 'auto'; exclude?: string[] }`
 - **默认值：** 省略 `config.checkers` 时使用
 
-`auto` 模式会把每个普通 `tsconfig.json` 当作一个源码入口。只包含 `TypeScript`、`JavaScript` 和 `JSON` 的入口会交给 `tsc`；包含 `.vue` 文件的入口会交给 `vue-tsc`。`solution-style tsconfig.json` 会按聚合器处理，Limina 根据它引用到的源码配置判断应该使用哪种能力。
+`auto` 模式会在每个激活 package island 中独立发现普通 `tsconfig.json`，包括外部激活包。只包含 `TypeScript`、`JavaScript` 和 `JSON` 的入口会交给 `tsc`；包含 `.vue` 文件的入口会交给 `vue-tsc`。`solution-style tsconfig.json` 会按聚合器处理，Limina 根据它引用到的源码配置判断应该使用哪种能力。父级发现不会穿过激活子包根目录或 owner-local 嵌套工作区边界；激活子包会启动自己的发现任务。
 
 如果 `TypeScript` 入口 `import` 到 `Vue` 入口，`auto` 模式会把这个 `TypeScript` 入口也交给 `vue-tsc`。这个提升会沿依赖链继续传播，避免生成的构建图里出现 `tsc` 项目依赖 `vue-tsc` 项目的不兼容关系。
 
@@ -97,7 +97,7 @@ export default defineConfig({
 - **类型：** `string[]`
 - **必填：** 是
 
-`include` 是非空的、相对工作区根目录的选择器列表，只能选中文件名正好为 `tsconfig.json` 的源码入口。不要让它选中 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json`、`.limina` 里的生成文件、基础配置、检查配置或其他保留 `tsconfig`。
+`include` 是非空的、相对 `config.rootDir` 的选择器列表，只能选中文件名正好为 `tsconfig.json` 的源码入口。外部激活包可以使用 `../`。selector 只过滤激活 package island 已经产生的 candidate，不能把未激活路径或 owner-local 边界后的 descriptor 拉入图中。不要让它选中 `tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.build.json`、`.limina` 里的生成文件、基础配置、检查配置或其他保留 `tsconfig`。
 
 `limina graph prepare` 使用下面的模型：
 
@@ -110,7 +110,7 @@ effective entries = included entries 减去 exclude
 
 因此，`tsconfig.lib.json`、`tsconfig.test.json`、`tsconfig.tools.json` 这类非入口配置依然有用，但不要直接写进 `checker.include`。它们只有在被某个已选中的 `tsconfig.json` 入口 `reference` 到时，才会进入 Limina 的检查范围。单独存在的基础配置、仅构建配置或工具辅助配置，如果没有从入口可达，Limina 不会把它当成源码检查目标。
 
-对每个进入检查范围的源码配置，Limina 会在 `.limina/tsconfig/checkers/<checker>/projects/...` 下生成声明构建配置。这些配置会 `extends` 源码配置，强制声明输出选项，把声明输出写到 `.limina/dts/checkers/<checker>/...`，并记录源码配置和生成配置的对应关系。源码 `tsconfig.json` 聚合器会生成到 `.limina/tsconfig/checkers/<checker>/solutions/...` 下。
+对每个进入检查范围的源码配置，Limina 都会在受信任的 `.limina` namespace 内生成声明构建配置。内部包保留可读的 checker/project 布局；外部包会映射到内部 `external/<stable-id>/...` namespace，不会把 `../` 嵌入生成路径。这些配置会 `extends` 源码配置，强制声明输出选项，把声明输出写到同一个受信任 namespace，并记录源码配置和生成配置的对应关系。
 
 ## 入口唯一性与能力覆盖
 
@@ -160,7 +160,7 @@ exclude: ['**/docs/**', 'packages/playground/tsconfig.json'];
 - 单个前导 `!` 会被移除，剩余部分成为 negative pattern；`!!(...)` 也按这条规则处理，因为第二个 `!` 开始了 extglob；
 - `!!path`、`!!!path` 等其他双叹号或三叹号形式会被忽略。
 
-absolute、parent-relative、directory expansion、trailing slash、escaped metacharacter、dot path、brace、extglob、globstar 和大小写行为都保持 tinyglobby 兼容。最终路径仍必须落在工作区的已激活区域内。
+absolute、parent-relative、directory expansion、trailing slash、escaped metacharacter、dot path、brace、extglob、globstar 和大小写行为都保持 tinyglobby 兼容。公共 selector 从 `config.rootDir` 解释，最终路径仍必须落在已验证的激活包索引内。
 
 不要在这里重复整个区域的排除。被排除或不可访问区域中的路径按定义已经不参与 `include` 发现。也不要用 `exclude` 阻止 `references`：effective entry 选定后，即使引用路径匹配 exclude pattern，Limina 仍会继续跟随有效引用。
 

@@ -80,6 +80,22 @@ const workspacePackageDiscoveryIgnore = [
   '**/tests/**',
 ] as const;
 
+export function findNearestPnpmWorkspaceRoot(startDir: string): string {
+  let currentDir = normalizeAbsolutePath(startDir);
+  while (true) {
+    if (existsSync(path.join(currentDir, 'pnpm-workspace.yaml'))) {
+      return currentDir;
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      throw new Error(
+        `No pnpm-workspace.yaml was found from ${normalizeAbsolutePath(startDir)} or its ancestors.`,
+      );
+    }
+    currentDir = parentDir;
+  }
+}
+
 function toPackageJsonPattern(pattern: string): string {
   const negated = pattern.startsWith('!');
   const directoryPattern = (negated ? pattern.slice(1) : pattern).replace(
@@ -97,14 +113,15 @@ function toPackageJsonPattern(pattern: string): string {
 async function collectPnpmWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
-  const workspaceManifest = await readWorkspaceManifest(config.rootDir);
+  const workspaceRootDir = findNearestPnpmWorkspaceRoot(config.rootDir);
+  const workspaceManifest = await readWorkspaceManifest(workspaceRootDir);
   const packageJsonPatterns = (workspaceManifest?.packages ?? []).map(
     toPackageJsonPattern,
   );
   const [rootPackageJsonPaths, workspacePackageJsonPaths] = await Promise.all([
     glob('package.json', {
       absolute: true,
-      cwd: config.rootDir,
+      cwd: workspaceRootDir,
       expandDirectories: false,
       ignore: [...workspacePackageDiscoveryIgnore],
       onlyFiles: true,
@@ -112,7 +129,7 @@ async function collectPnpmWorkspacePackages(
     packageJsonPatterns.length > 0
       ? glob(packageJsonPatterns, {
           absolute: true,
-          cwd: config.rootDir,
+          cwd: workspaceRootDir,
           expandDirectories: false,
           ignore: [...workspacePackageDiscoveryIgnore],
           onlyFiles: true,

@@ -5,6 +5,7 @@ import { toRelativePath } from '#utils/path';
 import { createElapsedTimer } from 'logaria/helper';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { LiminaStructuredError } from '../check-reporting/errors';
 import {
   type CheckIssueReportOptions,
   formatCheckIssueHumanReport,
@@ -473,9 +474,34 @@ async function runReleaseCheckEntries(
   });
 }
 
+function createReleaseCheckErrorIssues(
+  error: unknown,
+  options: RunReleaseCheckOptions,
+): readonly LiminaCheckIssue[] {
+  if (error instanceof LiminaStructuredError) return error.issues;
+  return [
+    createTaskFailureIssue({
+      code: 'LIMINA_RELEASE_CHECK_FAILED',
+      detailLines: [formatErrorMessage(error)],
+      filePath: options.config.configPath,
+      fix: 'Inspect the release check error above, then rerun `limina release check`.',
+      packageName:
+        options.packageNames?.length === 1
+          ? options.packageNames[0]
+          : undefined,
+      reason: `Release check failed: ${formatErrorMessage(error)}.`,
+      rootDir: options.config.rootDir,
+      task: 'release:check',
+      title: 'Release check failed',
+      tool: 'release',
+    }),
+  ];
+}
+
 export async function runReleaseCheck(
   options: RunReleaseCheckOptions,
 ): Promise<boolean> {
+  const preflight = resolvePreflight(options.config, options);
   if (options.clearScreen ?? true) {
     clearCliScreen();
   }
@@ -493,7 +519,6 @@ export async function runReleaseCheck(
       ReleaseLogger.info('release check started');
     }
 
-    const preflight = resolvePreflight(options.config, options);
     const plan = await preflight.ensurePackageEntrySelectionPlan({
       cwd,
       packageNames: options.packageNames,
@@ -533,6 +558,7 @@ export async function runReleaseCheck(
     if (passed) {
       if (!options.deferSnapshot) {
         await completeCheckIssueSnapshot({
+          artifactNamespace: preflight.artifactNamespace,
           rootDir: options.config.rootDir,
         });
       }
@@ -568,6 +594,7 @@ export async function runReleaseCheck(
         options.issues?.push(...reportIssues);
       } else {
         await appendCheckIssues({
+          artifactNamespace: preflight.artifactNamespace,
           issues: reportIssues,
           rootDir: options.config.rootDir,
         });
@@ -588,27 +615,14 @@ export async function runReleaseCheck(
 
     return passed;
   } catch (error) {
-    const issue = createTaskFailureIssue({
-      code: 'LIMINA_RELEASE_CHECK_FAILED',
-      detailLines: [formatErrorMessage(error)],
-      filePath: options.config.configPath,
-      fix: 'Inspect the release check error above, then rerun `limina release check`.',
-      packageName:
-        options.packageNames?.length === 1
-          ? options.packageNames[0]
-          : undefined,
-      reason: `Release check failed: ${formatErrorMessage(error)}.`,
-      rootDir: options.config.rootDir,
-      task: 'release:check',
-      title: 'Release check failed',
-      tool: 'release',
-    });
+    const issues = createReleaseCheckErrorIssues(error, options);
 
     if (options.deferSnapshot) {
-      options.issues?.push(issue);
+      options.issues?.push(...issues);
     } else {
       await appendCheckIssues({
-        issues: [issue],
+        artifactNamespace: preflight.artifactNamespace,
+        issues,
         rootDir: options.config.rootDir,
       });
     }
@@ -616,14 +630,17 @@ export async function runReleaseCheck(
       ReleaseLogger.error(
         formatCheckIssueHumanReport({
           command: options.report?.command ?? 'limina release check',
-          issues: [issue],
+          issues,
           title: 'Release check summary',
           verbose: options.report?.verbose,
         }),
         elapsed(),
       );
     }
-    task?.fail('release check failed', { error });
+    task?.fail(
+      'release check failed',
+      error instanceof LiminaStructuredError ? undefined : { error },
+    );
     throw error;
   }
 }

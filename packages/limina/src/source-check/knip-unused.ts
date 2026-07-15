@@ -26,7 +26,7 @@ import {
   type SourceKnipWorkspaceConfigRecord,
 } from './knip-routing';
 import {
-  isInvalidWorkspacePattern,
+  isInvalidConfigRootPattern,
   normalizeWorkspacePattern,
   toOwnerRelativeEntryPattern,
 } from './workspace-patterns';
@@ -563,7 +563,7 @@ export function collectUnusedModuleConfig(options: {
                 'Invalid source Knip entry config:',
                 `  field: ${field}.files`,
                 `  value: ${formatUnknownValue(filesValue)}`,
-                '  reason: files must be a non-empty array of workspace-root-relative glob patterns.',
+                '  reason: files must be a non-empty array of config-root-relative glob patterns.',
               ].join('\n'),
             );
             continue;
@@ -604,13 +604,13 @@ export function collectUnusedModuleConfig(options: {
 
             const pattern = normalizeWorkspacePattern(fileValue);
 
-            if (isInvalidWorkspacePattern(pattern)) {
+            if (isInvalidConfigRootPattern(pattern)) {
               options.problems.push(
                 [
                   'Invalid source Knip entry config:',
                   `  field: ${fileField}`,
                   `  file: ${pattern}`,
-                  '  reason: file patterns must be positive workspace-root-relative globs inside the workspace root.',
+                  '  reason: file patterns must be positive config-root-relative globs.',
                 ].join('\n'),
               );
               continue;
@@ -711,7 +711,7 @@ export function collectUnusedModuleConfig(options: {
             'Invalid source Knip file ignore config:',
             `  field: ${field}.file`,
             `  value: ${formatUnknownValue(fileValue)}`,
-            '  reason: file must be a non-empty workspace-root-relative path.',
+            '  reason: file must be a non-empty config-root-relative path.',
           ].join('\n'),
         );
         continue;
@@ -737,7 +737,7 @@ export function collectUnusedModuleConfig(options: {
             'Invalid source Knip file ignore config:',
             `  field: ${field}.file`,
             `  file: ${file}`,
-            '  reason: file must be relative to the workspace root.',
+            '  reason: file must be relative to config.rootDir.',
           ].join('\n'),
         );
         continue;
@@ -746,18 +746,6 @@ export function collectUnusedModuleConfig(options: {
       const filePath = normalizeAbsolutePath(
         path.resolve(options.config.rootDir, file),
       );
-
-      if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
-        options.problems.push(
-          [
-            'Invalid source Knip file ignore config:',
-            `  field: ${field}.file`,
-            `  file: ${file}`,
-            '  reason: file must resolve inside the workspace root.',
-          ].join('\n'),
-        );
-        continue;
-      }
 
       if (!moduleFilesByOwnerName.get(ownerName)?.has(filePath)) {
         options.problems.push(

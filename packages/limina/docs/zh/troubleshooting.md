@@ -11,7 +11,7 @@
 根据诊断检查三点：
 
 1. `kind` 与 candidate 类型一致。
-2. `include` 选择相对于工作区根目录的 candidate 目录，而不是包名或 descriptor 路径。
+2. `include` 选择相对于 `config.rootDir` 的 candidate 词法目录，必要时包含 `../`，而不是包名或 descriptor 路径。
 3. 该目录不是 `node_modules`、`.git`、`.limina` 或明确配置的输出目录等固定 discovery ignore。
 
 例如，嵌套工作区清单位于 `packages/app/fixture/pnpm-workspace.yaml` 时，应使用 `kind: 'pnpm-workspace'` 和 `include: ['packages/app/fixture']`。

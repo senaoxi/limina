@@ -15,6 +15,7 @@ import {
   writeNotRunCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { SOURCE_ISSUE_CODES } from '../source-check/report';
 import {
   formatSourceIssueSnapshotInventory,
@@ -217,7 +218,7 @@ describe('source issue snapshots', () => {
       );
 
       const migrated = await readCheckIssueSnapshot(rootDir);
-      expect(migrated?.version).toBe(6);
+      expect(migrated?.version).toBe(7);
       expect(migrated?.run?.tasks.map((task) => task.state)).toEqual([
         'failed',
         'skipped',
@@ -477,7 +478,7 @@ describe('check issue snapshots', () => {
 
     try {
       await expect(
-        writeCheckIssueSnapshotOnly(rootDir, {
+        writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
           ...createCheckSnapshot([]),
           run: invalidRun,
         }),
@@ -608,7 +609,7 @@ describe('check issue snapshots', () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
 
     try {
-      await writeCheckIssueSnapshotOnly(rootDir, {
+      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
         ...createCheckSnapshot([]),
         run,
       });
@@ -625,7 +626,7 @@ describe('check issue snapshots', () => {
 
     try {
       await expect(
-        writeCheckIssueSnapshotOnly(rootDir, {
+        writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
           ...createCheckSnapshot([]),
           run,
         }),
@@ -640,7 +641,7 @@ describe('check issue snapshots', () => {
     const { run } = createCheckerCompletedRun();
 
     try {
-      await writeCheckIssueSnapshotOnly(rootDir, {
+      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
         ...createCheckSnapshot([]),
         run,
       });
@@ -812,7 +813,7 @@ describe('check issue snapshots', () => {
     }));
 
     try {
-      await writeCheckIssueSnapshotOnly(rootDir, {
+      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
         ...createCheckSnapshot([]),
         run: createCompletedRun(tasks),
       });
@@ -1039,6 +1040,7 @@ describe('check issue snapshots', () => {
 
     try {
       await writeNotRunCheckIssueSnapshot({
+        artifactNamespace: artifactNamespace(rootDir),
         command: 'limina check',
         rootDir,
         run: {
@@ -1067,6 +1069,7 @@ describe('check issue snapshots', () => {
       });
 
       await appendCheckIssues({
+        artifactNamespace: artifactNamespace(rootDir),
         issues: [firstIssue],
         rootDir,
       });
@@ -1095,6 +1098,7 @@ describe('check issue snapshots', () => {
       });
 
       await completeCheckIssueSnapshot({
+        artifactNamespace: artifactNamespace(rootDir),
         rootDir,
         run: {
           blockedBy: { id: 'graph', label: 'graph:check' },
@@ -1129,6 +1133,7 @@ describe('check issue snapshots', () => {
         },
       });
       await appendCheckIssues({
+        artifactNamespace: artifactNamespace(rootDir),
         issues: [secondIssue],
         rootDir,
       });
@@ -1457,3 +1462,6 @@ describe('check issue snapshots', () => {
     );
   });
 });
+function artifactNamespace(rootDir: string) {
+  return createLiminaArtifactNamespace({ generation: 0, rootDir });
+}

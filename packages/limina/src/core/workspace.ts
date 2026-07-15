@@ -18,12 +18,14 @@ import {
   type WorkspaceRegionBoundary,
   type WorkspaceRegionTopology,
 } from './workspace/regions';
+import type { ValidatedWorkspaceContext } from './workspace/validated-context';
 
 export class WorkspaceCore {
   readonly #config: ResolvedLiminaConfig;
   #importersPromise: Promise<ImporterInfo[]> | undefined;
   #ownersPromise: Promise<PackageOwner[]> | undefined;
-  #topologyPromise: Promise<WorkspaceRegionTopology> | undefined;
+  #rawPackagesPromise: Promise<WorkspacePackage[]> | undefined;
+  #topologyPromise: Promise<ValidatedWorkspaceContext> | undefined;
   #workspaceDependenciesPromise:
     | Promise<WorkspaceDependencyDeclaration[]>
     | undefined;
@@ -37,9 +39,8 @@ export class WorkspaceCore {
   }
 
   getRawPackages(): Promise<WorkspacePackage[]> {
-    return this.getRegionTopology().then((topology) =>
-      cloneWorkspacePackages(topology.rawPackages),
-    );
+    this.#rawPackagesPromise ??= collectRawWorkspacePackages(this.#config);
+    return this.#rawPackagesPromise.then(cloneWorkspacePackages);
   }
 
   getPackages(): Promise<WorkspacePackage[]> {
@@ -55,11 +56,22 @@ export class WorkspaceCore {
   }
 
   getRegionTopology(): Promise<WorkspaceRegionTopology> {
-    this.#topologyPromise ??= collectWorkspaceRegionTopology(this.#config, {
-      provider: collectRawWorkspacePackages,
-    }).then(cloneWorkspaceRegionTopology);
+    return this.getValidatedContext().then(cloneWorkspaceRegionTopology);
+  }
 
-    return this.#topologyPromise.then(cloneWorkspaceRegionTopology);
+  getValidatedContext(): Promise<ValidatedWorkspaceContext> {
+    this.#topologyPromise ??= this.getRawPackages()
+      .then((rawPackages) =>
+        collectWorkspaceRegionTopology(this.#config, {
+          provider: collectRawWorkspacePackages,
+          rawPackages,
+        }),
+      )
+      .then((topology) =>
+        cloneValidatedWorkspaceContext(topology as ValidatedWorkspaceContext),
+      );
+
+    return this.#topologyPromise.then(cloneValidatedWorkspaceContext);
   }
 
   getPackageOwners(): Promise<PackageOwner[]> {
@@ -138,15 +150,7 @@ function cloneWorkspaceRegionBoundary(
   return boundary.kind === 'pnpm-workspace'
     ? {
         ...boundary,
-        inspection:
-          boundary.inspection.status === 'completed'
-            ? {
-                status: 'completed',
-                workspacePackages: cloneWorkspacePackages(
-                  boundary.inspection.workspacePackages,
-                ),
-              }
-            : { ...boundary.inspection },
+        inspection: { ...boundary.inspection },
       }
     : { ...boundary };
 }
@@ -167,6 +171,25 @@ function cloneWorkspaceRegionTopology(
     })),
     packages: cloneWorkspacePackages(topology.packages),
     rawPackages: cloneWorkspacePackages(topology.rawPackages),
+  };
+}
+
+function cloneValidatedWorkspaceContext(
+  context: ValidatedWorkspaceContext,
+): ValidatedWorkspaceContext {
+  return {
+    ...cloneWorkspaceRegionTopology(context),
+    configRootDir: context.configRootDir,
+    descriptorCandidates: context.descriptorCandidates.map((candidate) => ({
+      ...candidate,
+    })),
+    outputRoots: [...context.outputRoots],
+    packageIdentities: context.packageIdentities.map((identity) => ({
+      ...identity,
+      package: cloneWorkspacePackage(identity.package),
+    })),
+    sourceConfigPaths: [...context.sourceConfigPaths],
+    workspaceRootDir: context.workspaceRootDir,
   };
 }
 

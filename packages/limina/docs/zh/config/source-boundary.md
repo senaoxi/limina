@@ -12,8 +12,8 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     source: {
-      include: ['packages/**/src/**/*.{ts,tsx,vue}'],
-      exclude: ['node_modules', 'dist', '.tsbuild', 'coverage'],
+      include: ['...', 'packages/**/src/**/*.vue'],
+      exclude: ['...', 'packages/**/src/generated/**'],
     },
   },
 });
@@ -23,19 +23,21 @@ export default defineConfig({
 
 - **类型：** `string[]`
 
-`include` 是 Limina 需要检查的全局源码 `glob`。省略时，Limina 会先使用一组基础源码范围，再根据当前检查器补充 `**/*.vue` 或 `**/*.svelte` 等框架扩展，最后应用默认排除列表。
+`include` 是 Limina 需要检查的全局源码 `glob` 集合。省略时，Limina 使用默认 TypeScript 源码 glob 集合；显式配置后会替换默认集合。可以在需要展开默认集合的位置使用精确字符串 `...`。
+
+模式相对于 `config.rootDir`，可以包含 `../`。它们只过滤每个激活 package island 已经发现的源码 candidate；模式不能让未激活目录或 owner-local 边界变得可见。默认发现同样会针对外部激活包运行。
 
 ::: details 默认 include glob 集合
-`**/*.ts`、`**/*.d.ts`、`**/*.tsx`、`**/*.cts`、`**/*.d.cts`、`**/*.mts`、`**/*.d.mts`、`**/*.mjs` 和 `**/*.json`。
+`**/*.ts`、`**/*.tsx`、`**/*.d.ts`、`**/*.cts`、`**/*.d.cts`、`**/*.mts` 和 `**/*.d.mts`。
 :::
 
-如果你希望 `packages/**/src` 下的 `TypeScript`、`TSX` 和 `Vue` 文件都进入治理，就把它们写进 `include`。之后新增文件会自动进入源码和覆盖证明检查范围。
+检查器扩展不会自动加入。如果希望默认 TypeScript 源码和 `packages/**/src` 下的 `Vue` 文件都进入治理，应展开默认集合并显式加入 `Vue` glob。之后新增的匹配文件会自动进入源码和覆盖证明检查范围。
 
 ```js
 export default defineConfig({
   config: {
     source: {
-      include: ['packages/**/src/**/*.{ts,tsx,vue}'],
+      include: ['...', 'packages/**/src/**/*.vue'],
     },
   },
 });
@@ -45,11 +47,17 @@ export default defineConfig({
 
 - **类型：** `string[]`
 
-`exclude` 是不需要进入源码治理的目录或 `glob`。它适合排除 `dist`、`.tsbuild`、测试夹具、生成缓存等不应该当作源码治理的内容。省略 `exclude` 时，Limina 会读取工作区根目录的 `.gitignore`，并且始终额外排除一组固定的目录和配置文件。
+`exclude` 是不进入被治理源码集合的目录或 `glob`。它适合排除 fixture、生成缓存和其他不应作为被检查源码的文件。省略时，Limina 使用默认排除集合。
 
-::: details 始终额外排除的条目（在 root `.gitignore` 之外）
-`TypeScript` 配置文件、常见任务工具配置/缓存文件、`dist`、`.git`、`.tsbuild`、`coverage` 和 `node_modules`。
+显式配置 `exclude` 会替换默认排除集合，并且不再使用根 `.gitignore`。可以在需要展开默认排除集合（包括根 `.gitignore`）的位置使用精确字符串 `...`。显式数组如果没有 `...`，会关闭所有默认排除项。根 `.gitignore` 只应用于 `config.rootDir` 内的 candidate，绝不会过滤外部激活包的 candidate。
+
+::: details 默认排除集合
+`node_modules`、`bower_components`、`jspm_packages`、当前可见源码配置显式声明的 `liminaOptions.outputs.outDir` 路径，以及只用于 `config.rootDir` 内 candidate 的根 `.gitignore`。
 :::
+
+只有显式声明的 `liminaOptions.outputs.outDir` 会进入这个集合。源码配置没有声明时，Limina 不会推断 `./dist`；一个配置声明的输出目录名也不会扩展成全局同名目录排除。
+
+`liminaOptions.outputs.outDir` 相对于声明它的源码配置。Limina 只从结构可达、且尚未位于无条件包条目输出内的 `tsconfig` 读取它；在稳定的工作区输出计算中，该 `tsconfig` 保持可见时，声明才继续生效。
 
 例如 `include` 覆盖了 `packages/**/src/**/*.{ts,tsx,vue}` 后，新增这个文件：
 

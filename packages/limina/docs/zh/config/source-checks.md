@@ -4,7 +4,7 @@
 顶层 `source` 选项配置 `source:check` 中的两类行为：`source.importAuthority` 用于源码导入授权，`source.knip` 用于 `Knip` 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
 :::
 
-`source check` 的主线是让源码导入能被包归属和依赖声明解释。Limina 从当前 `pnpm` 工作区激活的包开始治理，包括没有 `name`、只能用路径标识的工作区包；每个工作区包根目录的清单是它的源码 owner。
+`source check` 的主线是让源码导入能被包归属和依赖声明解释。Limina 会从每个已验证激活 package island 独立发现源码，包括外部包和没有 `name`、只能用路径标识的工作区包；每个工作区包根目录的清单是它的源码 owner。显式源码 selector 相对于 `config.rootDir`，可以包含 `../`，并且只过滤这些 island 已经产生的 candidate。
 
 默认情况下，嵌套 `package.json` 会停止当前治理区域，嵌套 `pnpm-workspace.yaml` 则永远是硬边界。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，满足条件的无名嵌套清单可以继续留在外层区域：其中源码继承外层工作区 owner 和依赖授权，这份嵌套清单仍负责相对导入和 `#imports` 的包作用域。[`regions.exclude`](./regions.md#exclude) 随后可以从当前运行中裁剪已识别治理单元或边界根；导入任何已停止或被排除的区域都会按跨边界访问处理。
 
@@ -67,7 +67,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` 的 key 必须匹配应用 `regions` 后仍留在当前治理区域内的源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用工作区根目录相对包目录。`include` 可选，写的是源码归属方目录相对 `glob`；省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
+`allow` 的 key 必须匹配应用 `regions` 后仍留在当前治理区域内的源码归属方身份。具名工作区包使用包名；没有 `name` 的源码归属方使用相对于 `config.rootDir` 的词法包目录，必要时包含 `../`。`include` 可选并相对于 `config.rootDir`；它可以包含 `../`，但只能过滤 key 对应 owner 已受治理的源码。省略时，授权适用于这个源码归属方下所有被 Limina 管辖的源码模块。
 
 `workspaceRootDependencies` 不是直接导入白名单。它只说明当源码归属方和 `include` 范围都匹配时，哪些包名可以读取工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包；如果源码归属方和根目录之间存在中间工作区包清单声明了同一个包，根目录授权不会绕过这个中间清单。
 
@@ -215,7 +215,7 @@ export default defineConfig({
 
 `entry` 用于声明包内合法的直接源码入口，但这些入口不应该成为包导出。例如测试运行器可能会直接加载 `*.spec.ts` 文件。
 
-`entry` 配置必须使用正向的、工作区根相对的 `glob`，且必须位于 `key` 指向的包目录内，并提供非空 `reason`。
+`entry` 配置必须使用相对于 `config.rootDir` 的正向 `glob`，且必须位于 `key` 指向的包目录内，并提供非空 `reason`。外部激活包使用 `../`；模式仍然只能过滤对应 owner 已发现的源码模块集合。
 
 ### workspaces[pkg].ignoreDependencies
 
@@ -233,4 +233,4 @@ export default defineConfig({
 
 `ignoreFiles` 只用于确实要保留、但 `Knip` 看不见的源码模块。
 
-`ignore entry` 必须使用工作区根相对文件路径，路径必须留在仓库内，并提供非空 `reason`。该文件还必须属于 `key` 指向的包的 Limina 已知源码模块集合。
+`ignore entry` 必须使用相对于 `config.rootDir` 的文件路径，并提供非空 `reason`。路径可以包含 `../`，但该文件还必须属于 `key` 指向的包的 Limina 已知源码模块集合。

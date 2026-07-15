@@ -10,6 +10,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { toPortablePath, toPortableRelativePaths } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -294,16 +295,10 @@ describe('defineConfig', () => {
       };
       const activeCheckers = getActiveCheckers(config);
       const generatedGraph = await prepareGeneratedTsconfigGraph(config, {
-        workspacePackagesProvider: async () => [
-          {
-            directory: path.join(rootDir, 'packages/app'),
-            manifest: {
-              name: 'app',
-              private: true,
-            },
-            name: 'app',
-          },
-        ],
+        artifactNamespace: createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir: config.rootDir,
+        }),
       });
       const graphRoutes = collectGraphProjectRoutes(config, generatedGraph);
 
@@ -404,16 +399,10 @@ describe('defineConfig', () => {
       };
       const activeCheckers = getActiveCheckers(config);
       const generatedGraph = await prepareGeneratedTsconfigGraph(config, {
-        workspacePackagesProvider: async () => [
-          {
-            directory: path.join(rootDir, 'packages/app'),
-            manifest: {
-              name: 'app',
-              private: true,
-            },
-            name: 'app',
-          },
-        ],
+        artifactNamespace: createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir: config.rootDir,
+        }),
       });
       const graphRoutes = collectGraphProjectRoutes(config, generatedGraph);
 
@@ -889,14 +878,6 @@ export default {
     extendNestedPackageScopes: true,
     exclude: [
       {
-        include: [
-          'packages/app/test/fixtures/**',
-          'packages/app/vendor/**',
-        ],
-        kind: 'pnpm-workspace',
-        reason: 'Fixture workspaces are checked independently.',
-      },
-      {
         include: ['packages/legacy'],
         kind: 'workspace-package',
         reason: 'Legacy package.',
@@ -916,18 +897,14 @@ export default {
 
       expect(config.regions?.extendNestedPackageScopes).toBe(true);
       expect(config.regions?.exclude?.[0]?.include).toEqual([
-        'packages/app/test/fixtures/**',
-        'packages/app/vendor/**',
+        'packages/legacy',
       ]);
-      expect(config.regions?.exclude?.[0]?.kind).toBe('pnpm-workspace');
+      expect(config.regions?.exclude?.[0]?.kind).toBe('workspace-package');
       expect(config.regions?.exclude?.map((entry) => entry.kind)).toEqual([
-        'pnpm-workspace',
         'workspace-package',
         'package-scope',
       ]);
-      expect(config.regions?.exclude?.[0]?.reason).toBe(
-        'Fixture workspaces are checked independently.',
-      );
+      expect(config.regions?.exclude?.[0]?.reason).toBe('Legacy package.');
     } finally {
       await rm(rootDir, {
         force: true,
@@ -1070,6 +1047,11 @@ export default {
       name: 'unknown kind',
     },
     {
+      entry: `{ kind: 'pnpm-workspace', include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
+      expected: 'regions.exclude[0].kind must be one of',
+      name: 'removed pnpm workspace kind',
+    },
+    {
       entry: `{ kind: 1, include: ['packages/app/vendor'], reason: 'Checked separately.' }`,
       expected: 'regions.exclude[0].kind must be one of',
       name: 'non-string kind',
@@ -1114,7 +1096,7 @@ export default {
   regions: {
     exclude: [
       {
-        kind: 'pnpm-workspace',
+        kind: 'package-scope',
         include: ['packages/app/test/fixtures/**'],
       },
     ],
@@ -1203,7 +1185,7 @@ export default {
     {
       config:
         'allow: { "@example/app": [{ files: ["packages/app/test/**/*.ts"], workspaceRootDependencies: ["zod"], reason: "legacy files" }] }',
-      expected: 'files has been replaced by owner-root-relative include',
+      expected: 'files has been replaced by config-root-relative include',
       name: 'legacy files',
     },
     {
