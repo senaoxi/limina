@@ -9,11 +9,7 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import { uniqueSortedStrings } from '#utils/collections';
-import {
-  isPathInsideDirectory,
-  normalizeAbsolutePath,
-  toRelativePath,
-} from '#utils/path';
+import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 
 import type { CheckCounter } from '../check-reporting/stats';
@@ -276,7 +272,7 @@ function parseConditionDomainEntry(options: {
       field: `${field}.entry`,
       problems: options.problems,
       reason:
-        'condition domain entry must be a non-empty workspace-root-relative source tsconfig path.',
+        'condition domain entry must be a non-empty config-root-relative source tsconfig path.',
       value: entry,
     });
     return null;
@@ -286,8 +282,7 @@ function parseConditionDomainEntry(options: {
     addConditionDomainShapeProblem({
       field: `${field}.entry`,
       problems: options.problems,
-      reason:
-        'condition domain entry must be relative to the inferred workspace root.',
+      reason: 'condition domain entry must be relative to config.rootDir.',
       value: entry,
     });
     return null;
@@ -373,18 +368,6 @@ export function addConditionDomainProblems(options: {
       createGeneratedGraphPathAliases(options.generatedGraph).get(
         configuredEntryPath,
       ) ?? configuredEntryPath;
-
-    if (!isPathInsideDirectory(configuredEntryPath, options.config.rootDir)) {
-      options.problems.push(
-        [
-          'Invalid graph condition domain entry:',
-          `  domain: ${normalizedDomain.name}`,
-          `  entry: ${normalizedDomain.entry}`,
-          '  reason: condition domain entries must stay inside the inferred workspace root.',
-        ].join('\n'),
-      );
-      continue;
-    }
 
     if (
       !existsSync(configuredEntryPath) &&

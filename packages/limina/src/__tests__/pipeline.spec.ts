@@ -19,6 +19,7 @@ import {
   readCheckIssueSnapshot,
   writeNotRunCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { ResourceLockSet } from '../execution/resources';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 import {
@@ -29,6 +30,7 @@ import {
   runDefaultCheck,
   runPipeline,
 } from '../pipeline/runner';
+import { LiminaPreflightManager } from '../preflight/manager';
 
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
 
@@ -54,12 +56,15 @@ describe('ExecutionPlan construction', () => {
           label,
         })),
       ).toEqual([
+        { generation: 0, kind: 'preparation', label: 'workspace:validate' },
         { generation: 0, kind: 'preparation', label: 'graph:materialize' },
         { generation: 0, kind: 'task', label: 'checker:build' },
         { generation: 0, kind: 'command', label: 'command-a' },
+        { generation: 1, kind: 'preparation', label: 'workspace:validate' },
         { generation: 1, kind: 'preparation', label: 'graph:materialize' },
         { generation: 1, kind: 'task', label: 'checker:typecheck' },
         { generation: 1, kind: 'command', label: 'command-b' },
+        { generation: 2, kind: 'preparation', label: 'workspace:validate' },
         { generation: 2, kind: 'preparation', label: 'graph:materialize' },
         { generation: 2, kind: 'task', label: 'checker:build' },
       ]);
@@ -190,6 +195,11 @@ async function createConfig(): Promise<{
   const configPath = path.join(rootDir, 'limina.config.mjs');
 
   await writeFile(configPath, 'export default {};\n');
+  await writeText(
+    path.join(rootDir, 'package.json'),
+    stringifyJson({ name: 'fixture', private: true }),
+  );
+  await writeText(path.join(rootDir, 'pnpm-workspace.yaml'), 'packages: []\n');
 
   return {
     cleanup: async () => {
@@ -343,7 +353,7 @@ async function createOutputPackage(
   await writeText(path.join(outDir, 'README.md'), '# Example package\n');
   await writeText(path.join(outDir, 'LICENSE.md'), 'MIT\n');
 
-  return outDir;
+  return path.relative(rootDir, outDir);
 }
 
 function createFlow(): {
@@ -544,11 +554,12 @@ describe('runPipeline', () => {
         rejectGeneratedGraph = reject;
       },
     );
+    const generatedGraphProvider = vi.fn(() => generatedGraph);
 
     try {
       const check = runDefaultCheck(fixture.config, {
         flow,
-        generatedGraphProvider: () => generatedGraph,
+        generatedGraphProvider,
       });
 
       expect(chunks.join('')).toContain('◇      graph check\n');
@@ -557,11 +568,13 @@ describe('runPipeline', () => {
       expect(chunks.join('')).toContain('◇      checker build\n');
       expect(chunks.join('')).toContain('◇      checker typecheck\n');
 
+      await vi.waitFor(() => {
+        expect(generatedGraphProvider).toHaveBeenCalledTimes(1);
+      });
       rejectGeneratedGraph?.(new Error('delayed generated graph'));
 
       await expect(check).resolves.toBe(false);
     } finally {
-      rejectGeneratedGraph?.(new Error('test cleanup'));
       await fixture.cleanup();
     }
   });
@@ -603,13 +616,14 @@ describe('runPipeline', () => {
 
   it('shares generated graph preflight between built-in tasks', async () => {
     const fixture = await createConfig();
-    const generatedGraphProvider = vi.fn(
-      async () =>
-        ({
-          artifactPlan: { changes: [], ownedPaths: [] },
-          changed: false,
-        }) as unknown as GeneratedTsconfigGraphResult,
+    let preflight: LiminaPreflightManager;
+    const generatedGraphProvider = vi.fn(() =>
+      preflight.providers.buildGraph.getGraph(),
     );
+    preflight = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider,
+    });
 
     fixture.config.pipelines = {
       demo: ['graph:prepare', 'graph:prepare'],
@@ -618,7 +632,7 @@ describe('runPipeline', () => {
     try {
       await expect(
         runPipeline(fixture.config, 'demo', {
-          generatedGraphProvider,
+          preflight,
         }),
       ).resolves.toBe(true);
 
@@ -643,6 +657,10 @@ describe('runPipeline', () => {
 
     try {
       await writeNotRunCheckIssueSnapshot({
+        artifactNamespace: createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir: fixture.config.rootDir,
+        }),
         command: 'limina check demo',
         rootDir: fixture.config.rootDir,
         run: recorder.getRunSummary(),
@@ -664,6 +682,11 @@ describe('runPipeline', () => {
         run: {
           result: 'passed',
           tasks: [
+            {
+              issueTask: 'workspace:validate',
+              kind: 'preparation',
+              state: 'passed',
+            },
             {
               issueTask: 'graph:materialize',
               kind: 'preparation',
@@ -729,15 +752,89 @@ describe('runPipeline', () => {
     }
   });
 
+  it('writes a v7 workspace validation failure snapshot through the pre-validation namespace', async () => {
+    const fixture = await createConfig();
+
+    fixture.config.pipelines = { demo: ['source:check'] };
+    fixture.config.regions = {
+      exclude: [
+        {
+          include: ['app/**'],
+          kind: 'workspace-package',
+          reason: 'The nested workspace runs independently.',
+        },
+      ],
+    };
+    await writeText(
+      path.join(fixture.config.rootDir, 'pnpm-workspace.yaml'),
+      'packages:\n  - app\n',
+    );
+    await writeText(
+      path.join(fixture.config.rootDir, 'app/package.json'),
+      stringifyJson({ name: '@example/app', private: true }),
+    );
+    await writeText(
+      path.join(fixture.config.rootDir, 'app/pnpm-workspace.yaml'),
+      'packages: []\n',
+    );
+    const plan = createExecutionPlan(fixture.config, 'demo');
+    const recorder = createCheckRunRecorder({
+      command: 'limina check demo',
+      configPath: fixture.config.configPath,
+      pipeline: 'demo',
+      plannedTasks: plan.tasks,
+      rootDir: fixture.config.rootDir,
+    });
+
+    try {
+      await expect(
+        runPipeline(fixture.config, 'demo', {
+          checkRunRecorder: recorder,
+          executionPlan: plan,
+        }),
+      ).resolves.toBe(false);
+
+      const snapshot = await readCheckIssueSnapshot(fixture.config.rootDir);
+
+      expect(snapshot).toMatchObject({
+        issues: [
+          {
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            filePath: 'app/pnpm-workspace.yaml',
+            task: 'workspace:validate',
+          },
+        ],
+        run: {
+          result: 'blocked',
+          tasks: [
+            {
+              issueTask: 'workspace:validate',
+              state: 'failed',
+            },
+            {
+              issueTask: 'source:check',
+              state: 'blocked',
+            },
+          ],
+        },
+        status: 'completed',
+        version: 7,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('invalidates generated graph preflight after command steps', async () => {
     const fixture = await createConfig();
-    const generatedGraphProvider = vi.fn(
-      async () =>
-        ({
-          artifactPlan: { changes: [], ownedPaths: [] },
-          changed: false,
-        }) as unknown as GeneratedTsconfigGraphResult,
+    let preflight: LiminaPreflightManager;
+    const generatedGraphProvider = vi.fn(() =>
+      preflight.providers.buildGraph.getGraph(),
     );
+    preflight = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider,
+    });
 
     fixture.config.pipelines = {
       demo: [
@@ -754,7 +851,7 @@ describe('runPipeline', () => {
     try {
       await expect(
         runPipeline(fixture.config, 'demo', {
-          generatedGraphProvider,
+          preflight,
         }),
       ).resolves.toBe(true);
 
@@ -1030,6 +1127,10 @@ describe('runPipeline', () => {
 
     try {
       await writeNotRunCheckIssueSnapshot({
+        artifactNamespace: createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir: fixture.config.rootDir,
+        }),
         command: 'limina check demo',
         rootDir: fixture.config.rootDir,
         run: recorder.getRunSummary(),
@@ -1145,6 +1246,10 @@ describe('runPipeline', () => {
 
       try {
         await writeNotRunCheckIssueSnapshot({
+          artifactNamespace: createLiminaArtifactNamespace({
+            generation: 0,
+            rootDir: fixture.config.rootDir,
+          }),
           command: 'limina check demo',
           rootDir: fixture.config.rootDir,
           run: recorder.getRunSummary(),

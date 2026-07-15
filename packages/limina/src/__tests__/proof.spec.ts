@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { runProofCheck } from '../commands/proof';
+import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { createArtifactPlan } from '../domain/artifacts/plan';
 import { ProofLogger } from '../logger';
 import { collectExpectedSourceFiles } from '../proof/source-files';
 import {
@@ -248,13 +251,17 @@ function createMultiEnvironmentFiles(
 function createCheckerGraphCoverageProofGeneratedGraph(
   rootDir: string,
 ): GeneratedTsconfigGraphResult {
+  const artifactNamespace = createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir,
+  });
   const checkerEntryPath = path.join(
     rootDir,
     '.limina/tsconfig.typescript.build.json',
   );
 
   return {
-    artifactPlan: { changes: [], ownedPaths: [] },
+    artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([['typescript', checkerEntryPath]]),
     checkers: [
@@ -278,8 +285,9 @@ function createCheckerGraphCoverageProofGeneratedGraph(
         diagnostics: [],
         packages: [],
       },
+      ownedArtifacts: [],
       providerEdges: [],
-      version: 2,
+      version: 3,
     },
     manifestPath: path.join(rootDir, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),
@@ -1957,17 +1965,19 @@ describe('runProofCheck dts config semantics', () => {
       const sourceFiles = await collectExpectedSourceFiles(
         fixture.config,
         createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
-        [
-          {
-            directory: path.join(fixture.rootDir, 'packages/pkg'),
-            manifest: {
+        await collectValidatedWorkspaceContext({
+          config: fixture.config,
+          rawPackages: [
+            {
+              directory: path.join(fixture.rootDir, 'packages/pkg'),
+              manifest: {
+                name: '@fixture/pkg',
+                private: true,
+              },
               name: '@fixture/pkg',
-              private: true,
             },
-            name: '@fixture/pkg',
-          },
-        ],
-        [],
+          ],
+        }),
       );
 
       expect(
@@ -1977,6 +1987,59 @@ describe('runProofCheck dts config semantics', () => {
       ).not.toContain('random/unowned.ts');
     } finally {
       await fixture.cleanup();
+    }
+  });
+
+  it('filters external island candidates with ../ selectors without applying root .gitignore', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        '.gitignore': '**/*.ts\n',
+      }),
+    );
+    const externalRoot = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-proof-external-')),
+    );
+    const externalSourcePath = path.join(externalRoot, 'src/index.ts');
+    await writeText(
+      path.join(externalRoot, 'package.json'),
+      stringifyConfig({ name: '@fixture/external', private: true }),
+    );
+    await writeText(externalSourcePath, 'export const value = 1;\n');
+    const externalPattern = `${path
+      .relative(fixture.rootDir, externalRoot)
+      .split(path.sep)
+      .join('/')}/src/**/*.ts`;
+    const config: ResolvedLiminaConfig = {
+      ...fixture.config,
+      config: {
+        ...fixture.config.config,
+        source: { include: [externalPattern] },
+      },
+    };
+
+    try {
+      const context = await collectValidatedWorkspaceContext({
+        config,
+        rawPackages: [
+          {
+            directory: externalRoot,
+            manifest: { name: '@fixture/external', private: true },
+            name: '@fixture/external',
+          },
+        ],
+      });
+      const sourceFiles = await collectExpectedSourceFiles(
+        config,
+        createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+        context,
+      );
+
+      expect(sourceFiles.has(externalSourcePath)).toBe(true);
+    } finally {
+      await Promise.all([
+        fixture.cleanup(),
+        rm(externalRoot, { force: true, recursive: true }),
+      ]);
     }
   });
 

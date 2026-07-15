@@ -1717,6 +1717,7 @@ export async function runProofCheckImpl(
     }
 
     await appendCheckIssues({
+      artifactNamespace: preflight.artifactNamespace,
       issues: reportIssues,
       rootDir: config.rootDir,
     });

@@ -4,7 +4,7 @@
 The top-level `source` option configures two parts of `source:check`: `source.importAuthority` controls source import authorization, and `source.knip` controls `Knip`-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
 :::
 
-`source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina starts from the packages activated by the current `pnpm` workspace, including nameless workspace packages identified by path. Each workspace package root manifest is its source owner.
+`source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina discovers source independently from every validated activated package island, including external packages and nameless workspace packages identified by path. Each workspace package root manifest is its source owner. Explicit source selectors are relative to `config.rootDir`, may contain `../`, and only filter candidates already produced by those islands.
 
 A nested `package.json` stops the current governed region by default, and a nested `pnpm-workspace.yaml` is always a hard boundary. With [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), an eligible nameless nested manifest can remain inside the surrounding region: its source inherits the outer workspace owner and dependency authority, while the nested manifest remains the package scope for relative imports and `#imports`. [`regions.exclude`](./regions.md#exclude) can then remove recognized units or boundary roots from the current run. Imports into any stopped or excluded region are treated as cross-boundary access.
 
@@ -67,7 +67,7 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 }
 ```
 
-`allow` keys must match source owner identities that remain in the current governed region after `regions` is applied. Named workspace packages use their package name, and nameless source owners use their workspace-root-relative package directory. `include` is optional and owner-root-relative; when omitted, the grant applies to all governed source modules owned by that source owner.
+`allow` keys must match source owner identities that remain in the current governed region after `regions` is applied. Named workspace packages use their package name, and nameless source owners use their config-root-relative lexical package directory, including `../` when needed. `include` is optional and config-root-relative; it may contain `../` but can only filter governed source owned by the keyed owner. When omitted, the grant applies to all governed source modules owned by that source owner.
 
 `workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, and it will not bypass an intermediate workspace package manifest between the source owner and the workspace root.
 
@@ -215,7 +215,7 @@ export default defineConfig({
 
 Use `entry` for package-owned source modules that are legitimate direct roots without being package exports. For example, test runners may load `*.spec.ts` files directly.
 
-Entry configs must use positive workspace-root-relative `glob` patterns inside the keyed package directory and a non-empty reason.
+Entry configs must use positive config-root-relative `glob` patterns inside the keyed package directory and a non-empty reason. External activated packages use `../`; patterns still only filter files in the keyed owner's discovered source module set.
 
 ### workspaces[pkg].ignoreDependencies
 
@@ -233,4 +233,4 @@ Ignore entries must name an existing workspace package in `dep` and a dependency
 
 Use `ignoreFiles` only when a source module is intentionally retained but not visible to `Knip`.
 
-Ignore entries must use a workspace-root-relative file path that stays inside the repository and a non-empty reason. The file must belong to the keyed package's source module set known to Limina.
+Ignore entries must use a config-root-relative file path and a non-empty reason. The path may contain `../`, but the file must belong to the keyed package's source module set known to Limina.

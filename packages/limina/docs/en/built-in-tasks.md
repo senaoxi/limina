@@ -6,7 +6,7 @@ The sections below explain how the built-in tasks are divided and how to underst
 
 ## Understand the Default Check First
 
-When `limina check` is run without a pipeline name, it runs five default tasks:
+When `limina check` is run without a pipeline name, it runs the shared `workspace:validate` preparation and five default tasks:
 
 1. `graph:check`
 2. `source:check`
@@ -15,6 +15,8 @@ When `limina check` is run without a pipeline name, it runs five default tasks:
 5. `checker:typecheck`
 
 This order is the display and recording order for results. It does not mean the default check runs these tasks serially. The default check schedules them as independent tasks; when the concurrency budget and resource locks allow it, they may run concurrently. A failed task fails the current check, but it should not be understood as inherently blocking the remaining default tasks from continuing.
+
+`workspace:validate` is shared by all topology-dependent work. It must pass before source, proof, graph, checker, migration, package, release, or artifact-producing work can begin. It is recorded as a preparation and as a `LiminaCheckTaskName`, so `limina check --issues --task workspace:validate` can query its structured issues. It is injected automatically and is not a user-configurable pipeline step.
 
 Named pipelines are different. `limina check <name>` runs according to the configured pipeline step order and is used to express explicit sequencing, such as building first and then checking artifacts.
 
@@ -48,6 +50,8 @@ Besides built-in tasks, pipeline steps may also be external commands. Built-in t
 | `checker:typecheck` | Yes           | Typecheck-only checkers                                                                                 | Calls checkers that cannot act as build graph providers, such as some framework checkers                                            |
 | `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                                      |
 | `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                                      |
+
+Before every task in this table, Limina reuses the current generation's validated workspace context. If validation fails, dependent work is blocked and the primary workspace issue can still be written safely to `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
 
 The core tasks are `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `package:check` and `release:check` are supplemental release-phase tasks. They fit well in release pipelines, but should not be overstated as Limina's core capability.
 

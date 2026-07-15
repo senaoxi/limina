@@ -30,6 +30,14 @@ import {
   type WorkspaceLookupIndex,
 } from '../core/workspace/lookup';
 import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
+import {
+  type ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from '../core/workspace/validated-context';
+import {
+  createLiminaArtifactNamespace,
+  type LiminaArtifactNamespace,
+} from '../domain/artifacts/namespace';
 import { identifier } from '../domain/shared/identifiers';
 import {
   createPackageEntrySelectionPlan,
@@ -80,6 +88,7 @@ interface MaterializationSlot {
  * cached domain data in place.
  */
 export class LiminaPreflightManager {
+  artifactNamespace: LiminaArtifactNamespace;
   readonly config: ResolvedLiminaConfig;
   providers: AnalysisProviderSet;
   run: AnalysisRun;
@@ -109,6 +118,9 @@ export class LiminaPreflightManager {
     | undefined;
   #workspaceLookupPromise: Promise<WorkspaceLookupIndex> | undefined;
   #workspacePackagesPromise: Promise<WorkspacePackage[]> | undefined;
+  #validatedWorkspaceContextPromise:
+    | Promise<ValidatedWorkspaceContext>
+    | undefined;
   #workspaceRegionBoundariesPromise:
     | Promise<WorkspaceRegionBoundary[]>
     | undefined;
@@ -119,8 +131,15 @@ export class LiminaPreflightManager {
     this.#generatedGraphProvider = options.generatedGraphProvider;
     this.#metrics = options.metrics ?? createNoopMetricsRecorder();
     this.#signal = options.signal ?? new AbortController().signal;
+    this.artifactNamespace =
+      options.providers?.artifactNamespace ??
+      createLiminaArtifactNamespace({
+        generation: 0,
+        rootDir: options.config.rootDir,
+      });
     this.providers =
-      options.providers ?? createAnalysisProviders(options.config);
+      options.providers ??
+      createAnalysisProviders(options.config, this.artifactNamespace);
     this.run = this.#createRun();
     registerPreflightGenerationAdvancer(this, () =>
       this.#startNextGeneration(),
@@ -128,13 +147,25 @@ export class LiminaPreflightManager {
   }
 
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#generatedGraphPromise ??=
-      this.#generatedGraphProvider?.() ?? this.providers.buildGraph.getGraph();
+    if (!this.#generatedGraphPromise) {
+      const providers = this.providers;
+      const generatedGraphProvider = this.#generatedGraphProvider;
+      this.#generatedGraphPromise = this.ensureWorkspaceValidated().then(
+        () => generatedGraphProvider?.() ?? providers.buildGraph.getGraph(),
+      );
+    }
     return this.#generatedGraphPromise;
+  }
+
+  ensureWorkspaceValidated(): Promise<ValidatedWorkspaceContext> {
+    this.#validatedWorkspaceContextPromise ??=
+      this.providers.workspace.getValidatedContext();
+    return this.#validatedWorkspaceContextPromise;
   }
 
   ensureGeneratedArtifactsMaterialized(): Promise<MaterializationReceipt> {
     const slot = this.#materializationSlot;
+    const artifactNamespace = this.artifactNamespace;
 
     if (slot.receipt) {
       return Promise.resolve(slot.receipt);
@@ -145,7 +176,10 @@ export class LiminaPreflightManager {
     }
 
     const inFlight = this.ensureGeneratedGraph().then(async (graph) => {
-      await materializeGeneratedArtifactPlan(graph.artifactPlan);
+      await materializeGeneratedArtifactPlan(
+        artifactNamespace,
+        graph.artifactPlan,
+      );
 
       return {
         changed: graph.changed,
@@ -180,7 +214,13 @@ export class LiminaPreflightManager {
   }
 
   ensureWorkspacePackages(): Promise<WorkspacePackage[]> {
-    this.#workspacePackagesPromise ??= this.providers.workspace.getPackages();
+    this.#workspacePackagesPromise ??= this.ensureWorkspaceValidated().then(
+      (context) =>
+        context.packages.map((workspacePackage) => ({
+          ...workspacePackage,
+          manifest: { ...workspacePackage.manifest },
+        })),
+    );
     return this.#workspacePackagesPromise;
   }
 
@@ -205,13 +245,13 @@ export class LiminaPreflightManager {
       this.ensureImporters(),
       this.ensurePackageOwners(),
       this.ensureWorkspacePackages(),
-      this.ensureWorkspaceRegionBoundaries(),
-    ]).then(([importers, owners, packages, regionBoundaries]) =>
+      this.ensureWorkspaceValidated(),
+    ]).then(([importers, owners, packages, context]) =>
       createWorkspaceLookupIndex({
         importers,
         owners,
         packages,
-        regionBoundaries,
+        pathIndex: new WorkspaceRegionPathIndex(context),
         rootDir: this.config.rootDir,
       }),
     );
@@ -257,26 +297,25 @@ export class LiminaPreflightManager {
   ensureExpectedSourceFiles(): Promise<Set<string>> {
     this.#expectedSourceFilesPromise ??= Promise.all([
       this.ensureGeneratedGraph(),
-      this.ensureWorkspacePackages(),
-      this.ensureWorkspaceRegionBoundaries(),
-    ]).then(([graph, packages, boundaries]) =>
-      collectExpectedSourceFiles(this.config, graph, packages, boundaries),
+      this.ensureWorkspaceValidated(),
+    ]).then(([graph, context]) =>
+      collectExpectedSourceFiles(this.config, graph, context),
     );
     return this.#expectedSourceFilesPromise;
   }
 
-  ensurePackageEntrySelectionPlan(
+  async ensurePackageEntrySelectionPlan(
     options: PackageEntryPlanOptions,
   ): Promise<PackageEntrySelectionPlan> {
-    return Promise.resolve(
-      createPackageEntrySelectionPlan({
-        config: this.config,
-        cwd: options.cwd,
-        packageNames: options.packageNames,
-        requireCwdPackageMatch: options.requireCwdPackageMatch,
-        tool: options.tool,
-      }),
-    );
+    const context = await this.ensureWorkspaceValidated();
+    return createPackageEntrySelectionPlan({
+      config: this.config,
+      cwd: options.cwd,
+      packageNames: options.packageNames,
+      requireCwdPackageMatch: options.requireCwdPackageMatch,
+      tool: options.tool,
+      workspaceContext: context,
+    });
   }
 
   get importAnalysis(): ImportAnalysisContext {
@@ -286,7 +325,14 @@ export class LiminaPreflightManager {
   #startNextGeneration(): void {
     this.#generation += 1;
     this.#materializationSlot = { generation: this.#generation };
-    this.providers = createAnalysisProviders(this.config);
+    this.artifactNamespace = createLiminaArtifactNamespace({
+      generation: this.#generation,
+      rootDir: this.config.rootDir,
+    });
+    this.providers = createAnalysisProviders(
+      this.config,
+      this.artifactNamespace,
+    );
     this.run = this.#createRun();
     this.#checkerEntryProjectRoutesPromise = undefined;
     this.#expectedSourceFilesPromise = undefined;
@@ -300,6 +346,7 @@ export class LiminaPreflightManager {
     this.#workspaceLookupPromise = undefined;
     this.#workspacePackagesPromise = undefined;
     this.#workspaceRegionBoundariesPromise = undefined;
+    this.#validatedWorkspaceContextPromise = undefined;
   }
 
   #createRun(): AnalysisRun {

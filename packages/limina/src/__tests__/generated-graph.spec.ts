@@ -14,10 +14,8 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { glob } from 'tinyglobby';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
-import type { CheckerEntryDiscovery } from '../core/checkers/entry-selection';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { toPortablePath } from './helpers/path';
 
@@ -128,7 +126,7 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
-  it('does not select explicit checker entries inside excluded exact-overlap packages', async () => {
+  it('rejects a raw package that is also a pnpm workspace root before exclusions', async () => {
     const fixture = await createFixture({
       'packages/app/package.json': json({
         name: '@example/app',
@@ -181,8 +179,16 @@ describe('prepareGeneratedTsconfigGraph', () => {
         ],
       };
 
-      const result = await prepareGeneratedTsconfigGraph(fixture.config);
-      expect(result.manifest.checkers.typescript?.roots).toEqual([]);
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            task: 'workspace:validate',
+          }),
+        ],
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -264,15 +270,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
             },
           },
         },
-        regions: {
-          exclude: [
-            {
-              include: ['packages/a/fixture/**'],
-              kind: 'pnpm-workspace',
-              reason: 'Fixture workspace.',
-            },
-          ],
-        },
       });
       expect(result.manifest.checkers.typescript?.roots).toEqual([
         'packages/a/tsconfig.json',
@@ -313,15 +310,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const result = await prepareGeneratedTsconfigGraph({
         ...fixture.config,
         config: {},
-        regions: {
-          exclude: [
-            {
-              include: ['packages/a/fixture/**'],
-              kind: 'pnpm-workspace',
-              reason: 'Fixture workspace.',
-            },
-          ],
-        },
       });
 
       expect(result.checkers).toMatchObject([
@@ -368,27 +356,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('does not rediscover checker entries during graph collection', async () => {
-    const fixture = await createFixture({
-      'packages/a/src/index.ts': 'export const value = 1;\n',
-      'packages/a/tsconfig.json': json({
-        include: ['src/**/*.ts'],
-      }),
-    });
-    const discover = vi.fn<CheckerEntryDiscovery>(async (patterns, options) =>
-      glob(patterns as string[], options),
-    );
-
-    try {
-      await prepareGeneratedTsconfigGraph(fixture.config, {
-        checkerEntryDiscovery: discover,
-      });
-      expect(discover).toHaveBeenCalledOnce();
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
   it('reports cross-region references with boundary details', async () => {
     const fixture = await createFixture({
       'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
@@ -414,39 +381,45 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
   it('reports cross-region references with no matching boundary', async () => {
     const fixture = await createFixture({
-      'outside/src/index.ts': 'export const outside = 1;\n',
-      'outside/tsconfig.lib.json': json({
-        include: ['src/**/*.ts'],
-      }),
       'packages/a/package.json': json({
         name: '@example/a',
         private: true,
       }),
       'packages/a/tsconfig.json': json({
         files: [],
-        references: [{ path: '../../outside/tsconfig.lib.json' }],
+        references: [],
       }),
     });
+    const outsideRoot = `${fixture.rootDir}-outside`;
 
     try {
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config, {
-          workspacePackagesProvider: async () => [
+      const outsideConfigPath = path.join(outsideRoot, 'tsconfig.lib.json');
+      await writeText(
+        path.join(outsideRoot, 'src/index.ts'),
+        'export const outside = 1;\n',
+      );
+      await writeText(outsideConfigPath, json({ include: ['src/**/*.ts'] }));
+      await writeText(
+        path.join(fixture.rootDir, 'packages/a/tsconfig.json'),
+        json({
+          files: [],
+          references: [
             {
-              directory: path.join(fixture.rootDir, 'packages/a'),
-              manifest: {
-                name: '@example/a',
-                private: true,
-              },
-              name: '@example/a',
+              path: path.relative(
+                path.join(fixture.rootDir, 'packages/a'),
+                outsideConfigPath,
+              ),
             },
           ],
-          workspaceRegionBoundaries: [],
         }),
+      );
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
       ).rejects.toThrow(
         /Referenced checker source config is outside activated workspace package regions:[\s\S]*not owned by any current-run activated workspace package/u,
       );
     } finally {
+      await rm(outsideRoot, { force: true, recursive: true });
       await fixture.cleanup();
     }
   });
@@ -474,15 +447,6 @@ describe('prepareGeneratedTsconfigGraph', () => {
         prepareGeneratedTsconfigGraph({
           ...fixture.config,
           config: {},
-          regions: {
-            exclude: [
-              {
-                include: ['packages/a/fixture/**'],
-                kind: 'pnpm-workspace',
-                reason: 'Fixture workspace.',
-              },
-            ],
-          },
         }),
       ).rejects.toThrow('Generated graph import crosses governance boundary');
     } finally {
@@ -1446,7 +1410,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         references?: { path: string }[];
       };
 
-      expect(result.manifest.version).toBe(2);
+      expect(result.manifest.version).toBe(3);
       expect(
         result.manifest.checkers.typescript?.configToOutputBuild,
       ).toMatchObject({
@@ -4082,6 +4046,14 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
   it('removes stale generated tsconfig files', async () => {
     const fixture = await createFixture({
+      '.limina/manifest.json': json({
+        generatedBy: 'limina',
+        ownedArtifacts: [
+          'tsconfig/checkers/typescript/projects/stale/tsconfig.dts.json',
+          'manifest.json',
+        ],
+        version: 3,
+      }),
       '.limina/tsconfig/checkers/typescript/projects/stale/tsconfig.dts.json':
         '{}\n',
       'packages/pkg/src/index.ts': 'export const value = 1;\n',

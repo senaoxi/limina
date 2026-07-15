@@ -1,26 +1,21 @@
 import ignore from 'ignore';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
-import { glob } from 'tinyglobby';
+import rawPicomatch from 'picomatch';
+import { escapePath, glob } from 'tinyglobby';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
-  collectGeneratedSourceConfigPaths,
-  type GeneratedTsconfigGraphResult,
-} from '#core/build-graph/runner';
-import { readJsonConfig } from '#core/tsconfig/actions';
-import {
+  isPathInsideDirectory,
   normalizeAbsolutePath,
   toPosixPath,
   toRelativePath,
 } from '#utils/path';
-import { isPlainRecord } from '#utils/values';
-import type { WorkspacePackage } from '../core/workspace/actions';
 import {
-  createWorkspaceRegionBoundaryIgnorePatterns,
-  isVisibleCurrentRegionSourcePath,
-  type WorkspaceRegionBoundary,
-} from '../core/workspace/regions';
+  type ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from '../core/workspace/validated-context';
 
 const DEFAULT_SOURCE_TOKEN = '...' as const;
 
@@ -118,57 +113,14 @@ function normalizeExactDirectoryExcludePattern(pattern: string): string[] {
   return normalized ? [normalized, `${normalized}/**`] : [];
 }
 
-function readExplicitOutputOutDir(options: {
-  config: ResolvedLiminaConfig;
-  sourceConfigPath: string;
-}): string | null {
-  const configObject = readJsonConfig(options.config, options.sourceConfigPath);
-  const liminaOptions = configObject.liminaOptions;
-
-  if (!isPlainRecord(liminaOptions)) {
-    return null;
-  }
-
-  const outputs = liminaOptions.outputs;
-
-  if (!isPlainRecord(outputs)) {
-    return null;
-  }
-
-  const outDir = outputs.outDir;
-
-  if (typeof outDir !== 'string' || outDir.trim().length === 0) {
-    return null;
-  }
-
-  if (path.isAbsolute(outDir)) {
-    return null;
-  }
-
-  return normalizeAbsolutePath(
-    path.resolve(path.dirname(options.sourceConfigPath), outDir.trim()),
-  );
-}
-
 function collectDefaultSourceExcludePatterns(options: {
   config: ResolvedLiminaConfig;
-  generatedGraph: GeneratedTsconfigGraphResult;
+  outputRoots?: readonly string[];
 }): string[] {
   const staticExcludes = defaultSourceExclude.flatMap(
     normalizeSourceExcludePattern,
   );
-  const outputExcludes = collectGeneratedSourceConfigPaths(
-    options.generatedGraph,
-  ).flatMap((sourceConfigPath) => {
-    const outDir = readExplicitOutputOutDir({
-      config: options.config,
-      sourceConfigPath,
-    });
-
-    if (!outDir) {
-      return [];
-    }
-
+  const outputExcludes = (options.outputRoots ?? []).flatMap((outDir) => {
     return normalizeExactDirectoryExcludePattern(
       toPosixPath(toRelativePath(options.config.rootDir, outDir)),
     );
@@ -218,9 +170,8 @@ function createGitignoreFilter(
 
 export async function collectExpectedSourceFiles(
   config: ResolvedLiminaConfig,
-  generatedGraph: GeneratedTsconfigGraphResult,
-  workspacePackages: readonly WorkspacePackage[],
-  regionBoundaries: readonly WorkspaceRegionBoundary[],
+  _generatedGraph: GeneratedTsconfigGraphResult,
+  workspaceContext: ValidatedWorkspaceContext,
 ): Promise<Set<string>> {
   const include = expandDefaultToken({
     configured: config.config?.source?.include,
@@ -230,37 +181,85 @@ export async function collectExpectedSourceFiles(
     configured: config.config?.source?.exclude,
     defaults: collectDefaultSourceExcludePatterns({
       config,
-      generatedGraph,
+      outputRoots: workspaceContext.outputRoots,
     }),
   });
   const gitignoreFilter = exclude.usesDefaultBundle
     ? createGitignoreFilter(config)
     : null;
-  const files = await glob(include.patterns, {
-    cwd: config.rootDir,
-    absolute: true,
-    ignore: [
-      ...exclude.patterns,
-      ...createWorkspaceRegionBoundaryIgnorePatterns(
-        config,
-        regionBoundaries,
-        workspacePackages,
-      ),
-    ],
-    onlyFiles: true,
-  });
+  const pathIndex = new WorkspaceRegionPathIndex(workspaceContext);
+  const candidates = (
+    await Promise.all(
+      workspaceContext.packages.map((workspacePackage) => {
+        const childIgnores = workspaceContext.packages.flatMap(
+          (candidatePackage) => {
+            const relativeRoot = toPosixPath(
+              toRelativePath(
+                workspacePackage.directory,
+                candidatePackage.directory,
+              ),
+            );
+            return relativeRoot !== '.' &&
+              !relativeRoot.startsWith('../') &&
+              relativeRoot !== '..'
+              ? [`${escapePath(relativeRoot)}/**`]
+              : [];
+          },
+        );
+        // Discover the island-local candidate universe first. Public source
+        // selectors are config-root-relative filters over this universe; they
+        // must never become traversal roots (especially for ../ selectors).
+        return glob('**/*', {
+          absolute: true,
+          cwd: workspacePackage.directory,
+          dot: true,
+          followSymbolicLinks: false,
+          ignore: [
+            '**/.git/**',
+            '**/.limina/**',
+            '**/node_modules/**',
+            ...childIgnores,
+          ],
+          onlyFiles: true,
+        });
+      }),
+    )
+  ).flat();
+  const matcherOptions = { dot: true } as const;
+  const includeMatchers = include.patterns.map((pattern) =>
+    (
+      rawPicomatch as unknown as (
+        pattern: string,
+        options: { dot: boolean },
+      ) => (value: string) => boolean
+    )(pattern, matcherOptions),
+  );
+  const excludeMatchers = exclude.patterns.map((pattern) =>
+    (
+      rawPicomatch as unknown as (
+        pattern: string,
+        options: { dot: boolean },
+      ) => (value: string) => boolean
+    )(pattern, matcherOptions),
+  );
+  const configRootDir = normalizeAbsolutePath(config.rootDir);
 
   return new Set(
-    files
-      .map(normalizeAbsolutePath)
-      .filter((filePath) => !gitignoreFilter?.(filePath))
-      .filter((filePath) =>
-        isVisibleCurrentRegionSourcePath({
-          boundaries: regionBoundaries,
-          filePath,
-          packages: workspacePackages,
-          rootDir: config.rootDir,
-        }),
+    [...new Set(candidates.map(normalizeAbsolutePath))]
+      .filter((filePath) => Boolean(pathIndex.findPackageForPath(filePath)))
+      .filter((filePath) => {
+        const relativePath = toPosixPath(
+          toRelativePath(configRootDir, filePath),
+        );
+        return (
+          includeMatchers.some((matches) => matches(relativePath)) &&
+          !excludeMatchers.some((matches) => matches(relativePath))
+        );
+      })
+      .filter(
+        (filePath) =>
+          !isPathInsideDirectory(filePath, configRootDir) ||
+          !gitignoreFilter?.(filePath),
       )
       .sort(),
   );

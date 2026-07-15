@@ -105,6 +105,73 @@ function createResolvedConfig(
   };
 }
 
+async function createMultipleWorktreeFixture(): Promise<{
+  cleanup: () => Promise<void>;
+  config: ResolvedLiminaConfig;
+  externalConfigPath: string;
+  externalRootDir: string;
+  rootConfigPath: string;
+  rootDir: string;
+}> {
+  const parentDir = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'limina-migration-worktrees-')),
+  );
+  const rootDir = path.join(parentDir, 'root');
+  const externalRootDir = path.join(parentDir, 'external');
+  const rootConfigPath = path.join(rootDir, 'tsconfig.json');
+  const externalConfigPath = path.join(externalRootDir, 'tsconfig.json');
+  const tsconfig = json({
+    compilerOptions: {
+      outDir: './dist',
+      rootDir: './src',
+      target: 'ES2023',
+    },
+    include: ['src/**/*.ts'],
+  });
+
+  await writeText(
+    path.join(rootDir, 'package.json'),
+    json({ name: '@example/root', private: true, type: 'module' }),
+  );
+  await writeText(
+    path.join(rootDir, 'pnpm-workspace.yaml'),
+    'packages:\n  - ../external\n',
+  );
+  await writeText(
+    path.join(rootDir, 'limina.config.mjs'),
+    'export default {};\n',
+  );
+  await writeText(path.join(rootDir, 'src/index.ts'), 'export {};\n');
+  await writeText(rootConfigPath, tsconfig);
+  await writeText(
+    path.join(externalRootDir, 'package.json'),
+    json({ name: '@example/external', version: '1.0.0' }),
+  );
+  await writeText(path.join(externalRootDir, 'src/index.ts'), 'export {};\n');
+  await writeText(externalConfigPath, tsconfig);
+
+  await commitFixture(rootDir);
+  await commitFixture(externalRootDir);
+
+  return {
+    cleanup: async () => {
+      await rm(parentDir, { force: true, recursive: true });
+    },
+    config: createResolvedConfig(rootDir, {
+      checkers: {
+        typescript: {
+          include: ['tsconfig.json', '../external/tsconfig.json'],
+          preset: 'tsc',
+        },
+      },
+    }),
+    externalConfigPath,
+    externalRootDir,
+    rootConfigPath,
+    rootDir,
+  };
+}
+
 describe('runMigration', () => {
   it('fails before writing when the workspace is not a git repository', async () => {
     const fixture = await createFixture({
@@ -135,7 +202,7 @@ describe('runMigration', () => {
 
     try {
       await expect(runMigration(config)).rejects.toThrow(
-        /Unable to verify the git working tree/u,
+        /Unable to resolve the Git worktree/u,
       );
       await expect(readFile(tsconfigPath, 'utf8')).resolves.toBe(before);
     } finally {
@@ -178,6 +245,59 @@ describe('runMigration', () => {
         /requires a clean git working tree/u,
       );
       await expect(readFile(tsconfigPath, 'utf8')).resolves.toBe(before);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('migrates targets across every involved clean Git worktree', async () => {
+    const fixture = await createMultipleWorktreeFixture();
+
+    try {
+      const result = await runMigration(fixture.config);
+
+      expect(result.modifiedFiles).toEqual(
+        toPortablePaths([fixture.externalConfigPath, fixture.rootConfigPath]),
+      );
+      await expect(
+        readJson<{ liminaOptions?: { outputs?: { outDir?: string } } }>(
+          fixture.rootConfigPath,
+        ),
+      ).resolves.toMatchObject({
+        liminaOptions: { outputs: { outDir: './dist' } },
+      });
+      await expect(
+        readJson<{ liminaOptions?: { outputs?: { outDir?: string } } }>(
+          fixture.externalConfigPath,
+        ),
+      ).resolves.toMatchObject({
+        liminaOptions: { outputs: { outDir: './dist' } },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('checks every involved Git worktree for cleanliness before any write', async () => {
+    const fixture = await createMultipleWorktreeFixture();
+    const rootBefore = await readFile(fixture.rootConfigPath, 'utf8');
+    const externalBefore = await readFile(fixture.externalConfigPath, 'utf8');
+
+    try {
+      await writeText(
+        path.join(fixture.externalRootDir, 'dirty.txt'),
+        'dirty\n',
+      );
+
+      await expect(runMigration(fixture.config)).rejects.toThrow(
+        /requires a clean git working tree/u,
+      );
+      await expect(readFile(fixture.rootConfigPath, 'utf8')).resolves.toBe(
+        rootBefore,
+      );
+      await expect(readFile(fixture.externalConfigPath, 'utf8')).resolves.toBe(
+        externalBefore,
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -247,7 +367,7 @@ describe('runMigration', () => {
     }
   });
 
-  it('reads and skips already-migrated symlink and hardlink configs', async () => {
+  it('uses canonical island visibility and skips only the reachable hardlink config', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'storage/tsconfig.json': json({
@@ -292,9 +412,7 @@ describe('runMigration', () => {
       const result = await runMigration(config);
 
       expect(result.modifiedFiles).toEqual([]);
-      expect(result.skippedFiles).toEqual(
-        toPortablePaths([hardlinkPath, symlinkPath]),
-      );
+      expect(result.skippedFiles).toEqual(toPortablePaths([hardlinkPath]));
       expect((await stat(sourcePath, { bigint: true })).mtimeNs).toBe(
         beforeMtime,
       );

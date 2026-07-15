@@ -26,6 +26,7 @@ import {
   createWorkspaceLookupIndex,
   type WorkspaceLookupIndex,
 } from '../core/workspace/lookup';
+import { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 
 export type DependencyGraphView = 'all' | 'artifact' | 'source';
 export type DependencyGraphEdgeKind = 'artifact' | 'source';
@@ -284,6 +285,7 @@ export async function collectDependencyGraph(
 ): Promise<DependencyGraphDocument> {
   const core = options.providers ?? createAnalysisProviders(config);
   const view = normalizeDependencyGraphView(options.view);
+  const workspaceContext = await core.workspace.getValidatedContext();
   const checkerProjects = await collectDependencyGraphProjects(core);
   const problems = [...checkerProjects.problems];
   const workspacePackages = await core.workspace.getPackages();
@@ -291,7 +293,7 @@ export async function collectDependencyGraph(
     importers: [],
     owners: [],
     packages: workspacePackages,
-    regionBoundaries: await core.workspace.getRegionBoundaries(),
+    pathIndex: new WorkspaceRegionPathIndex(workspaceContext),
     rootDir: config.rootDir,
   });
   const projects = checkerProjects.projects.map((project) =>

@@ -1,4 +1,8 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import {
+  createLiminaArtifactNamespace,
+  type LiminaArtifactNamespace,
+} from '../domain/artifacts/namespace';
 import { BuildGraphCore } from './build-graph';
 import { ImportCore } from './imports';
 import { PackageDomainCore } from './packages';
@@ -15,6 +19,7 @@ export type { SourceGraphProjects } from './tsconfig';
 export { WorkspaceCore } from './workspace';
 
 export class AnalysisProviderSet {
+  readonly artifactNamespace: LiminaArtifactNamespace;
   readonly buildGraph: BuildGraphCore;
   readonly config: ResolvedLiminaConfig;
   readonly imports: ImportCore;
@@ -22,9 +27,16 @@ export class AnalysisProviderSet {
   readonly tsconfig: TsconfigCore;
   readonly workspace: WorkspaceCore;
 
-  constructor(config: ResolvedLiminaConfig) {
+  constructor(
+    config: ResolvedLiminaConfig,
+    artifactNamespace: LiminaArtifactNamespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: config.rootDir,
+    }),
+  ) {
     let buildGraph: BuildGraphCore;
 
+    this.artifactNamespace = artifactNamespace;
     this.config = config;
     this.workspace = new WorkspaceCore(config);
     this.imports = new ImportCore(config);
@@ -34,6 +46,7 @@ export class AnalysisProviderSet {
       this.workspace,
     );
     buildGraph = new BuildGraphCore({
+      artifactNamespace,
       config,
       imports: this.imports,
       workspace: this.workspace,
@@ -49,6 +62,7 @@ export class AnalysisProviderSet {
 
 export function createAnalysisProviders(
   config: ResolvedLiminaConfig,
+  artifactNamespace?: LiminaArtifactNamespace,
 ): AnalysisProviderSet {
-  return new AnalysisProviderSet(config);
+  return new AnalysisProviderSet(config, artifactNamespace);
 }

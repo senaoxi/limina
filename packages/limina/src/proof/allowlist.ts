@@ -87,8 +87,21 @@ export function collectConfiguredAllowlistEntries(
       continue;
     }
 
+    const file = fileValue.trim();
+    if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/u.test(file)) {
+      problems.push(
+        [
+          'Invalid proof allowlist config:',
+          `  field: ${field}.file`,
+          `  value: ${formatUnknownValue(fileValue)}`,
+          '  reason: allowlist file must be relative to config.rootDir.',
+        ].join('\n'),
+      );
+      continue;
+    }
+
     entries.push({
-      filePath: normalizeAbsolutePath(path.join(config.rootDir, fileValue)),
+      filePath: normalizeAbsolutePath(path.resolve(config.rootDir, file)),
       reason: reasonValue.trim(),
     });
   }

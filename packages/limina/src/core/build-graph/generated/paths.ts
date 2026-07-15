@@ -5,6 +5,7 @@ import {
   toPosixPath,
   toRelativePath,
 } from '#utils/path';
+import { createExternalArtifactStableId } from '../../../domain/artifacts/namespace';
 
 export const generatedRootDirName: string = '.limina';
 export const generatedTsconfigDir: string = path.join(
@@ -49,8 +50,8 @@ function createOutputFileName(sourceFileName: string): string {
     : sourceFileName.replace(/\.json$/u, '.output.json');
 }
 
-export function getGeneratedDtsConfigPath(options: {
-  checkerName: string;
+function getManagedSourceRelativeDirectory(options: {
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
@@ -59,6 +60,53 @@ export function getGeneratedDtsConfigPath(options: {
     options.sourceConfigPath,
   );
   const relativeDir = path.dirname(relativeSourcePath);
+  if (
+    relativeSourcePath !== '..' &&
+    !relativeSourcePath.startsWith(`..${path.sep}`)
+  ) {
+    return relativeDir === '.' ? '' : relativeDir;
+  }
+  if (!options.packageRootDir) {
+    throw new Error(
+      `External source config requires an activated package root: ${options.sourceConfigPath}.`,
+    );
+  }
+  const packageDisplayRoot = toPosixPath(
+    toRelativePath(options.rootDir, options.packageRootDir),
+  );
+  const packageRelativeSourcePath = toRelativePath(
+    options.packageRootDir,
+    options.sourceConfigPath,
+  );
+  if (
+    packageRelativeSourcePath === '..' ||
+    packageRelativeSourcePath.startsWith(`..${path.sep}`)
+  ) {
+    throw new Error(
+      'External source config is outside its activated package root.',
+    );
+  }
+  const packageRelativeDirectory = path.dirname(packageRelativeSourcePath);
+  return path.join(
+    'external',
+    createExternalArtifactStableId(packageDisplayRoot),
+    ...(packageRelativeDirectory === '.'
+      ? []
+      : packageRelativeDirectory.split(path.sep)),
+  );
+}
+
+export function getGeneratedDtsConfigPath(options: {
+  checkerName: string;
+  packageRootDir?: string;
+  rootDir: string;
+  sourceConfigPath: string;
+}): string {
+  const relativeSourcePath = toRelativePath(
+    options.rootDir,
+    options.sourceConfigPath,
+  );
+  const relativeDir = getManagedSourceRelativeDirectory(options);
   const dtsFileName = createDtsFileName(path.basename(relativeSourcePath));
 
   return normalizeAbsolutePath(
@@ -76,14 +124,11 @@ export function getGeneratedDtsConfigPath(options: {
 
 export function getGeneratedSolutionBuildConfigPath(options: {
   checkerName: string;
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeSourcePath = toRelativePath(
-    options.rootDir,
-    options.sourceConfigPath,
-  );
-  const relativeDir = path.dirname(relativeSourcePath);
+  const relativeDir = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
@@ -100,6 +145,7 @@ export function getGeneratedSolutionBuildConfigPath(options: {
 
 export function getGeneratedOutputProjectConfigPath(options: {
   checkerName: string;
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
@@ -107,7 +153,7 @@ export function getGeneratedOutputProjectConfigPath(options: {
     options.rootDir,
     options.sourceConfigPath,
   );
-  const relativeDir = path.dirname(relativeSourcePath);
+  const relativeDir = getManagedSourceRelativeDirectory(options);
   const outputFileName = createOutputFileName(
     path.basename(relativeSourcePath),
   );
@@ -128,14 +174,11 @@ export function getGeneratedOutputProjectConfigPath(options: {
 
 export function getGeneratedOutputSolutionConfigPath(options: {
   checkerName: string;
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeSourcePath = toRelativePath(
-    options.rootDir,
-    options.sourceConfigPath,
-  );
-  const relativeDir = path.dirname(relativeSourcePath);
+  const relativeDir = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
@@ -168,14 +211,11 @@ export function getGeneratedCheckerEntryPath(options: {
 
 export function getGeneratedOutDir(options: {
   checkerName: string;
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeSourcePath = toRelativePath(
-    options.rootDir,
-    options.sourceConfigPath,
-  );
-  const relativeDir = path.dirname(relativeSourcePath);
+  const relativeDir = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
@@ -191,14 +231,11 @@ export function getGeneratedOutDir(options: {
 
 export function getGeneratedTsBuildInfoPath(options: {
   checkerName: string;
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeSourcePath = toRelativePath(
-    options.rootDir,
-    options.sourceConfigPath,
-  );
-  const relativeDir = path.dirname(relativeSourcePath);
+  const relativeDir = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
@@ -213,14 +250,11 @@ export function getGeneratedTsBuildInfoPath(options: {
 }
 
 export function getGeneratedOutputTsBuildInfoPath(options: {
+  packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeSourcePath = toRelativePath(
-    options.rootDir,
-    options.sourceConfigPath,
-  );
-  const relativeDir = path.dirname(relativeSourcePath);
+  const relativeDir = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(

@@ -65,6 +65,11 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   sourceUnusedModule: 'LIMINA_SOURCE_UNUSED_MODULE',
   sourceUnusedWorkspaceDependency: 'LIMINA_SOURCE_UNUSED_WORKSPACE_DEPENDENCY',
   workspaceRegionOverlap: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+  workspaceValidationFailed: 'LIMINA_WORKSPACE_VALIDATION_FAILED',
+  workspaceOutputCycle: 'LIMINA_WORKSPACE_OUTPUT_CYCLE',
+  workspaceOutputRootInvalid: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
+  workspacePackageIdentityConflict:
+    'LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT',
 } as const;
 
 export type LiminaCheckIssueCode =
@@ -374,7 +379,30 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
     code: LIMINA_CHECK_ISSUE_CODES.workspaceRegionOverlap,
     description:
       'A nested pnpm workspace root overlaps a current-region workspace package.',
-    task: 'source:check',
+    task: 'workspace:validate',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.workspaceValidationFailed]: {
+    code: LIMINA_CHECK_ISSUE_CODES.workspaceValidationFailed,
+    description: 'Workspace validation failed without a more specific issue.',
+    task: 'workspace:validate',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.workspaceOutputCycle]: {
+    code: LIMINA_CHECK_ISSUE_CODES.workspaceOutputCycle,
+    description:
+      'Workspace descriptor and output visibility does not reach a stable state.',
+    task: 'workspace:validate',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.workspaceOutputRootInvalid]: {
+    code: LIMINA_CHECK_ISSUE_CODES.workspaceOutputRootInvalid,
+    description:
+      'A configured output root overlaps a structural workspace root.',
+    task: 'workspace:validate',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.workspacePackageIdentityConflict]: {
+    code: LIMINA_CHECK_ISSUE_CODES.workspacePackageIdentityConflict,
+    description:
+      'Multiple activated package roots resolve to the same physical directory.',
+    task: 'workspace:validate',
   },
 } satisfies Record<LiminaCheckIssueCode, LiminaCheckIssueRuleMetadata>;
 

@@ -4,9 +4,11 @@ import type {
   PackageEntry,
   ResolvedLiminaConfig,
 } from '#config/runner';
-import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
-import { formatErrorMessage } from '../logger';
+import {
+  type ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from '../core/workspace/validated-context';
 
 interface PlannedPackageEntry {
   checks: PackageCheckTool[];
@@ -81,69 +83,6 @@ function selectEntryChecks(
   }
 
   return configuredChecks.includes(requestedTool) ? [requestedTool] : [];
-}
-
-function findNearestPackageJsonPath(
-  cwd: string,
-  rootDir: string,
-): string | undefined {
-  const resolvedRootDir = path.resolve(rootDir);
-  let currentDir = path.resolve(cwd);
-
-  while (true) {
-    const relativeToRoot = path.relative(resolvedRootDir, currentDir);
-    const isWithinRoot =
-      relativeToRoot === '' ||
-      (relativeToRoot !== '..' &&
-        !relativeToRoot.startsWith(`..${path.sep}`) &&
-        !path.isAbsolute(relativeToRoot));
-
-    if (!isWithinRoot) {
-      return undefined;
-    }
-
-    const packageJsonPath = path.join(currentDir, 'package.json');
-
-    if (existsSync(packageJsonPath)) {
-      return packageJsonPath;
-    }
-
-    if (currentDir === resolvedRootDir) {
-      return undefined;
-    }
-
-    const parentDir = path.dirname(currentDir);
-
-    if (parentDir === currentDir) {
-      return undefined;
-    }
-
-    currentDir = parentDir;
-  }
-}
-
-function readCwdPackageName(cwd: string, rootDir: string): string | undefined {
-  const packageJsonPath = findNearestPackageJsonPath(cwd, rootDir);
-
-  if (!packageJsonPath) {
-    return undefined;
-  }
-
-  try {
-    const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
-      name?: unknown;
-    };
-
-    return typeof manifest.name === 'string' && manifest.name.trim()
-      ? manifest.name.trim()
-      : undefined;
-  } catch (error) {
-    throw new Error(
-      `Unable to read package name from ${packageJsonPath}: ${formatErrorMessage(
-        error,
-      )}`,
-    );
-  }
 }
 
 function formatConfiguredPackageEntryNames(entries: PackageEntry[]): string {
@@ -235,6 +174,7 @@ export function createPackageEntrySelectionPlan(options: {
   packageNames?: readonly string[];
   requireCwdPackageMatch: boolean;
   tool?: PackageCheckToolSelection;
+  workspaceContext: ValidatedWorkspaceContext;
 }): PackageEntrySelectionPlan {
   const entries = getConfiguredPackageEntries(options.config);
 
@@ -247,10 +187,12 @@ export function createPackageEntrySelectionPlan(options: {
   const packageNames = normalizePackageNameFilters(options.packageNames);
 
   if (packageNames.length > 0) {
-    selectedEntries = packageNames.map((packageName) => {
-      const entry = entries.find((candidate) => candidate.name === packageName);
+    selectedEntries = packageNames.flatMap((packageName) => {
+      const matchingEntries = entries.filter(
+        (candidate) => candidate.name === packageName,
+      );
 
-      if (!entry) {
+      if (matchingEntries.length === 0) {
         throw new Error(
           [
             `No package entry named "${packageName}" is configured.`,
@@ -261,15 +203,15 @@ export function createPackageEntrySelectionPlan(options: {
         );
       }
 
-      return entry;
+      return matchingEntries;
     });
 
     selectionReason = `--package matched configured package entry name(s): ${packageNames.join(', ')}.`;
   } else {
-    const cwdPackageName = readCwdPackageName(
-      options.cwd,
-      options.config.rootDir,
-    );
+    const cwdPackage = new WorkspaceRegionPathIndex(
+      options.workspaceContext,
+    ).findPackageForPath(options.cwd);
+    const cwdPackageName = cwdPackage?.name;
 
     if (cwdPackageName) {
       selectedEntries = entries.filter(
@@ -277,11 +219,11 @@ export function createPackageEntrySelectionPlan(options: {
       );
 
       if (selectedEntries.length > 0) {
-        selectionReason = `nearest package.json name "${cwdPackageName}" matched configured package entry name.`;
+        selectionReason = `activated workspace package "${cwdPackageName}" matched configured package entry name.`;
       } else if (options.requireCwdPackageMatch) {
         throw new Error(
           [
-            `Nearest package.json name "${cwdPackageName}" does not match a configured package entry.`,
+            `Activated workspace package "${cwdPackageName}" does not match a configured package entry.`,
             `Configured package entries: ${formatConfiguredPackageEntryNames(
               entries,
             )}.`,
@@ -289,19 +231,32 @@ export function createPackageEntrySelectionPlan(options: {
         );
       } else {
         selectedEntries = entries;
-        selectionReason = `nearest package.json name "${cwdPackageName}" did not match configured package entries; running all configured entries.`;
+        selectionReason = `activated workspace package "${cwdPackageName}" did not match configured package entries; running all configured entries.`;
       }
+    } else if (cwdPackage) {
+      if (options.requireCwdPackageMatch) {
+        throw new Error(
+          [
+            'The activated workspace package containing cwd has no package name.',
+            'Run from a named activated package directory or pass --package <name>.',
+          ].join(' '),
+        );
+      }
+
+      selectedEntries = entries;
+      selectionReason =
+        'The activated workspace package containing cwd has no package name; running all configured entries.';
     } else if (options.requireCwdPackageMatch) {
       throw new Error(
         [
-          'No package name was found from cwd up to the workspace root.',
-          'Run from a configured package directory or pass --package <name>.',
+          'No activated workspace package contains cwd.',
+          'Run from an activated package directory or pass --package <name>.',
         ].join(' '),
       );
     } else {
       selectedEntries = entries;
       selectionReason =
-        'No package name was found from cwd up to the workspace root; running all configured entries.';
+        'No activated workspace package contains cwd; running all configured entries.';
     }
   }
 

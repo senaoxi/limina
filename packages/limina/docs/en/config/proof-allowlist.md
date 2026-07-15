@@ -38,7 +38,7 @@ proof: {
 
 - **Type:** `string`
 
-`file` is the allowed source file path, relative to the workspace root. It should point at a concrete file instead of using a broad `glob`.
+`file` is the allowed source file path, relative to `config.rootDir`. It may contain `../` for an external activated package and should point at a concrete file instead of using a broad `glob`. It can only cover a file already present in the validated source boundary.
 
 ## reason
 

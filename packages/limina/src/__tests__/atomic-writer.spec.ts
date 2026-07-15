@@ -1,4 +1,5 @@
 import {
+  mkdir,
   mkdtemp,
   open,
   readFile,
@@ -15,6 +16,7 @@ import {
   RetryableReplacementValidationIoError,
   writeJsonAtomically,
 } from '../check-reporting/atomic-writer';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 
 function retryableError(code: 'EACCES' | 'EBUSY' | 'EPERM'): Error {
   return Object.assign(new Error(code), { code });
@@ -103,13 +105,16 @@ describe('atomic snapshot writer', () => {
 
   it('uses exclusive temp creation and retries filename collisions', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
-    const targetPath = path.join(rootDir, 'snapshot.json');
-    const collisionPath = path.join(rootDir, '.collision.tmp');
-    const uniquePath = path.join(rootDir, '.unique.tmp');
+    const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
+    const targetPath = path.join(namespace.rootDir, 'snapshot.json');
+    const collisionPath = path.join(namespace.rootDir, '.collision.tmp');
+    const uniquePath = path.join(namespace.rootDir, '.unique.tmp');
+    await mkdir(namespace.rootDir, { recursive: true });
     await writeFile(collisionPath, 'occupied');
 
     try {
       await writeJsonAtomically(
+        namespace,
         targetPath,
         { written: true },
         {
@@ -128,12 +133,17 @@ describe('atomic snapshot writer', () => {
 
   it('flushes and closes the temp file before rename', async () => {
     const events: string[] = [];
+    const namespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: '/tmp',
+    });
 
     await writeJsonAtomically(
-      '/tmp/limina-atomic-order.json',
+      namespace,
+      '/tmp/.limina/limina-atomic-order.json',
       { ok: true },
       {
-        createTempPath: () => '/tmp/limina-atomic-order.tmp',
+        createTempPath: () => '/tmp/.limina/limina-atomic-order.tmp',
         openTemp: async (_tempPath, flags) => {
           expect(flags).toBe('wx');
           return {
@@ -159,7 +169,8 @@ describe('atomic snapshot writer', () => {
 
   it('serializes concurrent writes to the same target path', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
-    const targetPath = path.join(rootDir, 'snapshot.json');
+    const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
+    const targetPath = path.join(namespace.rootDir, 'snapshot.json');
     const openOrder: number[] = [];
     let releaseFirstRename!: () => void;
     const firstRenameBlocked = new Promise<void>((resolve) => {
@@ -172,6 +183,7 @@ describe('atomic snapshot writer', () => {
 
     try {
       const first = writeJsonAtomically(
+        namespace,
         targetPath,
         { sequence: 1 },
         {
@@ -188,6 +200,7 @@ describe('atomic snapshot writer', () => {
       );
       await firstRenameReady;
       const second = writeJsonAtomically(
+        namespace,
         targetPath,
         { sequence: 2 },
         {
@@ -213,7 +226,9 @@ describe('atomic snapshot writer', () => {
 
   it('overwrites an existing target without exposing partial JSON', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
-    const targetPath = path.join(rootDir, 'snapshot.json');
+    const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
+    const targetPath = path.join(namespace.rootDir, 'snapshot.json');
+    await mkdir(namespace.rootDir, { recursive: true });
     await writeFile(targetPath, '{"sequence":-1}\n');
     const observations: number[] = [];
 
@@ -229,7 +244,7 @@ describe('atomic snapshot writer', () => {
       })();
       const writer = (async () => {
         for (let sequence = 0; sequence < 20; sequence += 1) {
-          await writeJsonAtomically(targetPath, {
+          await writeJsonAtomically(namespace, targetPath, {
             payload: 'x'.repeat(16_384),
             sequence,
           });
@@ -251,7 +266,12 @@ describe('atomic snapshot writer', () => {
     'retries transient %s replacement failures',
     async (code) => {
       const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
-      const targetPath = path.join(rootDir, 'snapshot.json');
+      const namespace = createLiminaArtifactNamespace({
+        generation: 0,
+        rootDir,
+      });
+      const targetPath = path.join(namespace.rootDir, 'snapshot.json');
+      await mkdir(namespace.rootDir, { recursive: true });
       await writeFile(targetPath, '{"old":true}\n');
       const replace = vi
         .fn<(from: string, to: string) => Promise<void>>()
@@ -260,6 +280,7 @@ describe('atomic snapshot writer', () => {
 
       try {
         await writeJsonAtomically(
+          namespace,
           targetPath,
           { new: true },
           { rename: replace, retryDelaysMs: [0, 0] },
@@ -276,7 +297,9 @@ describe('atomic snapshot writer', () => {
 
   it('keeps the old target valid and never removes or renames it on exhaustion', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
-    const targetPath = path.join(rootDir, 'snapshot.json');
+    const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
+    const targetPath = path.join(namespace.rootDir, 'snapshot.json');
+    await mkdir(namespace.rootDir, { recursive: true });
     await writeFile(targetPath, '{"old":true}\n');
     const renameCalls: [string, string][] = [];
     const removed: string[] = [];
@@ -284,6 +307,7 @@ describe('atomic snapshot writer', () => {
     try {
       await expect(
         writeJsonAtomically(
+          namespace,
           targetPath,
           { new: true },
           {

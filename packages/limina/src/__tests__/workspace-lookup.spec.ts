@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createWorkspaceLookupIndex } from '../core/workspace/lookup';
+import { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -81,6 +82,28 @@ function createImporter(options: {
   };
 }
 
+function createPathIndex(
+  rootDir: string,
+  packages: readonly WorkspacePackage[],
+): WorkspaceRegionPathIndex {
+  return new WorkspaceRegionPathIndex({
+    boundaries: [],
+    configRootDir: rootDir,
+    descriptorCandidates: [],
+    extendedPackageScopes: [],
+    outputRoots: [],
+    packageIdentities: packages.map((workspacePackage) => ({
+      canonicalDirectory: workspacePackage.directory,
+      displayDirectory: path.relative(rootDir, workspacePackage.directory),
+      package: workspacePackage,
+    })),
+    packages: [...packages],
+    rawPackages: [...packages],
+    sourceConfigPaths: [],
+    workspaceRootDir: rootDir,
+  });
+}
+
 describe('WorkspaceLookupIndex', () => {
   it('uses the nearest workspace package and owner for nested packages', async () => {
     const fixture = await createFixture({
@@ -121,6 +144,11 @@ describe('WorkspaceLookupIndex', () => {
           }),
         ],
         packages: [rootPackage, appPackage, nestedPackage],
+        pathIndex: createPathIndex(fixture.rootDir, [
+          rootPackage,
+          appPackage,
+          nestedPackage,
+        ]),
         rootDir: fixture.rootDir,
       });
       const filePath = path.join(
@@ -155,16 +183,18 @@ describe('WorkspaceLookupIndex', () => {
       const namelessOwner = createOwner(fixture.rootDir, 'packages/nameless', {
         private: true,
       });
+      const packages = [
+        createWorkspacePackage(fixture.rootDir, '.', { name: 'root' }),
+        namelessPackage,
+      ];
       const index = createWorkspaceLookupIndex({
         importers: [],
         owners: [
           createOwner(fixture.rootDir, '.', { name: 'root' }),
           namelessOwner,
         ],
-        packages: [
-          createWorkspacePackage(fixture.rootDir, '.', { name: 'root' }),
-          namelessPackage,
-        ],
+        packages,
+        pathIndex: createPathIndex(fixture.rootDir, packages),
         rootDir: fixture.rootDir,
       });
       const filePath = path.join(
@@ -214,6 +244,7 @@ describe('WorkspaceLookupIndex', () => {
         importers: [rootImporter, appImporter],
         owners: [],
         packages: [rootPackage, appPackage],
+        pathIndex: createPathIndex(fixture.rootDir, [rootPackage, appPackage]),
         rootDir: fixture.rootDir,
       });
 
@@ -254,6 +285,7 @@ describe('WorkspaceLookupIndex', () => {
         importers: [],
         owners: [],
         packages: [appPackage],
+        pathIndex: createPathIndex(fixture.rootDir, [appPackage]),
         rootDir: fixture.rootDir,
       });
 
@@ -317,6 +349,7 @@ describe('WorkspaceLookupIndex', () => {
         importers: [],
         owners: [appOwner, libOwner],
         packages: [appPackage, libPackage],
+        pathIndex: createPathIndex(fixture.rootDir, [appPackage, libPackage]),
         rootDir: fixture.rootDir,
       });
 

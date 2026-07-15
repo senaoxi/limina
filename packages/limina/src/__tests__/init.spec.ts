@@ -5,6 +5,7 @@ import {
   readFile,
   realpath,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -823,6 +824,39 @@ export default defineConfig({
       ).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
+    }
+  });
+
+  it('refuses to clean a symlinked .limina namespace', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({
+        name: 'root',
+        private: true,
+        type: 'module',
+      }),
+      'pnpm-workspace.yaml': 'packages: []\n',
+    });
+    const externalRoot = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-init-external-')),
+    );
+    const externalMarker = path.join(externalRoot, 'keep.txt');
+    await writeFile(externalMarker, 'keep\n');
+    await symlink(externalRoot, path.join(fixture.rootDir, '.limina'), 'dir');
+
+    try {
+      await expect(
+        runInit({
+          clearScreen: false,
+          cwd: fixture.rootDir,
+          yes: true,
+        }),
+      ).rejects.toThrow(/crosses a symbolic link/u);
+      expect(await readFile(externalMarker, 'utf8')).toBe('keep\n');
+    } finally {
+      await Promise.all([
+        fixture.cleanup(),
+        rm(externalRoot, { force: true, recursive: true }),
+      ]);
     }
   });
 

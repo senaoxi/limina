@@ -9,22 +9,8 @@ import {
 } from '#utils/path';
 import path from 'node:path';
 import rawPicomatch from 'picomatch';
-import { escapePath, glob } from 'tinyglobby';
+import { escapePath } from 'tinyglobby';
 import { isDefaultSourceTsconfigPath } from '../build-graph/generated/config-readers';
-import {
-  createWorkspaceRegionBoundaryIgnorePatterns,
-  type WorkspaceActivatedRegionIndex,
-  type WorkspaceRegionBoundary,
-} from '../workspace/regions';
-
-const sourceDiscoveryIgnore = [
-  '**/.git/**',
-  '**/.limina/**',
-  '**/.tsbuild/**',
-  '**/coverage/**',
-  '**/dist/**',
-  '**/node_modules/**',
-] as const;
 
 const parentDirectoryPattern = /^(?:\/?\.\.)+/u;
 const escapingBackslashes = /\\(?=[()[\]{}!*+?@|])/gu;
@@ -46,23 +32,9 @@ export interface CheckerEntrySelection {
   includedEntryPaths: string[];
 }
 
-export interface CheckerEntryDiscoveryOptions {
-  absolute: true;
-  cwd: string;
-  ignore: readonly string[];
-  onlyFiles: true;
-}
-
-export type CheckerEntryDiscovery = (
-  patterns: string | readonly string[],
-  options: CheckerEntryDiscoveryOptions,
-) => Promise<string[]>;
-
 export interface CheckerEntrySelectionContext {
-  activatedRegions: WorkspaceActivatedRegionIndex;
   config: ResolvedLiminaConfig;
-  discover?: CheckerEntryDiscovery;
-  regionBoundaries: readonly WorkspaceRegionBoundary[];
+  sourceConfigPaths: readonly string[];
 }
 
 export interface CheckerEntrySelectionOptions {
@@ -211,31 +183,32 @@ export async function resolveCheckerEntrySelection(
   context: CheckerEntrySelectionContext,
   options: CheckerEntrySelectionOptions,
 ): Promise<CheckerEntrySelection> {
-  const discover = context.discover ?? (glob as CheckerEntryDiscovery);
-  const discoveredPaths = await discover(
-    options.include.map(normalizeWorkspaceGlob),
-    {
-      absolute: true,
-      cwd: context.config.rootDir,
-      ignore: [
-        ...sourceDiscoveryIgnore,
-        ...createWorkspaceRegionBoundaryIgnorePatterns(
-          context.config,
-          context.regionBoundaries,
-          context.activatedRegions.packages,
-        ),
-      ],
-      onlyFiles: true,
-    },
+  const includePatterns = options.include
+    .map(normalizeWorkspaceGlob)
+    .flatMap((pattern) =>
+      expandTinyglobbyPattern(
+        normalizeTinyglobbyPattern(pattern, context.config.rootDir),
+      ),
+    );
+  const matcherOptions = {
+    dot: false,
+    nobrace: false,
+    nocase: false,
+    noextglob: false,
+    noglobstar: false,
+    posix: true,
+  } as const;
+  const includeMatchers = includePatterns.map((pattern) =>
+    picomatch(pattern, matcherOptions),
   );
+  const discoveredPaths = context.sourceConfigPaths.filter((configPath) => {
+    const relativePath = toPosixPath(
+      toRelativePath(context.config.rootDir, configPath),
+    );
+    return includeMatchers.some((matches) => matches(relativePath));
+  });
   const includedEntryPaths = [
-    ...new Set(
-      discoveredPaths
-        .map(normalizeAbsolutePath)
-        .filter((configPath) =>
-          context.activatedRegions.isInsideActivatedRegion(configPath),
-        ),
-    ),
+    ...new Set(discoveredPaths.map(normalizeAbsolutePath)),
   ].sort((left, right) => left.localeCompare(right));
   const invalidEntryPaths = includedEntryPaths.filter(
     (configPath) => !isDefaultSourceTsconfigPath(configPath),

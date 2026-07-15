@@ -26,6 +26,14 @@ export function isInvalidWorkspacePattern(pattern: string): boolean {
   );
 }
 
+export function isInvalidConfigRootPattern(pattern: string): boolean {
+  return (
+    pattern.startsWith('!') ||
+    path.isAbsolute(pattern) ||
+    /^[A-Za-z]:[\\/]/u.test(pattern)
+  );
+}
+
 export function toOwnerRelativeEntryPattern(options: {
   config: ResolvedLiminaConfig;
   owner: PackageOwner;

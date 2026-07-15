@@ -1,3 +1,14 @@
+import type { ArtifactNamespaceGenerationToken } from './namespace';
+import {
+  assertArtifactPathLexicallyContained,
+  assertLiminaArtifactNamespace,
+  type LiminaArtifactNamespace,
+  toArtifactNamespaceRelativePath,
+} from './namespace';
+
+const artifactPlanBrand: unique symbol = Symbol('ArtifactPlan');
+const authenticatedArtifactPlans = new WeakSet<object>();
+
 export type ArtifactKind =
   | 'generated-config'
   | 'generated-manifest'
@@ -24,15 +35,29 @@ export type ArtifactChange =
   | { readonly path: string; readonly status: 'delete' };
 
 export interface ArtifactPlan {
+  readonly [artifactPlanBrand]: true;
   readonly changes: readonly ArtifactChange[];
+  readonly generationToken: ArtifactNamespaceGenerationToken;
   readonly ownedPaths: readonly string[];
 }
 
 export function createArtifactPlan(
+  namespace: LiminaArtifactNamespace,
   changes: readonly ArtifactChange[],
   ownedPaths: readonly string[],
 ): ArtifactPlan {
-  return Object.freeze({
+  assertLiminaArtifactNamespace(namespace);
+  for (const change of changes) {
+    assertArtifactPathLexicallyContained(
+      namespace,
+      change.status === 'delete' ? change.path : change.artifact.path,
+    );
+  }
+  const relativeOwnedPaths = ownedPaths.map((ownedPath) =>
+    toArtifactNamespaceRelativePath(namespace, ownedPath),
+  );
+  const plan = Object.freeze({
+    [artifactPlanBrand]: true as const,
     changes: Object.freeze(
       [...changes].sort((left, right) => {
         const leftPath =
@@ -42,10 +67,20 @@ export function createArtifactPlan(
         return leftPath.localeCompare(rightPath);
       }),
     ),
-    ownedPaths: Object.freeze([...ownedPaths].sort()),
+    generationToken: namespace.generationToken,
+    ownedPaths: Object.freeze(relativeOwnedPaths.sort()),
   });
+  authenticatedArtifactPlans.add(plan);
+  return plan;
+}
+
+export function assertArtifactPlan(plan: ArtifactPlan): void {
+  if (!authenticatedArtifactPlans.has(plan)) {
+    throw new Error('Unauthenticated generated artifact plan.');
+  }
 }
 
 export function serializeArtifactPlan(plan: ArtifactPlan): string {
+  assertArtifactPlan(plan);
   return `${JSON.stringify(plan, null, 2)}\n`;
 }

@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
 import path from 'pathe';
+import {
+  assertArtifactPathOperationSafe,
+  ensureArtifactParentDirectory,
+  type LiminaArtifactNamespace,
+} from '../domain/artifacts/namespace';
 
 const RETRYABLE_REPLACE_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
 // Windows can temporarily deny replacement while readers, indexers, or
@@ -121,6 +126,7 @@ function hasErrorCode(error: unknown, code: string): boolean {
 }
 
 async function performAtomicJsonWrite(
+  namespace: LiminaArtifactNamespace,
   targetPath: string,
   value: unknown,
   options: AtomicWriteOptions = {},
@@ -141,9 +147,13 @@ async function performAtomicJsonWrite(
   let tempPath: string | undefined;
 
   try {
+    await ensureArtifactParentDirectory(namespace, targetPath);
     for (let attempt = 0; attempt < tempCreateAttempts; attempt += 1) {
       const candidatePath = createTempPath(attempt);
       try {
+        await assertArtifactPathOperationSafe(namespace, candidatePath, {
+          targetKind: 'file',
+        });
         handle = await openTemp(candidatePath, 'wx');
         tempPath = candidatePath;
         break;
@@ -167,25 +177,37 @@ async function performAtomicJsonWrite(
     handle = undefined;
 
     await replaceFileWithRetry(tempPath, targetPath, {
+      beforeAttempt: async () => {
+        await assertArtifactPathOperationSafe(namespace, tempPath!, {
+          targetKind: 'file',
+        });
+        await assertArtifactPathOperationSafe(namespace, targetPath, {
+          targetKind: 'file',
+        });
+      },
       replace: options.rename,
       retryDelaysMs: options.retryDelaysMs,
     });
   } catch (error) {
     await handle?.close().catch(ignoreError);
-    await (
-      options.removeTemp
-        ? tempPath
-          ? options.removeTemp(tempPath)
-          : Promise.resolve()
-        : tempPath
-          ? rm(tempPath, { force: true })
-          : Promise.resolve()
-    ).catch(ignoreError);
+    if (tempPath) {
+      const cleanupPath = tempPath;
+      await assertArtifactPathOperationSafe(namespace, cleanupPath, {
+        targetKind: 'file',
+      })
+        .then(() =>
+          options.removeTemp
+            ? options.removeTemp(cleanupPath)
+            : rm(cleanupPath, { force: true }),
+        )
+        .catch(ignoreError);
+    }
     throw error;
   }
 }
 
 export function writeJsonAtomically(
+  namespace: LiminaArtifactNamespace,
   targetPath: string,
   value: unknown,
   options: AtomicWriteOptions = {},
@@ -193,7 +215,7 @@ export function writeJsonAtomically(
   const previous = writesByTargetPath.get(targetPath) ?? Promise.resolve();
   const scheduled = previous
     .catch(ignoreError)
-    .then(() => performAtomicJsonWrite(targetPath, value, options));
+    .then(() => performAtomicJsonWrite(namespace, targetPath, value, options));
   const tracked = scheduled.finally(() => {
     if (writesByTargetPath.get(targetPath) === tracked) {
       writesByTargetPath.delete(targetPath);

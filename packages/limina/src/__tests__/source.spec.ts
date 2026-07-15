@@ -660,7 +660,7 @@ describe('runSourceCheck package authority', () => {
               allow: {
                 '@example/app': [
                   {
-                    include: ['src/**'],
+                    include: ['app/src/**'],
                     workspaceRootDependencies: ['zod'],
                     reason: 'The workspace root declares shared test fixtures.',
                   },
@@ -701,7 +701,7 @@ describe('runSourceCheck package authority', () => {
             allow: {
               '@example/app': [
                 {
-                  include: ['src/**'],
+                  include: ['app/src/**'],
                   workspaceRootDependencies: ['lodash'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -720,6 +720,80 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
+  it('matches config-root-relative grants for an external activated package', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({
+        dependencies: {
+          zod: '^1.0.0',
+        },
+        name: 'root',
+        private: true,
+      }),
+      'pnpm-workspace.yaml': 'packages: []\n',
+    });
+    const externalDir = `${fixture.rootDir}-external`;
+    const externalSelector = `../${path.basename(externalDir)}`;
+
+    try {
+      await writeText(
+        path.join(externalDir, 'package.json'),
+        stringifyConfig(
+          withDefaultBuildScript({
+            exports: { '.': './src/index.ts' },
+            name: '@example/external',
+            type: 'module',
+          }),
+        ),
+      );
+      await writeText(
+        path.join(externalDir, 'src/index.ts'),
+        "import { z } from 'zod';\nexport const schema = z.string();\n",
+      );
+      await writeText(
+        path.join(externalDir, 'tsconfig.json'),
+        stringifyConfig({
+          files: [],
+          references: [{ path: './tsconfig.lib.json' }],
+        }),
+      );
+      await writeText(
+        path.join(externalDir, 'tsconfig.lib.json'),
+        typecheckConfig(['src/**/*.ts']),
+      );
+      await writeText(
+        path.join(fixture.rootDir, 'pnpm-workspace.yaml'),
+        `packages:\n  - ${externalSelector}\n`,
+      );
+      fixture.config.config = {
+        checkers: {
+          typescript: {
+            include: [`${externalSelector}/tsconfig.json`],
+            preset: 'tsc',
+          },
+        },
+      };
+      fixture.config.source = {
+        importAuthority: {
+          allow: {
+            '@example/external': [
+              {
+                include: [`${externalSelector}/src/**`],
+                workspaceRootDependencies: ['zod'],
+                reason: 'The root declares shared external dependencies.',
+              },
+            ],
+          },
+        },
+        knip: false,
+      };
+
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await rm(externalDir, { force: true, recursive: true });
+      await fixture.cleanup();
+    }
+  });
+
   it('rejects owner-keyed grants when the root manifest does not declare the package', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
@@ -734,7 +808,7 @@ describe('runSourceCheck package authority', () => {
             allow: {
               '@example/app': [
                 {
-                  include: ['src/**'],
+                  include: ['app/src/**'],
                   workspaceRootDependencies: ['zod'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -780,7 +854,7 @@ describe('runSourceCheck package authority', () => {
             allow: {
               '@example/app': [
                 {
-                  include: ['src/**'],
+                  include: ['app/src/**'],
                   workspaceRootDependencies: ['react'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -838,7 +912,7 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
-  it('rejects root declarations when owner-relative include does not match', async () => {
+  it('rejects root declarations when config-root-relative include does not match', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -859,7 +933,7 @@ describe('runSourceCheck package authority', () => {
             allow: {
               '@example/app': [
                 {
-                  include: ['test/**'],
+                  include: ['app/test/**'],
                   workspaceRootDependencies: ['zod'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -1233,7 +1307,7 @@ packages:
             allow: {
               '@example/app': [
                 {
-                  include: ['src/**'],
+                  include: ['packages/app/src/**'],
                   workspaceRootDependencies: ['zod'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -1316,7 +1390,7 @@ packages:
             allow: {
               '@example/app': [
                 {
-                  include: ['src/**'],
+                  include: ['packages/app/src/**'],
                   workspaceRootDependencies: ['zod'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -1736,7 +1810,7 @@ packages:
             allow: {
               'packages/fixture': [
                 {
-                  include: ['src/**'],
+                  include: ['packages/fixture/src/**'],
                   workspaceRootDependencies: ['zod'],
                   reason: 'The workspace root declares shared test fixtures.',
                 },
@@ -2577,7 +2651,7 @@ packages:
     }
   });
 
-  it('continues upward when the nearest bare tsconfig does not own the module', async () => {
+  it('does not continue tsconfig ownership above the activated package-island root', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -2610,7 +2684,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -4103,6 +4177,91 @@ packages:
     }
   });
 
+  it('applies config-root-relative Knip selectors to an external package island', async () => {
+    const fixture = await createFixture({
+      'pnpm-workspace.yaml': 'packages: []\n',
+    });
+    const externalDir = `${fixture.rootDir}-knip-external`;
+    const externalSelector = `../${path.basename(externalDir)}`;
+
+    try {
+      await writeText(
+        path.join(externalDir, 'package.json'),
+        stringifyConfig(
+          withDefaultBuildScript({
+            exports: { '.': './src/index.ts' },
+            name: '@example/external',
+            type: 'module',
+          }),
+        ),
+      );
+      await writeText(
+        path.join(externalDir, 'src/index.ts'),
+        'export const publicValue = 1;\n',
+      );
+      await writeText(
+        path.join(externalDir, 'src/test-entry.spec.ts'),
+        "export { testedValue } from './tested';\n",
+      );
+      await writeText(
+        path.join(externalDir, 'src/tested.ts'),
+        'export const testedValue = 1;\n',
+      );
+      await writeText(
+        path.join(externalDir, 'src/generated/runtime.ts'),
+        'export const generatedRuntime = 1;\n',
+      );
+      await writeText(
+        path.join(externalDir, 'tsconfig.json'),
+        stringifyConfig({
+          files: [],
+          references: [{ path: './tsconfig.lib.json' }],
+        }),
+      );
+      await writeText(
+        path.join(externalDir, 'tsconfig.lib.json'),
+        typecheckConfig(['src/**/*.ts']),
+      );
+      await writeText(
+        path.join(fixture.rootDir, 'pnpm-workspace.yaml'),
+        `packages:\n  - ${externalSelector}\n`,
+      );
+      fixture.config.config = {
+        checkers: {
+          typescript: {
+            include: [`${externalSelector}/tsconfig.json`],
+            preset: 'tsc',
+          },
+        },
+      };
+      fixture.config.source = {
+        knip: {
+          workspaces: {
+            '@example/external': {
+              entry: [
+                {
+                  files: [`${externalSelector}/src/**/*.spec.ts`],
+                  reason: 'Vitest loads external spec modules directly.',
+                },
+              ],
+              ignoreFiles: [
+                {
+                  file: `${externalSelector}/src/generated/runtime.ts`,
+                  reason: 'The external framework loads this module.',
+                },
+              ],
+            },
+          },
+        },
+      };
+
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await rm(externalDir, { force: true, recursive: true });
+      await fixture.cleanup();
+    }
+  });
+
   it('allows configured unused source modules with a reason', async () => {
     const fixture = await createFixture(
       {
@@ -4184,7 +4343,7 @@ packages:
       expect(errors).toContain('source.knip.workspaces["@example/app"].entry');
       expect(errors).toContain('reason must be a non-empty string');
       expect(errors).toContain(
-        'files must be a non-empty array of workspace-root-relative glob patterns',
+        'files must be a non-empty array of config-root-relative glob patterns',
       );
       expect(errors).toContain('../outside.ts');
       expect(errors).toContain(
@@ -4284,7 +4443,6 @@ packages:
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('reason must be a non-empty string');
-      expect(errors).toContain('file must resolve inside the workspace root');
       expect(errors).toContain(
         'file must belong to the keyed package source module set known to Limina',
       );
@@ -4404,31 +4562,7 @@ packages:
 });
 
 describe('runSourceCheck workspace regions', () => {
-  function getDiagnosticLines(
-    issues: SourceCheckIssue[],
-    code: string,
-  ): string[] | undefined {
-    const issue = issues.find((candidate) => candidate.code === code);
-
-    return issue && 'evidence' in issue
-      ? issue.evidence?.[0]?.lines
-      : undefined;
-  }
-
-  function getDiagnosticLineGroups(
-    issues: SourceCheckIssue[],
-    code: string,
-  ): string[][] {
-    return issues
-      .filter((candidate) => candidate.code === code)
-      .flatMap((issue) =>
-        'evidence' in issue && issue.evidence?.[0]?.lines
-          ? [issue.evidence[0].lines]
-          : [],
-      );
-  }
-
-  it('reports nested pnpm workspace roots inside current packages', async () => {
+  it('treats nested pnpm workspace roots as owner-local traversal boundaries', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4442,7 +4576,6 @@ describe('runSourceCheck workspace regions', () => {
         },
       },
     );
-    const sourceIssues: SourceCheckIssue[] = [];
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
@@ -4451,23 +4584,15 @@ describe('runSourceCheck workspace regions', () => {
           clearScreen: false,
           deferSnapshot: true,
           report: { defer: true },
-          sourceIssues,
         }),
-      ).resolves.toBe(false);
-
-      expect(sourceIssues.map((issue) => issue.code)).toContain(
-        'LIMINA_WORKSPACE_REGION_OVERLAP',
-      );
-      expect(
-        getDiagnosticLines(sourceIssues, 'LIMINA_WORKSPACE_REGION_OVERLAP'),
-      ).toEqual(expect.arrayContaining(['  nested workspace: app/fixture']));
+      ).resolves.toBe(true);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
-  it('suppresses nested pnpm workspace overlap with explicit region exclusion', async () => {
+  it('does not require exclusions for nested pnpm workspace boundaries', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4484,16 +4609,6 @@ describe('runSourceCheck workspace regions', () => {
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
-      fixture.config.regions = {
-        exclude: [
-          {
-            include: ['app/fixture/**'],
-            kind: 'pnpm-workspace',
-            reason: 'Fixture workspace.',
-          },
-        ],
-      };
-
       await expect(
         runSourceCheck(fixture.config, {
           clearScreen: false,
@@ -4543,7 +4658,7 @@ describe('runSourceCheck workspace regions', () => {
     }
   });
 
-  it('does not require a checker exclusion for a region-excluded entry', async () => {
+  it('does not let workspace-package exclusions suppress same-root overlap', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4564,9 +4679,9 @@ describe('runSourceCheck workspace regions', () => {
       fixture.config.regions = {
         exclude: [
           {
-            include: ['app/**'],
-            kind: 'pnpm-workspace',
-            reason: 'Nested app workspace is checked separately.',
+            include: ['app'],
+            kind: 'workspace-package',
+            reason: 'App is checked separately.',
           },
         ],
       };
@@ -4578,16 +4693,18 @@ describe('runSourceCheck workspace regions', () => {
           issues,
           report: { defer: true },
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
 
-      expect(issues).toEqual([]);
+      expect(issues.map((issue) => issue.code)).toEqual([
+        'LIMINA_WORKSPACE_REGION_OVERLAP',
+      ]);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
-  it('reports duplicate non-root package ownership across workspace regions', async () => {
+  it('reports the raw same-root overlap before constructing nested owners', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4611,7 +4728,7 @@ describe('runSourceCheck workspace regions', () => {
         },
       },
     );
-    const sourceIssues: SourceCheckIssue[] = [];
+    const issues: LiminaCheckIssue[] = [];
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
@@ -4619,22 +4736,18 @@ describe('runSourceCheck workspace regions', () => {
         runSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
+          issues,
           report: { defer: true },
-          sourceIssues,
         }),
       ).resolves.toBe(false);
 
-      expect(
-        getDiagnosticLineGroups(
-          sourceIssues,
-          'LIMINA_WORKSPACE_REGION_OVERLAP',
-        ),
-      ).toContainEqual(
+      expect(issues).toEqual(
         expect.arrayContaining([
-          'Duplicate pnpm workspace package ownership across workspace regions:',
-          '  package: packages/a/inner/x',
-          '  owning region: .',
-          '  owning region: packages/a',
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            filePath: 'packages/a/pnpm-workspace.yaml',
+            task: 'workspace:validate',
+          }),
         ]),
       );
     } finally {
@@ -4643,7 +4756,7 @@ describe('runSourceCheck workspace regions', () => {
     }
   });
 
-  it('suppresses duplicate package ownership for explicitly excluded nested regions', async () => {
+  it('does not suppress raw overlap by excluding the overlapping package', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4667,16 +4780,16 @@ describe('runSourceCheck workspace regions', () => {
         },
       },
     );
-    const sourceIssues: SourceCheckIssue[] = [];
+    const issues: LiminaCheckIssue[] = [];
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
       fixture.config.regions = {
         exclude: [
           {
-            include: ['packages/a/**'],
-            kind: 'pnpm-workspace',
-            reason: 'Nested workspace is checked separately.',
+            include: ['packages/a'],
+            kind: 'workspace-package',
+            reason: 'Nested package is checked separately.',
           },
         ],
       };
@@ -4685,28 +4798,21 @@ describe('runSourceCheck workspace regions', () => {
         runSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
+          issues,
           report: { defer: true },
-          sourceIssues,
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
 
-      expect(
-        getDiagnosticLineGroups(
-          sourceIssues,
-          'LIMINA_WORKSPACE_REGION_OVERLAP',
-        ).some((lines) =>
-          lines.includes(
-            'Duplicate pnpm workspace package ownership across workspace regions:',
-          ),
-        ),
-      ).toBe(false);
+      expect(issues.map((issue) => issue.code)).toContain(
+        'LIMINA_WORKSPACE_REGION_OVERLAP',
+      );
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
-  it('terminates when a non-excluded nested workspace cannot be inspected', async () => {
+  it('does not read invalid package metadata behind a nested workspace boundary', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4730,9 +4836,7 @@ describe('runSourceCheck workspace regions', () => {
           deferSnapshot: true,
           report: { defer: true },
         }),
-      ).rejects.toThrow(
-        /Failed to inspect nested pnpm workspace region[\s\S]*app\/fixture/u,
-      );
+      ).resolves.toBe(true);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();
@@ -4759,16 +4863,6 @@ describe('runSourceCheck workspace regions', () => {
     const infoSpy = vi.spyOn(SourceLogger, 'info').mockImplementation(() => {});
 
     try {
-      fixture.config.regions = {
-        exclude: [
-          {
-            include: ['app/fixture/**'],
-            kind: 'pnpm-workspace',
-            reason: 'Fixture workspace.',
-          },
-        ],
-      };
-
       await expect(
         runSourceCheck(fixture.config, {
           clearScreen: false,
@@ -4787,7 +4881,6 @@ describe('runSourceCheck workspace regions', () => {
           '  resolved file: app/fixture/pkg/src/value.ts',
           '  boundary kind: pnpm-workspace',
           '  boundary root: app/fixture',
-          '  excluded boundary reason: Fixture workspace.',
         ]),
       );
     } finally {

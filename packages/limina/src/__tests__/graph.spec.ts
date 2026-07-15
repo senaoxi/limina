@@ -17,7 +17,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readCheckIssueSnapshot } from '../check-reporting/snapshot';
 import { createCheckCounter } from '../check-reporting/stats';
-import { runGraphCheck, type RunGraphCheckOptions } from '../commands/graph';
+import {
+  runGraphCheck,
+  type RunGraphCheckOptions,
+  runGraphExport,
+} from '../commands/graph';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { createArtifactPlan } from '../domain/artifacts/plan';
 import { addTypecheckParityProblems } from '../graph-check/dts-options';
 import { GraphLogger } from '../logger';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
@@ -284,8 +290,12 @@ function createManualGeneratedGraph(
   rootDir: string,
   entryRelativePath = 'tsconfig.build.json',
 ): GeneratedTsconfigGraphResult {
+  const artifactNamespace = createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir,
+  });
   return {
-    artifactPlan: { changes: [], ownedPaths: [] },
+    artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([
       ['typescript', path.join(rootDir, entryRelativePath)],
@@ -311,8 +321,9 @@ function createManualGeneratedGraph(
         diagnostics: [],
         packages: [],
       },
+      ownedArtifacts: [],
       providerEdges: [],
-      version: 2,
+      version: 3,
     },
     manifestPath: path.join(rootDir, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),
@@ -733,6 +744,37 @@ packages:
     ),
   };
 }
+
+describe('runGraphExport workspace validation', () => {
+  it('fails validation before creating an export for a same-root overlap', async () => {
+    const fixture = await createFixture({
+      'app/package.json': stringifyConfig({
+        name: '@example/app',
+        private: true,
+      }),
+      'app/pnpm-workspace.yaml': 'packages: []\n',
+    });
+    const outputPath = path.join(fixture.rootDir, 'output', 'graph.json');
+
+    try {
+      await expect(
+        runGraphExport(fixture.config, { outputPath }),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            task: 'workspace:validate',
+          }),
+        ],
+      });
+      await expect(readFile(outputPath, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
 
 describe('runGraphCheck checker entry', () => {
   it('accepts reordered object keys and custom condition sets in companion configs', async () => {

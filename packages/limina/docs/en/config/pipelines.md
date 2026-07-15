@@ -31,6 +31,8 @@ export default defineConfig({
 
 `pipelines` maps a name to an ordered list of steps. `pnpm exec limina check <name>` schedules that pipeline's steps in array order, with each step depending on the previous one. This differs from the default `limina check`: the default check schedules built-in tasks as independent work that can run concurrently, while a named pipeline preserves the order you wrote.
 
+Limina inserts `workspace:validate` as a shared preparation before every built-in step that depends on workspace topology. It is not written in `pipelines` and is not accepted as a `BuiltinTaskName`. A failed validation blocks the dependent source, proof, graph, checker, package, release, or artifact-producing step before it can read or write topology-dependent state.
+
 Ordered does not mean every failure stops the pipeline immediately. A built-in task failure makes the final pipeline result fail, but later steps are still attempted in order. An external command step failure blocks the remaining steps and records them as `skipped`.
 
 ::: tip
@@ -71,6 +73,8 @@ Object form declares an external command explicitly:
   },
 }
 ```
+
+`cwd` is relative to `config.rootDir`.
 
 ## Object task step
 

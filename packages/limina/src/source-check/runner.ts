@@ -64,13 +64,10 @@ import type {
 } from '../core/packages/owners';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
-  createWorkspaceRegionBoundaryIndex,
-  findContainingWorkspacePackage,
   getWorkspaceRegionBoundaryExclusionReason,
-  isWorkspaceRegionBoundaryExcluded,
   type WorkspaceRegionBoundary,
-  type WorkspaceRegionBoundaryIndex,
 } from '../core/workspace/regions';
+import { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import type { TaskProgressReporter } from '../execution/progress';
 import {
   formatMissingOptionalToolSkipMessage,
@@ -116,7 +113,7 @@ import {
   writeCompletedStandaloneSourceCheckSnapshots,
 } from './snapshot';
 import {
-  isInvalidWorkspacePattern,
+  isInvalidConfigRootPattern,
   normalizeWorkspacePattern,
 } from './workspace-patterns';
 
@@ -138,7 +135,6 @@ export interface RunSourceCheckOptions {
 }
 
 const SOURCE_CHECK_ITEM_NAMES = [
-  'workspace regions',
   'source graph routes',
   'tsconfig governance',
   'knip source usage',
@@ -291,165 +287,6 @@ function addRelativeImportOwnerProblem(options: {
       '  reason: relative source imports must not cross the nearest package.json package boundary.',
     ].join('\n'),
   );
-}
-
-function addWorkspaceRegionOverlapProblems(options: {
-  boundaries: readonly WorkspaceRegionBoundary[];
-  checks: CheckCounter;
-  config: ResolvedLiminaConfig;
-  packages: readonly WorkspacePackage[];
-  problems: string[];
-}): void {
-  for (const boundary of options.boundaries) {
-    if (boundary.kind !== 'pnpm-workspace') {
-      continue;
-    }
-
-    options.checks.add();
-
-    if (isWorkspaceRegionBoundaryExcluded(boundary)) {
-      continue;
-    }
-
-    const workspacePackage = findContainingWorkspacePackage({
-      boundaryRootDir: boundary.rootDir,
-      packages: options.packages,
-      rootDir: options.config.rootDir,
-    });
-
-    if (!workspacePackage) {
-      continue;
-    }
-
-    const isExactOverlap =
-      normalizeAbsolutePath(workspacePackage.directory) ===
-      normalizeAbsolutePath(boundary.rootDir);
-    const packageLabel =
-      workspacePackage.name ??
-      normalizeSlashes(
-        toRelativePath(options.config.rootDir, workspacePackage.directory),
-      );
-
-    options.problems.push(
-      [
-        isExactOverlap
-          ? 'Nested pnpm workspace root exactly overlaps a current workspace package:'
-          : 'Nested pnpm workspace root is inside a current workspace package:',
-        `  current region: ${toRelativePath(options.config.rootDir, path.join(options.config.rootDir, 'pnpm-workspace.yaml'))}`,
-        `  current workspace package: ${toRelativePath(options.config.rootDir, workspacePackage.directory)}`,
-        ...(workspacePackage.name
-          ? [`  workspace package: ${workspacePackage.name}`]
-          : [`  package: ${packageLabel}`]),
-        `  nested workspace: ${toRelativePath(options.config.rootDir, boundary.rootDir)}`,
-        `  nested workspace config: ${toRelativePath(options.config.rootDir, boundary.workspaceYamlPath)}`,
-        '  reason: Limina requires source ownership and dependency authority to belong to one pnpm workspace region during a single run.',
-        '  fix: add a regions.exclude rule with kind "pnpm-workspace", root-directory include patterns, and a reason; move the nested workspace outside the package; or run Limina from the nested workspace root if it should be governed independently.',
-      ].join('\n'),
-    );
-  }
-}
-
-interface WorkspaceRegionPackageOwner {
-  packageDirectory: string;
-  packageName?: string;
-  regionRootDir: string;
-}
-
-function addPackageOwner(
-  ownersByDirectory: Map<string, WorkspaceRegionPackageOwner[]>,
-  owner: WorkspaceRegionPackageOwner,
-): void {
-  const existingOwners = ownersByDirectory.get(owner.packageDirectory) ?? [];
-
-  if (
-    existingOwners.some(
-      (existingOwner) => existingOwner.regionRootDir === owner.regionRootDir,
-    )
-  ) {
-    return;
-  }
-
-  ownersByDirectory.set(owner.packageDirectory, [...existingOwners, owner]);
-}
-
-async function addWorkspaceRegionDuplicatePackageOwnershipProblems(options: {
-  boundaries: readonly WorkspaceRegionBoundary[];
-  checks: CheckCounter;
-  config: ResolvedLiminaConfig;
-  packages: readonly WorkspacePackage[];
-  problems: string[];
-}): Promise<void> {
-  const ownersByDirectory = new Map<string, WorkspaceRegionPackageOwner[]>();
-  const currentRegionRootDir = normalizeAbsolutePath(options.config.rootDir);
-
-  for (const workspacePackage of options.packages) {
-    const packageDirectory = normalizeAbsolutePath(workspacePackage.directory);
-
-    if (packageDirectory === currentRegionRootDir) {
-      continue;
-    }
-
-    addPackageOwner(ownersByDirectory, {
-      packageDirectory,
-      ...(workspacePackage.name ? { packageName: workspacePackage.name } : {}),
-      regionRootDir: currentRegionRootDir,
-    });
-  }
-
-  for (const boundary of options.boundaries) {
-    if (
-      boundary.kind !== 'pnpm-workspace' ||
-      boundary.inspection.status === 'excluded'
-    ) {
-      continue;
-    }
-
-    const nestedRegionRootDir = normalizeAbsolutePath(boundary.rootDir);
-
-    for (const workspacePackage of boundary.inspection.workspacePackages) {
-      const packageDirectory = normalizeAbsolutePath(
-        workspacePackage.directory,
-      );
-
-      if (packageDirectory === nestedRegionRootDir) {
-        continue;
-      }
-
-      addPackageOwner(ownersByDirectory, {
-        packageDirectory,
-        ...(workspacePackage.name
-          ? { packageName: workspacePackage.name }
-          : {}),
-        regionRootDir: nestedRegionRootDir,
-      });
-    }
-  }
-
-  for (const [packageDirectory, owners] of ownersByDirectory) {
-    if (owners.length < 2) {
-      continue;
-    }
-
-    options.checks.add();
-    options.problems.push(
-      [
-        'Duplicate pnpm workspace package ownership across workspace regions:',
-        `  package: ${toRelativePath(options.config.rootDir, packageDirectory)}`,
-        ...owners
-          .sort((left, right) =>
-            left.regionRootDir.localeCompare(right.regionRootDir),
-          )
-          .flatMap((owner) => [
-            `  owning region: ${toRelativePath(options.config.rootDir, owner.regionRootDir)}`,
-            ...(owner.packageName
-              ? [`  workspace package: ${owner.packageName}`]
-              : []),
-          ]),
-        '  reason: one physical non-root package directory is reported by more than one non-excluded pnpm workspace region.',
-        '  fix: remove the duplicate workspace package pattern from one region, exclude the nested root with a regions.exclude rule whose kind is "pnpm-workspace", or run Limina separately from the nested workspace root.',
-      ].join('\n'),
-    );
-  }
 }
 
 function addSourceCrossGovernanceBoundaryProblem(options: {
@@ -758,7 +595,7 @@ function addImportAuthorityOwnerConfigProblems(options: {
         `  field: source.importAuthority.allow[${JSON.stringify(ownerKey)}]`,
         `  owner: ${ownerKey}`,
         `  reason: ${getImportAuthorityOwnerKeyReason(ownerKey)}`,
-        '  fix: use an existing workspace package name, or the workspace-root-relative owner directory for nameless owners.',
+        '  fix: use an existing workspace package name, or the config-root-relative owner directory for nameless owners.',
         ...(suggestion ? ['  did you mean:', `    - ${suggestion}`] : []),
       ].join('\n'),
     );
@@ -978,7 +815,7 @@ function collectImportAuthorityAllowRules(options: {
             )
             .filter((file) => file.length > 0)
         : [];
-      const invalidInclude = include.find(isInvalidWorkspacePattern);
+      const invalidInclude = include.find(isInvalidConfigRootPattern);
 
       if (grant.include !== undefined && include.length === 0) {
         options.problems.push(
@@ -997,7 +834,7 @@ function collectImportAuthorityAllowRules(options: {
             'Invalid source import authority config:',
             `  field: source.importAuthority.allow[${JSON.stringify(ownerIdentity)}][${grantIndex}].include`,
             `  file: ${invalidInclude}`,
-            '  reason: include must use positive owner-root-relative globs.',
+            '  reason: include must use positive config-root-relative globs.',
           ].join('\n'),
         );
         continue;
@@ -1098,12 +935,12 @@ function getImportAuthorityRuleContext(options: {
   importRecord: ImportRecord;
   owner: PackageOwner;
 }): {
-  ownerRelativeFilePath: string;
+  configRootRelativeFilePath: string;
   ownerIdentity: string;
 } {
   return {
-    ownerRelativeFilePath: normalizeSlashes(
-      toRelativePath(options.owner.directory, options.importRecord.filePath),
+    configRootRelativeFilePath: normalizeSlashes(
+      toRelativePath(options.config.rootDir, options.importRecord.filePath),
     ),
     ownerIdentity: getSourceOwnerIdentity({
       config: options.config,
@@ -1115,7 +952,7 @@ function getImportAuthorityRuleContext(options: {
 function isImportAuthorityRuleInScope(
   rule: CompiledImportAuthorityAllowRule,
   context: {
-    ownerRelativeFilePath: string;
+    configRootRelativeFilePath: string;
     ownerIdentity: string;
   },
 ): boolean {
@@ -1128,7 +965,7 @@ function isImportAuthorityRuleInScope(
   }
 
   return rule.includeMatchers.some((matches) =>
-    matches(context.ownerRelativeFilePath),
+    matches(context.configRootRelativeFilePath),
   );
 }
 
@@ -1581,10 +1418,11 @@ function resolveTsconfigOwnership(options: {
   config: ResolvedLiminaConfig;
   fileName: string;
   getProjectFileSet: (configPath: string) => Set<string>;
+  ownerRootDir: string;
 }): TsconfigOwnershipResolution {
   const candidatePaths = collectBareTsconfigPathCandidates({
     filePath: options.fileName,
-    rootDir: options.config.rootDir,
+    rootDir: options.ownerRootDir,
   });
   const searchedTsconfigPaths: string[] = [];
 
@@ -1674,7 +1512,7 @@ function addNearestTsconfigOwnershipProblem(options: {
       '  matched owner tsconfigs:',
       ...formatConfigPathList(options.config, options.matchedOwnerConfigPaths),
       `  reason: ${options.reason}`,
-      '  fix: make one tsconfig.json between the module directory and workspace root include the module, or make its ordinary typecheck references reach exactly one owner tsconfig.',
+      '  fix: make one tsconfig.json between the module directory and its activated package-island root include the module, or make its ordinary typecheck references reach exactly one owner tsconfig.',
     ].join('\n'),
   );
 }
@@ -1844,6 +1682,7 @@ async function addTsconfigGovernanceProblems(options: {
       config: options.config,
       fileName,
       getProjectFileSet,
+      ownerRootDir: [...governanceUnits.values()][0]!.owner.directory,
     });
 
     if (ownershipResolution.status === 'missing') {
@@ -1853,7 +1692,7 @@ async function addTsconfigGovernanceProblems(options: {
         matchedOwnerConfigPaths: ownershipResolution.matchedOwnerConfigPaths,
         problems: options.problems,
         reason:
-          'no tsconfig.json was found between the module directory and the workspace root.',
+          'no tsconfig.json was found between the module directory and its activated package-island root.',
         searchedTsconfigPaths: ownershipResolution.searchedTsconfigPaths,
         tsconfigPath: ownershipResolution.tsconfigPath,
       });
@@ -1865,7 +1704,7 @@ async function addTsconfigGovernanceProblems(options: {
         problems: options.problems,
         reason:
           ownershipResolution.status === 'unmatched'
-            ? 'no tsconfig.json between the module directory and workspace root includes the module or reaches one ordinary typecheck config that includes it.'
+            ? 'no tsconfig.json between the module directory and its activated package-island root includes the module or reaches one ordinary typecheck config that includes it.'
             : 'the first matching tsconfig.json reaches multiple ordinary typecheck configs that include the module.',
         searchedTsconfigPaths: ownershipResolution.searchedTsconfigPaths,
         tsconfigPath: ownershipResolution.tsconfigPath,
@@ -2589,9 +2428,9 @@ function addImportRecordProblems(options: {
   importRecord: ImportRecord;
   owner: PackageOwner;
   packages: WorkspacePackage[];
+  pathIndex: WorkspaceRegionPathIndex;
   problems: string[];
   project: ProjectInfo;
-  regionBoundaries: WorkspaceRegionBoundaryIndex;
   rootPackage: WorkspacePackage | null;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
@@ -2603,7 +2442,7 @@ function addImportRecordProblems(options: {
     options.importAnalysis,
   );
   const targetRegionBoundary = resolvedFilePath
-    ? options.regionBoundaries.findBoundaryForPath(resolvedFilePath)
+    ? options.pathIndex.findBoundaryForPath(resolvedFilePath)
     : null;
 
   if (resolvedFilePath && targetRegionBoundary) {
@@ -2688,8 +2527,8 @@ function addSourceImportProblems(options: {
   importAnalysis: AnalysisProviderSet['imports']['context'];
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   packages: WorkspacePackage[];
+  pathIndex: WorkspaceRegionPathIndex;
   problems: string[];
-  regionBoundaries: WorkspaceRegionBoundaryIndex;
   rootPackage: WorkspacePackage | null;
   sourceProjectEntries: SourceProjectEntry[];
   workspaceLookup: WorkspaceLookupIndex;
@@ -2717,9 +2556,9 @@ function addSourceImportProblems(options: {
           importRecord,
           owner,
           packages: options.packages,
+          pathIndex: options.pathIndex,
           problems: options.problems,
           project,
-          regionBoundaries: options.regionBoundaries,
           rootPackage: options.rootPackage,
           workspaceLookup: options.workspaceLookup,
         });
@@ -2977,13 +2816,9 @@ export async function runSourceCheckImpl(
     workspaceLookup,
   );
   const packages = await preflight.ensureWorkspacePackages();
-  const rawPackages = await preflight.ensureRawWorkspacePackages();
+  const workspaceContext = await preflight.ensureWorkspaceValidated();
+  const workspacePathIndex = new WorkspaceRegionPathIndex(workspaceContext);
   const packageOwners = await preflight.ensurePackageOwners();
-  const regionBoundaries = await preflight.ensureWorkspaceRegionBoundaries();
-  const regionBoundaryIndex = createWorkspaceRegionBoundaryIndex(
-    regionBoundaries,
-    packages,
-  );
   const workspaceDependencyDeclarations =
     await preflight.ensureWorkspaceDependencyDeclarations();
   const rootPackage = findWorkspaceRootPackage({
@@ -3004,23 +2839,6 @@ export async function runSourceCheckImpl(
   });
 
   sourceIssues.push(...ambientDeclarationResult.issues);
-
-  checkItems.start('workspace regions');
-  addWorkspaceRegionOverlapProblems({
-    boundaries: regionBoundaries,
-    checks,
-    config,
-    packages: rawPackages,
-    problems,
-  });
-  await addWorkspaceRegionDuplicatePackageOwnershipProblems({
-    boundaries: regionBoundaries,
-    checks,
-    config,
-    packages: rawPackages,
-    problems,
-  });
-  checkItems.record('workspace regions');
 
   checkItems.start('source graph routes');
   problems.push(...graphRoute.problems);
@@ -3109,8 +2927,8 @@ export async function runSourceCheckImpl(
     importAnalysis,
     importAuthorityAllowRules,
     packages,
+    pathIndex: workspacePathIndex,
     problems,
-    regionBoundaries: regionBoundaryIndex,
     rootPackage,
     sourceProjectEntries,
     workspaceLookup,
@@ -3134,6 +2952,7 @@ export async function runSourceCheckImpl(
 
   if (!options.deferSnapshot) {
     await writeCompletedStandaloneSourceCheckSnapshots({
+      artifactNamespace: preflight.artifactNamespace,
       command: options.report?.command ?? 'limina source check',
       issues: structuredSourceIssues,
       rootDir: config.rootDir,

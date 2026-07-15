@@ -7,6 +7,7 @@ import type { ResolvedPackageTarget } from './packages/owners';
 import type { TsconfigCore } from './tsconfig';
 import type { WorkspaceCore } from './workspace';
 import { createWorkspaceLookupIndex } from './workspace/lookup';
+import { WorkspaceRegionPathIndex } from './workspace/validated-context';
 
 export interface PackageDomain {
   owner: PackageOwner | null;
@@ -70,18 +71,18 @@ export class PackageDomainCore {
   }
 
   async #createWorkspaceLookupIndex() {
-    const [importers, owners, packages, regionBoundaries] = await Promise.all([
+    const [importers, owners, packages, context] = await Promise.all([
       this.#workspace.getImporters(),
       this.#workspace.getPackageOwners(),
       this.#workspace.getPackages(),
-      this.#workspace.getRegionBoundaries(),
+      this.#workspace.getValidatedContext(),
     ]);
 
     return createWorkspaceLookupIndex({
       importers,
       owners,
       packages,
-      regionBoundaries,
+      pathIndex: new WorkspaceRegionPathIndex(context),
       rootDir: this.#workspace.rootDir,
     });
   }

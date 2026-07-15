@@ -18,6 +18,7 @@ import {
   createWorkspaceLookupIndex,
   type WorkspaceLookupIndex,
 } from './workspace/lookup';
+import { WorkspaceRegionPathIndex } from './workspace/validated-context';
 
 export interface SourceGraphProjects {
   problems: string[];
@@ -156,18 +157,18 @@ export class TsconfigCore {
       return null;
     }
 
-    const [importers, owners, packages, regionBoundaries] = await Promise.all([
+    const [importers, owners, packages, context] = await Promise.all([
       this.#workspace.getImporters(),
       this.#workspace.getPackageOwners(),
       this.#workspace.getPackages(),
-      this.#workspace.getRegionBoundaries(),
+      this.#workspace.getValidatedContext(),
     ]);
 
     return createWorkspaceLookupIndex({
       importers,
       owners,
       packages,
-      regionBoundaries,
+      pathIndex: new WorkspaceRegionPathIndex(context),
       rootDir: this.#config.rootDir,
     });
   }

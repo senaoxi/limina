@@ -64,6 +64,8 @@ limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 
 日常使用通常从 `limina check` 开始。它运行默认检查组合：`graph:check`、`source:check`、`proof:check`、`checker:build`、`checker:typecheck`。这些任务共同检查工程图、源码边界、覆盖关系和检查器入口是否仍然一致。
 
+这些任务之前，Limina 会运行共享 preparation `workspace:validate`。独立的源码、证明、图、构建、检查器、迁移、包和发布命令也由同一份已验证激活包索引把关。工作区 issue 使用相对于 `config.rootDir` 的词法路径，外部激活包会保留 `../`。
+
 当你修改了 `tsconfig`、`references`、检查器包含范围或会影响工程图的源码结构时，先运行：
 
 ```sh
@@ -75,6 +77,7 @@ pnpm exec limina check
 
 ```sh
 pnpm exec limina check --issues
+pnpm exec limina check --issues --task workspace:validate
 pnpm exec limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING --verbose
 pnpm exec limina check --issues --format json
 ```
@@ -102,6 +105,7 @@ pnpm exec limina release check --package @scope/pkg
 | 目标                                 | 推荐命令                                   | 判断依据                                                                            |
 | ------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------- |
 | 初始化 `pnpm` 工作区中的 Limina 文件 | `limina init` 或 `limina init --yes`       | 首次接入，或需要生成基础配置与 `limina:build` 脚本                                  |
+| 迁移被治理的源码 `tsconfig`          | `limina migration`                         | 工作区验证后，把编译器输出设置迁入 `liminaOptions`                                  |
 | 日常检查仓库结构和类型构建入口       | `limina check`                             | 默认组合覆盖工程图、源码、证明和检查器入口                                          |
 | 自定义一组按顺序运行的检查           | `limina check <name>`                      | `<name>` 来自配置中的 `pipelines`                                                   |
 | 生成或刷新 `.limina` 工程图          | `limina graph prepare`                     | 修改了 `tsconfig`、检查器范围或源码结构后                                           |
@@ -133,6 +137,18 @@ pnpm exec limina init --yes
 `--yes` 会接受默认确认，并跳过交互式 `skill` 安装提示。非交互环境中如果不使用 `--yes`，需要用户确认的步骤会失败。
 
 `init` 不会根据仓库业务结构推断图规则，也不会替你决定哪些包边界应被允许或拒绝。初始化后的配置应按仓库真实结构继续维护。
+
+### limina migration
+
+`migration` 会改写已验证激活 package island 中选中的源码 `tsconfig` 入口。
+
+```sh
+pnpm exec limina migration
+```
+
+外部激活包也受支持，包括目标分布在多个 Git worktree 的迁移。任何写入开始前，Limina 会解析每个目标的规范 Git worktree 根目录，并要求所有涉及的 worktree 都是 clean 状态；随后以这些规范根目录作为完整写入 allowlist 执行一次事务。外部 worktree 只要有未提交变更，就会阻止全部写入；每个目标都必须属于一个 Git worktree。
+
+迁移选择与图准备使用相同的 package-island 可见性和 checker selector。即使祖先模式可以匹配，迁移也不会读取或修改 owner-local 边界后的配置。
 
 ### limina check [pipeline]
 
@@ -170,7 +186,9 @@ checker:typecheck
 | `--issues`             | 布尔值                    | 重新运行检查     | `limina check --issues`                                       | 读取最近一次检查快照；不能带流水线名       |
 | `--format <format>`    | `human`、`json`、`ndjson` | `human`          | `limina check --issues --format json`                         | 必须配合 `--issues`                        |
 
-`--issues` 不会重新执行检查。它读取上一次检查写入的快照，用于定位失败任务、规则、包、文件或检查器。第一次使用前需要先运行 `limina check`，并让检查至少进入可记录状态。
+`--issues` 不会重新执行检查。它读取上一次检查写入的快照，用于定位失败任务、规则、包、文件或检查器。工作区验证失败也可以记录：受信任的 `.limina` snapshot namespace 会在验证前建立，因此结构错误仍可出现在 `workspace:validate` 任务下。第一次查询前需要先运行 `limina check`，并让检查至少进入可记录状态。
+
+新 snapshot 使用 schema version 7。读取器仍接受 version 5 和 version 6，因此升级后可以查看上一次运行；下一次记录检查时会把文件重写为 version 7。
 
 辅助查询：
 

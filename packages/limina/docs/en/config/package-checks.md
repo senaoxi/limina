@@ -37,19 +37,23 @@ Package checks validate the resolver and runtime behavior of the directory consu
 
 - **Type:** `PackageEntry[]`
 
-`entries` lists the built package outputs to check. Each entry describes one package directory and the tools to run against it.
+`entries` lists the built package outputs to check. Each entry is an independent output artifact: several entries may share a name, one source package may produce several entries, and an entry name does not have to equal a source package name. Limina does not infer or validate a source-to-output binding from this configuration.
+
+`--package <name>` selects every configured entry with that name. Without `--package`, running from inside an activated package selects entries through the validated activated-package index; lexical paths outside `config.rootDir` remain selectable. A nearby unactivated `package.json` does not become a package selector.
 
 ## name
 
 - **Type:** `string`
 
-`name` is the friendly name for this package entry. The `CLI` uses it for `--package <name>` and release cwd matching.
+`name` is the selector name for this output artifact. The `CLI` uses it for `--package <name>`; duplicate names deliberately select multiple artifacts.
 
 ## outDir
 
 - **Type:** `string`
 
-`outDir` points at the built package directory consumers actually install, usually `packages/*/dist`. That directory should contain the publish-ready `package.json`, `JavaScript`, and declarations. `README.md`, `LICENSE.md`, and `tarball` hygiene are checked by `limina release check`.
+`outDir` is relative to `config.rootDir` and points at the built package directory consumers actually install, usually `packages/*/dist`. It may contain `../` and target the output of an external activated package. That directory should contain the publish-ready `package.json`, `JavaScript`, and declarations. `README.md`, `LICENSE.md`, and `tarball` hygiene are checked by `limina release check`.
+
+The output is unconditional during workspace discovery. It must be a dedicated strict descendant output directory: it cannot equal or contain `config.rootDir` or an activated package root, and it cannot overlap Limina's `.limina` namespace in either direction. Invalid output ownership fails `workspace:validate` before package selection or artifact work begins.
 
 ::: info
 Each `outDir/package.json` must exist and look like a complete `npm` package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and `npm` receive.

@@ -11,7 +11,7 @@ Every exclusion must declare exactly one candidate kind: `workspace-package`, `p
 Check all three facts in the diagnostic:
 
 1. `kind` matches the candidate type.
-2. `include` selects the candidate's workspace-root-relative directory, not its package name or descriptor path.
+2. `include` selects the candidate's config-root-relative lexical directory, including `../` when needed, not its package name or descriptor path.
 3. The directory is not a fixed discovery ignore such as `node_modules`, `.git`, `.limina`, or a configured output directory.
 
 For example, select a nested workspace at `packages/app/fixture/pnpm-workspace.yaml` with `kind: 'pnpm-workspace'` and `include: ['packages/app/fixture']`.

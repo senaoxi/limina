@@ -17,6 +17,7 @@ import {
   writeCheckIssueSnapshotOnly,
   writeSourceIssueSnapshotOnly,
 } from '../check-reporting/snapshot';
+import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { LiminaFlowReporter, LiminaFlowTreeNode } from '../flow';
 import type { LiminaPreflightManager } from '../preflight';
 import { createPreflightGenerationController } from '../preflight/generation';
@@ -47,8 +48,14 @@ export interface RunExecutionPlanOptions {
   preflight: LiminaPreflightManager;
   rootDir: string;
   snapshotWriters?: {
-    writeCheck(rootDir: string, snapshot: CheckIssueSnapshot): Promise<void>;
-    writeSource(rootDir: string, snapshot: SourceIssueSnapshot): Promise<void>;
+    writeCheck(
+      namespace: LiminaArtifactNamespace,
+      snapshot: CheckIssueSnapshot,
+    ): Promise<void>;
+    writeSource(
+      namespace: LiminaArtifactNamespace,
+      snapshot: SourceIssueSnapshot,
+    ): Promise<void>;
   };
 }
 
@@ -464,11 +471,13 @@ async function writeExecutionSnapshots(options: {
             rootDir: execution.rootDir,
           })
         : createNotRunSourceIssueSnapshot(execution.command);
-    await writer.enqueue(() => writeSource(execution.rootDir, sourceSnapshot));
+    await writer.enqueue(() =>
+      writeSource(execution.preflight.artifactNamespace, sourceSnapshot),
+    );
   }
 
   await writer.enqueue(() =>
-    writeCheck(execution.rootDir, {
+    writeCheck(execution.preflight.artifactNamespace, {
       command: execution.command,
       createdAt: nowIso(),
       issues: [...options.issues],
@@ -791,14 +800,21 @@ export async function runExecutionPlan(
       : undefined;
   const issues = sortCollectedIssues(orderedStartedIssues);
 
-  await writeExecutionSnapshots({
-    execution: options,
-    finalRepositoryGeneration: controller.generation,
-    issues,
-    sourceOutcome,
-    sourceTask,
-    tasks: orderedTasks,
-  });
+  try {
+    await writeExecutionSnapshots({
+      execution: options,
+      finalRepositoryGeneration: controller.generation,
+      issues,
+      sourceOutcome,
+      sourceTask,
+      tasks: orderedTasks,
+    });
+  } catch (error) {
+    if (completedOutcome.state === 'passed') throw error;
+    options.flow?.warn(
+      `Unable to write the failed-run snapshot; the original check failure remains authoritative: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   return {
     issues,

@@ -13,6 +13,7 @@ import {
   writeSourceIssueSnapshotOnly,
 } from '../check-reporting/snapshot';
 import { createCheckItemStats } from '../check-reporting/stats';
+import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import {
   resolveCheckerBuildConcurrency,
   resolveCheckerTypecheckConcurrency,
@@ -875,6 +876,52 @@ describe('runExecutionTasks', () => {
     });
   });
 
+  it('keeps a workspace validation failure authoritative when its snapshot write fails', async () => {
+    await withTempRoot(async (rootDir) => {
+      const validation = createTask({
+        id: 'workspace-validation',
+        issues: [
+          createIssue({
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            task: 'workspace:validate',
+          }),
+        ],
+        order: 0,
+        passed: false,
+      });
+      validation.issueTask = 'workspace:validate';
+      validation.kind = 'preparation';
+      validation.label = 'workspace:validate';
+      const { chunks, flow } = createBufferedTtyFlow();
+      const writeCheck = vi.fn(async () => {
+        throw new Error('snapshot storage unavailable');
+      });
+      const writeSource = vi.fn(async () => {});
+
+      const result = await runExecutionTasks({
+        command: 'limina check',
+        flow,
+        preflight: createPreflight(rootDir),
+        rootDir,
+        snapshotWriters: { writeCheck, writeSource },
+        tasks: [validation],
+      });
+
+      expect(result.passed).toBe(false);
+      expect(result.issues).toEqual([
+        expect.objectContaining({
+          code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+          task: 'workspace:validate',
+        }),
+      ]);
+      expect(writeCheck).toHaveBeenCalledOnce();
+      expect(writeSource).not.toHaveBeenCalled();
+      expect(chunks.join('')).toContain(
+        'the original check failure remains authoritative',
+      );
+    });
+  });
+
   it('joins already running work before returning a stop-policy result', async () => {
     await withTempRoot(async (rootDir) => {
       let joined = false;
@@ -1389,18 +1436,21 @@ describe('runExecutionTasks', () => {
 
   it('does not touch an existing source snapshot when the plan has no source task', async () => {
     await withTempRoot(async (rootDir) => {
-      await writeSourceIssueSnapshotOnly(rootDir, {
-        command: 'previous',
-        createdAt: '2026-07-14T00:00:00.000Z',
-        issues: [
-          {
-            code: SOURCE_ISSUE_CODES.unusedModule,
-            ownerName: '@fixture/old',
-          },
-        ],
-        status: 'completed',
-        version: 1,
-      });
+      await writeSourceIssueSnapshotOnly(
+        createLiminaArtifactNamespace({ generation: 0, rootDir }),
+        {
+          command: 'previous',
+          createdAt: '2026-07-14T00:00:00.000Z',
+          issues: [
+            {
+              code: SOURCE_ISSUE_CODES.unusedModule,
+              ownerName: '@fixture/old',
+            },
+          ],
+          status: 'completed',
+          version: 1,
+        },
+      );
       await runExecutionTasks({
         command: 'limina check',
         preflight: createPreflight(rootDir),
@@ -1425,6 +1475,10 @@ describe('runExecutionTasks', () => {
         status: 'passed',
       });
       await writeNotRunCheckIssueSnapshot({
+        artifactNamespace: createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir,
+        }),
         command: 'limina check',
         rootDir,
       });
@@ -1459,6 +1513,10 @@ describe('runExecutionTasks', () => {
         status: 'passed',
       });
       await writeNotRunCheckIssueSnapshot({
+        artifactNamespace: createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir,
+        }),
         command: 'limina check',
         rootDir,
       });
@@ -1469,13 +1527,13 @@ describe('runExecutionTasks', () => {
         preflight: createPreflight(rootDir),
         rootDir,
         snapshotWriters: {
-          async writeCheck(nextRootDir, snapshot) {
+          async writeCheck(namespace, snapshot) {
             writes.push(`check:${snapshot.status}`);
-            await writeCheckIssueSnapshotOnly(nextRootDir, snapshot);
+            await writeCheckIssueSnapshotOnly(namespace, snapshot);
           },
-          async writeSource(nextRootDir, snapshot) {
+          async writeSource(namespace, snapshot) {
             writes.push(`source:${snapshot.status}`);
-            await writeSourceIssueSnapshotOnly(nextRootDir, snapshot);
+            await writeSourceIssueSnapshotOnly(namespace, snapshot);
             expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
               status: 'not-run',
             });

@@ -5,6 +5,7 @@ import {
   type PrepareGeneratedTsconfigGraphOptions,
 } from '#core/build-graph/runner';
 import { materializeGeneratedArtifactPlan } from '../../core/build-graph/materializer';
+import { createLiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 
 /**
  * Test-only orchestration for assertions that inspect generated files.
@@ -12,9 +13,19 @@ import { materializeGeneratedArtifactPlan } from '../../core/build-graph/materia
  */
 export async function prepareAndMaterializeGeneratedTsconfigGraph(
   config: ResolvedLiminaConfig,
-  options: PrepareGeneratedTsconfigGraphOptions = {},
+  options: Omit<PrepareGeneratedTsconfigGraphOptions, 'artifactNamespace'> = {},
 ): Promise<GeneratedTsconfigGraphResult> {
-  const result = await prepareGeneratedTsconfigGraph(config, options);
-  await materializeGeneratedArtifactPlan(result.artifactPlan);
+  const artifactNamespace = createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir: config.rootDir,
+  });
+  const result = await prepareGeneratedTsconfigGraph(config, {
+    ...options,
+    artifactNamespace,
+  });
+  await materializeGeneratedArtifactPlan(
+    artifactNamespace,
+    result.artifactPlan,
+  );
   return result;
 }

@@ -976,6 +976,51 @@ function createMaterializationTask(
   };
 }
 
+function createWorkspaceValidationTask(
+  config: ResolvedLiminaConfig,
+  generation: number,
+  segment: number,
+): ExecutionTask {
+  return {
+    failPolicy: 'continue',
+    generation,
+    id: taskId(`preparation:workspace-validate:g${generation}:s${segment}`),
+    issueTask: 'workspace:validate',
+    kind: 'preparation',
+    label: 'workspace:validate',
+    order: 0,
+    resources: {
+      read: ['repository:snapshot', 'workspace:manifest'],
+    },
+    run: async ({ preflight }) => {
+      try {
+        await preflight.ensureWorkspaceValidated();
+        return { issues: [], status: 'passed' };
+      } catch (error) {
+        const issues =
+          error instanceof LiminaStructuredError
+            ? error.issues
+            : [
+                createTaskFailureIssue({
+                  code: 'LIMINA_WORKSPACE_VALIDATION_FAILED',
+                  detailLines: [
+                    error instanceof Error ? error.message : String(error),
+                  ],
+                  filePath: config.configPath,
+                  fix: 'Repair workspace topology, package identities, or output roots, then rerun limina check.',
+                  reason:
+                    'Workspace validation failed before dependent tasks started.',
+                  rootDir: config.rootDir,
+                  task: 'workspace:validate',
+                  title: 'Workspace validation failed',
+                }),
+              ];
+        return { issues, status: 'failed' };
+      }
+    },
+  };
+}
+
 function buildExecutionPlan(
   config: ResolvedLiminaConfig,
   steps: readonly NormalizedPipelineStep[],
@@ -1016,6 +1061,21 @@ function buildExecutionPlan(
     const command =
       segmentEnd < userTasks.length ? userTasks[segmentEnd] : undefined;
     const segmentTasks = userTasks.slice(segmentStart, segmentEnd);
+    const validation = createWorkspaceValidationTask(
+      config,
+      generation,
+      segment,
+    );
+    const firstUserPredecessors = segmentTasks[0]?.after;
+    if (firstUserPredecessors?.length) {
+      validation.after = [...firstUserPredecessors];
+    }
+    if (segmentTasks.length > 0) {
+      tasks.push(validation);
+      for (const dependent of segmentTasks) {
+        dependent.requiresSuccessOf = [validation.id];
+      }
+    }
     const dependentTasks = segmentTasks.filter(
       (task) =>
         task.kind === 'task' &&
@@ -1023,10 +1083,8 @@ function buildExecutionPlan(
     );
     if (dependentTasks.length > 0) {
       const preparation = createMaterializationTask(generation, segment);
-      const originalUserPredecessors = dependentTasks[0]?.after;
-      if (originalUserPredecessors?.length) {
-        preparation.after = [...originalUserPredecessors];
-      }
+      preparation.after = [validation.id];
+      preparation.requiresSuccessOf = [validation.id];
       tasks.push(preparation);
       for (const dependent of dependentTasks) {
         dependent.requiresSuccessOf = [preparation.id];

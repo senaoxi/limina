@@ -16,20 +16,14 @@ import type {
   NearestPackageInfo,
   ResolvedPackageTarget,
 } from '../packages/owners';
-import {
-  createWorkspaceActivatedRegionIndex,
-  createWorkspaceRegionBoundaryIndex,
-  type WorkspaceActivatedRegionIndex,
-  type WorkspaceRegionBoundary,
-  type WorkspaceRegionBoundaryIndex,
-} from './regions';
+import type { WorkspaceRegionPathIndex } from './validated-context';
 
 export interface WorkspaceLookupIndexOptions {
   importers: ImporterInfo[];
   owners: PackageOwner[];
   packages: WorkspacePackage[];
-  regionBoundaries?: readonly WorkspaceRegionBoundary[];
   rootDir: string;
+  pathIndex: WorkspaceRegionPathIndex;
 }
 
 interface NormalizedImporter {
@@ -49,7 +43,6 @@ interface PackageLookupBounds {
 export class WorkspaceLookupIndex {
   readonly rootDir: string;
 
-  readonly #activatedRegions: WorkspaceActivatedRegionIndex;
   readonly #importers: NormalizedImporter[];
   readonly #namedPackagesByName = new Map<string, NamedWorkspacePackage>();
   readonly #ownersByDirectory: Map<string, PackageOwner>;
@@ -59,7 +52,7 @@ export class WorkspaceLookupIndex {
   >();
   readonly #packagesByDirectory: Map<string, WorkspacePackage>;
   readonly #packagesByPackageJsonPath = new Map<string, WorkspacePackage>();
-  readonly #regionBoundaries: WorkspaceRegionBoundaryIndex;
+  readonly #pathIndex: WorkspaceRegionPathIndex;
 
   readonly #importerByFilePath = new Map<string, ImporterInfo | null>();
   readonly #nearestNamedPackageInfoByDirectory = new Map<
@@ -79,36 +72,20 @@ export class WorkspaceLookupIndex {
 
   constructor(options: WorkspaceLookupIndexOptions) {
     this.rootDir = normalizeAbsolutePath(options.rootDir);
-    this.#regionBoundaries = createWorkspaceRegionBoundaryIndex(
-      options.regionBoundaries ?? [],
-      options.packages,
-    );
-    this.#activatedRegions = createWorkspaceActivatedRegionIndex({
-      boundaries: options.regionBoundaries ?? [],
-      packages: options.packages,
-      rootDir: this.rootDir,
-    });
+    this.#pathIndex = options.pathIndex;
     this.#importers = options.importers
-      .filter(
-        (importer) =>
-          this.#isInsideActivatedRegion(importer.directory) &&
-          !this.#regionBoundaries.isInsideBoundary(importer.directory),
-      )
+      .filter((importer) => this.#isInsideActivatedRegion(importer.directory))
       .map((importer) => ({
         directory: normalizeAbsolutePath(importer.directory),
         importer,
       }));
     this.#ownersByDirectory = createDirectoryMap(
-      options.owners.filter(
-        (owner) =>
-          this.#isInsideActivatedRegion(owner.directory) &&
-          !this.#regionBoundaries.isInsideBoundary(owner.directory),
+      options.owners.filter((owner) =>
+        this.#isInsideActivatedRegion(owner.directory),
       ),
     );
-    const currentRegionPackages = options.packages.filter(
-      (workspacePackage) =>
-        this.#isInsideActivatedRegion(workspacePackage.directory) &&
-        !this.#regionBoundaries.isInsideBoundary(workspacePackage.directory),
+    const currentRegionPackages = options.packages.filter((workspacePackage) =>
+      this.#isInsideActivatedRegion(workspacePackage.directory),
     );
 
     this.#packagesByDirectory = createDirectoryMap(currentRegionPackages);
@@ -137,9 +114,18 @@ export class WorkspaceLookupIndex {
       return cached;
     }
 
+    const authoritativePackage =
+      this.#pathIndex.findPackageForPath(normalizedFilePath);
     const workspacePackage = this.#isOutsideGovernedRegion(normalizedFilePath)
       ? null
-      : findNearestDirectoryItem(normalizedFilePath, this.#packagesByDirectory);
+      : authoritativePackage
+        ? (this.#packagesByDirectory.get(
+            normalizeAbsolutePath(authoritativePackage.directory),
+          ) ?? null)
+        : findNearestDirectoryItem(
+            normalizedFilePath,
+            this.#packagesByDirectory,
+          );
 
     this.#packageByFilePath.set(normalizedFilePath, workspacePackage);
     return workspacePackage;
@@ -153,9 +139,15 @@ export class WorkspaceLookupIndex {
       return cached;
     }
 
+    const authoritativePackage =
+      this.#pathIndex.findPackageForPath(normalizedFilePath);
     const owner = this.#isOutsideGovernedRegion(normalizedFilePath)
       ? null
-      : findNearestDirectoryItem(normalizedFilePath, this.#ownersByDirectory);
+      : authoritativePackage
+        ? (this.#ownersByDirectory.get(
+            normalizeAbsolutePath(authoritativePackage.directory),
+          ) ?? null)
+        : findNearestDirectoryItem(normalizedFilePath, this.#ownersByDirectory);
 
     this.#ownerByFilePath.set(normalizedFilePath, owner);
     return owner;
@@ -368,8 +360,7 @@ export class WorkspaceLookupIndex {
       };
     }
 
-    const activatedPackage =
-      this.#activatedRegions.findPackageForPath(directory);
+    const activatedPackage = this.#pathIndex.findPackageForPath(directory);
 
     if (activatedPackage) {
       return {
@@ -424,7 +415,7 @@ export class WorkspaceLookupIndex {
   }
 
   #isInsideActivatedRegion(filePath: string): boolean {
-    return this.#activatedRegions.isInsideActivatedRegion(filePath);
+    return Boolean(this.#pathIndex.findPackageForPath(filePath));
   }
 
   #isInsideNodeModules(filePath: string): boolean {
@@ -433,9 +424,8 @@ export class WorkspaceLookupIndex {
 
   #isOutsideGovernedRegion(filePath: string): boolean {
     return (
-      this.#regionBoundaries.isInsideBoundary(filePath) ||
       this.#isInsideNodeModules(filePath) ||
-      !this.#isInsideActivatedRegion(filePath)
+      !this.#pathIndex.findPackageForPath(filePath)
     );
   }
 }
