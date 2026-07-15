@@ -712,6 +712,113 @@ export default {
     }
   });
 
+  it('validates source ambient declaration config and loads a complete rule', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      const invalidCases: [unknown, string][] = [
+        [[], 'declarations must be an object'],
+        [{ ambient: {} }, 'ambient must be an array'],
+        [{ ambient: ['bad'] }, 'ambient declaration rules must be objects'],
+        [
+          { ambient: [{ reason: 'needed' }] },
+          'ambient declaration include must be a non-empty string array',
+        ],
+        [
+          { ambient: [{ include: [], reason: 'needed' }] },
+          'ambient declaration include must be a non-empty string array',
+        ],
+        [
+          { ambient: [{ include: [1], reason: 'needed' }] },
+          'ambient declaration include entries must be non-empty strings',
+        ],
+        [
+          { ambient: [{ include: ['types.d.ts'] }] },
+          'ambient declaration reason must be a non-empty string',
+        ],
+        [
+          { ambient: [{ include: ['types.d.ts'], reason: '   ' }] },
+          'ambient declaration reason must be a non-empty string',
+        ],
+        [
+          {
+            ambient: [
+              {
+                allowSharedAcrossOwners: 'yes',
+                include: ['types.d.ts'],
+                reason: 'needed',
+              },
+            ],
+          },
+          'allowSharedAcrossOwners must be a boolean',
+        ],
+        [
+          {
+            ambient: [
+              {
+                allowTripleSlashReferences: 1,
+                include: ['types.d.ts'],
+                reason: 'needed',
+              },
+            ],
+          },
+          'allowTripleSlashReferences must be a boolean',
+        ],
+        [
+          {
+            ambient: [
+              { include: ['types.d.ts'], reason: 'needed', unknown: true },
+            ],
+          },
+          'unknown ambient declaration rule field',
+        ],
+      ];
+
+      for (const [index, [declarations, message]] of invalidCases.entries()) {
+        const configPath = `limina-${index}.config.mjs`;
+        await writeText(
+          path.join(rootDir, configPath),
+          `export default ${JSON.stringify({ source: { declarations } })};\n`,
+        );
+        await expect(loadConfig({ configPath, cwd: rootDir })).rejects.toThrow(
+          message,
+        );
+      }
+
+      const configPath = 'limina-valid.config.mjs';
+      await writeText(
+        path.join(rootDir, configPath),
+        `export default ${JSON.stringify({
+          source: {
+            declarations: {
+              ambient: [
+                {
+                  allowSharedAcrossOwners: true,
+                  allowTripleSlashReferences: true,
+                  include: ['types/**/*.d.ts'],
+                  reason: 'Shared type shims.',
+                },
+              ],
+            },
+          },
+        })};\n`,
+      );
+      const config = await loadConfig({ configPath, cwd: rootDir });
+      expect(config.source?.declarations?.ambient?.[0]).toEqual({
+        allowSharedAcrossOwners: true,
+        allowTripleSlashReferences: true,
+        include: ['types/**/*.d.ts'],
+        reason: 'Shared type shims.',
+      });
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('loads owner-keyed source import authority config', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 

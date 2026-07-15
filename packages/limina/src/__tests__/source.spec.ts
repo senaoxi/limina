@@ -421,6 +421,86 @@ packages:
 }
 
 describe('runSourceCheck package authority', () => {
+  it.each([
+    [
+      false,
+      false,
+      [
+        'LIMINA_SOURCE_AMBIENT_DECLARATION_SHARED_UNAUTHORIZED',
+        'LIMINA_SOURCE_AMBIENT_DECLARATION_REFERENCE_UNAUTHORIZED',
+      ],
+    ],
+    [true, false, ['LIMINA_SOURCE_AMBIENT_DECLARATION_REFERENCE_UNAUTHORIZED']],
+    [false, true, ['LIMINA_SOURCE_AMBIENT_DECLARATION_SHARED_UNAUTHORIZED']],
+    [true, true, []],
+  ])(
+    'governs shared ambient consumers and triple-slash paths independently (%s, %s)',
+    async (
+      allowSharedAcrossOwners,
+      allowTripleSlashReferences,
+      expectedCodes,
+    ) => {
+      const fixture = await createFixture(
+        {
+          '__typings__/global.d.ts': 'interface SharedGlobal {}\n',
+          'packages/a/package.json': stringifyConfig({
+            name: '@example/a',
+            private: true,
+          }),
+          'packages/a/tsconfig.json': typecheckConfig([
+            'src/**/*.ts',
+            '../../__typings__/**/*.d.ts',
+          ]),
+          'packages/a/src/index.ts':
+            '/// <reference path="../../../__typings__/global.d.ts" />\nexport const a = 1;\n',
+          'packages/b/package.json': stringifyConfig({
+            name: '@example/b',
+            private: true,
+          }),
+          'packages/b/tsconfig.json': typecheckConfig([
+            'src/**/*.ts',
+            '../../__typings__/**/*.d.ts',
+          ]),
+          'packages/b/src/index.ts': 'export const b = 1;\n',
+        },
+        {
+          source: {
+            declarations: {
+              ambient: [
+                {
+                  allowSharedAcrossOwners,
+                  allowTripleSlashReferences,
+                  include: ['__typings__/**/*.d.ts'],
+                  reason: 'Shared workspace test shims.',
+                },
+              ],
+            },
+            knip: false,
+          },
+        },
+      );
+      const sourceIssues: SourceCheckIssue[] = [];
+
+      try {
+        await expect(
+          runSourceCheck(fixture.config, {
+            deferSnapshot: true,
+            report: { defer: true },
+            sourceIssues,
+          }),
+        ).resolves.toBe(expectedCodes.length === 0);
+        expect(
+          sourceIssues
+            .map((issue) => issue.code)
+            .filter((code) => code.startsWith('LIMINA_SOURCE_AMBIENT_'))
+            .sort(),
+        ).toEqual([...expectedCodes].sort());
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('rejects external bare imports that are not declared by the source owner', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
@@ -450,6 +530,59 @@ describe('runSourceCheck package authority', () => {
       expect(errors).toContain('source.importAuthority.allow');
     } finally {
       errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not grant ordinary import or dependency authority through ambient declarations', async () => {
+    const fixture = await createFixture(
+      {
+        '__typings__/global.d.ts':
+          "declare module 'undeclared-package' {}\ninterface SharedGlobal {}\n",
+        'packages/a/package.json': stringifyConfig({
+          name: '@example/a',
+          private: true,
+        }),
+        'packages/a/tsconfig.json': typecheckConfig([
+          'src/**/*.ts',
+          '../../__typings__/**/*.d.ts',
+        ]),
+        'packages/a/src/index.ts':
+          "import type {} from '../../../__typings__/global';\nimport 'undeclared-package';\nexport const a = 1;\n",
+      },
+      {
+        source: {
+          declarations: {
+            ambient: [
+              {
+                allowSharedAcrossOwners: true,
+                allowTripleSlashReferences: true,
+                include: ['__typings__/**/*.d.ts'],
+                reason: 'Shared workspace test shims.',
+              },
+            ],
+          },
+          knip: false,
+        },
+      },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+      expect(sourceIssues.map((issue) => issue.code)).toEqual(
+        expect.arrayContaining([
+          'LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE',
+          'LIMINA_SOURCE_PACKAGE_IMPORT_UNAUTHORIZED',
+        ]),
+      );
+    } finally {
       await fixture.cleanup();
     }
   });

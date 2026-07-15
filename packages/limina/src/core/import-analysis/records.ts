@@ -6,7 +6,11 @@ export type ImportRecordKind =
   | 'commonjs'
   | 'require-resolve'
   | 'import-equals'
-  | 'comment';
+  | 'jsdoc-import'
+  | 'triple-slash-path'
+  | 'triple-slash-types'
+  | 'jsx-import-source'
+  | 'environment-pragma';
 
 export interface ImportRecord {
   filePath: string;

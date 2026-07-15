@@ -14,7 +14,11 @@ import {
   candidatePathsForBasePath,
   resolveExistingFilePath,
 } from '#utils/module-resolution';
-import { toPosixPath } from '#utils/path';
+import {
+  isPathInsideDirectory,
+  normalizeAbsolutePath,
+  toPosixPath,
+} from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import path from 'pathe';
 import { glob } from 'tinyglobby';
@@ -64,6 +68,29 @@ type PackageExportValue = unknown;
 
 const typeScriptRuntimeModulePattern = /\.(?:cjs|mjs|jsx|js)$/u;
 const typeScriptDeclarationModulePattern = /\.d\.(?:cts|mts|ts)$/u;
+
+function resolvePackageDeclarationTarget(
+  packageDirectory: string,
+  target: string,
+): string | null {
+  if (path.isAbsolute(target) || target.includes('*')) return null;
+  const basePath = normalizeAbsolutePath(
+    path.resolve(packageDirectory, target),
+  );
+
+  if (!isPathInsideDirectory(basePath, packageDirectory)) return null;
+
+  const resolved = candidatePathsForBasePath(basePath, [
+    '.d.ts',
+    '.d.mts',
+    '.d.cts',
+  ])
+    .map(resolveExistingFilePath)
+    .find((candidate): candidate is string => Boolean(candidate));
+  return resolved && typeScriptDeclarationModulePattern.test(resolved)
+    ? normalizeAbsolutePath(resolved)
+    : null;
+}
 
 function isSubpathExportMap(exportsField: Record<string, unknown>): boolean {
   return Object.keys(exportsField).some(
@@ -292,6 +319,37 @@ async function collectPackageExportEntries(
     ),
     problems,
   };
+}
+
+export async function collectWorkspacePackageDeclarationEntryPaths(
+  packages: readonly WorkspacePackage[],
+): Promise<Set<string>> {
+  const paths = new Set<string>();
+  for (const workspacePackage of packages.filter(isNamedWorkspacePackage)) {
+    for (const target of [
+      workspacePackage.manifest.types,
+      workspacePackage.manifest.typings,
+    ]) {
+      if (typeof target !== 'string') continue;
+      const resolved = resolvePackageDeclarationTarget(
+        workspacePackage.directory,
+        target,
+      );
+      if (resolved) paths.add(resolved);
+    }
+    if (workspacePackage.manifest.exports === undefined) continue;
+    const collected = await collectPackageExportEntries(workspacePackage);
+    for (const entry of collected.entries) {
+      for (const target of entry.targets) {
+        const resolved = resolvePackageDeclarationTarget(
+          workspacePackage.directory,
+          target,
+        );
+        if (resolved) paths.add(resolved);
+      }
+    }
+  }
+  return paths;
 }
 
 function getProfileContext(
