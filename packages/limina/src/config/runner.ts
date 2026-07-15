@@ -278,10 +278,39 @@ export interface SourceImportAuthorityWorkspaceRootGrant {
   reason: string;
 }
 
+export interface SourceAmbientDeclarationConfig {
+  /** Workspace-root-relative glob patterns matching declaration files. */
+  include: string[];
+  /**
+   * Allow matched declaration files to be consumed by TypeScript projects
+   * governed by more than one source owner. The declaration files retain one
+   * ambient governance role.
+   *
+   * @default false
+   */
+  allowSharedAcrossOwners?: boolean;
+  /**
+   * Allow source files to consume matched declarations through
+   * `/// <reference path="...">`. This does not authorize ordinary imports or
+   * `/// <reference types>`.
+   *
+   * @default false
+   */
+  allowTripleSlashReferences?: boolean;
+  /** Why this ambient declaration exception is required. */
+  reason: string;
+}
+
+export interface SourceDeclarationsConfig {
+  ambient?: SourceAmbientDeclarationConfig[];
+}
+
 /**
  * Source-owned dependency usage check settings.
  */
 export interface SourceCheckConfig {
+  /** Explicit governance for declaration-file roles. */
+  declarations?: SourceDeclarationsConfig;
   /**
    * Knip-backed unused dependency and unused source module analysis.
    *

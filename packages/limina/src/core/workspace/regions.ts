@@ -305,6 +305,23 @@ function readExplicitOutputOutDir(options: {
   return resolvedOutDir;
 }
 
+export function collectConfiguredOutputDirectories(options: {
+  config: ResolvedLiminaConfig;
+  sourceConfigPaths: readonly string[];
+}): string[] {
+  return [
+    ...new Set(
+      options.sourceConfigPaths.flatMap((sourceConfigPath) => {
+        const outDir = readExplicitOutputOutDir({
+          config: options.config,
+          sourceConfigPath: normalizeAbsolutePath(sourceConfigPath),
+        });
+        return outDir ? [outDir] : [];
+      }),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
 async function collectConfiguredOutputDirectoryIgnorePatterns(options: {
   config: ResolvedLiminaConfig;
   rawBoundaryRoots: readonly string[];
@@ -315,32 +332,21 @@ async function collectConfiguredOutputDirectoryIgnorePatterns(options: {
     ignore: [...workspaceRegionDiscoveryIgnore],
     onlyFiles: true,
   });
-  const sourceConfigOutputPatterns = sourceConfigPaths.flatMap(
-    (sourceConfigPath) => {
-      const normalizedSourceConfigPath =
-        normalizeAbsolutePath(sourceConfigPath);
-
-      if (
-        options.rawBoundaryRoots.some((rootDir) =>
-          isPathInsideDirectory(normalizedSourceConfigPath, rootDir),
-        )
-      ) {
-        return [];
-      }
-
-      const outDir = readExplicitOutputOutDir({
-        config: options.config,
-        sourceConfigPath: normalizedSourceConfigPath,
-      });
-
-      if (!outDir) {
-        return [];
-      }
-
-      return normalizeExactDirectoryIgnorePattern(
-        toPosixPath(toRelativePath(options.config.rootDir, outDir)),
-      );
-    },
+  const sourceConfigOutputPatterns = collectConfiguredOutputDirectories({
+    config: options.config,
+    sourceConfigPaths: sourceConfigPaths.filter(
+      (sourceConfigPath) =>
+        !options.rawBoundaryRoots.some((rootDir) =>
+          isPathInsideDirectory(
+            normalizeAbsolutePath(sourceConfigPath),
+            rootDir,
+          ),
+        ),
+    ),
+  }).flatMap((outDir) =>
+    normalizeExactDirectoryIgnorePattern(
+      toPosixPath(toRelativePath(options.config.rootDir, outDir)),
+    ),
   );
   const packageOutputPatterns = (options.config.package?.entries ?? []).flatMap(
     (entry) => {

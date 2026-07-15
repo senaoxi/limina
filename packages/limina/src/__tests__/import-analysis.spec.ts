@@ -156,13 +156,17 @@ describe('import analysis', () => {
           specifier: item.specifier,
         })),
       ).toEqual([
-        { kind: 'comment', line: 2, specifier: './jsdoc' },
-        { kind: 'comment', line: 3, specifier: './tagged' },
-        { kind: 'comment', line: 4, specifier: '@emotion/react' },
-        { kind: 'comment', line: 6, specifier: 'jest-environment-jsdom' },
-        { kind: 'comment', line: 7, specifier: '@edge-runtime/vm' },
-        { kind: 'comment', line: 9, specifier: 'vitest' },
-        { kind: 'comment', line: 10, specifier: './ambient.d.ts' },
+        { kind: 'jsdoc-import', line: 2, specifier: './jsdoc' },
+        { kind: 'jsdoc-import', line: 3, specifier: './tagged' },
+        { kind: 'jsx-import-source', line: 4, specifier: '@emotion/react' },
+        {
+          kind: 'environment-pragma',
+          line: 6,
+          specifier: 'jest-environment-jsdom',
+        },
+        { kind: 'environment-pragma', line: 7, specifier: '@edge-runtime/vm' },
+        { kind: 'triple-slash-types', line: 9, specifier: 'vitest' },
+        { kind: 'triple-slash-path', line: 10, specifier: './ambient.d.ts' },
       ]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -205,7 +209,7 @@ describe('import analysis', () => {
         { kind: 'import-equals', line: 4, specifier: './equal' },
         { kind: 'commonjs', line: 5, specifier: './cjs' },
         { kind: 'require-resolve', line: 6, specifier: './resolved' },
-        { kind: 'comment', line: 7, specifier: '@emotion/react' },
+        { kind: 'jsx-import-source', line: 7, specifier: '@emotion/react' },
         { kind: 'import-type', line: 8, specifier: './types' },
         { kind: 'export', line: 12, specifier: './Widget' },
         { kind: 'dynamic', line: 13, specifier: './lazy' },

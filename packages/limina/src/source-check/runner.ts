@@ -81,6 +81,10 @@ import { isNodeBuiltinSpecifier } from '../graph-check/rules';
 import { SourceLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import {
+  type AmbientDeclarationIndex,
+  createAmbientDeclarationIndex,
+} from './ambient-declarations';
+import {
   collectKnipSourceIssues,
   type KnipCliRunner,
   type KnipOwnerProject,
@@ -191,6 +195,7 @@ interface PackageImportAuthorizationResolution {
 }
 
 function addProjectOwnerProblems(options: {
+  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   configPath: string;
@@ -204,6 +209,11 @@ function addProjectOwnerProblems(options: {
 
   for (const fileName of options.fileNames) {
     options.checks.add();
+
+    if (options.ambientDeclarations.has(fileName)) {
+      continue;
+    }
+
     const owner = options.workspaceLookup.findOwnerForFile(fileName);
 
     if (!owner) {
@@ -1670,6 +1680,7 @@ function addNearestTsconfigOwnershipProblem(options: {
 }
 
 async function addTsconfigGovernanceProblems(options: {
+  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   configPaths: string[];
@@ -1683,6 +1694,10 @@ async function addTsconfigGovernanceProblems(options: {
     options.generatedGraph,
   );
   const governanceUnitsByFile = new Map<
+    string,
+    Map<string, { configPaths: string[]; owner: PackageOwner }>
+  >();
+  const ambientConsumersByFile = new Map<
     string,
     Map<string, { configPaths: string[]; owner: PackageOwner }>
   >();
@@ -1731,6 +1746,21 @@ async function addTsconfigGovernanceProblems(options: {
 
     for (const fileName of project.fileNames) {
       options.checks.add();
+      const ambientPolicy = options.ambientDeclarations.get(fileName);
+
+      if (ambientPolicy) {
+        const consumers = ambientConsumersByFile.get(fileName) ?? new Map();
+        const consumer = consumers.get(owner.packageJsonPath) ?? {
+          configPaths: [],
+          owner,
+        };
+
+        consumer.configPaths.push(configPath);
+        consumers.set(owner.packageJsonPath, consumer);
+        ambientConsumersByFile.set(fileName, consumers);
+        continue;
+      }
+
       const fileOwner = options.workspaceLookup.findOwnerForFile(fileName);
 
       if (fileOwner?.packageJsonPath !== owner.packageJsonPath) {
@@ -1762,6 +1792,44 @@ async function addTsconfigGovernanceProblems(options: {
       governanceUnits.set(unitKey, governanceUnit);
       governanceUnitsByFile.set(fileName, governanceUnits);
     }
+  }
+
+  for (const [fileName, consumers] of [
+    ...ambientConsumersByFile.entries(),
+  ].sort(([left], [right]) => left.localeCompare(right))) {
+    options.checks.add();
+    const policy = options.ambientDeclarations.get(fileName);
+
+    if (!policy || consumers.size <= 1 || policy.allowSharedAcrossOwners) {
+      continue;
+    }
+
+    options.problems.push(
+      [
+        'Ambient declaration is shared across source owners without authorization:',
+        `  file: ${toRelativePath(options.config.rootDir, fileName)}`,
+        `  rule: source.declarations.ambient[${policy.ruleIndex}]`,
+        '  source owners:',
+        ...[...consumers.values()]
+          .sort((left, right) =>
+            left.owner.packageJsonPath.localeCompare(
+              right.owner.packageJsonPath,
+            ),
+          )
+          .flatMap((consumer) => [
+            `    - ${toRelativePath(options.config.rootDir, consumer.owner.packageJsonPath)}`,
+            ...consumer.configPaths
+              .sort((left, right) => left.localeCompare(right))
+              .map(
+                (consumerConfigPath) =>
+                  `      config: ${toRelativePath(options.config.rootDir, consumerConfigPath)}`,
+              ),
+          ]),
+        `  configured reason: ${policy.reason}`,
+        '  reason: more than one distinct source owner consumes this ambient declaration, but allowSharedAcrossOwners is false.',
+        '  fix: set allowSharedAcrossOwners: true or narrow the ambient include and consuming tsconfig file sets.',
+      ].join('\n'),
+    );
   }
 
   for (const [fileName, governanceUnits] of [
@@ -2154,6 +2222,7 @@ async function createSourceProjectEntries(
 }
 
 async function addSourceProjectOwnerProblems(options: {
+  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   providers: AnalysisProviderSet;
@@ -2171,6 +2240,7 @@ async function addSourceProjectOwnerProblems(options: {
     }
 
     addProjectOwnerProblems({
+      ambientDeclarations: options.ambientDeclarations,
       checks: options.checks,
       config: options.config,
       configPath: project.configPath,
@@ -2187,6 +2257,7 @@ async function addSourceProjectOwnerProblems(options: {
     }
 
     addProjectOwnerProblems({
+      ambientDeclarations: options.ambientDeclarations,
       checks: options.checks,
       config: options.config,
       configPath: typecheckConfigPath,
@@ -2204,6 +2275,7 @@ async function addSourceProjectOwnerProblems(options: {
 }
 
 function addRelativeImportProblems(options: {
+  ambientDeclarations: AmbientDeclarationIndex;
   config: ResolvedLiminaConfig;
   filePath: string;
   importRecord: ImportRecord;
@@ -2214,6 +2286,29 @@ function addRelativeImportProblems(options: {
 }): void {
   if (!options.resolvedFilePath) {
     return;
+  }
+
+  if (options.importRecord.kind === 'triple-slash-path') {
+    const policy = options.ambientDeclarations.get(options.resolvedFilePath);
+
+    if (policy?.allowTripleSlashReferences) {
+      return;
+    }
+
+    if (policy) {
+      options.problems.push(
+        [
+          'Ambient declaration triple-slash path reference is not authorized:',
+          `  source owner: ${toRelativePath(options.config.rootDir, options.owner.packageJsonPath)}`,
+          `  file: ${toRelativePath(options.config.rootDir, options.filePath)}:${options.importRecord.line}`,
+          `  declaration target: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
+          `  rule: source.declarations.ambient[${policy.ruleIndex}]`,
+          '  reason: allowTripleSlashReferences is false for the matched ambient declaration rule.',
+          '  fix: set allowTripleSlashReferences: true or remove the triple-slash path reference.',
+        ].join('\n'),
+      );
+      return;
+    }
   }
 
   const sourcePackageScope =
@@ -2243,11 +2338,18 @@ function addRelativeImportProblems(options: {
 function shouldSkipBarePackageAuthorization(
   importRecord: ImportRecord,
 ): boolean {
+  const isCommentDependency =
+    importRecord.kind === 'jsdoc-import' ||
+    importRecord.kind === 'triple-slash-path' ||
+    importRecord.kind === 'triple-slash-types' ||
+    importRecord.kind === 'jsx-import-source' ||
+    importRecord.kind === 'environment-pragma';
+
   return (
     isUrlOrDataOrFileSpecifier(importRecord.specifier) ||
     isVirtualModuleSpecifier(importRecord.specifier) ||
     !isBarePackageSpecifier(importRecord.specifier) ||
-    importRecord.kind === 'comment' ||
+    isCommentDependency ||
     isNodeBuiltinSpecifier(importRecord.specifier)
   );
 }
@@ -2479,6 +2581,7 @@ function addBarePackageImportProblems(options: {
 }
 
 function addImportRecordProblems(options: {
+  ambientDeclarations: AmbientDeclarationIndex;
   config: ResolvedLiminaConfig;
   filePath: string;
   importAnalysis: AnalysisProviderSet['imports']['context'];
@@ -2531,6 +2634,7 @@ function addImportRecordProblems(options: {
 
   if (isRelativeSpecifier(options.importRecord.specifier)) {
     addRelativeImportProblems({
+      ambientDeclarations: options.ambientDeclarations,
       config: options.config,
       filePath: options.filePath,
       importRecord: options.importRecord,
@@ -2578,6 +2682,7 @@ function addImportRecordProblems(options: {
 }
 
 function addSourceImportProblems(options: {
+  ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   importAnalysis: AnalysisProviderSet['imports']['context'];
@@ -2604,6 +2709,7 @@ function addSourceImportProblems(options: {
       )) {
         options.checks.add();
         addImportRecordProblems({
+          ambientDeclarations: options.ambientDeclarations,
           config: options.config,
           filePath,
           importAnalysis: options.importAnalysis,
@@ -2649,6 +2755,18 @@ function stripProblemLocationSuffix(filePath: string): string {
 }
 
 function getSourceProblemCode(title: string): string {
+  if (title.startsWith('Ambient declaration configuration')) {
+    return LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid;
+  }
+
+  if (title.startsWith('Ambient declaration is shared across source owners')) {
+    return LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized;
+  }
+
+  if (title.startsWith('Ambient declaration triple-slash path reference')) {
+    return LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized;
+  }
+
   if (title.startsWith('Source import crosses governance boundary')) {
     return LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary;
   }
@@ -2877,6 +2995,15 @@ export async function runSourceCheckImpl(
     workspaceLookup,
   });
   const importAnalysis = preflight.importAnalysis;
+  const ambientDeclarationResult = await createAmbientDeclarationIndex({
+    config,
+    generatedGraph,
+    packages,
+    regionBoundaries: regionBoundaryIndex,
+    workspaceLookup,
+  });
+
+  sourceIssues.push(...ambientDeclarationResult.issues);
 
   checkItems.start('workspace regions');
   addWorkspaceRegionOverlapProblems({
@@ -2902,6 +3029,7 @@ export async function runSourceCheckImpl(
 
   checkItems.start('tsconfig governance');
   await addTsconfigGovernanceProblems({
+    ambientDeclarations: ambientDeclarationResult.index,
     checks,
     config,
     configPaths: collectGeneratedSourceConfigPaths(generatedGraph),
@@ -2938,6 +3066,7 @@ export async function runSourceCheckImpl(
 
   checkItems.start('source project ownership');
   await addSourceProjectOwnerProblems({
+    ambientDeclarations: ambientDeclarationResult.index,
     checks,
     config,
     providers: core,
@@ -2974,6 +3103,7 @@ export async function runSourceCheckImpl(
   });
 
   addSourceImportProblems({
+    ambientDeclarations: ambientDeclarationResult.index,
     checks,
     config,
     importAnalysis,

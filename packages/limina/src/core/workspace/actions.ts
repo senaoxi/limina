@@ -17,6 +17,8 @@ export interface PackageManifest {
   peerDependencies?: Record<string, string>;
   private?: boolean;
   scripts?: Record<string, string>;
+  types?: string;
+  typings?: string;
   type?: string;
   version?: string;
   workspaces?: string[];

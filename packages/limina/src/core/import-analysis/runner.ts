@@ -109,8 +109,10 @@ const jsDocImportTagRE =
   /@import\s+(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/gu;
 const jsxImportSourceRE = /@jsxImportSource\s+([^\s*]+)/gu;
 const envPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/gu;
-const tripleSlashReferenceRE =
-  /\/\/\/\s*<reference\s+(?:types|path)\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
+const tripleSlashPathReferenceRE =
+  /\/\/\/\s*<reference\s+path\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
+const tripleSlashTypesReferenceRE =
+  /\/\/\/\s*<reference\s+types\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
 const scriptExtractorRE =
   /<script\b((?:[^>"']|"[^"]*"|'[^']*')*)>([\s\S]*?)<\/script>/giu;
 const htmlAttrRE =
@@ -342,6 +344,7 @@ function getFirstNonTriviaStart(sourceText: string): number {
 function addCommentImportRecords(options: {
   commentStart: number;
   filePath: string;
+  kind: ImportRecordKind;
   lineOffset: number;
   lineStarts: number[];
   records: CollectedImportRecord[];
@@ -367,7 +370,7 @@ function addCommentImportRecords(options: {
     options.records.push(
       createImportRecord({
         filePath: options.filePath,
-        kind: 'comment',
+        kind: options.kind,
         lineOffset: options.lineOffset,
         lineStarts: options.lineStarts,
         pos:
@@ -445,24 +448,34 @@ function collectCommentImportRecords(options: {
 
     addCommentImportRecords({
       ...commonOptions,
+      kind: 'jsdoc-import',
       regex: jsDocImportRE,
     });
     addCommentImportRecords({
       ...commonOptions,
+      kind: 'jsdoc-import',
       regex: jsDocImportTagRE,
     });
     addCommentImportRecords({
       ...commonOptions,
+      kind: 'jsx-import-source',
       regex: jsxImportSourceRE,
     });
     addCommentImportRecords({
       ...commonOptions,
-      regex: tripleSlashReferenceRE,
+      kind: 'triple-slash-path',
+      regex: tripleSlashPathReferenceRE,
+    });
+    addCommentImportRecords({
+      ...commonOptions,
+      kind: 'triple-slash-types',
+      regex: tripleSlashTypesReferenceRE,
     });
 
     if (commentEnd <= firstNonTriviaStart) {
       addCommentImportRecords({
         ...commonOptions,
+        kind: 'environment-pragma',
         regex: envPragmaRE,
         resolveSpecifier: (match) => {
           const tool = match[1];

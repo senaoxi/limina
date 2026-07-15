@@ -45,6 +45,12 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   releaseRegistry: 'LIMINA_RELEASE_REGISTRY',
   releaseTarballHygiene: 'LIMINA_RELEASE_TARBALL_HYGIENE',
   sourceCheckFailed: 'LIMINA_SOURCE_CHECK_FAILED',
+  sourceAmbientDeclarationConfigInvalid:
+    'LIMINA_SOURCE_AMBIENT_DECLARATION_CONFIG_INVALID',
+  sourceAmbientDeclarationSharedUnauthorized:
+    'LIMINA_SOURCE_AMBIENT_DECLARATION_SHARED_UNAUTHORIZED',
+  sourceAmbientDeclarationReferenceUnauthorized:
+    'LIMINA_SOURCE_AMBIENT_DECLARATION_REFERENCE_UNAUTHORIZED',
   sourceCrossGovernanceBoundary: 'LIMINA_SOURCE_CROSS_GOVERNANCE_BOUNDARY',
   sourceImportAuthorityInvalid: 'LIMINA_SOURCE_IMPORT_AUTHORITY_INVALID',
   sourceKnipBuildScriptUnsupported:
@@ -288,6 +294,23 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
     code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
     description:
       'Source check failed before a more specific rule was recorded.',
+    task: 'source:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid]: {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid,
+    description: 'Shared ambient declaration configuration is invalid.',
+    task: 'source:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized]: {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationSharedUnauthorized,
+    description:
+      'An ambient declaration is consumed by multiple source owners without authorization.',
+    task: 'source:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized]: {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationReferenceUnauthorized,
+    description:
+      'A triple-slash path reference targets an ambient declaration without authorization.',
     task: 'source:check',
   },
   [LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary]: {

@@ -607,6 +607,93 @@ function validateSourceImportAuthorityConfig(
   }
 }
 
+function validateSourceDeclarationsConfig(
+  value: unknown,
+  ctx: ConfigValidationContext,
+): void {
+  if (value === undefined) return;
+  const declarationsPath = ['source', 'declarations'];
+  if (!isPlainConfigRecord(value)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'declarations must be an object.',
+      path: declarationsPath,
+    });
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== 'ambient')
+      ctx.addIssue({
+        code: 'custom',
+        message: 'unknown source declarations config field.',
+        path: [...declarationsPath, key],
+      });
+  }
+  if (value.ambient === undefined) return;
+  const ambientPath = [...declarationsPath, 'ambient'];
+  if (!Array.isArray(value.ambient)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'ambient must be an array.',
+      path: ambientPath,
+    });
+    return;
+  }
+  for (const [index, rule] of value.ambient.entries()) {
+    const rulePath = [...ambientPath, index];
+    if (!isPlainConfigRecord(rule)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'ambient declaration rules must be objects.',
+        path: rulePath,
+      });
+      continue;
+    }
+    for (const key of Object.keys(rule)) {
+      if (
+        ![
+          'include',
+          'allowSharedAcrossOwners',
+          'allowTripleSlashReferences',
+          'reason',
+        ].includes(key)
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'unknown ambient declaration rule field.',
+          path: [...rulePath, key],
+        });
+      }
+    }
+    validateStringArrayField({
+      ctx,
+      path: [...rulePath, 'include'],
+      required: true,
+      value: rule.include,
+      valueName: 'ambient declaration include',
+    });
+    if (typeof rule.reason !== 'string' || rule.reason.trim().length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'ambient declaration reason must be a non-empty string.',
+        path: [...rulePath, 'reason'],
+      });
+    }
+    for (const key of [
+      'allowSharedAcrossOwners',
+      'allowTripleSlashReferences',
+    ] as const) {
+      if (rule[key] !== undefined && typeof rule[key] !== 'boolean') {
+        ctx.addIssue({
+          code: 'custom',
+          message: `${key} must be a boolean.`,
+          path: [...rulePath, key],
+        });
+      }
+    }
+  }
+}
+
 const regionExcludeKinds = [
   'workspace-package',
   'package-scope',
@@ -768,7 +855,11 @@ const liminaConfigShapeSchema = z
     }
 
     for (const key of Object.keys(source)) {
-      if (key === 'knip' || key === 'importAuthority') {
+      if (
+        key === 'knip' ||
+        key === 'importAuthority' ||
+        key === 'declarations'
+      ) {
         continue;
       }
 
@@ -780,6 +871,7 @@ const liminaConfigShapeSchema = z
     }
 
     validateSourceImportAuthorityConfig(source.importAuthority, ctx);
+    validateSourceDeclarationsConfig(source.declarations, ctx);
   });
 
 function formatZodPath(pathSegments: readonly PropertyKey[]): string {

@@ -1,0 +1,272 @@
+import type { ResolvedLiminaConfig } from '#config/runner';
+import {
+  collectGeneratedSourceConfigPaths,
+  type GeneratedTsconfigGraphResult,
+} from '#core/build-graph/runner';
+import type { WorkspacePackage } from '#core/workspace/actions';
+import {
+  isPathInsideDirectory,
+  normalizeAbsolutePath,
+  toRelativePath,
+} from '#utils/path';
+import { readFile } from 'node:fs/promises';
+import path from 'pathe';
+import { glob } from 'tinyglobby';
+import ts from 'typescript';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { collectWorkspacePackageDeclarationEntryPaths } from '../core/workspace/exports';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import {
+  collectConfiguredOutputDirectories,
+  type WorkspaceRegionBoundaryIndex,
+} from '../core/workspace/regions';
+import type { SourceCheckIssue, SourceStructuredIssue } from './report';
+
+export interface AmbientDeclarationPolicy {
+  allowSharedAcrossOwners: boolean;
+  allowTripleSlashReferences: boolean;
+  filePath: string;
+  reason: string;
+  ruleIndex: number;
+}
+
+export interface AmbientDeclarationIndex {
+  get(filePath: string): AmbientDeclarationPolicy | null;
+  has(filePath: string): boolean;
+}
+
+export interface AmbientDeclarationIndexResult {
+  index: AmbientDeclarationIndex;
+  issues: SourceCheckIssue[];
+}
+
+class AmbientDeclarationIndexImpl implements AmbientDeclarationIndex {
+  readonly #policies: Map<string, AmbientDeclarationPolicy>;
+  constructor(policies: Iterable<readonly [string, AmbientDeclarationPolicy]>) {
+    this.#policies = new Map(policies);
+  }
+  get(filePath: string): AmbientDeclarationPolicy | null {
+    return this.#policies.get(normalizeAbsolutePath(filePath)) ?? null;
+  }
+  has(filePath: string): boolean {
+    return this.#policies.has(normalizeAbsolutePath(filePath));
+  }
+}
+
+function createConfigIssue(options: {
+  config: ResolvedLiminaConfig;
+  details?: string[];
+  filePath?: string;
+  reason: string;
+  ruleIndex: number;
+}): SourceStructuredIssue {
+  const rule = `source.declarations.ambient[${options.ruleIndex}]`;
+  const lines = [
+    `rule: ${rule}`,
+    ...(options.filePath
+      ? [`file: ${toRelativePath(options.config.rootDir, options.filePath)}`]
+      : []),
+    ...(options.details ?? []),
+    `reason: ${options.reason}`,
+  ];
+  return {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid,
+    detailLines: lines,
+    detector: 'source',
+    evidence: [{ label: 'diagnostic', lines }],
+    ...(options.filePath ? { filePath: options.filePath } : {}),
+    ownerName: '<workspace>',
+    reason: options.reason,
+    scope: rule,
+    summary: 'Ambient declaration configuration is invalid',
+    title: 'Ambient declaration configuration is invalid',
+  };
+}
+
+function isDeclarationFile(filePath: string): boolean {
+  return /\.d\.(?:cts|mts|ts)$/u.test(filePath);
+}
+
+function isEmptyExportMarker(statement: ts.Statement): boolean {
+  return (
+    ts.isExportDeclaration(statement) &&
+    !statement.moduleSpecifier &&
+    Boolean(
+      statement.exportClause &&
+        ts.isNamedExports(statement.exportClause) &&
+        statement.exportClause.elements.length === 0,
+    )
+  );
+}
+
+function isDeclareGlobalStatement(statement: ts.Statement): boolean {
+  return (
+    ts.isModuleDeclaration(statement) &&
+    (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0
+  );
+}
+
+async function hasAmbientDeclarationRole(filePath: string): Promise<boolean> {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    await readFile(filePath, 'utf8'),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  if (!ts.isExternalModule(sourceFile)) return true;
+  return sourceFile.statements.every(
+    (statement) =>
+      ts.isEmptyStatement(statement) ||
+      isEmptyExportMarker(statement) ||
+      isDeclareGlobalStatement(statement),
+  );
+}
+
+function collectManagedDeclarationPaths(
+  graph: GeneratedTsconfigGraphResult,
+): Set<string> {
+  return new Set(
+    [...graph.dtsToSource.values()].flatMap((mapping) =>
+      [...mapping.keys()].map(normalizeAbsolutePath),
+    ),
+  );
+}
+
+export async function createAmbientDeclarationIndex(options: {
+  config: ResolvedLiminaConfig;
+  generatedGraph: GeneratedTsconfigGraphResult;
+  packages: readonly WorkspacePackage[];
+  regionBoundaries: WorkspaceRegionBoundaryIndex;
+  workspaceLookup: WorkspaceLookupIndex;
+}): Promise<AmbientDeclarationIndexResult> {
+  const rules = options.config.source?.declarations?.ambient ?? [];
+  const issues: SourceCheckIssue[] = [];
+  const matchesByRule = await Promise.all(
+    rules.map(async (rule) =>
+      [
+        ...new Set(
+          (
+            await glob(rule.include, {
+              absolute: true,
+              cwd: options.config.rootDir,
+              dot: true,
+              onlyFiles: true,
+            })
+          ).map(normalizeAbsolutePath),
+        ),
+      ].sort((left, right) => left.localeCompare(right)),
+    ),
+  );
+  const ruleIndexesByFile = new Map<string, number[]>();
+
+  for (const [ruleIndex, matches] of matchesByRule.entries()) {
+    if (matches.length === 0) {
+      issues.push(
+        createConfigIssue({
+          config: options.config,
+          details: [`include: ${rules[ruleIndex]!.include.join(', ')}`],
+          reason:
+            'ambient declaration rules must match at least one existing declaration file.',
+          ruleIndex,
+        }),
+      );
+    }
+    for (const filePath of matches) {
+      const indexes = ruleIndexesByFile.get(filePath) ?? [];
+      indexes.push(ruleIndex);
+      ruleIndexesByFile.set(filePath, indexes);
+    }
+  }
+
+  const overlappingRules = new Set<number>();
+  for (const [filePath, indexes] of ruleIndexesByFile) {
+    if (indexes.length <= 1) continue;
+    for (const ruleIndex of indexes) {
+      overlappingRules.add(ruleIndex);
+      issues.push(
+        createConfigIssue({
+          config: options.config,
+          details: [
+            `matching rules: ${indexes.map((index) => `source.declarations.ambient[${index}]`).join(', ')}`,
+          ],
+          filePath,
+          reason:
+            'one physical declaration file cannot match multiple ambient declaration rules.',
+          ruleIndex,
+        }),
+      );
+    }
+  }
+
+  const managedPaths = collectManagedDeclarationPaths(options.generatedGraph);
+  const outputDirs = collectConfiguredOutputDirectories({
+    config: options.config,
+    sourceConfigPaths: collectGeneratedSourceConfigPaths(
+      options.generatedGraph,
+    ),
+  });
+  const publicEntries = await collectWorkspacePackageDeclarationEntryPaths(
+    options.packages,
+  );
+  const liminaDir = normalizeAbsolutePath(
+    path.join(options.config.rootDir, '.limina'),
+  );
+  const policies = new Map<string, AmbientDeclarationPolicy>();
+
+  for (const [ruleIndex, matches] of matchesByRule.entries()) {
+    const rule = rules[ruleIndex]!;
+    let valid = matches.length > 0 && !overlappingRules.has(ruleIndex);
+    for (const filePath of matches) {
+      let reason: string | null = null;
+      if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
+        reason =
+          'ambient declaration files must remain inside the active workspace root.';
+      } else if (!isDeclarationFile(filePath)) {
+        reason =
+          'ambient declaration rules may only match .d.ts, .d.cts, or .d.mts files.';
+      } else if (
+        options.regionBoundaries.findBoundaryForPath(filePath) ||
+        options.workspaceLookup.isLocalPathOutsideActivatedRegion(filePath)
+      ) {
+        reason =
+          'ambient declaration rules cannot cross nested, excluded, or inactive workspace region boundaries.';
+      } else if (
+        isPathInsideDirectory(filePath, liminaDir) ||
+        outputDirs.some((dir) => isPathInsideDirectory(filePath, dir)) ||
+        managedPaths.has(filePath)
+      ) {
+        reason =
+          'managed output declarations cannot be classified as ambient declarations.';
+      } else if (publicEntries.has(filePath)) {
+        reason =
+          'workspace package public declaration entries cannot be classified as ambient declarations.';
+      } else if (!(await hasAmbientDeclarationRole(filePath))) {
+        reason =
+          'ordinary external declaration modules with imports, exports, or re-exports remain package-owned declaration APIs.';
+      }
+      if (!reason) continue;
+      valid = false;
+      issues.push(
+        createConfigIssue({
+          config: options.config,
+          filePath,
+          reason,
+          ruleIndex,
+        }),
+      );
+    }
+    if (!valid) continue;
+    for (const filePath of matches) {
+      policies.set(filePath, {
+        allowSharedAcrossOwners: rule.allowSharedAcrossOwners ?? false,
+        allowTripleSlashReferences: rule.allowTripleSlashReferences ?? false,
+        filePath,
+        reason: rule.reason,
+        ruleIndex,
+      });
+    }
+  }
+
+  return { index: new AmbientDeclarationIndexImpl(policies), issues };
+}
