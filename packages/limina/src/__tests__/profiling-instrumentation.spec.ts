@@ -113,8 +113,8 @@ describe('module resolution profiling instrumentation', () => {
 
       const snapshot = metrics.snapshot();
       expect(metricCount(snapshot, 'module-resolution-request')).toBe(5);
-      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(5);
-      expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(0);
+      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(3);
+      expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(2);
       expect(metricCount(snapshot, 'typescript-resolution')).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
@@ -122,9 +122,9 @@ describe('module resolution profiling instrumentation', () => {
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
       ).toBe(0);
-      expect(metricCount(snapshot, 'oxc-resolution')).toBe(2);
+      expect(metricCount(snapshot, 'oxc-resolution')).toBe(1);
       expect(metricCount(snapshot, 'oxc-resolver-factory-create')).toBe(1);
-      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(1);
+      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(0);
 
       expect(metricCount(snapshot, 'internal-import-resolution')).toBe(2);
       expect(metricCount(snapshot, 'import-resolution-cache-miss')).toBe(1);
@@ -182,15 +182,16 @@ describe('module resolution profiling instrumentation', () => {
 
       expect(second).toEqual(first);
       const snapshot = metrics.snapshot();
-      expect(metricCount(snapshot, 'typescript-resolution')).toBe(2);
+      expect(metricCount(snapshot, 'typescript-resolution')).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
       ).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
-      ).toBe(1);
+      ).toBe(0);
       expect(metricCount(snapshot, 'module-resolution-request')).toBe(2);
-      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(2);
+      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(1);
+      expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(1);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -265,7 +266,9 @@ describe('module resolution profiling instrumentation', () => {
       ).toBe(4);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
-      ).toBe(1);
+      ).toBe(0);
+      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(4);
+      expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(1);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

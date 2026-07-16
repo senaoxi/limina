@@ -49,18 +49,13 @@ export function resolveDeclarationProvider(options: {
   importRecord: ImportRecord;
   project: DeclarationProviderProjectContext;
 }): DeclarationProviderResolution {
-  const typeScriptResolution = options.importAnalysis.resolveTypeScriptImport(
-    options.importRecord.specifier,
-    options.containingFile,
-    options.compilerOptions,
-    options.project,
-  );
-  const oxcResolvedFilePath = options.importAnalysis.resolveOxcImport(
-    options.importRecord.specifier,
-    options.containingFile,
-    options.compilerOptions,
-    options.project,
-  );
+  const { oxc: oxcResolvedFilePath, typescript: typeScriptResolution } =
+    options.importAnalysis.resolveModulePair(
+      options.importRecord.specifier,
+      options.containingFile,
+      options.compilerOptions,
+      options.project,
+    );
 
   if (!typeScriptResolution) {
     return oxcResolvedFilePath
