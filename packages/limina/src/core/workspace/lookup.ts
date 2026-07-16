@@ -16,7 +16,10 @@ import type {
   NearestPackageInfo,
   ResolvedPackageTarget,
 } from '../packages/owners';
-import type { WorkspaceRegionPathIndex } from './validated-context';
+import type {
+  WorkspaceIndexMetricsRecorder,
+  WorkspaceRegionPathIndex,
+} from './validated-context';
 
 export interface WorkspaceLookupIndexOptions {
   importers: ImporterInfo[];
@@ -24,6 +27,7 @@ export interface WorkspaceLookupIndexOptions {
   packages: WorkspacePackage[];
   rootDir: string;
   pathIndex: WorkspaceRegionPathIndex;
+  metrics?: WorkspaceIndexMetricsRecorder;
 }
 
 interface NormalizedImporter {
@@ -44,6 +48,7 @@ export class WorkspaceLookupIndex {
   readonly rootDir: string;
 
   readonly #importers: NormalizedImporter[];
+  readonly #metrics: WorkspaceIndexMetricsRecorder | undefined;
   readonly #namedPackagesByName = new Map<string, NamedWorkspacePackage>();
   readonly #ownersByDirectory: Map<string, PackageOwner>;
   readonly #packageInfoByPackageJsonPath = new Map<
@@ -72,6 +77,7 @@ export class WorkspaceLookupIndex {
 
   constructor(options: WorkspaceLookupIndexOptions) {
     this.rootDir = normalizeAbsolutePath(options.rootDir);
+    this.#metrics = options.metrics;
     this.#pathIndex = options.pathIndex;
     this.#importers = options.importers
       .filter((importer) => this.#isInsideActivatedRegion(importer.directory))
@@ -108,9 +114,9 @@ export class WorkspaceLookupIndex {
 
   findPackageForFile(filePath: string): WorkspacePackage | null {
     const normalizedFilePath = normalizeAbsolutePath(filePath);
-    const cached = this.#packageByFilePath.get(normalizedFilePath);
-
-    if (cached !== undefined) {
+    if (this.#packageByFilePath.has(normalizedFilePath)) {
+      const cached = this.#packageByFilePath.get(normalizedFilePath) ?? null;
+      this.#recordLookup('hit', 'package', cached);
       return cached;
     }
 
@@ -128,14 +134,15 @@ export class WorkspaceLookupIndex {
           );
 
     this.#packageByFilePath.set(normalizedFilePath, workspacePackage);
+    this.#recordLookup('miss', 'package', workspacePackage);
     return workspacePackage;
   }
 
   findOwnerForFile(filePath: string): PackageOwner | null {
     const normalizedFilePath = normalizeAbsolutePath(filePath);
-    const cached = this.#ownerByFilePath.get(normalizedFilePath);
-
-    if (cached !== undefined) {
+    if (this.#ownerByFilePath.has(normalizedFilePath)) {
+      const cached = this.#ownerByFilePath.get(normalizedFilePath) ?? null;
+      this.#recordLookup('hit', 'owner', cached);
       return cached;
     }
 
@@ -150,14 +157,15 @@ export class WorkspaceLookupIndex {
         : findNearestDirectoryItem(normalizedFilePath, this.#ownersByDirectory);
 
     this.#ownerByFilePath.set(normalizedFilePath, owner);
+    this.#recordLookup('miss', 'owner', owner);
     return owner;
   }
 
   findImporterForFile(filePath: string): ImporterInfo | null {
     const normalizedFilePath = normalizeAbsolutePath(filePath);
-    const cached = this.#importerByFilePath.get(normalizedFilePath);
-
-    if (cached !== undefined) {
+    if (this.#importerByFilePath.has(normalizedFilePath)) {
+      const cached = this.#importerByFilePath.get(normalizedFilePath) ?? null;
+      this.#recordLookup('hit', 'importer', cached);
       return cached;
     }
 
@@ -171,6 +179,7 @@ export class WorkspaceLookupIndex {
         )?.importer ?? null);
 
     this.#importerByFilePath.set(normalizedFilePath, importer);
+    this.#recordLookup('miss', 'importer', importer);
     return importer;
   }
 
@@ -217,6 +226,7 @@ export class WorkspaceLookupIndex {
     const cached = this.#resolvedPackageTargetByKey.get(cacheKey);
 
     if (cached) {
+      this.#recordLookup('hit', 'resolved-package-target', cached);
       return cached;
     }
 
@@ -234,7 +244,23 @@ export class WorkspaceLookupIndex {
     });
 
     this.#resolvedPackageTargetByKey.set(cacheKey, target);
+    this.#recordLookup('miss', 'resolved-package-target', target);
     return target;
+  }
+
+  #recordLookup(state: 'hit' | 'miss', kind: string, value: unknown): void {
+    this.#metrics?.record({
+      kind,
+      name: state === 'hit' ? 'provider-cache-hit' : 'provider-cache-miss',
+      provider: 'workspace-lookup-index',
+    });
+    if (value === null) {
+      this.#metrics?.record({
+        kind,
+        name: 'workspace-negative-lookup',
+        provider: 'workspace-lookup-index',
+      });
+    }
   }
 
   #classifyResolvedPackageTarget(options: {

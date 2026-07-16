@@ -6,8 +6,6 @@ import type { WorkspaceDependencyDeclaration } from './packages/authority';
 import type { ResolvedPackageTarget } from './packages/owners';
 import type { TsconfigCore } from './tsconfig';
 import type { WorkspaceCore } from './workspace';
-import { createWorkspaceLookupIndex } from './workspace/lookup';
-import { WorkspaceRegionPathIndex } from './workspace/validated-context';
 
 export interface PackageDomain {
   owner: PackageOwner | null;
@@ -47,7 +45,7 @@ export class PackageDomainCore {
   }
 
   async findOwner(filePath: string): Promise<PackageOwner | null> {
-    const owner = (await this.#createWorkspaceLookupIndex()).findOwnerForFile(
+    const owner = (await this.#workspace.getLookupIndex()).findOwnerForFile(
       filePath,
     );
 
@@ -59,7 +57,7 @@ export class PackageDomainCore {
     resolvedFilePath: string;
   }): Promise<ResolvedPackageTarget> {
     return (
-      await this.#createWorkspaceLookupIndex()
+      await this.#workspace.getLookupIndex()
     ).classifyResolvedPackageTarget({
       owner: options.owner,
       resolvedFilePath: options.resolvedFilePath,
@@ -68,23 +66,6 @@ export class PackageDomainCore {
 
   getDependencyDeclarations(): Promise<WorkspaceDependencyDeclaration[]> {
     return this.#workspace.getWorkspaceDependencyDeclarations();
-  }
-
-  async #createWorkspaceLookupIndex() {
-    const [importers, owners, packages, context] = await Promise.all([
-      this.#workspace.getImporters(),
-      this.#workspace.getPackageOwners(),
-      this.#workspace.getPackages(),
-      this.#workspace.getValidatedContext(),
-    ]);
-
-    return createWorkspaceLookupIndex({
-      importers,
-      owners,
-      packages,
-      pathIndex: new WorkspaceRegionPathIndex(context),
-      rootDir: this.#workspace.rootDir,
-    });
   }
 
   async #createPackageDomain(packageName: string): Promise<PackageDomain> {

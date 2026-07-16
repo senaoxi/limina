@@ -67,6 +67,21 @@ export interface ValidatedWorkspaceContext extends WorkspaceRegionTopology {
   readonly workspaceRootDir: string;
 }
 
+export interface WorkspaceIndexMetricsRecorder {
+  record(measurement: {
+    readonly count?: number;
+    readonly kind?: string;
+    readonly name:
+      | 'canonical-path-cache-hit'
+      | 'canonical-path-cache-miss'
+      | 'canonical-path'
+      | 'provider-cache-hit'
+      | 'provider-cache-miss'
+      | 'workspace-negative-lookup';
+    readonly provider?: string;
+  }): void;
+}
+
 interface PackageIslandCollection {
   boundaries: PackageScopeRegionBoundary[];
   descriptors: WorkspaceDescriptorCandidate[];
@@ -994,11 +1009,22 @@ export async function collectValidatedWorkspaceContext(options: {
 export class WorkspaceRegionPathIndex {
   readonly packages: readonly WorkspacePackage[];
   readonly rootDir: string;
-  readonly #boundariesByOwner: Map<string, WorkspaceRegionBoundary[]>;
+  readonly #boundariesByOwner: Map<
+    string,
+    { boundary: WorkspaceRegionBoundary; canonicalRootDir: string }[]
+  >;
+  readonly #boundaryByPath = new Map<string, WorkspaceRegionBoundary | null>();
+  readonly #canonicalProjectedPathByNormalizedPath = new Map<string, string>();
   readonly #identities: WorkspacePackageIdentity[];
+  readonly #metrics: WorkspaceIndexMetricsRecorder | undefined;
+  readonly #packageByPath = new Map<string, WorkspacePackage | null>();
   readonly #sourceConfigIdentities: Set<string>;
 
-  constructor(context: ValidatedWorkspaceContext) {
+  constructor(
+    context: ValidatedWorkspaceContext,
+    metrics?: WorkspaceIndexMetricsRecorder,
+  ) {
+    this.#metrics = metrics;
     this.packages = context.packages.map((workspacePackage) => ({
       ...workspacePackage,
       manifest: { ...workspacePackage.manifest },
@@ -1010,56 +1036,125 @@ export class WorkspaceRegionPathIndex {
     );
     this.#boundariesByOwner = new Map();
     this.#sourceConfigIdentities = new Set(
-      context.sourceConfigPaths.map(canonicalProjectedPathSync),
+      context.sourceConfigPaths.map((sourceConfigPath) =>
+        this.#canonicalProjectedPath(sourceConfigPath),
+      ),
     );
     for (const identity of this.#identities) {
       this.#boundariesByOwner.set(
         identity.canonicalDirectory,
-        context.boundaries.filter((boundary) =>
-          isInsideOrEqual(identity.package.directory, boundary.rootDir),
-        ),
+        context.boundaries
+          .filter((boundary) =>
+            isInsideOrEqual(identity.package.directory, boundary.rootDir),
+          )
+          .map((boundary) => ({
+            boundary,
+            canonicalRootDir: this.#canonicalProjectedPath(boundary.rootDir),
+          })),
       );
     }
   }
 
   findPackageForPath(filePath: string): WorkspacePackage | null {
-    const canonicalPath = canonicalProjectedPathSync(filePath);
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    if (this.#packageByPath.has(normalizedFilePath)) {
+      const cached = this.#packageByPath.get(normalizedFilePath) ?? null;
+      this.#recordLookup('hit', 'region-package', cached);
+      return cached;
+    }
+
+    const canonicalPath = this.#canonicalProjectedPath(normalizedFilePath);
     const identity = this.#identities.find((candidate) =>
       isInsideOrEqual(candidate.canonicalDirectory, canonicalPath),
     );
-    if (!identity) return null;
+    if (!identity) {
+      this.#packageByPath.set(normalizedFilePath, null);
+      this.#recordLookup('miss', 'region-package', null);
+      return null;
+    }
     const boundaries =
       this.#boundariesByOwner.get(identity.canonicalDirectory) ?? [];
-    return boundaries.some((boundary) =>
-      isInsideOrEqual(
-        canonicalProjectedPathSync(boundary.rootDir),
-        canonicalPath,
-      ),
+    const workspacePackage = boundaries.some(({ canonicalRootDir }) =>
+      isInsideOrEqual(canonicalRootDir, canonicalPath),
     )
       ? null
       : identity.package;
+    this.#packageByPath.set(normalizedFilePath, workspacePackage);
+    this.#recordLookup('miss', 'region-package', workspacePackage);
+    return workspacePackage;
   }
 
   findBoundaryForPath(filePath: string): WorkspaceRegionBoundary | null {
-    const canonicalPath = canonicalProjectedPathSync(filePath);
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    if (this.#boundaryByPath.has(normalizedFilePath)) {
+      const cached = this.#boundaryByPath.get(normalizedFilePath) ?? null;
+      this.#recordLookup('hit', 'region-boundary', cached);
+      return cached;
+    }
+
+    const canonicalPath = this.#canonicalProjectedPath(normalizedFilePath);
     const identity = this.#identities.find((candidate) =>
       isInsideOrEqual(candidate.canonicalDirectory, canonicalPath),
     );
-    if (!identity) return null;
-    return (
-      (this.#boundariesByOwner.get(identity.canonicalDirectory) ?? [])
-        .filter((boundary) =>
-          isInsideOrEqual(
-            canonicalProjectedPathSync(boundary.rootDir),
-            canonicalPath,
-          ),
-        )
-        .sort(
-          (left, right) =>
-            canonicalProjectedPathSync(right.rootDir).length -
-            canonicalProjectedPathSync(left.rootDir).length,
-        )[0] ?? null
+    const boundary = identity
+      ? ((this.#boundariesByOwner.get(identity.canonicalDirectory) ?? [])
+          .filter(({ canonicalRootDir }) =>
+            isInsideOrEqual(canonicalRootDir, canonicalPath),
+          )
+          .sort(
+            (left, right) =>
+              right.canonicalRootDir.length - left.canonicalRootDir.length,
+          )[0]?.boundary ?? null)
+      : null;
+    this.#boundaryByPath.set(normalizedFilePath, boundary);
+    this.#recordLookup('miss', 'region-boundary', boundary);
+    return boundary;
+  }
+
+  #canonicalProjectedPath(targetPath: string): string {
+    const normalizedTarget = normalizeAbsolutePath(targetPath);
+    const cached =
+      this.#canonicalProjectedPathByNormalizedPath.get(normalizedTarget);
+    if (cached !== undefined) {
+      this.#metrics?.record({
+        kind: 'projected-path',
+        name: 'canonical-path-cache-hit',
+        provider: 'workspace-path-index',
+      });
+      return cached;
+    }
+
+    this.#metrics?.record({
+      kind: 'projected-path',
+      name: 'canonical-path-cache-miss',
+      provider: 'workspace-path-index',
+    });
+    const canonicalPath = canonicalProjectedPathSync(normalizedTarget);
+    this.#metrics?.record({
+      kind: 'projected-path',
+      name: 'canonical-path',
+      provider: 'workspace-path-index',
+    });
+    this.#canonicalProjectedPathByNormalizedPath.set(
+      normalizedTarget,
+      canonicalPath,
     );
+    return canonicalPath;
+  }
+
+  #recordLookup(state: 'hit' | 'miss', kind: string, value: unknown): void {
+    this.#metrics?.record({
+      kind,
+      name: state === 'hit' ? 'provider-cache-hit' : 'provider-cache-miss',
+      provider: 'workspace-path-index',
+    });
+    if (value === null) {
+      this.#metrics?.record({
+        kind,
+        name: 'workspace-negative-lookup',
+        provider: 'workspace-path-index',
+      });
+    }
   }
 
   isInsideActivatedRegion(filePath: string): boolean {
@@ -1069,7 +1164,7 @@ export class WorkspaceRegionPathIndex {
   isSourceConfigPath(filePath: string): boolean {
     return (
       this.isInsideActivatedRegion(filePath) &&
-      this.#sourceConfigIdentities.has(canonicalProjectedPathSync(filePath))
+      this.#sourceConfigIdentities.has(this.#canonicalProjectedPath(filePath))
     );
   }
 }

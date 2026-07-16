@@ -67,6 +67,8 @@ import {
   runPipeline,
 } from './pipeline/runner';
 import { LiminaPreflightManager } from './preflight';
+import { createProfilingMetricsRecorder } from './profiling/metrics';
+import { createCheckProfileSession } from './profiling/session';
 import type { SourceIssueReportOptions } from './source-check/report';
 import { writeNotRunSourceIssueSnapshot } from './source-check/snapshot';
 
@@ -854,9 +856,23 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       }
 
       const config = await load(flags, 'check');
-      const preflight = new LiminaPreflightManager({ config });
-      const packageNames = parsePackageNames(flags.package);
       const command = pipeline ? `limina check ${pipeline}` : 'limina check';
+      const profileMetrics =
+        process.env.LIMINA_PROFILE === '1'
+          ? createProfilingMetricsRecorder()
+          : undefined;
+      const preflight = new LiminaPreflightManager({
+        config,
+        metrics: profileMetrics,
+      });
+      const profileSession = profileMetrics
+        ? await createCheckProfileSession({
+            artifactNamespace: preflight.artifactNamespace,
+            command,
+            metrics: profileMetrics,
+          })
+        : undefined;
+      const packageNames = parsePackageNames(flags.package);
       const sourceIssueReport = {
         ...createSourceIssueReportOptions(flags, command),
         defer: true,
@@ -880,35 +896,46 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         check: true,
         clearScreen: false,
       });
-      const passed = await runCheckWithCliFlowCleanup(flow, async () => {
-        flow.intro('limina check');
-        const checkRunRecorder = createCheckRunRecorder({
-          command,
-          configPath: config.configPath,
-          pipeline: pipeline ?? 'default',
-          plannedTasks: plan.tasks,
-          rootDir: config.rootDir,
+      let checkRunRecorder:
+        | ReturnType<typeof createCheckRunRecorder>
+        | undefined;
+      let passed = false;
+      try {
+        passed = await runCheckWithCliFlowCleanup(flow, async () => {
+          flow.intro('limina check');
+          checkRunRecorder = createCheckRunRecorder({
+            command,
+            configPath: config.configPath,
+            pipeline: pipeline ?? 'default',
+            plannedTasks: plan.tasks,
+            rootDir: config.rootDir,
+          });
+          await writeNotRunCheckIssueSnapshot({
+            artifactNamespace: preflight.artifactNamespace,
+            command: sourceIssueReport.command ?? command,
+            rootDir: config.rootDir,
+            run: checkRunRecorder.getRunSummary(),
+          });
+          return pipeline
+            ? await runPipeline(config, pipeline, {
+                ...planOptions,
+                checkRunRecorder,
+                executionPlan: plan,
+                flow,
+              })
+            : await runDefaultCheck(config, {
+                ...planOptions,
+                checkRunRecorder,
+                executionPlan: plan,
+                flow,
+              });
         });
-        await writeNotRunCheckIssueSnapshot({
-          artifactNamespace: preflight.artifactNamespace,
-          command: sourceIssueReport.command ?? command,
-          rootDir: config.rootDir,
-          run: checkRunRecorder.getRunSummary(),
+      } finally {
+        await profileSession?.finish({
+          passed,
+          run: checkRunRecorder?.getRunSummary(),
         });
-        return pipeline
-          ? await runPipeline(config, pipeline, {
-              ...planOptions,
-              checkRunRecorder,
-              executionPlan: plan,
-              flow,
-            })
-          : await runDefaultCheck(config, {
-              ...planOptions,
-              checkRunRecorder,
-              executionPlan: plan,
-              flow,
-            });
-      });
+      }
 
       if (!passed) {
         process.exitCode = 1;

@@ -204,6 +204,7 @@ export interface PrepareGeneratedTsconfigGraphOptions {
   artifactNamespace: LiminaArtifactNamespace;
   importAnalysisContext?: ImportAnalysisContext;
   workspaceContext?: ValidatedWorkspaceContext;
+  workspacePathIndex?: WorkspaceRegionPathIndex;
 }
 
 interface SourceProject {
@@ -1415,14 +1416,14 @@ async function resolveGeneratedGraphCheckerSelections(
   config: ResolvedLiminaConfig,
   options: Pick<
     PrepareGeneratedTsconfigGraphOptions,
-    'importAnalysisContext'
+    'importAnalysisContext' | 'workspacePathIndex'
   > & {
     workspaceContext: ValidatedWorkspaceContext;
   },
 ): Promise<ResolvedCheckerEntrySelection[]> {
-  const activatedRegions = new WorkspaceRegionPathIndex(
-    options.workspaceContext,
-  );
+  const activatedRegions =
+    options.workspacePathIndex ??
+    new WorkspaceRegionPathIndex(options.workspaceContext);
 
   if (isAutoCheckerMode(config)) {
     return resolveAutoCheckerSelections(config, activatedRegions, {
@@ -1449,7 +1450,7 @@ export async function resolveGeneratedGraphCheckers(
   config: ResolvedLiminaConfig,
   options: Pick<
     PrepareGeneratedTsconfigGraphOptions,
-    'importAnalysisContext' | 'workspaceContext'
+    'importAnalysisContext' | 'workspaceContext' | 'workspacePathIndex'
   > = {},
 ): Promise<ResolvedCheckerConfig[]> {
   const workspaceContext =
@@ -1462,6 +1463,7 @@ export async function resolveGeneratedGraphCheckers(
     await resolveGeneratedGraphCheckerSelections(config, {
       importAnalysisContext: options.importAnalysisContext,
       workspaceContext,
+      workspacePathIndex: options.workspacePathIndex,
     })
   ).map(({ checker }) => checker);
 }
@@ -3351,12 +3353,15 @@ export async function prepareGeneratedTsconfigGraph(
       rawPackages: await collectRawWorkspacePackages(config),
     }));
   const workspacePackages = workspaceContext.packages;
-  const activatedRegions = new WorkspaceRegionPathIndex(workspaceContext);
+  const activatedRegions =
+    options.workspacePathIndex ??
+    new WorkspaceRegionPathIndex(workspaceContext);
   const checkerSelections = await resolveGeneratedGraphCheckerSelections(
     config,
     {
       importAnalysisContext: options.importAnalysisContext,
       workspaceContext,
+      workspacePathIndex: activatedRegions,
     },
   );
   const checkers = checkerSelections.map(({ checker }) => checker);

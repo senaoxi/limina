@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runPipeline } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight';
+import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath, toPortablePaths } from './helpers/path';
 
 const buildCompilerOptions = {
@@ -224,6 +225,58 @@ describe('AnalysisProviderSet', () => {
       await fixture.cleanup();
     }
   });
+
+  it('shares one workspace path and lookup index within a provider generation', async () => {
+    const fixture = await createCoreFixture();
+    const metrics = createProfilingMetricsRecorder();
+    const core = createAnalysisProviders(fixture.config, undefined, metrics);
+    const filePath = path.join(fixture.rootDir, 'packages/a/src/index.ts');
+
+    try {
+      await core.buildGraph.getGraph();
+      const pathIndex = await core.workspace.getPathIndex();
+      const lookupIndex = await core.workspace.getLookupIndex();
+      expect(await core.workspace.getPathIndex()).toBe(pathIndex);
+      expect(await core.workspace.getLookupIndex()).toBe(lookupIndex);
+      await expect(core.packages.findOwner(filePath)).resolves.toMatchObject({
+        name: '@fixture/a',
+      });
+
+      const preflight = new LiminaPreflightManager({
+        config: fixture.config,
+        metrics,
+        providers: core,
+      });
+      expect(await preflight.ensureWorkspaceLookupIndex()).toBe(lookupIndex);
+      expect(await preflight.ensureWorkspacePathIndex()).toBe(pathIndex);
+
+      const snapshot = metrics.snapshot();
+      const metricCount = (name: string, kind: string): number | undefined =>
+        snapshot.find((metric) => metric.name === name && metric.kind === kind)
+          ?.count;
+      expect(metricCount('provider-cache-miss', 'workspace-path-index')).toBe(
+        1,
+      );
+      expect(metricCount('provider-cache-miss', 'workspace-lookup-index')).toBe(
+        1,
+      );
+      expect(
+        metricCount('provider-cache-hit', 'workspace-path-index'),
+      ).toBeGreaterThan(0);
+      expect(
+        metricCount('provider-cache-hit', 'workspace-lookup-index'),
+      ).toBeGreaterThan(0);
+
+      const nextGeneration = createAnalysisProviders(fixture.config);
+      expect(await nextGeneration.workspace.getPathIndex()).not.toBe(pathIndex);
+      expect(await nextGeneration.workspace.getLookupIndex()).not.toBe(
+        lookupIndex,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('starts a new analysis generation after external commands', async () => {
     const fixture = await createCoreFixture();
     const core = fixture.core;

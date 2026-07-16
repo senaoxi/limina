@@ -34,11 +34,15 @@ export class BuildGraphCore {
   }
 
   #prepareGraph(): Promise<GeneratedTsconfigGraphResult> {
-    return this.#workspace.getValidatedContext().then((topology) =>
+    return Promise.all([
+      this.#workspace.getValidatedContext(),
+      this.#workspace.getPathIndex(),
+    ]).then(([topology, workspacePathIndex]) =>
       prepareGeneratedTsconfigGraph(this.#config, {
         artifactNamespace: this.#artifactNamespace,
         importAnalysisContext: this.#imports.context,
         workspaceContext: topology,
+        workspacePathIndex,
       }),
     );
   }

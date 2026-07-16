@@ -16,7 +16,10 @@ import {
   RetryableReplacementValidationIoError,
   writeJsonAtomically,
 } from '../check-reporting/atomic-writer';
-import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import {
+  createLiminaArtifactNamespace,
+  resolveArtifactNamespacePath,
+} from '../domain/artifacts/namespace';
 
 function retryableError(code: 'EACCES' | 'EBUSY' | 'EPERM'): Error {
   return Object.assign(new Error(code), { code });
@@ -133,38 +136,48 @@ describe('atomic snapshot writer', () => {
 
   it('flushes and closes the temp file before rename', async () => {
     const events: string[] = [];
-    const namespace = createLiminaArtifactNamespace({
-      generation: 0,
-      rootDir: '/tmp',
-    });
-
-    await writeJsonAtomically(
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-atomic-'));
+    const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
+    const targetPath = resolveArtifactNamespacePath(
       namespace,
-      '/tmp/.limina/limina-atomic-order.json',
-      { ok: true },
-      {
-        createTempPath: () => '/tmp/.limina/limina-atomic-order.tmp',
-        openTemp: async (_tempPath, flags) => {
-          expect(flags).toBe('wx');
-          return {
-            close: async () => {
-              events.push('close');
-            },
-            sync: async () => {
-              events.push('sync');
-            },
-            writeFile: async () => {
-              events.push('write');
-            },
-          };
-        },
-        rename: async () => {
-          events.push('rename');
-        },
-      },
+      'limina-atomic-order.json',
+    );
+    const tempPath = resolveArtifactNamespacePath(
+      namespace,
+      'limina-atomic-order.tmp',
     );
 
-    expect(events).toEqual(['write', 'sync', 'close', 'rename']);
+    try {
+      await writeJsonAtomically(
+        namespace,
+        targetPath,
+        { ok: true },
+        {
+          createTempPath: () => tempPath,
+          openTemp: async (_tempPath, flags) => {
+            expect(flags).toBe('wx');
+            return {
+              close: async () => {
+                events.push('close');
+              },
+              sync: async () => {
+                events.push('sync');
+              },
+              writeFile: async () => {
+                events.push('write');
+              },
+            };
+          },
+          rename: async () => {
+            events.push('rename');
+          },
+        },
+      );
+
+      expect(events).toEqual(['write', 'sync', 'close', 'rename']);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
   });
 
   it('serializes concurrent writes to the same target path', async () => {

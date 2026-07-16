@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -857,7 +858,8 @@ describe('import analysis', () => {
         "import { first } from './first';\nvoid first;\n",
       );
 
-      const context = createImportAnalysisContext();
+      const metrics = createProfilingMetricsRecorder();
+      const context = createImportAnalysisContext({ metrics });
 
       expect(
         context
@@ -881,6 +883,18 @@ describe('import analysis', () => {
           .collectImportsFromFile(filePath, rootDir)
           .map((item) => item.specifier),
       ).toEqual(['./second']);
+
+      const snapshot = metrics.snapshot();
+      const metricCount = (name: string, kind?: string): number =>
+        snapshot.find(
+          (metric) =>
+            metric.name === name &&
+            (kind === undefined || metric.kind === kind),
+        )?.count ?? 0;
+      expect(metricCount('source-read')).toBe(1);
+      expect(metricCount('source-parse')).toBe(1);
+      expect(metricCount('provider-cache-miss', 'imports')).toBe(1);
+      expect(metricCount('provider-cache-hit', 'imports')).toBe(1);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -908,7 +922,8 @@ describe('import analysis', () => {
         configPath,
         extensions: ['.ts'],
       };
-      const context = createImportAnalysisContext();
+      const metrics = createProfilingMetricsRecorder();
+      const context = createImportAnalysisContext({ metrics });
 
       expect(
         context.resolveInternalImport(
@@ -933,6 +948,17 @@ describe('import analysis', () => {
           checkerContext,
         ),
       ).toBeNull();
+
+      const snapshot = metrics.snapshot();
+      expect(
+        snapshot.find(
+          (metric) => metric.name === 'import-resolution-cache-miss',
+        )?.count,
+      ).toBe(1);
+      expect(
+        snapshot.find((metric) => metric.name === 'import-resolution-cache-hit')
+          ?.count,
+      ).toBe(1);
 
       expect(
         toPortablePath(

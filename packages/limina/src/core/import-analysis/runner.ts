@@ -54,8 +54,24 @@ export interface ImportAnalysisContext {
 }
 
 export interface CreateImportAnalysisContextOptions {
+  metrics?: ImportAnalysisMetricsRecorder;
   projectRootDir?: string;
   vueParser?: VueImportParser;
+}
+
+export interface ImportAnalysisMetricsRecorder {
+  record(measurement: {
+    readonly count?: number;
+    readonly kind?: string;
+    readonly name:
+      | 'import-resolution-cache-hit'
+      | 'import-resolution-cache-miss'
+      | 'provider-cache-hit'
+      | 'provider-cache-miss'
+      | 'source-parse'
+      | 'source-read';
+    readonly provider?: string;
+  }): void;
 }
 
 export interface ImportResolveContextFields
@@ -1296,14 +1312,32 @@ export function createImportAnalysisContext(
   options: CreateImportAnalysisContextOptions = {},
 ): ImportAnalysisContext {
   const caches = createImportAnalysisCaches();
+  const metrics = options.metrics;
   const vueParser = options.vueParser ?? 'heuristic';
 
   const readSourceText = (filePath: string): string => {
-    if (!caches.sourceTextCache.has(filePath)) {
-      caches.sourceTextCache.set(filePath, readFileSync(filePath, 'utf8'));
+    if (caches.sourceTextCache.has(filePath)) {
+      metrics?.record({
+        kind: 'source-text',
+        name: 'provider-cache-hit',
+        provider: 'import-core',
+      });
+      return caches.sourceTextCache.get(filePath)!;
     }
 
-    return caches.sourceTextCache.get(filePath)!;
+    metrics?.record({
+      kind: 'source-text',
+      name: 'provider-cache-miss',
+      provider: 'import-core',
+    });
+    const sourceText = readFileSync(filePath, 'utf8');
+    metrics?.record({
+      kind: path.extname(filePath) || 'extensionless',
+      name: 'source-read',
+      provider: 'import-core',
+    });
+    caches.sourceTextCache.set(filePath, sourceText);
+    return sourceText;
   };
 
   const collectImportsFromFile = (
@@ -1320,11 +1354,20 @@ export function createImportAnalysisContext(
       vueParser,
     });
     const cached = caches.importsCache.get(cacheKey);
-
-    if (cached) {
+    if (cached !== undefined) {
+      metrics?.record({
+        kind: 'imports',
+        name: 'provider-cache-hit',
+        provider: 'import-core',
+      });
       return cached;
     }
 
+    metrics?.record({
+      kind: 'imports',
+      name: 'provider-cache-miss',
+      provider: 'import-core',
+    });
     const sourceText = readSourceText(normalizedFilePath);
     const imports = normalizedFilePath.endsWith('.vue')
       ? vueParser === 'compiler-sfc'
@@ -1343,6 +1386,11 @@ export function createImportAnalysisContext(
           sourceText,
         });
 
+    metrics?.record({
+      kind: path.extname(normalizedFilePath) || 'extensionless',
+      name: 'source-parse',
+      provider: 'import-core',
+    });
     caches.importsCache.set(cacheKey, imports);
     return imports;
   };
@@ -1407,11 +1455,20 @@ export function createImportAnalysisContext(
       specifier,
     });
     const cached = caches.resolutionCache.get(cacheKey);
-
     if (cached !== undefined) {
+      metrics?.record({
+        kind: 'internal-import',
+        name: 'import-resolution-cache-hit',
+        provider: 'import-core',
+      });
       return cached;
     }
 
+    metrics?.record({
+      kind: 'internal-import',
+      name: 'import-resolution-cache-miss',
+      provider: 'import-core',
+    });
     const preferTypeScriptResolver =
       hasTypeScriptOnlyResolutionOptions(options);
     const typeScriptResolved = preferTypeScriptResolver

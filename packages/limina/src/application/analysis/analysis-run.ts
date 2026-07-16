@@ -7,9 +7,23 @@ import type {
 import { identifier } from '../../domain/shared/identifiers';
 
 export type AnalysisMetricName =
+  | 'artifact-mutation'
+  | 'artifact-safety-immediate-recheck'
+  | 'artifact-safety-lstat'
+  | 'artifact-safety-unique-node'
+  | 'canonical-path-cache-hit'
+  | 'canonical-path-cache-miss'
+  | 'canonical-path'
+  | 'checker-route-projection'
+  | 'checker-route-traversal'
+  | 'import-resolution-cache-hit'
+  | 'import-resolution-cache-miss'
   | 'provider-cache-hit'
   | 'provider-cache-miss'
   | 'projection'
+  | 'source-parse'
+  | 'source-read'
+  | 'workspace-negative-lookup'
   | 'validator';
 
 export interface AnalysisMetricMeasurement {

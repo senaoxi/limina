@@ -14,11 +14,7 @@ import {
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { WorkspaceCore } from './workspace';
-import {
-  createWorkspaceLookupIndex,
-  type WorkspaceLookupIndex,
-} from './workspace/lookup';
-import { WorkspaceRegionPathIndex } from './workspace/validated-context';
+import type { WorkspaceLookupIndex } from './workspace/lookup';
 
 export interface SourceGraphProjects {
   problems: string[];
@@ -95,7 +91,7 @@ export class TsconfigCore {
         const projectPaths = [
           ...graphRoute.projectExtensionsByPath.keys(),
         ].sort();
-        const workspaceLookup = await this.#createWorkspaceLookupIndex();
+        const workspaceLookup = await this.#getWorkspaceLookupIndex();
         const projects = (
           await Promise.all(
             projectPaths.map((projectPath) =>
@@ -152,25 +148,12 @@ export class TsconfigCore {
     );
   }
 
-  async #createWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex | null> {
+  async #getWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex | null> {
     if (!this.#workspace) {
       return null;
     }
 
-    const [importers, owners, packages, context] = await Promise.all([
-      this.#workspace.getImporters(),
-      this.#workspace.getPackageOwners(),
-      this.#workspace.getPackages(),
-      this.#workspace.getValidatedContext(),
-    ]);
-
-    return createWorkspaceLookupIndex({
-      importers,
-      owners,
-      packages,
-      pathIndex: new WorkspaceRegionPathIndex(context),
-      rootDir: this.#config.rootDir,
-    });
+    return this.#workspace.getLookupIndex();
   }
 }
 

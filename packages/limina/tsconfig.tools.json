@@ -14,6 +14,7 @@
     "eslint.config.mjs",
     "package.json",
     "packagePlugin.ts",
-    "rolldown.config.ts"
+    "rolldown.config.ts",
+    "scripts/**/*.ts"
   ]
 }

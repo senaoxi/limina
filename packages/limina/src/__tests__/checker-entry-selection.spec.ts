@@ -5,6 +5,7 @@ import path from 'node:path';
 import { glob } from 'tinyglobby';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveCheckerEntrySelection } from '../core/checkers/entry-selection';
+import { toPortablePath } from './helpers/path';
 
 const roots = new Set<string>();
 const baseIgnore = [
@@ -195,7 +196,9 @@ describe('checker entry selection', () => {
       sourceConfigPaths: [onlyCandidate],
     });
 
-    expect(selection.includedEntryPaths).toEqual([onlyCandidate]);
+    expect(selection.includedEntryPaths).toEqual([
+      toPortablePath(onlyCandidate),
+    ]);
   });
 
   it('matches external activated-island candidates in config-root coordinates', async () => {
@@ -220,7 +223,11 @@ describe('checker entry selection', () => {
       sourceConfigPaths: [externalConfigPath],
     });
 
-    expect(selection.includedEntryPaths).toEqual([externalConfigPath]);
-    expect(selection.effectiveEntryPaths).toEqual([externalConfigPath]);
+    expect(selection.includedEntryPaths).toEqual([
+      toPortablePath(externalConfigPath),
+    ]);
+    expect(selection.effectiveEntryPaths).toEqual([
+      toPortablePath(externalConfigPath),
+    ]);
   });
 });

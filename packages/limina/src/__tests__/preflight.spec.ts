@@ -1,4 +1,7 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type {
+  ResolvedCheckerConfig,
+  ResolvedLiminaConfig,
+} from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -14,6 +17,8 @@ import {
   createArtifactPlan,
 } from '../domain/artifacts/plan';
 import { LiminaPreflightManager } from '../preflight';
+import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
 function createConfig(rootDir: string): ResolvedLiminaConfig {
@@ -386,6 +391,233 @@ describe('LiminaPreflightManager', () => {
       expect(first.entries).toHaveLength(1);
       expect(first.entries[0]?.label).toBe('@fixture/pkg');
       expect(getGraph).not.toHaveBeenCalled();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('shares one route traversal per normalized checker entry root while preserving projections', async () => {
+    const fixture = await createFixture();
+    const namespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: fixture.rootDir,
+    });
+    const rootConfigPath = path.join(
+      fixture.rootDir,
+      '.limina/tsconfig.shared.build.json',
+    );
+    const rootConfigAlias = `${path.dirname(rootConfigPath)}${path.sep}.${path.sep}${path.basename(rootConfigPath)}`;
+    const projectConfigPath = path.join(
+      fixture.rootDir,
+      '.limina/tsconfig.shared.dts.json',
+    );
+    await mkdir(path.dirname(rootConfigPath), { recursive: true });
+    await writeFile(
+      rootConfigPath,
+      JSON.stringify({
+        files: [],
+        references: [{ path: './tsconfig.shared.dts.json' }],
+      }),
+    );
+    await writeFile(projectConfigPath, JSON.stringify({ files: [] }));
+    const checkers: ResolvedCheckerConfig[] = [
+      {
+        exclude: [],
+        extensions: ['.ts'],
+        include: [],
+        name: 'typescript',
+        preset: 'tsgo',
+      },
+      {
+        exclude: [],
+        extensions: ['.ts', '.vue'],
+        include: [],
+        name: 'vue',
+        preset: 'vue-tsc',
+      },
+      {
+        exclude: [],
+        extensions: ['.svelte'],
+        include: [],
+        name: 'svelte',
+        preset: 'svelte-check',
+      },
+    ];
+    const graph = {
+      ...createGraph(namespace),
+      checkerEntries: new Map([
+        ['typescript', rootConfigPath],
+        ['vue', rootConfigAlias],
+        ['svelte', rootConfigPath],
+      ]),
+      checkers,
+      generatedFiles: new Map<string, string>(),
+    } as GeneratedTsconfigGraphResult;
+    const metrics = createProfilingMetricsRecorder();
+    const manager = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider: vi.fn(async () => graph),
+      metrics,
+      providers: createFakeCore({
+        config: fixture.config,
+        namespace,
+      }),
+    });
+
+    try {
+      const [graphRoutes, entryRoutes, sourceExtensions] = await Promise.all([
+        manager.ensureGraphProjectRoutes(),
+        manager.ensureCheckerEntryProjectRoutes(),
+        manager.ensureSourceGraphProjectExtensions(),
+      ]);
+
+      expect(graphRoutes.problems).toEqual([]);
+      expect(graphRoutes.routes.map((route) => route.checkerName)).toEqual([
+        'typescript',
+        'vue',
+      ]);
+      expect(entryRoutes.problems).toEqual([]);
+      expect(entryRoutes.routes.map((route) => route.checkerName)).toEqual([
+        'typescript',
+        'vue',
+        'svelte',
+      ]);
+      const portableProjectConfigPath = toPortablePath(projectConfigPath);
+      expect(
+        sourceExtensions.projectContextsByPath.get(portableProjectConfigPath)
+          ?.checkerPresets,
+      ).toEqual(['tsgo', 'vue-tsc']);
+      expect(
+        sourceExtensions.projectExtensionsByPath.get(portableProjectConfigPath),
+      ).toEqual(expect.arrayContaining(['.ts', '.vue']));
+      expect(
+        sourceExtensions.projectExtensionsByPath.get(portableProjectConfigPath),
+      ).not.toContain('.svelte');
+
+      const snapshot = metrics.snapshot();
+      const countMetric = (name: string, kind: string): number | undefined =>
+        snapshot.find((metric) => metric.name === name && metric.kind === kind)
+          ?.count;
+      expect(countMetric('checker-route-projection', 'checker-snapshot')).toBe(
+        3,
+      );
+      expect(countMetric('checker-route-projection', 'unique-entry-root')).toBe(
+        1,
+      );
+      expect(countMetric('checker-route-traversal', 'traversal')).toBe(1);
+      expect(countMetric('checker-route-traversal', 'cache-hit')).toBe(2);
+      expect(countMetric('checker-route-projection', 'graph-route')).toBe(1);
+      expect(countMetric('checker-route-projection', 'entry-route')).toBe(1);
+      expect(countMetric('checker-route-projection', 'source-extension')).toBe(
+        1,
+      );
+      expect(
+        countMetric('checker-route-traversal', 'traversal') ?? 0,
+      ).toBeLessThanOrEqual(
+        countMetric('checker-route-projection', 'unique-entry-root') ?? 0,
+      );
+
+      createPreflightGenerationController(manager).startNextGeneration();
+      await manager.ensureGraphProjectRoutes();
+      expect(
+        metrics
+          .snapshot()
+          .find(
+            (metric) =>
+              metric.name === 'checker-route-traversal' &&
+              metric.kind === 'traversal',
+          )?.count,
+      ).toBe(2);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves projection-specific missing-entry diagnostics', async () => {
+    const fixture = await createFixture();
+    const namespace = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: fixture.rootDir,
+    });
+    const checkers: ResolvedCheckerConfig[] = [
+      {
+        exclude: [],
+        extensions: ['.ts'],
+        include: [],
+        name: 'typescript',
+        preset: 'tsgo',
+      },
+      {
+        exclude: [],
+        extensions: ['.ts', '.vue'],
+        include: [],
+        name: 'vue',
+        preset: 'vue-tsc',
+      },
+      {
+        exclude: [],
+        extensions: ['.svelte'],
+        include: [],
+        name: 'svelte',
+        preset: 'svelte-check',
+      },
+    ];
+    const graph = {
+      ...createGraph(namespace),
+      checkerEntries: new Map([
+        ['vue', path.join(fixture.rootDir, '.limina/missing-vue.build.json')],
+        [
+          'svelte',
+          path.join(fixture.rootDir, '.limina/missing-svelte.build.json'),
+        ],
+      ]),
+      checkers,
+      generatedFiles: new Map<string, string>(),
+    } as GeneratedTsconfigGraphResult;
+    const manager = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider: vi.fn(async () => graph),
+      providers: createFakeCore({
+        config: fixture.config,
+        namespace,
+      }),
+    });
+
+    try {
+      const graphRoutes = await manager.ensureGraphProjectRoutes();
+      const entryRoutes = await manager.ensureCheckerEntryProjectRoutes();
+      const sourceExtensions =
+        await manager.ensureSourceGraphProjectExtensions();
+      expect(graphRoutes.problems).toEqual([
+        [
+          'Missing generated checker graph entry:',
+          '  checker: typescript',
+          '  reason: run limina graph prepare before collecting checker graph routes.',
+        ].join('\n'),
+        [
+          'Checker graph entry references a missing tsconfig:',
+          '  checker: vue',
+          '  config: .limina/missing-vue.build.json',
+        ].join('\n'),
+      ]);
+      expect(entryRoutes.problems).toEqual([
+        [
+          'Missing generated checker entry:',
+          '  checker: typescript',
+          '  reason: run limina graph prepare before collecting checker entry routes.',
+        ].join('\n'),
+        [
+          'Checker entry references a missing tsconfig:',
+          '  checker: vue',
+          '  config: .limina/missing-vue.build.json',
+        ].join('\n'),
+        [
+          'Checker entry references a missing tsconfig:',
+          '  checker: svelte',
+          '  config: .limina/missing-svelte.build.json',
+        ].join('\n'),
+      ]);
+      expect(sourceExtensions.problems).toEqual(graphRoutes.problems);
     } finally {
       await fixture.cleanup();
     }

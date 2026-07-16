@@ -14,6 +14,7 @@ import {
   type LiminaCheckIssue,
   readCheckIssueSnapshot,
 } from '../source-check/snapshot';
+import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -2034,7 +2035,7 @@ describe('runProofCheck dts config semantics', () => {
         context,
       );
 
-      expect(sourceFiles.has(externalSourcePath)).toBe(true);
+      expect(sourceFiles.has(toPortablePath(externalSourcePath))).toBe(true);
     } finally {
       await Promise.all([
         fixture.cleanup(),

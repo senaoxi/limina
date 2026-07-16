@@ -67,7 +67,7 @@ import {
   getWorkspaceRegionBoundaryExclusionReason,
   type WorkspaceRegionBoundary,
 } from '../core/workspace/regions';
-import { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
+import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import type { TaskProgressReporter } from '../execution/progress';
 import {
   formatMissingOptionalToolSkipMessage,
@@ -2817,7 +2817,7 @@ export async function runSourceCheckImpl(
   );
   const packages = await preflight.ensureWorkspacePackages();
   const workspaceContext = await preflight.ensureWorkspaceValidated();
-  const workspacePathIndex = new WorkspaceRegionPathIndex(workspaceContext);
+  const workspacePathIndex = await preflight.ensureWorkspacePathIndex();
   const packageOwners = await preflight.ensurePackageOwners();
   const workspaceDependencyDeclarations =
     await preflight.ensureWorkspaceDependencyDeclarations();

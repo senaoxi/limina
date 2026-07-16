@@ -14,24 +14,53 @@ import {
   type WorkspaceDependencyDeclaration,
 } from './packages/authority';
 import {
+  createWorkspaceLookupIndex,
+  type WorkspaceLookupIndex,
+} from './workspace/lookup';
+import {
   collectWorkspaceRegionTopology,
   type WorkspaceRegionBoundary,
   type WorkspaceRegionTopology,
 } from './workspace/regions';
-import type { ValidatedWorkspaceContext } from './workspace/validated-context';
+import {
+  type ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from './workspace/validated-context';
+
+export interface WorkspaceCoreMetricsRecorder {
+  record(measurement: {
+    readonly count?: number;
+    readonly kind?: string;
+    readonly name:
+      | 'canonical-path-cache-hit'
+      | 'canonical-path-cache-miss'
+      | 'canonical-path'
+      | 'provider-cache-hit'
+      | 'provider-cache-miss'
+      | 'workspace-negative-lookup';
+    readonly provider?: string;
+  }): void;
+}
 
 export class WorkspaceCore {
   readonly #config: ResolvedLiminaConfig;
+  readonly #metrics: WorkspaceCoreMetricsRecorder | undefined;
   #importersPromise: Promise<ImporterInfo[]> | undefined;
+  #lookupIndexPromise: Promise<WorkspaceLookupIndex> | undefined;
   #ownersPromise: Promise<PackageOwner[]> | undefined;
+  #pathIndexPromise: Promise<WorkspaceRegionPathIndex> | undefined;
   #rawPackagesPromise: Promise<WorkspacePackage[]> | undefined;
   #topologyPromise: Promise<ValidatedWorkspaceContext> | undefined;
   #workspaceDependenciesPromise:
     | Promise<WorkspaceDependencyDeclaration[]>
     | undefined;
 
-  constructor(config: ResolvedLiminaConfig) {
+  constructor(
+    config: ResolvedLiminaConfig,
+    metrics?: WorkspaceCoreMetricsRecorder,
+  ) {
     this.#config = config;
+    this.#metrics = metrics;
   }
 
   get rootDir(): string {
@@ -126,6 +155,52 @@ export class WorkspaceCore {
     return this.#workspaceDependenciesPromise.then((declarations) =>
       declarations.map(cloneWorkspaceDependencyDeclaration),
     );
+  }
+
+  getPathIndex(): Promise<WorkspaceRegionPathIndex> {
+    if (this.#pathIndexPromise) {
+      this.#recordProviderCache('hit', 'workspace-path-index');
+      return this.#pathIndexPromise;
+    }
+
+    this.#recordProviderCache('miss', 'workspace-path-index');
+    this.#pathIndexPromise = this.getValidatedContext().then(
+      (context) => new WorkspaceRegionPathIndex(context, this.#metrics),
+    );
+    return this.#pathIndexPromise;
+  }
+
+  getLookupIndex(): Promise<WorkspaceLookupIndex> {
+    if (this.#lookupIndexPromise) {
+      this.#recordProviderCache('hit', 'workspace-lookup-index');
+      return this.#lookupIndexPromise;
+    }
+
+    this.#recordProviderCache('miss', 'workspace-lookup-index');
+    this.#lookupIndexPromise = Promise.all([
+      this.getImporters(),
+      this.getPackageOwners(),
+      this.getPackages(),
+      this.getPathIndex(),
+    ]).then(([importers, owners, packages, pathIndex]) =>
+      createWorkspaceLookupIndex({
+        importers,
+        owners,
+        packages,
+        pathIndex,
+        rootDir: this.rootDir,
+        metrics: this.#metrics,
+      }),
+    );
+    return this.#lookupIndexPromise;
+  }
+
+  #recordProviderCache(kind: 'hit' | 'miss', provider: string): void {
+    this.#metrics?.record({
+      kind: provider,
+      name: kind === 'hit' ? 'provider-cache-hit' : 'provider-cache-miss',
+      provider: 'workspace-core',
+    });
   }
 }
 

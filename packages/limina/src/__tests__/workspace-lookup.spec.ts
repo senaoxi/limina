@@ -9,7 +9,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createWorkspaceLookupIndex } from '../core/workspace/lookup';
-import { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
+import {
+  type WorkspaceIndexMetricsRecorder,
+  WorkspaceRegionPathIndex,
+} from '../core/workspace/validated-context';
+import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -85,26 +89,91 @@ function createImporter(options: {
 function createPathIndex(
   rootDir: string,
   packages: readonly WorkspacePackage[],
+  metrics?: WorkspaceIndexMetricsRecorder,
 ): WorkspaceRegionPathIndex {
-  return new WorkspaceRegionPathIndex({
-    boundaries: [],
-    configRootDir: rootDir,
-    descriptorCandidates: [],
-    extendedPackageScopes: [],
-    outputRoots: [],
-    packageIdentities: packages.map((workspacePackage) => ({
-      canonicalDirectory: workspacePackage.directory,
-      displayDirectory: path.relative(rootDir, workspacePackage.directory),
-      package: workspacePackage,
-    })),
-    packages: [...packages],
-    rawPackages: [...packages],
-    sourceConfigPaths: [],
-    workspaceRootDir: rootDir,
-  });
+  return new WorkspaceRegionPathIndex(
+    {
+      boundaries: [],
+      configRootDir: rootDir,
+      descriptorCandidates: [],
+      extendedPackageScopes: [],
+      outputRoots: [],
+      packageIdentities: packages.map((workspacePackage) => ({
+        canonicalDirectory: workspacePackage.directory,
+        displayDirectory: path.relative(rootDir, workspacePackage.directory),
+        package: workspacePackage,
+      })),
+      packages: [...packages],
+      rawPackages: [...packages],
+      sourceConfigPaths: [],
+      workspaceRootDir: rootDir,
+    },
+    metrics,
+  );
 }
 
 describe('WorkspaceLookupIndex', () => {
+  it('memoizes package, owner, importer, and negative file lookups', async () => {
+    const fixture = await createFixture({
+      'packages/app/package.json': stringifyConfig({ name: '@acme/app' }),
+    });
+
+    try {
+      const appPackage = createWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        { name: '@acme/app' },
+      );
+      const appOwner = createOwner(fixture.rootDir, 'packages/app', {
+        name: '@acme/app',
+      });
+      const appImporter = createImporter({
+        name: '@acme/app',
+        relativeDirectory: 'packages/app',
+        rootDir: fixture.rootDir,
+      });
+      const metrics = createProfilingMetricsRecorder();
+      const index = createWorkspaceLookupIndex({
+        importers: [appImporter],
+        metrics,
+        owners: [appOwner],
+        packages: [appPackage],
+        pathIndex: createPathIndex(fixture.rootDir, [appPackage], metrics),
+        rootDir: fixture.rootDir,
+      });
+      const filePath = path.join(fixture.rootDir, 'packages/app/src/index.ts');
+      const outsideFile = path.join(fixture.rootDir, '..', 'outside.ts');
+
+      expect(index.findPackageForFile(filePath)).toBe(appPackage);
+      expect(index.findOwnerForFile(filePath)).toBe(appOwner);
+      expect(index.findImporterForFile(filePath)).toBe(appImporter);
+      expect(index.findPackageForFile(filePath)).toBe(appPackage);
+      expect(index.findOwnerForFile(filePath)).toBe(appOwner);
+      expect(index.findImporterForFile(filePath)).toBe(appImporter);
+      expect(index.findPackageForFile(outsideFile)).toBeNull();
+      expect(index.findPackageForFile(outsideFile)).toBeNull();
+
+      const snapshot = metrics.snapshot();
+      const metricCount = (name: string, kind?: string): number =>
+        snapshot.find(
+          (metric) =>
+            metric.name === name &&
+            metric.provider === 'workspace-lookup-index' &&
+            (kind === undefined || metric.kind === kind),
+        )?.count ?? 0;
+
+      for (const kind of ['package', 'owner', 'importer']) {
+        expect(metricCount('provider-cache-miss', kind)).toBeGreaterThan(0);
+        expect(metricCount('provider-cache-hit', kind)).toBeGreaterThan(0);
+      }
+      expect(
+        metricCount('workspace-negative-lookup', 'package'),
+      ).toBeGreaterThan(0);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('uses the nearest workspace package and owner for nested packages', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({ name: 'root' }),

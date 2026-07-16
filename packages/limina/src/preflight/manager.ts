@@ -6,11 +6,13 @@ import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import {
-  collectCheckerEntryProjectRoutes,
+  type CheckerRouteSnapshotCollection,
   type CollectCheckerGraphProjectRoutesResult,
-  collectGraphProjectRoutes,
-  collectSourceGraphProjectExtensions,
+  collectCheckerRouteSnapshot,
   type CollectSourceGraphProjectExtensionsResult,
+  projectCheckerEntryProjectRoutes,
+  projectGraphProjectRoutes,
+  projectSourceGraphProjectExtensions,
 } from '#core/tsconfig/actions';
 import type {
   ImporterInfo,
@@ -25,13 +27,10 @@ import {
 } from '../application/analysis/analysis-run';
 import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
-import {
-  createWorkspaceLookupIndex,
-  type WorkspaceLookupIndex,
-} from '../core/workspace/lookup';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
-import {
-  type ValidatedWorkspaceContext,
+import type {
+  ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
 import {
@@ -97,9 +96,13 @@ export class LiminaPreflightManager {
     | (() => Promise<GeneratedTsconfigGraphResult>)
     | undefined;
   readonly #metrics: AnalysisMetricsRecorder;
+  readonly #profilingMetrics: AnalysisMetricsRecorder | undefined;
   readonly #signal: AbortSignal;
   #checkerEntryProjectRoutesPromise:
     | Promise<CollectCheckerGraphProjectRoutesResult>
+    | undefined;
+  #checkerRouteSnapshotPromise:
+    | Promise<CheckerRouteSnapshotCollection>
     | undefined;
   #expectedSourceFilesPromise: Promise<Set<string>> | undefined;
   #generatedGraphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
@@ -130,6 +133,7 @@ export class LiminaPreflightManager {
     this.config = options.config;
     this.#generatedGraphProvider = options.generatedGraphProvider;
     this.#metrics = options.metrics ?? createNoopMetricsRecorder();
+    this.#profilingMetrics = options.metrics;
     this.#signal = options.signal ?? new AbortController().signal;
     this.artifactNamespace =
       options.providers?.artifactNamespace ??
@@ -139,7 +143,11 @@ export class LiminaPreflightManager {
       });
     this.providers =
       options.providers ??
-      createAnalysisProviders(options.config, this.artifactNamespace);
+      createAnalysisProviders(
+        options.config,
+        this.artifactNamespace,
+        this.#profilingMetrics,
+      );
     this.run = this.#createRun();
     registerPreflightGenerationAdvancer(this, () =>
       this.#startNextGeneration(),
@@ -179,6 +187,7 @@ export class LiminaPreflightManager {
       await materializeGeneratedArtifactPlan(
         artifactNamespace,
         graph.artifactPlan,
+        { metrics: this.run.metrics },
       );
 
       return {
@@ -241,21 +250,12 @@ export class LiminaPreflightManager {
   }
 
   ensureWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex> {
-    this.#workspaceLookupPromise ??= Promise.all([
-      this.ensureImporters(),
-      this.ensurePackageOwners(),
-      this.ensureWorkspacePackages(),
-      this.ensureWorkspaceValidated(),
-    ]).then(([importers, owners, packages, context]) =>
-      createWorkspaceLookupIndex({
-        importers,
-        owners,
-        packages,
-        pathIndex: new WorkspaceRegionPathIndex(context),
-        rootDir: this.config.rootDir,
-      }),
-    );
+    this.#workspaceLookupPromise ??= this.providers.workspace.getLookupIndex();
     return this.#workspaceLookupPromise;
+  }
+
+  ensureWorkspacePathIndex(): Promise<WorkspaceRegionPathIndex> {
+    return this.providers.workspace.getPathIndex();
   }
 
   ensureWorkspaceDependencyDeclarations(): Promise<
@@ -274,23 +274,24 @@ export class LiminaPreflightManager {
 
   async ensureSourceGraphProjectExtensions(): Promise<CollectSourceGraphProjectExtensionsResult> {
     this.#sourceGraphProjectExtensionsPromise ??=
-      this.ensureGeneratedGraph().then((graph) =>
-        collectSourceGraphProjectExtensions(this.config, graph),
+      this.#ensureCheckerRouteSnapshot().then((snapshot) =>
+        projectSourceGraphProjectExtensions(this.config, snapshot),
       );
     return this.#sourceGraphProjectExtensionsPromise;
   }
 
   async ensureGraphProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
-    this.#graphProjectRoutesPromise ??= this.ensureGeneratedGraph().then(
-      (graph) => collectGraphProjectRoutes(this.config, graph),
+    this.#graphProjectRoutesPromise ??= this.#ensureCheckerRouteSnapshot().then(
+      (snapshot) => projectGraphProjectRoutes(this.config, snapshot),
     );
     return this.#graphProjectRoutesPromise;
   }
 
   async ensureCheckerEntryProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
-    this.#checkerEntryProjectRoutesPromise ??= this.ensureGeneratedGraph().then(
-      (graph) => collectCheckerEntryProjectRoutes(this.config, graph),
-    );
+    this.#checkerEntryProjectRoutesPromise ??=
+      this.#ensureCheckerRouteSnapshot().then((snapshot) =>
+        projectCheckerEntryProjectRoutes(this.config, snapshot),
+      );
     return this.#checkerEntryProjectRoutesPromise;
   }
 
@@ -322,6 +323,14 @@ export class LiminaPreflightManager {
     return this.providers.imports.context;
   }
 
+  #ensureCheckerRouteSnapshot(): Promise<CheckerRouteSnapshotCollection> {
+    this.#checkerRouteSnapshotPromise ??= this.ensureGeneratedGraph().then(
+      (graph) =>
+        collectCheckerRouteSnapshot(this.config, graph, this.run.metrics),
+    );
+    return this.#checkerRouteSnapshotPromise;
+  }
+
   #startNextGeneration(): void {
     this.#generation += 1;
     this.#materializationSlot = { generation: this.#generation };
@@ -332,9 +341,11 @@ export class LiminaPreflightManager {
     this.providers = createAnalysisProviders(
       this.config,
       this.artifactNamespace,
+      this.#profilingMetrics,
     );
     this.run = this.#createRun();
     this.#checkerEntryProjectRoutesPromise = undefined;
+    this.#checkerRouteSnapshotPromise = undefined;
     this.#expectedSourceFilesPromise = undefined;
     this.#generatedGraphPromise = undefined;
     this.#graphProjectRoutesPromise = undefined;
