@@ -30,6 +30,11 @@ import {
 
 export type { ImportRecord, ImportRecordKind } from './records';
 
+export interface ModuleResolutionPair {
+  oxc: string | null;
+  typescript: ResolvedCheckerModuleName | null;
+}
+
 export interface ImportAnalysisContext {
   collectImportsFromFile: (filePath: string, rootDir: string) => ImportRecord[];
   resolveInternalImport: (
@@ -44,6 +49,12 @@ export interface ImportAnalysisContext {
     options: ts.CompilerOptions,
     contextOrExtensions?: ImportResolveContextInput,
   ) => string | null;
+  resolveModulePair: (
+    specifier: string,
+    containingFile: string,
+    options: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ) => ModuleResolutionPair;
   resolveTypeScriptImport: (
     specifier: string,
     containingFile: string,
@@ -96,9 +107,28 @@ type ResolvedImportContext = CheckerProjectParseContext & {
   resolverConfigPath?: string;
 };
 
+interface LazyModuleResolutionRecord {
+  hasInternalImportResult: boolean;
+  hasOxcResult: boolean;
+  hasTypeScriptResult: boolean;
+  internalImportResult: string | null;
+  oxcResult: string | null;
+  typeScriptResult: ResolvedCheckerModuleName | null;
+}
+
+interface NormalizedModuleResolutionRequest {
+  compilerOptions: ts.CompilerOptions;
+  containingFile: string;
+  context: ResolvedImportContext;
+  record: LazyModuleResolutionRecord;
+  specifier: string;
+}
+
 interface ImportAnalysisCaches {
   importsCache: Map<string, ImportRecord[]>;
-  resolutionCache: Map<string, string | null>;
+  moduleResolutionIndex: Map<string, LazyModuleResolutionRecord>;
+  moduleResolverIdentityCache: Map<string, number>;
+  nextModuleResolverIdentity: number;
   resolverCache: Map<string, ResolverFactory>;
   sourceTextCache: Map<string, string>;
   typeScriptModuleResolutionCache: Map<string, ts.ModuleResolutionCache>;
@@ -1247,7 +1277,9 @@ function normalizeResolvedPathForImporter(
 function createImportAnalysisCaches(): ImportAnalysisCaches {
   return {
     importsCache: new Map<string, ImportRecord[]>(),
-    resolutionCache: new Map<string, string | null>(),
+    moduleResolutionIndex: new Map<string, LazyModuleResolutionRecord>(),
+    moduleResolverIdentityCache: new Map<string, number>(),
+    nextModuleResolverIdentity: 0,
     resolverCache: new Map<string, ResolverFactory>(),
     sourceTextCache: new Map<string, string>(),
     typeScriptModuleResolutionCache: new Map<
@@ -1267,6 +1299,61 @@ function createTypeScriptModuleResolutionCacheKey(options: {
     extensions: getResolverExtensions(options),
     resolverConfigPath: options.context.resolverConfigPath ?? null,
   });
+}
+
+function getModuleResolverIdentity(
+  caches: ImportAnalysisCaches,
+  options: {
+    compilerOptions: ts.CompilerOptions;
+    context: ResolvedImportContext;
+  },
+): number {
+  const cacheKey = JSON.stringify({
+    checkerPresets: options.context.checkerPresets,
+    compilerOptions: options.compilerOptions,
+    configPath: options.context.configPath ?? null,
+    extensions: getResolverExtensions(options),
+    resolverConfigPath: options.context.resolverConfigPath ?? null,
+  });
+  const cached = caches.moduleResolverIdentityCache.get(cacheKey);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const identity = caches.nextModuleResolverIdentity;
+  caches.nextModuleResolverIdentity += 1;
+  caches.moduleResolverIdentityCache.set(cacheKey, identity);
+  return identity;
+}
+
+function createModuleResolutionRequestKey(options: {
+  containingFile: string;
+  resolverIdentity: number;
+  specifier: string;
+}): string {
+  return JSON.stringify({
+    containingFile: options.containingFile,
+    resolverIdentity: options.resolverIdentity,
+    specifier: options.specifier,
+  });
+}
+
+function createLazyModuleResolutionRecord(): LazyModuleResolutionRecord {
+  return {
+    hasInternalImportResult: false,
+    hasOxcResult: false,
+    hasTypeScriptResult: false,
+    internalImportResult: null,
+    oxcResult: null,
+    typeScriptResult: null,
+  };
+}
+
+function cloneTypeScriptResolution(
+  resolution: ResolvedCheckerModuleName | null,
+): ResolvedCheckerModuleName | null {
+  return resolution ? { ...resolution } : null;
 }
 
 function getTypeScriptModuleResolutionCache(
@@ -1389,12 +1476,16 @@ export function createImportAnalysisContext(
       name: 'module-resolution-request',
       provider: 'import-analysis',
     });
-    // Commit 1 has no generation-scoped ModuleResolutionIndex. Every logical
-    // request is therefore an outer-index miss, even when the older effective
-    // internal-import cache below hits.
+  };
+  const recordModuleResolutionIndexAccess = (
+    kind: 'internal-import' | 'oxc' | 'typescript',
+    hit: boolean,
+  ): void => {
     metrics?.record({
       kind,
-      name: 'module-resolution-index-miss',
+      name: hit
+        ? 'module-resolution-index-hit'
+        : 'module-resolution-index-miss',
       provider: 'import-analysis',
     });
   };
@@ -1479,25 +1570,66 @@ export function createImportAnalysisContext(
     return imports;
   };
 
-  const resolveTypeScriptImportRaw = (
+  const getModuleResolutionRequest = (
     specifier: string,
     containingFile: string,
     compilerOptions: ts.CompilerOptions,
     contextOrExtensions?: ImportResolveContextInput,
-  ): ResolvedCheckerModuleName | null => {
+  ): NormalizedModuleResolutionRequest => {
+    const normalizedContainingFile = normalizeAbsolutePath(containingFile);
     const context = normalizeContextInput(contextOrExtensions);
-
-    return resolveModuleNameWithCheckersDetailed({
-      compilerOptions,
-      containingFile: normalizeAbsolutePath(containingFile),
-      context,
-      metrics,
-      moduleResolutionCache: getTypeScriptModuleResolutionCache(caches, {
+    const cacheKey = createModuleResolutionRequestKey({
+      containingFile: normalizedContainingFile,
+      resolverIdentity: getModuleResolverIdentity(caches, {
         compilerOptions,
         context,
       }),
       specifier,
     });
+    let record = caches.moduleResolutionIndex.get(cacheKey);
+
+    if (!record) {
+      record = createLazyModuleResolutionRecord();
+      caches.moduleResolutionIndex.set(cacheKey, record);
+    }
+
+    return {
+      compilerOptions,
+      containingFile: normalizedContainingFile,
+      context,
+      record,
+      specifier,
+    };
+  };
+
+  const resolveTypeScriptImportRaw = (
+    request: NormalizedModuleResolutionRequest,
+  ): ResolvedCheckerModuleName | null =>
+    resolveModuleNameWithCheckersDetailed({
+      compilerOptions: request.compilerOptions,
+      containingFile: request.containingFile,
+      context: request.context,
+      metrics,
+      moduleResolutionCache: getTypeScriptModuleResolutionCache(caches, {
+        compilerOptions: request.compilerOptions,
+        context: request.context,
+      }),
+      specifier: request.specifier,
+    });
+
+  const resolveTypeScriptResult = (
+    request: NormalizedModuleResolutionRequest,
+  ): ResolvedCheckerModuleName | null => {
+    const hit = request.record.hasTypeScriptResult;
+    recordModuleResolutionIndexAccess('typescript', hit);
+
+    if (!hit) {
+      const resolution = resolveTypeScriptImportRaw(request);
+      request.record.typeScriptResult = cloneTypeScriptResolution(resolution);
+      request.record.hasTypeScriptResult = true;
+    }
+
+    return cloneTypeScriptResolution(request.record.typeScriptResult);
   };
 
   const resolveTypeScriptImport = (
@@ -1507,27 +1639,40 @@ export function createImportAnalysisContext(
     contextOrExtensions?: ImportResolveContextInput,
   ): ResolvedCheckerModuleName | null => {
     recordModuleResolutionRequest('typescript');
-    return resolveTypeScriptImportRaw(
-      specifier,
-      containingFile,
-      compilerOptions,
-      contextOrExtensions,
+    return resolveTypeScriptResult(
+      getModuleResolutionRequest(
+        specifier,
+        containingFile,
+        compilerOptions,
+        contextOrExtensions,
+      ),
     );
   };
 
   const resolveOxcImportRaw = (
-    specifier: string,
-    containingFile: string,
-    compilerOptions: ts.CompilerOptions,
-    contextOrExtensions?: ImportResolveContextInput,
+    request: NormalizedModuleResolutionRequest,
   ): string | null =>
     resolveModuleNameWithOxcCaches(caches, {
-      compilerOptions,
-      containingFile: normalizeAbsolutePath(containingFile),
-      context: normalizeContextInput(contextOrExtensions),
+      compilerOptions: request.compilerOptions,
+      containingFile: request.containingFile,
+      context: request.context,
       metrics,
-      specifier,
+      specifier: request.specifier,
     });
+
+  const resolveOxcResult = (
+    request: NormalizedModuleResolutionRequest,
+  ): string | null => {
+    const hit = request.record.hasOxcResult;
+    recordModuleResolutionIndexAccess('oxc', hit);
+
+    if (!hit) {
+      request.record.oxcResult = resolveOxcImportRaw(request);
+      request.record.hasOxcResult = true;
+    }
+
+    return request.record.oxcResult;
+  };
 
   const resolveOxcImport = (
     specifier: string,
@@ -1536,12 +1681,35 @@ export function createImportAnalysisContext(
     contextOrExtensions?: ImportResolveContextInput,
   ): string | null => {
     recordModuleResolutionRequest('oxc');
-    return resolveOxcImportRaw(
+    return resolveOxcResult(
+      getModuleResolutionRequest(
+        specifier,
+        containingFile,
+        compilerOptions,
+        contextOrExtensions,
+      ),
+    );
+  };
+
+  const resolveModulePair = (
+    specifier: string,
+    containingFile: string,
+    compilerOptions: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ): ModuleResolutionPair => {
+    const request = getModuleResolutionRequest(
       specifier,
       containingFile,
       compilerOptions,
       contextOrExtensions,
     );
+
+    recordModuleResolutionRequest('typescript');
+    const typescript = resolveTypeScriptResult(request);
+    recordModuleResolutionRequest('oxc');
+    const oxc = resolveOxcResult(request);
+
+    return { oxc, typescript };
   };
 
   const resolveInternalImport = (
@@ -1556,41 +1724,22 @@ export function createImportAnalysisContext(
       name: 'internal-import-resolution',
       provider: 'import-core',
     });
-    const normalizedContainingFile = normalizeAbsolutePath(containingFile);
-    const context = normalizeContextInput(contextOrExtensions);
-    const extensions = getResolverExtensions({
-      compilerOptions: options,
-      context,
-    });
-    const cacheKey = JSON.stringify({
-      configPath: context.configPath ?? null,
-      containingFile: normalizedContainingFile,
-      extensions,
-      options: {
-        allowArbitraryExtensions: options.allowArbitraryExtensions,
-        baseUrl: options.baseUrl,
-        customConditions: options.customConditions,
-        moduleResolution: options.moduleResolution,
-        moduleSuffixes: options.moduleSuffixes,
-        paths: options.paths,
-        pathsBasePath: (options as { pathsBasePath?: unknown }).pathsBasePath,
-        preserveSymlinks: options.preserveSymlinks,
-        resolvePackageJsonExports: options.resolvePackageJsonExports,
-        resolvePackageJsonImports: options.resolvePackageJsonImports,
-        resolveJsonModule: options.resolveJsonModule,
-        rootDirs: options.rootDirs,
-      },
-      resolverConfigPath: context.resolverConfigPath ?? null,
+    const request = getModuleResolutionRequest(
       specifier,
-    });
-    const cached = caches.resolutionCache.get(cacheKey);
-    if (cached !== undefined) {
+      containingFile,
+      options,
+      contextOrExtensions,
+    );
+    const hit = request.record.hasInternalImportResult;
+    recordModuleResolutionIndexAccess('internal-import', hit);
+
+    if (hit) {
       metrics?.record({
         kind: 'internal-import',
         name: 'import-resolution-cache-hit',
         provider: 'import-core',
       });
-      return cached;
+      return request.record.internalImportResult;
     }
 
     metrics?.record({
@@ -1598,56 +1747,47 @@ export function createImportAnalysisContext(
       name: 'import-resolution-cache-miss',
       provider: 'import-core',
     });
+    const extensions = getResolverExtensions({
+      compilerOptions: options,
+      context: request.context,
+    });
     const preferTypeScriptResolver =
       hasTypeScriptOnlyResolutionOptions(options);
     const typeScriptResolved = preferTypeScriptResolver
-      ? resolveTypeScriptImportRaw(
-          specifier,
-          normalizedContainingFile,
-          options,
-          context,
-        )?.resolvedFileName
+      ? resolveTypeScriptResult(request)?.resolvedFileName
       : null;
     const resolved =
       typeScriptResolved ??
       resolveRelativeModuleCandidate({
-        containingFile: normalizedContainingFile,
+        containingFile: request.containingFile,
         extensions,
-        specifier,
+        specifier: request.specifier,
       }) ??
       resolvePathMappedModuleCandidate({
         compilerOptions: options,
         extensions,
-        specifier,
+        specifier: request.specifier,
       }) ??
       resolveBaseUrlModuleCandidate({
         compilerOptions: options,
         extensions,
-        specifier,
+        specifier: request.specifier,
       }) ??
       (preferTypeScriptResolver
         ? null
-        : (resolveOxcImportRaw(
-            specifier,
-            normalizedContainingFile,
-            options,
-            context,
-          ) ??
-          resolveTypeScriptImportRaw(
-            specifier,
-            normalizedContainingFile,
-            options,
-            context,
-          )?.resolvedFileName ??
+        : (resolveOxcResult(request) ??
+          resolveTypeScriptResult(request)?.resolvedFileName ??
           null));
 
-    caches.resolutionCache.set(cacheKey, resolved);
+    request.record.internalImportResult = resolved;
+    request.record.hasInternalImportResult = true;
     return resolved;
   };
 
   return {
     collectImportsFromFile,
     resolveInternalImport,
+    resolveModulePair,
     resolveOxcImport,
     resolveTypeScriptImport,
   };
