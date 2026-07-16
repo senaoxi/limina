@@ -191,6 +191,19 @@ describe('validated workspace context', () => {
         metricCount('provider-cache-hit', 'region-boundary'),
       ).toBeGreaterThan(0);
       expect(metricCount('workspace-negative-lookup')).toBeGreaterThan(0);
+      expect(
+        metricCount('workspace-path-classification-miss', 'region-package'),
+      ).toBe(2);
+      expect(
+        metricCount('workspace-path-classification-miss', 'region-boundary'),
+      ).toBe(1);
+      expect(
+        metricCount('workspace-path-classification-hit', 'region-package'),
+      ).toBe(2);
+      expect(
+        metricCount('workspace-path-classification-hit', 'region-boundary'),
+      ).toBe(1);
+      expect(metricCount('workspace-path-ancestor-visit')).toBe(3);
     } finally {
       await fixture.cleanup();
     }

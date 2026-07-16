@@ -66,10 +66,20 @@ export interface ImportAnalysisMetricsRecorder {
     readonly name:
       | 'import-resolution-cache-hit'
       | 'import-resolution-cache-miss'
+      | 'internal-import-resolution'
+      | 'module-resolution-index-hit'
+      | 'module-resolution-index-miss'
+      | 'module-resolution-request'
+      | 'oxc-resolution'
+      | 'oxc-resolver-factory-create'
+      | 'oxc-resolver-factory-hit'
       | 'provider-cache-hit'
       | 'provider-cache-miss'
       | 'source-parse'
-      | 'source-read';
+      | 'source-read'
+      | 'typescript-module-resolution-cache-hit'
+      | 'typescript-module-resolution-cache-miss'
+      | 'typescript-resolution';
     readonly provider?: string;
   }): void;
 }
@@ -1249,6 +1259,7 @@ function resolveModuleNameWithOxcCaches(
     compilerOptions: ts.CompilerOptions;
     containingFile: string;
     context: ResolvedImportContext;
+    metrics?: ImportAnalysisMetricsRecorder;
     specifier: string;
   },
 ): string | null {
@@ -1266,8 +1277,16 @@ function resolveModuleNameWithOxcCaches(
     configPath,
     extensions,
   });
+  const cachedResolver = caches.resolverCache.get(resolverCacheKey);
+  options.metrics?.record({
+    kind: 'resolver-factory',
+    name: cachedResolver
+      ? 'oxc-resolver-factory-hit'
+      : 'oxc-resolver-factory-create',
+    provider: 'oxc',
+  });
   const resolver =
-    caches.resolverCache.get(resolverCacheKey) ??
+    cachedResolver ??
     new ResolverFactory(
       createResolverOptions({
         compilerOptions: options.compilerOptions,
@@ -1280,6 +1299,11 @@ function resolveModuleNameWithOxcCaches(
 
   let resolved: ReturnType<ResolverFactory['resolveFileSync']>;
 
+  options.metrics?.record({
+    kind: 'request',
+    name: 'oxc-resolution',
+    provider: 'module-resolution',
+  });
   try {
     resolved = resolver.resolveFileSync(
       options.containingFile,
@@ -1298,12 +1322,14 @@ export function resolveModuleNameWithOxc(options: {
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
   context?: ImportResolveContextInput;
+  metrics?: ImportAnalysisMetricsRecorder;
   specifier: string;
 }): string | null {
   return resolveModuleNameWithOxcCaches(createImportAnalysisCaches(), {
     compilerOptions: options.compilerOptions,
     containingFile: normalizeAbsolutePath(options.containingFile),
     context: normalizeContextInput(options.context),
+    metrics: options.metrics,
     specifier: options.specifier,
   });
 }
@@ -1314,6 +1340,23 @@ export function createImportAnalysisContext(
   const caches = createImportAnalysisCaches();
   const metrics = options.metrics;
   const vueParser = options.vueParser ?? 'heuristic';
+  const recordModuleResolutionRequest = (
+    kind: 'internal-import' | 'oxc' | 'typescript',
+  ): void => {
+    metrics?.record({
+      kind,
+      name: 'module-resolution-request',
+      provider: 'import-analysis',
+    });
+    // Commit 1 has no generation-scoped ModuleResolutionIndex. Every logical
+    // request is therefore an outer-index miss, even when the older effective
+    // internal-import cache below hits.
+    metrics?.record({
+      kind,
+      name: 'module-resolution-index-miss',
+      provider: 'import-analysis',
+    });
+  };
 
   const readSourceText = (filePath: string): string => {
     if (caches.sourceTextCache.has(filePath)) {
@@ -1395,7 +1438,7 @@ export function createImportAnalysisContext(
     return imports;
   };
 
-  const resolveTypeScriptImport = (
+  const resolveTypeScriptImportRaw = (
     specifier: string,
     containingFile: string,
     compilerOptions: ts.CompilerOptions,
@@ -1405,10 +1448,26 @@ export function createImportAnalysisContext(
       compilerOptions,
       containingFile: normalizeAbsolutePath(containingFile),
       context: normalizeContextInput(contextOrExtensions),
+      metrics,
       specifier,
     });
 
-  const resolveOxcImport = (
+  const resolveTypeScriptImport = (
+    specifier: string,
+    containingFile: string,
+    compilerOptions: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ): ResolvedCheckerModuleName | null => {
+    recordModuleResolutionRequest('typescript');
+    return resolveTypeScriptImportRaw(
+      specifier,
+      containingFile,
+      compilerOptions,
+      contextOrExtensions,
+    );
+  };
+
+  const resolveOxcImportRaw = (
     specifier: string,
     containingFile: string,
     compilerOptions: ts.CompilerOptions,
@@ -1418,8 +1477,24 @@ export function createImportAnalysisContext(
       compilerOptions,
       containingFile: normalizeAbsolutePath(containingFile),
       context: normalizeContextInput(contextOrExtensions),
+      metrics,
       specifier,
     });
+
+  const resolveOxcImport = (
+    specifier: string,
+    containingFile: string,
+    compilerOptions: ts.CompilerOptions,
+    contextOrExtensions?: ImportResolveContextInput,
+  ): string | null => {
+    recordModuleResolutionRequest('oxc');
+    return resolveOxcImportRaw(
+      specifier,
+      containingFile,
+      compilerOptions,
+      contextOrExtensions,
+    );
+  };
 
   const resolveInternalImport = (
     specifier: string,
@@ -1427,6 +1502,12 @@ export function createImportAnalysisContext(
     options: ts.CompilerOptions,
     contextOrExtensions?: ImportResolveContextInput,
   ): string | null => {
+    recordModuleResolutionRequest('internal-import');
+    metrics?.record({
+      kind: 'request',
+      name: 'internal-import-resolution',
+      provider: 'import-core',
+    });
     const normalizedContainingFile = normalizeAbsolutePath(containingFile);
     const context = normalizeContextInput(contextOrExtensions);
     const extensions = getResolverExtensions({
@@ -1472,7 +1553,7 @@ export function createImportAnalysisContext(
     const preferTypeScriptResolver =
       hasTypeScriptOnlyResolutionOptions(options);
     const typeScriptResolved = preferTypeScriptResolver
-      ? resolveTypeScriptImport(
+      ? resolveTypeScriptImportRaw(
           specifier,
           normalizedContainingFile,
           options,
@@ -1498,7 +1579,7 @@ export function createImportAnalysisContext(
       }) ??
       (preferTypeScriptResolver
         ? null
-        : (resolveOxcImport(
+        : (resolveOxcImportRaw(
             specifier,
             normalizedContainingFile,
             options,
@@ -1508,6 +1589,7 @@ export function createImportAnalysisContext(
             compilerOptions: options,
             containingFile: normalizedContainingFile,
             context,
+            metrics,
             specifier,
           })));
 

@@ -4,7 +4,10 @@ import {
   resolveModuleNameWithCheckers,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { resolveModuleNameWithOxc } from '#core/import-analysis/runner';
+import {
+  type ImportAnalysisMetricsRecorder,
+  resolveModuleNameWithOxc,
+} from '#core/import-analysis/runner';
 import type {
   NamedWorkspacePackage,
   WorkspacePackage,
@@ -48,6 +51,30 @@ export interface WorkspaceExportsResolutionIndex {
   ) => WorkspacePackageExportResolution | null;
   hasExports: (packageName: string) => boolean;
   problems: string[];
+}
+
+type ImportAnalysisMetricMeasurement = Parameters<
+  ImportAnalysisMetricsRecorder['record']
+>[0];
+
+export interface WorkspaceExportsMetricsRecorder
+  extends ImportAnalysisMetricsRecorder {
+  record(
+    measurement:
+      | ImportAnalysisMetricMeasurement
+      | {
+          readonly count?: number;
+          readonly kind?: string;
+          readonly name:
+            | 'workspace-export-oxc-resolution'
+            | 'workspace-export-oxc-semantic-profile-count'
+            | 'workspace-export-profile-count'
+            | 'workspace-export-resolution-request'
+            | 'workspace-export-typescript-resolution'
+            | 'workspace-export-typescript-semantic-profile-count';
+          readonly provider?: string;
+        },
+  ): void;
 }
 
 interface PackageExportEntry {
@@ -406,6 +433,7 @@ function resolveTargetWithCheckerExtensions(options: {
 
 function resolveTypeScriptExport(options: {
   entry: PackageExportEntry;
+  metrics?: WorkspaceExportsMetricsRecorder;
   profile: WorkspaceExportsResolutionProfile;
 }): string | null {
   const containingFile = path.join(
@@ -416,6 +444,7 @@ function resolveTypeScriptExport(options: {
     compilerOptions: options.profile.options,
     containingFile,
     context: getProfileContext(options.profile),
+    metrics: options.metrics,
     specifier: options.entry.specifier,
   });
 
@@ -430,13 +459,76 @@ function resolveTypeScriptExport(options: {
 
 function resolveOxcExport(options: {
   entry: PackageExportEntry;
+  metrics?: WorkspaceExportsMetricsRecorder;
   profile: WorkspaceExportsResolutionProfile;
 }): string | null {
   return resolveModuleNameWithOxc({
     compilerOptions: options.profile.options,
     containingFile: path.join(options.entry.packageDirectory, 'package.json'),
     context: getProfileContext(options.profile),
+    metrics: options.metrics,
     specifier: options.entry.specifier,
+  });
+}
+
+function createConservativeTypeScriptProfileIdentity(
+  profile: WorkspaceExportsResolutionProfile,
+): string {
+  // Treat every original project config as distinct until a later commit
+  // provides semantic proof for grouping resolver inputs.
+  return JSON.stringify([profile.configPath, profile.resolverConfigPath]);
+}
+
+function createConservativeOxcProfileIdentity(
+  profile: WorkspaceExportsResolutionProfile,
+): string {
+  // Keep both the original profile and the exact config loaded by Oxc. This
+  // intentionally does not claim cross-config semantic equivalence.
+  return JSON.stringify([profile.configPath, profile.resolverConfigPath]);
+}
+
+function recordWorkspaceExportProfileMetrics(options: {
+  metrics: WorkspaceExportsMetricsRecorder;
+  profiles: WorkspaceExportsResolutionProfile[];
+}): void {
+  options.metrics.record({
+    count: options.profiles.length,
+    kind: 'input',
+    name: 'workspace-export-profile-count',
+    provider: 'workspace-exports',
+  });
+  options.metrics.record({
+    count: new Set(
+      options.profiles.map(createConservativeTypeScriptProfileIdentity),
+    ).size,
+    kind: 'conservative',
+    name: 'workspace-export-typescript-semantic-profile-count',
+    provider: 'workspace-exports',
+  });
+  options.metrics.record({
+    count: new Set(options.profiles.map(createConservativeOxcProfileIdentity))
+      .size,
+    kind: 'conservative',
+    name: 'workspace-export-oxc-semantic-profile-count',
+    provider: 'workspace-exports',
+  });
+}
+
+function recordWorkspaceExportModuleRequest(
+  metrics: WorkspaceExportsMetricsRecorder | undefined,
+  kind: 'oxc' | 'typescript',
+): void {
+  metrics?.record({
+    kind,
+    name: 'module-resolution-request',
+    provider: 'workspace-exports',
+  });
+  // Commit 1 records the absence of a shared outer index as a miss without
+  // changing either resolver's existing cache behavior.
+  metrics?.record({
+    kind,
+    name: 'module-resolution-index-miss',
+    provider: 'workspace-exports',
   });
 }
 
@@ -687,6 +779,7 @@ function addEntryProblems(options: {
 
 export async function createWorkspaceExportsResolutionIndex(options: {
   config: ResolvedLiminaConfig;
+  metrics?: WorkspaceExportsMetricsRecorder;
   packages: WorkspacePackage[];
   profiles: WorkspaceExportsResolutionProfile[];
 }): Promise<WorkspaceExportsResolutionIndex> {
@@ -696,6 +789,13 @@ export async function createWorkspaceExportsResolutionIndex(options: {
     string,
     Map<string, WorkspacePackageExportResolution>
   >();
+
+  if (options.metrics) {
+    recordWorkspaceExportProfileMetrics({
+      metrics: options.metrics,
+      profiles: options.profiles,
+    });
+  }
 
   for (const workspacePackage of options.packages.filter(
     isNamedWorkspacePackage,
@@ -716,12 +816,31 @@ export async function createWorkspaceExportsResolutionIndex(options: {
       const oxcResolvedPaths: string[] = [];
 
       for (const profile of options.profiles) {
+        options.metrics?.record({
+          kind: 'request',
+          name: 'workspace-export-resolution-request',
+          provider: 'workspace-exports',
+        });
+        options.metrics?.record({
+          kind: 'request',
+          name: 'workspace-export-typescript-resolution',
+          provider: 'workspace-exports',
+        });
+        recordWorkspaceExportModuleRequest(options.metrics, 'typescript');
         const typeScriptResolvedFileName = resolveTypeScriptExport({
           entry,
+          metrics: options.metrics,
           profile,
         });
+        options.metrics?.record({
+          kind: 'request',
+          name: 'workspace-export-oxc-resolution',
+          provider: 'workspace-exports',
+        });
+        recordWorkspaceExportModuleRequest(options.metrics, 'oxc');
         const rawOxcResolvedFileName = resolveOxcExport({
           entry,
+          metrics: options.metrics,
           profile,
         });
         // Keep the raw runtime resolver result separate from the effective

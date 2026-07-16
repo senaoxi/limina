@@ -171,12 +171,17 @@ export class WorkspaceLookupIndex {
 
     const importer = this.#isOutsideGovernedRegion(normalizedFilePath)
       ? null
-      : (this.#importers.find((candidate) =>
-          isPathInsideNormalizedDirectory(
+      : (this.#importers.find((candidate) => {
+          this.#metrics?.record({
+            kind: 'importer',
+            name: 'workspace-importer-ancestor-visit',
+            provider: 'workspace-lookup-index',
+          });
+          return isPathInsideNormalizedDirectory(
             normalizedFilePath,
             candidate.directory,
-          ),
-        )?.importer ?? null);
+          );
+        })?.importer ?? null);
 
     this.#importerByFilePath.set(normalizedFilePath, importer);
     this.#recordLookup('miss', 'importer', importer);
