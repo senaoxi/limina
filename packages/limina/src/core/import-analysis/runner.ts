@@ -2,7 +2,6 @@ import {
   type CheckerProjectParseContext,
   normalizeExtensions,
   type ResolvedCheckerModuleName,
-  resolveModuleNameWithCheckers,
   resolveModuleNameWithCheckersDetailed,
 } from '#checkers';
 import type { VueImportParser } from '#config/runner';
@@ -102,6 +101,7 @@ interface ImportAnalysisCaches {
   resolutionCache: Map<string, string | null>;
   resolverCache: Map<string, ResolverFactory>;
   sourceTextCache: Map<string, string>;
+  typeScriptModuleResolutionCache: Map<string, ts.ModuleResolutionCache>;
 }
 
 interface VueCompilerSfcBlock {
@@ -1250,7 +1250,48 @@ function createImportAnalysisCaches(): ImportAnalysisCaches {
     resolutionCache: new Map<string, string | null>(),
     resolverCache: new Map<string, ResolverFactory>(),
     sourceTextCache: new Map<string, string>(),
+    typeScriptModuleResolutionCache: new Map<
+      string,
+      ts.ModuleResolutionCache
+    >(),
   };
+}
+
+function createTypeScriptModuleResolutionCacheKey(options: {
+  compilerOptions: ts.CompilerOptions;
+  context: ResolvedImportContext;
+}): string {
+  return JSON.stringify({
+    compilerOptions: options.compilerOptions,
+    configPath: options.context.configPath ?? null,
+    extensions: getResolverExtensions(options),
+    resolverConfigPath: options.context.resolverConfigPath ?? null,
+  });
+}
+
+function getTypeScriptModuleResolutionCache(
+  caches: ImportAnalysisCaches,
+  options: {
+    compilerOptions: ts.CompilerOptions;
+    context: ResolvedImportContext;
+  },
+): ts.ModuleResolutionCache {
+  const cacheKey = createTypeScriptModuleResolutionCacheKey(options);
+  const cached = caches.typeScriptModuleResolutionCache.get(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
+  const cache = ts.createModuleResolutionCache(
+    ts.sys.getCurrentDirectory(),
+    ts.sys.useCaseSensitiveFileNames
+      ? (fileName) => fileName
+      : (fileName) => fileName.toLowerCase(),
+    options.compilerOptions,
+  );
+  caches.typeScriptModuleResolutionCache.set(cacheKey, cache);
+  return cache;
 }
 
 function resolveModuleNameWithOxcCaches(
@@ -1443,14 +1484,21 @@ export function createImportAnalysisContext(
     containingFile: string,
     compilerOptions: ts.CompilerOptions,
     contextOrExtensions?: ImportResolveContextInput,
-  ): ResolvedCheckerModuleName | null =>
-    resolveModuleNameWithCheckersDetailed({
+  ): ResolvedCheckerModuleName | null => {
+    const context = normalizeContextInput(contextOrExtensions);
+
+    return resolveModuleNameWithCheckersDetailed({
       compilerOptions,
       containingFile: normalizeAbsolutePath(containingFile),
-      context: normalizeContextInput(contextOrExtensions),
+      context,
       metrics,
+      moduleResolutionCache: getTypeScriptModuleResolutionCache(caches, {
+        compilerOptions,
+        context,
+      }),
       specifier,
     });
+  };
 
   const resolveTypeScriptImport = (
     specifier: string,
@@ -1585,13 +1633,13 @@ export function createImportAnalysisContext(
             options,
             context,
           ) ??
-          resolveModuleNameWithCheckers({
-            compilerOptions: options,
-            containingFile: normalizedContainingFile,
-            context,
-            metrics,
+          resolveTypeScriptImportRaw(
             specifier,
-          })));
+            normalizedContainingFile,
+            options,
+            context,
+          )?.resolvedFileName ??
+          null));
 
     caches.resolutionCache.set(cacheKey, resolved);
     return resolved;

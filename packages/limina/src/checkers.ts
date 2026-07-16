@@ -155,6 +155,7 @@ export interface CheckerModuleResolveOptions {
   containingFile: string;
   extensions: string[];
   metrics?: CheckerModuleResolutionMetricsRecorder;
+  moduleResolutionCache?: ts.ModuleResolutionCache;
   specifier: string;
 }
 
@@ -638,11 +639,19 @@ function resolveTypeScriptModuleNameDetailed(
     name: 'typescript-resolution',
     provider: 'module-resolution',
   });
-  // No ts.ModuleResolutionCache is passed in Commit 1, so every raw call is
-  // a native-cache miss. Keep this distinct from the outer resolution index.
+  const nativeCacheHit = Boolean(
+    options.moduleResolutionCache &&
+      ts.resolveModuleNameFromCache(
+        options.specifier,
+        options.containingFile,
+        options.moduleResolutionCache,
+      ) !== undefined,
+  );
   options.metrics?.record({
     kind: 'module-resolution',
-    name: 'typescript-module-resolution-cache-miss',
+    name: nativeCacheHit
+      ? 'typescript-module-resolution-cache-hit'
+      : 'typescript-module-resolution-cache-miss',
     provider: 'typescript',
   });
   const resolved = ts.resolveModuleName(
@@ -650,6 +659,7 @@ function resolveTypeScriptModuleNameDetailed(
     options.containingFile,
     options.compilerOptions,
     ts.sys,
+    options.moduleResolutionCache,
   ).resolvedModule;
 
   if (resolved?.resolvedFileName) {
@@ -946,6 +956,7 @@ export function resolveModuleNameWithCheckers(options: {
   containingFile: string;
   context: CheckerProjectParseContext;
   metrics?: CheckerModuleResolutionMetricsRecorder;
+  moduleResolutionCache?: ts.ModuleResolutionCache;
   specifier: string;
 }): string | null {
   return (
@@ -958,6 +969,7 @@ export function resolveModuleNameWithCheckersDetailed(options: {
   containingFile: string;
   context: CheckerProjectParseContext;
   metrics?: CheckerModuleResolutionMetricsRecorder;
+  moduleResolutionCache?: ts.ModuleResolutionCache;
   specifier: string;
 }): ResolvedCheckerModuleName | null {
   const checkerPresets =
@@ -965,27 +977,18 @@ export function resolveModuleNameWithCheckersDetailed(options: {
       ? options.context.checkerPresets
       : (['tsc'] satisfies CheckerPreset[]);
 
-  for (const preset of checkerPresets) {
-    const adapter = getCheckerAdapter(preset);
-
-    if (!adapter) {
-      continue;
-    }
-
-    const resolved = resolveTypeScriptModuleNameDetailed({
-      compilerOptions: options.compilerOptions,
-      containingFile: options.containingFile,
-      extensions: options.context.extensions,
-      metrics: options.metrics,
-      specifier: options.specifier,
-    });
-
-    if (resolved) {
-      return resolved;
-    }
+  if (!checkerPresets.some((preset) => Boolean(getCheckerAdapter(preset)))) {
+    return null;
   }
 
-  return null;
+  return resolveTypeScriptModuleNameDetailed({
+    compilerOptions: options.compilerOptions,
+    containingFile: options.containingFile,
+    extensions: options.context.extensions,
+    metrics: options.metrics,
+    moduleResolutionCache: options.moduleResolutionCache,
+    specifier: options.specifier,
+  });
 }
 
 export function resolveCheckerProjectExtensions(options: {

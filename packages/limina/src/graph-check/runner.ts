@@ -1888,6 +1888,7 @@ export async function runGraphCheckImpl(
     createCustomConditionConsistencyContext(projectsByPath);
   const workspaceExports = await createWorkspaceExportsResolutionIndex({
     config,
+    importAnalysis: preflight.importAnalysis,
     metrics: preflight.profilingMetrics,
     packages,
     profiles: createWorkspaceExportsResolutionProfiles(projects),
