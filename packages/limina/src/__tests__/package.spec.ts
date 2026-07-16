@@ -633,6 +633,67 @@ describe('auditPublishedPackageBoundaries', () => {
       await pkg.cleanup();
     }
   });
+
+  it('validates exact, pattern, conditional, builtin, local, and dependency package imports from the published manifest', async () => {
+    const pkg = await createOutputPackage(
+      {
+        'browser.js': 'export const browser = true;\n',
+        'default.js': 'export const fallback = true;\n',
+        'features/a.js': 'export const feature = true;\n',
+        'index.js': [
+          "import '#exact';",
+          "import '#features/a';",
+          "import '#unknown';",
+          "import '#blocked';",
+          "import '#escape';",
+          "import '#dependency';",
+          "import '#missing-dependency';",
+          "import '#conditional';",
+          "import '#conditional-bad';",
+          "import '@example/dep';",
+          "import '@example/direct-missing';",
+        ].join('\n'),
+        'internal.js': 'export const internal = true;\n',
+        'node/index.js': "import '#builtin';\n",
+      },
+      {
+        imports: {
+          '#blocked': null,
+          '#builtin': 'node:fs',
+          '#conditional': {
+            browser: './browser.js',
+            default: './default.js',
+          },
+          '#conditional-bad': {
+            default: './default.js',
+            node: '@example/undeclared-conditional',
+          },
+          '#dependency': '@example/dep',
+          '#escape': '../outside.js',
+          '#exact': './internal.js',
+          '#features/*': './features/*.js',
+          '#missing-dependency': '@example/missing',
+        },
+      },
+    );
+
+    try {
+      const violations = await auditPublishedPackageBoundaries({
+        outDir: pkg.outDir,
+      });
+
+      expect(violations.map((violation) => violation.specifier)).toEqual([
+        '@example/direct-missing',
+        '#blocked',
+        '#conditional-bad',
+        '#escape',
+        '#missing-dependency',
+        '#unknown',
+      ]);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
 });
 
 describe('runPackageCheck and runReleaseCheck', () => {
@@ -769,6 +830,70 @@ describe('runPackageCheck and runReleaseCheck', () => {
         total: 1,
       });
     } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('reuses the preflight activated package index for release consistency', async () => {
+    const rootDir = await createWorkspaceRoot();
+    const outDir = await createWorkspacePackage(
+      rootDir,
+      '@example/a',
+      {
+        dependencies: {
+          '@example/b': 'workspace:*',
+        },
+      },
+      {
+        dependencies: {
+          '@example/b': '^1.0.0',
+        },
+      },
+    );
+    await createWorkspacePackage(rootDir, '@example/b', {});
+    const config = createConfig(rootDir, [
+      {
+        checks: ['boundary'],
+        name: '@example/a',
+        outDir,
+      },
+    ]);
+    const preflight = createGraphRejectingPreflight(config, async () => {
+      throw new Error('release check should not read generated graph');
+    });
+    const activatedPackages = await preflight.ensureWorkspacePackages();
+    vi.spyOn(preflight, 'ensureWorkspacePackages').mockResolvedValue(
+      activatedPackages.map((workspacePackage) =>
+        workspacePackage.name === '@example/b'
+          ? {
+              ...workspacePackage,
+              manifest: { ...workspacePackage.manifest, private: true },
+            }
+          : workspacePackage,
+      ),
+    );
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+
+    try {
+      await expect(
+        runReleaseCheck({
+          clearScreen: false,
+          config,
+          packageNames: ['@example/a'],
+          preflight,
+        }),
+      ).resolves.toBe(false);
+
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        '@example/a -> @example/b [dependencies] (workspace:*): publishable packages cannot depend on a private workspace package',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await rm(rootDir, {
         force: true,
         recursive: true,
@@ -3739,6 +3864,61 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await pkg.cleanup();
     }
   });
+
+  it.each([
+    {
+      ignored: [] as string[],
+      profile: 'strict' as const,
+    },
+    {
+      ignored: ['node10'] as string[],
+      profile: 'node16' as const,
+    },
+    {
+      ignored: ['node10', 'node16-cjs'] as string[],
+      profile: 'esm-only' as const,
+    },
+  ])(
+    'filters the complete ATTW resolution matrix for $profile',
+    async ({ ignored, profile }) => {
+      const pkg = await createOutputPackage({
+        'index.js': 'export const value = 1;\n',
+      });
+      const resolutionKinds = [
+        'node10',
+        'node16-cjs',
+        'node16-esm',
+        'bundler',
+        'future-resolution',
+      ];
+      try {
+        for (const resolutionKind of resolutionKinds) {
+          packageCheckMocks.attwProblems = [
+            {
+              entrypoint: '.',
+              kind: 'NoResolution',
+              resolutionKind,
+            },
+          ];
+
+          await expect(
+            runPackageCheck({
+              config: createConfig(pkg.rootDir, [
+                {
+                  attw: { profile },
+                  name: '@example/pkg',
+                  outDir: pkg.outDir,
+                },
+              ]),
+              tool: 'attw',
+            }),
+          ).resolves.toBe(ignored.includes(resolutionKind));
+        }
+      } finally {
+        await pkg.cleanup();
+      }
+    },
+  );
 
   it('skips a missing publint peer only when publint is enabled', async () => {
     const pkg = await createOutputPackage({

@@ -2,7 +2,6 @@ import ignore from 'ignore';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
-import { escapePath, glob } from 'tinyglobby';
 
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
@@ -13,9 +12,10 @@ import {
   toRelativePath,
 } from '#utils/path';
 import {
-  type ValidatedWorkspaceContext,
-  WorkspaceRegionPathIndex,
-} from '../core/workspace/validated-context';
+  collectActivatedPackageFileCandidates,
+  createCandidateGlobMatcher,
+} from '../core/workspace/file-candidates';
+import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 
 const DEFAULT_SOURCE_TOKEN = '...' as const;
 
@@ -187,53 +187,12 @@ export async function collectExpectedSourceFiles(
   const gitignoreFilter = exclude.usesDefaultBundle
     ? createGitignoreFilter(config)
     : null;
-  const pathIndex = new WorkspaceRegionPathIndex(workspaceContext);
-  const candidates = (
-    await Promise.all(
-      workspaceContext.packages.map((workspacePackage) => {
-        const childIgnores = workspaceContext.packages.flatMap(
-          (candidatePackage) => {
-            const relativeRoot = toPosixPath(
-              toRelativePath(
-                workspacePackage.directory,
-                candidatePackage.directory,
-              ),
-            );
-            return relativeRoot !== '.' &&
-              !relativeRoot.startsWith('../') &&
-              relativeRoot !== '..'
-              ? [`${escapePath(relativeRoot)}/**`]
-              : [];
-          },
-        );
-        // Discover the island-local candidate universe first. Public source
-        // selectors are config-root-relative filters over this universe; they
-        // must never become traversal roots (especially for ../ selectors).
-        return glob('**/*', {
-          absolute: true,
-          cwd: workspacePackage.directory,
-          dot: true,
-          followSymbolicLinks: false,
-          ignore: [
-            '**/.git/**',
-            '**/.limina/**',
-            '**/node_modules/**',
-            ...childIgnores,
-          ],
-          onlyFiles: true,
-        });
-      }),
-    )
-  ).flat();
+  // Public source selectors filter the island-local universe; they never
+  // become traversal roots (especially for ../ selectors).
+  const candidates =
+    await collectActivatedPackageFileCandidates(workspaceContext);
   const matcherOptions = { dot: true } as const;
-  const includeMatchers = include.patterns.map((pattern) =>
-    (
-      rawPicomatch as unknown as (
-        pattern: string,
-        options: { dot: boolean },
-      ) => (value: string) => boolean
-    )(pattern, matcherOptions),
-  );
+  const includeMatcher = createCandidateGlobMatcher(include.patterns);
   const excludeMatchers = exclude.patterns.map((pattern) =>
     (
       rawPicomatch as unknown as (
@@ -245,14 +204,13 @@ export async function collectExpectedSourceFiles(
   const configRootDir = normalizeAbsolutePath(config.rootDir);
 
   return new Set(
-    [...new Set(candidates.map(normalizeAbsolutePath))]
-      .filter((filePath) => Boolean(pathIndex.findPackageForPath(filePath)))
+    candidates
       .filter((filePath) => {
         const relativePath = toPosixPath(
           toRelativePath(configRootDir, filePath),
         );
         return (
-          includeMatchers.some((matches) => matches(relativePath)) &&
+          includeMatcher(relativePath) &&
           !excludeMatchers.some((matches) => matches(relativePath))
         );
       })

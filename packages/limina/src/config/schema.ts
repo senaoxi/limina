@@ -643,6 +643,22 @@ function validateSourceImportAuthorityConfig(
         value: grant.include,
         valueName: 'include',
       });
+      if (Array.isArray(grant.include)) {
+        for (const [includeIndex, include] of grant.include.entries()) {
+          if (
+            typeof include === 'string' &&
+            include.trim().length > 0 &&
+            isAbsolutePublicSelector(include)
+          ) {
+            ctx.addIssue({
+              code: 'custom',
+              message:
+                'source.importAuthority allow include entries must be config.rootDir-relative paths; ../ is allowed.',
+              path: [...grantPath, 'include', includeIndex],
+            });
+          }
+        }
+      }
 
       if (
         typeof grant.reason !== 'string' ||
@@ -723,6 +739,22 @@ function validateSourceDeclarationsConfig(
       value: rule.include,
       valueName: 'ambient declaration include',
     });
+    if (Array.isArray(rule.include)) {
+      for (const [includeIndex, include] of rule.include.entries()) {
+        if (
+          typeof include === 'string' &&
+          include.trim().length > 0 &&
+          isAbsolutePublicSelector(include)
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            message:
+              'ambient declaration include entries must be config.rootDir-relative paths; ../ is allowed.',
+            path: [...rulePath, 'include', includeIndex],
+          });
+        }
+      }
+    }
     if (typeof rule.reason !== 'string' || rule.reason.trim().length === 0) {
       ctx.addIssue({
         code: 'custom',
@@ -745,11 +777,7 @@ function validateSourceDeclarationsConfig(
   }
 }
 
-const regionExcludeKinds = [
-  'workspace-package',
-  'package-scope',
-  'pnpm-workspace',
-] as const;
+const regionExcludeKinds = ['workspace-package', 'package-scope'] as const;
 
 function validateRegionsConfig(
   value: unknown,

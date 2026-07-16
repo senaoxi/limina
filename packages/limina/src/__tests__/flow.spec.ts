@@ -1,10 +1,13 @@
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import path from 'pathe';
 import { describe, expect, it, vi } from 'vitest';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
+import { resolveRendererEntryForTesting } from '../flow/process-renderer';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(
@@ -129,6 +132,58 @@ function getLastRenderedFrame(output: string): string {
 }
 
 describe('LiminaFlowReporter', () => {
+  it('executes the package sibling renderer bundle instead of consumer cwd candidates', async () => {
+    const rootDir = await mkdtemp(
+      path.join(tmpdir(), 'limina-renderer-authority-'),
+    );
+    const packageDir = path.join(rootDir, 'node_modules/limina');
+    const consumerDir = path.join(rootDir, 'consumer');
+    const safeMarker = path.join(rootDir, 'safe-marker');
+    const unsafeMarker = path.join(rootDir, 'unsafe-marker');
+
+    try {
+      await mkdir(path.join(packageDir, 'dist/flow'), { recursive: true });
+      await mkdir(path.join(consumerDir, 'src/flow'), { recursive: true });
+      await mkdir(path.join(consumerDir, 'dist'), { recursive: true });
+      await writeFile(
+        path.join(packageDir, 'dist/flow-renderer-process.js'),
+        "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.SAFE_MARKER, 'safe');\n",
+      );
+      const unsafeSource =
+        "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.UNSAFE_MARKER, 'unsafe');\n";
+
+      await writeFile(
+        path.join(consumerDir, 'src/flow/renderer-process.ts'),
+        unsafeSource,
+      );
+      await writeFile(
+        path.join(consumerDir, 'dist/flow-renderer-process.js'),
+        unsafeSource,
+      );
+
+      const entry = resolveRendererEntryForTesting(
+        pathToFileURL(path.join(packageDir, 'dist/flow/process-renderer.js'))
+          .href,
+      );
+
+      expect(entry).toBeDefined();
+      const result = spawnSync(entry!.command, entry!.args, {
+        cwd: consumerDir,
+        env: {
+          ...process.env,
+          SAFE_MARKER: safeMarker,
+          UNSAFE_MARKER: unsafeMarker,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      await expect(readFile(safeMarker, 'utf8')).resolves.toBe('safe');
+      expect(existsSync(unsafeMarker)).toBe(false);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('writes stable plain text outside TTY mode', () => {
     const { chunks, flow } = createBufferedFlow();
 

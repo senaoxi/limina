@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-import path from 'pathe';
+import {
+  type InternalProcessEntry,
+  resolveInternalProcessEntry,
+} from '../execution/internal-process-entry';
 import {
   type CheckerHostRequest,
   type CheckerHostResponse,
@@ -13,10 +13,7 @@ import {
 
 export type CheckerHostDegradationListener = (reason: string) => void;
 
-interface CheckerHostEntry {
-  args: string[];
-  command: string;
-}
+type CheckerHostEntry = InternalProcessEntry;
 
 interface PendingCheckerSpawn {
   onDegraded?: CheckerHostDegradationListener;
@@ -24,58 +21,18 @@ interface PendingCheckerSpawn {
   spec: CheckerHostSpawnSpec;
 }
 
-const requireFromHostClient = createRequire(import.meta.url);
-
-function resolveTsxCliPath(packageDir: string): string | undefined {
-  try {
-    return requireFromHostClient.resolve('tsx/cli');
-  } catch {
-    return [
-      path.join(packageDir, 'node_modules/tsx/dist/cli.mjs'),
-      path.join(packageDir, '../../node_modules/tsx/dist/cli.mjs'),
-    ].find((candidate) => existsSync(candidate));
-  }
+function resolveCheckerHostEntry(
+  moduleUrl: string = import.meta.url,
+): CheckerHostEntry | undefined {
+  return resolveInternalProcessEntry({
+    bundleFileName: 'checker-host-process.js',
+    moduleUrl,
+    sourceFileName: 'host-process.ts',
+  });
 }
 
-function resolveCheckerHostEntry(): CheckerHostEntry | undefined {
-  const currentDir = fileURLToPath(new URL('.', import.meta.url));
-  const sourceEntries = [
-    path.resolve(currentDir, 'host-process.ts'),
-    path.resolve(process.cwd(), 'src/typecheck/host-process.ts'),
-  ];
-  const distEntries = [
-    path.resolve(currentDir, 'checker-host-process.js'),
-    path.resolve(currentDir, '../checker-host-process.js'),
-    path.resolve(process.cwd(), 'dist/checker-host-process.js'),
-  ];
-  const sourceEntry = sourceEntries.find((candidate) => existsSync(candidate));
-
-  if (sourceEntry) {
-    const tsxCliPath = resolveTsxCliPath(
-      path.resolve(path.dirname(sourceEntry), '../..'),
-    );
-
-    if (!tsxCliPath) {
-      return undefined;
-    }
-
-    return {
-      args: [tsxCliPath, sourceEntry],
-      command: process.execPath,
-    };
-  }
-
-  const distEntry = distEntries.find((candidate) => existsSync(candidate));
-
-  if (distEntry) {
-    return {
-      args: [distEntry],
-      command: process.execPath,
-    };
-  }
-
-  return undefined;
-}
+export const resolveCheckerHostEntryForTesting: typeof resolveCheckerHostEntry =
+  resolveCheckerHostEntry;
 
 let sharedHost: CheckerProcessHost | undefined;
 let sharedHostUnavailable = false;

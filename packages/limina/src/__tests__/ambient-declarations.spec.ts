@@ -1,15 +1,12 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
+import type { WorkspacePackage } from '#core/workspace/actions';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import {
-  createWorkspaceRegionBoundaryIndex,
-  type WorkspaceRegionBoundary,
-} from '../core/workspace/regions';
+import type { WorkspaceRegionBoundary } from '../core/workspace/regions';
+import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { createAmbientDeclarationIndex } from '../source-check/ambient-declarations';
 
 async function writeText(
@@ -52,38 +49,62 @@ function createGraph(
   } as unknown as GeneratedTsconfigGraphResult;
 }
 
+function createWorkspaceContext(options: {
+  boundaries?: WorkspaceRegionBoundary[];
+  configRootDir: string;
+  outputRoots?: string[];
+  packages: WorkspacePackage[];
+  sourceConfigPaths?: string[];
+}): ValidatedWorkspaceContext {
+  return {
+    boundaries: options.boundaries ?? [],
+    configRootDir: options.configRootDir,
+    descriptorCandidates: [],
+    extendedPackageScopes: [],
+    outputRoots: options.outputRoots ?? [],
+    packageIdentities: options.packages.map((workspacePackage) => ({
+      canonicalDirectory: workspacePackage.directory,
+      displayDirectory: path.relative(
+        options.configRootDir,
+        workspacePackage.directory,
+      ),
+      package: workspacePackage,
+    })),
+    packages: options.packages,
+    rawPackages: options.packages,
+    sourceConfigPaths: options.sourceConfigPaths ?? [],
+    workspaceRootDir: options.configRootDir,
+  };
+}
+
 async function createContext(
   options: {
     boundaries?: WorkspaceRegionBoundary[];
     manifest?: WorkspacePackage['manifest'];
   } = {},
 ) {
-  const rootDir = await realpath(
+  const temporaryDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-ambient-')),
   );
+  const rootDir = path.join(temporaryDir, 'workspace');
+  await mkdir(rootDir, { recursive: true });
   const workspacePackage: WorkspacePackage = {
     directory: rootDir,
     manifest: { name: 'root', private: true, ...options.manifest },
     name: 'root',
   };
-  const owner: PackageOwner = {
-    ...workspacePackage,
-    packageJsonPath: path.join(rootDir, 'package.json'),
-  };
   const boundaries = options.boundaries ?? [];
+  const workspaceContext = createWorkspaceContext({
+    boundaries,
+    configRootDir: rootDir,
+    packages: [workspacePackage],
+  });
   return {
     boundaries,
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    owner,
-    packages: [workspacePackage],
+    cleanup: () => rm(temporaryDir, { force: true, recursive: true }),
     rootDir,
-    workspaceLookup: new WorkspaceLookupIndex({
-      importers: [],
-      owners: [owner],
-      packages: [workspacePackage],
-      regionBoundaries: boundaries,
-      rootDir,
-    }),
+    workspacePackage,
+    workspaceContext,
   };
 }
 
@@ -117,12 +138,7 @@ describe('ambient declaration index', () => {
           { include: [relativePath], reason: 'Shared shim.' },
         ]),
         generatedGraph: createGraph(),
-        packages: context.packages,
-        regionBoundaries: createWorkspaceRegionBoundaryIndex(
-          [],
-          context.packages,
-        ),
-        workspaceLookup: context.workspaceLookup,
+        workspaceContext: context.workspaceContext,
       });
       expect(result.issues).toEqual([]);
       expect(result.index.has(filePath)).toBe(true);
@@ -154,12 +170,7 @@ describe('ambient declaration index', () => {
             { include: [relativePath], reason: 'Invalid.' },
           ]),
           generatedGraph: createGraph(),
-          packages: context.packages,
-          regionBoundaries: createWorkspaceRegionBoundaryIndex(
-            [],
-            context.packages,
-          ),
-          workspaceLookup: context.workspaceLookup,
+          workspaceContext: context.workspaceContext,
         });
         expect(result.issues).toHaveLength(1);
         expect(result.issues[0]?.code).toBe(
@@ -186,13 +197,6 @@ describe('ambient declaration index', () => {
         packageJsonPath: path.join(nestedRoot, 'package.json'),
         excluded: true,
       };
-      const workspaceLookup = new WorkspaceLookupIndex({
-        importers: [],
-        owners: [context.owner],
-        packages: context.packages,
-        regionBoundaries: [boundary],
-        rootDir: context.rootDir,
-      });
       const ordinary = await writeText(
         context.rootDir,
         'ordinary.ts',
@@ -249,18 +253,103 @@ describe('ambient declaration index', () => {
           managed: [managed],
           sourceConfigPaths: [tsconfig],
         }),
-        packages: context.packages,
-        regionBoundaries: createWorkspaceRegionBoundaryIndex(
-          [boundary],
-          context.packages,
-        ),
-        workspaceLookup,
+        workspaceContext: {
+          ...context.workspaceContext,
+          boundaries: [boundary],
+          outputRoots: [path.join(context.rootDir, 'dist')],
+          sourceConfigPaths: [tsconfig],
+        },
       });
       expect(result.issues.length).toBeGreaterThanOrEqual(8);
       expect(result.index.has(ordinary)).toBe(false);
       expect(result.index.has(shared)).toBe(false);
       expect(result.index.has(publicEntry)).toBe(false);
       expect(result.index.has(exportedEntry)).toBe(false);
+    } finally {
+      await context.cleanup();
+    }
+  });
+
+  it('filters config-root-relative rules over activated external package candidates only', async () => {
+    const context = await createContext();
+    try {
+      const externalRoot = path.join(path.dirname(context.rootDir), 'external');
+      const inactiveRoot = path.join(path.dirname(context.rootDir), 'inactive');
+      const externalFile = await writeText(
+        externalRoot,
+        'shared.d.ts',
+        'interface ExternalShared {}\n',
+      );
+      await writeText(
+        inactiveRoot,
+        'hidden.d.ts',
+        'interface InactiveHidden {}\n',
+      );
+      const externalPackage: WorkspacePackage = {
+        directory: externalRoot,
+        manifest: { name: 'external', private: true },
+        name: 'external',
+      };
+      const workspaceContext = createWorkspaceContext({
+        configRootDir: context.rootDir,
+        packages: [context.workspacePackage, externalPackage],
+      });
+      const result = await createAmbientDeclarationIndex({
+        config: createConfig(context.rootDir, [
+          {
+            include: ['../external/**/*.d.ts'],
+            reason: 'Shared external fixture declarations.',
+          },
+          {
+            include: ['../inactive/**/*.d.ts'],
+            reason: 'Inactive files must remain invisible.',
+          },
+        ]),
+        generatedGraph: createGraph(),
+        workspaceContext,
+      });
+
+      expect(result.index.has(externalFile)).toBe(true);
+      expect(result.issues).toHaveLength(1);
+      expect(
+        result.issues[0] && 'reason' in result.issues[0]
+          ? result.issues[0].reason
+          : undefined,
+      ).toBe(
+        'ambient declaration rules must match at least one existing declaration file.',
+      );
+    } finally {
+      await context.cleanup();
+    }
+  });
+
+  it('applies negative patterns only within the activated candidate universe', async () => {
+    const context = await createContext();
+    try {
+      const sharedFile = await writeText(
+        context.rootDir,
+        'shared.d.ts',
+        'interface Shared {}\n',
+      );
+      const privateFile = await writeText(
+        context.rootDir,
+        'private.d.ts',
+        'interface Private {}\n',
+      );
+      const result = await createAmbientDeclarationIndex({
+        config: createConfig(context.rootDir, [
+          {
+            include: ['**/*.d.ts', '!private.d.ts'],
+            reason: 'Only the shared declaration is ambient.',
+          },
+        ]),
+        generatedGraph: createGraph(),
+        workspaceContext: context.workspaceContext,
+      });
+
+      expect(result.issues).toEqual([]);
+      expect(result.index.has(sharedFile)).toBe(true);
+      expect(result.index.has(privateFile)).toBe(false);
     } finally {
       await context.cleanup();
     }

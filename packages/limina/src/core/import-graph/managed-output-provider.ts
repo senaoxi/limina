@@ -160,18 +160,32 @@ function resolveContextMatch(
   const mappedDeclarationPath = normalizeAbsolutePath(
     path.resolve(context.outputOptions.rootDir, relativeDeclarationPath),
   );
-  const matchedSourceFilePaths = createSourceExtensionOrder(
-    declarationSuffix,
-    context.extensions,
+  const sourceBasePath = mappedDeclarationPath.slice(
+    0,
+    -declarationSuffix.length,
+  );
+  const exactSourcePath = context.extensions.some(
+    (extension) =>
+      !isDeclarationFamilyExtension(extension) &&
+      sourceBasePath.endsWith(extension),
   )
-    .map((extension) =>
-      normalizeAbsolutePath(
-        replaceDeclarationSuffix(
-          mappedDeclarationPath,
-          declarationSuffix,
-          extension,
+    ? sourceBasePath
+    : null;
+  const matchedSourceFilePaths = [
+    exactSourcePath,
+    ...createSourceExtensionOrder(declarationSuffix, context.extensions).map(
+      (extension) =>
+        normalizeAbsolutePath(
+          replaceDeclarationSuffix(
+            mappedDeclarationPath,
+            declarationSuffix,
+            extension,
+          ),
         ),
-      ),
+    ),
+  ]
+    .filter(
+      (sourceFilePath): sourceFilePath is string => sourceFilePath !== null,
     )
     .filter((sourceFilePath) => context.ownedFileNames.has(sourceFilePath));
 
@@ -179,14 +193,16 @@ function resolveContextMatch(
     return null;
   }
 
-  if (new Set(matchedSourceFilePaths).size > 1) {
+  const uniqueMatchedSourceFilePaths = [...new Set(matchedSourceFilePaths)];
+
+  if (uniqueMatchedSourceFilePaths.length > 1) {
     return 'ambiguous';
   }
 
   return {
     checkerName: context.checkerName,
     declarationFilePath,
-    mappedSourceFilePath: matchedSourceFilePaths[0]!,
+    mappedSourceFilePath: uniqueMatchedSourceFilePaths[0]!,
     sourceConfigPath: context.sourceConfigPath,
   };
 }

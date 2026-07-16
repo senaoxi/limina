@@ -280,7 +280,7 @@ export interface SourceImportAuthorityWorkspaceRootGrant {
 }
 
 export interface SourceAmbientDeclarationConfig {
-  /** Workspace-root-relative glob patterns matching declaration files. */
+  /** Config-root-relative glob patterns filtering activated-island files. */
   include: string[];
   /**
    * Allow matched declaration files to be consumed by TypeScript projects

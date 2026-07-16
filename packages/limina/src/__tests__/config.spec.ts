@@ -726,6 +726,10 @@ export default {
           'ambient declaration include entries must be non-empty strings',
         ],
         [
+          { ambient: [{ include: ['/types.d.ts'], reason: 'needed' }] },
+          'ambient declaration include entries must be config.rootDir-relative paths',
+        ],
+        [
           { ambient: [{ include: ['types.d.ts'] }] },
           'ambient declaration reason must be a non-empty string',
         ],
@@ -1084,6 +1088,38 @@ export default {
     },
   );
 
+  it.each(['js', 'mjs', 'ts'])(
+    'rejects the removed pnpm-workspace region kind during %s config validation',
+    async (extension) => {
+      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+      try {
+        await writeWorkspaceMetadata(rootDir);
+        await writeText(
+          path.join(rootDir, 'package.json'),
+          JSON.stringify({ name: 'root', private: true, type: 'module' }),
+        );
+        const configPath = path.join(rootDir, `limina.config.${extension}`);
+
+        await writeText(
+          configPath,
+          `export default { regions: { exclude: [{ kind: 'pnpm-workspace', include: ['packages/app'], reason: 'removed' }] } };\n`,
+        );
+
+        await expect(
+          loadConfig({
+            configPath,
+            cwd: rootDir,
+          }),
+        ).rejects.toMatchObject({
+          name: 'ConfigurationError',
+        });
+      } finally {
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
+
   it('rejects region boundary exclusions without a reason', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
@@ -1181,6 +1217,13 @@ export default {
         'allow: { "@example/app": [{ include: [""], workspaceRootDependencies: ["zod"], reason: "empty include entry" }] }',
       expected: 'include entries must be non-empty strings',
       name: 'empty include entry',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ include: ["/test/**/*.ts"], workspaceRootDependencies: ["zod"], reason: "absolute include" }] }',
+      expected:
+        'source.importAuthority allow include entries must be config.rootDir-relative paths',
+      name: 'absolute include',
     },
     {
       config:

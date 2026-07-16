@@ -1,25 +1,22 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import {
-  collectGeneratedSourceConfigPaths,
-  type GeneratedTsconfigGraphResult,
-} from '#core/build-graph/runner';
-import type { WorkspacePackage } from '#core/workspace/actions';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
+  toPosixPath,
   toRelativePath,
 } from '#utils/path';
 import { readFile } from 'node:fs/promises';
 import path from 'pathe';
-import { glob } from 'tinyglobby';
 import ts from 'typescript';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { collectWorkspacePackageDeclarationEntryPaths } from '../core/workspace/exports';
-import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
-  collectConfiguredOutputDirectories,
-  type WorkspaceRegionBoundaryIndex,
-} from '../core/workspace/regions';
+  collectActivatedPackageFileCandidates,
+  createCandidateGlobMatcher,
+  type WorkspaceRegionFilePathIndex,
+} from '../core/workspace/file-candidates';
+import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import type { SourceCheckIssue, SourceStructuredIssue } from './report';
 
 export interface AmbientDeclarationPolicy {
@@ -136,28 +133,21 @@ function collectManagedDeclarationPaths(
 export async function createAmbientDeclarationIndex(options: {
   config: ResolvedLiminaConfig;
   generatedGraph: GeneratedTsconfigGraphResult;
-  packages: readonly WorkspacePackage[];
-  regionBoundaries: WorkspaceRegionBoundaryIndex;
-  workspaceLookup: WorkspaceLookupIndex;
+  workspaceContext: ValidatedWorkspaceContext;
+  workspacePathIndex?: WorkspaceRegionFilePathIndex;
 }): Promise<AmbientDeclarationIndexResult> {
   const rules = options.config.source?.declarations?.ambient ?? [];
   const issues: SourceCheckIssue[] = [];
-  const matchesByRule = await Promise.all(
-    rules.map(async (rule) =>
-      [
-        ...new Set(
-          (
-            await glob(rule.include, {
-              absolute: true,
-              cwd: options.config.rootDir,
-              dot: true,
-              onlyFiles: true,
-            })
-          ).map(normalizeAbsolutePath),
-        ),
-      ].sort((left, right) => left.localeCompare(right)),
-    ),
+  const candidates = await collectActivatedPackageFileCandidates(
+    options.workspaceContext,
+    options.workspacePathIndex,
   );
+  const matchesByRule = rules.map((rule) => {
+    const matches = createCandidateGlobMatcher(rule.include);
+    return candidates.filter((filePath) =>
+      matches(toPosixPath(toRelativePath(options.config.rootDir, filePath))),
+    );
+  });
   const ruleIndexesByFile = new Map<string, number[]>();
 
   for (const [ruleIndex, matches] of matchesByRule.entries()) {
@@ -200,14 +190,9 @@ export async function createAmbientDeclarationIndex(options: {
   }
 
   const managedPaths = collectManagedDeclarationPaths(options.generatedGraph);
-  const outputDirs = collectConfiguredOutputDirectories({
-    config: options.config,
-    sourceConfigPaths: collectGeneratedSourceConfigPaths(
-      options.generatedGraph,
-    ),
-  });
+  const outputDirs = options.workspaceContext.outputRoots;
   const publicEntries = await collectWorkspacePackageDeclarationEntryPaths(
-    options.packages,
+    options.workspaceContext.packages,
   );
   const liminaDir = normalizeAbsolutePath(
     path.join(options.config.rootDir, '.limina'),
@@ -219,18 +204,9 @@ export async function createAmbientDeclarationIndex(options: {
     let valid = matches.length > 0 && !overlappingRules.has(ruleIndex);
     for (const filePath of matches) {
       let reason: string | null = null;
-      if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
-        reason =
-          'ambient declaration files must remain inside the active workspace root.';
-      } else if (!isDeclarationFile(filePath)) {
+      if (!isDeclarationFile(filePath)) {
         reason =
           'ambient declaration rules may only match .d.ts, .d.cts, or .d.mts files.';
-      } else if (
-        options.regionBoundaries.findBoundaryForPath(filePath) ||
-        options.workspaceLookup.isLocalPathOutsideActivatedRegion(filePath)
-      ) {
-        reason =
-          'ambient declaration rules cannot cross nested, excluded, or inactive workspace region boundaries.';
       } else if (
         isPathInsideDirectory(filePath, liminaDir) ||
         outputDirs.some((dir) => isPathInsideDirectory(filePath, dir)) ||

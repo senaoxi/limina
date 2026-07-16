@@ -1,6 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
-import { isLocalPackageDependencySpecifier } from '#core/workspace/actions';
+import {
+  isLocalPackageDependencySpecifier,
+  type WorkspacePackage,
+} from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { createElapsedTimer } from 'logaria/helper';
 import path from 'pathe';
@@ -316,6 +319,7 @@ async function runReleaseCheckEntry(options: {
   label: string;
   outDir: string;
   progressItem?: TaskProgressItem;
+  workspacePackages: readonly WorkspacePackage[];
 }): Promise<boolean> {
   const task = options.progressItem
     ? undefined
@@ -375,6 +379,7 @@ async function runReleaseCheckEntry(options: {
       outDir: options.outDir,
       outputManifest,
       packedTarball: packedDist.tarball,
+      workspacePackages: options.workspacePackages,
     });
 
     if (!options.flow?.interactive) {
@@ -413,6 +418,7 @@ async function runReleaseCheckEntry(options: {
 async function runReleaseCheckEntries(
   options: RunReleaseCheckOptions,
   entries: readonly ReleasePlanEntry[],
+  workspacePackages: readonly WorkspacePackage[],
 ): Promise<ReleaseCheckEntryRunResult[]> {
   if (entries.length === 0) {
     return [];
@@ -462,6 +468,7 @@ async function runReleaseCheckEntries(
         label: entry.label,
         outDir: entry.outDir,
         progressItem: progressItems.get(entry.label),
+        workspacePackages,
       });
 
       return {
@@ -531,7 +538,12 @@ export async function runReleaseCheck(
       plan,
     });
 
-    const entryResults = await runReleaseCheckEntries(options, plan.entries);
+    const workspacePackages = await preflight.ensureWorkspacePackages();
+    const entryResults = await runReleaseCheckEntries(
+      options,
+      plan.entries,
+      workspacePackages,
+    );
     const issues = entryResults.flatMap((result) => result.issues);
     const checkItems: LiminaCheckRunCheckItemSummary[] = entryResults.map(
       (result) =>

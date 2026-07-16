@@ -3,7 +3,6 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import {
-  collectWorkspacePackages,
   getPublishDependencySections,
   isLocalPackageDependencySpecifier,
   isNamedWorkspacePackage,
@@ -11,6 +10,7 @@ import {
   type NamedWorkspacePackage,
   type PackageManifest,
   type PublishDependencySectionName,
+  type WorkspacePackage,
 } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
@@ -163,6 +163,7 @@ export interface AssertPackageReleaseConsistencyOptions {
   outputManifest: PublishManifest;
   packedTarball: Buffer;
   outDir: string;
+  workspacePackages: readonly WorkspacePackage[];
 }
 
 export class PackageReleaseConsistencyError extends Error {
@@ -1499,9 +1500,9 @@ function createReleaseConsistencyError(options: {
 export async function assertPackageReleaseConsistency(
   options: AssertPackageReleaseConsistencyOptions,
 ): Promise<void> {
-  const workspacePackages = (
-    await collectWorkspacePackages(options.config)
-  ).filter(isNamedWorkspacePackage);
+  const workspacePackages = options.workspacePackages.filter(
+    isNamedWorkspacePackage,
+  );
   const sourcePackage = workspacePackages.find(
     (workspacePackage) => workspacePackage.name === options.outputManifest.name,
   );

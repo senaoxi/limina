@@ -11,7 +11,11 @@ import type {
 } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
 import { getPackageRootSpecifier } from '#core/workspace/actions';
-import { toRelativePath } from '#utils/path';
+import {
+  isPathInsideDirectory,
+  normalizeAbsolutePath,
+  toRelativePath,
+} from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import type {
   checkPackage,
@@ -63,6 +67,7 @@ import {
   collectBuiltPackageManifestProblems,
   collectSelfSpecifierMatchers,
   type DistPackageJson,
+  findPackageImportTargets,
   isAllowedSelfSpecifier,
   type SelfSpecifierMatchers,
 } from './manifest';
@@ -123,8 +128,8 @@ interface PackageCheckEntryRunResult {
 type PackageToolCheckResult = 'failed' | 'passed' | 'skipped';
 const ATTW_PROFILE_IGNORED_RESOLUTIONS: Record<PackageAttwProfile, string[]> = {
   strict: [],
-  node16: [],
-  'esm-only': ['node16-cjs'],
+  node16: ['node10'],
+  'esm-only': ['node10', 'node16-cjs'],
 };
 const ATTW_PROBLEM_RULE_NAMES = {
   CJSOnlyExportsDefault: 'cjs-only-exports-default',
@@ -342,6 +347,8 @@ async function collectPublishedModuleFiles(
 function validatePublishedSpecifier(options: {
   allowedExternalPackages: Set<string>;
   environment: RuntimeEnvironment;
+  importsField: DistPackageJson['imports'];
+  outDir: string;
   packageName: string;
   selfSpecifiers: SelfSpecifierMatchers;
   specifier: string;
@@ -349,10 +356,62 @@ function validatePublishedSpecifier(options: {
   const {
     allowedExternalPackages,
     environment,
+    importsField,
+    outDir,
     packageName,
     selfSpecifiers,
     specifier,
   } = options;
+
+  if (specifier.startsWith('#')) {
+    const match = findPackageImportTargets(importsField, specifier);
+
+    if (!match) {
+      return `package import "${specifier}" is not declared by output package.json imports`;
+    }
+
+    for (const target of match.targets) {
+      if (target === null) {
+        return `package import "${specifier}" is forbidden by the null target in output package.json imports key "${match.key}"`;
+      }
+
+      if (typeof target !== 'string' || target.trim().length === 0) {
+        return `package import "${specifier}" has an invalid target in output package.json imports key "${match.key}"`;
+      }
+
+      if (target.startsWith('.')) {
+        const absoluteTarget = normalizeAbsolutePath(
+          path.resolve(outDir, target),
+        );
+
+        if (!isPathInsideDirectory(absoluteTarget, outDir)) {
+          return `package import "${specifier}" target "${target}" escapes the published package root`;
+        }
+
+        if (!existsSync(absoluteTarget)) {
+          return `package import "${specifier}" target "${target}" is not present in the published package`;
+        }
+
+        continue;
+      }
+
+      if (target.startsWith('#') || isRelativeOrAbsoluteSpecifier(target)) {
+        return `package import "${specifier}" has unsupported target "${target}"`;
+      }
+
+      const targetProblem = validatePublishedSpecifier({
+        ...options,
+        importsField: undefined,
+        specifier: target,
+      });
+
+      if (targetProblem) {
+        return `package import "${specifier}" target "${target}" is invalid: ${targetProblem}`;
+      }
+    }
+
+    return null;
+  }
 
   if (isRelativeOrAbsoluteSpecifier(specifier)) {
     return null;
@@ -1073,6 +1132,8 @@ export async function auditPublishedPackageBoundaries(
       const message = validatePublishedSpecifier({
         allowedExternalPackages,
         environment,
+        importsField: manifest.imports,
+        outDir: target.outDir,
         packageName: manifest.name,
         selfSpecifiers,
         specifier: importSpecifier.n,

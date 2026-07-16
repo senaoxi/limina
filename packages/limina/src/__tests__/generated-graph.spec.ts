@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
+import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { toPortablePath } from './helpers/path';
 
@@ -126,6 +127,39 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it.each([
+    ['Button.d.ts', 'Button.ts'],
+    ['Button.d.ts', 'Button.tsx'],
+    ['Button.d.mts', 'Button.mts'],
+    ['Button.d.cts', 'Button.cts'],
+    ['Button.vue.d.ts', 'Button.vue'],
+  ])(
+    'reverse-maps managed %s output to owned %s source',
+    (declarationName, sourceName) => {
+      const rootDir = path.join(process.cwd(), 'virtual-managed-source');
+      const sourceFilePath = path.join(rootDir, 'src', sourceName);
+      const lookup = createManagedOutputDeclarationLookup([
+        {
+          checkerName: 'test',
+          extensions: ['.ts', '.tsx', '.mts', '.cts', '.vue'],
+          outputOptions: {
+            outDir: path.join(rootDir, 'dist'),
+            rootDir: path.join(rootDir, 'src'),
+          },
+          ownedFileNames: [sourceFilePath],
+          sourceConfigPath: path.join(rootDir, 'tsconfig.json'),
+        },
+      ]);
+
+      expect(
+        toPortablePath(
+          lookup.resolve(path.join(rootDir, 'dist', declarationName))!
+            .mappedSourceFilePath,
+        ),
+      ).toBe(toPortablePath(sourceFilePath));
+    },
+  );
+
   it('rejects a raw package that is also a pnpm workspace root before exclusions', async () => {
     const fixture = await createFixture({
       'packages/app/package.json': json({
@@ -3336,6 +3370,80 @@ describe('prepareGeneratedTsconfigGraph', () => {
       ).resolves.toEqual([
         {
           path: '../provider/tsconfig.dts.json',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reverse-maps Vue managed output declarations to owned Vue sources', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/App.vue':
+        '<script setup lang="ts">\nimport Button from \'@example/theme\';\nvoid Button;\n</script>\n',
+      'packages/app/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.vue'],
+      }),
+      'packages/theme/dist/Button.js': 'export default {};\n',
+      'packages/theme/dist/Button.vue.d.ts':
+        'declare const Button: unknown;\nexport default Button;\n',
+      'packages/theme/package.json': json({
+        exports: {
+          '.': {
+            default: './dist/Button.js',
+            types: './dist/Button.vue.d.ts',
+          },
+        },
+        name: '@example/theme',
+        type: 'module',
+      }),
+      'packages/theme/src/Button.vue':
+        '<script setup lang="ts">const label = "Button";</script>\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.vue'],
+        liminaOptions: {
+          outputs: {
+            outDir: 'dist',
+            rootDir: 'src',
+          },
+        },
+      }),
+    });
+
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/theme',
+        '@example/theme',
+      );
+
+      await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            vue: {
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/theme/tsconfig.json',
+              ],
+              preset: 'vue-tsc',
+            },
+          },
+        },
+      });
+
+      await expect(
+        readGeneratedReferences({
+          checkerName: 'vue',
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).resolves.toEqual([
+        {
+          path: '../theme/tsconfig.dts.json',
         },
       ]);
     } finally {
