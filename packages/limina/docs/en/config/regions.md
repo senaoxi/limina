@@ -38,7 +38,7 @@ export default defineConfig({
 
 ## Default Governed Region
 
-Limina starts from the raw package membership declared by the nearest `pnpm-workspace.yaml`. Each final activated workspace package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
+Limina starts from the raw package membership declared by the nearest `pnpm-workspace.yaml`. It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
 
 Inside each base unit, boundaries work as follows:
 
@@ -64,7 +64,7 @@ An ancestor boundary never prevents an activated descendant package from startin
 
 Before any source, proof, graph, checker, migration, package, release, or artifact-producing work starts, `workspace:validate` builds this activated package index. It rejects structural ambiguity before owner lookup is constructed:
 
-- a raw non-root workspace package that also contains its own `pnpm-workspace.yaml` reports `LIMINA_WORKSPACE_REGION_OVERLAP`, even if a `workspace-package` exclusion would later match it;
+- a non-root package that remains activated after `workspace-package` exclusions and also contains its own `pnpm-workspace.yaml` reports `LIMINA_WORKSPACE_REGION_OVERLAP`;
 - two lexical package roots that resolve to the same physical directory report `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`;
 - unsafe output ownership and non-stable output visibility report `LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID` or `LIMINA_WORKSPACE_OUTPUT_CYCLE`.
 
@@ -100,12 +100,12 @@ Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason
 
 Each of the two kinds has one candidate set:
 
-- `workspace-package` selects exact package-root candidates activated by the root `pnpm-workspace.yaml`. It removes each matched package from ownership, dependency authority, checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages.
+- `workspace-package` selects exact package-root candidates from the complete raw membership activated by the root `pnpm-workspace.yaml`. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
 - `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
 
 A rule is matched only against candidates of the same kind. A directory that is both an activated package and a nested package scope therefore keeps those identities separate.
 
-After discovery, every rule must have matched at least one candidate of its declared kind. Descriptor paths, fixed discovery ignores such as `node_modules`, `.git`, `.limina`, and configured output directories, and paths belonging only to another kind cannot satisfy a rule. Multiple rules may not match the same candidate; make their patterns non-overlapping instead of relying on array order.
+Every rule must match at least one candidate of its declared kind. `workspace-package` rules are validated against the complete raw package candidate set before activation and overlap validation. `package-scope` rules are validated after nested descriptor and output visibility stabilizes. Descriptor paths, fixed discovery ignores such as `node_modules`, `.git`, `.limina`, and configured output directories, and paths belonging only to another kind cannot satisfy a rule. Multiple rules may not match the same candidate; make their patterns non-overlapping instead of relying on array order.
 
 ## Path Coordinates and Output Safety
 
@@ -119,7 +119,7 @@ Public paths use one coordinate system per field:
 
 Package-entry outputs are unconditional output roots. A `tsconfig` output participates only while that `tsconfig` remains structurally visible in its package island and outside unconditional outputs. Limina iterates descriptor visibility and output roots until they stabilize; self-output and mutually hiding output cycles are configuration errors.
 
-Every declared output must be a dedicated directory. It may be a strict descendant such as `packages/app/dist`, `packages/app/generated`, or `../shared/dist`, but it cannot equal or contain `config.rootDir` or an activated package root, and it cannot overlap `.limina` in either direction. Limina validates both lexical and canonical identities before the output can remove any descriptor from discovery.
+Every declared output must be a dedicated directory. It may be a strict descendant such as `packages/app/dist`, `packages/app/generated`, or `../shared/dist`, but it cannot equal or contain `config.rootDir` or an activated package root, and it cannot overlap `.limina` in either direction. Here, activated package roots are the effective set after `workspace-package` exclusions: an excluded raw package root alone does not reserve an output path, while any unmatched activated descendant still protects its own root. Limina validates both lexical and canonical identities before the output can remove any descriptor from discovery.
 
 Nested `pnpm-workspace.yaml` files are automatic owner-local boundaries, not public exclusion candidates. The parent island records the boundary but does not read or validate the nested workspace context. If packages below that boundary are activated by the raw workspace membership, each starts its own package-island job independently.
 

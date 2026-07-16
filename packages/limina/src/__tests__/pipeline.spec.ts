@@ -752,19 +752,10 @@ describe('runPipeline', () => {
     }
   });
 
-  it('writes a v7 workspace validation failure snapshot through the pre-validation namespace', async () => {
+  it('writes an unexcluded overlap failure through the pre-validation namespace', async () => {
     const fixture = await createConfig();
 
     fixture.config.pipelines = { demo: ['source:check'] };
-    fixture.config.regions = {
-      exclude: [
-        {
-          include: ['app/**'],
-          kind: 'workspace-package',
-          reason: 'The nested workspace runs independently.',
-        },
-      ],
-    };
     await writeText(
       path.join(fixture.config.rootDir, 'pnpm-workspace.yaml'),
       'packages:\n  - app\n',

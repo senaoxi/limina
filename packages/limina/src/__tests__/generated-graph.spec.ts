@@ -160,7 +160,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     },
   );
 
-  it('rejects a raw package that is also a pnpm workspace root before exclusions', async () => {
+  it('omits an excluded overlap package from generated graph preparation', async () => {
     const fixture = await createFixture({
       'packages/app/package.json': json({
         name: '@example/app',
@@ -213,16 +213,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
         ],
       };
 
-      await expect(
-        prepareGeneratedTsconfigGraph(fixture.config),
-      ).rejects.toMatchObject({
-        issues: [
-          expect.objectContaining({
-            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
-            task: 'workspace:validate',
-          }),
-        ],
-      });
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+
+      expect(JSON.stringify(result.manifest)).not.toContain('packages/app');
+      expect(JSON.stringify(result.manifest)).not.toContain('@example/app');
     } finally {
       await fixture.cleanup();
     }
