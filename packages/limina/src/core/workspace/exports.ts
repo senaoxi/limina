@@ -25,6 +25,10 @@ import { isPlainRecord } from '#utils/values';
 import path from 'pathe';
 import { glob } from 'tinyglobby';
 import type ts from 'typescript';
+import {
+  compileWorkspaceExportResolutionGroups,
+  type WorkspaceExportResolutionGroups,
+} from './export-resolution-profiles';
 
 export interface WorkspaceExportsResolutionProfile {
   checkerPresets: CheckerProjectParseContext['checkerPresets'];
@@ -65,10 +69,14 @@ export interface WorkspaceExportsMetricsRecorder
           readonly count?: number;
           readonly kind?: string;
           readonly name:
+            | 'workspace-export-grouped-oxc-execution'
+            | 'workspace-export-grouped-typescript-execution'
             | 'workspace-export-oxc-resolution'
             | 'workspace-export-oxc-semantic-profile-count'
             | 'workspace-export-profile-count'
             | 'workspace-export-resolution-request'
+            | 'workspace-export-result-expansion'
+            | 'workspace-export-typescript-profile-fallback'
             | 'workspace-export-typescript-resolution'
             | 'workspace-export-typescript-semantic-profile-count';
           readonly provider?: string;
@@ -77,6 +85,8 @@ export interface WorkspaceExportsMetricsRecorder
 }
 
 interface PackageExportEntry {
+  hasExplicitExports: boolean;
+  isNamedWorkspacePackage: boolean;
   packageDirectory: string;
   packageJsonPath: string;
   packageName: string;
@@ -250,6 +260,8 @@ async function expandWildcardExportEntry(options: {
       const specifier = getSpecifierForSubpath(options.packageName, subpath);
 
       entries.set(specifier, {
+        hasExplicitExports: true,
+        isNamedWorkspacePackage: true,
         packageDirectory: options.packageDirectory,
         packageJsonPath: path.join(options.packageDirectory, 'package.json'),
         packageName: options.packageName,
@@ -327,6 +339,8 @@ async function collectPackageExportEntries(
     }
 
     entries.push({
+      hasExplicitExports: true,
+      isNamedWorkspacePackage: true,
       packageDirectory: workspacePackage.directory,
       packageJsonPath: path.join(workspacePackage.directory, 'package.json'),
       packageName: workspacePackage.name,
@@ -468,45 +482,93 @@ function resolveOxcExport(options: {
   );
 }
 
-function createConservativeTypeScriptProfileIdentity(
-  profile: WorkspaceExportsResolutionProfile,
-): string {
-  // Treat every original project config as distinct until a later commit
-  // provides semantic proof for grouping resolver inputs.
-  return JSON.stringify([profile.configPath, profile.resolverConfigPath]);
-}
-
-function createConservativeOxcProfileIdentity(
-  profile: WorkspaceExportsResolutionProfile,
-): string {
-  // Keep both the original profile and the exact config loaded by Oxc. This
-  // intentionally does not claim cross-config semantic equivalence.
-  return JSON.stringify([profile.configPath, profile.resolverConfigPath]);
-}
-
 function recordWorkspaceExportProfileMetrics(options: {
+  groups: WorkspaceExportResolutionGroups;
   metrics: WorkspaceExportsMetricsRecorder;
-  profiles: WorkspaceExportsResolutionProfile[];
 }): void {
   options.metrics.record({
-    count: options.profiles.length,
+    count: options.groups.originals.length,
     kind: 'input',
     name: 'workspace-export-profile-count',
     provider: 'workspace-exports',
   });
   options.metrics.record({
-    count: new Set(
-      options.profiles.map(createConservativeTypeScriptProfileIdentity),
-    ).size,
-    kind: 'conservative',
+    count: options.groups.typescriptGroups.size,
+    kind: 'semantic-v1',
     name: 'workspace-export-typescript-semantic-profile-count',
     provider: 'workspace-exports',
   });
   options.metrics.record({
-    count: new Set(options.profiles.map(createConservativeOxcProfileIdentity))
-      .size,
-    kind: 'conservative',
+    count: options.groups.oxcGroups.size,
+    kind: 'factory-identity-v1',
     name: 'workspace-export-oxc-semantic-profile-count',
+    provider: 'workspace-exports',
+  });
+
+  const fallbackCounts = new Map<string, number>();
+
+  for (const profile of options.groups.compiledOriginals) {
+    if (profile.typescriptFallbackReason) {
+      const kind = profile.typescriptFallbackReason.kind;
+      fallbackCounts.set(kind, (fallbackCounts.get(kind) ?? 0) + 1);
+    }
+  }
+
+  for (const [kind, count] of fallbackCounts) {
+    options.metrics.record({
+      count,
+      kind,
+      name: 'workspace-export-typescript-profile-fallback',
+      provider: 'workspace-exports',
+    });
+  }
+}
+
+function recordGroupedTypeScriptExecution(
+  metrics: WorkspaceExportsMetricsRecorder | undefined,
+): void {
+  metrics?.record({
+    kind: 'request',
+    name: 'workspace-export-grouped-typescript-execution',
+    provider: 'workspace-exports',
+  });
+}
+
+function recordGroupedOxcExecution(
+  metrics: WorkspaceExportsMetricsRecorder | undefined,
+): void {
+  metrics?.record({
+    kind: 'request',
+    name: 'workspace-export-grouped-oxc-execution',
+    provider: 'workspace-exports',
+  });
+}
+
+function recordOriginalResultExpansion(
+  metrics: WorkspaceExportsMetricsRecorder | undefined,
+): void {
+  if (!metrics) {
+    return;
+  }
+
+  metrics.record({
+    kind: 'request',
+    name: 'workspace-export-resolution-request',
+    provider: 'workspace-exports',
+  });
+  metrics.record({
+    kind: 'request',
+    name: 'workspace-export-typescript-resolution',
+    provider: 'workspace-exports',
+  });
+  metrics.record({
+    kind: 'request',
+    name: 'workspace-export-oxc-resolution',
+    provider: 'workspace-exports',
+  });
+  metrics.record({
+    kind: 'result',
+    name: 'workspace-export-result-expansion',
     provider: 'workspace-exports',
   });
 }
@@ -769,11 +831,12 @@ export async function createWorkspaceExportsResolutionIndex(options: {
     string,
     Map<string, WorkspacePackageExportResolution>
   >();
+  const groups = compileWorkspaceExportResolutionGroups(options.profiles);
 
   if (options.metrics) {
     recordWorkspaceExportProfileMetrics({
+      groups,
       metrics: options.metrics,
-      profiles: options.profiles,
     });
   }
 
@@ -796,31 +859,19 @@ export async function createWorkspaceExportsResolutionIndex(options: {
       const oxcResolvedPaths: string[] = [];
 
       for (const profile of options.profiles) {
-        options.metrics?.record({
-          kind: 'request',
-          name: 'workspace-export-resolution-request',
-          provider: 'workspace-exports',
-        });
-        options.metrics?.record({
-          kind: 'request',
-          name: 'workspace-export-typescript-resolution',
-          provider: 'workspace-exports',
-        });
+        recordGroupedTypeScriptExecution(options.metrics);
         const typeScriptResolvedFileName = resolveTypeScriptExport({
           entry,
           importAnalysis: options.importAnalysis,
           profile,
         });
-        options.metrics?.record({
-          kind: 'request',
-          name: 'workspace-export-oxc-resolution',
-          provider: 'workspace-exports',
-        });
+        recordGroupedOxcExecution(options.metrics);
         const rawOxcResolvedFileName = resolveOxcExport({
           entry,
           importAnalysis: options.importAnalysis,
           profile,
         });
+        recordOriginalResultExpansion(options.metrics);
         // Keep the raw runtime resolver result separate from the effective
         // value: pure type exports intentionally fall back to the TS result.
         const oxcResolvedFileName = getEffectiveOxcResolvedFileName({

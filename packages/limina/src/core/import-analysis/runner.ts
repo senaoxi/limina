@@ -102,6 +102,15 @@ export interface ImportResolveContextFields
 
 export type ImportResolveContextInput = ImportResolveContextFields | string[];
 
+export interface OxcResolverProfileIdentity {
+  readonly conditionNames: readonly string[];
+  readonly configPath: string;
+  readonly extensions: readonly string[];
+  readonly id: string;
+  readonly packageJsonExportsAndImports: boolean;
+  readonly preserveSymlinks: boolean;
+}
+
 type ResolvedImportContext = CheckerProjectParseContext & {
   configPath?: string;
   resolverConfigPath?: string;
@@ -1216,21 +1225,61 @@ function createResolverOptions(options: {
   };
 }
 
-function createResolverCacheKey(options: {
+function createOxcResolverProfileIdentityFromResolvedOptions(options: {
   compilerOptions: ts.CompilerOptions;
   configPath: string;
   extensions: string[];
-}): string {
+}): OxcResolverProfileIdentity {
   const packageJsonExportsAndImports = supportsPackageJsonExportsAndImports(
     options.compilerOptions,
   );
-
-  return JSON.stringify({
-    conditions: getConditionNames(options.compilerOptions),
+  const conditionNames = getConditionNames(options.compilerOptions);
+  const preserveSymlinks = options.compilerOptions.preserveSymlinks === true;
+  const identity = {
+    conditionNames,
     configPath: options.configPath,
     extensions: options.extensions,
     packageJsonExportsAndImports,
-    preserveSymlinks: options.compilerOptions.preserveSymlinks === true,
+    preserveSymlinks,
+  };
+
+  return {
+    ...identity,
+    id: JSON.stringify({
+      conditions: conditionNames,
+      configPath: options.configPath,
+      extensions: options.extensions,
+      packageJsonExportsAndImports,
+      preserveSymlinks,
+    }),
+  };
+}
+
+/**
+ * Returns the exact identity used by the Oxc resolver-factory cache.
+ * Workspace-export grouping deliberately shares this helper so it cannot
+ * drift into a broader cross-config equivalence claim.
+ */
+export function createOxcResolverProfileIdentity(options: {
+  compilerOptions: ts.CompilerOptions;
+  context: ImportResolveContextFields;
+}): OxcResolverProfileIdentity {
+  const context = normalizeContextInput(options.context);
+  const configPath = context.resolverConfigPath ?? context.configPath;
+
+  if (!configPath) {
+    throw new Error(
+      'Unable to create Oxc resolver identity without a configPath.',
+    );
+  }
+
+  return createOxcResolverProfileIdentityFromResolvedOptions({
+    compilerOptions: options.compilerOptions,
+    configPath,
+    extensions: getResolverExtensions({
+      compilerOptions: options.compilerOptions,
+      context,
+    }),
   });
 }
 
@@ -1400,12 +1449,12 @@ function resolveModuleNameWithOxcCaches(
     compilerOptions: options.compilerOptions,
     context: options.context,
   });
-  const resolverCacheKey = createResolverCacheKey({
+  const resolverIdentity = createOxcResolverProfileIdentityFromResolvedOptions({
     compilerOptions: options.compilerOptions,
     configPath,
     extensions,
   });
-  const cachedResolver = caches.resolverCache.get(resolverCacheKey);
+  const cachedResolver = caches.resolverCache.get(resolverIdentity.id);
   options.metrics?.record({
     kind: 'resolver-factory',
     name: cachedResolver
@@ -1423,7 +1472,7 @@ function resolveModuleNameWithOxcCaches(
       }),
     );
 
-  caches.resolverCache.set(resolverCacheKey, resolver);
+  caches.resolverCache.set(resolverIdentity.id, resolver);
 
   let resolved: ReturnType<ResolverFactory['resolveFileSync']>;
 
