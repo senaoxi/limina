@@ -3,6 +3,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   createImportAnalysisContext,
   type ImportAnalysisContext,
+  type ImportAnalysisMetricsRecorder,
   type ImportRecord,
 } from '#core/import-analysis/runner';
 import type { ProjectInfo } from '#core/import-graph/context';
@@ -24,17 +25,23 @@ export class ImportCore {
   readonly #config: ResolvedLiminaConfig;
   #context: ImportAnalysisContext;
 
-  constructor(config: ResolvedLiminaConfig) {
+  constructor(
+    config: ResolvedLiminaConfig,
+    metrics?: ImportAnalysisMetricsRecorder,
+  ) {
     this.#config = config;
-    this.#context = this.#createContext();
+    this.#context = this.#createContext(metrics);
   }
 
   get context(): ImportAnalysisContext {
     return this.#context;
   }
 
-  #createContext(): ImportAnalysisContext {
+  #createContext(
+    metrics?: ImportAnalysisMetricsRecorder,
+  ): ImportAnalysisContext {
     return createImportAnalysisContext({
+      metrics,
       projectRootDir: this.#config.rootDir,
       vueParser: this.#config.config?.imports?.vue,
     });

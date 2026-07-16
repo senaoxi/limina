@@ -4,10 +4,14 @@ import {
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
 import { BuildGraphCore } from './build-graph';
+import type { ImportAnalysisMetricsRecorder } from './import-analysis/runner';
 import { ImportCore } from './imports';
 import { PackageDomainCore } from './packages';
 import { TsconfigCore } from './tsconfig';
-import { WorkspaceCore } from './workspace';
+import { WorkspaceCore, type WorkspaceCoreMetricsRecorder } from './workspace';
+
+type AnalysisCoreMetricsRecorder = ImportAnalysisMetricsRecorder &
+  WorkspaceCoreMetricsRecorder;
 
 export { BuildGraphCore } from './build-graph';
 export { ImportCore } from './imports';
@@ -33,13 +37,14 @@ export class AnalysisProviderSet {
       generation: 0,
       rootDir: config.rootDir,
     }),
+    metrics?: AnalysisCoreMetricsRecorder,
   ) {
     let buildGraph: BuildGraphCore;
 
     this.artifactNamespace = artifactNamespace;
     this.config = config;
-    this.workspace = new WorkspaceCore(config);
-    this.imports = new ImportCore(config);
+    this.workspace = new WorkspaceCore(config, metrics);
+    this.imports = new ImportCore(config, metrics);
     this.tsconfig = new TsconfigCore(
       config,
       () => buildGraph.getGraph(),
@@ -63,6 +68,7 @@ export class AnalysisProviderSet {
 export function createAnalysisProviders(
   config: ResolvedLiminaConfig,
   artifactNamespace?: LiminaArtifactNamespace,
+  metrics?: AnalysisCoreMetricsRecorder,
 ): AnalysisProviderSet {
-  return new AnalysisProviderSet(config, artifactNamespace);
+  return new AnalysisProviderSet(config, artifactNamespace, metrics);
 }

@@ -4,7 +4,7 @@ import {
   normalizeExtensions,
   resolveCheckerProjectExtensions,
 } from '#checkers';
-import type { CheckerPreset } from '#config/runner';
+import type { CheckerPreset, ResolvedCheckerConfig } from '#config/runner';
 import { getActiveCheckers, type ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { uniqueValues } from '#utils/collections';
@@ -66,6 +66,45 @@ export interface CollectSourceGraphProjectExtensionsResult {
   problems: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
   projectExtensionsByPath: Map<string, string[]>;
+}
+
+export interface CheckerRouteMetricsRecorder {
+  record(measurement: {
+    readonly count?: number;
+    readonly kind?: string;
+    readonly name: 'checker-route-projection' | 'checker-route-traversal';
+    readonly provider?: string;
+  }): void;
+}
+
+export type CheckerEntryAvailability =
+  | 'available'
+  | 'missing-config'
+  | 'missing-entry';
+
+export interface CheckerRouteTraversalSnapshot {
+  readonly normalizedRootConfigPath: string;
+  readonly problems: readonly string[];
+  readonly projectPaths: readonly string[];
+}
+
+export interface CheckerRouteSnapshot {
+  readonly checkerName: string;
+  readonly checkerPreset: CheckerPreset;
+  readonly entryAvailability: CheckerEntryAvailability;
+  readonly extensions: readonly string[];
+  readonly normalizedRootConfigPath?: string;
+  readonly rootConfigPath?: string;
+  readonly supportsSourceGraph: boolean;
+  readonly traversal?: CheckerRouteTraversalSnapshot;
+}
+
+export interface CheckerRouteSnapshotCollection {
+  readonly checkers: readonly CheckerRouteSnapshot[];
+  readonly generatedFiles?: ReadonlyMap<string, string>;
+  readonly metrics?: CheckerRouteMetricsRecorder;
+  readonly traversalCount: number;
+  readonly uniqueValidCheckerEntryRoots: number;
 }
 
 function createFormatHost(rootDir: string): ts.FormatDiagnosticsHost {
@@ -462,56 +501,191 @@ export function collectGraphProjectRoutes(
   config: ResolvedLiminaConfig,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): CollectCheckerGraphProjectRoutesResult {
+  return projectGraphProjectRoutes(
+    config,
+    collectCheckerRouteSnapshot(config, generatedGraph),
+  );
+}
+
+export function collectCheckerRouteSnapshot(
+  config: ResolvedLiminaConfig,
+  generatedGraph?: GeneratedTsconfigGraphResult,
+  metrics?: CheckerRouteMetricsRecorder,
+): CheckerRouteSnapshotCollection {
+  const checkers = generatedGraph?.checkers ?? getActiveCheckers(config);
+  const snapshots: CheckerRouteSnapshot[] = [];
+  const traversals = new Map<string, CheckerRouteTraversalSnapshot>();
+
+  for (const checker of checkers) {
+    const rootConfigPath = generatedGraph?.checkerEntries.get(checker.name);
+    const supportsSourceGraph = Boolean(
+      getCheckerAdapter(checker.preset)?.sourceGraph,
+    );
+
+    if (!rootConfigPath) {
+      snapshots.push(
+        createCheckerRouteSnapshot({
+          checker,
+          entryAvailability: 'missing-entry',
+          supportsSourceGraph,
+        }),
+      );
+      continue;
+    }
+
+    const normalizedRootConfigPath = normalizeAbsolutePath(rootConfigPath);
+    if (
+      !existsSync(rootConfigPath) &&
+      !generatedGraph?.generatedFiles.has(normalizedRootConfigPath)
+    ) {
+      snapshots.push(
+        createCheckerRouteSnapshot({
+          checker,
+          entryAvailability: 'missing-config',
+          normalizedRootConfigPath,
+          rootConfigPath,
+          supportsSourceGraph,
+        }),
+      );
+      continue;
+    }
+
+    let traversal = traversals.get(normalizedRootConfigPath);
+    if (traversal) {
+      metrics?.record({
+        kind: 'cache-hit',
+        name: 'checker-route-traversal',
+        provider: 'checker-route-snapshot',
+      });
+    } else {
+      const result = collectGraphProjectRouteFromRoot({
+        rootConfigPath: normalizedRootConfigPath,
+        rootDir: config.rootDir,
+        virtualFiles: generatedGraph?.generatedFiles,
+      });
+      traversal = Object.freeze({
+        normalizedRootConfigPath,
+        problems: Object.freeze([...result.problems]),
+        projectPaths: Object.freeze([...result.projectPaths]),
+      });
+      traversals.set(normalizedRootConfigPath, traversal);
+      metrics?.record({
+        kind: 'traversal',
+        name: 'checker-route-traversal',
+        provider: 'checker-route-snapshot',
+      });
+    }
+
+    snapshots.push(
+      createCheckerRouteSnapshot({
+        checker,
+        entryAvailability: 'available',
+        normalizedRootConfigPath,
+        rootConfigPath,
+        supportsSourceGraph,
+        traversal,
+      }),
+    );
+  }
+
+  metrics?.record({
+    count: snapshots.length,
+    kind: 'checker-snapshot',
+    name: 'checker-route-projection',
+    provider: 'checker-route-snapshot',
+  });
+  metrics?.record({
+    count: traversals.size,
+    kind: 'unique-entry-root',
+    name: 'checker-route-projection',
+    provider: 'checker-route-snapshot',
+  });
+
+  return Object.freeze({
+    checkers: Object.freeze(snapshots),
+    generatedFiles: generatedGraph?.generatedFiles,
+    metrics,
+    traversalCount: traversals.size,
+    uniqueValidCheckerEntryRoots: traversals.size,
+  });
+}
+
+function createCheckerRouteSnapshot(options: {
+  checker: ResolvedCheckerConfig;
+  entryAvailability: CheckerEntryAvailability;
+  normalizedRootConfigPath?: string;
+  rootConfigPath?: string;
+  supportsSourceGraph: boolean;
+  traversal?: CheckerRouteTraversalSnapshot;
+}): CheckerRouteSnapshot {
+  return Object.freeze({
+    checkerName: options.checker.name,
+    checkerPreset: options.checker.preset,
+    entryAvailability: options.entryAvailability,
+    extensions: Object.freeze([...options.checker.extensions]),
+    normalizedRootConfigPath: options.normalizedRootConfigPath,
+    rootConfigPath: options.rootConfigPath,
+    supportsSourceGraph: options.supportsSourceGraph,
+    traversal: options.traversal,
+  });
+}
+
+function projectCheckerRoutes(
+  config: ResolvedLiminaConfig,
+  snapshot: CheckerRouteSnapshotCollection,
+  projection: 'entry' | 'graph',
+): CollectCheckerGraphProjectRoutesResult {
   const routes: CheckerGraphProjectRoute[] = [];
   const problems: string[] = [];
 
-  for (const checker of generatedGraph?.checkers ?? getActiveCheckers(config)) {
-    const adapter = getCheckerAdapter(checker.preset);
-
-    if (!adapter?.sourceGraph) {
+  for (const checker of snapshot.checkers) {
+    if (projection === 'graph' && !checker.supportsSourceGraph) {
       continue;
     }
 
-    const rootConfigPath = generatedGraph?.checkerEntries.get(checker.name);
-
-    if (!rootConfigPath) {
+    if (checker.entryAvailability === 'missing-entry') {
       problems.push(
-        [
-          'Missing generated checker graph entry:',
-          `  checker: ${checker.name}`,
-          '  reason: run limina graph prepare before collecting checker graph routes.',
-        ].join('\n'),
+        projection === 'graph'
+          ? [
+              'Missing generated checker graph entry:',
+              `  checker: ${checker.checkerName}`,
+              '  reason: run limina graph prepare before collecting checker graph routes.',
+            ].join('\n')
+          : [
+              'Missing generated checker entry:',
+              `  checker: ${checker.checkerName}`,
+              '  reason: run limina graph prepare before collecting checker entry routes.',
+            ].join('\n'),
       );
       continue;
     }
 
-    if (
-      !existsSync(rootConfigPath) &&
-      !generatedGraph?.generatedFiles.has(normalizeAbsolutePath(rootConfigPath))
-    ) {
+    if (checker.entryAvailability === 'missing-config') {
       problems.push(
-        [
-          'Checker graph entry references a missing tsconfig:',
-          `  checker: ${checker.name}`,
-          `  config: ${toRelativePath(config.rootDir, rootConfigPath)}`,
-        ].join('\n'),
+        projection === 'graph'
+          ? [
+              'Checker graph entry references a missing tsconfig:',
+              `  checker: ${checker.checkerName}`,
+              `  config: ${toRelativePath(config.rootDir, checker.rootConfigPath ?? '')}`,
+            ].join('\n')
+          : [
+              'Checker entry references a missing tsconfig:',
+              `  checker: ${checker.checkerName}`,
+              `  config: ${toRelativePath(config.rootDir, checker.rootConfigPath ?? '')}`,
+            ].join('\n'),
       );
       continue;
     }
 
-    const routeCollection = collectGraphProjectRouteFromRoot({
-      rootConfigPath,
-      rootDir: config.rootDir,
-      virtualFiles: generatedGraph?.generatedFiles,
-    });
-
-    problems.push(...routeCollection.problems);
+    const traversal = checker.traversal;
+    if (!checker.rootConfigPath || !traversal) continue;
+    problems.push(...traversal.problems);
     routes.push({
-      checkerName: checker.name,
-      checkerPreset: checker.preset,
-      extensions: checker.extensions,
-      projectPaths: routeCollection.projectPaths,
-      rootConfigPath,
+      checkerName: checker.checkerName,
+      checkerPreset: checker.checkerPreset,
+      extensions: [...checker.extensions],
+      projectPaths: [...traversal.projectPaths],
+      rootConfigPath: checker.rootConfigPath,
     });
   }
 
@@ -519,70 +693,62 @@ export function collectGraphProjectRoutes(
     problems,
     routes,
   };
+}
+
+export function projectGraphProjectRoutes(
+  config: ResolvedLiminaConfig,
+  snapshot: CheckerRouteSnapshotCollection,
+): CollectCheckerGraphProjectRoutesResult {
+  snapshot.metrics?.record({
+    kind: 'graph-route',
+    name: 'checker-route-projection',
+    provider: 'checker-route-snapshot',
+  });
+  return projectCheckerRoutes(config, snapshot, 'graph');
 }
 
 export function collectCheckerEntryProjectRoutes(
   config: ResolvedLiminaConfig,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): CollectCheckerGraphProjectRoutesResult {
-  const routes: CheckerGraphProjectRoute[] = [];
-  const problems: string[] = [];
+  return projectCheckerEntryProjectRoutes(
+    config,
+    collectCheckerRouteSnapshot(config, generatedGraph),
+  );
+}
 
-  for (const checker of generatedGraph?.checkers ?? getActiveCheckers(config)) {
-    const rootConfigPath = generatedGraph?.checkerEntries.get(checker.name);
-
-    if (!rootConfigPath) {
-      problems.push(
-        [
-          'Missing generated checker entry:',
-          `  checker: ${checker.name}`,
-          '  reason: run limina graph prepare before collecting checker entry routes.',
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    if (
-      !existsSync(rootConfigPath) &&
-      !generatedGraph?.generatedFiles.has(normalizeAbsolutePath(rootConfigPath))
-    ) {
-      problems.push(
-        [
-          'Checker entry references a missing tsconfig:',
-          `  checker: ${checker.name}`,
-          `  config: ${toRelativePath(config.rootDir, rootConfigPath)}`,
-        ].join('\n'),
-      );
-      continue;
-    }
-
-    const routeCollection = collectGraphProjectRouteFromRoot({
-      rootConfigPath,
-      rootDir: config.rootDir,
-      virtualFiles: generatedGraph?.generatedFiles,
-    });
-
-    problems.push(...routeCollection.problems);
-    routes.push({
-      checkerName: checker.name,
-      checkerPreset: checker.preset,
-      extensions: checker.extensions,
-      projectPaths: routeCollection.projectPaths,
-      rootConfigPath,
-    });
-  }
-
-  return {
-    problems,
-    routes,
-  };
+export function projectCheckerEntryProjectRoutes(
+  config: ResolvedLiminaConfig,
+  snapshot: CheckerRouteSnapshotCollection,
+): CollectCheckerGraphProjectRoutesResult {
+  snapshot.metrics?.record({
+    kind: 'entry-route',
+    name: 'checker-route-projection',
+    provider: 'checker-route-snapshot',
+  });
+  return projectCheckerRoutes(config, snapshot, 'entry');
 }
 
 export function collectSourceGraphProjectExtensions(
   config: ResolvedLiminaConfig,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): CollectSourceGraphProjectExtensionsResult {
-  const routeCollection = collectGraphProjectRoutes(config, generatedGraph);
+  return projectSourceGraphProjectExtensions(
+    config,
+    collectCheckerRouteSnapshot(config, generatedGraph),
+  );
+}
+
+export function projectSourceGraphProjectExtensions(
+  config: ResolvedLiminaConfig,
+  snapshot: CheckerRouteSnapshotCollection,
+): CollectSourceGraphProjectExtensionsResult {
+  snapshot.metrics?.record({
+    kind: 'source-extension',
+    name: 'checker-route-projection',
+    provider: 'checker-route-snapshot',
+  });
+  const routeCollection = projectCheckerRoutes(config, snapshot, 'graph');
   const projectContextsByPath = new Map<string, CheckerProjectParseContext>();
   const projectExtensionsByPath = new Map<string, string[]>();
   for (const route of routeCollection.routes) {
@@ -595,7 +761,7 @@ export function collectSourceGraphProjectExtensions(
         configPath: projectPath,
         preset: route.checkerPreset,
         projectRootDir: config.rootDir,
-        virtualFiles: generatedGraph?.generatedFiles,
+        virtualFiles: snapshot.generatedFiles,
       });
       const routeExtensions = normalizeExtensions(adapterExtensions);
       const projectContext = projectContextsByPath.get(projectPath) ?? {

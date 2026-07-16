@@ -15,6 +15,7 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
+import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { createFixturePathResolver } from './helpers/path';
 
 function json(value: unknown): string {
@@ -137,6 +138,61 @@ describe('validated workspace context', () => {
         fixture.cleanup(),
         rm(physicalRoot, { force: true, recursive: true }),
       ]);
+    }
+  });
+
+  it('memoizes projected canonical paths and positive and negative region lookups', async () => {
+    const fixture = await createFixture({
+      'packages/app/package.json': json({
+        name: '@fixture/app',
+        private: true,
+      }),
+    });
+
+    try {
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+        ],
+      });
+      const metrics = createProfilingMetricsRecorder();
+      const pathIndex = new WorkspaceRegionPathIndex(context, metrics);
+      const packageFile = fixture.path('packages/app/src/index.ts');
+      const outsideFile = path.join(fixture.rootDir, '..', 'outside.ts');
+
+      expect(pathIndex.findPackageForPath(packageFile)?.name).toBe(
+        '@fixture/app',
+      );
+      expect(pathIndex.findBoundaryForPath(packageFile)).toBeNull();
+      expect(pathIndex.findPackageForPath(packageFile)?.name).toBe(
+        '@fixture/app',
+      );
+      expect(pathIndex.findBoundaryForPath(packageFile)).toBeNull();
+      expect(pathIndex.findPackageForPath(outsideFile)).toBeNull();
+      expect(pathIndex.findPackageForPath(outsideFile)).toBeNull();
+
+      const snapshot = metrics.snapshot();
+      const metricCount = (name: string, kind?: string): number =>
+        snapshot.find(
+          (metric) =>
+            metric.name === name &&
+            (kind === undefined || metric.kind === kind),
+        )?.count ?? 0;
+
+      expect(metricCount('canonical-path')).toBe(
+        metricCount('canonical-path-cache-miss'),
+      );
+      expect(metricCount('canonical-path-cache-hit')).toBeGreaterThan(0);
+      expect(
+        metricCount('provider-cache-hit', 'region-package'),
+      ).toBeGreaterThan(0);
+      expect(
+        metricCount('provider-cache-hit', 'region-boundary'),
+      ).toBeGreaterThan(0);
+      expect(metricCount('workspace-negative-lookup')).toBeGreaterThan(0);
+    } finally {
+      await fixture.cleanup();
     }
   });
 

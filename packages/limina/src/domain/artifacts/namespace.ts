@@ -29,6 +29,23 @@ export class ArtifactNamespaceContainmentError extends Error {
   override readonly name = 'ArtifactNamespaceContainmentError';
 }
 
+type ArtifactPathSafetyRole =
+  | 'parent-directory'
+  | 'target-directory'
+  | 'target-file';
+
+export interface ArtifactSafetyMetricsRecorder {
+  record(measurement: {
+    readonly count?: number;
+    readonly kind?: string;
+    readonly name:
+      | 'artifact-safety-immediate-recheck'
+      | 'artifact-safety-lstat'
+      | 'artifact-safety-unique-node';
+    readonly provider?: string;
+  }): void;
+}
+
 function normalizeAbsolutePath(value: string): string {
   return path.normalize(path.resolve(value));
 }
@@ -191,12 +208,10 @@ async function lstatIfPresent(
   }
 }
 
-/** Revalidates canonical containment immediately before a mutation. */
-export async function assertArtifactPathOperationSafe(
+function assertArtifactPathProjectedCanonicalContainment(
   namespace: LiminaArtifactNamespace,
   targetPath: string,
-  options: { targetKind?: 'directory' | 'file' } = {},
-): Promise<void> {
+): string {
   assertArtifactPathLexicallyContained(namespace, targetPath);
   const normalizedTarget = normalizeAbsolutePath(targetPath);
   const projectedCanonicalTarget = path.join(
@@ -215,6 +230,125 @@ export async function assertArtifactPathOperationSafe(
     );
   }
 
+  return normalizedTarget;
+}
+
+function assertArtifactPathStatsSafe(
+  targetPath: string,
+  stats: Awaited<ReturnType<typeof lstat>>,
+  roles: ReadonlySet<ArtifactPathSafetyRole>,
+): void {
+  if (stats.isSymbolicLink()) {
+    throw new ArtifactNamespaceContainmentError(
+      `Generated-artifact mutation crosses a symbolic link: ${targetPath}.`,
+    );
+  }
+  if (roles.has('parent-directory') && !stats.isDirectory()) {
+    throw new ArtifactNamespaceContainmentError(
+      `Generated-artifact parent is not a directory: ${targetPath}.`,
+    );
+  }
+  if (roles.has('target-file') && !stats.isFile()) {
+    throw new ArtifactNamespaceContainmentError(
+      `Generated-artifact target is not a regular file: ${targetPath}.`,
+    );
+  }
+  if (roles.has('target-directory') && !stats.isDirectory()) {
+    throw new ArtifactNamespaceContainmentError(
+      `Generated-artifact target is not a directory: ${targetPath}.`,
+    );
+  }
+}
+
+/**
+ * Validates every path in an artifact plan before the first mutation while
+ * sharing checks for common namespace ancestors.
+ */
+export async function assertArtifactPlanPathsOperationSafe(
+  namespace: LiminaArtifactNamespace,
+  targetPaths: readonly string[],
+  options: { metrics?: ArtifactSafetyMetricsRecorder } = {},
+): Promise<void> {
+  assertLiminaArtifactNamespace(namespace);
+  const nodes = new Map<string, Set<ArtifactPathSafetyRole>>();
+  const addRole = (targetPath: string, role: ArtifactPathSafetyRole): void => {
+    const normalizedTarget = normalizeAbsolutePath(targetPath);
+    const roles = nodes.get(normalizedTarget) ?? new Set();
+    roles.add(role);
+    nodes.set(normalizedTarget, roles);
+  };
+
+  for (const targetPath of targetPaths) {
+    const normalizedTarget = assertArtifactPathProjectedCanonicalContainment(
+      namespace,
+      targetPath,
+    );
+    addRole(namespace.rootDir, 'parent-directory');
+
+    const relative = path.relative(namespace.rootDir, normalizedTarget);
+    const segments = relative === '' ? [] : relative.split(path.sep);
+    let cursor = namespace.rootDir;
+    for (const [index, segment] of segments.entries()) {
+      cursor = path.join(cursor, segment);
+      addRole(
+        cursor,
+        index === segments.length - 1 ? 'target-file' : 'parent-directory',
+      );
+    }
+    if (segments.length === 0) addRole(normalizedTarget, 'target-file');
+  }
+
+  const orderedNodes = [...nodes.entries()].sort(([left], [right]) => {
+    const leftDepth = path
+      .relative(namespace.rootDir, left)
+      .split(path.sep)
+      .filter(Boolean).length;
+    const rightDepth = path
+      .relative(namespace.rootDir, right)
+      .split(path.sep)
+      .filter(Boolean).length;
+    return leftDepth - rightDepth || left.localeCompare(right);
+  });
+  options.metrics?.record({
+    count: orderedNodes.length,
+    kind: 'batch',
+    name: 'artifact-safety-unique-node',
+    provider: 'artifact-namespace',
+  });
+
+  for (const [targetPath, roles] of orderedNodes) {
+    options.metrics?.record({
+      kind: 'batch',
+      name: 'artifact-safety-lstat',
+      provider: 'artifact-namespace',
+    });
+    const stats = await lstatIfPresent(targetPath);
+    if (stats) assertArtifactPathStatsSafe(targetPath, stats, roles);
+  }
+}
+
+/** Revalidates canonical containment immediately before a mutation. */
+export async function assertArtifactPathOperationSafe(
+  namespace: LiminaArtifactNamespace,
+  targetPath: string,
+  options: {
+    metrics?: ArtifactSafetyMetricsRecorder;
+    phase?: 'immediate';
+    targetKind?: 'directory' | 'file';
+  } = {},
+): Promise<void> {
+  const normalizedTarget = assertArtifactPathProjectedCanonicalContainment(
+    namespace,
+    targetPath,
+  );
+  if (options.phase === 'immediate') {
+    options.metrics?.record({
+      kind: options.targetKind,
+      name: 'artifact-safety-immediate-recheck',
+      provider: 'artifact-namespace',
+    });
+  }
+
   const relative = path.relative(namespace.rootDir, normalizedTarget);
   const segments = relative === '' ? [] : relative.split(path.sep);
   let cursor = namespace.rootDir;
@@ -222,46 +356,32 @@ export async function assertArtifactPathOperationSafe(
     if (segment) cursor = path.join(cursor, segment);
     const stats = await lstatIfPresent(cursor);
     if (!stats) continue;
-    if (stats.isSymbolicLink()) {
-      throw new ArtifactNamespaceContainmentError(
-        `Generated-artifact mutation crosses a symbolic link: ${cursor}.`,
-      );
+    const roles = new Set<ArtifactPathSafetyRole>();
+    if (cursor !== normalizedTarget) roles.add('parent-directory');
+    if (cursor === normalizedTarget && options.targetKind === 'file') {
+      roles.add('target-file');
     }
-    if (cursor !== normalizedTarget && !stats.isDirectory()) {
-      throw new ArtifactNamespaceContainmentError(
-        `Generated-artifact parent is not a directory: ${cursor}.`,
-      );
+    if (cursor === normalizedTarget && options.targetKind === 'directory') {
+      roles.add('target-directory');
     }
-    if (
-      cursor === normalizedTarget &&
-      options.targetKind === 'file' &&
-      !stats.isFile()
-    ) {
-      throw new ArtifactNamespaceContainmentError(
-        `Generated-artifact target is not a regular file: ${cursor}.`,
-      );
-    }
-    if (
-      cursor === normalizedTarget &&
-      options.targetKind === 'directory' &&
-      !stats.isDirectory()
-    ) {
-      throw new ArtifactNamespaceContainmentError(
-        `Generated-artifact target is not a directory: ${cursor}.`,
-      );
-    }
+    assertArtifactPathStatsSafe(cursor, stats, roles);
   }
 }
 
 export async function ensureArtifactParentDirectory(
   namespace: LiminaArtifactNamespace,
   targetPath: string,
+  options: { metrics?: ArtifactSafetyMetricsRecorder } = {},
 ): Promise<void> {
   await assertArtifactPathOperationSafe(namespace, targetPath, {
+    metrics: options.metrics,
+    phase: 'immediate',
     targetKind: 'file',
   });
   await mkdir(path.dirname(targetPath), { recursive: true });
   await assertArtifactPathOperationSafe(namespace, targetPath, {
+    metrics: options.metrics,
+    phase: 'immediate',
     targetKind: 'file',
   });
 }
