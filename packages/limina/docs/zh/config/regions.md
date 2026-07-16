@@ -38,7 +38,7 @@ export default defineConfig({
 
 ## 默认治理区域
 
-Limina 从最近的 `pnpm-workspace.yaml` 声明的原始包成员关系开始。每个最终激活的工作区包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
+Limina 从最近的 `pnpm-workspace.yaml` 声明的原始包成员关系开始。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
 
 每个基础治理单元内部遵循这些边界规则：
 
@@ -64,7 +64,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 任何源码、证明、图、检查器、迁移、包、发布或产物生成工作开始前，`workspace:validate` 都会先建立这份激活包索引。它会在 owner lookup 建立前拒绝结构歧义：
 
-- 原始成员中的非根工作区包如果自己又包含 `pnpm-workspace.yaml`，会报告 `LIMINA_WORKSPACE_REGION_OVERLAP`；后续可能命中的 `workspace-package` 排除规则不能屏蔽它；
+- 应用 `workspace-package` 排除后仍处于激活状态的非根包，如果自己又包含 `pnpm-workspace.yaml`，会报告 `LIMINA_WORKSPACE_REGION_OVERLAP`；
 - 两个词法包根目录如果解析到同一个物理目录，会报告 `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`；
 - 不安全的输出归属和无法稳定的输出可见性分别报告 `LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID`、`LIMINA_WORKSPACE_OUTPUT_CYCLE`。
 
@@ -100,12 +100,12 @@ packages/app/vendor/pkg/              不属于当前区域
 
 两种 `kind` 各自只对应一种 candidate：
 
-- `workspace-package` 选择根 `pnpm-workspace.yaml` 激活的精确包根 candidate。命中后，每个被匹配的包不再参与源码归属、依赖授权、检查器发现和生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。
+- `workspace-package` 从根 `pnpm-workspace.yaml` 激活的完整原始成员中选择精确包根 candidate。Limina 会在 overlap 检查前验证这些规则，再让每个被匹配的包退出源码归属、依赖授权、源码与检查器发现以及生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。显式配置的 `package.entries` 仍是独立产物条目，不会被这类规则删除。
 - `package-scope` 选择嵌套 `package.json` 的根目录。它同时覆盖已扩展的包作用域和原本已经停止治理的包作用域。排除后，该根目录及其后代都位于当前运行之外。
 
 规则只与同 `kind` 的 candidate 匹配。因此，同一个目录即使同时是激活包和嵌套包作用域，这两种 identity 也不会合并。
 
-发现完成后，每条规则都必须至少命中一个同 `kind` candidate。descriptor 路径、`node_modules`、`.git`、`.limina`、明确配置的输出目录等固定 discovery ignore，以及只属于其他 `kind` 的路径，都不能让规则通过匹配验证。同一个 candidate 也不能被多条规则命中；应让模式互不重叠，而不是依赖数组顺序。
+每条规则都必须至少命中一个同 `kind` candidate。`workspace-package` 规则会在激活与 overlap 检查前，使用完整原始包 candidate 集合验证；`package-scope` 规则则在嵌套 descriptor 与输出可见性稳定后验证。descriptor 路径、`node_modules`、`.git`、`.limina`、明确配置的输出目录等固定 discovery ignore，以及只属于其他 `kind` 的路径，都不能让规则通过匹配验证。同一个 candidate 也不能被多条规则命中；应让模式互不重叠，而不是依赖数组顺序。
 
 ## 路径坐标与输出安全
 
@@ -119,7 +119,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 包条目的输出是无条件 output root。`tsconfig` 输出只有在该 `tsconfig` 仍可从所属 package island 访问、且不位于无条件输出内时才参与计算。Limina 会迭代 descriptor 可见性和 output root，直到状态稳定；自输出和互相隐藏的输出循环属于配置错误。
 
-每个声明的输出都必须是专用目录。它可以是 `packages/app/dist`、`packages/app/generated` 或 `../shared/dist` 这样的严格后代目录，但不能等于或包含 `config.rootDir` 或任何激活包根目录，也不能与 `.limina` 发生任一方向的包含。Limina 会先校验词法和规范物理 identity，合法输出才可以从发现范围移除 descriptor。
+每个声明的输出都必须是专用目录。它可以是 `packages/app/dist`、`packages/app/generated` 或 `../shared/dist` 这样的严格后代目录，但不能等于或包含 `config.rootDir` 或任何激活包根目录，也不能与 `.limina` 发生任一方向的包含。这里的激活包根目录，是应用 `workspace-package` 排除后的 effective set：仅仅属于已排除的原始包不会继续占用输出路径，但任何未被匹配、仍然激活的后代包都会继续保护自己的根目录。Limina 会先校验词法和规范物理 identity，合法输出才可以从发现范围移除 descriptor。
 
 嵌套 `pnpm-workspace.yaml` 是自动生效的 owner-local boundary，不是公开的 exclusion candidate。父 package island 只记录边界，不读取或校验嵌套工作区 context；如果原始工作区成员关系激活了边界下方的包，每个包仍会独立启动自己的 package-island 任务。
 

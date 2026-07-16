@@ -3018,6 +3018,54 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('excludes overlap package cwd authority but keeps explicit release entries', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const packageRoot = path.join(rootDir, 'packages/a');
+      const config = createConfig(rootDir, [
+        {
+          name: '@example/a',
+          outDir,
+        },
+      ]);
+      config.regions = {
+        exclude: [
+          {
+            include: ['packages/a'],
+            kind: 'workspace-package',
+            reason: 'The nested workspace is checked separately.',
+          },
+        ],
+      };
+      await writeText(
+        path.join(packageRoot, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+
+      await expect(
+        runReleaseCheck({
+          config,
+          cwd: path.join(packageRoot, 'src'),
+        }),
+      ).rejects.toThrow(/No activated workspace package/u);
+      await expect(
+        runReleaseCheck({
+          config,
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+
+      expect(packageCheckMocks.packCalls).toEqual([outDir]);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it('fails release checks when cwd is not in a named activated package', async () => {
     const rootDir = await createWorkspaceRoot();
 

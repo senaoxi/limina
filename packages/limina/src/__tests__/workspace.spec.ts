@@ -271,7 +271,7 @@ describe('collectWorkspacePackages', () => {
     }
   });
 
-  it('reports raw same-root overlap before workspace-package exclusions', async () => {
+  it('keeps an excluded overlap in raw evidence but removes activated authority', async () => {
     const fixture = await createFixture({
       'app/package.json': stringifyConfig({
         name: '@example/app',
@@ -305,22 +305,14 @@ describe('collectWorkspacePackages', () => {
       expect(
         rawPackages.map((workspacePackage) => workspacePackage.name),
       ).toEqual(expect.arrayContaining(['@example/app']));
-      await expect(core.workspace.getPackages()).rejects.toMatchObject({
-        issues: [
-          expect.objectContaining({
-            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
-          }),
-        ],
-      });
+      await expect(core.workspace.getPackages()).resolves.not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: '@example/app' }),
+        ]),
+      );
       await expect(
         core.workspace.findPackageBySpecifier('@example/app'),
-      ).rejects.toMatchObject({
-        issues: [
-          expect.objectContaining({
-            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
-          }),
-        ],
-      });
+      ).resolves.toBeNull();
     } finally {
       await fixture.cleanup();
     }
@@ -904,7 +896,237 @@ describe('collectWorkspaceRegionTopology', () => {
     }
   });
 
-  it('reports same-path workspace/package overlap before exclusions', async () => {
+  it('reports an activated package that is also a non-root workspace root', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/app/package.json': stringifyConfig({
+        name: '@example/app',
+        private: true,
+      }),
+      'packages/app/pnpm-workspace.yaml': 'packages: []\n',
+      'pnpm-workspace.yaml': 'packages:\n  - packages/app\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionTopology(fixture.config, {
+          provider: async () => [],
+          rawPackages: [
+            createWorkspacePackageFixture(fixture.rootDir, 'packages/app', {
+              name: '@example/app',
+              private: true,
+            }),
+          ],
+        }),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            filePath: 'packages/app/pnpm-workspace.yaml',
+            reason:
+              'An activated non-root workspace package is also the root of a pnpm workspace.',
+          }),
+        ],
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not let a package-scope rule suppress activated package overlap', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/app/package.json': stringifyConfig({
+        name: '@example/app',
+        private: true,
+      }),
+      'packages/app/pnpm-workspace.yaml': 'packages: []\n',
+      'pnpm-workspace.yaml': 'packages:\n  - packages/app\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionTopology(
+          {
+            ...fixture.config,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/app'],
+                  kind: 'package-scope',
+                  reason: 'Package scopes do not remove package identity.',
+                },
+              ],
+            },
+          },
+          {
+            provider: async () => [],
+            rawPackages: [
+              createWorkspacePackageFixture(fixture.rootDir, 'packages/app', {
+                name: '@example/app',
+                private: true,
+              }),
+            ],
+          },
+        ),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+          }),
+        ],
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves an excluded overlap boundary and active descendant re-entry', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/parent/fixture/nested/package.json': stringifyConfig({
+        name: '@example/nested',
+        private: true,
+      }),
+      'packages/parent/fixture/nested/src/index.ts':
+        'export const nested = true;\n',
+      'packages/parent/fixture/package.json': stringifyConfig({
+        name: '@example/fixture',
+        private: true,
+      }),
+      'packages/parent/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/parent/fixture/src/index.ts': 'export const fixture = true;\n',
+      'packages/parent/package.json': stringifyConfig({
+        name: '@example/parent',
+        private: true,
+      }),
+      'pnpm-workspace.yaml':
+        'packages:\n  - packages/parent\n  - packages/parent/fixture\n  - packages/parent/fixture/nested\n',
+    });
+
+    try {
+      const topology = await collectWorkspaceRegionTopology(
+        {
+          ...fixture.config,
+          regions: {
+            exclude: [
+              {
+                include: ['packages/parent/fixture'],
+                kind: 'workspace-package',
+                reason: 'The nested workspace is checked separately.',
+              },
+            ],
+          },
+        },
+        {
+          provider: async () => [],
+          rawPackages: [
+            createWorkspacePackageFixture(fixture.rootDir, 'packages/parent', {
+              name: '@example/parent',
+              private: true,
+            }),
+            createWorkspacePackageFixture(
+              fixture.rootDir,
+              'packages/parent/fixture',
+              { name: '@example/fixture', private: true },
+            ),
+            createWorkspacePackageFixture(
+              fixture.rootDir,
+              'packages/parent/fixture/nested',
+              { name: '@example/nested', private: true },
+            ),
+          ],
+        },
+      );
+      const pathIndex = new WorkspaceRegionPathIndex(
+        topology as ValidatedWorkspaceContext,
+      );
+
+      expect(
+        topology.rawPackages.map((workspacePackage) => workspacePackage.name),
+      ).toEqual(['@example/parent', '@example/fixture', '@example/nested']);
+      expect(
+        topology.packages.map((workspacePackage) => workspacePackage.name),
+      ).toEqual(['@example/parent', '@example/nested']);
+      expect(topology.boundaries).toEqual([
+        expect.objectContaining({
+          kind: 'pnpm-workspace',
+          rootDir: fixture.path('packages/parent/fixture'),
+        }),
+      ]);
+      expect(
+        pathIndex.findPackageForPath(
+          fixture.path('packages/parent/fixture/src/index.ts'),
+        ),
+      ).toBeNull();
+      expect(
+        pathIndex.findBoundaryForPath(
+          fixture.path('packages/parent/fixture/src/index.ts'),
+        ),
+      ).toMatchObject({
+        kind: 'pnpm-workspace',
+        rootDir: fixture.path('packages/parent/fixture'),
+      });
+      expect(
+        pathIndex.findPackageForPath(
+          fixture.path('packages/parent/fixture/nested/src/index.ts'),
+        )?.name,
+      ).toBe('@example/nested');
+      expect(
+        pathIndex.findBoundaryForPath(
+          fixture.path('packages/parent/fixture/nested/src/index.ts'),
+        ),
+      ).toBeNull();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('validates unmatched workspace-package rules before overlap', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/app/package.json': stringifyConfig({
+        name: '@example/app',
+        private: true,
+      }),
+      'packages/app/pnpm-workspace.yaml': 'packages: []\n',
+      'pnpm-workspace.yaml': 'packages:\n  - packages/app\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionTopology(
+          {
+            ...fixture.config,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/missing'],
+                  kind: 'workspace-package',
+                  reason: 'This rule is invalid.',
+                },
+              ],
+            },
+          },
+          {
+            provider: async () => [],
+            rawPackages: [
+              createWorkspacePackageFixture(fixture.rootDir, 'packages/app', {
+                name: '@example/app',
+                private: true,
+              }),
+            ],
+          },
+        ),
+      ).rejects.toThrow(
+        'regions.exclude[0] does not match an exact governance candidate.',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('validates duplicate workspace-package rules before overlap', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({ name: 'root', private: true }),
       'packages/app/package.json': stringifyConfig({
@@ -925,7 +1147,12 @@ describe('collectWorkspaceRegionTopology', () => {
                 {
                   include: ['packages/app'],
                   kind: 'workspace-package',
-                  reason: 'Workspace package is outside this run.',
+                  reason: 'First matching rule.',
+                },
+                {
+                  include: ['packages/**'],
+                  kind: 'workspace-package',
+                  reason: 'Second matching rule.',
                 },
               ],
             },
@@ -940,10 +1167,66 @@ describe('collectWorkspaceRegionTopology', () => {
             ],
           },
         ),
+      ).rejects.toThrow(
+        'Multiple regions.exclude rules match workspace-package packages/app.',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports an unrelated activated overlap after applying a valid exclusion', async () => {
+    const fixture = await createFixture({
+      'package.json': stringifyConfig({ name: 'root', private: true }),
+      'packages/excluded/package.json': stringifyConfig({
+        name: '@example/excluded',
+        private: true,
+      }),
+      'packages/excluded/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/overlap/package.json': stringifyConfig({
+        name: '@example/overlap',
+        private: true,
+      }),
+      'packages/overlap/pnpm-workspace.yaml': 'packages: []\n',
+      'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    });
+
+    try {
+      await expect(
+        collectWorkspaceRegionTopology(
+          {
+            ...fixture.config,
+            regions: {
+              exclude: [
+                {
+                  include: ['packages/excluded'],
+                  kind: 'workspace-package',
+                  reason: 'This workspace is checked separately.',
+                },
+              ],
+            },
+          },
+          {
+            provider: async () => [],
+            rawPackages: [
+              createWorkspacePackageFixture(
+                fixture.rootDir,
+                'packages/excluded',
+                { name: '@example/excluded', private: true },
+              ),
+              createWorkspacePackageFixture(
+                fixture.rootDir,
+                'packages/overlap',
+                { name: '@example/overlap', private: true },
+              ),
+            ],
+          },
+        ),
       ).rejects.toMatchObject({
         issues: [
           expect.objectContaining({
             code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
+            filePath: 'packages/overlap/pnpm-workspace.yaml',
           }),
         ],
       });

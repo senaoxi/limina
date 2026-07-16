@@ -4658,7 +4658,7 @@ describe('runSourceCheck workspace regions', () => {
     }
   });
 
-  it('does not let workspace-package exclusions suppress same-root overlap', async () => {
+  it('accepts an excluded package that would otherwise overlap a workspace root', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4693,18 +4693,16 @@ describe('runSourceCheck workspace regions', () => {
           issues,
           report: { defer: true },
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
 
-      expect(issues.map((issue) => issue.code)).toEqual([
-        'LIMINA_WORKSPACE_REGION_OVERLAP',
-      ]);
+      expect(issues).toEqual([]);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
-  it('reports the raw same-root overlap before constructing nested owners', async () => {
+  it('reports activated same-root overlap before constructing nested owners', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4756,7 +4754,7 @@ describe('runSourceCheck workspace regions', () => {
     }
   });
 
-  it('does not suppress raw overlap by excluding the overlapping package', async () => {
+  it('keeps active descendants after excluding an overlapping parent', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -4801,11 +4799,9 @@ describe('runSourceCheck workspace regions', () => {
           issues,
           report: { defer: true },
         }),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
 
-      expect(issues.map((issue) => issue.code)).toContain(
-        'LIMINA_WORKSPACE_REGION_OVERLAP',
-      );
+      expect(issues).toEqual([]);
     } finally {
       infoSpy.mockRestore();
       await fixture.cleanup();

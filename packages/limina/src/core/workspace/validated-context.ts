@@ -196,14 +196,14 @@ async function canonicalProjectedPath(targetPath: string): Promise<string> {
 
 async function collectPackageIdentities(options: {
   config: ResolvedLiminaConfig;
-  rawPackages: readonly WorkspacePackage[];
+  packages: readonly WorkspacePackage[];
 }): Promise<{
   identities: WorkspacePackageIdentity[];
   issues: LiminaCheckIssue[];
 }> {
   const issues: LiminaCheckIssue[] = [];
   const identities = await Promise.all(
-    options.rawPackages.map(async (workspacePackage) => ({
+    options.packages.map(async (workspacePackage) => ({
       canonicalDirectory: normalizeAbsolutePath(
         await realpath(workspacePackage.directory),
       ),
@@ -247,13 +247,13 @@ async function collectPackageIdentities(options: {
 
 async function collectSameRootOverlapIssues(options: {
   config: ResolvedLiminaConfig;
-  rawPackages: readonly WorkspacePackage[];
+  packages: readonly WorkspacePackage[];
 }): Promise<LiminaCheckIssue[]> {
   const configRootDir = normalizeAbsolutePath(options.config.rootDir);
   const workspaceRootDir = findNearestPnpmWorkspaceRoot(configRootDir);
   const issues: LiminaCheckIssue[] = [];
 
-  for (const workspacePackage of options.rawPackages) {
+  for (const workspacePackage of options.packages) {
     const packageRoot = normalizeAbsolutePath(workspacePackage.directory);
     if (packageRoot === workspaceRootDir) continue;
     const workspaceYamlPath = path.join(packageRoot, 'pnpm-workspace.yaml');
@@ -276,13 +276,13 @@ async function collectSameRootOverlapIssues(options: {
         code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
         config: options.config,
         evidence: [
-          `raw workspace package: ${displayPath(configRootDir, packageRoot)}`,
+          `activated workspace package: ${displayPath(configRootDir, packageRoot)}`,
           `workspace descriptor: ${displayPath(configRootDir, workspaceYamlPath)}`,
         ],
         filePath: workspaceYamlPath,
-        fix: 'Remove the overlapping raw workspace membership or the package-root pnpm-workspace.yaml.',
+        fix: 'Exclude the activated package from this run, remove its workspace membership, or remove the package-root pnpm-workspace.yaml.',
         reason:
-          'A raw non-root workspace package is also the root of a pnpm workspace.',
+          'An activated non-root workspace package is also the root of a pnpm workspace.',
         title: 'Workspace package and workspace root overlap',
       }),
     );
@@ -309,7 +309,7 @@ function findExactExclusions(options: {
   config: ResolvedLiminaConfig;
   kind: 'package-scope' | 'workspace-package';
   rootDir: string;
-  rules: CompiledExclusionRule[];
+  rules: readonly CompiledExclusionRule[];
 }): CompiledExclusionRule[] {
   const relativeRoot = displayPath(options.config.rootDir, options.rootDir);
   const matches = options.rules.filter(
@@ -786,34 +786,22 @@ function resolveStableDescriptors(options: {
   }
 }
 
-function validateCommittedExclusions(options: {
+interface ExclusionCandidate {
+  kind: 'package-scope' | 'workspace-package';
+  rootDir: string;
+}
+
+function validateExclusionRules(options: {
+  candidates: readonly ExclusionCandidate[];
   config: ResolvedLiminaConfig;
-  rawPackages: readonly WorkspacePackage[];
   rules: readonly CompiledExclusionRule[];
-  stableCandidates: readonly WorkspaceDescriptorCandidate[];
 }): void {
-  const workspaceCandidates = options.rawPackages.map((workspacePackage) => ({
-    kind: 'workspace-package' as const,
-    rootDir: workspacePackage.directory,
-  }));
-  const packageScopeCandidates = options.stableCandidates
-    .filter(
-      (candidate) =>
-        candidate.kind === 'package-json' &&
-        normalizeAbsolutePath(candidate.rootDir) !==
-          normalizeAbsolutePath(candidate.ownerDirectory),
-    )
-    .map((candidate) => ({
-      kind: 'package-scope' as const,
-      rootDir: candidate.rootDir,
-    }));
-  const candidates = [...workspaceCandidates, ...packageScopeCandidates];
-  for (const candidate of candidates) {
+  for (const candidate of options.candidates) {
     const matches = findExactExclusions({
       config: options.config,
       kind: candidate.kind,
       rootDir: candidate.rootDir,
-      rules: [...options.rules],
+      rules: options.rules,
     });
     if (matches.length > 1) {
       throw new Error(
@@ -823,7 +811,7 @@ function validateCommittedExclusions(options: {
   }
   const unmatched = options.rules.filter(
     (rule) =>
-      !candidates.some(
+      !options.candidates.some(
         (candidate) =>
           candidate.kind === rule.entry.kind &&
           rule.matchers.some((matches) =>
@@ -837,12 +825,65 @@ function validateCommittedExclusions(options: {
   );
 }
 
+function validateWorkspacePackageExclusions(options: {
+  config: ResolvedLiminaConfig;
+  rawPackages: readonly WorkspacePackage[];
+  rules: readonly CompiledExclusionRule[];
+}): void {
+  validateExclusionRules({
+    candidates: options.rawPackages.map((workspacePackage) => ({
+      kind: 'workspace-package',
+      rootDir: workspacePackage.directory,
+    })),
+    config: options.config,
+    rules: options.rules.filter(
+      (rule) => rule.entry.kind === 'workspace-package',
+    ),
+  });
+}
+
+function validatePackageScopeExclusions(options: {
+  config: ResolvedLiminaConfig;
+  rules: readonly CompiledExclusionRule[];
+  stableCandidates: readonly WorkspaceDescriptorCandidate[];
+}): void {
+  validateExclusionRules({
+    candidates: options.stableCandidates
+      .filter(
+        (candidate) =>
+          candidate.kind === 'package-json' &&
+          normalizeAbsolutePath(candidate.rootDir) !==
+            normalizeAbsolutePath(candidate.ownerDirectory),
+      )
+      .map((candidate) => ({
+        kind: 'package-scope',
+        rootDir: candidate.rootDir,
+      })),
+    config: options.config,
+    rules: options.rules.filter((rule) => rule.entry.kind === 'package-scope'),
+  });
+}
+
 export async function collectValidatedWorkspaceContext(options: {
   config: ResolvedLiminaConfig;
   rawPackages: readonly WorkspacePackage[];
 }): Promise<ValidatedWorkspaceContext> {
   const { config } = options;
-  const overlapIssues = await collectSameRootOverlapIssues(options);
+  const rules = compileExclusionRules(config);
+  validateWorkspacePackageExclusions({
+    config,
+    rawPackages: options.rawPackages,
+    rules,
+  });
+  const packages = applyWorkspacePackageExclusions({
+    config,
+    rawPackages: options.rawPackages,
+    rules,
+  });
+  const overlapIssues = await collectSameRootOverlapIssues({
+    config,
+    packages,
+  });
   if (overlapIssues.length > 0) {
     throw new LiminaStructuredError(
       'Workspace validation failed.',
@@ -850,15 +891,9 @@ export async function collectValidatedWorkspaceContext(options: {
     );
   }
 
-  const rules = compileExclusionRules(config);
-  const packages = applyWorkspacePackageExclusions({
-    config,
-    rawPackages: options.rawPackages,
-    rules,
-  });
   const identityResult = await collectPackageIdentities({
     config,
-    rawPackages: packages,
+    packages,
   });
   if (identityResult.issues.length > 0) {
     throw new LiminaStructuredError(
@@ -977,9 +1012,8 @@ export async function collectValidatedWorkspaceContext(options: {
     packageOutputs,
     universe,
   });
-  validateCommittedExclusions({
+  validatePackageScopeExclusions({
     config,
-    rawPackages: options.rawPackages,
     rules,
     stableCandidates: stable.candidates,
   });

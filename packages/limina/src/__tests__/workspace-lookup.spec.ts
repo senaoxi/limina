@@ -4,6 +4,7 @@ import {
   type PackageOwner,
   type WorkspacePackage,
 } from '#core/workspace/actions';
+import { normalizeAbsolutePath } from '#utils/path';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -99,7 +100,7 @@ function createPathIndex(
       extendedPackageScopes: [],
       outputRoots: [],
       packageIdentities: packages.map((workspacePackage) => ({
-        canonicalDirectory: workspacePackage.directory,
+        canonicalDirectory: normalizeAbsolutePath(workspacePackage.directory),
         displayDirectory: path.relative(rootDir, workspacePackage.directory),
         package: workspacePackage,
       })),

@@ -16,7 +16,10 @@ import {
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { createFixturePathResolver } from './helpers/path';
+import {
+  createFixturePathResolver,
+  toPortableRelativePath,
+} from './helpers/path';
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -98,6 +101,83 @@ describe('validated workspace context', () => {
       });
     } finally {
       await fixture.cleanup();
+    }
+  });
+
+  it('validates canonical identity after lexical package exclusion', async () => {
+    const fixture = await createFixture({
+      'packages/real/package.json': json({
+        name: '@fixture/real',
+        private: true,
+      }),
+    });
+    await symlink(
+      fixture.path('packages/real'),
+      fixture.path('packages/alias'),
+    );
+    fixture.config.regions = {
+      exclude: [
+        {
+          include: ['packages/alias'],
+          kind: 'workspace-package',
+          reason: 'The alias is not a separate package owner.',
+        },
+      ],
+    };
+
+    try {
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/real'), '@fixture/real'),
+          workspacePackage(fixture.path('packages/alias'), '@fixture/alias'),
+        ],
+      });
+
+      expect(context.rawPackages).toHaveLength(2);
+      expect(
+        context.packages.map((workspacePackage) => workspacePackage.name),
+      ).toEqual(['@fixture/real']);
+      expect(context.packageIdentities).toEqual([
+        expect.objectContaining({ displayDirectory: 'packages/real' }),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps config-relative parent selectors for external package exclusions', async () => {
+    const fixture = await createFixture();
+    const externalRoot = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-external-package-')),
+    );
+    await writeText(
+      path.join(externalRoot, 'package.json'),
+      json({ name: '@fixture/external', private: true }),
+    );
+    fixture.config.regions = {
+      exclude: [
+        {
+          include: [toPortableRelativePath(fixture.rootDir, externalRoot)],
+          kind: 'workspace-package',
+          reason: 'The external package is checked separately.',
+        },
+      ],
+    };
+
+    try {
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [workspacePackage(externalRoot, '@fixture/external')],
+      });
+
+      expect(context.rawPackages).toHaveLength(1);
+      expect(context.packages).toEqual([]);
+    } finally {
+      await Promise.all([
+        fixture.cleanup(),
+        rm(externalRoot, { force: true, recursive: true }),
+      ]);
     }
   });
 
@@ -266,6 +346,128 @@ describe('validated workspace context', () => {
       }
     },
   );
+
+  it('allows an output at an excluded overlap boundary without an active descendant', async () => {
+    const fixture = await createFixture({
+      'packages/parent/fixture/package.json': json({
+        name: '@fixture/fixture',
+        private: true,
+      }),
+      'packages/parent/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/parent/package.json': json({
+        name: '@fixture/parent',
+        private: true,
+      }),
+    });
+    fixture.config.package = {
+      entries: [
+        {
+          checks: [],
+          name: '@fixture/output',
+          outDir: 'packages/parent/fixture',
+        },
+      ],
+    };
+    fixture.config.regions = {
+      exclude: [
+        {
+          include: ['packages/parent/fixture'],
+          kind: 'workspace-package',
+          reason: 'The nested workspace is checked separately.',
+        },
+      ],
+    };
+
+    try {
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/parent'), '@fixture/parent'),
+          workspacePackage(
+            fixture.path('packages/parent/fixture'),
+            '@fixture/fixture',
+          ),
+        ],
+      });
+
+      expect(
+        context.packages.map((workspacePackage) => workspacePackage.name),
+      ).toEqual(['@fixture/parent']);
+      expect(context.outputRoots).toEqual([
+        fixture.path('packages/parent/fixture'),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects an output containing an active descendant of an excluded overlap', async () => {
+    const fixture = await createFixture({
+      'packages/parent/fixture/nested/package.json': json({
+        name: '@fixture/nested',
+        private: true,
+      }),
+      'packages/parent/fixture/package.json': json({
+        name: '@fixture/fixture',
+        private: true,
+      }),
+      'packages/parent/fixture/pnpm-workspace.yaml': 'packages: []\n',
+      'packages/parent/package.json': json({
+        name: '@fixture/parent',
+        private: true,
+      }),
+    });
+    fixture.config.package = {
+      entries: [
+        {
+          checks: [],
+          name: '@fixture/output',
+          outDir: 'packages/parent/fixture',
+        },
+      ],
+    };
+    fixture.config.regions = {
+      exclude: [
+        {
+          include: ['packages/parent/fixture'],
+          kind: 'workspace-package',
+          reason: 'The nested workspace is checked separately.',
+        },
+      ],
+    };
+
+    try {
+      await expect(
+        collectValidatedWorkspaceContext({
+          config: fixture.config,
+          rawPackages: [
+            workspacePackage(
+              fixture.path('packages/parent'),
+              '@fixture/parent',
+            ),
+            workspacePackage(
+              fixture.path('packages/parent/fixture'),
+              '@fixture/fixture',
+            ),
+            workspacePackage(
+              fixture.path('packages/parent/fixture/nested'),
+              '@fixture/nested',
+            ),
+          ],
+        }),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
+            reason:
+              'The output root equals or contains an activated package root.',
+          }),
+        ],
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 
   it('never reads tsconfig output declarations behind a nested workspace boundary', async () => {
     const fixture = await createFixture({

@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
+import { normalizeAbsolutePath } from '#utils/path';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -63,7 +64,7 @@ function createWorkspaceContext(options: {
     extendedPackageScopes: [],
     outputRoots: options.outputRoots ?? [],
     packageIdentities: options.packages.map((workspacePackage) => ({
-      canonicalDirectory: workspacePackage.directory,
+      canonicalDirectory: normalizeAbsolutePath(workspacePackage.directory),
       displayDirectory: path.relative(
         options.configRootDir,
         workspacePackage.directory,
