@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
-import path from 'pathe';
+import {
+  type InternalProcessEntry,
+  resolveInternalProcessEntry,
+} from '../execution/internal-process-entry';
 import type {
   FlowOutputMessage,
   FlowRendererParentMessage,
@@ -17,65 +17,22 @@ import type {
 } from './terminal-frame';
 import { writeWithFlowArgs } from './terminal-frame';
 
-interface RendererEntry {
-  args: string[];
-  command: string;
-}
+type RendererEntry = InternalProcessEntry;
 
 type WriteStreamName = 'stderr' | 'stdout';
 
-const requireFromRenderer = createRequire(import.meta.url);
-
-function resolveTsxCliPath(packageDir: string): string | undefined {
-  try {
-    return requireFromRenderer.resolve('tsx/cli');
-  } catch {
-    return [
-      path.join(packageDir, 'node_modules/tsx/dist/cli.mjs'),
-      path.join(packageDir, '../../node_modules/tsx/dist/cli.mjs'),
-    ].find((candidate) => existsSync(candidate));
-  }
+function resolveRendererEntry(
+  moduleUrl: string = import.meta.url,
+): RendererEntry | undefined {
+  return resolveInternalProcessEntry({
+    bundleFileName: 'flow-renderer-process.js',
+    moduleUrl,
+    sourceFileName: 'renderer-process.ts',
+  });
 }
 
-function resolveRendererEntry(): RendererEntry | undefined {
-  const currentDir = fileURLToPath(new URL('.', import.meta.url));
-  const sourceEntries = [
-    path.resolve(currentDir, 'renderer-process.ts'),
-    path.resolve(process.cwd(), 'src/flow/renderer-process.ts'),
-  ];
-  const distEntries = [
-    path.resolve(currentDir, 'flow-renderer-process.js'),
-    path.resolve(currentDir, '../flow-renderer-process.js'),
-    path.resolve(process.cwd(), 'dist/flow-renderer-process.js'),
-  ];
-  const sourceEntry = sourceEntries.find((candidate) => existsSync(candidate));
-
-  if (sourceEntry) {
-    const tsxCliPath = resolveTsxCliPath(
-      path.resolve(path.dirname(sourceEntry), '../..'),
-    );
-
-    if (!tsxCliPath) {
-      return undefined;
-    }
-
-    return {
-      args: [tsxCliPath, sourceEntry],
-      command: process.execPath,
-    };
-  }
-
-  const distEntry = distEntries.find((candidate) => existsSync(candidate));
-
-  if (distEntry) {
-    return {
-      args: [distEntry],
-      command: process.execPath,
-    };
-  }
-
-  return undefined;
-}
+export const resolveRendererEntryForTesting: typeof resolveRendererEntry =
+  resolveRendererEntry;
 
 function getWriteCallback(args: FlowWriteArgs): FlowWriteCallback | undefined {
   if (args.length === 3) {

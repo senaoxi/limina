@@ -1,12 +1,12 @@
 # 源码检查
 
 ::: warning
-顶层 `source` 选项配置 `source:check` 中的两类行为：`source.importAuthority` 用于源码导入授权，`source.knip` 用于 `Knip` 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
+顶层 `source` 选项配置 `source:check` 中的三类行为：`source.importAuthority` 用于源码导入授权，`source.declarations` 管理显式 ambient declaration 角色，`source.knip` 用于 `Knip` 驱动的未使用工作区依赖和未使用源码模块检查。它不同于 `config.source`，后者定义覆盖证明使用的全局源码边界。`config.source` 见 [源码边界](./source-boundary.md)。
 :::
 
 `source check` 的主线是让源码导入能被包归属和依赖声明解释。Limina 会从每个已验证激活 package island 独立发现源码，包括外部包和没有 `name`、只能用路径标识的工作区包；每个工作区包根目录的清单是它的源码 owner。显式源码 selector 相对于 `config.rootDir`，可以包含 `../`，并且只过滤这些 island 已经产生的 candidate。
 
-默认情况下，嵌套 `package.json` 会停止当前治理区域，嵌套 `pnpm-workspace.yaml` 则永远是硬边界。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，满足条件的无名嵌套清单可以继续留在外层区域：其中源码继承外层工作区 owner 和依赖授权，这份嵌套清单仍负责相对导入和 `#imports` 的包作用域。[`regions.exclude`](./regions.md#exclude) 随后可以从当前运行中裁剪已识别治理单元或边界根；导入任何已停止或被排除的区域都会按跨边界访问处理。
+默认情况下，嵌套 `package.json` 会停止当前治理区域，嵌套 `pnpm-workspace.yaml` 则永远是自动生效的 owner-local boundary。启用 [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes) 后，满足条件的无名嵌套清单可以继续留在外层区域：其中源码继承外层工作区 owner 和依赖授权，这份嵌套清单仍负责相对导入和 `#imports` 的包作用域。[`regions.exclude`](./regions.md#exclude) 可以从当前运行中裁剪激活包或已识别的嵌套包作用域；导入任何已停止或被排除的区域都会按跨边界访问处理。
 
 `Knip` 驱动分支使用包入口而不是 `include` / `exclude`，报告未使用工作区依赖，以及基于 Limina 源码归属方模块集合识别出的未使用源码模块。
 
@@ -72,6 +72,45 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 `workspaceRootDependencies` 不是直接导入白名单。它只说明当源码归属方和 `include` 范围都匹配时，哪些包名可以读取工作区根目录清单中的依赖声明。Limina 仍然要求根清单实际声明这个包；如果源码归属方和根目录之间存在中间工作区包清单声明了同一个包，根目录授权不会绕过这个中间清单。
 
 真正属于这个源码归属方运行时的导入，仍然优先写进归属方自己的清单文件。
+
+## declarations.ambient
+
+`source.declarations.ambient` 用于明确标记承担 TypeScript ambient 角色的声明文件，避免把它们当成普通的包归属声明 API。
+
+```ts
+interface SourceAmbientDeclarationConfig {
+  include: string[];
+  allowSharedAcrossOwners?: boolean;
+  allowTripleSlashReferences?: boolean;
+  reason: string;
+}
+
+interface SourceDeclarationsConfig {
+  ambient?: SourceAmbientDeclarationConfig[];
+}
+```
+
+每个 `include` 数组都使用相对于 `config.rootDir` 的 pattern；外部激活包可以使用 `../`。这些 pattern 只过滤已验证 package island 发现的文件，不能让未激活目录或 owner-local boundary 后方的路径变得可见。每条规则必须至少匹配一个声明文件，同一个物理文件也不能同时匹配多条规则。
+
+被匹配文件必须确实符合 ambient declaration 的结构。Limina 管理的输出声明、包的公开声明入口，以及包含普通导入或导出的外部声明模块，都不能重新归类为 ambient declaration。
+
+`allowSharedAcrossOwners` 默认为 `false`；只有多个源码 owner 确实需要共同使用同一份 ambient declaration 时才设为 `true`。`allowTripleSlashReferences` 同样默认为 `false`；它只授权通过 `/// <reference path="...">` 访问匹配的声明文件，不会授权普通导入、包依赖或 `/// <reference types>`。
+
+```js
+export default defineConfig({
+  source: {
+    declarations: {
+      ambient: [
+        {
+          include: ['../shared-types/globals.d.ts'],
+          allowSharedAcrossOwners: true,
+          reason: '多个应用共用宿主环境提供的全局声明。',
+        },
+      ],
+    },
+  },
+});
+```
 
 ## knip
 

@@ -2833,9 +2833,8 @@ export async function runSourceCheckImpl(
   const ambientDeclarationResult = await createAmbientDeclarationIndex({
     config,
     generatedGraph,
-    packages,
-    regionBoundaries: regionBoundaryIndex,
-    workspaceLookup,
+    workspaceContext,
+    workspacePathIndex,
   });
 
   sourceIssues.push(...ambientDeclarationResult.issues);

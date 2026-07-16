@@ -3,7 +3,7 @@
 `regions` defines which package scopes belong to the current Limina run. It is a structural boundary: it decides where package ownership, checker discovery, source analysis, generated graphs, and dependency authority apply.
 
 ::: warning
-`regions.exclude` does not replace `config.source.exclude`. Checker-level `exclude` is still required for individual checker entries inside an activated region. Paths belonging to an excluded or inaccessible region are outside checker `include` discovery by construction, so do not duplicate those paths in checker `exclude`. Use `regions` when an entire recognized package scope or workspace boundary must stay outside the current run.
+`regions.exclude` does not replace `config.source.exclude`. Checker-level `exclude` is still required for individual checker entries inside an activated region. Paths belonging to an excluded or inaccessible region are outside checker `include` discovery by construction, so do not duplicate those paths in checker `exclude`. Use `regions` when an entire activated package or recognized package scope must stay outside the current run.
 :::
 
 ```ts
@@ -13,7 +13,7 @@ interface RegionsConfig {
 }
 
 interface RegionExcludeConfig {
-  kind: 'workspace-package' | 'package-scope' | 'pnpm-workspace';
+  kind: 'workspace-package' | 'package-scope';
   include: string[];
   reason: string;
 }
@@ -27,9 +27,9 @@ export default defineConfig({
     extendNestedPackageScopes: true,
     exclude: [
       {
-        kind: 'pnpm-workspace',
-        include: ['packages/app/fixtures/workspace-a'],
-        reason: 'This fixture workspace is validated independently.',
+        kind: 'workspace-package',
+        include: ['packages/legacy-app'],
+        reason: 'This package is governed by a separate Limina run.',
       },
     ],
   },
@@ -96,15 +96,14 @@ An extended package scope does not become a new source owner. Its source continu
 
 Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason`. There is no kind inference or legacy kind-less form.
 
-`include` patterns match only config-root-relative lexical candidate root directories. They may use `../` for activated packages outside `config.rootDir`. They do not match package names, `package.json` paths, `pnpm-workspace.yaml` paths, canonical filesystem paths, or arbitrary files. For a manifest at `packages/app/fixtures/workspace-a/pnpm-workspace.yaml`, select the root with `packages/app/fixtures/workspace-a` or a root glob such as `packages/**/fixtures/**`; `**/pnpm-workspace.yaml` does not select it.
+`include` patterns match only config-root-relative lexical candidate root directories. They may use `../` for activated packages outside `config.rootDir`. They do not match package names, `package.json` paths, `pnpm-workspace.yaml` paths, canonical filesystem paths, or arbitrary files. For a package or package-scope root at `packages/app/fixtures/local`, select the root with `packages/app/fixtures/local` or a root glob such as `packages/**/fixtures/**`; `**/package.json` does not select it.
 
-Each kind has one candidate set:
+Each of the two kinds has one candidate set:
 
 - `workspace-package` selects exact package-root candidates activated by the root `pnpm-workspace.yaml`. It removes each matched package from ownership, dependency authority, checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages.
 - `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
-- `pnpm-workspace` selects directories containing nested `pnpm-workspace.yaml` files. Limina applies this exclusion before reading the nested manifest or discovering its packages. The excluded directory remains a hard boundary. The root `pnpm-workspace.yaml` defines the governance origin and cannot be excluded.
 
-A rule is matched only against candidates of the same kind. The same directory may therefore be both a `workspace-package` and a `pnpm-workspace` candidate without the two identities being merged.
+A rule is matched only against candidates of the same kind. A directory that is both an activated package and a nested package scope therefore keeps those identities separate.
 
 After discovery, every rule must have matched at least one candidate of its declared kind. Descriptor paths, fixed discovery ignores such as `node_modules`, `.git`, `.limina`, and configured output directories, and paths belonging only to another kind cannot satisfy a rule. Multiple rules may not match the same candidate; make their patterns non-overlapping instead of relying on array order.
 
@@ -122,6 +121,6 @@ Package-entry outputs are unconditional output roots. A `tsconfig` output partic
 
 Every declared output must be a dedicated directory. It may be a strict descendant such as `packages/app/dist`, `packages/app/generated`, or `../shared/dist`, but it cannot equal or contain `config.rootDir` or an activated package root, and it cannot overlap `.limina` in either direction. Limina validates both lexical and canonical identities before the output can remove any descriptor from discovery.
 
-Nested workspaces that are not excluded are inspected strictly. Invalid YAML, invalid pnpm workspace or catalog configuration, unreadable package manifests, package-discovery failures, and missing package identity stop the run. Repair the nested workspace or add a deliberate `pnpm-workspace` exclusion for its root.
+Nested `pnpm-workspace.yaml` files are automatic owner-local boundaries, not public exclusion candidates. The parent island records the boundary but does not read or validate the nested workspace context. If packages below that boundary are activated by the raw workspace membership, each starts its own package-island job independently.
 
 Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. If the intent is only to omit selected files while keeping the containing package governed, use a file-level source exclusion or checker entry exclusion instead.

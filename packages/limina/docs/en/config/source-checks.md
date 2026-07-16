@@ -1,12 +1,12 @@
 # Source Checks
 
 ::: warning
-The top-level `source` option configures two parts of `source:check`: `source.importAuthority` controls source import authorization, and `source.knip` controls `Knip`-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
+The top-level `source` option configures three parts of `source:check`: `source.importAuthority` controls source import authorization, `source.declarations` governs explicit ambient declaration roles, and `source.knip` controls `Knip`-driven unused workspace dependency and unused source module checks. It is different from `config.source`, which defines the global source boundary used by coverage proof. For that option, see [Source Boundary](./source-boundary.md).
 :::
 
 `source check` is mainly about making source imports explainable by package ownership and dependency declarations. Limina discovers source independently from every validated activated package island, including external packages and nameless workspace packages identified by path. Each workspace package root manifest is its source owner. Explicit source selectors are relative to `config.rootDir`, may contain `../`, and only filter candidates already produced by those islands.
 
-A nested `package.json` stops the current governed region by default, and a nested `pnpm-workspace.yaml` is always a hard boundary. With [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), an eligible nameless nested manifest can remain inside the surrounding region: its source inherits the outer workspace owner and dependency authority, while the nested manifest remains the package scope for relative imports and `#imports`. [`regions.exclude`](./regions.md#exclude) can then remove recognized units or boundary roots from the current run. Imports into any stopped or excluded region are treated as cross-boundary access.
+A nested `package.json` stops the current governed region by default, and a nested `pnpm-workspace.yaml` is always an automatic owner-local boundary. With [`regions.extendNestedPackageScopes`](./regions.md#extendnestedpackagescopes), an eligible nameless nested manifest can remain inside the surrounding region: its source inherits the outer workspace owner and dependency authority, while the nested manifest remains the package scope for relative imports and `#imports`. [`regions.exclude`](./regions.md#exclude) can remove activated packages or recognized nested package scopes from the current run. Imports into any stopped or excluded region are treated as cross-boundary access.
 
 Its `Knip`-backed branch uses package entries instead of `include` / `exclude` to report unused workspace dependencies and unused source modules from Limina's workspace-package module sets.
 
@@ -72,6 +72,45 @@ interface SourceImportAuthorityWorkspaceRootGrant {
 `workspaceRootDependencies` is not a direct import allowlist. It names package keys whose declarations may be read from the workspace root manifest when the owner grant and `include` scope match. Limina still requires the root manifest to declare the package, and it will not bypass an intermediate workspace package manifest between the source owner and the workspace root.
 
 Prefer an owner manifest dependency whenever the import is part of that owner's actual runtime.
+
+## declarations.ambient
+
+`source.declarations.ambient` explicitly identifies declaration files that provide an ambient TypeScript role instead of an ordinary package-owned declaration API.
+
+```ts
+interface SourceAmbientDeclarationConfig {
+  include: string[];
+  allowSharedAcrossOwners?: boolean;
+  allowTripleSlashReferences?: boolean;
+  reason: string;
+}
+
+interface SourceDeclarationsConfig {
+  ambient?: SourceAmbientDeclarationConfig[];
+}
+```
+
+Each `include` list contains config-root-relative patterns and may use `../` for an external activated package. These patterns only filter files already discovered from validated package islands; they cannot make an unactivated path or a path behind an owner-local boundary visible. Every rule must match at least one declaration file, and one physical file cannot match multiple rules.
+
+A matched file must have an ambient declaration shape. Managed output declarations, package public declaration entries, and ordinary external declaration modules with imports or exports cannot be reclassified as ambient declarations.
+
+`allowSharedAcrossOwners` defaults to `false`. Set it to `true` only when multiple source owners intentionally consume the same ambient declaration. `allowTripleSlashReferences` also defaults to `false`; it authorizes `/// <reference path="...">` access to a matched declaration, but does not authorize ordinary imports, package dependencies, or `/// <reference types>`.
+
+```js
+export default defineConfig({
+  source: {
+    declarations: {
+      ambient: [
+        {
+          include: ['../shared-types/globals.d.ts'],
+          allowSharedAcrossOwners: true,
+          reason: 'Applications share the host-provided global declarations.',
+        },
+      ],
+    },
+  },
+});
+```
 
 ## knip
 

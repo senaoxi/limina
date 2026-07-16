@@ -3,7 +3,7 @@
 - A source file has at most one accepted source-project owner. Multiple candidates are a structured governance issue.
 - Checker coverage is intentionally many-valued and must not be coerced into source ownership.
 - An output source has at most one output-build owner.
-- A real nested `pnpm-workspace.yaml` is a governance boundary; exclusion records why a boundary is inactive.
+- A real nested `pnpm-workspace.yaml` is an automatic owner-local governance boundary, never a public exclusion candidate.
 - A workspace package belongs to one activated region after topology validation.
 - Resolution is performed before validation. Validators never read files or resolve imports.
 - Declaration-provider edges and declaration-reference edges retain checker identity.

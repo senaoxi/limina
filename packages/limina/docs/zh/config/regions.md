@@ -3,7 +3,7 @@
 `regions` 用来定义哪些包作用域属于当前这次 Limina 运行。它是一层结构边界：包归属、检查器发现、源码分析、生成图和依赖授权都只在这层边界内生效。
 
 ::: warning
-`regions.exclude` 不能替代 `config.source.exclude`。如果要排除已激活区域内的个别检查器入口，仍然需要使用检查器级 `exclude`。被排除或不可访问区域中的路径按定义已经不参与检查器 `include` 发现，不应该再重复写进 checker `exclude`。只有整个已识别包作用域或工作区边界都不属于当前运行时，才使用 `regions`。
+`regions.exclude` 不能替代 `config.source.exclude`。如果要排除已激活区域内的个别检查器入口，仍然需要使用检查器级 `exclude`。被排除或不可访问区域中的路径按定义已经不参与检查器 `include` 发现，不应该再重复写进 checker `exclude`。只有整个激活包或已识别包作用域都不属于当前运行时，才使用 `regions`。
 :::
 
 ```ts
@@ -13,7 +13,7 @@ interface RegionsConfig {
 }
 
 interface RegionExcludeConfig {
-  kind: 'workspace-package' | 'package-scope' | 'pnpm-workspace';
+  kind: 'workspace-package' | 'package-scope';
   include: string[];
   reason: string;
 }
@@ -27,9 +27,9 @@ export default defineConfig({
     extendNestedPackageScopes: true,
     exclude: [
       {
-        kind: 'pnpm-workspace',
-        include: ['packages/app/fixtures/workspace-a'],
-        reason: '这个 fixture 工作区由独立流程验证。',
+        kind: 'workspace-package',
+        include: ['packages/legacy-app'],
+        reason: '这个包由另一套 Limina 运行独立治理。',
       },
     ],
   },
@@ -96,15 +96,14 @@ packages/app/vendor/pkg/              不属于当前区域
 
 每条规则都必须提供 `kind`、非空 `include` 数组和非空 `reason`。Limina 不会推断 `kind`，也不接受省略 `kind` 的旧写法。
 
-`include` 只匹配相对于 `config.rootDir` 的词法 candidate 根目录；`config.rootDir` 外的激活包可以使用 `../`。它不匹配包名、`package.json` 路径、`pnpm-workspace.yaml` 路径、规范化后的物理路径或任意普通文件。例如，清单位于 `packages/app/fixtures/workspace-a/pnpm-workspace.yaml` 时，应使用 `packages/app/fixtures/workspace-a`，也可以使用 `packages/**/fixtures/**` 这类根目录 glob；`**/pnpm-workspace.yaml` 不会命中。
+`include` 只匹配相对于 `config.rootDir` 的词法 candidate 根目录；`config.rootDir` 外的激活包可以使用 `../`。它不匹配包名、`package.json` 路径、`pnpm-workspace.yaml` 路径、规范化后的物理路径或任意普通文件。例如，包或包作用域根目录位于 `packages/app/fixtures/local` 时，应使用 `packages/app/fixtures/local`，也可以使用 `packages/**/fixtures/**` 这类根目录 glob；`**/package.json` 不会命中。
 
-三种 `kind` 各自只对应一种 candidate：
+两种 `kind` 各自只对应一种 candidate：
 
 - `workspace-package` 选择根 `pnpm-workspace.yaml` 激活的精确包根 candidate。命中后，每个被匹配的包不再参与源码归属、依赖授权、检查器发现和生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。
 - `package-scope` 选择嵌套 `package.json` 的根目录。它同时覆盖已扩展的包作用域和原本已经停止治理的包作用域。排除后，该根目录及其后代都位于当前运行之外。
-- `pnpm-workspace` 选择包含嵌套 `pnpm-workspace.yaml` 的目录。Limina 会在读取该清单和发现其中包之前应用排除；被排除目录仍然是硬边界。根 `pnpm-workspace.yaml` 定义当前治理起点，不能被排除。
 
-规则只与同 `kind` 的 candidate 匹配。因此，同一个目录可以同时是 `workspace-package` 和 `pnpm-workspace` candidate，两种 identity 不会合并。
+规则只与同 `kind` 的 candidate 匹配。因此，同一个目录即使同时是激活包和嵌套包作用域，这两种 identity 也不会合并。
 
 发现完成后，每条规则都必须至少命中一个同 `kind` candidate。descriptor 路径、`node_modules`、`.git`、`.limina`、明确配置的输出目录等固定 discovery ignore，以及只属于其他 `kind` 的路径，都不能让规则通过匹配验证。同一个 candidate 也不能被多条规则命中；应让模式互不重叠，而不是依赖数组顺序。
 
@@ -122,6 +121,6 @@ packages/app/vendor/pkg/              不属于当前区域
 
 每个声明的输出都必须是专用目录。它可以是 `packages/app/dist`、`packages/app/generated` 或 `../shared/dist` 这样的严格后代目录，但不能等于或包含 `config.rootDir` 或任何激活包根目录，也不能与 `.limina` 发生任一方向的包含。Limina 会先校验词法和规范物理 identity，合法输出才可以从发现范围移除 descriptor。
 
-没有被排除的嵌套工作区会接受严格检查。YAML 错误、pnpm 工作区或 catalog 配置错误、包清单读取失败、包发现失败或无法建立包 identity，都会终止当前运行。应修复嵌套工作区，或为它的根目录配置明确的 `pnpm-workspace` 排除规则。
+嵌套 `pnpm-workspace.yaml` 是自动生效的 owner-local boundary，不是公开的 exclusion candidate。父 package island 只记录边界，不读取或校验嵌套工作区 context；如果原始工作区成员关系激活了边界下方的包，每个包仍会独立启动自己的 package-island 任务。
 
 当前治理源码如果导入被排除或已经停止的区域，Limina 会按跨边界访问处理。检查器入口的 `references` 也遵循同一套结构边界：checker `exclude` 不会让跨区域引用变得有效，也不会隐藏 effective entry 触达的现有普通源码配置。诊断会指出边界根目录，并在可用时附上配置的原因；如果路径不属于任何已登记边界，诊断会明确说明当前运行没有已激活工作区包拥有它。如果本意只是忽略少量文件、同时继续治理其所在的包，应改用源码文件排除或检查器入口排除。

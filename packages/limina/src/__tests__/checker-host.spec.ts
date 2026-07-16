@@ -1,8 +1,16 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runBuildTargets } from '../typecheck/build-plan';
-import { disposeCheckerProcessHostForTesting } from '../typecheck/process-host';
+import {
+  disposeCheckerProcessHostForTesting,
+  resolveCheckerHostEntryForTesting,
+} from '../typecheck/process-host';
 import {
   createCheckerTargetId,
   createDefaultRunner,
@@ -50,6 +58,58 @@ afterEach(() => {
 });
 
 describe('createDefaultRunner duration measurement', () => {
+  it('executes the package sibling host bundle instead of consumer cwd candidates', async () => {
+    const rootDir = await mkdtemp(
+      path.join(tmpdir(), 'limina-host-authority-'),
+    );
+    const packageDir = path.join(rootDir, 'node_modules/limina');
+    const consumerDir = path.join(rootDir, 'consumer');
+    const safeMarker = path.join(rootDir, 'safe-marker');
+    const unsafeMarker = path.join(rootDir, 'unsafe-marker');
+
+    try {
+      await mkdir(path.join(packageDir, 'dist/typecheck'), { recursive: true });
+      await mkdir(path.join(consumerDir, 'src/typecheck'), { recursive: true });
+      await mkdir(path.join(consumerDir, 'dist'), { recursive: true });
+      await writeFile(
+        path.join(packageDir, 'dist/checker-host-process.js'),
+        "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.SAFE_MARKER, 'safe');\n",
+      );
+      const unsafeSource =
+        "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.UNSAFE_MARKER, 'unsafe');\n";
+
+      await writeFile(
+        path.join(consumerDir, 'src/typecheck/host-process.ts'),
+        unsafeSource,
+      );
+      await writeFile(
+        path.join(consumerDir, 'dist/checker-host-process.js'),
+        unsafeSource,
+      );
+
+      const entry = resolveCheckerHostEntryForTesting(
+        pathToFileURL(path.join(packageDir, 'dist/typecheck/process-host.js'))
+          .href,
+      );
+
+      expect(entry).toBeDefined();
+      const result = spawnSync(entry!.command, entry!.args, {
+        cwd: consumerDir,
+        env: {
+          ...process.env,
+          SAFE_MARKER: safeMarker,
+          UNSAFE_MARKER: unsafeMarker,
+        },
+      });
+
+      expect(result.status).toBe(0);
+      await expect(readFile(safeMarker, 'utf8')).resolves.toBe('safe');
+      expect(existsSync(unsafeMarker)).toBe(false);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('measures checker durations independently of main-thread blocking', async () => {
     const runner = createDefaultRunner({ stdio: 'ignore' });
     const shortPromise = Promise.resolve(

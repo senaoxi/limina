@@ -5,10 +5,16 @@ export interface DistPackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   exports?: Record<string, unknown>;
+  imports?: Record<string, unknown>;
   name: string;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   private?: boolean;
+}
+
+export interface PackageImportTargetMatch {
+  key: string;
+  targets: unknown[];
 }
 
 export interface SelfSpecifierMatchers {
@@ -159,4 +165,90 @@ export function isAllowedSelfSpecifier(
     matchers.exact.has(specifier) ||
     matchers.prefixes.some((prefix) => specifier.startsWith(prefix))
   );
+}
+
+function collectConditionalTargets(value: unknown, targets: unknown[]): void {
+  if (Array.isArray(value)) {
+    for (const target of value) {
+      collectConditionalTargets(target, targets);
+    }
+    return;
+  }
+
+  if (isPlainRecord(value)) {
+    for (const target of Object.values(value)) {
+      collectConditionalTargets(target, targets);
+    }
+    return;
+  }
+
+  targets.push(value);
+}
+
+export function findPackageImportTargets(
+  importsField: DistPackageJson['imports'],
+  specifier: string,
+): PackageImportTargetMatch | null {
+  if (!isPlainRecord(importsField)) {
+    return null;
+  }
+
+  let key: string | undefined;
+  let wildcardValue: string | null = null;
+
+  if (Object.hasOwn(importsField, specifier)) {
+    key = specifier;
+  } else {
+    const matches = Object.keys(importsField)
+      .filter((candidate) => candidate.split('*').length === 2)
+      .map((candidate) => {
+        const wildcardIndex = candidate.indexOf('*');
+        const prefix = candidate.slice(0, wildcardIndex);
+        const suffix = candidate.slice(wildcardIndex + 1);
+
+        if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) {
+          return null;
+        }
+
+        return {
+          key: candidate,
+          wildcardIndex,
+          wildcardValue: specifier.slice(
+            prefix.length,
+            specifier.length - suffix.length,
+          ),
+        };
+      })
+      .filter((match): match is NonNullable<typeof match> => match !== null)
+      .sort((left, right) => {
+        const prefixDifference = right.wildcardIndex - left.wildcardIndex;
+
+        return prefixDifference === 0
+          ? right.key.length - left.key.length
+          : prefixDifference;
+      });
+    const match = matches[0];
+
+    if (match) {
+      key = match.key;
+      wildcardValue = match.wildcardValue;
+    }
+  }
+
+  if (!key) {
+    return null;
+  }
+
+  const targets: unknown[] = [];
+
+  collectConditionalTargets(importsField[key], targets);
+
+  return {
+    key,
+    targets: targets.map((target) =>
+      typeof target === 'string' && wildcardValue !== null
+        ? target.replaceAll('*', wildcardValue)
+        : target,
+    ),
+  };
 }
