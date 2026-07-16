@@ -441,22 +441,22 @@ describe('module resolution profiling instrumentation', () => {
       expect(metricCount(snapshot, 'workspace-export-oxc-resolution')).toBe(2);
       expect(
         metricCount(snapshot, 'workspace-export-grouped-typescript-execution'),
-      ).toBe(2);
+      ).toBe(1);
       expect(
         metricCount(snapshot, 'workspace-export-grouped-oxc-execution'),
-      ).toBe(2);
+      ).toBe(1);
       expect(metricCount(snapshot, 'workspace-export-result-expansion')).toBe(
         2,
       );
-      expect(metricCount(snapshot, 'module-resolution-request')).toBe(4);
-      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(4);
-      expect(metricCount(snapshot, 'typescript-resolution')).toBe(2);
+      expect(metricCount(snapshot, 'module-resolution-request')).toBe(2);
+      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(2);
+      expect(metricCount(snapshot, 'typescript-resolution')).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
-      ).toBe(2);
-      expect(metricCount(snapshot, 'oxc-resolution')).toBe(2);
+      ).toBe(1);
+      expect(metricCount(snapshot, 'oxc-resolution')).toBe(1);
       expect(metricCount(snapshot, 'oxc-resolver-factory-create')).toBe(1);
-      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(1);
+      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(0);
 
       const distinctMetrics = createProfilingMetricsRecorder();
       const distinctProfiles = [
@@ -491,7 +491,7 @@ describe('module resolution profiling instrumentation', () => {
           distinctSnapshot,
           'workspace-export-grouped-typescript-execution',
         ),
-      ).toBe(2);
+      ).toBe(1);
       expect(
         metricCount(distinctSnapshot, 'workspace-export-grouped-oxc-execution'),
       ).toBe(2);

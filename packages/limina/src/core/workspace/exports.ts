@@ -27,6 +27,7 @@ import { glob } from 'tinyglobby';
 import type ts from 'typescript';
 import {
   compileWorkspaceExportResolutionGroups,
+  getWorkspaceExportSelfNameContext,
   type WorkspaceExportResolutionGroups,
 } from './export-resolution-profiles';
 
@@ -101,6 +102,41 @@ interface CollectedPackageExportEntries {
 }
 
 type PackageExportValue = unknown;
+
+const groupedTypeScriptExecutionMeasurement = {
+  kind: 'request',
+  name: 'workspace-export-grouped-typescript-execution',
+  provider: 'workspace-exports',
+} as const;
+const groupedOxcExecutionMeasurement = {
+  kind: 'request',
+  name: 'workspace-export-grouped-oxc-execution',
+  provider: 'workspace-exports',
+} as const;
+const originalResolutionRequestMeasurement = {
+  kind: 'request',
+  name: 'workspace-export-resolution-request',
+  provider: 'workspace-exports',
+} as const;
+const originalTypeScriptResolutionMeasurement = {
+  kind: 'request',
+  name: 'workspace-export-typescript-resolution',
+  provider: 'workspace-exports',
+} as const;
+const originalOxcResolutionMeasurement = {
+  kind: 'request',
+  name: 'workspace-export-oxc-resolution',
+  provider: 'workspace-exports',
+} as const;
+const resultExpansionMeasurement = {
+  kind: 'result',
+  name: 'workspace-export-result-expansion',
+  provider: 'workspace-exports',
+} as const;
+// Bound native Oxc resolution-cache growth without changing factory identity
+// or physical resolver-call counts. Clearing is safe between synchronous
+// workspace-export entries, when no resolution operation is in flight.
+const oxcResolverCacheEntryBatchSize = 128;
 
 const typeScriptRuntimeModulePattern = /\.(?:cjs|mjs|jsx|js)$/u;
 const typeScriptDeclarationModulePattern = /\.d\.(?:cts|mts|ts)$/u;
@@ -527,21 +563,13 @@ function recordWorkspaceExportProfileMetrics(options: {
 function recordGroupedTypeScriptExecution(
   metrics: WorkspaceExportsMetricsRecorder | undefined,
 ): void {
-  metrics?.record({
-    kind: 'request',
-    name: 'workspace-export-grouped-typescript-execution',
-    provider: 'workspace-exports',
-  });
+  metrics?.record(groupedTypeScriptExecutionMeasurement);
 }
 
 function recordGroupedOxcExecution(
   metrics: WorkspaceExportsMetricsRecorder | undefined,
 ): void {
-  metrics?.record({
-    kind: 'request',
-    name: 'workspace-export-grouped-oxc-execution',
-    provider: 'workspace-exports',
-  });
+  metrics?.record(groupedOxcExecutionMeasurement);
 }
 
 function recordOriginalResultExpansion(
@@ -551,26 +579,10 @@ function recordOriginalResultExpansion(
     return;
   }
 
-  metrics.record({
-    kind: 'request',
-    name: 'workspace-export-resolution-request',
-    provider: 'workspace-exports',
-  });
-  metrics.record({
-    kind: 'request',
-    name: 'workspace-export-typescript-resolution',
-    provider: 'workspace-exports',
-  });
-  metrics.record({
-    kind: 'request',
-    name: 'workspace-export-oxc-resolution',
-    provider: 'workspace-exports',
-  });
-  metrics.record({
-    kind: 'result',
-    name: 'workspace-export-result-expansion',
-    provider: 'workspace-exports',
-  });
+  metrics.record(originalResolutionRequestMeasurement);
+  metrics.record(originalTypeScriptResolutionMeasurement);
+  metrics.record(originalOxcResolutionMeasurement);
+  metrics.record(resultExpansionMeasurement);
 }
 
 function getEffectiveOxcResolvedFileName(options: {
@@ -770,15 +782,12 @@ function createWorkspaceExportProblem(options: {
 function addEntryProblems(options: {
   config: ResolvedLiminaConfig;
   entry: PackageExportEntry;
-  oxcResolvedPaths: string[];
+  hasOxcResolution: boolean;
+  hasTypeScriptResolution: boolean;
   problems: string[];
   profiles: readonly WorkspaceExportsResolutionProfile[];
-  typeScriptResolvedPaths: string[];
 }): void {
-  if (
-    options.typeScriptResolvedPaths.length === 0 &&
-    options.oxcResolvedPaths.length === 0
-  ) {
+  if (!options.hasTypeScriptResolution && !options.hasOxcResolution) {
     options.problems.push(
       createWorkspaceExportProblem({
         config: options.config,
@@ -798,7 +807,7 @@ function addEntryProblems(options: {
     );
   }
 
-  if (options.oxcResolvedPaths.length === 0) {
+  if (!options.hasOxcResolution) {
     options.problems.push(
       createWorkspaceExportProblem({
         config: options.config,
@@ -825,6 +834,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
   packages: WorkspacePackage[];
   profiles: WorkspaceExportsResolutionProfile[];
 }): Promise<WorkspaceExportsResolutionIndex> {
+  let processedEntryCount = 0;
   const packagesWithExports = new Set<string>();
   const problems: string[] = [];
   const resolutionByProfilePath = new Map<
@@ -832,6 +842,12 @@ export async function createWorkspaceExportsResolutionIndex(options: {
     Map<string, WorkspacePackageExportResolution>
   >();
   const groups = compileWorkspaceExportResolutionGroups(options.profiles);
+  const typeScriptResultsByOriginalIndex = Array.from({
+    length: options.profiles.length,
+  }).fill(null) as (string | null)[];
+  const oxcResultsByOriginalIndex = Array.from({
+    length: options.profiles.length,
+  }).fill(null) as (string | null)[];
 
   if (options.metrics) {
     recordWorkspaceExportProfileMetrics({
@@ -855,23 +871,69 @@ export async function createWorkspaceExportsResolutionIndex(options: {
     problems.push(...collectedEntries.problems);
 
     for (const entry of collectedEntries.entries) {
-      const typeScriptResolvedPaths: string[] = [];
-      const oxcResolvedPaths: string[] = [];
+      processedEntryCount += 1;
+      let hasTypeScriptResolution = false;
+      let hasOxcResolution = false;
+      const selfNameContext = getWorkspaceExportSelfNameContext({ entry });
+      typeScriptResultsByOriginalIndex.fill(null);
+      oxcResultsByOriginalIndex.fill(null);
 
-      for (const profile of options.profiles) {
-        recordGroupedTypeScriptExecution(options.metrics);
-        const typeScriptResolvedFileName = resolveTypeScriptExport({
-          entry,
-          importAnalysis: options.importAnalysis,
-          profile,
-        });
+      if (selfNameContext.eligible) {
+        for (const plan of groups.typescriptGroups.values()) {
+          const profile = options.profiles[plan.representativeIndex];
+
+          if (!profile) {
+            continue;
+          }
+
+          recordGroupedTypeScriptExecution(options.metrics);
+          const resolved = resolveTypeScriptExport({
+            entry,
+            importAnalysis: options.importAnalysis,
+            profile,
+          });
+
+          for (const memberIndex of plan.memberIndexes) {
+            typeScriptResultsByOriginalIndex[memberIndex] = resolved;
+          }
+        }
+      } else {
+        for (const compiled of groups.compiledOriginals) {
+          recordGroupedTypeScriptExecution(options.metrics);
+          typeScriptResultsByOriginalIndex[compiled.originalIndex] =
+            resolveTypeScriptExport({
+              entry,
+              importAnalysis: options.importAnalysis,
+              profile: compiled.original,
+            });
+        }
+      }
+
+      for (const plan of groups.oxcGroups.values()) {
+        const profile = options.profiles[plan.representativeIndex];
+
+        if (!profile) {
+          continue;
+        }
+
         recordGroupedOxcExecution(options.metrics);
-        const rawOxcResolvedFileName = resolveOxcExport({
+        const resolved = resolveOxcExport({
           entry,
           importAnalysis: options.importAnalysis,
           profile,
         });
+
+        for (const memberIndex of plan.memberIndexes) {
+          oxcResultsByOriginalIndex[memberIndex] = resolved;
+        }
+      }
+
+      for (const compiled of groups.compiledOriginals) {
         recordOriginalResultExpansion(options.metrics);
+        const typeScriptResolvedFileName =
+          typeScriptResultsByOriginalIndex[compiled.originalIndex] ?? null;
+        const rawOxcResolvedFileName =
+          oxcResultsByOriginalIndex[compiled.originalIndex] ?? null;
         // Keep the raw runtime resolver result separate from the effective
         // value: pure type exports intentionally fall back to the TS result.
         const oxcResolvedFileName = getEffectiveOxcResolvedFileName({
@@ -879,7 +941,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
           typeScriptResolvedFileName,
         });
         const profileResolutions =
-          resolutionByProfilePath.get(profile.configPath) ?? new Map();
+          resolutionByProfilePath.get(compiled.originalConfigPath) ?? new Map();
 
         profileResolutions.set(entry.specifier, {
           hasTypeScriptStableEntry: Boolean(
@@ -892,27 +954,35 @@ export async function createWorkspaceExportsResolutionIndex(options: {
           subpath: entry.subpath,
           typeScriptResolvedFileName,
         });
-        resolutionByProfilePath.set(profile.configPath, profileResolutions);
+        resolutionByProfilePath.set(
+          compiled.originalConfigPath,
+          profileResolutions,
+        );
 
         if (typeScriptResolvedFileName) {
-          typeScriptResolvedPaths.push(typeScriptResolvedFileName);
+          hasTypeScriptResolution = true;
         }
 
         if (oxcResolvedFileName) {
-          oxcResolvedPaths.push(oxcResolvedFileName);
+          hasOxcResolution = true;
         }
       }
 
       addEntryProblems({
         config: options.config,
         entry,
-        oxcResolvedPaths,
+        hasOxcResolution,
+        hasTypeScriptResolution,
         problems,
         profiles: options.profiles,
-        typeScriptResolvedPaths,
       });
+      if (processedEntryCount % oxcResolverCacheEntryBatchSize === 0) {
+        options.importAnalysis.clearOxcResolverCaches?.();
+      }
     }
   }
+
+  options.importAnalysis.clearOxcResolverCaches?.();
 
   return {
     get: (profileConfigPath, specifier) =>
