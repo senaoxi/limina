@@ -1,12 +1,11 @@
 import {
   type CheckerProjectParseContext,
   normalizeExtensions,
-  resolveModuleNameWithCheckers,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
-import {
-  type ImportAnalysisMetricsRecorder,
-  resolveModuleNameWithOxc,
+import type {
+  ImportAnalysisContext,
+  ImportAnalysisMetricsRecorder,
 } from '#core/import-analysis/runner';
 import type {
   NamedWorkspacePackage,
@@ -433,20 +432,19 @@ function resolveTargetWithCheckerExtensions(options: {
 
 function resolveTypeScriptExport(options: {
   entry: PackageExportEntry;
-  metrics?: WorkspaceExportsMetricsRecorder;
+  importAnalysis: ImportAnalysisContext;
   profile: WorkspaceExportsResolutionProfile;
 }): string | null {
   const containingFile = path.join(
     options.entry.packageDirectory,
     'package.json',
   );
-  const resolved = resolveModuleNameWithCheckers({
-    compilerOptions: options.profile.options,
+  const resolved = options.importAnalysis.resolveTypeScriptImport(
+    options.entry.specifier,
     containingFile,
-    context: getProfileContext(options.profile),
-    metrics: options.metrics,
-    specifier: options.entry.specifier,
-  });
+    options.profile.options,
+    getProfileContext(options.profile),
+  )?.resolvedFileName;
 
   return (
     resolved ??
@@ -459,16 +457,15 @@ function resolveTypeScriptExport(options: {
 
 function resolveOxcExport(options: {
   entry: PackageExportEntry;
-  metrics?: WorkspaceExportsMetricsRecorder;
+  importAnalysis: ImportAnalysisContext;
   profile: WorkspaceExportsResolutionProfile;
 }): string | null {
-  return resolveModuleNameWithOxc({
-    compilerOptions: options.profile.options,
-    containingFile: path.join(options.entry.packageDirectory, 'package.json'),
-    context: getProfileContext(options.profile),
-    metrics: options.metrics,
-    specifier: options.entry.specifier,
-  });
+  return options.importAnalysis.resolveOxcImport(
+    options.entry.specifier,
+    path.join(options.entry.packageDirectory, 'package.json'),
+    options.profile.options,
+    getProfileContext(options.profile),
+  );
 }
 
 function createConservativeTypeScriptProfileIdentity(
@@ -510,24 +507,6 @@ function recordWorkspaceExportProfileMetrics(options: {
       .size,
     kind: 'conservative',
     name: 'workspace-export-oxc-semantic-profile-count',
-    provider: 'workspace-exports',
-  });
-}
-
-function recordWorkspaceExportModuleRequest(
-  metrics: WorkspaceExportsMetricsRecorder | undefined,
-  kind: 'oxc' | 'typescript',
-): void {
-  metrics?.record({
-    kind,
-    name: 'module-resolution-request',
-    provider: 'workspace-exports',
-  });
-  // Commit 1 records the absence of a shared outer index as a miss without
-  // changing either resolver's existing cache behavior.
-  metrics?.record({
-    kind,
-    name: 'module-resolution-index-miss',
     provider: 'workspace-exports',
   });
 }
@@ -779,6 +758,7 @@ function addEntryProblems(options: {
 
 export async function createWorkspaceExportsResolutionIndex(options: {
   config: ResolvedLiminaConfig;
+  importAnalysis: ImportAnalysisContext;
   metrics?: WorkspaceExportsMetricsRecorder;
   packages: WorkspacePackage[];
   profiles: WorkspaceExportsResolutionProfile[];
@@ -826,10 +806,9 @@ export async function createWorkspaceExportsResolutionIndex(options: {
           name: 'workspace-export-typescript-resolution',
           provider: 'workspace-exports',
         });
-        recordWorkspaceExportModuleRequest(options.metrics, 'typescript');
         const typeScriptResolvedFileName = resolveTypeScriptExport({
           entry,
-          metrics: options.metrics,
+          importAnalysis: options.importAnalysis,
           profile,
         });
         options.metrics?.record({
@@ -837,10 +816,9 @@ export async function createWorkspaceExportsResolutionIndex(options: {
           name: 'workspace-export-oxc-resolution',
           provider: 'workspace-exports',
         });
-        recordWorkspaceExportModuleRequest(options.metrics, 'oxc');
         const rawOxcResolvedFileName = resolveOxcExport({
           entry,
-          metrics: options.metrics,
+          importAnalysis: options.importAnalysis,
           profile,
         });
         // Keep the raw runtime resolver result separate from the effective

@@ -299,8 +299,10 @@ export async function collectDependencyGraph(
   const projects = checkerProjects.projects.map((project) =>
     filterProjectInfoToActivatedRegion(project, workspaceLookup),
   );
+  const importAnalysis = core.imports.context;
   const workspaceExports = await createWorkspaceExportsResolutionIndex({
     config,
+    importAnalysis,
     packages: workspacePackages,
     profiles: createWorkspaceExportsResolutionProfiles(projects),
   });
@@ -312,7 +314,6 @@ export async function collectDependencyGraph(
   }
 
   const fileOwnerLookup = createFileOwnerLookup(projects);
-  const importAnalysis = core.imports.context;
   const edgesByKey = new Map<string, DependencyGraphEdge>();
 
   for (const project of projects) {

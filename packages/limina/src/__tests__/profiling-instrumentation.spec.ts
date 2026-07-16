@@ -1,5 +1,8 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { createImportAnalysisContext } from '#core/import-analysis/runner';
+import {
+  createImportAnalysisContext,
+  type ImportResolveContextFields,
+} from '#core/import-analysis/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -112,19 +115,215 @@ describe('module resolution profiling instrumentation', () => {
       expect(metricCount(snapshot, 'module-resolution-request')).toBe(5);
       expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(5);
       expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(0);
-      expect(metricCount(snapshot, 'typescript-resolution')).toBe(2);
+      expect(metricCount(snapshot, 'typescript-resolution')).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
-      ).toBe(2);
+      ).toBe(1);
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
       ).toBe(0);
       expect(metricCount(snapshot, 'oxc-resolution')).toBe(2);
       expect(metricCount(snapshot, 'oxc-resolver-factory-create')).toBe(1);
       expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(1);
+
       expect(metricCount(snapshot, 'internal-import-resolution')).toBe(2);
       expect(metricCount(snapshot, 'import-resolution-cache-miss')).toBe(1);
       expect(metricCount(snapshot, 'import-resolution-cache-hit')).toBe(1);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('reuses one native TypeScript cache within a conservative resolver identity', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-ts-cache-metrics-')),
+    );
+
+    try {
+      const configPath = await writeText(
+        rootDir,
+        'tsconfig.json',
+        JSON.stringify({ compilerOptions: {} }),
+      );
+      const containingFile = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import './target';\n",
+      );
+      await writeText(
+        rootDir,
+        'src/target.ts',
+        'export const target = true;\n',
+      );
+      const metrics = createProfilingMetricsRecorder();
+      const context = createImportAnalysisContext({ metrics });
+      const compilerOptions: ts.CompilerOptions = {
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+      };
+      const resolverContext = {
+        checkerPresets: [],
+        configPath,
+        extensions: ['.ts'],
+        resolverConfigPath: configPath,
+      };
+
+      const first = context.resolveTypeScriptImport(
+        './target',
+        containingFile,
+        compilerOptions,
+        resolverContext,
+      );
+      const second = context.resolveTypeScriptImport(
+        './target',
+        containingFile,
+        compilerOptions,
+        resolverContext,
+      );
+
+      expect(second).toEqual(first);
+      const snapshot = metrics.snapshot();
+      expect(metricCount(snapshot, 'typescript-resolution')).toBe(2);
+      expect(
+        metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
+      ).toBe(1);
+      expect(
+        metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
+      ).toBe(1);
+      expect(metricCount(snapshot, 'module-resolution-request')).toBe(2);
+      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(2);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps config, compiler option, and extension cache identities separate', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-ts-cache-identity-')),
+    );
+
+    try {
+      const configPathA = await writeText(
+        rootDir,
+        'configs/a.json',
+        JSON.stringify({ compilerOptions: {} }),
+      );
+      const configPathB = await writeText(
+        rootDir,
+        'configs/b.json',
+        JSON.stringify({ compilerOptions: {} }),
+      );
+      const containingFile = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import './target';\n",
+      );
+      await writeText(
+        rootDir,
+        'src/target.ts',
+        'export const target = true;\n',
+      );
+      const metrics = createProfilingMetricsRecorder();
+      const context = createImportAnalysisContext({ metrics });
+      const baseOptions: ts.CompilerOptions = {
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+      };
+      const baseContext = {
+        checkerPresets: [],
+        configPath: configPathA,
+        extensions: ['.ts'],
+        resolverConfigPath: configPathA,
+      };
+      const requests: [ts.CompilerOptions, ImportResolveContextFields][] = [
+        [baseOptions, baseContext],
+        [
+          baseOptions,
+          {
+            ...baseContext,
+            configPath: configPathB,
+            resolverConfigPath: configPathB,
+          },
+        ],
+        [{ ...baseOptions, preserveSymlinks: true }, baseContext],
+        [baseOptions, { ...baseContext, extensions: ['.ts', '.vue'] }],
+        [baseOptions, baseContext],
+      ];
+
+      for (const [compilerOptions, resolverContext] of requests) {
+        expect(
+          context.resolveTypeScriptImport(
+            './target',
+            containingFile,
+            compilerOptions,
+            resolverContext,
+          )?.resolvedBy,
+        ).toBe('typescript');
+      }
+
+      const snapshot = metrics.snapshot();
+      expect(
+        metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
+      ).toBe(4);
+      expect(
+        metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
+      ).toBe(1);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('does not share native TypeScript caches across analysis generations', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-ts-cache-generation-')),
+    );
+
+    try {
+      const configPath = await writeText(
+        rootDir,
+        'tsconfig.json',
+        JSON.stringify({ compilerOptions: {} }),
+      );
+      const containingFile = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import './target';\n",
+      );
+      await writeText(
+        rootDir,
+        'src/target.ts',
+        'export const target = true;\n',
+      );
+      const metrics = createProfilingMetricsRecorder();
+      const compilerOptions: ts.CompilerOptions = {};
+      const resolverContext = {
+        checkerPresets: [],
+        configPath,
+        extensions: ['.ts'],
+        resolverConfigPath: configPath,
+      };
+
+      const first = createImportAnalysisContext({ metrics });
+      const second = createImportAnalysisContext({ metrics });
+      const firstResult = first.resolveTypeScriptImport(
+        './target',
+        containingFile,
+        compilerOptions,
+        resolverContext,
+      );
+      const secondResult = second.resolveTypeScriptImport(
+        './target',
+        containingFile,
+        compilerOptions,
+        resolverContext,
+      );
+
+      expect(secondResult).toEqual(firstResult);
+      const snapshot = metrics.snapshot();
+      expect(
+        metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
+      ).toBe(2);
+      expect(
+        metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
+      ).toBe(0);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -139,6 +338,11 @@ describe('module resolution profiling instrumentation', () => {
       const configPath = await writeText(
         rootDir,
         'tsconfig.json',
+        JSON.stringify({ compilerOptions: {} }),
+      );
+      const alternateConfigPath = await writeText(
+        rootDir,
+        'tsconfig.alternate.json',
         JSON.stringify({ compilerOptions: {} }),
       );
       const liminaConfigPath = await writeText(
@@ -194,12 +398,14 @@ describe('module resolution profiling instrumentation', () => {
       }));
       const baselineIndex = await createWorkspaceExportsResolutionIndex({
         config,
+        importAnalysis: createImportAnalysisContext(),
         packages: [workspacePackage],
         profiles,
       });
       const metrics = createProfilingMetricsRecorder();
       const index = await createWorkspaceExportsResolutionIndex({
         config,
+        importAnalysis: createImportAnalysisContext({ metrics }),
         metrics,
         packages: [workspacePackage],
         profiles,
@@ -237,8 +443,41 @@ describe('module resolution profiling instrumentation', () => {
         metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
       ).toBe(2);
       expect(metricCount(snapshot, 'oxc-resolution')).toBe(2);
-      expect(metricCount(snapshot, 'oxc-resolver-factory-create')).toBe(2);
-      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(0);
+      expect(metricCount(snapshot, 'oxc-resolver-factory-create')).toBe(1);
+      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(1);
+
+      const distinctMetrics = createProfilingMetricsRecorder();
+      const distinctProfiles = [
+        profiles[0],
+        {
+          ...profiles[1],
+          resolverConfigPath: alternateConfigPath,
+        },
+      ];
+      const distinctIndex = await createWorkspaceExportsResolutionIndex({
+        config,
+        importAnalysis: createImportAnalysisContext({
+          metrics: distinctMetrics,
+        }),
+        metrics: distinctMetrics,
+        packages: [workspacePackage],
+        profiles: distinctProfiles,
+      });
+
+      expect(distinctIndex.problems).toEqual(baselineIndex.problems);
+      for (const profile of distinctProfiles) {
+        expect(distinctIndex.get(profile.configPath, manifest.name)).toEqual(
+          baselineIndex.get(profile.configPath, manifest.name),
+        );
+      }
+      const distinctSnapshot = distinctMetrics.snapshot();
+      expect(
+        metricCount(distinctSnapshot, 'workspace-export-oxc-resolution'),
+      ).toBe(2);
+      expect(metricCount(distinctSnapshot, 'oxc-resolver-factory-create')).toBe(
+        2,
+      );
+      expect(metricCount(distinctSnapshot, 'oxc-resolver-factory-hit')).toBe(0);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

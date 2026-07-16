@@ -1,12 +1,16 @@
 import {
   clearCheckerProjectConfigCache,
   parseCheckerProjectConfigForContext,
+  resolveModuleNameWithCheckersDetailed,
 } from '#checkers';
+import type { CheckerPreset } from '#config/runner';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { toPortableRelativePaths } from './helpers/path';
+import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { toPortablePath, toPortableRelativePaths } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -35,6 +39,54 @@ async function createFixture(files: Record<string, string>): Promise<{
 
 function tsconfig(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+async function assertCheckerModuleResolution(options: {
+  expectedRawCalls: number;
+  expectedResolved: boolean;
+  presets: CheckerPreset[];
+}): Promise<void> {
+  const fixture = await createFixture({
+    'src/index.ts': "import './target';\n",
+    'src/target.ts': 'export const target = true;\n',
+  });
+
+  try {
+    const metrics = createProfilingMetricsRecorder();
+    const resolved = resolveModuleNameWithCheckersDetailed({
+      compilerOptions: {
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+      },
+      containingFile: path.join(fixture.rootDir, 'src/index.ts'),
+      context: {
+        checkerPresets: options.presets,
+        extensions: ['.ts'],
+      },
+      metrics,
+      specifier: options.expectedResolved ? './target' : './missing',
+    });
+
+    expect(
+      metrics
+        .snapshot()
+        .filter((metric) => metric.name === 'typescript-resolution')
+        .reduce((count, metric) => count + metric.count, 0),
+    ).toBe(options.expectedRawCalls);
+
+    if (options.expectedResolved) {
+      expect(resolved).toEqual({
+        isExternalLibraryImport: false,
+        resolvedBy: 'typescript',
+        resolvedFileName: toPortablePath(
+          path.join(fixture.rootDir, 'src/target.ts'),
+        ),
+      });
+    } else {
+      expect(resolved).toBeNull();
+    }
+  } finally {
+    await fixture.cleanup();
+  }
 }
 
 beforeEach(() => {
@@ -140,5 +192,47 @@ describe('checker project config parsing', () => {
     } finally {
       await fixture.cleanup();
     }
+  });
+});
+
+describe('checker module resolution', () => {
+  it('runs one raw TypeScript resolution for multiple valid presets on success', async () => {
+    await assertCheckerModuleResolution({
+      expectedRawCalls: 1,
+      expectedResolved: true,
+      presets: ['tsc', 'tsgo'],
+    });
+  });
+
+  it('runs one raw TypeScript resolution for multiple valid presets on failure', async () => {
+    await assertCheckerModuleResolution({
+      expectedRawCalls: 1,
+      expectedResolved: false,
+      presets: ['tsc', 'tsgo'],
+    });
+  });
+
+  it('keeps mixed valid and invalid preset behavior with one raw call', async () => {
+    await assertCheckerModuleResolution({
+      expectedRawCalls: 1,
+      expectedResolved: true,
+      presets: ['unsupported' as CheckerPreset, 'tsgo'],
+    });
+  });
+
+  it('does not resolve when every preset is invalid', async () => {
+    await assertCheckerModuleResolution({
+      expectedRawCalls: 0,
+      expectedResolved: false,
+      presets: ['unsupported' as CheckerPreset],
+    });
+  });
+
+  it('keeps the default tsc behavior for an empty preset list', async () => {
+    await assertCheckerModuleResolution({
+      expectedRawCalls: 1,
+      expectedResolved: true,
+      presets: [],
+    });
   });
 });
