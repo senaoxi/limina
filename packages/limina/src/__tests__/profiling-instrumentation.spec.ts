@@ -428,10 +428,10 @@ describe('module resolution profiling instrumentation', () => {
           snapshot,
           'workspace-export-typescript-semantic-profile-count',
         ),
-      ).toBe(2);
+      ).toBe(1);
       expect(
         metricCount(snapshot, 'workspace-export-oxc-semantic-profile-count'),
-      ).toBe(2);
+      ).toBe(1);
       expect(metricCount(snapshot, 'workspace-export-resolution-request')).toBe(
         2,
       );
@@ -439,6 +439,15 @@ describe('module resolution profiling instrumentation', () => {
         metricCount(snapshot, 'workspace-export-typescript-resolution'),
       ).toBe(2);
       expect(metricCount(snapshot, 'workspace-export-oxc-resolution')).toBe(2);
+      expect(
+        metricCount(snapshot, 'workspace-export-grouped-typescript-execution'),
+      ).toBe(2);
+      expect(
+        metricCount(snapshot, 'workspace-export-grouped-oxc-execution'),
+      ).toBe(2);
+      expect(metricCount(snapshot, 'workspace-export-result-expansion')).toBe(
+        2,
+      );
       expect(metricCount(snapshot, 'module-resolution-request')).toBe(4);
       expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(4);
       expect(metricCount(snapshot, 'typescript-resolution')).toBe(2);
@@ -476,6 +485,15 @@ describe('module resolution profiling instrumentation', () => {
       const distinctSnapshot = distinctMetrics.snapshot();
       expect(
         metricCount(distinctSnapshot, 'workspace-export-oxc-resolution'),
+      ).toBe(2);
+      expect(
+        metricCount(
+          distinctSnapshot,
+          'workspace-export-grouped-typescript-execution',
+        ),
+      ).toBe(2);
+      expect(
+        metricCount(distinctSnapshot, 'workspace-export-grouped-oxc-execution'),
       ).toBe(2);
       expect(metricCount(distinctSnapshot, 'oxc-resolver-factory-create')).toBe(
         2,
