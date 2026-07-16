@@ -555,9 +555,9 @@ describe('workspace-export grouped execution', () => {
         profiles,
       });
 
-      expect(typeScriptResolver).toHaveBeenCalledTimes(2);
-      expect(oxcResolver).toHaveBeenCalledTimes(2);
-      expect(clearOxcResolverCaches).not.toHaveBeenCalled();
+      expect(typeScriptResolver).toHaveBeenCalledTimes(1);
+      expect(oxcResolver).toHaveBeenCalledTimes(1);
+      expect(clearOxcResolverCaches).toHaveBeenCalledTimes(1);
       expect(metricEvents).toEqual([
         'workspace-export-profile-count',
         'workspace-export-typescript-semantic-profile-count',
@@ -568,8 +568,6 @@ describe('workspace-export grouped execution', () => {
         'workspace-export-typescript-resolution',
         'workspace-export-oxc-resolution',
         'workspace-export-result-expansion',
-        'workspace-export-grouped-typescript-execution',
-        'workspace-export-grouped-oxc-execution',
         'workspace-export-resolution-request',
         'workspace-export-typescript-resolution',
         'workspace-export-oxc-resolution',
@@ -637,7 +635,7 @@ describe('workspace-export grouped execution', () => {
       });
 
       expect(typeScriptResolver).toHaveBeenCalledTimes(2);
-      expect(oxcResolver).toHaveBeenCalledTimes(2);
+      expect(oxcResolver).toHaveBeenCalledTimes(1);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

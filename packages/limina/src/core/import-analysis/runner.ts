@@ -36,6 +36,7 @@ export interface ModuleResolutionPair {
 }
 
 export interface ImportAnalysisContext {
+  clearOxcResolverCaches?: () => void;
   collectImportsFromFile: (filePath: string, rootDir: string) => ImportRecord[];
   resolveInternalImport: (
     specifier: string,
@@ -1833,7 +1834,14 @@ export function createImportAnalysisContext(
     return resolved;
   };
 
+  const clearOxcResolverCaches = (): void => {
+    for (const resolver of caches.resolverCache.values()) {
+      resolver.clearCache();
+    }
+  };
+
   return {
+    clearOxcResolverCaches,
     collectImportsFromFile,
     resolveInternalImport,
     resolveModulePair,
