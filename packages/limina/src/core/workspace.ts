@@ -37,6 +37,7 @@ export interface WorkspaceCoreMetricsRecorder {
       | 'canonical-path'
       | 'provider-cache-hit'
       | 'provider-cache-miss'
+      | 'workspace-directory-index-entry'
       | 'workspace-importer-ancestor-visit'
       | 'workspace-negative-lookup'
       | 'workspace-path-ancestor-visit'

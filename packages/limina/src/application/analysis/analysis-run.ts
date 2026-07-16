@@ -33,6 +33,7 @@ export type AnalysisMetricName =
   | 'typescript-module-resolution-cache-hit'
   | 'typescript-module-resolution-cache-miss'
   | 'typescript-resolution'
+  | 'workspace-directory-index-entry'
   | 'workspace-export-oxc-resolution'
   | 'workspace-export-oxc-semantic-profile-count'
   | 'workspace-export-profile-count'

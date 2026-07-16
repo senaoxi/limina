@@ -14,6 +14,12 @@ describe('normalizeAbsolutePathIdentity', () => {
     );
     expect(normalizeAbsolutePathIdentity('C:\\')).toBe('C:/');
   });
+
+  it('normalizes UNC separators without changing path casing', () => {
+    expect(normalizeAbsolutePathIdentity('\\\\server\\share\\Repo\\')).toBe(
+      '//server/share/Repo',
+    );
+  });
 });
 
 describe('isPathInsideDirectory', () => {
@@ -47,6 +53,21 @@ describe('isPathInsideDirectory', () => {
     ).toBe(false);
     expect(
       isPathInsideDirectory('D:/repo/project/file.ts', 'C:/repo/project'),
+    ).toBe(false);
+  });
+
+  it('handles UNC shares segment-by-segment without filesystem access', () => {
+    expect(
+      isPathInsideDirectory(
+        '//server/share/repo/packages/app',
+        '//server/share/repo',
+      ),
+    ).toBe(true);
+    expect(
+      isPathInsideDirectory(
+        '//server/share-other/repo/packages/app',
+        '//server/share/repo',
+      ),
     ).toBe(false);
   });
 });
