@@ -18,6 +18,7 @@ import type {
 } from '../packages/owners';
 import type {
   WorkspaceIndexMetricsRecorder,
+  WorkspacePathClassification,
   WorkspaceRegionPathIndex,
 } from './validated-context';
 
@@ -30,9 +31,9 @@ export interface WorkspaceLookupIndexOptions {
   metrics?: WorkspaceIndexMetricsRecorder;
 }
 
-interface NormalizedImporter {
-  directory: string;
+interface IndexedImporter {
   importer: ImporterInfo;
+  originalOrdinal: number;
 }
 
 interface NearestPackageLookupOptions {
@@ -47,7 +48,7 @@ interface PackageLookupBounds {
 export class WorkspaceLookupIndex {
   readonly rootDir: string;
 
-  readonly #importers: NormalizedImporter[];
+  readonly #importerByDirectory = new Map<string, IndexedImporter>();
   readonly #metrics: WorkspaceIndexMetricsRecorder | undefined;
   readonly #namedPackagesByName = new Map<string, NamedWorkspacePackage>();
   readonly #ownersByDirectory: Map<string, PackageOwner>;
@@ -79,12 +80,22 @@ export class WorkspaceLookupIndex {
     this.rootDir = normalizeAbsolutePath(options.rootDir);
     this.#metrics = options.metrics;
     this.#pathIndex = options.pathIndex;
-    this.#importers = options.importers
-      .filter((importer) => this.#isInsideActivatedRegion(importer.directory))
-      .map((importer) => ({
-        directory: normalizeAbsolutePath(importer.directory),
-        importer,
-      }));
+    for (const [originalOrdinal, importer] of options.importers.entries()) {
+      if (!this.#isInsideActivatedRegion(importer.directory)) continue;
+      const directory = normalizeAbsolutePath(importer.directory);
+      if (!this.#importerByDirectory.has(directory)) {
+        this.#importerByDirectory.set(directory, {
+          importer,
+          originalOrdinal,
+        });
+      }
+    }
+    this.#metrics?.record({
+      count: this.#importerByDirectory.size,
+      kind: 'importer',
+      name: 'workspace-directory-index-entry',
+      provider: 'workspace-lookup-index',
+    });
     this.#ownersByDirectory = createDirectoryMap(
       options.owners.filter((owner) =>
         this.#isInsideActivatedRegion(owner.directory),
@@ -120,9 +131,12 @@ export class WorkspaceLookupIndex {
       return cached;
     }
 
-    const authoritativePackage =
-      this.#pathIndex.findPackageForPath(normalizedFilePath);
-    const workspacePackage = this.#isOutsideGovernedRegion(normalizedFilePath)
+    const classification = this.#pathIndex.classifyPath(normalizedFilePath);
+    const authoritativePackage = classification.package;
+    const workspacePackage = this.#isOutsideGovernedRegion(
+      normalizedFilePath,
+      classification,
+    )
       ? null
       : authoritativePackage
         ? (this.#packagesByDirectory.get(
@@ -146,9 +160,12 @@ export class WorkspaceLookupIndex {
       return cached;
     }
 
-    const authoritativePackage =
-      this.#pathIndex.findPackageForPath(normalizedFilePath);
-    const owner = this.#isOutsideGovernedRegion(normalizedFilePath)
+    const classification = this.#pathIndex.classifyPath(normalizedFilePath);
+    const authoritativePackage = classification.package;
+    const owner = this.#isOutsideGovernedRegion(
+      normalizedFilePath,
+      classification,
+    )
       ? null
       : authoritativePackage
         ? (this.#ownersByDirectory.get(
@@ -169,19 +186,34 @@ export class WorkspaceLookupIndex {
       return cached;
     }
 
-    const importer = this.#isOutsideGovernedRegion(normalizedFilePath)
-      ? null
-      : (this.#importers.find((candidate) => {
-          this.#metrics?.record({
-            kind: 'importer',
-            name: 'workspace-importer-ancestor-visit',
-            provider: 'workspace-lookup-index',
-          });
-          return isPathInsideNormalizedDirectory(
-            normalizedFilePath,
-            candidate.directory,
-          );
-        })?.importer ?? null);
+    let importer: ImporterInfo | null = null;
+    if (!this.#isOutsideGovernedRegion(normalizedFilePath)) {
+      let currentDirectory = normalizedFilePath;
+      let selectedImporter: IndexedImporter | undefined;
+      while (true) {
+        // One visit is one directory-index ancestor node, not one importer
+        // predicate evaluation.
+        this.#metrics?.record({
+          kind: 'importer',
+          name: 'workspace-importer-ancestor-visit',
+          provider: 'workspace-lookup-index',
+        });
+        const candidate = this.#importerByDirectory.get(currentDirectory);
+        if (
+          candidate &&
+          (!selectedImporter ||
+            candidate.originalOrdinal < selectedImporter.originalOrdinal)
+        ) {
+          selectedImporter = candidate;
+          if (candidate.originalOrdinal === 0) break;
+        }
+
+        const parentDirectory = path.dirname(currentDirectory);
+        if (parentDirectory === currentDirectory) break;
+        currentDirectory = parentDirectory;
+      }
+      importer = selectedImporter?.importer ?? null;
+    }
 
     this.#importerByFilePath.set(normalizedFilePath, importer);
     this.#recordLookup('miss', 'importer', importer);
@@ -391,7 +423,7 @@ export class WorkspaceLookupIndex {
       };
     }
 
-    const activatedPackage = this.#pathIndex.findPackageForPath(directory);
+    const activatedPackage = this.#pathIndex.classifyPath(directory).package;
 
     if (activatedPackage) {
       return {
@@ -446,17 +478,20 @@ export class WorkspaceLookupIndex {
   }
 
   #isInsideActivatedRegion(filePath: string): boolean {
-    return Boolean(this.#pathIndex.findPackageForPath(filePath));
+    return Boolean(this.#pathIndex.classifyPath(filePath).package);
   }
 
   #isInsideNodeModules(filePath: string): boolean {
     return normalizeAbsolutePath(filePath).split('/').includes('node_modules');
   }
 
-  #isOutsideGovernedRegion(filePath: string): boolean {
+  #isOutsideGovernedRegion(
+    filePath: string,
+    classification?: WorkspacePathClassification,
+  ): boolean {
     return (
       this.#isInsideNodeModules(filePath) ||
-      !this.#pathIndex.findPackageForPath(filePath)
+      !(classification ?? this.#pathIndex.classifyPath(filePath)).package
     );
   }
 }
@@ -540,20 +575,6 @@ function isPackageInfoInsideNodeModules(
   return normalizeAbsolutePath(packageInfo.directory)
     .split('/')
     .includes('node_modules');
-}
-
-function isPathInsideNormalizedDirectory(
-  normalizedFilePath: string,
-  normalizedDirectoryPath: string,
-): boolean {
-  const directoryPrefix = normalizedDirectoryPath.endsWith('/')
-    ? normalizedDirectoryPath
-    : `${normalizedDirectoryPath}/`;
-
-  return (
-    normalizedFilePath === normalizedDirectoryPath ||
-    normalizedFilePath.startsWith(directoryPrefix)
-  );
 }
 
 function setCachedPackageInfo(

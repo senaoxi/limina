@@ -169,7 +169,7 @@ describe('WorkspaceLookupIndex', () => {
       expect(
         metricCount('workspace-negative-lookup', 'package'),
       ).toBeGreaterThan(0);
-      expect(metricCount('workspace-importer-ancestor-visit')).toBe(1);
+      expect(metricCount('workspace-importer-ancestor-visit')).toBe(3);
     } finally {
       await fixture.cleanup();
     }

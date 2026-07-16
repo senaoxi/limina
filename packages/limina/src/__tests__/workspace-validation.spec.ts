@@ -183,27 +183,19 @@ describe('validated workspace context', () => {
       expect(metricCount('canonical-path')).toBe(
         metricCount('canonical-path-cache-miss'),
       );
-      expect(metricCount('canonical-path-cache-hit')).toBeGreaterThan(0);
+      expect(metricCount('canonical-path-cache-hit')).toBe(0);
       expect(
-        metricCount('provider-cache-hit', 'region-package'),
+        metricCount('provider-cache-hit', 'package-boundary'),
       ).toBeGreaterThan(0);
-      expect(
-        metricCount('provider-cache-hit', 'region-boundary'),
-      ).toBeGreaterThan(0);
+      expect(metricCount('provider-cache-miss', 'package-boundary')).toBe(2);
       expect(metricCount('workspace-negative-lookup')).toBeGreaterThan(0);
       expect(
-        metricCount('workspace-path-classification-miss', 'region-package'),
+        metricCount('workspace-path-classification-miss', 'package-boundary'),
       ).toBe(2);
       expect(
-        metricCount('workspace-path-classification-miss', 'region-boundary'),
-      ).toBe(1);
-      expect(
-        metricCount('workspace-path-classification-hit', 'region-package'),
-      ).toBe(2);
-      expect(
-        metricCount('workspace-path-classification-hit', 'region-boundary'),
-      ).toBe(1);
-      expect(metricCount('workspace-path-ancestor-visit')).toBe(3);
+        metricCount('workspace-path-classification-hit', 'package-boundary'),
+      ).toBe(4);
+      expect(metricCount('workspace-path-ancestor-visit')).toBeGreaterThan(2);
     } finally {
       await fixture.cleanup();
     }
