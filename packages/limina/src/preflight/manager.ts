@@ -154,6 +154,10 @@ export class LiminaPreflightManager {
     );
   }
 
+  get profilingMetrics(): AnalysisMetricsRecorder | undefined {
+    return this.#profilingMetrics;
+  }
+
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
     if (!this.#generatedGraphPromise) {
       const providers = this.providers;

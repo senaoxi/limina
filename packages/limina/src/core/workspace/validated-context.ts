@@ -77,7 +77,11 @@ export interface WorkspaceIndexMetricsRecorder {
       | 'canonical-path'
       | 'provider-cache-hit'
       | 'provider-cache-miss'
-      | 'workspace-negative-lookup';
+      | 'workspace-importer-ancestor-visit'
+      | 'workspace-negative-lookup'
+      | 'workspace-path-ancestor-visit'
+      | 'workspace-path-classification-hit'
+      | 'workspace-path-classification-miss';
     readonly provider?: string;
   }): void;
 }
@@ -1064,9 +1068,14 @@ export class WorkspaceRegionPathIndex {
     }
 
     const canonicalPath = this.#canonicalProjectedPath(normalizedFilePath);
-    const identity = this.#identities.find((candidate) =>
-      isInsideOrEqual(candidate.canonicalDirectory, canonicalPath),
-    );
+    const identity = this.#identities.find((candidate) => {
+      this.#metrics?.record({
+        kind: 'package-identity',
+        name: 'workspace-path-ancestor-visit',
+        provider: 'workspace-path-index',
+      });
+      return isInsideOrEqual(candidate.canonicalDirectory, canonicalPath);
+    });
     if (!identity) {
       this.#packageByPath.set(normalizedFilePath, null);
       this.#recordLookup('miss', 'region-package', null);
@@ -1093,9 +1102,14 @@ export class WorkspaceRegionPathIndex {
     }
 
     const canonicalPath = this.#canonicalProjectedPath(normalizedFilePath);
-    const identity = this.#identities.find((candidate) =>
-      isInsideOrEqual(candidate.canonicalDirectory, canonicalPath),
-    );
+    const identity = this.#identities.find((candidate) => {
+      this.#metrics?.record({
+        kind: 'package-identity',
+        name: 'workspace-path-ancestor-visit',
+        provider: 'workspace-path-index',
+      });
+      return isInsideOrEqual(candidate.canonicalDirectory, canonicalPath);
+    });
     const boundary = identity
       ? ((this.#boundariesByOwner.get(identity.canonicalDirectory) ?? [])
           .filter(({ canonicalRootDir }) =>
@@ -1143,6 +1157,14 @@ export class WorkspaceRegionPathIndex {
   }
 
   #recordLookup(state: 'hit' | 'miss', kind: string, value: unknown): void {
+    this.#metrics?.record({
+      kind,
+      name:
+        state === 'hit'
+          ? 'workspace-path-classification-hit'
+          : 'workspace-path-classification-miss',
+      provider: 'workspace-path-index',
+    });
     this.#metrics?.record({
       kind,
       name: state === 'hit' ? 'provider-cache-hit' : 'provider-cache-miss',

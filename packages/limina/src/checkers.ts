@@ -138,10 +138,23 @@ export interface CheckerProjectParseContext {
   extensions: string[];
 }
 
+export interface CheckerModuleResolutionMetricsRecorder {
+  record(measurement: {
+    readonly count?: number;
+    readonly kind?: string;
+    readonly name:
+      | 'typescript-module-resolution-cache-hit'
+      | 'typescript-module-resolution-cache-miss'
+      | 'typescript-resolution';
+    readonly provider?: string;
+  }): void;
+}
+
 export interface CheckerModuleResolveOptions {
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
   extensions: string[];
+  metrics?: CheckerModuleResolutionMetricsRecorder;
   specifier: string;
 }
 
@@ -620,6 +633,18 @@ function resolveTypeScriptModuleName(
 function resolveTypeScriptModuleNameDetailed(
   options: CheckerModuleResolveOptions,
 ): ResolvedCheckerModuleName | null {
+  options.metrics?.record({
+    kind: 'request',
+    name: 'typescript-resolution',
+    provider: 'module-resolution',
+  });
+  // No ts.ModuleResolutionCache is passed in Commit 1, so every raw call is
+  // a native-cache miss. Keep this distinct from the outer resolution index.
+  options.metrics?.record({
+    kind: 'module-resolution',
+    name: 'typescript-module-resolution-cache-miss',
+    provider: 'typescript',
+  });
   const resolved = ts.resolveModuleName(
     options.specifier,
     options.containingFile,
@@ -920,6 +945,7 @@ export function resolveModuleNameWithCheckers(options: {
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
   context: CheckerProjectParseContext;
+  metrics?: CheckerModuleResolutionMetricsRecorder;
   specifier: string;
 }): string | null {
   return (
@@ -931,6 +957,7 @@ export function resolveModuleNameWithCheckersDetailed(options: {
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
   context: CheckerProjectParseContext;
+  metrics?: CheckerModuleResolutionMetricsRecorder;
   specifier: string;
 }): ResolvedCheckerModuleName | null {
   const checkerPresets =
@@ -949,6 +976,7 @@ export function resolveModuleNameWithCheckersDetailed(options: {
       compilerOptions: options.compilerOptions,
       containingFile: options.containingFile,
       extensions: options.context.extensions,
+      metrics: options.metrics,
       specifier: options.specifier,
     });
 

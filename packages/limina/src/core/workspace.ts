@@ -37,7 +37,11 @@ export interface WorkspaceCoreMetricsRecorder {
       | 'canonical-path'
       | 'provider-cache-hit'
       | 'provider-cache-miss'
-      | 'workspace-negative-lookup';
+      | 'workspace-importer-ancestor-visit'
+      | 'workspace-negative-lookup'
+      | 'workspace-path-ancestor-visit'
+      | 'workspace-path-classification-hit'
+      | 'workspace-path-classification-miss';
     readonly provider?: string;
   }): void;
 }
