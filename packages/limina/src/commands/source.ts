@@ -8,9 +8,6 @@ import {
   type RunSourceCheckOptions,
 } from '../source-check/runner';
 import {
-  appendCheckIssues,
-  appendTaskFailureIssueIfMissing,
-  completeCheckIssueSnapshot,
   createSourceCheckIssue,
   createTaskFailureIssue,
   writeNotRunSourceIssueSnapshot,
@@ -63,13 +60,6 @@ export async function runSourceCheck(
     });
 
     if (passed) {
-      if (!options.deferSnapshot) {
-        await completeCheckIssueSnapshot({
-          artifactNamespace: preflight.artifactNamespace,
-          rootDir: config.rootDir,
-        });
-      }
-
       if (logSuccess) {
         SourceLogger.success('source check finished', elapsed());
       }
@@ -99,20 +89,6 @@ export async function runSourceCheck(
 
       if (options.deferSnapshot) {
         options.issues?.push(...issues);
-      } else {
-        await appendTaskFailureIssueIfMissing({
-          artifactNamespace: preflight.artifactNamespace,
-          issue: createTaskFailureIssue({
-            code: 'LIMINA_SOURCE_CHECK_FAILED',
-            filePath: config.configPath,
-            fix: 'Inspect the source check report above, then rerun `limina source check` or `limina check`.',
-            reason: 'Source check finished without structured issue details.',
-            rootDir: config.rootDir,
-            task: 'source:check',
-            title: 'Source check failed',
-          }),
-          rootDir: config.rootDir,
-        });
       }
       if (!options.report?.defer && !options.flow) {
         SourceLogger.error('source check failed', elapsed());
@@ -140,12 +116,6 @@ export async function runSourceCheck(
 
     if (options.deferSnapshot) {
       options.issues?.push(...issues);
-    } else {
-      await appendCheckIssues({
-        artifactNamespace: preflight.artifactNamespace,
-        issues,
-        rootDir: config.rootDir,
-      });
     }
     if (!options.report?.defer && !(error instanceof LiminaStructuredError)) {
       SourceLogger.error(

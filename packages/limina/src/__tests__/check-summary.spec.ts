@@ -264,7 +264,7 @@ describe('check run summary reporting', () => {
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
       rootDir: '/repo',
-      snapshot,
+      run: snapshot.run!,
     });
     const plainOutput = stripAnsi(output);
 
@@ -321,6 +321,47 @@ describe('check run summary reporting', () => {
       'By rule: limina check --issues --rule LIMINA_SOURCE_PACKAGE_IMPORT_UNAUTHORIZED',
     );
     expect(plainOutput).toContain('--verbose');
+  });
+
+  it('uses the stable issue task in next commands for custom commands', () => {
+    const label = 'node -e "process.exit(7)" --label "two words"';
+    const issue = createLiminaCheckIssue({
+      code: 'LIMINA_COMMAND_FAILED',
+      reason: 'custom command failed',
+      rootDir: '/repo',
+      task: 'command',
+      title: 'Pipeline command failed',
+    });
+    const output = stripAnsi(
+      formatCheckRunSummaryHuman({
+        issues: [issue],
+        rootDir: '/repo',
+        run: {
+          blockedBy: { id: 'custom-command', label },
+          command: 'limina check custom',
+          completedAt: '2026-07-17T00:00:01.000Z',
+          configPath: '/repo/limina.config.mjs',
+          createdAt: '2026-07-17T00:00:00.000Z',
+          result: 'failed',
+          tasks: [
+            {
+              completedAt: '2026-07-17T00:00:01.000Z',
+              generation: 0,
+              id: 'custom-command',
+              issueTask: 'command',
+              kind: 'command',
+              label,
+              state: 'failed',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(output).toContain(`Blocked at: ${label}`);
+    expect(output).toContain(label);
+    expect(output).toContain('limina check --issues --task command --verbose');
+    expect(output).not.toContain(`--task ${label}`);
   });
 
   it('sums child check counts for task rows and abbreviates large values', () => {
@@ -385,7 +426,7 @@ describe('check run summary reporting', () => {
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
       rootDir: '/repo',
-      snapshot,
+      run: snapshot.run!,
     });
     const plainOutput = stripAnsi(output);
 
@@ -500,7 +541,7 @@ describe('check run summary reporting', () => {
     const output = formatCheckRunSummaryHuman({
       issues,
       rootDir: '/repo',
-      snapshot,
+      run: snapshot.run!,
     });
     const checkLines = stripAnsi(output)
       .split('\n')
@@ -574,7 +615,7 @@ describe('check run summary reporting', () => {
     const output = formatCheckRunSummaryHuman({
       issues: snapshot.issues,
       rootDir: '/repo',
-      snapshot,
+      run: snapshot.run!,
     });
     const plainOutput = stripAnsi(output);
 

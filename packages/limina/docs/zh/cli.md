@@ -180,13 +180,18 @@ checker:typecheck
 | `--verbose`            | 布尔值                    | 输出摘要         | `limina check --verbose`                                      | 只影响报告详细程度                         |
 | `--rule <code>`        | 可重复字符串              | 不按规则过滤     | `limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING` | 作为问题查询时需要配合 `--issues`          |
 | `--file <path>`        | 可重复路径                | 不按文件过滤     | `limina check --issues --file packages/a/src/index.ts`        | 匹配精确文件路径                           |
-| `--scope <glob>`       | 可重复 `glob`             | 不按路径范围过滤 | `limina check --issues --scope 'packages/a/**'`               | 用于问题快照过滤                           |
+| `--scope <glob>`       | 可重复路径或 `glob`       | 不按路径范围过滤 | `limina check --issues --scope 'packages/a/**'`               | 只匹配带路径的问题候选                     |
 | `--task <name>`        | 可重复字符串              | 不按任务过滤     | `limina check --issues --task source:check`                   | 必须配合 `--issues`                        |
 | `--checker <name>`     | 可重复字符串              | 不按检查器过滤   | `limina check --issues --checker vue`                         | 这里只用于问题快照过滤，不是构建检查器选择 |
-| `--issues`             | 布尔值                    | 重新运行检查     | `limina check --issues`                                       | 读取最近一次检查快照；不能带流水线名       |
+| `--issues`             | 布尔值                    | 运行检查         | `limina check --issues`                                       | 读取最近一次已完成检查；不能带流水线名     |
+| `--invocation <uuid>`  | UUID                      | 读取最近检查     | `limina check --issues --invocation <uuid>`                   | 读取一条不可变的 standalone 失败记录       |
 | `--format <format>`    | `human`、`json`、`ndjson` | `human`          | `limina check --issues --format json`                         | 必须配合 `--issues`                        |
 
-`--issues` 不会重新执行检查。它读取上一次检查写入的快照，用于定位失败任务、规则、包、文件或检查器。工作区验证失败也可以记录：受信任的 `.limina` snapshot namespace 会在验证前建立，因此结构错误仍可出现在 `workspace:validate` 任务下。第一次查询前需要先运行 `limina check`，并让检查至少进入可记录状态。
+`--issues` 不会重新执行检查。不带 `--invocation` 时，它读取最近一次进入终态的 `limina check` 结果，用于定位失败任务、规则、包、文件或检查器。正在运行或被中断的检查不会替换上一次已完成结果，standalone 命令也不会替换它。工作区验证失败同样可以记录：受信任的 `.limina` snapshot namespace 会在验证前建立，因此结构错误仍可出现在 `workspace:validate` 任务下。第一次使用默认问题清单前，需要让 `limina check` 至少完整结束一次。
+
+会产生问题的 standalone 命令失败时，会打印 standalone invocation ID 和可直接执行的 `limina check --issues --invocation <uuid>` 查询。每次 invocation 都独立保存在 `.limina/check/invocations/` 下。若原命令显式使用了 `--config`，打印出的查询会携带其 canonical absolute path，因此可以从其他工作目录查询同一条记录。问题查询只定位工作区，不会导入或验证 Limina 配置。
+
+`--file` 做精确匹配，`--scope` 接受目录或 `glob`。两者都接受工作区相对路径、`./` 路径、绝对路径以及两种斜杠形式。它们只匹配问题文件、包 manifest 等真正带路径的候选；配置 field scope 等 diagnostic label 不会被当作路径。同一过滤项重复传入时采用 OR 语义。
 
 check snapshot 使用 schema version 7，读取器也只接受 version 7。
 
@@ -198,6 +203,8 @@ pnpm exec limina check --issues --package --help
 pnpm exec limina check --issues --checker --help
 pnpm exec limina check --issues --rule --help
 ```
+
+task help 始终列出全部静态公开检查任务，再合并 snapshot 中出现的任务。因此即使 snapshot 不存在或问题数为零，它仍然可用。package 和 checker help 仍由 snapshot 内容生成。
 
 ### limina graph \<action\>
 
@@ -225,6 +232,8 @@ pnpm exec limina source check
 pnpm exec limina source check --package @scope/pkg
 pnpm exec limina source check --scope 'packages/app/**' --verbose
 ```
+
+`limina source check --scope` 还接受相对于所选源码 owner 的范围。例如对 `packages/app` owner，`src/theme` 可以匹配 `packages/app/src/theme`；工作区相对路径、绝对路径和 glob 形式也继续有效。
 
 它检查源码文件是否属于 `pnpm` 工作区源码拥有者，非聚合型 `tsconfig` 是否混合多个源码拥有者，普通相对导入是否越过最近的 `package.json` 包边界，裸包导入是否由最近的源码拥有者或显式规则授权，`#...` 包导入是否保持在声明包范围内，以及 `Knip` 支撑的源码使用情况。
 

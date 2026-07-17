@@ -6,6 +6,11 @@ import path from 'pathe';
 import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
+import {
+  pathCandidatesMatchFileFilters,
+  pathCandidatesMatchScopeFilters,
+  type PathFilterCandidate,
+} from '../check-reporting/path-filters';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
   createIssueOverview,
@@ -27,18 +32,21 @@ import type {
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 1;
 export const CHECK_ISSUE_SNAPSHOT_VERSION = 7;
 
-export type LiminaCheckTaskName =
-  | 'checker:build'
-  | 'checker:typecheck'
-  | 'command'
-  | 'graph:check'
-  | 'graph:materialize'
-  | 'graph:prepare'
-  | 'package:check'
-  | 'proof:check'
-  | 'release:check'
-  | 'source:check'
-  | 'workspace:validate';
+export const LIMINA_CHECK_TASK_NAMES = [
+  'checker:build',
+  'checker:typecheck',
+  'command',
+  'graph:check',
+  'graph:materialize',
+  'graph:prepare',
+  'package:check',
+  'proof:check',
+  'release:check',
+  'source:check',
+  'workspace:validate',
+] as const;
+
+export type LiminaCheckTaskName = (typeof LIMINA_CHECK_TASK_NAMES)[number];
 
 export type SourceIssueSnapshotStatus = 'completed' | 'not-run';
 export type CheckIssueSnapshotStatus = 'completed' | 'not-run';
@@ -127,6 +135,7 @@ export interface LiminaCheckIssueLocation {
   label?: string;
   line?: number;
   packageManifestPath?: string;
+  /** Diagnostic/configuration scope label. Not a filesystem path filter. */
   scope?: string;
 }
 
@@ -159,6 +168,7 @@ export interface LiminaCheckIssue {
   packageManifestPath?: string;
   packageName?: string;
   reason: string;
+  /** Diagnostic/configuration scope label. Not a filesystem path filter. */
   scope?: string;
   severity?: LiminaCheckIssueSeverity;
   summary?: string;
@@ -191,9 +201,18 @@ export type CheckIssueInventoryFormat = 'human' | 'json' | 'ndjson';
 export interface CheckIssueInventoryOptions {
   filters?: CheckIssueInventoryFilters;
   format?: CheckIssueInventoryFormat;
+  invocation?: CheckIssueInventoryInvocationMetadata;
   rootDir?: string;
   snapshot: CheckIssueSnapshot | null;
   verbose?: boolean;
+}
+
+export interface CheckIssueInventoryInvocationMetadata {
+  completedAt: string;
+  invocationId: string;
+  kind: 'standalone-invocation';
+  result: 'failed';
+  version: number;
 }
 
 export interface SourceIssueSnapshotIssue {
@@ -570,7 +589,7 @@ function hasLiminaCheckIssuePresentationFields(
   );
 }
 
-function isLiminaCheckIssue(value: unknown): value is LiminaCheckIssue {
+export function isLiminaCheckIssue(value: unknown): value is LiminaCheckIssue {
   return (
     isPlainRecord(value) &&
     hasLiminaCheckIssueBaseFields(value) &&
@@ -602,20 +621,17 @@ function isCurrentV7CheckIssueSnapshotStructure(
   );
 }
 
+function isCheckInventoryOwner(snapshot: CheckIssueSnapshot): boolean {
+  if (snapshot.status === 'not-run') {
+    return true;
+  }
+
+  const command = snapshot.run?.command ?? snapshot.command;
+  return /^limina check(?:\s|$)/u.test(command);
+}
+
 function isKnownIssueTask(value: string): value is LiminaCheckTaskName {
-  return [
-    'checker:build',
-    'checker:typecheck',
-    'command',
-    'graph:check',
-    'graph:materialize',
-    'graph:prepare',
-    'package:check',
-    'proof:check',
-    'release:check',
-    'source:check',
-    'workspace:validate',
-  ].includes(value);
+  return (LIMINA_CHECK_TASK_NAMES as readonly string[]).includes(value);
 }
 
 function getCheckerTargetRelationProblem(
@@ -879,56 +895,35 @@ function normalizeFilterValues(
   return (values ?? []).map((value) => value.trim()).filter(Boolean);
 }
 
-function normalizeFilePath(rootDir: string, filePath: string): string {
-  return normalizeSlashes(
-    path.isAbsolute(filePath) ? toRelativePath(rootDir, filePath) : filePath,
-  );
-}
-
-function getIssueScope(issue: LiminaCheckIssue): string | undefined {
-  if (issue.scope) {
-    return issue.scope;
-  }
-
-  const filePath =
-    issue.filePath ??
-    issue.locations?.find((location) => location.filePath)?.filePath ??
-    issue.packageManifestPath ??
-    issue.locations?.find((location) => location.packageManifestPath)
-      ?.packageManifestPath;
-
-  if (!filePath) {
-    return undefined;
-  }
-
-  const directory = path.posix.dirname(filePath);
-
-  return directory === '.' ? '.' : directory;
-}
-
-function issueMatchesScope(issue: LiminaCheckIssue, scope: string): boolean {
-  const issueScope = getIssueScope(issue);
-  const filePaths = getIssueFilePaths(issue);
-
-  return Boolean(
-    issueScope &&
-      (issueScope === scope ||
-        issueScope.startsWith(`${scope}/`) ||
-        filePaths.some(
-          (filePath) => filePath === scope || filePath.startsWith(`${scope}/`),
-        )),
-  );
-}
-
-function getIssueFilePaths(issue: LiminaCheckIssue): string[] {
+function getIssuePathCandidates(
+  issue: LiminaCheckIssue,
+): PathFilterCandidate[] {
   return [
-    issue.filePath,
-    issue.packageManifestPath,
+    ...(issue.filePath
+      ? [{ kind: 'file' as const, path: issue.filePath }]
+      : []),
+    ...(issue.packageManifestPath
+      ? [
+          {
+            kind: 'package-manifest' as const,
+            path: issue.packageManifestPath,
+          },
+        ]
+      : []),
     ...(issue.locations ?? []).flatMap((location) => [
-      location.filePath,
-      location.packageManifestPath,
+      ...(location.filePath
+        ? [{ kind: 'file' as const, path: location.filePath }]
+        : []),
+      ...(location.packageManifestPath
+        ? [
+            {
+              kind: 'package-manifest' as const,
+              path: location.packageManifestPath,
+            },
+          ]
+        : []),
     ]),
-  ].filter((value): value is string => Boolean(value));
+  ];
 }
 
 function issueMatchesFilters(
@@ -939,12 +934,10 @@ function issueMatchesFilters(
   const tasks = normalizeFilterValues(filters.tasks);
   const packages = normalizeFilterValues(filters.packageNames);
   const rules = normalizeFilterValues(filters.rules);
-  const files = normalizeFilterValues(filters.files).map((filePath) =>
-    rootDir ? normalizeFilePath(rootDir, filePath) : normalizeSlashes(filePath),
-  );
+  const files = normalizeFilterValues(filters.files);
   const scopes = normalizeFilterValues(filters.scopes);
   const checkers = normalizeFilterValues(filters.checkerNames);
-  const issueFiles = getIssueFilePaths(issue);
+  const pathCandidates = getIssuePathCandidates(issue);
 
   return (
     (tasks.length === 0 || tasks.includes(issue.task)) &&
@@ -952,9 +945,17 @@ function issueMatchesFilters(
       (issue.packageName ? packages.includes(issue.packageName) : false)) &&
     (rules.length === 0 || rules.includes(issue.code)) &&
     (files.length === 0 ||
-      issueFiles.some((filePath) => files.includes(filePath))) &&
+      pathCandidatesMatchFileFilters({
+        candidates: pathCandidates,
+        files,
+        rootDir,
+      })) &&
     (scopes.length === 0 ||
-      scopes.some((scope) => issueMatchesScope(issue, scope))) &&
+      pathCandidatesMatchScopeFilters({
+        candidates: pathCandidates,
+        rootDir,
+        scopes,
+      })) &&
     (checkers.length === 0 ||
       (issue.checkerName ? checkers.includes(issue.checkerName) : false))
   );
@@ -1176,20 +1177,10 @@ export async function writeCompletedStandaloneSourceCheckSnapshots(options: {
   issues: readonly SourceCheckIssue[];
   rootDir: string;
 }): Promise<void> {
-  const checkIssues = options.issues.map((issue) =>
-    createSourceCheckIssue({ issue, rootDir: options.rootDir }),
-  );
   await writeSourceIssueSnapshotOnly(
     options.artifactNamespace,
     createCompletedSourceIssueSnapshot(options),
   );
-  await writeCheckIssueSnapshotOnly(options.artifactNamespace, {
-    command: options.command,
-    createdAt: new Date().toISOString(),
-    issues: checkIssues,
-    status: 'completed',
-    version: CHECK_ISSUE_SNAPSHOT_VERSION,
-  });
 }
 
 export async function readSourceIssueSnapshot(
@@ -1241,7 +1232,7 @@ export async function readCheckIssueSnapshot(
       ) {
         return null;
       }
-      return parsed;
+      return isCheckInventoryOwner(parsed) ? parsed : null;
     }
 
     return null;
@@ -1363,6 +1354,7 @@ export function createSourceCheckIssue(options: {
 function createInventoryPayload(options: {
   filteredIssues: readonly LiminaCheckIssue[];
   filters: CheckIssueInventoryFilters;
+  invocation?: CheckIssueInventoryInvocationMetadata;
   snapshot: CheckIssueSnapshot | null;
 }): Record<string, unknown> {
   return {
@@ -1376,12 +1368,22 @@ function createInventoryPayload(options: {
     status: options.snapshot?.status ?? 'missing',
     topBlockers: selectTopBlockers(options.filteredIssues),
     version: options.snapshot?.version,
+    ...(options.invocation
+      ? {
+          completedAt: options.invocation.completedAt,
+          invocationId: options.invocation.invocationId,
+          kind: options.invocation.kind,
+          result: options.invocation.result,
+          version: options.invocation.version,
+        }
+      : {}),
   };
 }
 
 function formatJsonInventory(options: {
   filteredIssues: readonly LiminaCheckIssue[];
   filters: CheckIssueInventoryFilters;
+  invocation?: CheckIssueInventoryInvocationMetadata;
   snapshot: CheckIssueSnapshot | null;
 }): string {
   return JSON.stringify(createInventoryPayload(options), null, 2);
@@ -1402,6 +1404,7 @@ export function formatCheckIssueSnapshotInventory(
       return formatJsonInventory({
         filteredIssues: [],
         filters,
+        invocation: options.invocation,
         snapshot: null,
       });
     }
@@ -1421,6 +1424,7 @@ export function formatCheckIssueSnapshotInventory(
       return formatJsonInventory({
         filteredIssues: [],
         filters,
+        invocation: options.invocation,
         snapshot: options.snapshot,
       });
     }
@@ -1451,6 +1455,7 @@ export function formatCheckIssueSnapshotInventory(
     return formatJsonInventory({
       filteredIssues,
       filters,
+      invocation: options.invocation,
       snapshot: options.snapshot,
     });
   }
@@ -1459,9 +1464,20 @@ export function formatCheckIssueSnapshotInventory(
     return formatNdjsonInventory(filteredIssues);
   }
 
+  const humanSummary = options.invocation
+    ? [
+        `Standalone invocation: ${options.invocation.invocationId}`,
+        `Command: ${options.snapshot.command}`,
+        'Result: FAILED',
+        `Completed: ${options.invocation.completedAt}`,
+        '',
+        issueSummary,
+      ].join('\n')
+    : issueSummary;
+
   if (options.verbose) {
     return [
-      issueSummary,
+      humanSummary,
       '',
       formatCheckIssueHumanReport({
         command: options.snapshot.command,
@@ -1472,7 +1488,7 @@ export function formatCheckIssueSnapshotInventory(
     ].join('\n');
   }
 
-  return issueSummary;
+  return humanSummary;
 }
 
 export function formatSourceIssueSnapshotInventory(

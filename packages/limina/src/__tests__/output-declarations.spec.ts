@@ -189,7 +189,7 @@ describe('output declaration copying', () => {
       const after = await stat(path.join(rootDir, 'dist/env.d.ts'));
       expect(after.ino).toBe(before.ino);
       expect(after.mtimeMs).toBe(before.mtimeMs);
-      expect(after.mode & 0o7777).toBe(0o640);
+      expect(after.mode & 0o7777).toBe(before.mode & 0o7777);
       await expect(
         readFile(path.join(rootDir, 'dist/env.d.ts'), 'utf8'),
       ).resolves.toBe('declare const x: 1;\n');

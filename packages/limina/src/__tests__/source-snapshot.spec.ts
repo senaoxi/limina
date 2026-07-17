@@ -329,7 +329,7 @@ describe('check issue snapshots', () => {
     }
   });
 
-  it('reads current v7 not-run and standalone completed snapshots', async () => {
+  it('accepts check-owned snapshots and rejects standalone completed snapshots', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
 
     try {
@@ -356,10 +356,31 @@ describe('check issue snapshots', () => {
         run: { result: 'not-run', tasks: [{ state: 'planned' }] },
       });
 
-      await writeRawCheckSnapshot(rootDir, createCheckSnapshot([]));
-      const standalone = await readCheckIssueSnapshot(rootDir);
-      expect(standalone).toMatchObject({ status: 'completed' });
-      expect(standalone).not.toHaveProperty('run');
+      await writeRawCheckSnapshot(rootDir, {
+        ...createCheckSnapshot([]),
+        command: 'limina source check',
+      });
+      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+
+      await writeRawCheckSnapshot(rootDir, {
+        ...createCheckSnapshot([]),
+        run: {
+          command: 'limina check',
+          createdAt: '2026-06-20T00:00:00.000Z',
+          result: 'failed',
+          tasks: [
+            {
+              generation: 0,
+              id: 'legacy-v5:forged',
+              issueTask: 'proof:check',
+              kind: 'task',
+              label: 'proof:check',
+              state: 'failed',
+            },
+          ],
+        },
+      });
+      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

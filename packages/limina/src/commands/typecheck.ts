@@ -1,4 +1,5 @@
 import { createElapsedTimer } from 'logaria/helper';
+import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
@@ -82,8 +83,19 @@ async function completeCheckSnapshotIfNeeded(
   });
 }
 
+function getCheckerFailureFilePath(options: {
+  config: { configPath: string };
+  configPath?: string;
+  cwd?: string;
+}): string {
+  return options.configPath
+    ? path.resolve(options.cwd ?? process.cwd(), options.configPath)
+    : options.config.configPath;
+}
+
 function createCheckerFailureIssues(options: {
   failedTargets: readonly CheckerFailureTarget[];
+  fallbackFilePath?: string;
   fallbackReason: string;
   failureKind?: CheckerFailureKind;
   fix: string;
@@ -123,6 +135,7 @@ function createCheckerFailureIssues(options: {
           : {}),
         fix: options.fix,
         fixSteps: [options.fix],
+        filePath: options.fallbackFilePath,
         reason: options.hideExecutionDetails
           ? options.title
           : options.fallbackReason,
@@ -227,6 +240,7 @@ export async function runCheckerBuild(
     } else {
       const issues = createCheckerFailureIssues({
         failedTargets: result.failedTargets,
+        fallbackFilePath: getCheckerFailureFilePath(options),
         fallbackReason: 'Checker build finished with failures.',
         failureKind: result.failureKind,
         fix: 'Inspect the checker build output above, then rerun `limina checker build` or `limina check`.',
@@ -269,6 +283,7 @@ export async function runCheckerBuild(
                 ? {}
                 : { detailLines: [formatErrorMessage(error)] }),
               fix: 'Inspect the checker build error above, then rerun `limina checker build` or `limina check`.',
+              filePath: getCheckerFailureFilePath(options),
               reason: options.report?.defer
                 ? 'Checker build failed.'
                 : `Checker build failed: ${formatErrorMessage(error)}.`,
@@ -348,6 +363,7 @@ export async function runBuild(
     } else {
       const issues = createCheckerFailureIssues({
         failedTargets: result.failedTargets,
+        fallbackFilePath: getCheckerFailureFilePath(options),
         fallbackReason: 'Checker build finished with failures.',
         failureKind: result.failureKind,
         fix: 'Inspect the build output above, then rerun `limina build <config>`.',
@@ -387,6 +403,7 @@ export async function runBuild(
             createTaskFailureIssue({
               code: 'LIMINA_CHECKER_BUILD_FAILED',
               detailLines: [formatErrorMessage(error)],
+              filePath: getCheckerFailureFilePath(options),
               fix: 'Inspect the build error above, then rerun `limina build <config>`.',
               reason: `Checker build failed: ${formatErrorMessage(error)}.`,
               rootDir: options.config.rootDir,
@@ -459,6 +476,7 @@ export async function runCheckerTypecheck(
     } else {
       const issues = createCheckerFailureIssues({
         failedTargets: result.failedTargets,
+        fallbackFilePath: options.config.configPath,
         fallbackReason: 'Checker typecheck finished with failures.',
         failureKind: result.failureKind,
         fix: 'Inspect the checker typecheck output above, then rerun `limina checker typecheck` or `limina check`.',
@@ -498,6 +516,7 @@ export async function runCheckerTypecheck(
             createTaskFailureIssue({
               code: 'LIMINA_CHECKER_TYPECHECK_FAILED',
               detailLines: [formatErrorMessage(error)],
+              filePath: options.config.configPath,
               fix: 'Inspect the checker typecheck error above, then rerun `limina checker typecheck` or `limina check`.',
               reason: `Checker typecheck failed: ${formatErrorMessage(error)}.`,
               rootDir: options.config.rootDir,

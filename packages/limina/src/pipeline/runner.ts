@@ -25,7 +25,11 @@ import { runProofCheck } from '../commands/proof';
 import { runReleaseCheck } from '../commands/release';
 import { runSourceCheck } from '../commands/source';
 import { runCheckerBuild, runCheckerTypecheck } from '../commands/typecheck';
-import { runExecutionPlan, validateExecutionPlan } from '../execution/executor';
+import {
+  runExecutionPlan,
+  type RunExecutionResult,
+  validateExecutionPlan,
+} from '../execution/executor';
 import type { TaskProgressReporter } from '../execution/progress';
 import type { ResourceRequest } from '../execution/resources';
 import {
@@ -1189,11 +1193,11 @@ function projectParentFlowCompletion(options: {
   }
 }
 
-export async function runPipeline(
+export async function runPipelineWithResult(
   config: ResolvedLiminaConfig,
   pipelineName: string,
   options: RunPipelineOptions = {},
-): Promise<boolean> {
+): Promise<RunExecutionResult> {
   const plan =
     options.executionPlan ?? createExecutionPlan(config, pipelineName, options);
   const pipelineTask = options.flow?.start(`pipeline: ${pipelineName}`, {
@@ -1222,13 +1226,21 @@ export async function runPipeline(
     task: pipelineTask,
   });
 
-  return execution.passed;
+  return execution;
 }
 
-export async function runDefaultCheck(
+export async function runPipeline(
   config: ResolvedLiminaConfig,
+  pipelineName: string,
   options: RunPipelineOptions = {},
 ): Promise<boolean> {
+  return (await runPipelineWithResult(config, pipelineName, options)).passed;
+}
+
+export async function runDefaultCheckWithResult(
+  config: ResolvedLiminaConfig,
+  options: RunPipelineOptions = {},
+): Promise<RunExecutionResult> {
   const plan =
     options.executionPlan ?? createDefaultExecutionPlan(config, options);
   const pipelineTask = options.flow?.start('default check', {
@@ -1270,5 +1282,12 @@ export async function runDefaultCheck(
     task: pipelineTask,
   });
 
-  return execution.passed;
+  return execution;
+}
+
+export async function runDefaultCheck(
+  config: ResolvedLiminaConfig,
+  options: RunPipelineOptions = {},
+): Promise<boolean> {
+  return (await runDefaultCheckWithResult(config, options)).passed;
 }

@@ -1,5 +1,4 @@
 import {
-  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -141,14 +140,13 @@ describe('vue-tsgo cache batch coordinator', () => {
   it('does not perform cache cleanup inside the default runner', async () => {
     const fixture = await createFixture();
     const configPath = fixture.path('packages/app/tsconfig.json');
-    const commandPath = fixture.path('bin/vue-tsgo');
+    const commandPath = fixture.path('bin/vue-tsgo.cjs');
     await writeText(
       fixture.path('packages/app/package.json'),
       '{"name":"@fixture/app"}\n',
     );
     await writeText(configPath, '{"files":[]}\n');
-    await writeText(commandPath, '#!/bin/sh\nexit 0\n');
-    await chmod(commandPath, 0o755);
+    await writeText(commandPath, 'process.exit(0);\n');
     const stalePath = path.join(
       createVueTsgoCachePaths(configPath)[0]!,
       'stale.txt',
@@ -157,9 +155,11 @@ describe('vue-tsgo cache batch coordinator', () => {
     process.env.LIMINA_CHECKER_HOST = 'off';
 
     try {
+      const target = createTarget({ configPath, rootDir: fixture.rootDir });
       const result = await createDefaultRunner({ stdio: 'ignore' })({
-        ...createTarget({ configPath, rootDir: fixture.rootDir }),
-        command: commandPath,
+        ...target,
+        args: [commandPath, ...target.args],
+        command: process.execPath,
       });
 
       expect(result.status).toBe(0);

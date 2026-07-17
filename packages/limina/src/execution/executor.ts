@@ -72,6 +72,13 @@ export interface ExecutionTaskResultView {
   status: ExecutionTaskOutcome['status'];
 }
 
+export interface RunExecutionResult {
+  issues: LiminaCheckIssue[];
+  outcome: CompletedRunOutcome;
+  passed: boolean;
+  results: ExecutionTaskResultView[];
+}
+
 interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;
@@ -492,12 +499,7 @@ async function writeExecutionSnapshots(options: {
 export async function runExecutionPlan(
   plan: ExecutionPlan,
   options: RunExecutionPlanOptions,
-): Promise<{
-  issues: LiminaCheckIssue[];
-  outcome: CompletedRunOutcome;
-  passed: boolean;
-  results: ExecutionTaskResultView[];
-}> {
+): Promise<RunExecutionResult> {
   validateExecutionPlan(plan);
   const orderedTasks = [...plan.tasks].sort(
     (left, right) => left.order - right.order,
