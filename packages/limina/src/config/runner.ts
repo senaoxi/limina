@@ -904,7 +904,17 @@ export function defineConfig(config: LiminaConfigExport): LiminaConfigExport {
 export function getActiveCheckers(
   config: LiminaConfig,
 ): ResolvedCheckerConfig[] {
-  validateLiminaConfig(config);
+  if ('configPath' in config && 'rootDir' in config) {
+    const userConfig: Record<string, unknown> = { ...config };
+
+    delete userConfig.configPath;
+    delete userConfig.rootDir;
+
+    validateLiminaConfig(userConfig as LiminaConfig);
+  } else {
+    validateLiminaConfig(config);
+  }
+
   return getResolvedCheckers(config);
 }
 

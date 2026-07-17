@@ -1332,7 +1332,8 @@ describe('prepareGeneratedTsconfigGraph', () => {
         expect.objectContaining({
           command: 'limina build tsconfig.json --checker tsgo',
           packageName: '@example/pkg',
-          reason: 'Unknown option: --checker. Use --preset instead.',
+          reason:
+            'Limina build script analysis only supports --raw, --preset, -w/--watch, plus one literal config argument.',
           scriptName: 'build:checker',
         }),
       ]);

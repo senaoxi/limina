@@ -1228,27 +1228,32 @@ export default {
     {
       config:
         'allow: { "@example/app": [{ files: ["packages/app/test/**/*.ts"], workspaceRootDependencies: ["zod"], reason: "legacy files" }] }',
-      expected: 'files has been replaced by config-root-relative include',
+      expected: 'unknown source import authority grant field',
       name: 'legacy files',
     },
     {
       config:
         'allow: { "@example/app": [{ packages: ["zod"], reason: "legacy packages" }] }',
-      expected: 'packages has been replaced by workspaceRootDependencies',
+      expected: 'unknown source import authority grant field',
       name: 'legacy packages',
     },
     {
       config:
         'allow: { "@example/app": [{ specifiers: ["zod"], workspaceRootDependencies: ["zod"], reason: "legacy specifiers" }] }',
-      expected:
-        'direct specifier authority is not part of the workspace root dependency authority model',
+      expected: 'unknown source import authority grant field',
       name: 'legacy specifiers',
     },
     {
       config:
         'allow: { "@example/app": [{ owner: "@example/app", workspaceRootDependencies: ["zod"], reason: "legacy owner" }] }',
-      expected: 'owner is now expressed by the allow object key',
+      expected: 'unknown source import authority grant field',
       name: 'legacy owner',
+    },
+    {
+      config:
+        'allow: { "@example/app": [{ experimental: true, workspaceRootDependencies: ["zod"], reason: "unknown field" }] }',
+      expected: 'unknown source import authority grant field',
+      name: 'neutral unknown grant field',
     },
   ])(
     'rejects invalid source import authority config: $name',
@@ -2162,7 +2167,7 @@ export default {
     }
   });
 
-  it('reports the 0.2.0 failFast migration error', async () => {
+  it('rejects execution.failFast through the unknown-field contract', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -2176,7 +2181,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /execution\.failFast was removed in Limina 0\.2\.0/u,
+        /unknown execution config field/u,
       );
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -2333,7 +2338,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checkers: "auto" has been removed/u,
+        /config\.checkers must be an object auto config or an object keyed by checker name/u,
       );
     } finally {
       await rm(rootDir, {
@@ -2566,7 +2571,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker\.entry has been removed; configure checker\.include/u,
+        /unknown checker config field/u,
       );
     } finally {
       await rm(rootDir, {
@@ -2602,7 +2607,43 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker extensions are fixed by built-in presets and cannot be configured/u,
+        /unknown checker config field/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects neutral unknown named checker fields', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  config: {
+    checkers: {
+      typescript: {
+        preset: 'tsc',
+        include: ['tsconfig.json'],
+        experimental: true,
+      },
+    },
+  },
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /config\.checkers\.typescript\.experimental[\s\S]*unknown checker config field/u,
       );
     } finally {
       await rm(rootDir, {
@@ -2640,7 +2681,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker routes are not supported/u,
+        /unknown checker config field/u,
       );
     } finally {
       await rm(rootDir, {
@@ -2670,7 +2711,35 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /paths config has been removed/u,
+        /unknown Limina config field/u,
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('rejects neutral unknown top-level config fields', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `
+export default {
+  experimental: true,
+};
+`,
+      );
+
+      await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
+        /field: experimental[\s\S]*unknown Limina config field/u,
       );
     } finally {
       await rm(rootDir, {
@@ -2741,7 +2810,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker extensions are fixed by built-in presets and cannot be configured[\s\S]*configured checkers require a built-in checker adapter/u,
+        /unknown checker config field[\s\S]*configured checkers require a built-in checker adapter/u,
       );
     } finally {
       await rm(rootDir, {
@@ -2810,7 +2879,7 @@ export default {
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /checker\.entry has been removed; configure checker\.include/u,
+        /unknown checker config field/u,
       );
     } finally {
       await rm(rootDir, {

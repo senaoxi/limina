@@ -5,23 +5,11 @@ import path from 'pathe';
 import { z } from 'zod';
 import { ConfigurationError } from '../domain/validation/errors';
 
-const checkerExtensionsConfigReason =
-  'checker extensions are fixed by built-in presets and cannot be configured.';
-
-const checkerRoutesConfigReason =
-  'checker routes are not supported; configure checker.include with source tsconfig selectors.';
-
 const unsupportedCheckerPresetReason =
   'configured checkers require a built-in checker adapter.';
 
-const checkerEntryConfigReason =
-  'checker.entry has been removed; configure checker.include with source tsconfig selectors.';
-
 const checkerConfigReason =
   'config.checkers must be an object auto config or an object keyed by checker name.';
-
-const checkerAutoStringConfigReason =
-  'checkers: "auto" has been removed; omit config.checkers or use { mode: "auto" }.';
 
 const autoCheckerMixedConfigReason =
   'auto checker config must not be mixed with named checker entries.';
@@ -35,6 +23,24 @@ const importAnalysisConfigReason =
 const vueImportParserConfigReason =
   'config.imports.vue must be "heuristic" or "compiler-sfc".';
 
+const checkerConfigKeys = new Set(['exclude', 'include', 'preset']);
+const importAuthorityGrantKeys = new Set([
+  'include',
+  'reason',
+  'workspaceRootDependencies',
+]);
+const liminaConfigKeys = new Set([
+  'config',
+  'execution',
+  'graph',
+  'package',
+  'pipelines',
+  'proof',
+  'release',
+  'regions',
+  'source',
+]);
+
 function isAbsolutePublicSelector(value: string): boolean {
   const selector = value.trim().replace(/^!+/u, '');
   return path.isAbsolute(selector) || /^[A-Za-z]:[\\/]/u.test(selector);
@@ -47,27 +53,15 @@ const checkerConfigShapeSchema = z
     const include = checker.include;
     const exclude = checker.exclude;
 
-    if (Object.hasOwn(checker, 'entry')) {
-      ctx.addIssue({
-        code: 'custom',
-        message: checkerEntryConfigReason,
-        path: ['entry'],
-      });
-    }
+    for (const key of Object.keys(checker)) {
+      if (checkerConfigKeys.has(key)) {
+        continue;
+      }
 
-    if (Object.hasOwn(checker, 'extensions')) {
       ctx.addIssue({
         code: 'custom',
-        message: checkerExtensionsConfigReason,
-        path: ['extensions'],
-      });
-    }
-
-    if (Object.hasOwn(checker, 'routes')) {
-      ctx.addIssue({
-        code: 'custom',
-        message: checkerRoutesConfigReason,
-        path: ['routes'],
+        message: 'unknown checker config field.',
+        path: [key],
       });
     }
 
@@ -208,13 +202,7 @@ const sharedLiminaConfigShapeSchema = z
     const source = sharedConfig.source;
 
     if (checkers !== undefined) {
-      if (checkers === 'auto') {
-        ctx.addIssue({
-          code: 'custom',
-          message: checkerAutoStringConfigReason,
-          path: ['checkers'],
-        });
-      } else if (!isPlainConfigRecord(checkers)) {
+      if (!isPlainConfigRecord(checkers)) {
         ctx.addIssue({
           code: 'custom',
           message: checkerConfigReason,
@@ -437,16 +425,6 @@ const executionConfigShapeSchema = z
   .looseObject({})
   .superRefine((execution, ctx) => {
     for (const key of Object.keys(execution)) {
-      if (key === 'failFast') {
-        ctx.addIssue({
-          code: 'custom',
-          message:
-            'execution.failFast was removed in Limina 0.2.0; remove this field and use pipeline dependency/stop-policy semantics.',
-          path: [key],
-        });
-        continue;
-      }
-
       if (
         executionConcurrencyFields.includes(
           key as (typeof executionConcurrencyFields)[number],
@@ -594,38 +572,15 @@ function validateSourceImportAuthorityConfig(
         continue;
       }
 
-      if (Object.hasOwn(grant, 'files')) {
-        ctx.addIssue({
-          code: 'custom',
-          message:
-            'files has been replaced by config-root-relative include.\n  fix: move the source owner into the allow object key and keep file selectors relative to config.rootDir.',
-          path: [...grantPath, 'files'],
-        });
-      }
+      for (const key of Object.keys(grant)) {
+        if (importAuthorityGrantKeys.has(key)) {
+          continue;
+        }
 
-      if (Object.hasOwn(grant, 'packages')) {
         ctx.addIssue({
           code: 'custom',
-          message:
-            'packages has been replaced by workspaceRootDependencies.\n  fix: rename packages to workspaceRootDependencies.',
-          path: [...grantPath, 'packages'],
-        });
-      }
-
-      if (Object.hasOwn(grant, 'specifiers')) {
-        ctx.addIssue({
-          code: 'custom',
-          message:
-            'direct specifier authority is not part of the workspace root dependency authority model.',
-          path: [...grantPath, 'specifiers'],
-        });
-      }
-
-      if (Object.hasOwn(grant, 'owner')) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'owner is now expressed by the allow object key.',
-          path: [...grantPath, 'owner'],
+          message: 'unknown source import authority grant field.',
+          path: [...grantPath, key],
         });
       }
 
@@ -923,12 +878,15 @@ const liminaConfigShapeSchema = z
     release: releaseConfigShapeSchema.optional(),
   })
   .superRefine((config, ctx) => {
-    if (Object.hasOwn(config, 'paths')) {
+    for (const key of Object.keys(config)) {
+      if (liminaConfigKeys.has(key)) {
+        continue;
+      }
+
       ctx.addIssue({
         code: 'custom',
-        message:
-          'paths config has been removed; use graph/proof/source checks instead.',
-        path: ['paths'],
+        message: 'unknown Limina config field.',
+        path: [key],
       });
     }
 
@@ -1019,30 +977,12 @@ function formatLiminaConfigShapeIssue(
     ].join('\n');
   }
 
-  if (field === 'paths') {
-    return [
-      'Invalid Limina paths config:',
-      '  field: paths',
-      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-      `  reason: ${issue.message}`,
-    ].join('\n');
-  }
-
   if (field === 'execution') {
     return [
       'Invalid Limina execution config:',
       '  field: execution',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       '  reason: execution must be an object.',
-    ].join('\n');
-  }
-
-  if (field === 'execution.failFast') {
-    return [
-      'Invalid Limina execution config:',
-      '  field: execution.failFast',
-      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-      `  reason: ${issue.message}`,
     ].join('\n');
   }
 
@@ -1156,32 +1096,12 @@ function formatLiminaConfigShapeIssue(
       ].join('\n');
     }
 
-    if (pathSegments[3] === 'entry') {
-      return [
-        'Invalid Limina checker entry config:',
-        `  field: ${checkerField}.entry`,
-        `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-        `  reason: ${issue.message}`,
-      ].join('\n');
-    }
-
-    if (pathSegments[3] === 'extensions') {
-      return [
-        'Invalid Limina checker config:',
-        `  field: ${checkerField}.extensions`,
-        `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-        `  reason: ${issue.message}`,
-      ].join('\n');
-    }
-
-    if (pathSegments[3] === 'routes') {
-      return [
-        'Invalid Limina checker config:',
-        `  field: ${checkerField}.routes`,
-        `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
-        `  reason: ${issue.message}`,
-      ].join('\n');
-    }
+    return [
+      'Invalid Limina checker config:',
+      `  field: ${field}`,
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
+    ].join('\n');
   }
 
   if (field === 'release') {
