@@ -367,6 +367,90 @@ describe('runMigration', () => {
     }
   });
 
+  it('rejects removed root limina metadata before writing a migration target', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          outDir: './dist',
+        },
+        include: ['src/**/*.ts'],
+        limina: 'runtime',
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        typescript: {
+          include: ['packages/pkg/tsconfig.json'],
+          preset: 'tsc',
+        },
+      },
+    });
+    const configPath = path.join(fixture.rootDir, 'packages/pkg/tsconfig.json');
+
+    try {
+      await commitFixture(fixture.rootDir);
+      const before = await readFile(configPath);
+
+      await expect(runMigration(config)).rejects.toThrow(
+        [
+          'Invalid Limina tsconfig metadata:',
+          '  field: limina',
+          '  reason: root-level limina metadata is not part of the Limina 0.2.0 tsconfig contract.',
+        ].join('\n'),
+      );
+      await expect(readFile(configPath)).resolves.toEqual(before);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps earlier valid targets unchanged when a later target has removed metadata', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/a/src/index.ts': 'export const value = 1;\n',
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          outDir: './dist',
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/z/src/index.ts': 'export const value = 1;\n',
+      'packages/z/tsconfig.json': json({
+        compilerOptions: {
+          outDir: './dist',
+        },
+        include: ['src/**/*.ts'],
+        limina: 'runtime',
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        typescript: {
+          include: ['packages/*/tsconfig.json'],
+          preset: 'tsc',
+        },
+      },
+    });
+    const firstPath = path.join(fixture.rootDir, 'packages/a/tsconfig.json');
+    const laterPath = path.join(fixture.rootDir, 'packages/z/tsconfig.json');
+
+    try {
+      await commitFixture(fixture.rootDir);
+      const firstBefore = await readFile(firstPath);
+      const laterBefore = await readFile(laterPath);
+
+      await expect(runMigration(config)).rejects.toThrow(
+        'root-level limina metadata is not part of the Limina 0.2.0 tsconfig contract',
+      );
+      await expect(readFile(firstPath)).resolves.toEqual(firstBefore);
+      await expect(readFile(laterPath)).resolves.toEqual(laterBefore);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('uses canonical island visibility and skips only the reachable hardlink config', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',

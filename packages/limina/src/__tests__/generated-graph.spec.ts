@@ -260,6 +260,100 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('rejects removed root limina metadata in an activated checker source config', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+        limina: 'runtime',
+      }),
+    });
+
+    try {
+      await expect(
+        prepareGeneratedTsconfigGraph(fixture.config),
+      ).rejects.toThrow(
+        'root-level limina metadata is not part of the Limina 0.2.0 tsconfig contract',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not reject removed metadata in an unactivated tsconfig', async () => {
+    const fixture = await createFixture({
+      'packages/active/src/index.ts': 'export const value = 1;\n',
+      'packages/active/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/inactive/tsconfig.unused.json': json({
+        limina: 'runtime',
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+
+      expect(result.manifest.checkers.typescript?.roots).toEqual([
+        'packages/active/tsconfig.json',
+      ]);
+      expect(JSON.stringify(result.manifest)).not.toContain(
+        'tsconfig.unused.json',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts current liminaOptions and unrelated root extensions on activated configs', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        customTool: {
+          enabled: true,
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+        liminaOptions: {
+          graphRules: ['runtime'],
+          outputs: {
+            outDir: './dist',
+          },
+        },
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+
+      expect(result.manifest.checkers.typescript?.roots).toEqual([
+        'packages/pkg/tsconfig.json',
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('does not let explicit checker discovery select nested region tsconfigs', async () => {
     const fixture = await createFixture({
       'packages/a/fixture/pnpm-workspace.yaml': 'packages: []\n',
