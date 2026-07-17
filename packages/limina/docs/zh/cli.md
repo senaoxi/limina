@@ -188,7 +188,7 @@ checker:typecheck
 
 `--issues` 不会重新执行检查。它读取上一次检查写入的快照，用于定位失败任务、规则、包、文件或检查器。工作区验证失败也可以记录：受信任的 `.limina` snapshot namespace 会在验证前建立，因此结构错误仍可出现在 `workspace:validate` 任务下。第一次查询前需要先运行 `limina check`，并让检查至少进入可记录状态。
 
-新 snapshot 使用 schema version 7。读取器仍接受 version 5 和 version 6，因此升级后可以查看上一次运行；下一次记录检查时会把文件重写为 version 7。
+check snapshot 使用 schema version 7，读取器也只接受 version 7。
 
 辅助查询：
 
@@ -275,7 +275,7 @@ pnpm exec limina checker build packages/app/tsconfig.json --preset vue-tsc --wat
 
 不带 `config` 时，命令使用生成工程图中的所有构建型检查器入口。带 `config` 时，Limina 只解析已管理配置对应的内部声明目标；如果配置不由 Limina 管理，会立即失败。该命令不读取 `liminaOptions.outputs`，不会生成 `dist` 等用户产物，也不会对用户维护的 `tsconfig` 执行 `raw build`。
 
-`--watch` 只允许和配置路径一起使用。`--preset` 也需要配置路径。旧写法 `--checker` 不再支持，应改为 `--preset`。旧写法 `--project` 不再支持，应把配置路径作为位置参数传入。
+`--watch` 只允许和配置路径一起使用。`--preset` 也需要配置路径。
 
 这个命令仍然依赖对应检查器包。缺少 `peer dependency` 时，报告会提示需要安装的包，例如 `typescript`、`vue-tsc` 或 `@typescript/native-preview`。
 
@@ -325,20 +325,18 @@ pnpm exec limina release check --package @scope/pkg --verbose
 
 ## 排障
 
-| 症状或错误信息                                                         | 可能原因                                     | 处理方式                                                                                                |
-| ---------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `no pnpm-workspace.yaml was found`                                     | 当前目录不在 `pnpm` 工作区内                 | 在工作区内运行命令，或先创建 `pnpm-workspace.yaml`                                                      |
-| `Unable to find limina config`                                         | 未找到支持的 Limina 配置文件                 | 运行 `limina init`，或用 `--config` 指定配置路径                                                        |
-| `config file must be inside the governed pnpm workspace`               | `--config` 指向工作区外文件                  | 把配置文件放到当前 `pnpm` 工作区内                                                                      |
-| `checker build --preset requires a config argument`                    | `--preset` 只能选择某个配置的构建型检查器    | 改为 `limina checker build <config> --preset tsc`                                                       |
-| `checker build --watch requires a config argument`                     | 监听模式只支持指定配置                       | 改为 `limina checker build <config> --watch`                                                            |
-| `limina build --raw requires --preset`                                 | 原始模式没有指定检查器预设                   | 改为 `limina build <config> --raw --preset tsc`                                                         |
-| `Unknown option: --checker. Use --preset instead.`                     | 使用了旧选项                                 | 改用 `--preset`                                                                                         |
-| `Unknown option: --project. Pass the config as a positional argument.` | 使用了旧选项                                 | 把配置路径放在 `checker build` 后面                                                                     |
-| `checker typecheck does not accept --preset` 或 `--watch`              | `checker typecheck` 只运行非构建型检查器入口 | 对单个配置使用 `checker build <config>`                                                                 |
-| `No package checks are enabled`                                        | 选中的包条目没有启用任何包检查               | 检查 `package.entries[].checks`，或移除不需要的包检查任务                                               |
-| `outDir package.json not found`                                        | 包产物尚未构建，或 `outDir` 配置不正确       | 先运行项目构建，再检查 `package.entries[].outDir`                                                       |
-| `Missing peer dependency ...`                                          | 某个检查器或包检查工具未安装                 | 按报告提示安装对应对等依赖，例如 `typescript`、`vue-tsc`、`knip`、`publint` 或 `@arethetypeswrong/core` |
-| `limina check --task, --checker, and --format require --issues.`       | 把快照查询选项用于重新检查命令               | 添加 `--issues`，或移除这些过滤选项                                                                     |
-| `limina check --issues does not accept a pipeline name.`               | `--issues` 读取最近快照，不运行流水线        | 使用 `limina check --issues`，不要加流水线名                                                            |
-| `Invalid graph export --view`                                          | `--view` 取值不在支持范围内                  | 使用 `all`、`source` 或 `artifact`                                                                      |
+| 症状或错误信息                                                   | 可能原因                                     | 处理方式                                                                                                |
+| ---------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `no pnpm-workspace.yaml was found`                               | 当前目录不在 `pnpm` 工作区内                 | 在工作区内运行命令，或先创建 `pnpm-workspace.yaml`                                                      |
+| `Unable to find limina config`                                   | 未找到支持的 Limina 配置文件                 | 运行 `limina init`，或用 `--config` 指定配置路径                                                        |
+| `config file must be inside the governed pnpm workspace`         | `--config` 指向工作区外文件                  | 把配置文件放到当前 `pnpm` 工作区内                                                                      |
+| `checker build --preset requires a config argument`              | `--preset` 只能选择某个配置的构建型检查器    | 改为 `limina checker build <config> --preset tsc`                                                       |
+| `checker build --watch requires a config argument`               | 监听模式只支持指定配置                       | 改为 `limina checker build <config> --watch`                                                            |
+| `limina build --raw requires --preset`                           | 原始模式没有指定检查器预设                   | 改为 `limina build <config> --raw --preset tsc`                                                         |
+| `checker typecheck does not accept --preset` 或 `--watch`        | `checker typecheck` 只运行非构建型检查器入口 | 对单个配置使用 `checker build <config>`                                                                 |
+| `No package checks are enabled`                                  | 选中的包条目没有启用任何包检查               | 检查 `package.entries[].checks`，或移除不需要的包检查任务                                               |
+| `outDir package.json not found`                                  | 包产物尚未构建，或 `outDir` 配置不正确       | 先运行项目构建，再检查 `package.entries[].outDir`                                                       |
+| `Missing peer dependency ...`                                    | 某个检查器或包检查工具未安装                 | 按报告提示安装对应对等依赖，例如 `typescript`、`vue-tsc`、`knip`、`publint` 或 `@arethetypeswrong/core` |
+| `limina check --task, --checker, and --format require --issues.` | 把快照查询选项用于重新检查命令               | 添加 `--issues`，或移除这些过滤选项                                                                     |
+| `limina check --issues does not accept a pipeline name.`         | `--issues` 读取最近快照，不运行流水线        | 使用 `limina check --issues`，不要加流水线名                                                            |
+| `Invalid graph export --view`                                    | `--view` 取值不在支持范围内                  | 使用 `all`、`source` 或 `artifact`                                                                      |
