@@ -184,16 +184,6 @@ function parsePackageBuildScript(options: {
       continue;
     }
 
-    if (token === '--checker' || token.startsWith('--checker=')) {
-      return createDiagnostic({
-        command: options.command,
-        packageJsonPath: options.packageJsonPath,
-        packageName: options.packageName,
-        reason: 'Unknown option: --checker. Use --preset instead.',
-        scriptName: options.scriptName,
-      });
-    }
-
     if (token === '--preset') {
       const parsedChecker = parseChecker(tokens[index + 1]);
 

@@ -952,9 +952,9 @@ function addDtsConfigProblems(options: {
     if (!options.graphProjectPaths.has(configPath)) {
       options.problems.push(
         [
-          'Source-level DTS config is no longer supported:',
+          'Source-level DTS config violates the managed config boundary:',
           `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: Limina now generates declaration configs under .limina from checker.include source tsconfigs.',
+          '  reason: declaration configs are Limina-managed under .limina and derived from checker.include source tsconfigs.',
         ].join('\n'),
       );
       continue;
@@ -1172,9 +1172,9 @@ function addBuildGraphConfigProblems(options: {
     if (!configPath.includes('/.limina/')) {
       options.problems.push(
         [
-          'Source-level build graph config is no longer supported:',
+          'Source-level build graph config violates the managed config boundary:',
           `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: Limina now generates checker build aggregators under .limina from checker.include source tsconfigs.',
+          '  reason: checker build aggregators are Limina-managed under .limina and derived from checker.include source tsconfigs.',
         ].join('\n'),
       );
       continue;

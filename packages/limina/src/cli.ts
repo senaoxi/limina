@@ -106,9 +106,7 @@ interface PackageFlags extends GlobalFlags, PackageSelectionFlags {
 
 interface CheckerFlags extends GlobalFlags {
   '--'?: string[];
-  checker?: unknown;
   preset?: string;
-  project?: unknown;
   verbose?: boolean;
   w?: boolean;
   watch?: boolean;
@@ -207,16 +205,6 @@ function parseBuildPreset(
 }
 
 function rejectUnknownCheckerOptions(flags: CheckerFlags): void {
-  if (flags.checker !== undefined) {
-    throw new Error('Unknown option: --checker. Use --preset instead.');
-  }
-
-  if (flags.project !== undefined) {
-    throw new Error(
-      'Unknown option: --project. Pass the config as a positional argument.',
-    );
-  }
-
   const knownOptions = new Set([
     '--',
     'config',
@@ -225,8 +213,6 @@ function rejectUnknownCheckerOptions(flags: CheckerFlags): void {
     'preset',
     'w',
     'watch',
-    'checker',
-    'project',
     'verbose',
   ]);
 

@@ -720,34 +720,78 @@ export default {
       ),
     });
 
-    await expect(
-      execFileAsync(process.execPath, [
-        cliPath,
-        'checker',
-        'build',
-        'packages/pkg/tsconfig.lib.json',
-        '--checker',
-        'vue-tsc',
-      ]),
-    ).rejects.toMatchObject({
-      stderr: expect.stringContaining(
-        'Unknown option: --checker. Use --preset instead.',
-      ),
-    });
+    for (const { args, option } of [
+      {
+        args: [
+          'checker',
+          'build',
+          'packages/pkg/tsconfig.lib.json',
+          '--checker',
+          'vue-tsc',
+        ],
+        option: 'checker',
+      },
+      {
+        args: [
+          'checker',
+          'typecheck',
+          'packages/pkg/tsconfig.lib.json',
+          '--checker',
+          'vue-tsc',
+        ],
+        option: 'checker',
+      },
+      {
+        args: [
+          'build',
+          'packages/pkg/tsconfig.lib.json',
+          '--checker',
+          'vue-tsc',
+        ],
+        option: 'checker',
+      },
+      {
+        args: [
+          'checker',
+          'build',
+          '--project',
+          'packages/pkg/tsconfig.lib.json',
+        ],
+        option: 'project',
+      },
+      {
+        args: [
+          'checker',
+          'typecheck',
+          '--project',
+          'packages/pkg/tsconfig.lib.json',
+        ],
+        option: 'project',
+      },
+    ]) {
+      let failure:
+        | {
+            code?: number;
+            stderr?: string;
+            stdout?: string;
+          }
+        | undefined;
 
-    await expect(
-      execFileAsync(process.execPath, [
-        cliPath,
-        'checker',
-        'build',
-        '--project',
-        'packages/pkg/tsconfig.lib.json',
-      ]),
-    ).rejects.toMatchObject({
-      stderr: expect.stringContaining(
-        'Unknown option: --project. Pass the config as a positional argument.',
-      ),
-    });
+      try {
+        await execFileAsync(process.execPath, [cliPath, ...args]);
+      } catch (error) {
+        failure = error as typeof failure;
+      }
+
+      expect(failure?.code).not.toBe(0);
+      expect(failure?.stderr).toContain(`Unknown option: --${option}.`);
+      expect(failure?.stderr).not.toContain('Use --preset instead.');
+      expect(failure?.stderr).not.toContain(
+        'Pass the config as a positional argument.',
+      );
+      expect(failure?.stdout ?? '').not.toContain('limina checker');
+      expect(failure?.stdout ?? '').not.toContain('limina build');
+    }
 
     await expect(
       execFileAsync(process.execPath, [

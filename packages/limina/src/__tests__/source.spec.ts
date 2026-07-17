@@ -4355,7 +4355,7 @@ packages:
     }
   });
 
-  it('rejects unsupported workspace tsConfig configs', async () => {
+  it('rejects removed workspace tsConfig configs as unknown fields', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
@@ -4383,9 +4383,7 @@ packages:
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
-      expect(errors).toContain(
-        'Unsupported source Knip workspace config  1 issue',
-      );
+      expect(errors).toContain('Invalid source Knip workspace config  1 issue');
       expect(errors).toContain('package: @example/app');
       expect(errors).toContain('package: @example/internal');
       expect(errors).toContain(
@@ -4394,7 +4392,42 @@ packages:
       expect(errors).toContain(
         'source.knip.workspaces["@example/internal"].tsConfig',
       );
-      expect(errors).toContain('tsConfig is no longer supported');
+      expect(errors).toContain('unknown source Knip workspace config field');
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects neutral unknown source Knip workspace config fields', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      {
+        source: {
+          knip: {
+            workspaces: {
+              '@example/app': {
+                experimental: true,
+              } as unknown as SourceKnipWorkspaceConfig,
+            },
+          },
+        },
+      },
+    );
+
+    try {
+      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const errors = errorSpy.mock.calls.join('\n');
+
+      expect(errors).toContain(
+        'source.knip.workspaces["@example/app"].experimental',
+      );
+      expect(errors).toContain('unknown source Knip workspace config field');
     } finally {
       errorSpy.mockRestore();
       await fixture.cleanup();

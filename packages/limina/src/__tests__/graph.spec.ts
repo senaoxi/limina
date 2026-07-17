@@ -2561,6 +2561,74 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
+  it.each([
+    {
+      field: 'graph.rules.runtime.experimental',
+      graph: {
+        rules: {
+          runtime: {
+            experimental: true,
+          },
+        },
+      } as unknown as GraphConfig,
+      reason: 'unknown graph rule field',
+      structure: 'rule',
+    },
+    {
+      field: 'graph.rules.runtime.allow.experimental',
+      graph: {
+        rules: {
+          runtime: {
+            allow: {
+              experimental: true,
+            },
+          },
+        },
+      } as unknown as GraphConfig,
+      reason: 'unknown graph rule allow field',
+      structure: 'allow',
+    },
+    {
+      field: 'graph.rules.runtime.deny.experimental',
+      graph: {
+        rules: {
+          runtime: {
+            deny: {
+              experimental: true,
+            },
+          },
+        },
+      } as unknown as GraphConfig,
+      reason: 'unknown graph rule deny field',
+      structure: 'deny',
+    },
+  ])(
+    'rejects neutral unknown graph $structure fields',
+    async ({ field, graph, reason }) => {
+      const errorSpy = vi
+        .spyOn(GraphLogger, 'error')
+        .mockImplementation(() => {});
+      const fixture = await createFixture(
+        createLocalBoundaryFiles({
+          limina: 'runtime',
+          runtimeSource: 'export const runtimeValue = 1;\n',
+        }),
+        graph,
+      );
+
+      try {
+        await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+        const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+        expect(errors).toContain(field);
+        expect(errors).toContain(reason);
+      } finally {
+        errorSpy.mockRestore();
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('formats thrown graph check errors as summary reports in flow mode', async () => {
     const errorSpy = vi
       .spyOn(GraphLogger, 'error')
@@ -2850,6 +2918,9 @@ describe('runGraphCheck graph rules', () => {
   });
 
   it('rejects removed deny.workspaceDeps graph rule config', async () => {
+    const errorSpy = vi
+      .spyOn(GraphLogger, 'error')
+      .mockImplementation(() => {});
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
@@ -2872,12 +2943,20 @@ describe('runGraphCheck graph rules', () => {
 
     try {
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('graph.rules.runtime.deny.workspaceDeps');
+      expect(errors).toContain('unknown graph rule deny field');
     } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });
 
   it('rejects removed deny.nodeBuiltins graph rule config', async () => {
+    const errorSpy = vi
+      .spyOn(GraphLogger, 'error')
+      .mockImplementation(() => {});
     const fixture = await createFixture(
       createLocalBoundaryFiles({
         limina: 'runtime',
@@ -2901,7 +2980,12 @@ describe('runGraphCheck graph rules', () => {
 
     try {
       await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
+
+      expect(errors).toContain('graph.rules.runtime.deny.nodeBuiltins');
+      expect(errors).toContain('unknown graph rule deny field');
     } finally {
+      errorSpy.mockRestore();
       await fixture.cleanup();
     }
   });

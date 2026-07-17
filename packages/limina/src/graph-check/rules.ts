@@ -45,6 +45,10 @@ interface GraphRuleKindSelection {
   refs?: boolean;
 }
 
+const graphRuleKeys = new Set(['allow', 'deny']);
+const graphRuleAllowKeys = new Set(['refs']);
+const graphRuleDenyKeys = new Set(['deps', 'refs']);
+
 const nodeBuiltinNames = new Set(
   builtinModules.flatMap((specifier) => {
     const normalized = specifier.startsWith('node:')
@@ -347,6 +351,18 @@ export function normalizeGraphRules(options: {
       continue;
     }
 
+    for (const key of Object.keys(rawRule)) {
+      if (graphRuleKeys.has(key)) {
+        continue;
+      }
+
+      addRuleEntryConfigProblem(options.problems, [
+        `  field: graph.rules.${label}.${key}`,
+        `  value: ${formatUnknownValue(rawRule[key])}`,
+        '  reason: unknown graph rule field.',
+      ]);
+    }
+
     if (rawRule.deny !== undefined && !isPlainRecord(rawRule.deny)) {
       addRuleEntryConfigProblem(options.problems, [
         `  field: graph.rules.${label}.deny`,
@@ -357,6 +373,21 @@ export function normalizeGraphRules(options: {
     }
 
     const deny = isPlainRecord(rawRule.deny) ? rawRule.deny : undefined;
+
+    if (deny) {
+      for (const key of Object.keys(deny)) {
+        if (graphRuleDenyKeys.has(key)) {
+          continue;
+        }
+
+        addRuleEntryConfigProblem(options.problems, [
+          `  field: graph.rules.${label}.deny.${key}`,
+          `  value: ${formatUnknownValue(deny[key])}`,
+          '  reason: unknown graph rule deny field.',
+        ]);
+      }
+    }
+
     const denyRefs = deny?.refs;
 
     if (
@@ -384,28 +415,6 @@ export function normalizeGraphRules(options: {
           '  reason: deny.refs must be an array.',
         ]);
       }
-    }
-
-    if (
-      shouldNormalizeRuleKind(options.include, 'deps') &&
-      deny?.workspaceDeps !== undefined
-    ) {
-      addRuleEntryConfigProblem(options.problems, [
-        `  field: graph.rules.${label}.deny.workspaceDeps`,
-        `  value: ${formatUnknownValue(deny.workspaceDeps)}`,
-        '  reason: deny.workspaceDeps has been removed; use deny.deps.',
-      ]);
-    }
-
-    if (
-      shouldNormalizeRuleKind(options.include, 'deps') &&
-      deny?.nodeBuiltins !== undefined
-    ) {
-      addRuleEntryConfigProblem(options.problems, [
-        `  field: graph.rules.${label}.deny.nodeBuiltins`,
-        `  value: ${formatUnknownValue(deny.nodeBuiltins)}`,
-        '  reason: deny.nodeBuiltins has been removed; use deny.deps.',
-      ]);
     }
 
     const deps = deny?.deps;
@@ -443,6 +452,21 @@ export function normalizeGraphRules(options: {
     }
 
     const allow = isPlainRecord(rawRule.allow) ? rawRule.allow : undefined;
+
+    if (allow) {
+      for (const key of Object.keys(allow)) {
+        if (graphRuleAllowKeys.has(key)) {
+          continue;
+        }
+
+        addRuleEntryConfigProblem(options.problems, [
+          `  field: graph.rules.${label}.allow.${key}`,
+          `  value: ${formatUnknownValue(allow[key])}`,
+          '  reason: unknown graph rule allow field.',
+        ]);
+      }
+    }
+
     const allowRefs = allow?.refs;
 
     if (
