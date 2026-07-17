@@ -3,8 +3,14 @@ import { tmpdir } from 'node:os';
 import path from 'pathe';
 import { describe, expect, it } from 'vitest';
 import {
+  type CheckIssueInventoryView,
+  DEFAULT_PRIMARY_BLOCKER_LIMIT,
+  DEFAULT_VISIBLE_ISSUE_LIMIT,
+} from '../check-reporting/inventory-presentation';
+import {
   appendCheckIssues,
   CHECK_ISSUE_SNAPSHOT_VERSION,
+  type CheckIssueInventoryFilters,
   type CheckIssueSnapshot,
   completeCheckIssueSnapshot,
   formatCheckIssueSnapshotInventory,
@@ -58,6 +64,43 @@ function createCheckSnapshot(
     status: 'completed',
     version: CHECK_ISSUE_SNAPSHOT_VERSION,
   };
+}
+
+function formatHumanInventory(options: {
+  filters?: CheckIssueInventoryFilters;
+  limit?: number | null;
+  limitExplicit?: boolean;
+  rootDir?: string;
+  snapshot: CheckIssueSnapshot | null;
+  verbose?: boolean;
+  view?: CheckIssueInventoryView;
+}): string {
+  const filters = options.filters ?? {};
+  const limit =
+    options.limit === undefined ? DEFAULT_VISIBLE_ISSUE_LIMIT : options.limit;
+  const verbose = options.verbose ?? false;
+  const hasFilters = Object.values(filters).some((values) => values?.length);
+
+  return formatCheckIssueSnapshotInventory({
+    format: 'human',
+    presentation: {
+      maxIssues: limit,
+      maxPrimaryBlockers: DEFAULT_PRIMARY_BLOCKER_LIMIT,
+      view:
+        options.view ??
+        (verbose ? 'detailed' : hasFilters ? 'compact' : 'summary'),
+    },
+    queryContext: {
+      effectiveFormat: 'human',
+      filters,
+      global: {},
+      limit,
+      limitExplicit: options.limitExplicit ?? false,
+      verbose,
+    },
+    ...(options.rootDir ? { rootDir: options.rootDir } : {}),
+    snapshot: options.snapshot,
+  });
 }
 
 async function writeRawCheckSnapshot(
@@ -924,7 +967,7 @@ describe('check issue snapshots', () => {
   });
 
   it('formats the default run summary across tasks', () => {
-    const output = formatCheckIssueSnapshotInventory({
+    const output = formatHumanInventory({
       snapshot: createCheckSnapshot([
         {
           code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
@@ -962,27 +1005,28 @@ describe('check issue snapshots', () => {
         },
       ]),
     });
+    const plainOutput = stripAnsi(output);
 
-    expect(output).toContain('Limina check issue summary');
-    expect(output).toContain('Status: completed');
-    expect(output).toContain('Matched: 4 / 4 issues');
-    expect(output).toContain('Issue overview:');
-    expect(output).toContain('Tasks: package:check (2)');
-    expect(output).toContain('Packages: @example/app (2)');
-    expect(output).toContain('Top rules:');
-    expect(output).toContain('2  LIMINA_PACKAGE_CHECK_FAILED');
-    expect(output).toContain('Next commands:');
-    expect(output).toContain(
-      'limina check --issues --rule LIMINA_PACKAGE_CHECK_FAILED --verbose',
-    );
+    expect(plainOutput).toContain('Limina check issue summary');
+    expect(plainOutput).toContain('Status: completed');
+    expect(plainOutput).toContain('Matched: 4 / 4 issues');
+    expect(plainOutput).toContain('Issue overview:');
+    expect(plainOutput).toContain('Tasks: package:check (2)');
+    expect(plainOutput).toContain('Packages: @example/app (2)');
+    expect(plainOutput).toContain('Top rules:');
+    expect(plainOutput).toContain('2  LIMINA_PACKAGE_CHECK_FAILED');
+    expect(plainOutput).toContain('Next commands:');
+    expect(plainOutput).toContain('limina check --issues --limit 20');
+    expect(plainOutput).toContain('limina check --issues --task package:check');
+    expect(plainOutput).toContain('LIMINA_PACKAGE_CHECK_FAILED');
   });
 
   it('formats empty and filtered unified snapshots', () => {
-    expect(formatCheckIssueSnapshotInventory({ snapshot: null })).toContain(
+    expect(formatHumanInventory({ snapshot: null })).toContain(
       'No check issue snapshot found.',
     );
     expect(
-      formatCheckIssueSnapshotInventory({
+      formatHumanInventory({
         snapshot: {
           ...createCheckSnapshot([]),
           status: 'not-run',
@@ -990,18 +1034,19 @@ describe('check issue snapshots', () => {
       }),
     ).toContain('No completed check issue snapshot is available');
 
-    const emptyOutput = formatCheckIssueSnapshotInventory({
+    const emptyOutput = formatHumanInventory({
       snapshot: createCheckSnapshot([]),
     });
+    const plainEmptyOutput = stripAnsi(emptyOutput);
 
-    expect(emptyOutput).toContain('Limina check issue summary');
-    expect(emptyOutput).toContain('Matched: 0 / 0 issues');
-    expect(emptyOutput).toContain('Tasks: (none)');
-    expect(emptyOutput).toContain('Packages: (none)');
-    expect(emptyOutput).toContain('Top rules:');
-    expect(emptyOutput).toContain('(none)');
+    expect(plainEmptyOutput).toContain('Limina check issue summary');
+    expect(plainEmptyOutput).toContain('Matched: 0 / 0 issues');
+    expect(plainEmptyOutput).toContain('Tasks: (none)');
+    expect(plainEmptyOutput).toContain('Packages: (none)');
+    expect(plainEmptyOutput).toContain('Top rules:');
+    expect(plainEmptyOutput).toContain('(none)');
 
-    const filteredOutput = formatCheckIssueSnapshotInventory({
+    const filteredOutput = formatHumanInventory({
       filters: {
         tasks: ['proof:check'],
       },
@@ -1023,17 +1068,59 @@ describe('check issue snapshots', () => {
         },
       ]),
     });
+    const plainFilteredOutput = stripAnsi(filteredOutput);
 
-    expect(filteredOutput).toContain('Limina check issue summary');
-    expect(filteredOutput).toContain('Filters:');
-    expect(filteredOutput).toContain('task: proof:check');
-    expect(filteredOutput).toContain('Matched: 1 / 2 issues');
-    expect(filteredOutput).toContain('Tasks: proof:check (1)');
-    expect(filteredOutput).not.toContain('package:check');
+    expect(plainFilteredOutput).toContain('Limina check issue summary');
+    expect(plainFilteredOutput).toContain('Filters:');
+    expect(plainFilteredOutput).toContain('task: proof:check');
+    expect(plainFilteredOutput).toContain('Matched: 1 / 2 issues');
+    expect(plainFilteredOutput).toContain('Tasks: proof:check (1)');
+    expect(plainFilteredOutput).not.toContain('package:check');
+  });
+
+  it('colors issue inventory summary titles like live check summaries', () => {
+    const passedOutput = formatHumanInventory({
+      snapshot: {
+        ...createCheckSnapshot([]),
+        run: createCompletedRun(),
+      },
+    });
+    const failedOutput = formatHumanInventory({
+      snapshot: {
+        ...createCheckSnapshot([
+          {
+            code: 'LIMINA_SOURCE_UNCOVERED_FILE',
+            reason: 'source file is not covered',
+            task: 'source:check',
+            title: 'Uncovered source file',
+          },
+        ]),
+        run: createCompletedRun([], 'failed'),
+      },
+    });
+
+    expect(passedOutput).toContain(
+      `${ANSI_ESCAPE}[32m╭ Limina check issue summary`,
+    );
+    expect(failedOutput).toContain(
+      `${ANSI_ESCAPE}[31m╭ Limina check issue summary`,
+    );
+    expect(failedOutput).toContain(
+      `${ANSI_ESCAPE}[35mIssue overview:${ANSI_ESCAPE}[0m`,
+    );
+    expect(failedOutput).toContain(
+      `${ANSI_ESCAPE}[34mTop rules:${ANSI_ESCAPE}[0m`,
+    );
+    expect(failedOutput).toContain(
+      `${ANSI_ESCAPE}[36mPrimary blockers:${ANSI_ESCAPE}[0m`,
+    );
+    expect(failedOutput).toContain(
+      `${ANSI_ESCAPE}[36mNext commands:${ANSI_ESCAPE}[0m`,
+    );
   });
 
   it('filters internal preparation failures by graph:materialize issue task', () => {
-    const output = formatCheckIssueSnapshotInventory({
+    const output = formatHumanInventory({
       filters: { tasks: ['graph:materialize'] },
       snapshot: createCheckSnapshot([
         createLiminaCheckIssue({
@@ -1052,11 +1139,12 @@ describe('check issue snapshots', () => {
         }),
       ]),
     });
+    const plainOutput = stripAnsi(output);
 
-    expect(output).toContain('task: graph:materialize');
-    expect(output).toContain('Matched: 1 / 2 issues');
-    expect(output).toContain('LIMINA_GRAPH_MATERIALIZE_FAILED');
-    expect(output).not.toContain('LIMINA_GRAPH_PREPARE_FAILED');
+    expect(plainOutput).toContain('task: graph:materialize');
+    expect(plainOutput).toContain('Matched: 1 / 2 issues');
+    expect(plainOutput).toContain('LIMINA_GRAPH_MATERIALIZE_FAILED');
+    expect(plainOutput).not.toContain('LIMINA_GRAPH_PREPARE_FAILED');
   });
 
   it('formats detailed, json, and ndjson issue inventory output', () => {
@@ -1081,7 +1169,7 @@ describe('check issue snapshots', () => {
       verifyCommands: ['limina package check'],
     });
     const snapshot = createCheckSnapshot([issue]);
-    const details = formatCheckIssueSnapshotInventory({
+    const details = formatHumanInventory({
       snapshot,
       verbose: true,
     });
@@ -1120,6 +1208,208 @@ describe('check issue snapshots', () => {
     });
   });
 
+  it('preserves the frozen machine inventory payload and issue order', () => {
+    const issues: CheckIssueSnapshot['issues'] = [
+      {
+        code: 'RULE_B',
+        filePath: 'packages/b/src/b.ts',
+        packageName: '@example/b',
+        reason: 'Rule B failed.',
+        severity: 'warning',
+        task: 'proof:check',
+        title: 'Rule B',
+      },
+      {
+        code: 'RULE_A',
+        filePath: 'packages/a/src/a.ts',
+        packageName: '@example/a',
+        reason: 'Rule A failed.',
+        task: 'source:check',
+        title: 'Rule A',
+      },
+      {
+        code: 'RULE_A',
+        filePath: 'packages/b/src/a.ts',
+        packageName: '@example/b',
+        reason: 'Rule A failed.',
+        task: 'source:check',
+        title: 'Rule A',
+      },
+    ];
+    const run = createCompletedRun([], 'failed');
+    const snapshot: CheckIssueSnapshot = {
+      command: 'limina check',
+      createdAt: '2026-07-17T00:00:00.000Z',
+      issues,
+      run,
+      status: 'completed',
+      version: CHECK_ISSUE_SNAPSHOT_VERSION,
+    };
+
+    expect(
+      JSON.parse(
+        formatCheckIssueSnapshotInventory({ format: 'json', snapshot }),
+      ),
+    ).toEqual({
+      command: 'limina check',
+      createdAt: '2026-07-17T00:00:00.000Z',
+      filters: {},
+      issueCount: 3,
+      issues,
+      overview: {
+        affectedFiles: 3,
+        affectedPackages: 2,
+        affectedScopes: 2,
+        checkers: [],
+        issueCount: 3,
+        packages: [
+          { count: 2, name: '@example/b' },
+          { count: 1, name: '@example/a' },
+        ],
+        rules: [
+          { count: 2, name: 'RULE_A' },
+          { count: 1, name: 'RULE_B' },
+        ],
+        scopes: [
+          { count: 2, name: 'packages/b/src' },
+          { count: 1, name: 'packages/a/src' },
+        ],
+        severities: [
+          { count: 2, name: 'error' },
+          { count: 1, name: 'warning' },
+        ],
+        tasks: [
+          { count: 2, name: 'source:check' },
+          { count: 1, name: 'proof:check' },
+        ],
+      },
+      run,
+      status: 'completed',
+      topBlockers: [
+        {
+          affectedFiles: 2,
+          affectedPackages: 2,
+          code: 'RULE_A',
+          count: 2,
+          packages: [
+            { count: 1, name: '@example/a' },
+            { count: 1, name: '@example/b' },
+          ],
+          summary: 'Rule A failed.',
+          task: 'source:check',
+          title: 'Rule A',
+        },
+        {
+          affectedFiles: 1,
+          affectedPackages: 1,
+          code: 'RULE_B',
+          count: 1,
+          packages: [{ count: 1, name: '@example/b' }],
+          severity: 'warning',
+          summary: 'Rule B failed.',
+          task: 'proof:check',
+          title: 'Rule B',
+        },
+      ],
+      version: CHECK_ISSUE_SNAPSHOT_VERSION,
+    });
+    expect(
+      formatCheckIssueSnapshotInventory({ format: 'ndjson', snapshot })
+        .split('\n')
+        .map((line) => JSON.parse(line)),
+    ).toEqual(issues);
+  });
+
+  it('does not mutate snapshots or issue ids across human inventory views', () => {
+    const snapshot = createCheckSnapshot([
+      createLiminaCheckIssue({
+        code: 'ROOT_A',
+        evidence: [{ label: 'details', lines: ['one', 'two'] }],
+        filePath: '/repo/packages/app/src/index.ts',
+        packageName: '@example/app',
+        reason: 'Root A failed.',
+        rootDir: '/repo',
+        task: 'source:check',
+        title: 'Root A',
+      }),
+      createLiminaCheckIssue({
+        code: 'ROOT_B',
+        filePath: '/repo/packages/lib/src/index.ts',
+        packageName: '@example/lib',
+        reason: 'Root B failed.',
+        rootDir: '/repo',
+        task: 'proof:check',
+        title: 'Root B',
+      }),
+    ]);
+    const before = JSON.stringify(snapshot);
+    const ids = snapshot.issues.map((issue) => issue.id);
+
+    formatHumanInventory({ snapshot, view: 'summary' });
+    formatHumanInventory({ snapshot, view: 'compact' });
+    formatHumanInventory({ snapshot, verbose: true, view: 'detailed' });
+    formatHumanInventory({ limit: null, snapshot, view: 'compact' });
+
+    expect(JSON.stringify(snapshot)).toBe(before);
+    expect(snapshot.issues.map((issue) => issue.id)).toEqual(ids);
+  });
+
+  it('keeps invocation identity in every generated query command', () => {
+    const invocationId = '00000000-0000-4000-8000-000000000000';
+    const issue = createLiminaCheckIssue({
+      code: 'ROOT_A',
+      filePath: '/repo/packages/app/src/index.ts',
+      reason: 'Root A failed.',
+      rootDir: '/repo',
+      task: 'source:check',
+      title: 'Root A',
+    });
+    const output = stripAnsi(
+      formatCheckIssueSnapshotInventory({
+        format: 'human',
+        invocation: {
+          completedAt: '2026-07-17T00:00:01.000Z',
+          invocationId,
+          kind: 'standalone-invocation',
+          result: 'failed',
+          version: 1,
+        },
+        presentation: {
+          maxIssues: 20,
+          maxPrimaryBlockers: DEFAULT_PRIMARY_BLOCKER_LIMIT,
+          view: 'compact',
+        },
+        queryContext: {
+          effectiveFormat: 'human',
+          filters: {},
+          global: {},
+          invocationId,
+          limit: 20,
+          limitExplicit: false,
+          verbose: false,
+        },
+        snapshot: {
+          ...createCheckSnapshot([issue]),
+          command: 'recorded command --must-not-be-used-for-query-building',
+        },
+      }),
+    );
+    const normalized = output
+      .replaceAll(/\s*│\s*/gu, ' ')
+      .replaceAll(/\s+/gu, ' ');
+
+    expect(output).toContain(`Invocation: ${invocationId}`);
+    expect(output).toContain('Kind: standalone-invocation');
+    expect(output).toContain('Result: failed');
+    expect(output).toContain('Completed: 2026-07-17T00:00:01.000Z');
+    expect(normalized).toContain(
+      `limina check --issues --invocation ${invocationId}`,
+    );
+    expect(normalized).not.toContain(
+      'recorded command --must-not-be-used-for-query-building --',
+    );
+  });
+
   it('filters unified inventory by rule, file, scope, package, task, and checker', () => {
     const snapshot = createCheckSnapshot([
       createLiminaCheckIssue({
@@ -1144,7 +1434,7 @@ describe('check issue snapshots', () => {
         tool: 'publint',
       }),
     ]);
-    const output = formatCheckIssueSnapshotInventory({
+    const output = formatHumanInventory({
       filters: {
         checkerNames: ['typescript'],
         files: ['.limina/checkers/typescript/tsconfig.json'],
@@ -1156,14 +1446,15 @@ describe('check issue snapshots', () => {
       rootDir: '/repo',
       snapshot,
     });
+    const plainOutput = stripAnsi(output);
 
-    expect(output).toContain('Limina check issue summary');
-    expect(output).toContain('Filters:');
-    expect(output).toContain('task: checker:build');
-    expect(output).toContain('Matched: 1 / 2 issues');
-    expect(output).toContain('Tasks: checker:build (1)');
-    expect(output).toContain('1  LIMINA_CHECKER_BUILD_FAILED');
-    expect(output).not.toContain('@example/lib');
+    expect(plainOutput).toContain('Limina check issue summary');
+    expect(plainOutput).toContain('Filters:');
+    expect(plainOutput).toContain('task: checker:build');
+    expect(plainOutput).toContain('Matched: 1 / 2 issues');
+    expect(plainOutput).toContain('Tasks: checker:build (1)');
+    expect(plainOutput).toContain('1  LIMINA_CHECKER_BUILD_FAILED');
+    expect(plainOutput).not.toContain('@example/lib');
   });
 
   it('reports unmatched human filter values with help commands', () => {
@@ -1180,7 +1471,7 @@ describe('check issue snapshots', () => {
       }),
     ]);
     const output = stripAnsi(
-      formatCheckIssueSnapshotInventory({
+      formatHumanInventory({
         filters: {
           checkerNames: ['vue'],
           packageNames: ['@example/missing'],
@@ -1196,27 +1487,24 @@ describe('check issue snapshots', () => {
       .replaceAll(/\s+/gu, ' ');
 
     expect(output).toContain('Matched: 0 / 1 issues');
+    expect(output).not.toContain('Showing 0');
     expect(output).toContain('Filter diagnostics:');
     expect(output).toContain(
       'task "proof:check" has no issues in the last snapshot.',
     );
-    expect(normalizedOutput).toContain('limina check --issues --task --help');
+    expect(normalizedOutput).toContain('--task --help');
     expect(output).toContain(
       'package "@example/missing" has no issues in the last snapshot.',
     );
-    expect(normalizedOutput).toContain(
-      'limina check --issues --package --help',
-    );
+    expect(normalizedOutput).toContain('--package --help');
     expect(output).toContain(
       'Supported rule "LIMINA_GRAPH_CHECK_FAILED" is absent from the last snapshot.',
     );
-    expect(normalizedOutput).toContain('limina check --issues --rule --help');
+    expect(normalizedOutput).toContain('--rule --help');
     expect(output).toContain(
       'checker "vue" has no issues in the last snapshot.',
     );
-    expect(normalizedOutput).toContain(
-      'limina check --issues --checker --help',
-    );
+    expect(normalizedOutput).toContain('--checker --help');
   });
 });
 function artifactNamespace(rootDir: string) {

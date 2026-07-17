@@ -3,7 +3,16 @@ import { normalizeSlashes } from '#utils/path';
 import path from 'pathe';
 import { generatedRootDirName } from '../core/build-graph/generated/paths';
 import { formatCheckSummaryBlock } from '../reporting';
-import { formatShellCommand } from './shell-command';
+import {
+  type CheckIssueInventoryPresentationOptions,
+  compareCodeUnits,
+  DEFAULT_PRIMARY_BLOCKER_LIMIT,
+  DEFAULT_VISIBLE_ISSUE_LIMIT,
+  formatInventoryQueryCommand,
+  type HumanPrimaryBlocker,
+  type InventoryQueryContext,
+  selectHumanPrimaryBlockers,
+} from './inventory-presentation';
 import type {
   CheckIssueInventoryFilters,
   CheckIssueSnapshot,
@@ -55,14 +64,18 @@ export interface CheckTopBlocker {
 
 export interface CheckRunSummaryHumanOptions {
   issues: readonly LiminaCheckIssue[];
+  queryContext?: InventoryQueryContext;
   rootDir?: string;
   run: LiminaCheckRunSummary;
+  verbose?: boolean;
 }
 
 interface CheckIssueSnapshotSummaryHumanOptions {
   filteredIssueCount?: number;
   filters?: CheckIssueInventoryFilters;
   issues: readonly LiminaCheckIssue[];
+  presentation: CheckIssueInventoryPresentationOptions;
+  queryContext: InventoryQueryContext;
   rootDir?: string;
   snapshot: CheckIssueSnapshot;
   totalIssueCount?: number;
@@ -122,6 +135,24 @@ function countBy(
     .sort(
       (left, right) =>
         right.count - left.count || left.name.localeCompare(right.name),
+    );
+}
+
+function countByHuman(
+  issues: readonly LiminaCheckIssue[],
+  getValue: (issue: LiminaCheckIssue) => string | undefined,
+): CountEntry[] {
+  const counts = new Map<string, number>();
+
+  for (const issue of issues) {
+    incrementCount(counts, getValue(issue));
+  }
+
+  return [...counts.entries()]
+    .map(([name, count]) => ({ count, name }))
+    .sort(
+      (left, right) =>
+        right.count - left.count || compareCodeUnits(left.name, right.name),
     );
 }
 
@@ -251,6 +282,23 @@ export function createIssueOverview(
   };
 }
 
+function createHumanIssueOverview(
+  issues: readonly LiminaCheckIssue[],
+): CheckIssueOverview {
+  return {
+    affectedFiles: countUnique(issues, getIssueFilePaths),
+    affectedPackages: countUnique(issues, (issue) => issue.packageName),
+    affectedScopes: countUnique(issues, getIssueScope),
+    checkers: countByHuman(issues, (issue) => issue.checkerName),
+    issueCount: issues.length,
+    packages: countByHuman(issues, (issue) => issue.packageName),
+    rules: countByHuman(issues, (issue) => issue.code),
+    scopes: countByHuman(issues, getIssueScope),
+    severities: countByHuman(issues, (issue) => issue.severity ?? 'error'),
+    tasks: countByHuman(issues, (issue) => issue.task),
+  };
+}
+
 export function selectTopBlockers(
   issues: readonly LiminaCheckIssue[],
   limit: number = TOP_BLOCKER_LIMIT,
@@ -366,6 +414,17 @@ function formatCheckRunResult(run: LiminaCheckRunSummary): string {
   }
 
   return result.toUpperCase();
+}
+
+function getCheckSummaryBorderColor(options: {
+  issues: readonly LiminaCheckIssue[];
+  run?: LiminaCheckRunSummary;
+}): 'green' | 'red' {
+  const passed = options.run
+    ? formatCheckRunResult(options.run) === 'PASSED'
+    : options.issues.length === 0;
+
+  return passed ? 'green' : 'red';
 }
 
 function countIssuesByTask(
@@ -641,6 +700,7 @@ function formatCheckItemStatsLines(options: {
 function formatTaskStatsLines(
   run: LiminaCheckRunSummary | undefined,
   issues: readonly LiminaCheckIssue[],
+  verbose: boolean,
 ): string[] {
   const stats = createTaskExecutionStats(run, issues);
 
@@ -652,7 +712,7 @@ function formatTaskStatsLines(
     return ['  (no units reached)'];
   }
 
-  const visibleTasks = stats.slice(0, TASK_DISPLAY_LIMIT);
+  const visibleTasks = verbose ? stats : stats.slice(0, TASK_DISPLAY_LIMIT);
   const remainingTaskCount = stats.length - visibleTasks.length;
   const labelWidth = Math.max(
     22,
@@ -779,6 +839,7 @@ function formatUnavailableFilterLines(options: {
 
 function formatUnavailableRuleLines(options: {
   availableValues: ReadonlySet<string>;
+  helpCommand: string;
   selectedValues: readonly string[] | undefined;
 }): string[] {
   return findUnavailableFilterValues(
@@ -786,40 +847,50 @@ function formatUnavailableRuleLines(options: {
     options.availableValues,
   ).flatMap((value) => [
     `  - Supported rule "${value}" is absent from the last snapshot.`,
-    '    Help: limina check --issues --rule --help',
+    `    Help: ${options.helpCommand}`,
   ]);
 }
 
 function formatFilterDiagnostics(options: {
   filters: CheckIssueInventoryFilters | undefined;
+  queryContext: InventoryQueryContext;
   snapshot: CheckIssueSnapshot;
 }): string[] {
   if (!hasFilters(options.filters)) {
     return [];
   }
 
-  const overview = createIssueOverview(options.snapshot.issues);
+  const overview = createHumanIssueOverview(options.snapshot.issues);
   const diagnostics = [
     ...formatUnavailableFilterLines({
       availableValues: getEntryNames(overview.tasks),
       filterLabel: 'task',
-      helpCommand: 'limina check --issues --task --help',
+      helpCommand: formatInventoryQueryCommand(options.queryContext, {
+        filterHelp: 'task',
+      }),
       selectedValues: options.filters?.tasks,
     }),
     ...formatUnavailableFilterLines({
       availableValues: getEntryNames(overview.packages),
       filterLabel: 'package',
-      helpCommand: 'limina check --issues --package --help',
+      helpCommand: formatInventoryQueryCommand(options.queryContext, {
+        filterHelp: 'package',
+      }),
       selectedValues: options.filters?.packageNames,
     }),
     ...formatUnavailableRuleLines({
       availableValues: getEntryNames(overview.rules),
+      helpCommand: formatInventoryQueryCommand(options.queryContext, {
+        filterHelp: 'rule',
+      }),
       selectedValues: options.filters?.rules,
     }),
     ...formatUnavailableFilterLines({
       availableValues: getEntryNames(overview.checkers),
       filterLabel: 'checker',
-      helpCommand: 'limina check --issues --checker --help',
+      helpCommand: formatInventoryQueryCommand(options.queryContext, {
+        filterHelp: 'checker',
+      }),
       selectedValues: options.filters?.checkerNames,
     }),
   ];
@@ -848,7 +919,10 @@ function formatSeverityTotal(overview: CheckIssueOverview): string {
     .join(', ');
 }
 
-function formatTopBlockerLines(blockers: readonly CheckTopBlocker[]): string[] {
+function formatHumanPrimaryBlockerLines(
+  blockers: readonly HumanPrimaryBlocker[],
+  verbose: boolean,
+): string[] {
   if (blockers.length === 0) {
     return ['  (none)'];
   }
@@ -856,9 +930,27 @@ function formatTopBlockerLines(blockers: readonly CheckTopBlocker[]): string[] {
   return blockers.flatMap((blocker, index) => [
     `${index + 1}. ${blocker.title}  ${blocker.count} ${pluralIssue(blocker.count)}`,
     `   Rule: ${blocker.code}`,
-    `   ${blocker.summary ?? blocker.title}`,
+    `   ${blocker.summary}`,
+    ...(verbose
+      ? [
+          `   Task: ${blocker.task}`,
+          `   Severity: ${blocker.severity ?? 'error'}`,
+          `   Affected files: ${blocker.affectedFiles}`,
+          `   Affected packages: ${blocker.affectedPackages}`,
+          `   Representative: ${blocker.representativeLocation ?? '(not recorded)'}`,
+          ...(blocker.checkerName
+            ? [`   Checker: ${blocker.checkerName}`]
+            : []),
+          ...(blocker.tool ? [`   Tool: ${blocker.tool}`] : []),
+        ]
+      : []),
     ...(blocker.packages.length > 0
-      ? [`   Packages: ${formatTopCounts(blocker.packages, 5)}`]
+      ? [
+          `   Packages: ${formatTopCounts(
+            blocker.packages,
+            verbose ? blocker.packages.length : 5,
+          )}`,
+        ]
       : []),
   ]);
 }
@@ -919,48 +1011,51 @@ function formatNextCommandEntries(
   );
 }
 
+function createDefaultInventoryQueryContext(): InventoryQueryContext {
+  return {
+    effectiveFormat: 'human',
+    filters: {},
+    global: {},
+    limit: DEFAULT_VISIBLE_ISSUE_LIMIT,
+    limitExplicit: false,
+    verbose: false,
+  };
+}
+
 function createCheckRunNextCommands(options: {
   failedTask: FailedTaskSelection | null;
-  topBlocker: CheckTopBlocker | undefined;
+  queryContext: InventoryQueryContext;
+  topBlocker: HumanPrimaryBlocker | undefined;
 }): NextCommandEntry[] {
-  const taskFilter = options.failedTask?.queryTask
-    ? ['--task', options.failedTask.queryTask]
-    : [];
+  const taskFilters = options.failedTask?.queryTask
+    ? [options.failedTask.queryTask]
+    : undefined;
 
   return [
     {
-      command: formatShellCommand([
-        'limina',
-        'check',
-        '--issues',
-        ...taskFilter,
-        '--verbose',
-      ]),
+      command: formatInventoryQueryCommand(options.queryContext, {
+        additionalFilters: { tasks: taskFilters },
+        limit: 'preserve',
+        verbose: true,
+      }),
       label: 'Verbose',
     },
     ...(options.topBlocker
       ? [
           {
-            command: formatShellCommand([
-              'limina',
-              'check',
-              '--issues',
-              '--rule',
-              options.topBlocker.code,
-              '--verbose',
-            ]),
+            command: formatInventoryQueryCommand(options.queryContext, {
+              additionalFilters: { rules: [options.topBlocker.code] },
+              limit: 'preserve',
+              verbose: true,
+            }),
             label: 'By rule',
           },
         ]
       : []),
     {
-      command: formatShellCommand([
-        'limina',
-        'check',
-        '--issues',
-        '--format',
-        'json',
-      ]),
+      command: formatInventoryQueryCommand(options.queryContext, {
+        format: 'json',
+      }),
       label: 'JSON',
     },
   ];
@@ -969,14 +1064,21 @@ function createCheckRunNextCommands(options: {
 export function formatCheckRunSummaryHuman(
   options: CheckRunSummaryHumanOptions,
 ): string {
-  const overview = createIssueOverview(options.issues);
-  const topBlockers = selectTopBlockers(options.issues);
+  const verbose = options.verbose ?? false;
+  const overview = createHumanIssueOverview(options.issues);
+  const primaryBlockers = selectHumanPrimaryBlockers(
+    options.issues,
+    verbose ? options.issues.length : DEFAULT_PRIMARY_BLOCKER_LIMIT,
+  );
   const run = options.run;
   const failedTask = getFailedTask(run);
   const result = formatCheckRunResult(run);
+  const queryContext =
+    options.queryContext ?? createDefaultInventoryQueryContext();
   const nextCommands = createCheckRunNextCommands({
     failedTask,
-    topBlocker: topBlockers[0],
+    queryContext,
+    topBlocker: primaryBlockers[0],
   });
   const hasIssues = overview.issueCount > 0;
   const shouldShowFailureSections = result !== 'PASSED';
@@ -984,7 +1086,10 @@ export function formatCheckRunSummaryHuman(
     run?.result === 'blocked' || Boolean(run?.blockedBy);
 
   return formatCheckSummaryBlock({
-    borderColor: result === 'PASSED' ? 'green' : 'red',
+    borderColor: getCheckSummaryBorderColor({
+      issues: options.issues,
+      run,
+    }),
     colorLine: colorCheckStatsLine,
     lines: [
       `Command: ${run.command}`,
@@ -994,7 +1099,7 @@ export function formatCheckRunSummaryHuman(
         issueCount: overview.issueCount,
         run,
       }),
-      ...(shouldShowFailureSections
+      ...(shouldShowFailureSections || verbose
         ? [
             ...(shouldShowBlockedAt
               ? [
@@ -1007,17 +1112,29 @@ export function formatCheckRunSummaryHuman(
           ]
         : []),
       'Validation units:',
-      ...formatTaskStatsLines(run, options.issues),
+      ...formatTaskStatsLines(run, options.issues, verbose),
       ...(hasIssues
         ? [
             'Issue overview:',
             `Total: ${formatSeverityTotal(overview)}`,
             `Affected packages: ${overview.affectedPackages}`,
             `Affected scopes: ${overview.affectedScopes}`,
+            ...(verbose
+              ? [
+                  'Package counts:',
+                  ...formatRankedCounts(
+                    overview.packages,
+                    overview.packages.length,
+                  ),
+                ]
+              : []),
             'Top rules:',
-            ...formatRankedCounts(overview.rules, 5),
-            'Top blockers:',
-            ...formatTopBlockerLines(topBlockers),
+            ...formatRankedCounts(
+              overview.rules,
+              verbose ? overview.rules.length : 5,
+            ),
+            'Primary blockers:',
+            ...formatHumanPrimaryBlockerLines(primaryBlockers, verbose),
             'Next commands:',
             ...formatNextCommandEntries(nextCommands),
           ]
@@ -1027,26 +1144,87 @@ export function formatCheckRunSummaryHuman(
   }).join('\n');
 }
 
-function createIssueSnapshotNextCommands(
-  topRule: CountEntry | undefined,
-): string[] {
-  return [
-    ...(topRule
-      ? [`limina check --issues --rule ${topRule.name} --verbose`]
-      : ['limina check --issues --verbose']),
-    'limina check --issues --format json',
-  ];
+function createIssueSnapshotNextCommands(options: {
+  presentation: CheckIssueInventoryPresentationOptions;
+  primaryBlocker: HumanPrimaryBlocker | undefined;
+  queryContext: InventoryQueryContext;
+}): NextCommandEntry[] {
+  const entries: NextCommandEntry[] = [];
+
+  if (options.presentation.view === 'summary') {
+    entries.push({
+      command: formatInventoryQueryCommand(options.queryContext, {
+        limit: options.presentation.maxIssues ?? 'all',
+      }),
+      label: 'Show issues',
+    });
+  }
+
+  if (options.primaryBlocker) {
+    entries.push({
+      command: formatInventoryQueryCommand(options.queryContext, {
+        additionalFilters: {
+          rules: [options.primaryBlocker.code],
+          tasks: [options.primaryBlocker.task],
+        },
+        limit: 'preserve',
+        verbose: options.queryContext.verbose,
+      }),
+      label: 'Refine',
+    });
+  }
+
+  if (options.presentation.view !== 'detailed') {
+    entries.push({
+      command: formatInventoryQueryCommand(options.queryContext, {
+        limit: 'preserve',
+        verbose: true,
+      }),
+      label: 'Detailed',
+    });
+  }
+
+  entries.push(
+    {
+      command: formatInventoryQueryCommand(options.queryContext, {
+        limit: 'all',
+        verbose: options.queryContext.verbose,
+      }),
+      label: 'Complete',
+    },
+    {
+      command: formatInventoryQueryCommand(options.queryContext, {
+        format: 'json',
+      }),
+      label: 'JSON',
+    },
+  );
+
+  return entries;
 }
 
 export function formatCheckIssueSnapshotSummaryHuman(
   options: CheckIssueSnapshotSummaryHumanOptions,
 ): string {
-  const overview = createIssueOverview(options.issues);
+  const overview = createHumanIssueOverview(options.issues);
+  const primaryBlockers = selectHumanPrimaryBlockers(
+    options.issues,
+    options.presentation.maxPrimaryBlockers,
+  );
   const filteredIssueCount =
     options.filteredIssueCount ?? options.issues.length;
   const totalIssueCount = options.totalIssueCount ?? options.issues.length;
+  const nextCommands = createIssueSnapshotNextCommands({
+    presentation: options.presentation,
+    primaryBlocker: primaryBlockers[0],
+    queryContext: options.queryContext,
+  });
 
   return formatCheckSummaryBlock({
+    borderColor: getCheckSummaryBorderColor({
+      issues: options.snapshot.issues,
+      run: options.snapshot.run,
+    }),
     lines: [
       `Snapshot: ${formatSnapshotTimestamp(options.snapshot)}`,
       `Command: ${options.snapshot.run?.command ?? options.snapshot.command}`,
@@ -1055,6 +1233,7 @@ export function formatCheckIssueSnapshotSummaryHuman(
       ...formatFilters(options.filters),
       ...formatFilterDiagnostics({
         filters: options.filters,
+        queryContext: options.queryContext,
         snapshot: options.snapshot,
       }),
       'Issue overview:',
@@ -1062,8 +1241,10 @@ export function formatCheckIssueSnapshotSummaryHuman(
       `Packages: ${formatTopCounts(overview.packages, 5)}`,
       'Top rules:',
       ...formatRankedCounts(overview.rules, 5),
+      'Primary blockers:',
+      ...formatHumanPrimaryBlockerLines(primaryBlockers, false),
       'Next commands:',
-      ...createIssueSnapshotNextCommands(overview.rules[0]),
+      ...formatNextCommandEntries(nextCommands),
     ],
     title: 'Limina check issue summary',
   }).join('\n');

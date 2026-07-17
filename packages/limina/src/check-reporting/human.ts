@@ -2,6 +2,8 @@ import boxen from 'boxen';
 
 import { uniqueSortedStrings } from '#utils/collections';
 import { formatCheckSummaryBlock } from '../reporting';
+import type { CheckIssueInventoryView } from './inventory-presentation';
+import { getAllCanonicalIssueLocations } from './inventory-presentation';
 import type {
   LiminaCheckIssue,
   LiminaCheckIssueEvidence,
@@ -34,6 +36,12 @@ export interface CheckIssueHumanReportOptions extends CheckIssueReportOptions {
   detailLimit?: number;
   issues: readonly LiminaCheckIssue[];
   title: string;
+}
+
+export interface CheckIssueInventoryCardOptions {
+  issue: LiminaCheckIssue;
+  representativeLocation: string | undefined;
+  view: Exclude<CheckIssueInventoryView, 'summary'>;
 }
 
 interface IssueGroup {
@@ -496,6 +504,115 @@ function formatIssueBlock(
     },
     width,
   }).split('\n');
+}
+
+function collapseIssueScalar(value: string): string {
+  return value.split(/\s+/u).filter(Boolean).join(' ');
+}
+
+function formatCompactInventoryIssueLines(
+  issue: LiminaCheckIssue,
+  representativeLocation: string | undefined,
+): string[] {
+  const summary = issue.summary ? collapseIssueScalar(issue.summary) : '';
+  const reason = collapseIssueScalar(issue.reason);
+  const fix = issue.fix ? collapseIssueScalar(issue.fix) : '';
+  const tool = issue.tool ?? issue.external?.tool;
+
+  return [
+    collapseIssueScalar(issue.title),
+    `location: ${representativeLocation ?? '(not recorded)'}`,
+    `rule: ${issue.code}`,
+    ...(issue.packageName ? [`package: ${issue.packageName}`] : []),
+    ...(issue.checkerName ? [`checker: ${issue.checkerName}`] : []),
+    ...(tool ? [`tool: ${tool}`] : []),
+    ...(summary ? [`summary: ${summary}`] : [`reason: ${reason}`]),
+    ...(fix ? [`fix: ${fix}`] : []),
+  ];
+}
+
+function getDeduplicatedRawDetailLines(issue: LiminaCheckIssue): string[] {
+  const evidenceLines = new Set(
+    (issue.evidence ?? []).flatMap((evidence) => evidence.lines ?? []),
+  );
+  const seen = new Set<string>();
+
+  return (issue.detailLines ?? []).filter((line) => {
+    if (evidenceLines.has(line) || seen.has(line)) {
+      return false;
+    }
+
+    seen.add(line);
+    return true;
+  });
+}
+
+function formatDetailedInventoryIssueLines(issue: LiminaCheckIssue): string[] {
+  const locations = getAllCanonicalIssueLocations(issue);
+  const rawDetailLines = getDeduplicatedRawDetailLines(issue);
+  const tool = issue.tool ?? issue.external?.tool;
+
+  return [
+    issue.title,
+    `rule: ${issue.code}`,
+    `task: ${issue.task}`,
+    ...(issue.domain ? [`domain: ${issue.domain}`] : []),
+    ...(issue.detector ? [`detector: ${issue.detector}`] : []),
+    ...(issue.severity ? [`severity: ${issue.severity}`] : []),
+    ...(issue.packageName ? [`package: ${issue.packageName}`] : []),
+    ...(issue.packageManifestPath
+      ? [`package manifest: ${issue.packageManifestPath}`]
+      : []),
+    ...(issue.checkerName ? [`checker: ${issue.checkerName}`] : []),
+    ...(tool ? [`tool: ${tool}`] : []),
+    ...formatExternalLines(issue.external),
+    '',
+    'locations:',
+    ...(locations.length > 0
+      ? locations.map((location) => `  - ${location}`)
+      : ['  - (not recorded)']),
+    ...(issue.summary ? ['', 'summary:', `  ${issue.summary}`] : []),
+    '',
+    'reason:',
+    `  ${issue.reason}`,
+    ...(issue.fix ? ['', 'suggested fix:', `  ${issue.fix}`] : []),
+    ...(issue.fixSteps?.length
+      ? [
+          '',
+          'fix steps:',
+          ...issue.fixSteps.map((step, index) => `  ${index + 1}. ${step}`),
+        ]
+      : []),
+    ...(issue.verifyCommands?.length
+      ? [
+          '',
+          'verify:',
+          ...issue.verifyCommands.map((command) => `  - ${command}`),
+        ]
+      : []),
+    ...(issue.evidence?.length
+      ? ['', 'evidence:', ...issue.evidence.flatMap(formatEvidenceLine)]
+      : []),
+    ...(rawDetailLines.length > 0
+      ? ['', 'details:', ...rawDetailLines.map((line) => `  ${line}`)]
+      : []),
+  ];
+}
+
+export function formatCheckIssueInventoryCard(
+  options: CheckIssueInventoryCardOptions,
+): string {
+  const lines =
+    options.view === 'compact'
+      ? formatCompactInventoryIssueLines(
+          options.issue,
+          options.representativeLocation,
+        )
+      : formatDetailedInventoryIssueLines(options.issue);
+
+  return formatIssueBlock(lines, {
+    severity: options.issue.severity,
+  }).join('\n');
 }
 
 function indentDetailLines(lines: readonly string[]): string[] {

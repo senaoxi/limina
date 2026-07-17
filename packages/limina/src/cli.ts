@@ -24,9 +24,16 @@ import {
   formatCheckIssueRuleHelp,
   formatCheckIssueSnapshotFilterHelp,
 } from './check-reporting/filter-help';
+import {
+  type CheckIssueInventoryPresentationOptions,
+  DEFAULT_PRIMARY_BLOCKER_LIMIT,
+  DEFAULT_VISIBLE_ISSUE_LIMIT,
+  type InventoryQueryContext,
+} from './check-reporting/inventory-presentation';
 import { createCheckRunRecorder } from './check-reporting/run-recorder';
 import { formatShellCommand } from './check-reporting/shell-command';
 import {
+  type CheckIssueInventoryFilters,
   type CheckIssueInventoryFormat,
   createTaskFailureIssue,
   formatCheckIssueSnapshotInventory,
@@ -107,6 +114,7 @@ interface CheckFlags extends GlobalFlags, SourceIssueSelectionFlags {
   format?: string;
   invocation?: string;
   issues?: boolean;
+  limit?: number | string;
   task?: string | string[];
 }
 
@@ -362,14 +370,152 @@ function parseIssueInventoryFormat(
   );
 }
 
+function parseIssueInventoryLimit(
+  limit: number | string | undefined,
+): number | null {
+  if (limit === undefined) {
+    return DEFAULT_VISIBLE_ISSUE_LIMIT;
+  }
+
+  const rawLimit = String(limit);
+
+  if (rawLimit === 'all') {
+    return null;
+  }
+
+  if (!/^\d+$/u.test(rawLimit)) {
+    throw new Error(
+      `Invalid check --issues --limit "${rawLimit}". Expected a positive integer or "all".`,
+    );
+  }
+
+  const parsed = Number(rawLimit);
+
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `Invalid check --issues --limit "${rawLimit}". Expected a positive integer or "all".`,
+    );
+  }
+
+  return parsed;
+}
+
+function assertIssueInventoryLimitArgv(argv: readonly string[]): void {
+  if (
+    getPrimaryCliCommandName(argv) !== 'check' ||
+    !argv.includes('--issues')
+  ) {
+    return;
+  }
+
+  const limitArgumentIndex = argv.findIndex(
+    (argument) => argument === '--limit' || argument.startsWith('--limit='),
+  );
+
+  if (limitArgumentIndex === -1) {
+    return;
+  }
+
+  const argument = argv[limitArgumentIndex]!;
+  const rawLimit = argument.startsWith('--limit=')
+    ? argument.slice('--limit='.length)
+    : (argv[limitArgumentIndex + 1] ?? '');
+  const format =
+    parseIssueInventoryFormat(readArgvOptionValue(argv, '--format')) ?? 'human';
+
+  parseIssueInventoryLimit(rawLimit);
+  assertHumanIssueInventoryLimit({
+    format,
+    limitExplicit: true,
+  });
+}
+
+function getPrimaryCliCommandName(argv: readonly string[]): string | undefined {
+  for (let index = 2; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (
+      argument === '--config' ||
+      argument === '--config-loader' ||
+      argument === '--mode'
+    ) {
+      index += 1;
+      continue;
+    }
+
+    if (
+      argument?.startsWith('--config=') ||
+      argument?.startsWith('--config-loader=') ||
+      argument?.startsWith('--mode=')
+    ) {
+      continue;
+    }
+
+    if (argument && !argument.startsWith('-')) {
+      return argument;
+    }
+  }
+
+  return undefined;
+}
+
+function assertHumanIssueInventoryLimit(options: {
+  format: CheckIssueInventoryFormat;
+  limitExplicit: boolean;
+}): void {
+  if (options.limitExplicit && options.format !== 'human') {
+    throw new Error(
+      '`limina check --issues --limit` is only available with --format human.',
+    );
+  }
+}
+
+function hasIssueInventoryFilter(filters: CheckIssueInventoryFilters): boolean {
+  return Boolean(
+    filters.tasks?.length ||
+      filters.rules?.length ||
+      filters.packageNames?.length ||
+      filters.files?.length ||
+      filters.scopes?.length ||
+      filters.checkerNames?.length,
+  );
+}
+
+function resolveIssueInventoryPresentation(options: {
+  filters: CheckIssueInventoryFilters;
+  hasInvocation: boolean;
+  limit: number | null;
+  limitExplicit: boolean;
+  verbose: boolean;
+}): CheckIssueInventoryPresentationOptions {
+  const hasInventorySelector =
+    hasIssueInventoryFilter(options.filters) || options.hasInvocation;
+
+  return {
+    maxIssues: options.limit,
+    maxPrimaryBlockers: DEFAULT_PRIMARY_BLOCKER_LIMIT,
+    view: options.verbose
+      ? 'detailed'
+      : hasInventorySelector || options.limitExplicit
+        ? 'compact'
+        : 'summary',
+  };
+}
+
 function assertStandaloneIssuesFlag(
   pipeline: string | undefined,
   flags: CheckFlags,
 ): void {
   if (!flags.issues) {
-    if (flags.task || flags.checker || flags.format || flags.invocation) {
+    if (
+      flags.task ||
+      flags.checker ||
+      flags.format ||
+      flags.invocation ||
+      flags.limit !== undefined
+    ) {
       throw new Error(
-        '`limina check --task`, `--checker`, `--format`, and `--invocation` require --issues.',
+        '`limina check --task`, `--checker`, `--format`, `--invocation`, and `--limit` require --issues.',
       );
     }
 
@@ -908,13 +1054,17 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       '-p, --package <name>',
       'Run package-aware pipeline tasks for one package entry',
     )
-    .option('--verbose', 'Show full check issue details')
+    .option('--verbose', 'Expand check summaries or show detailed issue cards')
     .option('--rule <code>', 'Filter check issue details by stable rule code')
     .option('--file <path>', 'Filter check issue details by exact file path')
     .option('--scope <glob>', 'Filter check issue details by path scope')
     .option('--task <name>', 'Filter issue inventory by stable task name')
     .option('--checker <name>', 'Filter issue inventory by checker')
     .option('--issues', 'Show issues from the last completed check')
+    .option(
+      '--limit <limit>',
+      'Limit human issue cards to a positive integer or all',
+    )
     .option(
       '--invocation <uuid>',
       'Read one standalone failure invocation instead of the last check run',
@@ -924,8 +1074,23 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       assertStandaloneIssuesFlag(pipeline, flags);
 
       if (flags.issues) {
+        const format = parseIssueInventoryFormat(flags.format) ?? 'human';
+        const limitExplicit = flags.limit !== undefined;
+        const limit = parseIssueInventoryLimit(flags.limit);
+
+        assertHumanIssueInventoryLimit({ format, limitExplicit });
+
         const rules = parseRepeatedStrings(flags.rule);
         assertKnownCheckRuleCodes(rules);
+
+        const filters: CheckIssueInventoryFilters = {
+          checkerNames: parseRepeatedStrings(flags.checker),
+          files: parseRepeatedStrings(flags.file),
+          packageNames: parsePackageNames(flags.package),
+          rules,
+          scopes: parseRepeatedStrings(flags.scope),
+          tasks: parseRepeatedStrings(flags.task),
+        };
 
         const location = locateCheckIssueWorkspace({
           configPath: flags.config,
@@ -939,29 +1104,51 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         const snapshot = invocation
           ? toCheckIssueSnapshot(invocation)
           : await readCheckIssueSnapshot(location.rootDir);
+        const invocationMetadata = invocation
+          ? toCheckIssueInventoryInvocationMetadata(invocation)
+          : undefined;
+        const queryContext: InventoryQueryContext = {
+          effectiveFormat: 'human',
+          filters,
+          global: {
+            ...(flags.configLoader ? { configLoader: flags.configLoader } : {}),
+            ...(location.configPath ? { configPath: location.configPath } : {}),
+            ...(flags.mode ? { mode: flags.mode } : {}),
+          },
+          ...(flags.invocation ? { invocationId: flags.invocation } : {}),
+          limit,
+          limitExplicit,
+          verbose: flags.verbose ?? false,
+        };
+        const output =
+          format === 'human'
+            ? formatCheckIssueSnapshotInventory({
+                format: 'human',
+                ...(invocationMetadata
+                  ? { invocation: invocationMetadata }
+                  : {}),
+                presentation: resolveIssueInventoryPresentation({
+                  filters,
+                  hasInvocation: Boolean(flags.invocation),
+                  limit,
+                  limitExplicit,
+                  verbose: flags.verbose ?? false,
+                }),
+                queryContext,
+                rootDir: location.rootDir,
+                snapshot,
+              })
+            : formatCheckIssueSnapshotInventory({
+                filters,
+                format,
+                ...(invocationMetadata
+                  ? { invocation: invocationMetadata }
+                  : {}),
+                rootDir: location.rootDir,
+                snapshot,
+              });
 
-        process.stdout.write(
-          `${formatCheckIssueSnapshotInventory({
-            filters: {
-              checkerNames: parseRepeatedStrings(flags.checker),
-              files: parseRepeatedStrings(flags.file),
-              packageNames: parsePackageNames(flags.package),
-              rules,
-              scopes: parseRepeatedStrings(flags.scope),
-              tasks: parseRepeatedStrings(flags.task),
-            },
-            format: parseIssueInventoryFormat(flags.format),
-            ...(invocation
-              ? {
-                  invocation:
-                    toCheckIssueInventoryInvocationMetadata(invocation),
-                }
-              : {}),
-            rootDir: location.rootDir,
-            snapshot,
-            verbose: flags.verbose,
-          })}\n`,
-        );
+        process.stdout.write(`${output}\n`);
         return;
       }
 
@@ -1052,8 +1239,29 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         process.stdout.write(
           `\n${formatCheckRunSummaryHuman({
             issues: executionResult.issues,
+            queryContext: {
+              effectiveFormat: 'human',
+              filters: {},
+              global: {
+                ...(flags.configLoader
+                  ? { configLoader: flags.configLoader }
+                  : {}),
+                ...(flags.config === undefined
+                  ? {}
+                  : {
+                      configPath: normalizeAbsolutePathIdentity(
+                        config.configPath,
+                      ),
+                    }),
+                ...(flags.mode ? { mode: flags.mode } : {}),
+              },
+              limit: DEFAULT_VISIBLE_ISSUE_LIMIT,
+              limitExplicit: false,
+              verbose: flags.verbose ?? false,
+            },
             rootDir: config.rootDir,
             run,
+            verbose: flags.verbose,
           })}\n`,
         );
       }
@@ -1561,6 +1769,8 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
   const cli = createLiminaCli();
 
   try {
+    assertIssueInventoryLimitArgv(argv);
+
     if (await printCheckIssueFilterHelpIfRequested(argv)) {
       return;
     }

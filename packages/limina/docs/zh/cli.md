@@ -77,8 +77,10 @@ pnpm exec limina check
 
 ```sh
 pnpm exec limina check --issues
+pnpm exec limina check --issues --limit 20
 pnpm exec limina check --issues --task workspace:validate
 pnpm exec limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING --verbose
+pnpm exec limina check --issues --verbose --limit all
 pnpm exec limina check --issues --format json
 ```
 
@@ -174,22 +176,38 @@ checker:typecheck
 
 常用选项：
 
-| 选项                   | 类型                      | 默认行为         | 示例                                                          | 边界                                       |
-| ---------------------- | ------------------------- | ---------------- | ------------------------------------------------------------- | ------------------------------------------ |
-| `-p, --package <name>` | 可重复字符串              | 不限制包         | `limina check -p @scope/pkg`                                  | 只影响支持包选择的任务                     |
-| `--verbose`            | 布尔值                    | 输出摘要         | `limina check --verbose`                                      | 只影响报告详细程度                         |
-| `--rule <code>`        | 可重复字符串              | 不按规则过滤     | `limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING` | 作为问题查询时需要配合 `--issues`          |
-| `--file <path>`        | 可重复路径                | 不按文件过滤     | `limina check --issues --file packages/a/src/index.ts`        | 匹配精确文件路径                           |
-| `--scope <glob>`       | 可重复路径或 `glob`       | 不按路径范围过滤 | `limina check --issues --scope 'packages/a/**'`               | 只匹配带路径的问题候选                     |
-| `--task <name>`        | 可重复字符串              | 不按任务过滤     | `limina check --issues --task source:check`                   | 必须配合 `--issues`                        |
-| `--checker <name>`     | 可重复字符串              | 不按检查器过滤   | `limina check --issues --checker vue`                         | 这里只用于问题快照过滤，不是构建检查器选择 |
-| `--issues`             | 布尔值                    | 运行检查         | `limina check --issues`                                       | 读取最近一次已完成检查；不能带流水线名     |
-| `--invocation <uuid>`  | UUID                      | 读取最近检查     | `limina check --issues --invocation <uuid>`                   | 读取一条不可变的 standalone 失败记录       |
-| `--format <format>`    | `human`、`json`、`ndjson` | `human`          | `limina check --issues --format json`                         | 必须配合 `--issues`                        |
+| 选项                   | 类型                      | 默认行为           | 示例                                                          | 边界                                             |
+| ---------------------- | ------------------------- | ------------------ | ------------------------------------------------------------- | ------------------------------------------------ |
+| `-p, --package <name>` | 可重复字符串              | 不限制包           | `limina check -p @scope/pkg`                                  | 只影响支持包选择的任务                           |
+| `--verbose`            | 布尔值                    | 输出精简摘要       | `limina check --verbose`                                      | 扩展实时运行摘要；配合 `--issues` 时输出详细卡片 |
+| `--rule <code>`        | 可重复字符串              | 不按规则过滤       | `limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING` | 作为问题查询时需要配合 `--issues`                |
+| `--file <path>`        | 可重复路径                | 不按文件过滤       | `limina check --issues --file packages/a/src/index.ts`        | 匹配精确文件路径                                 |
+| `--scope <glob>`       | 可重复路径或 `glob`       | 不按路径范围过滤   | `limina check --issues --scope 'packages/a/**'`               | 只匹配带路径的问题候选                           |
+| `--task <name>`        | 可重复字符串              | 不按任务过滤       | `limina check --issues --task source:check`                   | 必须配合 `--issues`                              |
+| `--checker <name>`     | 可重复字符串              | 不按检查器过滤     | `limina check --issues --checker vue`                         | 这里只用于问题快照过滤，不是构建检查器选择       |
+| `--issues`             | 布尔值                    | 读取最近摘要       | `limina check --issues`                                       | 读取最近一次已完成检查；不能带流水线名           |
+| `--limit <limit>`      | 正整数或 `all`            | 显示 20 张问题卡片 | `limina check --issues --limit 50`                            | 只用于 human 问题清单；必须配合 `--issues`       |
+| `--invocation <uuid>`  | UUID                      | 读取最近检查       | `limina check --issues --invocation <uuid>`                   | 读取一条不可变的 standalone 失败记录             |
+| `--format <format>`    | `human`、`json`、`ndjson` | `human`            | `limina check --issues --format json`                         | 必须配合 `--issues`                              |
 
 `--issues` 不会重新执行检查。不带 `--invocation` 时，它读取最近一次进入终态的 `limina check` 结果，用于定位失败任务、规则、包、文件或检查器。正在运行或被中断的检查不会替换上一次已完成结果，standalone 命令也不会替换它。工作区验证失败同样可以记录：受信任的 `.limina` snapshot namespace 会在验证前建立，因此结构错误仍可出现在 `workspace:validate` 任务下。第一次使用默认问题清单前，需要让 `limina check` 至少完整结束一次。
 
+问题输出分为四档：
+
+| 视图 | 触发方式                                                                                   | 输出内容                                                                                           | 可见问题上限 |
+| ---- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------ |
+| 摘要 | `limina check --issues`，且没有 filter、invocation 或显式 limit                            | 基于完整过滤结果的计数、主要阻塞项和后续命令；不输出问题卡片                                       | 不输出卡片   |
+| 精简 | 添加 task、rule、package、file、scope 或 checker filter；选择 invocation；或传入 `--limit` | 每个选中问题一张固定结构卡片，只显示一个位置、规则、可选归属/工具，以及单行 summary、reason 或 fix | 默认 20      |
+| 详细 | 在问题查询中加入 `--verbose`                                                               | 显示选中问题的全部位置、evidence、外部诊断、修复步骤、验证命令和去重后的原始详情                   | 默认 20      |
+| 机器 | 使用 `--format json` 或 `--format ndjson`                                                  | 按既有机器契约输出完整过滤结果                                                                     | 永不截断     |
+
+human 摘要中的计数和主要阻塞项始终基于完整过滤结果。精简与详细卡片采用确定性采样：Limina 会先让互不相关的根因都有展示机会，再从同一根因取第二个样本；同一根因内部则轮换不同 package。报告会显示 `Showing X of Y issues`。使用 `--limit <正整数>` 指定精确卡片预算，使用 `--limit all` 显示全部匹配卡片。零匹配时仍保留摘要、filter diagnostics 和帮助命令，但不会输出空卡片区。
+
+`--limit` 只能用于 human 格式的 `check --issues`。JSON 与 NDJSON 会拒绝该选项，并始终返回全部过滤结果；`--verbose` 不改变机器输出。`limina check --verbose` 与 `limina check --issues --verbose` 的作用不同：前者扩展运行级聚合行、耗时、规则、阻塞项和 package 计数，但不会输出原始问题诊断；后者选择详细问题卡片视图。
+
 会产生问题的 standalone 命令失败时，会打印 standalone invocation ID 和可直接执行的 `limina check --issues --invocation <uuid>` 查询。每次 invocation 都独立保存在 `.limina/check/invocations/` 下。若原命令显式使用了 `--config`，打印出的查询会携带其 canonical absolute path，因此可以从其他工作目录查询同一条记录。问题查询只定位工作区，不会导入或验证 Limina 配置。
+
+invocation 是 selector，不是问题 filter，因此默认 human 视图会进入精简档。human header 会显示 invocation ID、kind、result 和完成时间。生成的 refine、detailed、complete、JSON 与 filter-help 命令会保留同一个 invocation ID、当前全部 filters 和显式全局配置上下文。记录中的原始命令只作为元数据显示，不会用于拼接新查询。
 
 `--file` 做精确匹配，`--scope` 接受目录或 `glob`。两者都接受工作区相对路径、`./` 路径、绝对路径以及两种斜杠形式。它们只匹配问题文件、包 manifest 等真正带路径的候选；配置 field scope 等 diagnostic label 不会被当作路径。同一过滤项重复传入时采用 OR 语义。
 
@@ -334,18 +352,20 @@ pnpm exec limina release check --package @scope/pkg --verbose
 
 ## 排障
 
-| 症状或错误信息                                                   | 可能原因                                     | 处理方式                                                                                                |
-| ---------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `no pnpm-workspace.yaml was found`                               | 当前目录不在 `pnpm` 工作区内                 | 在工作区内运行命令，或先创建 `pnpm-workspace.yaml`                                                      |
-| `Unable to find limina config`                                   | 未找到支持的 Limina 配置文件                 | 运行 `limina init`，或用 `--config` 指定配置路径                                                        |
-| `config file must be inside the governed pnpm workspace`         | `--config` 指向工作区外文件                  | 把配置文件放到当前 `pnpm` 工作区内                                                                      |
-| `checker build --preset requires a config argument`              | `--preset` 只能选择某个配置的构建型检查器    | 改为 `limina checker build <config> --preset tsc`                                                       |
-| `checker build --watch requires a config argument`               | 监听模式只支持指定配置                       | 改为 `limina checker build <config> --watch`                                                            |
-| `limina build --raw requires --preset`                           | 原始模式没有指定检查器预设                   | 改为 `limina build <config> --raw --preset tsc`                                                         |
-| `checker typecheck does not accept --preset` 或 `--watch`        | `checker typecheck` 只运行非构建型检查器入口 | 对单个配置使用 `checker build <config>`                                                                 |
-| `No package checks are enabled`                                  | 选中的包条目没有启用任何包检查               | 检查 `package.entries[].checks`，或移除不需要的包检查任务                                               |
-| `outDir package.json not found`                                  | 包产物尚未构建，或 `outDir` 配置不正确       | 先运行项目构建，再检查 `package.entries[].outDir`                                                       |
-| `Missing peer dependency ...`                                    | 某个检查器或包检查工具未安装                 | 按报告提示安装对应对等依赖，例如 `typescript`、`vue-tsc`、`knip`、`publint` 或 `@arethetypeswrong/core` |
-| `limina check --task, --checker, and --format require --issues.` | 把快照查询选项用于重新检查命令               | 添加 `--issues`，或移除这些过滤选项                                                                     |
-| `limina check --issues does not accept a pipeline name.`         | `--issues` 读取最近快照，不运行流水线        | 使用 `limina check --issues`，不要加流水线名                                                            |
-| `Invalid graph export --view`                                    | `--view` 取值不在支持范围内                  | 使用 `all`、`source` 或 `artifact`                                                                      |
+| 症状或错误信息                                                                          | 可能原因                                                   | 处理方式                                                                                                |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `no pnpm-workspace.yaml was found`                                                      | 当前目录不在 `pnpm` 工作区内                               | 在工作区内运行命令，或先创建 `pnpm-workspace.yaml`                                                      |
+| `Unable to find limina config`                                                          | 未找到支持的 Limina 配置文件                               | 运行 `limina init`，或用 `--config` 指定配置路径                                                        |
+| `config file must be inside the governed pnpm workspace`                                | `--config` 指向工作区外文件                                | 把配置文件放到当前 `pnpm` 工作区内                                                                      |
+| `checker build --preset requires a config argument`                                     | `--preset` 只能选择某个配置的构建型检查器                  | 改为 `limina checker build <config> --preset tsc`                                                       |
+| `checker build --watch requires a config argument`                                      | 监听模式只支持指定配置                                     | 改为 `limina checker build <config> --watch`                                                            |
+| `limina build --raw requires --preset`                                                  | 原始模式没有指定检查器预设                                 | 改为 `limina build <config> --raw --preset tsc`                                                         |
+| `checker typecheck does not accept --preset` 或 `--watch`                               | `checker typecheck` 只运行非构建型检查器入口               | 对单个配置使用 `checker build <config>`                                                                 |
+| `No package checks are enabled`                                                         | 选中的包条目没有启用任何包检查                             | 检查 `package.entries[].checks`，或移除不需要的包检查任务                                               |
+| `outDir package.json not found`                                                         | 包产物尚未构建，或 `outDir` 配置不正确                     | 先运行项目构建，再检查 `package.entries[].outDir`                                                       |
+| `Missing peer dependency ...`                                                           | 某个检查器或包检查工具未安装                               | 按报告提示安装对应对等依赖，例如 `typescript`、`vue-tsc`、`knip`、`publint` 或 `@arethetypeswrong/core` |
+| `limina check --task, --checker, --format, --invocation, and --limit require --issues.` | 把 snapshot 查询选项用于重新检查命令                       | 添加 `--issues`，或移除这些查询选项                                                                     |
+| `limina check --issues does not accept a pipeline name.`                                | `--issues` 读取最近快照，不运行流水线                      | 使用 `limina check --issues`，不要加流水线名                                                            |
+| `Invalid check --issues --limit ...`                                                    | limit 为零、负数、小数、指数写法、非数字或超出安全整数范围 | 使用十进制正整数或 `all`                                                                                |
+| `limina check --issues --limit is only available with --format human.`                  | human 卡片上限与 JSON 或 NDJSON 同时使用                   | 移除 `--limit`，或使用 human 输出                                                                       |
+| `Invalid graph export --view`                                                           | `--view` 取值不在支持范围内                                | 使用 `all`、`source` 或 `artifact`                                                                      |
