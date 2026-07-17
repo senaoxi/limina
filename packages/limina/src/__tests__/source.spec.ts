@@ -2719,7 +2719,16 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      const checkIssues: LiminaCheckIssue[] = [];
+      const sourceIssues: SourceCheckIssue[] = [];
+
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          issues: checkIssues,
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -2728,16 +2737,15 @@ packages:
       expect(errors).toContain('resolver tsconfig: app/tsconfig.json');
       expect(errors).toContain('app/tools/build.ts');
 
-      const sourceSnapshot = await readSourceIssueSnapshot(fixture.rootDir);
-
       expect(
-        sourceSnapshot?.issues.some((issue) =>
-          issue.filePath?.endsWith('app/tools/build.ts'),
+        sourceIssues.some((issue) =>
+          'filePath' in issue
+            ? issue.filePath?.endsWith('app/tools/build.ts')
+            : false,
         ),
       ).toBe(true);
 
-      const checkSnapshot = await readCheckIssueSnapshot(fixture.rootDir);
-      const checkIssue = checkSnapshot?.issues.find(
+      const checkIssue = checkIssues.find(
         (issue) =>
           issue.title === 'Tsconfig search cannot determine module owner',
       );
@@ -3832,7 +3840,7 @@ packages:
     }
   });
 
-  it('writes the last-run source issue snapshot for failed structured issues', async () => {
+  it('writes only the source last-run snapshot for failed standalone checks', async () => {
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
@@ -3866,19 +3874,7 @@ packages:
         },
       ]);
 
-      const checkSnapshot = await readCheckIssueSnapshot(fixture.rootDir);
-
-      expect(checkSnapshot?.issues).toContainEqual(
-        expect.objectContaining({
-          code: SOURCE_ISSUE_CODES.unusedModule,
-          filePath: 'packages/app/src/dead.ts',
-          packageName: '@example/app',
-          reason: expect.any(String),
-          scope: 'packages/app/src',
-          task: 'source:check',
-          title: 'Unused source module',
-        }),
-      );
+      await expect(readCheckIssueSnapshot(fixture.rootDir)).resolves.toBeNull();
     } finally {
       errorSpy.mockRestore();
       await fixture.cleanup();
@@ -4020,7 +4016,7 @@ packages:
             command: 'limina check',
             packageNames: ['@example/app'],
             rules: [SOURCE_ISSUE_CODES.unusedModule],
-            scopes: ['packages/app/src/theme'],
+            scopes: ['src/theme'],
             verbose: true,
           },
         }),
@@ -4031,7 +4027,7 @@ packages:
       expect(errors).toContain('Filters:');
       expect(errors).toContain('package: @example/app');
       expect(errors).toContain(`rule: ${SOURCE_ISSUE_CODES.unusedModule}`);
-      expect(errors).toContain('scope: packages/app/src/theme');
+      expect(errors).toContain('scope: src/theme');
       expect(errors).toContain('Matched 2 issues.');
       expect(errors).toContain('files by scope:');
       expect(errors).toContain('src/theme  2 files');

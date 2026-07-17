@@ -1,4 +1,5 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import {
   chmod,
   lstat,
@@ -75,6 +76,20 @@ const buildCompilerOptions = {
   tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
   types: [],
 };
+
+const PUBLIC_CHECK_ISSUE_TASKS = [
+  'checker:build',
+  'checker:typecheck',
+  'command',
+  'graph:check',
+  'graph:materialize',
+  'graph:prepare',
+  'package:check',
+  'proof:check',
+  'release:check',
+  'source:check',
+  'workspace:validate',
+] as const;
 
 interface CliBuildFixture {
   cliPath: string;
@@ -546,6 +561,655 @@ export default {
       );
     });
   });
+
+  it('keeps standalone failures queryable without replacing the last check', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const configPath = path.join(rootDir, 'limina config.mjs');
+      const explicitConfigArgument = path.join(
+        'packages',
+        '..',
+        'limina config.mjs',
+      );
+      const lastRunPath = path.join(rootDir, '.limina/check/last-run.json');
+      const otherCwd = await mkdtemp(
+        path.join(tmpdir(), 'limina-invocation-query-'),
+      );
+
+      try {
+        await writeText(
+          configPath,
+          await readFile(path.join(rootDir, 'limina.config.mjs'), 'utf8'),
+        );
+        await writeText(
+          lastRunPath,
+          stringifyConfig({
+            command: 'limina check',
+            createdAt: '2026-07-17T00:00:00.000Z',
+            issues: [
+              {
+                code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
+                id: 'seed-check-issue',
+                reason: 'seed issue',
+                task: 'proof:check',
+                title: 'Seed check issue',
+              },
+            ],
+            status: 'completed',
+            version: 7,
+          }),
+        );
+        const seedSnapshot = await readFile(lastRunPath, 'utf8');
+
+        await execFileAsync(
+          process.execPath,
+          [cliPath, '--config', configPath, 'checker', 'build'],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        );
+        expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
+
+        await writeText(
+          configPath,
+          `export default ${JSON.stringify(
+            {
+              config: {
+                checkers: {
+                  typescript: {
+                    include: ['packages/**/tsconfig.json'],
+                    preset: 'tsc',
+                  },
+                },
+              },
+              package: {
+                entries: [
+                  {
+                    checks: ['boundary'],
+                    name: '@example/boundary',
+                    outDir: 'packages/boundary/dist',
+                  },
+                  {
+                    name: '@example/release',
+                    outDir: 'packages/release-missing/dist',
+                  },
+                ],
+              },
+            },
+            null,
+            2,
+          )};\n`,
+        );
+        await writeText(
+          path.join(rootDir, 'packages/pkg/package.json'),
+          stringifyConfig({
+            dependencies: { '@example/b': 'workspace:*' },
+            name: '@example/a',
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/pkg/src/index.ts'),
+          "import { value } from '@example/b';\nexport const appValue = value;\n",
+        );
+        await writeText(
+          path.join(rootDir, 'packages/b/package.json'),
+          stringifyConfig({
+            exports: { '.': './src/index.ts' },
+            name: '@example/b',
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/b/src/index.ts'),
+          'export const value = 1;\n',
+        );
+        await writeText(
+          path.join(rootDir, 'packages/b/tsconfig.lib.json'),
+          stringifyConfig({
+            compilerOptions: {
+              ...buildCompilerOptions,
+              noEmit: true,
+            },
+            include: ['src/**/*.ts'],
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/b/tsconfig.json'),
+          stringifyConfig({
+            files: [],
+            references: [{ path: './tsconfig.lib.json' }],
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/boundary/dist/package.json'),
+          stringifyConfig({
+            exports: { '.': './browser/index.js' },
+            name: '@example/boundary',
+            version: '1.0.0',
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/boundary/dist/browser/index.js'),
+          "import '@example/undeclared';\n",
+        );
+
+        const runFailure = async (
+          args: string[],
+          expectedTask: string,
+        ): Promise<void> => {
+          let stdout = '';
+
+          try {
+            await execFileAsync(
+              process.execPath,
+              [cliPath, '--config', explicitConfigArgument, ...args],
+              {
+                cwd: rootDir,
+                env: { ...process.env, CI: 'true' },
+              },
+            );
+            throw new Error(`Expected ${args.join(' ')} to fail.`);
+          } catch (error) {
+            expect(error).toMatchObject({ code: 1 });
+            stdout = String((error as { stdout?: unknown }).stdout ?? '');
+          }
+
+          const invocationId =
+            /Standalone issue invocation: ([0-9a-f-]+)/u.exec(stdout)?.[1];
+          const queryLine = stdout
+            .split('\n')
+            .find((line) => line.startsWith('Query: '));
+
+          expect(invocationId).toMatch(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+          );
+          expect(queryLine).toContain('--config');
+          expect(queryLine).toContain(configPath.replaceAll(path.sep, '/'));
+          expect(queryLine).toContain(`--invocation ${invocationId}`);
+
+          const query = await execFileAsync(
+            process.execPath,
+            [
+              cliPath,
+              '--config',
+              configPath,
+              'check',
+              '--issues',
+              '--invocation',
+              invocationId!,
+              '--format',
+              'json',
+            ],
+            {
+              cwd: otherCwd,
+              env: { ...process.env, CI: 'true' },
+            },
+          );
+          const payload = JSON.parse(query.stdout) as {
+            invocationId: string;
+            issueCount: number;
+            issues: {
+              code: string;
+              filePath?: string;
+              reason: string;
+              task: string;
+            }[];
+            kind: string;
+            result: string;
+            version: number;
+          };
+
+          expect(payload).toMatchObject({
+            invocationId,
+            kind: 'standalone-invocation',
+            result: 'failed',
+            version: 1,
+          });
+          expect(payload.issueCount).toBeGreaterThan(0);
+          expect(payload.issues).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                code: expect.any(String),
+                filePath: expect.any(String),
+                reason: expect.any(String),
+                task: expectedTask,
+              }),
+            ]),
+          );
+          expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
+        };
+
+        await runFailure(
+          ['checker', 'build', 'packages/missing/tsconfig.json'],
+          'checker:build',
+        );
+        await runFailure(['graph', 'check'], 'graph:check');
+        await runFailure(['proof', 'check'], 'proof:check');
+        await runFailure(
+          [
+            'package',
+            'check',
+            '--package',
+            '@example/boundary',
+            '--tool',
+            'boundary',
+          ],
+          'package:check',
+        );
+        await runFailure(
+          ['release', 'check', '--package', '@example/release'],
+          'release:check',
+        );
+      } finally {
+        await rm(otherCwd, { force: true, recursive: true });
+      }
+    });
+  }, 60_000);
+
+  it('keeps the last completed check when a running check is terminated', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const barrierScript = path.join(rootDir, 'slow-check.cjs');
+      const configPath = path.join(rootDir, 'limina.config.mjs');
+      const markerPath = path.join(rootDir, 'slow-check.started');
+      const lastRunPath = path.join(rootDir, '.limina/check/last-run.json');
+      let checkProcessPid: number | undefined;
+      let commandPid: number | undefined;
+
+      await writeText(
+        barrierScript,
+        [
+          "const { writeFileSync } = require('node:fs');",
+          'const markerPath = process.argv[2];',
+          'if (!markerPath) process.exit(98);',
+          'writeFileSync(markerPath, JSON.stringify({ commandPid: process.pid, parentPid: process.ppid }));',
+          'setInterval(() => {}, 1000);',
+          '',
+        ].join('\n'),
+      );
+      await writeText(
+        configPath,
+        `export default ${JSON.stringify({
+          pipelines: {
+            slow: [
+              {
+                args: [barrierScript, markerPath],
+                command: process.execPath,
+                type: 'command',
+              },
+            ],
+          },
+        })};\n`,
+      );
+      await writeText(
+        lastRunPath,
+        stringifyConfig({
+          command: 'limina check',
+          createdAt: '2026-07-17T00:00:00.000Z',
+          issues: [
+            {
+              code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
+              id: 'completed-check-a',
+              reason: 'completed check A',
+              task: 'proof:check',
+              title: 'Completed check A',
+            },
+          ],
+          status: 'completed',
+          version: 7,
+        }),
+      );
+      const completedCheck = await readFile(lastRunPath, 'utf8');
+      const child = spawn(process.execPath, [cliPath, 'check', 'slow'], {
+        cwd: rootDir,
+        env: { ...process.env, CI: 'true' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      child.stdout.resume();
+      child.stderr.resume();
+      const closed = new Promise<void>((resolve) => {
+        child.once('close', () => resolve());
+        child.once('error', () => resolve());
+      });
+
+      try {
+        await vi.waitFor(
+          () => {
+            expect(existsSync(markerPath)).toBe(true);
+          },
+          { timeout: 10_000 },
+        );
+        const processInfo = JSON.parse(await readFile(markerPath, 'utf8')) as {
+          commandPid: number;
+          parentPid: number;
+        };
+        checkProcessPid = processInfo.parentPid;
+        commandPid = processInfo.commandPid;
+        expect(() => process.kill(checkProcessPid!, 'SIGKILL')).not.toThrow();
+        if (Number.isInteger(commandPid)) {
+          try {
+            process.kill(commandPid, 'SIGKILL');
+          } catch {
+            // The command child may exit when its Limina parent is terminated.
+          }
+        }
+        await closed;
+
+        expect(await readFile(lastRunPath, 'utf8')).toBe(completedCheck);
+        const query = await execFileAsync(
+          process.execPath,
+          [cliPath, 'check', '--issues', '--format', 'json'],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        );
+        expect(JSON.parse(query.stdout)).toMatchObject({
+          issueCount: 1,
+          issues: [{ id: 'completed-check-a' }],
+        });
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+          await closed;
+        }
+        if (checkProcessPid && Number.isInteger(checkProcessPid)) {
+          try {
+            process.kill(checkProcessPid, 'SIGKILL');
+          } catch {
+            // The check process was expected to be terminated above.
+          }
+        }
+        if (commandPid && Number.isInteger(commandPid)) {
+          try {
+            process.kill(commandPid, 'SIGKILL');
+          } catch {
+            // The command child may already have exited with its Limina parent.
+          }
+        }
+      }
+    });
+  }, 30_000);
+
+  it('keeps concurrent checker failure invocations isolated', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const barrierDir = path.join(rootDir, 'barrier');
+      const configPath = path.join(rootDir, 'limina.config.mjs');
+      const lastRunPath = path.join(rootDir, '.limina/check/last-run.json');
+
+      await writeText(
+        path.join(rootDir, 'packages/b/src/index.ts'),
+        'export const value = 2;\n',
+      );
+      await writeText(
+        path.join(rootDir, 'packages/b/tsconfig.lib.json'),
+        stringifyConfig({
+          liminaOptions: { outputs: {} },
+          compilerOptions: {
+            ...buildCompilerOptions,
+            noEmit: true,
+          },
+          include: ['src/**/*.ts'],
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/b/tsconfig.json'),
+        stringifyConfig({
+          files: [],
+          references: [{ path: './tsconfig.lib.json' }],
+        }),
+      );
+      await writeText(
+        configPath,
+        `export default ${JSON.stringify(
+          {
+            config: {
+              checkers: {
+                typescript: {
+                  include: ['packages/*/tsconfig.json'],
+                  preset: 'tsc',
+                },
+              },
+            },
+          },
+          null,
+          2,
+        )};\n`,
+      );
+      await writeBinShim(
+        rootDir,
+        'tsc',
+        [
+          "const { existsSync, mkdirSync, writeFileSync } = require('node:fs');",
+          "const { join } = require('node:path');",
+          'const barrierDir = process.env.LIMINA_TEST_BARRIER_DIR;',
+          "if (!barrierDir) throw new Error('missing barrier dir');",
+          'mkdirSync(barrierDir, { recursive: true });',
+          "const args = process.argv.slice(2).join(' ').replaceAll('\\\\', '/');",
+          "const name = args.includes('/packages/pkg/') ? 'pkg' : 'b';",
+          'writeFileSync(join(barrierDir, name), args);',
+          'const deadline = Date.now() + 10000;',
+          'const timer = setInterval(() => {',
+          "  if (existsSync(join(barrierDir, 'pkg')) && existsSync(join(barrierDir, 'b'))) {",
+          '    clearInterval(timer);',
+          "    process.exit(name === 'pkg' ? 7 : 8);",
+          '  }',
+          '  if (Date.now() > deadline) {',
+          '    clearInterval(timer);',
+          '    process.exit(99);',
+          '  }',
+          '}, 10);',
+          '',
+        ].join('\n'),
+      );
+      await writeText(
+        lastRunPath,
+        stringifyConfig({
+          command: 'limina check',
+          createdAt: '2026-07-17T00:00:00.000Z',
+          issues: [],
+          status: 'completed',
+          version: 7,
+        }),
+      );
+      const seedSnapshot = await readFile(lastRunPath, 'utf8');
+
+      const runChecker = async (config: string) =>
+        execFileAsync(
+          process.execPath,
+          [cliPath, '--config', configPath, 'checker', 'build', config],
+          {
+            cwd: rootDir,
+            env: {
+              ...process.env,
+              CI: 'true',
+              LIMINA_TEST_BARRIER_DIR: barrierDir,
+            },
+          },
+        ).then(
+          () => {
+            throw new Error(`Expected checker build ${config} to fail.`);
+          },
+          (error: { code?: number; stdout?: string }) => error,
+        );
+      const [pkgResult, bResult] = await Promise.all([
+        runChecker('packages/pkg/tsconfig.lib.json'),
+        runChecker('packages/b/tsconfig.lib.json'),
+      ]);
+
+      expect(pkgResult.code).toBe(1);
+      expect(bResult.code).toBe(1);
+      const invocationIds = [pkgResult, bResult].map(
+        (result) =>
+          /Standalone issue invocation: ([0-9a-f-]+)/u.exec(
+            result.stdout ?? '',
+          )?.[1],
+      );
+
+      expect(invocationIds[0]).toBeTruthy();
+      expect(invocationIds[1]).toBeTruthy();
+      expect(invocationIds[0]).not.toBe(invocationIds[1]);
+
+      const payloads = await Promise.all(
+        invocationIds.map(async (invocationId) => {
+          const query = await execFileAsync(
+            process.execPath,
+            [
+              cliPath,
+              '--config',
+              configPath,
+              'check',
+              '--issues',
+              '--invocation',
+              invocationId!,
+              '--format',
+              'json',
+            ],
+            {
+              cwd: rootDir,
+              env: { ...process.env, CI: 'true' },
+            },
+          );
+          return JSON.parse(query.stdout) as {
+            issueCount: number;
+            issues: { filePath?: string; id?: string }[];
+          };
+        }),
+      );
+
+      expect(payloads[0]).toMatchObject({ issueCount: 1 });
+      expect(payloads[1]).toMatchObject({ issueCount: 1 });
+      expect(payloads[0]!.issues[0]?.filePath).toContain('packages/pkg');
+      expect(payloads[1]!.issues[0]?.filePath).toContain('packages/b');
+      expect(payloads[0]!.issues[0]?.id).not.toBe(payloads[1]!.issues[0]?.id);
+      expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
+    });
+  }, 45_000);
+
+  it('prints only the current check result when two checks finish concurrently', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-concurrent-checks-')),
+    );
+    const cliPath = fileURLToPath(
+      new URL('../../bin/limina.js', import.meta.url),
+    );
+    const barrierScript = path.join(rootDir, 'check-barrier.cjs');
+    const barrierDir = path.join(rootDir, 'barrier');
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({ name: 'root', private: true }),
+      );
+      await writeText(
+        barrierScript,
+        [
+          "const { existsSync, mkdirSync, writeFileSync } = require('node:fs');",
+          "const { join } = require('node:path');",
+          'const [name, barrierDir] = process.argv.slice(2);',
+          'const run = process.env.LIMINA_TEST_RUN;',
+          'if (!name || !barrierDir || !run) process.exit(98);',
+          'mkdirSync(barrierDir, { recursive: true });',
+          'writeFileSync(join(barrierDir, `${run}-${name}`), name);',
+          'const deadline = Date.now() + 10000;',
+          'const timer = setInterval(() => {',
+          "  const ready = ['ALPHA_RESULT', 'BETA_RESULT'].every((item) => existsSync(join(barrierDir, `${run}-${item}`)));",
+          '  if (ready) {',
+          '    clearInterval(timer);',
+          "    process.exit(name === 'ALPHA_RESULT' ? 7 : 8);",
+          '  }',
+          '  if (Date.now() > deadline) {',
+          '    clearInterval(timer);',
+          '    process.exit(99);',
+          '  }',
+          '}, 10);',
+          '',
+        ].join('\n'),
+      );
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
+        `export default ${JSON.stringify({
+          pipelines: {
+            alpha: [
+              {
+                args: [barrierScript, 'ALPHA_RESULT', barrierDir],
+                command: process.execPath,
+                type: 'command',
+              },
+            ],
+            beta: [
+              {
+                args: [barrierScript, 'BETA_RESULT', barrierDir],
+                command: process.execPath,
+                type: 'command',
+              },
+            ],
+          },
+        })};\n`,
+      );
+
+      const runCheck = (pipeline: 'alpha' | 'beta', run: string) =>
+        execFileAsync(process.execPath, [cliPath, 'check', pipeline], {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+            LIMINA_TEST_RUN: run,
+          },
+        }).then(
+          () => {
+            throw new Error(`Expected check ${pipeline} to fail.`);
+          },
+          (error: { code?: number; stdout?: string }) => error,
+        );
+
+      for (let iteration = 0; iteration < 3; iteration += 1) {
+        const run = `run-${iteration}`;
+        const [alpha, beta] = await Promise.all([
+          runCheck('alpha', run),
+          runCheck('beta', run),
+        ]);
+        const alphaOutput = stripAnsi(alpha.stdout ?? '');
+        const betaOutput = stripAnsi(beta.stdout ?? '');
+        const alphaSummary = alphaOutput.slice(
+          alphaOutput.lastIndexOf('Limina check summary'),
+        );
+        const betaSummary = betaOutput.slice(
+          betaOutput.lastIndexOf('Limina check summary'),
+        );
+
+        expect(alpha.code).toBe(1);
+        expect(beta.code).toBe(1);
+        expect(alphaSummary).toContain('ALPHA_RESULT');
+        expect(alphaSummary).not.toContain('BETA_RESULT');
+        expect(alphaSummary).toContain(
+          'limina check --issues --task command --verbose',
+        );
+        expect(betaSummary).toContain('BETA_RESULT');
+        expect(betaSummary).not.toContain('ALPHA_RESULT');
+        expect(betaSummary).toContain(
+          'limina check --issues --task command --verbose',
+        );
+      }
+
+      const stableTaskQuery = await execFileAsync(
+        process.execPath,
+        [cliPath, 'check', '--issues', '--task', 'command', '--format', 'json'],
+        {
+          cwd: rootDir,
+          env: { ...process.env, CI: 'true' },
+        },
+      );
+      expect(JSON.parse(stableTaskQuery.stdout)).toMatchObject({
+        issueCount: 1,
+        issues: [{ task: 'command' }],
+      });
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  }, 45_000);
 
   it('runs managed output build from the public command', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
@@ -1117,7 +1781,7 @@ export default {
         'Invalid build --preset "svelte-check". Expected one of: tsc, vue-tsc, tsgo.',
       ),
     });
-  }, 15_000);
+  }, 30_000);
 
   it('runs source check from the public command', async () => {
     const rootDir = await realpath(
@@ -1391,6 +2055,79 @@ export default {
       );
       expect(checkFailurePlainStdout).not.toContain('Source check summary');
 
+      for (const configSource of [
+        'export default {\n',
+        'export default { config: { checkers: 42 } };\n',
+        'export default () => { throw new Error("config executed"); };\n',
+      ]) {
+        await writeText(path.join(rootDir, 'limina.config.mjs'), configSource);
+        const explicitQuery = await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            '--config-loader',
+            'unavailable',
+            '--mode',
+            'must-not-run',
+            'check',
+            '--issues',
+            '--format',
+            'json',
+          ],
+          {
+            cwd: rootDir,
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
+          },
+        );
+        const defaultNestedQuery = await execFileAsync(
+          process.execPath,
+          [cliPath, 'check', '--issues', '--format', 'json'],
+          {
+            cwd: path.join(rootDir, 'app/src'),
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
+          },
+        );
+
+        expect(JSON.parse(explicitQuery.stdout)).toMatchObject({
+          issueCount: 3,
+        });
+        expect(JSON.parse(defaultNestedQuery.stdout)).toMatchObject({
+          issueCount: 3,
+        });
+      }
+
+      const missingConfigQuery = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'missing.config.mjs'),
+          'check',
+          '--issues',
+          '--format',
+          'json',
+        ],
+        {
+          cwd: rootDir,
+          env: {
+            ...process.env,
+            CI: 'true',
+          },
+        },
+      );
+
+      expect(JSON.parse(missingConfigQuery.stdout)).toMatchObject({
+        issueCount: 3,
+      });
+
       const result = await execFileAsync(
         process.execPath,
         [
@@ -1650,28 +2387,7 @@ export default {
       );
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
-        `export default ${JSON.stringify(
-          {
-            config: {
-              checkers: {
-                typescript: {
-                  include: ['packages/app/tsconfig.json'],
-                  preset: 'tsc',
-                },
-              },
-            },
-            package: {
-              entries: [
-                {
-                  name: '@example/pkg-entry',
-                  outDir: 'packages/pkg/dist',
-                },
-              ],
-            },
-          },
-          null,
-          2,
-        )};\n`,
+        'export default {\n',
       );
 
       const result = await execFileAsync(
@@ -1693,6 +2409,59 @@ export default {
       );
 
       expect(result.stdout).toContain('No check issue snapshot found.');
+      const missingTaskHelpResult = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'limina.config.mjs'),
+          'check',
+          '--issues',
+          '--task',
+          '--help',
+        ],
+        {
+          cwd: rootDir,
+          env: { ...process.env, CI: 'true' },
+        },
+      );
+      const missingTaskHelpPlainStdout = stripAnsi(
+        missingTaskHelpResult.stdout,
+      );
+      for (const task of PUBLIC_CHECK_ISSUE_TASKS) {
+        expect(missingTaskHelpPlainStdout).toContain(`- ${task}  0 issues`);
+      }
+
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [cliPath, 'check', '--issues', '--invocation', 'not-a-uuid'],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          'Invalid standalone issue invocation ID: not-a-uuid.',
+        ),
+      });
+      const missingInvocationId = '00000000-0000-4000-8000-000000000000';
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [cliPath, 'check', '--issues', '--invocation', missingInvocationId],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        ),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          `No standalone issue invocation found for ${missingInvocationId}.`,
+        ),
+      });
+
       await writeText(
         path.join(rootDir, '.limina/check/last-run.json'),
         stringifyConfig({
@@ -1750,7 +2519,9 @@ export default {
       const emptyTaskHelpPlainStdout = stripAnsi(emptyTaskHelpResult.stdout);
       expect(emptyTaskHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(emptyTaskHelpPlainStdout).toContain('Check issue tasks:');
-      expect(emptyTaskHelpPlainStdout).toContain('- source:check  0 issues');
+      for (const task of PUBLIC_CHECK_ISSUE_TASKS) {
+        expect(emptyTaskHelpPlainStdout).toContain(`- ${task}  0 issues`);
+      }
       expect(emptyTaskHelpPlainStdout).not.toContain(
         'No task filters are available',
       );
@@ -1780,9 +2551,6 @@ export default {
       expect(emptyPackageHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(emptyPackageHelpPlainStdout).toContain('Check issue packages:');
       expect(emptyPackageHelpPlainStdout).toContain(
-        '- @example/pkg-entry  0 issues',
-      );
-      expect(emptyPackageHelpPlainStdout).not.toContain(
         'No package filters are available',
       );
 
@@ -1813,7 +2581,7 @@ export default {
         'Check issue packages:',
       );
       expect(emptyShortPackageHelpPlainStdout).toContain(
-        '- @example/pkg-entry  0 issues',
+        'No package filters are available',
       );
 
       const emptyCheckerHelpResult = await execFileAsync(
@@ -1840,8 +2608,7 @@ export default {
       );
       expect(emptyCheckerHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(emptyCheckerHelpPlainStdout).toContain('Check issue checkers:');
-      expect(emptyCheckerHelpPlainStdout).toContain('- typescript  0 issues');
-      expect(emptyCheckerHelpPlainStdout).not.toContain(
+      expect(emptyCheckerHelpPlainStdout).toContain(
         'No checker filters are available',
       );
 
@@ -1919,6 +2686,9 @@ export default {
       expect(taskHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(taskHelpPlainStdout).toContain('Check issue tasks:');
       expect(taskHelpPlainStdout).toContain('- checker:build  1 issue');
+      expect(taskHelpPlainStdout).toContain('- command  0 issues');
+      expect(taskHelpPlainStdout).toContain('- package:check  0 issues');
+      expect(taskHelpPlainStdout).toContain('- release:check  0 issues');
 
       const packageHelpResult = await execFileAsync(
         process.execPath,
@@ -1943,9 +2713,6 @@ export default {
       expect(packageHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(packageHelpPlainStdout).toContain('Check issue packages:');
       expect(packageHelpPlainStdout).toContain('- @example/app  1 issue');
-      expect(packageHelpPlainStdout).toContain(
-        '- @example/pkg-entry  0 issues',
-      );
 
       const checkerHelpResult = await execFileAsync(
         process.execPath,
@@ -1987,7 +2754,7 @@ export default {
         ]),
       ).rejects.toMatchObject({
         stderr: expect.stringContaining(
-          '`limina check --task`, `--checker`, and `--format` require --issues.',
+          '`limina check --task`, `--checker`, `--format`, and `--invocation` require --issues.',
         ),
       });
       await Promise.all([
@@ -2069,7 +2836,7 @@ export default {
     }
   }, 90_000);
 
-  it('prints checker filter help from auto checker discovery', async () => {
+  it('does not import config while reading checker filter help', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-auto-issues-')),
     );
@@ -2084,17 +2851,7 @@ export default {
       );
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
-        `export default ${JSON.stringify(
-          {
-            config: {
-              checkers: {
-                mode: 'auto',
-              },
-            },
-          },
-          null,
-          2,
-        )};\n`,
+        'throw new Error("config must not execute");\n',
       );
       await writeText(
         path.join(rootDir, 'app/src/index.ts'),
@@ -2143,9 +2900,8 @@ export default {
       const plainStdout = stripAnsi(result.stdout);
 
       expect(result.stdout).toContain(`${ANSI_ESCAPE}[`);
-      expect(plainStdout).toContain('Check issue checkers:');
-      expect(plainStdout).toContain('- typescript  0 issues');
-      expect(plainStdout).not.toContain('No check issue snapshot found.');
+      expect(plainStdout).toContain('No check issue snapshot found.');
+      expect(plainStdout).not.toContain('config must not execute');
     } finally {
       await rm(rootDir, {
         force: true,

@@ -854,6 +854,7 @@ async function runBoundaryCheck(
   }
 
   for (const violation of violations) {
+    const structuredFilePath = path.resolve(target.outDir, violation.filePath);
     addPackageCheckIssue({
       code: 'LIMINA_PACKAGE_BOUNDARY',
       detailLines: [
@@ -866,7 +867,7 @@ async function runBoundaryCheck(
         },
         { label: 'environment', value: violation.environment },
       ],
-      filePath: violation.filePath,
+      filePath: structuredFilePath,
       fix: 'Remove the import, change the package boundary config, or move the code to an environment that allows this dependency.',
       fixSteps: [
         'Remove the disallowed import from the published output.',

@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 import {
   type BuildCheckerPreset,
-  getActiveCheckers,
-  isAutoCheckerConfigMode,
   type LiminaCommand,
   type LiminaConfigLoader,
   loadConfig,
@@ -10,13 +8,16 @@ import {
   type PackageCheckToolSelection,
   type ResolvedLiminaConfig,
 } from '#config/runner';
-import { resolveGeneratedGraphCheckers } from '#core/build-graph/runner';
 import { uniqueTrimmedNonEmptySortedStrings } from '#utils/collections';
+import { normalizeAbsolutePathIdentity } from '#utils/path';
 import { cac } from 'cac';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 import path from 'pathe';
-import { isLiminaCheckIssueCode } from './check-reporting/codes';
+import {
+  defaultTaskFailureCode,
+  isLiminaCheckIssueCode,
+} from './check-reporting/codes';
 import {
   type CheckIssueFilterHelpKind,
   type CheckIssueFilterHelpValue,
@@ -24,11 +25,20 @@ import {
   formatCheckIssueSnapshotFilterHelp,
 } from './check-reporting/filter-help';
 import { createCheckRunRecorder } from './check-reporting/run-recorder';
+import { formatShellCommand } from './check-reporting/shell-command';
 import {
   type CheckIssueInventoryFormat,
+  createTaskFailureIssue,
   formatCheckIssueSnapshotInventory,
+  LIMINA_CHECK_TASK_NAMES,
+  type LiminaCheckIssue,
+  type LiminaCheckTaskName,
+  locateCheckIssueWorkspace,
   readCheckIssueSnapshot,
-  writeNotRunCheckIssueSnapshot,
+  readStandaloneIssueInvocation,
+  toCheckIssueInventoryInvocationMetadata,
+  toCheckIssueSnapshot,
+  writeStandaloneFailureInvocation,
 } from './check-reporting/snapshot';
 import { formatCheckRunSummaryHuman } from './check-reporting/summary';
 import {
@@ -48,13 +58,10 @@ import {
   runCheckerTypecheck,
 } from './commands/typecheck';
 import {
-  collectWorkspacePackages,
-  isNamedWorkspacePackage,
-} from './core/workspace/actions';
-import {
   type DependencyGraphView,
   stringifyDependencyGraph,
 } from './dependency-graph/runner';
+import type { RunExecutionResult } from './execution/executor';
 import {
   createLiminaCheckFlowReporter,
   createLiminaFlowReporter,
@@ -63,14 +70,20 @@ import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 import {
   createDefaultExecutionPlan,
   createExecutionPlan,
-  runDefaultCheck,
-  runPipeline,
+  runDefaultCheckWithResult,
+  runPipelineWithResult,
 } from './pipeline/runner';
 import { LiminaPreflightManager } from './preflight';
 import { createProfilingMetricsRecorder } from './profiling/metrics';
 import { createCheckProfileSession } from './profiling/session';
-import type { SourceIssueReportOptions } from './source-check/report';
-import { writeNotRunSourceIssueSnapshot } from './source-check/snapshot';
+import type {
+  SourceCheckIssue,
+  SourceIssueReportOptions,
+} from './source-check/report';
+import {
+  writeCompletedStandaloneSourceCheckSnapshots,
+  writeNotRunSourceIssueSnapshot,
+} from './source-check/snapshot';
 
 interface GlobalFlags {
   config?: string;
@@ -92,6 +105,7 @@ interface SourceIssueSelectionFlags extends PackageSelectionFlags {
 interface CheckFlags extends GlobalFlags, SourceIssueSelectionFlags {
   checker?: string | string[];
   format?: string;
+  invocation?: string;
   issues?: boolean;
   task?: string | string[];
 }
@@ -353,9 +367,9 @@ function assertStandaloneIssuesFlag(
   flags: CheckFlags,
 ): void {
   if (!flags.issues) {
-    if (flags.task || flags.checker || flags.format) {
+    if (flags.task || flags.checker || flags.format || flags.invocation) {
       throw new Error(
-        '`limina check --task`, `--checker`, and `--format` require --issues.',
+        '`limina check --task`, `--checker`, `--format`, and `--invocation` require --issues.',
       );
     }
 
@@ -500,6 +514,110 @@ export function runCheckWithCliFlowCleanup(
   );
 }
 
+interface StandaloneIssueSession {
+  command: string;
+  config: ResolvedLiminaConfig;
+  explicitConfig: boolean;
+  issues: LiminaCheckIssue[];
+  preflight: LiminaPreflightManager;
+  task: LiminaCheckTaskName;
+  title: string;
+}
+
+async function writeStandaloneFailureSession(
+  session: StandaloneIssueSession,
+  error?: unknown,
+): Promise<void> {
+  const invocation = await writeStandaloneFailureInvocation({
+    artifactNamespace: session.preflight.artifactNamespace,
+    command: session.command,
+    createFallbackIssue: () =>
+      createTaskFailureIssue({
+        code: defaultTaskFailureCode(session.task),
+        filePath: session.config.configPath,
+        fix: `Inspect the ${session.title.toLowerCase()} output, then rerun \`${session.command}\`.`,
+        reason:
+          error === undefined
+            ? `${session.title} finished unsuccessfully without structured issue details.`
+            : `${session.title} failed: ${formatErrorMessage(error)}.`,
+        rootDir: session.config.rootDir,
+        task: session.task,
+        title: `${session.title} failed`,
+      }),
+    error,
+    issues: session.issues,
+    rootDir: session.config.rootDir,
+  });
+  const query = formatShellCommand([
+    'limina',
+    ...(session.explicitConfig
+      ? ['--config', normalizeAbsolutePathIdentity(session.config.configPath)]
+      : []),
+    'check',
+    '--issues',
+    '--invocation',
+    invocation.invocationId,
+  ]);
+
+  process.stdout.write(
+    `\nStandalone issue invocation: ${invocation.invocationId}\nQuery: ${query}\n`,
+  );
+}
+
+async function runStandaloneIssueFlow(options: {
+  execute: (
+    registerSession: (session: StandaloneIssueSession) => void,
+  ) => Promise<boolean>;
+  flow: CliFlowBoundary;
+  messages: { failed: string; passed: string };
+}): Promise<boolean> {
+  let commandError: unknown;
+  let commandPassed = false;
+  let commandSettled = false;
+  let finalizationAttempted = false;
+  let session: StandaloneIssueSession | undefined;
+
+  const finalize = async (error?: unknown): Promise<void> => {
+    if (!session || finalizationAttempted) {
+      return;
+    }
+
+    finalizationAttempted = true;
+    await writeStandaloneFailureSession(session, error);
+  };
+
+  try {
+    const passed = await runCliFlowWithCleanup(
+      options.flow,
+      options.messages,
+      async () => {
+        try {
+          commandPassed = await options.execute((nextSession) => {
+            session = nextSession;
+          });
+          commandSettled = true;
+          return commandPassed;
+        } catch (error) {
+          commandError = error;
+          throw error;
+        }
+      },
+    );
+
+    if (!passed) {
+      await finalize();
+    }
+
+    return passed;
+  } catch (error) {
+    if (session && (!commandSettled || !commandPassed)) {
+      await finalize(commandError);
+    }
+
+    throw error;
+  }
+}
+
 function readGlobalFlagsFromArgv(argv: readonly string[]): GlobalFlags {
   const flags: GlobalFlags = {};
 
@@ -555,6 +673,26 @@ function readGlobalFlagsFromArgv(argv: readonly string[]): GlobalFlags {
   }
 
   return flags;
+}
+
+function readArgvOptionValue(
+  argv: readonly string[],
+  optionName: string,
+): string | undefined {
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === optionName) {
+      const value = argv[index + 1];
+      return value && !value.startsWith('-') ? value : undefined;
+    }
+
+    if (arg?.startsWith(`${optionName}=`)) {
+      return arg.slice(optionName.length + 1);
+    }
+  }
+
+  return undefined;
 }
 
 function parseCheckIssueFilterHelpKind(
@@ -640,84 +778,43 @@ function getSnapshotIssueCheckerNames(
   );
 }
 
-function usesAutoCheckers(config: ResolvedLiminaConfig): boolean {
-  return (
-    config.config?.checkers === undefined ||
-    isAutoCheckerConfigMode(config.config.checkers)
-  );
-}
-
 function getCheckIssueTaskHelpValues(
   snapshot: Awaited<ReturnType<typeof readCheckIssueSnapshot>>,
 ): CheckIssueFilterHelpValue[] {
   return uniqueSortedValues([
-    'checker:build',
-    'checker:typecheck',
-    'graph:check',
-    'graph:materialize',
-    'proof:check',
-    'source:check',
-    'workspace:validate',
+    ...LIMINA_CHECK_TASK_NAMES,
     ...(snapshot?.run?.tasks.map((task) => task.issueTask) ?? []),
     ...(snapshot?.issues.map((issue) => issue.task) ?? []),
   ]);
 }
 
-async function getCheckIssueCheckerHelpValues(options: {
-  config: ResolvedLiminaConfig;
+function getCheckIssueCheckerHelpValues(options: {
   snapshot: Awaited<ReturnType<typeof readCheckIssueSnapshot>>;
-}): Promise<CheckIssueFilterHelpValue[]> {
-  const checkers = usesAutoCheckers(options.config)
-    ? await resolveGeneratedGraphCheckers(options.config)
-    : getActiveCheckers(options.config);
-
-  return uniqueSortedValues([
-    ...checkers.map((checker) => checker.name),
-    ...getSnapshotIssueCheckerNames(options.snapshot),
-  ]);
+}): CheckIssueFilterHelpValue[] {
+  return uniqueSortedValues(getSnapshotIssueCheckerNames(options.snapshot));
 }
 
-async function getWorkspacePackageNames(
-  config: ResolvedLiminaConfig,
-): Promise<string[]> {
-  try {
-    return (await collectWorkspacePackages(config))
-      .filter(isNamedWorkspacePackage)
-      .map((workspacePackage) => workspacePackage.name);
-  } catch {
-    return [];
-  }
-}
-
-async function getCheckIssuePackageHelpValues(options: {
-  config: ResolvedLiminaConfig;
+function getCheckIssuePackageHelpValues(options: {
   snapshot: Awaited<ReturnType<typeof readCheckIssueSnapshot>>;
-}): Promise<CheckIssueFilterHelpValue[]> {
-  return uniqueSortedValues([
-    ...getSnapshotIssuePackageNames(options.snapshot),
-    ...(options.config.package?.entries ?? []).map((entry) => entry.name),
-    ...(await getWorkspacePackageNames(options.config)),
-  ]);
+}): CheckIssueFilterHelpValue[] {
+  return uniqueSortedValues(getSnapshotIssuePackageNames(options.snapshot));
 }
 
-async function getCheckIssueFilterHelpValues(options: {
-  config: ResolvedLiminaConfig;
+function getCheckIssueFilterHelpValues(options: {
   helpKind: Exclude<CheckIssueFilterHelpKind, 'rule'>;
   snapshot: Awaited<ReturnType<typeof readCheckIssueSnapshot>>;
-}): Promise<CheckIssueFilterHelpValue[]> {
+}): CheckIssueFilterHelpValue[] {
   if (options.helpKind === 'task') {
     return getCheckIssueTaskHelpValues(options.snapshot);
   }
 
   if (options.helpKind === 'checker') {
     return getCheckIssueCheckerHelpValues({
-      config: options.config,
       snapshot: options.snapshot,
     });
   }
 
   return getCheckIssuePackageHelpValues({
-    config: options.config,
     snapshot: options.snapshot,
   });
 }
@@ -736,13 +833,20 @@ async function printCheckIssueFilterHelpIfRequested(
     return true;
   }
 
-  const config = await load(readGlobalFlagsFromArgv(argv), 'check');
-  const snapshot = await readCheckIssueSnapshot(config.rootDir);
+  const globalFlags = readGlobalFlagsFromArgv(argv);
+  const location = locateCheckIssueWorkspace({
+    configPath: globalFlags.config,
+  });
+  const invocationId = readArgvOptionValue(argv, '--invocation');
+  const snapshot = invocationId
+    ? toCheckIssueSnapshot(
+        await readStandaloneIssueInvocation(location.rootDir, invocationId),
+      )
+    : await readCheckIssueSnapshot(location.rootDir);
 
   process.stdout.write(
     `${formatCheckIssueSnapshotFilterHelp({
-      availableValues: await getCheckIssueFilterHelpValues({
-        config,
+      availableValues: getCheckIssueFilterHelpValues({
         helpKind,
         snapshot,
       }),
@@ -808,9 +912,13 @@ export function createLiminaCli(): ReturnType<typeof cac> {
     .option('--rule <code>', 'Filter check issue details by stable rule code')
     .option('--file <path>', 'Filter check issue details by exact file path')
     .option('--scope <glob>', 'Filter check issue details by path scope')
-    .option('--task <name>', 'Filter last-run issue inventory by task')
-    .option('--checker <name>', 'Filter last-run issue inventory by checker')
-    .option('--issues', 'Show check issue filters from the last run')
+    .option('--task <name>', 'Filter issue inventory by stable task name')
+    .option('--checker <name>', 'Filter issue inventory by checker')
+    .option('--issues', 'Show issues from the last completed check')
+    .option(
+      '--invocation <uuid>',
+      'Read one standalone failure invocation instead of the last check run',
+    )
     .option('--format <format>', 'Issue output format: human, json, or ndjson')
     .action(async (pipeline: string | undefined, flags: CheckFlags) => {
       assertStandaloneIssuesFlag(pipeline, flags);
@@ -819,8 +927,18 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         const rules = parseRepeatedStrings(flags.rule);
         assertKnownCheckRuleCodes(rules);
 
-        const config = await load(flags, 'check');
-        const snapshot = await readCheckIssueSnapshot(config.rootDir);
+        const location = locateCheckIssueWorkspace({
+          configPath: flags.config,
+        });
+        const invocation = flags.invocation
+          ? await readStandaloneIssueInvocation(
+              location.rootDir,
+              flags.invocation,
+            )
+          : undefined;
+        const snapshot = invocation
+          ? toCheckIssueSnapshot(invocation)
+          : await readCheckIssueSnapshot(location.rootDir);
 
         process.stdout.write(
           `${formatCheckIssueSnapshotInventory({
@@ -833,7 +951,13 @@ export function createLiminaCli(): ReturnType<typeof cac> {
               tasks: parseRepeatedStrings(flags.task),
             },
             format: parseIssueInventoryFormat(flags.format),
-            rootDir: config.rootDir,
+            ...(invocation
+              ? {
+                  invocation:
+                    toCheckIssueInventoryInvocationMetadata(invocation),
+                }
+              : {}),
+            rootDir: location.rootDir,
             snapshot,
             verbose: flags.verbose,
           })}\n`,
@@ -885,6 +1009,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       let checkRunRecorder:
         | ReturnType<typeof createCheckRunRecorder>
         | undefined;
+      let executionResult: RunExecutionResult | undefined;
       let passed = false;
       try {
         passed = await runCheckWithCliFlowCleanup(flow, async () => {
@@ -896,25 +1021,20 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             plannedTasks: plan.tasks,
             rootDir: config.rootDir,
           });
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
-            command: sourceIssueReport.command ?? command,
-            rootDir: config.rootDir,
-            run: checkRunRecorder.getRunSummary(),
-          });
-          return pipeline
-            ? await runPipeline(config, pipeline, {
+          executionResult = pipeline
+            ? await runPipelineWithResult(config, pipeline, {
                 ...planOptions,
                 checkRunRecorder,
                 executionPlan: plan,
                 flow,
               })
-            : await runDefaultCheck(config, {
+            : await runDefaultCheckWithResult(config, {
                 ...planOptions,
                 checkRunRecorder,
                 executionPlan: plan,
                 flow,
               });
+          return executionResult.passed;
         });
       } finally {
         await profileSession?.finish({
@@ -927,13 +1047,13 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         process.exitCode = 1;
       }
 
-      const snapshot = await readCheckIssueSnapshot(config.rootDir);
-      if (snapshot) {
+      const run = checkRunRecorder?.getRunSummary();
+      if (executionResult && run) {
         process.stdout.write(
           `\n${formatCheckRunSummaryHuman({
-            issues: snapshot.issues,
+            issues: executionResult.issues,
             rootDir: config.rootDir,
-            snapshot,
+            run,
           })}\n`,
         );
       }
@@ -971,36 +1091,48 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       }
 
       const flow = createCliFlow();
-      const passed = await runCliFlowWithCleanup(
-        flow,
-        { failed: 'limina graph failed', passed: 'limina graph passed' },
-        async () => {
+      const passed = await runStandaloneIssueFlow({
+        execute: async (registerSession) => {
           flow.intro(`limina graph ${action}`);
           const config = await load(flags, 'graph');
           const preflight = new LiminaPreflightManager({ config });
           const command =
             action === 'check' ? 'limina graph check' : 'limina graph prepare';
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
+          const issues: LiminaCheckIssue[] = [];
+          registerSession({
             command,
-            rootDir: config.rootDir,
+            config,
+            explicitConfig: flags.config !== undefined,
+            issues,
+            preflight,
+            task: action === 'check' ? 'graph:check' : 'graph:prepare',
+            title: action === 'check' ? 'Graph check' : 'Graph prepare',
           });
 
           return action === 'check'
             ? runGraphCheck(config, {
                 clearScreen: false,
+                deferSnapshot: true,
                 flow,
+                issues,
                 preflight,
                 report: { command, verbose: flags.verbose },
               })
             : runGraphPrepare(config, {
                 clearScreen: false,
+                deferSnapshot: true,
                 flow,
+                issues,
                 preflight,
                 report: { command, verbose: flags.verbose },
               });
         },
-      );
+        flow,
+        messages: {
+          failed: 'limina graph failed',
+          passed: 'limina graph passed',
+        },
+      });
 
       if (!passed) {
         process.exitCode = 1;
@@ -1015,21 +1147,26 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown proof action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      const passed = await runCliFlowWithCleanup(
-        flow,
-        { failed: 'limina proof failed', passed: 'limina proof passed' },
-        async () => {
+      const passed = await runStandaloneIssueFlow({
+        execute: async (registerSession) => {
           flow.intro('limina proof check');
           const config = await load(flags, 'proof');
           const preflight = new LiminaPreflightManager({ config });
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
+          const issues: LiminaCheckIssue[] = [];
+          registerSession({
             command: 'limina proof check',
-            rootDir: config.rootDir,
+            config,
+            explicitConfig: flags.config !== undefined,
+            issues,
+            preflight,
+            task: 'proof:check',
+            title: 'Proof check',
           });
           return runProofCheck(config, {
             clearScreen: false,
+            deferSnapshot: true,
             flow,
+            issues,
             preflight,
             report: {
               command: 'limina proof check',
@@ -1037,7 +1174,12 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             },
           });
         },
-      );
+        flow,
+        messages: {
+          failed: 'limina proof failed',
+          passed: 'limina proof passed',
+        },
+      });
 
       if (!passed) {
         process.exitCode = 1;
@@ -1056,34 +1198,59 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown source action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      const passed = await runCliFlowWithCleanup(
-        flow,
-        { failed: 'limina source failed', passed: 'limina source passed' },
-        async () => {
+      const passed = await runStandaloneIssueFlow({
+        execute: async (registerSession) => {
           flow.intro('limina source check');
           const config = await load(flags, 'source');
           const preflight = new LiminaPreflightManager({ config });
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
+          const issues: LiminaCheckIssue[] = [];
+          let completedSourceIssues: readonly SourceCheckIssue[] | undefined;
+          registerSession({
             command: 'limina source check',
-            rootDir: config.rootDir,
+            config,
+            explicitConfig: flags.config !== undefined,
+            issues,
+            preflight,
+            task: 'source:check',
+            title: 'Source check',
           });
           await writeNotRunSourceIssueSnapshot({
             artifactNamespace: preflight.artifactNamespace,
             command: 'limina source check',
             rootDir: config.rootDir,
           });
-          return runSourceCheck(config, {
+          const passed = await runSourceCheck(config, {
             clearScreen: false,
+            deferSnapshot: true,
             flow,
+            issues,
+            onSourceSnapshot: (sourceIssues) => {
+              completedSourceIssues = sourceIssues;
+            },
             preflight,
             report: createSourceIssueReportOptions(
               flags,
               'limina source check',
             ),
           });
+
+          if (completedSourceIssues) {
+            await writeCompletedStandaloneSourceCheckSnapshots({
+              artifactNamespace: preflight.artifactNamespace,
+              command: 'limina source check',
+              issues: completedSourceIssues,
+              rootDir: config.rootDir,
+            });
+          }
+
+          return passed;
         },
-      );
+        flow,
+        messages: {
+          failed: 'limina source failed',
+          passed: 'limina source passed',
+        },
+      });
 
       if (!passed) {
         process.exitCode = 1;
@@ -1108,17 +1275,20 @@ export function createLiminaCli(): ReturnType<typeof cac> {
 
       const checker = parseBuildPreset(flags.preset, 'build');
       const flow = createCliFlow();
-      const passed = await runCliFlowWithCleanup(
-        flow,
-        { failed: 'limina build failed', passed: 'limina build passed' },
-        async () => {
+      const passed = await runStandaloneIssueFlow({
+        execute: async (registerSession) => {
           flow.intro('limina build');
           const config = await load(flags, 'build');
           const preflight = new LiminaPreflightManager({ config });
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
+          const issues: LiminaCheckIssue[] = [];
+          registerSession({
             command: 'limina build',
-            rootDir: config.rootDir,
+            config,
+            explicitConfig: flags.config !== undefined,
+            issues,
+            preflight,
+            task: 'checker:build',
+            title: 'Build',
           });
           const result = await runBuild({
             checker,
@@ -1126,7 +1296,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             config,
             configPath,
             cwd: process.cwd(),
+            deferSnapshot: true,
             flow,
+            issues,
             preflight,
             raw: flags.raw,
             report: {
@@ -1137,7 +1309,12 @@ export function createLiminaCli(): ReturnType<typeof cac> {
           });
           return result.passed;
         },
-      );
+        flow,
+        messages: {
+          failed: 'limina build failed',
+          passed: 'limina build passed',
+        },
+      });
 
       if (!passed) {
         process.exitCode = 1;
@@ -1168,13 +1345,8 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         }
 
         const flow = createCliFlow();
-        const passed = await runCliFlowWithCleanup(
-          flow,
-          {
-            failed: 'limina checker failed',
-            passed: 'limina checker passed',
-          },
-          async () => {
+        const passed = await runStandaloneIssueFlow({
+          execute: async (registerSession) => {
             flow.intro(`limina checker ${action}`);
 
             if (action === 'build') {
@@ -1194,10 +1366,15 @@ export function createLiminaCli(): ReturnType<typeof cac> {
 
               const config = await load(flags, configPath ? 'build' : 'check');
               const preflight = new LiminaPreflightManager({ config });
-              await writeNotRunCheckIssueSnapshot({
-                artifactNamespace: preflight.artifactNamespace,
+              const issues: LiminaCheckIssue[] = [];
+              registerSession({
                 command: 'limina checker build',
-                rootDir: config.rootDir,
+                config,
+                explicitConfig: flags.config !== undefined,
+                issues,
+                preflight,
+                task: 'checker:build',
+                title: 'Checker build',
               });
               const result = await runCheckerBuild({
                 ...(configPath
@@ -1210,7 +1387,9 @@ export function createLiminaCli(): ReturnType<typeof cac> {
                 clearScreen: false,
                 config,
                 cwd: process.cwd(),
+                deferSnapshot: true,
                 flow,
+                issues,
                 preflight,
                 report: {
                   command: 'limina checker build',
@@ -1234,16 +1413,23 @@ export function createLiminaCli(): ReturnType<typeof cac> {
 
             const config = await load(flags, 'check');
             const preflight = new LiminaPreflightManager({ config });
-            await writeNotRunCheckIssueSnapshot({
-              artifactNamespace: preflight.artifactNamespace,
+            const issues: LiminaCheckIssue[] = [];
+            registerSession({
               command: 'limina checker typecheck',
-              rootDir: config.rootDir,
+              config,
+              explicitConfig: flags.config !== undefined,
+              issues,
+              preflight,
+              task: 'checker:typecheck',
+              title: 'Checker typecheck',
             });
             const result = await runCheckerTypecheck({
               clearScreen: false,
               config,
               cwd: process.cwd(),
+              deferSnapshot: true,
               flow,
+              issues,
               preflight,
               report: {
                 command: 'limina checker typecheck',
@@ -1252,7 +1438,12 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             });
             return result.passed;
           },
-        );
+          flow,
+          messages: {
+            failed: 'limina checker failed',
+            passed: 'limina checker passed',
+          },
+        });
         if (!passed) process.exitCode = 1;
       },
     );
@@ -1268,24 +1459,29 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown package action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      const passed = await runCliFlowWithCleanup(
-        flow,
-        { failed: 'limina package failed', passed: 'limina package passed' },
-        async () => {
+      const passed = await runStandaloneIssueFlow({
+        execute: async (registerSession) => {
           flow.intro('limina package check');
           const config = await load(flags, 'package');
           const preflight = new LiminaPreflightManager({ config });
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
+          const issues: LiminaCheckIssue[] = [];
+          registerSession({
             command: 'limina package check',
-            rootDir: config.rootDir,
+            config,
+            explicitConfig: flags.config !== undefined,
+            issues,
+            preflight,
+            task: 'package:check',
+            title: 'Package check',
           });
           return runPackageCheck({
             attwProfile: parsePackageAttwProfile(flags.attwProfile),
             clearScreen: false,
             config,
             cwd: process.cwd(),
+            deferSnapshot: true,
             flow,
+            issues,
             preflight,
             packageNames: parsePackageNames(flags.package),
             report: {
@@ -1295,7 +1491,12 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             tool: parsePackageTool(flags.tool),
           });
         },
-      );
+        flow,
+        messages: {
+          failed: 'limina package failed',
+          passed: 'limina package passed',
+        },
+      });
 
       if (!passed) {
         process.exitCode = 1;
@@ -1311,23 +1512,28 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         throw new Error(`Unknown release action "${action}". Expected check.`);
       }
       const flow = createCliFlow();
-      const passed = await runCliFlowWithCleanup(
-        flow,
-        { failed: 'limina release failed', passed: 'limina release passed' },
-        async () => {
+      const passed = await runStandaloneIssueFlow({
+        execute: async (registerSession) => {
           flow.intro('limina release check');
           const config = await load(flags, 'release');
           const preflight = new LiminaPreflightManager({ config });
-          await writeNotRunCheckIssueSnapshot({
-            artifactNamespace: preflight.artifactNamespace,
+          const issues: LiminaCheckIssue[] = [];
+          registerSession({
             command: 'limina release check',
-            rootDir: config.rootDir,
+            config,
+            explicitConfig: flags.config !== undefined,
+            issues,
+            preflight,
+            task: 'release:check',
+            title: 'Release check',
           });
           return runReleaseCheck({
             clearScreen: false,
             config,
             cwd: process.cwd(),
+            deferSnapshot: true,
             flow,
+            issues,
             preflight,
             packageNames: parsePackageNames(flags.package),
             report: {
@@ -1336,7 +1542,12 @@ export function createLiminaCli(): ReturnType<typeof cac> {
             },
           });
         },
-      );
+        flow,
+        messages: {
+          failed: 'limina release failed',
+          passed: 'limina release passed',
+        },
+      });
 
       if (!passed) {
         process.exitCode = 1;

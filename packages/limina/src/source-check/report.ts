@@ -1,14 +1,15 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { uniqueSortedStrings } from '#utils/collections';
-import {
-  normalizeAbsolutePath,
-  normalizeSlashes,
-  toRelativePath,
-} from '#utils/path';
+import { normalizeSlashes, toRelativePath } from '#utils/path';
 import boxen from 'boxen';
 import path from 'pathe';
-import rawPicomatch from 'picomatch';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import {
+  pathCandidatesMatchFileFilters,
+  pathCandidatesMatchScopeFilters,
+  type PathFilterCandidate,
+} from '../check-reporting/path-filters';
+import { formatShellCommand } from '../check-reporting/shell-command';
 import type {
   LiminaCheckIssueEvidence,
   LiminaCheckIssueLocation,
@@ -93,11 +94,6 @@ const LABEL_PREFIX_PATTERN = /^(\s*(?:-\s+|\d+\.\s+)?)([A-Za-z][A-Za-z ]*):/u;
 
 type AnsiColor = string;
 
-const picomatch = rawPicomatch as unknown as (
-  pattern: string,
-  options?: { dot?: boolean; posixSlashes?: boolean },
-) => (value: string) => boolean;
-
 function plural(count: number, singular: string, pluralForm: string): string {
   return count === 1 ? singular : pluralForm;
 }
@@ -181,68 +177,22 @@ function formatFilters(options: SourceIssueReportOptions): string[] {
   return lines.length > 0 ? ['Filters:', ...lines] : [];
 }
 
-function normalizeIssueFilePath(rootDir: string, filePath: string): string {
-  return normalizeAbsolutePath(
-    path.isAbsolute(filePath) ? filePath : path.join(rootDir, filePath),
-  );
-}
-
-function hasGlobSyntax(value: string): boolean {
-  return /[*?[\]{}()!+]/u.test(value);
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.replaceAll(/\/+$/gu, '');
-}
-
-function normalizeScope(rootDir: string, scope: string): string {
-  const normalizedScope = normalizeSlashes(scope.trim());
-
-  if (path.isAbsolute(normalizedScope)) {
-    return trimTrailingSlash(
-      normalizeSlashes(toRelativePath(rootDir, normalizedScope)),
-    );
-  }
-
-  return trimTrailingSlash(normalizedScope.replaceAll(/^\.\//gu, ''));
-}
-
-function pathMatchesPlainScope(filePath: string, scope: string): boolean {
-  return filePath === scope || filePath.startsWith(`${scope}/`);
-}
-
-function pathMatchesScope(
-  rootDir: string,
+function getSourceIssuePathCandidates(
   issue: SourceUnusedModuleIssue | SourceStructuredIssue,
-  scope: string,
-): boolean {
-  const normalizedScope = normalizeScope(rootDir, scope);
-  const filePath = issue.filePath;
-
-  if (!filePath) {
-    return false;
+): PathFilterCandidate[] {
+  if (!issue.filePath) {
+    return [];
   }
 
-  const rootRelativePath = normalizeSlashes(toRelativePath(rootDir, filePath));
-  const ownerDirectory =
-    'ownerDirectory' in issue ? issue.ownerDirectory : undefined;
-  const ownerRelativePath = ownerDirectory
-    ? normalizeSlashes(toRelativePath(ownerDirectory, filePath))
-    : rootRelativePath;
-
-  if (!hasGlobSyntax(normalizedScope)) {
-    return (
-      pathMatchesPlainScope(rootRelativePath, normalizedScope) ||
-      pathMatchesPlainScope(ownerRelativePath, normalizedScope)
-    );
-  }
-
-  const matches = picomatch(normalizedScope, {
-    dot: true,
-    posixSlashes: true,
-  });
-
-  return matches(rootRelativePath) || matches(ownerRelativePath);
+  return [
+    {
+      kind: 'file',
+      path: issue.filePath,
+      ...('ownerDirectory' in issue
+        ? { scopeRelativeTo: [issue.ownerDirectory] }
+        : {}),
+    },
+  ];
 }
 
 function isSourceUnusedModuleIssue(
@@ -294,12 +244,13 @@ function issueMatchesFilters(
       return false;
     }
 
-    const issueFilePath = normalizeAbsolutePath(issue.filePath);
-    const selectedFiles = options.files.map((filePath) =>
-      normalizeIssueFilePath(config.rootDir, filePath),
-    );
-
-    if (!selectedFiles.includes(issueFilePath)) {
+    if (
+      !pathCandidatesMatchFileFilters({
+        candidates: getSourceIssuePathCandidates(issue),
+        files: options.files,
+        rootDir: config.rootDir,
+      })
+    ) {
       return false;
     }
   }
@@ -308,9 +259,11 @@ function issueMatchesFilters(
     options.scopes?.length &&
     (!isFileBackedIssue(issue) ||
       !issue.filePath ||
-      !options.scopes.some((scope) =>
-        pathMatchesScope(config.rootDir, issue, scope),
-      ))
+      !pathCandidatesMatchScopeFilters({
+        candidates: getSourceIssuePathCandidates(issue),
+        rootDir: config.rootDir,
+        scopes: options.scopes,
+      }))
   ) {
     return false;
   }
@@ -389,10 +342,6 @@ function formatUnknownRules(
   });
 }
 
-function quoteCommandValue(value: string): string {
-  return /^[\w@./:=,-]+$/u.test(value) ? value : JSON.stringify(value);
-}
-
 function formatCommandFlags(options: SourceIssueReportOptions): string {
   const flags = [
     ...(options.packageNames ?? []).flatMap((packageName) => [
@@ -404,7 +353,7 @@ function formatCommandFlags(options: SourceIssueReportOptions): string {
     ...(options.scopes ?? []).flatMap((scope) => ['--scope', scope]),
   ];
 
-  return flags.map(quoteCommandValue).join(' ');
+  return formatShellCommand(flags);
 }
 
 function createVerboseCommand(options: SourceIssueReportOptions): string {

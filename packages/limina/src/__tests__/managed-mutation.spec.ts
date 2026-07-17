@@ -32,10 +32,14 @@ async function createFixture(): Promise<{
   rootDir: string;
   sourceConfigPath: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-managed-mutation-')),
+  const rootDir = normalizeAbsolutePath(
+    await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-managed-mutation-')),
+    ),
   );
-  const sourceConfigPath = path.join(rootDir, 'packages/app/tsconfig.json');
+  const sourceConfigPath = normalizeAbsolutePath(
+    path.join(rootDir, 'packages/app/tsconfig.json'),
+  );
   await writeText(
     path.join(rootDir, 'package.json'),
     '{"name":"root","private":true}\n',
@@ -92,7 +96,9 @@ async function createFixture(): Promise<{
           },
         },
       },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
+      configPath: normalizeAbsolutePath(
+        path.join(rootDir, 'limina.config.mjs'),
+      ),
       rootDir,
     },
     rootDir,

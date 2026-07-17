@@ -180,13 +180,18 @@ Common options:
 | `--verbose`            | boolean                   | Output summary              | `limina check --verbose`                                      | Only affects report detail                                           |
 | `--rule <code>`        | repeatable string         | Do not filter by rule       | `limina check --issues --rule LIMINA_GRAPH_REFERENCE_MISSING` | Requires `--issues` for issue queries                                |
 | `--file <path>`        | repeatable path           | Do not filter by file       | `limina check --issues --file packages/a/src/index.ts`        | Matches exact file paths                                             |
-| `--scope <glob>`       | repeatable `glob`         | Do not filter by path scope | `limina check --issues --scope 'packages/a/**'`               | Used for issue snapshot filtering                                    |
+| `--scope <glob>`       | repeatable path or `glob` | Do not filter by path scope | `limina check --issues --scope 'packages/a/**'`               | Matches path-bearing issue candidates only                           |
 | `--task <name>`        | repeatable string         | Do not filter by task       | `limina check --issues --task source:check`                   | Must be used with `--issues`                                         |
 | `--checker <name>`     | repeatable string         | Do not filter by checker    | `limina check --issues --checker vue`                         | Only filters issue snapshots here; it is not build checker selection |
-| `--issues`             | boolean                   | Rerun checks                | `limina check --issues`                                       | Reads the latest check snapshot; cannot be used with a pipeline name |
+| `--issues`             | boolean                   | Run checks                  | `limina check --issues`                                       | Reads the last completed check; cannot be used with a pipeline name  |
+| `--invocation <uuid>`  | UUID                      | Read the last check         | `limina check --issues --invocation <uuid>`                   | Reads one immutable standalone failure record                        |
 | `--format <format>`    | `human`, `json`, `ndjson` | `human`                     | `limina check --issues --format json`                         | Must be used with `--issues`                                         |
 
-`--issues` does not rerun checks. It reads the snapshot written by the previous check and is used to locate failed tasks, rules, packages, files, or checkers. Workspace validation failures are recordable too: the trusted `.limina` snapshot namespace is created before validation, so a structural failure can still appear under task `workspace:validate`. Before using issue inventory the first time, run `limina check` and let it reach a recordable state.
+`--issues` does not rerun checks. Without `--invocation`, it reads the last terminal `limina check` result and is used to locate failed tasks, rules, packages, files, or checkers. A running or interrupted check does not replace the previous completed result, and standalone commands do not replace it either. Workspace validation failures are recordable too: the trusted `.limina` snapshot namespace is created before validation, so a structural failure can still appear under task `workspace:validate`. Before using the default issue inventory for the first time, let `limina check` finish once.
+
+When an issue-producing standalone command fails, it prints a standalone invocation ID and a ready-to-run `limina check --issues --invocation <uuid>` query. Each invocation is stored independently under `.limina/check/invocations/`. If the original command used an explicit `--config`, the printed query carries its canonical absolute path, so the same record can be queried from another working directory. Issue queries locate the workspace without importing or validating the Limina config.
+
+`--file` performs exact matching, while `--scope` accepts a directory or `glob`. Both accept workspace-relative paths, `./` paths, absolute paths, and either slash style. They match only path-bearing candidates such as issue files and package manifests; diagnostic labels such as config field scopes are not treated as paths. Repeated values within one filter use OR semantics.
 
 Check snapshots use schema version 7, and the reader accepts only version 7.
 
@@ -198,6 +203,8 @@ pnpm exec limina check --issues --package --help
 pnpm exec limina check --issues --checker --help
 pnpm exec limina check --issues --rule --help
 ```
+
+Task help always includes every public static check task and then merges task names found in the snapshot. It therefore remains useful when the snapshot is missing or contains no issues. Package and checker help remain snapshot-derived.
 
 ### limina graph \<action\>
 
@@ -225,6 +232,8 @@ pnpm exec limina source check
 pnpm exec limina source check --package @scope/pkg
 pnpm exec limina source check --scope 'packages/app/**' --verbose
 ```
+
+For `limina source check --scope`, a scope may also be relative to the selected source owner. For example, `src/theme` matches `packages/app/src/theme` for the `packages/app` owner. Workspace-relative, absolute, and glob forms continue to work as well.
 
 It checks whether source files belong to `pnpm` workspace packages, whether non-aggregator `tsconfig` files mix multiple workspace package owners, whether ordinary relative imports cross the nearest `package.json` package boundary, whether bare package imports are authorized by the owning workspace package or explicit rules, whether `#...` package imports stay inside the declaring package scope, and source usage backed by `Knip`.
 

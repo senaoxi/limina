@@ -618,13 +618,16 @@ describe('validated workspace context', () => {
         },
         rawPackages: [workspacePackage(logicalRoot, '@fixture/root')],
       });
-      const capability =
-        context.outputMutationAuthorities?.get(sourceConfigPath);
+      const capability = context.outputMutationAuthorities?.get(
+        toPortablePath(sourceConfigPath),
+      );
 
       expect(toPortablePath(capability?.outputRoot ?? '')).toBe(
         toPortablePath(path.join(logicalRoot, 'dist')),
       );
-      expect(capability?.authority.trustedBaseLogicalPath).toBe(logicalRoot);
+      expect(
+        toPortablePath(capability?.authority.trustedBaseLogicalPath ?? ''),
+      ).toBe(toPortablePath(logicalRoot));
       expect(capability?.authority.trustedBaseIdentity.logicalEntry.kind).toBe(
         'symlink',
       );
@@ -654,13 +657,16 @@ describe('validated workspace context', () => {
         config: fixture.config,
         rawPackages: [workspacePackage(logicalPackage, '@fixture/app')],
       });
-      const capability =
-        context.outputMutationAuthorities?.get(sourceConfigPath);
+      const capability = context.outputMutationAuthorities?.get(
+        toPortablePath(sourceConfigPath),
+      );
 
       expect(toPortablePath(capability?.outputRoot ?? '')).toBe(
         toPortablePath(path.join(logicalPackage, 'dist')),
       );
-      expect(capability?.authority.trustedBaseLogicalPath).toBe(logicalPackage);
+      expect(
+        toPortablePath(capability?.authority.trustedBaseLogicalPath ?? ''),
+      ).toBe(toPortablePath(logicalPackage));
       expect(capability?.authority.trustedBaseIdentity.logicalEntry.kind).toBe(
         'symlink',
       );
@@ -708,12 +714,19 @@ describe('validated workspace context', () => {
         },
         rawPackages: [workspacePackage(packageRoot, '@fixture/a')],
       });
-      const capability =
-        context.outputMutationAuthorities?.get(sourceConfigPath);
+      const capability = context.outputMutationAuthorities?.get(
+        toPortablePath(sourceConfigPath),
+      );
 
-      expect(capability?.outputRoot).toBe(outputRoot);
-      expect(capability?.authority.logicalMutationRoot).toBe(outputRoot);
-      expect(capability?.authority.trustedBaseLogicalPath).toBe(container);
+      expect(toPortablePath(capability?.outputRoot ?? '')).toBe(
+        toPortablePath(outputRoot),
+      );
+      expect(
+        toPortablePath(capability?.authority.logicalMutationRoot ?? ''),
+      ).toBe(toPortablePath(outputRoot));
+      expect(
+        toPortablePath(capability?.authority.trustedBaseLogicalPath ?? ''),
+      ).toBe(toPortablePath(container));
     } finally {
       await rm(container, { force: true, recursive: true });
     }

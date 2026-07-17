@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
+import {
+  formatCheckIssueSnapshotInventory,
+  type LiminaCheckIssue,
+} from '../check-reporting/snapshot';
 import { LiminaFlowReporter } from '../flow';
 import { ReleaseLogger } from '../logger';
 
@@ -697,6 +701,91 @@ describe('auditPublishedPackageBoundaries', () => {
 });
 
 describe('runPackageCheck and runReleaseCheck', () => {
+  it('records package boundary file paths relative to the config root', async () => {
+    const rootDir = await createWorkspaceRoot();
+    const outDir = path.join(rootDir, 'packages/pkg/dist');
+    const issues: LiminaCheckIssue[] = [];
+
+    try {
+      await writeText(
+        path.join(outDir, 'package.json'),
+        JSON.stringify({
+          exports: { '.': './browser/index.js' },
+          name: '@example/pkg',
+          version: '1.0.0',
+        }),
+      );
+      await writeText(
+        path.join(outDir, 'browser/index.js'),
+        "import '@example/undeclared';\n",
+      );
+
+      await expect(
+        runPackageCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/pkg',
+              outDir: 'packages/pkg/dist',
+            },
+          ]),
+          deferSnapshot: true,
+          issues,
+          tool: 'boundary',
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues).toContainEqual(
+        expect.objectContaining({
+          filePath: 'packages/pkg/dist/browser/index.js',
+          locations: expect.arrayContaining([
+            {
+              filePath: 'packages/pkg/dist/browser/index.js',
+            },
+          ]),
+        }),
+      );
+
+      const snapshot = {
+        command: 'limina check',
+        createdAt: '2026-07-17T00:00:00.000Z',
+        issues,
+        status: 'completed' as const,
+        version: 7 as const,
+      };
+      const byFile = JSON.parse(
+        formatCheckIssueSnapshotInventory({
+          filters: { files: ['packages/pkg/dist/browser/index.js'] },
+          format: 'json',
+          rootDir,
+          snapshot,
+        }),
+      ) as { issueCount: number };
+      const byScope = JSON.parse(
+        formatCheckIssueSnapshotInventory({
+          filters: { scopes: ['packages/pkg/dist/browser/**'] },
+          format: 'json',
+          rootDir,
+          snapshot,
+        }),
+      ) as { issueCount: number };
+      const ndjson = formatCheckIssueSnapshotInventory({
+        filters: { scopes: ['packages/pkg/dist/browser'] },
+        format: 'ndjson',
+        rootDir,
+        snapshot,
+      });
+
+      expect(byFile.issueCount).toBe(1);
+      expect(byScope.issueCount).toBe(1);
+      expect(JSON.parse(ndjson)).toMatchObject({
+        filePath: 'packages/pkg/dist/browser/index.js',
+      });
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('reports package entry and sub-check states to the flow reporter', async () => {
     const pkg = await createOutputPackage({
       'index.js': "import '@example/dep';\n",

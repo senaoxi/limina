@@ -3,6 +3,7 @@ import { normalizeSlashes } from '#utils/path';
 import path from 'pathe';
 import { generatedRootDirName } from '../core/build-graph/generated/paths';
 import { formatCheckSummaryBlock } from '../reporting';
+import { formatShellCommand } from './shell-command';
 import type {
   CheckIssueInventoryFilters,
   CheckIssueSnapshot,
@@ -53,6 +54,12 @@ export interface CheckTopBlocker {
 }
 
 export interface CheckRunSummaryHumanOptions {
+  issues: readonly LiminaCheckIssue[];
+  rootDir?: string;
+  run: LiminaCheckRunSummary;
+}
+
+interface CheckIssueSnapshotSummaryHumanOptions {
   filteredIssueCount?: number;
   filters?: CheckIssueInventoryFilters;
   issues: readonly LiminaCheckIssue[];
@@ -347,17 +354,8 @@ function formatSnapshotTimestamp(snapshot: CheckIssueSnapshot): string {
   );
 }
 
-function formatCheckRunResult(
-  snapshot: CheckIssueSnapshot,
-  issues: readonly LiminaCheckIssue[],
-): string {
-  const result =
-    snapshot.run?.result ??
-    (snapshot.status === 'completed'
-      ? issues.length > 0
-        ? 'failed'
-        : 'passed'
-      : 'not-run');
+function formatCheckRunResult(run: LiminaCheckRunSummary): string {
+  const result = run.result;
 
   if (result === 'passed') {
     return 'PASSED';
@@ -865,18 +863,43 @@ function formatTopBlockerLines(blockers: readonly CheckTopBlocker[]): string[] {
   ]);
 }
 
-function getFailedTask(run: LiminaCheckRunSummary | undefined): string | null {
+interface FailedTaskSelection {
+  label: string;
+  queryTask?: string;
+}
+
+function getFailedTask(
+  run: LiminaCheckRunSummary | undefined,
+): FailedTaskSelection | null {
   if (run?.blockedBy?.label) {
-    return run.blockedBy.label;
+    const blockedTask = run.tasks.find(
+      (task) =>
+        task.id === run.blockedBy?.id || task.label === run.blockedBy?.label,
+    );
+    return {
+      label: run.blockedBy.label,
+      ...(blockedTask ? { queryTask: blockedTask.issueTask } : {}),
+    };
   }
 
-  const failedTasks = uniqueValues(
-    run?.tasks
-      .filter((task) => task.state === 'failed')
-      .map((task) => task.label) ?? [],
+  const failedTasks =
+    run?.tasks.filter((task) => task.state === 'failed') ?? [];
+  const failedLabels = uniqueValues(failedTasks.map((task) => task.label));
+
+  if (failedLabels.length !== 1) {
+    return null;
+  }
+
+  const failedIssueTasks = uniqueValues(
+    failedTasks.map((task) => task.issueTask),
   );
 
-  return failedTasks.length === 1 ? failedTasks[0] : null;
+  return {
+    label: failedLabels[0]!,
+    ...(failedIssueTasks.length === 1
+      ? { queryTask: failedIssueTasks[0] }
+      : {}),
+  };
 }
 
 interface NextCommandEntry {
@@ -897,26 +920,47 @@ function formatNextCommandEntries(
 }
 
 function createCheckRunNextCommands(options: {
-  failedTask: string | null;
+  failedTask: FailedTaskSelection | null;
   topBlocker: CheckTopBlocker | undefined;
 }): NextCommandEntry[] {
-  const taskFilter = options.failedTask ? ` --task ${options.failedTask}` : '';
+  const taskFilter = options.failedTask?.queryTask
+    ? ['--task', options.failedTask.queryTask]
+    : [];
 
   return [
     {
-      command: `limina check --issues${taskFilter} --verbose`,
+      command: formatShellCommand([
+        'limina',
+        'check',
+        '--issues',
+        ...taskFilter,
+        '--verbose',
+      ]),
       label: 'Verbose',
     },
     ...(options.topBlocker
       ? [
           {
-            command: `limina check --issues --rule ${options.topBlocker.code} --verbose`,
+            command: formatShellCommand([
+              'limina',
+              'check',
+              '--issues',
+              '--rule',
+              options.topBlocker.code,
+              '--verbose',
+            ]),
             label: 'By rule',
           },
         ]
       : []),
     {
-      command: 'limina check --issues --format json',
+      command: formatShellCommand([
+        'limina',
+        'check',
+        '--issues',
+        '--format',
+        'json',
+      ]),
       label: 'JSON',
     },
   ];
@@ -927,9 +971,9 @@ export function formatCheckRunSummaryHuman(
 ): string {
   const overview = createIssueOverview(options.issues);
   const topBlockers = selectTopBlockers(options.issues);
-  const run = options.snapshot.run;
+  const run = options.run;
   const failedTask = getFailedTask(run);
-  const result = formatCheckRunResult(options.snapshot, options.issues);
+  const result = formatCheckRunResult(run);
   const nextCommands = createCheckRunNextCommands({
     failedTask,
     topBlocker: topBlockers[0],
@@ -943,7 +987,7 @@ export function formatCheckRunSummaryHuman(
     borderColor: result === 'PASSED' ? 'green' : 'red',
     colorLine: colorCheckStatsLine,
     lines: [
-      `Command: ${run?.command ?? options.snapshot.command}`,
+      `Command: ${run.command}`,
       `Config: ${formatConfigPath(run, options.rootDir)}`,
       `Duration: ${formatDuration(run?.durationMs)}`,
       ...formatRunExecutionLines({
@@ -955,7 +999,7 @@ export function formatCheckRunSummaryHuman(
             ...(shouldShowBlockedAt
               ? [
                   `Blocked at: ${
-                    run?.blockedBy?.label ?? failedTask ?? '(none)'
+                    run?.blockedBy?.label ?? failedTask?.label ?? '(none)'
                   }`,
                 ]
               : []),
@@ -995,7 +1039,7 @@ function createIssueSnapshotNextCommands(
 }
 
 export function formatCheckIssueSnapshotSummaryHuman(
-  options: CheckRunSummaryHumanOptions,
+  options: CheckIssueSnapshotSummaryHumanOptions,
 ): string {
   const overview = createIssueOverview(options.issues);
   const filteredIssueCount =
