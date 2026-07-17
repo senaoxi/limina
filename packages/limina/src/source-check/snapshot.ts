@@ -5,7 +5,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'pathe';
 import { writeJsonAtomically } from '../check-reporting/atomic-writer';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { formatCheckIssueHumanReport } from '../check-reporting/human';
+import { formatCheckIssueInventoryCard } from '../check-reporting/human';
+import {
+  type CheckIssueInventoryPresentationOptions,
+  getCanonicalIssueLocation,
+  type InventoryQueryContext,
+  selectInventoryIssues,
+} from '../check-reporting/inventory-presentation';
 import {
   pathCandidatesMatchFileFilters,
   pathCandidatesMatchScopeFilters,
@@ -198,13 +204,36 @@ export interface CheckIssueInventoryFilters {
 
 export type CheckIssueInventoryFormat = 'human' | 'json' | 'ndjson';
 
-export interface CheckIssueInventoryOptions {
-  filters?: CheckIssueInventoryFilters;
-  format?: CheckIssueInventoryFormat;
+interface CheckIssueInventoryBaseOptions {
   invocation?: CheckIssueInventoryInvocationMetadata;
   rootDir?: string;
   snapshot: CheckIssueSnapshot | null;
-  verbose?: boolean;
+}
+
+export interface CheckIssueInventoryHumanOptions
+  extends CheckIssueInventoryBaseOptions {
+  filters?: never;
+  format?: 'human';
+  presentation: CheckIssueInventoryPresentationOptions;
+  queryContext: InventoryQueryContext;
+}
+
+export interface CheckIssueInventoryMachineOptions
+  extends CheckIssueInventoryBaseOptions {
+  filters?: CheckIssueInventoryFilters;
+  format: Exclude<CheckIssueInventoryFormat, 'human'>;
+  presentation?: never;
+  queryContext?: never;
+}
+
+export type CheckIssueInventoryOptions =
+  | CheckIssueInventoryHumanOptions
+  | CheckIssueInventoryMachineOptions;
+
+function isCheckIssueInventoryMachineOptions(
+  options: CheckIssueInventoryOptions,
+): options is CheckIssueInventoryMachineOptions {
+  return options.format === 'json' || options.format === 'ndjson';
 }
 
 export interface CheckIssueInventoryInvocationMetadata {
@@ -1396,7 +1425,10 @@ function formatNdjsonInventory(issues: readonly LiminaCheckIssue[]): string {
 export function formatCheckIssueSnapshotInventory(
   options: CheckIssueInventoryOptions,
 ): string {
-  const filters = options.filters ?? {};
+  const machine = isCheckIssueInventoryMachineOptions(options);
+  const filters = machine
+    ? (options.filters ?? {})
+    : options.queryContext.filters;
   const format = options.format ?? 'human';
 
   if (!options.snapshot) {
@@ -1442,53 +1474,62 @@ export function formatCheckIssueSnapshotInventory(
   const filteredIssues = options.snapshot.issues.filter((issue) =>
     issueMatchesFilters(issue, filters, options.rootDir),
   );
+
+  if (machine) {
+    return options.format === 'json'
+      ? formatJsonInventory({
+          filteredIssues,
+          filters,
+          invocation: options.invocation,
+          snapshot: options.snapshot,
+        })
+      : formatNdjsonInventory(filteredIssues);
+  }
+
+  const view = options.presentation.view;
+  const selectedIssues =
+    view === 'summary'
+      ? []
+      : selectInventoryIssues(filteredIssues, options.presentation.maxIssues);
   const issueSummary = formatCheckIssueSnapshotSummaryHuman({
     filteredIssueCount: filteredIssues.length,
     filters,
     issues: filteredIssues,
+    presentation: options.presentation,
+    queryContext: options.queryContext,
     rootDir: options.rootDir,
     snapshot: options.snapshot,
     totalIssueCount: options.snapshot.issues.length,
   });
 
-  if (format === 'json') {
-    return formatJsonInventory({
-      filteredIssues,
-      filters,
-      invocation: options.invocation,
-      snapshot: options.snapshot,
-    });
-  }
-
-  if (format === 'ndjson') {
-    return formatNdjsonInventory(filteredIssues);
-  }
-
   const humanSummary = options.invocation
     ? [
-        `Standalone invocation: ${options.invocation.invocationId}`,
-        `Command: ${options.snapshot.command}`,
-        'Result: FAILED',
+        `Invocation: ${options.invocation.invocationId}`,
+        `Kind: ${options.invocation.kind}`,
+        `Result: ${options.invocation.result}`,
         `Completed: ${options.invocation.completedAt}`,
         '',
         issueSummary,
       ].join('\n')
     : issueSummary;
 
-  if (options.verbose) {
-    return [
-      humanSummary,
-      '',
-      formatCheckIssueHumanReport({
-        command: options.snapshot.command,
-        issues: filteredIssues,
-        title: 'Check issue details',
-        verbose: true,
-      }),
-    ].join('\n');
+  if (view === 'summary' || filteredIssues.length === 0) {
+    return humanSummary;
   }
 
-  return humanSummary;
+  return [
+    humanSummary,
+    '',
+    `Showing ${selectedIssues.length} of ${filteredIssues.length} issues`,
+    ...selectedIssues.flatMap((issue) => [
+      '',
+      formatCheckIssueInventoryCard({
+        issue,
+        representativeLocation: getCanonicalIssueLocation(issue),
+        view,
+      }),
+    ]),
+  ].join('\n');
 }
 
 export function formatSourceIssueSnapshotInventory(

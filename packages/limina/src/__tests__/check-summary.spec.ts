@@ -306,7 +306,7 @@ describe('check run summary reporting', () => {
     expect(plainOutput).toContain('Issue overview:');
     expect(output).toContain('\u001B[35mIssue overview:\u001B[0m');
     expect(plainOutput).toContain('Total: 1 error');
-    expect(plainOutput).toContain('Top blockers:');
+    expect(plainOutput).toContain('Primary blockers:');
     expect(plainOutput).toContain('Packages: @example/app (1)');
     expect(plainOutput).not.toContain('Fix:');
     expect(plainOutput).not.toContain(
@@ -633,5 +633,124 @@ describe('check run summary reporting', () => {
     expect(plainOutput).toContain('✓ source:check');
     expect(plainOutput).not.toContain('Snapshot:');
     expect(plainOutput).not.toContain('Issue overview:');
+  });
+
+  it.each(['passed', 'failed', 'blocked'] as const)(
+    'expands %s run metadata without rendering raw issue details',
+    (result) => {
+      const issue = createLiminaCheckIssue({
+        code: 'ROOT_A',
+        detailLines: ['RAW_ISSUE_DETAIL_MUST_STAY_HIDDEN'],
+        filePath: '/repo/packages/app/src/index.ts',
+        packageName: '@example/app',
+        reason: 'Root A failed.',
+        rootDir: '/repo',
+        task: 'source:check',
+        title: 'Root A',
+      });
+      const run: CheckIssueSnapshot['run'] = {
+        ...(result === 'blocked'
+          ? { blockedBy: { id: 'source', label: 'source:check' } }
+          : {}),
+        command: 'limina check',
+        completedAt: '2026-07-17T00:00:01.000Z',
+        configPath: '/repo/limina.config.mjs',
+        createdAt: '2026-07-17T00:00:00.000Z',
+        result,
+        tasks: [
+          {
+            completedAt: '2026-07-17T00:00:01.000Z',
+            durationMs: 1000,
+            generation: 0,
+            id: 'source',
+            issueTask: 'source:check',
+            kind: 'task',
+            label: 'source:check',
+            state: result === 'passed' ? 'passed' : 'failed',
+          },
+        ],
+      };
+      const issues = result === 'passed' ? [] : [issue];
+      const regular = stripAnsi(
+        formatCheckRunSummaryHuman({ issues, rootDir: '/repo', run: run! }),
+      );
+      const verbose = stripAnsi(
+        formatCheckRunSummaryHuman({
+          issues,
+          rootDir: '/repo',
+          run: run!,
+          verbose: true,
+        }),
+      );
+
+      expect(verbose).not.toBe(regular);
+      expect(verbose).toContain('Snapshot: .limina/check/last-run.json');
+      expect(verbose).not.toContain('RAW_ISSUE_DETAIL_MUST_STAY_HIDDEN');
+      if (result === 'passed') {
+        expect(regular).not.toContain('Snapshot:');
+      } else {
+        expect(regular).toContain('Snapshot: .limina/check/last-run.json');
+      }
+    },
+  );
+
+  it('uncaps verbose task, rule, package, and blocker summaries', () => {
+    const issues = Array.from({ length: 6 }, (_, index) =>
+      createLiminaCheckIssue({
+        code: `RULE_${index}`,
+        detailLines: [`RAW_DETAIL_${index}`],
+        filePath: `/repo/packages/p${index}/src/index.ts`,
+        packageName: `@example/p${index}`,
+        reason: `Rule ${index} failed.`,
+        rootDir: '/repo',
+        task: 'source:check',
+        title: `Rule ${index}`,
+      }),
+    );
+    const run: NonNullable<CheckIssueSnapshot['run']> = {
+      command: 'limina check',
+      completedAt: '2026-07-17T00:00:01.000Z',
+      createdAt: '2026-07-17T00:00:00.000Z',
+      result: 'failed',
+      tasks: Array.from({ length: 13 }, (_, index) => ({
+        checkItems: [
+          {
+            durationMs: index + 1,
+            itemKind: 'check' as const,
+            name: `check item ${index}`,
+            status: 'passed' as const,
+          },
+        ],
+        durationMs: index + 1,
+        generation: 0,
+        id: `task-${index}`,
+        issueTask: 'source:check' as const,
+        kind: 'task' as const,
+        label: `task ${String(index).padStart(2, '0')}`,
+        state: index === 0 ? ('failed' as const) : ('passed' as const),
+      })),
+    };
+    const regular = stripAnsi(
+      formatCheckRunSummaryHuman({ issues, rootDir: '/repo', run }),
+    );
+    const verbose = stripAnsi(
+      formatCheckRunSummaryHuman({
+        issues,
+        rootDir: '/repo',
+        run,
+        verbose: true,
+      }),
+    );
+
+    expect(regular).toContain('... 1 more tasks');
+    expect(regular).not.toContain('RULE_5');
+    expect(verbose).not.toContain('... 1 more tasks');
+    expect(verbose).toContain('task 12');
+    expect(verbose).toContain('check item 12');
+    expect(verbose).toContain('RULE_5');
+    expect(verbose).toContain('@example/p5');
+    expect(verbose).toContain('Affected files: 1');
+    expect(verbose).toContain('Representative: packages/p5/src/index.ts');
+    expect(verbose).not.toContain('RAW_DETAIL_5');
   });
 });
