@@ -31,7 +31,6 @@ import {
   type InventoryQueryContext,
 } from './check-reporting/inventory-presentation';
 import { createCheckRunRecorder } from './check-reporting/run-recorder';
-import { formatShellCommand } from './check-reporting/shell-command';
 import {
   type CheckIssueInventoryFilters,
   type CheckIssueInventoryFormat,
@@ -47,6 +46,12 @@ import {
   toCheckIssueSnapshot,
   writeStandaloneFailureInvocation,
 } from './check-reporting/snapshot';
+import {
+  createGlobalQueryCommandContext,
+  createStandaloneInvocationCommand,
+  type GlobalQueryCommandContext,
+  renderGeneratedCommandVariants,
+} from './check-reporting/standalone-invocation-command';
 import { formatCheckRunSummaryHuman } from './check-reporting/summary';
 import {
   runGraphCheck,
@@ -170,6 +175,34 @@ async function load(
     cwd: process.cwd(),
     mode: flags.mode,
   });
+}
+
+async function loadStandaloneContext(
+  flags: GlobalFlags,
+  command: LiminaCommand,
+): Promise<{
+  commandContext: GlobalQueryCommandContext;
+  config: ResolvedLiminaConfig;
+}> {
+  const configLoader = parseConfigLoader(flags.configLoader) ?? 'native';
+  const mode = flags.mode ?? process.env.NODE_ENV ?? 'default';
+  const config = await loadConfig({
+    command,
+    configLoader,
+    configPath: flags.config,
+    cwd: process.cwd(),
+    mode,
+  });
+
+  return {
+    commandContext: createGlobalQueryCommandContext({
+      configLoader,
+      configPath: config.configPath,
+      mode,
+      workspaceRoot: config.rootDir,
+    }),
+    config,
+  };
 }
 
 function parseConfigLoader(
@@ -662,8 +695,8 @@ export function runCheckWithCliFlowCleanup(
 
 interface StandaloneIssueSession {
   command: string;
+  commandContext: GlobalQueryCommandContext;
   config: ResolvedLiminaConfig;
-  explicitConfig: boolean;
   issues: LiminaCheckIssue[];
   preflight: LiminaPreflightManager;
   task: LiminaCheckTaskName;
@@ -694,19 +727,16 @@ async function writeStandaloneFailureSession(
     issues: session.issues,
     rootDir: session.config.rootDir,
   });
-  const query = formatShellCommand([
-    'limina',
-    ...(session.explicitConfig
-      ? ['--config', normalizeAbsolutePathIdentity(session.config.configPath)]
-      : []),
-    'check',
-    '--issues',
-    '--invocation',
+  const generatedCommand = createStandaloneInvocationCommand(
+    session.commandContext,
     invocation.invocationId,
-  ]);
+  );
+  const queryLines = renderGeneratedCommandVariants(generatedCommand).map(
+    (variant) => `${variant.label}: ${variant.command}`,
+  );
 
   process.stdout.write(
-    `\nStandalone issue invocation: ${invocation.invocationId}\nQuery: ${query}\n`,
+    `\nStandalone issue invocation: ${invocation.invocationId}\n${queryLines.join('\n')}\n`,
   );
 }
 
@@ -1302,15 +1332,18 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runStandaloneIssueFlow({
         execute: async (registerSession) => {
           flow.intro(`limina graph ${action}`);
-          const config = await load(flags, 'graph');
+          const { commandContext, config } = await loadStandaloneContext(
+            flags,
+            'graph',
+          );
           const preflight = new LiminaPreflightManager({ config });
           const command =
             action === 'check' ? 'limina graph check' : 'limina graph prepare';
           const issues: LiminaCheckIssue[] = [];
           registerSession({
             command,
+            commandContext,
             config,
-            explicitConfig: flags.config !== undefined,
             issues,
             preflight,
             task: action === 'check' ? 'graph:check' : 'graph:prepare',
@@ -1358,13 +1391,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runStandaloneIssueFlow({
         execute: async (registerSession) => {
           flow.intro('limina proof check');
-          const config = await load(flags, 'proof');
+          const { commandContext, config } = await loadStandaloneContext(
+            flags,
+            'proof',
+          );
           const preflight = new LiminaPreflightManager({ config });
           const issues: LiminaCheckIssue[] = [];
           registerSession({
             command: 'limina proof check',
+            commandContext,
             config,
-            explicitConfig: flags.config !== undefined,
             issues,
             preflight,
             task: 'proof:check',
@@ -1409,14 +1445,17 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runStandaloneIssueFlow({
         execute: async (registerSession) => {
           flow.intro('limina source check');
-          const config = await load(flags, 'source');
+          const { commandContext, config } = await loadStandaloneContext(
+            flags,
+            'source',
+          );
           const preflight = new LiminaPreflightManager({ config });
           const issues: LiminaCheckIssue[] = [];
           let completedSourceIssues: readonly SourceCheckIssue[] | undefined;
           registerSession({
             command: 'limina source check',
+            commandContext,
             config,
-            explicitConfig: flags.config !== undefined,
             issues,
             preflight,
             task: 'source:check',
@@ -1486,13 +1525,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runStandaloneIssueFlow({
         execute: async (registerSession) => {
           flow.intro('limina build');
-          const config = await load(flags, 'build');
+          const { commandContext, config } = await loadStandaloneContext(
+            flags,
+            'build',
+          );
           const preflight = new LiminaPreflightManager({ config });
           const issues: LiminaCheckIssue[] = [];
           registerSession({
             command: 'limina build',
+            commandContext,
             config,
-            explicitConfig: flags.config !== undefined,
             issues,
             preflight,
             task: 'checker:build',
@@ -1572,13 +1614,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
                 );
               }
 
-              const config = await load(flags, configPath ? 'build' : 'check');
+              const { commandContext, config } = await loadStandaloneContext(
+                flags,
+                configPath ? 'build' : 'check',
+              );
               const preflight = new LiminaPreflightManager({ config });
               const issues: LiminaCheckIssue[] = [];
               registerSession({
                 command: 'limina checker build',
+                commandContext,
                 config,
-                explicitConfig: flags.config !== undefined,
                 issues,
                 preflight,
                 task: 'checker:build',
@@ -1619,13 +1664,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
               throw new Error('checker typecheck does not accept --watch.');
             }
 
-            const config = await load(flags, 'check');
+            const { commandContext, config } = await loadStandaloneContext(
+              flags,
+              'check',
+            );
             const preflight = new LiminaPreflightManager({ config });
             const issues: LiminaCheckIssue[] = [];
             registerSession({
               command: 'limina checker typecheck',
+              commandContext,
               config,
-              explicitConfig: flags.config !== undefined,
               issues,
               preflight,
               task: 'checker:typecheck',
@@ -1670,13 +1718,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runStandaloneIssueFlow({
         execute: async (registerSession) => {
           flow.intro('limina package check');
-          const config = await load(flags, 'package');
+          const { commandContext, config } = await loadStandaloneContext(
+            flags,
+            'package',
+          );
           const preflight = new LiminaPreflightManager({ config });
           const issues: LiminaCheckIssue[] = [];
           registerSession({
             command: 'limina package check',
+            commandContext,
             config,
-            explicitConfig: flags.config !== undefined,
             issues,
             preflight,
             task: 'package:check',
@@ -1723,13 +1774,16 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       const passed = await runStandaloneIssueFlow({
         execute: async (registerSession) => {
           flow.intro('limina release check');
-          const config = await load(flags, 'release');
+          const { commandContext, config } = await loadStandaloneContext(
+            flags,
+            'release',
+          );
           const preflight = new LiminaPreflightManager({ config });
           const issues: LiminaCheckIssue[] = [];
           registerSession({
             command: 'limina release check',
+            commandContext,
             config,
-            explicitConfig: flags.config !== undefined,
             issues,
             preflight,
             task: 'release:check',

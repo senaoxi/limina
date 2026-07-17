@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,12 +6,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface CommandResult {
+  code?: string;
+  exitCode: number;
+  failed: boolean;
   stderr: string;
   stdout: string;
 }
 
 export interface ConsumerFixture {
   cleanup: () => Promise<void>;
+  configPath: string;
   fixtureDir: string;
 }
 
@@ -56,53 +60,52 @@ function readJsonFile<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '')) as T;
 }
 
-function runCommand(
+export async function runCommand(
   command: string,
   args: string[],
   options: {
     cwd: string;
+    env?: NodeJS.ProcessEnv;
     inherit?: boolean;
+    reject?: boolean;
+    timeout?: number;
   },
-): CommandResult {
-  if (options.inherit) {
-    execFileSync(command, args, {
-      cwd: options.cwd,
-      stdio: 'inherit',
-    });
-
-    return {
-      stderr: '',
-      stdout: '',
-    };
-  }
-
-  const stdout = execFileSync(command, args, {
+): Promise<CommandResult> {
+  const result = await execa(command, args, {
     cwd: options.cwd,
-    encoding: 'utf8',
+    env: options.env,
     maxBuffer: 64 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    reject: options.reject ?? true,
+    stderr: options.inherit ? 'inherit' : 'pipe',
+    stdin: 'ignore',
+    stdout: options.inherit ? 'inherit' : 'pipe',
+    timeout: options.timeout ?? 120_000,
   });
 
   return {
-    stderr: '',
-    stdout,
+    code: result.code,
+    exitCode: result.exitCode ?? 1,
+    failed: result.failed,
+    stderr: typeof result.stderr === 'string' ? result.stderr : '',
+    stdout: typeof result.stdout === 'string' ? result.stdout : '',
   };
 }
 
-export function runPnpm(
+export async function runPnpm(
   args: string[],
   options: {
     cwd: string;
     inherit?: boolean;
+    timeout?: number;
   },
-): CommandResult {
+): Promise<CommandResult> {
   return runCommand(getPnpmCommand(), args, options);
 }
 
-export function runNodeScript(options: {
+export async function runNodeScript(options: {
   cwd: string;
   scriptPath: string;
-}): CommandResult {
+}): Promise<CommandResult> {
   return runCommand(process.execPath, [options.scriptPath], {
     cwd: options.cwd,
   });
@@ -169,15 +172,18 @@ export async function packLiminaDist(): Promise<PackedDistTarball> {
   const destination = await mkdtemp(path.join(tmpdir(), 'limina-package-'));
 
   try {
-    const output = execFileSync(
+    const result = await execa(
       getNpmCommand(),
       ['pack', DIST_DIR, '--pack-destination', destination, '--ignore-scripts'],
       {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'inherit'],
+        maxBuffer: 64 * 1024 * 1024,
+        stderr: 'inherit',
+        stdin: 'ignore',
+        stdout: 'pipe',
+        timeout: 120_000,
       },
     );
-    const fileName = output.trim().split(/\r?\n/u).at(-1);
+    const fileName = result.stdout.trim().split(/\r?\n/u).at(-1);
 
     if (!fileName) {
       throw new Error(`npm pack did not report a tarball for ${DIST_DIR}`);
@@ -201,15 +207,21 @@ export async function packLiminaDist(): Promise<PackedDistTarball> {
   }
 }
 
-export function readCurrentPnpmConfig<T>(key: string): T | undefined {
+export async function readCurrentPnpmConfig<T>(
+  key: string,
+): Promise<T | undefined> {
   try {
-    const rawValue = execFileSync(
+    const result = await execa(
       getPnpmCommand(),
       ['config', 'get', key, '--json'],
       {
-        encoding: 'utf8',
+        stderr: 'pipe',
+        stdin: 'ignore',
+        stdout: 'pipe',
+        timeout: 30_000,
       },
-    ).trim();
+    );
+    const rawValue = result.stdout.trim();
 
     if (
       rawValue.length === 0 ||
@@ -228,9 +240,9 @@ export function readCurrentPnpmConfig<T>(key: string): T | undefined {
 async function writeConsumerPackageManagerConfig(
   fixtureDir: string,
 ): Promise<void> {
-  const trustPolicy = readCurrentPnpmConfig<string>('trust-policy');
+  const trustPolicy = await readCurrentPnpmConfig<string>('trust-policy');
   const trustPolicyExcludes =
-    readCurrentPnpmConfig<string[]>('trust-policy-exclude') ?? [];
+    (await readCurrentPnpmConfig<string[]>('trust-policy-exclude')) ?? [];
   const lines: string[] = [
     'auto-install-peers=false',
     'strict-peer-dependencies=true',
@@ -255,10 +267,15 @@ async function writeConsumerPackageManagerConfig(
   );
 }
 
-async function writeConsumerFiles(fixtureDir: string): Promise<void> {
-  const pnpmVersion = execFileSync(getPnpmCommand(), ['--version'], {
-    encoding: 'utf8',
-  }).trim();
+async function writeConsumerFiles(
+  fixtureDir: string,
+  configFileName: string,
+): Promise<void> {
+  const pnpmVersionResult = await runPnpm(['--version'], {
+    cwd: fixtureDir,
+    timeout: 30_000,
+  });
+  const pnpmVersion = pnpmVersionResult.stdout.trim();
 
   await mkdir(path.join(fixtureDir, 'app', 'src'), { recursive: true });
 
@@ -281,7 +298,7 @@ async function writeConsumerFiles(fixtureDir: string): Promise<void> {
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'limina.config.mjs'),
+    path.join(fixtureDir, configFileName),
     `import { defineConfig } from 'limina';
 
 export default defineConfig({
@@ -393,18 +410,18 @@ console.log('limina exports ok');
   );
 }
 
-export function installConsumerDependencies(options: {
+export async function installConsumerDependencies(options: {
   fixtureDir: string;
   manifest: DistPackageJson;
   tarballPath: string;
-}): void {
+}): Promise<void> {
   const typescriptRange = getPeerDependencyRange(
     options.manifest,
     'typescript',
   );
   const knipRange = getPeerDependencyRange(options.manifest, 'knip');
 
-  runPnpm(
+  await runPnpm(
     [
       'add',
       '--save-dev',
@@ -417,23 +434,35 @@ export function installConsumerDependencies(options: {
     {
       cwd: options.fixtureDir,
       inherit: true,
+      timeout: 300_000,
     },
   );
 }
 
 export async function createConsumerFixture(options: {
+  configFileName?: string;
+  directoryName?: string;
   manifest: DistPackageJson;
+  sourceText?: string;
   tarballPath: string;
 }): Promise<ConsumerFixture> {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'limina-smoke-'));
-  const fixtureDir = path.join(fixtureRoot, 'fixture');
+  const configFileName = options.configFileName ?? 'limina.config.mjs';
+  const fixtureDir = path.join(fixtureRoot, options.directoryName ?? 'fixture');
 
   try {
     await mkdir(fixtureDir, {
       recursive: true,
     });
-    await writeConsumerFiles(fixtureDir);
-    installConsumerDependencies({
+    await writeConsumerFiles(fixtureDir, configFileName);
+    if (options.sourceText !== undefined) {
+      await writeFile(
+        path.join(fixtureDir, 'app', 'src', 'index.ts'),
+        options.sourceText,
+        'utf8',
+      );
+    }
+    await installConsumerDependencies({
       fixtureDir,
       manifest: options.manifest,
       tarballPath: options.tarballPath,
@@ -448,6 +477,7 @@ export async function createConsumerFixture(options: {
           retryDelay: 100,
         });
       },
+      configPath: path.join(fixtureDir, configFileName),
       fixtureDir,
     };
   } catch (error) {
