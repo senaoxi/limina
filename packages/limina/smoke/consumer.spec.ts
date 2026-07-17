@@ -21,21 +21,21 @@ describe('limina published package smoke', () => {
         tarballPath: packedDist.tarballPath,
       });
 
-      const helpResult = runPnpm(['exec', 'limina', '--help'], {
+      const helpResult = await runPnpm(['exec', 'limina', '--help'], {
         cwd: fixture.fixtureDir,
       });
 
       expect(helpResult.stdout).toContain('Usage:');
       expect(helpResult.stdout).toContain('$ limina <command> [options]');
 
-      const exportsResult = runNodeScript({
+      const exportsResult = await runNodeScript({
         cwd: fixture.fixtureDir,
         scriptPath: path.join(fixture.fixtureDir, 'verify-exports.mjs'),
       });
 
       expect(exportsResult.stdout).toContain('limina exports ok');
 
-      const sourceCheckResult = runPnpm(
+      const sourceCheckResult = await runPnpm(
         [
           'exec',
           'limina',

@@ -92,6 +92,7 @@
     "rolldown": "catalog:dev",
     "rolldown-plugin-dts": "catalog:dev",
     "tsx": "catalog:dev",
+    "shescape": "catalog:dev",
     "typescript": "catalog:dev",
     "vitest": "catalog:test"
   },

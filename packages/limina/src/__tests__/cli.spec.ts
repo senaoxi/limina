@@ -695,13 +695,31 @@ export default {
         const runFailure = async (
           args: string[],
           expectedTask: string,
+          options: {
+            configArgument?: string;
+            expectedConfigPath: string;
+          } = {
+            configArgument: explicitConfigArgument,
+            expectedConfigPath: configPath,
+          },
         ): Promise<void> => {
+          const mode = 'standalone invocation mode';
           let stdout = '';
 
           try {
             await execFileAsync(
               process.execPath,
-              [cliPath, '--config', explicitConfigArgument, ...args],
+              [
+                cliPath,
+                ...(options.configArgument === undefined
+                  ? []
+                  : ['--config', options.configArgument]),
+                '--config-loader',
+                'native',
+                '--mode',
+                mode,
+                ...args,
+              ],
               {
                 cwd: rootDir,
                 env: { ...process.env, CI: 'true' },
@@ -715,23 +733,43 @@ export default {
 
           const invocationId =
             /Standalone issue invocation: ([0-9a-f-]+)/u.exec(stdout)?.[1];
-          const queryLine = stdout
-            .split('\n')
-            .find((line) => line.startsWith('Query: '));
+          const outputLines = stdout.split('\n');
+          const queryLines =
+            process.platform === 'win32'
+              ? [
+                  outputLines.find((line) => line.startsWith('PowerShell: ')),
+                  outputLines.find((line) =>
+                    line.startsWith('cmd.exe (/V:OFF): '),
+                  ),
+                ]
+              : [outputLines.find((line) => line.startsWith('Query: '))];
 
           expect(invocationId).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
           );
-          expect(queryLine).toContain('--config');
-          expect(queryLine).toContain(configPath.replaceAll(path.sep, '/'));
-          expect(queryLine).toContain(`--invocation ${invocationId}`);
+          expect(queryLines).not.toContain(undefined);
+          for (const queryLine of queryLines) {
+            expect(queryLine).toContain('pnpm');
+            expect(queryLine).toContain('--dir');
+            expect(queryLine).toContain(rootDir.replaceAll(path.sep, '/'));
+            expect(queryLine).toContain('--config');
+            expect(queryLine).toContain(
+              options.expectedConfigPath.replaceAll(path.sep, '/'),
+            );
+            expect(queryLine).toContain('--config-loader');
+            expect(queryLine).toContain('native');
+            expect(queryLine).toContain('--mode');
+            expect(queryLine).toContain(mode);
+            expect(queryLine).toContain('--invocation');
+            expect(queryLine).toContain(invocationId);
+          }
 
           const query = await execFileAsync(
             process.execPath,
             [
               cliPath,
               '--config',
-              configPath,
+              options.expectedConfigPath,
               'check',
               '--issues',
               '--invocation',
@@ -778,6 +816,13 @@ export default {
           expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
         };
 
+        await runFailure(
+          ['checker', 'build', 'packages/missing/tsconfig.json'],
+          'checker:build',
+          {
+            expectedConfigPath: path.join(rootDir, 'limina.config.mjs'),
+          },
+        );
         await runFailure(
           ['checker', 'build', 'packages/missing/tsconfig.json'],
           'checker:build',
