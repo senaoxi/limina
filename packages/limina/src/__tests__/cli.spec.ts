@@ -1417,19 +1417,28 @@ export default {
           issues: [],
           run: {
             command: 'limina check',
+            completedAt: '2026-06-21T00:00:00.000Z',
             createdAt: '2026-06-21T00:00:00.000Z',
+            durationMs: 0,
             pipeline: 'default',
             result: 'passed',
+            startedAt: '2026-06-21T00:00:00.000Z',
             tasks: [
               {
+                completedAt: '2026-06-21T00:00:00.000Z',
+                durationMs: 0,
+                generation: 0,
+                id: 'task:source-check',
+                issueTask: 'source:check',
                 kind: 'task',
-                name: 'source:check',
-                status: 'passed',
+                label: 'source:check',
+                startedAt: '2026-06-21T00:00:00.000Z',
+                state: 'passed',
               },
             ],
           },
           status: 'completed',
-          version: 5,
+          version: 7,
         }),
       );
 
@@ -1568,7 +1577,7 @@ export default {
             },
           ],
           status: 'completed',
-          version: 5,
+          version: 7,
         }),
       );
 

@@ -19,8 +19,10 @@ import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { SOURCE_ISSUE_CODES } from '../source-check/report';
 import {
   formatSourceIssueSnapshotInventory,
+  readSourceIssueSnapshot,
   SOURCE_ISSUE_SNAPSHOT_VERSION,
   type SourceIssueSnapshot,
+  writeSourceIssueSnapshotOnly,
 } from '../source-check/snapshot';
 import { createCheckerTargetId } from '../typecheck/targets';
 
@@ -185,70 +187,31 @@ function createBlockedRun(
 }
 
 describe('source issue snapshots', () => {
-  it('migrates every v5 skipped task conservatively without blocker ids', async () => {
+  it('keeps version 1 readable without promoting it to a check snapshot', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
-    const snapshotPath = getCheckIssueSnapshotPath(rootDir);
 
     try {
-      await mkdir(path.dirname(snapshotPath), { recursive: true });
-      await writeFile(
-        snapshotPath,
-        `${JSON.stringify({
-          command: 'limina check demo',
-          createdAt: '2026-06-20T00:00:00.000Z',
-          issues: [],
-          run: {
-            command: 'limina check demo',
-            createdAt: '2026-06-20T00:00:00.000Z',
-            result: 'blocked',
-            tasks: [
-              { kind: 'command', name: 'same', status: 'failed' },
-              {
-                blockedBy: 'same',
-                kind: 'command',
-                name: 'same',
-                status: 'skipped',
-              },
-              { kind: 'task', name: 'proof:check', status: 'skipped' },
-            ],
+      await writeSourceIssueSnapshotOnly(
+        artifactNamespace(rootDir),
+        createSnapshot([
+          {
+            code: SOURCE_ISSUE_CODES.unusedModule,
+            filePath: 'packages/app/src/unused.ts',
+            ownerName: '@example/app',
           },
-          status: 'completed',
-          version: 5,
-        })}\n`,
-      );
-
-      const migrated = await readCheckIssueSnapshot(rootDir);
-      expect(migrated?.version).toBe(7);
-      expect(migrated?.run?.tasks.map((task) => task.state)).toEqual([
-        'failed',
-        'skipped',
-        'skipped',
-      ]);
-      expect(migrated?.run?.tasks[1]).toMatchObject({
-        reason: 'Legacy v5 run: skipped after "same"',
-      });
-      expect(migrated?.run?.tasks[2]).toMatchObject({
-        reason: 'Legacy v5 run: skipped',
-      });
-      expect(migrated?.run?.tasks[1]).not.toHaveProperty('blockedBy');
-      expect(migrated?.run?.tasks[2]).not.toHaveProperty('blockedBy');
-      expect(migrated?.run?.tasks).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            generation: 0,
-            id: expect.stringMatching(/^legacy-v5:/u),
-          }),
         ]),
       );
-      expect(migrated?.run?.tasks[0]).not.toHaveProperty('startedAt');
-      expect(migrated?.run?.tasks[0]).not.toHaveProperty('completedAt');
-      expect(migrated?.run?.tasks[0]).not.toHaveProperty('durationMs');
-      expect(
-        formatCheckIssueSnapshotInventory({ snapshot: migrated }),
-      ).not.toMatch(/generation\s+0/iu);
-      expect(
-        migrated?.run?.tasks.some((task) => task.state === 'blocked'),
-      ).toBe(false);
+
+      await expect(readSourceIssueSnapshot(rootDir)).resolves.toMatchObject({
+        issues: [
+          {
+            code: SOURCE_ISSUE_CODES.unusedModule,
+            ownerName: '@example/app',
+          },
+        ],
+        version: SOURCE_ISSUE_SNAPSHOT_VERSION,
+      });
+      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -309,72 +272,23 @@ describe('source issue snapshots', () => {
 });
 
 describe('check issue snapshots', () => {
-  it('migrates valid v5 check items only as ordinary check items', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+  it.each([1, 2, 3, 4, 5, 6])(
+    'returns null for check snapshot version %i',
+    async (version) => {
+      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
 
-    try {
-      await writeRawCheckSnapshot(rootDir, {
-        command: 'limina check',
-        createdAt: '2026-06-20T00:00:00.000Z',
-        issues: [],
-        run: {
-          command: 'limina check',
-          createdAt: '2026-06-20T00:00:00.000Z',
-          result: 'failed',
-          tasks: [
-            {
-              checkItems: [
-                {
-                  checksPassed: 1,
-                  checksTotal: 2,
-                  durationMs: 5,
-                  issues: 1,
-                  name: 'ordinary validation',
-                  status: 'failed',
-                  unknown: 'discard me',
-                },
-                { name: '', status: 'passed' },
-                { name: 'negative stats', status: 'passed', checksTotal: -1 },
-              ],
-              kind: 'task',
-              name: 'proof:check',
-              status: 'failed',
-            },
-          ],
-        },
-        status: 'completed',
-        version: 5,
-      });
+      try {
+        await writeRawCheckSnapshot(rootDir, {
+          ...createCheckSnapshot([]),
+          version,
+        });
 
-      const migrated = await readCheckIssueSnapshot(rootDir);
-      expect(migrated?.run?.tasks[0]?.checkItems).toEqual([
-        {
-          checksPassed: 1,
-          checksTotal: 2,
-          durationMs: 5,
-          issues: 1,
-          itemKind: 'check',
-          name: 'ordinary validation',
-          status: 'failed',
-        },
-        {
-          itemKind: 'check',
-          name: 'negative stats',
-          status: 'passed',
-        },
-      ]);
-      expect(migrated?.run?.tasks[0]?.checkItems?.[0]).not.toHaveProperty('id');
-      expect(migrated?.run?.tasks[0]?.checkItems?.[0]).not.toHaveProperty(
-        'blockedBy',
-      );
-      expect(migrated?.run?.tasks[0]).toMatchObject({
-        generation: 0,
-        id: 'legacy-v5:0',
-      });
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
+        await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      } finally {
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
 
   it.each([
     [
@@ -399,7 +313,7 @@ describe('check issue snapshots', () => {
         delete run.tasks[0]!.durationMs;
       },
     ],
-  ] as const)('rejects current v6 completed when %s', async (_name, mutate) => {
+  ] as const)('rejects current v7 completed when %s', async (_name, mutate) => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
     const run = createCompletedRun();
     mutate(run);
@@ -415,7 +329,7 @@ describe('check issue snapshots', () => {
     }
   });
 
-  it('routes v6 not-run, standalone completed, and legacy v5 independently', async () => {
+  it('reads current v7 not-run and standalone completed snapshots', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
 
     try {
@@ -446,26 +360,6 @@ describe('check issue snapshots', () => {
       const standalone = await readCheckIssueSnapshot(rootDir);
       expect(standalone).toMatchObject({ status: 'completed' });
       expect(standalone).not.toHaveProperty('run');
-
-      await writeRawCheckSnapshot(rootDir, {
-        ...createCheckSnapshot([]),
-        run: {
-          command: 'limina check',
-          createdAt: '2026-06-20T00:00:00.000Z',
-          result: 'failed',
-          tasks: [
-            {
-              generation: 0,
-              id: 'legacy-v5:forged',
-              issueTask: 'proof:check',
-              kind: 'task',
-              label: 'proof:check',
-              state: 'failed',
-            },
-          ],
-        },
-      });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -614,23 +508,6 @@ describe('check issue snapshots', () => {
         run,
       });
       await expect(readCheckIssueSnapshot(rootDir)).resolves.not.toBeNull();
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
-
-  it('prevents current writers from generating legacy v5 task identities', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
-    const run = createCompletedRun();
-    run.tasks[0]!.id = 'legacy-v5:forged';
-
-    try {
-      await expect(
-        writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
-          ...createCheckSnapshot([]),
-          run,
-        }),
-      ).rejects.toThrow('must not use legacy-v5 task ids');
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -863,157 +740,16 @@ describe('check issue snapshots', () => {
     expect(issue.id).toBe(sameIssue.id);
   });
 
-  it('rejects pre-0.2 snapshots and reads only the current schema', async () => {
+  it('returns null for missing and corrupt check snapshots', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
 
     try {
+      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+
       const snapshotPath = getCheckIssueSnapshotPath(rootDir);
       await mkdir(path.dirname(snapshotPath), { recursive: true });
-      await writeFile(
-        snapshotPath,
-        `${JSON.stringify(
-          {
-            ...createCheckSnapshot([
-              {
-                code: 'LIMINA_PACKAGE_CHECK_FAILED',
-                reason: 'package failed',
-                task: 'package:check',
-                title: 'Package check failed',
-              },
-            ]),
-            version: 1,
-          },
-          null,
-          2,
-        )}\n`,
-      );
-
+      await writeFile(snapshotPath, '{not valid json\n');
       await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
-
-      await writeFile(
-        snapshotPath,
-        `${JSON.stringify(
-          {
-            ...createCheckSnapshot([
-              createLiminaCheckIssue({
-                code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
-                filePath: 'packages/app/src/internal.ts',
-                reason: 'not covered',
-                rootDir,
-                task: 'proof:check',
-                title: 'Uncovered source file',
-              }),
-            ]),
-            version: 2,
-          },
-          null,
-          2,
-        )}\n`,
-      );
-
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
-
-      await writeFile(
-        snapshotPath,
-        `${JSON.stringify(
-          {
-            ...createCheckSnapshot([
-              createLiminaCheckIssue({
-                code: 'LIMINA_GRAPH_REFERENCE_MISSING',
-                filePath: 'packages/app/src/index.ts',
-                reason: 'missing ref',
-                rootDir,
-                task: 'graph:check',
-                title: 'Missing project reference',
-              }),
-            ]),
-            run: {
-              command: 'limina check',
-              createdAt: '2026-06-20T00:00:00.000Z',
-              result: 'blocked',
-              tasks: [
-                {
-                  kind: 'task',
-                  name: 'graph:check',
-                  status: 'failed',
-                },
-              ],
-            },
-            version: 3,
-          },
-          null,
-          2,
-        )}\n`,
-      );
-
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
-
-      await writeFile(
-        snapshotPath,
-        `${JSON.stringify(
-          {
-            ...createCheckSnapshot([
-              createLiminaCheckIssue({
-                code: 'LIMINA_SOURCE_PACKAGE_IMPORT_UNAUTHORIZED',
-                filePath: 'packages/app/src/index.ts',
-                reason: 'unauthorized import',
-                rootDir,
-                task: 'source:check',
-                title: 'Unauthorized import',
-              }),
-            ]),
-            run: {
-              command: 'limina check',
-              createdAt: '2026-06-20T00:00:00.000Z',
-              result: 'failed',
-              tasks: [
-                {
-                  checkItems: [
-                    {
-                      checksPassed: 0,
-                      checksTotal: 1,
-                      issues: 1,
-                      name: 'source import authority',
-                      status: 'failed',
-                    },
-                  ],
-                  kind: 'task',
-                  name: 'source:check',
-                  status: 'failed',
-                },
-              ],
-            },
-            version: 5,
-          },
-          null,
-          2,
-        )}\n`,
-      );
-
-      expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
-        issues: [
-          {
-            code: 'LIMINA_SOURCE_PACKAGE_IMPORT_UNAUTHORIZED',
-            id: expect.any(String),
-          },
-        ],
-        run: {
-          result: 'failed',
-          tasks: [
-            {
-              checkItems: [
-                {
-                  name: 'source import authority',
-                  status: 'failed',
-                },
-              ],
-              label: 'source:check',
-              state: 'failed',
-            },
-          ],
-        },
-        version: CHECK_ISSUE_SNAPSHOT_VERSION,
-      });
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
