@@ -17,6 +17,7 @@ import {
   type WorkspaceExportsMetricsRecorder,
   type WorkspaceExportsResolutionProfile,
 } from '../core/workspace/exports';
+import { toPortablePath } from './helpers/path';
 
 const fixtureRoot = path.resolve('workspace-export-profile-fixture');
 
@@ -64,11 +65,12 @@ function createVisiblePackageSystem(options: {
     exports: './dist/index.js',
     name: options.entry.packageName,
   };
+  const packageJsonPath = toPortablePath(options.entry.packageJsonPath);
 
   return {
-    fileExists: (filePath) => filePath === options.entry.packageJsonPath,
+    fileExists: (filePath) => toPortablePath(filePath) === packageJsonPath,
     readFile: (filePath) =>
-      filePath === options.entry.packageJsonPath
+      toPortablePath(filePath) === packageJsonPath
         ? JSON.stringify(manifest)
         : undefined,
   };

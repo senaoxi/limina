@@ -42,4 +42,4 @@ The default `limina check` schedules built-in tasks as independent work; when `e
 
 Named pipelines are always scheduled in array order. `execution.tasks` does not turn ordered pipeline steps into concurrent work.
 
-Concurrency settings do not change failure policy. A built-in task failure makes the final result fail, but it does not block other built-in tasks or later ordered steps. An external command step failure blocks the remaining steps and records them as `skipped`. `execution.failFast` is a boolean field, but top-level `limina check` blocking is not controlled by it.
+Concurrency settings do not change failure policy. A built-in task failure makes the final result fail, but it does not block other built-in tasks or later ordered steps. An external command step failure blocks the remaining steps and records them as `skipped`.

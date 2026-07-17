@@ -37,6 +37,15 @@ async function readJson<T>(filePath: string): Promise<T> {
   return JSON.parse(await readFile(filePath, 'utf8')) as T;
 }
 
+async function removeFixtureDirectory(rootDir: string): Promise<void> {
+  await rm(rootDir, {
+    force: true,
+    maxRetries: 5,
+    recursive: true,
+    retryDelay: 50,
+  });
+}
+
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   rootDir: string;
@@ -59,12 +68,7 @@ async function createFixture(files: Record<string, string>): Promise<{
   }
 
   return {
-    cleanup: async () => {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
-    },
+    cleanup: () => removeFixtureDirectory(rootDir),
     rootDir,
   };
 }
@@ -154,9 +158,7 @@ async function createMultipleWorktreeFixture(): Promise<{
   await commitFixture(externalRootDir);
 
   return {
-    cleanup: async () => {
-      await rm(parentDir, { force: true, recursive: true });
-    },
+    cleanup: () => removeFixtureDirectory(parentDir),
     config: createResolvedConfig(rootDir, {
       checkers: {
         typescript: {

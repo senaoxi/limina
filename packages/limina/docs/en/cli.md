@@ -188,7 +188,7 @@ Common options:
 
 `--issues` does not rerun checks. It reads the snapshot written by the previous check and is used to locate failed tasks, rules, packages, files, or checkers. Workspace validation failures are recordable too: the trusted `.limina` snapshot namespace is created before validation, so a structural failure can still appear under task `workspace:validate`. Before using issue inventory the first time, run `limina check` and let it reach a recordable state.
 
-New snapshots use schema version 7. The reader still accepts version 5 and version 6 snapshots so an upgrade can inspect the previous run; the next recorded check rewrites the file in version 7.
+Check snapshots use schema version 7, and the reader accepts only version 7.
 
 Helper queries:
 
@@ -275,7 +275,7 @@ pnpm exec limina checker build packages/app/tsconfig.json --preset vue-tsc --wat
 
 Without `config`, the command uses all build checker entries in the generated graph. With `config`, Limina only resolves the internal declaration target corresponding to an already managed config; if the config is not managed by Limina, it fails immediately. The command does not read `liminaOptions.outputs`, does not generate user artifacts such as `dist`, and does not perform `raw build` on user-maintained `tsconfig` files.
 
-`--watch` is allowed only with a config path. `--preset` also requires a config path. The old `--checker` form is no longer supported; use `--preset`. The old `--project` form is no longer supported; pass the config path as a positional argument.
+`--watch` is allowed only with a config path. `--preset` also requires a config path.
 
 This command still depends on the corresponding checker packages. Missing `peer dependency` packages are reported with the package that needs to be installed, such as `typescript`, `vue-tsc`, or `@typescript/native-preview`.
 
@@ -333,8 +333,6 @@ It also selects artifact directories based on `package.entries`, and requires th
 | `checker build --preset requires a config argument`                        | `--preset` can only choose the build checker for a specific config | Use `limina checker build <config> --preset tsc`                                                                      |
 | `checker build --watch requires a config argument`                         | Watch mode only supports a specified config                        | Use `limina checker build <config> --watch`                                                                           |
 | `limina build --raw requires --preset`                                     | Raw mode did not specify a checker preset                          | Use `limina build <config> --raw --preset tsc`                                                                        |
-| `Unknown option: --checker. Use --preset instead.`                         | Old option was used                                                | Use `--preset`                                                                                                        |
-| `Unknown option: --project. Pass the config as a positional argument.`     | Old option was used                                                | Put the config path after `checker build`                                                                             |
 | `checker typecheck does not accept --preset` or `--watch`                  | `checker typecheck` only runs non-build checker entries            | Use `checker build <config>` for a single config                                                                      |
 | `No package checks are enabled`                                            | The selected package entries do not enable any package checks      | Check `package.entries[].checks`, or remove the unneeded package check task                                           |
 | `outDir package.json not found`                                            | Package artifacts have not been built, or `outDir` is incorrect    | Run the project build first, then check `package.entries[].outDir`                                                    |
