@@ -264,12 +264,22 @@ function cloneValidatedWorkspaceContext(
       ...candidate,
     })),
     outputRoots: [...context.outputRoots],
+    ...(context.outputMutationAuthorities
+      ? {
+          outputMutationAuthorities: new Map(context.outputMutationAuthorities),
+        }
+      : {}),
     packageIdentities: context.packageIdentities.map((identity) => ({
       ...identity,
       package: cloneWorkspacePackage(identity.package),
     })),
     sourceConfigPaths: [...context.sourceConfigPaths],
     workspaceRootDir: context.workspaceRootDir,
+    ...(context.workspaceMutationGeneration
+      ? {
+          workspaceMutationGeneration: context.workspaceMutationGeneration,
+        }
+      : {}),
   };
 }
 

@@ -3,6 +3,7 @@ import type { WorkspacePackage } from '#core/workspace/actions';
 import {
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rm,
   symlink,
@@ -18,6 +19,7 @@ import {
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import {
   createFixturePathResolver,
+  toPortablePath,
   toPortableRelativePath,
 } from './helpers/path';
 
@@ -538,12 +540,11 @@ describe('validated workspace context', () => {
     }
   });
 
-  it('filters output descriptors by canonical identity across a symlink alias', async () => {
+  it('rejects a mechanically discovered output parent symlink', async () => {
     const fixture = await createFixture();
     const physicalRoot = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-output-physical-package-')),
     );
-    const physicalPath = createFixturePathResolver(physicalRoot);
     await writeText(
       path.join(physicalRoot, 'package.json'),
       json({ name: '@fixture/external', private: true }),
@@ -564,25 +565,214 @@ describe('validated workspace context', () => {
     };
 
     try {
-      const context = await collectValidatedWorkspaceContext({
-        config: fixture.config,
-        rawPackages: [workspacePackage(physicalRoot, '@fixture/external')],
-      });
-
-      expect(context.outputRoots).toEqual([fixture.path('alias/generated')]);
-      expect(context.sourceConfigPaths).toEqual([]);
-      expect(context.descriptorCandidates).not.toEqual(
-        expect.arrayContaining([
+      await expect(
+        collectValidatedWorkspaceContext({
+          config: fixture.config,
+          rawPackages: [workspacePackage(physicalRoot, '@fixture/external')],
+        }),
+      ).rejects.toMatchObject({
+        issues: [
           expect.objectContaining({
-            path: physicalPath('generated/tsconfig.json'),
+            code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
           }),
-        ]),
-      );
+        ],
+      });
     } finally {
       await Promise.all([
         fixture.cleanup(),
         rm(physicalRoot, { force: true, recursive: true }),
       ]);
+    }
+  });
+
+  it('authenticates a package-local output through a symlinked workspace root', async () => {
+    const container = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-symlinked-workspace-')),
+    );
+    const physicalRoot = path.join(container, 'workspace');
+    const logicalRoot = path.join(container, 'workspace-link');
+    await writeText(
+      path.join(physicalRoot, 'package.json'),
+      json({ name: '@fixture/root', private: true }),
+    );
+    await writeText(
+      path.join(physicalRoot, 'pnpm-workspace.yaml'),
+      'packages: []\n',
+    );
+    await writeText(
+      path.join(physicalRoot, 'limina.config.mjs'),
+      'export default {};\n',
+    );
+    await writeText(
+      path.join(physicalRoot, 'tsconfig.json'),
+      json({ liminaOptions: { outputs: { outDir: './dist' } } }),
+    );
+    await symlink(physicalRoot, logicalRoot);
+
+    try {
+      const sourceConfigPath = path.join(logicalRoot, 'tsconfig.json');
+      const context = await collectValidatedWorkspaceContext({
+        config: {
+          configPath: path.join(logicalRoot, 'limina.config.mjs'),
+          rootDir: logicalRoot,
+        },
+        rawPackages: [workspacePackage(logicalRoot, '@fixture/root')],
+      });
+      const capability =
+        context.outputMutationAuthorities?.get(sourceConfigPath);
+
+      expect(toPortablePath(capability?.outputRoot ?? '')).toBe(
+        toPortablePath(path.join(logicalRoot, 'dist')),
+      );
+      expect(capability?.authority.trustedBaseLogicalPath).toBe(logicalRoot);
+      expect(capability?.authority.trustedBaseIdentity.logicalEntry.kind).toBe(
+        'symlink',
+      );
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
+
+  it('authenticates output below a symlinked activated package root', async () => {
+    const fixture = await createFixture();
+    const physicalPackage = fixture.path('physical/app');
+    const logicalPackage = fixture.path('packages/app');
+    await writeText(
+      path.join(physicalPackage, 'package.json'),
+      json({ name: '@fixture/app', private: true }),
+    );
+    await writeText(
+      path.join(physicalPackage, 'tsconfig.json'),
+      json({ liminaOptions: { outputs: { outDir: './dist' } } }),
+    );
+    await mkdir(path.dirname(logicalPackage), { recursive: true });
+    await symlink(physicalPackage, logicalPackage);
+
+    try {
+      const sourceConfigPath = path.join(logicalPackage, 'tsconfig.json');
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [workspacePackage(logicalPackage, '@fixture/app')],
+      });
+      const capability =
+        context.outputMutationAuthorities?.get(sourceConfigPath);
+
+      expect(toPortablePath(capability?.outputRoot ?? '')).toBe(
+        toPortablePath(path.join(logicalPackage, 'dist')),
+      );
+      expect(capability?.authority.trustedBaseLogicalPath).toBe(logicalPackage);
+      expect(capability?.authority.trustedBaseIdentity.logicalEntry.kind).toBe(
+        'symlink',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('signs an exact authority for a missing external output under ordinary parents', async () => {
+    const container = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-external-output-')),
+    );
+    const repoRoot = path.join(container, 'repo');
+    const packageRoot = path.join(repoRoot, 'packages/a');
+    await writeText(
+      path.join(repoRoot, 'package.json'),
+      json({ name: '@fixture/root', private: true }),
+    );
+    await writeText(
+      path.join(repoRoot, 'pnpm-workspace.yaml'),
+      'packages:\n  - packages/*\n',
+    );
+    await writeText(
+      path.join(repoRoot, 'limina.config.mjs'),
+      'export default {};\n',
+    );
+    await writeText(
+      path.join(packageRoot, 'package.json'),
+      json({ name: '@fixture/a', private: true }),
+    );
+    await writeText(
+      path.join(packageRoot, 'tsconfig.json'),
+      json({
+        liminaOptions: { outputs: { outDir: '../../../artifacts/a' } },
+      }),
+    );
+
+    try {
+      const sourceConfigPath = path.join(packageRoot, 'tsconfig.json');
+      const outputRoot = path.join(container, 'artifacts/a');
+      const context = await collectValidatedWorkspaceContext({
+        config: {
+          configPath: path.join(repoRoot, 'limina.config.mjs'),
+          rootDir: repoRoot,
+        },
+        rawPackages: [workspacePackage(packageRoot, '@fixture/a')],
+      });
+      const capability =
+        context.outputMutationAuthorities?.get(sourceConfigPath);
+
+      expect(capability?.outputRoot).toBe(outputRoot);
+      expect(capability?.authority.logicalMutationRoot).toBe(outputRoot);
+      expect(capability?.authority.trustedBaseLogicalPath).toBe(container);
+    } finally {
+      await rm(container, { force: true, recursive: true });
+    }
+  });
+
+  it('does not sign an external output authority through an existing parent symlink', async () => {
+    const container = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-external-output-link-')),
+    );
+    const repoRoot = path.join(container, 'repo');
+    const packageRoot = path.join(repoRoot, 'packages/a');
+    const externalRoot = path.join(container, 'external');
+    const markerPath = path.join(externalRoot, 'marker.txt');
+    await writeText(markerPath, 'external marker\n');
+    await writeText(
+      path.join(repoRoot, 'package.json'),
+      json({ name: '@fixture/root', private: true }),
+    );
+    await writeText(
+      path.join(repoRoot, 'pnpm-workspace.yaml'),
+      'packages:\n  - packages/*\n',
+    );
+    await writeText(
+      path.join(repoRoot, 'limina.config.mjs'),
+      'export default {};\n',
+    );
+    await writeText(
+      path.join(packageRoot, 'package.json'),
+      json({ name: '@fixture/a', private: true }),
+    );
+    await writeText(
+      path.join(packageRoot, 'tsconfig.json'),
+      json({
+        liminaOptions: { outputs: { outDir: '../../../artifacts/a' } },
+      }),
+    );
+    await symlink(externalRoot, path.join(container, 'artifacts'));
+
+    try {
+      await expect(
+        collectValidatedWorkspaceContext({
+          config: {
+            configPath: path.join(repoRoot, 'limina.config.mjs'),
+            rootDir: repoRoot,
+          },
+          rawPackages: [workspacePackage(packageRoot, '@fixture/a')],
+        }),
+      ).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({
+            code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
+          }),
+        ],
+      });
+      await expect(readFile(markerPath, 'utf8')).resolves.toBe(
+        'external marker\n',
+      );
+    } finally {
+      await rm(container, { force: true, recursive: true });
     }
   });
 

@@ -85,6 +85,14 @@ function getNativeTypeScriptProjectExtensions(): string[] {
   );
 }
 
+/** Uses the active compiler's supported-extension metadata, not a hard-coded list. */
+export function isNativeTypeScriptProjectInput(fileName: string): boolean {
+  const normalizedFileName = fileName.toLowerCase();
+  return getNativeTypeScriptProjectExtensions().some((extension) =>
+    normalizedFileName.endsWith(extension.toLowerCase()),
+  );
+}
+
 export function getBuildCheckerSupportedExtensions(
   preset: CheckerPreset,
 ): string[] {
@@ -171,6 +179,8 @@ export interface CheckerAdapter {
   ) => CheckerCommandTarget;
   extensions: (options: CheckerProjectConfigParseOptions) => string[];
   execution: CheckerExecutionKind;
+  /** Internal emit-proof strategy used before managed checker processes run. */
+  emitProjection: 'typescript' | 'vue-bounded';
   packageNames: string[];
   parseProjectConfig: (
     options: CheckerProjectConfigParseOptions,
@@ -1118,6 +1128,7 @@ const builtinCheckerAdapters = {
     extensions: (options) =>
       resolveExtensionsForChecker(options, getSvelteCheckerExtensions()),
     execution: 'typecheck',
+    emitProjection: 'typescript',
     packageNames: ['svelte-check'],
     parseProjectConfig: (options) =>
       parseProjectConfigWithExtensions(options, getSvelteCheckerExtensions()),
@@ -1130,6 +1141,7 @@ const builtinCheckerAdapters = {
     extensions: (options) =>
       resolveExtensionsForChecker(options, getTypeScriptCheckerExtensions()),
     execution: 'build',
+    emitProjection: 'typescript',
     packageNames: ['typescript'],
     parseProjectConfig: (options) =>
       parseProjectConfigWithExtensions(
@@ -1145,6 +1157,7 @@ const builtinCheckerAdapters = {
     extensions: (options) =>
       resolveExtensionsForChecker(options, getTypeScriptCheckerExtensions()),
     execution: 'build',
+    emitProjection: 'typescript',
     packageNames: ['@typescript/native-preview'],
     parseProjectConfig: (options) =>
       parseProjectConfigWithExtensions(
@@ -1160,6 +1173,7 @@ const builtinCheckerAdapters = {
     extensions: (options) =>
       resolveVueProjectExtensionsForChecker(options, 'vue-tsc'),
     execution: 'build',
+    emitProjection: 'vue-bounded',
     packageNames: ['vue-tsc'],
     parseProjectConfig: (options) => parseVueProjectConfig(options, 'vue-tsc'),
     preset: 'vue-tsc',
@@ -1171,6 +1185,7 @@ const builtinCheckerAdapters = {
     extensions: (options) =>
       resolveVueProjectExtensionsForChecker(options, 'vue-tsgo'),
     execution: 'typecheck',
+    emitProjection: 'vue-bounded',
     packageNames: ['vue-tsgo', '@typescript/native-preview'],
     parseProjectConfig: (options) => parseVueProjectConfig(options, 'vue-tsgo'),
     preset: 'vue-tsgo',

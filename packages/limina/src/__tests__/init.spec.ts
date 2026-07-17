@@ -822,6 +822,18 @@ export default defineConfig({
           path.join(fixture.rootDir, 'packages/pkg/.limina/manifest.json'),
         ),
       ).resolves.toBe(true);
+      await expect(
+        readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
+      ).resolves.toContain('defineConfig');
+      await expect(
+        readFile(path.join(fixture.rootDir, '.gitignore'), 'utf8'),
+      ).resolves.toContain('.limina/');
+      const rootManifest = await readJson<{
+        scripts?: Record<string, string>;
+      }>(path.join(fixture.rootDir, 'package.json'));
+      expect(rootManifest.scripts?.['limina:build']).toBe(
+        'limina checker build',
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -857,6 +869,132 @@ export default defineConfig({
         fixture.cleanup(),
         rm(externalRoot, { force: true, recursive: true }),
       ]);
+    }
+  });
+
+  it('rejects a nested .limina link before deleting or updating any init target', async () => {
+    const initialPackageJson = stringifyConfig({
+      name: 'root',
+      private: true,
+      type: 'module',
+    });
+    const fixture = await createFixture({
+      '.limina/keep.txt': 'root artifact bytes\n',
+      'package.json': initialPackageJson,
+      'pnpm-workspace.yaml': 'packages: []\n',
+    });
+    const externalMarker = path.join(fixture.rootDir, 'external/marker.txt');
+    await writeText(externalMarker, 'external marker bytes\n');
+    await symlink(
+      path.join(fixture.rootDir, 'external'),
+      path.join(fixture.rootDir, '.limina/nested-link'),
+      'dir',
+    );
+
+    try {
+      await expect(
+        runInit({ clearScreen: false, cwd: fixture.rootDir, yes: true }),
+      ).rejects.toThrow(/symbolic link or junction/u);
+      await expect(
+        readFile(path.join(fixture.rootDir, '.limina/keep.txt'), 'utf8'),
+      ).resolves.toBe('root artifact bytes\n');
+      await expect(
+        readFile(path.join(fixture.rootDir, 'package.json'), 'utf8'),
+      ).resolves.toBe(initialPackageJson);
+      await expect(
+        fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+      ).resolves.toBe(false);
+      await expect(
+        fileExists(path.join(fixture.rootDir, '.gitignore')),
+      ).resolves.toBe(false);
+      await expect(readFile(externalMarker, 'utf8')).resolves.toBe(
+        'external marker bytes\n',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(['limina.config.mts', '.gitignore', 'package.json'])(
+    'rejects a final %s symlink before deleting .limina or updating sibling files',
+    async (unsafeFileName) => {
+      const fixture = await createFixture({
+        '.limina/keep.txt': 'root artifact bytes\n',
+        ...(unsafeFileName === 'package.json'
+          ? {}
+          : {
+              'package.json': stringifyConfig({
+                name: 'root',
+                private: true,
+                type: 'module',
+              }),
+            }),
+        'pnpm-workspace.yaml': 'packages: []\n',
+      });
+      const externalTarget = path.join(
+        fixture.rootDir,
+        `external/${unsafeFileName.replaceAll('/', '-')}`,
+      );
+      const externalContent =
+        unsafeFileName === 'package.json'
+          ? stringifyConfig({ name: 'root', private: true, type: 'module' })
+          : 'external marker bytes\n';
+      await writeText(externalTarget, externalContent);
+      await symlink(externalTarget, path.join(fixture.rootDir, unsafeFileName));
+
+      try {
+        await expect(
+          runInit({ clearScreen: false, cwd: fixture.rootDir, yes: true }),
+        ).rejects.toThrow(/symbolic link or junction/u);
+        await expect(readFile(externalTarget, 'utf8')).resolves.toBe(
+          externalContent,
+        );
+        await expect(
+          readFile(path.join(fixture.rootDir, '.limina/keep.txt'), 'utf8'),
+        ).resolves.toBe('root artifact bytes\n');
+        if (unsafeFileName !== 'limina.config.mts') {
+          await expect(
+            fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+          ).resolves.toBe(false);
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('continues init through a symlinked workspace root', async () => {
+    const container = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-init-symlinked-root-')),
+    );
+    const physicalRoot = path.join(container, 'workspace');
+    const logicalRoot = path.join(container, 'workspace-link');
+    await writeText(
+      path.join(physicalRoot, 'package.json'),
+      stringifyConfig({ name: 'root', private: true, type: 'module' }),
+    );
+    await writeText(
+      path.join(physicalRoot, 'pnpm-workspace.yaml'),
+      'packages: []\n',
+    );
+    await symlink(physicalRoot, logicalRoot, 'dir');
+
+    try {
+      const result = await runInit({
+        clearScreen: false,
+        cwd: logicalRoot,
+        yes: true,
+      });
+
+      expect(result.writtenFiles.length).toBeGreaterThan(0);
+      await expect(
+        readFile(path.join(physicalRoot, 'limina.config.mts'), 'utf8'),
+      ).resolves.toContain('defineConfig');
+      await expect(
+        readFile(path.join(physicalRoot, '.gitignore'), 'utf8'),
+      ).resolves.toContain('.limina/');
+    } finally {
+      await rm(container, { force: true, recursive: true });
     }
   });
 

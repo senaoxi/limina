@@ -1,12 +1,19 @@
 import type { RegionExcludeConfig, ResolvedLiminaConfig } from '#config/runner';
 import { readJsonConfig } from '#core/tsconfig/actions';
 import {
+  createExplicitMutationAuthority,
+  createMechanicalExactMutationAuthority,
+  type MutationAuthority,
+  MutationBoundaryError,
+} from '#utils/mutation-boundary';
+import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
   normalizeSlashes,
   toRelativePath,
 } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
+import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
 import { lstat, opendir, readFile, realpath } from 'node:fs/promises';
 import path from 'pathe';
@@ -68,9 +75,22 @@ export interface ValidatedWorkspaceContext extends WorkspaceRegionTopology {
   readonly configRootDir: string;
   readonly descriptorCandidates: readonly WorkspaceDescriptorCandidate[];
   readonly outputRoots: readonly string[];
+  /** Internal exact-root capabilities for managed checker output mutation. */
+  readonly outputMutationAuthorities?: ReadonlyMap<
+    string,
+    WorkspaceOutputMutationAuthority
+  >;
   readonly packageIdentities: readonly WorkspacePackageIdentity[];
   readonly sourceConfigPaths: readonly string[];
   readonly workspaceRootDir: string;
+  readonly workspaceMutationGeneration?: string;
+}
+
+export interface WorkspaceOutputMutationAuthority {
+  readonly authority: MutationAuthority;
+  readonly declaringSourceConfig: string;
+  readonly outputRoot: string;
+  readonly workspaceGeneration: string;
 }
 
 export interface WorkspaceIndexMetricsRecorder {
@@ -618,6 +638,76 @@ async function assertOutputRootValid(options: {
     : null;
 }
 
+function selectExplicitOutputTrustedBase(options: {
+  activatedPackageRoots: readonly string[];
+  configRoot: string;
+  outputRoot: string;
+}): string | null {
+  return (
+    [options.configRoot, ...options.activatedPackageRoots]
+      .map(normalizeAbsolutePath)
+      .filter((candidate) => isInsideOrEqual(candidate, options.outputRoot))
+      .sort((left, right) => right.length - left.length)[0] ?? null
+  );
+}
+
+async function createWorkspaceOutputMutationAuthority(options: {
+  activatedPackageRoots: readonly string[];
+  config: ResolvedLiminaConfig;
+  declaringSourceConfig: string;
+  outputRoot: string;
+  workspaceGeneration: string;
+}): Promise<WorkspaceOutputMutationAuthority> {
+  const outputRoot = normalizeAbsolutePath(options.outputRoot);
+  const trustedBase = selectExplicitOutputTrustedBase({
+    activatedPackageRoots: options.activatedPackageRoots,
+    configRoot: options.config.rootDir,
+    outputRoot,
+  });
+  const authority = trustedBase
+    ? await createExplicitMutationAuthority({
+        generation: options.workspaceGeneration,
+        logicalMutationRoot: outputRoot,
+        scope: 'directory',
+        trustedBasePath: trustedBase,
+      })
+    : await createMechanicalExactMutationAuthority({
+        generation: options.workspaceGeneration,
+        logicalMutationRoot: outputRoot,
+        scope: 'directory',
+      });
+
+  return Object.freeze({
+    authority,
+    declaringSourceConfig: normalizeAbsolutePath(options.declaringSourceConfig),
+    outputRoot,
+    workspaceGeneration: options.workspaceGeneration,
+  });
+}
+
+function createOutputAuthorityIssue(options: {
+  config: ResolvedLiminaConfig;
+  declaredAt: string;
+  error: unknown;
+  outputRoot: string;
+}): LiminaCheckIssue {
+  return createWorkspaceIssue({
+    code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
+    config: options.config,
+    evidence: [
+      `declaration: ${displayPath(options.config.rootDir, options.declaredAt)}`,
+      `output root: ${displayPath(options.config.rootDir, options.outputRoot)}`,
+    ],
+    filePath: options.declaredAt,
+    fix: 'Choose a dedicated output path whose existing parent chain contains no symlink or junction.',
+    reason:
+      options.error instanceof MutationBoundaryError
+        ? options.error.message
+        : `Unable to authenticate the output mutation root: ${String(options.error)}`,
+    title: 'Workspace output root is structurally unsafe',
+  });
+}
+
 function createReadableTsconfigCandidate(
   descriptor: WorkspaceDescriptorCandidate,
 ): ReadableWorkspaceTsconfigCandidate {
@@ -647,7 +737,12 @@ export function readWorkspaceTsconfigOutputRoot(
   }
   const outDir = liminaOptions.outputs.outDir;
   if (outDir === undefined) {
-    return { kind: 'absent' };
+    return {
+      kind: 'output',
+      outputRoot: normalizeAbsolutePath(
+        path.resolve(path.dirname(candidate.path), './dist'),
+      ),
+    };
   }
   if (typeof outDir !== 'string' || outDir.trim().length === 0) {
     return {
@@ -920,6 +1015,7 @@ export async function collectValidatedWorkspaceContext(options: {
     normalizeAbsolutePath(workspacePackage.directory),
   );
   const packageOutputs = new Set<string>();
+  const declaredPackageOutputs = new Map<string, string>();
   const outputIssues: LiminaCheckIssue[] = [];
 
   for (const [entryIndex, entry] of (config.package?.entries ?? []).entries()) {
@@ -955,6 +1051,10 @@ export async function collectValidatedWorkspaceContext(options: {
       });
     } else {
       packageOutputs.add(outputRoot);
+      declaredPackageOutputs.set(
+        `${config.configPath}#package.entries[${entryIndex}].outDir`,
+        outputRoot,
+      );
     }
   }
   if (outputIssues.length > 0) {
@@ -1031,6 +1131,47 @@ export async function collectValidatedWorkspaceContext(options: {
   const packageIdentities = identityResult.identities.filter((identity) =>
     packages.includes(identity.package),
   );
+  const workspaceMutationGeneration = randomUUID();
+  const outputMutationAuthorities = new Map<
+    string,
+    WorkspaceOutputMutationAuthority
+  >();
+  const authorityDeclarations = [
+    ...declaredPackageOutputs,
+    ...[...explicitOutputs].filter(([sourceConfigPath]) =>
+      stablePaths.has(sourceConfigPath),
+    ),
+  ];
+
+  for (const [declaringSourceConfig, outputRoot] of authorityDeclarations) {
+    try {
+      outputMutationAuthorities.set(
+        declaringSourceConfig,
+        await createWorkspaceOutputMutationAuthority({
+          activatedPackageRoots,
+          config,
+          declaringSourceConfig,
+          outputRoot,
+          workspaceGeneration: workspaceMutationGeneration,
+        }),
+      );
+    } catch (error) {
+      outputIssues.push(
+        createOutputAuthorityIssue({
+          config,
+          declaredAt: declaringSourceConfig.split('#')[0]!,
+          error,
+          outputRoot,
+        }),
+      );
+    }
+  }
+  if (outputIssues.length > 0) {
+    throw new LiminaStructuredError(
+      'Workspace output validation failed.',
+      outputIssues,
+    );
+  }
 
   return {
     boundaries,
@@ -1040,6 +1181,7 @@ export async function collectValidatedWorkspaceContext(options: {
       .flatMap((island) => island.extendedScopes)
       .filter((scope) => stablePaths.has(scope.packageJsonPath)),
     outputRoots: [...stable.outputs].sort(),
+    outputMutationAuthorities,
     packageIdentities,
     packages,
     rawPackages: [...options.rawPackages],
@@ -1048,6 +1190,7 @@ export async function collectValidatedWorkspaceContext(options: {
       .map((candidate) => candidate.path)
       .sort(),
     workspaceRootDir: findNearestPnpmWorkspaceRoot(config.rootDir),
+    workspaceMutationGeneration,
   };
 }
 

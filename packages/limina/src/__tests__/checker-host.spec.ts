@@ -423,4 +423,97 @@ describe('runBuildTargets provider blocking', () => {
       blockedBy: [first.id, second.id],
     });
   });
+
+  it('holds a provider layer at an awaited boundary barrier before any target starts', async () => {
+    const first = createBuildTarget('first');
+    const second = createBuildTarget('second');
+    const runner = vi.fn(async (target: TypecheckTarget) => ({
+      configPath: target.configPath,
+      status: 0,
+    }));
+    const onTargetStart = vi.fn();
+    const beforeLayerRun = vi.fn(async () => {
+      throw new Error('unsafe layer boundary');
+    });
+
+    const results = await runBuildTargets([first, second], [], runner, {
+      beforeLayerRun,
+      config: createPoolConfig(),
+      onTargetStart,
+    });
+
+    expect(beforeLayerRun).toHaveBeenCalledOnce();
+    expect(runner).not.toHaveBeenCalled();
+    expect(onTargetStart).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      expect.objectContaining({ id: first.id, status: 1 }),
+      expect.objectContaining({ id: second.id, status: 1 }),
+    ]);
+  });
+
+  it('keeps completed provider results and blocks later consumers after layer drift', async () => {
+    const provider = createBuildTarget('provider');
+    const consumer = createBuildTarget('consumer');
+    const transitive = createBuildTarget('transitive');
+    const calls: string[] = [];
+    const started: string[] = [];
+    const results = await runBuildTargets(
+      [provider, consumer, transitive],
+      [edge('consumer', 'provider'), edge('transitive', 'consumer')],
+      async (target) => {
+        calls.push(target.id);
+        return { configPath: target.configPath, status: 0 };
+      },
+      {
+        beforeLayerRun: async (targets) => {
+          if (targets.some((target) => target.id === consumer.id)) {
+            throw new Error('provider-layer mutation boundary drifted');
+          }
+        },
+        config: createPoolConfig(),
+        onTargetStart: (target) => started.push(target.id),
+      },
+    );
+
+    expect(calls).toEqual([provider.id]);
+    expect(started).toEqual([provider.id]);
+    expect(results.find((result) => result.id === provider.id)).toMatchObject({
+      status: 0,
+    });
+    expect(results.find((result) => result.id === consumer.id)).toMatchObject({
+      status: 1,
+    });
+    expect(results.find((result) => result.id === transitive.id)).toMatchObject(
+      {
+        blockedBy: [consumer.id],
+        status: 1,
+      },
+    );
+  });
+
+  it('runs target-local recheck before start reporting and runner invocation', async () => {
+    const target = createBuildTarget('target');
+    const events: string[] = [];
+    const runner = vi.fn(async () => {
+      events.push('runner');
+      return { configPath: target.configPath, status: 0 };
+    });
+    const results = await runBuildTargets([target], [], runner, {
+      beforeLayerRun: async () => {
+        events.push('layer');
+      },
+      beforeTargetRun: async () => {
+        events.push('target-recheck');
+        throw new Error('final output became a symlink');
+      },
+      config: createPoolConfig(),
+      onTargetStart: () => events.push('start'),
+    });
+
+    expect(events).toEqual(['layer', 'target-recheck']);
+    expect(runner).not.toHaveBeenCalled();
+    expect(results).toEqual([
+      expect.objectContaining({ id: target.id, status: 1 }),
+    ]);
+  });
 });

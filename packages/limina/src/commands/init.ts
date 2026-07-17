@@ -10,17 +10,17 @@ import ignore from 'ignore';
 import { createElapsedTimer } from 'logaria/helper';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { lstat, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import { parse as parseYaml } from 'yaml';
-import {
-  assertArtifactPathOperationSafe,
-  createLiminaArtifactNamespace,
-  type LiminaArtifactNamespace,
-} from '../domain/artifacts/namespace';
 import type { LiminaFlowReporter } from '../flow';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../logger';
+import {
+  type InitMutationContext,
+  prepareInitMutationContext,
+  removeInitGeneratedRoot,
+  writeInitFile,
+} from './init-mutation';
 
 export interface RunInitOptions {
   clearScreen?: boolean;
@@ -166,11 +166,13 @@ async function writeTextFile(
   filePath: string,
   content: string,
   writtenFiles: string[],
+  mutationContext: InitMutationContext,
 ): Promise<void> {
-  await mkdir(path.dirname(filePath), {
-    recursive: true,
+  await writeInitFile({
+    content,
+    context: mutationContext,
+    filePath,
   });
-  await writeFile(filePath, content);
   writtenFiles.push(filePath);
 }
 
@@ -287,6 +289,7 @@ async function updateRootPackageJson(options: {
   rootDir: string;
   skippedFiles: string[];
   writtenFiles: string[];
+  mutationContext: InitMutationContext;
 }): Promise<RootPackageJsonUpdateResult> {
   const packageJsonPath = path.join(options.rootDir, 'package.json');
   let installRequired = false;
@@ -322,6 +325,7 @@ async function updateRootPackageJson(options: {
       packageJsonPath,
       stringifyJson(manifest),
       options.writtenFiles,
+      options.mutationContext,
     );
 
     return {
@@ -381,6 +385,7 @@ async function updateRootPackageJson(options: {
         scripts,
       }),
       options.writtenFiles,
+      options.mutationContext,
     );
     return {
       installRequired,
@@ -402,6 +407,7 @@ async function writeLiminaConfig(options: {
   rootDir: string;
   skippedFiles: string[];
   writtenFiles: string[];
+  mutationContext: InitMutationContext;
 }): Promise<InitFileStepResult> {
   const configPath = path.join(options.rootDir, liminaConfigFileName);
   const content = createLiminaConfigContent();
@@ -429,7 +435,12 @@ async function writeLiminaConfig(options: {
     }
   }
 
-  await writeTextFile(configPath, content, options.writtenFiles);
+  await writeTextFile(
+    configPath,
+    content,
+    options.writtenFiles,
+    options.mutationContext,
+  );
   return {
     message: `${liminaConfigFileName} written`,
     status: 'pass',
@@ -440,12 +451,18 @@ async function ensureGeneratedGraphGitignore(options: {
   rootDir: string;
   skippedFiles: string[];
   writtenFiles: string[];
+  mutationContext: InitMutationContext;
 }): Promise<InitFileStepResult> {
   const gitignorePath = path.join(options.rootDir, '.gitignore');
   const entry = '.limina/';
 
   if (!existsSync(gitignorePath)) {
-    await writeTextFile(gitignorePath, `${entry}\n`, options.writtenFiles);
+    await writeTextFile(
+      gitignorePath,
+      `${entry}\n`,
+      options.writtenFiles,
+      options.mutationContext,
+    );
     return {
       message: '.gitignore created',
       status: 'pass',
@@ -469,6 +486,7 @@ async function ensureGeneratedGraphGitignore(options: {
     gitignorePath,
     `${content}${separator}${entry}\n`,
     options.writtenFiles,
+    options.mutationContext,
   );
 
   return {
@@ -478,32 +496,16 @@ async function ensureGeneratedGraphGitignore(options: {
 }
 
 async function removeRootGeneratedGraphDir(options: {
-  artifactNamespace: LiminaArtifactNamespace;
+  mutationContext: InitMutationContext;
   removedPaths: string[];
 }): Promise<InitFileStepResult> {
-  const generatedRootPath = options.artifactNamespace.rootDir;
-
-  try {
-    await lstat(generatedRootPath);
-  } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-      return {
-        message: 'root .limina (skipped: not present)',
-        status: 'skip',
-      };
-    }
-    throw error;
+  const generatedRootPath = options.mutationContext.generatedRootPath;
+  if (!(await removeInitGeneratedRoot(options.mutationContext))) {
+    return {
+      message: 'root .limina (skipped: not present)',
+      status: 'skip',
+    };
   }
-
-  await assertArtifactPathOperationSafe(
-    options.artifactNamespace,
-    generatedRootPath,
-    { targetKind: 'directory' },
-  );
-  await rm(generatedRootPath, {
-    force: true,
-    recursive: true,
-  });
   options.removedPaths.push(generatedRootPath);
   return {
     message: 'root .limina removed',
@@ -648,10 +650,6 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
     label: 'resolve workspace root',
   });
   const config = createInitConfig(rootDir);
-  const artifactNamespace = createLiminaArtifactNamespace({
-    generation: 0,
-    rootDir,
-  });
 
   const workspacePackages = await runInitFlowStep({
     action: async () => {
@@ -674,11 +672,15 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
   const removedPaths: string[] = [];
   const writtenFiles: string[] = [];
   const skippedFiles: string[] = [];
+  const mutationContext = await prepareInitMutationContext({
+    fileNames: [liminaConfigFileName, '.gitignore', 'package.json'],
+    rootDir,
+  });
 
   await runInitFlowStep({
     action: async () => ({
       ...(await removeRootGeneratedGraphDir({
-        artifactNamespace,
+        mutationContext,
         removedPaths,
       })),
       value: undefined,
@@ -694,6 +696,7 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
         rootDir,
         skippedFiles,
         writtenFiles,
+        mutationContext,
       })),
       value: undefined,
     }),
@@ -707,6 +710,7 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
         rootDir,
         skippedFiles,
         writtenFiles,
+        mutationContext,
       })),
       value: undefined,
     }),
@@ -722,6 +726,7 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
         rootDir,
         skippedFiles,
         writtenFiles,
+        mutationContext,
       });
 
       return {
