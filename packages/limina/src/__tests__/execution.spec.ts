@@ -1,7 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import {
@@ -43,6 +46,7 @@ import type { LiminaCheckIssue } from '../source-check/snapshot';
 import { createCheckerTargetId } from '../typecheck/targets';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
+const execFileAsync = promisify(execFile);
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
 
 function createIssue(overrides: Partial<LiminaCheckIssue>): LiminaCheckIssue {
@@ -1501,6 +1505,86 @@ describe('runExecutionTasks', () => {
       });
     });
   });
+
+  it('keeps the source snapshot when the following check write fails', async () => {
+    await withTempRoot(async (rootDir) => {
+      const sourceIssue: SourceCheckIssue = {
+        code: SOURCE_ISSUE_CODES.unusedModule,
+        filePath: path.join(rootDir, 'src/unused.ts'),
+        ownerDirectory: rootDir,
+        ownerName: '@fixture/pkg',
+        packageJsonPath: path.join(rootDir, 'package.json'),
+      };
+      const source = createTask({ id: 'source', order: 0 });
+      source.issueTask = 'source:check';
+      source.label = 'source:check';
+      source.run = async () => ({
+        issues: [],
+        sourceSnapshot: { issues: [sourceIssue], status: 'completed' },
+        status: 'failed',
+      });
+      const writeCheck = vi.fn(async () => {
+        throw new Error('injected check snapshot write failure');
+      });
+
+      const executionResult = await runExecutionTasks({
+        command: 'limina check',
+        preflight: createPreflight(rootDir),
+        rootDir,
+        snapshotWriters: {
+          writeCheck,
+          writeSource: writeSourceIssueSnapshotOnly,
+        },
+        tasks: [source],
+      });
+
+      expect(executionResult.passed).toBe(false);
+      expect(writeCheck).toHaveBeenCalledOnce();
+      await expect(access(getSourceIssueSnapshotPath(rootDir))).resolves.toBe(
+        undefined,
+      );
+      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+
+      await writeFile(
+        path.join(rootDir, 'limina.config.mjs'),
+        'export default {};\n',
+      );
+      await writeFile(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages: []\n',
+      );
+      const cliPath = fileURLToPath(
+        new URL('../../bin/limina.js', import.meta.url),
+      );
+      const cliResult = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          path.join(rootDir, 'limina.config.mjs'),
+          'check',
+          '--issues',
+        ],
+        {
+          cwd: rootDir,
+          env: { ...process.env, CI: 'true' },
+        },
+      );
+
+      expect(cliResult.stdout).toContain('No check issue snapshot found.');
+      expect(cliResult.stdout).not.toContain(SOURCE_ISSUE_CODES.unusedModule);
+      await expect(readSourceIssueSnapshot(rootDir)).resolves.toMatchObject({
+        issues: [
+          {
+            code: SOURCE_ISSUE_CODES.unusedModule,
+            ownerName: '@fixture/pkg',
+          },
+        ],
+        status: 'completed',
+        version: 1,
+      });
+    });
+  }, 40_000);
 
   it('keeps check not-run until the authoritative source write settles', async () => {
     await withTempRoot(async (rootDir) => {

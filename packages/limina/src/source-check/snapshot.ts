@@ -26,8 +26,6 @@ import type {
 
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 1;
 export const CHECK_ISSUE_SNAPSHOT_VERSION = 7;
-const LEGACY_CHECK_ISSUE_SNAPSHOT_VERSION = 5;
-const LEGACY_V6_CHECK_ISSUE_SNAPSHOT_VERSION = 6;
 
 export type LiminaCheckTaskName =
   | 'checker:build'
@@ -814,9 +812,6 @@ export function getCompletedRunSemanticProblem(
 }
 
 export function assertCompletedRunSummary(run: LiminaCheckRunSummary): void {
-  if (run.tasks.some((task) => task.id.startsWith('legacy-v5:'))) {
-    throw new Error('New v7 snapshots must not use legacy-v5 task ids.');
-  }
   const problem = getCompletedRunSemanticProblem(run);
   if (problem) {
     throw new Error(`Invalid completed check run summary: ${problem}`);
@@ -849,168 +844,6 @@ function getNotRunSummaryProblem(run: LiminaCheckRunSummary): string | null {
     }
   }
   return null;
-}
-
-function migrateLegacyV5CheckItem(
-  value: unknown,
-): ValidationCheckItemSnapshot | null {
-  if (
-    !isPlainRecord(value) ||
-    typeof value.name !== 'string' ||
-    value.name.length === 0 ||
-    (value.status !== 'passed' &&
-      value.status !== 'failed' &&
-      value.status !== 'skipped')
-  ) {
-    return null;
-  }
-
-  const item: ValidationCheckItemSnapshot = {
-    itemKind: 'check',
-    name: value.name,
-    status: value.status,
-  };
-  for (const field of [
-    'checksPassed',
-    'checksTotal',
-    'durationMs',
-    'issues',
-  ] as const) {
-    if (isFiniteNonNegativeNumber(value[field])) {
-      item[field] = value[field];
-    }
-  }
-  return item;
-}
-
-function migrateLegacyV5CheckIssueSnapshot(
-  value: Record<string, unknown>,
-): CheckIssueSnapshot | null {
-  if (
-    value.version !== LEGACY_CHECK_ISSUE_SNAPSHOT_VERSION ||
-    typeof value.command !== 'string' ||
-    typeof value.createdAt !== 'string' ||
-    !isCheckIssueSnapshotStatus(value.status) ||
-    !Array.isArray(value.issues) ||
-    !value.issues.every(isLiminaCheckIssue)
-  ) {
-    return null;
-  }
-
-  const legacyRun = isPlainRecord(value.run) ? value.run : undefined;
-  const legacyTasks = Array.isArray(legacyRun?.tasks) ? legacyRun.tasks : [];
-  const tasks: LiminaCheckRunTaskSummary[] = legacyTasks.flatMap(
-    (legacyTask, index) => {
-      if (
-        !isPlainRecord(legacyTask) ||
-        typeof legacyTask.name !== 'string' ||
-        !isLiminaCheckRunTaskStatus(legacyTask.status) ||
-        (legacyTask.kind !== 'command' && legacyTask.kind !== 'task')
-      ) {
-        return [];
-      }
-
-      const legacyBlockedBy =
-        typeof legacyTask.blockedBy === 'string'
-          ? legacyTask.blockedBy
-          : undefined;
-      const state =
-        legacyTask.status === 'blocked' ? 'failed' : legacyTask.status;
-      const issueTask = isKnownIssueTask(legacyTask.name)
-        ? legacyTask.name
-        : legacyTask.kind === 'command'
-          ? 'command'
-          : 'command';
-
-      return [
-        {
-          ...(Array.isArray(legacyTask.checkItems)
-            ? {
-                checkItems: legacyTask.checkItems.flatMap((item) => {
-                  const migratedItem = migrateLegacyV5CheckItem(item);
-                  return migratedItem ? [migratedItem] : [];
-                }),
-              }
-            : {}),
-          ...(typeof legacyTask.checksPassed === 'number'
-            ? { checksPassed: legacyTask.checksPassed }
-            : {}),
-          ...(typeof legacyTask.checksTotal === 'number'
-            ? { checksTotal: legacyTask.checksTotal }
-            : {}),
-          ...(typeof legacyTask.completedAt === 'string'
-            ? { completedAt: legacyTask.completedAt }
-            : {}),
-          ...(typeof legacyTask.durationMs === 'number'
-            ? { durationMs: legacyTask.durationMs }
-            : {}),
-          id: `legacy-v5:${index}`,
-          // Legacy v5 snapshots did not record repository generations.
-          // Generation 0 is a schema compatibility normalization only and
-          // must not be interpreted as reconstructed historical execution data.
-          generation: 0,
-          issueTask,
-          kind: legacyTask.kind,
-          label: legacyTask.name,
-          reason:
-            state === 'skipped'
-              ? legacyBlockedBy
-                ? `Legacy v5 run: skipped after "${legacyBlockedBy}"`
-                : typeof legacyTask.reason === 'string'
-                  ? legacyTask.reason
-                  : 'Legacy v5 run: skipped'
-              : typeof legacyTask.reason === 'string'
-                ? legacyTask.reason
-                : undefined,
-          ...(typeof legacyTask.startedAt === 'string'
-            ? { startedAt: legacyTask.startedAt }
-            : {}),
-          state,
-        },
-      ];
-    },
-  );
-
-  const run: LiminaCheckRunSummary | undefined = legacyRun
-    ? {
-        command:
-          typeof legacyRun.command === 'string'
-            ? legacyRun.command
-            : value.command,
-        ...(typeof legacyRun.completedAt === 'string'
-          ? { completedAt: legacyRun.completedAt }
-          : {}),
-        ...(typeof legacyRun.configPath === 'string'
-          ? { configPath: legacyRun.configPath }
-          : {}),
-        createdAt:
-          typeof legacyRun.createdAt === 'string'
-            ? legacyRun.createdAt
-            : value.createdAt,
-        ...(typeof legacyRun.durationMs === 'number'
-          ? { durationMs: legacyRun.durationMs }
-          : {}),
-        ...(typeof legacyRun.pipeline === 'string'
-          ? { pipeline: legacyRun.pipeline }
-          : {}),
-        result: isLiminaCheckRunResult(legacyRun.result)
-          ? legacyRun.result
-          : 'not-run',
-        ...(typeof legacyRun.startedAt === 'string'
-          ? { startedAt: legacyRun.startedAt }
-          : {}),
-        tasks,
-      }
-    : undefined;
-
-  return {
-    command: value.command,
-    createdAt: value.createdAt,
-    issues: value.issues,
-    ...(run ? { run } : {}),
-    status: value.status,
-    version: CHECK_ISSUE_SNAPSHOT_VERSION,
-  };
 }
 
 function pluralIssue(count: number): string {
@@ -1383,11 +1216,7 @@ export async function readCheckIssueSnapshot(
   const snapshotPath = getCheckIssueSnapshotPath(rootDir);
 
   if (!existsSync(snapshotPath)) {
-    const sourceSnapshot = await readSourceIssueSnapshot(rootDir);
-
-    return sourceSnapshot
-      ? sourceSnapshotToCheckSnapshot(sourceSnapshot)
-      : null;
+    return null;
   }
 
   try {
@@ -1415,21 +1244,7 @@ export async function readCheckIssueSnapshot(
       return parsed;
     }
 
-    if (
-      isPlainRecord(parsed) &&
-      parsed.version === LEGACY_V6_CHECK_ISSUE_SNAPSHOT_VERSION
-    ) {
-      const migrated = {
-        ...parsed,
-        version: CHECK_ISSUE_SNAPSHOT_VERSION,
-      };
-      return isCurrentV7CheckIssueSnapshotStructure(migrated) ? migrated : null;
-    }
-    if (!isPlainRecord(parsed) || parsed.version !== 5) return null;
-    const migrated = migrateLegacyV5CheckIssueSnapshot(parsed);
-    return migrated && isCurrentV7CheckIssueSnapshotStructure(migrated)
-      ? migrated
-      : null;
+    return null;
   } catch {
     return null;
   }
@@ -1543,38 +1358,6 @@ export function createSourceCheckIssue(options: {
     tool: options.issue.tool,
     verifyCommands: options.issue.verifyCommands,
   });
-}
-
-function sourceSnapshotToCheckSnapshot(
-  snapshot: SourceIssueSnapshot,
-): CheckIssueSnapshot {
-  return {
-    command: snapshot.command,
-    createdAt: snapshot.createdAt,
-    issues: snapshot.issues.map((issue) => {
-      const filePath = issue.filePath
-        ? normalizeSlashes(issue.filePath)
-        : undefined;
-
-      return createLiminaCheckIssue({
-        code: issue.code,
-        filePath,
-        packageName: issue.ownerName,
-        reason:
-          issue.code === LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule
-            ? 'Owner-governed source modules must be reachable from package entries, binaries, scripts, or Knip plugin entries.'
-            : 'Workspace package dependencies must be reachable from package entries, binaries, scripts, or explicitly ignored when usage is not visible to Knip analysis.',
-        rootDir: '.',
-        task: 'source:check',
-        title:
-          issue.code === LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule
-            ? 'Unused source module'
-            : 'Unused workspace dependency',
-      });
-    }),
-    status: snapshot.status,
-    version: CHECK_ISSUE_SNAPSHOT_VERSION,
-  };
 }
 
 function createInventoryPayload(options: {
