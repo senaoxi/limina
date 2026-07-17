@@ -20,6 +20,12 @@ import ts from 'typescript';
 
 export type JsonObject = Record<string, unknown>;
 
+const removedRootLiminaMetadataError = [
+  'Invalid Limina tsconfig metadata:',
+  '  field: limina',
+  '  reason: root-level limina metadata is not part of the Limina 0.2.0 tsconfig contract.',
+].join('\n');
+
 const dtsConfigFilePattern = /^tsconfig(?:\..+)?\.dts\.json$/u;
 const buildGraphConfigFilePattern = /^tsconfig(?:\..+)?\.build\.json$/u;
 const baseConfigFilePattern = /^tsconfig(?:\..+)?\.base\.json$/u;
@@ -166,6 +172,23 @@ function readJsonConfigFile(
   }
 
   return result.config as JsonObject;
+}
+
+function isGeneratedLiminaConfigPath(configPath: string): boolean {
+  return configPath.split(/[\\/]/u).includes('.limina');
+}
+
+export function validateUserMaintainedLiminaTsconfigMetadata(options: {
+  configObject: JsonObject;
+  configPath: string;
+}): void {
+  if (isGeneratedLiminaConfigPath(options.configPath)) {
+    return;
+  }
+
+  if (Object.hasOwn(options.configObject, 'limina')) {
+    throw new Error(removedRootLiminaMetadataError);
+  }
 }
 
 export function readJsonConfig(
@@ -406,6 +429,27 @@ export function collectGraphProjectRouteFromRoot(options: {
   }));
   const formatConfigPath = (configPath: string): string =>
     toRelativePath(options.rootDir, configPath);
+  const validateUserConfig = (configPath: string): void => {
+    const normalizedConfigPath = normalizeAbsolutePath(configPath);
+
+    if (
+      !existsSync(normalizedConfigPath) &&
+      !options.virtualFiles?.has(normalizedConfigPath)
+    ) {
+      return;
+    }
+
+    validateUserMaintainedLiminaTsconfigMetadata({
+      configObject: readJsonConfigFile(
+        options.rootDir,
+        normalizedConfigPath,
+        options.virtualFiles,
+      ),
+      configPath: normalizedConfigPath,
+    });
+  };
+
+  validateUserConfig(rootGraphConfigPath);
 
   problems.push(...rootReferences.problems);
 
@@ -451,6 +495,8 @@ export function collectGraphProjectRouteFromRoot(options: {
       );
       continue;
     }
+
+    validateUserConfig(projectPath);
 
     if (!isBuildGraphConfigPath(projectPath) && !isDtsConfigPath(projectPath)) {
       problems.push(

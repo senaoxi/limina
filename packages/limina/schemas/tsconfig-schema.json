@@ -10,6 +10,9 @@
     },
     {
       "type": "object",
+      "not": {
+        "required": ["limina"]
+      },
       "properties": {
         "liminaOptions": {
           "$ref": "#/definitions/liminaOptions"

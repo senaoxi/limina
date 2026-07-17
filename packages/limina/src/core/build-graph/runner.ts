@@ -29,6 +29,7 @@ import {
   isOrdinarySourceTypecheckConfigPath,
   type JsonObject,
   readJsonConfig,
+  validateUserMaintainedLiminaTsconfigMetadata,
 } from '#core/tsconfig/actions';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import { uniqueSortedStrings } from '#utils/collections';
@@ -802,6 +803,11 @@ function collectCheckerSourceConfigModules(options: {
   );
 
   const configObject = readJsonConfig(options.config, options.sourceConfigPath);
+
+  validateUserMaintainedLiminaTsconfigMetadata({
+    configObject,
+    configPath: options.sourceConfigPath,
+  });
   const hasReferences = Object.hasOwn(configObject, 'references');
   const isSolutionStyleConfig = isSolutionStyleTsconfig(
     options.sourceConfigPath,

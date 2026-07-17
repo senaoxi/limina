@@ -23,6 +23,7 @@ import {
   type JsonObject,
   readJsonConfig,
   resolveReferencePath,
+  validateUserMaintainedLiminaTsconfigMetadata,
 } from '#core/tsconfig/actions';
 import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
 import {
@@ -649,9 +650,16 @@ function readProofConfig(
   virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {
   const content = virtualFiles?.get(normalizeAbsolutePath(configPath));
-  return content
+  const configObject = content
     ? (JSON.parse(content) as JsonObject)
     : readJsonConfig(config, configPath);
+
+  validateUserMaintainedLiminaTsconfigMetadata({
+    configObject,
+    configPath,
+  });
+
+  return configObject;
 }
 
 function getProofCompanionConfigPath(
@@ -680,7 +688,7 @@ function readRelativeTypeFiles(
   config: ResolvedLiminaConfig,
   sourceConfigPath: string,
 ): string[] {
-  const configObject = readJsonConfig(config, sourceConfigPath);
+  const configObject = readProofConfig(config, sourceConfigPath);
   const compilerOptions = configObject.compilerOptions;
 
   if (
@@ -892,7 +900,7 @@ function configExtendsPathTransitively(options: {
 
     visited.add(configPath);
 
-    const configObject = readJsonConfig(options.config, configPath);
+    const configObject = readProofConfig(options.config, configPath);
 
     pending.push(
       ...normalizeRawExtends(configObject.extends).map((entry) =>
@@ -1119,7 +1127,7 @@ function addSourceReferenceRoleProblems(options: {
       continue;
     }
 
-    const configObject = readJsonConfig(options.config, configPath);
+    const configObject = readProofConfig(options.config, configPath);
 
     if (!hasProjectReferencesField(configObject)) {
       continue;
@@ -1226,7 +1234,7 @@ function addDefaultTsconfigShapeProblems(options: {
   tsconfigPaths: string[];
 }): void {
   for (const configPath of options.tsconfigPaths) {
-    const configObject = readJsonConfig(options.config, configPath);
+    const configObject = readProofConfig(options.config, configPath);
 
     if (!hasProjectReferencesField(configObject)) {
       continue;
@@ -1324,7 +1332,7 @@ function addDefaultTsconfigEnvironmentProblems(options: {
       continue;
     }
 
-    const defaultConfigObject = readJsonConfig(
+    const defaultConfigObject = readProofConfig(
       options.config,
       defaultConfigPath,
     );
@@ -1508,7 +1516,7 @@ function addDuplicateTypecheckOwnershipProblems(options: {
   );
 
   for (const configPath of options.ordinaryConfigPaths) {
-    const configObject = readJsonConfig(options.config, configPath);
+    const configObject = readProofConfig(options.config, configPath);
 
     if (
       path.basename(configPath) === 'tsconfig.json' &&

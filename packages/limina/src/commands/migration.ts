@@ -9,6 +9,7 @@ import {
   isOrdinarySourceTypecheckConfigPath,
   type JsonObject,
   readJsonConfig,
+  validateUserMaintainedLiminaTsconfigMetadata,
 } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
@@ -675,6 +676,14 @@ async function runMigrationImpl(
 ): Promise<RunMigrationImplResult> {
   const context = await preflight.ensureWorkspaceValidated();
   const targetCollection = await collectMigrationTargets(config, context);
+
+  for (const target of targetCollection.targets) {
+    validateUserMaintainedLiminaTsconfigMetadata({
+      configObject: target.configObject,
+      configPath: target.configPath,
+    });
+  }
+
   const worktreeRoots = await collectMigrationWorktreeRoots(
     targetCollection.targets,
   );

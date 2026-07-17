@@ -378,6 +378,42 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it('rejects removed metadata in a source-level declaration config interpreted by proof', async () => {
+    const fixture = await createFixture(
+      createSingleEnvironmentFiles({
+        '.limina/tsconfig.typescript.build.json': JSON.stringify({
+          files: [],
+          references: [
+            {
+              path: '../packages/pkg/tsconfig.dts.json',
+            },
+          ],
+        }),
+        'packages/pkg/tsconfig.dts.json': JSON.stringify({
+          extends: './tsconfig.json',
+          limina: 'runtime',
+        }),
+      }),
+    );
+
+    try {
+      await expect(
+        runProofCheck(fixture.config, {
+          deferSnapshot: true,
+          generatedGraphProvider: async () =>
+            createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+          report: {
+            defer: true,
+          },
+        }),
+      ).rejects.toThrow(
+        'root-level limina metadata is not part of the Limina 0.2.0 tsconfig contract',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('ignores inert build graph references to ordinary configs', async () => {
     const fixture = await createFixture(
       createPassingFiles({
