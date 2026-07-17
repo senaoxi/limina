@@ -48,9 +48,12 @@ import {
 } from '../source-check/snapshot';
 import type { CheckerFailureTarget } from '../typecheck/runner';
 import {
-  prepareVueTsgoCache,
+  createCheckerTargetId,
+  isVueTsgoCommand,
+  type TypecheckTarget,
   type TypecheckTargetResult,
 } from '../typecheck/targets';
+import { VueTsgoCacheBatchCoordinator } from '../typecheck/vue-tsgo-cache';
 
 export interface RunPipelineOptions {
   checkRunRecorder?: CheckRunRecorder;
@@ -249,12 +252,6 @@ function createCommandStepEnvironment(
   );
 }
 
-function isVueTsgoCommand(command: string): boolean {
-  const commandName = path.basename(command).toLowerCase();
-
-  return commandName === 'vue-tsgo' || commandName === 'vue-tsgo.cmd';
-}
-
 function collectVueTsgoCommandConfigPaths(
   step: Extract<PipelineStep, { type: 'command' }>,
   cwd: string,
@@ -293,17 +290,31 @@ function collectVueTsgoCommandConfigPaths(
 async function prepareCommandStepCache(
   step: Extract<PipelineStep, { type: 'command' }>,
   cwd: string,
-): Promise<void> {
-  await Promise.all(
-    collectVueTsgoCommandConfigPaths(step, cwd).map((configPath) =>
-      prepareVueTsgoCache({
-        args: step.args ?? [],
-        command: step.command,
-        configPath,
+): Promise<{
+  coordinator: VueTsgoCacheBatchCoordinator;
+  targets: TypecheckTarget[];
+} | null> {
+  if (!isVueTsgoCommand(step.command)) return null;
+  const targets = collectVueTsgoCommandConfigPaths(step, cwd).map(
+    (configPath) => ({
+      args: [...(step.args ?? [])],
+      command: step.command,
+      configPath,
+      cwd,
+      id: createCheckerTargetId([
+        'pipeline-vue-tsgo-cache',
         cwd,
-      }),
-    ),
+        step.command,
+        configPath,
+      ]),
+    }),
   );
+  return {
+    coordinator: await VueTsgoCacheBatchCoordinator.prepare(targets, {
+      requireValidGeneratedRoute: false,
+    }),
+    targets,
+  };
 }
 
 function createCheckerTaskStats(
@@ -681,7 +692,12 @@ async function runCommandStep(
     shell: shouldUseShellForCommand(step.command),
   };
 
-  await prepareCommandStepCache(step, cwd);
+  const preparedCache = await prepareCommandStepCache(step, cwd);
+  if (preparedCache) {
+    for (const target of preparedCache.targets) {
+      await preparedCache.coordinator.beforeTargetRun(target);
+    }
+  }
 
   const createFailureIssue = (exitCode: number): LiminaCheckIssue =>
     createTaskFailureIssue({

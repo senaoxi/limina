@@ -31,6 +31,7 @@ import {
 import { existsSync, statSync } from 'node:fs';
 import path from 'pathe';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
+import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { resolveCheckerTypecheckConcurrency } from '../execution/config';
 import { runPool } from '../execution/pool';
 import type {
@@ -42,6 +43,7 @@ import { formatErrorMessage, TypecheckLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import { formatCheckIssueSummaryReport } from '../reporting';
 import { runBuildTargets } from './build-plan';
+import { ManagedCheckerMutationCoordinator } from './managed-mutation';
 import {
   copyOutputDeclarationInputs,
   createOutputDeclarationCopyPlan,
@@ -63,6 +65,7 @@ import {
   type TypecheckTarget,
   type TypecheckTargetResult,
 } from './targets';
+import { VueTsgoCacheBatchCoordinator } from './vue-tsgo-cache';
 
 export interface RunCheckerBuildOptions {
   clearScreen?: boolean;
@@ -332,6 +335,7 @@ export async function runCheckerBuildImpl(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
   const preflight = resolvePreflight(options.config, options);
+  const workspaceContext = await preflight.ensureWorkspaceValidated();
   const generatedGraph = (
     await preflight.ensureGeneratedArtifactsMaterialized()
   ).graph;
@@ -470,11 +474,23 @@ export async function runCheckerBuildImpl(
         projectRootDir,
       ),
     );
+    const mutationCoordinator = await ManagedCheckerMutationCoordinator.create({
+      artifactNamespace: preflight.artifactNamespace,
+      checkers: allCheckers,
+      config: options.config,
+      generatedGraph,
+      targets,
+      workspaceContext,
+    });
     const results = await runBuildTargets(
       targets,
       generatedGraph.providerEdges,
       resolveTypecheckRunner(options),
       {
+        beforeLayerRun: (targets) =>
+          mutationCoordinator.beforeLayerRun(targets),
+        beforeTargetRun: (target) =>
+          mutationCoordinator.beforeTargetRun(target),
         config: options.config,
         onTargetResult: (target, result) => {
           const task = targetTasks.get(target.id);
@@ -639,11 +655,21 @@ export async function runCheckerBuildImpl(
       projectRootDir,
     ),
   );
+  const mutationCoordinator = await ManagedCheckerMutationCoordinator.create({
+    artifactNamespace: preflight.artifactNamespace,
+    checkers: allCheckers,
+    config: options.config,
+    generatedGraph,
+    targets,
+    workspaceContext,
+  });
   const results = await runBuildTargets(
     targets,
     generatedGraph.providerEdges,
     resolveTypecheckRunner(options),
     {
+      beforeLayerRun: (targets) => mutationCoordinator.beforeLayerRun(targets),
+      beforeTargetRun: (target) => mutationCoordinator.beforeTargetRun(target),
       config: options.config,
       onTargetResult: (target, result) => {
         const task = targetTasks.get(target.id);
@@ -1571,6 +1597,7 @@ async function runOutputDeclarationCopyPostBuild(options: {
   flowDepth: number;
   projectRootDir: string;
   report?: CheckIssueReportOptions;
+  workspaceContext: ValidatedWorkspaceContext;
 }): Promise<string | null> {
   const copyContexts = collectOutputDeclarationCopyContexts(
     options.buildTargetDescriptors,
@@ -1581,14 +1608,29 @@ async function runOutputDeclarationCopyPostBuild(options: {
   }
 
   const plan = mergeOutputDeclarationCopyPlans(
-    copyContexts.map((copyContext) =>
-      createOutputDeclarationCopyPlan({
+    copyContexts.map((copyContext) => {
+      const capability =
+        options.workspaceContext.outputMutationAuthorities?.get(
+          normalizeAbsolutePath(copyContext.sourceConfigPath),
+        );
+      if (
+        !capability ||
+        capability.outputRoot !== normalizeAbsolutePath(copyContext.outDir) ||
+        capability.workspaceGeneration !==
+          options.workspaceContext.workspaceMutationGeneration
+      ) {
+        throw new Error(
+          `Missing validated declaration output authority for ${copyContext.sourceConfigPath}.`,
+        );
+      }
+      return createOutputDeclarationCopyPlan({
+        authority: capability.authority,
         fileNames: copyContext.fileNames,
         outDir: copyContext.outDir,
         projectRootDir: options.projectRootDir,
         rootDir: copyContext.rootDir,
-      }),
-    ),
+      });
+    }),
   );
   const warning = formatOutputDeclarationCopyWarnings({
     problems: plan.problems,
@@ -1609,6 +1651,7 @@ async function runOutputDeclarationCopyPostBuild(options: {
   try {
     await copyOutputDeclarationInputs(plan, {
       projectRootDir: options.projectRootDir,
+      requireAuthenticatedAuthorities: true,
     });
   } catch (error) {
     const problem =
@@ -1642,7 +1685,7 @@ export async function runBuildImpl(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
   const preflight = resolvePreflight(options.config, options);
-  await preflight.ensureWorkspaceValidated();
+  const workspaceContext = await preflight.ensureWorkspaceValidated();
   const resolvedTarget = await resolveBuildTarget({
     checker: options.checker,
     config: options.config,
@@ -1935,11 +1978,21 @@ export async function runBuildImpl(
   }
 
   const targetTasks = new Map<CheckerTargetId, LiminaFlowTask>();
+  const mutationCoordinator = await ManagedCheckerMutationCoordinator.create({
+    artifactNamespace: preflight.artifactNamespace,
+    checkers: resolvedTarget.allCheckers,
+    config: options.config,
+    generatedGraph: resolvedTarget.generatedGraph,
+    targets,
+    workspaceContext,
+  });
   const results = await runBuildTargets(
     targets,
     resolvedTarget.generatedGraph.providerEdges,
     resolveTypecheckRunner(options),
     {
+      beforeLayerRun: (targets) => mutationCoordinator.beforeLayerRun(targets),
+      beforeTargetRun: (target) => mutationCoordinator.beforeTargetRun(target),
       config: options.config,
       onTargetResult: (target, result) => {
         const task = targetTasks.get(target.id);
@@ -1994,6 +2047,7 @@ export async function runBuildImpl(
       flowDepth,
       projectRootDir,
       report: options.report,
+      workspaceContext,
     });
 
     if (copyProblem) {
@@ -2149,6 +2203,28 @@ export async function runCheckerTypecheckImpl(
     ),
   );
   const runner = resolveTypecheckRunner(options);
+  const cacheCoordinator = await VueTsgoCacheBatchCoordinator.prepare(targets);
+  const onTargetStart = (target: TypecheckTarget): void => {
+    if (options.progress) {
+      (targetTasks.get(target.id) as TaskProgressItem | undefined)?.start();
+      return;
+    }
+
+    if (!options.flow) {
+      return;
+    }
+
+    targetTasks.set(
+      target.id,
+      options.flow.start(
+        getCheckerTargetFlowLabel(target, 'checker typecheck', projectRootDir),
+        {
+          collapseOnSuccess: false,
+          depth: flowDepth + 1,
+        },
+      ),
+    );
+  };
   const results = await runPool<TypecheckTarget, TypecheckTargetResult>({
     concurrency: resolveCheckerTypecheckConcurrency({
       config: options.config,
@@ -2171,32 +2247,11 @@ export async function runCheckerTypecheckImpl(
 
       completeCheckerTargetTask(task, result);
     },
-    onStart: (target) => {
-      if (options.progress) {
-        (targetTasks.get(target.id) as TaskProgressItem | undefined)?.start();
-        return;
-      }
-
-      if (!options.flow) {
-        return;
-      }
-
-      targetTasks.set(
-        target.id,
-        options.flow.start(
-          getCheckerTargetFlowLabel(
-            target,
-            'checker typecheck',
-            projectRootDir,
-          ),
-          {
-            collapseOnSuccess: false,
-            depth: flowDepth + 1,
-          },
-        ),
-      );
+    run: async (target) => {
+      await cacheCoordinator.beforeTargetRun(target);
+      onTargetStart(target);
+      return runTargetWithMeasuredDuration(runner, target);
     },
-    run: (target) => runTargetWithMeasuredDuration(runner, target),
   });
   const failedResults = results.filter((result) => result.status !== 0);
   const failedTargets = collectFailedCheckerTargets(targets, failedResults);

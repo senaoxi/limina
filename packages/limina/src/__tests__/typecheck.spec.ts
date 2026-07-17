@@ -9,6 +9,7 @@ import {
   readFile,
   realpath,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { availableParallelism, tmpdir } from 'node:os';
@@ -28,6 +29,7 @@ import type {
   TypecheckRunnerResult,
   TypecheckTarget,
 } from '../typecheck/targets';
+import { createVueTsgoCachePaths } from '../typecheck/targets';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -383,7 +385,7 @@ describe('runCheckerBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual([
+      expect(calls.map((target) => target.command).sort()).toEqual([
         'tsgo',
         'vue-tsc',
       ]);
@@ -958,6 +960,154 @@ describe('runBuild', () => {
     }
   });
 
+  it('proves safe TS, JS, JSON, source-map, and declaration-map outputs inside outDir', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/data.json': '{"value":1}\n',
+      'packages/pkg/src/helper.js': 'export const helper = 1;\n',
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        compilerOptions: {
+          allowJs: true,
+          declaration: true,
+          declarationMap: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          resolveJsonModule: true,
+          sourceMap: true,
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        files: ['src/index.ts', 'src/helper.js', 'src/data.json'],
+        liminaOptions: {
+          outputs: { outDir: './dist', rootDir: './src' },
+        },
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/pkg/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/pkg/tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls).toHaveLength(1);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts bounded Vue emit proof for inputs inside configured rootDir', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/src/view.vue': '<script setup lang="ts"></script>\n',
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          declaration: true,
+          declarationMap: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          sourceMap: true,
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+        liminaOptions: {
+          outputs: { outDir: './dist', rootDir: './src' },
+        },
+      }),
+    });
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              vue: {
+                include: ['packages/app/tsconfig.json'],
+                preset: 'vue-tsc',
+              },
+            },
+          },
+          configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+          rootDir: fixture.rootDir,
+        },
+        configPath: 'packages/app/tsconfig.json',
+        cwd: fixture.rootDir,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls.map((target) => target.command)).toEqual(['vue-tsc']);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('rejects a rootDir-external Vue input before managed runner invocation', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/app/outside.vue': '<script setup lang="ts"></script>\n',
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': tsconfig({
+        compilerOptions: {
+          declaration: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        files: ['src/index.ts', 'outside.vue'],
+        liminaOptions: {
+          outputs: { outDir: './dist', rootDir: './src' },
+        },
+      }),
+    });
+
+    try {
+      await expect(
+        runBuild({
+          config: {
+            config: {
+              checkers: {
+                vue: {
+                  include: ['packages/app/tsconfig.json'],
+                  preset: 'vue-tsc',
+                },
+              },
+            },
+            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          configPath: 'packages/app/tsconfig.json',
+          cwd: fixture.rootDir,
+          runner: passingRunner(calls),
+        }),
+      ).rejects.toThrow('cannot be proven inside the configured emit root');
+      expect(calls).toHaveLength(0);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('copies local declaration inputs after managed output build', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({
@@ -1085,6 +1235,65 @@ describe('runBuild', () => {
           'utf8',
         ),
       ).resolves.toBe('declare const cjsValue: 1;\n');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('creates a validated missing external outDir for declaration copies', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'repo/package.json': tsconfig({ name: 'repo', private: true }),
+      'repo/packages/a/package.json': tsconfig({
+        name: '@fixture/a',
+        private: true,
+      }),
+      'repo/packages/a/src/env.d.ts': 'declare const externalEnv: 1;\n',
+      'repo/packages/a/src/index.ts': 'export const value = 1;\n',
+      'repo/packages/a/tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+        liminaOptions: {
+          outputs: {
+            outDir: '../../../artifacts/a',
+            rootDir: './src',
+          },
+        },
+      }),
+      'repo/pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+    });
+    const repoRoot = path.join(fixture.rootDir, 'repo');
+
+    try {
+      const result = await runBuild({
+        config: {
+          config: {
+            checkers: {
+              typescript: {
+                include: ['packages/a/tsconfig.json'],
+                preset: 'tsc',
+              },
+            },
+          },
+          configPath: path.join(repoRoot, 'limina.config.mjs'),
+          rootDir: repoRoot,
+        },
+        configPath: 'packages/a/tsconfig.json',
+        cwd: repoRoot,
+        runner: passingRunner(calls),
+      });
+
+      expect(result.passed).toBe(true);
+      expect(calls).toHaveLength(1);
+      await expect(
+        readFile(path.join(fixture.rootDir, 'artifacts/a/env.d.ts'), 'utf8'),
+      ).resolves.toBe('declare const externalEnv: 1;\n');
     } finally {
       await fixture.cleanup();
     }
@@ -1383,6 +1592,86 @@ describe('runBuild', () => {
           'utf8',
         ),
       ).resolves.toBe('declare const testEnv: 1;\n');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preflights every output leaf in a solution before any provider runner starts', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'external/marker.txt': 'external marker bytes\n',
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/test/index.ts': 'export const testValue = 1;\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [
+          { path: './tsconfig.lib.json' },
+          { path: './tsconfig.test.json' },
+        ],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*'],
+        liminaOptions: {
+          outputs: { outDir: './dist/lib', rootDir: './src' },
+        },
+      }),
+      'packages/pkg/tsconfig.test.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['test/**/*'],
+        liminaOptions: {
+          outputs: { outDir: './dist/test', rootDir: './test' },
+        },
+      }),
+    });
+    await mkdir(path.join(fixture.rootDir, 'packages/pkg/dist/test'), {
+      recursive: true,
+    });
+    await symlink(
+      path.join(fixture.rootDir, 'external'),
+      path.join(fixture.rootDir, 'packages/pkg/dist/test/nested-link'),
+    );
+
+    try {
+      await expect(
+        runBuild({
+          config: {
+            config: {
+              checkers: {
+                typescript: {
+                  include: ['packages/pkg/tsconfig.json'],
+                  preset: 'tsc',
+                },
+              },
+            },
+            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          configPath: 'packages/pkg/tsconfig.json',
+          cwd: fixture.rootDir,
+          runner: passingRunner(calls),
+        }),
+      ).rejects.toThrow('symbolic link or junction');
+      expect(calls).toHaveLength(0);
+      expect(
+        existsSync(path.join(fixture.rootDir, 'packages/pkg/dist/lib')),
+      ).toBe(false);
+      await expect(
+        readFile(path.join(fixture.rootDir, 'external/marker.txt'), 'utf8'),
+      ).resolves.toBe('external marker bytes\n');
     } finally {
       await fixture.cleanup();
     }
@@ -2677,6 +2966,69 @@ describe('runCheckerTypecheck', () => {
 
       expect(result.passed).toBe(true);
       expect(staleState).toBe('false');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps safe vue-tsgo caches and runs no checker when one cache subtree is unsafe', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'vue/a/tsconfig.json': tsconfig({ files: [] }),
+      'vue/b/tsconfig.json': tsconfig({ files: [] }),
+    });
+    const safeGeneratedConfig = path.join(
+      fixture.rootDir,
+      '.limina/tsconfig/checkers/a/tsconfig.build.json',
+    );
+    const unsafeGeneratedConfig = path.join(
+      fixture.rootDir,
+      '.limina/tsconfig/checkers/b/tsconfig.build.json',
+    );
+    const safeStalePath = path.join(
+      createVueTsgoCachePaths(safeGeneratedConfig)[0]!,
+      'stale.txt',
+    );
+    const unsafeCachePath = createVueTsgoCachePaths(unsafeGeneratedConfig)[0]!;
+    const markerPath = path.join(fixture.rootDir, 'external/marker.txt');
+    await writeText(safeStalePath, 'safe stale bytes\n');
+    await writeText(markerPath, 'external marker bytes\n');
+    await mkdir(unsafeCachePath, { recursive: true });
+    await symlink(
+      path.join(fixture.rootDir, 'external'),
+      path.join(unsafeCachePath, 'nested-link'),
+    );
+
+    try {
+      await expect(
+        runCheckerTypecheck({
+          config: {
+            config: {
+              checkers: {
+                a: {
+                  include: ['vue/a/tsconfig.json'],
+                  preset: 'vue-tsgo',
+                },
+                b: {
+                  include: ['vue/b/tsconfig.json'],
+                  preset: 'vue-tsgo',
+                },
+              },
+            },
+            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          cwd: fixture.rootDir,
+          runner: passingRunner(calls),
+        }),
+      ).rejects.toThrow('symbolic link or junction');
+      expect(calls).toHaveLength(0);
+      await expect(readFile(safeStalePath, 'utf8')).resolves.toBe(
+        'safe stale bytes\n',
+      );
+      await expect(readFile(markerPath, 'utf8')).resolves.toBe(
+        'external marker bytes\n',
+      );
     } finally {
       await fixture.cleanup();
     }

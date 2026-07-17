@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process';
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
   realpath,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -204,6 +206,39 @@ async function withCliBuildFixture(
       recursive: true,
     });
   }
+}
+
+async function runCliExpectFailure(options: {
+  args: string[];
+  cliPath: string;
+  rootDir: string;
+}): Promise<string> {
+  try {
+    await execFileAsync(
+      process.execPath,
+      [
+        options.cliPath,
+        '--config',
+        path.join(options.rootDir, 'limina.config.mjs'),
+        ...options.args,
+      ],
+      {
+        cwd: options.rootDir,
+        env: { ...process.env, CI: 'true' },
+      },
+    );
+  } catch (error) {
+    const result = error as {
+      code?: unknown;
+      stderr?: unknown;
+      stdout?: unknown;
+    };
+    expect(result.code).not.toBe(0);
+    return stripAnsi(
+      `${String(result.stdout ?? '')}\n${String(result.stderr ?? '')}`,
+    );
+  }
+  throw new Error('Expected Limina CLI command to fail.');
 }
 
 function getHelpOutput(argv: string[]): string {
@@ -544,6 +579,255 @@ export default {
     });
   });
 
+  it('rejects rootDir-escaping effective emit paths before public managed build spawn', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const externalMarker = path.join(rootDir, 'external/marker.txt');
+      await writeText(externalMarker, 'external marker bytes\n');
+      await writeText(
+        path.join(rootDir, 'packages/pkg/outside.ts'),
+        'export const outside = 1;\n',
+      );
+      await writeText(
+        path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
+        stringifyConfig({
+          compilerOptions: {
+            ...buildCompilerOptions,
+            declarationMap: true,
+            noEmit: true,
+            sourceMap: true,
+          },
+          files: ['src/index.ts', 'outside.ts'],
+          liminaOptions: {
+            outputs: { outDir: './dist', rootDir: './src' },
+          },
+        }),
+      );
+
+      const output = await runCliExpectFailure({
+        args: ['build', 'packages/pkg/tsconfig.lib.json'],
+        cliPath,
+        rootDir,
+      });
+
+      expect(output).toContain('outside its authenticated authority');
+      await expect(
+        readFile(path.join(rootDir, 'tsc-args.txt')),
+      ).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      for (const fileName of [
+        'outside.js',
+        'outside.js.map',
+        'outside.d.ts',
+        'outside.d.ts.map',
+      ]) {
+        await expect(
+          lstat(path.join(rootDir, 'packages/pkg', fileName)),
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+      await expect(
+        lstat(path.join(rootDir, 'packages/pkg/dist')),
+      ).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(readFile(externalMarker, 'utf8')).resolves.toBe(
+        'external marker bytes\n',
+      );
+    });
+  });
+
+  it.each([
+    ['managed output build', ['build', 'packages/pkg/tsconfig.lib.json']],
+    [
+      'selected checker build',
+      ['checker', 'build', 'packages/pkg/tsconfig.lib.json'],
+    ],
+    ['global checker build', ['checker', 'build']],
+  ])('rejects inherited outFile before %s spawn', async (_label, args) => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const externalMarker = path.join(rootDir, 'external/marker.txt');
+      const bundlePath = path.join(rootDir, 'external/bundle.js');
+      await writeText(externalMarker, 'external marker bytes\n');
+      await writeText(
+        path.join(rootDir, 'packages/pkg/tsconfig.base.json'),
+        stringifyConfig({
+          compilerOptions: { outFile: bundlePath },
+        }),
+      );
+      await writeText(
+        path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
+        stringifyConfig({
+          compilerOptions: {
+            ...buildCompilerOptions,
+            noEmit: true,
+          },
+          extends: './tsconfig.base.json',
+          include: ['src/**/*.ts'],
+          liminaOptions: { outputs: {} },
+        }),
+      );
+
+      const output = await runCliExpectFailure({ args, cliPath, rootDir });
+
+      expect(output).toContain('outFile');
+      await expect(
+        readFile(path.join(rootDir, 'tsc-args.txt')),
+      ).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(lstat(bundlePath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(
+        lstat(path.join(rootDir, 'external/bundle.d.ts')),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(readFile(externalMarker, 'utf8')).resolves.toBe(
+        'external marker bytes\n',
+      );
+    });
+  });
+
+  it('rejects an inherited outFile even when it is lexically inside outDir', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      await writeText(
+        path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
+        stringifyConfig({
+          compilerOptions: {
+            ...buildCompilerOptions,
+            noEmit: true,
+            outFile: path.join(rootDir, 'packages/pkg/dist/bundle.js'),
+          },
+          include: ['src/**/*.ts'],
+          liminaOptions: {
+            outputs: { outDir: './dist', rootDir: './src' },
+          },
+        }),
+      );
+
+      const output = await runCliExpectFailure({
+        args: ['build', 'packages/pkg/tsconfig.lib.json'],
+        cliPath,
+        rootDir,
+      });
+
+      expect(output).toContain('outFile');
+      await expect(
+        readFile(path.join(rootDir, 'tsc-args.txt')),
+      ).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+  });
+
+  it.each(['nested-directory-link', 'final-file-link'])(
+    'rejects an unsafe user outDir %s before public managed build spawn',
+    async (unsafeKind) => {
+      await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+        const outDir = path.join(rootDir, 'packages/pkg/dist');
+        const externalDir = path.join(rootDir, 'external');
+        const markerPath = path.join(externalDir, 'marker.txt');
+        await writeText(markerPath, 'external marker bytes\n');
+        await mkdir(outDir, { recursive: true });
+        await symlink(
+          unsafeKind === 'nested-directory-link' ? externalDir : markerPath,
+          path.join(
+            outDir,
+            unsafeKind === 'nested-directory-link' ? 'sub' : 'index.d.ts',
+          ),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
+          stringifyConfig({
+            compilerOptions: {
+              ...buildCompilerOptions,
+              noEmit: true,
+            },
+            include: ['src/**/*.ts'],
+            liminaOptions: {
+              outputs: { outDir: './dist', rootDir: './src' },
+            },
+          }),
+        );
+
+        const output = await runCliExpectFailure({
+          args: ['build', 'packages/pkg/tsconfig.lib.json'],
+          cliPath,
+          rootDir,
+        });
+
+        expect(output).toContain('symbolic link or junction');
+        await expect(
+          readFile(path.join(rootDir, 'tsc-args.txt')),
+        ).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        await expect(readFile(markerPath, 'utf8')).resolves.toBe(
+          'external marker bytes\n',
+        );
+      });
+    },
+  );
+
+  it.each([
+    ['build', ['build', 'packages/pkg/tsconfig.lib.json'], 'tsbuildinfo/build'],
+    ['checker dts', ['checker', 'build'], 'dts/checkers'],
+    ['checker tsbuildinfo', ['checker', 'build'], 'tsbuildinfo/checkers'],
+  ])(
+    'rejects an unsafe internal %s runtime directory before checker spawn',
+    async (_label, args, runtimeDirectory) => {
+      await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+        const externalDir = path.join(rootDir, 'external');
+        const markerPath = path.join(externalDir, 'marker.txt');
+        const internalPath = path.join(rootDir, '.limina', runtimeDirectory);
+        await writeText(markerPath, 'external marker bytes\n');
+        await mkdir(path.dirname(internalPath), { recursive: true });
+        await symlink(externalDir, internalPath);
+
+        const output = await runCliExpectFailure({ args, cliPath, rootDir });
+
+        expect(output).toContain('symbolic link or junction');
+        await expect(
+          readFile(path.join(rootDir, 'tsc-args.txt')),
+        ).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        await expect(readFile(markerPath, 'utf8')).resolves.toBe(
+          'external marker bytes\n',
+        );
+        await expect(
+          lstat(path.join(externalDir, 'lib.tsbuildinfo')),
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+      });
+    },
+  );
+
+  it('rejects a final output tsBuildInfoFile symlink before public managed build spawn', async () => {
+    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+      const markerPath = path.join(rootDir, 'external/marker.txt');
+      const buildInfoPath = path.join(
+        rootDir,
+        '.limina/tsbuildinfo/build/packages/pkg/lib.tsbuildinfo',
+      );
+      await writeText(markerPath, 'external marker bytes\n');
+      await mkdir(path.dirname(buildInfoPath), { recursive: true });
+      await symlink(markerPath, buildInfoPath);
+
+      const output = await runCliExpectFailure({
+        args: ['build', 'packages/pkg/tsconfig.lib.json'],
+        cliPath,
+        rootDir,
+      });
+
+      expect(output).toContain('symbolic link or junction');
+      await expect(
+        readFile(path.join(rootDir, 'tsc-args.txt')),
+      ).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(readFile(markerPath, 'utf8')).resolves.toBe(
+        'external marker bytes\n',
+      );
+    });
+  });
+
   it('runs raw build with the requested preset from the public command', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
       await writeText(
@@ -833,7 +1117,7 @@ export default {
         'Invalid build --preset "svelte-check". Expected one of: tsc, vue-tsc, tsgo.',
       ),
     });
-  });
+  }, 15_000);
 
   it('runs source check from the public command', async () => {
     const rootDir = await realpath(

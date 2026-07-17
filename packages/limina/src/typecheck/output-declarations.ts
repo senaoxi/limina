@@ -1,7 +1,13 @@
-import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { lstat, mkdir, open, rmdir, unlink } from 'node:fs/promises';
 import path from 'pathe';
 
+import {
+  createExplicitMutationAuthority,
+  type MutationAuthority,
+  type MutationBoundaryTarget,
+  preflightMutationBoundary,
+} from '#utils/mutation-boundary';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
@@ -10,6 +16,9 @@ import {
 } from '#utils/path';
 
 export interface OutputDeclarationCopyPlanEntry {
+  authority?: MutationAuthority;
+  outDir: string;
+  rootDir: string;
   sourcePath: string;
   targetPath: string;
 }
@@ -74,6 +83,7 @@ function entryKey(entry: OutputDeclarationCopyPlanEntry): string {
 }
 
 export function createOutputDeclarationCopyPlan(options: {
+  authority?: MutationAuthority;
   fileNames: string[];
   outDir: string;
   projectRootDir: string;
@@ -145,6 +155,9 @@ export function createOutputDeclarationCopyPlan(options: {
     }
 
     const entry = {
+      ...(options.authority ? { authority: options.authority } : {}),
+      outDir,
+      rootDir,
       sourcePath,
       targetPath,
     };
@@ -309,10 +322,493 @@ export function formatOutputDeclarationCopyErrors(options: {
     .join('\n');
 }
 
+interface RegularFileState {
+  readonly content: Buffer;
+  readonly dev: string;
+  readonly hash: string;
+  readonly ino: string;
+  readonly length: number;
+  readonly mode: number;
+  readonly nlink: number;
+}
+
+interface OwnedDeclarationFile {
+  readonly authority: MutationAuthority;
+  readonly path: string;
+  readonly state: RegularFileState;
+  readonly transactionToken: string;
+}
+
+interface OwnedDeclarationDirectory {
+  readonly dev: string;
+  readonly ino: string;
+  readonly path: string;
+  readonly transactionToken: string;
+}
+
+interface PreparedDeclarationEntry {
+  readonly authority: MutationAuthority;
+  readonly entry: OutputDeclarationCopyPlanEntry;
+  readonly sourceState: RegularFileState;
+  readonly targetState?: RegularFileState;
+}
+
+class ExclusivePublicationError extends Error {
+  readonly cleanupErrors: Error[];
+  readonly ownedFile?: OwnedDeclarationFile;
+
+  constructor(options: {
+    cause: unknown;
+    cleanupErrors?: Error[];
+    ownedFile?: OwnedDeclarationFile;
+  }) {
+    const cause =
+      options.cause instanceof Error
+        ? options.cause
+        : new Error(String(options.cause));
+    super(cause.message, { cause });
+    this.name = 'ExclusivePublicationError';
+    this.cleanupErrors = options.cleanupErrors ?? [];
+    this.ownedFile = options.ownedFile;
+  }
+}
+
+function isMissingError(error: unknown): boolean {
+  return (
+    error instanceof Error && 'code' in error && String(error.code) === 'ENOENT'
+  );
+}
+
+function fileIdentityKey(state: RegularFileState): string {
+  return JSON.stringify({
+    dev: state.dev,
+    hash: state.hash,
+    ino: state.ino,
+    length: state.length,
+    mode: state.mode,
+    nlink: state.nlink,
+  });
+}
+
+async function readRegularFileState(
+  filePath: string,
+): Promise<RegularFileState> {
+  const pathStats = await lstat(filePath);
+  if (pathStats.isSymbolicLink() || !pathStats.isFile()) {
+    throw new Error(`Declaration path is not an ordinary file: ${filePath}.`);
+  }
+  const handle = await open(filePath, 'r');
+  try {
+    const before = await handle.stat();
+    const content = await handle.readFile();
+    const after = await handle.stat();
+    const stable =
+      String(pathStats.dev) === String(before.dev) &&
+      String(pathStats.ino) === String(before.ino) &&
+      String(before.dev) === String(after.dev) &&
+      String(before.ino) === String(after.ino) &&
+      Number(before.nlink) === Number(after.nlink) &&
+      Number(before.size) === Number(after.size);
+    if (!stable) {
+      throw new Error(
+        `Declaration file identity drifted while it was read: ${filePath}.`,
+      );
+    }
+    return {
+      content,
+      dev: String(before.dev),
+      hash: createHash('sha256').update(content).digest('hex'),
+      ino: String(before.ino),
+      length: content.byteLength,
+      mode: Number(before.mode) & 0o7777,
+      nlink: Number(before.nlink),
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function readRegularFileStateIfPresent(
+  filePath: string,
+): Promise<RegularFileState | undefined> {
+  try {
+    return await readRegularFileState(filePath);
+  } catch (error) {
+    if (isMissingError(error)) return undefined;
+    throw error;
+  }
+}
+
+async function readHandleState(
+  handle: Awaited<ReturnType<typeof open>>,
+): Promise<RegularFileState> {
+  const before = await handle.stat();
+  if (!before.isFile()) {
+    throw new Error('Transaction-owned declaration target is not a file.');
+  }
+  const size = Number(before.size);
+  const content = Buffer.alloc(size);
+  let offset = 0;
+  while (offset < size) {
+    const result = await handle.read(content, offset, size - offset, offset);
+    if (result.bytesRead === 0) break;
+    offset += result.bytesRead;
+  }
+  const actualContent = content.subarray(0, offset);
+  const after = await handle.stat();
+  if (
+    String(before.dev) !== String(after.dev) ||
+    String(before.ino) !== String(after.ino) ||
+    Number(before.nlink) !== Number(after.nlink) ||
+    Number(before.size) !== Number(after.size)
+  ) {
+    throw new Error(
+      'Transaction-owned declaration identity drifted while it was verified.',
+    );
+  }
+  return {
+    content: actualContent,
+    dev: String(after.dev),
+    hash: createHash('sha256').update(actualContent).digest('hex'),
+    ino: String(after.ino),
+    length: actualContent.byteLength,
+    mode: Number(after.mode) & 0o7777,
+    nlink: Number(after.nlink),
+  };
+}
+
+async function resolveEntryAuthority(options: {
+  entry: OutputDeclarationCopyPlanEntry;
+  projectRootDir: string;
+  requireAuthenticatedAuthorities: boolean;
+}): Promise<MutationAuthority> {
+  if (options.entry.authority) return options.entry.authority;
+  if (options.requireAuthenticatedAuthorities) {
+    throw new Error(
+      `Missing validated declaration output authority for ${options.entry.outDir}.`,
+    );
+  }
+  return createExplicitMutationAuthority({
+    logicalMutationRoot: options.entry.outDir,
+    scope: 'directory',
+    trustedBasePath: options.projectRootDir,
+  });
+}
+
+function createConflictProblem(
+  entry: OutputDeclarationCopyPlanEntry,
+): OutputDeclarationCopyProblem {
+  return {
+    filePath: entry.sourcePath,
+    outDir: entry.outDir,
+    reason: 'target-conflict',
+    rootDir: entry.rootDir,
+    severity: 'error',
+    targetPath: entry.targetPath,
+  };
+}
+
+async function prepareDeclarationEntries(options: {
+  entries: readonly OutputDeclarationCopyPlanEntry[];
+  projectRootDir: string;
+  requireAuthenticatedAuthorities: boolean;
+}): Promise<{
+  boundaryTargets: MutationBoundaryTarget[];
+  entries: PreparedDeclarationEntry[];
+  problems: OutputDeclarationCopyProblem[];
+}> {
+  const preparedByTarget = new Map<string, PreparedDeclarationEntry>();
+  const problems: OutputDeclarationCopyProblem[] = [];
+  const boundaryTargets: MutationBoundaryTarget[] = [];
+
+  for (const entry of options.entries) {
+    const authority = await resolveEntryAuthority({
+      entry,
+      projectRootDir: options.projectRootDir,
+      requireAuthenticatedAuthorities: options.requireAuthenticatedAuthorities,
+    });
+    boundaryTargets.push(
+      {
+        authority,
+        kind: 'directory',
+        path: entry.outDir,
+        recursive: true,
+      },
+      {
+        authority,
+        kind: 'file',
+        path: entry.targetPath,
+      },
+    );
+    const sourceState = await readRegularFileState(entry.sourcePath);
+    const duplicate = preparedByTarget.get(entry.targetPath);
+    if (duplicate) {
+      if (!sourceState.content.equals(duplicate.sourceState.content)) {
+        problems.push(createConflictProblem(entry));
+      }
+      continue;
+    }
+    const targetState = await readRegularFileStateIfPresent(entry.targetPath);
+    if (targetState && !sourceState.content.equals(targetState.content)) {
+      problems.push(createConflictProblem(entry));
+    }
+    preparedByTarget.set(entry.targetPath, {
+      authority,
+      entry,
+      sourceState,
+      ...(targetState ? { targetState } : {}),
+    });
+  }
+
+  return {
+    boundaryTargets,
+    entries: [...preparedByTarget.values()].sort((left, right) =>
+      left.entry.targetPath.localeCompare(right.entry.targetPath),
+    ),
+    problems,
+  };
+}
+
+async function assertPreparedEntriesCurrent(
+  entries: readonly PreparedDeclarationEntry[],
+): Promise<void> {
+  for (const prepared of entries) {
+    const currentSource = await readRegularFileState(prepared.entry.sourcePath);
+    if (
+      fileIdentityKey(currentSource) !== fileIdentityKey(prepared.sourceState)
+    ) {
+      throw new Error(
+        `Declaration source drifted after transaction preflight: ${prepared.entry.sourcePath}.`,
+      );
+    }
+    const currentTarget = await readRegularFileStateIfPresent(
+      prepared.entry.targetPath,
+    );
+    if (prepared.targetState) {
+      if (
+        !currentTarget ||
+        fileIdentityKey(currentTarget) !== fileIdentityKey(prepared.targetState)
+      ) {
+        throw new Error(
+          `Identical declaration target drifted after preflight: ${prepared.entry.targetPath}.`,
+        );
+      }
+    } else if (currentTarget) {
+      throw new Error(
+        `Missing declaration target appeared after preflight: ${prepared.entry.targetPath}.`,
+      );
+    }
+  }
+}
+
+async function ensureDeclarationParentDirectories(options: {
+  prepared: PreparedDeclarationEntry;
+  transactionToken: string;
+}): Promise<OwnedDeclarationDirectory[]> {
+  const owned: OwnedDeclarationDirectory[] = [];
+  const parentPath = path.dirname(options.prepared.entry.targetPath);
+  const relative = path.relative(
+    options.prepared.authority.trustedBaseLogicalPath,
+    parentPath,
+  );
+  let cursor = options.prepared.authority.trustedBaseLogicalPath;
+
+  for (const segment of relative === '' ? [] : relative.split(path.sep)) {
+    cursor = path.join(cursor, segment);
+    try {
+      const stats = await lstat(cursor);
+      if (stats.isSymbolicLink() || !stats.isDirectory()) {
+        throw new Error(
+          `Declaration output parent is not an ordinary directory: ${cursor}.`,
+        );
+      }
+      continue;
+    } catch (error) {
+      if (!isMissingError(error)) throw error;
+    }
+
+    await preflightMutationBoundary([
+      {
+        authority: options.prepared.authority,
+        kind: 'file',
+        path: options.prepared.entry.targetPath,
+      },
+    ]);
+    try {
+      await mkdir(cursor);
+      const stats = await lstat(cursor);
+      if (!stats.isDirectory() || stats.isSymbolicLink()) {
+        throw new Error(
+          `Transaction-created declaration parent is unsafe: ${cursor}.`,
+        );
+      }
+      owned.push({
+        dev: String(stats.dev),
+        ino: String(stats.ino),
+        path: cursor,
+        transactionToken: options.transactionToken,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        String(error.code) === 'EEXIST'
+      ) {
+        const stats = await lstat(cursor);
+        if (!stats.isDirectory() || stats.isSymbolicLink()) throw error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  return owned;
+}
+
+async function publishDeclarationExclusive(options: {
+  prepared: PreparedDeclarationEntry;
+  transactionToken: string;
+}): Promise<OwnedDeclarationFile> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  let ownedFile: OwnedDeclarationFile | undefined;
+  const cleanupErrors: Error[] = [];
+  let primaryError: unknown;
+
+  try {
+    handle = await open(options.prepared.entry.targetPath, 'wx+');
+    try {
+      await handle.writeFile(options.prepared.sourceState.content);
+      await handle.sync();
+    } catch (error) {
+      primaryError = error;
+    }
+    try {
+      const state = await readHandleState(handle);
+      ownedFile = {
+        authority: options.prepared.authority,
+        path: options.prepared.entry.targetPath,
+        state,
+        transactionToken: options.transactionToken,
+      };
+      if (
+        !primaryError &&
+        !state.content.equals(options.prepared.sourceState.content)
+      ) {
+        primaryError = new Error(
+          `Exclusive declaration publication content verification failed: ${options.prepared.entry.targetPath}.`,
+        );
+      }
+    } catch (error) {
+      if (primaryError) {
+        cleanupErrors.push(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      } else {
+        primaryError = error;
+      }
+    }
+  } catch (error) {
+    primaryError = error;
+  }
+
+  if (handle) {
+    try {
+      await handle.close();
+    } catch (error) {
+      const closeError =
+        error instanceof Error ? error : new Error(String(error));
+      if (primaryError) cleanupErrors.push(closeError);
+      else primaryError = closeError;
+    }
+  }
+  if (primaryError) {
+    throw new ExclusivePublicationError({
+      cause: primaryError,
+      cleanupErrors,
+      ...(ownedFile ? { ownedFile } : {}),
+    });
+  }
+  if (!ownedFile) {
+    throw new ExclusivePublicationError({
+      cause: new Error(
+        `Unable to capture transaction-owned declaration identity: ${options.prepared.entry.targetPath}.`,
+      ),
+    });
+  }
+  return ownedFile;
+}
+
+async function rollbackOwnedFile(owned: OwnedDeclarationFile): Promise<void> {
+  await preflightMutationBoundary([
+    {
+      authority: owned.authority,
+      kind: 'file',
+      path: owned.path,
+    },
+  ]);
+  const current = await readRegularFileStateIfPresent(owned.path);
+  if (!current || fileIdentityKey(current) !== fileIdentityKey(owned.state)) {
+    throw new Error(
+      `Refusing to delete a declaration target whose transaction identity drifted: ${owned.path}.`,
+    );
+  }
+  await unlink(owned.path);
+}
+
+async function rollbackOwnedDirectory(
+  owned: OwnedDeclarationDirectory,
+): Promise<void> {
+  let stats: Awaited<ReturnType<typeof lstat>>;
+  try {
+    stats = await lstat(owned.path);
+  } catch (error) {
+    if (isMissingError(error)) {
+      throw new Error(
+        `Transaction-created declaration directory disappeared before cleanup: ${owned.path}.`,
+      );
+    }
+    throw error;
+  }
+  if (
+    stats.isSymbolicLink() ||
+    !stats.isDirectory() ||
+    String(stats.dev) !== owned.dev ||
+    String(stats.ino) !== owned.ino
+  ) {
+    throw new Error(
+      `Refusing to remove a declaration directory whose transaction identity drifted: ${owned.path}.`,
+    );
+  }
+  await rmdir(owned.path);
+}
+
+function throwWithCleanupErrors(
+  primaryError: unknown,
+  cleanupErrors: readonly Error[],
+): never {
+  const primary =
+    primaryError instanceof Error
+      ? primaryError
+      : new Error(String(primaryError));
+  if (cleanupErrors.length === 0) throw primary;
+  throw new AggregateError(
+    [primary, ...cleanupErrors],
+    `${primary.message}\nDeclaration rollback/cleanup also failed:\n${cleanupErrors
+      .map((error) => `  - ${error.message}`)
+      .join('\n')}`,
+    { cause: primary },
+  );
+}
+
 export async function copyOutputDeclarationInputs(
   plan: OutputDeclarationCopyPlan,
   options: {
+    /** Transaction-race injection used only by focused source-level tests. */
+    beforePublishForTesting?: (
+      entry: Readonly<OutputDeclarationCopyPlanEntry>,
+      index: number,
+    ) => Promise<void> | void;
     projectRootDir: string;
+    requireAuthenticatedAuthorities?: boolean;
   },
 ): Promise<void> {
   const plannedError = formatOutputDeclarationCopyErrors({
@@ -327,34 +823,85 @@ export async function copyOutputDeclarationInputs(
     );
   }
 
-  for (const entry of plan.entries) {
-    if (existsSync(entry.targetPath)) {
-      const [sourceContent, targetContent] = await Promise.all([
-        readFile(entry.sourcePath),
-        readFile(entry.targetPath),
-      ]);
-
-      if (sourceContent.equals(targetContent)) {
-        continue;
-      }
-
-      const problem: OutputDeclarationCopyProblem = {
-        filePath: entry.sourcePath,
-        outDir: path.dirname(entry.targetPath),
-        reason: 'target-conflict',
-        rootDir: path.dirname(entry.sourcePath),
-        severity: 'error',
-        targetPath: entry.targetPath,
-      };
-      const message = formatOutputDeclarationCopyErrors({
-        problems: [problem],
+  const prepared = await prepareDeclarationEntries({
+    entries: plan.entries,
+    projectRootDir: options.projectRootDir,
+    requireAuthenticatedAuthorities:
+      options.requireAuthenticatedAuthorities ?? false,
+  });
+  await preflightMutationBoundary(prepared.boundaryTargets);
+  if (prepared.problems.length > 0) {
+    throw new OutputDeclarationCopyError(
+      formatOutputDeclarationCopyErrors({
+        problems: prepared.problems,
         projectRootDir: options.projectRootDir,
-      });
+      }) ?? '',
+      prepared.problems,
+    );
+  }
+  await assertPreparedEntriesCurrent(prepared.entries);
 
-      throw new OutputDeclarationCopyError(message ?? '', [problem]);
+  const transactionToken = randomUUID();
+  const ownedFiles: OwnedDeclarationFile[] = [];
+  const ownedDirectories: OwnedDeclarationDirectory[] = [];
+  try {
+    for (const entry of prepared.entries.filter(
+      (candidate) => !candidate.targetState,
+    )) {
+      ownedDirectories.push(
+        ...(await ensureDeclarationParentDirectories({
+          prepared: entry,
+          transactionToken,
+        })),
+      );
     }
-
-    await mkdir(path.dirname(entry.targetPath), { recursive: true });
-    await copyFile(entry.sourcePath, entry.targetPath);
+    await assertPreparedEntriesCurrent(prepared.entries);
+    const missingEntries = prepared.entries.filter(
+      (candidate) => !candidate.targetState,
+    );
+    for (const [index, entry] of missingEntries.entries()) {
+      try {
+        await options.beforePublishForTesting?.(entry.entry, index);
+        ownedFiles.push(
+          await publishDeclarationExclusive({
+            prepared: entry,
+            transactionToken,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof ExclusivePublicationError && error.ownedFile) {
+          ownedFiles.push(error.ownedFile);
+        }
+        throw error;
+      }
+    }
+  } catch (error) {
+    const cleanupErrors: Error[] =
+      error instanceof ExclusivePublicationError
+        ? [...error.cleanupErrors]
+        : [];
+    for (const owned of ownedFiles.toReversed()) {
+      try {
+        await rollbackOwnedFile(owned);
+      } catch (cleanupError) {
+        cleanupErrors.push(
+          cleanupError instanceof Error
+            ? cleanupError
+            : new Error(String(cleanupError)),
+        );
+      }
+    }
+    for (const owned of ownedDirectories.toReversed()) {
+      try {
+        await rollbackOwnedDirectory(owned);
+      } catch (cleanupError) {
+        cleanupErrors.push(
+          cleanupError instanceof Error
+            ? cleanupError
+            : new Error(String(cleanupError)),
+        );
+      }
+    }
+    throwWithCleanupErrors(error, cleanupErrors);
   }
 }

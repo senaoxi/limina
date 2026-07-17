@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import nodePath from 'node:path';
 import path from 'pathe';
@@ -255,7 +254,7 @@ function createCheckerProcessEnvironment(
   );
 }
 
-function findNearestPackageDir(startDir: string): string | null {
+export function findNearestPackageDir(startDir: string): string | null {
   let currentDir = startDir;
 
   for (;;) {
@@ -273,7 +272,7 @@ function findNearestPackageDir(startDir: string): string | null {
   }
 }
 
-function createVueTsgoCachePaths(configPath: string): string[] {
+export function createVueTsgoCachePaths(configPath: string): string[] {
   const packageDir = findNearestPackageDir(path.dirname(configPath));
 
   if (!packageDir) {
@@ -292,62 +291,32 @@ function createVueTsgoCachePaths(configPath: string): string[] {
   );
 }
 
-function collectVueTsgoConfigPaths(
+export function collectVueTsgoConfigPaths(
   target: Pick<TypecheckTarget, 'configPath' | 'cwd'>,
+  options: { requireValidGeneratedRoute?: boolean } = {},
 ): string[] {
   const configPaths = new Set([target.configPath]);
 
-  try {
-    const route = collectGraphProjectRouteFromRoot({
-      rootConfigPath: target.configPath,
-      rootDir: target.cwd,
-    });
-
-    for (const projectPath of route.projectPaths) {
-      configPaths.add(projectPath);
-    }
-  } catch {
-    // Best effort cache cleanup must not mask the checker process result.
+  const route = collectGraphProjectRouteFromRoot({
+    rootConfigPath: target.configPath,
+    rootDir: target.cwd,
+  });
+  if (options.requireValidGeneratedRoute && route.problems.length > 0) {
+    throw new Error(
+      ['Unable to prove vue-tsgo cache routes:', ...route.problems].join('\n'),
+    );
+  }
+  for (const projectPath of route.projectPaths) {
+    configPaths.add(projectPath);
   }
 
   return [...configPaths];
 }
 
-function isVueTsgoCommand(command: string): boolean {
+export function isVueTsgoCommand(command: string): boolean {
   const commandName = path.basename(command).toLowerCase();
 
   return commandName === 'vue-tsgo' || commandName === 'vue-tsgo.cmd';
-}
-
-/**
- * vue-tsgo generates a transient virtual TS workspace under
- * node_modules/.cache/vue-tsgo/<hash>. In project graphs where multiple
- * references converge on the same config, vue-tsgo can create duplicate
- * Project instances with the same targetRoot. Leaving a previous targetRoot
- * in place may race rm()/writeFile() during Project.generate() and fail with
- * ENOENT, so Limina clears reachable vue-tsgo workspaces before launching it.
- */
-export async function prepareVueTsgoCache(
-  target: Pick<TypecheckTarget, 'args' | 'command' | 'configPath' | 'cwd'>,
-): Promise<void> {
-  if (!isVueTsgoCommand(target.command)) {
-    return;
-  }
-
-  const cachePaths = collectVueTsgoConfigPaths(target).flatMap((configPath) =>
-    createVueTsgoCachePaths(configPath),
-  );
-
-  await Promise.all(
-    uniqueValues(cachePaths).map((cachePath) =>
-      rm(cachePath, {
-        force: true,
-        maxRetries: 3,
-        recursive: true,
-        retryDelay: 50,
-      }),
-    ),
-  );
 }
 
 export function createDefaultRunner(
@@ -357,8 +326,6 @@ export function createDefaultRunner(
   } = {},
 ): TypecheckRunner {
   return async (target) => {
-    await prepareVueTsgoCache(target);
-
     const measurement = await runCheckerSpawnMeasured(
       {
         args: target.args,

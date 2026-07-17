@@ -256,6 +256,8 @@ export async function runBuildTargets(
   providerEdges: GeneratedProviderEdge[],
   runner: TypecheckRunner,
   options: {
+    beforeLayerRun?: (targets: readonly TypecheckTarget[]) => Promise<void>;
+    beforeTargetRun?: (target: TypecheckTarget) => Promise<void>;
     config: ResolvedLiminaConfig;
     onTargetResult?: (
       target: TypecheckTarget,
@@ -324,28 +326,48 @@ export async function runBuildTargets(
       }
     }
 
-    const layerResults =
-      runnableTargets.length === 0
-        ? []
-        : await runPool<TypecheckTarget, TypecheckTargetResult>({
-            concurrency: options.watch
-              ? runnableTargets.length
-              : resolveCheckerBuildConcurrency({
-                  config: options.config,
-                  itemCount: runnableTargets.length,
-                }),
-            items: runnableTargets,
-            onError: (target, error) => ({
-              configPath: target.configPath,
-              durationMs: 0,
-              error: error instanceof Error ? error : new Error(String(error)),
-              id: target.id,
-              status: 1,
+    let layerResults: TypecheckTargetResult[] = [];
+    if (runnableTargets.length > 0) {
+      try {
+        await options.beforeLayerRun?.(runnableTargets);
+      } catch (error) {
+        layerResults = runnableTargets.map((target) => {
+          const result: TypecheckTargetResult = {
+            configPath: target.configPath,
+            durationMs: 0,
+            error: error instanceof Error ? error : new Error(String(error)),
+            id: target.id,
+            status: 1,
+          };
+          options.onTargetResult?.(target, result);
+          return result;
+        });
+      }
+    }
+    if (runnableTargets.length > 0 && layerResults.length === 0) {
+      layerResults = await runPool<TypecheckTarget, TypecheckTargetResult>({
+        concurrency: options.watch
+          ? runnableTargets.length
+          : resolveCheckerBuildConcurrency({
+              config: options.config,
+              itemCount: runnableTargets.length,
             }),
-            onResult: options.onTargetResult,
-            onStart: options.onTargetStart,
-            run: (target) => runTargetWithMeasuredDuration(runner, target),
-          });
+        items: runnableTargets,
+        onError: (target, error) => ({
+          configPath: target.configPath,
+          durationMs: 0,
+          error: error instanceof Error ? error : new Error(String(error)),
+          id: target.id,
+          status: 1,
+        }),
+        onResult: options.onTargetResult,
+        run: async (target) => {
+          await options.beforeTargetRun?.(target);
+          options.onTargetStart?.(target);
+          return runTargetWithMeasuredDuration(runner, target);
+        },
+      });
+    }
     for (const result of layerResults) {
       resultsByTargetId.set(result.id, result);
     }
