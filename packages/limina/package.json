@@ -52,6 +52,7 @@
     "benchmark:identity": "tsx scripts/benchmark-identity.ts",
     "typecheck": "node bin/limina.js checker build",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:unit": "vitest run",
     "smoke": "pnpm nx run limina:build && pnpm --dir ./smoke test",
     "lint": "eslint . --config ./eslint.config.mjs --fix --cache --cache-location ./node_modules/.cache/eslint/",

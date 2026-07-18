@@ -7,6 +7,9 @@ import { portablePathPlugin } from '@docs-islands/eslint-config/plugins';
 import { defineConfig } from 'eslint/config';
 
 export default defineConfig([
+  {
+    ignores: ['fixtures/**'],
+  },
   ...eslintGeneralConfig,
 
   {
