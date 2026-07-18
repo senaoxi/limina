@@ -303,10 +303,21 @@ describe('standalone invocation generated command', () => {
       ).toBe(true);
       expect(bareLiminaResolution.code).toBeUndefined();
 
-      const failedCheck = await runPnpm(
+      // Seed the failed invocation without crossing a package-manager shim.
+      // The generated command itself is still exercised through each real
+      // shell below. On Windows, routing this setup call through pnpm exec
+      // crosses a .cmd shim, where literal %NAME% arguments can expand before
+      // Limina receives them and exceed cmd.exe's hosted-runner line limit.
+      const failedCheck = await runCommand(
+        process.execPath,
         [
-          'exec',
-          'limina',
+          path.join(
+            fixture.fixtureDir,
+            'node_modules',
+            'limina',
+            'bin',
+            'limina.js',
+          ),
           '--config',
           fixture.configPath,
           '--config-loader',
