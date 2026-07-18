@@ -11,9 +11,11 @@ const invocationId = '123e4567-e89b-42d3-a456-426614174000';
 
 function createSensitiveCommand() {
   const context = createGlobalQueryCommandContext({
+    cliEntryPath: '/opt/limina path/bin/limina.js',
     configLoader: 'tsx',
     configPath: '/tmp/work space/專案 & | < > ^ % ! (x)/limina\'"config.mjs\\',
     mode: 'ci \' " & | < > ^ % ! ( ) \\ tail\\',
+    nodeExecutablePath: '/opt/node path/bin/node',
     workspaceRoot: '/tmp/work space/專案 & ^ % ! (x)/',
   });
 
@@ -31,7 +33,7 @@ describe('standalone invocation generated commands', () => {
     expect(Object.isFrozen(command)).toBe(true);
     expect(Object.isFrozen(command.subcommandTokens)).toBe(true);
     expect(context.workspaceRoot).toBe('/tmp/work space/專案 & ^ % ! (x)');
-    expect(getGeneratedLiminaCommandTokens(command)).toEqual([
+    expect(getGeneratedLiminaCommandTokens(command, 'posix')).toEqual([
       'pnpm',
       '--dir',
       '/tmp/work space/專案 & ^ % ! (x)',
@@ -48,6 +50,26 @@ describe('standalone invocation generated commands', () => {
       '--invocation',
       invocationId,
     ]);
+    const windowsTokens = [
+      '/opt/node path/bin/node',
+      '/opt/limina path/bin/limina.js',
+      '--config',
+      '/tmp/work space/專案 & | < > ^ % ! (x)/limina\'"config.mjs',
+      '--config-loader',
+      'tsx',
+      '--mode',
+      'ci \' " & | < > ^ % ! ( ) \\ tail\\',
+      'check',
+      '--issues',
+      '--invocation',
+      invocationId,
+    ];
+    expect(getGeneratedLiminaCommandTokens(command, 'powershell')).toEqual(
+      windowsTokens,
+    );
+    expect(getGeneratedLiminaCommandTokens(command, 'cmd')).toEqual(
+      windowsTokens,
+    );
   });
 
   it.runIf(process.platform !== 'win32')(
@@ -70,9 +92,11 @@ describe('standalone invocation generated commands', () => {
     'preserves an empty bounded argument',
     () => {
       const context = createGlobalQueryCommandContext({
+        cliEntryPath: '/tmp/workspace/node_modules/limina/bin/limina.js',
         configLoader: 'native',
         configPath: '/tmp/workspace/limina.config.mjs',
         mode: '',
+        nodeExecutablePath: '/usr/bin/node',
         workspaceRoot: '/tmp/workspace',
       });
       const rendered = renderGeneratedLiminaCommand(
@@ -106,8 +130,16 @@ describe('standalone invocation generated commands', () => {
       const powershell = renderGeneratedLiminaCommand(command, 'powershell');
       const cmd = renderGeneratedLiminaCommand(command, 'cmd');
 
-      expect(powershell).toMatch(/^pnpm '--dir' /u);
-      expect(cmd).toMatch(/^pnpm "--dir" /u);
+      expect(powershell).toMatch(/^Set-Location -LiteralPath /u);
+      expect(powershell).toContain(
+        " -ErrorAction Stop; & { $PSNativeCommandArgumentPassing = 'Legacy'; & ",
+      );
+      expect(powershell).toContain("'/opt/node path/bin/node'");
+      expect(powershell).toMatch(/ \}$/u);
+      expect(powershell).not.toContain('pnpm');
+      expect(cmd).toMatch(/^cd \/d /u);
+      expect(cmd).toContain(' && ');
+      expect(cmd).not.toContain('pnpm');
       expect(powershell).not.toBe(cmd);
     },
   );

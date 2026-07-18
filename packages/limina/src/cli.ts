@@ -196,9 +196,11 @@ async function loadStandaloneContext(
 
   return {
     commandContext: createGlobalQueryCommandContext({
+      cliEntryPath: process.argv[1] ?? fileURLToPath(import.meta.url),
       configLoader,
       configPath: config.configPath,
       mode,
+      nodeExecutablePath: process.execPath,
       workspaceRoot: config.rootDir,
     }),
     config,

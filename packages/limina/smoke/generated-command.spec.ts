@@ -421,8 +421,15 @@ describe('standalone invocation generated command', () => {
           failedCheck.stdout,
           'cmd.exe (/V:OFF)',
         );
-        expect(powershellCommand).toMatch(/^pnpm /u);
-        expect(cmdCommand).toMatch(/^pnpm /u);
+        expect(powershellCommand).toMatch(/^Set-Location -LiteralPath /u);
+        expect(powershellCommand).toContain(
+          " -ErrorAction Stop; & { $PSNativeCommandArgumentPassing = 'Legacy'; & ",
+        );
+        expect(powershellCommand).toMatch(/ \}$/u);
+        expect(powershellCommand).not.toContain('pnpm');
+        expect(cmdCommand).toMatch(/^cd \/d /u);
+        expect(cmdCommand).toContain(' && ');
+        expect(cmdCommand).not.toContain('pnpm');
 
         const cmdPnpm = await getCmdPnpmEvidence(environment, outsideCwd);
 
