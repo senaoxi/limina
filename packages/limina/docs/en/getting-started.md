@@ -14,15 +14,15 @@ Limina expects a pnpm workspace and an ESM config file.
 ::: code-group
 
 ```bash [pnpm]
-pnpm add -D limina typescript
+pnpm add -D limina@latest typescript
 ```
 
 ```bash [npm]
-npm install -D limina typescript
+npm install -D limina@latest typescript
 ```
 
 ```bash [yarn]
-yarn add -D limina typescript
+yarn add -D limina@latest typescript
 ```
 
 :::
@@ -63,7 +63,7 @@ Initialization can create or update:
 - missing root `limina` and `typescript` dev dependencies.
 
 ::: warning
-Generated checker graphs are written under `.limina/` by `limina graph prepare` and by commands that use the graph.
+`limina graph prepare` explicitly materializes generated checker files under `.limina/`. Managed `build`, checker execution, and `check` pipelines containing checker or `graph:prepare` tasks also materialize them when needed. Validation-only graph, source, and proof checks calculate the graph in memory without writing those files.
 :::
 
 When graph preparation fails, it usually means the checker's `include` matched a reserved config or a non-source `tsconfig`. Narrow `include` or add `exclude` entries until only ordinary source configs are selected.

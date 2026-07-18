@@ -54,7 +54,7 @@ A string step can be a built-in Limina task:
 
 It can also be a simple external command. Simple commands are split on whitespace; use object form when arguments contain spaces, or when the step needs `cwd` or environment variables.
 
-`graph:prepare` only generates graph files; it does not validate them. Most flows can use `graph:check` directly, because graph checking automatically `prepare`s the graph before it runs.
+`graph:prepare` materializes graph files; it does not validate them. Most validation-only flows can use `graph:check` directly because graph checking calculates the required graph in memory without materializing checker configs. Add `graph:prepare` only when a later step needs those files on disk; checker tasks already receive an automatic materialization preparation.
 
 ## Object command step
 

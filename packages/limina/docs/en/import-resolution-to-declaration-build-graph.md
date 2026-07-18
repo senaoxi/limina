@@ -333,7 +333,7 @@ These fixes do not make Limina perform reference graph tree-shaking, but they re
 
 ## How Graph Check Uses This Classification
 
-Generation writes the declaration build graph under `.limina`. Graph check compares that generated graph against the source import facts.
+Graph check calculates the declaration build graph in memory and compares it against the source import facts. It does not write checker files under `.limina`; `graph prepare` and execution paths that need generated checker configs materialize the same graph on disk.
 
 For `references` completeness checks, graph check also uses declaration provider classification:
 

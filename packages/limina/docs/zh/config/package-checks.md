@@ -73,7 +73,7 @@ export default defineConfig({
 `checks` 先决定基础工具集合。`publint` 和 `attw` 也可以写成 `true`、`false` 或对象，用来覆盖对应工具：`false` 表示关闭，`true` 或对象表示开启并使用默认或自定义配置。
 
 ::: warning
-`publint` 和 `@arethetypeswrong/core` 是 Limina 的可选 `peer dependency`。如果启用了对应检查，但运行 Limina 的工作区没有安装该包，`package check` 会直接报缺失 `peer dependency`。
+`publint` 和 `@arethetypeswrong/core` 是 Limina 的可选 `peer dependency`。已启用的 analyzer 未安装时，Limina 会把对应检查记为 `skipped`，并继续其他包检查；即使用 `--tool` 单独选择它，仅发生 skip 也不会让 `package check` 以非零状态退出。如果 CI 必须覆盖这两项检查，应显式安装并校验对应包。
 :::
 
 ## publint
