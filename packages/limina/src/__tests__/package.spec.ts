@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -50,6 +51,7 @@ const packageCheckMocks = vi.hoisted(() => ({
     }
   >(),
   registryTarballs: new Map<string, Buffer>(),
+  unpackCalls: [] as string[],
 }));
 
 vi.mock('@publint/pack', async () => {
@@ -140,6 +142,8 @@ vi.mock('@publint/pack', async () => {
     ),
     unpack: vi.fn(async (tarball: Uint8Array) => {
       const tarballData = Buffer.from(tarball).toString('utf8');
+
+      packageCheckMocks.unpackCalls.push(tarballData);
       const manifest =
         packageCheckMocks.packedTarballManifests.get(tarballData) ?? {};
       const files = packageCheckMocks.packedTarballFiles.get(tarballData) ?? [
@@ -338,6 +342,17 @@ function createPublishedTarballUrl(
   return `https://registry.npmjs.org/${encodeURIComponent(packageName)}/-/${tarballName}-${version}.tgz`;
 }
 
+function createIntegrity(
+  data: string | Buffer,
+  algorithm: 'sha256' | 'sha512' = 'sha512',
+): string {
+  return `${algorithm}-${createHash(algorithm).update(data).digest('base64')}`;
+}
+
+function createShasum(data: string | Buffer): string {
+  return createHash('sha1').update(data).digest('hex');
+}
+
 function createPublishedPackageFiles(
   packageName: string,
   version: string,
@@ -382,26 +397,37 @@ function registerPublishedPackage(
     | {
         distTags?: Record<string, string>;
         files?: Record<string, string>;
+        includeIntegrity?: boolean;
         includeTarballUrl?: boolean;
+        integrity?: string;
         manifest?: Record<string, unknown>;
         registerTarball?: boolean;
+        shasum?: string;
         versions?: Record<string, unknown>;
       } = {},
 ): void {
   const normalizedOptions = typeof options === 'string' ? {} : options;
   const tarballUrl = createPublishedTarballUrl(packageName, version);
   const tarballData = `published tarball ${packageName}@${version}`;
+  const dist = {
+    ...(normalizedOptions.includeTarballUrl === false
+      ? {}
+      : { tarball: tarballUrl }),
+    ...(normalizedOptions.includeIntegrity === false
+      ? {}
+      : {
+          integrity:
+            normalizedOptions.integrity ?? createIntegrity(tarballData),
+        }),
+    ...(normalizedOptions.shasum === undefined
+      ? {}
+      : { shasum: normalizedOptions.shasum }),
+  };
   const versions =
     normalizedOptions.versions ??
     ({
       [version]: {
-        ...(normalizedOptions.includeTarballUrl === false
-          ? {}
-          : {
-              dist: {
-                tarball: tarballUrl,
-              },
-            }),
+        dist,
       },
     } satisfies Record<string, unknown>);
 
@@ -535,6 +561,7 @@ beforeEach(() => {
   packageCheckMocks.registryPackages.clear();
   packageCheckMocks.registryResponses.clear();
   packageCheckMocks.registryTarballs.clear();
+  packageCheckMocks.unpackCalls = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string | URL) => {
@@ -3175,6 +3202,162 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
     } finally {
       errorSpy.mockRestore();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it.each([
+    {
+      expectedMessage:
+        '@example/b@1.0.0 registry metadata has no dist.integrity or dist.shasum',
+      name: 'missing integrity metadata',
+      registration: {
+        includeIntegrity: false,
+      },
+    },
+    {
+      expectedMessage:
+        '@example/b@1.0.0 registry metadata has invalid dist.integrity',
+      name: 'invalid integrity metadata even when shasum is valid',
+      registration: {
+        integrity: 'not-valid-sri',
+        shasum: createShasum('published tarball @example/b@1.0.0'),
+      },
+    },
+    {
+      expectedMessage:
+        '@example/b@1.0.0 registry metadata has invalid dist.shasum',
+      name: 'invalid shasum metadata',
+      registration: {
+        includeIntegrity: false,
+        shasum: 'not-a-sha1-digest',
+      },
+    },
+  ])('fails before unpacking when $name is received', async (testCase) => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+
+    registerPublishedPackage('@example/b', '1.0.0', testCase.registration);
+
+    try {
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        testCase.expectedMessage,
+      );
+      expect(packageCheckMocks.unpackCalls).not.toContain(
+        'published tarball @example/b@1.0.0',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('fails before unpacking when registry tarball integrity does not match', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+
+    registerPublishedPackage('@example/b', '1.0.0', {
+      integrity: createIntegrity('different tarball'),
+    });
+
+    try {
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'npm tarball integrity mismatch for @example/b@1.0.0 from https://registry.npmjs.org/%40example%2Fb/-/example-b-1.0.0.tgz',
+      );
+      expect(packageCheckMocks.unpackCalls).not.toContain(
+        'published tarball @example/b@1.0.0',
+      );
+    } finally {
+      errorSpy.mockRestore();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it.each([
+    {
+      name: 'valid integrity',
+      registration: {
+        integrity: createIntegrity(
+          'published tarball @example/b@1.0.0',
+          'sha512',
+        ),
+      },
+    },
+    {
+      name: 'multi-algorithm integrity',
+      registration: {
+        integrity: [
+          createIntegrity('published tarball @example/b@1.0.0', 'sha256'),
+          createIntegrity('published tarball @example/b@1.0.0', 'sha512'),
+        ].join(' '),
+      },
+    },
+    {
+      name: 'shasum fallback',
+      registration: {
+        includeIntegrity: false,
+        shasum: createShasum('published tarball @example/b@1.0.0'),
+      },
+    },
+  ])('accepts registry tarballs with $name', async (testCase) => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+
+    registerPublishedPackage('@example/b', '1.0.0', testCase.registration);
+
+    try {
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+      expect(packageCheckMocks.unpackCalls).toContain(
+        'published tarball @example/b@1.0.0',
+      );
+    } finally {
       await rm(rootDir, {
         force: true,
         recursive: true,

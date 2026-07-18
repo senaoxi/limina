@@ -6,6 +6,8 @@ Limina's built-in release checks always run. The optional `release.npmPackageJso
 
 For workspace publish dependencies, Limina compares the local packed package output with an `npm dist-tag` baseline (`release.contentHash.baselineTag`, defaulting to `latest`) by package-relative content diffs. Diff reports classify files as `changed`, `local-only`, or `remote-only`, and failures list the release-relevant file names. If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish.
 
+Before unpacking or comparing a registry baseline tarball, Limina verifies it against `dist.integrity`. If that field is absent, Limina verifies the SHA-1 `dist.shasum` fallback. Missing, malformed, or mismatched integrity metadata fails `release check`; this verification cannot be skipped.
+
 ::: warning Tarball and publish hygiene
 Release checks reject private outputs (`private: true`), missing `README.md` or `LICENSE.md`, source map files (`.map`), `JavaScript sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
 :::
