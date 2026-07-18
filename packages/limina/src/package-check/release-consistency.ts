@@ -118,6 +118,13 @@ type RegistryMetadataResult =
   | {
       cause?: unknown;
       kind: 'failure';
+      reason:
+        | 'body-read'
+        | 'http-status'
+        | 'invalid-json'
+        | 'invalid-metadata'
+        | 'request'
+        | 'timeout';
       statusCode?: number;
       statusText?: string;
       url: string;
@@ -174,6 +181,8 @@ const picomatch = rawPicomatch as unknown as (
   },
 ) => (value: string) => boolean;
 const DEFAULT_CONTENT_HASH_BASELINE_TAG = 'latest';
+const REGISTRY_METADATA_TIMEOUT_MS = 30_000;
+const REGISTRY_TARBALL_TIMEOUT_MS = 120_000;
 const CONTENT_HASH_DIFF_KINDS = [
   'local-only',
   'remote-only',
@@ -344,6 +353,7 @@ async function fetchRegistryPackageMetadata(
   }
 
   const url = getNpmPackageMetadataUrl(packageName);
+  const signal = AbortSignal.timeout(REGISTRY_METADATA_TIMEOUT_MS);
   let response: Response;
 
   try {
@@ -351,11 +361,13 @@ async function fetchRegistryPackageMetadata(
       headers: {
         accept: 'application/json',
       },
+      signal,
     });
   } catch (error) {
     const result: RegistryMetadataResult = {
       cause: error,
       kind: 'failure',
+      reason: signal.aborted ? 'timeout' : 'request',
       url,
     };
 
@@ -375,6 +387,7 @@ async function fetchRegistryPackageMetadata(
   if (!response.ok) {
     const result: RegistryMetadataResult = {
       kind: 'failure',
+      reason: 'http-status',
       statusCode: response.status,
       statusText: response.statusText,
       url,
@@ -392,6 +405,11 @@ async function fetchRegistryPackageMetadata(
     const result: RegistryMetadataResult = {
       cause: error,
       kind: 'failure',
+      reason: signal.aborted
+        ? 'timeout'
+        : error instanceof SyntaxError
+          ? 'invalid-json'
+          : 'body-read',
       statusCode: response.status,
       statusText: response.statusText,
       url,
@@ -405,6 +423,7 @@ async function fetchRegistryPackageMetadata(
     const result: RegistryMetadataResult = {
       cause: new TypeError('registry metadata response must be a JSON object'),
       kind: 'failure',
+      reason: 'invalid-metadata',
       statusCode: response.status,
       statusText: response.statusText,
       url,
@@ -427,6 +446,10 @@ function formatRegistryMetadataFailure(
   packageName: string,
   failure: Extract<RegistryMetadataResult, { kind: 'failure' }>,
 ): string {
+  if (failure.reason === 'timeout') {
+    return `npm registry metadata request for ${packageName} from ${failure.url} timed out after 30 seconds`;
+  }
+
   const status =
     failure.statusCode === undefined
       ? ''
@@ -435,6 +458,18 @@ function formatRegistryMetadataFailure(
         })`;
   const cause =
     failure.cause === undefined ? '' : `: ${formatErrorMessage(failure.cause)}`;
+
+  if (failure.reason === 'invalid-json') {
+    return `npm registry metadata response for ${packageName} from ${failure.url} is not valid JSON${cause}`;
+  }
+
+  if (failure.reason === 'body-read') {
+    return `unable to read npm registry metadata response body for ${packageName} from ${failure.url}${cause}`;
+  }
+
+  if (failure.reason === 'invalid-metadata') {
+    return `invalid npm registry metadata response for ${packageName} from ${failure.url}${cause}`;
+  }
 
   return `unable to read npm registry metadata for ${packageName} from ${failure.url}${status}${cause}`;
 }
@@ -484,19 +519,49 @@ function getRegistryTarballUrl(
 }
 
 async function fetchRegistryTarball(tarballUrl: string): Promise<Buffer> {
-  const response = await fetch(tarballUrl, {
-    headers: {
-      accept: 'application/octet-stream',
-    },
-  });
+  const signal = AbortSignal.timeout(REGISTRY_TARBALL_TIMEOUT_MS);
+  let response: Response;
 
-  if (!response.ok) {
+  try {
+    response = await fetch(tarballUrl, {
+      headers: {
+        accept: 'application/octet-stream',
+      },
+      signal,
+    });
+  } catch (error) {
+    if (signal.aborted) {
+      throw new Error(
+        `npm tarball request for ${tarballUrl} timed out after 120 seconds`,
+      );
+    }
+
     throw new Error(
-      `unable to download npm tarball ${tarballUrl}: ${response.status} ${response.statusText}`,
+      `unable to request npm tarball ${tarballUrl}: ${formatErrorMessage(error)}`,
     );
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  if (!response.ok) {
+    const status = `${response.status}${
+      response.statusText ? ` ${response.statusText}` : ''
+    }`;
+
+    throw new Error(`unable to download npm tarball ${tarballUrl}: ${status}`);
+  }
+
+  try {
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    if (signal.aborted) {
+      throw new Error(
+        `npm tarball request for ${tarballUrl} timed out after 120 seconds`,
+      );
+    }
+
+    throw new Error(
+      `unable to read npm tarball response body for ${tarballUrl}: ${formatErrorMessage(error)}`,
+    );
+  }
 }
 
 function resolveWorkspacePackageOutputDir(
