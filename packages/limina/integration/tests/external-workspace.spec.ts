@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -45,8 +45,10 @@ interface GeneratedDtsConfig {
 }
 
 interface ExternalProjectPaths {
+  declarationDir: string;
   generatedConfigPath: string;
   hash: string;
+  tsBuildInfoPath: string;
 }
 
 let fixture: PreparedFixture | undefined;
@@ -134,12 +136,22 @@ async function discoverExternalProject(
   const hash = hashes[0]!;
 
   return {
+    declarationDir: preparedFixture.path(
+      'repo/.limina/dts/checkers/typescript/external',
+      hash,
+      'tsconfig',
+    ),
     generatedConfigPath: preparedFixture.path(
       'repo/.limina/tsconfig/checkers/typescript/projects/external',
       hash,
       'tsconfig.dts.json',
     ),
     hash,
+    tsBuildInfoPath: preparedFixture.path(
+      'repo/.limina/tsbuildinfo/checkers/typescript/external',
+      hash,
+      'tsconfig.tsbuildinfo',
+    ),
   };
 }
 
@@ -148,6 +160,42 @@ function expectInside(rootDir: string, candidatePath: string): void {
 
   expect(relativePath).not.toBe('..');
   expect(relativePath.startsWith('../')).toBe(false);
+}
+
+async function collectMatchingEntries(
+  rootDir: string,
+  predicate: (entryName: string) => boolean,
+): Promise<string[]> {
+  const matches: string[] = [];
+
+  for (const entryName of await readdir(rootDir)) {
+    const entryPath = path.join(rootDir, entryName);
+    const entryStat = await lstat(entryPath);
+
+    if (predicate(entryName)) {
+      matches.push(toPortablePath(entryPath));
+      continue;
+    }
+
+    if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
+      matches.push(...(await collectMatchingEntries(entryPath, predicate)));
+    }
+  }
+
+  return matches.sort();
+}
+
+async function expectExternalSourceTreeClean(
+  preparedFixture: PreparedFixture,
+): Promise<void> {
+  const externalRoot = preparedFixture.path('external');
+  const privateEntries = await collectMatchingEntries(
+    externalRoot,
+    (entryName) =>
+      entryName === '.limina' || entryName.endsWith('.tsbuildinfo'),
+  );
+
+  expect(privateEntries).toEqual([]);
 }
 
 beforeEach(async () => {
@@ -259,5 +307,77 @@ describe('external workspace public CLI integration', () => {
     );
     expect(internalReferences).toHaveLength(1);
     expect(internalReferences).toContain(externalProject.generatedConfigPath);
+  });
+
+  it('reuses the external namespace and rebuilds after source changes', async () => {
+    const preparedFixture = fixture!;
+    const firstBuild = await runFixtureLimina(preparedFixture, [
+      'checker',
+      'build',
+    ]);
+    expectLiminaSuccess(firstBuild);
+
+    const externalProject = await discoverExternalProject(preparedFixture);
+    const externalDeclarationPath = path.join(
+      externalProject.declarationDir,
+      'index.d.ts',
+    );
+    const internalDeclarationPath = preparedFixture.path(
+      'repo/.limina/dts/checkers/typescript/packages/app/tsconfig/index.d.ts',
+    );
+
+    expect((await lstat(externalProject.declarationDir)).isDirectory()).toBe(
+      true,
+    );
+    expect(await exists(externalProject.tsBuildInfoPath)).toBe(true);
+    const firstDeclaration = await readFile(externalDeclarationPath, 'utf8');
+    expect(firstDeclaration).toContain('export declare const value: 1;');
+    await expectExternalSourceTreeClean(preparedFixture);
+
+    const secondBuild = await runFixtureLimina(preparedFixture, [
+      'checker',
+      'build',
+    ]);
+    expectLiminaSuccess(secondBuild);
+    expect(await getExternalHashes(preparedFixture)).toEqual([
+      externalProject.hash,
+    ]);
+    expect(await readFile(externalDeclarationPath, 'utf8')).toBe(
+      firstDeclaration,
+    );
+    expect(await exists(externalProject.tsBuildInfoPath)).toBe(true);
+
+    await writeFile(
+      preparedFixture.path('external/shared/src/index.ts'),
+      'export const value = 2 as const;\n',
+    );
+
+    const rebuild = await runFixtureLimina(preparedFixture, [
+      'checker',
+      'build',
+    ]);
+    expectLiminaSuccess(rebuild);
+    expect(await getExternalHashes(preparedFixture)).toEqual([
+      externalProject.hash,
+    ]);
+
+    const rebuiltExternalDeclaration = await readFile(
+      externalDeclarationPath,
+      'utf8',
+    );
+    const rebuiltInternalDeclaration = await readFile(
+      internalDeclarationPath,
+      'utf8',
+    );
+    expect(rebuiltExternalDeclaration).not.toBe(firstDeclaration);
+    expect(rebuiltExternalDeclaration).toContain(
+      'export declare const value: 2;',
+    );
+    expect(rebuiltInternalDeclaration).toContain(
+      'export declare const appValue: 2;',
+    );
+    expect(rebuiltInternalDeclaration).not.toBe(rebuiltExternalDeclaration);
+    expect(await exists(externalProject.tsBuildInfoPath)).toBe(true);
+    await expectExternalSourceTreeClean(preparedFixture);
   });
 });
