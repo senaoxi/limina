@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedProviderEdge } from '#core/build-graph/runner';
+import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
 import { resolveCheckerBuildConcurrency } from '../execution/config';
 import { runPool } from '../execution/pool';
 import {
@@ -37,83 +38,6 @@ function providerEdgeMatchesProvider(
     target.checkerName === edge.toChecker &&
     (!target.sourceConfigPath || target.sourceConfigPath === edge.toConfigPath)
   );
-}
-
-function collectStronglyConnectedBuildTargetKeys(
-  orderedKeys: string[],
-  dependenciesByTargetKey: Map<string, Set<string>>,
-): string[][] {
-  const indexByKey = new Map<string, number>();
-  const lowLinkByKey = new Map<string, number>();
-  const stack: string[] = [];
-  const stackedKeys = new Set<string>();
-  const components: string[][] = [];
-  let nextIndex = 0;
-
-  const visit = (key: string): void => {
-    indexByKey.set(key, nextIndex);
-    lowLinkByKey.set(key, nextIndex);
-    nextIndex += 1;
-    stack.push(key);
-    stackedKeys.add(key);
-
-    for (const dependencyKey of dependenciesByTargetKey.get(key) ?? []) {
-      if (!indexByKey.has(dependencyKey)) {
-        visit(dependencyKey);
-        lowLinkByKey.set(
-          key,
-          Math.min(
-            lowLinkByKey.get(key) ?? 0,
-            lowLinkByKey.get(dependencyKey) ?? 0,
-          ),
-        );
-      } else if (stackedKeys.has(dependencyKey)) {
-        lowLinkByKey.set(
-          key,
-          Math.min(
-            lowLinkByKey.get(key) ?? 0,
-            indexByKey.get(dependencyKey) ?? 0,
-          ),
-        );
-      }
-    }
-
-    if (lowLinkByKey.get(key) !== indexByKey.get(key)) {
-      return;
-    }
-
-    const component: string[] = [];
-
-    while (stack.length > 0) {
-      const componentKey = stack.pop()!;
-
-      stackedKeys.delete(componentKey);
-      component.push(componentKey);
-
-      if (componentKey === key) {
-        break;
-      }
-    }
-
-    components.push(component);
-  };
-
-  for (const key of orderedKeys) {
-    if (!indexByKey.has(key)) {
-      visit(key);
-    }
-  }
-
-  return components
-    .map((component) =>
-      component.sort(
-        (left, right) => orderedKeys.indexOf(left) - orderedKeys.indexOf(right),
-      ),
-    )
-    .sort(
-      (left, right) =>
-        orderedKeys.indexOf(left[0]!) - orderedKeys.indexOf(right[0]!),
-    );
 }
 
 function createBuildDependencyPlan(
@@ -162,9 +86,9 @@ function createBuildDependencyPlan(
   }
 
   const orderedKeys = targets.map(getBuildTargetDependencyKey);
-  const components = collectStronglyConnectedBuildTargetKeys(
+  const components = collectStronglyConnectedComponents(
     orderedKeys,
-    dependenciesByTargetKey,
+    (key) => dependenciesByTargetKey.get(key) ?? [],
   );
   const componentIndexByKey = new Map<string, number>();
 
