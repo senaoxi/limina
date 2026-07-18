@@ -73,7 +73,7 @@ Each `outDir/package.json` must exist and look like a complete `npm` package man
 `checks` selects the base tool set. `publint` and `attw` can also be `true`, `false`, or an object to override that tool: `false` disables it, while `true` or an object enables it with default or custom settings.
 
 ::: warning
-`publint` and `@arethetypeswrong/core` are optional `peer dependency` packages of Limina. If the corresponding check is enabled but the package is not installed in the workspace running Limina, `package check` fails with a missing `peer dependency` error.
+`publint` and `@arethetypeswrong/core` are optional `peer dependency` packages of Limina. If an enabled analyzer is not installed, Limina marks that analyzer as `skipped` and continues the other package checks. A skipped optional analyzer alone does not make `package check` exit non-zero, including when it was selected with `--tool`. Install and verify both packages explicitly in CI when their coverage is required.
 :::
 
 ## publint

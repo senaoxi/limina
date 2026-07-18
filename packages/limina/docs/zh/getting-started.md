@@ -14,15 +14,15 @@ Limina 面向 `pnpm` 工作区，并要求配置文件使用 `ESM`。
 ::: code-group
 
 ```bash [pnpm]
-pnpm add -D limina typescript
+pnpm add -D limina@latest typescript
 ```
 
 ```bash [npm]
-npm install -D limina typescript
+npm install -D limina@latest typescript
 ```
 
 ```bash [yarn]
-yarn add -D limina typescript
+yarn add -D limina@latest typescript
 ```
 
 :::
@@ -63,7 +63,7 @@ npx --yes skills add senaoxi/docs-islands --skill limina
 - 根目录缺失的 `limina` 和 `typescript` 开发依赖。
 
 ::: warning
-生成的检查器图会由 `limina graph prepare` 以及使用该图的命令写入 `.limina/`。
+`limina graph prepare` 会显式把生成的检查器文件物化到 `.limina/`。managed `build`、检查器执行，以及包含检查器任务或 `graph:prepare` 的 `check` 流水线也会按需物化；只做图、源码或覆盖验证的命令会在内存中计算图，不写出这些文件。
 :::
 
 如果图准备失败，通常说明检查器的 `include` 选中了保留配置或非源码 `tsconfig`。此时应收窄 `include`，或补充 `exclude`，直到只选中普通的源码配置。

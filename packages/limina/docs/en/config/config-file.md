@@ -34,7 +34,7 @@ If `config.checkers` is omitted, Limina uses auto checker discovery. See [Checke
 - **Default:** `'native'`
 - **CLI:** `--config-loader native` or `--config-loader tsx`
 
-The native loader imports the config through the current runtime. Use `tsx` when your config relies on TypeScript syntax that the runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the consuming workspace before using it.
+The native loader imports the config through the current runtime and follows that runtime's module rules. An existing `limina.config.js` can therefore use CommonJS when Node treats the file as CommonJS; `.mts` and `.mjs` use ESM. Use `tsx` when your config relies on TypeScript syntax that the runtime cannot import natively. The `tsx` loader uses `tsx/esm/api`, so install `tsx` in the consuming workspace before using it.
 
 ## mode
 
@@ -56,10 +56,10 @@ export default defineConfig(({ mode }) => ({
 
 ## command
 
-- **Type:** `'check' | 'graph' | 'package' | 'proof' | 'release' | 'source'`
+- **Type:** `'check' | 'graph' | 'package' | 'proof' | 'release' | 'source' | (string & {})`
 - **Related:** [Checker Entries](./checkers.md)
 
-`command` is the command family currently loading the config, such as `check`, `graph`, `source`, `package`, or `release`. Use it when expensive configuration only matters for one command family.
+`command` is the command family currently loading the config, such as `check`, `graph`, `source`, `package`, or `release`. The open string branch covers other current commands such as `build` and `migration`, and keeps function configs forward-compatible with additional command families. Use it when expensive configuration only matters for one command family.
 
 For example, declare package output entries only for package-aware commands:
 

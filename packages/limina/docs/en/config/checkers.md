@@ -166,6 +166,6 @@ Do not repeat whole-region exclusions here. Paths in an excluded or inaccessible
 
 ## Generated Graph
 
-Run `limina graph prepare` to materialize `.limina/manifest.json` and generated checker configs. Graph-consuming commands also automatically prepare the graph before they run.
+Run `limina graph prepare` to materialize `.limina/manifest.json` and generated checker configs explicitly. Managed `limina build`, `checker build`, `checker typecheck`, and `check` pipelines containing checker or `graph:prepare` tasks materialize the same files when needed. `graph check`, `source check`, and `proof check` calculate the generated graph in memory and do not materialize checker configs merely because they consume graph facts.
 
 Source `tsconfig` paths are the canonical paths in user config and diagnostics. Generated `.limina/tsconfig/checkers/.../*.dts.json` paths are internal output and do not need to be written in user config.

@@ -34,7 +34,7 @@ export default defineConfig(({ command, mode }) => ({
 - **默认值：** `'native'`
 - **CLI：** `--config-loader native` 或 `--config-loader tsx`
 
-`native` loader 会通过当前运行时直接导入配置。当配置使用了当前运行时无法原生导入的 TypeScript 语法时，使用 `tsx`。`tsx` loader 使用 `tsx/esm/api`，因此使用前需要在接入工作区安装 `tsx`。
+`native` loader 会通过当前运行时直接导入配置，并遵循运行时的模块规则。因此，当 Node 把已有的 `limina.config.js` 视为 CommonJS 时，该文件可以使用 CommonJS；`.mts` 和 `.mjs` 使用 ESM。当配置使用了当前运行时无法原生导入的 TypeScript 语法时，使用 `tsx`。`tsx` loader 使用 `tsx/esm/api`，因此使用前需要在接入工作区安装 `tsx`。
 
 ## mode
 
@@ -56,10 +56,10 @@ export default defineConfig(({ mode }) => ({
 
 ## command
 
-- **类型：** `'check' | 'graph' | 'package' | 'proof' | 'release' | 'source'`
+- **类型：** `'check' | 'graph' | 'package' | 'proof' | 'release' | 'source' | (string & {})`
 - **相关：** [检查器入口](./checkers.md)
 
-`command` 表示当前加载配置的命令族，例如 `check`、`graph`、`source`、`package` 或 `release`。当某些昂贵配置只服务于特定命令时，可以按 `command` 分支返回。
+`command` 表示当前加载配置的命令族，例如 `check`、`graph`、`source`、`package` 或 `release`。开放字符串分支还覆盖 `build`、`migration` 等当前命令，并允许以后增加新的命令族。当某些昂贵配置只服务于特定命令时，可以按 `command` 分支返回。
 
 例如只在包感知命令里声明发布产物条目：
 

@@ -166,6 +166,6 @@ absolute、parent-relative、directory expansion、trailing slash、escaped meta
 
 ## 生成图
 
-运行 `limina graph prepare` 会生成 `.limina/manifest.json` 和检查器作用域内的 `tsconfig` 图。消费图的命令也会在运行前自动准备。
+运行 `limina graph prepare` 会显式物化 `.limina/manifest.json` 和检查器作用域内的 `tsconfig` 图。managed `limina build`、`checker build`、`checker typecheck`，以及包含检查器任务或 `graph:prepare` 的 `check` 流水线，也会按需物化相同文件。`graph check`、`source check`、`proof check` 只在内存中计算生成图，不会因为读取图事实就写出检查器配置。
 
 用户配置和诊断中的规范路径是源码 `tsconfig` 路径。`.limina/tsconfig/checkers/.../*.dts.json` 是内部生成路径，不需要写进用户配置。

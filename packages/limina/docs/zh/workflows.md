@@ -96,3 +96,24 @@ jobs:
 ### Vue 或 Svelte 文件应该放进 TypeScript 图吗？
 
 框架文件应该由对应框架检查器入口覆盖。Limina 可以通过 `vue-tsc`、`vue-tsgo` 或 `svelte-check` 证明覆盖，不需要把这些文件假装成普通 `tsc -b` 声明构建项目。
+
+### `--mode` 有什么用途？
+
+当 `limina.config.mts` 导出函数，并需要为本地、`CI` 或发布流程返回不同配置时，使用 `--mode`。
+
+## 维护者发布检查清单
+
+发布 Limina 本身或受 Limina 管理的包之前，确认：
+
+- 常规测试通过；
+- `pnpm exec limina check` 通过；
+- 包构建已经完成；
+- `pnpm exec limina package check --package <name>` 通过；
+- `pnpm exec limina release check --package <name>` 通过。
+
+## 相关内容
+
+- [CLI 参考](./cli.md)——全部命令和参数。
+- [流水线](./config/pipelines.md)——用内置任务和外部命令组合命名工作流。
+- [包检查](./config/package-checks.md)——构建产物条目和 `publint` / `attw` / `boundary`。
+- [发布检查](./config/release-checks.md)——`tarball` 与发布卫生检查。
