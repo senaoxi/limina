@@ -22,6 +22,7 @@ import {
   type WorkspacePackage,
 } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
+import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -697,71 +698,18 @@ function createGeneratedReferenceGraph(
 function collectGeneratedReferenceComponents(
   graph: Map<string, Set<string>>,
 ): string[][] {
-  const components: string[][] = [];
-  const indexByPath = new Map<string, number>();
-  const lowLinkByPath = new Map<string, number>();
-  const stack: string[] = [];
-  const pathsOnStack = new Set<string>();
-  let nextIndex = 0;
+  const configPaths = new Set(graph.keys());
 
-  function visit(configPath: string): void {
-    indexByPath.set(configPath, nextIndex);
-    lowLinkByPath.set(configPath, nextIndex);
-    nextIndex += 1;
-    stack.push(configPath);
-    pathsOnStack.add(configPath);
-
-    for (const referencePath of graph.get(configPath) ?? []) {
-      if (!indexByPath.has(referencePath)) {
-        visit(referencePath);
-        lowLinkByPath.set(
-          configPath,
-          Math.min(
-            lowLinkByPath.get(configPath)!,
-            lowLinkByPath.get(referencePath)!,
-          ),
-        );
-        continue;
-      }
-
-      if (pathsOnStack.has(referencePath)) {
-        lowLinkByPath.set(
-          configPath,
-          Math.min(
-            lowLinkByPath.get(configPath)!,
-            indexByPath.get(referencePath)!,
-          ),
-        );
-      }
-    }
-
-    if (lowLinkByPath.get(configPath) !== indexByPath.get(configPath)) {
-      return;
-    }
-
-    const component: string[] = [];
-
-    while (stack.length > 0) {
-      const currentPath = stack.pop()!;
-
-      pathsOnStack.delete(currentPath);
-      component.push(currentPath);
-
-      if (currentPath === configPath) {
-        break;
-      }
-    }
-
-    components.push(component.sort());
-  }
-
-  for (const configPath of [...graph.keys()].sort()) {
-    if (!indexByPath.has(configPath)) {
-      visit(configPath);
+  for (const referencePaths of graph.values()) {
+    for (const referencePath of referencePaths) {
+      configPaths.add(referencePath);
     }
   }
 
-  return components.sort((left, right) => left[0]!.localeCompare(right[0]!));
+  return collectStronglyConnectedComponents(
+    [...configPaths].sort(),
+    (configPath) => graph.get(configPath) ?? [],
+  );
 }
 
 function getGeneratedReferenceCycleEdges(
