@@ -1,5 +1,6 @@
-import { uniqueValues } from '#utils/collections';
+import { countDefinedBy, uniqueValues } from '#utils/collections';
 import { normalizeSlashes } from '#utils/path';
+import { colorText, plural } from '#utils/reporting';
 import path from 'pathe';
 import { generatedRootDirName } from '../core/build-graph/generated/paths';
 import { formatCheckSummaryBlock } from '../reporting';
@@ -24,13 +25,10 @@ import type {
 
 const TOP_BLOCKER_LIMIT = 5;
 const TASK_DISPLAY_LIMIT = 12;
-const ANSI_RESET = '\u001B[0m';
 const ANSI_GREEN = '\u001B[32m';
 const ANSI_RED = '\u001B[31m';
 const ANSI_YELLOW = '\u001B[33m';
 const CHECK_STATS_LINE_PATTERN = /^(\s*)([✓✕◇]) (.*?)(\s{2}units\b.*)$/u;
-
-type AnsiColor = string;
 
 export interface CountEntry {
   count: number;
@@ -100,16 +98,8 @@ interface CheckRunTaskExecutionStats {
   total: number;
 }
 
-function plural(count: number, singular: string, pluralForm: string): string {
-  return count === 1 ? singular : pluralForm;
-}
-
 function pluralIssue(count: number): string {
   return plural(count, 'issue', 'issues');
-}
-
-function colorText(color: AnsiColor, text: string): string {
-  return `${color}${text}${ANSI_RESET}`;
 }
 
 function incrementCount(counts: Map<string, number>, key: string | undefined) {
@@ -124,11 +114,7 @@ function countBy(
   issues: readonly LiminaCheckIssue[],
   getValue: (issue: LiminaCheckIssue) => string | undefined,
 ): CountEntry[] {
-  const counts = new Map<string, number>();
-
-  for (const issue of issues) {
-    incrementCount(counts, getValue(issue));
-  }
+  const counts = countDefinedBy(issues, getValue);
 
   return [...counts.entries()]
     .map(([name, count]) => ({ count, name }))
@@ -142,11 +128,7 @@ function countByHuman(
   issues: readonly LiminaCheckIssue[],
   getValue: (issue: LiminaCheckIssue) => string | undefined,
 ): CountEntry[] {
-  const counts = new Map<string, number>();
-
-  for (const issue of issues) {
-    incrementCount(counts, getValue(issue));
-  }
+  const counts = countDefinedBy(issues, getValue);
 
   return [...counts.entries()]
     .map(([name, count]) => ({ count, name }))
