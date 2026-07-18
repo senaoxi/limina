@@ -29,7 +29,7 @@ SOFTWARE.
 
 The published limina artifact additionally contains code with the following licenses:
 
-ISC, MIT, MPL-2.0
+BlueOak-1.0.0, ISC, MIT, MPL-2.0
 
 # Bundled dependencies:
 ## @clack/core, @clack/prompts
@@ -162,11 +162,25 @@ Repository: git+https://github.com/nexdrew/ansi-align.git
 
 ---------------------------------------
 
-## ansi-regex, ansi-styles, boxen, camelcase, chalk, cli-boxes, get-east-asian-width, string-width, strip-ansi, widest-line, wrap-ansi
+## ansi-regex, is-fullwidth-code-point, strip-ansi, strip-bom
 
 License: MIT
 By: Sindre Sorhus
-Repository: chalk/ansi-regex
+Repositories: chalk/ansi-regex, sindresorhus/is-fullwidth-code-point, chalk/strip-ansi, sindresorhus/strip-bom
+
+> MIT License
+>
+> Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---------------------------------------
+
+## ansi-styles, boxen, camelcase, chalk, cli-boxes, get-east-asian-width, string-width, widest-line, wrap-ansi
 
 License: MIT
 By: Sindre Sorhus
@@ -194,10 +208,6 @@ Repository: sindresorhus/get-east-asian-width
 License: MIT
 By: Sindre Sorhus
 Repository: sindresorhus/string-width
-
-License: MIT
-By: Sindre Sorhus
-Repository: chalk/strip-ansi
 
 License: MIT
 By: Sindre Sorhus
@@ -388,24 +398,6 @@ Repository: git@github.com:kaelzhang/node-ignore.git
 
 ---------------------------------------
 
-## is-fullwidth-code-point, strip-bom
-
-License: MIT
-By: Sindre Sorhus
-Repositories: sindresorhus/is-fullwidth-code-point, sindresorhus/strip-bom
-
-> MIT License
->
-> Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
->
-> Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
->
-> The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
->
-> THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
----------------------------------------
-
 ## isexe, semver, which
 
 License: ISC
@@ -506,6 +498,70 @@ Repository: git+https://github.com/senaoxi/docs-islands.git
 > The published logaria artifact additionally contains code with the following licenses:
 >
 > # Bundled dependencies:
+
+---------------------------------------
+
+## minipass
+
+License: BlueOak-1.0.0
+By: Isaac Z. Schlueter
+Repository: https://github.com/isaacs/minipass
+
+> # Blue Oak Model License
+>
+> Version 1.0.0
+>
+> ## Purpose
+>
+> This license gives everyone as much permission to work with
+> this software as possible, while protecting contributors
+> from liability.
+>
+> ## Acceptance
+>
+> In order to receive this license, you must agree to its
+> rules.  The rules of this license are both obligations
+> under that agreement and conditions to your license.
+> You must not do anything with this software that triggers
+> a rule that you cannot or will not follow.
+>
+> ## Copyright
+>
+> Each contributor licenses you to do everything with this
+> software that would otherwise infringe that contributor's
+> copyright in it.
+>
+> ## Notices
+>
+> You must ensure that everyone who gets a copy of
+> any part of this software from you, with or without
+> changes, also gets the text of this license or a link to
+> <https://blueoakcouncil.org/license/1.0.0>.
+>
+> ## Excuse
+>
+> If anyone notifies you in writing that you have not
+> complied with [Notices](#notices), you can keep your
+> license by taking all practical steps to comply within 30
+> days after the notice.  If you do not do so, your license
+> ends immediately.
+>
+> ## Patent
+>
+> Each contributor licenses you to do everything with this
+> software that would otherwise infringe any patent claims
+> they can license or become able to license.
+>
+> ## Reliability
+>
+> No contributor can revoke this license.
+>
+> ## No Liability
+>
+> ***As far as the law allows, this software comes as is,
+> without any warranty or condition, and no contributor
+> will be liable to anyone for any damages related to this
+> software or this license, under any kind of legal claim.***
 
 ---------------------------------------
 
@@ -1050,6 +1106,31 @@ Repository: https://github.com/terkelg/sisteransi
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
+
+---------------------------------------
+
+## ssri
+
+License: ISC
+By: GitHub Inc.
+Repository: git+https://github.com/npm/ssri.git
+
+> ISC License
+>
+> Copyright 2021 (c) npm, Inc.
+>
+> Permission to use, copy, modify, and/or distribute this software for
+> any purpose with or without fee is hereby granted, provided that the
+> above copyright notice and this permission notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE COPYRIGHT HOLDER DISCLAIMS
+> ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
+> WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+> COPYRIGHT HOLDER BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
+> CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+> OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+> OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE
+> USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ---------------------------------------
 

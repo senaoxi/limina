@@ -19,6 +19,8 @@ import { parseSync } from 'oxc-parser';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
 import semver from 'semver';
+// @ts-expect-error -- ssri v13 does not ship TypeScript declarations.
+import rawSsri from 'ssri';
 import { formatErrorMessage, ReleaseLogger } from '../logger';
 import {
   lintPackedManifest,
@@ -98,8 +100,27 @@ interface WorkspacePackageOutputComparison {
   releaseRelevantDiffs: ContentHashDiffGroup;
 }
 
+interface RegistryDistMetadata {
+  integrity?: unknown;
+  shasum?: unknown;
+  tarball?: unknown;
+}
+
 interface RegistryVersionMetadata {
-  dist?: unknown;
+  dist?: RegistryDistMetadata;
+}
+
+interface ParsedIntegrity {
+  toString(options?: { strict?: boolean }): string;
+}
+
+interface SsriModule {
+  checkData(data: Buffer, integrity: string): unknown;
+  fromHex(hexDigest: string, algorithm: string): ParsedIntegrity | null;
+  parse(
+    integrity: string,
+    options?: { strict?: boolean },
+  ): ParsedIntegrity | null;
 }
 
 interface RegistryPackageMetadata {
@@ -128,6 +149,20 @@ type RegistryMetadataResult =
       statusCode?: number;
       statusText?: string;
       url: string;
+    };
+
+type RegistryTarballIntegrityResult =
+  | {
+      integrity: string;
+      kind: 'found';
+      source: 'integrity' | 'shasum';
+    }
+  | {
+      field: 'integrity' | 'shasum';
+      kind: 'invalid';
+    }
+  | {
+      kind: 'missing';
     };
 
 interface DirectWorkspaceDependency {
@@ -180,6 +215,7 @@ const picomatch = rawPicomatch as unknown as (
     dot?: boolean;
   },
 ) => (value: string) => boolean;
+const ssri = rawSsri as SsriModule;
 const DEFAULT_CONTENT_HASH_BASELINE_TAG = 'latest';
 const REGISTRY_METADATA_TIMEOUT_MS = 30_000;
 const REGISTRY_TARBALL_TIMEOUT_MS = 120_000;
@@ -516,6 +552,81 @@ function getRegistryTarballUrl(
   return typeof tarballUrl === 'string' && tarballUrl.trim().length > 0
     ? tarballUrl
     : null;
+}
+
+function parseRegistryTarballIntegrity(value: string): string | null {
+  const tokens = value.trim().split(/\s+/u);
+
+  if (tokens.length === 0 || tokens[0] === '') {
+    return null;
+  }
+
+  try {
+    for (const token of tokens) {
+      const parsed = ssri.parse(token, { strict: true });
+
+      if (!parsed || parsed.toString({ strict: true }) !== token) {
+        return null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return tokens.join(' ');
+}
+
+function resolveRegistryTarballIntegrity(
+  versionMetadata: RegistryVersionMetadata,
+): RegistryTarballIntegrityResult {
+  if (!isPlainRecord(versionMetadata.dist)) {
+    return { kind: 'missing' };
+  }
+
+  const integrityValue = versionMetadata.dist.integrity;
+
+  if (integrityValue !== undefined) {
+    const integrity =
+      typeof integrityValue === 'string'
+        ? parseRegistryTarballIntegrity(integrityValue)
+        : null;
+
+    return integrity
+      ? { integrity, kind: 'found', source: 'integrity' }
+      : { field: 'integrity', kind: 'invalid' };
+  }
+
+  const shasumValue = versionMetadata.dist.shasum;
+
+  if (shasumValue === undefined) {
+    return { kind: 'missing' };
+  }
+
+  if (typeof shasumValue !== 'string' || !/^[\da-f]{40}$/iu.test(shasumValue)) {
+    return { field: 'shasum', kind: 'invalid' };
+  }
+
+  const integrity = ssri.fromHex(shasumValue, 'sha1')?.toString();
+
+  return integrity
+    ? { integrity, kind: 'found', source: 'shasum' }
+    : { field: 'shasum', kind: 'invalid' };
+}
+
+function verifyRegistryTarballIntegrity(options: {
+  integrity: string;
+  packageName: string;
+  tarball: Buffer;
+  tarballUrl: string;
+  version: string;
+}): void {
+  if (ssri.checkData(options.tarball, options.integrity)) {
+    return;
+  }
+
+  throw new Error(
+    `npm tarball integrity mismatch for ${options.packageName}@${options.version} from ${options.tarballUrl}`,
+  );
 }
 
 async function fetchRegistryTarball(tarballUrl: string): Promise<Buffer> {
@@ -919,8 +1030,11 @@ function formatContentHashComparisonReport(options: {
 }
 
 async function compareLocalWorkspacePackageOutputToBaseline(options: {
+  baselineVersion: string;
   config: ResolvedLiminaConfig;
+  dependencyName: string;
   ignoreRules: readonly ContentHashIgnoreRule[];
+  integrity: string;
   tarballUrl: string;
   workspacePackage: NamedWorkspacePackage;
 }): Promise<WorkspacePackageOutputComparison> {
@@ -932,6 +1046,13 @@ async function compareLocalWorkspacePackageOutputToBaseline(options: {
       options.workspacePackage,
     );
     const publishedTarball = await fetchRegistryTarball(options.tarballUrl);
+    verifyRegistryTarballIntegrity({
+      integrity: options.integrity,
+      packageName: options.dependencyName,
+      tarball: publishedTarball,
+      tarballUrl: options.tarballUrl,
+      version: options.baselineVersion,
+    });
     localPackedTarball = await packOutputTarball(localOutDir);
 
     const [remoteArtifact, localArtifact] = await Promise.all([
@@ -1057,12 +1178,33 @@ async function verifyWorkspacePackagePublished(options: {
     return;
   }
 
+  const integrityResult = resolveRegistryTarballIntegrity(versionMetadata);
+
+  if (integrityResult.kind === 'missing') {
+    state.registryProblems.push({
+      ...problemBase,
+      message: `${dependencyName}@${baselineVersion} registry metadata has no dist.integrity or dist.shasum`,
+    });
+    return;
+  }
+
+  if (integrityResult.kind === 'invalid') {
+    state.registryProblems.push({
+      ...problemBase,
+      message: `${dependencyName}@${baselineVersion} registry metadata has invalid dist.${integrityResult.field}`,
+    });
+    return;
+  }
+
   let comparison: WorkspacePackageOutputComparison;
 
   try {
     comparison = await compareLocalWorkspacePackageOutputToBaseline({
+      baselineVersion,
       config: options.config,
+      dependencyName,
       ignoreRules,
+      integrity: integrityResult.integrity,
       tarballUrl,
       workspacePackage,
     });

@@ -94,6 +94,7 @@
     "rolldown-plugin-dts": "catalog:dev",
     "tsx": "catalog:dev",
     "shescape": "catalog:dev",
+    "ssri": "catalog:dev",
     "string-width": "catalog:dev",
     "typescript": "catalog:dev",
     "vitest": "catalog:test"
