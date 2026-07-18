@@ -1,8 +1,8 @@
+import type { FlowWritableChunk } from './render-model';
 import {
-  type FlowWritableChunk,
-  stripControlSequences,
-  toWritableText,
-} from './render-model';
+  advanceTerminalPosition,
+  TerminalTextStream,
+} from './terminal-position';
 
 export const DEFAULT_TERMINAL_COLUMNS = 80;
 
@@ -32,8 +32,9 @@ export interface FlowWriteStream {
 }
 
 export class TerminalFrameTracker {
-  #column = 0;
-  #lineCount = 0;
+  #completedLineCount = 0;
+  #currentLine = '';
+  readonly #textStream = new TerminalTextStream();
   readonly #getColumns: () => number;
 
   constructor(getColumns: () => number) {
@@ -41,37 +42,39 @@ export class TerminalFrameTracker {
   }
 
   get lineCount(): number {
-    return this.#lineCount;
+    return (
+      this.#completedLineCount +
+      advanceTerminalPosition(
+        this.#currentLine,
+        Math.max(1, this.#getColumns()),
+      ).rowsAdvanced
+    );
   }
 
   record(chunk: FlowWritableChunk): void {
-    const text = stripControlSequences(toWritableText(chunk));
+    const text = this.#textStream.decode(chunk);
     const columns = Math.max(1, this.#getColumns());
+    const lines = text.split('\n');
 
-    for (const char of text) {
-      if (char === '\n') {
-        this.#lineCount += 1;
-        this.#column = 0;
-        continue;
-      }
+    this.#currentLine += lines.shift() ?? '';
 
-      this.#column += 1;
-
-      if (this.#column >= columns) {
-        this.#lineCount += 1;
-        this.#column = 0;
-      }
+    for (const line of lines) {
+      this.#completedLineCount +=
+        advanceTerminalPosition(this.#currentLine, columns).rowsAdvanced + 1;
+      this.#currentLine = line;
     }
   }
 
   reset(): void {
-    this.#lineCount = 0;
-    this.#column = 0;
+    this.#completedLineCount = 0;
+    this.#currentLine = '';
+    this.#textStream.reset();
   }
 
   setLineCount(lineCount: number): void {
-    this.#lineCount = Math.max(0, lineCount);
-    this.#column = 0;
+    this.#completedLineCount = Math.max(0, lineCount);
+    this.#currentLine = '';
+    this.#textStream.reset();
   }
 }
 

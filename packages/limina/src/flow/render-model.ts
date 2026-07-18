@@ -1,3 +1,8 @@
+import {
+  advanceTerminalPosition,
+  stripTerminalControlSequences,
+} from './terminal-position';
+
 export type FlowStatus =
   | 'block'
   | 'fail'
@@ -100,12 +105,6 @@ const DEFAULT_TERMINAL_COLUMNS = 80;
 const TERMINAL_FRAME_MARGIN_LINES = 1;
 const TERMINAL_FRAME_CONTEXT_LINES = 6;
 const OMITTED_LINES_MARKER = '│  ...';
-const ANSI_ESCAPE = String.fromCodePoint(0x1b);
-const ANSI_PATTERN = new RegExp(
-  String.raw`${ANSI_ESCAPE}\[[\d:;<=>?]*[\u0020-\u002F]*[\u0040-\u007E]`,
-  'gu',
-);
-
 export const SPINNER_FRAMES = [
   '⠋',
   '⠙',
@@ -343,30 +342,11 @@ function renderCompactSnapshotLines(
 }
 
 export function stripControlSequences(text: string): string {
-  return text.replaceAll(ANSI_PATTERN, '').replaceAll('\r', '');
+  return stripTerminalControlSequences(text);
 }
 
 function countRenderedTerminalRows(line: string, columns: number): number {
-  const text = stripControlSequences(line);
-  let column = 0;
-  let rows = 1;
-
-  for (const char of text) {
-    if (char === '\n') {
-      rows += 1;
-      column = 0;
-      continue;
-    }
-
-    column += 1;
-
-    if (column >= columns) {
-      rows += 1;
-      column = 0;
-    }
-  }
-
-  return rows;
+  return advanceTerminalPosition(line, columns).rowsAdvanced + 1;
 }
 
 function countRenderedRows(
