@@ -42,6 +42,7 @@ const packageCheckMocks = vi.hoisted(() => ({
     string,
     {
       body?: unknown;
+      bodyError?: Error;
       fetchError?: Error;
       jsonError?: Error;
       status: number;
@@ -312,6 +313,22 @@ function toArrayBuffer(buffer: Buffer): ArrayBuffer {
   ) as ArrayBuffer;
 }
 
+function waitForAbort(signal: AbortSignal | null | undefined): Promise<never> {
+  if (!signal) {
+    return Promise.reject(new Error('expected registry request signal'));
+  }
+
+  if (signal.aborted) {
+    return Promise.reject(signal.reason);
+  }
+
+  return new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), {
+      once: true,
+    });
+  });
+}
+
 function createPublishedTarballUrl(
   packageName: string,
   version: string,
@@ -555,6 +572,10 @@ beforeEach(() => {
 
         return {
           json: async () => {
+            if (configuredResponse.bodyError) {
+              throw configuredResponse.bodyError;
+            }
+
             if (configuredResponse.jsonError) {
               throw configuredResponse.jsonError;
             }
@@ -2643,6 +2664,76 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it('aborts registry metadata requests after 30 seconds', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+    const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
+    let markRequestStarted!: () => void;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+
+    vi.useFakeTimers();
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation((delay) => {
+        const controller = new AbortController();
+
+        setTimeout(
+          () => controller.abort(new Error('registry request timed out')),
+          delay,
+        );
+        return controller.signal;
+      });
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input) === 'https://registry.npmjs.org/%40example%2Fb') {
+        markRequestStarted();
+        return waitForAbort(init?.signal);
+      }
+
+      return defaultFetch(input, init);
+    });
+
+    try {
+      const resultPromise = runReleaseCheck({
+        config: createConfig(rootDir, [
+          {
+            checks: ['boundary'],
+            name: '@example/a',
+            outDir,
+          },
+        ]),
+        packageNames: ['@example/a'],
+      });
+      let settled = false;
+
+      const settlementPromise = resultPromise.then(() => {
+        settled = true;
+      });
+      await requestStarted;
+
+      expect(timeoutSpy).toHaveBeenCalledWith(30_000);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(resultPromise).resolves.toBe(false);
+      await settlementPromise;
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'npm registry metadata request for @example/b from https://registry.npmjs.org/%40example%2Fb timed out after 30 seconds',
+      );
+    } finally {
+      timeoutSpy.mockRestore();
+      vi.useRealTimers();
+      errorSpy.mockRestore();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
   it.each([
     [401, 'Unauthorized'],
     [403, 'Forbidden'],
@@ -2708,6 +2799,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
         statusText: 'OK',
       },
       'invalid registry JSON',
+    ],
+    [
+      'body read failure',
+      {
+        bodyError: new Error('registry body interrupted'),
+        status: 200,
+        statusText: 'OK',
+      },
+      'unable to read npm registry metadata response body',
     ],
     [
       'non-object metadata',
@@ -2949,6 +3049,132 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
     } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('aborts a slow registry tarball body after 120 seconds', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+    const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
+    let markBodyStarted!: () => void;
+    const bodyStarted = new Promise<void>((resolve) => {
+      markBodyStarted = resolve;
+    });
+
+    registerPublishedPackage('@example/b', '1.0.0');
+    vi.useFakeTimers();
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation((delay) => {
+        const controller = new AbortController();
+
+        setTimeout(
+          () => controller.abort(new Error('registry request timed out')),
+          delay,
+        );
+        return controller.signal;
+      });
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).endsWith('.tgz')) {
+        return {
+          arrayBuffer: async () => {
+            markBodyStarted();
+            return waitForAbort(init?.signal);
+          },
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+        } as unknown as Response;
+      }
+
+      return defaultFetch(input, init);
+    });
+
+    try {
+      const resultPromise = runReleaseCheck({
+        config: createConfig(rootDir, [
+          {
+            checks: ['boundary'],
+            name: '@example/a',
+            outDir,
+          },
+        ]),
+        packageNames: ['@example/a'],
+      });
+      let settled = false;
+
+      const settlementPromise = resultPromise.then(() => {
+        settled = true;
+      });
+      await bodyStarted;
+
+      expect(timeoutSpy).toHaveBeenCalledWith(120_000);
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(resultPromise).resolves.toBe(false);
+      await settlementPromise;
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'npm tarball request for https://registry.npmjs.org/%40example%2Fb/-/example-b-1.0.0.tgz timed out after 120 seconds',
+      );
+    } finally {
+      timeoutSpy.mockRestore();
+      vi.useRealTimers();
+      errorSpy.mockRestore();
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('reports registry tarball body read failures separately', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const errorSpy = vi
+      .spyOn(ReleaseLogger, 'error')
+      .mockImplementation(() => {});
+    const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
+
+    registerPublishedPackage('@example/b', '1.0.0');
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).endsWith('.tgz')) {
+        return {
+          arrayBuffer: async () => {
+            throw new Error('tarball body interrupted');
+          },
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+        } as unknown as Response;
+      }
+
+      return defaultFetch(input, init);
+    });
+
+    try {
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              checks: ['boundary'],
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+      expect(errorSpy.mock.calls.join('\n')).toContain(
+        'unable to read npm tarball response body for https://registry.npmjs.org/%40example%2Fb/-/example-b-1.0.0.tgz: tarball body interrupted',
+      );
+    } finally {
+      errorSpy.mockRestore();
       await rm(rootDir, {
         force: true,
         recursive: true,
