@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/managed-library",
+  "private": true,
+  "type": "module"
+}

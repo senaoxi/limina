@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2023",
+    "types": [],
+  },
+  "exclude": [],
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "liminaOptions": {
+    "outputs": {
+      "rootDir": "./src",
+      "outDir": "./dist",
+      "declarationMap": true,
+    },
+  },
+}

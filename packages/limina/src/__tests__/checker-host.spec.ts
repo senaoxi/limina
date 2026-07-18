@@ -37,12 +37,13 @@ function createPoolConfig(): ResolvedLiminaConfig {
 }
 
 function blockMainThread(durationMs: number): void {
-  const blockUntil = performance.now() + durationMs;
+  const blocker = new Int32Array(
+    new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT),
+  );
 
-  while (performance.now() < blockUntil) {
-    // Deliberately spin to simulate synchronous analysis work on the
-    // main thread while checker child processes are running.
-  }
+  // Block this event loop without burning a CPU core, so the checker host and
+  // its child processes remain schedulable on constrained CI runners.
+  Atomics.wait(blocker, 0, 0, durationMs);
 }
 
 async function waitForMacrotasks(durationMs: number): Promise<void> {

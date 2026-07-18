@@ -2,12 +2,16 @@ import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { toPortablePath } from '../../src/__tests__/helpers/path';
 import {
-  toPortablePath,
-  toPortableRelativePath,
-} from '../../src/__tests__/helpers/path';
+  exists,
+  expectLiminaSuccess,
+  expectPathInside,
+  readJson,
+  resolveGeneratedPath,
+  runFixtureLimina,
+} from '../helpers/assertions';
 import { type PreparedFixture, prepareFixture } from '../helpers/fixture';
-import { runLimina, type RunLiminaResult } from '../helpers/run-limina';
 
 interface DependencyGraphNode {
   id: string;
@@ -53,63 +57,6 @@ interface ExternalProjectPaths {
 
 let fixture: PreparedFixture | undefined;
 
-async function exists(filePath: string): Promise<boolean> {
-  try {
-    await lstat(filePath);
-    return true;
-  } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
-      return false;
-    }
-
-    throw error;
-  }
-}
-
-async function readJson<T>(filePath: string): Promise<T> {
-  return JSON.parse(await readFile(filePath, 'utf8')) as T;
-}
-
-function resolveGeneratedPath(configPath: string, value: string): string {
-  return toPortablePath(path.resolve(path.dirname(configPath), value));
-}
-
-function formatResult(result: RunLiminaResult): string {
-  return [
-    `fixture: ${result.fixtureName}`,
-    `exit code: ${String(result.code)}`,
-    `signal: ${String(result.signal)}`,
-    `timed out: ${String(result.timedOut)}`,
-    `stdout:\n${result.stdout}`,
-    `stderr:\n${result.stderr}`,
-  ].join('\n');
-}
-
-function expectLiminaSuccess(result: RunLiminaResult): void {
-  const diagnostic = formatResult(result);
-
-  expect(result.timedOut, diagnostic).toBe(false);
-  expect(result.signal, diagnostic).toBeNull();
-  expect(result.code, diagnostic).toBe(0);
-}
-
-async function runFixtureLimina(
-  preparedFixture: PreparedFixture,
-  args: string[],
-): Promise<RunLiminaResult> {
-  return runLimina({
-    args: ['--config', preparedFixture.configPath, ...args],
-    cwd: preparedFixture.cwd,
-    fixtureName: preparedFixture.fixtureName,
-    timeout: 90_000,
-  });
-}
-
 async function getExternalHashes(
   preparedFixture: PreparedFixture,
 ): Promise<string[]> {
@@ -153,13 +100,6 @@ async function discoverExternalProject(
       'tsconfig.tsbuildinfo',
     ),
   };
-}
-
-function expectInside(rootDir: string, candidatePath: string): void {
-  const relativePath = toPortableRelativePath(rootDir, candidatePath);
-
-  expect(relativePath).not.toBe('..');
-  expect(relativePath.startsWith('../')).toBe(false);
 }
 
 async function collectMatchingEntries(
@@ -294,8 +234,8 @@ describe('external workspace public CLI integration', () => {
       externalProject.generatedConfigPath,
       externalConfig.compilerOptions.tsBuildInfoFile,
     );
-    expectInside(preparedFixture.path('repo/.limina/dts'), externalOutDir);
-    expectInside(
+    expectPathInside(preparedFixture.path('repo/.limina/dts'), externalOutDir);
+    expectPathInside(
       preparedFixture.path('repo/.limina/tsbuildinfo'),
       externalTsBuildInfoPath,
     );
