@@ -1,9 +1,9 @@
+import { colorText, plural } from '#utils/reporting';
 import boxen from 'boxen';
 
 const CHECK_SUMMARY_BLOCK_MIN_WIDTH = 88;
 const CHECK_BLOCK_HORIZONTAL_PADDING = 2;
 const CHECK_BLOCK_BORDER_WIDTH = 2;
-const ANSI_RESET = '\u001B[0m';
 const ANSI_BLUE = '\u001B[34m';
 const ANSI_CYAN = '\u001B[36m';
 const ANSI_GREEN = '\u001B[32m';
@@ -14,10 +14,6 @@ const SUMMARY_LABEL_PREFIX_PATTERN =
 
 type CheckSummaryBlockColor = 'green' | 'red';
 type AnsiColor = string;
-
-function plural(count: number, singular: string, pluralForm: string): string {
-  return count === 1 ? singular : pluralForm;
-}
 
 function splitDetailBlocks(
   details: string | readonly string[] | undefined,
@@ -41,10 +37,6 @@ function getBlockContentWidth(blockWidth: number): number {
     1,
     blockWidth - CHECK_BLOCK_BORDER_WIDTH - CHECK_BLOCK_HORIZONTAL_PADDING,
   );
-}
-
-function colorText(color: AnsiColor, text: string): string {
-  return `${color}${text}${ANSI_RESET}`;
 }
 
 function getSummaryLabelColor(label: string): AnsiColor {

@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { uniqueSortedStrings } from '#utils/collections';
 import { normalizeSlashes, toRelativePath } from '#utils/path';
+import { colorText, plural } from '#utils/reporting';
 import boxen from 'boxen';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -83,7 +84,6 @@ const DEFAULT_COMMAND = 'limina check';
 const ISSUE_BLOCK_MIN_WIDTH = 88;
 const ISSUE_BLOCK_HORIZONTAL_PADDING = 2;
 const ISSUE_BLOCK_BORDER_WIDTH = 2;
-const ANSI_RESET = '\u001B[0m';
 const ANSI_BLUE = '\u001B[34m';
 const ANSI_CYAN = '\u001B[36m';
 const ANSI_GREEN = '\u001B[32m';
@@ -93,14 +93,6 @@ const ANSI_YELLOW = '\u001B[33m';
 const LABEL_PREFIX_PATTERN = /^(\s*(?:-\s+|\d+\.\s+)?)([A-Za-z][A-Za-z ]*):/u;
 
 type AnsiColor = string;
-
-function plural(count: number, singular: string, pluralForm: string): string {
-  return count === 1 ? singular : pluralForm;
-}
-
-function colorText(color: AnsiColor, text: string): string {
-  return `${color}${text}${ANSI_RESET}`;
-}
 
 function getLabelColor(label: string): AnsiColor {
   switch (label.toLowerCase()) {

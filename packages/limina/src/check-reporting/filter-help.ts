@@ -1,3 +1,4 @@
+import { countDefinedBy } from '#utils/collections';
 import {
   type LiminaCheckIssueRuleMetadata,
   listLiminaCheckIssueRuleMetadata,
@@ -73,17 +74,7 @@ function countBy(
   issues: readonly LiminaCheckIssue[],
   getValue: (issue: LiminaCheckIssue) => string | undefined,
 ): CountEntry[] {
-  const counts = new Map<string, number>();
-
-  for (const issue of issues) {
-    const value = getValue(issue);
-
-    if (!value) {
-      continue;
-    }
-
-    counts.set(value, (counts.get(value) ?? 0) + 1);
-  }
+  const counts = countDefinedBy(issues, getValue);
 
   return [...counts.entries()]
     .map(([name, count]) => ({ count, name }))

@@ -1,6 +1,7 @@
 import boxen from 'boxen';
 
-import { uniqueSortedStrings } from '#utils/collections';
+import { countDefinedBy, uniqueSortedStrings } from '#utils/collections';
+import { colorText, plural } from '#utils/reporting';
 import { formatCheckSummaryBlock } from '../reporting';
 import type { CheckIssueInventoryView } from './inventory-presentation';
 import { getAllCanonicalIssueLocations } from './inventory-presentation';
@@ -15,7 +16,6 @@ const DEFAULT_DETAIL_LIMIT = 5;
 const ISSUE_BLOCK_MIN_WIDTH = 88;
 const ISSUE_BLOCK_HORIZONTAL_PADDING = 2;
 const ISSUE_BLOCK_BORDER_WIDTH = 2;
-const ANSI_RESET = '\u001B[0m';
 const ANSI_BLUE = '\u001B[34m';
 const ANSI_CYAN = '\u001B[36m';
 const ANSI_GREEN = '\u001B[32m';
@@ -64,14 +64,6 @@ interface IssueGroup {
   verifyCommands?: string[];
 }
 
-function plural(count: number, singular: string, pluralForm: string): string {
-  return count === 1 ? singular : pluralForm;
-}
-
-function colorText(color: AnsiColor, text: string): string {
-  return `${color}${text}${ANSI_RESET}`;
-}
-
 function getSeverityColor(severity: string | undefined): AnsiColor {
   if (severity === 'warning') {
     return ANSI_YELLOW;
@@ -107,25 +99,6 @@ function getLabelColor(label: string): AnsiColor {
       return ANSI_CYAN;
     }
   }
-}
-
-function countBy(
-  issues: readonly LiminaCheckIssue[],
-  getValue: (issue: LiminaCheckIssue) => string | undefined,
-): Map<string, number> {
-  const counts = new Map<string, number>();
-
-  for (const issue of issues) {
-    const value = getValue(issue);
-
-    if (!value) {
-      continue;
-    }
-
-    counts.set(value, (counts.get(value) ?? 0) + 1);
-  }
-
-  return counts;
 }
 
 function formatTopCounts(counts: Map<string, number>, limit: number): string {
@@ -910,8 +883,8 @@ export function formatCheckIssueHumanReport(
   const groups = groupIssues(issues);
   const packageCount = uniqueCount(issues, (issue) => issue.packageName);
   const scopeCount = uniqueCount(issues, (issue) => issue.scope);
-  const taskCounts = countBy(issues, (issue) => issue.task);
-  const ruleCounts = countBy(issues, (issue) => issue.code);
+  const taskCounts = countDefinedBy(issues, (issue) => issue.task);
+  const ruleCounts = countDefinedBy(issues, (issue) => issue.code);
   const verboseCommand = createVerboseCommand(options.command);
   const summaryLines = [
     `Found ${issues.length} ${plural(issues.length, 'check issue', 'check issues')}.`,
