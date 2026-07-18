@@ -4,6 +4,7 @@ import { formatUnknownValue } from '#utils/values';
 import path from 'pathe';
 import { z } from 'zod';
 import { ConfigurationError } from '../domain/validation/errors';
+import type { ExecutionConfig } from '../execution/config';
 
 const unsupportedCheckerPresetReason =
   'configured checkers require a built-in checker adapter.';
@@ -499,50 +500,50 @@ const releaseConfigShapeSchema = z.looseObject({
   npmPackageJsonLint: releaseNpmPackageJsonLintShapeSchema.optional(),
 });
 
-const executionConcurrencyFields = [
-  'tasks',
-  'checkerBuild',
-  'checkerTypecheck',
-  'packageEntries',
-  'releaseEntries',
-] as const;
-
-function isValidExecutionConcurrencyValue(value: unknown): boolean {
-  return (
-    value === 'auto' ||
-    (typeof value === 'number' && Number.isInteger(value) && value > 0)
-  );
-}
+const executionConcurrencyError =
+  'execution concurrency must be a positive integer or "auto".';
+const executionConcurrencySchema = z.union(
+  [
+    z.literal('auto', {
+      error: executionConcurrencyError,
+    }),
+    z
+      .number({
+        error: executionConcurrencyError,
+      })
+      .int({
+        error: executionConcurrencyError,
+      })
+      .positive({
+        error: executionConcurrencyError,
+      }),
+  ],
+  {
+    error: executionConcurrencyError,
+  },
+);
+type ExecutionConfigShape = {
+  [Key in keyof ExecutionConfig]-?: z.ZodType<ExecutionConfig[Key]>;
+};
+const executionConfigShape = {
+  checkerBuild: executionConcurrencySchema.optional(),
+  checkerTypecheck: executionConcurrencySchema.optional(),
+  packageEntries: executionConcurrencySchema.optional(),
+  releaseEntries: executionConcurrencySchema.optional(),
+  tasks: executionConcurrencySchema.optional(),
+} satisfies ExecutionConfigShape;
 
 const executionConfigShapeSchema = z
-  .looseObject({})
+  .looseObject(executionConfigShape)
   .superRefine((execution, ctx) => {
     for (const key of Object.keys(execution)) {
-      if (
-        executionConcurrencyFields.includes(
-          key as (typeof executionConcurrencyFields)[number],
-        )
-      ) {
+      if (Object.hasOwn(executionConfigShape, key)) {
         continue;
       }
 
       ctx.addIssue({
         code: 'custom',
         message: 'unknown execution config field.',
-        path: [key],
-      });
-    }
-
-    for (const key of executionConcurrencyFields) {
-      const value = execution[key];
-
-      if (value === undefined || isValidExecutionConcurrencyValue(value)) {
-        continue;
-      }
-
-      ctx.addIssue({
-        code: 'custom',
-        message: 'execution concurrency must be a positive integer or "auto".',
         path: [key],
       });
     }

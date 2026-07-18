@@ -2238,6 +2238,106 @@ export default {
     }
   });
 
+  it.each([
+    'checkerBuild',
+    'checkerTypecheck',
+    'packageEntries',
+    'releaseEntries',
+    'tasks',
+  ] as const)('accepts every execution concurrency form for %s', (key) => {
+    for (const value of ['auto', 1, 8] as const) {
+      expect(() =>
+        validateLiminaConfig({
+          execution: {
+            [key]: value,
+          },
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it.each([
+    'checkerBuild',
+    'checkerTypecheck',
+    'packageEntries',
+    'releaseEntries',
+    'tasks',
+  ] as const)(
+    'rejects every invalid execution concurrency form for %s',
+    (key) => {
+      for (const value of [
+        0,
+        -1,
+        1.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        'AUTO',
+        true,
+        null,
+        {},
+        [],
+      ]) {
+        let error: unknown;
+
+        try {
+          validateLiminaConfig({
+            execution: {
+              [key]: value,
+            },
+          } as never);
+        } catch (caughtError) {
+          error = caughtError;
+        }
+
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toContain(`  field: execution.${key}`);
+        expect((error as Error).message).toContain(
+          '  reason: execution concurrency must be a positive integer or "auto".',
+        );
+      }
+    },
+  );
+
+  it('preserves the exact execution unknown-field path and message', () => {
+    expect(() =>
+      validateLiminaConfig({
+        execution: {
+          legacy: true,
+        },
+      } as never),
+    ).toThrow(
+      [
+        'Invalid Limina execution config:',
+        '  field: execution.legacy',
+        '  value: true',
+        '  reason: unknown execution config field.',
+      ].join('\n'),
+    );
+  });
+
+  it('reports unknown and invalid execution fields together', () => {
+    let error: unknown;
+
+    try {
+      validateLiminaConfig({
+        execution: {
+          legacy: true,
+          tasks: 0,
+        },
+      } as never);
+    } catch (caughtError) {
+      error = caughtError;
+    }
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(
+      '  reason: unknown execution config field.',
+    );
+    expect((error as Error).message).toContain(
+      '  reason: execution concurrency must be a positive integer or "auto".',
+    );
+  });
+
   it('rejects execution.failFast through the unknown-field contract', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
