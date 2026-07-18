@@ -749,8 +749,6 @@ export default {
           );
           expect(queryLines).not.toContain(undefined);
           for (const queryLine of queryLines) {
-            expect(queryLine).toContain('pnpm');
-            expect(queryLine).toContain('--dir');
             expect(queryLine).toContain(rootDir.replaceAll(path.sep, '/'));
             expect(queryLine).toContain('--config');
             expect(queryLine).toContain(
@@ -762,6 +760,18 @@ export default {
             expect(queryLine).toContain(mode);
             expect(queryLine).toContain('--invocation');
             expect(queryLine).toContain(invocationId);
+          }
+          if (process.platform === 'win32') {
+            expect(queryLines[0]).toContain('Set-Location -LiteralPath');
+            expect(queryLines[0]).toContain('-ErrorAction Stop; &');
+            expect(queryLines[0]).toContain('node');
+            expect(queryLines[0]).not.toContain('pnpm');
+            expect(queryLines[1]).toContain('cd /d');
+            expect(queryLines[1]).toContain('node');
+            expect(queryLines[1]).not.toContain('pnpm');
+          } else {
+            expect(queryLines[0]).toContain('pnpm');
+            expect(queryLines[0]).toContain('--dir');
           }
 
           const query = await execFileAsync(

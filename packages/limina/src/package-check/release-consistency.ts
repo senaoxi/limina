@@ -19,8 +19,7 @@ import { parseSync } from 'oxc-parser';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
 import semver from 'semver';
-// @ts-expect-error -- ssri v13 does not ship TypeScript declarations.
-import rawSsri from 'ssri';
+import ssri from 'ssri';
 import { formatErrorMessage, ReleaseLogger } from '../logger';
 import {
   lintPackedManifest,
@@ -108,19 +107,6 @@ interface RegistryDistMetadata {
 
 interface RegistryVersionMetadata {
   dist?: RegistryDistMetadata;
-}
-
-interface ParsedIntegrity {
-  toString(options?: { strict?: boolean }): string;
-}
-
-interface SsriModule {
-  checkData(data: Buffer, integrity: string): unknown;
-  fromHex(hexDigest: string, algorithm: string): ParsedIntegrity | null;
-  parse(
-    integrity: string,
-    options?: { strict?: boolean },
-  ): ParsedIntegrity | null;
 }
 
 interface RegistryPackageMetadata {
@@ -215,7 +201,6 @@ const picomatch = rawPicomatch as unknown as (
     dot?: boolean;
   },
 ) => (value: string) => boolean;
-const ssri = rawSsri as SsriModule;
 const DEFAULT_CONTENT_HASH_BASELINE_TAG = 'latest';
 const REGISTRY_METADATA_TIMEOUT_MS = 30_000;
 const REGISTRY_TARBALL_TIMEOUT_MS = 120_000;
