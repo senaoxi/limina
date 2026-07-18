@@ -6,6 +6,7 @@ const liminaBinPath = fileURLToPath(
 );
 const defaultTimeout = 60_000;
 const forceTerminationDelay = 2000;
+const finalWatchdogDelay = 5000;
 
 export interface RunLiminaOptions {
   args: string[];
@@ -22,6 +23,19 @@ export interface RunLiminaResult {
   stderr: string;
   stdout: string;
   timedOut: boolean;
+}
+
+interface TerminationStatus {
+  completed: boolean;
+  failure?: string;
+  requested: boolean;
+}
+
+interface RunLiminaDependencies {
+  finalWatchdogDelay: number;
+  forceTerminationDelay: number;
+  spawnChild: (options: RunLiminaOptions) => ChildProcess;
+  terminateProcessTree: (child: ChildProcess, force: boolean) => Promise<void>;
 }
 
 function waitForTaskkill(pid: number, force: boolean): Promise<void> {
@@ -71,79 +85,231 @@ async function terminateProcessTree(
   }
 }
 
-export function runLimina(options: RunLiminaOptions): Promise<RunLiminaResult> {
+function spawnLiminaChild(options: RunLiminaOptions): ChildProcess {
+  return spawn(process.execPath, [liminaBinPath, ...options.args], {
+    cwd: options.cwd,
+    detached: process.platform !== 'win32',
+    env: {
+      ...process.env,
+      CI: 'true',
+      FORCE_COLOR: '0',
+      ...options.env,
+    },
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+}
+
+function formatUnknownError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function formatTerminationStatus(
+  label: 'force' | 'graceful',
+  status: TerminationStatus,
+): string[] {
+  return [
+    `${label} termination requested: ${String(status.requested)}`,
+    `${label} termination completed: ${String(status.completed)}`,
+    `${label} termination failed: ${String(status.failure !== undefined)}`,
+    ...(status.failure === undefined
+      ? []
+      : [`${label} termination failure: ${status.failure}`]),
+  ];
+}
+
+function formatFinalWatchdogError(options: {
+  args: string[];
+  cwd: string;
+  fixtureName: string;
+  force: TerminationStatus;
+  graceful: TerminationStatus;
+  pid: number | undefined;
+  stderr: string;
+  stdout: string;
+}): Error {
+  return new Error(
+    [
+      'Limina integration runner exceeded its final completion watchdog.',
+      `fixture: ${options.fixtureName}`,
+      `cwd: ${options.cwd}`,
+      `args: ${JSON.stringify(options.args)}`,
+      `PID: ${String(options.pid ?? 'unavailable')}`,
+      ...formatTerminationStatus('graceful', options.graceful),
+      ...formatTerminationStatus('force', options.force),
+      `stdout:\n${options.stdout}`,
+      `stderr:\n${options.stderr}`,
+    ].join('\n'),
+  );
+}
+
+export function createRunLimina(
+  overrides: Partial<RunLiminaDependencies> = {},
+): (options: RunLiminaOptions) => Promise<RunLiminaResult> {
+  const dependencies: RunLiminaDependencies = {
+    finalWatchdogDelay,
+    forceTerminationDelay,
+    spawnChild: spawnLiminaChild,
+    terminateProcessTree,
+    ...overrides,
+  };
+
+  return (options: RunLiminaOptions): Promise<RunLiminaResult> =>
+    runLiminaWithDependencies(options, dependencies);
+}
+
+function runLiminaWithDependencies(
+  options: RunLiminaOptions,
+  dependencies: RunLiminaDependencies,
+): Promise<RunLiminaResult> {
   return new Promise((resolve, reject) => {
-    const terminationAttempts: Promise<void>[] = [];
+    const forceStatus: TerminationStatus = {
+      completed: false,
+      requested: false,
+    };
+    const gracefulStatus: TerminationStatus = {
+      completed: false,
+      requested: false,
+    };
+    let finalWatchdogTimer: NodeJS.Timeout | undefined;
     let forceTimer: NodeJS.Timeout | undefined;
-    let spawnError: Error | undefined;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    let settled = false;
     let stderr = '';
     let stdout = '';
     let timedOut = false;
 
-    const child = spawn(process.execPath, [liminaBinPath, ...options.args], {
-      cwd: options.cwd,
-      detached: process.platform !== 'win32',
-      env: {
-        ...process.env,
-        CI: 'true',
-        FORCE_COLOR: '0',
-        ...options.env,
-      },
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    let child: ChildProcess;
+    try {
+      child = dependencies.spawnChild(options);
+    } catch (error) {
+      reject(
+        new Error(
+          `Unable to start Limina for fixture ${options.fixtureName}: ${formatUnknownError(error)}`,
+        ),
+      );
+      return;
+    }
 
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.once('error', (error) => {
-      spawnError = error;
-    });
+    if (!child.stdout || !child.stderr) {
+      reject(
+        new Error(
+          `Unable to capture Limina output for fixture ${options.fixtureName}.`,
+        ),
+      );
+      return;
+    }
 
-    const timeoutTimer = setTimeout(() => {
-      timedOut = true;
-      terminationAttempts.push(terminateProcessTree(child, false));
-      forceTimer = setTimeout(() => {
-        terminationAttempts.push(terminateProcessTree(child, true));
-      }, forceTerminationDelay);
-    }, options.timeout ?? defaultTimeout);
+    const stdoutStream = child.stdout;
+    const stderrStream = child.stderr;
 
-    child.once('close', (code, signal) => {
-      clearTimeout(timeoutTimer);
+    const clearTimers = (): void => {
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+      }
       if (forceTimer) {
         clearTimeout(forceTimer);
       }
+      if (finalWatchdogTimer) {
+        clearTimeout(finalWatchdogTimer);
+      }
+    };
 
-      Promise.allSettled(terminationAttempts)
-        .then(() => {
-          child.stdout.destroy();
-          child.stderr.destroy();
+    const onStdout = (chunk: string): void => {
+      stdout += chunk;
+    };
+    const onStderr = (chunk: string): void => {
+      stderr += chunk;
+    };
 
-          if (spawnError) {
+    const settle = (complete: () => void): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimers();
+      stdoutStream.off('data', onStdout);
+      stderrStream.off('data', onStderr);
+      stdoutStream.destroy();
+      stderrStream.destroy();
+      complete();
+    };
+
+    const requestTermination = (
+      status: TerminationStatus,
+      force: boolean,
+    ): void => {
+      status.requested = true;
+
+      Promise.resolve()
+        .then(() => dependencies.terminateProcessTree(child, force))
+        .then(
+          () => {
+            if (!settled) {
+              status.completed = true;
+            }
+          },
+          (error: unknown) => {
+            if (!settled) {
+              status.failure = formatUnknownError(error);
+            }
+          },
+        );
+    };
+
+    stdoutStream.setEncoding('utf8');
+    stderrStream.setEncoding('utf8');
+    stdoutStream.on('data', onStdout);
+    stderrStream.on('data', onStderr);
+    child.on('error', (error) => {
+      settle(() => {
+        reject(
+          new Error(
+            `Unable to start Limina for fixture ${options.fixtureName}: ${error.message}`,
+          ),
+        );
+      });
+    });
+
+    timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      requestTermination(gracefulStatus, false);
+      forceTimer = setTimeout(() => {
+        requestTermination(forceStatus, true);
+        finalWatchdogTimer = setTimeout(() => {
+          settle(() => {
             reject(
-              new Error(
-                `Unable to start Limina for fixture ${options.fixtureName}: ${spawnError.message}`,
-              ),
+              formatFinalWatchdogError({
+                args: options.args,
+                cwd: options.cwd,
+                fixtureName: options.fixtureName,
+                force: forceStatus,
+                graceful: gracefulStatus,
+                pid: child.pid,
+                stderr,
+                stdout,
+              }),
             );
-            return;
-          }
-
-          resolve({
-            code,
-            fixtureName: options.fixtureName,
-            signal,
-            stderr,
-            stdout,
-            timedOut,
           });
-        })
-        .catch(reject);
+        }, dependencies.finalWatchdogDelay);
+      }, dependencies.forceTerminationDelay);
+    }, options.timeout ?? defaultTimeout);
+
+    child.on('close', (code, signal) => {
+      settle(() => {
+        resolve({
+          code,
+          fixtureName: options.fixtureName,
+          signal,
+          stderr,
+          stdout,
+          timedOut,
+        });
+      });
     });
   });
 }
+
+export const runLimina = createRunLimina();

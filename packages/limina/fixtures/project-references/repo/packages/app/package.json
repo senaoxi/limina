@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/project-references-app",
+  "private": true,
+  "type": "module"
+}

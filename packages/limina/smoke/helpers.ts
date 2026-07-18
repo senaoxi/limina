@@ -117,6 +117,7 @@ export async function runCommand(
     inherit?: boolean;
     reject?: boolean;
     timeout?: number;
+    windowsVerbatimArguments?: boolean;
   },
 ): Promise<CommandResult> {
   const result = await execa(command, args, {
@@ -128,6 +129,7 @@ export async function runCommand(
     stdin: 'ignore',
     stdout: options.inherit ? 'inherit' : 'pipe',
     timeout: options.timeout ?? 120_000,
+    windowsVerbatimArguments: options.windowsVerbatimArguments,
   });
 
   return {
