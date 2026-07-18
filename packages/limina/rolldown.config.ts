@@ -16,6 +16,13 @@ const packageExternalDeps = [
   ...Object.keys(pkg.optionalDependencies ?? {}),
 ];
 
+function isPackageExternal(id: string): boolean {
+  return packageExternalDeps.some(
+    (dependencyName) =>
+      id === dependencyName || id.startsWith(`${dependencyName}/`),
+  );
+}
+
 const cleanDistPlugin = (): NonNullable<RolldownOptions['plugins']> => ({
   name: 'rolldown-plugin-clean-dist',
   async buildStart() {
@@ -41,7 +48,7 @@ const moduleConfig: RolldownOptions = defineConfig({
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',
-  external: packageExternalDeps,
+  external: isPackageExternal,
   plugins: [
     cleanDistPlugin(),
     packagePlugin(),
@@ -66,7 +73,7 @@ const dtsConfig: RolldownOptions = defineConfig({
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',
-  external: packageExternalDeps,
+  external: isPackageExternal,
   output: {
     dir: 'dist',
   },

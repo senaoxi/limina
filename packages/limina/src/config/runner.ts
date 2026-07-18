@@ -725,6 +725,31 @@ export interface ReleaseContentHashConfig {
 }
 
 /**
+ * Severity accepted by npm-package-json-lint release rules.
+ */
+export type ReleaseNpmPackageJsonLintSeverity = 'error' | 'off' | 'warning';
+
+/**
+ * One npm-package-json-lint rule setting.
+ */
+export type ReleaseNpmPackageJsonLintRuleConfig =
+  | ReleaseNpmPackageJsonLintSeverity
+  | readonly [
+      ReleaseNpmPackageJsonLintSeverity,
+      readonly unknown[] | Record<string, unknown>,
+    ];
+
+/**
+ * npm-package-json-lint settings for the packed publish manifest.
+ */
+export interface ReleaseNpmPackageJsonLintConfig {
+  /**
+   * Rule settings merged over Limina's publish-manifest defaults.
+   */
+  rules?: Record<string, ReleaseNpmPackageJsonLintRuleConfig>;
+}
+
+/**
  * Release check settings.
  */
 export interface ReleaseConfig {
@@ -732,6 +757,14 @@ export interface ReleaseConfig {
    * Dependency artifact content hash comparison settings.
    */
   contentHash?: ReleaseContentHashConfig;
+  /**
+   * Optional npm-package-json-lint integration for the packed publish
+   * manifest. `true` uses Limina's defaults, `false` or omission disables the
+   * integration, and an object overrides individual default rules.
+   *
+   * @default false
+   */
+  npmPackageJsonLint?: boolean | ReleaseNpmPackageJsonLintConfig;
 }
 
 export type RegionExcludeKind = 'package-scope' | 'workspace-package';

@@ -3,6 +3,7 @@ import {
   getActiveCheckers,
   isAutoCheckerConfigMode,
   loadConfig,
+  validateLiminaConfig,
 } from '#config/runner';
 import { prepareGeneratedTsconfigGraph } from '#core/build-graph/runner';
 import { collectGraphProjectRoutes } from '#core/tsconfig/actions';
@@ -136,6 +137,12 @@ describe('defineConfig', () => {
           builtinIgnore: false,
           ignore: ['client/**'],
         },
+        npmPackageJsonLint: {
+          rules: {
+            'prefer-property-order': 'off',
+            'require-license': 'error',
+          },
+        },
       },
       execution: {
         checkerBuild: 'auto',
@@ -202,6 +209,12 @@ describe('defineConfig', () => {
     expect(config.release?.contentHash?.baselineTag).toBe('next');
     expect(config.release?.contentHash?.builtinIgnore).toBe(false);
     expect(config.release?.contentHash?.ignore).toEqual(['client/**']);
+    expect(config.release?.npmPackageJsonLint).toMatchObject({
+      rules: {
+        'prefer-property-order': 'off',
+        'require-license': 'error',
+      },
+    });
     expect(config.execution?.checkerTypecheck).toBe(2);
     expect(config.execution?.tasks).toBe('auto');
   });
@@ -2125,6 +2138,64 @@ export default {
         recursive: true,
       });
     }
+  });
+
+  it('accepts boolean and object npm-package-json-lint release config', () => {
+    expect(() =>
+      validateLiminaConfig({
+        release: {
+          npmPackageJsonLint: true,
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateLiminaConfig({
+        release: {
+          npmPackageJsonLint: {
+            rules: {
+              'prefer-property-order': 'off',
+              'valid-values-private': ['error', [false]],
+            },
+          },
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    {
+      error: /npmPackageJsonLint must be a boolean or object/u,
+      name: 'non-object integration config',
+      value: 'yes',
+    },
+    {
+      error: /unknown npmPackageJsonLint config field/u,
+      name: 'unknown integration field',
+      value: { configFile: '.npmpackagejsonlintrc.json' },
+    },
+    {
+      error: /npmPackageJsonLint\.rules must be an object/u,
+      name: 'non-object rules',
+      value: { rules: [] },
+    },
+    {
+      error: /rule config must be/u,
+      name: 'unsupported rule severity',
+      value: { rules: { 'require-license': 'fatal' } },
+    },
+    {
+      error: /rule config must be/u,
+      name: 'unsupported tuple options',
+      value: { rules: { 'valid-values-private': ['error', false] } },
+    },
+  ])('rejects $name', ({ error, value }) => {
+    expect(() =>
+      validateLiminaConfig({
+        release: {
+          npmPackageJsonLint: value,
+        },
+      } as never),
+    ).toThrow(error);
   });
 
   it('accepts canonical execution config', async () => {

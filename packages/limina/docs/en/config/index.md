@@ -12,7 +12,7 @@ Limina configuration starts from `limina.config.mts` inside the workspace. Read 
 - [Condition Domains](./condition-domains.md): `graph.conditionDomains` — condition sets checked against declaration reference trees.
 - [Proof Allowlist](./proof-allowlist.md): source coverage exceptions (`file`, `reason`).
 - [Package Checks](./package-checks.md): built-output entries, `publint` / `attw` / `boundary`.
-- [Release Checks](./release-checks.md): `release.contentHash`, tarball and publish hygiene.
+- [Release Checks](./release-checks.md): `release.npmPackageJsonLint`, `release.contentHash`, tarball and publish hygiene.
 - [Pipelines](./pipelines.md): named workflows of built-in tasks and external commands.
 - [Execution Concurrency](./execution.md): concurrency limits for `execution.tasks`, checkers, package checks, and release checks.
 

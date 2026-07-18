@@ -2,6 +2,8 @@
 
 `limina release check` is separate from `package check`. It uses the same `package.entries` selection, packs the `npm tarball`, and verifies publish hygiene plus workspace publish-dependency consistency against `npm` registry content.
 
+Limina's built-in release checks always run. The optional `release.npmPackageJsonLint` integration can additionally lint the packed `package.json` with `npm-package-json-lint`.
+
 For workspace publish dependencies, Limina compares the local packed package output with an `npm dist-tag` baseline (`release.contentHash.baselineTag`, defaulting to `latest`) by package-relative content diffs. Diff reports classify files as `changed`, `local-only`, or `remote-only`, and failures list the release-relevant file names. If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish.
 
 ::: warning Tarball and publish hygiene
@@ -15,6 +17,36 @@ Release checks reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from 
 ::: tip Selecting entries
 Without `--package`, `limina release check` requires the nearest cwd `package.json#name` to match a configured entry. Pass `--package <name>` one or more times to skip cwd matching.
 :::
+
+## npmPackageJsonLint
+
+- **Type:** `boolean | { rules?: Record<string, RuleConfig> }`
+- **Default:** `false`
+
+`npmPackageJsonLint: true` enables `npm-package-json-lint` for the packed publish manifest with Limina's default release rules. The object form also enables the integration and merges `rules` over those defaults. Set an individual rule to `off` to disable it, or use `warning` when the finding should be shown without failing the release check.
+
+`RuleConfig` is `off`, `warning`, `error`, or a `[severity, options]` tuple accepted by the selected rule.
+
+```ts
+export default defineConfig({
+  release: {
+    npmPackageJsonLint: {
+      rules: {
+        'prefer-property-order': 'warning',
+        'require-types': 'off',
+      },
+    },
+  },
+});
+```
+
+`npm-package-json-lint` is an optional peer dependency of Limina. Install it in the workspace that runs the enabled integration:
+
+```sh
+pnpm add -D npm-package-json-lint@^9.1.0
+```
+
+If the integration is enabled but the package is not installed, `release check` fails with an installation hint. Omit the field or set it to `false` when the workspace does not want this integration. Limina reads rule overrides directly from this field and does not search for a separate `npm-package-json-lint` config file.
 
 ## contentHash.baselineTag
 
