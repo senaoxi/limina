@@ -15,19 +15,16 @@ import {
 import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { unpack } from '@publint/pack';
-import { NpmPackageJsonLint } from 'npm-package-json-lint';
+import { parseSync } from 'oxc-parser';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
 import semver from 'semver';
 import { formatErrorMessage, ReleaseLogger } from '../logger';
+import {
+  lintPackedManifest,
+  type PackedManifestLintIssue,
+} from './packed-manifest-lint';
 import { type PackedPackageTarball, packOutputTarball } from './runner';
-
-interface NpmPackageJsonLintIssue {
-  lintId: string;
-  lintMessage: string;
-  node: string;
-  severity: string;
-}
 
 interface PublishDependencyEntry {
   dependencyName: string;
@@ -192,51 +189,9 @@ const ARTIFACT_HASH_IGNORED_FILES = new Set([
   'CODE_OF_CONDUCT.md',
   'SECURITY.md',
 ]);
-const SOURCE_MAPPING_URL_PATTERN =
+const SOURCE_MAPPING_URL_SOURCE_PATTERN =
   /\/\/\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=/u;
-const PACKED_MANIFEST_LINT_CONFIG = {
-  rules: {
-    'bin-type': 'error',
-    'bundledDependencies-type': 'error',
-    'config-type': 'error',
-    'cpu-type': 'error',
-    'dependencies-type': 'error',
-    'description-type': 'error',
-    'devDependencies-type': 'error',
-    'directories-type': 'error',
-    'engines-type': 'error',
-    'files-type': 'error',
-    'homepage-type': 'error',
-    'keywords-type': 'error',
-    'license-type': 'error',
-    'main-type': 'error',
-    'man-type': 'error',
-    'name-format': 'error',
-    'name-type': 'error',
-    'no-archive-dependencies': 'error',
-    'no-archive-devDependencies': 'error',
-    'no-file-dependencies': 'error',
-    'no-file-devDependencies': 'error',
-    'no-git-dependencies': 'error',
-    'no-git-devDependencies': 'error',
-    'no-repeated-dependencies': 'error',
-    'optionalDependencies-type': 'error',
-    'os-type': 'error',
-    'peerDependencies-type': 'error',
-    'preferGlobal-type': 'error',
-    'private-type': 'error',
-    'repository-type': 'error',
-    'require-license': 'error',
-    'require-name': 'error',
-    'require-types': 'error',
-    'require-version': 'error',
-    'scripts-type': 'error',
-    'type-type': 'error',
-    'valid-values-private': ['error', [false]],
-    'version-format': 'error',
-    'version-type': 'error',
-  },
-} as const;
+const SOURCE_MAPPING_URL_COMMENT_PATTERN = /^\s*#\s*sourceMappingURL\s*=/u;
 
 function isLinkDependencySpecifier(specifier: string): boolean {
   return specifier.startsWith('link:');
@@ -1225,46 +1180,74 @@ function readPackedPackageJson(options: {
   }
 }
 
-function formatNpmPackageJsonLintIssue(issue: NpmPackageJsonLintIssue): string {
+function formatNpmPackageJsonLintIssue(issue: PackedManifestLintIssue): string {
   return `${issue.lintId} [${issue.node || 'package.json'}]: ${
     issue.lintMessage
   }`;
 }
 
-function validatePackedManifestLint(options: {
+async function validatePackedManifestLint(options: {
   config: ResolvedLiminaConfig;
+  lintConfig: NonNullable<
+    NonNullable<ResolvedLiminaConfig['release']>['npmPackageJsonLint']
+  >;
   manifest: PublishManifest;
   outDir: string;
   rootPackageName: string;
   state: ReleaseConsistencyState;
-}): void {
-  const lintResult = new NpmPackageJsonLint({
-    config: PACKED_MANIFEST_LINT_CONFIG,
+}): Promise<void> {
+  const issues = await lintPackedManifest({
+    config: typeof options.lintConfig === 'object' ? options.lintConfig : {},
     cwd: options.config.rootDir,
+    manifest: options.manifest,
     packageJsonFilePath: path.join(options.outDir, 'package.json'),
-    packageJsonObject: options.manifest,
-  }).lint();
+  });
 
-  for (const result of lintResult.results) {
-    if (result.errorCount === 0) {
+  for (const issue of issues) {
+    const message = formatNpmPackageJsonLintIssue(issue);
+
+    if (issue.severity === 'warning') {
+      ReleaseLogger.warn(
+        `[${options.rootPackageName}] [npm-package-json-lint] ${message}`,
+      );
       continue;
     }
 
-    for (const issue of result.issues) {
-      if (issue.severity !== 'error') {
-        continue;
-      }
-
-      options.state.packedManifestLintProblems.push({
-        importerName: options.rootPackageName,
-        message: formatNpmPackageJsonLintIssue(issue),
-      });
+    if (issue.severity !== 'error') {
+      continue;
     }
+
+    options.state.packedManifestLintProblems.push({
+      importerName: options.rootPackageName,
+      message,
+    });
   }
 }
 
 function isJavaScriptPackageFile(relativePath: string): boolean {
   return /\.(?:cjs|mjs|js)$/u.test(relativePath);
+}
+
+function hasSourceMappingUrlDirective(options: {
+  relativePath: string;
+  source: string;
+}): boolean {
+  try {
+    const parseResult = parseSync(options.relativePath, options.source, {
+      sourceType: 'unambiguous',
+    });
+
+    if (parseResult.errors.length === 0) {
+      return parseResult.comments.some((comment) =>
+        SOURCE_MAPPING_URL_COMMENT_PATTERN.test(comment.value),
+      );
+    }
+  } catch {
+    // Keep the release hygiene check conservative when a native parser error
+    // prevents reliable comment classification.
+  }
+
+  return SOURCE_MAPPING_URL_SOURCE_PATTERN.test(options.source);
 }
 
 function validateReleaseTarballHygiene(options: {
@@ -1303,7 +1286,12 @@ function validateReleaseTarballHygiene(options: {
 
     const source = Buffer.from(file.data).toString('utf8');
 
-    if (SOURCE_MAPPING_URL_PATTERN.test(source)) {
+    if (
+      hasSourceMappingUrlDirective({
+        relativePath: file.relativePath,
+        source,
+      })
+    ) {
       options.state.releaseHygieneProblems.push({
         importerName: options.rootPackageName,
         message: `tarball JavaScript file contains sourceMappingURL directive: ${file.relativePath}`,
@@ -1541,13 +1529,18 @@ export async function assertPackageReleaseConsistency(
   });
 
   if (packedManifest) {
-    validatePackedManifestLint({
-      config: options.config,
-      manifest: packedManifest,
-      outDir: options.outDir,
-      rootPackageName: options.outputManifest.name,
-      state,
-    });
+    const npmPackageJsonLint = options.config.release?.npmPackageJsonLint;
+
+    if (npmPackageJsonLint !== undefined && npmPackageJsonLint !== false) {
+      await validatePackedManifestLint({
+        config: options.config,
+        lintConfig: npmPackageJsonLint,
+        manifest: packedManifest,
+        outDir: options.outDir,
+        rootPackageName: options.outputManifest.name,
+        state,
+      });
+    }
 
     validatePackedManifest({
       manifest: packedManifest,

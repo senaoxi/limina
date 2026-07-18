@@ -101,6 +101,7 @@
     "@typescript/native-preview": ">=7.0.0-dev.20260421.2 <7.0.0",
     "@vue/compiler-sfc": ">=3.0.0 <4.0.0",
     "knip": ">=6.0.0 <7.0.0",
+    "npm-package-json-lint": ">=9.1.0 <10.0.0",
     "publint": ">=0.3.0 <0.4.0",
     "svelte-check": ">=4.0.0 <5.0.0",
     "tsx": "^4.9.0",
@@ -119,6 +120,9 @@
       "optional": true
     },
     "knip": {
+      "optional": true
+    },
+    "npm-package-json-lint": {
       "optional": true
     },
     "publint": {

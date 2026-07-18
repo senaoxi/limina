@@ -402,8 +402,101 @@ const releaseContentHashShapeSchema = z
     }
   });
 
+const releaseNpmPackageJsonLintSeverities = new Set([
+  'error',
+  'off',
+  'warning',
+]);
+
+function isReleaseNpmPackageJsonLintRuleConfig(value: unknown): boolean {
+  if (
+    typeof value === 'string' &&
+    releaseNpmPackageJsonLintSeverities.has(value)
+  ) {
+    return true;
+  }
+
+  if (!Array.isArray(value) || value.length !== 2) {
+    return false;
+  }
+
+  const [severity, ruleOptions] = value;
+
+  return (
+    typeof severity === 'string' &&
+    releaseNpmPackageJsonLintSeverities.has(severity) &&
+    (Array.isArray(ruleOptions) || isPlainConfigRecord(ruleOptions))
+  );
+}
+
+const releaseNpmPackageJsonLintShapeSchema = z
+  .unknown()
+  .superRefine((npmPackageJsonLint, ctx) => {
+    if (typeof npmPackageJsonLint === 'boolean') {
+      return;
+    }
+
+    if (!isPlainConfigRecord(npmPackageJsonLint)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'npmPackageJsonLint must be a boolean or object.',
+      });
+      return;
+    }
+
+    for (const key of Object.keys(npmPackageJsonLint)) {
+      if (key === 'rules') {
+        continue;
+      }
+
+      ctx.addIssue({
+        code: 'custom',
+        message: 'unknown npmPackageJsonLint config field.',
+        path: [key],
+      });
+    }
+
+    const rules = npmPackageJsonLint.rules;
+
+    if (rules === undefined) {
+      return;
+    }
+
+    if (!isPlainConfigRecord(rules)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'npmPackageJsonLint.rules must be an object.',
+        path: ['rules'],
+      });
+      return;
+    }
+
+    for (const [ruleName, ruleConfig] of Object.entries(rules)) {
+      if (ruleName.trim().length === 0) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'npmPackageJsonLint rule names must be non-empty strings.',
+          path: ['rules'],
+        });
+        continue;
+      }
+
+      if (isReleaseNpmPackageJsonLintRuleConfig(ruleConfig)) {
+        continue;
+      }
+
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'rule config must be "off", "warning", "error", or a [severity, options] tuple.',
+        path: ['rules', ruleName],
+      });
+    }
+  });
+
 const releaseConfigShapeSchema = z.looseObject({
   contentHash: releaseContentHashShapeSchema.optional(),
+  npmPackageJsonLint: releaseNpmPackageJsonLintShapeSchema.optional(),
 });
 
 const executionConcurrencyFields = [
@@ -1119,6 +1212,18 @@ function formatLiminaConfigShapeIssue(
       '  field: release.contentHash',
       `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
       '  reason: release.contentHash must be an object.',
+    ].join('\n');
+  }
+
+  if (
+    field === 'release.npmPackageJsonLint' ||
+    field.startsWith('release.npmPackageJsonLint.')
+  ) {
+    return [
+      'Invalid Limina release config:',
+      `  field: ${field}`,
+      `  value: ${formatUnknownValue(getValueAtPath(value, pathSegments))}`,
+      `  reason: ${issue.message}`,
     ].join('\n');
   }
 

@@ -2,6 +2,8 @@
 
 `limina release check` 独立于 `package check`。它使用同一组 `package.entries` 做选择，打包 `npm tarball`，然后校验发布卫生，以及基于 `npm` 注册表内容的工作区发布依赖一致性。
 
+Limina 内置的发布检查始终执行。除此之外，还可以通过可选的 `release.npmPackageJsonLint` 集成，让 `npm-package-json-lint` 检查打包后的 `package.json`。
+
 对于工作区发布依赖，Limina 会把本地打包产物和 `npm dist-tag` 基线（`release.contentHash.baselineTag`，默认 `latest`）做包相对内容差异对比。差异报告会把文件分成 `changed`、`local-only`、`remote-only` 三类；失败时会列出发布相关的具体文件名。如果按配置忽略后消费者可见包内容一致，就不会要求该依赖重新发布。
 
 ::: warning `tarball` 与发布卫生
@@ -15,6 +17,36 @@
 ::: tip 选择条目
 没有 `--package` 时，`limina release check` 要求当前目录最近的 `package.json#name` 必须命中配置条目；传入一个或多个 `--package <name>` 时会跳过当前目录匹配。
 :::
+
+## npmPackageJsonLint
+
+- **类型：** `boolean | { rules?: Record<string, RuleConfig> }`
+- **默认值：** `false`
+
+`npmPackageJsonLint: true` 会使用 Limina 的默认发布规则，让 `npm-package-json-lint` 检查打包后的发布清单。对象形式同样会启用集成，并把 `rules` 合并到默认规则上。将单条规则设为 `off` 可以关闭它；设为 `warning` 时会显示问题，但不会让发布检查失败。
+
+`RuleConfig` 可以是 `off`、`warning`、`error`，也可以是所选规则支持的 `[severity, options]` 元组。
+
+```ts
+export default defineConfig({
+  release: {
+    npmPackageJsonLint: {
+      rules: {
+        'prefer-property-order': 'warning',
+        'require-types': 'off',
+      },
+    },
+  },
+});
+```
+
+`npm-package-json-lint` 是 Limina 的可选对等依赖。需要启用这项集成时，请在运行 Limina 的工作区中安装它：
+
+```sh
+pnpm add -D npm-package-json-lint@^9.1.0
+```
+
+如果已经启用集成但没有安装这个包，`release check` 会失败并给出安装提示。不需要这项集成时，可以省略该字段或显式设为 `false`。Limina 直接读取这里的规则覆盖，不会搜索单独的 `npm-package-json-lint` 配置文件。
 
 ## contentHash.baselineTag
 

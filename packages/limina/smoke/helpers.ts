@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { env as inheritedEnvironment } from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 export interface CommandResult {
@@ -25,6 +26,7 @@ export interface DistPackageJson {
   exports?: Record<string, unknown>;
   name: string;
   peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   types?: string;
 }
 
@@ -35,6 +37,7 @@ interface PackedDistTarball {
 
 export const PACKAGE_ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 export const DIST_DIR = path.join(PACKAGE_ROOT_DIR, 'dist');
+export const RELEASE_FIXTURE_PACKAGE_NAME = '@limina-smoke/release-fixture';
 const REQUIRED_DIST_FILES = [
   'package.json',
   'bin/limina.js',
@@ -50,6 +53,51 @@ function stringifyJson(value: unknown): string {
 
 export function getPnpmCommand(): string {
   return process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+}
+
+function resolvePnpmCommand(environment: NodeJS.ProcessEnv): {
+  command: string;
+  argsPrefix: string[];
+} {
+  const npmExecPath = environment.npm_execpath;
+  const npmExecFileName = npmExecPath
+    ? path.basename(npmExecPath).toLowerCase()
+    : undefined;
+
+  // Package scripts expose the exact pnpm JS entry that launched them. Running
+  // that entry through Node avoids an extra cmd.exe/.cmd parsing round-trip on
+  // Windows, where shell metacharacters in forwarded CLI arguments can change.
+  if (
+    npmExecPath &&
+    existsSync(npmExecPath) &&
+    (npmExecFileName === 'pnpm.cjs' ||
+      npmExecFileName === 'pnpm.mjs' ||
+      npmExecFileName === 'pnpm.js')
+  ) {
+    return {
+      command: process.execPath,
+      argsPrefix: [npmExecPath],
+    };
+  }
+
+  // Corepack sets COREPACK_ROOT before handing off to pnpm. Nx preserves that
+  // environment for inferred package-script targets even when npm_execpath is
+  // absent, so invoke the same Corepack entry without crossing its .cmd shim.
+  const corepackPnpmPath = environment.COREPACK_ROOT
+    ? path.join(environment.COREPACK_ROOT, 'dist', 'pnpm.js')
+    : undefined;
+
+  if (corepackPnpmPath && existsSync(corepackPnpmPath)) {
+    return {
+      command: process.execPath,
+      argsPrefix: [corepackPnpmPath],
+    };
+  }
+
+  return {
+    command: getPnpmCommand(),
+    argsPrefix: [],
+  };
 }
 
 function getNpmCommand(): string {
@@ -95,11 +143,18 @@ export async function runPnpm(
   args: string[],
   options: {
     cwd: string;
+    env?: NodeJS.ProcessEnv;
     inherit?: boolean;
+    reject?: boolean;
     timeout?: number;
   },
 ): Promise<CommandResult> {
-  return runCommand(getPnpmCommand(), args, options);
+  const { command, argsPrefix } = resolvePnpmCommand({
+    ...inheritedEnvironment,
+    ...options.env,
+  });
+
+  return runCommand(command, [...argsPrefix, ...args], options);
 }
 
 export async function runNodeScript(options: {
@@ -111,7 +166,7 @@ export async function runNodeScript(options: {
   });
 }
 
-function getPeerDependencyRange(
+export function getPeerDependencyRange(
   manifest: DistPackageJson,
   packageName: string,
 ): string {
@@ -163,6 +218,14 @@ export function assertDistArtifacts(): DistPackageJson {
 
   if (manifest.types !== './index.d.ts') {
     throw new Error('Expected dist package.json to expose ./index.d.ts.');
+  }
+
+  if (
+    manifest.peerDependenciesMeta?.['npm-package-json-lint']?.optional !== true
+  ) {
+    throw new Error(
+      'Expected dist package.json to mark npm-package-json-lint as an optional peer dependency.',
+    );
   }
 
   return manifest;
@@ -278,6 +341,7 @@ async function writeConsumerFiles(
   const pnpmVersion = pnpmVersionResult.stdout.trim();
 
   await mkdir(path.join(fixtureDir, 'app', 'src'), { recursive: true });
+  await mkdir(path.join(fixtureDir, 'release-dist'), { recursive: true });
 
   await writeFile(
     path.join(fixtureDir, 'package.json'),
@@ -313,6 +377,14 @@ export default defineConfig({
       include: ['**/*.ts'],
       exclude: ['node_modules', '.limina', '.tsbuild', 'dist'],
     },
+  },
+  package: {
+    entries: [
+      {
+        name: '${RELEASE_FIXTURE_PACKAGE_NAME}',
+        outDir: 'release-dist',
+      },
+    ],
   },
 });
 `,
@@ -356,6 +428,40 @@ export default defineConfig({
       },
       include: ['src/**/*.ts'],
     }),
+    'utf8',
+  );
+  await writeFile(
+    path.join(fixtureDir, 'release-dist', 'package.json'),
+    stringifyJson({
+      exports: {
+        '.': './index.js',
+      },
+      license: 'MIT',
+      name: RELEASE_FIXTURE_PACKAGE_NAME,
+      type: 'module',
+      types: './index.d.ts',
+      version: '1.0.0',
+    }),
+    'utf8',
+  );
+  await writeFile(
+    path.join(fixtureDir, 'release-dist', 'index.js'),
+    'export const value = 1;\n',
+    'utf8',
+  );
+  await writeFile(
+    path.join(fixtureDir, 'release-dist', 'index.d.ts'),
+    'export declare const value = 1;\n',
+    'utf8',
+  );
+  await writeFile(
+    path.join(fixtureDir, 'release-dist', 'README.md'),
+    '# Release fixture\n',
+    'utf8',
+  );
+  await writeFile(
+    path.join(fixtureDir, 'release-dist', 'LICENSE.md'),
+    'MIT\n',
     'utf8',
   );
   await writeFile(

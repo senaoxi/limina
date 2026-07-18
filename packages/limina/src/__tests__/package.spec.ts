@@ -1454,7 +1454,44 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
-  it('fails release checks when the packed manifest fails npm-package-json-lint', async () => {
+  it('allows sourceMappingURL text in JavaScript literals', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      await writeText(
+        path.join(outDir, 'index.cjs'),
+        [
+          "const line = '//# sourceMappingURL=line.js.map';",
+          'const block = "/*# sourceMappingURL=block.js.map */";',
+          'const template = `\\n//# sourceMappingURL=template.js.map`;',
+          'const regexp = /\\/\\/# sourceMappingURL=regexp\\.js\\.map/;',
+          'module.exports = { block, line, regexp, template };',
+          '',
+        ].join('\n'),
+      );
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('does not run npm-package-json-lint when the release integration is omitted', async () => {
     const rootDir = await createWorkspaceRoot();
 
     try {
@@ -1479,7 +1516,96 @@ describe('runPackageCheck and runReleaseCheck', () => {
           ]),
           packageNames: ['@example/a'],
         }),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('fails release checks when the enabled npm-package-json-lint defaults find a problem', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      packageCheckMocks.packedManifestOverrides.set(outDir, {
+        dependencies: {},
+        exports: {
+          '.': './index.js',
+        },
+        name: '@example/a',
+        version: '1.0.0',
+      });
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(
+            rootDir,
+            [
+              {
+                name: '@example/a',
+                outDir,
+              },
+            ],
+            {
+              release: {
+                npmPackageJsonLint: true,
+              },
+            },
+          ),
+          packageNames: ['@example/a'],
+        }),
       ).resolves.toBe(false);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('merges npm-package-json-lint rule overrides over Limina defaults', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      packageCheckMocks.packedManifestOverrides.set(outDir, {
+        dependencies: {},
+        exports: {
+          '.': './index.js',
+        },
+        license: 'MIT',
+        name: '@example/a',
+        version: '1.0.0',
+      });
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(
+            rootDir,
+            [
+              {
+                name: '@example/a',
+                outDir,
+              },
+            ],
+            {
+              release: {
+                npmPackageJsonLint: {
+                  rules: {
+                    'require-types': 'off',
+                  },
+                },
+              },
+            },
+          ),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
     } finally {
       await rm(rootDir, {
         force: true,
@@ -1518,12 +1644,20 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(
+            rootDir,
+            [
+              {
+                name: '@example/a',
+                outDir,
+              },
+            ],
             {
-              name: '@example/a',
-              outDir,
+              release: {
+                npmPackageJsonLint: true,
+              },
             },
-          ]),
+          ),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);

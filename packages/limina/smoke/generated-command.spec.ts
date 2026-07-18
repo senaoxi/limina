@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { env as inheritedEnvironment } from 'node:process';
@@ -9,9 +16,9 @@ import {
   type CommandResult,
   type ConsumerFixture,
   createConsumerFixture,
-  getPnpmCommand,
   packLiminaDist,
   runCommand,
+  runPnpm,
 } from './helpers';
 
 const INVOCATION_ID_PATTERN =
@@ -231,6 +238,37 @@ async function getPowerShellEvidence(
   return { pnpmSource, version };
 }
 
+describe('smoke pnpm runner', () => {
+  it('uses the Corepack JS entry when npm_execpath is unavailable', async () => {
+    const corepackRoot = await mkdtemp(
+      path.join(tmpdir(), 'limina-fake-corepack-'),
+    );
+    const forwardedArgs = ['exec', 'limina', '--mode', MODE];
+
+    try {
+      const corepackDistDir = path.join(corepackRoot, 'dist');
+      await mkdir(corepackDistDir, { recursive: true });
+      await writeFile(
+        path.join(corepackDistDir, 'pnpm.js'),
+        'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n',
+        'utf8',
+      );
+
+      const result = await runPnpm(forwardedArgs, {
+        cwd: corepackRoot,
+        env: createShellEnvironment({
+          COREPACK_ROOT: corepackRoot,
+          npm_execpath: undefined,
+        }),
+      });
+
+      expect(result.stdout).toBe(JSON.stringify(forwardedArgs));
+    } finally {
+      await rm(corepackRoot, { force: true, recursive: true });
+    }
+  });
+});
+
 describe('standalone invocation generated command', () => {
   it('round-trips the exact packed-consumer command through real shells', async () => {
     const manifest = assertDistArtifacts();
@@ -265,8 +303,7 @@ describe('standalone invocation generated command', () => {
       ).toBe(true);
       expect(bareLiminaResolution.code).toBeUndefined();
 
-      const failedCheck = await runCommand(
-        getPnpmCommand(),
+      const failedCheck = await runPnpm(
         [
           'exec',
           'limina',
@@ -287,7 +324,10 @@ describe('standalone invocation generated command', () => {
         },
       );
 
-      expect(failedCheck.exitCode).toBe(1);
+      expect(
+        failedCheck.exitCode,
+        `${failedCheck.stdout}\n${failedCheck.stderr}`,
+      ).toBe(1);
       const invocationId =
         /Standalone issue invocation: ([0-9a-f-]+)/u.exec(
           failedCheck.stdout,
