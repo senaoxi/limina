@@ -1,7 +1,7 @@
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   type CheckIssueSnapshot,
@@ -48,6 +48,10 @@ const faultLauncherPath = fileURLToPath(
   new URL('fault-injection-launcher.ts', import.meta.url),
 );
 const tsxLoaderPath = createRequire(import.meta.url).resolve('tsx');
+// Node's `--import` flag requires a URL specifier; on Windows a bare drive
+// path (`D:\...`) is rejected as an unsupported ESM scheme, so pass a
+// `file://` URL that is valid on every platform.
+const tsxLoaderSpecifier = pathToFileURL(tsxLoaderPath).href;
 
 interface FaultInjectionReceipt {
   readonly boundary?: {
@@ -458,7 +462,7 @@ export async function runDetectorFixture(
   const receiptPath = path.join(harnessRoot, 'fault-receipt.json');
   const entry = isFaultInjection
     ? {
-        args: ['--import', tsxLoaderPath, faultLauncherPath],
+        args: ['--import', tsxLoaderSpecifier, faultLauncherPath],
         executable: process.execPath,
       }
     : undefined;

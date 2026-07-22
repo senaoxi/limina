@@ -1759,12 +1759,18 @@ describe('source invariant and cleanup', () => {
     });
     const remove = vi.fn(async () => {});
     await cleanupDetectorSandbox(retrySandbox, { remove });
-    expect(remove).toHaveBeenCalledWith(retrySandbox.sandboxRoot, {
-      force: true,
-      maxRetries: SANDBOX_CLEANUP_MAX_RETRIES,
-      recursive: true,
-      retryDelay: SANDBOX_CLEANUP_RETRY_DELAY_MS,
-    });
+    // Cleanup canonicalizes the sandbox path (forward slashes) before handing
+    // it to `rm`, so assert against the portable form rather than the raw
+    // backslash path a Windows fixture would carry.
+    expect(remove).toHaveBeenCalledWith(
+      toPortablePath(retrySandbox.sandboxRoot),
+      {
+        force: true,
+        maxRetries: SANDBOX_CLEANUP_MAX_RETRIES,
+        recursive: true,
+        retryDelay: SANDBOX_CLEANUP_RETRY_DELAY_MS,
+      },
+    );
   });
 
   it('does not follow a sandbox link while recursively cleaning', async () => {

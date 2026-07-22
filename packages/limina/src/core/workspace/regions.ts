@@ -1,8 +1,4 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { readJsonConfig } from '#core/tsconfig/actions';
-import { normalizeAbsolutePath } from '#utils/path';
-import { isPlainRecord } from '#utils/values';
-import path from 'pathe';
 import type { WorkspacePackage } from './actions';
 import { collectValidatedWorkspaceContext } from './validated-context';
 
@@ -71,43 +67,6 @@ export interface WorkspaceRegionTopology {
 export type WorkspacePackagesProvider = (
   config: ResolvedLiminaConfig,
 ) => Promise<WorkspacePackage[]>;
-
-export function collectConfiguredOutputDirectories(options: {
-  config: ResolvedLiminaConfig;
-  sourceConfigPaths: readonly string[];
-}): string[] {
-  return [
-    ...new Set(
-      options.sourceConfigPaths.flatMap((sourceConfigPath) => {
-        let configObject: Record<string, unknown>;
-        try {
-          configObject = readJsonConfig(
-            options.config,
-            normalizeAbsolutePath(sourceConfigPath),
-          );
-        } catch {
-          return [];
-        }
-        const liminaOptions = configObject.liminaOptions;
-        if (
-          !isPlainRecord(liminaOptions) ||
-          !isPlainRecord(liminaOptions.outputs)
-        ) {
-          return [];
-        }
-        const outDir = liminaOptions.outputs.outDir;
-        if (typeof outDir !== 'string' || outDir.trim().length === 0) {
-          return [];
-        }
-        return [
-          normalizeAbsolutePath(
-            path.resolve(path.dirname(sourceConfigPath), outDir.trim()),
-          ),
-        ];
-      }),
-    ),
-  ].sort((left, right) => left.localeCompare(right));
-}
 
 export async function collectWorkspaceRegionTopology(
   config: ResolvedLiminaConfig,

@@ -600,10 +600,3 @@ export async function recheckMutationBoundary(
     );
   }
 }
-
-/** Captures a fresh safe generation instead of comparing transaction-created nodes. */
-export async function refreshMutationBoundary(
-  targets: readonly MutationBoundaryTarget[],
-): Promise<MutationBoundarySnapshot> {
-  return preflightMutationBoundary(targets);
-}

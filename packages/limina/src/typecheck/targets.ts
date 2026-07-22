@@ -16,7 +16,6 @@ import type {
   ResolvedCheckerConfig,
 } from '#config/runner';
 import { collectGraphProjectRouteFromRoot } from '#core/tsconfig/actions';
-import { uniqueValues } from '#utils/collections';
 import { normalizeSlashes, toRelativePath } from '#utils/path';
 import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
 import { runCheckerSpawnMeasured } from './process-host';
@@ -279,16 +278,18 @@ export function createVueTsgoCachePaths(configPath: string): string[] {
     return [];
   }
 
-  return uniqueValues([configPath, nodePath.resolve(configPath)]).map(
-    (candidate) => {
-      const configHash = createHash('sha256')
-        .update(candidate)
-        .digest('hex')
-        .slice(0, 8);
+  // vue-tsgo derives its cache directory from the OS-native absolute config
+  // path (`node:path.resolve(cwd, --project)`), so hash that exact form. Using
+  // `nodePath.resolve` also canonicalizes the slash style, keeping the hash
+  // stable whether the incoming path arrives in pathe (forward-slash) or native
+  // (Windows backslash) form — one logical config maps to one cache path on
+  // every platform.
+  const configHash = createHash('sha256')
+    .update(nodePath.resolve(configPath))
+    .digest('hex')
+    .slice(0, 8);
 
-      return path.join(packageDir, 'node_modules/.cache/vue-tsgo', configHash);
-    },
-  );
+  return [path.join(packageDir, 'node_modules/.cache/vue-tsgo', configHash)];
 }
 
 export function collectVueTsgoConfigPaths(

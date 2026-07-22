@@ -18,6 +18,7 @@ import {
   LIMINA_CHECK_TASK_NAMES,
   type LiminaCheckTaskName,
 } from '../source-check/snapshot';
+import { normalizeSlashes } from '../utils/path';
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, '../../../..');
 
@@ -217,7 +218,7 @@ describe('Limina issue code contracts', () => {
   ] as const)('keeps the %s producer-free', (_name, nonActiveCode) => {
     const sourceRoot = path.join(WORKSPACE_ROOT, 'packages/limina/src');
     const references = readdirSync(sourceRoot, { recursive: true })
-      .map(String)
+      .map((entry) => normalizeSlashes(String(entry)))
       .filter(
         (filePath) =>
           filePath.endsWith('.ts') &&

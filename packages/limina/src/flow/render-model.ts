@@ -1,7 +1,4 @@
-import {
-  advanceTerminalPosition,
-  stripTerminalControlSequences,
-} from './terminal-position';
+import { advanceTerminalPosition } from './terminal-position';
 
 export type FlowStatus =
   | 'block'
@@ -339,10 +336,6 @@ function renderCompactSnapshotLines(
   return snapshot.outroMessage
     ? [...lines, `└  ${snapshot.outroMessage}`]
     : lines;
-}
-
-export function stripControlSequences(text: string): string {
-  return stripTerminalControlSequences(text);
 }
 
 function countRenderedTerminalRows(line: string, columns: number): number {

@@ -1107,11 +1107,6 @@ export async function writeCheckIssueSnapshotOnly(
   );
 }
 
-export const writeSourceIssueSnapshot: typeof writeSourceIssueSnapshotOnly =
-  writeSourceIssueSnapshotOnly;
-export const writeCheckIssueSnapshot: typeof writeCheckIssueSnapshotOnly =
-  writeCheckIssueSnapshotOnly;
-
 export async function writeNotRunCheckIssueSnapshot(options: {
   artifactNamespace: LiminaArtifactNamespace;
   command: string;

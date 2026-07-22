@@ -748,18 +748,33 @@ export default {
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
           );
           expect(queryLines).not.toContain(undefined);
+          // The PowerShell variant marshals the canonical Node argv through a
+          // Base64 JSON transport token, so flags like `--config` are not
+          // present as plaintext on that line. Decode any trailing Base64
+          // payload back into its arguments before asserting on the tokens.
+          const expandQueryLine = (line: string): string => {
+            const base64Match = /'([A-Za-z0-9+/=]{16,})'\s*$/u.exec(line);
+            if (!base64Match) {
+              return line;
+            }
+            const decodedArgs = JSON.parse(
+              Buffer.from(base64Match[1], 'base64').toString('utf8'),
+            ) as string[];
+            return `${line} ${decodedArgs.join(' ')}`;
+          };
           for (const queryLine of queryLines) {
-            expect(queryLine).toContain(rootDir.replaceAll(path.sep, '/'));
-            expect(queryLine).toContain('--config');
-            expect(queryLine).toContain(
+            const queryTokens = expandQueryLine(queryLine!);
+            expect(queryTokens).toContain(rootDir.replaceAll(path.sep, '/'));
+            expect(queryTokens).toContain('--config');
+            expect(queryTokens).toContain(
               options.expectedConfigPath.replaceAll(path.sep, '/'),
             );
-            expect(queryLine).toContain('--config-loader');
-            expect(queryLine).toContain('native');
-            expect(queryLine).toContain('--mode');
-            expect(queryLine).toContain(mode);
-            expect(queryLine).toContain('--invocation');
-            expect(queryLine).toContain(invocationId);
+            expect(queryTokens).toContain('--config-loader');
+            expect(queryTokens).toContain('native');
+            expect(queryTokens).toContain('--mode');
+            expect(queryTokens).toContain(mode);
+            expect(queryTokens).toContain('--invocation');
+            expect(queryTokens).toContain(invocationId);
           }
           if (process.platform === 'win32') {
             expect(queryLines[0]).toContain('Set-Location -LiteralPath');

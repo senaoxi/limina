@@ -14,18 +14,6 @@ export function normalizeWorkspacePattern(value: string): string {
   return pattern;
 }
 
-export function isInvalidWorkspacePattern(pattern: string): boolean {
-  return (
-    pattern.startsWith('!') ||
-    path.isAbsolute(pattern) ||
-    /^[A-Za-z]:[\\/]/u.test(pattern) ||
-    pattern === '..' ||
-    pattern.startsWith('../') ||
-    pattern.includes('/../') ||
-    pattern.endsWith('/..')
-  );
-}
-
 export function isInvalidConfigRootPattern(pattern: string): boolean {
   return (
     pattern.startsWith('!') ||

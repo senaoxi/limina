@@ -1272,12 +1272,6 @@ export function createDefaultExecutionPlan(
   );
 }
 
-export function describeDefaultCheckPipeline(
-  plan: ExecutionPlan,
-): ReturnType<typeof describePipeline> {
-  return describePipeline(plan);
-}
-
 function reportPostCommitProjectionWarning(error: unknown): void {
   try {
     const message = error instanceof Error ? error.message : String(error);

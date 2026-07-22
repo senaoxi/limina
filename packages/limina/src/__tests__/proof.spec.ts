@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import { normalizeAbsolutePath } from '#utils/path';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -301,9 +302,8 @@ function createCheckerGraphCoverageProofGeneratedGraph(
     generation: 0,
     rootDir,
   });
-  const checkerEntryPath = path.join(
-    rootDir,
-    '.limina/tsconfig.typescript.build.json',
+  const checkerEntryPath = normalizeAbsolutePath(
+    path.join(rootDir, '.limina/tsconfig.typescript.build.json'),
   );
 
   return {

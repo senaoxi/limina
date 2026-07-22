@@ -11,8 +11,6 @@ import type {
   LiminaCheckRunTaskSummary,
 } from './snapshot';
 
-export type LiminaCheckRunTaskPlan = ExecutionTaskIdentity;
-
 export interface LiminaCheckRunTaskStats {
   items?: readonly LiminaCheckRunCheckItemSummary[];
   passed: number;

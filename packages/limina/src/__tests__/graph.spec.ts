@@ -1,6 +1,7 @@
 import type { GraphConfig, ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { parseProject } from '#core/import-graph/context';
+import { normalizeAbsolutePath } from '#utils/path';
 import {
   mkdir,
   mkdtemp,
@@ -299,7 +300,10 @@ function createManualGeneratedGraph(
     artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([
-      ['typescript', path.join(rootDir, entryRelativePath)],
+      [
+        'typescript',
+        normalizeAbsolutePath(path.join(rootDir, entryRelativePath)),
+      ],
     ]),
     checkers: [
       {
@@ -2037,25 +2041,23 @@ packages:
       );
 
       const generatedGraph = createManualGeneratedGraph(fixture.rootDir);
-      const appSourceConfigPath = path.join(
-        fixture.rootDir,
-        'packages/app/tsconfig.lib.json',
+      const appSourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/app/tsconfig.lib.json'),
       );
-      const appDtsConfigPath = path.join(
-        fixture.rootDir,
-        generatedAppDtsRelativePath,
+      const appDtsConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, generatedAppDtsRelativePath),
       );
-      const internalSourceConfigPath = path.join(
-        fixture.rootDir,
-        'packages/internal/tsconfig.lib.json',
+      const internalSourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/internal/tsconfig.lib.json'),
       );
-      const internalDtsConfigPath = path.join(
-        fixture.rootDir,
-        'packages/internal/tsconfig.lib.dts.json',
+      const internalDtsConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/internal/tsconfig.lib.dts.json'),
       );
-      const unreachableInternalDtsConfigPath = path.join(
-        fixture.rootDir,
-        '.limina/tsconfig/checkers/typescript/projects/packages/internal/tsconfig.lib.dts.json',
+      const unreachableInternalDtsConfigPath = normalizeAbsolutePath(
+        path.join(
+          fixture.rootDir,
+          '.limina/tsconfig/checkers/typescript/projects/packages/internal/tsconfig.lib.dts.json',
+        ),
       );
       generatedGraph.sourceToDts.set(
         'typescript',

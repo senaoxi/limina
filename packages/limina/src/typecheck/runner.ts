@@ -2287,5 +2287,3 @@ export async function runCheckerTypecheckImpl(
     targetResults: results,
   };
 }
-
-export default runCheckerBuildImpl;
