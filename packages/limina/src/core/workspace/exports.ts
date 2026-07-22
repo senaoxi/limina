@@ -48,7 +48,18 @@ export interface WorkspacePackageExportResolution {
   typeScriptResolvedFileName: string | null;
 }
 
+export interface WorkspaceExportProblem {
+  readonly detailLines: readonly string[];
+  readonly fix?: string;
+  readonly packageJsonPath: string;
+  readonly packageName: string;
+  readonly reason: string;
+  readonly subpath: string;
+  readonly title: string;
+}
+
 export interface WorkspaceExportsResolutionIndex {
+  diagnostics: WorkspaceExportProblem[];
   get: (
     profileConfigPath: string,
     specifier: string,
@@ -97,6 +108,7 @@ interface PackageExportEntry {
 }
 
 interface CollectedPackageExportEntries {
+  diagnostics: WorkspaceExportProblem[];
   entries: PackageExportEntry[];
   problems: string[];
 }
@@ -248,6 +260,7 @@ async function expandWildcardExportEntry(options: {
   subpath: string;
   targets: string[];
 }): Promise<CollectedPackageExportEntries> {
+  const diagnostics: WorkspaceExportProblem[] = [];
   const entries = new Map<string, PackageExportEntry>();
   const problems: string[] = [];
   const wildcardTargets = options.targets.filter((target) =>
@@ -255,15 +268,26 @@ async function expandWildcardExportEntry(options: {
   );
 
   if (wildcardTargets.length === 0) {
-    problems.push(
-      [
-        'Unable to expand wildcard package export:',
-        `  package: ${options.packageName}`,
-        `  export: ${options.subpath}`,
-        '  reason: wildcard exports must have at least one string target containing "*".',
-      ].join('\n'),
-    );
+    const reason =
+      'wildcard exports must have at least one string target containing "*".';
+    const detailLines = [
+      'Unable to expand wildcard package export:',
+      `  package: ${options.packageName}`,
+      `  export: ${options.subpath}`,
+      '  reason: wildcard exports must have at least one string target containing "*".',
+    ];
+
+    problems.push(detailLines.join('\n'));
+    diagnostics.push({
+      detailLines,
+      packageJsonPath: path.join(options.packageDirectory, 'package.json'),
+      packageName: options.packageName,
+      reason,
+      subpath: options.subpath,
+      title: 'Unable to expand wildcard package export',
+    });
     return {
+      diagnostics,
       entries: [],
       problems,
     };
@@ -312,17 +336,27 @@ async function expandWildcardExportEntry(options: {
   }
 
   if (entries.size === 0) {
-    problems.push(
-      [
-        'Unable to expand wildcard package export:',
-        `  package: ${options.packageName}`,
-        `  export: ${options.subpath}`,
-        '  reason: no concrete files matched the export target patterns.',
-      ].join('\n'),
-    );
+    const reason = 'no concrete files matched the export target patterns.';
+    const detailLines = [
+      'Unable to expand wildcard package export:',
+      `  package: ${options.packageName}`,
+      `  export: ${options.subpath}`,
+      '  reason: no concrete files matched the export target patterns.',
+    ];
+
+    problems.push(detailLines.join('\n'));
+    diagnostics.push({
+      detailLines,
+      packageJsonPath: path.join(options.packageDirectory, 'package.json'),
+      packageName: options.packageName,
+      reason,
+      subpath: options.subpath,
+      title: 'Unable to expand wildcard package export',
+    });
   }
 
   return {
+    diagnostics,
     entries: [...entries.values()].sort((left, right) =>
       left.specifier.localeCompare(right.specifier),
     ),
@@ -333,6 +367,7 @@ async function expandWildcardExportEntry(options: {
 async function collectPackageExportEntries(
   workspacePackage: NamedWorkspacePackage,
 ): Promise<CollectedPackageExportEntries> {
+  const diagnostics: WorkspaceExportProblem[] = [];
   const exportsField = workspacePackage.manifest.exports;
   const problems: string[] = [];
   const rawEntries: {
@@ -370,6 +405,7 @@ async function collectPackageExportEntries(
       });
 
       entries.push(...expanded.entries);
+      diagnostics.push(...expanded.diagnostics);
       problems.push(...expanded.problems);
       continue;
     }
@@ -390,6 +426,7 @@ async function collectPackageExportEntries(
   }
 
   return {
+    diagnostics,
     entries: entries.sort((left, right) =>
       left.specifier.localeCompare(right.specifier),
     ),
@@ -739,7 +776,7 @@ function createWorkspaceExportProblem(options: {
   reason: string;
   resolver: string;
   title: string;
-}): string {
+}): WorkspaceExportProblem {
   const lines = [
     options.title,
     '  check: graph:check workspace exports preflight',
@@ -776,11 +813,20 @@ function createWorkspaceExportProblem(options: {
     `  fix: ${getWorkspaceExportFix()}`,
   );
 
-  return lines.join('\n');
+  return {
+    detailLines: lines,
+    fix: getWorkspaceExportFix(),
+    packageJsonPath: options.entry.packageJsonPath,
+    packageName: options.entry.packageName,
+    reason: options.reason,
+    subpath: options.entry.subpath,
+    title: options.title,
+  };
 }
 
 function addEntryProblems(options: {
   config: ResolvedLiminaConfig;
+  diagnostics: WorkspaceExportProblem[];
   entry: PackageExportEntry;
   hasOxcResolution: boolean;
   hasTypeScriptResolution: boolean;
@@ -788,42 +834,44 @@ function addEntryProblems(options: {
   profiles: readonly WorkspaceExportsResolutionProfile[];
 }): void {
   if (!options.hasTypeScriptResolution && !options.hasOxcResolution) {
-    options.problems.push(
-      createWorkspaceExportProblem({
+    const diagnostic = createWorkspaceExportProblem({
+      config: options.config,
+      entry: options.entry,
+      expectedCandidates: getDeclarationCandidatePaths({
         config: options.config,
         entry: options.entry,
-        expectedCandidates: getDeclarationCandidatePaths({
-          config: options.config,
-          entry: options.entry,
-        }),
-        expectedCandidatesLabel: 'expected declaration candidates',
-        profiles: options.profiles,
-        reason:
-          'package.json#exports/types/main do not resolve to a declaration entry for any active checker profile.',
-        resolver: 'TypeScript declaration resolver',
-        title:
-          'Workspace package export has no TypeScript declaration-context resolution',
       }),
-    );
+      expectedCandidatesLabel: 'expected declaration candidates',
+      profiles: options.profiles,
+      reason:
+        'package.json#exports/types/main do not resolve to a declaration entry for any active checker profile.',
+      resolver: 'TypeScript declaration resolver',
+      title:
+        'Workspace package export has no TypeScript declaration-context resolution',
+    });
+
+    options.diagnostics.push(diagnostic);
+    options.problems.push(diagnostic.detailLines.join('\n'));
   }
 
   if (!options.hasOxcResolution) {
-    options.problems.push(
-      createWorkspaceExportProblem({
+    const diagnostic = createWorkspaceExportProblem({
+      config: options.config,
+      entry: options.entry,
+      expectedCandidates: getRuntimeCandidatePaths({
         config: options.config,
         entry: options.entry,
-        expectedCandidates: getRuntimeCandidatePaths({
-          config: options.config,
-          entry: options.entry,
-        }),
-        expectedCandidatesLabel: 'expected runtime candidates',
-        profiles: options.profiles,
-        reason:
-          'package.json#exports declares this public entry, but no active checker profile can resolve it.',
-        resolver: 'Oxc runtime resolver',
-        title: 'Workspace package export points to an unresolved public entry',
       }),
-    );
+      expectedCandidatesLabel: 'expected runtime candidates',
+      profiles: options.profiles,
+      reason:
+        'package.json#exports declares this public entry, but no active checker profile can resolve it.',
+      resolver: 'Oxc runtime resolver',
+      title: 'Workspace package export points to an unresolved public entry',
+    });
+
+    options.diagnostics.push(diagnostic);
+    options.problems.push(diagnostic.detailLines.join('\n'));
   }
 }
 
@@ -834,6 +882,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
   packages: WorkspacePackage[];
   profiles: WorkspaceExportsResolutionProfile[];
 }): Promise<WorkspaceExportsResolutionIndex> {
+  const diagnostics: WorkspaceExportProblem[] = [];
   let processedEntryCount = 0;
   const packagesWithExports = new Set<string>();
   const problems: string[] = [];
@@ -868,6 +917,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
     const collectedEntries =
       await collectPackageExportEntries(workspacePackage);
 
+    diagnostics.push(...collectedEntries.diagnostics);
     problems.push(...collectedEntries.problems);
 
     for (const entry of collectedEntries.entries) {
@@ -970,6 +1020,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
 
       addEntryProblems({
         config: options.config,
+        diagnostics,
         entry,
         hasOxcResolution,
         hasTypeScriptResolution,
@@ -985,6 +1036,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
   options.importAnalysis.clearOxcResolverCaches?.();
 
   return {
+    diagnostics,
     get: (profileConfigPath, specifier) =>
       resolutionByProfilePath.get(profileConfigPath)?.get(specifier) ?? null,
     hasExports: (packageName) => packagesWithExports.has(packageName),

@@ -35,6 +35,11 @@ import {
   PackageReleaseConsistencyError,
 } from '../package-check/release-consistency';
 import {
+  createReleaseCheckIssuesFromFindings,
+  createReleaseFinding,
+  type ReleaseFinding,
+} from '../package-check/release-findings';
+import {
   type DistPackageJson,
   type PackageEntrySelectionPlan,
   type PackedPackageTarball,
@@ -117,19 +122,20 @@ function finishReleaseProgressItem(
   }
 }
 
-function collectOutputManifestProblems(options: {
+function collectOutputManifestFindings(options: {
   label: string;
   manifest: DistPackageJson;
   outDir: string;
   rootDir: string;
-}): string[] {
+}): ReleaseFinding[] {
   const sections = [
     'dependencies',
     'devDependencies',
     'peerDependencies',
     'optionalDependencies',
   ] as const;
-  const problems: string[] = [];
+  const findings: ReleaseFinding[] = [];
+  const packageManifestPath = path.join(options.outDir, 'package.json');
 
   for (const sectionName of sections) {
     const section = options.manifest[sectionName];
@@ -146,135 +152,47 @@ function collectOutputManifestProblems(options: {
         continue;
       }
 
-      problems.push(
-        [
-          `${options.label}: ${options.manifest.name} -> ${dependencyName} [${sectionName}] (${specifier}): output package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers`,
-          `  output: ${toRelativePath(options.rootDir, options.outDir)}`,
-        ].join('\n'),
+      const problemLines = [
+        `${options.label}: ${options.manifest.name} -> ${dependencyName} [${sectionName}] (${specifier}): output package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers`,
+        `  output: ${toRelativePath(options.rootDir, options.outDir)}`,
+      ];
+      findings.push(
+        createReleaseFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.releasePackedManifest,
+          facts: {
+            dependencyName,
+            kind: 'output-local-specifier',
+            outputDirectory: options.outDir,
+            packageManifestPath,
+            sectionName,
+            specifier,
+          },
+          filePath: packageManifestPath,
+          packageManifestPath,
+          packageName: options.manifest.name,
+          presentation: {
+            problemLines,
+            section: 'output-manifest',
+            sectionTitle: 'Output package manifest is not publish-ready:',
+            summary: problemLines[0],
+            title: 'Output package manifest is not publish-ready',
+          },
+        }),
       );
     }
   }
 
-  return problems;
+  return findings;
 }
 
-function getReleaseConsistencySectionCode(
-  section: string,
-  body: string,
-): string {
-  if (section.includes('tarball')) {
-    return LIMINA_CHECK_ISSUE_CODES.releaseTarballHygiene;
-  }
-
-  if (
-    section.includes('Packed package manifest') ||
-    section.includes('Output package manifest') ||
-    section.includes('Source manifest')
-  ) {
-    return LIMINA_CHECK_ISSUE_CODES.releasePackedManifest;
-  }
-
-  if (/content hash|local-only|remote-only|changed/iu.test(body)) {
-    return LIMINA_CHECK_ISSUE_CODES.releaseContentHash;
-  }
-
-  if (section.includes('registry') || section.includes('published')) {
-    return LIMINA_CHECK_ISSUE_CODES.releaseRegistry;
-  }
-
-  return LIMINA_CHECK_ISSUE_CODES.releaseConsistency;
-}
-
-function createReleaseConsistencyIssues(options: {
+function createReleaseIssuesFromFindings(options: {
   error: PackageReleaseConsistencyError;
-  label: string;
-  outputPackageJsonPath: string;
   rootDir: string;
 }): LiminaCheckIssue[] {
-  const lines = formatErrorMessage(options.error).split('\n');
-  const issues: LiminaCheckIssue[] = [];
-  let sectionTitle = 'Release consistency issue';
-  let sectionLines: string[] = [];
-
-  const flush = (): void => {
-    if (sectionLines.length === 0) {
-      return;
-    }
-
-    const body = sectionLines.join('\n');
-    const code = getReleaseConsistencySectionCode(sectionTitle, body);
-
-    issues.push(
-      createTaskFailureIssue({
-        code,
-        detailLines: [sectionTitle, ...sectionLines],
-        domain: 'release',
-        evidence: [
-          {
-            label: sectionTitle.replace(/:$/u, ''),
-            lines: sectionLines,
-          },
-        ],
-        filePath: options.outputPackageJsonPath,
-        fix: 'Inspect the release check report, rebuild the package output, or adjust release metadata before publishing.',
-        fixSteps: [
-          'Inspect the release check section shown in this issue.',
-          'Rebuild the package output or adjust release metadata for the failing section.',
-          'Rerun the release check before publishing.',
-        ],
-        packageManifestPath: options.outputPackageJsonPath,
-        packageName: options.label,
-        reason: sectionTitle.replace(/:$/u, ''),
-        rootDir: options.rootDir,
-        summary: sectionLines[0]?.replace(/^\s*-\s*/u, '') ?? sectionTitle,
-        task: 'release:check',
-        title:
-          code === LIMINA_CHECK_ISSUE_CODES.releaseConsistency
-            ? 'Release consistency issue'
-            : sectionTitle.replace(/:$/u, ''),
-        tool: 'release',
-        verifyCommands: ['limina release check'],
-      }),
-    );
-    sectionLines = [];
-  };
-
-  for (const line of lines) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    if (/^[A-Z][^:]+:$/u.test(line.trim())) {
-      flush();
-      sectionTitle = line.trim();
-      continue;
-    }
-
-    if (/^\s+-\s+/u.test(line) || sectionLines.length > 0) {
-      sectionLines.push(line);
-    }
-  }
-
-  flush();
-
-  return issues.length > 0
-    ? issues
-    : [
-        createTaskFailureIssue({
-          code: LIMINA_CHECK_ISSUE_CODES.releaseConsistency,
-          detailLines: lines,
-          filePath: options.outputPackageJsonPath,
-          fix: 'Inspect the release check report, rebuild the package output, or adjust release metadata before publishing.',
-          packageManifestPath: options.outputPackageJsonPath,
-          packageName: options.label,
-          reason:
-            'Release check found package output or tarball consistency failures.',
-          rootDir: options.rootDir,
-          task: 'release:check',
-          title: 'Release consistency issue',
-          tool: 'release',
-        }),
-      ];
+  return createReleaseCheckIssuesFromFindings({
+    findings: options.error.findings,
+    rootDir: options.rootDir,
+  });
 }
 
 async function packReleaseTarball(options: {
@@ -335,34 +253,48 @@ async function runReleaseCheckEntry(options: {
       label: options.label,
       packageJsonPath: outputPackageJsonPath,
     });
-    const outputProblems = collectOutputManifestProblems({
+    const outputFindings = collectOutputManifestFindings({
       label: options.label,
       manifest: outputManifest,
       outDir: options.outDir,
       rootDir: options.config.rootDir,
     });
 
-    if (outputProblems.length > 0) {
-      throw new PackageReleaseConsistencyError(
-        [
-          `package release check failed for ${options.label}:`,
-          `  output: ${toRelativePath(options.config.rootDir, options.outDir)}`,
-          '',
-          'Output package manifest is not publish-ready:',
-          ...outputProblems.map((problem) => `  - ${problem}`),
-        ].join('\n'),
-      );
+    if (outputFindings.length > 0) {
+      throw new PackageReleaseConsistencyError(outputFindings, {
+        label: options.label,
+        outDir: options.outDir,
+        rootDir: options.config.rootDir,
+      });
     }
 
     if (outputManifest.private === true) {
+      const problemLine = `${outputManifest.name}: selected release package has "private": true; npm publish would reject it`;
       throw new PackageReleaseConsistencyError(
         [
-          `package release check failed for ${options.label}:`,
-          `  output: ${toRelativePath(options.config.rootDir, options.outDir)}`,
-          '',
-          'Release tarball is not publishable:',
-          `  - ${outputManifest.name}: selected release package has "private": true; npm publish would reject it`,
-        ].join('\n'),
+          createReleaseFinding({
+            code: LIMINA_CHECK_ISSUE_CODES.releaseTarballHygiene,
+            facts: {
+              kind: 'output-private',
+              packageManifestPath: outputPackageJsonPath,
+            },
+            filePath: outputPackageJsonPath,
+            packageManifestPath: outputPackageJsonPath,
+            packageName: outputManifest.name,
+            presentation: {
+              problemLines: [problemLine],
+              section: 'tarball',
+              sectionTitle: 'Release tarball is not publishable:',
+              summary: problemLine,
+              title: 'Release tarball is not publishable',
+            },
+          }),
+        ],
+        {
+          label: options.label,
+          outDir: options.outDir,
+          rootDir: options.config.rootDir,
+        },
       );
     }
 
@@ -378,6 +310,7 @@ async function runReleaseCheckEntry(options: {
       label: options.label,
       outDir: options.outDir,
       outputManifest,
+      packedTarballPath: packedDist.tarballPath,
       packedTarball: packedDist.tarball,
       workspacePackages: options.workspacePackages,
     });
@@ -391,10 +324,8 @@ async function runReleaseCheckEntry(options: {
   } catch (error) {
     if (error instanceof PackageReleaseConsistencyError) {
       options.issueSink?.push(
-        ...createReleaseConsistencyIssues({
+        ...createReleaseIssuesFromFindings({
           error,
-          label: options.label,
-          outputPackageJsonPath,
           rootDir: options.config.rootDir,
         }),
       );

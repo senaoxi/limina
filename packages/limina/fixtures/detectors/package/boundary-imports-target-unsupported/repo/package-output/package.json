@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "#internal": "#other"
+  },
+  "name": "@fixture/boundary-imports-target-unsupported",
+  "version": "1.0.0"
+}

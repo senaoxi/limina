@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/source-package-import-invalid",
+  "private": true,
+  "type": "module"
+}

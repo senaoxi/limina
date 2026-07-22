@@ -1,6 +1,9 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import {
   createGlobalQueryCommandContext,
+  createPowerShellNodeTransportTokens,
   createStandaloneInvocationCommand,
   getGeneratedCommandPresentation,
   getGeneratedLiminaCommandTokens,
@@ -8,6 +11,7 @@ import {
 } from '../check-reporting/standalone-invocation-command';
 
 const invocationId = '123e4567-e89b-42d3-a456-426614174000';
+const execFileAsync = promisify(execFile);
 
 function createSensitiveCommand() {
   const context = createGlobalQueryCommandContext({
@@ -72,6 +76,29 @@ describe('standalone invocation generated commands', () => {
     );
   });
 
+  it('round-trips sensitive argv through the encoded PowerShell transport', async () => {
+    const { context } = createSensitiveCommand();
+    const expectedArgs = [
+      '--config',
+      context.configPath,
+      '--mode',
+      context.mode,
+    ];
+    const childScript =
+      'process.stdout.write(JSON.stringify(process.argv.slice(1)))';
+    const transportTokens = createPowerShellNodeTransportTokens(
+      process.execPath,
+      ['-e', childScript, '--', ...expectedArgs],
+    );
+    const [executable, ...args] = transportTokens;
+
+    expect(transportTokens[2]).not.toMatch(/["\\]/u);
+    const { stdout } = await execFileAsync(executable, args, {
+      encoding: 'utf8',
+    });
+    expect(JSON.parse(stdout)).toEqual(expectedArgs);
+  });
+
   it.runIf(process.platform !== 'win32')(
     'renders a POSIX command with Shescape while keeping pnpm executable',
     () => {
@@ -123,20 +150,26 @@ describe('standalone invocation generated commands', () => {
     ).toBe(false);
   });
 
+  it('renders PowerShell through the encoded Node argv transport', () => {
+    const { command, context } = createSensitiveCommand();
+    const powershell = renderGeneratedLiminaCommand(command, 'powershell');
+
+    expect(powershell).toMatch(/^Set-Location -LiteralPath /u);
+    expect(powershell).toContain(' -ErrorAction Stop; & ');
+    expect(powershell).toContain("'/opt/node path/bin/node'");
+    expect(powershell).toContain(" '-e' ");
+    expect(powershell).not.toContain(context.mode);
+    expect(powershell).not.toContain('$PSNativeCommandArgumentPassing');
+    expect(powershell).not.toContain('pnpm');
+  });
+
   it.runIf(process.platform === 'win32')(
-    'renders separate PowerShell and cmd.exe commands on Windows',
+    'renders a separate cmd.exe command on Windows',
     () => {
       const { command } = createSensitiveCommand();
       const powershell = renderGeneratedLiminaCommand(command, 'powershell');
       const cmd = renderGeneratedLiminaCommand(command, 'cmd');
 
-      expect(powershell).toMatch(/^Set-Location -LiteralPath /u);
-      expect(powershell).toContain(
-        " -ErrorAction Stop; & { $PSNativeCommandArgumentPassing = 'Legacy'; & ",
-      );
-      expect(powershell).toContain("'/opt/node path/bin/node'");
-      expect(powershell).toMatch(/ \}$/u);
-      expect(powershell).not.toContain('pnpm');
       expect(cmd).toMatch(/^cd \/d /u);
       expect(cmd).toContain(' && ');
       expect(cmd).not.toContain('pnpm');

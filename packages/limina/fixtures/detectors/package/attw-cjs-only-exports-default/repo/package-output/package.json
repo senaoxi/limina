@@ -1,0 +1,11 @@
+{
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "name": "@fixture/attw-cjs-only-exports-default",
+  "type": "commonjs",
+  "version": "1.0.0"
+}

@@ -110,7 +110,8 @@ function createCheckerFailureIssues(options: {
       ? LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed
       : LIMINA_CHECK_ISSUE_CODES.checkerTypecheckFailed;
   const failureCode =
-    options.failureKind === 'peer-dependency'
+    options.failureKind === 'peer-dependency' &&
+    options.task === 'checker:build'
       ? LIMINA_CHECK_ISSUE_CODES.checkerPeerDependencyMissing
       : options.failureKind === 'target-selection'
         ? LIMINA_CHECK_ISSUE_CODES.checkerTargetSelectionFailed

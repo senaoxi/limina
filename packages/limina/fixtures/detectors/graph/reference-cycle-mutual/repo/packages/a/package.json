@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/graph-cycle-a",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fixture/graph-cycle-b": "workspace:*"
+  }
+}

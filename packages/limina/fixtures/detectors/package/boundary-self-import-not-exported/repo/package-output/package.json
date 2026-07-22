@@ -1,0 +1,7 @@
+{
+  "exports": {
+    ".": "./index.js"
+  },
+  "name": "@fixture/boundary-self-import",
+  "version": "1.0.0"
+}

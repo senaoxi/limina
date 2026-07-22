@@ -1,0 +1,14 @@
+{
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./index.d.mts",
+        "default": "./index.js"
+      },
+      "default": "./index.js"
+    }
+  },
+  "name": "@fixture/attw-untyped-resolution-bundler",
+  "type": "module",
+  "version": "1.0.0"
+}

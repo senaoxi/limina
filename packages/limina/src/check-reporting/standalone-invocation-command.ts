@@ -1,5 +1,6 @@
 import type { LiminaConfigLoader } from '#config/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
+import { Buffer } from 'node:buffer';
 import { Shescape } from 'shescape';
 
 export type GeneratedCommandDialect = 'cmd' | 'posix' | 'powershell';
@@ -29,13 +30,32 @@ export interface GeneratedCommandVariant {
   readonly label: 'PowerShell' | 'Query' | 'cmd.exe (/V:OFF)';
 }
 
-const SHELL_BY_DIALECT: Readonly<Record<GeneratedCommandDialect, string>> = {
+const SHESCAPE_SHELL_BY_DIALECT = {
   cmd: 'cmd.exe',
   posix: 'bash',
-  powershell: 'powershell.exe',
-};
-const POWERSHELL_LEGACY_NATIVE_ARGUMENTS =
-  "$PSNativeCommandArgumentPassing = 'Legacy';";
+} as const;
+const POWERSHELL_NODE_ARGV_RUNNER = [
+  "const p=JSON.parse(Buffer.from(process.argv[1],'base64').toString())",
+  "const r=require('node:child_process').spawnSync(process.execPath,p,{stdio:'inherit'})",
+  'if(r.error)throw r.error',
+  'process.exitCode=r.status??1',
+].join(';');
+
+function quotePowerShellLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+export function createPowerShellNodeTransportTokens(
+  nodeExecutablePath: string,
+  nodeArgs: readonly string[],
+): readonly [string, '-e', string, string] {
+  return Object.freeze([
+    nodeExecutablePath,
+    '-e',
+    POWERSHELL_NODE_ARGV_RUNNER,
+    Buffer.from(JSON.stringify(nodeArgs), 'utf8').toString('base64'),
+  ] as const);
+}
 
 export function createGlobalQueryCommandContext(options: {
   cliEntryPath: string;
@@ -112,12 +132,12 @@ export function renderGeneratedLiminaCommand(
     generatedCommand,
     dialect,
   );
-  const shescape = new Shescape({
-    flagProtection: false,
-    shell: SHELL_BY_DIALECT[dialect],
-  });
-
   if (dialect === 'cmd') {
+    const shescape = new Shescape({
+      flagProtection: false,
+      shell: SHESCAPE_SHELL_BY_DIALECT.cmd,
+    });
+
     return [
       'cd',
       '/d',
@@ -128,25 +148,30 @@ export function renderGeneratedLiminaCommand(
   }
 
   if (dialect === 'powershell') {
+    // Windows PowerShell 5.1 and PowerShell 7 marshal native arguments
+    // differently. Carry the canonical Node argv as Base64 JSON through a
+    // metacharacter-free argument, then reconstruct it in Node and spawn the
+    // installed Limina entry without another shell parsing pass.
+    const transportTokens = createPowerShellNodeTransportTokens(
+      executable,
+      args,
+    );
+
     return [
       'Set-Location',
       '-LiteralPath',
-      shescape.quote(generatedCommand.context.workspaceRoot),
+      quotePowerShellLiteral(generatedCommand.context.workspaceRoot),
       '-ErrorAction',
       'Stop;',
       '&',
-      '{',
-      // Shescape protects embedded quotes and trailing backslashes for the
-      // legacy native argument parser. PowerShell 7.3+ otherwise preserves
-      // those protection characters when it invokes node.exe. Keep the
-      // preference in a child scope so a pasted query does not change it for
-      // later commands in the caller's session.
-      POWERSHELL_LEGACY_NATIVE_ARGUMENTS,
-      '&',
-      ...shescape.quoteAll([executable, ...args]),
-      '}',
+      ...transportTokens.map(quotePowerShellLiteral),
     ].join(' ');
   }
+
+  const shescape = new Shescape({
+    flagProtection: false,
+    shell: SHESCAPE_SHELL_BY_DIALECT.posix,
+  });
 
   return [executable, ...shescape.quoteAll(args)].join(' ');
 }

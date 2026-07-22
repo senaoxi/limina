@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/source-unused-dependency-target",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "type": "module"
+}

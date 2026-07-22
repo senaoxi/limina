@@ -1,0 +1,6 @@
+{
+  "exports": "./index.js",
+  "name": "fixture-external-dependency",
+  "type": "module",
+  "version": "1.0.0"
+}

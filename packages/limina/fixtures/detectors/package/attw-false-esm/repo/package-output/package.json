@@ -1,0 +1,17 @@
+{
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.js"
+      },
+      "require": {
+        "types": "./require.d.mts",
+        "default": "./index.cjs"
+      }
+    }
+  },
+  "name": "@fixture/attw-false-esm",
+  "type": "module",
+  "version": "1.0.0"
+}

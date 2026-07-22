@@ -19,6 +19,15 @@ export class VueTsgoCacheBoundaryError extends Error {
   override readonly name = 'VueTsgoCacheBoundaryError';
 }
 
+export interface VueTsgoCacheCleanupDependencies {
+  readonly afterDirectoryCleanup?: (
+    descriptor: MutationBoundaryTarget,
+  ) => Promise<void> | void;
+  readonly observeDescriptor?: (
+    descriptor: MutationBoundaryTarget,
+  ) => Promise<void> | void;
+}
+
 export class VueTsgoCacheBatchCoordinator {
   readonly #snapshotsByCheckerTargetId: ReadonlyMap<
     TypecheckTarget['id'],
@@ -40,7 +49,10 @@ export class VueTsgoCacheBatchCoordinator {
    */
   static async prepare(
     targets: readonly TypecheckTarget[],
-    options: { requireValidGeneratedRoute?: boolean } = {},
+    options: {
+      cleanup?: VueTsgoCacheCleanupDependencies;
+      requireValidGeneratedRoute?: boolean;
+    } = {},
   ): Promise<VueTsgoCacheBatchCoordinator> {
     const generation = randomUUID();
     const boundaryTargetsByPath = new Map<string, MutationBoundaryTarget>();
@@ -94,12 +106,14 @@ export class VueTsgoCacheBatchCoordinator {
       await recheckMutationBoundary(
         deletionSnapshots.get(boundaryTarget.path)!,
       );
+      await options.cleanup?.observeDescriptor?.(boundaryTarget);
       await rm(boundaryTarget.path, {
         force: true,
         maxRetries: 3,
         recursive: true,
         retryDelay: 50,
       });
+      await options.cleanup?.afterDirectoryCleanup?.(boundaryTarget);
     }
 
     const snapshotsByCheckerTargetId = new Map<

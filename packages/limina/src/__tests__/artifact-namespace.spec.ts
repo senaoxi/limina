@@ -214,6 +214,50 @@ describe('trusted artifact namespace', () => {
     }
   });
 
+  it('keeps coexisting generation plans attributed to their own resources', async () => {
+    const fixture = await createFixture();
+    const generationZero = createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: fixture.rootDir,
+    });
+    const generationOne = createLiminaArtifactNamespace({
+      generation: 1,
+      rootDir: fixture.rootDir,
+    });
+    const generationZeroPath = fixture.path('.limina/generation-zero.json');
+    const generationOnePath = fixture.path('.limina/generation-one.json');
+    const generationZeroPlan = createArtifactPlan(
+      generationZero,
+      [createChange(generationZeroPath, 'generation-zero\n')],
+      [generationZeroPath],
+    );
+    const generationOnePlan = createArtifactPlan(
+      generationOne,
+      [createChange(generationOnePath, 'generation-one\n')],
+      [generationOnePath],
+    );
+
+    try {
+      await materializeGeneratedArtifactPlan(
+        generationZero,
+        generationZeroPlan,
+      );
+      await materializeGeneratedArtifactPlan(generationOne, generationOnePlan);
+
+      await expect(
+        materializeGeneratedArtifactPlan(generationOne, generationZeroPlan),
+      ).rejects.toThrow(/different preflight generation/u);
+      await expect(readFile(generationZeroPath, 'utf8')).resolves.toBe(
+        'generation-zero\n',
+      );
+      await expect(readFile(generationOnePath, 'utf8')).resolves.toBe(
+        'generation-one\n',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('rejects a forged plan even when it copies an authentic generation token', async () => {
     const fixture = await createFixture();
     const namespace = createLiminaArtifactNamespace({

@@ -1,0 +1,17 @@
+{
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./node.d.mts",
+        "default": "./index.js"
+      },
+      "default": {
+        "types": "./bundler.d.mts",
+        "default": "./index.js"
+      }
+    }
+  },
+  "name": "@fixture/attw-internal-resolution-error",
+  "type": "module",
+  "version": "1.0.0"
+}

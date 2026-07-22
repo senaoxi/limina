@@ -1967,7 +1967,7 @@ export default {
     }
   }, 15_000);
 
-  it('prints source issue filters from the last run', async () => {
+  it('prints source and Proof issue filters from the last run', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-')),
     );
@@ -2219,7 +2219,7 @@ export default {
         .replaceAll(/\s*│\s*/gu, ' ')
         .replaceAll(/\s+/gu, ' ');
       expect(normalizedResult).toContain(
-        'check --issues --task source:check --rule LIMINA_SOURCE_UNUSED_MODULE',
+        'check --issues --task proof:check --rule LIMINA_PROOF_DEFAULT_TSCONFIG_INVALID',
       );
 
       const detailsResult = await execFileAsync(
@@ -2302,6 +2302,10 @@ export default {
           }),
         ]),
       );
+      expect(jsonPayload.topBlockers[0]).toMatchObject({
+        code: 'LIMINA_PROOF_DEFAULT_TSCONFIG_INVALID',
+        task: 'proof:check',
+      });
 
       const ndjsonResult = await execFileAsync(
         process.execPath,
@@ -2392,7 +2396,7 @@ export default {
 
       expect(plainPackageFilteredResult).toContain('Filters:');
       expect(plainPackageFilteredResult).toContain('package: @example/app');
-      expect(plainPackageFilteredResult).toContain('Matched: 1 / 3 issues');
+      expect(plainPackageFilteredResult).toContain('Matched: 2 / 3 issues');
 
       const unmatchedRuleResult = await execFileAsync(
         process.execPath,

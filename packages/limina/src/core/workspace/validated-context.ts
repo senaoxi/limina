@@ -18,6 +18,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { lstat, opendir, readFile, realpath } from 'node:fs/promises';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
+import type { LiminaWritableCheckIssueCode } from '../../check-reporting/codes';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import { createLiminaCheckIssue } from '../../check-reporting/structured';
 import type { LiminaCheckIssue } from '../../source-check/snapshot';
@@ -161,7 +162,7 @@ function displayPath(rootDir: string, targetPath: string): string {
 }
 
 function createWorkspaceIssue(options: {
-  code: string;
+  code: LiminaWritableCheckIssueCode;
   config: ResolvedLiminaConfig;
   evidence?: readonly string[];
   filePath?: string;

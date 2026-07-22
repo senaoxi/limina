@@ -17,7 +17,11 @@ import {
   type WorkspaceRegionFilePathIndex,
 } from '../core/workspace/file-candidates';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
-import type { SourceCheckIssue, SourceStructuredIssue } from './report';
+import type {
+  SourceAmbientDeclarationConfigInvalidFacts,
+  SourceFinding,
+  SourceFindingForCode,
+} from './findings';
 
 export interface AmbientDeclarationPolicy {
   allowSharedAcrossOwners: boolean;
@@ -34,7 +38,7 @@ export interface AmbientDeclarationIndex {
 
 export interface AmbientDeclarationIndexResult {
   index: AmbientDeclarationIndex;
-  issues: SourceCheckIssue[];
+  issues: SourceFinding[];
 }
 
 class AmbientDeclarationIndexImpl implements AmbientDeclarationIndex {
@@ -53,11 +57,13 @@ class AmbientDeclarationIndexImpl implements AmbientDeclarationIndex {
 function createConfigIssue(options: {
   config: ResolvedLiminaConfig;
   details?: string[];
+  facts: SourceAmbientDeclarationConfigInvalidFacts;
   filePath?: string;
   reason: string;
-  ruleIndex: number;
-}): SourceStructuredIssue {
-  const rule = `source.declarations.ambient[${options.ruleIndex}]`;
+}): SourceFindingForCode<
+  typeof LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid
+> {
+  const rule = options.facts.ruleIdentity;
   const lines = [
     `rule: ${rule}`,
     ...(options.filePath
@@ -71,11 +77,13 @@ function createConfigIssue(options: {
     detailLines: lines,
     detector: 'source',
     evidence: [{ label: 'diagnostic', lines }],
+    facts: options.facts,
     ...(options.filePath ? { filePath: options.filePath } : {}),
     ownerName: '<workspace>',
     reason: options.reason,
     scope: rule,
     summary: 'Ambient declaration configuration is invalid',
+    task: 'source:check',
     title: 'Ambient declaration configuration is invalid',
   };
 }
@@ -137,7 +145,7 @@ export async function createAmbientDeclarationIndex(options: {
   workspacePathIndex?: WorkspaceRegionFilePathIndex;
 }): Promise<AmbientDeclarationIndexResult> {
   const rules = options.config.source?.declarations?.ambient ?? [];
-  const issues: SourceCheckIssue[] = [];
+  const issues: SourceFinding[] = [];
   const candidates = await collectActivatedPackageFileCandidates(
     options.workspaceContext,
     options.workspacePathIndex,
@@ -156,9 +164,14 @@ export async function createAmbientDeclarationIndex(options: {
         createConfigIssue({
           config: options.config,
           details: [`include: ${rules[ruleIndex]!.include.join(', ')}`],
+          facts: {
+            include: rules[ruleIndex]!.include,
+            kind: 'no-matches',
+            ruleIdentity: `source.declarations.ambient[${ruleIndex}]`,
+            ruleIndex,
+          },
           reason:
             'ambient declaration rules must match at least one existing declaration file.',
-          ruleIndex,
         }),
       );
     }
@@ -180,10 +193,18 @@ export async function createAmbientDeclarationIndex(options: {
           details: [
             `matching rules: ${indexes.map((index) => `source.declarations.ambient[${index}]`).join(', ')}`,
           ],
+          facts: {
+            declarationPath: filePath,
+            kind: 'overlapping-rules',
+            matchingRuleIdentities: indexes.map(
+              (index) => `source.declarations.ambient[${index}]`,
+            ),
+            ruleIdentity: `source.declarations.ambient[${ruleIndex}]`,
+            ruleIndex,
+          },
           filePath,
           reason:
             'one physical declaration file cannot match multiple ambient declaration rules.',
-          ruleIndex,
         }),
       );
     }
@@ -204,9 +225,16 @@ export async function createAmbientDeclarationIndex(options: {
     let valid = matches.length > 0 && !overlappingRules.has(ruleIndex);
     for (const filePath of matches) {
       let reason: string | null = null;
+      let violation:
+        | 'managed-output'
+        | 'not-ambient-role'
+        | 'not-declaration-file'
+        | 'public-declaration-entry'
+        | null = null;
       if (!isDeclarationFile(filePath)) {
         reason =
           'ambient declaration rules may only match .d.ts, .d.cts, or .d.mts files.';
+        violation = 'not-declaration-file';
       } else if (
         isPathInsideDirectory(filePath, liminaDir) ||
         outputDirs.some((dir) => isPathInsideDirectory(filePath, dir)) ||
@@ -214,21 +242,30 @@ export async function createAmbientDeclarationIndex(options: {
       ) {
         reason =
           'managed output declarations cannot be classified as ambient declarations.';
+        violation = 'managed-output';
       } else if (publicEntries.has(filePath)) {
         reason =
           'workspace package public declaration entries cannot be classified as ambient declarations.';
+        violation = 'public-declaration-entry';
       } else if (!(await hasAmbientDeclarationRole(filePath))) {
         reason =
           'ordinary external declaration modules with imports, exports, or re-exports remain package-owned declaration APIs.';
+        violation = 'not-ambient-role';
       }
-      if (!reason) continue;
+      if (!reason || !violation) continue;
       valid = false;
       issues.push(
         createConfigIssue({
           config: options.config,
+          facts: {
+            declarationPath: filePath,
+            kind: 'invalid-declaration',
+            ruleIdentity: `source.declarations.ambient[${ruleIndex}]`,
+            ruleIndex,
+            violation,
+          },
           filePath,
           reason,
-          ruleIndex,
         }),
       );
     }

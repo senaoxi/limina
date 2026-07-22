@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/graph-runtime-only-app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fixture/graph-runtime-only-internal": "workspace:*"
+  }
+}

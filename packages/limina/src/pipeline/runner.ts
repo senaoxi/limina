@@ -10,7 +10,13 @@ import type { AnalysisProviderSet } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { toRelativePath } from '#utils/path';
 import { prependPathEntry, shouldUseShellForCommand } from '#utils/process';
-import { spawn, spawnSync } from 'node:child_process';
+import {
+  type ChildProcess,
+  spawn,
+  type SpawnOptions,
+  spawnSync,
+  type SpawnSyncOptions,
+} from 'node:child_process';
 import path from 'pathe';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
@@ -27,6 +33,7 @@ import { runSourceCheck } from '../commands/source';
 import { runCheckerBuild, runCheckerTypecheck } from '../commands/typecheck';
 import {
   runExecutionPlan,
+  type RunExecutionPlanOptions,
   type RunExecutionResult,
   validateExecutionPlan,
 } from '../execution/executor';
@@ -57,11 +64,15 @@ import {
   type TypecheckTarget,
   type TypecheckTargetResult,
 } from '../typecheck/targets';
-import { VueTsgoCacheBatchCoordinator } from '../typecheck/vue-tsgo-cache';
+import {
+  VueTsgoCacheBatchCoordinator,
+  type VueTsgoCacheCleanupDependencies,
+} from '../typecheck/vue-tsgo-cache';
 
 export interface RunPipelineOptions {
   checkRunRecorder?: CheckRunRecorder;
   checkIssueReport?: CheckIssueReportOptions;
+  commandProcess?: CommandProcessDependencies;
   providers?: AnalysisProviderSet;
   cwd?: string;
   flow?: LiminaFlowReporter;
@@ -71,6 +82,26 @@ export interface RunPipelineOptions {
   progress?: TaskProgressReporter;
   sourceIssueReport?: SourceIssueReportOptions;
   executionPlan?: ExecutionPlan;
+  snapshotWriters?: RunExecutionPlanOptions['snapshotWriters'];
+  vueTsgoCacheCleanup?: VueTsgoCacheCleanupDependencies;
+}
+
+export interface CommandProcessDependencies {
+  readonly spawn?: (
+    command: string,
+    args: readonly string[],
+    options: SpawnOptions,
+  ) => ChildProcess;
+  readonly spawnSync?: (
+    command: string,
+    args: readonly string[],
+    options: SpawnSyncOptions,
+  ) => {
+    readonly error?: Error;
+    readonly signal: NodeJS.Signals | null;
+    readonly status: number | null;
+  };
+  readonly timeoutMs?: number;
 }
 
 type NormalizedPipelineStep = Exclude<PipelineStep, string>;
@@ -294,6 +325,7 @@ function collectVueTsgoCommandConfigPaths(
 async function prepareCommandStepCache(
   step: Extract<PipelineStep, { type: 'command' }>,
   cwd: string,
+  cleanup?: VueTsgoCacheCleanupDependencies,
 ): Promise<{
   coordinator: VueTsgoCacheBatchCoordinator;
   targets: TypecheckTarget[];
@@ -315,6 +347,7 @@ async function prepareCommandStepCache(
   );
   return {
     coordinator: await VueTsgoCacheBatchCoordinator.prepare(targets, {
+      ...(cleanup ? { cleanup } : {}),
       requireValidGeneratedRoute: false,
     }),
     targets,
@@ -613,7 +646,6 @@ async function runBuiltinTask(
       } else {
         issues.push(
           createTaskFailureIssue({
-            code: `LIMINA_${taskName.replaceAll(':', '_').toUpperCase()}_FAILED`,
             detailLines: [
               error instanceof Error ? error.message : String(error),
             ],
@@ -696,7 +728,11 @@ async function runCommandStep(
     shell: shouldUseShellForCommand(step.command),
   };
 
-  const preparedCache = await prepareCommandStepCache(step, cwd);
+  const preparedCache = await prepareCommandStepCache(
+    step,
+    cwd,
+    options.vueTsgoCacheCleanup,
+  );
   if (preparedCache) {
     for (const target of preparedCache.targets) {
       await preparedCache.coordinator.beforeTargetRun(target);
@@ -740,12 +776,46 @@ async function runCommandStep(
     };
   };
 
+  const normalizeProcessError = (error: unknown): Error =>
+    error instanceof Error ? error : new Error(String(error));
+
   if (options.flow?.interactive) {
     return new Promise((resolve, reject) => {
-      const child = spawn(step.command, step.args ?? [], {
-        ...commandOptions,
-        stdio: ['inherit', 'pipe', 'pipe'],
-      });
+      const spawnProcess =
+        options.commandProcess?.spawn ??
+        ((command, args, spawnOptions) =>
+          spawn(command, [...args], spawnOptions));
+      let child: ChildProcess;
+      let boundaryError: Error | undefined;
+      let timeout: NodeJS.Timeout | undefined;
+      let settled = false;
+
+      const settle = (callback: () => void): void => {
+        if (settled) return;
+        settled = true;
+        if (timeout) clearTimeout(timeout);
+        callback();
+      };
+      const stopAfterBoundaryError = (error: Error): void => {
+        if (settled) return;
+        boundaryError ??= error;
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill();
+        }
+      };
+
+      try {
+        child = spawnProcess(step.command, step.args ?? [], {
+          ...commandOptions,
+          stdio: ['inherit', 'pipe', 'pipe'],
+        });
+      } catch (error) {
+        const normalized = normalizeProcessError(error);
+        commandItem?.fail(undefined, { error: normalized });
+        task?.fail(undefined, { error: normalized });
+        settle(() => reject(normalized));
+        return;
+      }
 
       child.stdout?.on('data', (chunk: Uint8Array) => {
         options.flow?.writeOutput(chunk, { stream: 'stdout' });
@@ -753,13 +823,29 @@ async function runCommandStep(
       child.stderr?.on('data', (chunk: Uint8Array) => {
         options.flow?.writeOutput(chunk, { stream: 'stderr' });
       });
+      child.stdout?.on('error', (error) => {
+        stopAfterBoundaryError(normalizeProcessError(error));
+      });
+      child.stderr?.on('error', (error) => {
+        stopAfterBoundaryError(normalizeProcessError(error));
+      });
 
       child.on('error', (error) => {
-        commandItem?.fail(undefined, { error });
-        task?.fail(undefined, { error });
-        reject(error);
+        if (settled) return;
+        const normalized = normalizeProcessError(error);
+        commandItem?.fail(undefined, { error: normalized });
+        task?.fail(undefined, { error: normalized });
+        settle(() => reject(normalized));
       });
       child.on('close', (code) => {
+        if (settled) return;
+        if (boundaryError) {
+          commandItem?.fail(undefined, { error: boundaryError });
+          task?.fail(undefined, { error: boundaryError });
+          settle(() => reject(boundaryError));
+          return;
+        }
+
         const passed = (code ?? 1) === 0;
         const exitCode = code ?? 1;
 
@@ -775,20 +861,54 @@ async function runCommandStep(
           task?.fail(`command failed: ${label} exited with code ${exitCode}`);
         }
 
-        resolve(createResult(passed, exitCode));
+        settle(() => resolve(createResult(passed, exitCode)));
       });
+
+      if (options.commandProcess?.timeoutMs !== undefined) {
+        timeout = setTimeout(() => {
+          const error = Object.assign(
+            new Error(
+              `Command timed out after ${options.commandProcess!.timeoutMs}ms.`,
+            ),
+            {
+              code: 'ETIMEDOUT',
+              name: 'CommandTimeoutError',
+            },
+          );
+          stopAfterBoundaryError(error);
+        }, options.commandProcess.timeoutMs);
+      }
     });
   }
 
-  const result = spawnSync(step.command, step.args ?? [], {
-    ...commandOptions,
-    stdio: 'inherit',
-  });
+  const spawnProcessSync =
+    options.commandProcess?.spawnSync ??
+    ((
+      command: string,
+      args: readonly string[],
+      spawnOptions: SpawnSyncOptions,
+    ) => spawnSync(command, [...args], spawnOptions));
+  let result: ReturnType<NonNullable<CommandProcessDependencies['spawnSync']>>;
+  try {
+    result = spawnProcessSync(step.command, step.args ?? [], {
+      ...commandOptions,
+      stdio: 'inherit',
+      ...(options.commandProcess?.timeoutMs === undefined
+        ? {}
+        : { timeout: options.commandProcess.timeoutMs }),
+    });
+  } catch (error) {
+    const normalized = normalizeProcessError(error);
+    commandItem?.fail(undefined, { error: normalized });
+    task?.fail(undefined, { error: normalized });
+    throw normalized;
+  }
 
   if (result.error) {
-    commandItem?.fail(undefined, { error: result.error });
-    task?.fail(undefined, { error: result.error });
-    throw result.error;
+    const normalized = normalizeProcessError(result.error);
+    commandItem?.fail(undefined, { error: normalized });
+    task?.fail(undefined, { error: normalized });
+    throw normalized;
   }
 
   const exitCode = result.status ?? 1;
@@ -1217,6 +1337,9 @@ export async function runPipelineWithResult(
     flow: options.flow,
     preflight,
     rootDir: config.rootDir,
+    ...(options.snapshotWriters
+      ? { snapshotWriters: options.snapshotWriters }
+      : {}),
   });
 
   projectParentFlowCompletion({
@@ -1265,6 +1388,9 @@ export async function runDefaultCheckWithResult(
     flow: options.flow,
     preflight,
     rootDir: config.rootDir,
+    ...(options.snapshotWriters
+      ? { snapshotWriters: options.snapshotWriters }
+      : {}),
   });
 
   if (shouldReportAutoCheckerCapabilities) {

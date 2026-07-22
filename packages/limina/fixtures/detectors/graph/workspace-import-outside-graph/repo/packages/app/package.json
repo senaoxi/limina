@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/graph-outside-app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fixture/graph-outside-internal": "workspace:*"
+  }
+}

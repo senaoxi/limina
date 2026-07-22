@@ -12,16 +12,23 @@ import { uniqueSortedStrings } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
+import type {
+  GraphConditionDomainMismatchFinding,
+  GraphConfigInvalidFinding,
+  GraphFinding,
+} from './findings';
 
 interface CustomConditionSubtreeSummary {
   consistentConditions: string[] | null;
-  mismatchProblems: string[];
+  mismatchFindings: GraphConditionDomainMismatchFinding[];
   projectPaths: Set<string>;
 }
 
 export interface CustomConditionConsistencyContext {
   conditionsByProjectPath: Map<string, string[]>;
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   projectsByPath: Map<string, ProjectInfo>;
   subtreeByProjectPath: Map<string, CustomConditionSubtreeSummary>;
   visitingProjectPaths: Set<string>;
@@ -82,14 +89,14 @@ function collectCustomConditionSubtreeSummary(
   if (context.visitingProjectPaths.has(project.configPath)) {
     return {
       consistentConditions: projectConditions,
-      mismatchProblems: [],
+      mismatchFindings: [],
       projectPaths: new Set([project.configPath]),
     };
   }
 
   context.visitingProjectPaths.add(project.configPath);
 
-  const mismatchProblems: string[] = [];
+  const mismatchFindings: GraphConditionDomainMismatchFinding[] = [];
   const projectPaths = new Set([project.configPath]);
 
   for (const referencePath of [...project.references].sort()) {
@@ -112,7 +119,7 @@ function collectCustomConditionSubtreeSummary(
       projectPaths.add(projectPath);
     }
 
-    mismatchProblems.push(...referencedSummary.mismatchProblems);
+    mismatchFindings.push(...referencedSummary.mismatchFindings);
 
     const referencedConditions =
       context.conditionsByProjectPath.get(referencedProject.configPath) ??
@@ -127,27 +134,65 @@ function collectCustomConditionSubtreeSummary(
       continue;
     }
 
-    mismatchProblems.push(
-      [
-        'Custom conditions mismatch in declaration reference tree:',
-        `  root project: ${toRelativePath(config.rootDir, project.configPath)}`,
-        `  referenced project: ${toRelativePath(
-          config.rootDir,
-          referencedProject.configPath,
-        )}`,
-        `  expected customConditions: ${formatCustomConditions(projectConditions)}`,
-        `  actual customConditions: ${formatCustomConditions(referencedConditions)}`,
-        '  reason: every tsconfig*.dts.json project reachable from a declaration leaf must use the same effective compilerOptions.customConditions.',
-      ].join('\n'),
-    );
+    const lines = [
+      'Custom conditions mismatch in declaration reference tree:',
+      `  root project: ${toRelativePath(config.rootDir, project.configPath)}`,
+      `  referenced project: ${toRelativePath(
+        config.rootDir,
+        referencedProject.configPath,
+      )}`,
+      `  expected customConditions: ${formatCustomConditions(projectConditions)}`,
+      `  actual customConditions: ${formatCustomConditions(referencedConditions)}`,
+      '  reason: every tsconfig*.dts.json project reachable from a declaration leaf must use the same effective compilerOptions.customConditions.',
+    ];
+
+    mismatchFindings.push({
+      checkerName: context.projectCheckerNamesByPath.get(project.configPath),
+      code: LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
+      evidence: [
+        {
+          label: 'expected customConditions',
+          value: formatCustomConditions(projectConditions),
+        },
+        {
+          label: 'actual customConditions',
+          value: formatCustomConditions(referencedConditions),
+        },
+      ],
+      facts: {
+        actualConditions: referencedConditions,
+        expectedConditions: projectConditions,
+        kind: 'reference-tree',
+        referencedProjectPath: referencedProject.configPath,
+        rootProjectPath: project.configPath,
+      },
+      filePath: project.configPath,
+      locations: [
+        {
+          filePath: project.configPath,
+          label: 'root project',
+        },
+        {
+          filePath: referencedProject.configPath,
+          label: 'referenced project',
+        },
+      ],
+      presentation: {
+        detailLines: lines,
+        reason:
+          'every tsconfig*.dts.json project reachable from a declaration leaf must use the same effective compilerOptions.customConditions.',
+        title: 'Custom conditions mismatch in declaration reference tree',
+      },
+      task: 'graph:check',
+    });
   }
 
   context.visitingProjectPaths.delete(project.configPath);
 
   const summary: CustomConditionSubtreeSummary = {
     consistentConditions:
-      mismatchProblems.length === 0 ? projectConditions : null,
-    mismatchProblems,
+      mismatchFindings.length === 0 ? projectConditions : null,
+    mismatchFindings,
     projectPaths,
   };
 
@@ -158,27 +203,39 @@ function collectCustomConditionSubtreeSummary(
 
 export function createCustomConditionConsistencyContext(
   projectsByPath: Map<string, ProjectInfo>,
+  projectCheckerNamesByPath: ReadonlyMap<string, string> = new Map(),
 ): CustomConditionConsistencyContext {
   return {
     conditionsByProjectPath: new Map(),
+    projectCheckerNamesByPath,
     projectsByPath,
     subtreeByProjectPath: new Map(),
     visitingProjectPaths: new Set(),
   };
 }
 
-function addUniqueProblems(
-  problems: string[],
-  seenProblems: Set<string>,
-  nextProblems: readonly string[],
+function getConditionMismatchIdentity(
+  finding: GraphConditionDomainMismatchFinding,
+): string {
+  return finding.facts.kind === 'reference-tree'
+    ? `${finding.code}\0reference-tree\0${finding.facts.rootProjectPath}\0${finding.facts.referencedProjectPath}`
+    : `${finding.code}\0domain-entry\0${finding.facts.domainName}\0${finding.facts.entryProjectPath}`;
+}
+
+function addUniqueFindings(
+  findings: GraphFinding[],
+  seenFindingIdentities: Set<string>,
+  nextFindings: readonly GraphConditionDomainMismatchFinding[],
 ): void {
-  for (const problem of nextProblems) {
-    if (seenProblems.has(problem) || problems.includes(problem)) {
+  for (const finding of nextFindings) {
+    const identity = getConditionMismatchIdentity(finding);
+
+    if (seenFindingIdentities.has(identity)) {
       continue;
     }
 
-    seenProblems.add(problem);
-    problems.push(problem);
+    seenFindingIdentities.add(identity);
+    findings.push(finding);
   }
 }
 
@@ -186,10 +243,10 @@ export function addDefaultCustomConditionProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   consistencyContext: CustomConditionConsistencyContext;
-  problems: string[];
+  findings: GraphFinding[];
   projects: ProjectInfo[];
 }): void {
-  const seenProblems = new Set<string>();
+  const seenFindingIdentities = new Set<string>();
 
   for (const project of options.projects) {
     if (!isDtsProjectConfig(project.configPath)) {
@@ -204,7 +261,11 @@ export function addDefaultCustomConditionProblems(options: {
       options.consistencyContext,
     );
 
-    addUniqueProblems(options.problems, seenProblems, summary.mismatchProblems);
+    addUniqueFindings(
+      options.findings,
+      seenFindingIdentities,
+      summary.mismatchFindings,
+    );
   }
 }
 
@@ -218,34 +279,71 @@ function getConditionDomainEntryPath(options: {
 }
 
 function addConditionDomainShapeProblem(options: {
+  config: ResolvedLiminaConfig;
   field: string;
-  problems: string[];
+  findings: GraphFinding[];
   reason: string;
   value?: unknown;
 }): void {
-  options.problems.push(
-    [
-      'Invalid graph condition domain config:',
-      `  field: ${options.field}`,
+  const lines = [
+    'Invalid graph condition domain config:',
+    `  field: ${options.field}`,
+    ...(Object.hasOwn(options, 'value')
+      ? [`  value: ${formatUnknownValue(options.value)}`]
+      : []),
+    `  reason: ${options.reason}`,
+  ];
+
+  options.findings.push({
+    code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+    evidence: [
+      {
+        label: 'field',
+        value: options.field,
+      },
       ...(Object.hasOwn(options, 'value')
-        ? [`  value: ${formatUnknownValue(options.value)}`]
+        ? [
+            {
+              label: 'value',
+              value: formatUnknownValue(options.value),
+            },
+          ]
         : []),
-      `  reason: ${options.reason}`,
-    ].join('\n'),
-  );
+    ],
+    facts: {
+      configPath: options.config.configPath,
+      field: options.field,
+      kind: 'condition-domain',
+    },
+    filePath: options.config.configPath,
+    locations: [
+      {
+        filePath: options.config.configPath,
+        label: 'Limina config',
+      },
+    ],
+    presentation: {
+      detailLines: lines,
+      reason: options.reason,
+      title: 'Invalid graph condition domain config',
+    },
+    task: 'graph:check',
+  } satisfies GraphConfigInvalidFinding);
 }
 
 function parseConditionDomainEntry(options: {
+  config: ResolvedLiminaConfig;
   domain: unknown;
+  findings: GraphFinding[];
   index: number;
-  problems: string[];
 }): { customConditions: string[]; entry: string; name: string } | null {
   const field = `graph.conditionDomains[${options.index}]`;
 
   if (!isPlainRecord(options.domain)) {
     addConditionDomainShapeProblem({
+      config: options.config,
       field,
-      problems: options.problems,
+      findings: options.findings,
       reason:
         'condition domain entries must be objects with non-empty name and entry fields and a customConditions array.',
       value: options.domain,
@@ -259,8 +357,9 @@ function parseConditionDomainEntry(options: {
 
   if (typeof name !== 'string' || name.trim().length === 0) {
     addConditionDomainShapeProblem({
+      config: options.config,
       field: `${field}.name`,
-      problems: options.problems,
+      findings: options.findings,
       reason: 'condition domain name must be a non-empty string.',
       value: name,
     });
@@ -269,8 +368,9 @@ function parseConditionDomainEntry(options: {
 
   if (typeof entry !== 'string' || entry.trim().length === 0) {
     addConditionDomainShapeProblem({
+      config: options.config,
       field: `${field}.entry`,
-      problems: options.problems,
+      findings: options.findings,
       reason:
         'condition domain entry must be a non-empty config-root-relative source tsconfig path.',
       value: entry,
@@ -280,8 +380,9 @@ function parseConditionDomainEntry(options: {
 
   if (path.isAbsolute(entry)) {
     addConditionDomainShapeProblem({
+      config: options.config,
       field: `${field}.entry`,
-      problems: options.problems,
+      findings: options.findings,
       reason: 'condition domain entry must be relative to config.rootDir.',
       value: entry,
     });
@@ -290,8 +391,9 @@ function parseConditionDomainEntry(options: {
 
   if (!Array.isArray(customConditions)) {
     addConditionDomainShapeProblem({
+      config: options.config,
       field: `${field}.customConditions`,
-      problems: options.problems,
+      findings: options.findings,
       reason: 'condition domain customConditions must be an array of strings.',
       value: customConditions,
     });
@@ -303,8 +405,9 @@ function parseConditionDomainEntry(options: {
   for (const [conditionIndex, condition] of customConditions.entries()) {
     if (typeof condition !== 'string') {
       addConditionDomainShapeProblem({
+        config: options.config,
         field: `${field}.customConditions[${conditionIndex}]`,
-        problems: options.problems,
+        findings: options.findings,
         reason: 'condition domain customConditions entries must be strings.',
         value: condition,
       });
@@ -321,12 +424,66 @@ function parseConditionDomainEntry(options: {
   };
 }
 
+function addConditionDomainEntryProblem(options: {
+  config: ResolvedLiminaConfig;
+  domainName: string;
+  entryPath: string;
+  entryValue: string;
+  findings: GraphFinding[];
+  reason: string;
+  title: string;
+}): void {
+  const lines = [
+    `${options.title}:`,
+    `  domain: ${options.domainName}`,
+    `  entry: ${options.entryValue}`,
+    `  resolved: ${toRelativePath(options.config.rootDir, options.entryPath)}`,
+    `  reason: ${options.reason}`,
+  ];
+
+  options.findings.push({
+    code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+    evidence: [
+      {
+        label: 'condition domain',
+        value: options.domainName,
+      },
+      {
+        label: 'resolved entry',
+        value: options.entryPath,
+      },
+    ],
+    facts: {
+      configPath: options.config.configPath,
+      field: 'graph.conditionDomains',
+      kind: 'condition-domain',
+    },
+    filePath: options.entryPath,
+    locations: [
+      {
+        filePath: options.config.configPath,
+        label: 'Limina config',
+      },
+      {
+        filePath: options.entryPath,
+        label: 'condition domain entry',
+      },
+    ],
+    presentation: {
+      detailLines: lines,
+      reason: options.reason,
+      title: options.title,
+    },
+    task: 'graph:check',
+  } satisfies GraphConfigInvalidFinding);
+}
+
 export function addConditionDomainProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
   consistencyContext: CustomConditionConsistencyContext;
   generatedGraph: GeneratedTsconfigGraphResult;
-  problems: string[];
+  findings: GraphFinding[];
   projectsByPath: Map<string, ProjectInfo>;
 }): void {
   const domains = options.config.graph?.conditionDomains;
@@ -337,23 +494,25 @@ export function addConditionDomainProblems(options: {
 
   if (!Array.isArray(domains)) {
     addConditionDomainShapeProblem({
+      config: options.config,
       field: 'graph.conditionDomains',
-      problems: options.problems,
+      findings: options.findings,
       reason: 'conditionDomains must be an array of condition domain objects.',
       value: domains,
     });
     return;
   }
 
-  const seenSubtreeProblems = new Set<string>();
+  const seenSubtreeFindingIdentities = new Set<string>();
 
   for (const [index, domain] of domains.entries()) {
     options.checks.add();
 
     const normalizedDomain = parseConditionDomainEntry({
+      config: options.config,
       domain,
+      findings: options.findings,
       index,
-      problems: options.problems,
     });
 
     if (!normalizedDomain) {
@@ -375,43 +534,47 @@ export function addConditionDomainProblems(options: {
         normalizeAbsolutePath(configuredEntryPath),
       )
     ) {
-      options.problems.push(
-        [
-          'Graph condition domain entry does not exist:',
-          `  domain: ${normalizedDomain.name}`,
-          `  entry: ${normalizedDomain.entry}`,
-          `  resolved: ${toRelativePath(options.config.rootDir, configuredEntryPath)}`,
-          '  reason: condition domain entries must point to an existing source tsconfig or generated declaration project.',
-        ].join('\n'),
-      );
+      addConditionDomainEntryProblem({
+        config: options.config,
+        domainName: normalizedDomain.name,
+        entryPath: configuredEntryPath,
+        entryValue: normalizedDomain.entry,
+        findings: options.findings,
+        reason:
+          'condition domain entries must point to an existing source tsconfig or generated declaration project.',
+        title: 'Graph condition domain entry does not exist',
+      });
       continue;
     }
 
     if (!isDtsProjectConfig(entryPath)) {
-      options.problems.push(
-        [
-          'Graph condition domain entry is not a declaration project:',
-          `  domain: ${normalizedDomain.name}`,
-          `  entry: ${normalizedDomain.entry}`,
-          `  resolved: ${toRelativePath(options.config.rootDir, entryPath)}`,
-          '  reason: condition domain entries must point to source tsconfig paths that map to generated declaration projects.',
-        ].join('\n'),
-      );
+      addConditionDomainEntryProblem({
+        config: options.config,
+        domainName: normalizedDomain.name,
+        entryPath,
+        entryValue: normalizedDomain.entry,
+        findings: options.findings,
+        reason:
+          'condition domain entries must point to source tsconfig paths that map to generated declaration projects.',
+        title: 'Graph condition domain entry is not a declaration project',
+      });
       continue;
     }
 
     const entryProject = options.projectsByPath.get(entryPath);
 
     if (!entryProject) {
-      options.problems.push(
-        [
-          'Graph condition domain entry is not reachable from checker entries:',
-          `  domain: ${normalizedDomain.name}`,
-          `  entry: ${normalizedDomain.entry}`,
-          `  resolved: ${toRelativePath(options.config.rootDir, entryPath)}`,
-          '  reason: condition domain entries must point to source tsconfig paths governed by the active Limina checker entries.',
-        ].join('\n'),
-      );
+      addConditionDomainEntryProblem({
+        config: options.config,
+        domainName: normalizedDomain.name,
+        entryPath,
+        entryValue: normalizedDomain.entry,
+        findings: options.findings,
+        reason:
+          'condition domain entries must point to source tsconfig paths governed by the active Limina checker entries.',
+        title:
+          'Graph condition domain entry is not reachable from checker entries',
+      });
       continue;
     }
 
@@ -421,10 +584,10 @@ export function addConditionDomainProblems(options: {
       options.consistencyContext,
     );
 
-    addUniqueProblems(
-      options.problems,
-      seenSubtreeProblems,
-      summary.mismatchProblems,
+    addUniqueFindings(
+      options.findings,
+      seenSubtreeFindingIdentities,
+      summary.mismatchFindings,
     );
 
     const entryConditions =
@@ -442,15 +605,54 @@ export function addConditionDomainProblems(options: {
       continue;
     }
 
-    options.problems.push(
-      [
-        'Graph condition domain customConditions mismatch:',
-        `  domain: ${normalizedDomain.name}`,
-        `  entry: ${toRelativePath(options.config.rootDir, entryPath)}`,
-        `  expected customConditions: ${formatCustomConditions(normalizedDomain.customConditions)}`,
-        `  actual customConditions: ${formatCustomConditions(entryConditions)}`,
-        '  reason: a condition domain declares the bundler/package resolution conditions for its declaration reference tree, so the entry project must use the same effective compilerOptions.customConditions.',
-      ].join('\n'),
-    );
+    const lines = [
+      'Graph condition domain customConditions mismatch:',
+      `  domain: ${normalizedDomain.name}`,
+      `  entry: ${toRelativePath(options.config.rootDir, entryPath)}`,
+      `  expected customConditions: ${formatCustomConditions(normalizedDomain.customConditions)}`,
+      `  actual customConditions: ${formatCustomConditions(entryConditions)}`,
+      '  reason: a condition domain declares the bundler/package resolution conditions for its declaration reference tree, so the entry project must use the same effective compilerOptions.customConditions.',
+    ];
+
+    options.findings.push({
+      checkerName:
+        options.consistencyContext.projectCheckerNamesByPath.get(entryPath),
+      code: LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
+      evidence: [
+        {
+          label: 'expected customConditions',
+          value: formatCustomConditions(normalizedDomain.customConditions),
+        },
+        {
+          label: 'actual customConditions',
+          value: formatCustomConditions(entryConditions),
+        },
+      ],
+      facts: {
+        actualConditions: entryConditions,
+        domainName: normalizedDomain.name,
+        entryProjectPath: entryPath,
+        expectedConditions: normalizedDomain.customConditions,
+        kind: 'domain-entry',
+      },
+      filePath: entryPath,
+      locations: [
+        {
+          filePath: options.config.configPath,
+          label: 'Limina config',
+        },
+        {
+          filePath: entryPath,
+          label: 'condition domain entry',
+        },
+      ],
+      presentation: {
+        detailLines: lines,
+        reason:
+          'a condition domain declares the bundler/package resolution conditions for its declaration reference tree, so the entry project must use the same effective compilerOptions.customConditions.',
+        title: 'Graph condition domain customConditions mismatch',
+      },
+      task: 'graph:check',
+    } satisfies GraphConditionDomainMismatchFinding);
   }
 }

@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@fixture/dependency": "workspace:*"
+  },
+  "name": "@fixture/manifest-local-workspace",
+  "version": "1.0.0"
+}

@@ -1,0 +1,13 @@
+{
+  "exports": {
+    ".": {
+      "import": {
+        "node": "./index.js",
+        "types": "./index.d.mts"
+      }
+    }
+  },
+  "name": "@fixture/publint-exports-types-order",
+  "type": "module",
+  "version": "1.0.0"
+}

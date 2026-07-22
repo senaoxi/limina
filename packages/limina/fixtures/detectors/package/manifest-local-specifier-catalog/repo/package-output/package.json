@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/manifest-local-catalog",
+  "optionalDependencies": {
+    "@fixture/dependency": "catalog:"
+  },
+  "version": "1.0.0"
+}

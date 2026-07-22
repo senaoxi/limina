@@ -1,0 +1,17 @@
+{
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.js"
+      },
+      "require": {
+        "types": "./require.d.mts",
+        "default": "./index.js"
+      }
+    }
+  },
+  "name": "@fixture/attw-cjs-resolves-to-esm",
+  "type": "module",
+  "version": "1.0.0"
+}

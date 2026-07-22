@@ -1,0 +1,7 @@
+{
+  "devDependencies": {
+    "@fixture/dependency": "link:../dependency"
+  },
+  "name": "@fixture/manifest-local-link",
+  "version": "1.0.0"
+}

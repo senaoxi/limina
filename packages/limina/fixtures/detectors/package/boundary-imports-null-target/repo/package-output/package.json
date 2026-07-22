@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "#internal": null
+  },
+  "name": "@fixture/boundary-imports-null-target",
+  "version": "1.0.0"
+}

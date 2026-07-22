@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/coverage-valid",
+  "private": true,
+  "type": "module"
+}

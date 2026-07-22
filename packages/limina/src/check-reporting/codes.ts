@@ -29,6 +29,7 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   packageCheckFailed: 'LIMINA_PACKAGE_CHECK_FAILED',
   packageManifestInvalid: 'LIMINA_PACKAGE_MANIFEST_INVALID',
   packagePublint: 'LIMINA_PACKAGE_PUBLINT',
+  /** @deprecated Historical alias. New command issues use LIMINA_COMMAND_FAILED. */
   pipelineCommandFailed: 'LIMINA_PIPELINE_COMMAND_FAILED',
   proofAllowlistInvalid: 'LIMINA_PROOF_ALLOWLIST_INVALID',
   proofCheckerCoverageInvalid: 'LIMINA_PROOF_CHECKER_COVERAGE_INVALID',
@@ -75,13 +76,25 @@ export const LIMINA_CHECK_ISSUE_CODES = {
 export type LiminaCheckIssueCode =
   (typeof LIMINA_CHECK_ISSUE_CODES)[keyof typeof LIMINA_CHECK_ISSUE_CODES];
 
+export type LiminaCheckIssueRuleStatus = 'active' | 'planned' | 'retired';
+
 export interface LiminaCheckIssueRuleMetadata {
   code: LiminaCheckIssueCode;
   description: string;
+  status: LiminaCheckIssueRuleStatus;
   task: LiminaCheckTaskName;
 }
 
-const LIMINA_CHECK_ISSUE_RULE_METADATA = {
+interface LiminaCheckIssueRuleDefinition {
+  code: LiminaCheckIssueCode;
+  description: string;
+  status?: Exclude<LiminaCheckIssueRuleStatus, 'active'>;
+  task: LiminaCheckTaskName;
+}
+
+const LIMINA_CHECK_ISSUE_RULE_METADATA: Readonly<
+  Record<LiminaCheckIssueCode, LiminaCheckIssueRuleDefinition>
+> = {
   [LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed]: {
     code: LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed,
     description: 'Checker build execution failed for one or more targets.',
@@ -218,7 +231,9 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
   },
   [LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed]: {
     code: LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed,
-    description: 'A configured pipeline command failed.',
+    description:
+      'Deprecated legacy alias for command failures; new issues use LIMINA_COMMAND_FAILED.',
+    status: 'retired',
     task: 'command',
   },
   [LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid]: {
@@ -273,6 +288,7 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
   [LIMINA_CHECK_ISSUE_CODES.releaseConsistency]: {
     code: LIMINA_CHECK_ISSUE_CODES.releaseConsistency,
     description: 'Release metadata or package output is inconsistent.',
+    status: 'planned',
     task: 'release:check',
   },
   [LIMINA_CHECK_ISSUE_CODES.releaseContentHash]: {
@@ -404,10 +420,24 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA = {
       'Multiple activated package roots resolve to the same physical directory.',
     task: 'workspace:validate',
   },
-} satisfies Record<LiminaCheckIssueCode, LiminaCheckIssueRuleMetadata>;
+};
+
+export type LiminaReadableCheckIssueCode = Exclude<
+  LiminaCheckIssueCode,
+  typeof LIMINA_CHECK_ISSUE_CODES.releaseConsistency
+>;
+
+export type LiminaWritableCheckIssueCode = Exclude<
+  LiminaCheckIssueCode,
+  | typeof LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed
+  | typeof LIMINA_CHECK_ISSUE_CODES.releaseConsistency
+>;
+
+const LIMINA_CHECK_ISSUE_CODE_VALUES: readonly LiminaCheckIssueCode[] =
+  Object.values(LIMINA_CHECK_ISSUE_CODES);
 
 const LIMINA_CHECK_ISSUE_CODE_SET: ReadonlySet<string> = new Set(
-  Object.values(LIMINA_CHECK_ISSUE_CODES),
+  LIMINA_CHECK_ISSUE_CODE_VALUES,
 );
 
 export function isLiminaCheckIssueCode(
@@ -416,24 +446,101 @@ export function isLiminaCheckIssueCode(
   return LIMINA_CHECK_ISSUE_CODE_SET.has(code);
 }
 
-export function listLiminaCheckIssueCodes(): readonly string[] {
-  return [...LIMINA_CHECK_ISSUE_CODE_SET].sort();
+export function listLiminaCheckIssueCodes(): readonly LiminaCheckIssueCode[] {
+  return [...LIMINA_CHECK_ISSUE_CODE_VALUES].sort();
+}
+
+export function isWritableLiminaCheckIssueCode(
+  code: string,
+): code is LiminaWritableCheckIssueCode {
+  return isLiminaCheckIssueCode(code) && getIssueRuleStatus(code) === 'active';
+}
+
+export function isReadableLiminaCheckIssueCode(
+  code: string,
+): code is LiminaReadableCheckIssueCode {
+  return isLiminaCheckIssueCode(code) && getIssueRuleStatus(code) !== 'planned';
 }
 
 export function getLiminaCheckIssueRuleMetadata(
   code: LiminaCheckIssueCode,
 ): LiminaCheckIssueRuleMetadata {
-  return LIMINA_CHECK_ISSUE_RULE_METADATA[code];
+  const definition = LIMINA_CHECK_ISSUE_RULE_METADATA[code];
+
+  return {
+    code: definition.code,
+    description: definition.description,
+    status: getIssueRuleStatus(code),
+    task: definition.task,
+  };
 }
 
 export function listLiminaCheckIssueRuleMetadata(): readonly LiminaCheckIssueRuleMetadata[] {
-  return Object.values(LIMINA_CHECK_ISSUE_RULE_METADATA).sort(
+  return LIMINA_CHECK_ISSUE_CODE_VALUES.map((code) =>
+    getLiminaCheckIssueRuleMetadata(code),
+  ).sort(
     (left, right) =>
       left.task.localeCompare(right.task) ||
       left.code.localeCompare(right.code),
   );
 }
 
-export function defaultTaskFailureCode(task: LiminaCheckTaskName): string {
-  return `LIMINA_${task.replaceAll(/[:.-]/gu, '_').toUpperCase()}_FAILED`;
+function getIssueRuleStatus(
+  code: LiminaCheckIssueCode,
+): LiminaCheckIssueRuleStatus {
+  const definition = LIMINA_CHECK_ISSUE_RULE_METADATA[code];
+  return definition.status ?? 'active';
+}
+
+export function assertIssueTaskMatchesCode(
+  code: LiminaCheckIssueCode,
+  task: LiminaCheckTaskName,
+): void {
+  const expectedTask = getLiminaCheckIssueRuleMetadata(code).task;
+
+  if (task !== expectedTask) {
+    throw new Error(
+      `Issue code ${code} belongs to ${expectedTask}, not ${task}.`,
+    );
+  }
+}
+
+export function assertWritableLiminaCheckIssueCode(
+  code: string,
+): asserts code is LiminaWritableCheckIssueCode {
+  if (!isLiminaCheckIssueCode(code)) {
+    throw new Error(`Unknown canonical Limina issue code: ${code}.`);
+  }
+
+  const status = getIssueRuleStatus(code);
+
+  if (status === 'planned') {
+    throw new Error(`Planned Limina issue code is not writable: ${code}.`);
+  }
+
+  if (status === 'retired') {
+    throw new Error(`Retired Limina issue code is read-only: ${code}.`);
+  }
+}
+
+export const DEFAULT_ISSUE_CODE_BY_TASK: Readonly<
+  Record<LiminaCheckTaskName, LiminaWritableCheckIssueCode>
+> = {
+  'checker:build': LIMINA_CHECK_ISSUE_CODES.checkerBuildFailed,
+  'checker:typecheck': LIMINA_CHECK_ISSUE_CODES.checkerTypecheckFailed,
+  command: LIMINA_CHECK_ISSUE_CODES.commandFailed,
+  'graph:check': LIMINA_CHECK_ISSUE_CODES.graphCheckFailed,
+  'graph:materialize': LIMINA_CHECK_ISSUE_CODES.graphMaterializeFailed,
+  'graph:prepare': LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
+  'package:check': LIMINA_CHECK_ISSUE_CODES.packageCheckFailed,
+  'proof:check': LIMINA_CHECK_ISSUE_CODES.proofCheckFailed,
+  'release:check': LIMINA_CHECK_ISSUE_CODES.releaseCheckFailed,
+  'source:check': LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
+  'workspace:validate': LIMINA_CHECK_ISSUE_CODES.workspaceValidationFailed,
+};
+
+export function defaultTaskFailureCode(
+  task: LiminaCheckTaskName,
+): LiminaWritableCheckIssueCode {
+  return DEFAULT_ISSUE_CODE_BY_TASK[task];
 }

@@ -138,9 +138,6 @@
     "tsx": {
       "optional": true
     },
-    "typescript": {
-      "optional": true
-    },
     "vue-tsc": {
       "optional": true
     },

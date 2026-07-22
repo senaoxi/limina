@@ -1,0 +1,17 @@
+{
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./missing.d.mts",
+        "default": "./missing.js"
+      },
+      "default": {
+        "types": "./index.d.mts",
+        "default": "./index.js"
+      }
+    }
+  },
+  "name": "@fixture/attw-fallback-condition",
+  "type": "module",
+  "version": "1.0.0"
+}

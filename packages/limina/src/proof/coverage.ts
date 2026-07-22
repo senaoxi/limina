@@ -1,7 +1,27 @@
-export interface CoverageSource {
-  label: string;
-  type: 'allowlist' | 'checker' | 'graph';
-}
+export type CoverageSource =
+  | {
+      configuredPath: string;
+      label: string;
+      reason: string;
+      resolvedPath: string;
+      ruleIndex: number;
+      type: 'allowlist';
+    }
+  | {
+      checkerEntryPath: string;
+      checkerName: string;
+      label: string;
+      projectPath: string;
+      type: 'checker';
+    }
+  | {
+      checkerEntryPath: string;
+      checkerName: string;
+      checkerPreset: string;
+      label: string;
+      projectPath: string;
+      type: 'graph';
+    };
 
 export function addCoverage(
   coverageByFile: Map<string, CoverageSource[]>,

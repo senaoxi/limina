@@ -1,0 +1,19 @@
+{
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.js"
+      },
+      "require": {
+        "types": "./index.d.cts",
+        "default": "./index.cjs"
+      }
+    }
+  },
+  "main": "./index.cjs",
+  "name": "@fixture/attw-dual-package-valid",
+  "type": "module",
+  "types": "./index.d.cts",
+  "version": "1.0.0"
+}

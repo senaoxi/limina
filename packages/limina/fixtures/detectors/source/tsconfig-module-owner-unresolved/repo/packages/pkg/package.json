@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/source-tsconfig-owner",
+  "private": true,
+  "type": "module"
+}

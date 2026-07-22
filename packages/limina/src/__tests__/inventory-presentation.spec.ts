@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  LIMINA_CHECK_ISSUE_CODES,
+  type LiminaWritableCheckIssueCode,
+} from '../check-reporting/codes';
 import { formatCheckIssueInventoryCard } from '../check-reporting/human';
 import type { InventoryQueryContext } from '../check-reporting/inventory-presentation';
 import {
@@ -30,7 +34,7 @@ function stripAnsi(value: string): string {
 
 function createIssue(options: {
   checkerName?: string;
-  code: string;
+  code: LiminaWritableCheckIssueCode;
   filePath?: string;
   packageName?: string;
   task?: LiminaCheckTaskName;
@@ -80,7 +84,7 @@ describe('check issue inventory presentation', () => {
   it('selects exactly twenty canonical issues from one root and package', () => {
     const issues = Array.from({ length: 96 }, (_, index) =>
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: `/repo/packages/app/src/file-${String(index).padStart(3, '0')}.ts`,
         packageName: '@example/app',
         title: 'Root A',
@@ -101,7 +105,7 @@ describe('check issue inventory presentation', () => {
   it('gives unrelated root causes first-round visibility across 100 packages', () => {
     const highFrequencyRoot = Array.from({ length: 100 }, (_, index) =>
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: `/repo/packages/pkg-${String(index).padStart(3, '0')}/src/index.ts`,
         packageName: `@example/pkg-${String(index).padStart(3, '0')}`,
         title: 'Root A',
@@ -110,13 +114,13 @@ describe('check issue inventory presentation', () => {
     const issues = [
       ...highFrequencyRoot,
       createIssue({
-        code: 'ROOT_B',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid,
         filePath: '/repo/packages/blocker-b/src/index.ts',
         packageName: '@example/blocker-b',
         title: 'Root B',
       }),
       createIssue({
-        code: 'ROOT_C',
+        code: LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
         filePath: '/repo/packages/blocker-c/src/index.ts',
         packageName: '@example/blocker-c',
         title: 'Root C',
@@ -125,43 +129,47 @@ describe('check issue inventory presentation', () => {
     const selected = selectInventoryIssues(issues, 20);
 
     expect(selected.slice(0, 3).map((issue) => issue.code)).toEqual([
-      'ROOT_A',
-      'ROOT_B',
-      'ROOT_C',
+      LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
+      LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid,
+      LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
     ]);
     expect(new Set(selected.map((issue) => issue.code))).toEqual(
-      new Set(['ROOT_A', 'ROOT_B', 'ROOT_C']),
+      new Set([
+        LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
+        LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid,
+        LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
+      ]),
     );
   });
 
   it('round-robins package sub-buckets within one root cause', () => {
     const issues = [
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/a/src/2.ts',
         packageName: '@example/a',
         title: 'Root A',
       }),
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/b/src/2.ts',
         packageName: '@example/b',
         title: 'Root A',
       }),
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/c/src/1.ts',
         packageName: '@example/c',
         title: 'Root A',
       }),
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/a/src/1.ts',
         packageName: '@example/a',
         title: 'Root A',
       }),
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/b/src/1.ts',
         packageName: '@example/b',
         title: 'Root A',
@@ -182,25 +190,25 @@ describe('check issue inventory presentation', () => {
   it('produces identical selection, blockers, and ANSI output for every permutation', () => {
     const issues = [
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/a/src/a.ts',
         packageName: '@example/a',
         title: 'Root A',
       }),
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/b/src/b.ts',
         packageName: '@example/b',
         title: 'Root A',
       }),
       createIssue({
-        code: 'ROOT_B',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid,
         filePath: '/repo/packages/a/src/c.ts',
         packageName: '@example/a',
         title: 'Root B',
       }),
       createIssue({
-        code: 'ROOT_C',
+        code: LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
         filePath: '/repo/packages/c/src/d.ts',
         packageName: '@example/c',
         title: 'Root C',
@@ -245,7 +253,7 @@ describe('check issue inventory presentation', () => {
   it('uses package only for impact and sampling, not blocker identity', () => {
     const issues = Array.from({ length: 100 }, (_, index) =>
       createIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: `/repo/packages/p${index}/src/index.ts`,
         packageName: `@example/p${index}`,
         title: 'Root A',
@@ -256,7 +264,7 @@ describe('check issue inventory presentation', () => {
     expect(blockers).toHaveLength(1);
     expect(blockers[0]).toMatchObject({
       affectedPackages: 100,
-      code: 'ROOT_A',
+      code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
       count: 100,
     });
   });
@@ -267,7 +275,7 @@ describe('check issue inventory presentation', () => {
       (_, index) => `provider candidate ${index}`,
     );
     const base = {
-      code: 'LIMINA_GRAPH_PREPARE_FAILED',
+      code: LIMINA_CHECK_ISSUE_CODES.graphPrepareFailed,
       filePath: '/repo/packages/app/src/index.ts',
       fix: 'Choose one provider.\nThen rerun the check.',
       packageName: '@example/app',
@@ -373,7 +381,7 @@ describe('check issue inventory presentation', () => {
 
   it('orders tied issues with a fixed persisted-field fingerprint without mutation', () => {
     const left = createLiminaCheckIssue({
-      code: 'ROOT_A',
+      code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
       evidence: [{ label: 'provider', lines: ['a'] }],
       reason: 'Root A failed.',
       rootDir: '/repo',
