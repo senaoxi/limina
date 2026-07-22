@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readFile, realpath } from 'node:fs/promises';
+import { readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'pathe';
 
 export interface FileTreeIdentity {
@@ -14,32 +14,6 @@ export interface RuntimeTreeIdentity extends FileTreeIdentity {
   readonly packageRealPath: string;
 }
 
-export interface LinkedRuntimeTreeIdentity extends RuntimeTreeIdentity {
-  readonly shimLogicalPath: string;
-  readonly shimRealPath: string;
-}
-
-const BUILD_INPUT_RELATIVE_PATHS = [
-  'nx.json',
-  'package.json',
-  'packages/limina',
-  'packages/plugins/license',
-  'packages/utils',
-  'pnpm-lock.yaml',
-  'tsconfig.base.json',
-  'tsconfig.json',
-] as const;
-
-const BUILD_INPUT_IGNORED_SEGMENTS = new Set([
-  '.cache',
-  '.eslintcache',
-  '.nx',
-  '.tsbuild',
-  'coverage',
-  'dist',
-  'node_modules',
-]);
-
 function toPortableRelativePath(value: string): string {
   return value.split(path.sep).join('/');
 }
@@ -52,10 +26,7 @@ function isPathInsideOrEqual(parentPath: string, childPath: string): boolean {
   );
 }
 
-async function collectRegularFiles(
-  rootDir: string,
-  options: { ignoredSegments?: ReadonlySet<string> } = {},
-): Promise<string[]> {
+async function collectRegularFiles(rootDir: string): Promise<string[]> {
   const files: string[] = [];
 
   async function visit(directoryPath: string): Promise<void> {
@@ -63,7 +34,6 @@ async function collectRegularFiles(
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
-      if (options.ignoredSegments?.has(entry.name)) continue;
       const entryPath = path.join(directoryPath, entry.name);
       if (entry.isSymbolicLink()) {
         throw new Error(
@@ -164,72 +134,4 @@ export async function collectRuntimeTreeIdentity(options: {
     packageLogicalPath,
     packageRealPath,
   };
-}
-
-export async function collectLinkedRuntimeTreeIdentity(
-  consumerRootDir: string,
-): Promise<LinkedRuntimeTreeIdentity> {
-  const rootDir = path.resolve(consumerRootDir);
-  const packageLogicalPath = path.join(rootDir, 'node_modules', 'limina');
-  const shimLogicalPath = path.join(rootDir, 'node_modules', '.bin', 'limina');
-  const executableLogicalPath = path.resolve(
-    packageLogicalPath,
-    await readPackageBinPath(packageLogicalPath),
-  );
-  const shimStats = await lstat(shimLogicalPath);
-  if (!shimStats.isFile() && !shimStats.isSymbolicLink()) {
-    throw new Error(
-      `Limina executable shim is not a file: ${shimLogicalPath}.`,
-    );
-  }
-
-  return {
-    ...(await collectRuntimeTreeIdentity({
-      executableLogicalPath,
-      packageLogicalPath,
-    })),
-    shimLogicalPath,
-    shimRealPath: await realpath(shimLogicalPath),
-  };
-}
-
-export async function collectBuildInputIdentity(
-  workspaceRootDir: string,
-): Promise<FileTreeIdentity> {
-  const rootDir = path.resolve(workspaceRootDir);
-  const files: string[] = [];
-
-  for (const relativePath of BUILD_INPUT_RELATIVE_PATHS) {
-    const targetPath = path.join(rootDir, relativePath);
-    let stats;
-    try {
-      stats = await lstat(targetPath);
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        'code' in error &&
-        error.code === 'ENOENT'
-      ) {
-        continue;
-      }
-      throw error;
-    }
-    if (stats.isSymbolicLink()) {
-      throw new Error(`Build input contains a symbolic link: ${targetPath}.`);
-    }
-    if (stats.isDirectory()) {
-      files.push(
-        ...(await collectRegularFiles(targetPath, {
-          ignoredSegments: BUILD_INPUT_IGNORED_SEGMENTS,
-        })),
-      );
-      continue;
-    }
-    if (!stats.isFile()) {
-      throw new Error(`Build input is not a regular file: ${targetPath}.`);
-    }
-    files.push(targetPath);
-  }
-
-  return hashFiles(rootDir, files);
 }

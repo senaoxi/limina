@@ -8,6 +8,8 @@ import type { ImportAnalysisMetricsRecorder } from './import-analysis/runner';
 import { ImportCore } from './imports';
 import { PackageDomainCore } from './packages';
 import { TsconfigCore } from './tsconfig';
+import { TypeEvidenceCore } from './type-evidence';
+import type { TypeEvidenceMetricsRecorder } from './type-evidence/cache';
 import {
   WorkspaceCore,
   type WorkspaceCoreDependencies,
@@ -15,6 +17,7 @@ import {
 } from './workspace';
 
 type AnalysisCoreMetricsRecorder = ImportAnalysisMetricsRecorder &
+  TypeEvidenceMetricsRecorder &
   WorkspaceCoreMetricsRecorder;
 
 export { BuildGraphCore } from './build-graph';
@@ -24,6 +27,16 @@ export { PackageDomainCore } from './packages';
 export type { PackageDomain } from './packages';
 export { TsconfigCore } from './tsconfig';
 export type { SourceGraphProjects } from './tsconfig';
+export { TypeEvidenceCore } from './type-evidence';
+export type {
+  AmbientSymbolLookupCache,
+  ImportTypeEvidenceCache,
+  ProgramCache,
+  TypeEvidence,
+  TypeEvidenceProgramHandle,
+  TypeEvidenceProvider,
+  TypeEvidenceProviderCache,
+} from './type-evidence';
 export { WorkspaceCore } from './workspace';
 
 export interface AnalysisProviderSetDependencies {
@@ -37,6 +50,7 @@ export class AnalysisProviderSet {
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
   readonly tsconfig: TsconfigCore;
+  readonly typeEvidence: TypeEvidenceCore;
   readonly workspace: WorkspaceCore;
 
   constructor(
@@ -59,6 +73,11 @@ export class AnalysisProviderSet {
       () => buildGraph.getGraph(),
       this.workspace,
     );
+    this.typeEvidence = new TypeEvidenceCore({
+      generation: artifactNamespace.generation,
+      importAnalysis: this.imports.context,
+      metrics,
+    });
     buildGraph = new BuildGraphCore({
       artifactNamespace,
       config,
@@ -71,6 +90,10 @@ export class AnalysisProviderSet {
       tsconfig: this.tsconfig,
       workspace: this.workspace,
     });
+  }
+
+  dispose(): void {
+    this.typeEvidence.dispose();
   }
 }
 

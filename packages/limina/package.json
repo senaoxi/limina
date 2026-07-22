@@ -49,7 +49,6 @@
   "scripts": {
     "build": "rolldown --config rolldown.config.ts",
     "build:watch": "rolldown --config rolldown.config.ts --watch",
-    "benchmark:identity": "tsx scripts/benchmark-identity.ts",
     "typecheck": "node bin/limina.js checker build",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",

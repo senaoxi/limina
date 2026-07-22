@@ -3267,70 +3267,73 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('writes same-checker declaration references for static imports', async () => {
-    const fixture = await createFixture({
-      'packages/app/src/index.ts':
-        "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
-      'packages/app/tsconfig.json': json({
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          target: 'ES2023',
-          types: [],
-        },
-        include: ['src/**/*.ts'],
-      }),
-      'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
-      'packages/theme/tsconfig.json': json({
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          target: 'ES2023',
-          types: [],
-        },
-        include: ['src/**/*.ts'],
-      }),
-    });
-
-    try {
-      await prepareGeneratedTsconfigGraph({
-        ...fixture.config,
-        config: {
-          checkers: {
-            typescript: {
-              preset: 'tsc',
-              include: [
-                'packages/app/tsconfig.json',
-                'packages/theme/tsconfig.json',
-              ],
-            },
+  it.each(['ts', 'tsx'] as const)(
+    'writes same-checker declaration references for static %s imports',
+    async (extension) => {
+      const fixture = await createFixture({
+        [`packages/app/src/index.${extension}`]:
+          "import { themeValue } from '../../theme/src/theme';\nexport const value = themeValue;\n",
+        'packages/app/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
           },
-        },
+          include: [`src/**/*.${extension}`],
+        }),
+        'packages/theme/src/theme.ts': 'export const themeValue = 1;\n',
+        'packages/theme/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
       });
 
-      const generatedConfig = JSON.parse(
-        await readFile(
-          path.join(
-            fixture.rootDir,
-            '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
-          ),
-          'utf8',
-        ),
-      ) as {
-        references: { path: string }[];
-      };
+      try {
+        await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              typescript: {
+                preset: 'tsc',
+                include: [
+                  'packages/app/tsconfig.json',
+                  'packages/theme/tsconfig.json',
+                ],
+              },
+            },
+          },
+        });
 
-      expect(generatedConfig.references).toEqual([
-        {
-          path: '../theme/tsconfig.dts.json',
-        },
-      ]);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
+        const generatedConfig = JSON.parse(
+          await readFile(
+            path.join(
+              fixture.rootDir,
+              '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+            ),
+            'utf8',
+          ),
+        ) as {
+          references: { path: string }[];
+        };
+
+        expect(generatedConfig.references).toEqual([
+          {
+            path: '../theme/tsconfig.dts.json',
+          },
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('does not write references for TypeScript declaration providers', async () => {
     const fixture = await createFixture({
@@ -4187,6 +4190,127 @@ describe('prepareGeneratedTsconfigGraph', () => {
           path: '../theme/tsconfig.dts.json',
         },
       ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps physical and missing resource modules out of the Vue provider graph', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/App.vue': [
+        '<script setup lang="ts">',
+        "import Theme from '../../theme/src/Theme.vue';",
+        "import './style.css';",
+        "import './icon.svg';",
+        "import './data.yaml';",
+        "import './readme.txt';",
+        "import './missing.css';",
+        'void Theme;',
+        '</script>',
+        '',
+      ].join('\n'),
+      'packages/app/src/data.yaml': 'value: true\n',
+      'packages/app/src/icon.svg': '<svg />\n',
+      'packages/app/src/readme.txt': 'resource\n',
+      'packages/app/src/style.css': '.root {}\n',
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.vue'],
+      }),
+      'packages/theme/src/Theme.vue':
+        '<script setup lang="ts">const value = 1;</script>\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.vue'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: {
+          checkers: {
+            vue: {
+              preset: 'vue-tsc',
+              include: [
+                'packages/app/tsconfig.json',
+                'packages/theme/tsconfig.json',
+              ],
+            },
+          },
+        },
+      });
+
+      expect(result.manifest.providerEdges).toEqual([]);
+      expect(
+        await readGeneratedReferences({
+          checkerName: 'vue',
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).toEqual([
+        {
+          path: '../theme/tsconfig.dts.json',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not reference a cross-project hand-written arbitrary-extension declaration', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import className from '../../theme/src/button.css';\nexport const value = className;\n",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          allowArbitraryExtensions: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/theme/src/button.css': '.button {}\n',
+      'packages/theme/src/button.d.css.ts':
+        'declare const className: string;\nexport default className;\n',
+      'packages/theme/tsconfig.json': json({
+        compilerOptions: {
+          allowArbitraryExtensions: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+
+      expect(result.manifest.providerEdges).toEqual([]);
+      expect(
+        await readGeneratedReferences({
+          projectRelativePath: 'packages/app',
+          rootDir: fixture.rootDir,
+        }),
+      ).toEqual([]);
     } finally {
       await fixture.cleanup();
     }

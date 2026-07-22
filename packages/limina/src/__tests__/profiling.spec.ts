@@ -1,7 +1,6 @@
 import {
   mkdir,
   mkdtemp,
-  readFile,
   realpath,
   rm,
   symlink,
@@ -10,13 +9,8 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  collectBuildInputIdentity,
-  collectLinkedRuntimeTreeIdentity,
-  collectRuntimeTreeIdentity,
-} from '../profiling/identity';
+import { collectRuntimeTreeIdentity } from '../profiling/identity';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { toPortablePath } from './helpers/path';
 
 async function createRuntimeFixture(): Promise<{
   cleanup(): Promise<void>;
@@ -75,30 +69,6 @@ describe('profiling identity', () => {
     }
   });
 
-  it('records package, shim, and executable identities for a linked runtime', async () => {
-    const fixture = await createRuntimeFixture();
-    const consumerRoot = path.join(fixture.rootDir, 'consumer');
-    const packagePath = path.join(consumerRoot, 'node_modules', 'limina');
-    const shimPath = path.join(consumerRoot, 'node_modules', '.bin', 'limina');
-    await mkdir(path.dirname(shimPath), { recursive: true });
-    await symlink(fixture.packageRoot, packagePath, 'dir');
-    await writeFile(shimPath, '#!/bin/sh\n');
-
-    try {
-      const identity = await collectLinkedRuntimeTreeIdentity(consumerRoot);
-      expect(identity.packageLogicalPath).toBe(toPortablePath(packagePath));
-      expect(identity.packageRealPath).toBe(fixture.packageRoot);
-      expect(identity.executableLogicalPath).toBe(
-        toPortablePath(path.join(packagePath, 'bin', 'limina.js')),
-      );
-      expect(identity.executableRealPath).toBe(fixture.executablePath);
-      expect(identity.shimLogicalPath).toBe(toPortablePath(shimPath));
-      expect(await readFile(identity.shimRealPath, 'utf8')).toBe('#!/bin/sh\n');
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
   it('rejects symlink entries inside the runtime tree', async () => {
     const fixture = await createRuntimeFixture();
     await symlink(
@@ -115,36 +85,6 @@ describe('profiling identity', () => {
       ).rejects.toThrow(/contains a symbolic link/u);
     } finally {
       await fixture.cleanup();
-    }
-  });
-
-  it('includes untracked package inputs while excluding build outputs', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-build-input-')),
-    );
-    const sourcePath = path.join(
-      rootDir,
-      'packages',
-      'limina',
-      'src',
-      'index.ts',
-    );
-    const distPath = path.join(rootDir, 'packages', 'limina', 'dist', 'cli.js');
-    await mkdir(path.dirname(sourcePath), { recursive: true });
-    await mkdir(path.dirname(distPath), { recursive: true });
-    await writeFile(sourcePath, 'export {};\n');
-    await writeFile(distPath, 'generated\n');
-
-    try {
-      const before = await collectBuildInputIdentity(rootDir);
-      await writeFile(distPath, 'changed output\n');
-      expect(await collectBuildInputIdentity(rootDir)).toEqual(before);
-      await writeFile(sourcePath, 'changed input\n');
-      expect((await collectBuildInputIdentity(rootDir)).treeHash).not.toBe(
-        before.treeHash,
-      );
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
     }
   });
 });

@@ -818,6 +818,28 @@ export const LIMINA_CHECK_ISSUE_DETECTOR_COVERAGE: DetectorCoverageRegistry = {
       'packages/limina/src/__tests__/source.spec.ts',
     ],
   },
+  [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound]: {
+    kind: 'integration',
+    producers: [
+      'packages/limina/src/source-check/runner.ts#addResourceModuleProblems',
+    ],
+    task: 'source:check',
+    tests: [
+      'packages/limina/src/__tests__/source-findings.spec.ts',
+      'packages/limina/src/__tests__/source.spec.ts',
+    ],
+  },
+  [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared]: {
+    kind: 'integration',
+    producers: [
+      'packages/limina/src/source-check/runner.ts#addResourceModuleProblems',
+    ],
+    task: 'source:check',
+    tests: [
+      'packages/limina/src/__tests__/source-findings.spec.ts',
+      'packages/limina/src/__tests__/source.spec.ts',
+    ],
+  },
   [LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance]: {
     kind: 'fixture',
     producers: [

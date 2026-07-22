@@ -62,6 +62,9 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   sourcePackageImportUnauthorized: 'LIMINA_SOURCE_PACKAGE_IMPORT_UNAUTHORIZED',
   sourceRelativeImportEscapesScope:
     'LIMINA_SOURCE_RELATIVE_IMPORT_ESCAPES_SCOPE',
+  sourceResourceModuleNotFound: 'LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND',
+  sourceResourceModuleTypeUndeclared:
+    'LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED',
   sourceTsconfigGovernance: 'LIMINA_SOURCE_TSCONFIG_GOVERNANCE',
   sourceUnusedModule: 'LIMINA_SOURCE_UNUSED_MODULE',
   sourceUnusedWorkspaceDependency: 'LIMINA_SOURCE_UNUSED_WORKSPACE_DEPENDENCY',
@@ -374,6 +377,17 @@ const LIMINA_CHECK_ISSUE_RULE_METADATA: Readonly<
   [LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope]: {
     code: LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope,
     description: 'A relative source import escapes its owner scope.',
+    task: 'source:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound]: {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+    description: 'A resource import does not resolve to a physical file.',
+    task: 'source:check',
+  },
+  [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared]: {
+    code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+    description:
+      'A physical resource import has no declaration visible to its checker project.',
     task: 'source:check',
   },
   [LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance]: {

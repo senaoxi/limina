@@ -169,7 +169,7 @@ export interface CheckerModuleResolveOptions {
 
 export interface ResolvedCheckerModuleName {
   isExternalLibraryImport: boolean;
-  resolvedBy: 'checker-extension' | 'typescript';
+  resolvedBy: 'checker-source' | 'typescript';
   resolvedFileName: string;
 }
 
@@ -680,10 +680,10 @@ function resolveTypeScriptModuleNameDetailed(
     };
   }
 
-  return resolveCheckerExtensionModuleName(options);
+  return resolveCheckerSourceModuleName(options);
 }
 
-function resolveCheckerExtensionModuleName(
+function resolveCheckerSourceModuleName(
   options: CheckerModuleResolveOptions,
 ): ResolvedCheckerModuleName | null {
   const typeScriptExtensions = new Set(getTypeScriptCheckerExtensions());
@@ -712,10 +712,15 @@ function resolveCheckerExtensionModuleName(
       specifier: options.specifier,
     });
 
-  return resolvedFileName
+  const normalizedResolvedFileName = resolvedFileName?.toLowerCase();
+  const isDeclaredCheckerSource = checkerOnlyExtensions.some((extension) =>
+    normalizedResolvedFileName?.endsWith(extension.toLowerCase()),
+  );
+
+  return resolvedFileName && isDeclaredCheckerSource
     ? {
         isExternalLibraryImport: false,
-        resolvedBy: 'checker-extension',
+        resolvedBy: 'checker-source',
         resolvedFileName,
       }
     : null;

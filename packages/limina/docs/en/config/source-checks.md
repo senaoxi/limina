@@ -25,6 +25,28 @@ export default defineConfig({
 });
 ```
 
+## Resource module imports
+
+`source:check` validates imported physical resources such as CSS, SVG, YAML, and text files without treating them as TypeScript source projects. A resource import is valid only when both of these statements are true:
+
+1. the runtime resolver or filesystem confirms that the physical resource exists; and
+2. the current checker project can see type evidence for that import.
+
+Type evidence may come from a checker source file, a concrete declaration file such as `button.d.css.ts`, or an ambient module declaration included by the current project. An ambient declaration does not prove that the resource exists. Conversely, an existing resource without a visible concrete or ambient declaration is not type-complete.
+
+Limina reports these cases from `source:check` only:
+
+| Rule                                            | Meaning                                                                       |
+| ----------------------------------------------- | ----------------------------------------------------------------------------- |
+| `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`       | The physical resource does not exist. This takes precedence over types.       |
+| `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED` | The resource exists, but the current checker project has no type declaration. |
+
+Resource imports do not become declaration providers, provider edges, or project references, and a missing resource does not stop `graph prepare`. Existing TypeScript, JavaScript, JSON, and framework source resolution continues through the configured checker.
+
+For `?raw`, `?url`, and `?worker` imports, Limina checks that the base physical file exists and that the checker project provides a matching type declaration. This does not assert that a particular bundler transformer is installed. Virtual and framework-injected module runtime behavior remains unsupported; an ambient declaration alone does not make such a runtime module valid, and Limina does not report it as a missing physical resource.
+
+Vue resource type evidence is available with the verified Vue checker family: `vue-tsc` 3.2.x, `@vue/language-core` 3.2.x, `@volar/typescript` 2.4.x, and TypeScript 5.9 or 6.0. Other Vue checker tuples are treated as unsupported rather than being reported as missing declarations.
+
 ## importAuthority
 
 `source.importAuthority` controls bare package imports that are not declared by the owning workspace package manifest.

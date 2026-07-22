@@ -2448,6 +2448,10 @@ function inferProjectReferences(
           },
         });
 
+        if (declarationProvider.kind === 'resource') {
+          continue;
+        }
+
         if (declarationProvider.kind === 'oxc-only') {
           problems.push(
             formatOxcOnlyDeclarationProviderProblem({

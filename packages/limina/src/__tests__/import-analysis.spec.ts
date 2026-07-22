@@ -45,6 +45,43 @@ async function linkCompilerSfc(rootDir: string): Promise<void> {
 }
 
 describe('import analysis', () => {
+  it('keeps full UTF-16 string-token locators and duplicate occurrences stable', async () => {
+    const rootDir = await createTempDir();
+    const sourceText = [
+      "const label = '資源😀';",
+      "import './shared.css';",
+      "import './shared.css';",
+      "void import('./shared.css');",
+      "type Shared = import('./shared.css').Shared;",
+      '',
+    ].join('\r\n');
+
+    try {
+      const filePath = await writeText(rootDir, 'src/locator.ts', sourceText);
+      const imports = collectImportsFromFile(filePath, rootDir).filter(
+        (record) => record.specifier === './shared.css',
+      );
+
+      expect(
+        imports.map((record) => ({
+          kind: record.kind,
+          occurrence: record.locator.occurrence,
+          token: sourceText.slice(
+            record.locator.sourceStart,
+            record.locator.sourceEnd,
+          ),
+        })),
+      ).toEqual([
+        { kind: 'static', occurrence: 0, token: "'./shared.css'" },
+        { kind: 'static', occurrence: 1, token: "'./shared.css'" },
+        { kind: 'dynamic', occurrence: 0, token: "'./shared.css'" },
+        { kind: 'import-type', occurrence: 0, token: "'./shared.css'" },
+      ]);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('collects static, type, export-from, dynamic, and import-type dependencies', async () => {
     const rootDir = await createTempDir();
 
@@ -214,6 +251,38 @@ describe('import analysis', () => {
         { kind: 'import-type', line: 8, specifier: './types' },
         { kind: 'export', line: 12, specifier: './Widget' },
         { kind: 'dynamic', line: 13, specifier: './lazy' },
+      ]);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('keeps Vue SFC locators in original-source UTF-16 coordinates', async () => {
+    const rootDir = await createTempDir();
+    const sourceText = [
+      '<template><div>資源😀</div></template>',
+      '<script setup lang="ts">',
+      "import './style.css';",
+      "import './style.css';",
+      '</script>',
+      '',
+    ].join('\r\n');
+
+    try {
+      const filePath = await writeText(rootDir, 'src/Locator.vue', sourceText);
+      const records = collectImportsFromFile(filePath, rootDir);
+
+      expect(
+        records.map((record) => ({
+          occurrence: record.locator.occurrence,
+          token: sourceText.slice(
+            record.locator.sourceStart,
+            record.locator.sourceEnd,
+          ),
+        })),
+      ).toEqual([
+        { occurrence: 0, token: "'./style.css'" },
+        { occurrence: 1, token: "'./style.css'" },
       ]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });

@@ -196,6 +196,77 @@ describe('checker project config parsing', () => {
 });
 
 describe('checker module resolution', () => {
+  it('accepts only declared checker-source extensions across relative, paths, and package exports', async () => {
+    const fixture = await createFixture({
+      'node_modules/@example/theme/Theme.vue': '<template><div /></template>\n',
+      'node_modules/@example/theme/package.json': tsconfig({
+        exports: {
+          './theme': './Theme.vue',
+        },
+        name: '@example/theme',
+      }),
+      'src/App.vue': '<template><div /></template>\n',
+      'src/data.yaml': 'value: true\n',
+      'src/icon.svg': '<svg />\n',
+      'src/index.ts': 'export const value = true;\n',
+      'src/readme.txt': 'text\n',
+      'src/style.css': '.root {}\n',
+    });
+    const compilerOptions = {
+      baseUrl: fixture.rootDir,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      paths: {
+        '@app/*': ['src/*'],
+      },
+    } satisfies ts.CompilerOptions;
+    const context = {
+      checkerPresets: ['vue-tsc' as const],
+      extensions: ['.ts', '.tsx', '.mts', '.cts', '.vue'],
+    };
+    const containingFile = path.join(fixture.rootDir, 'src/index.ts');
+
+    try {
+      for (const [specifier, expectedRelativePath] of [
+        ['./App.vue', 'src/App.vue'],
+        ['@app/App', 'src/App.vue'],
+        ['@example/theme/theme', 'node_modules/@example/theme/Theme.vue'],
+      ] as const) {
+        expect(
+          resolveModuleNameWithCheckersDetailed({
+            compilerOptions,
+            containingFile,
+            context,
+            specifier,
+          }),
+        ).toEqual({
+          isExternalLibraryImport: false,
+          resolvedBy: 'checker-source',
+          resolvedFileName: toPortablePath(
+            path.join(fixture.rootDir, expectedRelativePath),
+          ),
+        });
+      }
+
+      for (const specifier of [
+        './style.css',
+        './icon.svg',
+        './data.yaml',
+        './readme.txt',
+      ]) {
+        expect(
+          resolveModuleNameWithCheckersDetailed({
+            compilerOptions,
+            containingFile,
+            context,
+            specifier,
+          }),
+        ).toBeNull();
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('runs one raw TypeScript resolution for multiple valid presets on success', async () => {
     await assertCheckerModuleResolution({
       expectedRawCalls: 1,

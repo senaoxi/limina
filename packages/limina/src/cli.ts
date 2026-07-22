@@ -793,6 +793,8 @@ async function runStandaloneIssueFlow(options: {
     }
 
     throw error;
+  } finally {
+    session?.preflight.dispose();
   }
 }
 
@@ -1256,10 +1258,14 @@ export function createLiminaCli(): ReturnType<typeof cac> {
           return executionResult.passed;
         });
       } finally {
-        await profileSession?.finish({
-          passed,
-          run: checkRunRecorder?.getRunSummary(),
-        });
+        try {
+          await profileSession?.finish({
+            passed,
+            run: checkRunRecorder?.getRunSummary(),
+          });
+        } finally {
+          preflight.dispose();
+        }
       }
 
       if (!passed) {
