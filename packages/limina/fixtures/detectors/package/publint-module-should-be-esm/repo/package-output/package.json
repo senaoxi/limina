@@ -1,0 +1,6 @@
+{
+  "module": "./index.js",
+  "name": "@fixture/publint-module-should-be-esm",
+  "type": "commonjs",
+  "version": "1.0.0"
+}

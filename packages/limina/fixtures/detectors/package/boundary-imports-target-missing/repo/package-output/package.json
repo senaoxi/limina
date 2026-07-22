@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "#internal": "./missing.js"
+  },
+  "name": "@fixture/boundary-imports-target-missing",
+  "version": "1.0.0"
+}

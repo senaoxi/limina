@@ -33,6 +33,7 @@ import { tmpdir } from 'node:os';
 import path from 'pathe';
 import type { publint } from 'publint';
 import type { formatMessage } from 'publint/utils';
+import type { LiminaWritableCheckIssueCode } from '../check-reporting/codes';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import type {
@@ -97,6 +98,7 @@ export interface PublishedPackageBoundaryViolation {
 export interface PackedPackageTarball {
   cleanup: () => Promise<void>;
   tarball: Buffer;
+  tarballPath: string;
 }
 
 export interface RunPackageCheckOptions {
@@ -168,7 +170,7 @@ function createMissingPeerDependencyError(options: {
 }
 
 function addPackageCheckIssue(options: {
-  code: string;
+  code: LiminaWritableCheckIssueCode;
   detailLines?: readonly string[];
   evidence?: readonly LiminaCheckIssueEvidence[];
   external?: LiminaCheckIssueExternal;
@@ -550,6 +552,7 @@ export async function packOutputTarball(
       }).catch(() => null);
     },
     tarball,
+    tarballPath,
   };
 }
 

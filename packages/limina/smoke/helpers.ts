@@ -222,6 +222,13 @@ export function assertDistArtifacts(): DistPackageJson {
     throw new Error('Expected dist package.json to expose ./index.d.ts.');
   }
 
+  getPeerDependencyRange(manifest, 'typescript');
+  if (manifest.peerDependenciesMeta?.typescript?.optional === true) {
+    throw new Error(
+      'Expected dist package.json to declare TypeScript as a required peer dependency.',
+    );
+  }
+
   if (
     manifest.peerDependenciesMeta?.['npm-package-json-lint']?.optional !== true
   ) {

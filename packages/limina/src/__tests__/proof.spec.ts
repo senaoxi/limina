@@ -4,11 +4,18 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { runProofCheck } from '../commands/proof';
 import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
 import { ProofLogger } from '../logger';
+import {
+  type ProofFinding,
+  type ProofFindingForCode,
+  type ProofSemanticIssueCode,
+} from '../proof/findings';
+import { runProofCheckImpl } from '../proof/runner';
 import { collectExpectedSourceFiles } from '../proof/source-files';
 import {
   type LiminaCheckIssue,
@@ -138,6 +145,44 @@ async function collectProofIssues(config: ResolvedLiminaConfig): Promise<{
     issues,
     passed,
   };
+}
+
+async function collectTypedProofFindings(
+  config: ResolvedLiminaConfig,
+  options: NonNullable<Parameters<typeof runProofCheckImpl>[1]> = {},
+): Promise<{
+  findings: ProofFinding[];
+  issues: LiminaCheckIssue[];
+  passed: boolean;
+}> {
+  const findings: ProofFinding[] = [];
+  const issues: LiminaCheckIssue[] = [];
+  const passed = await runProofCheckImpl(config, {
+    ...options,
+    deferSnapshot: true,
+    findingSink: findings,
+    issues,
+    logSuccess: false,
+    report: {
+      ...options.report,
+      defer: true,
+    },
+  });
+
+  return { findings, issues, passed };
+}
+
+function requireProofFinding<Code extends ProofSemanticIssueCode>(
+  findings: readonly ProofFinding[],
+  code: Code,
+): ProofFindingForCode<Code> {
+  const finding = findings.find((candidate) => candidate.code === code);
+
+  if (!finding) {
+    throw new Error(`Expected Proof finding ${code}.`);
+  }
+
+  return finding as ProofFindingForCode<Code>;
 }
 
 function collectUncoveredSourceIssueFiles(
@@ -319,6 +364,43 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it('emits a typed checker-coverage finding for a missing generated entry', async () => {
+    const fixture = await createFixture(createPassingFiles());
+
+    try {
+      const generatedGraph = createCheckerGraphCoverageProofGeneratedGraph(
+        fixture.rootDir,
+      );
+      const result = await collectTypedProofFindings(fixture.config, {
+        generatedGraphProvider: async () => ({
+          ...generatedGraph,
+          checkerEntries: new Map(),
+        }),
+      });
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        checkerName: 'typescript',
+        code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+        facts: {
+          checkerName: 'typescript',
+          diagnosticReason:
+            'run limina graph prepare before collecting checker graph routes.',
+          diagnosticTitle: 'Missing generated checker graph entry',
+          kind: 'checker-route',
+          projection: 'graph',
+        },
+        task: 'proof:check',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('ignores inert dts leaves that do not transitively extend their companion', async () => {
     const fixture = await createFixture(
       createSingleEnvironmentFiles({
@@ -439,7 +521,36 @@ describe('runProofCheck dts config semantics', () => {
     const fixture = await createFixture(createMultiEnvironmentFiles());
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      const result = await collectTypedProofFindings(fixture.config);
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        code: LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner,
+        facts: {
+          checkerNames: ['typescript'],
+          kind: 'multiple-typecheck-owners',
+          ownerProjectPaths: [
+            toPortablePath(
+              path.join(fixture.rootDir, 'packages/pkg/tsconfig.lib.json'),
+            ),
+            toPortablePath(
+              path.join(fixture.rootDir, 'packages/pkg/tsconfig.test.json'),
+            ),
+          ],
+          sourcePath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
+          ),
+        },
+        packageManifestPath: toPortablePath(
+          path.join(fixture.rootDir, 'packages/pkg/package.json'),
+        ),
+        packageName: '@fixture/pkg',
+        task: 'proof:check',
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -529,22 +640,51 @@ describe('runProofCheck dts config semantics', () => {
         ],
       }),
     });
-    const issues: LiminaCheckIssue[] = [];
-
     try {
-      await expect(
-        runProofCheck(fixture.config, {
-          deferSnapshot: true,
-          generatedGraphProvider: async () =>
-            createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
-          issues,
-          report: {
-            defer: true,
-          },
-        }),
-      ).resolves.toBe(false);
+      const result = await collectTypedProofFindings(fixture.config, {
+        deferSnapshot: true,
+        generatedGraphProvider: async () =>
+          createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
+      });
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage,
+      );
 
-      expect(issues).toContainEqual(
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        code: LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage,
+        facts: {
+          checkerNames: ['typescript'],
+          checkerPreset: 'tsc',
+          declarationProjectPaths: [
+            toPortablePath(
+              path.join(
+                fixture.rootDir,
+                'packages/pkg/tsconfig.alpha.dts.json',
+              ),
+            ),
+            toPortablePath(
+              path.join(fixture.rootDir, 'packages/pkg/tsconfig.beta.dts.json'),
+            ),
+          ],
+          graphEntryPaths: [
+            toPortablePath(
+              path.join(
+                fixture.rootDir,
+                '.limina/tsconfig.typescript.build.json',
+              ),
+            ),
+          ],
+          kind: 'multiple-declaration-projects',
+          sourcePath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/src/shared.ts'),
+          ),
+        },
+        task: 'proof:check',
+      });
+
+      expect(result.issues).toContainEqual(
         expect.objectContaining({
           code: 'LIMINA_PROOF_DUPLICATE_GRAPH_COVERAGE',
           filePath: 'packages/pkg/src/shared.ts',
@@ -552,7 +692,7 @@ describe('runProofCheck dts config semantics', () => {
           title: 'Duplicate checker graph coverage',
         }),
       );
-      expect(issues).not.toContainEqual(
+      expect(result.issues).not.toContainEqual(
         expect.objectContaining({
           code: 'LIMINA_PROOF_DUPLICATE_SOURCE_OWNER',
           title: 'Duplicate checker graph coverage',
@@ -1128,7 +1268,32 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      const result = await collectTypedProofFindings(fixture.config);
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+        facts: {
+          defaultConfigPath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+          ),
+          directoryPath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg'),
+          ),
+          environmentConfigPaths: [
+            toPortablePath(
+              path.join(fixture.rootDir, 'packages/pkg/tsconfig.lib.json'),
+            ),
+          ],
+          kind: 'environment-layout',
+          violation: 'single-environment-uses-named-config',
+        },
+        task: 'proof:check',
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -1309,6 +1474,34 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
+      const result = await collectTypedProofFindings(fixture.config);
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        code: LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile,
+        facts: {
+          candidateCheckerNames: ['typescript'],
+          candidateProjectPaths: expect.any(Array),
+          configuredSourceExcludes: [],
+          configuredSourceIncludes: ['...'],
+          coverage: [],
+          kind: 'no-checker-or-allowlist-coverage',
+          sourcePath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/fixtures/uncovered.ts'),
+          ),
+        },
+        filePath: toPortablePath(
+          path.join(fixture.rootDir, 'packages/pkg/fixtures/uncovered.ts'),
+        ),
+        hint: expect.any(String),
+        packageName: '@fixture/pkg',
+        task: 'proof:check',
+      });
+
       await expect(runProofCheck(fixture.config)).resolves.toBe(false);
 
       const snapshot = await readCheckIssueSnapshot(fixture.rootDir);
@@ -1317,8 +1510,14 @@ describe('runProofCheck dts config semantics', () => {
         expect.objectContaining({
           code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
           filePath: 'packages/pkg/fixtures/uncovered.ts',
-          fix: expect.any(String),
-          reason: expect.any(String),
+          fix: finding.hint,
+          locations: [
+            {
+              filePath: 'packages/pkg/fixtures/uncovered.ts',
+              label: 'uncovered source',
+            },
+          ],
+          reason: finding.reason,
           scope: 'packages/pkg/fixtures',
           task: 'proof:check',
           title: 'Source file is not covered by typecheck proof',
@@ -1773,19 +1972,55 @@ describe('runProofCheck dts config semantics', () => {
         }),
       }),
     );
+    const config = {
+      ...fixture.config,
+      config: {
+        ...fixture.config.config,
+        source: {
+          include: ['packages/pkg/src/**/*.ts'],
+        },
+      },
+    };
 
     try {
-      await expect(
-        runProofCheck({
-          ...fixture.config,
-          config: {
-            ...fixture.config.config,
-            source: {
-              include: ['packages/pkg/src/**/*.ts'],
+      const result = await collectTypedProofFindings(config);
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        code: LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch,
+        facts: {
+          configuredSourceExcludes: [],
+          configuredSourceIncludes: ['packages/pkg/src/**/*.ts'],
+          kind: 'coverage-outside-source-boundary',
+          repositoryRoot: toPortablePath(fixture.rootDir),
+          sources: expect.arrayContaining([
+            {
+              coverage: expect.arrayContaining([
+                expect.objectContaining({ type: 'graph' }),
+                expect.objectContaining({ type: 'checker' }),
+              ]),
+              sourcePath: toPortablePath(
+                path.join(fixture.rootDir, 'packages/pkg/fixtures/covered.ts'),
+              ),
+              packageManifestPath: toPortablePath(
+                path.join(fixture.rootDir, 'packages/pkg/package.json'),
+              ),
+              packageName: '@fixture/pkg',
+              packageRoot: toPortablePath(
+                path.join(fixture.rootDir, 'packages/pkg'),
+              ),
             },
-          },
-        }),
-      ).resolves.toBe(false);
+          ]),
+        },
+        hint: expect.any(String),
+        task: 'proof:check',
+      });
+
+      await expect(runProofCheck(config)).resolves.toBe(false);
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Typecheck proof source boundary does not match tsconfig coverage',
       );
@@ -2183,21 +2418,46 @@ describe('runProofCheck dts config semantics', () => {
         'packages/pkg/fixtures/ignored.md': 'not part of source proof\n',
       }),
     );
+    const config = {
+      ...fixture.config,
+      proof: {
+        allowlist: [
+          {
+            file: 'packages/pkg/fixtures/ignored.md',
+            reason: 'markdown files are outside proof source boundary',
+          },
+        ],
+      },
+    };
 
     try {
-      await expect(
-        runProofCheck({
-          ...fixture.config,
-          proof: {
-            allowlist: [
-              {
-                file: 'packages/pkg/fixtures/ignored.md',
-                reason: 'markdown files are outside proof source boundary',
-              },
-            ],
-          },
-        }),
-      ).resolves.toBe(false);
+      const result = await collectTypedProofFindings(config);
+      const finding = requireProofFinding(
+        result.findings,
+        LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid,
+      );
+
+      expect(result.passed).toBe(false);
+      expect(finding).toMatchObject({
+        code: LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid,
+        facts: {
+          configuredPath: 'packages/pkg/fixtures/ignored.md',
+          coverage: [],
+          kind: 'entry-coverage',
+          repositoryRoot: toPortablePath(fixture.rootDir),
+          resolvedPath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/fixtures/ignored.md'),
+          ),
+          ruleIndex: 0,
+          sourcePath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/fixtures/ignored.md'),
+          ),
+          violation: 'outside-source-boundary',
+        },
+        task: 'proof:check',
+      });
+
+      await expect(runProofCheck(config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }

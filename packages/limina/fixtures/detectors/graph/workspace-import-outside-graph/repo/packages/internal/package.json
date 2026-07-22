@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/graph-outside-internal",
+  "private": true,
+  "type": "module",
+  "types": "./src/outside.ts"
+}

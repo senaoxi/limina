@@ -59,7 +59,10 @@ class CheckerProcessHost {
   #disposed = false;
   #nextRequestId = 0;
 
-  constructor(child: ChildProcess) {
+  constructor(
+    child: ChildProcess,
+    onProtocolMessage?: (message: unknown) => void,
+  ) {
     this.#child = child;
     // The host cannot rely on IPC disconnect alone: in source mode it runs
     // behind a tsx wrapper process that neither exits nor forwards the
@@ -81,6 +84,7 @@ class CheckerProcessHost {
     }, 5000);
     this.#pingTimer.unref();
     child.on('message', (message: CheckerHostResponse) => {
+      onProtocolMessage?.(message);
       if (message.type !== 'result') {
         return;
       }
@@ -262,6 +266,28 @@ export async function runCheckerSpawnMeasured(
   }
 
   return host.spawnMeasured(spec, options.onDegraded);
+}
+
+export async function runCheckerHostProtocolProbeForTesting(options: {
+  entry: { args: readonly string[]; command: string };
+  onDegraded?: CheckerHostDegradationListener;
+  onProtocolMessage?: (message: unknown) => void;
+  spec: CheckerHostSpawnSpec;
+}): Promise<CheckerHostSpawnMeasurement> {
+  const child = spawn(options.entry.command, [...options.entry.args], {
+    env: process.env,
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  });
+  const host = new CheckerProcessHost(child, options.onProtocolMessage);
+
+  try {
+    return await host.spawnMeasured(options.spec, options.onDegraded);
+  } finally {
+    host.dispose();
+    sharedHost = undefined;
+    sharedHostUnavailable = false;
+    degradationNoticeSent = false;
+  }
 }
 
 export function disposeCheckerProcessHostForTesting(): void {

@@ -14,6 +14,7 @@ import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { collectGeneratedSourceConfigPaths } from '#core/build-graph/runner';
 import {
   type CheckerGraphProjectRoute,
+  type CheckerGraphRouteDiagnostic,
   collectGraphProjectRouteFromRoot,
   getDtsCompanionConfigPath,
   isBuildGraphConfigPath,
@@ -42,21 +43,23 @@ import {
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import {
   appendCheckIssues,
-  createTaskFailureIssue,
   type LiminaCheckIssue,
+  type LiminaCheckIssueEvidence,
+  type LiminaCheckIssueLocation,
 } from '../check-reporting/snapshot';
 import {
   createCheckCounter,
   createCheckItemAccumulator,
 } from '../check-reporting/stats';
 import { isSolutionStyleTsconfig } from '../core/build-graph/generated/config-readers';
+import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { TaskProgressReporter } from '../execution/progress';
 import type { LiminaFlowReporter } from '../flow';
 import { ProofLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import {
   addAllowlistCoverage,
-  addAllowlistProblems,
+  addAllowlistFindings,
   collectConfiguredAllowlistEntries,
 } from './allowlist';
 import { formatUnknownValue, isPlainRecord } from './config-values';
@@ -65,6 +68,15 @@ import {
   cloneCoverageByFile,
   type CoverageSource,
 } from './coverage';
+import {
+  createProofCheckIssuesFromFindings,
+  createProofFinding,
+  type ProofCheckerCoverageInvalidFacts,
+  type ProofFinding,
+  type ProofFindingFactsByCode,
+  type ProofFindingForCode,
+  type ProofSemanticIssueCode,
+} from './findings';
 
 interface CheckerCoverageTarget {
   checker: ResolvedCheckerConfig;
@@ -74,174 +86,31 @@ interface CheckerCoverageTarget {
 }
 
 interface CheckerCoverageTargetCollection {
-  problems: string[];
+  findings: ProofFinding[];
   targets: CheckerCoverageTarget[];
-}
-
-interface ProofProblemIssueHint {
-  code: string;
-  filePath?: string;
-  fix?: string;
-  reason?: string;
-  title?: string;
-}
-
-const proofProblemIssueHints = new Map<string, ProofProblemIssueHint>();
-
-function addProofProblem(
-  problems: string[],
-  lines: readonly string[],
-  hint: ProofProblemIssueHint,
-): void {
-  const problem = lines.join('\n');
-
-  problems.push(problem);
-  proofProblemIssueHints.set(problem, hint);
-}
-
-function getProofProblemTitle(problem: string): string {
-  const firstLine = problem.split('\n')[0]?.trim() || 'Proof check issue';
-
-  return firstLine.replace(/:+$/u, '');
-}
-
-function getProofProblemCode(title: string): string {
-  if (title.startsWith('Source files are not covered')) {
-    return LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile;
-  }
-
-  if (title.startsWith('Typecheck proof source boundary')) {
-    return LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch;
-  }
-
-  if (
-    title.startsWith('Source file belongs to multiple typecheck configs') ||
-    title.startsWith(
-      'Implementation source file belongs to multiple typecheck configs',
-    )
-  ) {
-    return LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner;
-  }
-
-  if (title.startsWith('Duplicate checker graph coverage')) {
-    return LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage;
-  }
-
-  if (
-    title.includes('allowlist') ||
-    title.includes('Allowlist') ||
-    title.includes('proof.allowlist')
-  ) {
-    return LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid;
-  }
-
-  if (
-    title.includes('default tsconfig') ||
-    title.includes('Default tsconfig')
-  ) {
-    return LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid;
-  }
-
-  if (title.includes('checker') || title.includes('Checker')) {
-    return LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid;
-  }
-
-  return LIMINA_CHECK_ISSUE_CODES.proofCheckFailed;
-}
-
-function getProblemLineValue(
-  problem: string,
-  label: string,
-): string | undefined {
-  const escapedLabel = label.replaceAll(
-    /[.*+?^${}()|[\]\\]/gu,
-    String.raw`\$&`,
-  );
-  const match = new RegExp(String.raw`^\s*${escapedLabel}:\s*(.+)$`, 'mu').exec(
-    problem,
-  );
-
-  return match?.[1]?.trim();
-}
-
-function createProofCheckIssue(options: {
-  config: ResolvedLiminaConfig;
-  problem: string;
-}): LiminaCheckIssue {
-  const hint = proofProblemIssueHints.get(options.problem);
-  const title = hint?.title ?? getProofProblemTitle(options.problem);
-  const filePath =
-    hint?.filePath ??
-    getProblemLineValue(options.problem, 'file') ??
-    getProblemLineValue(options.problem, 'project') ??
-    getProblemLineValue(options.problem, 'config');
-
-  return createTaskFailureIssue({
-    code: hint?.code ?? getProofProblemCode(title),
-    detailLines: options.problem.split('\n'),
-    filePath,
-    fix: hint?.fix ?? getProblemLineValue(options.problem, 'fix'),
-    reason:
-      hint?.reason ??
-      getProblemLineValue(options.problem, 'reason') ??
-      'Proof check found source coverage or checker graph proof violations.',
-    rootDir: options.config.rootDir,
-    task: 'proof:check',
-    title,
-  });
-}
-
-function createProofCheckIssues(options: {
-  config: ResolvedLiminaConfig;
-  existingIssues: readonly LiminaCheckIssue[];
-  problems: readonly string[];
-}): LiminaCheckIssue[] {
-  const existingCodes = new Set(
-    options.existingIssues.map((issue) => issue.code),
-  );
-
-  return options.problems
-    .map((problem) =>
-      createProofCheckIssue({
-        config: options.config,
-        problem,
-      }),
-    )
-    .filter(
-      (issue) =>
-        issue.code !== 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE' ||
-        !existingCodes.has(issue.code),
-    );
 }
 
 function collectProofReportIssues(options: {
   config: ResolvedLiminaConfig;
-  existingIssues?: readonly LiminaCheckIssue[];
-  problems: readonly string[];
+  findings: readonly ProofFinding[];
 }): LiminaCheckIssue[] {
-  const existingIssues = options.existingIssues ?? [];
-
-  return [
-    ...existingIssues,
-    ...createProofCheckIssues({
-      config: options.config,
-      existingIssues,
-      problems: options.problems,
-    }),
-  ];
+  return createProofCheckIssuesFromFindings({
+    findings: options.findings,
+    rootDir: options.config.rootDir,
+  });
 }
 
-function formatProofProblemReport(options: {
+function formatProofFindingReport(options: {
   config: ResolvedLiminaConfig;
+  findings: readonly ProofFinding[];
   issues?: readonly LiminaCheckIssue[];
-  problems: readonly string[];
   report?: CheckIssueReportOptions;
 }): string {
   const issues =
     options.issues ??
     collectProofReportIssues({
       config: options.config,
-      problems: options.problems,
+      findings: options.findings,
     });
 
   return formatCheckIssueHumanReport({
@@ -250,6 +119,66 @@ function formatProofProblemReport(options: {
     title: 'Proof check summary',
     verbose: options.report?.verbose,
   });
+}
+
+interface ProofPackageIdentity {
+  packageManifestPath?: string;
+  packageName?: string;
+}
+
+function getProofPackageIdentity(
+  workspaceLookup: WorkspaceLookupIndex,
+  filePath: string | undefined,
+): ProofPackageIdentity {
+  if (!filePath) {
+    return {};
+  }
+
+  const owner = workspaceLookup.findOwnerForFile(filePath);
+
+  return owner
+    ? {
+        packageManifestPath: owner.packageJsonPath,
+        packageName: owner.name,
+      }
+    : {};
+}
+
+function createProofDiagnosticFinding<
+  Code extends ProofSemanticIssueCode,
+>(options: {
+  checkerName?: string;
+  code: Code;
+  detailLines: readonly string[];
+  evidence?: readonly LiminaCheckIssueEvidence[];
+  facts: ProofFindingFactsByCode[Code];
+  filePath?: string;
+  hint?: string;
+  locations?: readonly LiminaCheckIssueLocation[];
+  packageIdentity?: ProofPackageIdentity;
+  reason: string;
+  scope?: string;
+  title: string;
+}): ProofFindingForCode<Code> {
+  return createProofFinding({
+    checkerName: options.checkerName,
+    code: options.code,
+    evidence: options.evidence ?? [
+      { label: 'diagnostic', lines: [...options.detailLines] },
+    ],
+    facts: options.facts,
+    filePath: options.filePath,
+    hint: options.hint,
+    locations: options.locations,
+    packageManifestPath: options.packageIdentity?.packageManifestPath,
+    packageName: options.packageIdentity?.packageName,
+    presentation: {
+      detailLines: options.detailLines,
+      title: options.title,
+    },
+    reason: options.reason,
+    scope: options.scope,
+  } as Omit<ProofFindingForCode<Code>, 'task'>);
 }
 
 export interface RunProofCheckOptions {
@@ -274,6 +203,8 @@ const PROOF_CHECK_ITEM_NAMES = [
 ] as const;
 
 interface ConfigFileOwner {
+  checkerEntryPath: string;
+  checkerName: string;
   checkerPreset: ResolvedCheckerConfig['preset'];
   configPath: string;
 }
@@ -361,29 +292,73 @@ function createCheckerProjectContext(options: {
   };
 }
 
+function createProofCheckerRouteFinding(options: {
+  checkerName: string;
+  diagnostic: CheckerGraphRouteDiagnostic;
+  projection: Extract<
+    ProofCheckerCoverageInvalidFacts,
+    { readonly kind: 'checker-route' }
+  >['projection'];
+  workspaceLookup: WorkspaceLookupIndex;
+}): ProofFindingForCode<
+  typeof LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid
+> {
+  return createProofDiagnosticFinding({
+    checkerName: options.checkerName,
+    code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+    detailLines: options.diagnostic.detailLines,
+    facts: {
+      checkerName: options.checkerName,
+      configPath: options.diagnostic.filePath,
+      diagnosticReason: options.diagnostic.reason,
+      diagnosticTitle: options.diagnostic.title,
+      kind: 'checker-route',
+      projection: options.projection,
+    },
+    filePath: options.diagnostic.filePath,
+    locations: options.diagnostic.filePath
+      ? [{ filePath: options.diagnostic.filePath, label: 'checker project' }]
+      : undefined,
+    packageIdentity: getProofPackageIdentity(
+      options.workspaceLookup,
+      options.diagnostic.filePath,
+    ),
+    reason: options.diagnostic.reason,
+    title: options.diagnostic.title,
+  });
+}
+
 function collectCheckerCoverageTargets(
   config: ResolvedLiminaConfig,
   generatedGraph: GeneratedTsconfigGraphResult,
+  workspaceLookup: WorkspaceLookupIndex,
 ): CheckerCoverageTargetCollection {
-  const problems: string[] = [];
+  const findings: ProofFinding[] = [];
   const targets: CheckerCoverageTarget[] = [];
 
   for (const checker of generatedGraph.checkers) {
     const configPath = generatedGraph.checkerEntries.get(checker.name);
 
     if (!configPath) {
-      addProofProblem(
-        problems,
-        [
-          'Checker proof entry is missing a generated tsconfig:',
-          `  checker: ${checker.name}`,
-        ],
-        {
+      const detailLines = [
+        'Checker proof entry is missing a generated tsconfig:',
+        `  checker: ${checker.name}`,
+      ];
+
+      findings.push(
+        createProofDiagnosticFinding({
+          checkerName: checker.name,
           code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            checkerName: checker.name,
+            kind: 'checker-entry',
+            violation: 'missing-generated-entry',
+          },
           reason:
             'Every active checker needs a generated entry tsconfig before proof can validate coverage.',
           title: 'Checker proof entry is missing a generated tsconfig',
-        },
+        }),
       );
       continue;
     }
@@ -392,20 +367,30 @@ function collectCheckerCoverageTargets(
       !existsSync(configPath) &&
       !generatedGraph.generatedFiles.has(normalizeAbsolutePath(configPath))
     ) {
-      addProofProblem(
-        problems,
-        [
-          'Checker proof entry references a missing tsconfig:',
-          `  checker: ${checker.name}`,
-          `  config: ${toRelativePath(config.rootDir, configPath)}`,
-        ],
-        {
+      const detailLines = [
+        'Checker proof entry references a missing tsconfig:',
+        `  checker: ${checker.name}`,
+        `  config: ${toRelativePath(config.rootDir, configPath)}`,
+      ];
+
+      findings.push(
+        createProofDiagnosticFinding({
+          checkerName: checker.name,
           code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            checkerName: checker.name,
+            configPath,
+            kind: 'checker-entry',
+            violation: 'missing-config',
+          },
           filePath: configPath,
+          locations: [{ filePath: configPath, label: 'checker entry' }],
+          packageIdentity: getProofPackageIdentity(workspaceLookup, configPath),
           reason:
             'The generated checker entry referenced by proof no longer exists on disk.',
           title: 'Checker proof entry references a missing tsconfig',
-        },
+        }),
       );
       continue;
     }
@@ -416,7 +401,19 @@ function collectCheckerCoverageTargets(
       virtualFiles: generatedGraph.generatedFiles,
     });
 
-    problems.push(...routeCollection.problems);
+    findings.push(
+      ...routeCollection.diagnostics.map((diagnostic) =>
+        createProofCheckerRouteFinding({
+          checkerName: checker.name,
+          diagnostic: {
+            checkerName: checker.name,
+            ...diagnostic,
+          },
+          projection: 'target',
+          workspaceLookup,
+        }),
+      ),
+    );
     targets.push({
       checker,
       configPath,
@@ -426,7 +423,7 @@ function collectCheckerCoverageTargets(
   }
 
   return {
-    problems,
+    findings,
     targets,
   };
 }
@@ -514,7 +511,11 @@ function collectCoverage(options: {
         }
 
         const coverageSource: CoverageSource = {
+          checkerEntryPath: route.rootConfigPath,
+          checkerName: route.checkerName,
+          checkerPreset: route.checkerPreset,
           label: toRelativePath(options.config.rootDir, graphProjectPath),
+          projectPath: graphProjectPath,
           type: 'graph',
         };
 
@@ -556,10 +557,13 @@ function collectCoverage(options: {
         virtualFiles: options.virtualFiles,
       })) {
         const coverageSource: CoverageSource = {
+          checkerEntryPath: checkerTarget.configPath,
+          checkerName: checkerTarget.checker.name,
           label: `${toRelativePath(
             options.config.rootDir,
             configPath,
           )} via ${checkerTarget.label}`,
+          projectPath: configPath,
           type: 'checker',
         };
 
@@ -750,13 +754,14 @@ function normalizeCompilerOptionValue(value: unknown): unknown {
   return value;
 }
 
-function addDtsConfigSemanticProblems(options: {
+function addDtsConfigSemanticFindings(options: {
   dtsConfigPath: string;
   dtsConfig: ParsedConfig;
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   localConfigPath: string;
   localConfig: ParsedConfig;
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const dtsFileNames = new Set(options.dtsConfig.fileNames);
   const localFileNames = new Set([
@@ -771,42 +776,64 @@ function addDtsConfigSemanticProblems(options: {
   );
 
   if (onlyInDts.length > 0 || onlyInLocal.length > 0) {
-    options.problems.push(
-      [
-        'DTS config file set does not match its local typecheck config:',
-        `  config: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
-        `  local: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
-        ...(onlyInDts.length > 0
-          ? [
-              '  only in dts config:',
-              ...onlyInDts
-                .slice(0, 10)
-                .map(
-                  (fileName) =>
-                    `    - ${toRelativePath(options.config.rootDir, fileName)}`,
-                ),
-              onlyInDts.length > 10
-                ? `    ... ${onlyInDts.length - 10} more`
-                : '',
-            ]
-          : []),
-        ...(onlyInLocal.length > 0
-          ? [
-              '  only in local config:',
-              ...onlyInLocal
-                .slice(0, 10)
-                .map(
-                  (fileName) =>
-                    `    - ${toRelativePath(options.config.rootDir, fileName)}`,
-                ),
-              onlyInLocal.length > 10
-                ? `    ... ${onlyInLocal.length - 10} more`
-                : '',
-            ]
-          : []),
-      ]
-        .filter(Boolean)
-        .join('\n'),
+    const detailLines = [
+      'DTS config file set does not match its local typecheck config:',
+      `  config: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
+      `  local: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
+      ...(onlyInDts.length > 0
+        ? [
+            '  only in dts config:',
+            ...onlyInDts
+              .slice(0, 10)
+              .map(
+                (fileName) =>
+                  `    - ${toRelativePath(options.config.rootDir, fileName)}`,
+              ),
+            onlyInDts.length > 10
+              ? `    ... ${onlyInDts.length - 10} more`
+              : '',
+          ]
+        : []),
+      ...(onlyInLocal.length > 0
+        ? [
+            '  only in local config:',
+            ...onlyInLocal
+              .slice(0, 10)
+              .map(
+                (fileName) =>
+                  `    - ${toRelativePath(options.config.rootDir, fileName)}`,
+              ),
+            onlyInLocal.length > 10
+              ? `    ... ${onlyInLocal.length - 10} more`
+              : '',
+          ]
+        : []),
+    ].filter(Boolean);
+
+    options.findings.push(
+      createProofDiagnosticFinding({
+        code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+        detailLines,
+        facts: {
+          companionProjectPath: options.localConfigPath,
+          declarationProjectPath: options.dtsConfigPath,
+          kind: 'declaration-file-set',
+          onlyInCompanion: onlyInLocal,
+          onlyInDeclaration: onlyInDts,
+        },
+        filePath: options.dtsConfigPath,
+        locations: [
+          { filePath: options.dtsConfigPath, label: 'declaration project' },
+          { filePath: options.localConfigPath, label: 'typecheck companion' },
+        ],
+        packageIdentity: getProofPackageIdentity(
+          options.workspaceLookup,
+          options.localConfigPath,
+        ),
+        reason:
+          'Declaration and companion typecheck configs must cover the same source files.',
+        title: 'DTS config file set does not match its local typecheck config',
+      }),
     );
   }
 
@@ -841,15 +868,41 @@ function addDtsConfigSemanticProblems(options: {
       continue;
     }
 
-    options.problems.push(
-      [
-        'DTS config overrides a typecheck compiler option from its local typecheck config:',
-        `  config: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
-        `  local: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
-        `  option: compilerOptions.${optionName}`,
-        `  local: ${formatJsonValue(localValue)}`,
-        `  dts: ${formatJsonValue(dtsValue)}`,
-      ].join('\n'),
+    const detailLines = [
+      'DTS config overrides a typecheck compiler option from its local typecheck config:',
+      `  config: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
+      `  local: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
+      `  option: compilerOptions.${optionName}`,
+      `  local: ${formatJsonValue(localValue)}`,
+      `  dts: ${formatJsonValue(dtsValue)}`,
+    ];
+
+    options.findings.push(
+      createProofDiagnosticFinding({
+        code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+        detailLines,
+        facts: {
+          actual: dtsValue,
+          companionProjectPath: options.localConfigPath,
+          declarationProjectPath: options.dtsConfigPath,
+          expected: localValue,
+          kind: 'declaration-option-parity',
+          optionName,
+        },
+        filePath: options.dtsConfigPath,
+        locations: [
+          { filePath: options.dtsConfigPath, label: 'declaration project' },
+          { filePath: options.localConfigPath, label: 'typecheck companion' },
+        ],
+        packageIdentity: getProofPackageIdentity(
+          options.workspaceLookup,
+          options.localConfigPath,
+        ),
+        reason:
+          'Declaration configs may add output behavior but must preserve companion typecheck semantics.',
+        title:
+          'DTS config overrides a typecheck compiler option from its local typecheck config',
+      }),
     );
   }
 }
@@ -912,12 +965,13 @@ function configExtendsPathTransitively(options: {
   return false;
 }
 
-function addDtsCompanionExtendsProblems(options: {
+function addDtsCompanionExtendsFindings(options: {
   config: ResolvedLiminaConfig;
   configObject: JsonObject;
   dtsConfigPath: string;
+  findings: ProofFinding[];
   localConfigPath: string;
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const rawExtends = normalizeRawExtends(options.configObject.extends);
   const extendsCompanion = configExtendsPathTransitively({
@@ -931,24 +985,51 @@ function addDtsCompanionExtendsProblems(options: {
     return;
   }
 
-  options.problems.push(
-    [
-      'Declaration leaf does not transitively extend its companion typecheck config:',
-      `  declaration leaf: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
-      `  expected companion: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
-      `  direct extends: ${rawExtends.length > 0 ? rawExtends.join(', ') : '(none)'}`,
-      '  reason: tsconfig*.dts.json must add only declaration/build output behavior on top of the matching tsconfig*.json.',
-    ].join('\n'),
+  const reason =
+    'tsconfig*.dts.json must add only declaration/build output behavior on top of the matching tsconfig*.json.';
+  const detailLines = [
+    'Declaration leaf does not transitively extend its companion typecheck config:',
+    `  declaration leaf: ${toRelativePath(options.config.rootDir, options.dtsConfigPath)}`,
+    `  expected companion: ${toRelativePath(options.config.rootDir, options.localConfigPath)}`,
+    `  direct extends: ${rawExtends.length > 0 ? rawExtends.join(', ') : '(none)'}`,
+    `  reason: ${reason}`,
+  ];
+
+  options.findings.push(
+    createProofDiagnosticFinding({
+      code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+      detailLines,
+      facts: {
+        companionProjectPath: options.localConfigPath,
+        declarationProjectPath: options.dtsConfigPath,
+        directExtends: rawExtends,
+        kind: 'declaration-companion',
+        violation: 'not-extended',
+      },
+      filePath: options.dtsConfigPath,
+      locations: [
+        { filePath: options.dtsConfigPath, label: 'declaration project' },
+        { filePath: options.localConfigPath, label: 'expected companion' },
+      ],
+      packageIdentity: getProofPackageIdentity(
+        options.workspaceLookup,
+        options.localConfigPath,
+      ),
+      reason,
+      title:
+        'Declaration leaf does not transitively extend its companion typecheck config',
+    }),
   );
 }
 
-function addDtsConfigProblems(options: {
+function addDtsConfigFindings(options: {
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   graphProjectPaths: Set<string>;
-  problems: string[];
   dtsConfigPaths: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
   virtualFiles: ReadonlyMap<string, string>;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   for (const configPath of options.dtsConfigPaths) {
     const configObject = readProofConfig(
@@ -958,12 +1039,32 @@ function addDtsConfigProblems(options: {
     );
 
     if (!options.graphProjectPaths.has(configPath)) {
-      options.problems.push(
-        [
-          'Source-level DTS config violates the managed config boundary:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: declaration configs are Limina-managed under .limina and derived from checker.include source tsconfigs.',
-        ].join('\n'),
+      const reason =
+        'declaration configs are Limina-managed under .limina and derived from checker.include source tsconfigs.';
+      const detailLines = [
+        'Source-level DTS config violates the managed config boundary:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            configPath,
+            configRole: 'declaration-leaf',
+            kind: 'managed-config-boundary',
+          },
+          filePath: configPath,
+          locations: [{ filePath: configPath, label: 'declaration config' }],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            configPath,
+          ),
+          reason,
+          title: 'Source-level DTS config violates the managed config boundary',
+        }),
       );
       continue;
     }
@@ -974,22 +1075,47 @@ function addDtsConfigProblems(options: {
     );
 
     if (!existsSync(localConfigPath)) {
-      options.problems.push(
-        [
-          'DTS config is missing its local typecheck config:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          `  expected: ${toRelativePath(options.config.rootDir, localConfigPath)}`,
-        ].join('\n'),
+      const detailLines = [
+        'DTS config is missing its local typecheck config:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  expected: ${toRelativePath(options.config.rootDir, localConfigPath)}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            companionProjectPath: localConfigPath,
+            declarationProjectPath: configPath,
+            directExtends: normalizeRawExtends(configObject.extends),
+            kind: 'declaration-companion',
+            violation: 'missing',
+          },
+          filePath: configPath,
+          locations: [
+            { filePath: configPath, label: 'declaration project' },
+            { filePath: localConfigPath, label: 'expected companion' },
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            localConfigPath,
+          ),
+          reason:
+            'Every declaration project must have an existing local typecheck companion.',
+          title: 'DTS config is missing its local typecheck config',
+        }),
       );
       continue;
     }
 
-    addDtsCompanionExtendsProblems({
+    addDtsCompanionExtendsFindings({
       config: options.config,
       configObject,
       dtsConfigPath: configPath,
+      findings: options.findings,
       localConfigPath,
-      problems: options.problems,
+      workspaceLookup: options.workspaceLookup,
     });
 
     const context = options.projectContextsByPath.get(configPath);
@@ -1002,42 +1128,106 @@ function addDtsConfigProblems(options: {
     const localConfig = parseConfig(options.config, localConfigPath, context);
 
     if (dtsConfig.options.composite !== true) {
-      options.problems.push(
-        [
-          'DTS config is not valid for tsc -b:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: final compilerOptions.composite must be true.',
-        ].join('\n'),
+      const reason = 'final compilerOptions.composite must be true.';
+      const detailLines = [
+        'DTS config is not valid for tsc -b:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            actual: dtsConfig.options.composite,
+            configPath,
+            expected: true,
+            kind: 'declaration-compiler-option',
+            optionName: 'composite',
+          },
+          filePath: configPath,
+          locations: [{ filePath: configPath, label: 'declaration project' }],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            localConfigPath,
+          ),
+          reason,
+          title: 'DTS config is not valid for tsc -b',
+        }),
       );
     }
 
     if (dtsConfig.options.noEmit === true) {
-      options.problems.push(
-        [
-          'DTS config is not valid for tsc -b:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: final compilerOptions.noEmit must not be true.',
-        ].join('\n'),
+      const reason = 'final compilerOptions.noEmit must not be true.';
+      const detailLines = [
+        'DTS config is not valid for tsc -b:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            actual: dtsConfig.options.noEmit,
+            configPath,
+            expected: false,
+            kind: 'declaration-compiler-option',
+            optionName: 'noEmit',
+          },
+          filePath: configPath,
+          locations: [{ filePath: configPath, label: 'declaration project' }],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            localConfigPath,
+          ),
+          reason,
+          title: 'DTS config is not valid for tsc -b',
+        }),
       );
     }
 
     if (dtsConfig.options.declaration !== true) {
-      options.problems.push(
-        [
-          'DTS config is not valid for declaration emit:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: final compilerOptions.declaration must be true.',
-        ].join('\n'),
+      const reason = 'final compilerOptions.declaration must be true.';
+      const detailLines = [
+        'DTS config is not valid for declaration emit:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            actual: dtsConfig.options.declaration,
+            configPath,
+            expected: true,
+            kind: 'declaration-compiler-option',
+            optionName: 'declaration',
+          },
+          filePath: configPath,
+          locations: [{ filePath: configPath, label: 'declaration project' }],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            localConfigPath,
+          ),
+          reason,
+          title: 'DTS config is not valid for declaration emit',
+        }),
       );
     }
 
-    addDtsConfigSemanticProblems({
+    addDtsConfigSemanticFindings({
       config: options.config,
       dtsConfig,
       dtsConfigPath: configPath,
+      findings: options.findings,
       localConfig,
       localConfigPath,
-      problems: options.problems,
+      workspaceLookup: options.workspaceLookup,
     });
   }
 }
@@ -1052,12 +1242,13 @@ function formatConfigRole(role: 'build graph' | 'tsconfig.json'): string {
     : 'Default tsconfig.json';
 }
 
-function addPureAggregatorProblems(options: {
+function addPureAggregatorFindings(options: {
   config: ResolvedLiminaConfig;
   configObject: Record<string, unknown>;
   configPath: string;
-  problems: string[];
+  findings: ProofFinding[];
   role: 'build graph' | 'tsconfig.json';
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const roleLabel = formatConfigRole(options.role);
   const issueLines: string[] = [];
@@ -1095,13 +1286,49 @@ function addPureAggregatorProblems(options: {
     return;
   }
 
-  options.problems.push(
-    [
-      `${roleLabel} is not a pure aggregator:`,
-      `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
-      '  issues:',
-      ...issueLines,
-    ].join('\n'),
+  const detailLines = [
+    `${roleLabel} is not a pure aggregator:`,
+    `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
+    '  issues:',
+    ...issueLines,
+  ];
+  const commonOptions = {
+    detailLines,
+    filePath: options.configPath,
+    locations: [{ filePath: options.configPath, label: 'aggregator config' }],
+    packageIdentity: getProofPackageIdentity(
+      options.workspaceLookup,
+      options.configPath,
+    ),
+    reason:
+      'Configs with project references must be pure aggregators with files: [] and no source or compiler-option fields.',
+    title: `${roleLabel} is not a pure aggregator`,
+  } as const;
+
+  options.findings.push(
+    options.role === 'build graph'
+      ? createProofDiagnosticFinding({
+          ...commonOptions,
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          facts: {
+            actualFiles: options.configObject.files,
+            configPath: options.configPath,
+            extraFields: extraKeys,
+            kind: 'build-aggregator-shape',
+            missingFilesField: !Object.hasOwn(options.configObject, 'files'),
+          },
+        })
+      : createProofDiagnosticFinding({
+          ...commonOptions,
+          code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+          facts: {
+            actualFiles: options.configObject.files,
+            configPath: options.configPath,
+            extraFields: extraKeys,
+            kind: 'aggregator-shape',
+            missingFilesField: !Object.hasOwn(options.configObject, 'files'),
+          },
+        }),
   );
 }
 
@@ -1117,10 +1344,11 @@ function hasProjectReferencesField(configObject: JsonObject): boolean {
   return Object.hasOwn(configObject, 'references');
 }
 
-function addSourceReferenceRoleProblems(options: {
+function addSourceReferenceRoleFindings(options: {
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   ordinaryConfigPaths: string[];
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   for (const configPath of options.ordinaryConfigPaths) {
     if (!isOrdinarySourceTypecheckConfigPath(configPath)) {
@@ -1139,36 +1367,84 @@ function addSourceReferenceRoleProblems(options: {
     );
 
     if (!isSolutionStyleConfig) {
-      options.problems.push(
-        [
-          'Source typecheck config declares project references:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  field: references',
-          '  reason: source typecheck configs must not hand-maintain project references; Limina infers static source edges and liminaOptions.implicitRefs documents dynamic or virtual edges.',
-          '  fix: remove obsolete tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.',
-        ].join('\n'),
+      const reason =
+        'source typecheck configs must not hand-maintain project references; Limina infers static source edges and liminaOptions.implicitRefs documents dynamic or virtual edges.';
+      const hint =
+        'Remove obsolete tsc -b references from source configs, move IDE aggregation references to a files: [] solution tsconfig.json, or replace dynamic source edges with liminaOptions.implicitRefs.';
+      const detailLines = [
+        'Source typecheck config declares project references:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        '  field: references',
+        `  reason: ${reason}`,
+        `  fix: ${hint.charAt(0).toLowerCase()}${hint.slice(1)}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            configPath,
+            field: 'references',
+            kind: 'source-reference-role',
+            violation: 'references-on-source-leaf',
+          },
+          filePath: configPath,
+          hint,
+          locations: [
+            { filePath: configPath, label: 'source typecheck config' },
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            configPath,
+          ),
+          reason,
+          title: 'Source typecheck config declares project references',
+        }),
       );
       continue;
     }
 
     if (hasImplicitRefs(configObject)) {
-      options.problems.push(
-        [
-          'Solution tsconfig declares Limina implicit references:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  field: liminaOptions.implicitRefs',
-          '  reason: solution-style tsconfig.json files aggregate typecheck configs and do not own source files, so implicitRefs must live on the source typecheck config that needs the extra edge.',
-        ].join('\n'),
+      const reason =
+        'solution-style tsconfig.json files aggregate typecheck configs and do not own source files, so implicitRefs must live on the source typecheck config that needs the extra edge.';
+      const detailLines = [
+        'Solution tsconfig declares Limina implicit references:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        '  field: liminaOptions.implicitRefs',
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            configPath,
+            field: 'liminaOptions.implicitRefs',
+            kind: 'source-reference-role',
+            violation: 'implicit-refs-on-solution',
+          },
+          filePath: configPath,
+          locations: [{ filePath: configPath, label: 'solution config' }],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            configPath,
+          ),
+          reason,
+          title: 'Solution tsconfig declares Limina implicit references',
+        }),
       );
     }
   }
 }
 
-function addBuildGraphConfigProblems(options: {
+function addBuildGraphConfigFindings(options: {
   buildGraphConfigPaths: string[];
   config: ResolvedLiminaConfig;
-  problems: string[];
+  findings: ProofFinding[];
   virtualFiles: ReadonlyMap<string, string>;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   for (const configPath of options.buildGraphConfigPaths) {
     const configObject = readProofConfig(
@@ -1178,22 +1454,44 @@ function addBuildGraphConfigProblems(options: {
     );
 
     if (!configPath.includes('/.limina/')) {
-      options.problems.push(
-        [
-          'Source-level build graph config violates the managed config boundary:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          '  reason: checker build aggregators are Limina-managed under .limina and derived from checker.include source tsconfigs.',
-        ].join('\n'),
+      const reason =
+        'checker build aggregators are Limina-managed under .limina and derived from checker.include source tsconfigs.';
+      const detailLines = [
+        'Source-level build graph config violates the managed config boundary:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            configPath,
+            configRole: 'build-graph',
+            kind: 'managed-config-boundary',
+          },
+          filePath: configPath,
+          locations: [{ filePath: configPath, label: 'build graph config' }],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            configPath,
+          ),
+          reason,
+          title:
+            'Source-level build graph config violates the managed config boundary',
+        }),
       );
       continue;
     }
 
-    addPureAggregatorProblems({
+    addPureAggregatorFindings({
       config: options.config,
       configObject,
       configPath,
-      problems: options.problems,
+      findings: options.findings,
       role: 'build graph',
+      workspaceLookup: options.workspaceLookup,
     });
 
     if (!Array.isArray(configObject.references)) {
@@ -1214,24 +1512,50 @@ function addBuildGraphConfigProblems(options: {
         continue;
       }
 
-      options.problems.push(
-        [
-          'Build graph references a non-build project:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          `  field: references[${index}].path`,
-          `  reference: ${reference.path}`,
-          `  resolved: ${toRelativePath(options.config.rootDir, referencePath)}`,
-          '  reason: tsconfig*.build.json may reference only tsconfig*.build.json aggregators or tsconfig*.dts.json declaration leaves.',
-        ].join('\n'),
+      const reason =
+        'tsconfig*.build.json may reference only tsconfig*.build.json aggregators or tsconfig*.dts.json declaration leaves.';
+      const detailLines = [
+        'Build graph references a non-build project:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  field: references[${index}].path`,
+        `  reference: ${reference.path}`,
+        `  resolved: ${toRelativePath(options.config.rootDir, referencePath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
+          detailLines,
+          facts: {
+            configPath,
+            configuredPath: reference.path,
+            kind: 'build-reference',
+            referenceIndex: index,
+            resolvedPath: referencePath,
+          },
+          filePath: configPath,
+          locations: [
+            { filePath: configPath, label: 'build graph config' },
+            { filePath: referencePath, label: 'referenced project' },
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            configPath,
+          ),
+          reason,
+          title: 'Build graph references a non-build project',
+        }),
       );
     }
   }
 }
 
-function addDefaultTsconfigShapeProblems(options: {
+function addDefaultTsconfigShapeFindings(options: {
   config: ResolvedLiminaConfig;
-  problems: string[];
+  findings: ProofFinding[];
   tsconfigPaths: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   for (const configPath of options.tsconfigPaths) {
     const configObject = readProofConfig(options.config, configPath);
@@ -1244,12 +1568,13 @@ function addDefaultTsconfigShapeProblems(options: {
       continue;
     }
 
-    addPureAggregatorProblems({
+    addPureAggregatorFindings({
       config: options.config,
       configObject,
       configPath,
-      problems: options.problems,
+      findings: options.findings,
       role: 'tsconfig.json',
+      workspaceLookup: options.workspaceLookup,
     });
 
     if (!Array.isArray(configObject.references)) {
@@ -1267,24 +1592,50 @@ function addDefaultTsconfigShapeProblems(options: {
         continue;
       }
 
-      options.problems.push(
-        [
-          'Default tsconfig.json references a non-typecheck config:',
-          `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
-          `  field: references[${index}].path`,
-          `  reference: ${reference.path}`,
-          `  resolved: ${toRelativePath(options.config.rootDir, referencePath)}`,
-          '  reason: tsconfig.json is the default IDE/typecheck entry and must not reference declaration build graph configs.',
-        ].join('\n'),
+      const reason =
+        'tsconfig.json is the default IDE/typecheck entry and must not reference declaration build graph configs.';
+      const detailLines = [
+        'Default tsconfig.json references a non-typecheck config:',
+        `  config: ${toRelativePath(options.config.rootDir, configPath)}`,
+        `  field: references[${index}].path`,
+        `  reference: ${reference.path}`,
+        `  resolved: ${toRelativePath(options.config.rootDir, referencePath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+          detailLines,
+          facts: {
+            configPath,
+            configuredPath: reference.path,
+            kind: 'reference-target',
+            referenceIndex: index,
+            resolvedPath: referencePath,
+          },
+          filePath: configPath,
+          locations: [
+            { filePath: configPath, label: 'default tsconfig' },
+            { filePath: referencePath, label: 'referenced config' },
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            configPath,
+          ),
+          reason,
+          title: 'Default tsconfig.json references a non-typecheck config',
+        }),
       );
     }
   }
 }
 
-function addDefaultTsconfigEnvironmentProblems(options: {
+function addDefaultTsconfigEnvironmentFindings(options: {
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   ordinaryConfigPaths: string[];
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const configsByDirectory = new Map<string, string[]>();
 
@@ -1310,24 +1661,79 @@ function addDefaultTsconfigEnvironmentProblems(options: {
     );
 
     if (!existsSync(defaultConfigPath)) {
-      options.problems.push(
-        [
-          'Directory with typecheck environments is missing default tsconfig.json:',
-          `  directory: ${toRelativePath(options.config.rootDir, directory)}`,
-          '  reason: tsconfig.json is the default IDE/typecheck entry for its directory.',
-        ].join('\n'),
+      const reason =
+        'tsconfig.json is the default IDE/typecheck entry for its directory.';
+      const detailLines = [
+        'Directory with typecheck environments is missing default tsconfig.json:',
+        `  directory: ${toRelativePath(options.config.rootDir, directory)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+          detailLines,
+          facts: {
+            defaultConfigPath,
+            directoryPath: directory,
+            environmentConfigPaths: scopedConfigPaths,
+            kind: 'environment-layout',
+            violation: 'missing-default',
+          },
+          filePath: defaultConfigPath,
+          locations: [
+            { filePath: defaultConfigPath, label: 'expected default tsconfig' },
+            ...scopedConfigPaths.map((filePath) => ({
+              filePath,
+              label: 'typecheck environment',
+            })),
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            directory,
+          ),
+          reason,
+          title:
+            'Directory with typecheck environments is missing default tsconfig.json',
+        }),
       );
       continue;
     }
 
     if (scopedConfigPaths.length === 1) {
-      options.problems.push(
-        [
-          'Single typecheck environment should use default tsconfig.json:',
-          `  config: ${toRelativePath(options.config.rootDir, scopedConfigPaths[0]!)}`,
-          `  default: ${toRelativePath(options.config.rootDir, defaultConfigPath)}`,
-          '  reason: directories with only one type environment should make tsconfig.json the leaf entry.',
-        ].join('\n'),
+      const reason =
+        'directories with only one type environment should make tsconfig.json the leaf entry.';
+      const detailLines = [
+        'Single typecheck environment should use default tsconfig.json:',
+        `  config: ${toRelativePath(options.config.rootDir, scopedConfigPaths[0]!)}`,
+        `  default: ${toRelativePath(options.config.rootDir, defaultConfigPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+          detailLines,
+          facts: {
+            defaultConfigPath,
+            directoryPath: directory,
+            environmentConfigPaths: scopedConfigPaths,
+            kind: 'environment-layout',
+            violation: 'single-environment-uses-named-config',
+          },
+          filePath: scopedConfigPaths[0],
+          locations: [
+            { filePath: scopedConfigPaths[0], label: 'named typecheck config' },
+            { filePath: defaultConfigPath, label: 'default tsconfig' },
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            defaultConfigPath,
+          ),
+          reason,
+          title:
+            'Single typecheck environment should use default tsconfig.json',
+        }),
       );
       continue;
     }
@@ -1338,12 +1744,41 @@ function addDefaultTsconfigEnvironmentProblems(options: {
     );
 
     if (!Object.hasOwn(defaultConfigObject, 'references')) {
-      options.problems.push(
-        [
-          'Directory with multiple typecheck environments must use tsconfig.json as an aggregator:',
-          `  config: ${toRelativePath(options.config.rootDir, defaultConfigPath)}`,
-          '  reason: multiple type environments require a default IDE/typecheck aggregator.',
-        ].join('\n'),
+      const reason =
+        'multiple type environments require a default IDE/typecheck aggregator.';
+      const detailLines = [
+        'Directory with multiple typecheck environments must use tsconfig.json as an aggregator:',
+        `  config: ${toRelativePath(options.config.rootDir, defaultConfigPath)}`,
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
+          detailLines,
+          facts: {
+            defaultConfigPath,
+            directoryPath: directory,
+            environmentConfigPaths: scopedConfigPaths,
+            kind: 'environment-layout',
+            violation: 'multiple-environments-not-aggregated',
+          },
+          filePath: defaultConfigPath,
+          locations: [
+            { filePath: defaultConfigPath, label: 'default tsconfig' },
+            ...scopedConfigPaths.map((filePath) => ({
+              filePath,
+              label: 'typecheck environment',
+            })),
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            defaultConfigPath,
+          ),
+          reason,
+          title:
+            'Directory with multiple typecheck environments must use tsconfig.json as an aggregator',
+        }),
       );
     }
   }
@@ -1406,6 +1841,8 @@ function collectConfigFileOwners(
         const owners = ownersByFile.get(filePath) ?? [];
 
         owners.push({
+          checkerEntryPath: route.rootConfigPath,
+          checkerName: route.checkerName,
           checkerPreset: route.checkerPreset,
           configPath,
         });
@@ -1417,10 +1854,11 @@ function collectConfigFileOwners(
   return ownersByFile;
 }
 
-function addDuplicateGraphCoverageProblems(options: {
+function addDuplicateGraphCoverageFindings(options: {
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   ownersByFile: ConfigFileOwners;
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   for (const [filePath, owners] of [...options.ownersByFile.entries()].sort(
     ([left], [right]) =>
@@ -1446,23 +1884,64 @@ function addDuplicateGraphCoverageProblems(options: {
         continue;
       }
 
-      options.problems.push(
-        [
-          'Duplicate checker graph coverage:',
-          `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
-          '  covered by:',
-          ...uniqueOwners
-            .sort((left, right) =>
-              toRelativePath(options.config.rootDir, left).localeCompare(
-                toRelativePath(options.config.rootDir, right),
-              ),
-            )
-            .map(
-              (configPath) =>
-                `    - ${toRelativePath(options.config.rootDir, configPath)}`,
-            ),
-          '  reason: a declaration-emitting source file must have a single generated dts owner; move the file to one dts leaf or narrow include/exclude patterns.',
-        ].join('\n'),
+      const sortedOwners = uniqueOwners.sort((left, right) =>
+        toRelativePath(options.config.rootDir, left).localeCompare(
+          toRelativePath(options.config.rootDir, right),
+        ),
+      );
+      const checkerNames = uniqueSortedStrings(
+        presetOwners.map((owner) => owner.checkerName),
+      );
+      const graphEntryPaths = uniqueSortedStrings(
+        presetOwners.map((owner) => owner.checkerEntryPath),
+      );
+      const reason =
+        'a declaration-emitting source file must have a single generated dts owner; move the file to one dts leaf or narrow include/exclude patterns.';
+      const detailLines = [
+        'Duplicate checker graph coverage:',
+        `  file: ${toRelativePath(options.config.rootDir, filePath)}`,
+        '  covered by:',
+        ...sortedOwners.map(
+          (configPath) =>
+            `    - ${toRelativePath(options.config.rootDir, configPath)}`,
+        ),
+        `  reason: ${reason}`,
+      ];
+
+      options.findings.push(
+        createProofDiagnosticFinding({
+          code: LIMINA_CHECK_ISSUE_CODES.proofDuplicateGraphCoverage,
+          detailLines,
+          evidence: [
+            { label: 'diagnostic', lines: [...detailLines] },
+            ...sortedOwners.map((projectPath) => ({
+              label: 'declaration project',
+              value: projectPath,
+            })),
+          ],
+          facts: {
+            checkerNames,
+            checkerPreset: presetOwners[0]!.checkerPreset,
+            declarationProjectPaths: sortedOwners,
+            graphEntryPaths,
+            kind: 'multiple-declaration-projects',
+            sourcePath: filePath,
+          },
+          filePath,
+          locations: [
+            { filePath, label: 'source' },
+            ...sortedOwners.map((projectPath) => ({
+              filePath: projectPath,
+              label: 'declaration project',
+            })),
+          ],
+          packageIdentity: getProofPackageIdentity(
+            options.workspaceLookup,
+            filePath,
+          ),
+          reason,
+          title: 'Duplicate checker graph coverage',
+        }),
       );
     }
   }
@@ -1503,11 +1982,12 @@ function isCheckerGraphDeclarationOwnerCandidate(
   });
 }
 
-function addDuplicateTypecheckOwnershipProblems(options: {
+function addDuplicateTypecheckOwnershipFindings(options: {
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
   ordinaryConfigPaths: string[];
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const fileOwners = new Map<string, string[]>();
   const context = getActiveCheckerContext(
@@ -1550,32 +2030,74 @@ function addDuplicateTypecheckOwnershipProblems(options: {
       continue;
     }
 
-    options.problems.push(
-      [
-        'Source file belongs to multiple typecheck configs:',
-        `  file: ${toRelativePath(options.config.rootDir, fileName)}`,
-        '  typecheck configs:',
-        ...uniqueOwners
-          .sort((left, right) =>
-            toRelativePath(options.config.rootDir, left).localeCompare(
-              toRelativePath(options.config.rootDir, right),
-            ),
-          )
-          .map(
-            (owner) => `    - ${toRelativePath(options.config.rootDir, owner)}`,
-          ),
-        '  reason: each implementation source file must belong to exactly one tsconfig*.json typecheck leaf.',
-      ].join('\n'),
+    const sortedOwners = uniqueOwners.sort((left, right) =>
+      toRelativePath(options.config.rootDir, left).localeCompare(
+        toRelativePath(options.config.rootDir, right),
+      ),
+    );
+    const checkerNames = uniqueSortedStrings(
+      [...options.generatedGraph.sourceToBuild.entries()].flatMap(
+        ([checkerName, sourceToBuild]) =>
+          sortedOwners.some((configPath) => sourceToBuild.has(configPath))
+            ? [checkerName]
+            : [],
+      ),
+    );
+    const reason =
+      'each implementation source file must belong to exactly one tsconfig*.json typecheck leaf.';
+    const detailLines = [
+      'Source file belongs to multiple typecheck configs:',
+      `  file: ${toRelativePath(options.config.rootDir, fileName)}`,
+      '  typecheck configs:',
+      ...sortedOwners.map(
+        (owner) => `    - ${toRelativePath(options.config.rootDir, owner)}`,
+      ),
+      `  reason: ${reason}`,
+    ];
+
+    options.findings.push(
+      createProofDiagnosticFinding({
+        code: LIMINA_CHECK_ISSUE_CODES.proofDuplicateSourceOwner,
+        detailLines,
+        evidence: [
+          { label: 'diagnostic', lines: [...detailLines] },
+          ...sortedOwners.map((projectPath) => ({
+            label: 'owner project',
+            value: projectPath,
+          })),
+        ],
+        facts: {
+          checkerNames,
+          kind: 'multiple-typecheck-owners',
+          ownerProjectPaths: sortedOwners,
+          sourcePath: fileName,
+        },
+        filePath: fileName,
+        locations: [
+          { filePath: fileName, label: 'source' },
+          ...sortedOwners.map((projectPath) => ({
+            filePath: projectPath,
+            label: 'owner project',
+          })),
+        ],
+        packageIdentity: getProofPackageIdentity(
+          options.workspaceLookup,
+          fileName,
+        ),
+        reason,
+        title: 'Source file belongs to multiple typecheck configs',
+      }),
     );
   }
 }
 
-function addUncoveredSourceProblems(options: {
+function addUncoveredSourceFindings(options: {
+  checkerTargets: CheckerCoverageTarget[];
   config: ResolvedLiminaConfig;
   coverageByFile: Map<string, CoverageSource[]>;
-  issues: LiminaCheckIssue[];
-  problems: string[];
+  findings: ProofFinding[];
   sourceFiles: Set<string>;
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const uncoveredFiles = [...options.sourceFiles].filter(
     (filePath) => !options.coverageByFile.has(filePath),
@@ -1585,50 +2107,65 @@ function addUncoveredSourceProblems(options: {
     return;
   }
 
-  addProofProblem(
-    options.problems,
-    [
-      'Source files are not covered by typecheck proof:',
-      ...uncoveredFiles
-        .slice(0, 20)
-        .map(
-          (filePath) =>
-            `  - ${toRelativePath(options.config.rootDir, filePath)}`,
-        ),
-      uncoveredFiles.length > 20
-        ? `  ... ${uncoveredFiles.length - 20} more`
-        : '',
-      '  reason: every file in config.source must be covered by a checker entry or an explicit allowlist entry.',
-    ].filter(Boolean),
-    {
-      code: LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile,
-      fix: 'Add uncovered files to a checker entry, exclude them from config.source, or add explicit proof.allowlist entries with reasons.',
-      reason:
-        'Every file in config.source must be covered by a checker entry or an explicit allowlist entry.',
-      title: 'Source files are not covered by typecheck proof',
-    },
+  const candidateCheckerNames = uniqueSortedStrings(
+    options.checkerTargets.map((target) => target.checker.name),
   );
+  const candidateProjectPaths = uniqueSortedStrings(
+    options.checkerTargets.flatMap((target) => target.coverageConfigPaths),
+  );
+  const reason =
+    'Every file in config.source must be covered by a checker entry or an explicit allowlist entry.';
+  const hint =
+    'Add the file to a checker entry, exclude it from config.source, or add an explicit proof.allowlist entry with a reason.';
 
   for (const filePath of uncoveredFiles) {
-    options.issues.push(
-      createTaskFailureIssue({
+    options.findings.push(
+      createProofDiagnosticFinding({
         code: LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile,
+        detailLines: [],
+        evidence: [
+          { label: 'source', value: filePath },
+          ...candidateCheckerNames.map((checkerName) => ({
+            label: 'candidate checker',
+            value: checkerName,
+          })),
+          ...candidateProjectPaths.map((projectPath) => ({
+            label: 'candidate project',
+            value: projectPath,
+          })),
+        ],
+        facts: {
+          candidateCheckerNames,
+          candidateProjectPaths,
+          configuredSourceExcludes: [
+            ...(options.config.config?.source?.exclude ?? []),
+          ],
+          configuredSourceIncludes: [
+            ...(options.config.config?.source?.include ?? ['...']),
+          ],
+          coverage: [],
+          kind: 'no-checker-or-allowlist-coverage',
+          sourcePath: filePath,
+        },
         filePath,
-        fix: 'Add the file to a checker entry, exclude it from config.source, or add an explicit proof.allowlist entry with a reason.',
-        reason:
-          'Every file in config.source must be covered by a checker entry or an explicit allowlist entry.',
-        rootDir: options.config.rootDir,
-        task: 'proof:check',
+        hint,
+        locations: [{ filePath, label: 'uncovered source' }],
+        packageIdentity: getProofPackageIdentity(
+          options.workspaceLookup,
+          filePath,
+        ),
+        reason,
         title: 'Source file is not covered by typecheck proof',
       }),
     );
   }
 }
 
-function addSourceBoundaryMismatchProblems(options: {
+function addSourceBoundaryMismatchFindings(options: {
   config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
   outsideSourceCoverageByFile: Map<string, CoverageSource[]>;
-  problems: string[];
+  workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const outsideSourceFiles = [
     ...options.outsideSourceCoverageByFile.entries(),
@@ -1638,32 +2175,75 @@ function addSourceBoundaryMismatchProblems(options: {
     return;
   }
 
-  addProofProblem(
-    options.problems,
-    [
-      'Typecheck proof source boundary does not match tsconfig coverage:',
-      ...outsideSourceFiles
-        .slice(0, 20)
-        .flatMap(([filePath, sources]) => [
-          `  - ${toRelativePath(options.config.rootDir, filePath)}`,
-          ...sources
-            .slice(0, 3)
-            .map((source) => `    covered by: ${source.label}`),
-          sources.length > 3 ? `    ... ${sources.length - 3} more` : '',
-        ]),
-      outsideSourceFiles.length > 20
-        ? `  ... ${outsideSourceFiles.length - 20} more`
-        : '',
-      '  reason: config.source and tsconfig*.json coverage describe different module sets.',
-      '  fix: include these files in config.source, exclude them from the related tsconfig*.json, or move intentionally unmanaged files out of checker coverage.',
-    ].filter(Boolean),
-    {
+  const reason =
+    'config.source and tsconfig*.json coverage describe different module sets.';
+  const hint =
+    'Include these files in config.source, exclude them from the related tsconfig*.json, or move intentionally unmanaged files out of checker coverage.';
+  const detailLines = [
+    'Typecheck proof source boundary does not match tsconfig coverage:',
+    ...outsideSourceFiles
+      .slice(0, 20)
+      .flatMap(([filePath, sources]) => [
+        `  - ${toRelativePath(options.config.rootDir, filePath)}`,
+        ...sources
+          .slice(0, 3)
+          .map((source) => `    covered by: ${source.label}`),
+        sources.length > 3 ? `    ... ${sources.length - 3} more` : '',
+      ]),
+    outsideSourceFiles.length > 20
+      ? `  ... ${outsideSourceFiles.length - 20} more`
+      : '',
+    `  reason: ${reason}`,
+    `  fix: ${hint.charAt(0).toLowerCase()}${hint.slice(1)}`,
+  ].filter(Boolean);
+  const locations = uniqueValues([
+    ...outsideSourceFiles.map(([filePath]) => filePath),
+    ...outsideSourceFiles.flatMap(([, sources]) =>
+      sources.flatMap((source) =>
+        'projectPath' in source ? [source.projectPath] : [],
+      ),
+    ),
+  ]).map((filePath) => ({ filePath, label: 'source or covering project' }));
+
+  options.findings.push(
+    createProofDiagnosticFinding({
       code: LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch,
-      fix: 'Include these files in config.source, exclude them from the related tsconfig*.json, or move intentionally unmanaged files out of checker coverage.',
-      reason:
-        'config.source and tsconfig*.json coverage describe different module sets.',
+      detailLines,
+      evidence: [
+        { label: 'diagnostic', lines: [...detailLines] },
+        ...outsideSourceFiles.flatMap(([filePath, sources]) =>
+          sources.map((source) => ({
+            label: 'coverage',
+            value: `${filePath} <- ${source.label}`,
+          })),
+        ),
+      ],
+      facts: {
+        configuredSourceExcludes: [
+          ...(options.config.config?.source?.exclude ?? []),
+        ],
+        configuredSourceIncludes: [
+          ...(options.config.config?.source?.include ?? ['...']),
+        ],
+        kind: 'coverage-outside-source-boundary',
+        repositoryRoot: normalizeAbsolutePath(options.config.rootDir),
+        sources: outsideSourceFiles.map(([sourcePath, coverage]) => {
+          const owner = options.workspaceLookup.findOwnerForFile(sourcePath);
+
+          return {
+            coverage: [...coverage],
+            packageManifestPath: owner?.packageJsonPath,
+            packageName: owner?.name,
+            packageRoot: owner?.directory,
+            sourcePath,
+          };
+        }),
+      },
+      hint,
+      locations,
+      reason,
       title: 'Typecheck proof source boundary does not match tsconfig coverage',
-    },
+    }),
   );
 }
 
@@ -1672,6 +2252,7 @@ export async function runProofCheckImpl(
   options: {
     providers?: AnalysisProviderSet;
     deferSnapshot?: boolean;
+    findingSink?: ProofFinding[];
     generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
     issues?: LiminaCheckIssue[];
     logSuccess?: boolean;
@@ -1681,11 +2262,10 @@ export async function runProofCheckImpl(
     report?: CheckIssueReportOptions;
   } = {},
 ): Promise<boolean> {
-  const problems: string[] = [];
-  const issues: LiminaCheckIssue[] = [];
+  const findings: ProofFinding[] = [];
   const checks = createCheckCounter();
   const checkItems = createCheckItemAccumulator(
-    () => problems.length + issues.length,
+    () => findings.length,
     () => checks.value,
     {
       plannedItems: PROOF_CHECK_ITEM_NAMES,
@@ -1697,6 +2277,7 @@ export async function runProofCheckImpl(
   const graphRouteCollection = await preflight.ensureGraphProjectRoutes();
   const entryRouteCollection =
     await preflight.ensureCheckerEntryProjectRoutes();
+  const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
   const entryProjectPaths = uniqueSortedStrings(
     entryRouteCollection.routes.flatMap((route) => route.projectPaths),
   );
@@ -1715,13 +2296,19 @@ export async function runProofCheckImpl(
     (configPath) => path.basename(configPath) === 'tsconfig.json',
   );
   const proofCheckTotal = entryProjectPaths.length + dtsConfigPaths.length;
-  const collectIssues = async (
-    reportIssues: readonly LiminaCheckIssue[],
-  ): Promise<void> => {
+  const collectFindings = async (
+    reportFindings: readonly ProofFinding[],
+  ): Promise<LiminaCheckIssue[]> => {
+    options.findingSink?.push(...reportFindings);
+    const reportIssues = collectProofReportIssues({
+      config,
+      findings: reportFindings,
+    });
+
     options.issues?.push(...reportIssues);
 
     if (options.deferSnapshot) {
-      return;
+      return reportIssues;
     }
 
     await appendCheckIssues({
@@ -1729,71 +2316,88 @@ export async function runProofCheckImpl(
       issues: reportIssues,
       rootDir: config.rootDir,
     });
+
+    return reportIssues;
   };
 
-  problems.push(
-    ...graphRouteCollection.problems,
-    ...entryRouteCollection.problems,
+  findings.push(
+    ...graphRouteCollection.diagnostics.map((diagnostic) =>
+      createProofCheckerRouteFinding({
+        checkerName: diagnostic.checkerName,
+        diagnostic,
+        projection: 'graph',
+        workspaceLookup,
+      }),
+    ),
+    ...entryRouteCollection.diagnostics.map((diagnostic) =>
+      createProofCheckerRouteFinding({
+        checkerName: diagnostic.checkerName,
+        diagnostic,
+        projection: 'checker-entry',
+        workspaceLookup,
+      }),
+    ),
   );
 
   checkItems.start('project routes and configs');
-  addDtsConfigProblems({
+  addDtsConfigFindings({
     config,
     dtsConfigPaths,
+    findings,
     graphProjectPaths: entryProjectPathSet,
-    problems,
     projectContextsByPath: entryProjectContextsByPath,
     virtualFiles: generatedGraph.generatedFiles,
+    workspaceLookup,
   });
-  addBuildGraphConfigProblems({
+  addBuildGraphConfigFindings({
     buildGraphConfigPaths,
     config,
-    problems,
+    findings,
     virtualFiles: generatedGraph.generatedFiles,
+    workspaceLookup,
   });
-  addDefaultTsconfigShapeProblems({
+  addDefaultTsconfigShapeFindings({
     config,
-    problems,
+    findings,
     tsconfigPaths: defaultTsconfigPaths,
+    workspaceLookup,
   });
-  addSourceReferenceRoleProblems({
+  addSourceReferenceRoleFindings({
     config,
+    findings,
     ordinaryConfigPaths: ordinaryTypecheckConfigPaths,
-    problems,
+    workspaceLookup,
   });
-  addDefaultTsconfigEnvironmentProblems({
+  addDefaultTsconfigEnvironmentFindings({
     config,
+    findings,
     ordinaryConfigPaths: ordinaryTypecheckConfigPaths,
-    problems,
+    workspaceLookup,
   });
 
-  addDuplicateTypecheckOwnershipProblems({
+  addDuplicateTypecheckOwnershipFindings({
     config,
+    findings,
     generatedGraph,
     ordinaryConfigPaths: ordinaryTypecheckConfigPaths,
-    problems,
+    workspaceLookup,
   });
   checks.add(proofCheckTotal);
   checkItems.record('project routes and configs');
 
-  if (problems.length > 0) {
-    const reportIssues = collectProofReportIssues({
-      config,
-      problems,
-    });
-
+  if (findings.length > 0) {
     options.onStats?.({
       items: checkItems.getItems(),
       passed: 0,
       total: checks.value,
     });
-    await collectIssues(reportIssues);
+    const reportIssues = await collectFindings(findings);
     if (!options.report?.defer) {
       ProofLogger.error(
-        formatProofProblemReport({
+        formatProofFindingReport({
           config,
+          findings,
           issues: reportIssues,
-          problems,
           report: options.report,
         }),
       );
@@ -1804,32 +2408,28 @@ export async function runProofCheckImpl(
   const checkerTargetCollection = collectCheckerCoverageTargets(
     config,
     generatedGraph,
+    workspaceLookup,
   );
   const checkerTargets = checkerTargetCollection.targets;
 
   checkItems.start('checker coverage targets');
-  problems.push(...checkerTargetCollection.problems);
+  findings.push(...checkerTargetCollection.findings);
   checks.add(checkerTargets.length);
   checkItems.record('checker coverage targets');
 
-  if (problems.length > 0) {
-    const reportIssues = collectProofReportIssues({
-      config,
-      problems,
-    });
-
+  if (findings.length > 0) {
     options.onStats?.({
       items: checkItems.getItems(),
       passed: 0,
       total: checks.value,
     });
-    await collectIssues(reportIssues);
+    const reportIssues = await collectFindings(findings);
     if (!options.report?.defer) {
       ProofLogger.error(
-        formatProofProblemReport({
+        formatProofFindingReport({
           config,
+          findings,
           issues: reportIssues,
-          problems,
           report: options.report,
         }),
       );
@@ -1842,7 +2442,7 @@ export async function runProofCheckImpl(
   const allowlistEntries = allowlistCollection.entries;
 
   checkItems.start('proof allowlist');
-  problems.push(...allowlistCollection.problems);
+  findings.push(...allowlistCollection.findings);
   checks.add(allowlistEntries.length);
   checkItems.record('proof allowlist');
 
@@ -1870,52 +2470,51 @@ export async function runProofCheckImpl(
     generatedGraph.generatedFiles,
   );
 
-  addDuplicateGraphCoverageProblems({
+  const uncoveredFindings: ProofFinding[] = [];
+  addUncoveredSourceFindings({
+    checkerTargets,
     config,
-    ownersByFile: graphFileOwners,
-    problems,
+    coverageByFile,
+    findings: uncoveredFindings,
+    sourceFiles,
+    workspaceLookup,
   });
-  addAllowlistProblems({
+  findings.unshift(...uncoveredFindings);
+  addDuplicateGraphCoverageFindings({
+    config,
+    findings,
+    ownersByFile: graphFileOwners,
+    workspaceLookup,
+  });
+  addAllowlistFindings({
     allowlistEntries,
     baseCoverageByFile,
     config,
-    problems,
+    findings,
     sourceFiles,
   });
-  addUncoveredSourceProblems({
+  addSourceBoundaryMismatchFindings({
     config,
-    coverageByFile,
-    issues,
-    problems,
-    sourceFiles,
-  });
-  addSourceBoundaryMismatchProblems({
-    config,
+    findings,
     outsideSourceCoverageByFile,
-    problems,
+    workspaceLookup,
   });
   checks.add(sourceFiles.size);
   checkItems.record('source coverage');
 
-  if (problems.length > 0) {
-    const reportIssues = collectProofReportIssues({
-      config,
-      existingIssues: issues,
-      problems,
-    });
-
+  if (findings.length > 0) {
     options.onStats?.({
       items: checkItems.getItems(),
       passed: 0,
       total: checks.value,
     });
-    await collectIssues(reportIssues);
+    const reportIssues = await collectFindings(findings);
     if (!options.report?.defer) {
       ProofLogger.error(
-        formatProofProblemReport({
+        formatProofFindingReport({
           config,
+          findings,
           issues: reportIssues,
-          problems,
           report: options.report,
         }),
       );

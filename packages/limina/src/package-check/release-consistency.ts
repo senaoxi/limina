@@ -12,19 +12,39 @@ import {
   type PublishDependencySectionName,
   type WorkspacePackage,
 } from '#core/workspace/actions';
-import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { unpack } from '@publint/pack';
+import { createHash } from 'node:crypto';
 import { parseSync } from 'oxc-parser';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
 import semver from 'semver';
 import ssri from 'ssri';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { formatErrorMessage, ReleaseLogger } from '../logger';
 import {
   lintPackedManifest,
   type PackedManifestLintIssue,
 } from './packed-manifest-lint';
+import {
+  createReleaseFinding,
+  formatReleaseFindings,
+  orderReleaseFindingsForPresentation,
+  type ReleaseContentHashFacts,
+  type ReleaseContentHashFileDiff,
+  type ReleaseFinding,
+  type ReleaseFindingPresentation,
+  type ReleaseFindingSection,
+  type ReleaseIgnoredContentHashDiffGroup,
+  type ReleasePackedManifestFacts,
+  type ReleaseRegistryFacts,
+  type ReleaseTarballHygieneFacts,
+} from './release-findings';
+import {
+  assertReleaseRegistryTarballUrlAllowed,
+  resolveReleaseRegistryMetadataUrl,
+  resolveReleaseRegistryTimeoutMs,
+} from './release-registry-test-seam';
 import { type PackedPackageTarball, packOutputTarball } from './runner';
 
 interface PublishDependencyEntry {
@@ -75,12 +95,9 @@ interface PackedArtifactContent {
   packageVersion: string | null;
 }
 
-interface ContentHashDiff {
-  kind: ContentHashDiffKind;
-  relativePath: string;
-}
+type ContentHashDiff = ReleaseContentHashFileDiff;
 
-type ContentHashDiffGroup = Record<ContentHashDiffKind, string[]>;
+type ContentHashDiffGroup = Record<ContentHashDiffKind, ContentHashDiff[]>;
 
 interface ContentHashIgnoreRule {
   label: string;
@@ -94,6 +111,7 @@ interface IgnoredContentHashDiffGroup {
 
 interface WorkspacePackageOutputComparison {
   ignoredDiffGroups: IgnoredContentHashDiffGroup[];
+  localOutputDirectory: string;
   localVersion: string | null;
   matchesBaseline: boolean;
   releaseRelevantDiffs: ContentHashDiffGroup;
@@ -121,6 +139,8 @@ type RegistryMetadataResult =
     }
   | {
       kind: 'missing';
+      statusCode: 404;
+      url: string;
     }
   | {
       cause?: unknown;
@@ -134,22 +154,56 @@ type RegistryMetadataResult =
         | 'timeout';
       statusCode?: number;
       statusText?: string;
+      timeoutMs?: number;
       url: string;
     };
 
 type RegistryTarballIntegrityResult =
   | {
+      expectedShasum?: string;
       integrity: string;
       kind: 'found';
+      registryIntegrity?: unknown;
+      registryShasum?: unknown;
       source: 'integrity' | 'shasum';
     }
   | {
       field: 'integrity' | 'shasum';
       kind: 'invalid';
+      registryIntegrity?: unknown;
+      registryShasum?: unknown;
     }
   | {
       kind: 'missing';
     };
+
+interface RegistryTarballFailure {
+  actualIntegrity?: string;
+  actualShasum?: string;
+  errorMessage?: string;
+  expectedIntegrity?: string;
+  expectedShasum?: string;
+  kind:
+    | 'integrity-mismatch'
+    | 'tarball-body-read'
+    | 'tarball-http-status'
+    | 'tarball-request'
+    | 'tarball-timeout';
+  statusCode?: number;
+  statusText?: string;
+  tarballUrl: string;
+  timeoutMs?: number;
+}
+
+class RegistryTarballError extends Error {
+  override readonly name = 'RegistryTarballError';
+  readonly failure: RegistryTarballFailure;
+
+  constructor(failure: RegistryTarballFailure, message: string) {
+    super(message);
+    this.failure = failure;
+  }
+}
 
 interface DirectWorkspaceDependency {
   dependencyName: string;
@@ -157,27 +211,12 @@ interface DirectWorkspaceDependency {
   targetPackage: NamedWorkspacePackage;
 }
 
-interface ReleaseConsistencyProblem {
-  dependencyName?: string;
-  importerName: string;
-  message: string;
-  packageName?: string;
-  sectionName?: PackageDependencySectionName;
-  specifier?: string;
-}
-
 interface ReleaseConsistencyState {
   changedPackageNames: Set<string>;
   directWorkspaceDependencies: DirectWorkspaceDependency[];
   edges: Map<string, Set<string>>;
-  missingWorkspaceDependencies: ReleaseConsistencyProblem[];
-  packedManifestLintProblems: ReleaseConsistencyProblem[];
-  packedManifestProblems: ReleaseConsistencyProblem[];
-  privateWorkspaceDependencies: ReleaseConsistencyProblem[];
-  releaseHygieneProblems: ReleaseConsistencyProblem[];
+  findings: ReleaseFinding[];
   registryMetadataCache: Map<string, RegistryMetadataResult>;
-  registryProblems: ReleaseConsistencyProblem[];
-  sourceLinkDependencies: ReleaseConsistencyProblem[];
   unpublishedPackageNames: Set<string>;
   visitedPackages: Set<string>;
 }
@@ -186,6 +225,7 @@ export interface AssertPackageReleaseConsistencyOptions {
   config: ResolvedLiminaConfig;
   label: string;
   outputManifest: PublishManifest;
+  packedTarballPath: string;
   packedTarball: Buffer;
   outDir: string;
   workspacePackages: readonly WorkspacePackage[];
@@ -193,6 +233,30 @@ export interface AssertPackageReleaseConsistencyOptions {
 
 export class PackageReleaseConsistencyError extends Error {
   override readonly name = 'PackageReleaseConsistencyError';
+  readonly findings: readonly ReleaseFinding[];
+
+  constructor(
+    findings: readonly ReleaseFinding[],
+    options: {
+      readonly label: string;
+      readonly outDir: string;
+      readonly publishOrder?: readonly string[];
+      readonly rootDir: string;
+    },
+  ) {
+    const orderedFindings = orderReleaseFindingsForPresentation(findings);
+
+    super(
+      formatReleaseFindings({
+        findings: orderedFindings,
+        label: options.label,
+        outDir: options.outDir,
+        publishOrder: options.publishOrder,
+        rootDir: options.rootDir,
+      }),
+    );
+    this.findings = orderedFindings;
+  }
 }
 
 const picomatch = rawPicomatch as unknown as (
@@ -232,14 +296,8 @@ function createReleaseConsistencyState(): ReleaseConsistencyState {
     changedPackageNames: new Set<string>(),
     directWorkspaceDependencies: [],
     edges: new Map<string, Set<string>>(),
-    missingWorkspaceDependencies: [],
-    packedManifestLintProblems: [],
-    packedManifestProblems: [],
-    privateWorkspaceDependencies: [],
-    releaseHygieneProblems: [],
+    findings: [],
     registryMetadataCache: new Map<string, RegistryMetadataResult>(),
-    registryProblems: [],
-    sourceLinkDependencies: [],
     unpublishedPackageNames: new Set<string>(),
     visitedPackages: new Set<string>(),
   };
@@ -316,32 +374,144 @@ function addEdge(
   edges.set(importerName, dependencies);
 }
 
-function formatDependencyLocation(problem: ReleaseConsistencyProblem): string {
-  const dependency = problem.dependencyName
-    ? ` -> ${problem.dependencyName}`
+function formatDependencyLocation(options: {
+  dependencyName?: string;
+  importerName: string;
+  sectionName?: PackageDependencySectionName;
+  specifier?: string;
+}): string {
+  const dependency = options.dependencyName
+    ? ` -> ${options.dependencyName}`
     : '';
-  const section = problem.sectionName ? ` [${problem.sectionName}]` : '';
-  const specifier = problem.specifier ? ` (${problem.specifier})` : '';
+  const section = options.sectionName ? ` [${options.sectionName}]` : '';
+  const specifier = options.specifier ? ` (${options.specifier})` : '';
 
-  return `${problem.importerName}${dependency}${section}${specifier}`;
+  return `${options.importerName}${dependency}${section}${specifier}`;
 }
 
-function formatProblemLines(
-  title: string,
-  problems: ReleaseConsistencyProblem[],
-): string[] {
-  if (problems.length === 0) {
-    return [];
-  }
+function createReleaseFindingPresentation(options: {
+  message: string;
+  section: ReleaseFindingSection;
+  sectionTitle: string;
+  title?: string;
+}): ReleaseFindingPresentation {
+  const problemLines = options.message.split('\n');
 
-  return [
-    '',
-    title,
-    ...problems.map(
-      (problem) =>
-        `  - ${formatDependencyLocation(problem)}: ${problem.message}`,
-    ),
-  ];
+  return {
+    problemLines,
+    section: options.section,
+    sectionTitle: options.sectionTitle,
+    summary: problemLines[0] ?? options.sectionTitle,
+    title: options.title ?? options.sectionTitle.replace(/:$/u, ''),
+  };
+}
+
+function addPackedManifestFinding(
+  state: ReleaseConsistencyState,
+  options: {
+    external?: {
+      code?: string;
+      message?: string;
+      tool?: string;
+    };
+    facts: ReleasePackedManifestFacts;
+    filePath?: string;
+    message: string;
+    packageManifestPath: string;
+    packageName: string;
+    section: ReleaseFindingSection;
+    sectionTitle: string;
+  },
+): void {
+  state.findings.push(
+    createReleaseFinding({
+      code: LIMINA_CHECK_ISSUE_CODES.releasePackedManifest,
+      external: options.external,
+      facts: options.facts,
+      filePath: options.filePath,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.packageName,
+      presentation: createReleaseFindingPresentation(options),
+    }),
+  );
+}
+
+function addTarballHygieneFinding(
+  state: ReleaseConsistencyState,
+  options: {
+    facts: ReleaseTarballHygieneFacts;
+    filePath?: string;
+    message: string;
+    packageManifestPath: string;
+    packageName: string;
+  },
+): void {
+  state.findings.push(
+    createReleaseFinding({
+      code: LIMINA_CHECK_ISSUE_CODES.releaseTarballHygiene,
+      facts: options.facts,
+      filePath: options.filePath,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.packageName,
+      presentation: createReleaseFindingPresentation({
+        message: options.message,
+        section: 'tarball',
+        sectionTitle: 'Release tarball is not publishable:',
+      }),
+    }),
+  );
+}
+
+function addRegistryFinding(
+  state: ReleaseConsistencyState,
+  options: {
+    facts: ReleaseRegistryFacts;
+    filePath?: string;
+    message: string;
+    packageManifestPath: string;
+    packageName: string;
+  },
+): void {
+  state.findings.push(
+    createReleaseFinding({
+      code: LIMINA_CHECK_ISSUE_CODES.releaseRegistry,
+      facts: options.facts,
+      filePath: options.filePath,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.packageName,
+      presentation: createReleaseFindingPresentation({
+        message: options.message,
+        section: 'registry-content',
+        sectionTitle: 'Workspace package registry/content checks failed:',
+      }),
+    }),
+  );
+}
+
+function addContentHashFinding(
+  state: ReleaseConsistencyState,
+  options: {
+    facts: ReleaseContentHashFacts;
+    filePath?: string;
+    message: string;
+    packageManifestPath: string;
+    packageName: string;
+  },
+): void {
+  state.findings.push(
+    createReleaseFinding({
+      code: LIMINA_CHECK_ISSUE_CODES.releaseContentHash,
+      facts: options.facts,
+      filePath: options.filePath,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.packageName,
+      presentation: createReleaseFindingPresentation({
+        message: options.message,
+        section: 'registry-content',
+        sectionTitle: 'Workspace package registry/content checks failed:',
+      }),
+    }),
+  );
 }
 
 function getPackedDependencySpecifier(
@@ -360,7 +530,7 @@ function getPackedDependencySpecifier(
 }
 
 function getNpmPackageMetadataUrl(packageName: string): string {
-  return `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
+  return resolveReleaseRegistryMetadataUrl(packageName);
 }
 
 async function fetchRegistryPackageMetadata(
@@ -374,7 +544,10 @@ async function fetchRegistryPackageMetadata(
   }
 
   const url = getNpmPackageMetadataUrl(packageName);
-  const signal = AbortSignal.timeout(REGISTRY_METADATA_TIMEOUT_MS);
+  const timeoutMs = resolveReleaseRegistryTimeoutMs(
+    REGISTRY_METADATA_TIMEOUT_MS,
+  );
+  const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
 
   try {
@@ -389,6 +562,7 @@ async function fetchRegistryPackageMetadata(
       cause: error,
       kind: 'failure',
       reason: signal.aborted ? 'timeout' : 'request',
+      timeoutMs: signal.aborted ? timeoutMs : undefined,
       url,
     };
 
@@ -399,6 +573,8 @@ async function fetchRegistryPackageMetadata(
   if (response.status === 404) {
     const result: RegistryMetadataResult = {
       kind: 'missing',
+      statusCode: 404,
+      url,
     };
 
     state.registryMetadataCache.set(packageName, result);
@@ -468,7 +644,12 @@ function formatRegistryMetadataFailure(
   failure: Extract<RegistryMetadataResult, { kind: 'failure' }>,
 ): string {
   if (failure.reason === 'timeout') {
-    return `npm registry metadata request for ${packageName} from ${failure.url} timed out after 30 seconds`;
+    const timeoutMs = failure.timeoutMs ?? REGISTRY_METADATA_TIMEOUT_MS;
+    const duration =
+      timeoutMs === REGISTRY_METADATA_TIMEOUT_MS
+        ? '30 seconds'
+        : `${String(timeoutMs)} milliseconds`;
+    return `npm registry metadata request for ${packageName} from ${failure.url} timed out after ${duration}`;
   }
 
   const status =
@@ -569,6 +750,7 @@ function resolveRegistryTarballIntegrity(
   }
 
   const integrityValue = versionMetadata.dist.integrity;
+  const shasumValue = versionMetadata.dist.shasum;
 
   if (integrityValue !== undefined) {
     const integrity =
@@ -577,28 +759,52 @@ function resolveRegistryTarballIntegrity(
         : null;
 
     return integrity
-      ? { integrity, kind: 'found', source: 'integrity' }
-      : { field: 'integrity', kind: 'invalid' };
+      ? {
+          integrity,
+          kind: 'found',
+          registryIntegrity: integrityValue,
+          registryShasum: shasumValue,
+          source: 'integrity',
+        }
+      : {
+          field: 'integrity',
+          kind: 'invalid',
+          registryIntegrity: integrityValue,
+          registryShasum: shasumValue,
+        };
   }
-
-  const shasumValue = versionMetadata.dist.shasum;
 
   if (shasumValue === undefined) {
     return { kind: 'missing' };
   }
 
   if (typeof shasumValue !== 'string' || !/^[\da-f]{40}$/iu.test(shasumValue)) {
-    return { field: 'shasum', kind: 'invalid' };
+    return {
+      field: 'shasum',
+      kind: 'invalid',
+      registryShasum: shasumValue,
+    };
   }
 
   const integrity = ssri.fromHex(shasumValue, 'sha1')?.toString();
 
   return integrity
-    ? { integrity, kind: 'found', source: 'shasum' }
-    : { field: 'shasum', kind: 'invalid' };
+    ? {
+        expectedShasum: shasumValue,
+        integrity,
+        kind: 'found',
+        registryShasum: shasumValue,
+        source: 'shasum',
+      }
+    : {
+        field: 'shasum',
+        kind: 'invalid',
+        registryShasum: shasumValue,
+      };
 }
 
 function verifyRegistryTarballIntegrity(options: {
+  expectedShasum?: string;
   integrity: string;
   packageName: string;
   tarball: Buffer;
@@ -609,13 +815,25 @@ function verifyRegistryTarballIntegrity(options: {
     return;
   }
 
-  throw new Error(
+  throw new RegistryTarballError(
+    {
+      actualIntegrity: ssri.fromData(options.tarball)?.toString(),
+      actualShasum: createHash('sha1').update(options.tarball).digest('hex'),
+      expectedIntegrity: options.integrity,
+      expectedShasum: options.expectedShasum,
+      kind: 'integrity-mismatch',
+      tarballUrl: options.tarballUrl,
+    },
     `npm tarball integrity mismatch for ${options.packageName}@${options.version} from ${options.tarballUrl}`,
   );
 }
 
 async function fetchRegistryTarball(tarballUrl: string): Promise<Buffer> {
-  const signal = AbortSignal.timeout(REGISTRY_TARBALL_TIMEOUT_MS);
+  assertReleaseRegistryTarballUrlAllowed(tarballUrl);
+  const timeoutMs = resolveReleaseRegistryTimeoutMs(
+    REGISTRY_TARBALL_TIMEOUT_MS,
+  );
+  const signal = AbortSignal.timeout(timeoutMs);
   let response: Response;
 
   try {
@@ -627,12 +845,27 @@ async function fetchRegistryTarball(tarballUrl: string): Promise<Buffer> {
     });
   } catch (error) {
     if (signal.aborted) {
-      throw new Error(
-        `npm tarball request for ${tarballUrl} timed out after 120 seconds`,
+      const duration =
+        timeoutMs === REGISTRY_TARBALL_TIMEOUT_MS
+          ? '120 seconds'
+          : `${String(timeoutMs)} milliseconds`;
+      throw new RegistryTarballError(
+        {
+          errorMessage: formatErrorMessage(error),
+          kind: 'tarball-timeout',
+          tarballUrl,
+          timeoutMs,
+        },
+        `npm tarball request for ${tarballUrl} timed out after ${duration}`,
       );
     }
 
-    throw new Error(
+    throw new RegistryTarballError(
+      {
+        errorMessage: formatErrorMessage(error),
+        kind: 'tarball-request',
+        tarballUrl,
+      },
       `unable to request npm tarball ${tarballUrl}: ${formatErrorMessage(error)}`,
     );
   }
@@ -642,19 +875,42 @@ async function fetchRegistryTarball(tarballUrl: string): Promise<Buffer> {
       response.statusText ? ` ${response.statusText}` : ''
     }`;
 
-    throw new Error(`unable to download npm tarball ${tarballUrl}: ${status}`);
+    throw new RegistryTarballError(
+      {
+        kind: 'tarball-http-status',
+        statusCode: response.status,
+        statusText: response.statusText,
+        tarballUrl,
+      },
+      `unable to download npm tarball ${tarballUrl}: ${status}`,
+    );
   }
 
   try {
     return Buffer.from(await response.arrayBuffer());
   } catch (error) {
     if (signal.aborted) {
-      throw new Error(
-        `npm tarball request for ${tarballUrl} timed out after 120 seconds`,
+      const duration =
+        timeoutMs === REGISTRY_TARBALL_TIMEOUT_MS
+          ? '120 seconds'
+          : `${String(timeoutMs)} milliseconds`;
+      throw new RegistryTarballError(
+        {
+          errorMessage: formatErrorMessage(error),
+          kind: 'tarball-timeout',
+          tarballUrl,
+          timeoutMs,
+        },
+        `npm tarball request for ${tarballUrl} timed out after ${duration}`,
       );
     }
 
-    throw new Error(
+    throw new RegistryTarballError(
+      {
+        errorMessage: formatErrorMessage(error),
+        kind: 'tarball-body-read',
+        tarballUrl,
+      },
       `unable to read npm tarball response body for ${tarballUrl}: ${formatErrorMessage(error)}`,
     );
   }
@@ -781,12 +1037,12 @@ function addContentHashDiff(
   group: ContentHashDiffGroup,
   diff: ContentHashDiff,
 ): void {
-  group[diff.kind].push(diff.relativePath);
+  group[diff.kind].push(diff);
 }
 
 function sortContentHashDiffGroup(group: ContentHashDiffGroup): void {
   for (const kind of CONTENT_HASH_DIFF_KINDS) {
-    group[kind].sort((a, b) => a.localeCompare(b));
+    group[kind].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   }
 }
 
@@ -858,6 +1114,10 @@ function fileDataEquals(left: Uint8Array, right: Uint8Array): boolean {
   return true;
 }
 
+function hashFileData(data: Uint8Array): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
 function createContentHashDiffs(options: {
   localArtifact: PackedArtifactContent;
   remoteArtifact: PackedArtifactContent;
@@ -875,6 +1135,7 @@ function createContentHashDiffs(options: {
     if (localFile && !remoteFile) {
       diffs.push({
         kind: 'local-only',
+        localHash: hashFileData(localFile.data),
         relativePath,
       });
       continue;
@@ -884,6 +1145,7 @@ function createContentHashDiffs(options: {
       diffs.push({
         kind: 'remote-only',
         relativePath,
+        remoteHash: hashFileData(remoteFile.data),
       });
       continue;
     }
@@ -895,7 +1157,9 @@ function createContentHashDiffs(options: {
     ) {
       diffs.push({
         kind: 'changed',
+        localHash: hashFileData(localFile.data),
         relativePath,
+        remoteHash: hashFileData(remoteFile.data),
       });
     }
   }
@@ -953,7 +1217,7 @@ function formatReleaseRelevantContentHashDiffs(
   const lines = ['', 'Release-relevant diffs:'];
 
   for (const kind of CONTENT_HASH_DIFF_KINDS) {
-    const paths = diffs[kind];
+    const paths = diffs[kind].map((diff) => diff.relativePath);
 
     if (paths.length === 0) {
       continue;
@@ -1018,6 +1282,7 @@ async function compareLocalWorkspacePackageOutputToBaseline(options: {
   baselineVersion: string;
   config: ResolvedLiminaConfig;
   dependencyName: string;
+  expectedShasum?: string;
   ignoreRules: readonly ContentHashIgnoreRule[];
   integrity: string;
   tarballUrl: string;
@@ -1032,6 +1297,7 @@ async function compareLocalWorkspacePackageOutputToBaseline(options: {
     );
     const publishedTarball = await fetchRegistryTarball(options.tarballUrl);
     verifyRegistryTarballIntegrity({
+      expectedShasum: options.expectedShasum,
       integrity: options.integrity,
       packageName: options.dependencyName,
       tarball: publishedTarball,
@@ -1055,6 +1321,7 @@ async function compareLocalWorkspacePackageOutputToBaseline(options: {
 
     return {
       ignoredDiffGroups,
+      localOutputDirectory: localOutDir,
       localVersion: localArtifact.packageVersion,
       matchesBaseline: !hasContentHashDiffs(releaseRelevantDiffs),
       releaseRelevantDiffs,
@@ -1066,6 +1333,52 @@ async function compareLocalWorkspacePackageOutputToBaseline(options: {
   }
 }
 
+function createRegistryComparisonFailure(options: {
+  baselineTag: string;
+  baselineVersion: string;
+  dependencyName: string;
+  error: unknown;
+  importerName: string;
+  integrityResult: Extract<RegistryTarballIntegrityResult, { kind: 'found' }>;
+  registryUrl: string;
+  tarballUrl: string;
+}): {
+  errorMessage: string;
+  facts: ReleaseRegistryFacts;
+} {
+  const typedFailure =
+    options.error instanceof RegistryTarballError
+      ? options.error.failure
+      : undefined;
+  const errorMessage = formatErrorMessage(options.error);
+
+  return {
+    errorMessage,
+    facts: {
+      actualIntegrity: typedFailure?.actualIntegrity,
+      actualShasum: typedFailure?.actualShasum,
+      dependencyName: options.dependencyName,
+      errorMessage: typedFailure?.errorMessage ?? errorMessage,
+      expectedIntegrity:
+        typedFailure?.expectedIntegrity ?? options.integrityResult.integrity,
+      expectedShasum:
+        typedFailure?.expectedShasum ?? options.integrityResult.expectedShasum,
+      importerName: options.importerName,
+      integritySource: options.integrityResult.source,
+      kind: typedFailure?.kind ?? 'comparison-failed',
+      registryIntegrity: options.integrityResult.registryIntegrity,
+      registryShasum: options.integrityResult.registryShasum,
+      registryUrl: options.registryUrl,
+      requestedDistTag: options.baselineTag,
+      requestedVersion: options.baselineVersion,
+      statusCode: typedFailure?.statusCode,
+      statusText: typedFailure?.statusText,
+      tarballUrl: typedFailure?.tarballUrl ?? options.tarballUrl,
+      timeoutMs: typedFailure?.timeoutMs,
+    },
+  };
+}
+
 async function verifyWorkspacePackagePublished(options: {
   config: ResolvedLiminaConfig;
   importerName: string;
@@ -1074,11 +1387,11 @@ async function verifyWorkspacePackagePublished(options: {
 }): Promise<void> {
   const { importerName, state, workspacePackage } = options;
   const dependencyName = workspacePackage.name;
-  const problemBase = {
-    dependencyName,
-    importerName,
-    packageName: dependencyName,
-  };
+  const sourceManifestPath = path.join(
+    workspacePackage.directory,
+    'package.json',
+  );
+  const registryUrl = getNpmPackageMetadataUrl(dependencyName);
   const contentHashArgs = {
     dependencyName,
     importerName,
@@ -1091,17 +1404,61 @@ async function verifyWorkspacePackagePublished(options: {
       options.config,
       contentHashArgs,
     );
+  } catch (error) {
+    const errorMessage = formatErrorMessage(error);
+    addContentHashFinding(state, {
+      facts: {
+        configField: 'release.contentHash.baselineTag',
+        dependencyName,
+        errorMessage,
+        importerName,
+        kind: 'config-invalid',
+        policy: {
+          baselineTag: options.config.release?.contentHash?.baselineTag,
+          builtinIgnore: options.config.release?.contentHash?.builtinIgnore,
+          ignore: options.config.release?.contentHash?.ignore,
+        },
+        sourceManifestPath,
+      },
+      filePath: options.config.configPath,
+      message: [
+        `${formatDependencyLocation({ dependencyName, importerName })}: invalid release.contentHash config for ${dependencyName}:`,
+        errorMessage,
+      ].join(' '),
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
+    });
+    return;
+  }
+
+  try {
     ignoreRules = resolveReleaseContentHashIgnoreRules(
       options.config,
       contentHashArgs,
     );
   } catch (error) {
-    state.registryProblems.push({
-      ...problemBase,
+    const errorMessage = formatErrorMessage(error);
+    addContentHashFinding(state, {
+      facts: {
+        configField: 'release.contentHash.ignore',
+        dependencyName,
+        errorMessage,
+        importerName,
+        kind: 'config-invalid',
+        policy: {
+          baselineTag: options.config.release?.contentHash?.baselineTag,
+          builtinIgnore: options.config.release?.contentHash?.builtinIgnore,
+          ignore: options.config.release?.contentHash?.ignore,
+        },
+        sourceManifestPath,
+      },
+      filePath: options.config.configPath,
       message: [
-        `invalid release.contentHash config for ${dependencyName}:`,
-        formatErrorMessage(error),
+        `${formatDependencyLocation({ dependencyName, importerName })}: invalid release.contentHash config for ${dependencyName}:`,
+        errorMessage,
       ].join(' '),
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1112,18 +1469,53 @@ async function verifyWorkspacePackagePublished(options: {
   );
 
   if (metadataResult.kind === 'failure') {
-    state.registryProblems.push({
-      ...problemBase,
-      message: formatRegistryMetadataFailure(dependencyName, metadataResult),
+    const reasonByResult = {
+      'body-read': 'metadata-body-read',
+      'http-status': 'metadata-http-status',
+      'invalid-json': 'metadata-invalid-json',
+      'invalid-metadata': 'metadata-invalid-object',
+      request: 'metadata-request',
+      timeout: 'metadata-timeout',
+    } as const satisfies Record<
+      Extract<RegistryMetadataResult, { kind: 'failure' }>['reason'],
+      ReleaseRegistryFacts['kind']
+    >;
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        errorMessage:
+          metadataResult.cause === undefined
+            ? undefined
+            : formatErrorMessage(metadataResult.cause),
+        importerName,
+        kind: reasonByResult[metadataResult.reason],
+        registryUrl: metadataResult.url,
+        statusCode: metadataResult.statusCode,
+        statusText: metadataResult.statusText,
+        timeoutMs: metadataResult.timeoutMs,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${formatRegistryMetadataFailure(dependencyName, metadataResult)}`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
 
   if (metadataResult.kind === 'missing') {
     state.unpublishedPackageNames.add(dependencyName);
-    state.registryProblems.push({
-      ...problemBase,
-      message: `${dependencyName} is not published to the npm registry`,
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        importerName,
+        kind: 'package-not-found',
+        registryUrl: metadataResult.url,
+        statusCode: metadataResult.statusCode,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${dependencyName} is not published to the npm registry`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1133,9 +1525,18 @@ async function verifyWorkspacePackagePublished(options: {
   const baselineVersion = findRegistryDistTagVersion(metadata, baselineTag);
 
   if (!baselineVersion) {
-    state.registryProblems.push({
-      ...problemBase,
-      message: `${dependencyName} registry metadata has no "${baselineTag}" dist-tag`,
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        importerName,
+        kind: 'dist-tag-missing',
+        registryUrl,
+        requestedDistTag: baselineTag,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${dependencyName} registry metadata has no "${baselineTag}" dist-tag`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1146,9 +1547,19 @@ async function verifyWorkspacePackagePublished(options: {
   );
 
   if (!versionMetadata) {
-    state.registryProblems.push({
-      ...problemBase,
-      message: `${dependencyName}@${baselineVersion} is not published to the npm registry`,
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        importerName,
+        kind: 'version-missing',
+        registryUrl,
+        requestedDistTag: baselineTag,
+        requestedVersion: baselineVersion,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${dependencyName}@${baselineVersion} is not published to the npm registry`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1156,9 +1567,19 @@ async function verifyWorkspacePackagePublished(options: {
   const tarballUrl = getRegistryTarballUrl(versionMetadata);
 
   if (!tarballUrl) {
-    state.registryProblems.push({
-      ...problemBase,
-      message: `${dependencyName}@${baselineVersion} registry metadata has no dist.tarball`,
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        importerName,
+        kind: 'tarball-url-missing',
+        registryUrl,
+        requestedDistTag: baselineTag,
+        requestedVersion: baselineVersion,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${dependencyName}@${baselineVersion} registry metadata has no dist.tarball`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1166,17 +1587,42 @@ async function verifyWorkspacePackagePublished(options: {
   const integrityResult = resolveRegistryTarballIntegrity(versionMetadata);
 
   if (integrityResult.kind === 'missing') {
-    state.registryProblems.push({
-      ...problemBase,
-      message: `${dependencyName}@${baselineVersion} registry metadata has no dist.integrity or dist.shasum`,
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        importerName,
+        kind: 'integrity-missing',
+        registryUrl,
+        requestedDistTag: baselineTag,
+        requestedVersion: baselineVersion,
+        tarballUrl,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${dependencyName}@${baselineVersion} registry metadata has no dist.integrity or dist.shasum`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
 
   if (integrityResult.kind === 'invalid') {
-    state.registryProblems.push({
-      ...problemBase,
-      message: `${dependencyName}@${baselineVersion} registry metadata has invalid dist.${integrityResult.field}`,
+    addRegistryFinding(state, {
+      facts: {
+        dependencyName,
+        importerName,
+        integrityField: integrityResult.field,
+        kind: 'integrity-invalid',
+        registryUrl,
+        registryIntegrity: integrityResult.registryIntegrity,
+        registryShasum: integrityResult.registryShasum,
+        requestedDistTag: baselineTag,
+        requestedVersion: baselineVersion,
+        tarballUrl,
+      },
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${dependencyName}@${baselineVersion} registry metadata has invalid dist.${integrityResult.field}`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1188,19 +1634,33 @@ async function verifyWorkspacePackagePublished(options: {
       baselineVersion,
       config: options.config,
       dependencyName,
+      expectedShasum: integrityResult.expectedShasum,
       ignoreRules,
       integrity: integrityResult.integrity,
       tarballUrl,
       workspacePackage,
     });
   } catch (error) {
-    state.registryProblems.push({
-      ...problemBase,
-      message: [
+    const comparisonFailure = createRegistryComparisonFailure({
+      baselineTag,
+      baselineVersion,
+      dependencyName,
+      error,
+      importerName,
+      integrityResult,
+      registryUrl,
+      tarballUrl,
+    });
+    addRegistryFinding(state, {
+      facts: comparisonFailure.facts,
+      filePath: sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${[
         `unable to compare local package output for ${dependencyName}`,
         `against npm ${baselineTag} ${dependencyName}@${baselineVersion}:`,
-        formatErrorMessage(error),
-      ].join(' '),
+        comparisonFailure.errorMessage,
+      ].join(' ')}`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1216,9 +1676,41 @@ async function verifyWorkspacePackagePublished(options: {
 
   if (!comparison.matchesBaseline) {
     state.changedPackageNames.add(dependencyName);
-    state.registryProblems.push({
-      ...problemBase,
-      message: comparisonReport,
+    const diffs = CONTENT_HASH_DIFF_KINDS.flatMap(
+      (kind) => comparison.releaseRelevantDiffs[kind],
+    );
+    const ignoredDiffGroups: ReleaseIgnoredContentHashDiffGroup[] =
+      comparison.ignoredDiffGroups.map((group) => ({
+        diffs: CONTENT_HASH_DIFF_KINDS.flatMap((kind) => group.diffs[kind]),
+        ruleIdentity: group.label,
+      }));
+    const firstLocalDiff = diffs.find((diff) => diff.kind !== 'remote-only');
+    addContentHashFinding(state, {
+      facts: {
+        baselineTag,
+        baselineVersion,
+        dependencyName,
+        diffs,
+        ignoredDiffGroups,
+        importerName,
+        integrity: integrityResult.integrity,
+        integritySource: integrityResult.source,
+        kind: 'content-diff',
+        localOutputDirectory: comparison.localOutputDirectory,
+        localVersion:
+          comparison.localVersion ?? workspacePackage.manifest.version,
+        sourceManifestPath,
+        tarballUrl,
+      },
+      filePath: firstLocalDiff
+        ? path.join(
+            comparison.localOutputDirectory,
+            firstLocalDiff.relativePath,
+          )
+        : sourceManifestPath,
+      message: `${formatDependencyLocation({ dependencyName, importerName })}: ${comparisonReport}`,
+      packageManifestPath: sourceManifestPath,
+      packageName: dependencyName,
     });
     return;
   }
@@ -1231,6 +1723,7 @@ async function visitWorkspacePackageDependencies(options: {
   importerName: string;
   isRoot: boolean;
   manifest: PackageManifest;
+  manifestPath: string;
   state: ReleaseConsistencyState;
   workspacePackagesByName: Map<string, NamedWorkspacePackage>;
 }): Promise<void> {
@@ -1245,12 +1738,27 @@ async function visitWorkspacePackageDependencies(options: {
 
   for (const entry of collectPublishDependencyEntries(manifest)) {
     if (isLinkDependencySpecifier(entry.specifier)) {
-      state.sourceLinkDependencies.push({
-        dependencyName: entry.dependencyName,
-        importerName,
-        message: 'publishable dependency sections must not use link:',
-        sectionName: entry.sectionName,
-        specifier: entry.specifier,
+      addPackedManifestFinding(state, {
+        facts: {
+          dependencyName: entry.dependencyName,
+          importerName,
+          kind: 'source-link-dependency',
+          sectionName: entry.sectionName,
+          sourceManifestPath: options.manifestPath,
+          specifier: entry.specifier,
+        },
+        filePath: options.manifestPath,
+        message: `${formatDependencyLocation({
+          dependencyName: entry.dependencyName,
+          importerName,
+          sectionName: entry.sectionName,
+          specifier: entry.specifier,
+        })}: publishable dependency sections must not use link:`,
+        packageManifestPath: options.manifestPath,
+        packageName: importerName,
+        section: 'source-link',
+        sectionTitle:
+          'Source manifest contains local link: publish dependencies:',
       });
       continue;
     }
@@ -1262,13 +1770,27 @@ async function visitWorkspacePackageDependencies(options: {
     const targetPackage = workspacePackagesByName.get(entry.dependencyName);
 
     if (!targetPackage) {
-      state.missingWorkspaceDependencies.push({
-        dependencyName: entry.dependencyName,
-        importerName,
-        message:
-          'workspace: publish dependency does not match a named workspace package',
-        sectionName: entry.sectionName,
-        specifier: entry.specifier,
+      addPackedManifestFinding(state, {
+        facts: {
+          dependencyName: entry.dependencyName,
+          importerName,
+          kind: 'source-workspace-dependency-missing',
+          sectionName: entry.sectionName,
+          sourceManifestPath: options.manifestPath,
+          specifier: entry.specifier,
+        },
+        filePath: options.manifestPath,
+        message: `${formatDependencyLocation({
+          dependencyName: entry.dependencyName,
+          importerName,
+          sectionName: entry.sectionName,
+          specifier: entry.specifier,
+        })}: workspace: publish dependency does not match a named workspace package`,
+        packageManifestPath: options.manifestPath,
+        packageName: importerName,
+        section: 'source-workspace',
+        sectionTitle:
+          'Source manifest has invalid workspace: publish dependencies:',
       });
       continue;
     }
@@ -1284,14 +1806,30 @@ async function visitWorkspacePackageDependencies(options: {
     }
 
     if (targetPackage.manifest.private === true) {
-      state.privateWorkspaceDependencies.push({
-        dependencyName: entry.dependencyName,
-        importerName,
-        message:
-          'publishable packages cannot depend on a private workspace package',
-        packageName: targetPackage.name,
-        sectionName: entry.sectionName,
-        specifier: entry.specifier,
+      addPackedManifestFinding(state, {
+        facts: {
+          dependencyName: entry.dependencyName,
+          importerName,
+          kind: 'source-private-dependency',
+          sectionName: entry.sectionName,
+          sourceManifestPath: options.manifestPath,
+          specifier: entry.specifier,
+          targetManifestPath: path.join(
+            targetPackage.directory,
+            'package.json',
+          ),
+        },
+        filePath: options.manifestPath,
+        message: `${formatDependencyLocation({
+          dependencyName: entry.dependencyName,
+          importerName,
+          sectionName: entry.sectionName,
+          specifier: entry.specifier,
+        })}: publishable packages cannot depend on a private workspace package`,
+        packageManifestPath: options.manifestPath,
+        packageName: importerName,
+        section: 'source-private',
+        sectionTitle: 'Source manifest depends on private workspace packages:',
       });
       continue;
     }
@@ -1309,6 +1847,7 @@ async function visitWorkspacePackageDependencies(options: {
         importerName: targetPackage.name,
         isRoot: false,
         manifest: targetPackage.manifest,
+        manifestPath: path.join(targetPackage.directory, 'package.json'),
         state,
         workspacePackagesByName,
       });
@@ -1342,17 +1881,26 @@ function getPackedContentFiles(
 
 function readPackedPackageJson(options: {
   contentFiles: PackedPackageContentFile[];
+  packageManifestPath: string;
   rootPackageName: string;
   state: ReleaseConsistencyState;
+  tarballPath: string;
 }): PublishManifest | null {
   const packageJsonFile = options.contentFiles.find(
     (file) => file.relativePath === 'package.json',
   );
 
   if (!packageJsonFile) {
-    options.state.releaseHygieneProblems.push({
-      importerName: options.rootPackageName,
-      message: 'tarball does not contain package.json',
+    addTarballHygieneFinding(options.state, {
+      facts: {
+        archiveEntryPath: 'package.json',
+        kind: 'package-json-missing',
+        tarballPath: options.tarballPath,
+      },
+      filePath: options.packageManifestPath,
+      message: `${options.rootPackageName}: tarball does not contain package.json`,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.rootPackageName,
     });
     return null;
   }
@@ -1362,11 +1910,18 @@ function readPackedPackageJson(options: {
       Buffer.from(packageJsonFile.data).toString('utf8'),
     ) as PublishManifest;
   } catch (error) {
-    options.state.releaseHygieneProblems.push({
-      importerName: options.rootPackageName,
-      message: `tarball package.json is not valid JSON: ${formatErrorMessage(
-        error,
-      )}`,
+    const errorMessage = formatErrorMessage(error);
+    addTarballHygieneFinding(options.state, {
+      facts: {
+        archiveEntryPath: 'package.json',
+        errorMessage,
+        kind: 'package-json-invalid',
+        tarballPath: options.tarballPath,
+      },
+      filePath: options.packageManifestPath,
+      message: `${options.rootPackageName}: tarball package.json is not valid JSON: ${errorMessage}`,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.rootPackageName,
     });
     return null;
   }
@@ -1385,6 +1940,8 @@ async function validatePackedManifestLint(options: {
   >;
   manifest: PublishManifest;
   outDir: string;
+  packedManifestPath: string;
+  packageManifestPath: string;
   rootPackageName: string;
   state: ReleaseConsistencyState;
 }): Promise<void> {
@@ -1409,9 +1966,25 @@ async function validatePackedManifestLint(options: {
       continue;
     }
 
-    options.state.packedManifestLintProblems.push({
-      importerName: options.rootPackageName,
-      message,
+    addPackedManifestFinding(options.state, {
+      external: {
+        code: issue.lintId,
+        message: issue.lintMessage,
+        tool: 'npm-package-json-lint',
+      },
+      facts: {
+        kind: 'manifest-lint-failed',
+        lintMessage: issue.lintMessage,
+        lintNode: issue.node || 'package.json',
+        lintRule: issue.lintId,
+        packedManifestPath: options.packedManifestPath,
+      },
+      filePath: options.packageManifestPath,
+      message: `${options.rootPackageName}: ${message}`,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.rootPackageName,
+      section: 'packed-lint',
+      sectionTitle: 'Packed package manifest failed npm-package-json-lint:',
     });
   }
 }
@@ -1444,8 +2017,11 @@ function hasSourceMappingUrlDirective(options: {
 
 function validateReleaseTarballHygiene(options: {
   contentFiles: PackedPackageContentFile[];
+  outDir: string;
+  packageManifestPath: string;
   rootPackageName: string;
   state: ReleaseConsistencyState;
+  tarballPath: string;
 }): void {
   const filePaths = new Set(
     options.contentFiles.map((file) => file.relativePath),
@@ -1455,19 +2031,31 @@ function validateReleaseTarballHygiene(options: {
   );
 
   if (missingReleaseFiles.length > 0) {
-    options.state.releaseHygieneProblems.push({
-      importerName: options.rootPackageName,
-      message: `tarball is missing required file(s): ${missingReleaseFiles.join(
-        ', ',
-      )}`,
+    addTarballHygieneFinding(options.state, {
+      facts: {
+        kind: 'required-files-missing',
+        missingFiles: missingReleaseFiles,
+        tarballPath: options.tarballPath,
+      },
+      filePath: options.packageManifestPath,
+      message: `${options.rootPackageName}: tarball is missing required file(s): ${missingReleaseFiles.join(', ')}`,
+      packageManifestPath: options.packageManifestPath,
+      packageName: options.rootPackageName,
     });
   }
 
   for (const file of options.contentFiles) {
     if (/\.map$/u.test(file.relativePath)) {
-      options.state.releaseHygieneProblems.push({
-        importerName: options.rootPackageName,
-        message: `tarball contains source map file: ${file.relativePath}`,
+      addTarballHygieneFinding(options.state, {
+        facts: {
+          archiveEntryPath: file.relativePath,
+          kind: 'source-map-file',
+          tarballPath: options.tarballPath,
+        },
+        filePath: path.join(options.outDir, file.relativePath),
+        message: `${options.rootPackageName}: tarball contains source map file: ${file.relativePath}`,
+        packageManifestPath: options.packageManifestPath,
+        packageName: options.rootPackageName,
       });
       continue;
     }
@@ -1484,9 +2072,16 @@ function validateReleaseTarballHygiene(options: {
         source,
       })
     ) {
-      options.state.releaseHygieneProblems.push({
-        importerName: options.rootPackageName,
-        message: `tarball JavaScript file contains sourceMappingURL directive: ${file.relativePath}`,
+      addTarballHygieneFinding(options.state, {
+        facts: {
+          archiveEntryPath: file.relativePath,
+          kind: 'source-mapping-url',
+          tarballPath: options.tarballPath,
+        },
+        filePath: path.join(options.outDir, file.relativePath),
+        message: `${options.rootPackageName}: tarball JavaScript file contains sourceMappingURL directive: ${file.relativePath}`,
+        packageManifestPath: options.packageManifestPath,
+        packageName: options.rootPackageName,
       });
     }
   }
@@ -1494,6 +2089,8 @@ function validateReleaseTarballHygiene(options: {
 
 function validatePackedManifest(options: {
   manifest: PublishManifest;
+  packedManifestPath: string;
+  packageManifestPath: string;
   rootPackageName: string;
   state: ReleaseConsistencyState;
 }): void {
@@ -1504,13 +2101,27 @@ function validatePackedManifest(options: {
       isWorkspaceDependencySpecifier(entry.specifier) ||
       isLinkDependencySpecifier(entry.specifier)
     ) {
-      state.packedManifestProblems.push({
-        dependencyName: entry.dependencyName,
-        importerName: rootPackageName,
-        message:
-          'packed package manifest must not expose workspace: or link: dependency specifiers',
-        sectionName: entry.sectionName,
-        specifier: entry.specifier,
+      addPackedManifestFinding(state, {
+        facts: {
+          dependencyName: entry.dependencyName,
+          importerName: rootPackageName,
+          kind: 'packed-publish-local-specifier',
+          packedManifestPath: options.packedManifestPath,
+          sectionName: entry.sectionName,
+          specifier: entry.specifier,
+        },
+        filePath: options.packageManifestPath,
+        message: `${formatDependencyLocation({
+          dependencyName: entry.dependencyName,
+          importerName: rootPackageName,
+          sectionName: entry.sectionName,
+          specifier: entry.specifier,
+        })}: packed package manifest must not expose workspace: or link: dependency specifiers`,
+        packageManifestPath: options.packageManifestPath,
+        packageName: rootPackageName,
+        section: 'packed-manifest',
+        sectionTitle:
+          'Packed package manifest is inconsistent with workspace publish dependencies:',
       });
     }
   }
@@ -1529,13 +2140,27 @@ function validatePackedManifest(options: {
       continue;
     }
 
-    state.packedManifestProblems.push({
-      dependencyName: entry.dependencyName,
-      importerName: rootPackageName,
-      message:
-        'packed package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers in any dependency section',
-      sectionName: entry.sectionName,
-      specifier: entry.specifier,
+    addPackedManifestFinding(state, {
+      facts: {
+        dependencyName: entry.dependencyName,
+        importerName: rootPackageName,
+        kind: 'packed-local-specifier',
+        packedManifestPath: options.packedManifestPath,
+        sectionName: entry.sectionName,
+        specifier: entry.specifier,
+      },
+      filePath: options.packageManifestPath,
+      message: `${formatDependencyLocation({
+        dependencyName: entry.dependencyName,
+        importerName: rootPackageName,
+        sectionName: entry.sectionName,
+        specifier: entry.specifier,
+      })}: packed package manifest must not expose workspace:, link:, file:, or catalog: dependency specifiers in any dependency section`,
+      packageManifestPath: options.packageManifestPath,
+      packageName: rootPackageName,
+      section: 'packed-manifest',
+      sectionTitle:
+        'Packed package manifest is inconsistent with workspace publish dependencies:',
     });
   }
 
@@ -1546,12 +2171,25 @@ function validatePackedManifest(options: {
     );
 
     if (!packedSpecifier) {
-      state.packedManifestProblems.push({
-        dependencyName: dependency.dependencyName,
-        importerName: rootPackageName,
-        message:
-          'packed package manifest must keep every source workspace publish dependency',
-        sectionName: dependency.sectionName,
+      addPackedManifestFinding(state, {
+        facts: {
+          dependencyName: dependency.dependencyName,
+          importerName: rootPackageName,
+          kind: 'packed-dependency-missing',
+          packedManifestPath: options.packedManifestPath,
+          sectionName: dependency.sectionName,
+        },
+        filePath: options.packageManifestPath,
+        message: `${formatDependencyLocation({
+          dependencyName: dependency.dependencyName,
+          importerName: rootPackageName,
+          sectionName: dependency.sectionName,
+        })}: packed package manifest must keep every source workspace publish dependency`,
+        packageManifestPath: options.packageManifestPath,
+        packageName: rootPackageName,
+        section: 'packed-manifest',
+        sectionTitle:
+          'Packed package manifest is inconsistent with workspace publish dependencies:',
       });
       continue;
     }
@@ -1571,14 +2209,28 @@ function validatePackedManifest(options: {
         includePrerelease: true,
       })
     ) {
-      state.packedManifestProblems.push({
-        dependencyName: dependency.dependencyName,
-        importerName: rootPackageName,
-        message: `packed dependency range must include ${
-          dependency.targetPackage.name
-        }@${targetVersion ?? '(missing version)'}`,
-        sectionName: dependency.sectionName,
-        specifier: packedSpecifier,
+      addPackedManifestFinding(state, {
+        facts: {
+          actualRange: packedSpecifier,
+          dependencyName: dependency.dependencyName,
+          expectedVersion: targetVersion,
+          importerName: rootPackageName,
+          kind: 'packed-dependency-range-mismatch',
+          packedManifestPath: options.packedManifestPath,
+          sectionName: dependency.sectionName,
+        },
+        filePath: options.packageManifestPath,
+        message: `${formatDependencyLocation({
+          dependencyName: dependency.dependencyName,
+          importerName: rootPackageName,
+          sectionName: dependency.sectionName,
+          specifier: packedSpecifier,
+        })}: packed dependency range must include ${dependency.targetPackage.name}@${targetVersion ?? '(missing version)'}`,
+        packageManifestPath: options.packageManifestPath,
+        packageName: rootPackageName,
+        section: 'packed-manifest',
+        sectionTitle:
+          'Packed package manifest is inconsistent with workspace publish dependencies:',
       });
     }
   }
@@ -1623,58 +2275,19 @@ function createReleaseConsistencyError(options: {
   state: ReleaseConsistencyState;
 }): PackageReleaseConsistencyError | null {
   const { config, label, outDir, rootPackageName, state } = options;
-  const problemCount =
-    state.sourceLinkDependencies.length +
-    state.privateWorkspaceDependencies.length +
-    state.missingWorkspaceDependencies.length +
-    state.registryProblems.length +
-    state.releaseHygieneProblems.length +
-    state.packedManifestLintProblems.length +
-    state.packedManifestProblems.length;
 
-  if (problemCount === 0) {
+  if (state.findings.length === 0) {
     return null;
   }
 
   const publishOrder = createPublishOrder(rootPackageName, state);
-  const lines = [
-    `package release check failed for ${label}:`,
-    `  output: ${toRelativePath(config.rootDir, outDir)}`,
-    ...formatProblemLines(
-      'Release tarball is not publishable:',
-      state.releaseHygieneProblems,
-    ),
-    ...formatProblemLines(
-      'Source manifest contains local link: publish dependencies:',
-      state.sourceLinkDependencies,
-    ),
-    ...formatProblemLines(
-      'Source manifest depends on private workspace packages:',
-      state.privateWorkspaceDependencies,
-    ),
-    ...formatProblemLines(
-      'Source manifest has invalid workspace: publish dependencies:',
-      state.missingWorkspaceDependencies,
-    ),
-    ...formatProblemLines(
-      'Workspace package registry/content checks failed:',
-      state.registryProblems,
-    ),
-    ...formatProblemLines(
-      'Packed package manifest failed npm-package-json-lint:',
-      state.packedManifestLintProblems,
-    ),
-    ...formatProblemLines(
-      'Packed package manifest is inconsistent with workspace publish dependencies:',
-      state.packedManifestProblems,
-    ),
-  ];
 
-  if (publishOrder.length > 1) {
-    lines.push('', `Suggested publish order: ${publishOrder.join(' -> ')}`);
-  }
-
-  return new PackageReleaseConsistencyError(lines.join('\n'));
+  return new PackageReleaseConsistencyError(state.findings, {
+    label,
+    outDir,
+    publishOrder,
+    rootDir: config.rootDir,
+  });
 }
 
 export async function assertPackageReleaseConsistency(
@@ -1687,6 +2300,9 @@ export async function assertPackageReleaseConsistency(
     (workspacePackage) => workspacePackage.name === options.outputManifest.name,
   );
   const state = createReleaseConsistencyState();
+  const packageManifestPath = path.join(options.outDir, 'package.json');
+  const tarballPath = path.basename(options.packedTarballPath);
+  const packedManifestPath = `${tarballPath}#package.json`;
 
   if (sourcePackage) {
     state.visitedPackages.add(sourcePackage.name);
@@ -1695,6 +2311,7 @@ export async function assertPackageReleaseConsistency(
       importerName: sourcePackage.name,
       isRoot: true,
       manifest: sourcePackage.manifest,
+      manifestPath: path.join(sourcePackage.directory, 'package.json'),
       state,
       workspacePackagesByName: new Map(
         workspacePackages.map((workspacePackage) => [
@@ -1710,14 +2327,19 @@ export async function assertPackageReleaseConsistency(
 
   validateReleaseTarballHygiene({
     contentFiles,
+    outDir: options.outDir,
+    packageManifestPath,
     rootPackageName: options.outputManifest.name,
     state,
+    tarballPath,
   });
 
   const packedManifest = readPackedPackageJson({
     contentFiles,
+    packageManifestPath,
     rootPackageName: options.outputManifest.name,
     state,
+    tarballPath,
   });
 
   if (packedManifest) {
@@ -1729,6 +2351,8 @@ export async function assertPackageReleaseConsistency(
         lintConfig: npmPackageJsonLint,
         manifest: packedManifest,
         outDir: options.outDir,
+        packedManifestPath,
+        packageManifestPath,
         rootPackageName: options.outputManifest.name,
         state,
       });
@@ -1736,6 +2360,8 @@ export async function assertPackageReleaseConsistency(
 
     validatePackedManifest({
       manifest: packedManifest,
+      packedManifestPath,
+      packageManifestPath,
       rootPackageName: options.outputManifest.name,
       state,
     });

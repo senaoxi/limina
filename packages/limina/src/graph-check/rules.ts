@@ -17,6 +17,8 @@ import {
 } from '#utils/values';
 import { builtinModules } from 'node:module';
 import path from 'pathe';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
 
 export interface GraphRuleRef {
   path: string;
@@ -59,11 +61,40 @@ const nodeBuiltinNames = new Set(
   }),
 );
 
-function addRuleEntryConfigProblem(
-  problems: string[],
-  details: string[],
+function addRuleEntryConfigFinding(
+  config: ResolvedLiminaConfig,
+  findings: GraphFinding[],
+  details: readonly string[],
+  reason: string,
 ): void {
-  problems.push(['Invalid graph rule config:', ...details].join('\n'));
+  const lines = ['Invalid graph rule config:', ...details];
+
+  findings.push({
+    code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+    evidence: [
+      {
+        label: 'graph rule configuration',
+        lines: [...details],
+      },
+    ],
+    facts: {
+      configPath: config.configPath,
+      kind: 'graph-rule',
+    },
+    filePath: config.configPath,
+    locations: [
+      {
+        filePath: config.configPath,
+        label: 'Limina config',
+      },
+    ],
+    presentation: {
+      detailLines: lines,
+      reason,
+      title: 'Invalid graph rule config',
+    },
+    task: 'graph:check',
+  } satisfies GraphConfigInvalidFinding);
 }
 
 function matchWildcardPattern(pattern: string, value: string): boolean {
@@ -151,7 +182,7 @@ function createNormalizedDep(
 
 function getRulesRecord(
   config: ResolvedLiminaConfig,
-  problems: string[],
+  findings: GraphFinding[],
 ): Record<string, unknown> {
   const rules = config.graph?.rules;
 
@@ -160,14 +191,45 @@ function getRulesRecord(
   }
 
   if (!isPlainRecord(rules)) {
-    problems.push(
-      [
-        'Invalid graph rules config:',
-        '  field: graph.rules',
-        `  value: ${formatUnknownValue(rules)}`,
-        '  reason: graph.rules must be an object keyed by Limina labels.',
-      ].join('\n'),
-    );
+    const reason = 'graph.rules must be an object keyed by Limina labels.';
+    const lines = [
+      'Invalid graph rules config:',
+      '  field: graph.rules',
+      `  value: ${formatUnknownValue(rules)}`,
+      `  reason: ${reason}`,
+    ];
+
+    findings.push({
+      code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+      evidence: [
+        {
+          label: 'field',
+          value: 'graph.rules',
+        },
+        {
+          label: 'value',
+          value: formatUnknownValue(rules),
+        },
+      ],
+      facts: {
+        configPath: config.configPath,
+        field: 'graph.rules',
+        kind: 'graph-rule',
+      },
+      filePath: config.configPath,
+      locations: [
+        {
+          filePath: config.configPath,
+          label: 'Limina config',
+        },
+      ],
+      presentation: {
+        detailLines: lines,
+        reason,
+        title: 'Invalid graph rules config',
+      },
+      task: 'graph:check',
+    } satisfies GraphConfigInvalidFinding);
     return {};
   }
 
@@ -179,7 +241,7 @@ function addNormalizedRuleRef(options: {
   entry: unknown;
   index: number;
   label: string;
-  problems: string[];
+  findings: GraphFinding[];
   projectPathAliases?: Map<string, string>;
   projectPathSet: Set<string>;
   refsByLabel: Map<string, Map<string, GraphRuleRef>>;
@@ -188,11 +250,17 @@ function addNormalizedRuleRef(options: {
   const field = `graph.rules.${options.label}.${options.ruleKind}.refs[${options.index}]`;
 
   if (!isPlainRecord(options.entry)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}`,
-      `  value: ${formatUnknownValue(options.entry)}`,
-      `  reason: ${options.ruleKind}.refs entries must be objects with non-empty path and reason fields.`,
-    ]);
+    const reason = `${options.ruleKind}.refs entries must be objects with non-empty path and reason fields.`;
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}`,
+        `  value: ${formatUnknownValue(options.entry)}`,
+        `  reason: ${reason}`,
+      ],
+      reason,
+    );
     return;
   }
 
@@ -200,20 +268,32 @@ function addNormalizedRuleRef(options: {
   const reasonValue = options.entry.reason;
 
   if (!isNonEmptyString(pathValue)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.path`,
-      `  value: ${formatUnknownValue(pathValue)}`,
-      `  reason: ${options.ruleKind}.refs path is required and must be a non-empty string.`,
-    ]);
+    const reason = `${options.ruleKind}.refs path is required and must be a non-empty string.`;
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}.path`,
+        `  value: ${formatUnknownValue(pathValue)}`,
+        `  reason: ${reason}`,
+      ],
+      reason,
+    );
     return;
   }
 
   if (!isNonEmptyString(reasonValue)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.reason`,
-      `  value: ${formatUnknownValue(reasonValue)}`,
-      `  reason: ${options.ruleKind}.refs reason is required and must be a non-empty string.`,
-    ]);
+    const reason = `${options.ruleKind}.refs reason is required and must be a non-empty string.`;
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}.reason`,
+        `  value: ${formatUnknownValue(reasonValue)}`,
+        `  reason: ${reason}`,
+      ],
+      reason,
+    );
     return;
   }
 
@@ -225,20 +305,24 @@ function addNormalizedRuleRef(options: {
     : options.projectPathAliases?.get(refPath);
 
   if (!normalizedRefPath || !options.projectPathSet.has(normalizedRefPath)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.path`,
-      `  path: ${pathValue}`,
-      `  reason: ${options.ruleKind}.refs path must point to a source tsconfig or generated declaration project reachable from a checker entry.`,
-    ]);
+    const reason = `${options.ruleKind}.refs path must point to a source tsconfig or generated declaration project reachable from a checker entry.`;
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [`  field: ${field}.path`, `  path: ${pathValue}`, `  reason: ${reason}`],
+      reason,
+    );
     return;
   }
 
   if (!isDtsProjectConfig(normalizedRefPath)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.path`,
-      `  path: ${pathValue}`,
-      `  reason: ${options.ruleKind}.refs path must point to a tsconfig*.dts.json declaration leaf.`,
-    ]);
+    const reason = `${options.ruleKind}.refs path must point to a tsconfig*.dts.json declaration leaf.`;
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [`  field: ${field}.path`, `  path: ${pathValue}`, `  reason: ${reason}`],
+      reason,
+    );
     return;
   }
 
@@ -252,20 +336,28 @@ function addNormalizedRuleRef(options: {
 }
 
 function addNormalizedDep(options: {
+  config: ResolvedLiminaConfig;
   depsByLabel: Map<string, GraphRuleDepDeny[]>;
   entry: unknown;
   index: number;
   label: string;
-  problems: string[];
+  findings: GraphFinding[];
 }): void {
   const field = `graph.rules.${options.label}.deny.deps[${options.index}]`;
 
   if (!isPlainRecord(options.entry)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}`,
-      `  value: ${formatUnknownValue(options.entry)}`,
-      '  reason: deny.deps entries must be objects with non-empty name and reason fields.',
-    ]);
+    const reason =
+      'deny.deps entries must be objects with non-empty name and reason fields.';
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}`,
+        `  value: ${formatUnknownValue(options.entry)}`,
+        `  reason: ${reason}`,
+      ],
+      reason,
+    );
     return;
   }
 
@@ -273,20 +365,33 @@ function addNormalizedDep(options: {
   const reasonValue = options.entry.reason;
 
   if (!isNonEmptyString(nameValue)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.name`,
-      `  value: ${formatUnknownValue(nameValue)}`,
-      '  reason: deny.deps name is required and must be a non-empty string.',
-    ]);
+    const reason = 'deny.deps name is required and must be a non-empty string.';
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}.name`,
+        `  value: ${formatUnknownValue(nameValue)}`,
+        `  reason: ${reason}`,
+      ],
+      reason,
+    );
     return;
   }
 
   if (!isNonEmptyString(reasonValue)) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.reason`,
-      `  value: ${formatUnknownValue(reasonValue)}`,
-      '  reason: deny.deps reason is required and must be a non-empty string.',
-    ]);
+    const reason =
+      'deny.deps reason is required and must be a non-empty string.';
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}.reason`,
+        `  value: ${formatUnknownValue(reasonValue)}`,
+        `  reason: ${reason}`,
+      ],
+      reason,
+    );
     return;
   }
 
@@ -295,11 +400,18 @@ function addNormalizedDep(options: {
   const normalizedDep = createNormalizedDep(name, reason);
 
   if (!normalizedDep) {
-    addRuleEntryConfigProblem(options.problems, [
-      `  field: ${field}.name`,
-      `  name: ${name}`,
-      '  reason: deny.deps name must be a package root, a package.json imports specifier such as "#internal/*", or a Node builtin such as "fs", "node:fs", or "node:*".',
-    ]);
+    const problemReason =
+      'deny.deps name must be a package root, a package.json imports specifier such as "#internal/*", or a Node builtin such as "fs", "node:fs", or "node:*".';
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      [
+        `  field: ${field}.name`,
+        `  name: ${name}`,
+        `  reason: ${problemReason}`,
+      ],
+      problemReason,
+    );
     return;
   }
 
@@ -320,7 +432,7 @@ export function normalizeGraphRules(options: {
   config: ResolvedLiminaConfig;
   include?: GraphRuleKindSelection;
   packages: WorkspacePackage[];
-  problems: string[];
+  findings: GraphFinding[];
   projectPathAliases?: Map<string, string>;
   projectPaths: string[];
 }): NormalizedGraphRules {
@@ -328,26 +440,39 @@ export function normalizeGraphRules(options: {
   const depsByLabel = new Map<string, GraphRuleDepDeny[]>();
   const refsByLabel = new Map<string, Map<string, GraphRuleRefDeny>>();
   const projectPathSet = new Set(options.projectPaths);
+  const addConfigFinding = (
+    details: readonly string[],
+    reason: string,
+  ): void => {
+    addRuleEntryConfigFinding(
+      options.config,
+      options.findings,
+      details,
+      reason,
+    );
+  };
 
   for (const [rawLabel, rawRule] of Object.entries(
-    getRulesRecord(options.config, options.problems),
+    getRulesRecord(options.config, options.findings),
   )) {
     const label = rawLabel.trim();
 
     if (!label) {
-      addRuleEntryConfigProblem(options.problems, [
-        '  field: graph.rules',
-        '  reason: graph.rules keys must be non-empty labels.',
-      ]);
+      const reason = 'graph.rules keys must be non-empty labels.';
+      addConfigFinding(['  field: graph.rules', `  reason: ${reason}`], reason);
       continue;
     }
 
     if (!isPlainRecord(rawRule)) {
-      addRuleEntryConfigProblem(options.problems, [
-        `  field: graph.rules.${rawLabel}`,
-        `  value: ${formatUnknownValue(rawRule)}`,
-        '  reason: each graph rule must be an object.',
-      ]);
+      const reason = 'each graph rule must be an object.';
+      addConfigFinding(
+        [
+          `  field: graph.rules.${rawLabel}`,
+          `  value: ${formatUnknownValue(rawRule)}`,
+          '  reason: each graph rule must be an object.',
+        ],
+        reason,
+      );
       continue;
     }
 
@@ -356,19 +481,27 @@ export function normalizeGraphRules(options: {
         continue;
       }
 
-      addRuleEntryConfigProblem(options.problems, [
-        `  field: graph.rules.${label}.${key}`,
-        `  value: ${formatUnknownValue(rawRule[key])}`,
-        '  reason: unknown graph rule field.',
-      ]);
+      const reason = 'unknown graph rule field.';
+      addConfigFinding(
+        [
+          `  field: graph.rules.${label}.${key}`,
+          `  value: ${formatUnknownValue(rawRule[key])}`,
+          '  reason: unknown graph rule field.',
+        ],
+        reason,
+      );
     }
 
     if (rawRule.deny !== undefined && !isPlainRecord(rawRule.deny)) {
-      addRuleEntryConfigProblem(options.problems, [
-        `  field: graph.rules.${label}.deny`,
-        `  value: ${formatUnknownValue(rawRule.deny)}`,
-        '  reason: graph rule deny must be an object.',
-      ]);
+      const reason = 'graph rule deny must be an object.';
+      addConfigFinding(
+        [
+          `  field: graph.rules.${label}.deny`,
+          `  value: ${formatUnknownValue(rawRule.deny)}`,
+          '  reason: graph rule deny must be an object.',
+        ],
+        reason,
+      );
       continue;
     }
 
@@ -380,11 +513,15 @@ export function normalizeGraphRules(options: {
           continue;
         }
 
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.deny.${key}`,
-          `  value: ${formatUnknownValue(deny[key])}`,
-          '  reason: unknown graph rule deny field.',
-        ]);
+        const reason = 'unknown graph rule deny field.';
+        addConfigFinding(
+          [
+            `  field: graph.rules.${label}.deny.${key}`,
+            `  value: ${formatUnknownValue(deny[key])}`,
+            '  reason: unknown graph rule deny field.',
+          ],
+          reason,
+        );
       }
     }
 
@@ -399,9 +536,9 @@ export function normalizeGraphRules(options: {
           addNormalizedRuleRef({
             config: options.config,
             entry,
+            findings: options.findings,
             index,
             label,
-            problems: options.problems,
             projectPathAliases: options.projectPathAliases,
             projectPathSet,
             refsByLabel,
@@ -409,11 +546,15 @@ export function normalizeGraphRules(options: {
           });
         }
       } else {
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.deny.refs`,
-          `  value: ${formatUnknownValue(denyRefs)}`,
-          '  reason: deny.refs must be an array.',
-        ]);
+        const reason = 'deny.refs must be an array.';
+        addConfigFinding(
+          [
+            `  field: graph.rules.${label}.deny.refs`,
+            `  value: ${formatUnknownValue(denyRefs)}`,
+            `  reason: ${reason}`,
+          ],
+          reason,
+        );
       }
     }
 
@@ -426,28 +567,37 @@ export function normalizeGraphRules(options: {
       if (Array.isArray(deps)) {
         for (const [index, entry] of deps.entries()) {
           addNormalizedDep({
+            config: options.config,
             depsByLabel,
             entry,
+            findings: options.findings,
             index,
             label,
-            problems: options.problems,
           });
         }
       } else {
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.deny.deps`,
-          `  value: ${formatUnknownValue(deps)}`,
-          '  reason: deny.deps must be an array.',
-        ]);
+        const reason = 'deny.deps must be an array.';
+        addConfigFinding(
+          [
+            `  field: graph.rules.${label}.deny.deps`,
+            `  value: ${formatUnknownValue(deps)}`,
+            `  reason: ${reason}`,
+          ],
+          reason,
+        );
       }
     }
 
     if (rawRule.allow !== undefined && !isPlainRecord(rawRule.allow)) {
-      addRuleEntryConfigProblem(options.problems, [
-        `  field: graph.rules.${label}.allow`,
-        `  value: ${formatUnknownValue(rawRule.allow)}`,
-        '  reason: graph rule allow must be an object.',
-      ]);
+      const reason = 'graph rule allow must be an object.';
+      addConfigFinding(
+        [
+          `  field: graph.rules.${label}.allow`,
+          `  value: ${formatUnknownValue(rawRule.allow)}`,
+          '  reason: graph rule allow must be an object.',
+        ],
+        reason,
+      );
       continue;
     }
 
@@ -459,11 +609,15 @@ export function normalizeGraphRules(options: {
           continue;
         }
 
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.allow.${key}`,
-          `  value: ${formatUnknownValue(allow[key])}`,
-          '  reason: unknown graph rule allow field.',
-        ]);
+        const reason = 'unknown graph rule allow field.';
+        addConfigFinding(
+          [
+            `  field: graph.rules.${label}.allow.${key}`,
+            `  value: ${formatUnknownValue(allow[key])}`,
+            '  reason: unknown graph rule allow field.',
+          ],
+          reason,
+        );
       }
     }
 
@@ -478,9 +632,9 @@ export function normalizeGraphRules(options: {
           addNormalizedRuleRef({
             config: options.config,
             entry,
+            findings: options.findings,
             index,
             label,
-            problems: options.problems,
             projectPathAliases: options.projectPathAliases,
             projectPathSet,
             refsByLabel: allowRefsByLabel,
@@ -488,11 +642,15 @@ export function normalizeGraphRules(options: {
           });
         }
       } else {
-        addRuleEntryConfigProblem(options.problems, [
-          `  field: graph.rules.${label}.allow.refs`,
-          `  value: ${formatUnknownValue(allowRefs)}`,
-          '  reason: allow.refs must be an array.',
-        ]);
+        const reason = 'allow.refs must be an array.';
+        addConfigFinding(
+          [
+            `  field: graph.rules.${label}.allow.refs`,
+            `  value: ${formatUnknownValue(allowRefs)}`,
+            `  reason: ${reason}`,
+          ],
+          reason,
+        );
       }
     }
   }

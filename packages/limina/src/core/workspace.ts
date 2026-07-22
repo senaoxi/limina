@@ -47,7 +47,16 @@ export interface WorkspaceCoreMetricsRecorder {
   }): void;
 }
 
+export interface WorkspaceCoreDependencies {
+  readonly collectRawWorkspacePackages?: (
+    config: ResolvedLiminaConfig,
+  ) => Promise<WorkspacePackage[]>;
+}
+
 export class WorkspaceCore {
+  readonly #collectRawWorkspacePackages: (
+    config: ResolvedLiminaConfig,
+  ) => Promise<WorkspacePackage[]>;
   readonly #config: ResolvedLiminaConfig;
   readonly #metrics: WorkspaceCoreMetricsRecorder | undefined;
   #importersPromise: Promise<ImporterInfo[]> | undefined;
@@ -63,7 +72,10 @@ export class WorkspaceCore {
   constructor(
     config: ResolvedLiminaConfig,
     metrics?: WorkspaceCoreMetricsRecorder,
+    dependencies: WorkspaceCoreDependencies = {},
   ) {
+    this.#collectRawWorkspacePackages =
+      dependencies.collectRawWorkspacePackages ?? collectRawWorkspacePackages;
     this.#config = config;
     this.#metrics = metrics;
   }
@@ -73,7 +85,9 @@ export class WorkspaceCore {
   }
 
   getRawPackages(): Promise<WorkspacePackage[]> {
-    this.#rawPackagesPromise ??= collectRawWorkspacePackages(this.#config);
+    this.#rawPackagesPromise ??= this.#collectRawWorkspacePackages(
+      this.#config,
+    );
     return this.#rawPackagesPromise.then(cloneWorkspacePackages);
   }
 

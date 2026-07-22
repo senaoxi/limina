@@ -15,6 +15,8 @@ import {
 import { availableParallelism, tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import {
   runBuild as runBuildCommand,
   type RunBuildOptions,
@@ -2856,6 +2858,7 @@ describe('runCheckerTypecheck', () => {
 
   it('requires vue-tsgo and the native preview package for vue-tsgo second-class entries', async () => {
     const calls: TypecheckTarget[] = [];
+    const issues: LiminaCheckIssue[] = [];
     const errorSpy = vi
       .spyOn(TypecheckLogger, 'error')
       .mockImplementation(() => {});
@@ -2864,7 +2867,7 @@ describe('runCheckerTypecheck', () => {
     });
 
     try {
-      const result = await runCheckerTypecheck({
+      const result = await runCheckerTypecheckCommand({
         checkerPackageResolver: ({ packageName }) =>
           packageName === 'vue-tsgo' ? packageName : undefined,
         config: {
@@ -2880,11 +2883,19 @@ describe('runCheckerTypecheck', () => {
           rootDir: fixture.rootDir,
         },
         cwd: fixture.rootDir,
+        deferSnapshot: true,
+        issues,
         runner: passingRunner(calls),
       });
 
       expect(result.passed).toBe(false);
       expect(calls).toHaveLength(0);
+      expect(issues).toMatchObject([
+        {
+          code: LIMINA_CHECK_ISSUE_CODES.checkerTypecheckFailed,
+          task: 'checker:typecheck',
+        },
+      ]);
       expect(errorSpy.mock.calls.join('\n')).toContain(
         '@typescript/native-preview',
       );

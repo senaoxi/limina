@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/release-root",
+  "version": "1.0.0",
+  "dependencies": {
+    "@fixture/release-dependency": "workspace:*"
+  }
+}

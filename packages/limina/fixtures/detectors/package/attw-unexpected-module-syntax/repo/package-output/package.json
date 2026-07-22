@@ -1,0 +1,11 @@
+{
+  "exports": {
+    ".": {
+      "types": "./index.d.cts",
+      "default": "./index.cjs"
+    }
+  },
+  "name": "@fixture/attw-unexpected-module-syntax",
+  "type": "commonjs",
+  "version": "1.0.0"
+}

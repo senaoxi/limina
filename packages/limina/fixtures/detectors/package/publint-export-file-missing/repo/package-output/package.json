@@ -1,0 +1,6 @@
+{
+  "exports": "./missing.js",
+  "name": "@fixture/publint-export-file-missing",
+  "type": "module",
+  "version": "1.0.0"
+}

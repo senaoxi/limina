@@ -422,10 +422,12 @@ describe('standalone invocation generated command', () => {
           'cmd.exe (/V:OFF)',
         );
         expect(powershellCommand).toMatch(/^Set-Location -LiteralPath /u);
-        expect(powershellCommand).toContain(
-          " -ErrorAction Stop; & { $PSNativeCommandArgumentPassing = 'Legacy'; & ",
+        expect(powershellCommand).toContain(' -ErrorAction Stop; & ');
+        expect(powershellCommand).toContain(" '-e' ");
+        expect(powershellCommand).not.toContain(MODE);
+        expect(powershellCommand).not.toContain(
+          '$PSNativeCommandArgumentPassing',
         );
-        expect(powershellCommand).toMatch(/ \}$/u);
         expect(powershellCommand).not.toContain('pnpm');
         expect(cmdCommand).toMatch(/^cd \/d /u);
         expect(cmdCommand).toContain(' && ');

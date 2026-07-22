@@ -209,6 +209,10 @@ function cloneReferenceGraph(
   graph: CollectGraphProjectPathsResult,
 ): CollectGraphProjectPathsResult {
   return {
+    diagnostics: graph.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      detailLines: [...diagnostic.detailLines],
+    })),
     problems: [...graph.problems],
     projectPaths: [...graph.projectPaths],
   };

@@ -1,0 +1,16 @@
+{
+  "files": [],
+  "liminaOptions": {
+    "implicitRefs": [
+      {
+        "path": "./packages/pkg/tsconfig.json",
+        "reason": "This invalid placement belongs on a source leaf, not an IDE aggregator.",
+      },
+    ],
+  },
+  "references": [
+    {
+      "path": "./packages/pkg/tsconfig.json",
+    },
+  ],
+}

@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "customConditions": ["browser"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2023",
+    "types": []
+  },
+  "files": ["src/browser.ts"]
+}

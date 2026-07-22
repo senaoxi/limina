@@ -1,8 +1,14 @@
 import { normalizeSlashes, toRelativePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import path from 'pathe';
-import { defaultTaskFailureCode } from './codes';
+import {
+  assertIssueTaskMatchesCode,
+  assertWritableLiminaCheckIssueCode,
+  defaultTaskFailureCode,
+  type LiminaWritableCheckIssueCode,
+} from './codes';
 import type {
+  CanonicalLiminaCheckIssue,
   LiminaCheckIssue,
   LiminaCheckIssueEvidence,
   LiminaCheckIssueExternal,
@@ -13,7 +19,7 @@ import type {
 
 export interface CreateLiminaCheckIssueOptions {
   checkerName?: string;
-  code?: string;
+  code?: LiminaWritableCheckIssueCode;
   detailLines?: readonly string[];
   detector?: string;
   domain?: string;
@@ -116,7 +122,7 @@ function normalizeEvidence(
   }));
 }
 
-function createIssueId(issue: Omit<LiminaCheckIssue, 'id'>): string {
+function createIssueId(issue: Omit<CanonicalLiminaCheckIssue, 'id'>): string {
   const hash = createHash('sha1')
     .update(
       JSON.stringify({
@@ -145,7 +151,7 @@ function inferDomain(task: LiminaCheckTaskName): string {
 
 export function createLiminaCheckIssue(
   options: CreateLiminaCheckIssueOptions,
-): LiminaCheckIssue {
+): CanonicalLiminaCheckIssue {
   const filePath = normalizeCheckIssuePath(options.rootDir, options.filePath);
   const packageManifestPath = normalizeCheckIssuePath(
     options.rootDir,
@@ -165,9 +171,13 @@ export function createLiminaCheckIssue(
       : fallbackLocations.length > 0
         ? fallbackLocations
         : undefined;
-  const issueWithoutId: Omit<LiminaCheckIssue, 'id'> = {
+  const code = options.code ?? defaultTaskFailureCode(options.task);
+  assertWritableLiminaCheckIssueCode(code);
+  assertIssueTaskMatchesCode(code, options.task);
+
+  const issueWithoutId: Omit<CanonicalLiminaCheckIssue, 'id'> = {
     checkerName: options.checkerName,
-    code: options.code ?? defaultTaskFailureCode(options.task),
+    code,
     detailLines: options.detailLines ? [...options.detailLines] : undefined,
     detector: options.detector,
     domain: options.domain ?? inferDomain(options.task),

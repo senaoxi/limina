@@ -1,0 +1,13 @@
+{
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.cts",
+        "default": "./index.js"
+      }
+    }
+  },
+  "name": "@fixture/attw-false-cjs",
+  "type": "module",
+  "version": "1.0.0"
+}

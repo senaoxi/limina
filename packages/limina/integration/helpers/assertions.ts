@@ -41,6 +41,9 @@ export function resolveGeneratedPath(
 export function formatLiminaResult(result: RunLiminaResult): string {
   return [
     `fixture: ${result.fixtureName}`,
+    `executable: ${result.executable}`,
+    `args: ${JSON.stringify(result.args)}`,
+    `cwd: ${result.cwd}`,
     `exit code: ${String(result.code)}`,
     `signal: ${String(result.signal)}`,
     `timed out: ${String(result.timedOut)}`,

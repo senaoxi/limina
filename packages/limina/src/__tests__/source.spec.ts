@@ -6,6 +6,7 @@ import type {
   SourceCheckConfig,
   SourceKnipWorkspaceConfig,
 } from '#config/runner';
+import { normalizeAbsolutePath } from '#utils/path';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,6 +17,10 @@ import { createTaskProgressReporter } from '../execution/progress';
 import { LiminaOptionalToolMissingError } from '../execution/tools';
 import { LiminaFlowReporter } from '../flow';
 import { SourceLogger } from '../logger';
+import {
+  createSourceUnusedModuleFinding,
+  createSourceUnusedWorkspaceDependencyFinding,
+} from '../source-check/findings';
 import type { KnipCliInvocation } from '../source-check/knip';
 import {
   formatSourceCheckHumanReport,
@@ -3776,15 +3781,77 @@ packages:
       }),
       'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
     });
+    const sourceIssues: SourceCheckIssue[] = [];
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(
+        runSourceCheck(fixture.config, { sourceIssues }),
+      ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('Found 1 unused source module in 1 package.');
       expect(errors).toContain(`rule: ${SOURCE_ISSUE_CODES.unusedModule}`);
       expect(errors).toContain('@example/app');
       expect(errors).toContain('packages/app/src/dead.ts');
+      expect(
+        sourceIssues.find(
+          (issue) => issue.code === SOURCE_ISSUE_CODES.unusedModule,
+        ),
+      ).toMatchObject({
+        external: { code: 'files', tool: 'knip' },
+        facts: {
+          filePath: normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/app/src/dead.ts'),
+          ),
+          kind: 'unused-module',
+          packageManifestPath: normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/app/package.json'),
+          ),
+          packageName: '@example/app',
+        },
+        task: 'source:check',
+      });
+    } finally {
+      errorSpy.mockRestore();
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves the Knip dependency field as external code', async () => {
+    const errorSpy = vi
+      .spyOn(SourceLogger, 'error')
+      .mockImplementation(() => {});
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: 'export const appValue = 1;\n',
+      }),
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, { sourceIssues }),
+      ).resolves.toBe(false);
+      expect(
+        sourceIssues.find(
+          (issue) =>
+            issue.code === SOURCE_ISSUE_CODES.unusedWorkspaceDependency,
+        ),
+      ).toMatchObject({
+        dependencyName: '@example/internal',
+        external: { code: 'dependencies', tool: 'knip' },
+        facts: {
+          dependencyName: '@example/internal',
+          kind: 'unused-workspace-dependency',
+          packageManifestPath: normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/app/package.json'),
+          ),
+          packageName: '@example/app',
+          sectionName: 'dependencies',
+          specifier: 'workspace:*',
+        },
+        task: 'source:check',
+      });
     } finally {
       errorSpy.mockRestore();
       await fixture.cleanup();
@@ -3798,21 +3865,21 @@ packages:
       'packages/app/package.json',
     );
     const issues = [
-      {
-        code: SOURCE_ISSUE_CODES.unusedModule,
+      createSourceUnusedModuleFinding({
+        externalCode: 'files',
         filePath: path.join(fixture.rootDir, 'packages/app/src/dead.ts'),
         ownerDirectory: path.join(fixture.rootDir, 'packages/app'),
         ownerName: '@example/app',
         packageJsonPath,
-      },
-      {
-        code: SOURCE_ISSUE_CODES.unusedWorkspaceDependency,
+      }),
+      createSourceUnusedWorkspaceDependencyFinding({
         dependencyName: '@example/internal',
+        externalCode: 'dependencies',
         ownerName: '@example/app',
         packageJsonPath,
         sectionName: 'dependencies',
         specifier: 'workspace:*',
-      },
+      }),
     ] satisfies SourceCheckIssue[];
 
     try {

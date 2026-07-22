@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/source-knip-valid-app",
+  "private": true,
+  "dependencies": {
+    "@fixture/source-knip-valid-target": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "type": "module"
+}

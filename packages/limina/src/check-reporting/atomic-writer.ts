@@ -25,6 +25,7 @@ export interface AtomicWriteOptions {
   removeTemp?: (path: string) => Promise<void>;
   rename?: (from: string, to: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
+  serialize?: (value: unknown) => string;
   tempCreateAttempts?: number;
 }
 
@@ -171,7 +172,10 @@ async function performAtomicJsonWrite(
         `Unable to create an atomic temp file for ${targetPath}.`,
       );
     }
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    const serialized = options.serialize
+      ? options.serialize(value)
+      : JSON.stringify(value, null, 2);
+    await handle.writeFile(`${serialized}\n`, 'utf8');
     await handle.sync();
     await handle.close();
     handle = undefined;

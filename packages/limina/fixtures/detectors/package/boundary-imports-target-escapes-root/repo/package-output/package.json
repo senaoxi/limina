@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "#internal": "../outside.js"
+  },
+  "name": "@fixture/boundary-imports-target-escapes-root",
+  "version": "1.0.0"
+}

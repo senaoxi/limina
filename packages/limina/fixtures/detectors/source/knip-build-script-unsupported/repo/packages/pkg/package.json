@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/source-knip-build-script",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "limina build $CONFIG"
+  },
+  "type": "module"
+}

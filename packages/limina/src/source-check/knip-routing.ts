@@ -5,6 +5,7 @@ import { isNamedWorkspacePackage } from '#core/workspace/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import path from 'pathe';
+import { createSourceKnipConfigFinding, type SourceFinding } from './findings';
 import type { KnipSourceAnalysisGroup } from './knip';
 
 export type SourceKnipWorkspaceConfigRecord = Record<string, unknown>;
@@ -21,7 +22,7 @@ export function formatSourceKnipWorkspaceField(packageName: string): string {
 
 export function collectSourceKnipWorkspaceConfigs(options: {
   config: ResolvedLiminaConfig;
-  problems: string[];
+  findings: SourceFinding[];
   workspacePackages: WorkspacePackage[];
 }): Map<string, SourceKnipWorkspaceConfigRecord> {
   const workspaceConfigs = new Map<string, SourceKnipWorkspaceConfigRecord>();
@@ -38,13 +39,25 @@ export function collectSourceKnipWorkspaceConfigs(options: {
   }
 
   if (!isPlainRecord(rawWorkspaces)) {
-    options.problems.push(
-      [
-        'Invalid source Knip workspace config:',
-        '  field: source.knip.workspaces',
-        `  value: ${formatUnknownValue(rawWorkspaces)}`,
-        '  reason: workspaces must be an object keyed by workspace package name.',
-      ].join('\n'),
+    const field = 'source.knip.workspaces';
+    const title = 'Invalid source Knip workspace config';
+    const reason =
+      'workspaces must be an object keyed by workspace package name.';
+    const lines = [
+      `${title}:`,
+      `  field: ${field}`,
+      `  value: ${formatUnknownValue(rawWorkspaces)}`,
+      `  reason: ${reason}`,
+    ];
+    options.findings.push(
+      createSourceKnipConfigFinding({
+        field,
+        kind: 'workspace',
+        lines,
+        reason,
+        title,
+        value: rawWorkspaces,
+      }),
     );
     return workspaceConfigs;
   }
@@ -54,6 +67,14 @@ export function collectSourceKnipWorkspaceConfigs(options: {
       .filter(isNamedWorkspacePackage)
       .map((workspacePackage) => workspacePackage.name),
   );
+  const packageManifestPathByName = new Map(
+    options.workspacePackages
+      .filter(isNamedWorkspacePackage)
+      .map((entry) => [
+        entry.name,
+        normalizeAbsolutePath(path.join(entry.directory, 'package.json')),
+      ]),
+  );
 
   for (const [rawPackageName, rawWorkspaceConfig] of Object.entries(
     rawWorkspaces,
@@ -62,36 +83,65 @@ export function collectSourceKnipWorkspaceConfigs(options: {
     const field = formatSourceKnipWorkspaceField(rawPackageName);
 
     if (packageName.length === 0) {
-      options.problems.push(
-        [
-          'Invalid source Knip workspace config:',
-          `  field: ${field}`,
-          '  reason: workspace config keys must be non-empty package names.',
-        ].join('\n'),
+      const title = 'Invalid source Knip workspace config';
+      const reason = 'workspace config keys must be non-empty package names.';
+      const lines = [`${title}:`, `  field: ${field}`, `  reason: ${reason}`];
+      options.findings.push(
+        createSourceKnipConfigFinding({
+          field,
+          kind: 'workspace',
+          lines,
+          reason,
+          title,
+          value: rawPackageName,
+        }),
       );
       continue;
     }
 
     if (!workspacePackageNames.has(packageName)) {
-      options.problems.push(
-        [
-          'Invalid source Knip workspace config:',
-          `  field: ${field}`,
-          `  package: ${packageName}`,
-          '  reason: workspace config keys must name packages discovered in the pnpm workspace.',
-        ].join('\n'),
+      const title = 'Invalid source Knip workspace config';
+      const reason =
+        'workspace config keys must name packages discovered in the pnpm workspace.';
+      const lines = [
+        `${title}:`,
+        `  field: ${field}`,
+        `  package: ${packageName}`,
+        `  reason: ${reason}`,
+      ];
+      options.findings.push(
+        createSourceKnipConfigFinding({
+          field,
+          kind: 'workspace',
+          lines,
+          packageName,
+          reason,
+          title,
+        }),
       );
       continue;
     }
 
     if (!isPlainRecord(rawWorkspaceConfig)) {
-      options.problems.push(
-        [
-          'Invalid source Knip workspace config:',
-          `  field: ${field}`,
-          `  value: ${formatUnknownValue(rawWorkspaceConfig)}`,
-          '  reason: workspace config values must be objects.',
-        ].join('\n'),
+      const title = 'Invalid source Knip workspace config';
+      const reason = 'workspace config values must be objects.';
+      const lines = [
+        `${title}:`,
+        `  field: ${field}`,
+        `  value: ${formatUnknownValue(rawWorkspaceConfig)}`,
+        `  reason: ${reason}`,
+      ];
+      options.findings.push(
+        createSourceKnipConfigFinding({
+          field,
+          kind: 'workspace',
+          lines,
+          packageJsonPath: packageManifestPathByName.get(packageName),
+          packageName,
+          reason,
+          title,
+          value: rawWorkspaceConfig,
+        }),
       );
       continue;
     }
@@ -101,13 +151,27 @@ export function collectSourceKnipWorkspaceConfigs(options: {
         continue;
       }
 
-      options.problems.push(
-        [
-          'Invalid source Knip workspace config:',
-          `  field: ${field}.${key}`,
-          `  value: ${formatUnknownValue(rawWorkspaceConfig[key])}`,
-          '  reason: unknown source Knip workspace config field.',
-        ].join('\n'),
+      const invalidField = `${field}.${key}`;
+      const title = 'Invalid source Knip workspace config';
+      const reason = 'unknown source Knip workspace config field.';
+      const value = rawWorkspaceConfig[key];
+      const lines = [
+        `${title}:`,
+        `  field: ${invalidField}`,
+        `  value: ${formatUnknownValue(value)}`,
+        `  reason: ${reason}`,
+      ];
+      options.findings.push(
+        createSourceKnipConfigFinding({
+          field: invalidField,
+          kind: 'workspace',
+          lines,
+          packageJsonPath: packageManifestPathByName.get(packageName),
+          packageName,
+          reason,
+          title,
+          value,
+        }),
       );
     }
 

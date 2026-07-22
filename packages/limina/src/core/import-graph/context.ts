@@ -35,11 +35,21 @@ export interface ProjectInfo {
   extensions: string[];
   fileNames: string[];
   labels: string[];
+  labelDiagnostic?: ProjectGraphLabelDiagnostic | null;
   labelProblem: string | null;
   ownedFileNames: string[];
   options: ts.CompilerOptions;
   references: Set<string>;
   resolverConfigPath: string;
+}
+
+export interface ProjectGraphLabelDiagnostic {
+  readonly detailLines: readonly string[];
+  readonly field: string;
+  readonly projectPath: string;
+  readonly reason: string;
+  readonly title: string;
+  readonly value?: unknown;
 }
 
 export function isDtsProjectConfig(configPath: string): boolean {
@@ -61,9 +71,10 @@ function readProjectGraphRules(
   config: ResolvedLiminaConfig,
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
-): Pick<ProjectInfo, 'labels' | 'labelProblem'> {
+): Pick<ProjectInfo, 'labelDiagnostic' | 'labels' | 'labelProblem'> {
   if (!isDtsProjectConfig(configPath)) {
     return {
+      labelDiagnostic: null,
       labels: [],
       labelProblem: null,
     };
@@ -76,6 +87,7 @@ function readProjectGraphRules(
 
   if (!Object.hasOwn(configObject, 'liminaOptions')) {
     return {
+      labelDiagnostic: null,
       labels: [],
       labelProblem: null,
     };
@@ -88,15 +100,27 @@ function readProjectGraphRules(
     typeof optionsValue !== 'object' ||
     Array.isArray(optionsValue)
   ) {
+    const reason =
+      'liminaOptions must be an object with an optional graphRules array.';
+    const detailLines = [
+      'Invalid Limina graph options:',
+      `  project: ${toRelativePath(config.rootDir, configPath)}`,
+      '  field: liminaOptions',
+      `  value: ${formatUnknownValue(optionsValue)}`,
+      `  reason: ${reason}`,
+    ];
+
     return {
+      labelDiagnostic: {
+        detailLines,
+        field: 'liminaOptions',
+        projectPath: configPath,
+        reason,
+        title: 'Invalid Limina graph options',
+        value: optionsValue,
+      },
       labels: [],
-      labelProblem: [
-        'Invalid Limina graph options:',
-        `  project: ${toRelativePath(config.rootDir, configPath)}`,
-        '  field: liminaOptions',
-        `  value: ${formatUnknownValue(optionsValue)}`,
-        '  reason: liminaOptions must be an object with an optional graphRules array.',
-      ].join('\n'),
+      labelProblem: detailLines.join('\n'),
     };
   }
 
@@ -104,21 +128,34 @@ function readProjectGraphRules(
 
   if (graphRules === undefined) {
     return {
+      labelDiagnostic: null,
       labels: [],
       labelProblem: null,
     };
   }
 
   if (!Array.isArray(graphRules)) {
+    const reason =
+      'liminaOptions.graphRules must be an array of non-empty string labels.';
+    const detailLines = [
+      'Invalid Limina graph rules:',
+      `  project: ${toRelativePath(config.rootDir, configPath)}`,
+      '  field: liminaOptions.graphRules',
+      `  value: ${formatUnknownValue(graphRules)}`,
+      `  reason: ${reason}`,
+    ];
+
     return {
+      labelDiagnostic: {
+        detailLines,
+        field: 'liminaOptions.graphRules',
+        projectPath: configPath,
+        reason,
+        title: 'Invalid Limina graph rules',
+        value: graphRules,
+      },
       labels: [],
-      labelProblem: [
-        'Invalid Limina graph rules:',
-        `  project: ${toRelativePath(config.rootDir, configPath)}`,
-        '  field: liminaOptions.graphRules',
-        `  value: ${formatUnknownValue(graphRules)}`,
-        '  reason: liminaOptions.graphRules must be an array of non-empty string labels.',
-      ].join('\n'),
+      labelProblem: detailLines.join('\n'),
     };
   }
 
@@ -126,15 +163,27 @@ function readProjectGraphRules(
 
   for (const [index, value] of graphRules.entries()) {
     if (typeof value !== 'string' || value.trim().length === 0) {
+      const field = `liminaOptions.graphRules[${index}]`;
+      const reason = 'graph rule labels must be non-empty strings.';
+      const detailLines = [
+        'Invalid Limina graph rule label:',
+        `  project: ${toRelativePath(config.rootDir, configPath)}`,
+        `  field: ${field}`,
+        `  value: ${formatUnknownValue(value)}`,
+        `  reason: ${reason}`,
+      ];
+
       return {
+        labelDiagnostic: {
+          detailLines,
+          field,
+          projectPath: configPath,
+          reason,
+          title: 'Invalid Limina graph rule label',
+          value,
+        },
         labels: [],
-        labelProblem: [
-          'Invalid Limina graph rule label:',
-          `  project: ${toRelativePath(config.rootDir, configPath)}`,
-          `  field: liminaOptions.graphRules[${index}]`,
-          `  value: ${formatUnknownValue(value)}`,
-          '  reason: graph rule labels must be non-empty strings.',
-        ].join('\n'),
+        labelProblem: detailLines.join('\n'),
       };
     }
 
@@ -146,6 +195,7 @@ function readProjectGraphRules(
   }
 
   return {
+    labelDiagnostic: null,
     labels,
     labelProblem: null,
   };
@@ -206,6 +256,7 @@ export function parseProject(
     configPath: normalizedConfigPath,
     extensions: projectExtensions,
     fileNames: normalizeFileNames(parsed.fileNames),
+    labelDiagnostic: labelInfo.labelDiagnostic,
     labels: labelInfo.labels,
     labelProblem: labelInfo.labelProblem,
     ownedFileNames: normalizeFileNames(ownedParsed.fileNames),

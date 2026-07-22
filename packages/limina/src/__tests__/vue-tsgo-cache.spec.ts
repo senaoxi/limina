@@ -17,6 +17,12 @@ import {
   type TypecheckTarget,
 } from '../typecheck/targets';
 import { VueTsgoCacheBatchCoordinator } from '../typecheck/vue-tsgo-cache';
+import {
+  createExplicitMutationAuthority,
+  type MutationBoundaryTarget,
+  preflightMutationBoundary,
+  recheckMutationBoundary,
+} from '../utils/mutation-boundary';
 
 async function writeText(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -56,6 +62,88 @@ afterEach(() => {
 });
 
 describe('vue-tsgo cache batch coordinator', () => {
+  it('attributes cleanup descriptors to one generation without consuming another generation resource', async () => {
+    const fixture = await createFixture();
+    const currentConfig = fixture.path('packages/current/tsconfig.json');
+    const foreignConfig = fixture.path('packages/foreign/tsconfig.json');
+    for (const packageName of ['current', 'foreign']) {
+      await writeText(
+        fixture.path(`packages/${packageName}/package.json`),
+        `${JSON.stringify({ name: `@fixture/${packageName}` })}\n`,
+      );
+      await writeText(
+        fixture.path(`packages/${packageName}/tsconfig.json`),
+        '{"files":[]}\n',
+      );
+    }
+    const currentCache = createVueTsgoCachePaths(currentConfig)[0]!;
+    const foreignCache = createVueTsgoCachePaths(foreignConfig)[0]!;
+    const currentMarker = path.join(currentCache, 'stale.txt');
+    const foreignMarker = path.join(foreignCache, 'stale.txt');
+    await writeText(currentMarker, 'current generation stale bytes\n');
+    await writeText(foreignMarker, 'foreign generation stale bytes\n');
+    const foreignAuthority = await createExplicitMutationAuthority({
+      generation: 'foreign-generation',
+      logicalMutationRoot: foreignCache,
+      scope: 'directory',
+      trustedBasePath: fixture.path('packages/foreign'),
+    });
+    const foreignDescriptor: MutationBoundaryTarget = {
+      authority: foreignAuthority,
+      kind: 'directory',
+      path: foreignCache,
+      recursive: true,
+    };
+    const foreignSnapshot = await preflightMutationBoundary([
+      foreignDescriptor,
+    ]);
+    const observed: MutationBoundaryTarget[] = [];
+
+    try {
+      await VueTsgoCacheBatchCoordinator.prepare(
+        [
+          createTarget({
+            configPath: currentConfig,
+            rootDir: fixture.rootDir,
+          }),
+        ],
+        {
+          cleanup: {
+            observeDescriptor: (descriptor) => {
+              observed.push(descriptor);
+            },
+          },
+          requireValidGeneratedRoute: false,
+        },
+      );
+
+      expect(observed).toHaveLength(1);
+      expect(observed[0]).toMatchObject({
+        kind: 'directory',
+        path: currentCache,
+        recursive: true,
+      });
+      expect(observed[0]!.authority).toMatchObject({
+        logicalMutationRoot: currentCache,
+        scope: 'directory',
+      });
+      expect(observed[0]!.authority.generation).not.toBe(
+        foreignAuthority.generation,
+      );
+      await expect(readFile(currentMarker, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      await expect(recheckMutationBoundary(foreignSnapshot)).resolves.toBe(
+        undefined,
+      );
+      await expect(readFile(foreignMarker, 'utf8')).resolves.toBe(
+        'foreign generation stale bytes\n',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('keeps every safe cache unchanged when any cache subtree is unsafe', async () => {
     const fixture = await createFixture();
     const safeConfig = fixture.path('packages/safe/tsconfig.json');

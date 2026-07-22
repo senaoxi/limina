@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  LIMINA_CHECK_ISSUE_CODES,
+  type LiminaWritableCheckIssueCode,
+} from '../check-reporting/codes';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
   type CheckTopBlocker,
@@ -19,7 +23,7 @@ function stripAnsi(value: string): string {
 }
 
 function createIssue(options: {
-  code: string;
+  code: LiminaWritableCheckIssueCode;
   filePath?: string;
   fixSteps?: string[];
   packageName?: string;
@@ -81,63 +85,63 @@ describe('check run summary reporting', () => {
   it('selects at most five top blockers by severity, count, and impact', () => {
     const issues = [
       createIssue({
-        code: 'RULE_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/app/src/a.ts',
         packageName: '@example/app',
         task: 'source:check',
         title: 'Rule A',
       }),
       createIssue({
-        code: 'RULE_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/app/src/b.ts',
         packageName: '@example/app',
         task: 'source:check',
         title: 'Rule A',
       }),
       createIssue({
-        code: 'RULE_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/lib/src/a.ts',
         packageName: '@example/lib',
         task: 'source:check',
         title: 'Rule A',
       }),
       createIssue({
-        code: 'RULE_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         filePath: '/repo/packages/lib/src/a-variant.ts',
         packageName: '@example/lib',
         task: 'source:check',
         title: 'Rule A variant',
       }),
       createIssue({
-        code: 'RULE_B',
+        code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
         filePath: '/repo/packages/app/src/c.ts',
         packageName: '@example/app',
         task: 'graph:check',
         title: 'Rule B',
       }),
       createIssue({
-        code: 'RULE_C',
+        code: LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid,
         filePath: '/repo/packages/lib/src/c.ts',
         packageName: '@example/lib',
         task: 'proof:check',
         title: 'Rule C',
       }),
       createIssue({
-        code: 'RULE_D',
+        code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
         filePath: '/repo/packages/lib/src/d.ts',
         packageName: '@example/lib',
         task: 'proof:check',
         title: 'Rule D',
       }),
       createIssue({
-        code: 'RULE_E',
+        code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
         filePath: '/repo/packages/lib/src/e.ts',
         packageName: '@example/lib',
         task: 'proof:check',
         title: 'Rule E',
       }),
       createIssue({
-        code: 'RULE_F',
+        code: LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile,
         filePath: '/repo/packages/lib/src/f.ts',
         packageName: '@example/lib',
         task: 'proof:check',
@@ -149,7 +153,7 @@ describe('check run summary reporting', () => {
     expect(blockers).toHaveLength(5);
     expect(blockers[0]).toMatchObject({
       affectedPackages: 2,
-      code: 'RULE_A',
+      code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
       count: 4,
       packages: [
         {
@@ -164,11 +168,14 @@ describe('check run summary reporting', () => {
       task: 'source:check',
     });
     expect(
-      blockers.filter((blocker) => blocker.code === 'RULE_A'),
+      blockers.filter(
+        (blocker) =>
+          blocker.code === LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
+      ),
     ).toHaveLength(1);
     expect(
       blockers.map((blocker: CheckTopBlocker) => blocker.code),
-    ).not.toContain('RULE_F');
+    ).not.toContain(LIMINA_CHECK_ISSUE_CODES.proofUncoveredSourceFile);
   });
 
   it('formats a human run summary with task state and next commands', () => {
@@ -639,7 +646,7 @@ describe('check run summary reporting', () => {
     'expands %s run metadata without rendering raw issue details',
     (result) => {
       const issue = createLiminaCheckIssue({
-        code: 'ROOT_A',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
         detailLines: ['RAW_ISSUE_DETAIL_MUST_STAY_HIDDEN'],
         filePath: '/repo/packages/app/src/index.ts',
         packageName: '@example/app',
@@ -695,9 +702,17 @@ describe('check run summary reporting', () => {
   );
 
   it('uncaps verbose task, rule, package, and blocker summaries', () => {
-    const issues = Array.from({ length: 6 }, (_, index) =>
+    const issueCodes = [
+      LIMINA_CHECK_ISSUE_CODES.sourceAmbientDeclarationConfigInvalid,
+      LIMINA_CHECK_ISSUE_CODES.sourceCrossGovernanceBoundary,
+      LIMINA_CHECK_ISSUE_CODES.sourceImportAuthorityInvalid,
+      LIMINA_CHECK_ISSUE_CODES.sourceKnipConfigInvalid,
+      LIMINA_CHECK_ISSUE_CODES.sourceOwnerInvalid,
+      LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency,
+    ] as const;
+    const issues = issueCodes.map((code, index) =>
       createLiminaCheckIssue({
-        code: `RULE_${index}`,
+        code,
         detailLines: [`RAW_DETAIL_${index}`],
         filePath: `/repo/packages/p${index}/src/index.ts`,
         packageName: `@example/p${index}`,
@@ -743,11 +758,11 @@ describe('check run summary reporting', () => {
     );
 
     expect(regular).toContain('... 1 more tasks');
-    expect(regular).not.toContain('RULE_5');
+    expect(regular).not.toContain(issueCodes[5]);
     expect(verbose).not.toContain('... 1 more tasks');
     expect(verbose).toContain('task 12');
     expect(verbose).toContain('check item 12');
-    expect(verbose).toContain('RULE_5');
+    expect(verbose).toContain(issueCodes[5]);
     expect(verbose).toContain('@example/p5');
     expect(verbose).toContain('Affected files: 1');
     expect(verbose).toContain('Representative: packages/p5/src/index.ts');

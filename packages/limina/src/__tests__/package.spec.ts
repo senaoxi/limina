@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,7 @@ import {
 } from '../check-reporting/snapshot';
 import { LiminaFlowReporter } from '../flow';
 import { ReleaseLogger } from '../logger';
+import type { ReleaseFinding } from '../package-check/release-findings';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(
@@ -38,6 +40,7 @@ const packageCheckMocks = vi.hoisted(() => ({
   packCalls: [] as string[],
   publintCalls: [] as unknown[],
   publintMessages: [] as unknown[],
+  publintRenderedMessages: new Map<string, string>(),
   registryPackages: new Map<string, Record<string, unknown>>(),
   registryResponses: new Map<
     string,
@@ -173,7 +176,11 @@ vi.mock('publint', () => ({
 }));
 
 vi.mock('publint/utils', () => ({
-  formatMessage: vi.fn(() => 'mock publint message'),
+  formatMessage: vi.fn(
+    (message: { code: string }) =>
+      packageCheckMocks.publintRenderedMessages.get(message.code) ??
+      'mock publint message',
+  ),
 }));
 
 vi.mock('@arethetypeswrong/core', () => ({
@@ -191,9 +198,14 @@ vi.mock('@arethetypeswrong/core', () => ({
   })),
 }));
 
-const { auditPublishedPackageBoundaries } = await import(
+const { collectRawWorkspacePackages } = await import(
+  '../core/workspace/actions'
+);
+const { auditPublishedPackageBoundaries, packOutputTarball } = await import(
   '../package-check/runner'
 );
+const { assertPackageReleaseConsistency, PackageReleaseConsistencyError } =
+  await import('../package-check/release-consistency');
 const { runPackageCheck } = await import('../commands/package');
 const { runReleaseCheck } = await import('../commands/release');
 const { LiminaPreflightManager } = await import('../preflight');
@@ -513,6 +525,39 @@ function createConfig(
   };
 }
 
+async function collectReleaseConsistencyFindings(options: {
+  config: ResolvedLiminaConfig;
+  label: string;
+  outDir: string;
+}): Promise<readonly ReleaseFinding[]> {
+  const packedTarball = await packOutputTarball(options.outDir);
+  const outputManifest = JSON.parse(
+    await readFile(path.join(options.outDir, 'package.json'), 'utf8'),
+  ) as Parameters<typeof assertPackageReleaseConsistency>[0]['outputManifest'];
+
+  try {
+    await assertPackageReleaseConsistency({
+      config: options.config,
+      label: options.label,
+      outDir: options.outDir,
+      outputManifest,
+      packedTarball: packedTarball.tarball,
+      packedTarballPath: packedTarball.tarballPath,
+      workspacePackages: await collectRawWorkspacePackages(options.config),
+    });
+  } catch (error) {
+    if (error instanceof PackageReleaseConsistencyError) {
+      return error.findings;
+    }
+
+    throw error;
+  } finally {
+    await packedTarball.cleanup();
+  }
+
+  return [];
+}
+
 function createFlow(): {
   chunks: string[];
   flow: LiminaFlowReporter;
@@ -558,6 +603,7 @@ beforeEach(() => {
   packageCheckMocks.packCalls = [];
   packageCheckMocks.publintCalls = [];
   packageCheckMocks.publintMessages = [];
+  packageCheckMocks.publintRenderedMessages.clear();
   packageCheckMocks.registryPackages.clear();
   packageCheckMocks.registryResponses.clear();
   packageCheckMocks.registryTarballs.clear();
@@ -635,6 +681,725 @@ beforeEach(() => {
       };
     }),
   );
+});
+
+describe('typed Release finding producers', () => {
+  it.each([
+    {
+      configField: 'release.contentHash.baselineTag',
+      contentHash: { baselineTag: () => '' },
+    },
+    {
+      configField: 'release.contentHash.ignore',
+      contentHash: { ignore: () => [''] },
+    },
+  ] as const)(
+    'emits $configField failures directly instead of classifying registry text',
+    async ({ configField, contentHash }) => {
+      const { outDir, rootDir } =
+        await createWorkspaceDependencyReleaseFixture();
+      registerPublishedPackage('@example/b', '1.0.0');
+      const config = createConfig(rootDir, [{ name: '@example/a', outDir }], {
+        release: { contentHash },
+      });
+
+      try {
+        const findings = await collectReleaseConsistencyFindings({
+          config,
+          label: '@example/a',
+          outDir,
+        });
+
+        expect(findings).toHaveLength(1);
+        const finding = findings[0]!;
+        expect(finding).toMatchObject({
+          code: 'LIMINA_RELEASE_CONTENT_HASH',
+          filePath: config.configPath,
+          packageManifestPath: normalizeAbsolutePath(
+            path.join(rootDir, 'packages/b/package.json'),
+          ),
+          packageName: '@example/b',
+          reason: 'config-invalid',
+          task: 'release:check',
+        });
+        expect(finding.code).not.toBe('LIMINA_RELEASE_REGISTRY');
+        expect(finding.facts).toMatchObject({
+          configField,
+          dependencyName: '@example/b',
+          importerName: '@example/a',
+          kind: 'config-invalid',
+        });
+      } finally {
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it('emits changed, local-only, and remote-only content hash facts with hashes', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const dependencyOutDir = path.join(rootDir, 'packages/b/dist');
+    await writeText(
+      path.join(dependencyOutDir, 'index.js'),
+      'export const value = 2;\n',
+    );
+    await writeText(
+      path.join(dependencyOutDir, 'local-only.js'),
+      'export const local = true;\n',
+    );
+    registerPublishedPackage('@example/b', '1.0.0', {
+      files: {
+        'remote-only.js': 'export const remote = true;\n',
+      },
+    });
+
+    try {
+      const findings = await collectReleaseConsistencyFindings({
+        config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+        label: '@example/a',
+        outDir,
+      });
+      const finding = findings.find(
+        (item) => item.code === 'LIMINA_RELEASE_CONTENT_HASH',
+      );
+
+      expect(finding).toBeDefined();
+      expect(finding?.reason).toBe('content-diff');
+
+      if (
+        finding?.code !== 'LIMINA_RELEASE_CONTENT_HASH' ||
+        finding.facts.kind !== 'content-diff'
+      ) {
+        throw new Error('expected a typed content-diff finding');
+      }
+
+      expect(finding.facts.diffs.map((diff) => diff.kind)).toEqual([
+        'local-only',
+        'remote-only',
+        'changed',
+      ]);
+      expect(finding.facts.diffs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'changed',
+            localHash: expect.stringMatching(/^[\da-f]{64}$/u),
+            relativePath: 'index.js',
+            remoteHash: expect.stringMatching(/^[\da-f]{64}$/u),
+          }),
+          expect.objectContaining({
+            kind: 'local-only',
+            localHash: expect.stringMatching(/^[\da-f]{64}$/u),
+            relativePath: 'local-only.js',
+          }),
+          expect.objectContaining({
+            kind: 'remote-only',
+            relativePath: 'remote-only.js',
+            remoteHash: expect.stringMatching(/^[\da-f]{64}$/u),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    {
+      expectedReason: 'metadata-request',
+      response: {
+        fetchError: new Error('network unavailable'),
+        status: 0,
+        statusText: '',
+      },
+    },
+    {
+      expectedReason: 'metadata-invalid-json',
+      response: {
+        jsonError: new SyntaxError('invalid JSON'),
+        status: 200,
+        statusText: 'OK',
+      },
+    },
+    {
+      expectedReason: 'metadata-body-read',
+      response: {
+        bodyError: new Error('body interrupted'),
+        status: 200,
+        statusText: 'OK',
+      },
+    },
+    {
+      expectedReason: 'metadata-invalid-object',
+      response: {
+        body: [],
+        status: 200,
+        statusText: 'OK',
+      },
+    },
+    {
+      expectedReason: 'metadata-http-status',
+      response: {
+        status: 503,
+        statusText: 'Service Unavailable',
+      },
+    },
+  ])(
+    'maps registry metadata failures to $expectedReason findings',
+    async ({ expectedReason, response }) => {
+      const { outDir, rootDir } =
+        await createWorkspaceDependencyReleaseFixture();
+      packageCheckMocks.registryResponses.set('@example/b', response);
+
+      try {
+        const findings = await collectReleaseConsistencyFindings({
+          config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+          label: '@example/a',
+          outDir,
+        });
+        const finding = findings.find(
+          (item) => item.code === 'LIMINA_RELEASE_REGISTRY',
+        );
+
+        expect(finding).toMatchObject({
+          code: 'LIMINA_RELEASE_REGISTRY',
+          packageName: '@example/b',
+          reason: expectedReason,
+          task: 'release:check',
+        });
+        expect(finding?.facts).toMatchObject({
+          dependencyName: '@example/b',
+          importerName: '@example/a',
+          kind: expectedReason,
+          registryUrl: 'https://registry.npmjs.org/%40example%2Fb',
+        });
+      } finally {
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it('maps an aborted metadata request to a typed timeout finding', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const controller = new AbortController();
+    controller.abort(new Error('metadata timeout'));
+    const timeoutSpy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockReturnValue(controller.signal);
+    packageCheckMocks.registryResponses.set('@example/b', {
+      fetchError: new Error('metadata timeout'),
+      status: 0,
+      statusText: '',
+    });
+
+    try {
+      const findings = await collectReleaseConsistencyFindings({
+        config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+        label: '@example/a',
+        outDir,
+      });
+      const finding = findings.find(
+        (item) => item.code === 'LIMINA_RELEASE_REGISTRY',
+      );
+
+      expect(finding).toMatchObject({
+        code: 'LIMINA_RELEASE_REGISTRY',
+        reason: 'metadata-timeout',
+      });
+      expect(finding?.facts).toMatchObject({
+        kind: 'metadata-timeout',
+        timeoutMs: 30_000,
+      });
+    } finally {
+      timeoutSpy.mockRestore();
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    {
+      expectedReason: 'package-not-found',
+      register: () => {},
+    },
+    {
+      expectedReason: 'dist-tag-missing',
+      register: () =>
+        registerPackageMetadata('@example/b', {
+          versions: {},
+        }),
+    },
+    {
+      expectedReason: 'version-missing',
+      register: () =>
+        registerPackageMetadata('@example/b', {
+          'dist-tags': { latest: '1.0.0' },
+          versions: {},
+        }),
+    },
+    {
+      expectedReason: 'tarball-url-missing',
+      register: () =>
+        registerPublishedPackage('@example/b', '1.0.0', {
+          includeTarballUrl: false,
+        }),
+    },
+    {
+      expectedReason: 'integrity-missing',
+      register: () =>
+        registerPublishedPackage('@example/b', '1.0.0', {
+          includeIntegrity: false,
+        }),
+    },
+    {
+      expectedReason: 'integrity-invalid',
+      register: () =>
+        registerPublishedPackage('@example/b', '1.0.0', {
+          integrity: 'not-valid-sri',
+        }),
+    },
+    {
+      expectedReason: 'integrity-mismatch',
+      register: () =>
+        registerPublishedPackage('@example/b', '1.0.0', {
+          integrity: createIntegrity('different tarball'),
+        }),
+    },
+  ])(
+    'maps registry artifact metadata to $expectedReason findings',
+    async ({ expectedReason, register }) => {
+      const { outDir, rootDir } =
+        await createWorkspaceDependencyReleaseFixture();
+      register();
+
+      try {
+        const findings = await collectReleaseConsistencyFindings({
+          config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+          label: '@example/a',
+          outDir,
+        });
+        const finding = findings.find(
+          (item) => item.code === 'LIMINA_RELEASE_REGISTRY',
+        );
+
+        expect(finding).toMatchObject({
+          code: 'LIMINA_RELEASE_REGISTRY',
+          reason: expectedReason,
+          task: 'release:check',
+        });
+        expect(finding?.facts).toMatchObject({
+          dependencyName: '@example/b',
+          kind: expectedReason,
+        });
+
+        if (expectedReason === 'integrity-invalid') {
+          expect(finding?.facts).toMatchObject({
+            integrityField: 'integrity',
+            registryIntegrity: 'not-valid-sri',
+          });
+        }
+
+        if (expectedReason === 'integrity-mismatch') {
+          expect(finding?.facts).toMatchObject({
+            actualIntegrity: expect.stringMatching(/^sha512-/u),
+            actualShasum: createShasum('published tarball @example/b@1.0.0'),
+            expectedIntegrity: createIntegrity('different tarball'),
+            integritySource: 'integrity',
+            registryIntegrity: createIntegrity('different tarball'),
+          });
+        }
+      } finally {
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it('retains expected and actual shasum facts when registry shasum verification fails', async () => {
+    const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
+    const expectedShasum = createShasum('different tarball');
+    const actualShasum = createShasum('published tarball @example/b@1.0.0');
+
+    registerPublishedPackage('@example/b', '1.0.0', {
+      includeIntegrity: false,
+      shasum: expectedShasum,
+    });
+
+    try {
+      const findings = await collectReleaseConsistencyFindings({
+        config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+        label: '@example/a',
+        outDir,
+      });
+      const finding = findings.find(
+        (item) => item.code === 'LIMINA_RELEASE_REGISTRY',
+      );
+
+      expect(finding).toMatchObject({
+        code: 'LIMINA_RELEASE_REGISTRY',
+        facts: {
+          actualShasum,
+          expectedShasum,
+          integritySource: 'shasum',
+          kind: 'integrity-mismatch',
+          registryShasum: expectedShasum,
+        },
+        reason: 'integrity-mismatch',
+      });
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    'tarball-http-status',
+    'tarball-request',
+    'tarball-body-read',
+    'tarball-timeout',
+  ] as const)(
+    'maps registry tarball failures to %s findings',
+    async (expectedReason) => {
+      const { outDir, rootDir } =
+        await createWorkspaceDependencyReleaseFixture();
+      const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
+      let timeoutSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+      registerPublishedPackage('@example/b', '1.0.0', {
+        registerTarball: false,
+      });
+
+      if (expectedReason === 'tarball-timeout') {
+        const controller = new AbortController();
+        controller.abort(new Error('tarball timeout'));
+        timeoutSpy = vi
+          .spyOn(AbortSignal, 'timeout')
+          .mockReturnValue(controller.signal);
+      }
+
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (!String(input).endsWith('.tgz')) {
+          return defaultFetch(input, init);
+        }
+
+        if (expectedReason === 'tarball-http-status') {
+          return {
+            ok: false,
+            status: 502,
+            statusText: 'Bad Gateway',
+          } as Response;
+        }
+
+        if (expectedReason === 'tarball-body-read') {
+          return {
+            arrayBuffer: async () => {
+              throw new Error('tarball body interrupted');
+            },
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+          } as unknown as Response;
+        }
+
+        throw new Error(
+          expectedReason === 'tarball-timeout'
+            ? 'tarball timeout'
+            : 'tarball request failed',
+        );
+      });
+
+      try {
+        const findings = await collectReleaseConsistencyFindings({
+          config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+          label: '@example/a',
+          outDir,
+        });
+        const finding = findings.find(
+          (item) => item.code === 'LIMINA_RELEASE_REGISTRY',
+        );
+
+        expect(finding).toMatchObject({
+          code: 'LIMINA_RELEASE_REGISTRY',
+          packageName: '@example/b',
+          reason: expectedReason,
+          task: 'release:check',
+        });
+        expect(finding?.facts).toMatchObject({
+          dependencyName: '@example/b',
+          kind: expectedReason,
+          requestedVersion: '1.0.0',
+          tarballUrl:
+            'https://registry.npmjs.org/%40example%2Fb/-/example-b-1.0.0.tgz',
+        });
+      } finally {
+        timeoutSpy?.mockRestore();
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it('emits typed packed-manifest facts for private dependencies and range mismatches', async () => {
+    const privateRootDir = await createWorkspaceRoot();
+    const rangeRootDir = await createWorkspaceRoot();
+
+    try {
+      const privateOutDir = await createWorkspacePackage(
+        privateRootDir,
+        '@example/a',
+        { dependencies: { '@example/b': 'workspace:*' } },
+        { dependencies: { '@example/b': '^1.0.0' } },
+      );
+      await createWorkspacePackage(privateRootDir, '@example/b', {
+        private: true,
+      });
+      const privateFindings = await collectReleaseConsistencyFindings({
+        config: createConfig(privateRootDir, [
+          { name: '@example/a', outDir: privateOutDir },
+        ]),
+        label: '@example/a',
+        outDir: privateOutDir,
+      });
+
+      expect(privateFindings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+            facts: expect.objectContaining({
+              dependencyName: '@example/b',
+              kind: 'source-private-dependency',
+              targetManifestPath: normalizeAbsolutePath(
+                path.join(privateRootDir, 'packages/b/package.json'),
+              ),
+            }),
+          }),
+        ]),
+      );
+
+      const rangeOutDir = await createWorkspacePackage(
+        rangeRootDir,
+        '@example/a',
+        { dependencies: { '@example/b': 'workspace:*' } },
+        { dependencies: { '@example/b': '^2.0.0' } },
+      );
+      await createWorkspacePackage(rangeRootDir, '@example/b', {
+        version: '1.0.0',
+      });
+      registerPublishedPackage('@example/b', '1.0.0');
+      const rangeFindings = await collectReleaseConsistencyFindings({
+        config: createConfig(rangeRootDir, [
+          { name: '@example/a', outDir: rangeOutDir },
+        ]),
+        label: '@example/a',
+        outDir: rangeOutDir,
+      });
+
+      expect(rangeFindings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+            facts: expect.objectContaining({
+              actualRange: '^2.0.0',
+              dependencyName: '@example/b',
+              expectedVersion: '1.0.0',
+              kind: 'packed-dependency-range-mismatch',
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(privateRootDir, { force: true, recursive: true });
+      await rm(rangeRootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('emits packed-dependency-missing facts from the packed manifest producer', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(
+        rootDir,
+        '@example/a',
+        { dependencies: { '@example/b': 'workspace:*' } },
+        { dependencies: {} },
+      );
+      await createWorkspacePackage(rootDir, '@example/b', {
+        version: '1.0.0',
+      });
+      registerPublishedPackage('@example/b', '1.0.0');
+
+      const findings = await collectReleaseConsistencyFindings({
+        config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+        label: '@example/a',
+        outDir,
+      });
+
+      expect(findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+            facts: expect.objectContaining({
+              dependencyName: '@example/b',
+              kind: 'packed-dependency-missing',
+              packedManifestPath: 'package.tgz#package.json',
+              sectionName: 'dependencies',
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('adapts command-owned output-manifest and private-output findings without parsing text', async () => {
+    const localRootDir = await createWorkspaceRoot();
+    const privateRootDir = await createWorkspaceRoot();
+
+    try {
+      const localOutDir = await createWorkspacePackage(
+        localRootDir,
+        '@example/a',
+        {},
+        { devDependencies: { '@example/dev': 'file:../dev' } },
+      );
+      const localIssues: LiminaCheckIssue[] = [];
+      await expect(
+        runReleaseCheck({
+          config: createConfig(localRootDir, [
+            { name: '@example/a', outDir: localOutDir },
+          ]),
+          deferSnapshot: true,
+          issues: localIssues,
+          packageNames: ['@example/a'],
+          report: { defer: true },
+        }),
+      ).resolves.toBe(false);
+      expect(localIssues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+            filePath: 'packages/a/dist/package.json',
+            packageManifestPath: 'packages/a/dist/package.json',
+            packageName: '@example/a',
+            task: 'release:check',
+          }),
+        ]),
+      );
+      expect(
+        localIssues.every(
+          (issue) => issue.code === 'LIMINA_RELEASE_PACKED_MANIFEST',
+        ),
+      ).toBe(true);
+
+      const privateOutDir = await createWorkspacePackage(
+        privateRootDir,
+        '@example/a',
+        {},
+        { private: true },
+      );
+      const privateIssues: LiminaCheckIssue[] = [];
+      await expect(
+        runReleaseCheck({
+          config: createConfig(privateRootDir, [
+            { name: '@example/a', outDir: privateOutDir },
+          ]),
+          deferSnapshot: true,
+          issues: privateIssues,
+          packageNames: ['@example/a'],
+          report: { defer: true },
+        }),
+      ).resolves.toBe(false);
+      expect(privateIssues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+            filePath: 'packages/a/dist/package.json',
+            packageManifestPath: 'packages/a/dist/package.json',
+            packageName: '@example/a',
+            task: 'release:check',
+          }),
+        ]),
+      );
+      expect(
+        privateIssues.every(
+          (issue) => issue.code === 'LIMINA_RELEASE_TARBALL_HYGIENE',
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(localRootDir, { force: true, recursive: true });
+      await rm(privateRootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('emits packed-manifest and tarball-hygiene facts from their detectors', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      packageCheckMocks.packedManifestOverrides.set(outDir, {
+        devDependencies: { '@example/dev': 'file:../dev' },
+        name: '@example/a',
+        version: '1.0.0',
+      });
+      await rm(path.join(outDir, 'README.md'), { force: true });
+      await writeText(path.join(outDir, 'index.js.map'), '{}\n');
+      await writeText(
+        path.join(outDir, 'mapped.js'),
+        'export const mapped = true;\n//# sourceMappingURL=mapped.js.map\n',
+      );
+
+      const findings = await collectReleaseConsistencyFindings({
+        config: createConfig(rootDir, [{ name: '@example/a', outDir }], {
+          release: { npmPackageJsonLint: true },
+        }),
+        label: '@example/a',
+        outDir,
+      });
+
+      expect(findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+            facts: expect.objectContaining({
+              dependencyName: '@example/dev',
+              kind: 'packed-local-specifier',
+              sectionName: 'devDependencies',
+              specifier: 'file:../dev',
+            }),
+          }),
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+            external: expect.objectContaining({
+              code: expect.any(String),
+              tool: 'npm-package-json-lint',
+            }),
+            facts: expect.objectContaining({
+              kind: 'manifest-lint-failed',
+              lintRule: expect.any(String),
+            }),
+          }),
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+            facts: expect.objectContaining({
+              kind: 'required-files-missing',
+              missingFiles: ['README.md'],
+            }),
+          }),
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+            facts: expect.objectContaining({
+              archiveEntryPath: 'index.js.map',
+              kind: 'source-map-file',
+            }),
+          }),
+          expect.objectContaining({
+            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+            facts: expect.objectContaining({
+              archiveEntryPath: 'mapped.js',
+              kind: 'source-mapping-url',
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
 });
 
 describe('auditPublishedPackageBoundaries', () => {
@@ -4387,6 +5152,148 @@ describe('runPackageCheck and runReleaseCheck', () => {
         level: 'error',
         strict: false,
       });
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('keeps arbitrary publint rule codes and messages external to the Limina code', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': 'export const value = 1;\n',
+    });
+    const issues: LiminaCheckIssue[] = [];
+
+    try {
+      packageCheckMocks.publintRenderedMessages.set(
+        'EXPORTS_MODULE_SHOULD_PRECEDE_TYPES',
+        'first rendered wording',
+      );
+      packageCheckMocks.publintRenderedMessages.set(
+        'FUTURE_PUBLINT_RULE',
+        'changed future wording',
+      );
+      packageCheckMocks.publintMessages = [
+        {
+          code: 'EXPORTS_MODULE_SHOULD_PRECEDE_TYPES',
+          type: 'error',
+        },
+        {
+          code: 'FUTURE_PUBLINT_RULE',
+          type: 'error',
+        },
+      ];
+
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.rootDir, [
+            {
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+          deferSnapshot: true,
+          issues,
+          report: { defer: true },
+          tool: 'publint',
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues).toHaveLength(2);
+      expect(
+        issues.map((issue) => ({
+          code: issue.code,
+          external: issue.external,
+          packageManifestPath: issue.packageManifestPath,
+          packageName: issue.packageName,
+          task: issue.task,
+        })),
+      ).toEqual([
+        {
+          code: 'LIMINA_PACKAGE_PUBLINT',
+          external: {
+            code: 'EXPORTS_MODULE_SHOULD_PRECEDE_TYPES',
+            message: 'first rendered wording',
+            tool: 'publint',
+          },
+          packageManifestPath: 'output/package/package.json',
+          packageName: '@example/pkg',
+          task: 'package:check',
+        },
+        {
+          code: 'LIMINA_PACKAGE_PUBLINT',
+          external: {
+            code: 'FUTURE_PUBLINT_RULE',
+            message: 'changed future wording',
+            tool: 'publint',
+          },
+          packageManifestPath: 'output/package/package.json',
+          packageName: '@example/pkg',
+          task: 'package:check',
+        },
+      ]);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('keeps current and future ATTW rule codes in external.code', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': 'export const value = 1;\n',
+    });
+    const issues: LiminaCheckIssue[] = [];
+
+    try {
+      packageCheckMocks.attwProblems = [
+        {
+          implementationFileName: 'index.js',
+          kind: 'FalseCJS',
+          typesFileName: 'index.d.ts',
+        },
+        {
+          kind: 'FutureAttwRule',
+        },
+      ];
+
+      await expect(
+        runPackageCheck({
+          config: createConfig(pkg.rootDir, [
+            {
+              name: '@example/pkg',
+              outDir: pkg.outDir,
+            },
+          ]),
+          deferSnapshot: true,
+          issues,
+          report: { defer: true },
+          tool: 'attw',
+        }),
+      ).resolves.toBe(false);
+
+      expect(issues).toHaveLength(2);
+      expect(
+        issues.map((issue) => ({
+          code: issue.code,
+          externalCode: issue.external?.code,
+          packageManifestPath: issue.packageManifestPath,
+          packageName: issue.packageName,
+          task: issue.task,
+        })),
+      ).toEqual([
+        {
+          code: 'LIMINA_PACKAGE_ATTW',
+          externalCode: 'false-cjs',
+          packageManifestPath: 'output/package/package.json',
+          packageName: '@example/pkg',
+          task: 'package:check',
+        },
+        {
+          code: 'LIMINA_PACKAGE_ATTW',
+          externalCode: 'FutureAttwRule',
+          packageManifestPath: 'output/package/package.json',
+          packageName: '@example/pkg',
+          task: 'package:check',
+        },
+      ]);
     } finally {
       await pkg.cleanup();
     }

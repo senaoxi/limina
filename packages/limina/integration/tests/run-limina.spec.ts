@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createRunLimina,
+  liminaBinPath,
   type RunLiminaOptions,
   type RunLiminaResult,
 } from '../helpers/run-limina';
@@ -204,7 +205,10 @@ describe('runLimina bounded completion', () => {
     const result = await resultPromise;
 
     expect(result).toEqual({
+      args: [liminaBinPath, ...runOptions.args],
       code: 143,
+      cwd: runOptions.cwd,
+      executable: process.execPath,
       fixtureName: 'stuck-fixture',
       signal: 'SIGTERM',
       stderr: 'partial stderr',

@@ -3,6 +3,7 @@ import boxen from 'boxen';
 import { countDefinedBy, uniqueSortedStrings } from '#utils/collections';
 import { colorText, plural } from '#utils/reporting';
 import { formatCheckSummaryBlock } from '../reporting';
+import { LIMINA_CHECK_ISSUE_CODES } from './codes';
 import type { CheckIssueInventoryView } from './inventory-presentation';
 import { getAllCanonicalIssueLocations } from './inventory-presentation';
 import type {
@@ -632,10 +633,17 @@ function formatIssueDetailLines(
 ): string[] {
   const includeDetailLines = options.includeDetailLines ?? true;
   const includeSummary = options.includeSummary ?? true;
+  const visibleEvidence =
+    (issue.task === 'graph:check' &&
+      issue.code !== LIMINA_CHECK_ISSUE_CODES.graphCheckFailed) ||
+    (issue.task === 'proof:check' &&
+      issue.code !== LIMINA_CHECK_ISSUE_CODES.proofCheckFailed)
+      ? undefined
+      : issue.evidence;
   const detailLines =
     includeDetailLines &&
     issue.detailLines?.length &&
-    !hasMatchingEvidenceLines(issue.evidence, issue.detailLines)
+    !hasMatchingEvidenceLines(visibleEvidence, issue.detailLines)
       ? indentDetailLines(issue.detailLines)
       : [];
 
@@ -643,8 +651,8 @@ function formatIssueDetailLines(
     ...(includeSummary && issue.summary
       ? ['summary:', `    ${issue.summary}`]
       : []),
-    ...(issue.evidence?.length
-      ? ['evidence:', ...issue.evidence.flatMap(formatEvidenceLine)]
+    ...(visibleEvidence?.length
+      ? ['evidence:', ...visibleEvidence.flatMap(formatEvidenceLine)]
       : []),
     ...detailLines,
   ];

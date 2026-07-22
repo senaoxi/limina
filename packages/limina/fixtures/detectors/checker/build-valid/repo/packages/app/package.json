@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/checker-build-valid-app",
+  "private": true,
+  "type": "module"
+}

@@ -31,10 +31,7 @@ import {
   formatCheckIssueHumanReport,
 } from '../check-reporting/human';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
-import {
-  createTaskFailureIssue,
-  type LiminaCheckIssue,
-} from '../check-reporting/snapshot';
+import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 import {
   type CheckCounter,
   createCheckCounter,
@@ -78,6 +75,22 @@ import {
   addDtsOptionProblems,
   addTypecheckParityProblems,
 } from './dts-options';
+import {
+  createGraphCheckIssuesFromFindings,
+  type GraphAccessDeniedFinding,
+  type GraphConfigInvalidFinding,
+  type GraphFinding,
+  type GraphImportFact,
+  type GraphImportTargetUnmappedFinding,
+  type GraphReferenceCycleFinding,
+  type GraphReferenceExtraFinding,
+  type GraphReferenceMissingFinding,
+  type GraphTargetUnreachableFinding,
+  type GraphWorkspaceDependencyUndeclaredFinding,
+  type GraphWorkspaceImportOutsideGraphFinding,
+  type GraphWorkspaceImportUnresolvedFinding,
+  type GraphWorkspacePackageNameMissingFinding,
+} from './findings';
 import {
   getAllowedRefRule,
   getDeniedDepRuleForPackage,
@@ -145,6 +158,8 @@ const GRAPH_CHECK_ITEM_NAMES = [
   'reference completeness',
 ] as const;
 
+const GRAPH_CHECK_DEFAULT_REASON =
+  'Graph check found architecture, dependency, resolver, or config violations.';
 const GENERATED_REFERENCE_CYCLE_REASON =
   'Generated declaration project references must be acyclic so build-mode checkers can order declaration builds.';
 const GENERATED_REFERENCE_CYCLE_FIX =
@@ -193,7 +208,7 @@ interface ExpectedReferenceCollectionOptions {
   managedOutputLookup: ManagedOutputDeclarationLookup;
   packages: WorkspacePackage[];
   projectCheckerNamesByPath: Map<string, string>;
-  problems: string[];
+  findings: GraphFinding[];
   projectPaths: string[];
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
@@ -219,174 +234,33 @@ interface GraphImportResolution {
   workspaceExportResolution: WorkspacePackageExportResolution | null;
 }
 
-interface GraphProblemIssueHint {
-  code: string;
-  filePath?: string;
-  fix?: string;
-  packageManifestPath?: string;
-  packageName?: string;
-  reason?: string;
-  title?: string;
-}
-
 interface GeneratedReferenceCycleEdge {
   from: string;
   to: string;
 }
 
-const graphProblemIssueHints = new Map<string, GraphProblemIssueHint>();
-
-function addGraphProblem(
-  problems: string[],
-  lines: readonly string[],
-  hint: GraphProblemIssueHint,
-): void {
-  const problem = lines.join('\n');
-
-  problems.push(problem);
-  graphProblemIssueHints.set(problem, hint);
+function createGraphImportFact(importRecord: ImportRecord): GraphImportFact {
+  return {
+    filePath: importRecord.filePath,
+    kind: importRecord.kind,
+    line: importRecord.line,
+    specifier: importRecord.specifier,
+  };
 }
 
-function getGraphProblemTitle(problem: string): string {
-  const firstLine = problem.split('\n')[0]?.trim() || 'Graph check issue';
-
-  return firstLine.replace(/:+$/u, '');
-}
-
-function getGraphProblemCode(title: string): string {
-  if (title.startsWith('Missing project reference')) {
-    return 'LIMINA_GRAPH_REFERENCE_MISSING';
-  }
-
-  if (title.startsWith('Extra project reference')) {
-    return 'LIMINA_GRAPH_REFERENCE_EXTRA';
-  }
-
-  if (title.startsWith('Denied graph access')) {
-    return 'LIMINA_GRAPH_ACCESS_DENIED';
-  }
-
-  if (title.includes('without a declared dependency')) {
-    return 'LIMINA_GRAPH_WORKSPACE_DEPENDENCY_UNDECLARED';
-  }
-
-  if (title.includes('without package identity')) {
-    return 'LIMINA_GRAPH_WORKSPACE_PACKAGE_NAME_MISSING';
-  }
-
-  if (title.startsWith('Unresolved workspace import')) {
-    return 'LIMINA_GRAPH_WORKSPACE_IMPORT_UNRESOLVED';
-  }
-
-  if (
-    title.includes('outside the source graph') ||
-    title.includes('outside the workspace graph') ||
-    title.includes('build artifact')
-  ) {
-    return 'LIMINA_GRAPH_WORKSPACE_IMPORT_OUTSIDE_GRAPH';
-  }
-
-  if (title.startsWith('Unable to map workspace import')) {
-    return 'LIMINA_GRAPH_IMPORT_TARGET_UNMAPPED';
-  }
-
-  if (title.startsWith('Expected graph target is not reachable')) {
-    return 'LIMINA_GRAPH_TARGET_UNREACHABLE';
-  }
-
-  if (
-    title.startsWith('Invalid graph') ||
-    title.startsWith('Invalid declaration') ||
-    title.startsWith('Missing declaration') ||
-    title.startsWith('Missing typecheck') ||
-    title.startsWith('Typecheck option') ||
-    title.startsWith('Declaration leaf')
-  ) {
-    return 'LIMINA_GRAPH_CONFIG_INVALID';
-  }
-
-  if (title.startsWith('Custom conditions mismatch')) {
-    return 'LIMINA_GRAPH_CONDITION_DOMAIN_MISMATCH';
-  }
-
-  return 'LIMINA_GRAPH_CHECK_FAILED';
-}
-
-function getProblemLineValue(
-  problem: string,
-  label: string,
+function getProjectCheckerName(
+  projectCheckerNamesByPath: ReadonlyMap<string, string>,
+  projectPath: string,
 ): string | undefined {
-  const escapedLabel = label.replaceAll(
-    /[.*+?^${}()|[\]\\]/gu,
-    String.raw`\$&`,
-  );
-  const match = new RegExp(String.raw`^\s*${escapedLabel}:\s*(.+)$`, 'mu').exec(
-    problem,
-  );
-
-  return match?.[1]?.trim();
-}
-
-function getProblemFilePath(problem: string): string | undefined {
-  const rawFile =
-    getProblemLineValue(problem, 'file') ??
-    getProblemLineValue(problem, 'resolved file') ??
-    getProblemLineValue(problem, 'project') ??
-    getProblemLineValue(problem, 'importing project') ??
-    getProblemLineValue(problem, 'referencing project');
-
-  return rawFile?.replace(/:\d+(?::\d+)?(?:\s+\(.+\))?$/u, '');
-}
-
-function createGraphCheckIssue(options: {
-  config: ResolvedLiminaConfig;
-  problem: string;
-}): LiminaCheckIssue {
-  const hint = graphProblemIssueHints.get(options.problem);
-  const title = hint?.title ?? getGraphProblemTitle(options.problem);
-  const reason =
-    hint?.reason ??
-    getProblemLineValue(options.problem, 'reason') ??
-    'Graph check found architecture, dependency, resolver, or config violations.';
-
-  return createTaskFailureIssue({
-    code: hint?.code ?? getGraphProblemCode(title),
-    detailLines: options.problem.split('\n'),
-    filePath: hint?.filePath ?? getProblemFilePath(options.problem),
-    fix: hint?.fix ?? getProblemLineValue(options.problem, 'fix'),
-    packageManifestPath:
-      hint?.packageManifestPath ??
-      getProblemLineValue(options.problem, 'package.json') ??
-      getProblemLineValue(options.problem, 'package manifest'),
-    packageName:
-      hint?.packageName ??
-      getProblemLineValue(options.problem, 'referencing package') ??
-      getProblemLineValue(options.problem, 'matched workspace package') ??
-      getProblemLineValue(options.problem, 'package'),
-    reason,
-    rootDir: options.config.rootDir,
-    task: 'graph:check',
-    title,
-  });
-}
-
-function createGraphCheckIssues(options: {
-  config: ResolvedLiminaConfig;
-  problems: readonly string[];
-}): LiminaCheckIssue[] {
-  return options.problems.map((problem) =>
-    createGraphCheckIssue({
-      config: options.config,
-      problem,
-    }),
-  );
+  return projectCheckerNamesByPath.get(projectPath);
 }
 
 function addDeniedReferenceProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
-  problems: string[];
+  findings: GraphFinding[];
   project: ProjectInfo;
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   projectsByPath: Map<string, ProjectInfo>;
   rules: NormalizedGraphRules;
   workspaceLookup: WorkspaceLookupIndex;
@@ -440,20 +314,59 @@ function addDeniedReferenceProblems(options: {
       );
     }
 
-    addGraphProblem(options.problems, lines, {
+    options.findings.push({
+      checkerName: getProjectCheckerName(
+        options.projectCheckerNamesByPath,
+        options.project.configPath,
+      ),
       code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+      evidence: [
+        {
+          label: 'referenced project',
+          value: referencePath,
+        },
+        {
+          label: deniedDepRule ? 'denied dependency' : 'denied reference',
+          value: deniedDepRule?.name ?? deniedRefRule?.path,
+        },
+      ],
+      facts: {
+        kind: 'project-reference',
+        labels: [...options.project.labels],
+        referencedProjectPath: referencePath,
+        referencingProjectPath: options.project.configPath,
+        ruleKind: deniedDepRule ? 'dependency' : 'reference',
+        ruleReason: deniedDepRule?.reason ?? deniedRefRule!.reason,
+        ruleValue: deniedDepRule?.name ?? deniedRefRule!.path,
+      },
       filePath: options.project.configPath,
-      reason: deniedDepRule?.reason ?? deniedRefRule?.reason,
-      title: 'Denied graph access',
-    });
+      locations: [
+        {
+          filePath: options.project.configPath,
+          label: 'referencing project',
+        },
+        {
+          filePath: referencePath,
+          label: 'referenced project',
+        },
+      ],
+      packageName: deniedDepRule?.name,
+      presentation: {
+        detailLines: lines,
+        reason: deniedDepRule?.reason ?? deniedRefRule!.reason,
+        title: 'Denied graph access',
+      },
+      task: 'graph:check',
+    } satisfies GraphAccessDeniedFinding);
   }
 }
 
 function addDeniedDepImportProblem(options: {
   config: ResolvedLiminaConfig;
+  findings: GraphFinding[];
   importRecord: ImportRecord;
   project: ProjectInfo;
-  problems: string[];
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   rule: GraphRuleDepDeny;
 }): void {
   const lines = [
@@ -466,20 +379,63 @@ function addDeniedDepImportProblem(options: {
     `  reason: ${options.rule.reason}`,
   ];
 
-  addGraphProblem(options.problems, lines, {
+  options.findings.push({
+    checkerName: getProjectCheckerName(
+      options.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
     code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'denied dependency',
+        value: options.rule.name,
+      },
+    ],
+    facts: {
+      deniedDependency: options.rule.name,
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'import-dependency',
+      labels: [...options.project.labels],
+      ruleReason: options.rule.reason,
+    },
     filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+    ],
     packageName: options.rule.name,
-    reason: options.rule.reason,
-    title: 'Denied graph access',
-  });
+    presentation: {
+      detailLines: lines,
+      reason: options.rule.reason,
+      title: 'Denied graph access',
+    },
+    task: 'graph:check',
+  } satisfies GraphAccessDeniedFinding);
 }
 
 function addDeniedRefImportProblem(options: {
   config: ResolvedLiminaConfig;
+  findings: GraphFinding[];
   importRecord: ImportRecord;
   project: ProjectInfo;
-  problems: string[];
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   rule: GraphRuleRefDeny;
   targetProjectPath: string;
 }): void {
@@ -494,12 +450,59 @@ function addDeniedRefImportProblem(options: {
     `  reason: ${options.rule.reason}`,
   ];
 
-  addGraphProblem(options.problems, lines, {
+  options.findings.push({
+    checkerName: getProjectCheckerName(
+      options.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
     code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'denied reference',
+        value: options.rule.path,
+      },
+    ],
+    facts: {
+      deniedReferencePath: options.rule.path,
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'import-reference',
+      labels: [...options.project.labels],
+      ruleReason: options.rule.reason,
+      targetProjectPath: options.targetProjectPath,
+    },
     filePath: options.importRecord.filePath,
-    reason: options.rule.reason,
-    title: 'Denied graph access',
-  });
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+      {
+        filePath: options.targetProjectPath,
+        label: 'target project',
+      },
+    ],
+    presentation: {
+      detailLines: lines,
+      reason: options.rule.reason,
+      title: 'Denied graph access',
+    },
+    task: 'graph:check',
+  } satisfies GraphAccessDeniedFinding);
 }
 
 function getNodeModulesPackageName(filePath: string): string | null {
@@ -538,9 +541,10 @@ function getResolvedPackageName(
 
 function addNamelessWorkspaceReferenceProblem(options: {
   config: ResolvedLiminaConfig;
+  findings: GraphFinding[];
   packageRole: 'referencing' | 'referenced';
-  problems: string[];
   project: ProjectInfo;
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   referencePath: string;
   workspacePackage: WorkspacePackage;
 }): void {
@@ -557,16 +561,50 @@ function addNamelessWorkspaceReferenceProblem(options: {
     '  fix: add a non-empty package.json name when this workspace package should participate in package dependency graph checks.',
   ];
 
-  addGraphProblem(options.problems, lines, {
+  options.findings.push({
+    checkerName: getProjectCheckerName(
+      options.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
     code: LIMINA_CHECK_ISSUE_CODES.graphWorkspacePackageNameMissing,
+    evidence: [
+      {
+        label: `${options.packageRole} package manifest`,
+        value: packageManifestPath,
+      },
+    ],
+    facts: {
+      packageManifestPath,
+      packageRole: options.packageRole,
+      referencedProjectPath: options.referencePath,
+      referencingProjectPath: options.project.configPath,
+    },
     filePath: options.project.configPath,
-    fix: 'Add a non-empty package.json name when this workspace package should participate in package dependency graph checks.',
+    locations: [
+      {
+        filePath: options.project.configPath,
+        label: 'referencing project',
+      },
+      {
+        filePath: options.referencePath,
+        label: 'referenced project',
+      },
+      {
+        label: `${options.packageRole} package`,
+        packageManifestPath,
+      },
+    ],
     packageManifestPath,
-    reason:
-      'Cross-package graph references need non-empty package.json names so Limina can validate dependency identity.',
-    title:
-      'Project reference crosses workspace package without package identity',
-  });
+    presentation: {
+      detailLines: lines,
+      fix: 'Add a non-empty package.json name when this workspace package should participate in package dependency graph checks.',
+      reason:
+        'Cross-package graph references need non-empty package.json names so Limina can validate dependency identity.',
+      title:
+        'Project reference crosses workspace package without package identity',
+    },
+    task: 'graph:check',
+  } satisfies GraphWorkspacePackageNameMissingFinding);
 }
 
 function getResolvedWorkspacePackage(
@@ -585,7 +623,8 @@ function addWorkspaceReferenceDependencyProblems(
   project: ProjectInfo,
   projectsByPath: Map<string, ProjectInfo>,
   workspaceLookup: WorkspaceLookupIndex,
-  problems: string[],
+  findings: GraphFinding[],
+  projectCheckerNamesByPath: ReadonlyMap<string, string>,
   checks: CheckCounter,
 ): void {
   if (!isDtsProjectConfig(project.configPath)) {
@@ -617,9 +656,10 @@ function addWorkspaceReferenceDependencyProblems(
     if (!isNamedWorkspacePackage(sourcePackage)) {
       addNamelessWorkspaceReferenceProblem({
         config,
+        findings,
         packageRole: 'referencing',
-        problems,
         project,
+        projectCheckerNamesByPath,
         referencePath,
         workspacePackage: sourcePackage,
       });
@@ -629,9 +669,10 @@ function addWorkspaceReferenceDependencyProblems(
     if (!isNamedWorkspacePackage(targetPackage)) {
       addNamelessWorkspaceReferenceProblem({
         config,
+        findings,
         packageRole: 'referenced',
-        problems,
         project,
+        projectCheckerNamesByPath,
         referencePath,
         workspacePackage: targetPackage,
       });
@@ -657,16 +698,55 @@ function addWorkspaceReferenceDependencyProblems(
       `  fix: declare "${targetPackage.name}" in the referencing package manifest. If this package intentionally consumes built artifacts, remove the project reference; ${formatArtifactDependencyPolicy(targetPackage)}`,
     ];
 
-    addGraphProblem(problems, lines, {
+    findings.push({
+      checkerName: getProjectCheckerName(
+        projectCheckerNamesByPath,
+        project.configPath,
+      ),
       code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
+      evidence: [
+        {
+          label: 'referenced package',
+          value: targetPackage.name,
+        },
+        {
+          label: 'package manifest',
+          value: packageManifestPath,
+        },
+      ],
+      facts: {
+        packageManifestPath,
+        referencedPackageName: targetPackage.name,
+        referencedProjectPath: referencePath,
+        referencingPackageName: sourcePackage.name,
+        referencingProjectPath: project.configPath,
+      },
       filePath: project.configPath,
-      fix: `Declare "${targetPackage.name}" in the referencing package manifest. If this package intentionally consumes built artifacts, remove the project reference.`,
+      locations: [
+        {
+          filePath: project.configPath,
+          label: 'referencing project',
+        },
+        {
+          filePath: referencePath,
+          label: 'referenced project',
+        },
+        {
+          label: 'referencing package',
+          packageManifestPath,
+        },
+      ],
       packageManifestPath,
       packageName: sourcePackage.name,
-      reason: `A cross-package project reference is a source dependency edge, so ${sourcePackage.name} must declare ${targetPackage.name}.`,
-      title:
-        'Project reference crosses workspace packages without a declared dependency',
-    });
+      presentation: {
+        detailLines: lines,
+        fix: `Declare "${targetPackage.name}" in the referencing package manifest. If this package intentionally consumes built artifacts, remove the project reference.`,
+        reason: `A cross-package project reference is a source dependency edge, so ${sourcePackage.name} must declare ${targetPackage.name}.`,
+        title:
+          'Project reference crosses workspace packages without a declared dependency',
+      },
+      task: 'graph:check',
+    } satisfies GraphWorkspaceDependencyUndeclaredFinding);
   }
 }
 
@@ -733,7 +813,8 @@ function getGeneratedReferenceCycleEdges(
 function addGeneratedReferenceCycleProblems(options: {
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
-  problems: string[];
+  findings: GraphFinding[];
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   projects: ProjectInfo[];
 }): void {
   const graph = createGeneratedReferenceGraph(options.projects);
@@ -766,13 +847,44 @@ function addGeneratedReferenceCycleProblems(options: {
       `  fix: ${GENERATED_REFERENCE_CYCLE_FIX}`,
     ];
 
-    addGraphProblem(options.problems, lines, {
+    const checkerNames = new Set(
+      members
+        .map((member) =>
+          getProjectCheckerName(options.projectCheckerNamesByPath, member),
+        )
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    options.findings.push({
+      checkerName: checkerNames.size === 1 ? [...checkerNames][0] : undefined,
       code: LIMINA_CHECK_ISSUE_CODES.graphReferenceCycle,
+      evidence: [
+        {
+          label: 'projects',
+          lines: members,
+        },
+        {
+          label: 'references in cycle',
+          lines: internalEdges.map((edge) => `${edge.from} -> ${edge.to}`),
+        },
+      ],
+      facts: {
+        edges: internalEdges,
+        projectPaths: members,
+      },
       filePath: members[0],
-      fix: GENERATED_REFERENCE_CYCLE_FIX,
-      reason: GENERATED_REFERENCE_CYCLE_REASON,
-      title: 'Generated project reference cycle',
-    });
+      locations: members.map((member) => ({
+        filePath: member,
+        label: 'cycle project',
+      })),
+      presentation: {
+        detailLines: lines,
+        fix: GENERATED_REFERENCE_CYCLE_FIX,
+        reason: GENERATED_REFERENCE_CYCLE_REASON,
+        title: 'Generated project reference cycle',
+      },
+      task: 'graph:check',
+    } satisfies GraphReferenceCycleFinding);
   }
 }
 
@@ -837,9 +949,10 @@ function addReferenceCompletenessProblems(options: {
     string,
     Map<string, ReferenceExpectation>
   >;
+  findings: GraphFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
   graphRules: NormalizedGraphRules;
-  problems: string[];
+  projectCheckerNamesByPath: ReadonlyMap<string, string>;
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
 }): void {
@@ -882,14 +995,59 @@ function addReferenceCompletenessProblems(options: {
         '  fix: ensure both source tsconfig files are selected by checker.include, then run `limina graph prepare`.',
       ];
 
-      addGraphProblem(options.problems, lines, {
+      const importFacts: GraphImportFact[] = expectation.importRecords.map(
+        createGraphImportFact,
+      );
+
+      options.findings.push({
+        checkerName: getProjectCheckerName(
+          options.projectCheckerNamesByPath,
+          project.configPath,
+        ),
         code: LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
+        evidence: [
+          {
+            label: 'expected reference',
+            value: expectation.targetProjectPath,
+          },
+          {
+            label: 'imports',
+            lines: importFacts.map(
+              (importFact: GraphImportFact) =>
+                `${importFact.filePath}:${importFact.line} (${importFact.kind}) imports ${importFact.specifier}`,
+            ),
+          },
+        ],
+        facts: {
+          expectedReferencePath: expectation.targetProjectPath,
+          imports: importFacts,
+          projectPath: project.configPath,
+        },
         filePath: project.configPath,
-        fix: 'Ensure both source tsconfig files are selected by checker.include, then run `limina graph prepare`.',
-        reason:
-          'A static workspace import reaches a declaration project that is not listed in the source declaration references.',
-        title: 'Missing project reference for workspace import',
-      });
+        locations: [
+          {
+            filePath: project.configPath,
+            label: 'importing project',
+          },
+          {
+            filePath: expectation.targetProjectPath,
+            label: 'expected reference',
+          },
+          ...importFacts.map((importFact: GraphImportFact) => ({
+            filePath: importFact.filePath,
+            label: 'import',
+            line: importFact.line,
+          })),
+        ],
+        presentation: {
+          detailLines: lines,
+          fix: 'Ensure both source tsconfig files are selected by checker.include, then run `limina graph prepare`.',
+          reason:
+            'A static workspace import reaches a declaration project that is not listed in the source declaration references.',
+          title: 'Missing project reference for workspace import',
+        },
+        task: 'graph:check',
+      } satisfies GraphReferenceMissingFinding);
     }
 
     if (project.fileNames.length === 0) {
@@ -944,14 +1102,42 @@ function addReferenceCompletenessProblems(options: {
         '  fix: remove the extra reference, import from the referenced project, or document the exception in graph.rules.<label>.allow.refs.',
       ];
 
-      addGraphProblem(options.problems, lines, {
+      options.findings.push({
+        checkerName: getProjectCheckerName(
+          options.projectCheckerNamesByPath,
+          project.configPath,
+        ),
         code: LIMINA_CHECK_ISSUE_CODES.graphReferenceExtra,
+        evidence: [
+          {
+            label: 'extra reference',
+            value: referencePath,
+          },
+        ],
+        facts: {
+          extraReferencePath: referencePath,
+          projectPath: project.configPath,
+        },
         filePath: project.configPath,
-        fix: 'Remove the extra reference, import from the referenced project, or document the exception in graph.rules.<label>.allow.refs.',
-        reason:
-          'tsconfig*.dts.json references must match declaration leaves reached by static import/export analysis.',
-        title: 'Extra project reference not proven by static imports',
-      });
+        locations: [
+          {
+            filePath: project.configPath,
+            label: 'project',
+          },
+          {
+            filePath: referencePath,
+            label: 'extra reference',
+          },
+        ],
+        presentation: {
+          detailLines: lines,
+          fix: 'Remove the extra reference, import from the referenced project, or document the exception in graph.rules.<label>.allow.refs.',
+          reason:
+            'tsconfig*.dts.json references must match declaration leaves reached by static import/export analysis.',
+          title: 'Extra project reference not proven by static imports',
+        },
+        task: 'graph:check',
+      } satisfies GraphReferenceExtraFinding);
     }
   }
 }
@@ -1050,9 +1236,10 @@ function collectExpectedReferenceForImport(options: {
   if (rawDeniedDepRule) {
     addDeniedDepImportProblem({
       config: options.context.config,
+      findings: options.context.findings,
       importRecord: options.importRecord,
-      problems: options.context.problems,
       project: options.project,
+      projectCheckerNamesByPath: options.context.projectCheckerNamesByPath,
       rule: rawDeniedDepRule,
     });
     return;
@@ -1162,6 +1349,19 @@ function resolveImportForReferenceExpectation(options: {
       ? declarationProvider.typeScriptResolution.resolvedFileName
       : workspaceTypeScriptResolvedFilePath;
 
+  if (
+    workspaceExportResolution &&
+    !workspaceExportResolution.hasTypeScriptStableEntry
+  ) {
+    addWorkspacePackageExportWithoutTypeEntryProblem({
+      context: options.context,
+      importRecord: options.importRecord,
+      project: options.project,
+      resolution: workspaceExportResolution,
+    });
+    return null;
+  }
+
   if (!graphResolvedFilePath && declarationProvider.kind === 'oxc-only') {
     addOxcOnlyDeclarationProviderProblem({
       context: options.context,
@@ -1178,20 +1378,6 @@ function resolveImportForReferenceExpectation(options: {
       importRecord: options.importRecord,
       project: options.project,
       targetPackage,
-      title: 'Unresolved workspace import:',
-    });
-    return null;
-  }
-
-  if (
-    workspaceExportResolution &&
-    !workspaceExportResolution.hasTypeScriptStableEntry
-  ) {
-    addWorkspacePackageExportWithoutTypeEntryProblem({
-      context: options.context,
-      importRecord: options.importRecord,
-      project: options.project,
-      resolution: workspaceExportResolution,
     });
     return null;
   }
@@ -1251,9 +1437,10 @@ function resolveImportForReferenceExpectation(options: {
   if (deniedDepRule) {
     addDeniedDepImportProblem({
       config: options.context.config,
+      findings: options.context.findings,
       importRecord: options.importRecord,
-      problems: options.context.problems,
       project: options.project,
+      projectCheckerNamesByPath: options.context.projectCheckerNamesByPath,
       rule: deniedDepRule,
     });
     return null;
@@ -1281,29 +1468,81 @@ function addWorkspacePackageExportWithoutTypeEntryProblem(options: {
   const typeScriptResolvedFileName =
     options.resolution.typeScriptResolvedFileName;
   const oxcResolvedFileName = options.resolution.oxcResolvedFileName;
+  const reason =
+    'governed source imports through package exports must resolve to a stable type or checker source entry.';
+  const fix =
+    'add a types/declaration branch for this export, import a typed public API, or keep this entry as a runtime-only resource outside governed source imports.';
+  const lines = [
+    'Workspace source import uses package export without a type entry:',
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  package: ${options.resolution.packageName}`,
+    `  export: ${options.resolution.subpath}`,
+    ...(typeScriptResolvedFileName
+      ? [
+          `  TypeScript resolved file: ${toRelativePath(options.context.config.rootDir, typeScriptResolvedFileName)}`,
+        ]
+      : ['  TypeScript resolved file: (none)']),
+    ...(oxcResolvedFileName
+      ? [
+          `  runtime resolved file: ${toRelativePath(options.context.config.rootDir, oxcResolvedFileName)}`,
+        ]
+      : ['  runtime resolved file: (none)']),
+    `  reason: ${reason}`,
+    `  fix: ${fix}`,
+  ];
+  const resolvedFilePath = typeScriptResolvedFileName ?? oxcResolvedFileName;
 
-  options.context.problems.push(
-    [
-      'Workspace source import uses package export without a type entry:',
-      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
-      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-      `  imported specifier: ${options.importRecord.specifier}`,
-      `  package: ${options.resolution.packageName}`,
-      `  export: ${options.resolution.subpath}`,
-      ...(typeScriptResolvedFileName
-        ? [
-            `  TypeScript resolved file: ${toRelativePath(options.context.config.rootDir, typeScriptResolvedFileName)}`,
-          ]
-        : ['  TypeScript resolved file: (none)']),
-      ...(oxcResolvedFileName
-        ? [
-            `  runtime resolved file: ${toRelativePath(options.context.config.rootDir, oxcResolvedFileName)}`,
-          ]
-        : ['  runtime resolved file: (none)']),
-      '  reason: governed source imports through package exports must resolve to a stable type or checker source entry.',
-      '  fix: add a types/declaration branch for this export, import a typed public API, or keep this entry as a runtime-only resource outside governed source imports.',
-    ].join('\n'),
-  );
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'package export',
+        value: `${options.resolution.packageName}${options.resolution.subpath === '.' ? '' : options.resolution.subpath.slice(1)}`,
+      },
+    ],
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'missing-type-entry',
+      ...(resolvedFilePath ? { resolvedFilePath } : {}),
+      targetPackageName: options.resolution.packageName,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+    ],
+    packageName: options.resolution.packageName,
+    presentation: {
+      detailLines: lines,
+      fix,
+      reason,
+      title: 'Workspace source import uses package export without a type entry',
+    },
+    task: 'graph:check',
+  } satisfies GraphWorkspaceImportUnresolvedFinding);
 }
 
 function getWorkspaceExportResolution(options: {
@@ -1372,22 +1611,62 @@ function addUnresolvedWorkspaceImportProblem(options: {
   importRecord: ImportRecord;
   project: ProjectInfo;
   targetPackage: WorkspacePackage | null;
-  title: string;
 }): void {
-  if (!options.targetPackage) {
+  if (!options.targetPackage?.name) {
     return;
   }
+  const lines = [
+    'Unresolved workspace import:',
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  matched workspace package: ${options.targetPackage.name}`,
+    `  current references: ${formatReferences(options.context.config.rootDir, options.project.references)}`,
+  ];
 
-  options.context.problems.push(
-    [
-      options.title,
-      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
-      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-      `  imported specifier: ${options.importRecord.specifier}`,
-      `  matched workspace package: ${options.targetPackage.name}`,
-      `  current references: ${formatReferences(options.context.config.rootDir, options.project.references)}`,
-    ].join('\n'),
-  );
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+    ],
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'unresolved',
+      targetPackageName: options.targetPackage.name,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+    ],
+    packageName: options.targetPackage.name,
+    presentation: {
+      detailLines: lines,
+      reason: GRAPH_CHECK_DEFAULT_REASON,
+      title: 'Unresolved workspace import',
+    },
+    task: 'graph:check',
+  } satisfies GraphWorkspaceImportUnresolvedFinding);
 }
 
 function addOxcOnlyDeclarationProviderProblem(options: {
@@ -1396,26 +1675,78 @@ function addOxcOnlyDeclarationProviderProblem(options: {
   oxcResolvedFilePath: string;
   project: ProjectInfo;
 }): void {
-  addGraphProblem(
-    options.context.problems,
-    [
-      'Oxc can resolve this specifier, but TypeScript cannot:',
-      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
-      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-      `  imported specifier: ${options.importRecord.specifier}`,
-      `  Oxc resolved file: ${toRelativePath(options.context.config.rootDir, options.oxcResolvedFilePath)}`,
-      '  reason: declaration references follow the checker-aware TypeScript declaration provider, not the Oxc runtime-like resolver.',
-      '  fix: check moduleResolution, exports.types/types conditions, paths, customConditions, and package boundaries.',
+  const targetPackage = options.context.workspaceLookup.findPackageForSpecifier(
+    options.importRecord.specifier,
+  );
+
+  if (!targetPackage?.name) {
+    return;
+  }
+
+  const lines = [
+    'Oxc can resolve this specifier, but TypeScript cannot:',
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  Oxc resolved file: ${toRelativePath(options.context.config.rootDir, options.oxcResolvedFilePath)}`,
+    '  reason: declaration references follow the checker-aware TypeScript declaration provider, not the Oxc runtime-like resolver.',
+    '  fix: check moduleResolution, exports.types/types conditions, paths, customConditions, and package boundaries.',
+  ];
+
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'Oxc resolved file',
+        value: options.oxcResolvedFilePath,
+      },
     ],
-    {
-      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
-      filePath: options.importRecord.filePath,
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'oxc-only',
+      resolvedFilePath: options.oxcResolvedFilePath,
+      targetPackageName: targetPackage.name,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+      {
+        filePath: options.oxcResolvedFilePath,
+        label: 'Oxc resolved file',
+      },
+    ],
+    packageName: targetPackage.name,
+    presentation: {
+      detailLines: lines,
       fix: 'Check moduleResolution, exports.types/types conditions, paths, customConditions, and package boundaries.',
       reason:
         'Oxc resolved this specifier, but TypeScript could not resolve a declaration provider.',
       title: 'Oxc can resolve this specifier, but TypeScript cannot',
     },
-  );
+    task: 'graph:check',
+  } satisfies GraphWorkspaceImportUnresolvedFinding);
 }
 
 function findExpectedReferenceTargetProjectPath(options: {
@@ -1501,25 +1832,96 @@ function addBuildArtifactImportProblem(options: {
       options.project.references.has(referencedProjectPath),
   );
 
-  options.context.problems.push(
-    [
-      hasProjectReference
-        ? 'Referenced workspace dependency resolves through package exports to a build artifact:'
-        : 'Workspace source dependency resolved outside the source graph:',
-      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+  const targetPackageName = options.resolution.targetPackageForGraph.name;
+
+  if (!targetPackageName) {
+    return false;
+  }
+
+  const title = hasProjectReference
+    ? 'Referenced workspace dependency resolves through package exports to a build artifact'
+    : 'Workspace source dependency resolved outside the source graph';
+  const reason =
+    'this import resolved to a file not owned by the source graph, so it is not a source project-reference edge.';
+  const fix = `point the dependency package export at source files, or treat this relationship as artifact consumption; ${formatArtifactDependencyPolicy(options.resolution.targetPackageForGraph)}`;
+  const lines = [
+    `${title}:`,
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    ...(referencedProjectPath
+      ? [
+          `  referenced project: ${toRelativePath(options.context.config.rootDir, referencedProjectPath)}`,
+          `  project reference present: ${hasProjectReference ? 'yes' : 'no'}`,
+        ]
+      : []),
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolution.resolvedFilePath)}`,
+    `  reason: ${reason}`,
+    `  fix: ${fix}`,
+  ];
+
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportOutsideGraph,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'resolved file',
+        value: options.resolution.resolvedFilePath,
+      },
+    ],
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'build-artifact',
+      ...(referencedProjectPath ? { referencedProjectPath } : {}),
+      resolvedFilePath: options.resolution.resolvedFilePath,
+      targetPackageName,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
       ...(referencedProjectPath
         ? [
-            `  referenced project: ${toRelativePath(options.context.config.rootDir, referencedProjectPath)}`,
-            `  project reference present: ${hasProjectReference ? 'yes' : 'no'}`,
+            {
+              filePath: referencedProjectPath,
+              label: 'referenced project',
+            },
           ]
         : []),
-      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-      `  imported specifier: ${options.importRecord.specifier}`,
-      `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolution.resolvedFilePath)}`,
-      '  reason: this import resolved to a file not owned by the source graph, so it is not a source project-reference edge.',
-      `  fix: point the dependency package export at source files, or treat this relationship as artifact consumption; ${formatArtifactDependencyPolicy(options.resolution.targetPackageForGraph)}`,
-    ].join('\n'),
-  );
+      {
+        filePath: options.resolution.resolvedFilePath,
+        label: 'resolved file',
+      },
+    ],
+    packageName: targetPackageName,
+    presentation: {
+      detailLines: lines,
+      fix,
+      reason,
+      title,
+    },
+    task: 'graph:check',
+  } satisfies GraphWorkspaceImportOutsideGraphFinding);
 
   return true;
 }
@@ -1543,16 +1945,72 @@ function addUnmappedWorkspaceImportProblem(options: {
     return;
   }
 
-  options.context.problems.push(
-    [
-      'Unable to map workspace import to a graph project:',
-      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
-      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-      `  imported specifier: ${options.importRecord.specifier}`,
-      `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolution.graphResolvedFilePath)}`,
-      `  current references: ${formatReferences(options.context.config.rootDir, options.project.references)}`,
-    ].join('\n'),
-  );
+  const targetPackageName = options.resolution.targetPackageForGraph.name;
+
+  if (!targetPackageName) {
+    return;
+  }
+
+  const lines = [
+    'Unable to map workspace import to a graph project:',
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolution.graphResolvedFilePath)}`,
+    `  current references: ${formatReferences(options.context.config.rootDir, options.project.references)}`,
+  ];
+
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphImportTargetUnmapped,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'resolved file',
+        value: options.resolution.graphResolvedFilePath,
+      },
+    ],
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      resolvedFilePath: options.resolution.graphResolvedFilePath,
+      targetPackageName,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+      {
+        filePath: options.resolution.graphResolvedFilePath,
+        label: 'resolved file',
+      },
+    ],
+    packageName: targetPackageName,
+    presentation: {
+      detailLines: lines,
+      reason: GRAPH_CHECK_DEFAULT_REASON,
+      title: 'Unable to map workspace import to a graph project',
+    },
+    task: 'graph:check',
+  } satisfies GraphImportTargetUnmappedFinding);
 }
 
 function addOutsideWorkspaceGraphProblem(options: {
@@ -1570,16 +2028,72 @@ function addOutsideWorkspaceGraphProblem(options: {
     return;
   }
 
-  options.context.problems.push(
-    [
-      'Workspace source import resolved outside the workspace graph:',
-      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
-      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-      `  imported specifier: ${options.importRecord.specifier}`,
-      `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolution.graphResolvedFilePath)}`,
-      `  reason: source dependency edges must resolve to files owned by the source graph; ${formatArtifactDependencyPolicy(targetPackage)}`,
-    ].join('\n'),
-  );
+  if (!targetPackage.name) {
+    return;
+  }
+
+  const reason = `source dependency edges must resolve to files owned by the source graph; ${formatArtifactDependencyPolicy(targetPackage)}`;
+  const lines = [
+    'Workspace source import resolved outside the workspace graph:',
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  resolved file: ${toRelativePath(options.context.config.rootDir, options.resolution.graphResolvedFilePath)}`,
+    `  reason: ${reason}`,
+  ];
+
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportOutsideGraph,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+      {
+        label: 'resolved file',
+        value: options.resolution.graphResolvedFilePath,
+      },
+    ],
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'outside-workspace-graph',
+      resolvedFilePath: options.resolution.graphResolvedFilePath,
+      targetPackageName: targetPackage.name,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      {
+        filePath: options.project.configPath,
+        label: 'importing project',
+      },
+      {
+        filePath: options.resolution.graphResolvedFilePath,
+        label: 'resolved file',
+      },
+    ],
+    packageName: targetPackage.name,
+    presentation: {
+      detailLines: lines,
+      reason,
+      title: 'Workspace source import resolved outside the workspace graph',
+    },
+    task: 'graph:check',
+  } satisfies GraphWorkspaceImportOutsideGraphFinding);
 }
 
 function addExpectedReferenceForTarget(options: {
@@ -1602,9 +2116,10 @@ function addExpectedReferenceForTarget(options: {
   if (deniedRefRule) {
     addDeniedRefImportProblem({
       config: options.context.config,
+      findings: options.context.findings,
       importRecord: options.importRecord,
-      problems: options.context.problems,
       project: options.project,
+      projectCheckerNamesByPath: options.context.projectCheckerNamesByPath,
       rule: deniedRefRule,
       targetProjectPath: options.targetProjectPath,
     });
@@ -1622,15 +2137,63 @@ function addExpectedReferenceForTarget(options: {
   }
 
   if (!options.context.projectsByPath.has(options.targetProjectPath)) {
-    options.context.problems.push(
-      [
-        'Expected graph target is not reachable from any checker entry:',
-        `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
-        `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
-        `  imported specifier: ${options.importRecord.specifier}`,
-        `  expected graph project: ${toRelativePath(options.context.config.rootDir, options.targetProjectPath)}`,
-      ].join('\n'),
-    );
+    const lines = [
+      'Expected graph target is not reachable from any checker entry:',
+      `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+      `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+      `  imported specifier: ${options.importRecord.specifier}`,
+      `  expected graph project: ${toRelativePath(options.context.config.rootDir, options.targetProjectPath)}`,
+    ];
+
+    options.context.findings.push({
+      checkerName: getProjectCheckerName(
+        options.context.projectCheckerNamesByPath,
+        options.project.configPath,
+      ),
+      code: LIMINA_CHECK_ISSUE_CODES.graphTargetUnreachable,
+      evidence: [
+        {
+          label: 'import',
+          lines: [
+            `file: ${options.importRecord.filePath}`,
+            `line: ${options.importRecord.line}`,
+            `kind: ${options.importRecord.kind}`,
+          ],
+          value: options.importRecord.specifier,
+        },
+        {
+          label: 'expected graph project',
+          value: options.targetProjectPath,
+        },
+      ],
+      facts: {
+        import: createGraphImportFact(options.importRecord),
+        importingProjectPath: options.project.configPath,
+        targetProjectPath: options.targetProjectPath,
+      },
+      filePath: options.importRecord.filePath,
+      locations: [
+        {
+          filePath: options.importRecord.filePath,
+          label: 'import',
+          line: options.importRecord.line,
+        },
+        {
+          filePath: options.project.configPath,
+          label: 'importing project',
+        },
+        {
+          filePath: options.targetProjectPath,
+          label: 'expected graph project',
+        },
+      ],
+      presentation: {
+        detailLines: lines,
+        reason: GRAPH_CHECK_DEFAULT_REASON,
+        title: 'Expected graph target is not reachable from any checker entry',
+      },
+      task: 'graph:check',
+    } satisfies GraphTargetUnreachableFinding);
     return;
   }
 
@@ -1716,7 +2279,7 @@ function createGeneratedProjectCheckerNamesByPath(
 
 function createGraphCheckManagedOutputProjectContexts(options: {
   config: ResolvedLiminaConfig;
-  problems: string[];
+  findings: GraphFinding[];
   projectCheckerNamesByPath: Map<string, string>;
   projects: ProjectInfo[];
 }): ManagedOutputProjectContext[] {
@@ -1736,7 +2299,43 @@ function createGraphCheckManagedOutputProjectContexts(options: {
       project.resolverConfigPath,
     );
 
-    options.problems.push(...outputOptions.problems);
+    for (const diagnostic of outputOptions.diagnostics) {
+      options.findings.push({
+        checkerName,
+        code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+        evidence: [
+          {
+            label: 'field',
+            value: diagnostic.field,
+          },
+          ...(Object.hasOwn(diagnostic, 'value')
+            ? [
+                {
+                  label: 'value',
+                  value: JSON.stringify(diagnostic.value),
+                },
+              ]
+            : []),
+        ],
+        facts: {
+          kind: 'output-options',
+          projectPath: diagnostic.sourceConfigPath,
+        },
+        filePath: diagnostic.sourceConfigPath,
+        locations: [
+          {
+            filePath: diagnostic.sourceConfigPath,
+            label: 'source config',
+          },
+        ],
+        presentation: {
+          detailLines: diagnostic.detailLines,
+          reason: diagnostic.reason,
+          title: 'Invalid Limina output options',
+        },
+        task: 'graph:check',
+      } satisfies GraphConfigInvalidFinding);
+    }
 
     if (!outputOptions.outputs) {
       continue;
@@ -1786,10 +2385,10 @@ export async function runGraphCheckImpl(
     report?: CheckIssueReportOptions;
   } = {},
 ): Promise<boolean> {
-  const problems: string[] = [];
+  const findings: GraphFinding[] = [];
   const checks = createCheckCounter();
   const checkItems = createCheckItemAccumulator(
-    () => problems.length,
+    () => findings.length,
     () => checks.value,
     {
       plannedItems: GRAPH_CHECK_ITEM_NAMES,
@@ -1823,7 +2422,7 @@ export async function runGraphCheckImpl(
   const managedOutputLookup = createManagedOutputDeclarationLookup(
     createGraphCheckManagedOutputProjectContexts({
       config,
-      problems,
+      findings,
       projectCheckerNamesByPath,
       projects,
     }),
@@ -1831,9 +2430,42 @@ export async function runGraphCheckImpl(
   const packages = await preflight.ensureWorkspacePackages();
 
   checkItems.start('source graph routes');
-  problems.push(...graphRoute.problems);
+  for (const diagnostic of graphRoute.diagnostics) {
+    const filePath = diagnostic.filePath ?? config.configPath;
+
+    findings.push({
+      checkerName: diagnostic.checkerName,
+      code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+      evidence: [
+        {
+          label: 'checker',
+          value: diagnostic.checkerName,
+        },
+      ],
+      facts: {
+        configPath: config.configPath,
+        kind: 'route',
+      },
+      filePath,
+      locations: [
+        {
+          filePath,
+          label: 'checker graph route',
+        },
+      ],
+      presentation: {
+        detailLines: diagnostic.detailLines,
+        reason: diagnostic.reason,
+        title: diagnostic.title,
+      },
+      task: 'graph:check',
+    } satisfies GraphConfigInvalidFinding);
+  }
   const customConditionConsistencyContext =
-    createCustomConditionConsistencyContext(projectsByPath);
+    createCustomConditionConsistencyContext(
+      projectsByPath,
+      projectCheckerNamesByPath,
+    );
   const workspaceExports = await createWorkspaceExportsResolutionIndex({
     config,
     importAnalysis: preflight.importAnalysis,
@@ -1842,7 +2474,39 @@ export async function runGraphCheckImpl(
     profiles: createWorkspaceExportsResolutionProfiles(projects),
   });
 
-  problems.push(...workspaceExports.problems);
+  for (const diagnostic of workspaceExports.diagnostics) {
+    findings.push({
+      code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+      evidence: [
+        {
+          label: 'package export',
+          value: diagnostic.subpath,
+        },
+      ],
+      facts: {
+        configPath: config.configPath,
+        kind: 'workspace-export',
+        packageManifestPath: diagnostic.packageJsonPath,
+        packageName: diagnostic.packageName,
+      },
+      filePath: diagnostic.packageJsonPath,
+      locations: [
+        {
+          label: 'package manifest',
+          packageManifestPath: diagnostic.packageJsonPath,
+        },
+      ],
+      packageManifestPath: diagnostic.packageJsonPath,
+      packageName: diagnostic.packageName,
+      presentation: {
+        detailLines: diagnostic.detailLines,
+        fix: diagnostic.fix,
+        reason: diagnostic.reason,
+        title: diagnostic.title,
+      },
+      task: 'graph:check',
+    } satisfies GraphConfigInvalidFinding);
+  }
   checks.add(projectPaths.length);
   checkItems.record('source graph routes');
 
@@ -1854,22 +2518,67 @@ export async function runGraphCheckImpl(
       refs: true,
     },
     packages,
-    problems,
+    findings,
     projectPathAliases: createGeneratedGraphPathAliases(generatedGraph),
     projectPaths,
   });
   for (const project of projects) {
-    if (project.labelProblem) {
-      problems.push(project.labelProblem);
+    if (project.labelDiagnostic) {
+      const diagnostic = project.labelDiagnostic;
+
+      findings.push({
+        checkerName: getProjectCheckerName(
+          projectCheckerNamesByPath,
+          project.configPath,
+        ),
+        code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
+        evidence: [
+          {
+            label: 'field',
+            value: diagnostic.field,
+          },
+          ...(Object.hasOwn(diagnostic, 'value')
+            ? [
+                {
+                  label: 'value',
+                  value: JSON.stringify(diagnostic.value),
+                },
+              ]
+            : []),
+        ],
+        facts: {
+          kind: 'project-label',
+          projectPath: diagnostic.projectPath,
+        },
+        filePath: diagnostic.projectPath,
+        locations: [
+          {
+            filePath: diagnostic.projectPath,
+            label: 'project',
+          },
+        ],
+        presentation: {
+          detailLines: diagnostic.detailLines,
+          reason: diagnostic.reason,
+          title: diagnostic.title,
+        },
+        task: 'graph:check',
+      } satisfies GraphConfigInvalidFinding);
     }
 
-    addDtsOptionProblems(config, project, problems, checks);
-    addTypecheckParityProblems(config, project, problems, checks);
+    const checkerName = getProjectCheckerName(
+      projectCheckerNamesByPath,
+      project.configPath,
+    );
+
+    addDtsOptionProblems(config, project, findings, checks, checkerName);
+    addTypecheckParityProblems(config, project, findings, checks, checkerName);
     addDeniedReferenceProblems({
       checks,
       config,
-      problems,
+      findings,
       project,
+      projectCheckerNamesByPath,
       projectsByPath,
       rules: graphRules,
       workspaceLookup,
@@ -1879,14 +2588,16 @@ export async function runGraphCheckImpl(
       project,
       projectsByPath,
       workspaceLookup,
-      problems,
+      findings,
+      projectCheckerNamesByPath,
       checks,
     );
   }
   addGeneratedReferenceCycleProblems({
     checks,
     config,
-    problems,
+    findings,
+    projectCheckerNamesByPath,
     projects,
   });
   checkItems.record('project references');
@@ -1896,15 +2607,15 @@ export async function runGraphCheckImpl(
     checks,
     config,
     consistencyContext: customConditionConsistencyContext,
-    problems,
+    findings,
     projects,
   });
   addConditionDomainProblems({
     checks,
     config,
     consistencyContext: customConditionConsistencyContext,
+    findings,
     generatedGraph,
-    problems,
     projectsByPath,
   });
   checkItems.record('condition domains');
@@ -1919,7 +2630,7 @@ export async function runGraphCheckImpl(
     managedOutputLookup,
     packages,
     projectCheckerNamesByPath,
-    problems,
+    findings,
     projectPaths,
     projects,
     projectsByPath,
@@ -1931,18 +2642,19 @@ export async function runGraphCheckImpl(
     checks,
     config,
     expectedReferencesByProjectPath,
+    findings,
     generatedGraph,
     graphRules,
-    problems,
+    projectCheckerNamesByPath,
     projects,
     projectsByPath,
   });
   checkItems.record('reference completeness');
 
-  if (problems.length > 0) {
-    const issues = createGraphCheckIssues({
+  if (findings.length > 0) {
+    const issues = createGraphCheckIssuesFromFindings({
       config,
-      problems,
+      findings,
     });
 
     options.onStats?.({

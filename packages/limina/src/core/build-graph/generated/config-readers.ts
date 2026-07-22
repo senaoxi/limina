@@ -29,6 +29,14 @@ export interface OutputOptions {
   target: string;
 }
 
+export interface OutputOptionsProblem {
+  readonly detailLines: readonly string[];
+  readonly field: string;
+  readonly reason: string;
+  readonly sourceConfigPath: string;
+  readonly value?: unknown;
+}
+
 export function isDefaultTsconfigPath(configPath: string): boolean {
   return path.basename(configPath) === 'tsconfig.json';
 }
@@ -81,23 +89,31 @@ export function readGraphRules(
 
 function addOutputOptionsProblem(options: {
   config: ResolvedLiminaConfig;
+  diagnostics: OutputOptionsProblem[];
   field: string;
   problems: string[];
   reason: string;
   sourceConfigPath: string;
   value?: unknown;
 }): void {
-  options.problems.push(
-    [
-      'Invalid Limina output options:',
-      `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
-      `  field: ${options.field}`,
-      ...(Object.hasOwn(options, 'value')
-        ? [`  value: ${formatUnknownValue(options.value)}`]
-        : []),
-      `  reason: ${options.reason}`,
-    ].join('\n'),
-  );
+  const detailLines = [
+    'Invalid Limina output options:',
+    `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
+    `  field: ${options.field}`,
+    ...(Object.hasOwn(options, 'value')
+      ? [`  value: ${formatUnknownValue(options.value)}`]
+      : []),
+    `  reason: ${options.reason}`,
+  ];
+
+  options.problems.push(detailLines.join('\n'));
+  options.diagnostics.push({
+    detailLines,
+    field: options.field,
+    reason: options.reason,
+    sourceConfigPath: options.sourceConfigPath,
+    ...(Object.hasOwn(options, 'value') ? { value: options.value } : {}),
+  });
 }
 
 function normalizeExtendsConfigPath(
@@ -188,13 +204,19 @@ function readExplicitSourceCompilerTarget(options: {
 export function readOutputOptions(
   config: ResolvedLiminaConfig,
   sourceConfigPath: string,
-): { outputs: OutputOptions | null; problems: string[] } {
+): {
+  diagnostics: OutputOptionsProblem[];
+  outputs: OutputOptions | null;
+  problems: string[];
+} {
   const configObject = readJsonConfig(config, sourceConfigPath);
+  const diagnostics: OutputOptionsProblem[] = [];
   const liminaOptions = configObject.liminaOptions;
   const problems: string[] = [];
 
   if (liminaOptions === undefined) {
     return {
+      diagnostics,
       outputs: null,
       problems,
     };
@@ -203,6 +225,7 @@ export function readOutputOptions(
   if (!isPlainRecord(liminaOptions)) {
     addOutputOptionsProblem({
       config,
+      diagnostics,
       field: 'liminaOptions',
       problems,
       reason: 'liminaOptions must be an object before outputs can be read.',
@@ -210,6 +233,7 @@ export function readOutputOptions(
       value: liminaOptions,
     });
     return {
+      diagnostics,
       outputs: null,
       problems,
     };
@@ -219,6 +243,7 @@ export function readOutputOptions(
 
   if (outputs === undefined) {
     return {
+      diagnostics,
       outputs: null,
       problems,
     };
@@ -227,6 +252,7 @@ export function readOutputOptions(
   if (!isPlainRecord(outputs)) {
     addOutputOptionsProblem({
       config,
+      diagnostics,
       field: 'liminaOptions.outputs',
       problems,
       reason: 'outputs must be an object.',
@@ -234,6 +260,7 @@ export function readOutputOptions(
       value: outputs,
     });
     return {
+      diagnostics,
       outputs: null,
       problems,
     };
@@ -247,6 +274,7 @@ export function readOutputOptions(
     if (!allowedFields.has(fieldName)) {
       addOutputOptionsProblem({
         config,
+        diagnostics,
         field: `liminaOptions.outputs.${fieldName}`,
         problems,
         reason:
@@ -269,6 +297,7 @@ export function readOutputOptions(
     if (!isNonEmptyString(fieldValue)) {
       addOutputOptionsProblem({
         config,
+        diagnostics,
         field: `liminaOptions.outputs.${fieldName}`,
         problems,
         reason: 'output option fields must be non-empty strings.',
@@ -284,6 +313,7 @@ export function readOutputOptions(
     ) {
       addOutputOptionsProblem({
         config,
+        diagnostics,
         field: `liminaOptions.outputs.${fieldName}`,
         problems,
         reason:
@@ -306,6 +336,7 @@ export function readOutputOptions(
     } else {
       addOutputOptionsProblem({
         config,
+        diagnostics,
         field: 'liminaOptions.outputs.declarationMap',
         problems,
         reason: 'declarationMap must be a boolean.',
@@ -317,6 +348,7 @@ export function readOutputOptions(
 
   if (problems.length > 0) {
     return {
+      diagnostics,
       outputs: null,
       problems,
     };
@@ -332,6 +364,7 @@ export function readOutputOptions(
     'ESNext';
 
   return {
+    diagnostics,
     outputs: {
       declarationMap,
       target,

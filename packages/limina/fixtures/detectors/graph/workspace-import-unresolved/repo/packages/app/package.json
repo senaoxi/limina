@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/graph-unresolved-app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fixture/graph-unresolved-internal": "workspace:*"
+  }
+}

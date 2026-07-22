@@ -1,0 +1,7 @@
+{
+  "name": "@fixture/manifest-local-file",
+  "peerDependencies": {
+    "@fixture/dependency": "file:../dependency"
+  },
+  "version": "1.0.0"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/source-knip-valid-target",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "type": "module"
+}

@@ -3,8 +3,17 @@ import { isPlainRecord } from '#utils/values';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'pathe';
-import { writeJsonAtomically } from '../check-reporting/atomic-writer';
-import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import {
+  type AtomicWriteOptions,
+  writeJsonAtomically,
+} from '../check-reporting/atomic-writer';
+import {
+  assertIssueTaskMatchesCode,
+  assertWritableLiminaCheckIssueCode,
+  getLiminaCheckIssueRuleMetadata,
+  isReadableLiminaCheckIssueCode,
+  type LiminaWritableCheckIssueCode,
+} from '../check-reporting/codes';
 import { formatCheckIssueInventoryCard } from '../check-reporting/human';
 import {
   type CheckIssueInventoryPresentationOptions,
@@ -28,12 +37,8 @@ import {
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
 } from '../domain/artifacts/namespace';
-import type {
-  SourceCheckIssue,
-  SourceIssueCode,
-  SourceUnusedModuleIssue,
-  SourceUnusedWorkspaceDependencyIssue,
-} from './report';
+import { createSourceCheckIssueFromFinding } from './findings';
+import type { SourceCheckIssue, SourceIssueCode } from './report';
 
 export const SOURCE_ISSUE_SNAPSHOT_VERSION = 1;
 export const CHECK_ISSUE_SNAPSHOT_VERSION = 7;
@@ -160,6 +165,7 @@ export interface LiminaCheckIssueExternal {
 
 export interface LiminaCheckIssue {
   checkerName?: string;
+  /** Wire shape remains string-valued; current readers validate canonical lifecycle. */
   code: string;
   detector?: string;
   detailLines?: string[];
@@ -182,6 +188,10 @@ export interface LiminaCheckIssue {
   title: string;
   tool?: string;
   verifyCommands?: string[];
+}
+
+export interface CanonicalLiminaCheckIssue extends LiminaCheckIssue {
+  code: LiminaWritableCheckIssueCode;
 }
 
 export interface CheckIssueSnapshot {
@@ -539,20 +549,6 @@ function isSourceIssueSnapshotIssue(
   );
 }
 
-function isSourceUnusedWorkspaceDependencyIssue(
-  issue: SourceCheckIssue,
-): issue is SourceUnusedWorkspaceDependencyIssue {
-  return (
-    issue.code === LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency
-  );
-}
-
-function isSourceUnusedModuleIssue(
-  issue: SourceCheckIssue,
-): issue is SourceUnusedModuleIssue {
-  return issue.code === LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule;
-}
-
 function isSourceIssueSnapshot(value: unknown): value is SourceIssueSnapshot {
   return (
     isPlainRecord(value) &&
@@ -572,6 +568,8 @@ function hasLiminaCheckIssueBaseFields(
     typeof value.task === 'string' &&
     isKnownIssueTask(value.task) &&
     typeof value.code === 'string' &&
+    isReadableLiminaCheckIssueCode(value.code) &&
+    getLiminaCheckIssueRuleMetadata(value.code).task === value.task &&
     typeof value.title === 'string' &&
     typeof value.reason === 'string'
   );
@@ -625,6 +623,13 @@ export function isLiminaCheckIssue(value: unknown): value is LiminaCheckIssue {
     hasLiminaCheckIssueStructuredFields(value) &&
     hasLiminaCheckIssuePresentationFields(value)
   );
+}
+
+function assertWritableLiminaCheckIssue(
+  issue: LiminaCheckIssue,
+): asserts issue is CanonicalLiminaCheckIssue {
+  assertWritableLiminaCheckIssueCode(issue.code);
+  assertIssueTaskMatchesCode(issue.code, issue.task);
 }
 
 function isCurrentV7CheckIssueSnapshotStructure(
@@ -1055,21 +1060,31 @@ export function getCheckIssueSnapshotPath(rootDir: string): string {
 export async function writeSourceIssueSnapshotOnly(
   namespace: LiminaArtifactNamespace,
   snapshot: SourceIssueSnapshot,
+  atomicWriteOptions: AtomicWriteOptions = {},
 ): Promise<void> {
   const snapshotPath = resolveArtifactNamespacePath(
     namespace,
     'source-check',
     'last-run.json',
   );
-  await writeJsonAtomically(namespace, snapshotPath, snapshot);
+  await writeJsonAtomically(
+    namespace,
+    snapshotPath,
+    snapshot,
+    atomicWriteOptions,
+  );
 }
 
 export async function writeCheckIssueSnapshotOnly(
   namespace: LiminaArtifactNamespace,
   snapshot: CheckIssueSnapshot,
+  atomicWriteOptions: AtomicWriteOptions = {},
 ): Promise<void> {
   if (!isCurrentV7CheckIssueSnapshotStructure(snapshot)) {
     throw new Error('Invalid v7 check snapshot wire model.');
+  }
+  for (const issue of snapshot.issues) {
+    assertWritableLiminaCheckIssue(issue);
   }
   if (snapshot.status === 'completed' && snapshot.run) {
     assertCompletedRunSummary(snapshot.run);
@@ -1084,7 +1099,12 @@ export async function writeCheckIssueSnapshotOnly(
     'check',
     'last-run.json',
   );
-  await writeJsonAtomically(namespace, snapshotPath, snapshot);
+  await writeJsonAtomically(
+    namespace,
+    snapshotPath,
+    snapshot,
+    atomicWriteOptions,
+  );
 }
 
 export const writeSourceIssueSnapshot: typeof writeSourceIssueSnapshotOnly =
@@ -1272,7 +1292,7 @@ export async function readCheckIssueSnapshot(
 
 export function createTaskFailureIssue(options: {
   checkerName?: string;
-  code?: string;
+  code?: LiminaWritableCheckIssueCode;
   detector?: string;
   detailLines?: readonly string[];
   domain?: string;
@@ -1294,89 +1314,17 @@ export function createTaskFailureIssue(options: {
   title?: string;
   tool?: string;
   verifyCommands?: readonly string[];
-}): LiminaCheckIssue {
+}): CanonicalLiminaCheckIssue {
   return createLiminaCheckIssue(options);
 }
 
 export function createSourceCheckIssue(options: {
   issue: SourceCheckIssue;
   rootDir: string;
-}): LiminaCheckIssue {
-  if (isSourceUnusedModuleIssue(options.issue)) {
-    return createLiminaCheckIssue({
-      code: options.issue.code,
-      detector: 'knip',
-      domain: 'source',
-      filePath: options.issue.filePath,
-      fixSteps: [
-        'Delete files that are truly unused.',
-        'Make files reachable from package manifest entries, binaries, scripts, or Knip plugin entries.',
-        `Add intentional files to source.knip.workspaces["${options.issue.ownerName}"].ignoreFiles with a reason.`,
-      ],
-      packageManifestPath: options.issue.packageJsonPath,
-      packageName: options.issue.ownerName,
-      reason:
-        'Owner-governed source modules must be reachable from package entries, binaries, scripts, or Knip plugin entries.',
-      rootDir: options.rootDir,
-      summary:
-        'Unused source module is not reachable from package entry points.',
-      task: 'source:check',
-      title: 'Unused source module',
-      tool: 'knip',
-      verifyCommands: ['limina source check'],
-    });
-  }
-
-  if (isSourceUnusedWorkspaceDependencyIssue(options.issue)) {
-    return createLiminaCheckIssue({
-      code: options.issue.code,
-      detector: 'knip',
-      domain: 'source',
-      evidence: [
-        {
-          label: 'dependency',
-          value: `${options.issue.dependencyName} (${options.issue.sectionName}: ${options.issue.specifier})`,
-        },
-      ],
-      fixSteps: [
-        'Remove dependencies that are truly unused from the package manifest.',
-        'Make dependencies reachable from package entries, binaries, scripts, or Knip plugin entries.',
-        `Add intentional dependencies to source.knip.workspaces["${options.issue.ownerName}"].ignoreDependencies with dep and reason.`,
-      ],
-      packageManifestPath: options.issue.packageJsonPath,
-      packageName: options.issue.ownerName,
-      reason:
-        'Workspace package dependencies must be reachable from package entries, binaries, scripts, or explicitly ignored when usage is not visible to Knip analysis.',
-      rootDir: options.rootDir,
-      summary:
-        'Workspace package dependency is not visible to source analysis.',
-      task: 'source:check',
-      title: 'Unused workspace dependency',
-      tool: 'knip',
-      verifyCommands: ['limina source check'],
-    });
-  }
-
-  return createLiminaCheckIssue({
-    code: options.issue.code,
-    detector: options.issue.detector,
-    detailLines: options.issue.detailLines,
-    domain: 'source',
-    evidence: options.issue.evidence,
-    filePath: options.issue.filePath,
-    fix: options.issue.fix,
-    fixSteps: options.issue.fixSteps,
-    locations: options.issue.locations,
-    packageManifestPath: options.issue.packageJsonPath,
-    packageName: options.issue.ownerName,
-    reason: options.issue.reason,
+}): CanonicalLiminaCheckIssue {
+  return createSourceCheckIssueFromFinding({
+    finding: options.issue,
     rootDir: options.rootDir,
-    scope: options.issue.scope,
-    summary: options.issue.summary,
-    task: 'source:check',
-    title: options.issue.title,
-    tool: options.issue.tool,
-    verifyCommands: options.issue.verifyCommands,
   });
 }
 

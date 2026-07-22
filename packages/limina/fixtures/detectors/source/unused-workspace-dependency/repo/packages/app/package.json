@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/source-unused-dependency-app",
+  "private": true,
+  "dependencies": {
+    "@fixture/source-unused-dependency-target": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "type": "module"
+}

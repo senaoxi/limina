@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/graph-unmapped-internal",
+  "private": true,
+  "type": "module",
+  "types": "./src/unmapped.ts"
+}

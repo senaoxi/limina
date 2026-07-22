@@ -45,12 +45,21 @@ export interface ReferencePathInfo {
   resolvedPath: string;
 }
 
+export interface TsconfigGraphRouteDiagnostic {
+  readonly detailLines: readonly string[];
+  readonly filePath?: string;
+  readonly reason: string;
+  readonly title: string;
+}
+
 export interface ReferencePathCollection {
+  diagnostics: TsconfigGraphRouteDiagnostic[];
   problems: string[];
   references: ReferencePathInfo[];
 }
 
 export interface CollectGraphProjectPathsResult {
+  diagnostics: TsconfigGraphRouteDiagnostic[];
   problems: string[];
   projectPaths: string[];
 }
@@ -63,12 +72,22 @@ export interface CheckerGraphProjectRoute {
   rootConfigPath: string;
 }
 
+export interface CheckerGraphRouteDiagnostic {
+  readonly checkerName: string;
+  readonly detailLines: readonly string[];
+  readonly filePath?: string;
+  readonly reason: string;
+  readonly title: string;
+}
+
 export interface CollectCheckerGraphProjectRoutesResult {
+  diagnostics: CheckerGraphRouteDiagnostic[];
   problems: string[];
   routes: CheckerGraphProjectRoute[];
 }
 
 export interface CollectSourceGraphProjectExtensionsResult {
+  diagnostics: CheckerGraphRouteDiagnostic[];
   problems: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
   projectExtensionsByPath: Map<string, string[]>;
@@ -89,6 +108,7 @@ export type CheckerEntryAvailability =
   | 'missing-entry';
 
 export interface CheckerRouteTraversalSnapshot {
+  readonly diagnostics: readonly TsconfigGraphRouteDiagnostic[];
   readonly normalizedRootConfigPath: string;
   readonly problems: readonly string[];
   readonly projectPaths: readonly string[];
@@ -262,12 +282,30 @@ export function collectReferencePathInfosForConfig(
   );
 }
 
+function addTsconfigGraphRouteProblem(options: {
+  detailLines: readonly string[];
+  diagnostics: TsconfigGraphRouteDiagnostic[];
+  filePath?: string;
+  problems: string[];
+  reason: string;
+  title: string;
+}): void {
+  options.problems.push(options.detailLines.join('\n'));
+  options.diagnostics.push({
+    detailLines: options.detailLines,
+    filePath: options.filePath,
+    reason: options.reason,
+    title: options.title,
+  });
+}
+
 function collectReferencePathInfosFromConfigObject(
   rootDir: string,
   configPath: string,
   configObject: JsonObject,
 ): ReferencePathCollection {
   const references = configObject.references;
+  const diagnostics: TsconfigGraphRouteDiagnostic[] = [];
   const problems: string[] = [];
   const referenceInfos: ReferencePathInfo[] = [];
   const formatConfigPath = (pathValue: string): string =>
@@ -275,22 +313,31 @@ function collectReferencePathInfosFromConfigObject(
 
   if (references === undefined) {
     return {
+      diagnostics,
       problems,
       references: referenceInfos,
     };
   }
 
   if (!Array.isArray(references)) {
-    problems.push(
-      [
+    const reason =
+      'references must be an array of objects with a non-empty string path.';
+    addTsconfigGraphRouteProblem({
+      detailLines: [
         'Invalid tsconfig references field:',
         `  config: ${formatConfigPath(configPath)}`,
         `  field: references`,
         `  value: ${formatUnknownValue(references)}`,
-        '  reason: references must be an array of objects with a non-empty string path.',
-      ].join('\n'),
-    );
+        `  reason: ${reason}`,
+      ],
+      diagnostics,
+      filePath: configPath,
+      problems,
+      reason,
+      title: 'Invalid tsconfig references field',
+    });
     return {
+      diagnostics,
       problems,
       references: referenceInfos,
     };
@@ -304,30 +351,43 @@ function collectReferencePathInfosFromConfigObject(
       typeof reference !== 'object' ||
       Array.isArray(reference)
     ) {
-      problems.push(
-        [
+      const reason =
+        'each reference entry must be an object with a non-empty string path.';
+      addTsconfigGraphRouteProblem({
+        detailLines: [
           'Invalid tsconfig reference entry:',
           `  config: ${formatConfigPath(configPath)}`,
           `  field: ${field}`,
           `  value: ${formatUnknownValue(reference)}`,
-          '  reason: each reference entry must be an object with a non-empty string path.',
-        ].join('\n'),
-      );
+          `  reason: ${reason}`,
+        ],
+        diagnostics,
+        filePath: configPath,
+        problems,
+        reason,
+        title: 'Invalid tsconfig reference entry',
+      });
       continue;
     }
 
     const pathValue = (reference as { path?: unknown }).path;
 
     if (typeof pathValue !== 'string' || pathValue.trim().length === 0) {
-      problems.push(
-        [
+      const reason = 'reference path must be a non-empty string.';
+      addTsconfigGraphRouteProblem({
+        detailLines: [
           'Invalid tsconfig reference path:',
           `  config: ${formatConfigPath(configPath)}`,
           `  field: ${field}.path`,
           `  value: ${formatUnknownValue(pathValue)}`,
-          '  reason: reference path must be a non-empty string.',
-        ].join('\n'),
-      );
+          `  reason: ${reason}`,
+        ],
+        diagnostics,
+        filePath: configPath,
+        problems,
+        reason,
+        title: 'Invalid tsconfig reference path',
+      });
       continue;
     }
 
@@ -338,6 +398,7 @@ function collectReferencePathInfosFromConfigObject(
   }
 
   return {
+    diagnostics,
     problems,
     references: referenceInfos,
   };
@@ -414,6 +475,7 @@ export function collectGraphProjectRouteFromRoot(options: {
   virtualFiles?: ReadonlyMap<string, string>;
 }): CollectGraphProjectPathsResult {
   const rootGraphConfigPath = normalizeAbsolutePath(options.rootConfigPath);
+  const diagnostics: TsconfigGraphRouteDiagnostic[] = [];
   const seen = new Set<string>();
   const orderedProjects: string[] = [];
   const problems: string[] = [];
@@ -451,19 +513,27 @@ export function collectGraphProjectRouteFromRoot(options: {
 
   validateUserConfig(rootGraphConfigPath);
 
+  diagnostics.push(...rootReferences.diagnostics);
   problems.push(...rootReferences.problems);
 
   if (
     !isBuildGraphConfigPath(rootGraphConfigPath) &&
     !isDtsConfigPath(rootGraphConfigPath)
   ) {
-    problems.push(
-      [
+    const reason =
+      'checker entries should point to a tsconfig*.build.json graph aggregator or a direct tsconfig*.dts.json declaration leaf.';
+    addTsconfigGraphRouteProblem({
+      detailLines: [
         'Invalid checker entry config:',
         `  config: ${formatConfigPath(rootGraphConfigPath)}`,
-        '  reason: checker entries should point to a tsconfig*.build.json graph aggregator or a direct tsconfig*.dts.json declaration leaf.',
-      ].join('\n'),
-    );
+        `  reason: ${reason}`,
+      ],
+      diagnostics,
+      filePath: rootGraphConfigPath,
+      problems,
+      reason,
+      title: 'Invalid checker entry config',
+    });
   }
 
   if (isDtsConfigPath(rootGraphConfigPath)) {
@@ -484,30 +554,44 @@ export function collectGraphProjectRouteFromRoot(options: {
       !existsSync(projectPath) &&
       !options.virtualFiles?.has(normalizeAbsolutePath(projectPath))
     ) {
-      problems.push(
-        [
+      const reason =
+        'every project reference reachable from a checker entry must point to an existing tsconfig file or directory with tsconfig.json.';
+      addTsconfigGraphRouteProblem({
+        detailLines: [
           'Checker entry references a missing tsconfig:',
           `  from: ${formatConfigPath(referrerPath)}`,
           `  reference: ${rawReferencePath}`,
           `  resolved: ${formatConfigPath(projectPath)}`,
-          '  reason: every project reference reachable from a checker entry must point to an existing tsconfig file or directory with tsconfig.json.',
-        ].join('\n'),
-      );
+          `  reason: ${reason}`,
+        ],
+        diagnostics,
+        filePath: projectPath,
+        problems,
+        reason,
+        title: 'Checker entry references a missing tsconfig',
+      });
       continue;
     }
 
     validateUserConfig(projectPath);
 
     if (!isBuildGraphConfigPath(projectPath) && !isDtsConfigPath(projectPath)) {
-      problems.push(
-        [
+      const reason =
+        'checker entries may only reach tsconfig*.build.json graph aggregators and tsconfig*.dts.json declaration leaves.';
+      addTsconfigGraphRouteProblem({
+        detailLines: [
           'Invalid checker entry reference:',
           `  from: ${formatConfigPath(referrerPath)}`,
           `  reference: ${rawReferencePath}`,
           `  resolved: ${formatConfigPath(projectPath)}`,
-          '  reason: checker entries may only reach tsconfig*.build.json graph aggregators and tsconfig*.dts.json declaration leaves.',
-        ].join('\n'),
-      );
+          `  reason: ${reason}`,
+        ],
+        diagnostics,
+        filePath: projectPath,
+        problems,
+        reason,
+        title: 'Invalid checker entry reference',
+      });
       continue;
     }
 
@@ -519,6 +603,7 @@ export function collectGraphProjectRouteFromRoot(options: {
       options.virtualFiles,
     );
 
+    diagnostics.push(...referenceCollection.diagnostics);
     problems.push(...referenceCollection.problems);
 
     for (const reference of referenceCollection.references) {
@@ -538,6 +623,7 @@ export function collectGraphProjectRouteFromRoot(options: {
   }
 
   return {
+    diagnostics,
     problems,
     projectPaths: orderedProjects,
   };
@@ -610,6 +696,7 @@ export function collectCheckerRouteSnapshot(
         virtualFiles: generatedGraph?.generatedFiles,
       });
       traversal = Object.freeze({
+        diagnostics: Object.freeze([...result.diagnostics]),
         normalizedRootConfigPath,
         problems: Object.freeze([...result.problems]),
         projectPaths: Object.freeze([...result.projectPaths]),
@@ -681,6 +768,7 @@ function projectCheckerRoutes(
   snapshot: CheckerRouteSnapshotCollection,
   projection: 'entry' | 'graph',
 ): CollectCheckerGraphProjectRoutesResult {
+  const diagnostics: CheckerGraphRouteDiagnostic[] = [];
   const routes: CheckerGraphProjectRoute[] = [];
   const problems: string[] = [];
 
@@ -690,42 +778,62 @@ function projectCheckerRoutes(
     }
 
     if (checker.entryAvailability === 'missing-entry') {
-      problems.push(
+      const title =
         projection === 'graph'
-          ? [
-              'Missing generated checker graph entry:',
-              `  checker: ${checker.checkerName}`,
-              '  reason: run limina graph prepare before collecting checker graph routes.',
-            ].join('\n')
-          : [
-              'Missing generated checker entry:',
-              `  checker: ${checker.checkerName}`,
-              '  reason: run limina graph prepare before collecting checker entry routes.',
-            ].join('\n'),
-      );
+          ? 'Missing generated checker graph entry'
+          : 'Missing generated checker entry';
+      const reason =
+        projection === 'graph'
+          ? 'run limina graph prepare before collecting checker graph routes.'
+          : 'run limina graph prepare before collecting checker entry routes.';
+      const detailLines = [
+        `${title}:`,
+        `  checker: ${checker.checkerName}`,
+        `  reason: ${reason}`,
+      ];
+
+      problems.push(detailLines.join('\n'));
+      diagnostics.push({
+        checkerName: checker.checkerName,
+        detailLines,
+        reason,
+        title,
+      });
       continue;
     }
 
     if (checker.entryAvailability === 'missing-config') {
-      problems.push(
+      const title =
         projection === 'graph'
-          ? [
-              'Checker graph entry references a missing tsconfig:',
-              `  checker: ${checker.checkerName}`,
-              `  config: ${toRelativePath(config.rootDir, checker.rootConfigPath ?? '')}`,
-            ].join('\n')
-          : [
-              'Checker entry references a missing tsconfig:',
-              `  checker: ${checker.checkerName}`,
-              `  config: ${toRelativePath(config.rootDir, checker.rootConfigPath ?? '')}`,
-            ].join('\n'),
-      );
+          ? 'Checker graph entry references a missing tsconfig'
+          : 'Checker entry references a missing tsconfig';
+      const detailLines = [
+        `${title}:`,
+        `  checker: ${checker.checkerName}`,
+        `  config: ${toRelativePath(config.rootDir, checker.rootConfigPath ?? '')}`,
+      ];
+
+      problems.push(detailLines.join('\n'));
+      diagnostics.push({
+        checkerName: checker.checkerName,
+        detailLines,
+        filePath: checker.rootConfigPath,
+        reason:
+          'Graph check found architecture, dependency, resolver, or config violations.',
+        title,
+      });
       continue;
     }
 
     const traversal = checker.traversal;
     if (!checker.rootConfigPath || !traversal) continue;
     problems.push(...traversal.problems);
+    for (const diagnostic of traversal.diagnostics) {
+      diagnostics.push({
+        checkerName: checker.checkerName,
+        ...diagnostic,
+      });
+    }
     routes.push({
       checkerName: checker.checkerName,
       checkerPreset: checker.checkerPreset,
@@ -736,6 +844,7 @@ function projectCheckerRoutes(
   }
 
   return {
+    diagnostics,
     problems,
     routes,
   };
@@ -836,6 +945,7 @@ export function projectSourceGraphProjectExtensions(
   }
 
   return {
+    diagnostics: routeCollection.diagnostics,
     problems: routeCollection.problems,
     projectContextsByPath,
     projectExtensionsByPath,
