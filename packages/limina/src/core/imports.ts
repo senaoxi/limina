@@ -8,7 +8,6 @@ import {
 } from '#core/import-analysis/runner';
 import type { ProjectInfo } from '#core/import-graph/context';
 import { normalizeAbsolutePath } from '#utils/path';
-import type ts from 'typescript';
 
 export interface ResolveImportOptions {
   containingFile: string;
@@ -92,27 +91,4 @@ function createProjectResolveContext(
     extensions: project.extensions,
     resolverConfigPath: project.resolverConfigPath,
   };
-}
-
-export function resolveImportWithContext(options: {
-  compilerOptions: ts.CompilerOptions;
-  containingFile: string;
-  context: ImportAnalysisContext;
-  project: Pick<
-    ProjectInfo,
-    'checkerPresets' | 'configPath' | 'extensions' | 'resolverConfigPath'
-  >;
-  specifier: string;
-}): string | null {
-  return options.context.resolveInternalImport(
-    options.specifier,
-    options.containingFile,
-    options.compilerOptions,
-    {
-      checkerPresets: options.project.checkerPresets,
-      configPath: options.project.configPath,
-      extensions: options.project.extensions,
-      resolverConfigPath: options.project.resolverConfigPath,
-    },
-  );
 }

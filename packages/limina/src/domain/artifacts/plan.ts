@@ -79,8 +79,3 @@ export function assertArtifactPlan(plan: ArtifactPlan): void {
     throw new Error('Unauthenticated generated artifact plan.');
   }
 }
-
-export function serializeArtifactPlan(plan: ArtifactPlan): string {
-  assertArtifactPlan(plan);
-  return `${JSON.stringify(plan, null, 2)}\n`;
-}

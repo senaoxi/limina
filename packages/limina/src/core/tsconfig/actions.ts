@@ -862,16 +862,6 @@ export function projectGraphProjectRoutes(
   return projectCheckerRoutes(config, snapshot, 'graph');
 }
 
-export function collectCheckerEntryProjectRoutes(
-  config: ResolvedLiminaConfig,
-  generatedGraph?: GeneratedTsconfigGraphResult,
-): CollectCheckerGraphProjectRoutesResult {
-  return projectCheckerEntryProjectRoutes(
-    config,
-    collectCheckerRouteSnapshot(config, generatedGraph),
-  );
-}
-
 export function projectCheckerEntryProjectRoutes(
   config: ResolvedLiminaConfig,
   snapshot: CheckerRouteSnapshotCollection,

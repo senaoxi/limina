@@ -3,11 +3,29 @@ import {
   spawn,
   type SpawnOptions,
 } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-export const liminaBinPath = fileURLToPath(
+const builtBinPath = fileURLToPath(
+  new URL('../../dist/bin/limina.js', import.meta.url),
+);
+const sourceBinPath = fileURLToPath(
   new URL('../../bin/limina.js', import.meta.url),
 );
+
+/**
+ * Integration tests spawn the CLI as a real subprocess hundreds of times, so
+ * the per-spawn cost dominates the whole suite. The source `bin/limina.js`
+ * prefers `src/cli.ts` via tsx, which re-transpiles the entire CLI tree and
+ * incurs a second process spawn on every invocation — several times slower on
+ * Windows, where it inflates the suite from minutes to tens of minutes. When a
+ * build is present (always the case in CI before this step runs) the built
+ * shim imports `dist/cli.js` in-process with no tsx and no double spawn, so we
+ * prefer it and only fall back to the source entry for un-built local runs.
+ */
+export const liminaBinPath = existsSync(builtBinPath)
+  ? builtBinPath
+  : sourceBinPath;
 const defaultTimeout = 60_000;
 const forceTerminationDelay = 2000;
 const finalWatchdogDelay = 5000;

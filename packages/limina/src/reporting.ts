@@ -8,6 +8,7 @@ const ANSI_BLUE = '\u001B[34m';
 const ANSI_CYAN = '\u001B[36m';
 const ANSI_GREEN = '\u001B[32m';
 const ANSI_MAGENTA = '\u001B[35m';
+const ANSI_RED = '\u001B[31m';
 const ANSI_YELLOW = '\u001B[33m';
 const SUMMARY_LABEL_PREFIX_PATTERN =
   /^(\s*(?:-\s+|\d+\.\s+)?)([A-Za-z][A-Za-z ]*)(:)(\s*)/u;
@@ -90,6 +91,24 @@ function colorSummaryLabel(line: string): string {
   return `${indent}${colorText(getSummaryLabelColor(label), labelText)}${spacing}${line.slice(
     match[0].length,
   )}`;
+}
+
+function colorSummaryBlockBorder(
+  lines: readonly string[],
+  borderColor: CheckSummaryBlockColor,
+): string[] {
+  const color = borderColor === 'green' ? ANSI_GREEN : ANSI_RED;
+
+  return lines.map((line, index) => {
+    if (index === 0 || index === lines.length - 1) {
+      return colorText(color, line);
+    }
+
+    return `${colorText(color, line.slice(0, 1))}${line.slice(
+      1,
+      -1,
+    )}${colorText(color, line.slice(-1))}`;
+  });
 }
 
 function getLineWrapPrefix(line: string): {
@@ -259,9 +278,8 @@ export function formatCheckSummaryBlock(options: {
     ? coloredLines.map((line) => options.colorLine?.(line) ?? line)
     : coloredLines;
 
-  return boxen(renderedLines.join('\n'), {
+  const blockLines = boxen(renderedLines.join('\n'), {
     borderStyle: 'round',
-    ...(options.borderColor ? { borderColor: options.borderColor } : {}),
     padding: {
       left: 1,
       right: 1,
@@ -269,6 +287,10 @@ export function formatCheckSummaryBlock(options: {
     title: options.title,
     width,
   }).split('\n');
+
+  return options.borderColor
+    ? colorSummaryBlockBorder(blockLines, options.borderColor)
+    : blockLines;
 }
 
 export function formatCheckSummaryReport(options: {

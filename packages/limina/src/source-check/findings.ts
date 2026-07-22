@@ -397,12 +397,6 @@ export type SourceStructuredFinding = {
   readonly [Code in SourceStructuredIssueCode]: SourceFindingForCode<Code>;
 }[SourceStructuredIssueCode];
 
-export function defineSourceFinding<Code extends SourceSemanticIssueCode>(
-  finding: SourceFindingForCode<Code>,
-): SourceFindingForCode<Code> {
-  return finding;
-}
-
 export function createSourceKnipConfigFinding(options: {
   dependencyName?: string;
   field: string;
@@ -566,16 +560,4 @@ export function createSourceCheckIssueFromFinding(options: {
     tool: options.finding.tool,
     verifyCommands: options.finding.verifyCommands,
   });
-}
-
-export function createSourceCheckIssuesFromFindings(options: {
-  findings: readonly SourceFinding[];
-  rootDir: string;
-}): CanonicalLiminaCheckIssue[] {
-  return options.findings.map((finding) =>
-    createSourceCheckIssueFromFinding({
-      finding,
-      rootDir: options.rootDir,
-    }),
-  );
 }

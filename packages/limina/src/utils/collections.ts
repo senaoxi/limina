@@ -2,27 +2,6 @@ export function uniqueValues<T>(values: Iterable<T>): T[] {
   return [...new Set(values)];
 }
 
-export function uniqueBy<T>(
-  values: Iterable<T>,
-  getKey: (value: T) => string,
-): T[] {
-  const seen = new Set<string>();
-  const result: T[] = [];
-
-  for (const value of values) {
-    const key = getKey(value);
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(value);
-  }
-
-  return result;
-}
-
 export function countDefinedBy<T>(
   values: Iterable<T>,
   getKey: (value: T) => string | null | undefined,

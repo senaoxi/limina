@@ -2703,7 +2703,10 @@ describe('runBuild', () => {
     const calls: TypecheckTarget[] = [];
     const delayed = delayedRunner({
       calls,
-      delayMs: () => 30,
+      // Use a long delay so the two watch-mode runners are guaranteed to
+      // overlap even when beforeTargetRun (recheckMutationBoundary) takes
+      // non-trivial time on slower CI environments or newer Node versions.
+      delayMs: () => 500,
     });
     const fixture = await createFixture({
       'packages/app/src/index.ts':
