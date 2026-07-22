@@ -25,6 +25,28 @@ export default defineConfig({
 });
 ```
 
+## 资源模块导入
+
+`source:check` 会验证 CSS、SVG、YAML、文本等被导入的物理资源，但不会把它们当成 TypeScript 源码工程。资源导入只有同时满足下面两个条件才算完整：
+
+1. 运行时解析器或文件系统能确认物理资源存在；
+2. 当前 checker 工程能看到这条导入的类型证据。
+
+类型证据可以来自 checker source、`button.d.css.ts` 这类具体声明文件，或当前工程确实纳入的 ambient module declaration。Ambient declaration 不能证明物理资源存在；反过来，资源文件存在但当前工程看不到具体声明或 ambient declaration，也不具备完整类型证据。
+
+Limina 只在 `source:check` 中报告这两类问题：
+
+| 规则                                            | 含义                                                |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `LIMINA_SOURCE_RESOURCE_MODULE_NOT_FOUND`       | 物理资源不存在；这个结果优先于类型证据。            |
+| `LIMINA_SOURCE_RESOURCE_MODULE_TYPE_UNDECLARED` | 资源存在，但当前 checker 工程看不到对应的类型声明。 |
+
+资源导入不会成为声明 provider、provider edge 或 project reference；资源缺失也不会阻止 `graph prepare`。普通 TypeScript、JavaScript、JSON 和框架源码仍由已配置的 checker 按原有方式解析。
+
+对于 `?raw`、`?url` 和 `?worker` 导入，Limina 会检查基础物理文件是否存在，以及 checker 工程是否提供匹配的类型声明；这不表示某个特定 bundler transformer 一定已经安装。虚拟模块和框架注入模块的运行时行为仍不受支持；只有 ambient declaration 不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
+
+Vue 资源类型证据适用于已验证的 checker 组合：`vue-tsc` 3.2.x、`@vue/language-core` 3.2.x、`@volar/typescript` 2.4.x，以及 TypeScript 5.9 或 6.0。其他 Vue checker 版本组合会被视为 unsupported，不会误报成缺少类型声明。
+
 ## importAuthority
 
 `source.importAuthority` 控制那些没有写在源码归属方清单文件里的裸包导入。

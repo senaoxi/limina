@@ -1345,6 +1345,55 @@ describe('check issue snapshots', () => {
     });
   });
 
+  it('preserves resource module source codes in JSON and NDJSON inventories', () => {
+    const issues = [
+      createLiminaCheckIssue({
+        checkerName: 'typescript',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+        filePath: 'packages/app/src/index.ts',
+        reason: 'The physical resource is missing.',
+        rootDir: '/repo',
+        task: 'source:check',
+        title: 'Resource module was not found',
+      }),
+      createLiminaCheckIssue({
+        checkerName: 'vue',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+        filePath: 'packages/web/src/App.vue',
+        reason: 'The current Vue checker project has no declaration.',
+        rootDir: '/repo',
+        task: 'source:check',
+        title: 'Resource module type is undeclared',
+      }),
+    ];
+    const snapshot = createCheckSnapshot(issues);
+    const json = JSON.parse(
+      formatCheckIssueSnapshotInventory({ format: 'json', snapshot }),
+    ) as { issues: CheckIssueSnapshot['issues'] };
+    const ndjson = formatCheckIssueSnapshotInventory({
+      format: 'ndjson',
+      snapshot,
+    })
+      .split('\n')
+      .map((line) => JSON.parse(line) as CheckIssueSnapshot['issues'][number]);
+
+    expect(json.issues.map((issue) => issue.code)).toEqual(
+      issues.map((issue) => issue.code),
+    );
+    expect(ndjson).toEqual([
+      expect.objectContaining({
+        checkerName: 'typescript',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+        task: 'source:check',
+      }),
+      expect.objectContaining({
+        checkerName: 'vue',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+        task: 'source:check',
+      }),
+    ]);
+  });
+
   it('preserves the frozen machine inventory payload and issue order', () => {
     const issues: CheckIssueSnapshot['issues'] = [
       {

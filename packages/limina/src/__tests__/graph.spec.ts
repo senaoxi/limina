@@ -798,6 +798,39 @@ describe('runGraphExport workspace validation', () => {
 });
 
 describe('runGraphCheck checker entry', () => {
+  it('does not duplicate source-owned diagnostics for physical or missing resources', async () => {
+    const fixture = await createFixture({
+      'app/src/index.ts': [
+        "import './style.css';",
+        "import './missing.css';",
+        'export const value = true;',
+        '',
+      ].join('\n'),
+      'app/src/style.css': '.root { color: green; }\n',
+      'app/tsconfig.lib.dts.json': generatedDtsConfig({
+        include: ['src/**/*.ts'],
+        sourceConfig: './tsconfig.lib.json',
+        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+      }),
+      'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      'tsconfig.build.json': stringifyConfig({
+        files: [],
+        references: [{ path: './app/tsconfig.lib.dts.json' }],
+      }),
+    });
+
+    try {
+      const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
+
+      expect(passed).toBe(true);
+      expect(
+        issues.filter((issue) => issue.code.includes('RESOURCE_MODULE')),
+      ).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('accepts reordered object keys and custom condition sets in companion configs', async () => {
     const fixture = await createFixture({
       'app/src/index.ts': 'export const value = 1;\n',

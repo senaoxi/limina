@@ -11,6 +11,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { runSourceCheck } from '../commands/source';
 import { createTaskProgressReporter } from '../execution/progress';
@@ -426,6 +427,116 @@ packages:
 }
 
 describe('runSourceCheck package authority', () => {
+  it('reports a missing physical resource even when ambient type evidence exists', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "import './missing.css';\nexport const value = true;\n",
+        }),
+        'app/src/assets.d.ts': "declare module '*.css';\n",
+      },
+      { source: { knip: false } },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+
+      const resourceIssues = sourceIssues.filter((issue) =>
+        issue.code.includes('RESOURCE_MODULE'),
+      );
+      expect(resourceIssues).toHaveLength(1);
+      expect(resourceIssues[0]).toMatchObject({
+        checkerName: 'typescript',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+        facts: {
+          checkerName: 'typescript',
+          importerPath: normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'app/src/index.ts'),
+          ),
+          kind: 'resource-module-not-found',
+          specifier: './missing.css',
+          typeEvidenceKind: 'ambient',
+        },
+        task: 'source:check',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports an existing physical resource without current-project type evidence', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "import './style.css';\nexport const value = true;\n",
+        }),
+        'app/src/style.css': '.root { color: green; }\n',
+      },
+      { source: { knip: false } },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+
+      expect(
+        sourceIssues.find((issue) => issue.code.includes('RESOURCE_MODULE')),
+      ).toMatchObject({
+        checkerName: 'typescript',
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+        facts: {
+          checkerName: 'typescript',
+          kind: 'resource-module-type-undeclared',
+          runtimeFilePath: normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'app/src/style.css'),
+          ),
+          specifier: './style.css',
+          typeEvidenceKind: 'missing',
+        },
+        task: 'source:check',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts a physical resource with ambient type evidence from its checker project', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source: "import './style.css';\nexport const value = true;\n",
+        }),
+        'app/src/assets.d.ts': "declare module '*.css';\n",
+        'app/src/style.css': '.root { color: green; }\n',
+      },
+      { source: { knip: false } },
+    );
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each([
     [
       false,

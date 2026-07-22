@@ -128,6 +128,7 @@ export class LiminaPreflightManager {
     | Promise<WorkspaceRegionBoundary[]>
     | undefined;
   #materializationSlot: MaterializationSlot = { generation: 0 };
+  #disposed = false;
 
   constructor(options: LiminaPreflightManagerOptions) {
     this.config = options.config;
@@ -156,6 +157,15 @@ export class LiminaPreflightManager {
 
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
+  }
+
+  dispose(): void {
+    if (this.#disposed) {
+      return;
+    }
+
+    this.#disposed = true;
+    this.providers.dispose?.();
   }
 
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
@@ -336,6 +346,11 @@ export class LiminaPreflightManager {
   }
 
   #startNextGeneration(): void {
+    if (this.#disposed) {
+      throw new Error('Preflight manager has been disposed.');
+    }
+
+    this.providers.dispose?.();
     this.#generation += 1;
     this.#materializationSlot = { generation: this.#generation };
     this.artifactNamespace = createLiminaArtifactNamespace({

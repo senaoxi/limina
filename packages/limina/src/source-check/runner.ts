@@ -149,6 +149,7 @@ const SOURCE_CHECK_ITEM_NAMES = [
 ] as const;
 
 interface SourceProjectEntry {
+  checkerNames: string[];
   fileNames: string[];
   project: ProjectInfo;
 }
@@ -2553,6 +2554,7 @@ async function addKnipBackedSourceProblems(options: {
 
 async function createSourceProjectEntries(
   core: AnalysisProviderSet,
+  projectCheckerNamesByPath: ReadonlyMap<string, readonly string[]>,
   projects: ProjectInfo[],
   workspaceLookup: WorkspaceLookupIndex,
 ): Promise<SourceProjectEntry[]> {
@@ -2572,6 +2574,9 @@ async function createSourceProjectEntries(
         }
 
         return {
+          checkerNames: [
+            ...(projectCheckerNamesByPath.get(project.configPath) ?? []),
+          ],
           fileNames: [...fileNames]
             .filter((fileName) =>
               workspaceLookup.isInsideActivatedRegion(fileName),
@@ -2581,6 +2586,28 @@ async function createSourceProjectEntries(
         };
       }),
   );
+}
+
+function createGeneratedProjectCheckerNamesByPath(
+  generatedGraph: GeneratedTsconfigGraphResult,
+): Map<string, string[]> {
+  const checkerNamesByPath = new Map<string, string[]>();
+
+  for (const [checkerName, sourceToDts] of generatedGraph.sourceToDts) {
+    for (const [sourceConfigPath, dtsConfigPath] of sourceToDts) {
+      for (const configPath of [sourceConfigPath, dtsConfigPath]) {
+        checkerNamesByPath.set(
+          configPath,
+          uniqueSortedStrings([
+            ...(checkerNamesByPath.get(configPath) ?? []),
+            checkerName,
+          ]),
+        );
+      }
+    }
+  }
+
+  return checkerNamesByPath;
 }
 
 async function addSourceProjectOwnerProblems(options: {
@@ -3094,6 +3121,129 @@ function addImportRecordProblems(options: {
   });
 }
 
+function addResourceModuleProblems(options: {
+  checkerName: string;
+  config: ResolvedLiminaConfig;
+  findings: SourceFinding[];
+  importRecord: ImportRecord;
+  owner: PackageOwner;
+  project: ProjectInfo;
+  typeEvidence: AnalysisProviderSet['typeEvidence'];
+}): void {
+  const runtimeEvidence = options.typeEvidence.classifyImportRuntime({
+    checkerName: options.checkerName,
+    importRecord: options.importRecord,
+    project: options.project,
+  });
+
+  if (runtimeEvidence.classification !== 'resource') {
+    return;
+  }
+
+  const evidence = options.typeEvidence.resolveImportEvidence({
+    checkerName: options.checkerName,
+    importRecord: options.importRecord,
+    project: options.project,
+  });
+
+  if (evidence.runtime.kind === 'missing') {
+    const title = 'Resource module was not found';
+    const checkedPath = evidence.runtime.checkedPath;
+
+    options.findings.push(
+      createSourceDiagnosticFinding({
+        checkerName: options.checkerName,
+        code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+        facts: {
+          checkedPath,
+          checkerName: options.checkerName,
+          configPath: options.project.configPath,
+          importerPath: options.importRecord.filePath,
+          kind: 'resource-module-not-found',
+          line: options.importRecord.line,
+          specifier: options.importRecord.specifier,
+          typeEvidenceKind: evidence.type.kind,
+        },
+        filePath: options.importRecord.filePath,
+        fix: 'Create the referenced resource at the resolved path or correct the import specifier.',
+        lines: [
+          `${title}:`,
+          `  import: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+          `  specifier: ${options.importRecord.specifier}`,
+          `  checker: ${options.checkerName}`,
+          ...(checkedPath
+            ? [
+                `  checked path: ${toRelativePath(options.config.rootDir, checkedPath)}`,
+              ]
+            : []),
+          `  type evidence: ${evidence.type.kind}`,
+        ],
+        locations: [
+          {
+            filePath: options.importRecord.filePath,
+            label: 'import',
+            line: options.importRecord.line,
+          },
+        ],
+        ownerName: options.owner.name,
+        packageJsonPath: options.owner.packageJsonPath,
+        reason:
+          'Ambient or concrete type evidence cannot establish that a physical resource exists at runtime.',
+        title,
+      }),
+    );
+    return;
+  }
+
+  if (evidence.runtime.kind !== 'file' || evidence.type.kind !== 'missing') {
+    return;
+  }
+
+  const title = 'Resource module type is undeclared';
+  options.findings.push(
+    createSourceDiagnosticFinding({
+      checkerName: options.checkerName,
+      code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+      facts: {
+        checkerName: options.checkerName,
+        configPath: options.project.configPath,
+        importerPath: options.importRecord.filePath,
+        kind: 'resource-module-type-undeclared',
+        line: options.importRecord.line,
+        runtimeAuthority: evidence.runtime.authority,
+        runtimeFilePath: evidence.runtime.filePath,
+        specifier: options.importRecord.specifier,
+        typeEvidenceKind: evidence.type.kind,
+      },
+      filePath: options.importRecord.filePath,
+      fix: 'Add a concrete declaration companion or an ambient module declaration included by this checker project.',
+      lines: [
+        `${title}:`,
+        `  import: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
+        `  specifier: ${options.importRecord.specifier}`,
+        `  checker: ${options.checkerName}`,
+        `  runtime file: ${toRelativePath(options.config.rootDir, evidence.runtime.filePath)}`,
+      ],
+      locations: [
+        {
+          filePath: options.importRecord.filePath,
+          label: 'import',
+          line: options.importRecord.line,
+        },
+        {
+          filePath: evidence.runtime.filePath,
+          label: 'resource',
+        },
+      ],
+      ownerName: options.owner.name,
+      packageJsonPath: options.owner.packageJsonPath,
+      reason:
+        'The resource exists, but the current checker project has no concrete or ambient declaration for the import.',
+      title,
+    }),
+  );
+}
+
 function addSourceImportProblems(options: {
   ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
@@ -3105,9 +3255,14 @@ function addSourceImportProblems(options: {
   findings: SourceFinding[];
   rootPackage: WorkspacePackage | null;
   sourceProjectEntries: SourceProjectEntry[];
+  typeEvidence: AnalysisProviderSet['typeEvidence'];
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  for (const { fileNames, project } of options.sourceProjectEntries) {
+  for (const {
+    checkerNames,
+    fileNames,
+    project,
+  } of options.sourceProjectEntries) {
     for (const filePath of fileNames) {
       const owner = options.workspaceLookup.findOwnerForFile(filePath);
 
@@ -3121,6 +3276,17 @@ function addSourceImportProblems(options: {
         options.importAnalysis,
       )) {
         options.checks.add();
+        for (const checkerName of checkerNames) {
+          addResourceModuleProblems({
+            checkerName,
+            config: options.config,
+            findings: options.findings,
+            importRecord,
+            owner,
+            project,
+            typeEvidence: options.typeEvidence,
+          });
+        }
         addImportRecordProblems({
           ambientDeclarations: options.ambientDeclarations,
           config: options.config,
@@ -3138,6 +3304,8 @@ function addSourceImportProblems(options: {
         });
       }
     }
+
+    options.typeEvidence.completeProject(project.configPath);
   }
 }
 
@@ -3188,6 +3356,7 @@ export async function runSourceCheckImpl(
   );
   const sourceProjectEntries = await createSourceProjectEntries(
     core,
+    createGeneratedProjectCheckerNamesByPath(generatedGraph),
     projects,
     workspaceLookup,
   );
@@ -3322,6 +3491,7 @@ export async function runSourceCheckImpl(
     findings,
     rootPackage,
     sourceProjectEntries,
+    typeEvidence: core.typeEvidence,
     workspaceLookup,
   });
   checkItems.record('source import authority');

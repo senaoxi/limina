@@ -1343,6 +1343,11 @@ function resolveImportForReferenceExpectation(options: {
   });
   const workspaceTypeScriptResolvedFilePath =
     workspaceExportResolution?.typeScriptResolvedFileName ?? null;
+
+  if (declarationProvider.kind === 'resource') {
+    return null;
+  }
+
   const graphResolvedFilePath =
     declarationProvider.kind === 'declaration' ||
     declarationProvider.kind === 'source'

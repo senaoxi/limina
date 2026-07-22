@@ -5,6 +5,11 @@ import type {
   ResolvedCheckerModuleName,
 } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import {
+  classifyImportRuntimeEvidence,
+  type ImportRuntimeResolutionEvidence,
+} from '../import-analysis/evidence';
+import { isDeclarationFile } from './declaration-classifier';
 
 export interface DeclarationProviderProjectContext
   extends Pick<CheckerProjectParseContext, 'checkerPresets' | 'extensions'> {
@@ -13,6 +18,14 @@ export interface DeclarationProviderProjectContext
 }
 
 export type DeclarationProviderResolution =
+  | {
+      evidence: ImportRuntimeResolutionEvidence & {
+        classification: 'resource';
+      };
+      kind: 'resource';
+      oxcResolvedFilePath: string | null;
+      typeScriptResolution: ResolvedCheckerModuleName | null;
+    }
   | {
       kind: 'declaration';
       oxcResolvedFilePath: string | null;
@@ -35,10 +48,8 @@ export type DeclarationProviderResolution =
       typeScriptResolution: null;
     };
 
-const declarationFileFamilyPattern = /\.d\.(?:cts|mts|ts)$/u;
-
 export function isDeclarationFileFamily(filePath: string): boolean {
-  return declarationFileFamilyPattern.test(filePath);
+  return isDeclarationFile(filePath);
 }
 
 export function resolveDeclarationProvider(options: {
@@ -56,6 +67,26 @@ export function resolveDeclarationProvider(options: {
       options.compilerOptions,
       options.project,
     );
+  const evidence = classifyImportRuntimeEvidence({
+    compilerOptions: options.compilerOptions,
+    containingFile: options.containingFile,
+    extensions: options.project.extensions,
+    oxcResolvedFilePath,
+    specifier: options.importRecord.specifier,
+    typeScriptResolution,
+  });
+
+  if (evidence.classification === 'resource') {
+    return {
+      evidence: {
+        ...evidence,
+        classification: 'resource',
+      },
+      kind: 'resource',
+      oxcResolvedFilePath,
+      typeScriptResolution,
+    };
+  }
 
   if (!typeScriptResolution) {
     return oxcResolvedFilePath

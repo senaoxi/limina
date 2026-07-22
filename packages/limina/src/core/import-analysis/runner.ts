@@ -28,7 +28,7 @@ import {
   type ImportRecordKind,
 } from './records';
 
-export type { ImportRecord, ImportRecordKind } from './records';
+export type { ImportLocator, ImportRecord, ImportRecordKind } from './records';
 
 export interface ModuleResolutionPair {
   oxc: string | null;
@@ -262,6 +262,7 @@ function collectImportsFromSourceTextWithTypeScript(options: {
   ): void => {
     imports.push(
       createImportRecord({
+        end: node.getEnd(),
         filePath: options.filePath,
         kind,
         lineOffset,
@@ -432,17 +433,28 @@ function addCommentImportRecords(options: {
 
     const specifierOffset = match[0].indexOf(specifier);
     const matchStart = match.index ?? 0;
+    const beforeSpecifier =
+      specifierOffset > 0 ? match[0][specifierOffset - 1] : undefined;
+    const afterSpecifier = match[0][specifierOffset + specifier.length];
+    const hasStringQuotes =
+      (beforeSpecifier === '"' ||
+        beforeSpecifier === "'" ||
+        beforeSpecifier === '`') &&
+      beforeSpecifier === afterSpecifier;
+    const tokenStart =
+      options.commentStart +
+      matchStart +
+      (specifierOffset === -1 ? 0 : specifierOffset) -
+      (hasStringQuotes ? 1 : 0);
 
     options.records.push(
       createImportRecord({
+        end: tokenStart + specifier.length + (hasStringQuotes ? 2 : 0),
         filePath: options.filePath,
         kind: options.kind,
         lineOffset: options.lineOffset,
         lineStarts: options.lineStarts,
-        pos:
-          options.commentStart +
-          matchStart +
-          (specifierOffset === -1 ? 0 : specifierOffset),
+        pos: tokenStart,
         sourceOffset: options.sourceOffset,
         specifier,
       }),
@@ -581,7 +593,7 @@ function collectImportTypeRecords(options: {
 
   if (node.type === 'TSImportType') {
     const source = node.source as
-      | { start?: unknown; type?: unknown; value?: unknown }
+      | { end?: unknown; start?: unknown; type?: unknown; value?: unknown }
       | undefined;
 
     if (
@@ -591,6 +603,7 @@ function collectImportTypeRecords(options: {
     ) {
       options.records.push(
         createImportRecord({
+          end: typeof source.end === 'number' ? source.end : undefined,
           filePath: options.filePath,
           kind: 'import-type',
           lineOffset: options.lineOffset,
@@ -626,7 +639,7 @@ function isOxcIdentifier(node: unknown, name: string): boolean {
 
 function getOxcLiteralSpecifier(
   node: unknown,
-): { pos: number; specifier: string } | null {
+): { end?: number; pos: number; specifier: string } | null {
   const record = getRecord(node);
 
   if (!record) {
@@ -639,6 +652,7 @@ function getOxcLiteralSpecifier(
     typeof record.start === 'number'
   ) {
     return {
+      end: typeof record.end === 'number' ? record.end : undefined,
       pos: record.start,
       specifier: record.value,
     };
@@ -668,6 +682,7 @@ function getOxcLiteralSpecifier(
     typeof record.start === 'number'
   ) {
     return {
+      end: typeof record.end === 'number' ? record.end : undefined,
       pos: record.start,
       specifier,
     };
@@ -728,6 +743,7 @@ function collectOxcCommonJsRecords(options: {
     if (argument && kind) {
       options.records.push(
         createImportRecord({
+          end: argument.end,
           filePath: options.filePath,
           kind,
           lineOffset: options.lineOffset,
@@ -748,6 +764,7 @@ function collectOxcCommonJsRecords(options: {
     if (argument) {
       options.records.push(
         createImportRecord({
+          end: argument.end,
           filePath: options.filePath,
           kind: 'import-equals',
           lineOffset: options.lineOffset,
@@ -818,6 +835,7 @@ function collectImportsFromSourceTextWithOxc(options: {
   for (const staticImport of parseResult.module.staticImports) {
     imports.push(
       createImportRecord({
+        end: staticImport.moduleRequest.end,
         filePath: options.filePath,
         kind: getOxcStaticImportKind(staticImport),
         lineOffset,
@@ -837,6 +855,7 @@ function collectImportsFromSourceTextWithOxc(options: {
 
       imports.push(
         createImportRecord({
+          end: entry.moduleRequest.end,
           filePath: options.filePath,
           kind: 'export',
           lineOffset,
@@ -861,6 +880,7 @@ function collectImportsFromSourceTextWithOxc(options: {
 
     imports.push(
       createImportRecord({
+        end: dynamicImport.moduleRequest.end,
         filePath: options.filePath,
         kind: 'dynamic',
         lineOffset,

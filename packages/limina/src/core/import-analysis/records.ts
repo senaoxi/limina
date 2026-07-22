@@ -12,10 +12,17 @@ export type ImportRecordKind =
   | 'jsx-import-source'
   | 'environment-pragma';
 
+export interface ImportLocator {
+  occurrence: number;
+  sourceEnd: number;
+  sourceStart: number;
+}
+
 export interface ImportRecord {
   filePath: string;
   kind: ImportRecordKind;
   line: number;
+  locator: ImportLocator;
   specifier: string;
 }
 
@@ -26,18 +33,31 @@ export interface CollectedImportRecord extends ImportRecord {
 export function finalizeImportRecords(
   records: CollectedImportRecord[],
 ): ImportRecord[] {
+  const occurrenceByIdentity = new Map<string, number>();
+
   return records
     .map((record, index) => ({ index, record }))
     .sort(
       (left, right) =>
         left.record.pos - right.record.pos || left.index - right.index,
     )
-    .map(({ record }) => ({
-      filePath: record.filePath,
-      kind: record.kind,
-      line: record.line,
-      specifier: record.specifier,
-    }));
+    .map(({ record }) => {
+      const identity = JSON.stringify([record.kind, record.specifier]);
+      const occurrence = occurrenceByIdentity.get(identity) ?? 0;
+
+      occurrenceByIdentity.set(identity, occurrence + 1);
+
+      return {
+        filePath: record.filePath,
+        kind: record.kind,
+        line: record.line,
+        locator: {
+          ...record.locator,
+          occurrence,
+        },
+        specifier: record.specifier,
+      };
+    });
 }
 
 export function buildLineStarts(sourceText: string): number[] {
@@ -70,6 +90,7 @@ export function getLine(lineStarts: number[], pos: number): number {
 }
 
 export function createImportRecord(options: {
+  end?: number;
   filePath: string;
   kind: ImportRecordKind;
   lineOffset: number;
@@ -82,6 +103,13 @@ export function createImportRecord(options: {
     filePath: options.filePath,
     kind: options.kind,
     line: options.lineOffset + getLine(options.lineStarts, options.pos),
+    locator: {
+      occurrence: 0,
+      sourceEnd:
+        options.sourceOffset +
+        (options.end ?? options.pos + options.specifier.length),
+      sourceStart: options.sourceOffset + options.pos,
+    },
     pos: options.sourceOffset + options.pos,
     specifier: options.specifier,
   };

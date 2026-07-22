@@ -22,6 +22,8 @@ export type SourceSemanticIssueCode =
   | typeof LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid
   | typeof LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope
+  | typeof LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound
+  | typeof LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule
   | typeof LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency;
@@ -38,6 +40,8 @@ export const SOURCE_SEMANTIC_ISSUE_CODES: readonly SourceSemanticIssueCode[] = [
   LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
   LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized,
   LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope,
+  LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+  LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
   LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance,
   LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule,
   LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency,
@@ -227,6 +231,36 @@ export interface SourceRelativeImportEscapesScopeFacts {
   readonly targetPackageManifestPath?: string;
 }
 
+type SourceResourceTypeEvidenceKind =
+  | 'ambient'
+  | 'checker-source'
+  | 'concrete-declaration'
+  | 'missing'
+  | 'unsupported-checker';
+
+export interface SourceResourceModuleNotFoundFacts {
+  readonly checkedPath?: string;
+  readonly checkerName: string;
+  readonly configPath: string;
+  readonly importerPath: string;
+  readonly kind: 'resource-module-not-found';
+  readonly line: number;
+  readonly specifier: string;
+  readonly typeEvidenceKind: SourceResourceTypeEvidenceKind;
+}
+
+export interface SourceResourceModuleTypeUndeclaredFacts {
+  readonly checkerName: string;
+  readonly configPath: string;
+  readonly importerPath: string;
+  readonly kind: 'resource-module-type-undeclared';
+  readonly line: number;
+  readonly runtimeAuthority: 'filesystem' | 'oxc' | 'package-export';
+  readonly runtimeFilePath: string;
+  readonly specifier: string;
+  readonly typeEvidenceKind: 'missing';
+}
+
 export type SourceTsconfigGovernanceFacts =
   | {
       readonly checkerName: string;
@@ -292,6 +326,8 @@ export interface SourceFindingFactsByCode {
   readonly [LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid]: SourcePackageImportInvalidFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized]: SourcePackageImportUnauthorizedFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceRelativeImportEscapesScope]: SourceRelativeImportEscapesScopeFacts;
+  readonly [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound]: SourceResourceModuleNotFoundFacts;
+  readonly [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared]: SourceResourceModuleTypeUndeclaredFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceTsconfigGovernance]: SourceTsconfigGovernanceFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceUnusedModule]: SourceUnusedModuleFacts;
   readonly [LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency]: SourceUnusedWorkspaceDependencyFacts;
