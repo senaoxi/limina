@@ -8,6 +8,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-23
+
+### Features
+
+- feat(limina): add resource module governance ([2a1789e3](https://github.com/senaoxi/docs-islands/commit/2a1789e3))
+- feat(limina): verify registry tarball integrity ([42642b8b](https://github.com/senaoxi/docs-islands/commit/42642b8b))
+- feat(limina)!: make manifest linting opt-in ([edcd6752](https://github.com/senaoxi/docs-islands/commit/edcd6752))
+- feat(limina): add progressive issue diagnostics ([a559dffe](https://github.com/senaoxi/docs-islands/commit/a559dffe))
+- feat(limina): add isolated issue invocation records ([411df861](https://github.com/senaoxi/docs-islands/commit/411df861))
+- feat(limina)!: scope ambient declarations to activated package islands ([b1847be2](https://github.com/senaoxi/docs-islands/commit/b1847be2))
+- feat(limina)!: model workspace governance as activated package islands ([5f48cf3d](https://github.com/senaoxi/docs-islands/commit/5f48cf3d))
+- feat(limina): support governed shared ambient declarations ([944d76c7](https://github.com/senaoxi/docs-islands/commit/944d76c7))
+- feat(limina)!: region-scope checker entries and harden migration writes ([3322c896](https://github.com/senaoxi/docs-islands/commit/3322c896))
+- feat(limina)!: redesign validation core around layered aggregates ([017ef494](https://github.com/senaoxi/docs-islands/commit/017ef494))
+- feat(limina)!: require explicit kind on regions.exclude rules ([36ae956e](https://github.com/senaoxi/docs-islands/commit/36ae956e))
+- feat(limina): harden workspace, import, and release checks ([d468f1bd](https://github.com/senaoxi/docs-islands/commit/d468f1bd))
+- feat(eslint-config): add portable-path comparison rule and enforce it in limina ([44d7773a](https://github.com/senaoxi/docs-islands/commit/44d7773a))
+- feat(limina)!: introduce workspace region governance model ([82e84738](https://github.com/senaoxi/docs-islands/commit/82e84738))
+- feat(limina)!: align config.source defaults with TypeScript semantics ([18c3d50a](https://github.com/senaoxi/docs-islands/commit/18c3d50a))
+- feat(limina)!: rework source import authority as owner-keyed root grants ([c85e8f55](https://github.com/senaoxi/docs-islands/commit/c85e8f55))
+- feat(limina): split duplicate graph coverage from source owner checks ([0c32010d](https://github.com/senaoxi/docs-islands/commit/0c32010d))
+- feat(limina): enforce engine-safe cross-checker build boundaries ([4327016b](https://github.com/senaoxi/docs-islands/commit/4327016b))
+- feat(limina): skip optional checks when their tools are missing ([002c4e28](https://github.com/senaoxi/docs-islands/commit/002c4e28))
+- feat(limina): add migration command to govern tsconfig outputs ([f06a862b](https://github.com/senaoxi/docs-islands/commit/f06a862b))
+- feat(limina): attribute managed output declarations to project refs ([49a502d1](https://github.com/senaoxi/docs-islands/commit/49a502d1))
+- feat(limina): config loader ([f163c232](https://github.com/senaoxi/docs-islands/commit/f163c232))
+
+### Bug Fixes
+
+- fix(limina): drop unused exports and harden cross-platform tests ([a29ca2e8](https://github.com/senaoxi/docs-islands/commit/a29ca2e8))
+- fix(limina): bypass pnpm shim in cmd queries ([9cab2a36](https://github.com/senaoxi/docs-islands/commit/9cab2a36))
+- fix(limina): bound registry requests ([90b4d007](https://github.com/senaoxi/docs-islands/commit/90b4d007))
+- fix(limina): measure terminal display width correctly ([b4c47bc9](https://github.com/senaoxi/docs-islands/commit/b4c47bc9))
+- fix(limina): make standalone queries shell-specific ([274876aa](https://github.com/senaoxi/docs-islands/commit/274876aa))
+- fix(limina): enforce managed mutation boundaries ([68562bf7](https://github.com/senaoxi/docs-islands/commit/68562bf7))
+- fix(limina): reject removed root tsconfig metadata ([c73398d2](https://github.com/senaoxi/docs-islands/commit/c73398d2))
+- fix(limina): validate overlaps after workspace package exclusions ([c82977d8](https://github.com/senaoxi/docs-islands/commit/c82977d8))
+- fix(ci): stabilize cross-platform builds and tests ([8b8b5eb7](https://github.com/senaoxi/docs-islands/commit/8b8b5eb7))
+- fix(limina): source import authority for alias dependencies ([1252f9e7](https://github.com/senaoxi/docs-islands/commit/1252f9e7))
+- fix(limina): stop inferring declaration references from require.resolve imports ([4f032ebc](https://github.com/senaoxi/docs-islands/commit/4f032ebc))
+
+### Documentation
+
+- docs(limina): align docs and skill with current behavior ([b5dfcec3](https://github.com/senaoxi/docs-islands/commit/b5dfcec3))
+- docs(limina): remove pre-0.2.0 migration guidance ([aef1f0a8](https://github.com/senaoxi/docs-islands/commit/aef1f0a8))
+
+### Maintenance
+
+- refactor(limina): enforce detector issue contracts (#89) ([8726ce3a](https://github.com/senaoxi/docs-islands/commit/8726ce3a))
+- test(limina): harden real fixture integration coverage ([b26f93cd](https://github.com/senaoxi/docs-islands/commit/b26f93cd))
+- ci(limina): validate build and smoke across supported platforms ([45eb8036](https://github.com/senaoxi/docs-islands/commit/45eb8036))
+- refactor(limina): make execution config schema declarative ([55020dd9](https://github.com/senaoxi/docs-islands/commit/55020dd9))
+- refactor(limina): consolidate reporting primitives ([2f85aea4](https://github.com/senaoxi/docs-islands/commit/2f85aea4))
+- refactor(limina): consolidate strongly connected components ([b13fb95c](https://github.com/senaoxi/docs-islands/commit/b13fb95c))
+- test(limina): cover external checker build lifecycle ([add0d86c](https://github.com/senaoxi/docs-islands/commit/add0d86c))
+- test(limina): add external workspace graph fixture ([f3919ad8](https://github.com/senaoxi/docs-islands/commit/f3919ad8))
+- test(limina): add isolated integration fixture harness ([b4d8aa1e](https://github.com/senaoxi/docs-islands/commit/b4d8aa1e))
+- refactor(limina): drop legacy check snapshot readers ([7d327a31](https://github.com/senaoxi/docs-islands/commit/7d327a31))
+- refactor(limina): enforce current config and CLI key contracts ([7f9d96dc](https://github.com/senaoxi/docs-islands/commit/7f9d96dc))
+- chore(limina): improve workspace export resolution diagnostics ([9e9ea95a](https://github.com/senaoxi/docs-islands/commit/9e9ea95a))
+- chore(limina): optimize diagnostic display ([3f52ed8c](https://github.com/senaoxi/docs-islands/commit/3f52ed8c))
+- chore(limina): limina.config.mts as primary config format ([c9f44429](https://github.com/senaoxi/docs-islands/commit/c9f44429))
+- chore: align node 24 baseline with LTS ([3adc2b85](https://github.com/senaoxi/docs-islands/commit/3adc2b85))
+
+### Other Changes
+
+- perf(limina): group workspace export resolution execution ([162e9a0a](https://github.com/senaoxi/docs-islands/commit/162e9a0a))
+- perf(limina): compile workspace export resolution profiles ([f348afbc](https://github.com/senaoxi/docs-islands/commit/f348afbc))
+- perf(limina): index workspace path classification by directory ([efe048a3](https://github.com/senaoxi/docs-islands/commit/efe048a3))
+- perf(limina): share module resolution results across checks ([023e1b4d](https://github.com/senaoxi/docs-islands/commit/023e1b4d))
+- perf(limina): reuse resolver state within analysis runs ([505999c9](https://github.com/senaoxi/docs-islands/commit/505999c9))
+- perf(limina): add module resolution profiling metrics ([2c78e624](https://github.com/senaoxi/docs-islands/commit/2c78e624))
+- perf(limina): reduce redundant check pipeline and workspace lookup work ([2f5ac069](https://github.com/senaoxi/docs-islands/commit/2f5ac069))
+
 ## [0.1.3] - 2026-07-04
 
 ### Features
