@@ -2123,9 +2123,6 @@ export default {
       expect(normalizedCheckFailureStdout).toContain(
         'check --issues --verbose',
       );
-      expect(checkFailureStdout).toContain(
-        `${ANSI_ESCAPE}[34mExecuted tasks:${ANSI_ESCAPE}[0m 5 / 5`,
-      );
       expect(checkFailurePlainStdout).not.toContain('Source check summary');
 
       for (const configSource of [

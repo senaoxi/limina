@@ -5,6 +5,7 @@ import {
   type WorkspacePackage,
 } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
+import { shouldUseColor } from '#utils/reporting';
 import { createElapsedTimer } from 'logaria/helper';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -545,6 +546,7 @@ export async function runReleaseCheck(
       if (!options.report?.defer) {
         ReleaseLogger.error(
           formatCheckIssueHumanReport({
+            color: shouldUseColor(),
             command: options.report?.command ?? 'limina release check',
             issues: reportIssues,
             title: 'Release check summary',
@@ -572,6 +574,7 @@ export async function runReleaseCheck(
     if (!options.report?.defer) {
       ReleaseLogger.error(
         formatCheckIssueHumanReport({
+          color: shouldUseColor(),
           command: options.report?.command ?? 'limina release check',
           issues,
           title: 'Release check summary',

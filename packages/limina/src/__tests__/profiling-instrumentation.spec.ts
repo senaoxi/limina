@@ -668,6 +668,47 @@ describe('type evidence profiling instrumentation', () => {
     }
   });
 
+  it('keeps an unresolved dotted bare package specifier ordinary', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-dotted-package-import-')),
+    );
+
+    try {
+      const configPath = await writeText(rootDir, 'tsconfig.json', '{}\n');
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import value from 'missing.package';\nexport { value };\n",
+      );
+      const importAnalysis = createImportAnalysisContext({
+        projectRootDir: rootDir,
+      });
+      const [importRecord] = importAnalysis.collectImportsFromFile(
+        indexPath,
+        rootDir,
+      );
+      const core = new TypeEvidenceCore({
+        generation: 0,
+        importAnalysis,
+      });
+
+      expect(
+        core.classifyImportRuntime({
+          checkerName: 'typescript',
+          importRecord: importRecord!,
+          project: createTypeEvidenceProject({
+            configPath,
+            fileNames: [indexPath],
+          }),
+        }).classification,
+      ).toBe('ordinary-module');
+      expect(core.cache.programCache.size).toBe(0);
+      core.dispose();
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('records concrete resource queries without creating a provider or Program', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-concrete-metrics-')),

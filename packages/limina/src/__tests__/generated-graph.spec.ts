@@ -127,6 +127,53 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it('disables relative import rewriting for generated declaration projects', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/src/index.ts': "export { value } from './value.ts';\n",
+      'packages/pkg/src/value.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          allowImportingTsExtensions: true,
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          noEmit: true,
+          rewriteRelativeImportExtensions: true,
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      await prepareGeneratedTsconfigGraph(fixture.config);
+      const generatedConfig = JSON.parse(
+        await readFile(
+          path.join(
+            fixture.rootDir,
+            '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.dts.json',
+          ),
+          'utf8',
+        ),
+      ) as {
+        compilerOptions: {
+          rewriteRelativeImportExtensions?: boolean;
+        };
+      };
+
+      expect(
+        generatedConfig.compilerOptions.rewriteRelativeImportExtensions,
+      ).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it.each([
     ['Button.d.ts', 'Button.ts'],
     ['Button.d.ts', 'Button.tsx'],

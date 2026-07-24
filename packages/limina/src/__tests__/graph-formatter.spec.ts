@@ -72,6 +72,7 @@ describe('typed Graph finding formatter', () => {
     const issue = createGraphCheckIssueFromFinding({ config, finding });
     const output = stripAnsi(
       formatCheckIssueHumanReport({
+        color: true,
         issues: [issue],
         title: 'Graph check summary',
       }),
@@ -101,10 +102,12 @@ describe('typed Graph finding formatter', () => {
       },
     });
     const originalOutput = formatCheckIssueHumanReport({
+      color: true,
       issues: [originalIssue],
       title: 'Graph check summary',
     });
     const revisedOutput = formatCheckIssueHumanReport({
+      color: true,
       issues: [revisedIssue],
       title: 'Graph check summary',
     });

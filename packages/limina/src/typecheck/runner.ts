@@ -28,6 +28,7 @@ import {
   normalizeAbsolutePath,
   toRelativePath,
 } from '#utils/path';
+import { shouldUseColor } from '#utils/reporting';
 import { existsSync, statSync } from 'node:fs';
 import path from 'pathe';
 import type { CheckIssueReportOptions } from '../check-reporting/human';
@@ -211,6 +212,7 @@ function formatTypecheckProblemSummaryReport(options: {
   title: string;
 }): string {
   return formatCheckIssueSummaryReport({
+    color: shouldUseColor(),
     details: options.problems.join('\n\n'),
     issueCount: options.problems.length,
     pluralIssueLabel: options.pluralIssueLabel,
@@ -287,6 +289,7 @@ function formatFailedTargetSummaryReport(options: {
   title: string;
 }): string {
   return formatCheckIssueSummaryReport({
+    color: shouldUseColor(),
     details: [
       options.heading,
       ...options.failedResults.map((result) => {
@@ -1851,6 +1854,7 @@ export async function runBuildImpl(
     if (shouldLogCheckReport(options.report)) {
       TypecheckLogger.error(
         formatCheckIssueSummaryReport({
+          color: shouldUseColor(),
           details: selectionProblem,
           issueCount: 1,
           pluralIssueLabel: 'build selection issues',
@@ -1884,6 +1888,7 @@ export async function runBuildImpl(
     if (shouldLogCheckReport(options.report)) {
       TypecheckLogger.error(
         formatCheckIssueSummaryReport({
+          color: shouldUseColor(),
           details: selectionProblem,
           issueCount: 1,
           pluralIssueLabel: 'build selection issues',

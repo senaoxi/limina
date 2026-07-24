@@ -10,6 +10,7 @@ import {
 } from '#config/runner';
 import { uniqueTrimmedNonEmptySortedStrings } from '#utils/collections';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
+import { shouldUseColor } from '#utils/reporting';
 import { cac } from 'cac';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1157,6 +1158,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
         const output =
           format === 'human'
             ? formatCheckIssueSnapshotInventory({
+                color: shouldUseColor(),
                 format: 'human',
                 ...(invocationMetadata
                   ? { invocation: invocationMetadata }
@@ -1276,6 +1278,7 @@ export function createLiminaCli(): ReturnType<typeof cac> {
       if (executionResult && run) {
         process.stdout.write(
           `\n${formatCheckRunSummaryHuman({
+            color: shouldUseColor(),
             issues: executionResult.issues,
             queryContext: {
               effectiveFormat: 'human',

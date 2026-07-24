@@ -1,3 +1,4 @@
+import { shouldUseColor } from '#utils/reporting';
 import { createElapsedTimer } from 'logaria/helper';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
@@ -114,6 +115,7 @@ export async function runPackageCheck(
       if (!options.report?.defer) {
         PackageLogger.error(
           formatCheckIssueHumanReport({
+            color: shouldUseColor(),
             command: options.report?.command ?? 'limina package check',
             issues: reportIssues,
             title: 'Package check summary',
@@ -141,6 +143,7 @@ export async function runPackageCheck(
     if (!options.report?.defer) {
       PackageLogger.error(
         formatCheckIssueHumanReport({
+          color: shouldUseColor(),
           command: options.report?.command ?? 'limina package check',
           issues,
           title: 'Package check summary',

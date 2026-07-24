@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { shouldUseColor } from '#utils/reporting';
 import { createElapsedTimer } from 'logaria/helper';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
@@ -109,6 +110,7 @@ export async function runGraphPrepare(
     if (!options.report?.defer && error instanceof LiminaStructuredError) {
       GraphLogger.error(
         formatCheckIssueHumanReport({
+          color: shouldUseColor(),
           command: options.report?.command ?? 'limina graph prepare',
           issues,
           title: 'Graph prepare summary',
@@ -236,6 +238,7 @@ export async function runGraphCheck(
     if (!options.report?.defer) {
       GraphLogger.error(
         formatCheckIssueHumanReport({
+          color: shouldUseColor(),
           command: options.report?.command ?? 'limina graph check',
           issues,
           title: 'Graph check summary',

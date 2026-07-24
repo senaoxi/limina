@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -181,6 +181,42 @@ describe('managed outputs public CLI integration', () => {
     expectValidDeclarationMap(
       await readJson<DeclarationMap>(declarationMapPath),
     );
+    expect(await readFile(environmentOutputPath, 'utf8')).toBe(
+      environmentSource,
+    );
+
+    await rm(outputRoot, { force: true, recursive: true });
+    expect(await exists(outputRoot)).toBe(false);
+    expect(await exists(tsBuildInfoPath)).toBe(true);
+
+    const recoveredBuild = await runFixtureLimina(preparedFixture, [
+      'build',
+      'packages/library/tsconfig.json',
+    ]);
+    expectLiminaSuccess(recoveredBuild);
+    const recoveredPaths = [
+      jsPath,
+      declarationPath,
+      declarationMapPath,
+      environmentOutputPath,
+    ];
+    expect(
+      Object.fromEntries(
+        await Promise.all(
+          recoveredPaths.map(async (recoveredPath) => [
+            toPortablePath(path.relative(outputRoot, recoveredPath)),
+            await exists(recoveredPath),
+          ]),
+        ),
+      ),
+    ).toEqual({
+      'environment.d.ts': true,
+      'index.d.ts': true,
+      'index.d.ts.map': true,
+      'index.js': true,
+    });
+    expect(await readFile(jsPath, 'utf8')).toBe(firstJs);
+    expect(await readFile(declarationPath, 'utf8')).toBe(firstDeclaration);
     expect(await readFile(environmentOutputPath, 'utf8')).toBe(
       environmentSource,
     );

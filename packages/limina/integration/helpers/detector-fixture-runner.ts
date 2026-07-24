@@ -1,7 +1,5 @@
 import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   type CheckIssueSnapshot,
@@ -20,6 +18,7 @@ import {
   getDetectorStructuredSnapshotKind,
   readDetectorStructuredSnapshot,
 } from './detector-snapshot';
+import { createFaultInjectionRuntimeEntry } from './fault-injection-runtime';
 import {
   applyFixtureSetup,
   assertTreeSnapshotUnchanged,
@@ -44,14 +43,6 @@ import { liminaBinPath, runLimina, type RunLiminaResult } from './run-limina';
 import { createFixtureToolBridges } from './tool-bridge';
 
 const OUTPUT_DIAGNOSTIC_LIMIT = 4000;
-const faultLauncherPath = fileURLToPath(
-  new URL('fault-injection-launcher.ts', import.meta.url),
-);
-const tsxLoaderPath = createRequire(import.meta.url).resolve('tsx');
-// Node's `--import` flag requires a URL specifier; on Windows a bare drive
-// path (`D:\...`) is rejected as an unsupported ESM scheme, so pass a
-// `file://` URL that is valid on every platform.
-const tsxLoaderSpecifier = pathToFileURL(tsxLoaderPath).href;
 
 interface FaultInjectionReceipt {
   readonly boundary?: {
@@ -414,6 +405,16 @@ async function readExpectedFixtureSnapshot(options: {
   };
 }
 
+async function createFaultInjectionEntry(enabled: boolean): Promise<
+  | {
+      readonly args: readonly string[];
+      readonly executable: string;
+    }
+  | undefined
+> {
+  return enabled ? createFaultInjectionRuntimeEntry() : undefined;
+}
+
 async function assertRequiredFixtureArtifacts(options: {
   readonly cli: RunLiminaResult | undefined;
   readonly fixture: DetectorFixtureCase;
@@ -460,12 +461,7 @@ export async function runDetectorFixture(
   const harnessRoot = path.join(sandbox.sandboxRoot, 'harness');
   const faultPlanPath = path.join(harnessRoot, 'fault-plan.json');
   const receiptPath = path.join(harnessRoot, 'fault-receipt.json');
-  const entry = isFaultInjection
-    ? {
-        args: ['--import', tsxLoaderSpecifier, faultLauncherPath],
-        executable: process.execPath,
-      }
-    : undefined;
+  const entry = await createFaultInjectionEntry(isFaultInjection);
   const invocationArgs = isFaultInjection
     ? [
         '--config',

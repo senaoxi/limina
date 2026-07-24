@@ -41,6 +41,7 @@ import {
   normalizeSlashes,
   toRelativePath,
 } from '#utils/path';
+import { shouldUseColor } from '#utils/reporting';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import rawPicomatch from 'picomatch';
@@ -3140,6 +3141,13 @@ function addResourceModuleProblems(options: {
     return;
   }
 
+  if (
+    options.importRecord.kind === 'require-resolve' &&
+    runtimeEvidence.runtime.kind !== 'missing'
+  ) {
+    return;
+  }
+
   const evidence = options.typeEvidence.resolveImportEvidence({
     checkerName: options.checkerName,
     importRecord: options.importRecord,
@@ -3523,6 +3531,7 @@ export async function runSourceCheckImpl(
 
     SourceLogger.error(
       formatSourceCheckHumanReport({
+        color: shouldUseColor(),
         config,
         issues: structuredSourceIssues,
         report: options.report,

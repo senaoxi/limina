@@ -2808,6 +2808,7 @@ function createGeneratedDtsConfig(
       declaration: true,
       emitDeclarationOnly: true,
       declarationMap: false,
+      rewriteRelativeImportExtensions: false,
       rootDir: createRelativePath(
         project.dtsConfigPath,
         getCommonSourceRootDir(project),

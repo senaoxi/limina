@@ -222,6 +222,7 @@ interface CheckIssueInventoryBaseOptions {
 
 export interface CheckIssueInventoryHumanOptions
   extends CheckIssueInventoryBaseOptions {
+  color: boolean;
   filters?: never;
   format?: 'human';
   presentation: CheckIssueInventoryPresentationOptions;
@@ -1435,6 +1436,7 @@ export function formatCheckIssueSnapshotInventory(
       ? []
       : selectInventoryIssues(filteredIssues, options.presentation.maxIssues);
   const issueSummary = formatCheckIssueSnapshotSummaryHuman({
+    color: options.color,
     filteredIssueCount: filteredIssues.length,
     filters,
     issues: filteredIssues,
@@ -1467,6 +1469,7 @@ export function formatCheckIssueSnapshotInventory(
     ...selectedIssues.flatMap((issue) => [
       '',
       formatCheckIssueInventoryCard({
+        color: options.color,
         issue,
         representativeLocation: getCanonicalIssueLocation(issue),
         view,

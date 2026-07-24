@@ -5,9 +5,10 @@ import {
 } from '../check-reporting/codes';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import {
+  type CheckRunSummaryHumanOptions,
   type CheckTopBlocker,
   createIssueOverview,
-  formatCheckRunSummaryHuman,
+  formatCheckRunSummaryHuman as formatCheckRunSummaryHumanWithColor,
   selectTopBlockers,
 } from '../check-reporting/summary';
 import type { CheckIssueSnapshot } from '../source-check/snapshot';
@@ -20,6 +21,12 @@ const ANSI_PATTERN = new RegExp(
 
 function stripAnsi(value: string): string {
   return value.replaceAll(ANSI_PATTERN, '');
+}
+
+function formatCheckRunSummaryHuman(
+  options: Omit<CheckRunSummaryHumanOptions, 'color'>,
+): string {
+  return formatCheckRunSummaryHumanWithColor({ color: true, ...options });
 }
 
 function createIssue(options: {

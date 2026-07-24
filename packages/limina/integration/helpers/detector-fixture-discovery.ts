@@ -186,6 +186,7 @@ export interface DetectorFixtureCase {
 export interface DiscoverDetectorFixturesOptions {
   readonly caseModules: ReadonlyMap<string, unknown>;
   readonly detectorRoot: string;
+  readonly includeIdPrefixes?: readonly string[];
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -1428,6 +1429,11 @@ export async function discoverDetectorFixtures(
       directoryPath,
       id: path.relative(detectorRoot, directoryPath).replaceAll('\\', '/'),
     }))
+    .filter(
+      ({ id }) =>
+        options.includeIdPrefixes === undefined ||
+        options.includeIdPrefixes.some((prefix) => id.startsWith(prefix)),
+    )
     .sort((left, right) => comparePortableNames(left.id, right.id))
     .map(({ directoryPath, id: directoryId }) => {
       const casePath = path.join(directoryPath, 'case.mts');

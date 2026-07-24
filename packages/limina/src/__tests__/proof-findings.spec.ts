@@ -445,6 +445,7 @@ describe('typed Proof findings', () => {
     });
     const report = stripAnsi(
       formatCheckIssueHumanReport({
+        color: true,
         command: 'limina proof check',
         issues: [issue],
         title: 'Proof check summary',

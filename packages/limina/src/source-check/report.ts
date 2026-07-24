@@ -965,16 +965,18 @@ function wrapIssueLine(line: string, contentWidth: number): string[] {
 
 function formatIssueBlock(
   lines: readonly string[],
-  options: { title?: string } = {},
+  options: { color: boolean; title?: string },
 ): string[] {
   const width = getIssueBlockWidth(lines);
   const contentWidth = getIssueBlockContentWidth(width);
   const wrappedLines = lines.flatMap((line) =>
     wrapIssueLine(line, contentWidth),
   );
-  const coloredLines = colorIssueBlockLines(wrappedLines);
+  const renderedLines = options.color
+    ? colorIssueBlockLines(wrappedLines)
+    : wrappedLines;
 
-  return boxen(coloredLines.join('\n'), {
+  return boxen(renderedLines.join('\n'), {
     borderStyle: 'single',
     padding: {
       left: 1,
@@ -985,14 +987,19 @@ function formatIssueBlock(
   }).split('\n');
 }
 
-function formatSummaryBlock(summaryLines: readonly string[]): string[] {
+function formatSummaryBlock(
+  summaryLines: readonly string[],
+  color: boolean,
+): string[] {
   return formatCheckSummaryBlock({
+    color,
     lines: summaryLines,
     title: 'Source check summary',
   });
 }
 
 export function formatSourceCheckHumanReport(options: {
+  color: boolean;
   config: ResolvedLiminaConfig;
   issues: readonly SourceCheckIssue[];
   report?: SourceIssueReportOptions;
@@ -1084,7 +1091,7 @@ export function formatSourceCheckHumanReport(options: {
     }
 
     if (summaryLines.length > 0) {
-      lines.push(...formatSummaryBlock(summaryLines), '');
+      lines.push(...formatSummaryBlock(summaryLines, options.color), '');
     }
   }
 
@@ -1098,6 +1105,7 @@ export function formatSourceCheckHumanReport(options: {
         report.verbose
           ? formatVerboseUnusedModuleGroup(options.config, group)
           : formatDefaultUnusedModuleGroup(options.config, group, report),
+        { color: options.color },
       ),
     );
   }
@@ -1110,6 +1118,7 @@ export function formatSourceCheckHumanReport(options: {
     lines.push(
       ...formatIssueBlock(
         formatUnusedDependencyGroup(options.config, group, report),
+        { color: options.color },
       ),
     );
   }
@@ -1122,6 +1131,7 @@ export function formatSourceCheckHumanReport(options: {
     lines.push(
       ...formatIssueBlock(
         formatGenericSourceIssueGroup(options.config, group, report),
+        { color: options.color },
       ),
     );
   }

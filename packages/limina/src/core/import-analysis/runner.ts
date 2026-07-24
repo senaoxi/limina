@@ -196,6 +196,7 @@ const extensionAlias: NonNullable<NapiResolveOptions['extensionAlias']> = {
   '.jsx': ['.jsx', '.tsx'],
   '.mjs': ['.mjs', '.mts', '.d.mts'],
 };
+const defaultOxcRuntimeExtensions = ['.js', '.json', '.node'];
 
 function getSourceFileKind(filePath: string): ts.ScriptKind {
   if (filePath.endsWith('.tsx')) {
@@ -1148,7 +1149,7 @@ function getResolverExtensions(options: {
 }): string[] {
   return normalizeExtensions([
     ...options.context.extensions,
-    ...(options.compilerOptions.resolveJsonModule ? ['.json'] : []),
+    ...defaultOxcRuntimeExtensions,
   ]);
 }
 

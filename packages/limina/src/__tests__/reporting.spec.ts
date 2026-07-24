@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatCheckIssueHumanReport } from '../check-reporting/human';
+import {
+  type CheckIssueHumanReportOptions,
+  formatCheckIssueHumanReport as formatCheckIssueHumanReportWithColor,
+} from '../check-reporting/human';
 import {
   formatCheckDetailBlock,
-  formatCheckIssueSummaryReport,
-  formatCheckSummaryBlock,
+  formatCheckIssueSummaryReport as formatCheckIssueSummaryReportWithColor,
+  formatCheckSummaryBlock as formatCheckSummaryBlockWithColor,
 } from '../reporting';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -18,6 +21,30 @@ function stripAnsi(value: string): string {
 
 function countOccurrences(value: string, search: string): number {
   return value.split(search).length - 1;
+}
+
+function formatCheckIssueHumanReport(
+  options: Omit<CheckIssueHumanReportOptions, 'color'>,
+): string {
+  return formatCheckIssueHumanReportWithColor({ color: false, ...options });
+}
+
+function formatCheckIssueSummaryReport(
+  options: Omit<
+    Parameters<typeof formatCheckIssueSummaryReportWithColor>[0],
+    'color'
+  >,
+): string {
+  return formatCheckIssueSummaryReportWithColor({ color: false, ...options });
+}
+
+function formatCheckSummaryBlock(
+  options: Omit<
+    Parameters<typeof formatCheckSummaryBlockWithColor>[0],
+    'color'
+  >,
+): string[] {
+  return formatCheckSummaryBlockWithColor({ color: false, ...options });
 }
 
 describe('check reporting', () => {
@@ -48,8 +75,9 @@ describe('check reporting', () => {
   });
 
   it('accepts semantic colors for summary box labels', () => {
-    const report = formatCheckSummaryBlock({
+    const report = formatCheckSummaryBlockWithColor({
       borderColor: 'green',
+      color: true,
       lines: [
         'Command: limina check',
         'Verbose: limina check --issues --verbose',
@@ -74,6 +102,19 @@ describe('check reporting', () => {
     expect(report).toContain(
       '\u001B[33mReason:\u001B[0m source imports must be authorized.',
     );
+  });
+
+  it('omits ANSI while preserving summary content when color is disabled', () => {
+    const report = formatCheckSummaryBlockWithColor({
+      borderColor: 'red',
+      color: false,
+      lines: ['Reason: source imports must be authorized.'],
+      title: 'Limina check summary',
+    }).join('\n');
+
+    expect(report).not.toMatch(ANSI_PATTERN);
+    expect(report).toContain('Limina check summary');
+    expect(report).toContain('Reason: source imports must be authorized.');
   });
 
   it('formats detail blocks with the same left-aligned box shape', () => {
@@ -327,7 +368,8 @@ describe('check reporting', () => {
   });
 
   it('colors structured check issue titles and section headings', () => {
-    const report = formatCheckIssueHumanReport({
+    const report = formatCheckIssueHumanReportWithColor({
+      color: true,
       command: 'limina source check',
       issues: [
         {

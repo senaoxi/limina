@@ -221,6 +221,7 @@ describe('check issue inventory presentation', () => {
         packages: blocker.packages,
       })),
       report: formatCheckIssueSnapshotInventory({
+        color: true,
         format: 'human',
         presentation: {
           maxIssues: 3,
@@ -304,17 +305,20 @@ describe('check issue inventory presentation', () => {
       locations: [],
     });
     const compactLarge = formatCheckIssueInventoryCard({
+      color: true,
       issue: largeIssue,
       representativeLocation: getCanonicalIssueLocation(largeIssue),
       view: 'compact',
     });
     const compactSmall = formatCheckIssueInventoryCard({
+      color: true,
       issue: smallIssue,
       representativeLocation: getCanonicalIssueLocation(smallIssue),
       view: 'compact',
     });
     const detailed = stripAnsi(
       formatCheckIssueInventoryCard({
+        color: true,
         issue: largeIssue,
         representativeLocation: getCanonicalIssueLocation(largeIssue),
         view: 'detailed',
@@ -360,6 +364,7 @@ describe('check issue inventory presentation', () => {
     expect(compactLarge).toBe(compactSmall);
     expect(() =>
       formatCheckIssueInventoryCard({
+        color: true,
         issue: guardedIssue,
         representativeLocation: 'packages/app/src/index.ts',
         view: 'compact',

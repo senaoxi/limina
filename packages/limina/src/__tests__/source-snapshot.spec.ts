@@ -68,6 +68,7 @@ function createCheckSnapshot(
 }
 
 function formatHumanInventory(options: {
+  color?: boolean;
   filters?: CheckIssueInventoryFilters;
   limit?: number | null;
   limitExplicit?: boolean;
@@ -83,6 +84,7 @@ function formatHumanInventory(options: {
   const hasFilters = Object.values(filters).some((values) => values?.length);
 
   return formatCheckIssueSnapshotInventory({
+    color: options.color ?? true,
     format: 'human',
     presentation: {
       maxIssues: limit,
@@ -1256,6 +1258,28 @@ describe('check issue snapshots', () => {
     );
   });
 
+  it('omits ANSI from detailed issue inventory output when color is disabled', () => {
+    const output = formatHumanInventory({
+      color: false,
+      snapshot: {
+        ...createCheckSnapshot([
+          {
+            code: 'LIMINA_SOURCE_UNCOVERED_FILE',
+            reason: 'source file is not covered',
+            task: 'source:check',
+            title: 'Uncovered source file',
+          },
+        ]),
+        run: createCompletedRun([], 'failed'),
+      },
+      view: 'detailed',
+    });
+
+    expect(output).not.toMatch(ANSI_PATTERN);
+    expect(output).toContain('Limina check issue summary');
+    expect(output).toContain('Uncovered source file');
+  });
+
   it('filters internal preparation failures by graph:materialize issue task', () => {
     const output = formatHumanInventory({
       filters: { tasks: ['graph:materialize'] },
@@ -1552,6 +1576,7 @@ describe('check issue snapshots', () => {
     });
     const output = stripAnsi(
       formatCheckIssueSnapshotInventory({
+        color: false,
         format: 'human',
         invocation: {
           completedAt: '2026-07-17T00:00:01.000Z',

@@ -1142,6 +1142,46 @@ describe('runProofCheck dts config semantics', () => {
     }
   });
 
+  it('ignores relative import rewrite drift in declaration-only configs', async () => {
+    const fixture = await createFixture(
+      createPassingFiles({
+        'packages/pkg/tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            allowImportingTsExtensions: true,
+            lib: ['ES2023'],
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            noEmit: true,
+            rewriteRelativeImportExtensions: true,
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
+        'packages/pkg/tsconfig.lib.dts.json': JSON.stringify({
+          extends: './tsconfig.json',
+          compilerOptions: {
+            composite: true,
+            declaration: true,
+            emitDeclarationOnly: true,
+            noEmit: false,
+            outDir: './.tsbuild',
+            rewriteRelativeImportExtensions: false,
+            rootDir: 'src',
+            tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+          },
+        }),
+      }),
+    );
+
+    try {
+      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('ignores inert declaration-only compiler option extensions', async () => {
     const fixture = await createFixture(
       createPassingFiles({
