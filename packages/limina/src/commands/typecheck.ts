@@ -1,3 +1,4 @@
+import { shouldUseColor } from '#utils/reporting';
 import { createElapsedTimer } from 'logaria/helper';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -196,6 +197,7 @@ function formatCheckerIssueReport(options: {
   verbose?: boolean;
 }): string {
   return formatCheckIssueHumanReport({
+    color: shouldUseColor(),
     command: options.command,
     issues: options.issues,
     title: options.title,

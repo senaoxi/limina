@@ -32,6 +32,7 @@ import {
   normalizeAbsolutePath,
   toRelativePath,
 } from '#utils/path';
+import { shouldUseColor } from '#utils/reporting';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
@@ -114,6 +115,7 @@ function formatProofFindingReport(options: {
     });
 
   return formatCheckIssueHumanReport({
+    color: shouldUseColor(),
     command: options.report?.command ?? 'limina proof check',
     issues,
     title: 'Proof check summary',
@@ -241,6 +243,7 @@ const ignoredSemanticCompilerOptions = new Set([
   'preserveConstEnums',
   'project',
   'removeComments',
+  'rewriteRelativeImportExtensions',
   'rootDir',
   'showConfig',
   'sourceMap',

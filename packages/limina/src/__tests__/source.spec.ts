@@ -513,6 +513,79 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
+  it('accepts a dotted package root with a JavaScript runtime entry and declaration entry', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          manifest: {
+            dependencies: {
+              'lodash.kebabcase': '1.0.0',
+            },
+          },
+          source:
+            "import kebabCase from 'lodash.kebabcase';\nexport const value = kebabCase('hello world');\n",
+        }),
+        'app/node_modules/lodash.kebabcase/index.d.ts':
+          'declare function kebabCase(value: string): string;\nexport default kebabCase;\n',
+        'app/node_modules/lodash.kebabcase/index.js':
+          'module.exports = value => value.replaceAll(" ", "-");\n',
+        'app/node_modules/lodash.kebabcase/package.json': stringifyConfig({
+          main: './index.js',
+          name: 'lodash.kebabcase',
+          types: './index.d.ts',
+        }),
+      },
+      { source: { knip: false } },
+    );
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('accepts an existing resource located through require.resolve without type evidence', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          manifest: {
+            dependencies: {
+              'resource-fixture': '1.0.0',
+            },
+          },
+          source: [
+            "import { createRequire } from 'node:module';",
+            'const require = createRequire(import.meta.url);',
+            "export const archivePath = require.resolve('resource-fixture/archive.tgz');",
+            '',
+          ].join('\n'),
+        }),
+        'app/node_modules/resource-fixture/archive.tgz': 'fixture\n',
+        'app/node_modules/resource-fixture/package.json': stringifyConfig({
+          name: 'resource-fixture',
+        }),
+      },
+      { source: { knip: false } },
+    );
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('accepts a physical resource with ambient type evidence from its checker project', async () => {
     const fixture = await createFixture(
       {
@@ -629,18 +702,17 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
-      const errors = errorSpy.mock.calls.join('\n');
+      const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
-      expect(errors).toContain('\u001B[31mUnauthorized bare package import');
-      expect(errors).toContain('\u001B[36mpackage:');
-      expect(errors).toContain('\u001B[34mrule:');
-      expect(errors).toContain('\u001B[36msummary:\u001B[0m');
-      expect(errors).toContain('\u001B[33mreason:\u001B[0m');
-      expect(errors).toContain('\u001B[32mfix steps:\u001B[0m');
-      expect(errors).toContain('\u001B[36mverify:\u001B[0m');
-      expect(errors).toContain('\u001B[35mevidence:\u001B[0m');
-      expect(errors).toContain('\u001B[36mfiles:\u001B[0m');
+      expect(errors).toContain('Unauthorized bare package import');
+      expect(errors).toContain('package:');
+      expect(errors).toContain('rule:');
+      expect(errors).toContain('summary:');
+      expect(errors).toContain('reason:');
       expect(errors).toContain('fix steps:');
+      expect(errors).toContain('verify:');
+      expect(errors).toContain('evidence:');
+      expect(errors).toContain('files:');
       expect(errors).toContain('Declare "zod" in app/package.json');
       expect(errors).toContain('or optionalDependencies.');
       expect(errors).toContain('source.importAuthority.allow');
@@ -3995,6 +4067,7 @@ packages:
 
     try {
       const report = formatSourceCheckHumanReport({
+        color: false,
         config: fixture.config,
         issues,
         report: {

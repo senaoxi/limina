@@ -557,6 +557,7 @@ describe('typed Source findings', () => {
     const finding =
       findingByCode[LIMINA_CHECK_ISSUE_CODES.sourcePackageImportUnauthorized];
     const report = formatSourceCheckHumanReport({
+      color: false,
       config,
       issues: [finding],
       report: { command: 'limina source check' },

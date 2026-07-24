@@ -20,12 +20,14 @@ import {
 } from '#utils/path';
 import { createHash } from 'node:crypto';
 import {
+  existsSync,
   lstatSync,
   readFileSync,
   readlinkSync,
   realpathSync,
   statSync,
 } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import ts from 'typescript';
@@ -70,7 +72,13 @@ interface ManagedLeafClassification {
   readonly sourceConfigPath: string;
 }
 
+interface ManagedBuildStateProof {
+  readonly outputPaths: readonly string[];
+  readonly tsBuildInfoPath?: string;
+}
+
 export interface ProvenManagedCheckerMutationContext {
+  readonly buildStateProofs: readonly ManagedBuildStateProof[];
   readonly checkerImplementationFingerprint: string;
   readonly configDependencies: readonly ConfigDependencyIdentity[];
   readonly effectiveOptionsFingerprint: string;
@@ -542,6 +550,7 @@ async function proveLeafMutation(options: {
   projectRootDir: string;
   workspaceContext: ValidatedWorkspaceContext;
 }): Promise<{
+  buildStateProof: ManagedBuildStateProof;
   configDependencies: ConfigDependencyIdentity[];
   effectiveOptionsFingerprint: string;
   inputPaths: string[];
@@ -638,6 +647,7 @@ async function proveLeafMutation(options: {
     });
   }
 
+  const outputPaths = [...projectedOutputs].sort();
   const mutationTargets: MutationBoundaryTarget[] = [];
   if (projectedOutputs.size > 0 || usesBoundedVueDirectory) {
     mutationTargets.push({
@@ -673,6 +683,13 @@ async function proveLeafMutation(options: {
   }
 
   return {
+    buildStateProof:
+      options.classification.kind === 'user-output'
+        ? {
+            outputPaths,
+            ...(tsBuildInfoFile ? { tsBuildInfoPath: tsBuildInfoFile } : {}),
+          }
+        : { outputPaths: [] },
     configDependencies: [...parsedProof.configDependencies],
     effectiveOptionsFingerprint: hashValue({
       adapterExtensions: parsed.extensions,
@@ -746,6 +763,7 @@ export async function proveManagedCheckerMutationContext(options: {
       workspaceGeneration: options.workspaceContext.workspaceMutationGeneration,
     });
     return {
+      buildStateProofs: [],
       checkerImplementationFingerprint,
       configDependencies: closure.dependencies,
       effectiveOptionsFingerprint,
@@ -770,6 +788,7 @@ export async function proveManagedCheckerMutationContext(options: {
       });
     }),
   );
+  const buildStateProofs = leafProofs.map((leaf) => leaf.buildStateProof);
   const dependencies = new Map<string, ConfigDependencyIdentity>(
     closure.dependencies.map((dependency) => [dependency.path, dependency]),
   );
@@ -812,6 +831,7 @@ export async function proveManagedCheckerMutationContext(options: {
   });
 
   return {
+    buildStateProofs,
     checkerImplementationFingerprint,
     configDependencies,
     effectiveOptionsFingerprint,
@@ -822,6 +842,58 @@ export async function proveManagedCheckerMutationContext(options: {
     projectedOutputPaths,
     targetId: options.target.id,
   };
+}
+
+function collectStaleBuildInfoTargets(
+  proofs: readonly ProvenManagedCheckerMutationContext[],
+): MutationBoundaryTarget[] {
+  const targetsByPath = new Map<string, MutationBoundaryTarget>();
+
+  for (const proof of proofs) {
+    for (const buildState of proof.buildStateProofs) {
+      const buildInfoPath = buildState.tsBuildInfoPath;
+      if (
+        !buildInfoPath ||
+        !existsSync(buildInfoPath) ||
+        buildState.outputPaths.every((outputPath) => existsSync(outputPath))
+      ) {
+        continue;
+      }
+
+      const boundaryTarget = proof.mutationTargets.find(
+        (target) =>
+          target.kind === 'file' &&
+          normalizeAbsolutePath(target.path) === buildInfoPath,
+      );
+      if (!boundaryTarget) {
+        throw new ManagedCheckerEmitBoundaryError(
+          `Managed checker build info has no authenticated mutation target: ${buildInfoPath}.`,
+        );
+      }
+      targetsByPath.set(buildInfoPath, boundaryTarget);
+    }
+  }
+
+  return [...targetsByPath.values()].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  );
+}
+
+async function invalidateStaleBuildInfo(
+  proofs: readonly ProvenManagedCheckerMutationContext[],
+): Promise<void> {
+  const staleTargets = collectStaleBuildInfoTargets(proofs);
+  if (staleTargets.length === 0) return;
+
+  await preflightMutationBoundary(staleTargets);
+  const snapshots = new Map<string, MutationBoundarySnapshot>();
+  for (const target of staleTargets) {
+    snapshots.set(target.path, await preflightMutationBoundary([target]));
+  }
+  for (const target of staleTargets) {
+    await recheckMutationBoundary(snapshots.get(target.path)!);
+    await rm(target.path, { force: true });
+  }
 }
 
 export class ManagedCheckerMutationCoordinator {
@@ -892,6 +964,7 @@ export class ManagedCheckerMutationCoordinator {
     await preflightMutationBoundary(
       layerProofs.flatMap((proof) => proof.mutationTargets),
     );
+    await invalidateStaleBuildInfo(layerProofs);
     for (const proof of layerProofs) {
       this.#layerSnapshots.set(
         proof.targetId,

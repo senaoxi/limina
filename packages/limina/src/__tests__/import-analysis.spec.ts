@@ -664,6 +664,61 @@ describe('import analysis', () => {
     }
   });
 
+  it('keeps JavaScript package entry extensions in Oxc runtime resolution', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const indexPath = await writeText(
+        rootDir,
+        'src/index.ts',
+        "import value from 'lodash.kebabcase';\nvoid value;\n",
+      );
+      const packageEntryPath = await writeText(
+        rootDir,
+        'node_modules/lodash.kebabcase/index.js',
+        'module.exports = value => value;\n',
+      );
+      await writeText(
+        rootDir,
+        'node_modules/lodash.kebabcase/package.json',
+        JSON.stringify({
+          main: './index.js',
+          name: 'lodash.kebabcase',
+        }),
+      );
+      const configPath = await writeText(
+        rootDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+          },
+        }),
+      );
+
+      expect(
+        toPortablePath(
+          resolveModuleNameWithOxc({
+            compilerOptions: {
+              module: ts.ModuleKind.ESNext,
+              moduleResolution: ts.ModuleResolutionKind.Bundler,
+            },
+            containingFile: indexPath,
+            context: {
+              checkerPresets: ['tsc'],
+              configPath,
+              extensions: ['.ts', '.tsx', '.d.ts'],
+            },
+            specifier: 'lodash.kebabcase',
+          }) ?? '',
+        ),
+      ).toBe(toPortablePath(packageEntryPath));
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('uses legacy package lookup for node10 instead of package exports conditions', async () => {
     const rootDir = await createTempDir();
 

@@ -61,6 +61,7 @@ export interface CheckTopBlocker {
 }
 
 export interface CheckRunSummaryHumanOptions {
+  color: boolean;
   issues: readonly LiminaCheckIssue[];
   queryContext?: InventoryQueryContext;
   rootDir?: string;
@@ -69,6 +70,7 @@ export interface CheckRunSummaryHumanOptions {
 }
 
 interface CheckIssueSnapshotSummaryHumanOptions {
+  color: boolean;
   filteredIssueCount?: number;
   filters?: CheckIssueInventoryFilters;
   issues: readonly LiminaCheckIssue[];
@@ -1072,6 +1074,7 @@ export function formatCheckRunSummaryHuman(
       issues: options.issues,
       run,
     }),
+    color: options.color,
     colorLine: colorCheckStatsLine,
     lines: [
       `Command: ${run.command}`,
@@ -1207,6 +1210,7 @@ export function formatCheckIssueSnapshotSummaryHuman(
       issues: options.snapshot.issues,
       run: options.snapshot.run,
     }),
+    color: options.color,
     lines: [
       `Snapshot: ${formatSnapshotTimestamp(options.snapshot)}`,
       `Command: ${options.snapshot.run?.command ?? options.snapshot.command}`,

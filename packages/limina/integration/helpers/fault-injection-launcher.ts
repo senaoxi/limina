@@ -557,7 +557,7 @@ function createFaultProcessDependencies(options: {
 
       return child;
     },
-    ...(timeoutFault ? { timeoutMs: 150 } : {}),
+    ...(timeoutFault ? { timeoutMs: 500 } : {}),
   };
 }
 

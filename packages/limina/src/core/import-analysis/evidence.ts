@@ -4,6 +4,10 @@ import {
   type ResolvedCheckerModuleName,
 } from '#checkers';
 import { resolveExistingFilePath } from '#utils/module-resolution';
+import {
+  isBarePackageSpecifier,
+  isPackageImportSpecifier,
+} from '#utils/module-specifier';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'node:path';
 import type ts from 'typescript';
@@ -111,6 +115,18 @@ function resolveRelativeRuntimeFile(options: {
 }
 
 function isExplicitPathExtension(specifier: string): boolean {
+  if (isBarePackageSpecifier(specifier)) {
+    const packageSubpath = specifier.startsWith('@')
+      ? specifier.split('/').slice(2).join('/')
+      : specifier.split('/').slice(1).join('/');
+
+    return packageSubpath.length > 0 && path.extname(packageSubpath).length > 0;
+  }
+
+  if (isPackageImportSpecifier(specifier)) {
+    return path.extname(specifier.slice(1)).length > 0;
+  }
+
   return path.extname(specifier).length > 0;
 }
 

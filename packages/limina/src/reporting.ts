@@ -261,22 +261,24 @@ export function formatCheckDetailBlock(lines: readonly string[]): string[] {
 
 export function formatCheckSummaryBlock(options: {
   borderColor?: CheckSummaryBlockColor;
+  color: boolean;
   colorLine?: (line: string) => string;
   lines: readonly string[];
   title: string;
 }): string[] {
   const width = CHECK_SUMMARY_BLOCK_MIN_WIDTH;
   const contentWidth = getBlockContentWidth(width);
-  const shouldColorLabels = Boolean(options.borderColor);
+  const shouldColorLabels = options.color && Boolean(options.borderColor);
   const wrappedLines = options.lines.flatMap((line) =>
     wrapDetailLine(line, contentWidth),
   );
   const coloredLines = shouldColorLabels
     ? wrappedLines.map((line) => colorSummaryLabel(line))
     : wrappedLines;
-  const renderedLines = options.colorLine
-    ? coloredLines.map((line) => options.colorLine?.(line) ?? line)
-    : coloredLines;
+  const renderedLines =
+    options.color && options.colorLine
+      ? coloredLines.map((line) => options.colorLine?.(line) ?? line)
+      : coloredLines;
 
   const blockLines = boxen(renderedLines.join('\n'), {
     borderStyle: 'round',
@@ -288,12 +290,13 @@ export function formatCheckSummaryBlock(options: {
     width,
   }).split('\n');
 
-  return options.borderColor
+  return options.color && options.borderColor
     ? colorSummaryBlockBorder(blockLines, options.borderColor)
     : blockLines;
 }
 
 export function formatCheckSummaryReport(options: {
+  color: boolean;
   details?: string | readonly string[];
   lines: readonly string[];
   title: string;
@@ -302,6 +305,7 @@ export function formatCheckSummaryReport(options: {
 
   return [
     ...formatCheckSummaryBlock({
+      color: options.color,
       lines: options.lines,
       title: options.title,
     }),
@@ -313,6 +317,7 @@ export function formatCheckSummaryReport(options: {
 }
 
 export function formatCheckIssueSummaryReport(options: {
+  color: boolean;
   details?: string | readonly string[];
   issueCount: number;
   pluralIssueLabel: string;
@@ -320,6 +325,7 @@ export function formatCheckIssueSummaryReport(options: {
   title: string;
 }): string {
   return formatCheckSummaryReport({
+    color: options.color,
     details: options.details,
     lines: [
       `Found ${options.issueCount} ${plural(

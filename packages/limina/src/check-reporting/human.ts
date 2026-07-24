@@ -34,12 +34,14 @@ export interface CheckIssueReportOptions {
 }
 
 export interface CheckIssueHumanReportOptions extends CheckIssueReportOptions {
+  color: boolean;
   detailLimit?: number;
   issues: readonly LiminaCheckIssue[];
   title: string;
 }
 
 export interface CheckIssueInventoryCardOptions {
+  color: boolean;
   issue: LiminaCheckIssue;
   representativeLocation: string | undefined;
   view: Exclude<CheckIssueInventoryView, 'summary'>;
@@ -458,7 +460,7 @@ function colorIssueBlockLines(
 
 function formatIssueBlock(
   lines: readonly string[],
-  options: { severity?: string } = {},
+  options: { color: boolean; severity?: string },
 ): string[] {
   const width = Math.max(
     ISSUE_BLOCK_MIN_WIDTH,
@@ -468,9 +470,11 @@ function formatIssueBlock(
   );
   const contentWidth = getContentWidth(width);
   const wrappedLines = lines.flatMap((line) => wrapLine(line, contentWidth));
-  const coloredLines = colorIssueBlockLines(wrappedLines, options);
+  const renderedLines = options.color
+    ? colorIssueBlockLines(wrappedLines, options)
+    : wrappedLines;
 
-  return boxen(coloredLines.join('\n'), {
+  return boxen(renderedLines.join('\n'), {
     borderStyle: 'single',
     padding: {
       left: 1,
@@ -585,6 +589,7 @@ export function formatCheckIssueInventoryCard(
       : formatDetailedInventoryIssueLines(options.issue);
 
   return formatIssueBlock(lines, {
+    color: options.color,
     severity: options.issue.severity,
   }).join('\n');
 }
@@ -883,6 +888,7 @@ export function formatCheckIssueHumanReport(
 
   if (issues.length === 0) {
     return formatCheckSummaryBlock({
+      color: options.color,
       lines: ['No check issues were reported.'],
       title: options.title,
     }).join('\n');
@@ -925,6 +931,7 @@ export function formatCheckIssueHumanReport(
 
   return [
     ...formatCheckSummaryBlock({
+      color: options.color,
       lines: summaryLines,
       title: options.title,
     }),
@@ -935,7 +942,7 @@ export function formatCheckIssueHumanReport(
           detailLimit,
           verbose: options.verbose ?? false,
         }),
-        { severity: group.severity },
+        { color: options.color, severity: group.severity },
       ),
     ]),
   ].join('\n');

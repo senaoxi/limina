@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { shouldUseColor } from '#utils/reporting';
 import { createElapsedTimer } from 'logaria/helper';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { formatCheckIssueHumanReport } from '../check-reporting/human';
@@ -130,6 +131,7 @@ export async function runProofCheck(
     if (!options.report?.defer && !(error instanceof LiminaStructuredError)) {
       ProofLogger.error(
         formatCheckIssueHumanReport({
+          color: shouldUseColor(),
           command: options.report?.command ?? 'limina proof check',
           issues,
           title: 'Proof check summary',

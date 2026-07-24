@@ -22,6 +22,7 @@ import {
   type WorkspacePackage,
 } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
+import { shouldUseColor } from '#utils/reporting';
 import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'pathe';
@@ -2671,6 +2672,7 @@ export async function runGraphCheckImpl(
     if (!options.report?.defer) {
       GraphLogger.error(
         formatCheckIssueHumanReport({
+          color: shouldUseColor(),
           command: options.report?.command ?? 'limina graph check',
           issues,
           title: 'Graph check summary',

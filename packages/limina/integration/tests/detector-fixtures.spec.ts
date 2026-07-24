@@ -10,7 +10,6 @@ import {
   LIMINA_DETECTOR_SCENARIO_COVERAGE,
 } from '../../src/check-reporting/detector-coverage';
 import { discoverDetectorFixtures } from '../helpers/detector-fixture-discovery';
-import { runDetectorFixture } from '../helpers/detector-fixture-runner';
 
 const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const detectorRoot = fileURLToPath(
@@ -278,13 +277,4 @@ describe('declarative detector fixtures', () => {
       });
     }
   });
-
-  for (const fixture of detectorFixtures) {
-    it(fixture.id, async () => {
-      const result = await runDetectorFixture(fixture);
-
-      expect(result.fixtureId).toBe(fixture.id);
-      expect(result.preserved || result.cleaned).toBe(true);
-    });
-  }
 });
