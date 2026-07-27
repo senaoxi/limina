@@ -13,19 +13,29 @@ function compareStrings(
   return (left ?? '').localeCompare(right ?? '');
 }
 
+function firstNonZero(comparisons: readonly number[]): number {
+  for (const comparison of comparisons) {
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+
+  return 0;
+}
+
 function compareIssues(
   left: LiminaCheckIssue,
   right: LiminaCheckIssue,
 ): number {
-  return (
-    compareStrings(left.code, right.code) ||
-    compareStrings(left.filePath, right.filePath) ||
-    compareStrings(left.packageManifestPath, right.packageManifestPath) ||
-    compareStrings(left.packageName, right.packageName) ||
-    compareStrings(left.checkerName, right.checkerName) ||
-    compareStrings(left.title, right.title) ||
-    compareStrings(left.reason, right.reason)
-  );
+  return firstNonZero([
+    compareStrings(left.code, right.code),
+    compareStrings(left.filePath, right.filePath),
+    compareStrings(left.packageManifestPath, right.packageManifestPath),
+    compareStrings(left.packageName, right.packageName),
+    compareStrings(left.checkerName, right.checkerName),
+    compareStrings(left.title, right.title),
+    compareStrings(left.reason, right.reason),
+  ]);
 }
 
 function getIssueDeduplicationKey(issue: LiminaCheckIssue): string {

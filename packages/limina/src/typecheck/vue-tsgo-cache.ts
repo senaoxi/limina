@@ -58,34 +58,42 @@ export class VueTsgoCacheBatchCoordinator {
     const boundaryTargetsByPath = new Map<string, MutationBoundaryTarget>();
     const cachePathsByTargetId = new Map<TypecheckTarget['id'], Set<string>>();
 
+    async function registerConfigCachePaths(
+      configPath: string,
+      targetCachePaths: Set<string>,
+    ): Promise<void> {
+      const packageDir = findNearestPackageDir(configPath);
+      if (!packageDir) {
+        throw new VueTsgoCacheBoundaryError(
+          `Unable to authenticate vue-tsgo cache package root for ${configPath}.`,
+        );
+      }
+
+      for (const cachePath of createVueTsgoCachePaths(configPath)) {
+        targetCachePaths.add(cachePath);
+        if (boundaryTargetsByPath.has(cachePath)) continue;
+        const authority = await createExplicitMutationAuthority({
+          generation,
+          logicalMutationRoot: cachePath,
+          scope: 'directory',
+          trustedBasePath: packageDir,
+        });
+        boundaryTargetsByPath.set(cachePath, {
+          authority,
+          kind: 'directory',
+          path: cachePath,
+          recursive: true,
+        });
+      }
+    }
+
     for (const target of targets) {
       if (!isVueTsgoCommand(target.command)) continue;
       const targetCachePaths = cachePathsByTargetId.get(target.id) ?? new Set();
       for (const configPath of collectVueTsgoConfigPaths(target, {
         requireValidGeneratedRoute: options.requireValidGeneratedRoute ?? true,
       })) {
-        const packageDir = findNearestPackageDir(configPath);
-        if (!packageDir) {
-          throw new VueTsgoCacheBoundaryError(
-            `Unable to authenticate vue-tsgo cache package root for ${configPath}.`,
-          );
-        }
-        for (const cachePath of createVueTsgoCachePaths(configPath)) {
-          targetCachePaths.add(cachePath);
-          if (boundaryTargetsByPath.has(cachePath)) continue;
-          const authority = await createExplicitMutationAuthority({
-            generation,
-            logicalMutationRoot: cachePath,
-            scope: 'directory',
-            trustedBasePath: packageDir,
-          });
-          boundaryTargetsByPath.set(cachePath, {
-            authority,
-            kind: 'directory',
-            path: cachePath,
-            recursive: true,
-          });
-        }
+        await registerConfigCachePaths(configPath, targetCachePaths);
       }
       cachePathsByTargetId.set(target.id, targetCachePaths);
     }

@@ -8,14 +8,14 @@ export function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-export function formatUnknownValue(value: unknown): string {
-  if (value === undefined) {
-    return 'undefined';
-  }
-
+function stringifyUnknownValue(value: unknown): string | undefined {
   try {
-    return JSON.stringify(value) ?? String(value);
+    return JSON.stringify(value);
   } catch {
-    return String(value);
+    return undefined;
   }
+}
+
+export function formatUnknownValue(value: unknown): string {
+  return stringifyUnknownValue(value) ?? String(value);
 }

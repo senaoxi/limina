@@ -1,6 +1,5 @@
-import { normalizeSlashes, toRelativePath } from '#utils/path';
+import { normalizeSlashes } from '#utils/path';
 import { createHash } from 'node:crypto';
-import path from 'pathe';
 import {
   assertIssueTaskMatchesCode,
   assertWritableLiminaCheckIssueCode,
@@ -9,13 +8,22 @@ import {
 } from './codes';
 import type {
   CanonicalLiminaCheckIssue,
-  LiminaCheckIssue,
   LiminaCheckIssueEvidence,
   LiminaCheckIssueExternal,
   LiminaCheckIssueLocation,
   LiminaCheckIssueSeverity,
   LiminaCheckTaskName,
 } from './snapshot';
+import {
+  deriveCheckIssueScope,
+  normalizeCheckIssueLocation,
+  normalizeCheckIssuePath,
+} from './structured-paths';
+
+export {
+  deriveCheckIssueScope,
+  normalizeCheckIssuePath,
+} from './structured-paths';
 
 export interface CreateLiminaCheckIssueOptions {
   checkerName?: string;
@@ -43,70 +51,10 @@ export interface CreateLiminaCheckIssueOptions {
   verifyCommands?: readonly string[];
 }
 
-function stripLineColumnSuffix(filePath: string): string {
-  return filePath.replace(/:\d+(?::\d+)?(?:\s+\(.+\))?$/u, '');
-}
-
-export function normalizeCheckIssuePath(
-  rootDir: string,
-  filePath: string | undefined,
-): string | undefined {
-  if (!filePath) {
-    return undefined;
-  }
-
-  const trimmedPath = stripLineColumnSuffix(filePath.trim());
-
-  if (!trimmedPath) {
-    return undefined;
-  }
-
-  return normalizeSlashes(
-    path.isAbsolute(trimmedPath)
-      ? toRelativePath(rootDir, trimmedPath)
-      : trimmedPath.replaceAll(/^\.\//gu, ''),
-  );
-}
-
-export function deriveCheckIssueScope(
-  issue: Pick<
-    LiminaCheckIssue,
-    'filePath' | 'locations' | 'packageManifestPath' | 'scope'
-  >,
-): string | undefined {
-  if (issue.scope) {
-    return issue.scope;
-  }
-
-  const locationPath =
-    issue.filePath ??
-    issue.locations?.find((location) => location.filePath)?.filePath ??
-    issue.packageManifestPath ??
-    issue.locations?.find((location) => location.packageManifestPath)
-      ?.packageManifestPath;
-
-  if (!locationPath) {
-    return undefined;
-  }
-
-  const directory = path.posix.dirname(locationPath);
-
-  return directory === '.' ? '.' : directory;
-}
-
-function normalizeLocation(
-  rootDir: string,
-  location: LiminaCheckIssueLocation,
-): LiminaCheckIssueLocation {
-  return {
-    ...location,
-    filePath: normalizeCheckIssuePath(rootDir, location.filePath),
-    packageManifestPath: normalizeCheckIssuePath(
-      rootDir,
-      location.packageManifestPath,
-    ),
-    scope: location.scope ? normalizeSlashes(location.scope) : undefined,
-  };
+function cloneOptionalArray<Value>(
+  values: readonly Value[] | undefined,
+): Value[] | undefined {
+  return values === undefined ? undefined : [...values];
 }
 
 function normalizeEvidence(
@@ -118,7 +66,7 @@ function normalizeEvidence(
 
   return evidence.map((item) => ({
     ...item,
-    lines: item.lines ? [...item.lines] : undefined,
+    lines: cloneOptionalArray(item.lines),
   }));
 }
 
@@ -149,67 +97,137 @@ function inferDomain(task: LiminaCheckTaskName): string {
   return task.split(':')[0] ?? task;
 }
 
-export function createLiminaCheckIssue(
+function valueOrDefault<Value>(
+  value: Value | undefined,
+  fallback: Value,
+): Value {
+  return value === undefined ? fallback : value;
+}
+
+function createFallbackLocations(
+  filePath: string | undefined,
+  packageManifestPath: string | undefined,
+): LiminaCheckIssueLocation[] {
+  const locations: LiminaCheckIssueLocation[] = [];
+
+  if (filePath !== undefined) {
+    locations.push({ filePath });
+  }
+
+  if (packageManifestPath !== undefined) {
+    locations.push({ packageManifestPath });
+  }
+
+  return locations;
+}
+
+function normalizeExplicitLocations(options: {
+  locations: readonly LiminaCheckIssueLocation[] | undefined;
+  rootDir: string;
+}): LiminaCheckIssueLocation[] | undefined {
+  return options.locations?.map((location) =>
+    normalizeCheckIssueLocation(options.rootDir, location),
+  );
+}
+
+function nonEmptyLocations(
+  locations: LiminaCheckIssueLocation[],
+): LiminaCheckIssueLocation[] | undefined {
+  return locations.length > 0 ? locations : undefined;
+}
+
+function createIssueLocations(options: {
+  filePath: string | undefined;
+  locations: readonly LiminaCheckIssueLocation[] | undefined;
+  packageManifestPath: string | undefined;
+  rootDir: string;
+}): LiminaCheckIssueLocation[] | undefined {
+  const explicitLocations = normalizeExplicitLocations(options);
+
+  if (explicitLocations !== undefined && explicitLocations.length > 0) {
+    return explicitLocations;
+  }
+
+  return nonEmptyLocations(
+    createFallbackLocations(options.filePath, options.packageManifestPath),
+  );
+}
+
+function normalizeExplicitScope(scope: string | undefined): string | undefined {
+  return scope === undefined
+    ? undefined
+    : normalizeSlashes(scope.replaceAll(/^\.\//gu, ''));
+}
+
+function resolveIssueTool(
   options: CreateLiminaCheckIssueOptions,
-): CanonicalLiminaCheckIssue {
+): string | undefined {
+  return options.tool === undefined ? options.external?.tool : options.tool;
+}
+
+function createIssueWithoutId(
+  options: CreateLiminaCheckIssueOptions,
+  code: LiminaWritableCheckIssueCode,
+): Omit<CanonicalLiminaCheckIssue, 'id'> {
   const filePath = normalizeCheckIssuePath(options.rootDir, options.filePath);
   const packageManifestPath = normalizeCheckIssuePath(
     options.rootDir,
     options.packageManifestPath,
   );
-  const explicitLocations =
-    options.locations?.map((location) =>
-      normalizeLocation(options.rootDir, location),
-    ) ?? [];
-  const fallbackLocations: LiminaCheckIssueLocation[] = [
-    ...(filePath ? [{ filePath }] : []),
-    ...(packageManifestPath ? [{ packageManifestPath }] : []),
-  ];
-  const locations =
-    explicitLocations.length > 0
-      ? explicitLocations
-      : fallbackLocations.length > 0
-        ? fallbackLocations
-        : undefined;
-  const code = options.code ?? defaultTaskFailureCode(options.task);
-  assertWritableLiminaCheckIssueCode(code);
-  assertIssueTaskMatchesCode(code, options.task);
+  const locations = createIssueLocations({
+    filePath,
+    locations: options.locations,
+    packageManifestPath,
+    rootDir: options.rootDir,
+  });
 
-  const issueWithoutId: Omit<CanonicalLiminaCheckIssue, 'id'> = {
+  return {
     checkerName: options.checkerName,
     code,
-    detailLines: options.detailLines ? [...options.detailLines] : undefined,
+    detailLines: cloneOptionalArray(options.detailLines),
     detector: options.detector,
-    domain: options.domain ?? inferDomain(options.task),
+    domain: valueOrDefault(options.domain, inferDomain(options.task)),
     evidence: normalizeEvidence(options.evidence),
     external: options.external,
     filePath,
     fix: options.fix,
-    fixSteps: options.fixSteps ? [...options.fixSteps] : undefined,
+    fixSteps: cloneOptionalArray(options.fixSteps),
     locations,
     packageManifestPath,
     packageName: options.packageName,
-    reason: options.reason ?? `${options.task} finished with failures.`,
+    reason: valueOrDefault(
+      options.reason,
+      `${options.task} finished with failures.`,
+    ),
     scope: deriveCheckIssueScope({
       filePath,
       locations,
       packageManifestPath,
-      scope: options.scope
-        ? normalizeSlashes(options.scope.replaceAll(/^\.\//gu, ''))
-        : undefined,
+      scope: normalizeExplicitScope(options.scope),
     }),
-    severity: options.severity ?? 'error',
+    severity: valueOrDefault(options.severity, 'error'),
     summary: options.summary,
     task: options.task,
-    title: options.title ?? `${options.task} failed`,
-    tool: options.tool ?? options.external?.tool,
-    verifyCommands: options.verifyCommands
-      ? [...options.verifyCommands]
-      : undefined,
+    title: valueOrDefault(options.title, `${options.task} failed`),
+    tool: resolveIssueTool(options),
+    verifyCommands: cloneOptionalArray(options.verifyCommands),
   };
+}
 
+export function createLiminaCheckIssue(
+  options: CreateLiminaCheckIssueOptions,
+): CanonicalLiminaCheckIssue {
+  const code = valueOrDefault(
+    options.code,
+    defaultTaskFailureCode(options.task),
+  );
+
+  assertWritableLiminaCheckIssueCode(code);
+  assertIssueTaskMatchesCode(code, options.task);
+
+  const issueWithoutId = createIssueWithoutId(options, code);
   return {
     ...issueWithoutId,
-    id: options.id ?? createIssueId(issueWithoutId),
+    id: valueOrDefault(options.id, createIssueId(issueWithoutId)),
   };
 }

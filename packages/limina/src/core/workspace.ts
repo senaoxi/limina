@@ -4,7 +4,6 @@ import {
   collectRawWorkspacePackages,
   findPackageForSpecifier,
   type ImporterInfo,
-  type NamedWorkspacePackage,
   type PackageOwner,
   type WorkspacePackage,
 } from '#core/workspace/actions';
@@ -13,6 +12,17 @@ import {
   collectWorkspaceDependencyDeclarations,
   type WorkspaceDependencyDeclaration,
 } from './packages/authority';
+import {
+  cloneImporterInfo,
+  clonePackageOwner,
+  clonePackageOwners,
+  cloneValidatedWorkspaceContext,
+  cloneWorkspaceDependencyDeclaration,
+  cloneWorkspacePackage,
+  cloneWorkspacePackages,
+  cloneWorkspaceRegionBoundaries,
+  cloneWorkspaceRegionTopology,
+} from './workspace/clones';
 import {
   createWorkspaceLookupIndex,
   type WorkspaceLookupIndex,
@@ -221,113 +231,4 @@ export class WorkspaceCore {
       provider: 'workspace-core',
     });
   }
-}
-
-function cloneWorkspacePackage(
-  workspacePackage: WorkspacePackage,
-): WorkspacePackage {
-  return {
-    ...workspacePackage,
-    manifest: { ...workspacePackage.manifest },
-  };
-}
-
-function cloneWorkspacePackages(
-  packages: WorkspacePackage[],
-): WorkspacePackage[] {
-  return packages.map(cloneWorkspacePackage);
-}
-
-function cloneWorkspaceRegionBoundary(
-  boundary: WorkspaceRegionBoundary,
-): WorkspaceRegionBoundary {
-  return boundary.kind === 'pnpm-workspace'
-    ? {
-        ...boundary,
-        inspection: { ...boundary.inspection },
-      }
-    : { ...boundary };
-}
-
-function cloneWorkspaceRegionBoundaries(
-  boundaries: WorkspaceRegionBoundary[],
-): WorkspaceRegionBoundary[] {
-  return boundaries.map(cloneWorkspaceRegionBoundary);
-}
-
-function cloneWorkspaceRegionTopology(
-  topology: WorkspaceRegionTopology,
-): WorkspaceRegionTopology {
-  return {
-    boundaries: cloneWorkspaceRegionBoundaries(topology.boundaries),
-    extendedPackageScopes: topology.extendedPackageScopes.map((scope) => ({
-      ...scope,
-    })),
-    packages: cloneWorkspacePackages(topology.packages),
-    rawPackages: cloneWorkspacePackages(topology.rawPackages),
-  };
-}
-
-function cloneValidatedWorkspaceContext(
-  context: ValidatedWorkspaceContext,
-): ValidatedWorkspaceContext {
-  return {
-    ...cloneWorkspaceRegionTopology(context),
-    configRootDir: context.configRootDir,
-    descriptorCandidates: context.descriptorCandidates.map((candidate) => ({
-      ...candidate,
-    })),
-    outputRoots: [...context.outputRoots],
-    ...(context.outputMutationAuthorities
-      ? {
-          outputMutationAuthorities: new Map(context.outputMutationAuthorities),
-        }
-      : {}),
-    packageIdentities: context.packageIdentities.map((identity) => ({
-      ...identity,
-      package: cloneWorkspacePackage(identity.package),
-    })),
-    sourceConfigPaths: [...context.sourceConfigPaths],
-    workspaceRootDir: context.workspaceRootDir,
-    ...(context.workspaceMutationGeneration
-      ? {
-          workspaceMutationGeneration: context.workspaceMutationGeneration,
-        }
-      : {}),
-  };
-}
-
-function cloneNamedWorkspacePackage(
-  workspacePackage: NamedWorkspacePackage,
-): NamedWorkspacePackage {
-  return cloneWorkspacePackage(workspacePackage) as NamedWorkspacePackage;
-}
-
-function clonePackageOwner(owner: PackageOwner): PackageOwner {
-  return {
-    ...owner,
-    manifest: { ...owner.manifest },
-  };
-}
-
-function clonePackageOwners(owners: PackageOwner[]): PackageOwner[] {
-  return owners.map(clonePackageOwner);
-}
-
-function cloneImporterInfo(importer: ImporterInfo): ImporterInfo {
-  return {
-    ...importer,
-    declaredWorkspaceDependencies: new Set(
-      importer.declaredWorkspaceDependencies,
-    ),
-  };
-}
-
-function cloneWorkspaceDependencyDeclaration(
-  declaration: WorkspaceDependencyDeclaration,
-): WorkspaceDependencyDeclaration {
-  return {
-    ...declaration,
-    importer: cloneNamedWorkspacePackage(declaration.importer),
-  };
 }

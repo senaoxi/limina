@@ -5,6 +5,7 @@ import type {
   IssueReportInput,
   IssueSeverity,
   RuleDescriptor,
+  RuleMessageTemplate,
 } from './contracts';
 
 export interface GovernanceIssueLocation {
@@ -77,6 +78,46 @@ function stableIssueId(input: Omit<GovernanceIssue, 'id'>): GovernanceIssueId {
   return identifier<'GovernanceIssueId'>(`${input.ruleId}:${digest}`);
 }
 
+function getMessageTemplate<
+  Kind extends string,
+  Options,
+  MessageId extends string,
+>(
+  options: AssembleGovernanceIssueOptions<Kind, Options, MessageId>,
+): RuleMessageTemplate {
+  const template = options.descriptor.messages[options.report.messageId];
+
+  if (!template) {
+    throw new Error(
+      `Rule "${options.descriptor.id}" reported unknown message "${options.report.messageId}".`,
+    );
+  }
+
+  return template;
+}
+
+function createIssueWithoutId<
+  Kind extends string,
+  Options,
+  MessageId extends string,
+>(
+  options: AssembleGovernanceIssueOptions<Kind, Options, MessageId>,
+  template: RuleMessageTemplate,
+): Omit<GovernanceIssue, 'id'> {
+  return {
+    category: options.descriptor.category,
+    documentation: options.descriptor.documentation.url,
+    evidence: Object.freeze([...(options.report.evidence ?? [])]),
+    location: options.report.location,
+    message: interpolate(template.text, options.report.values),
+    messageId: options.report.messageId,
+    origin: options.origin,
+    ruleId: options.descriptor.id,
+    severity: options.severity ?? options.descriptor.defaultSeverity,
+    title: interpolate(template.title, options.report.values),
+  };
+}
+
 export function assembleGovernanceIssue<
   Kind extends string,
   Options,
@@ -84,26 +125,10 @@ export function assembleGovernanceIssue<
 >(
   options: AssembleGovernanceIssueOptions<Kind, Options, MessageId>,
 ): GovernanceIssue {
-  const messageTemplate = options.descriptor.messages[options.report.messageId];
-
-  if (!messageTemplate) {
-    throw new Error(
-      `Rule "${options.descriptor.id}" reported unknown message "${options.report.messageId}".`,
-    );
-  }
-
-  const issueWithoutId: Omit<GovernanceIssue, 'id'> = {
-    category: options.descriptor.category,
-    documentation: options.descriptor.documentation.url,
-    evidence: Object.freeze([...(options.report.evidence ?? [])]),
-    location: options.report.location,
-    message: interpolate(messageTemplate.text, options.report.values),
-    messageId: options.report.messageId,
-    origin: options.origin,
-    ruleId: options.descriptor.id,
-    severity: options.severity ?? options.descriptor.defaultSeverity,
-    title: interpolate(messageTemplate.title, options.report.values),
-  };
+  const issueWithoutId = createIssueWithoutId(
+    options,
+    getMessageTemplate(options),
+  );
 
   return Object.freeze({
     ...issueWithoutId,
@@ -111,17 +136,35 @@ export function assembleGovernanceIssue<
   });
 }
 
+function getLocationPath(issue: GovernanceIssue): string {
+  return issue.location?.path ?? '';
+}
+
+function getLocationLine(issue: GovernanceIssue): number {
+  return issue.location?.line ?? 0;
+}
+
+function firstNonZero(comparisons: readonly number[]): number {
+  for (const comparison of comparisons) {
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+
+  return 0;
+}
+
 export function compareGovernanceIssues(
   left: GovernanceIssue,
   right: GovernanceIssue,
 ): number {
-  return (
-    left.ruleId.localeCompare(right.ruleId) ||
-    (left.location?.path ?? '').localeCompare(right.location?.path ?? '') ||
-    (left.location?.line ?? 0) - (right.location?.line ?? 0) ||
-    left.message.localeCompare(right.message) ||
-    left.id.localeCompare(right.id)
-  );
+  return firstNonZero([
+    left.ruleId.localeCompare(right.ruleId),
+    getLocationPath(left).localeCompare(getLocationPath(right)),
+    getLocationLine(left) - getLocationLine(right),
+    left.message.localeCompare(right.message),
+    left.id.localeCompare(right.id),
+  ]);
 }
 
 export function sortGovernanceIssues(

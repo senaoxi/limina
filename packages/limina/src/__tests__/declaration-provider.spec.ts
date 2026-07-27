@@ -62,7 +62,9 @@ describe('active TypeScript declaration classification', () => {
       false,
     );
   });
+});
 
+describe('active TypeScript declaration provider selection', () => {
   it.each([
     {
       declarationPath: 'src/button.d.css.ts',

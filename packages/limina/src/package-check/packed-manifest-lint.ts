@@ -81,13 +81,9 @@ const DEFAULT_PACKED_MANIFEST_LINT_RULES = {
   'version-type': 'error',
 } as const satisfies Record<string, ReleaseNpmPackageJsonLintRuleConfig>;
 
-async function loadNpmPackageJsonLintPeer(): Promise<NpmPackageJsonLintConstructor> {
-  let lintModule: NpmPackageJsonLintModule;
-
+async function importNpmPackageJsonLintPeer(): Promise<NpmPackageJsonLintModule> {
   try {
-    lintModule = (await import(
-      'npm-package-json-lint'
-    )) as NpmPackageJsonLintModule;
+    return (await import('npm-package-json-lint')) as NpmPackageJsonLintModule;
   } catch (error) {
     throw new LiminaOptionalToolMissingError({
       command: 'release check',
@@ -97,17 +93,27 @@ async function loadNpmPackageJsonLintPeer(): Promise<NpmPackageJsonLintConstruct
         'release.npmPackageJsonLint is enabled and Limina delegates packed manifest linting to npm-package-json-lint.',
     });
   }
+}
 
-  const NpmPackageJsonLint =
-    lintModule.NpmPackageJsonLint ?? lintModule.default?.NpmPackageJsonLint;
+function resolveNpmPackageJsonLintConstructor(
+  lintModule: NpmPackageJsonLintModule,
+): NpmPackageJsonLintConstructor | undefined {
+  return (
+    lintModule.NpmPackageJsonLint ?? lintModule.default?.NpmPackageJsonLint
+  );
+}
 
-  if (typeof NpmPackageJsonLint !== 'function') {
+async function loadNpmPackageJsonLintPeer(): Promise<NpmPackageJsonLintConstructor> {
+  const lintModule = await importNpmPackageJsonLintPeer();
+  const constructor = resolveNpmPackageJsonLintConstructor(lintModule);
+
+  if (typeof constructor !== 'function') {
     throw new TypeError(
       'Installed npm-package-json-lint does not expose NpmPackageJsonLint.',
     );
   }
 
-  return NpmPackageJsonLint;
+  return constructor;
 }
 
 export async function lintPackedManifest(options: {

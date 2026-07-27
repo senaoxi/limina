@@ -9,20 +9,20 @@ import {
 import type { PreparedFixture } from './fixture';
 import { runLimina, type RunLiminaResult } from './run-limina';
 
+function getErrorCode(error: unknown): unknown {
+  try {
+    return (error as { code?: unknown }).code;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function exists(filePath: string): Promise<boolean> {
   try {
     await lstat(filePath);
     return true;
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    ) {
-      return false;
-    }
-
+    if (getErrorCode(error) === 'ENOENT') return false;
     throw error;
   }
 }

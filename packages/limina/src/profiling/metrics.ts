@@ -22,28 +22,73 @@ function metricKey(measurement: AnalysisMetricMeasurement): string {
   ]);
 }
 
+function addMetricValue(
+  current: number | undefined,
+  next: number | undefined,
+  defaultIncrement: number,
+): number {
+  return (current ?? 0) + (next ?? defaultIncrement);
+}
+
+function readAggregateValue(
+  current: AnalysisMetricAggregate | undefined,
+  select: (aggregate: AnalysisMetricAggregate) => number,
+): number | undefined {
+  return current === undefined ? undefined : select(current);
+}
+
+function aggregateMeasurement(
+  current: AnalysisMetricAggregate | undefined,
+  measurement: AnalysisMetricMeasurement,
+): AnalysisMetricAggregate {
+  return {
+    count: addMetricValue(
+      readAggregateValue(current, (aggregate) => aggregate.count),
+      measurement.count,
+      1,
+    ),
+    durationMs: addMetricValue(
+      readAggregateValue(current, (aggregate) => aggregate.durationMs),
+      measurement.durationMs,
+      0,
+    ),
+    estimatedBytes: addMetricValue(
+      readAggregateValue(current, (aggregate) => aggregate.estimatedBytes),
+      measurement.estimatedBytes,
+      0,
+    ),
+    kind: measurement.kind,
+    name: measurement.name,
+    provider: measurement.provider,
+    reports: addMetricValue(
+      readAggregateValue(current, (aggregate) => aggregate.reports),
+      measurement.reports,
+      1,
+    ),
+  };
+}
+
+function copyAndSortMeasurements(
+  measurements: ReadonlyMap<string, AnalysisMetricAggregate>,
+): AnalysisMetricAggregate[] {
+  return [...measurements.values()]
+    .map((measurement) => ({ ...measurement }))
+    .sort((left, right) => metricKey(left).localeCompare(metricKey(right)));
+}
+
 export function createProfilingMetricsRecorder(): ProfilingMetricsRecorder {
   const measurements = new Map<string, AnalysisMetricAggregate>();
 
   return Object.freeze({
     record(measurement: AnalysisMetricMeasurement): void {
       const key = metricKey(measurement);
-      const current = measurements.get(key);
-      measurements.set(key, {
-        count: (current?.count ?? 0) + (measurement.count ?? 1),
-        durationMs: (current?.durationMs ?? 0) + (measurement.durationMs ?? 0),
-        estimatedBytes:
-          (current?.estimatedBytes ?? 0) + (measurement.estimatedBytes ?? 0),
-        kind: measurement.kind,
-        name: measurement.name,
-        provider: measurement.provider,
-        reports: (current?.reports ?? 0) + (measurement.reports ?? 1),
-      });
+      measurements.set(
+        key,
+        aggregateMeasurement(measurements.get(key), measurement),
+      );
     },
     snapshot(): AnalysisMetricAggregate[] {
-      return [...measurements.values()]
-        .map((measurement) => ({ ...measurement }))
-        .sort((left, right) => metricKey(left).localeCompare(metricKey(right)));
+      return copyAndSortMeasurements(measurements);
     },
   });
 }

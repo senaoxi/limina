@@ -143,7 +143,9 @@ describe('vue-tsgo cache batch coordinator', () => {
       await fixture.cleanup();
     }
   });
+});
 
+describe('vue-tsgo cache batch safety', () => {
   it('keeps every safe cache unchanged when any cache subtree is unsafe', async () => {
     const fixture = await createFixture();
     const safeConfig = fixture.path('packages/safe/tsconfig.json');
@@ -224,7 +226,9 @@ describe('vue-tsgo cache batch coordinator', () => {
       await fixture.cleanup();
     }
   });
+});
 
+describe('vue-tsgo cache runner ownership', () => {
   it('does not perform cache cleanup inside the default runner', async () => {
     const fixture = await createFixture();
     const configPath = fixture.path('packages/app/tsconfig.json');

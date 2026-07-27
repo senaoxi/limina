@@ -5,25 +5,49 @@ function collect(nodes: string[], edges: Record<string, string[]>): string[][] {
   return collectStronglyConnectedComponents(nodes, (node) => edges[node] ?? []);
 }
 
+interface GraphCase {
+  edges: Record<string, string[]>;
+  expected: string[][];
+  label: string;
+  nodes: string[];
+}
+
+const graphCases: GraphCase[] = [
+  { edges: {}, expected: [], label: 'an empty graph', nodes: [] },
+  {
+    edges: {},
+    expected: [['a'], ['b'], ['c']],
+    label: 'a disconnected graph',
+    nodes: ['a', 'b', 'c'],
+  },
+  {
+    edges: { a: ['a'] },
+    expected: [['a']],
+    label: 'a self-loop',
+    nodes: ['a'],
+  },
+  {
+    edges: { a: ['b'], b: ['a'] },
+    expected: [['a', 'b']],
+    label: 'a mutual cycle',
+    nodes: ['a', 'b'],
+  },
+  {
+    edges: { a: ['b'], b: ['c'], c: ['a', 'd'], d: ['b'] },
+    expected: [['a', 'b', 'c', 'd']],
+    label: 'nested cycles',
+    nodes: ['a', 'b', 'c', 'd'],
+  },
+  {
+    edges: { a: ['b', 'b'], b: ['a', 'a'] },
+    expected: [['a', 'b']],
+    label: 'duplicate edges',
+    nodes: ['a', 'b'],
+  },
+];
+
 describe('collectStronglyConnectedComponents', () => {
-  it.each([
-    ['an empty graph', [], {}, []],
-    ['a disconnected graph', ['a', 'b', 'c'], {}, [['a'], ['b'], ['c']]],
-    ['a self-loop', ['a'], { a: ['a'] }, [['a']]],
-    ['a mutual cycle', ['a', 'b'], { a: ['b'], b: ['a'] }, [['a', 'b']]],
-    [
-      'nested cycles',
-      ['a', 'b', 'c', 'd'],
-      { a: ['b'], b: ['c'], c: ['a', 'd'], d: ['b'] },
-      [['a', 'b', 'c', 'd']],
-    ],
-    [
-      'duplicate edges',
-      ['a', 'b'],
-      { a: ['b', 'b'], b: ['a', 'a'] },
-      [['a', 'b']],
-    ],
-  ])('collects %s', (_label, nodes, edges, expected) => {
+  it.each(graphCases)('collects $label', ({ edges, expected, nodes }) => {
     expect(collect(nodes, edges)).toEqual(expected);
   });
 

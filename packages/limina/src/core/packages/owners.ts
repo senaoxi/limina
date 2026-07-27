@@ -61,11 +61,9 @@ function isNodeModulesPackageRoot(directory: string): boolean {
     return true;
   }
 
-  if (parentName.startsWith('@')) {
-    return path.basename(path.dirname(parentDirectory)) === 'node_modules';
-  }
-
-  return false;
+  return parentName.startsWith('@')
+    ? path.basename(path.dirname(parentDirectory)) === 'node_modules'
+    : false;
 }
 
 function isPackageInfoInsideNodeModules(
@@ -90,56 +88,82 @@ function readPackageInfo(packageJsonPath: string): NearestPackageInfo {
   };
 }
 
+function readPackageInfoIfPresent(
+  directory: string,
+): NearestPackageInfo | null {
+  const packageJsonPath = normalizeAbsolutePath(
+    path.join(directory, 'package.json'),
+  );
+
+  return existsSync(packageJsonPath) ? readPackageInfo(packageJsonPath) : null;
+}
+
+function isAcceptedPackageInfo(
+  packageInfo: NearestPackageInfo | null,
+  accept: (packageInfo: NearestPackageInfo) => boolean,
+): packageInfo is NearestPackageInfo {
+  return packageInfo !== null && accept(packageInfo);
+}
+
+function findNearestAcceptedPackageInfo(
+  currentDir: string,
+  accept: (packageInfo: NearestPackageInfo) => boolean,
+): NearestPackageInfo | null {
+  const packageInfo = readPackageInfoIfPresent(currentDir);
+
+  if (isAcceptedPackageInfo(packageInfo, accept)) {
+    return packageInfo;
+  }
+
+  const parentDir = path.dirname(currentDir);
+
+  if (parentDir === currentDir) {
+    return null;
+  }
+
+  return findNearestAcceptedPackageInfo(parentDir, accept);
+}
+
+function getPackageSearchStartDirectory(filePath: string): string {
+  return normalizeAbsolutePath(path.dirname(normalizeAbsolutePath(filePath)));
+}
+
 export function findNearestPackageScopeInfo(
   filePath: string,
 ): NearestPackageInfo | null {
-  const normalizedFilePath = normalizeAbsolutePath(filePath);
-  let currentDir = normalizeAbsolutePath(path.dirname(normalizedFilePath));
+  return findNearestAcceptedPackageInfo(
+    getPackageSearchStartDirectory(filePath),
+    () => true,
+  );
+}
 
-  while (true) {
-    const packageJsonPath = normalizeAbsolutePath(
-      path.join(currentDir, 'package.json'),
-    );
-
-    if (existsSync(packageJsonPath)) {
-      return readPackageInfo(packageJsonPath);
-    }
-
-    const parentDir = path.dirname(currentDir);
-
-    if (parentDir === currentDir) {
-      return null;
-    }
-
-    currentDir = parentDir;
-  }
+function isNamedOrNodeModulesPackage(packageInfo: NearestPackageInfo): boolean {
+  return (
+    packageInfo.name !== undefined ||
+    isNodeModulesPackageRoot(packageInfo.directory)
+  );
 }
 
 function findNearestPackageInfo(filePath: string): NearestPackageInfo | null {
-  const normalizedFilePath = normalizeAbsolutePath(filePath);
-  let currentDir = normalizeAbsolutePath(path.dirname(normalizedFilePath));
+  return findNearestAcceptedPackageInfo(
+    getPackageSearchStartDirectory(filePath),
+    isNamedOrNodeModulesPackage,
+  );
+}
 
-  while (true) {
-    const packageJsonPath = normalizeAbsolutePath(
-      path.join(currentDir, 'package.json'),
-    );
+function matchesWorkspacePackage(
+  packageInfo: NearestPackageInfo,
+  workspacePackage: WorkspacePackage,
+): boolean {
+  const packageJsonPath = normalizeAbsolutePath(
+    path.join(workspacePackage.directory, 'package.json'),
+  );
+  const matchesPath = packageJsonPath === packageInfo.packageJsonPath;
+  const matchesName =
+    packageInfo.name !== undefined &&
+    workspacePackage.name === packageInfo.name;
 
-    if (existsSync(packageJsonPath)) {
-      const packageInfo = readPackageInfo(packageJsonPath);
-
-      if (packageInfo.name || isNodeModulesPackageRoot(currentDir)) {
-        return packageInfo;
-      }
-    }
-
-    const parentDir = path.dirname(currentDir);
-
-    if (parentDir === currentDir) {
-      return null;
-    }
-
-    currentDir = parentDir;
-  }
+  return matchesPath || matchesName;
 }
 
 function findWorkspacePackageForPackageInfo(
@@ -147,18 +171,81 @@ function findWorkspacePackageForPackageInfo(
   packages: WorkspacePackage[],
 ): WorkspacePackage | null {
   return (
-    packages.find((workspacePackage) => {
-      const packageJsonPath = normalizeAbsolutePath(
-        path.join(workspacePackage.directory, 'package.json'),
-      );
-
-      return (
-        packageJsonPath === packageInfo.packageJsonPath ||
-        (packageInfo.name !== undefined &&
-          workspacePackage.name === packageInfo.name)
-      );
-    }) ?? null
+    packages.find((workspacePackage) =>
+      matchesWorkspacePackage(packageInfo, workspacePackage),
+    ) ?? null
   );
+}
+
+function createOwnerPackageInfo(owner: PackageOwner): NearestPackageInfo {
+  return {
+    directory: owner.directory,
+    manifest: owner.manifest,
+    ...(owner.name ? { name: owner.name } : {}),
+    packageJsonPath: owner.packageJsonPath,
+  };
+}
+
+function isSameOwner(
+  owner: PackageOwner,
+  targetOwner: PackageOwner | null,
+): boolean {
+  return targetOwner?.packageJsonPath === owner.packageJsonPath;
+}
+
+function classifyMissingPackageInfo(
+  owner: PackageOwner,
+  targetOwner: PackageOwner | null,
+): ResolvedPackageTarget {
+  return isSameOwner(owner, targetOwner)
+    ? { kind: 'current-owner', packageInfo: createOwnerPackageInfo(owner) }
+    : { kind: 'unowned' };
+}
+
+function isCurrentOwnerPackage(options: {
+  owner: PackageOwner;
+  packageInfo: NearestPackageInfo;
+  targetOwner: PackageOwner | null;
+}): boolean {
+  return (
+    isSameOwner(options.owner, options.targetOwner) &&
+    !isPackageInfoInsideNodeModules(options.packageInfo)
+  );
+}
+
+function isOtherOwner(
+  owner: PackageOwner,
+  targetOwner: PackageOwner | null,
+): targetOwner is PackageOwner {
+  return (
+    targetOwner !== null &&
+    targetOwner.packageJsonPath !== owner.packageJsonPath
+  );
+}
+
+function classifyKnownPackageInfo(options: {
+  owner: PackageOwner;
+  packageInfo: NearestPackageInfo;
+  packages: WorkspacePackage[];
+  targetOwner: PackageOwner | null;
+}): ResolvedPackageTarget {
+  if (isCurrentOwnerPackage(options)) {
+    return { kind: 'current-owner', packageInfo: options.packageInfo };
+  }
+
+  if (isOtherOwner(options.owner, options.targetOwner)) {
+    return {
+      kind: 'other-owner',
+      packageInfo: options.packageInfo,
+      targetOwner: options.targetOwner,
+      workspacePackage: findWorkspacePackageForPackageInfo(
+        options.packageInfo,
+        options.packages,
+      ),
+    };
+  }
+
+  return { kind: 'artifact-package', packageInfo: options.packageInfo };
 }
 
 export function classifyResolvedPackageTarget(options: {
@@ -174,50 +261,13 @@ export function classifyResolvedPackageTarget(options: {
   );
 
   if (!packageInfo) {
-    if (targetOwner?.packageJsonPath === options.owner.packageJsonPath) {
-      return {
-        kind: 'current-owner',
-        packageInfo: {
-          directory: options.owner.directory,
-          manifest: options.owner.manifest,
-          ...(options.owner.name ? { name: options.owner.name } : {}),
-          packageJsonPath: options.owner.packageJsonPath,
-        },
-      };
-    }
-
-    return {
-      kind: 'unowned',
-    };
+    return classifyMissingPackageInfo(options.owner, targetOwner);
   }
 
-  if (
-    targetOwner?.packageJsonPath === options.owner.packageJsonPath &&
-    !isPackageInfoInsideNodeModules(packageInfo)
-  ) {
-    return {
-      kind: 'current-owner',
-      packageInfo,
-    };
-  }
-
-  if (
-    targetOwner &&
-    targetOwner.packageJsonPath !== options.owner.packageJsonPath
-  ) {
-    return {
-      kind: 'other-owner',
-      packageInfo,
-      targetOwner,
-      workspacePackage: findWorkspacePackageForPackageInfo(
-        packageInfo,
-        options.packages,
-      ),
-    };
-  }
-
-  return {
-    kind: 'artifact-package',
+  return classifyKnownPackageInfo({
+    owner: options.owner,
     packageInfo,
-  };
+    packages: options.packages,
+    targetOwner,
+  });
 }

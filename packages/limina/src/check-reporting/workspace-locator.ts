@@ -24,24 +24,46 @@ function findExistingPhysicalAncestor(startDir: string): string {
   return normalizeAbsolutePathIdentity(realpathSync.native(currentDir));
 }
 
+function resolveWorkspaceCwd(cwd: string | undefined): string {
+  return normalizeAbsolutePathIdentity(path.resolve(cwd || process.cwd()));
+}
+
+function resolveWorkspaceConfigPath(
+  cwd: string,
+  configPath: string | undefined,
+): string | undefined {
+  if (configPath === undefined) {
+    return undefined;
+  }
+
+  return normalizeAbsolutePathIdentity(path.resolve(cwd, configPath));
+}
+
+function getWorkspaceStartPath(
+  cwd: string,
+  configPath: string | undefined,
+): string {
+  return configPath === undefined ? cwd : path.dirname(configPath);
+}
+
+function createWorkspaceLocation(
+  rootDir: string,
+  configPath: string | undefined,
+): CheckIssueWorkspaceLocation {
+  return configPath === undefined ? { rootDir } : { configPath, rootDir };
+}
+
 export function locateCheckIssueWorkspace(
   options: {
     configPath?: string;
     cwd?: string;
   } = {},
 ): CheckIssueWorkspaceLocation {
-  const cwd = normalizeAbsolutePathIdentity(
-    path.resolve(options.cwd ?? process.cwd()),
-  );
-  const configPath = options.configPath
-    ? normalizeAbsolutePathIdentity(path.resolve(cwd, options.configPath))
-    : undefined;
-  const startDir = findExistingPhysicalAncestor(
-    configPath ? path.dirname(configPath) : cwd,
-  );
+  const cwd = resolveWorkspaceCwd(options.cwd);
+  const configPath = resolveWorkspaceConfigPath(cwd, options.configPath);
+  const startPath = getWorkspaceStartPath(cwd, configPath);
+  const physicalStartPath = findExistingPhysicalAncestor(startPath);
+  const rootDir = findNearestPnpmWorkspaceRoot(physicalStartPath);
 
-  return {
-    ...(configPath ? { configPath } : {}),
-    rootDir: findNearestPnpmWorkspaceRoot(startDir),
-  };
+  return createWorkspaceLocation(rootDir, configPath);
 }

@@ -2,6 +2,10 @@ export function uniqueValues<T>(values: Iterable<T>): T[] {
   return [...new Set(values)];
 }
 
+function incrementCount(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
 export function countDefinedBy<T>(
   values: Iterable<T>,
   getKey: (value: T) => string | null | undefined,
@@ -15,7 +19,7 @@ export function countDefinedBy<T>(
       continue;
     }
 
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    incrementCount(counts, key);
   }
 
   return counts;

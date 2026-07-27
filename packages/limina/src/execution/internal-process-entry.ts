@@ -24,6 +24,45 @@ function resolveTsxCliPath(
   }
 }
 
+function createProcessEntry(entryPath: string): InternalProcessEntry {
+  return {
+    args: [entryPath],
+    command: process.execPath,
+  };
+}
+
+function resolveSourceProcessEntry(options: {
+  moduleUrl: string;
+  sourceEntry: string;
+}): InternalProcessEntry | undefined {
+  if (!existsSync(options.sourceEntry)) {
+    return undefined;
+  }
+
+  const packageDir = path.resolve(path.dirname(options.sourceEntry), '../..');
+  const tsxCliPath = resolveTsxCliPath(options.moduleUrl, packageDir);
+  return tsxCliPath === null
+    ? undefined
+    : {
+        args: [tsxCliPath, options.sourceEntry],
+        command: process.execPath,
+      };
+}
+
+function resolveBundleProcessEntry(
+  currentDir: string,
+  bundleFileName: string,
+): InternalProcessEntry | undefined {
+  const bundleEntry = [
+    path.resolve(currentDir, bundleFileName),
+    path.resolve(currentDir, '..', bundleFileName),
+  ].find((candidate) => existsSync(candidate));
+
+  return bundleEntry === undefined
+    ? undefined
+    : createProcessEntry(bundleEntry);
+}
+
 export function resolveInternalProcessEntry(options: {
   bundleFileName: string;
   moduleUrl: string;
@@ -31,32 +70,13 @@ export function resolveInternalProcessEntry(options: {
 }): InternalProcessEntry | undefined {
   const currentDir = fileURLToPath(new URL('.', options.moduleUrl));
   const sourceEntry = path.resolve(currentDir, options.sourceFileName);
+  const sourceProcessEntry = resolveSourceProcessEntry({
+    moduleUrl: options.moduleUrl,
+    sourceEntry,
+  });
 
-  if (existsSync(sourceEntry)) {
-    const packageDir = path.resolve(path.dirname(sourceEntry), '../..');
-    const tsxCliPath = resolveTsxCliPath(options.moduleUrl, packageDir);
-
-    if (!tsxCliPath) {
-      return undefined;
-    }
-
-    return {
-      args: [tsxCliPath, sourceEntry],
-      command: process.execPath,
-    };
-  }
-
-  const bundleEntry = [
-    path.resolve(currentDir, options.bundleFileName),
-    path.resolve(currentDir, '..', options.bundleFileName),
-  ].find((candidate) => existsSync(candidate));
-
-  if (!bundleEntry) {
-    return undefined;
-  }
-
-  return {
-    args: [bundleEntry],
-    command: process.execPath,
-  };
+  return (
+    sourceProcessEntry ??
+    resolveBundleProcessEntry(currentDir, options.bundleFileName)
+  );
 }

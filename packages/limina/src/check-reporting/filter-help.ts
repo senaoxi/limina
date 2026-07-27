@@ -145,28 +145,118 @@ function formatCountHelp(options: {
   ].join('\n');
 }
 
-function mergeAvailableValuesWithIssueCounts(options: {
-  availableValues?: readonly CheckIssueFilterHelpValue[];
-  issueCounts: readonly CountEntry[];
-}): CountEntry[] {
-  const entries = new Map<string, CountEntry>();
+function compareCountEntries(left: CountEntry, right: CountEntry): number {
+  const countDifference = right.count - left.count;
+  return countDifference === 0
+    ? left.name.localeCompare(right.name)
+    : countDifference;
+}
 
-  for (const value of options.availableValues ?? []) {
+function getAvailableValues(
+  values: readonly CheckIssueFilterHelpValue[] | undefined,
+): readonly CheckIssueFilterHelpValue[] {
+  return values === undefined ? [] : values;
+}
+
+function addAvailableValues(
+  entries: Map<string, CountEntry>,
+  availableValues: readonly CheckIssueFilterHelpValue[] | undefined,
+): void {
+  for (const value of getAvailableValues(availableValues)) {
     const name = value.name.trim();
 
     if (name) {
       entries.set(name, { count: 0, name });
     }
   }
+}
+
+function mergeAvailableValuesWithIssueCounts(options: {
+  availableValues?: readonly CheckIssueFilterHelpValue[];
+  issueCounts: readonly CountEntry[];
+}): CountEntry[] {
+  const entries = new Map<string, CountEntry>();
+  addAvailableValues(entries, options.availableValues);
 
   for (const count of options.issueCounts) {
     entries.set(count.name, count);
   }
 
-  return [...entries.values()].sort(
-    (left, right) =>
-      right.count - left.count || left.name.localeCompare(right.name),
-  );
+  return [...entries.values()].sort(compareCountEntries);
+}
+
+function hasAvailableValues(
+  values: readonly CheckIssueFilterHelpValue[] | undefined,
+): values is readonly CheckIssueFilterHelpValue[] {
+  return values !== undefined && values.length > 0;
+}
+
+function formatAvailableValuesHelp(options: {
+  availableValues: readonly CheckIssueFilterHelpValue[];
+  helpKind: Exclude<CheckIssueFilterHelpKind, 'rule'>;
+}): string {
+  return formatCountHelp({
+    entries: mergeAvailableValuesWithIssueCounts({
+      availableValues: options.availableValues,
+      issueCounts: [],
+    }),
+    helpKind: options.helpKind,
+  });
+}
+
+function formatMissingSnapshotHelp(options: {
+  availableValues?: readonly CheckIssueFilterHelpValue[];
+  helpKind: Exclude<CheckIssueFilterHelpKind, 'rule'>;
+}): string {
+  if (hasAvailableValues(options.availableValues)) {
+    return formatAvailableValuesHelp({
+      availableValues: options.availableValues,
+      helpKind: options.helpKind,
+    });
+  }
+
+  return [
+    formatNotice('No check issue snapshot found.'),
+    `Run ${formatCommand('limina check')} first, then rerun this help command.`,
+  ].join('\n');
+}
+
+function formatIncompleteSnapshotHelp(options: {
+  availableValues?: readonly CheckIssueFilterHelpValue[];
+  helpKind: Exclude<CheckIssueFilterHelpKind, 'rule'>;
+}): string {
+  if (hasAvailableValues(options.availableValues)) {
+    return [
+      formatAvailableValuesHelp({
+        availableValues: options.availableValues,
+        helpKind: options.helpKind,
+      }),
+      '',
+      formatNotice(
+        'No completed check issue snapshot is available from the last run, so issue counts are 0.',
+      ),
+    ].join('\n');
+  }
+
+  return [
+    formatNotice(
+      'No completed check issue snapshot is available from the last run.',
+    ),
+    `Run ${formatCommand('limina check')} and let it reach a failing or completed task first.`,
+  ].join('\n');
+}
+
+function countSnapshotEntries(
+  snapshot: CheckIssueSnapshot,
+  helpKind: Exclude<CheckIssueFilterHelpKind, 'rule'>,
+): CountEntry[] {
+  if (helpKind === 'task') {
+    return countBy(snapshot.issues, (issue) => issue.task);
+  }
+
+  return helpKind === 'package'
+    ? countBy(snapshot.issues, (issue) => issue.packageName)
+    : countBy(snapshot.issues, (issue) => issue.checkerName);
 }
 
 export function formatCheckIssueSnapshotFilterHelp(options: {
@@ -175,58 +265,17 @@ export function formatCheckIssueSnapshotFilterHelp(options: {
   snapshot: CheckIssueSnapshot | null;
 }): string {
   if (!options.snapshot) {
-    if (options.availableValues?.length) {
-      return formatCountHelp({
-        entries: mergeAvailableValuesWithIssueCounts({
-          availableValues: options.availableValues,
-          issueCounts: [],
-        }),
-        helpKind: options.helpKind,
-      });
-    }
-
-    return [
-      formatNotice('No check issue snapshot found.'),
-      `Run ${formatCommand('limina check')} first, then rerun this help command.`,
-    ].join('\n');
+    return formatMissingSnapshotHelp(options);
   }
 
   if (options.snapshot.status !== 'completed') {
-    if (options.availableValues?.length) {
-      return [
-        formatCountHelp({
-          entries: mergeAvailableValuesWithIssueCounts({
-            availableValues: options.availableValues,
-            issueCounts: [],
-          }),
-          helpKind: options.helpKind,
-        }),
-        '',
-        formatNotice(
-          'No completed check issue snapshot is available from the last run, so issue counts are 0.',
-        ),
-      ].join('\n');
-    }
-
-    return [
-      formatNotice(
-        'No completed check issue snapshot is available from the last run.',
-      ),
-      `Run ${formatCommand('limina check')} and let it reach a failing or completed task first.`,
-    ].join('\n');
+    return formatIncompleteSnapshotHelp(options);
   }
-
-  const entries =
-    options.helpKind === 'task'
-      ? countBy(options.snapshot.issues, (issue) => issue.task)
-      : options.helpKind === 'package'
-        ? countBy(options.snapshot.issues, (issue) => issue.packageName)
-        : countBy(options.snapshot.issues, (issue) => issue.checkerName);
 
   return formatCountHelp({
     entries: mergeAvailableValuesWithIssueCounts({
       availableValues: options.availableValues,
-      issueCounts: entries,
+      issueCounts: countSnapshotEntries(options.snapshot, options.helpKind),
     }),
     helpKind: options.helpKind,
   });

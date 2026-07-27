@@ -19,7 +19,6 @@ const picomatch = rawPicomatch as unknown as (
   options?: { dot?: boolean; posixSlashes?: boolean },
 ) => (value: string) => boolean;
 
-/** Build fast-glob-style positive/negative filtering over known candidates. */
 export function createCandidateGlobMatcher(
   patterns: readonly string[],
 ): (relativePath: string) => boolean {
@@ -37,13 +36,60 @@ export function createCandidateGlobMatcher(
     !negatives.some((matches) => matches(relativePath));
 }
 
-/**
- * Discover files independently from every activated package island.
- *
- * Activated child roots are pruned from their parent traversal and discovered
- * by their own island job. The validated path index remains the final
- * visibility authority for owner-local boundaries and canonical identities.
- */
+function isNestedRelativeRoot(relativeRoot: string): boolean {
+  if (relativeRoot === '.' || relativeRoot === '..') {
+    return false;
+  }
+
+  return !relativeRoot.startsWith('../');
+}
+
+function toStructuralIgnorePattern(
+  packageDirectory: string,
+  candidateRoot: string,
+): string[] {
+  const relativeRoot = toPosixPath(
+    toRelativePath(packageDirectory, candidateRoot),
+  );
+
+  return isNestedRelativeRoot(relativeRoot)
+    ? [`${escapePath(relativeRoot)}/**`]
+    : [];
+}
+
+function collectStructuralIgnores(
+  context: ValidatedWorkspaceContext,
+  packageDirectory: string,
+): string[] {
+  const roots = [
+    ...context.packages.map((workspacePackage) => workspacePackage.directory),
+    ...context.boundaries.map((boundary) => boundary.rootDir),
+  ];
+
+  return roots.flatMap((candidateRoot) =>
+    toStructuralIgnorePattern(packageDirectory, candidateRoot),
+  );
+}
+
+async function collectPackageCandidates(
+  context: ValidatedWorkspaceContext,
+  packageDirectory: string,
+): Promise<string[]> {
+  return glob('**/*', {
+    absolute: true,
+    cwd: packageDirectory,
+    dot: true,
+    followSymbolicLinks: false,
+    ignore: [
+      '**/.git/**',
+      '**/.limina/**',
+      '**/node_modules/**',
+      ...new Set(collectStructuralIgnores(context, packageDirectory)),
+    ],
+    onlyFiles: true,
+  });
+}
+
 export async function collectActivatedPackageFileCandidates(
   context: ValidatedWorkspaceContext,
   pathIndex: WorkspaceRegionFilePathIndex = new WorkspaceRegionPathIndex(
@@ -52,37 +98,9 @@ export async function collectActivatedPackageFileCandidates(
 ): Promise<string[]> {
   const candidates = (
     await Promise.all(
-      context.packages.map((workspacePackage) => {
-        const structuralIgnores = [
-          ...context.packages.map(
-            (candidatePackage) => candidatePackage.directory,
-          ),
-          ...context.boundaries.map((boundary) => boundary.rootDir),
-        ].flatMap((candidateRoot) => {
-          const relativeRoot = toPosixPath(
-            toRelativePath(workspacePackage.directory, candidateRoot),
-          );
-          return relativeRoot !== '.' &&
-            !relativeRoot.startsWith('../') &&
-            relativeRoot !== '..'
-            ? [`${escapePath(relativeRoot)}/**`]
-            : [];
-        });
-
-        return glob('**/*', {
-          absolute: true,
-          cwd: workspacePackage.directory,
-          dot: true,
-          followSymbolicLinks: false,
-          ignore: [
-            '**/.git/**',
-            '**/.limina/**',
-            '**/node_modules/**',
-            ...new Set(structuralIgnores),
-          ],
-          onlyFiles: true,
-        });
-      }),
+      context.packages.map((workspacePackage) =>
+        collectPackageCandidates(context, workspacePackage.directory),
+      ),
     )
   ).flat();
 

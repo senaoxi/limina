@@ -96,7 +96,9 @@ describe('check issue path filters', () => {
       }),
     ).toEqual([]);
   });
+});
 
+describe('check issue scope path matching', () => {
   it('preserves source owner-relative scope matching', () => {
     const rootDir = path.resolve('path filter workspace');
     const ownerDirectory = path.join(rootDir, 'packages', 'a');

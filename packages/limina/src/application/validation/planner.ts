@@ -25,37 +25,26 @@ export interface ArchitectureValidationStageFactories {
   workspace(ruleIds: readonly string[]): ArchitectureValidationStageTask;
 }
 
+type StageFactory = (
+  ruleIds: readonly string[],
+) => ArchitectureValidationStageTask;
+
 function createStage(
   kind: ArchitectureValidationInputKind,
   ruleIds: readonly string[],
   factories: ArchitectureValidationStageFactories,
 ): ArchitectureValidationStageTask {
-  switch (kind) {
-    case 'declaration-build': {
-      return factories.declarationBuild(ruleIds);
-    }
-    case 'import-facts': {
-      return factories.importFacts(ruleIds);
-    }
-    case 'output-build': {
-      return factories.outputBuild(ruleIds);
-    }
-    case 'package-artifacts': {
-      return factories.packageArtifacts(ruleIds);
-    }
-    case 'projects': {
-      return factories.projects(ruleIds);
-    }
-    case 'source-dependencies': {
-      return factories.sourceDependencies(ruleIds);
-    }
-    case 'workspace': {
-      return factories.workspace(ruleIds);
-    }
-    default: {
-      throw new Error(`Unsupported architecture validation kind: ${kind}`);
-    }
-  }
+  const factoryByKind: Record<ArchitectureValidationInputKind, StageFactory> = {
+    'declaration-build': (ids) => factories.declarationBuild(ids),
+    'import-facts': (ids) => factories.importFacts(ids),
+    'output-build': (ids) => factories.outputBuild(ids),
+    'package-artifacts': (ids) => factories.packageArtifacts(ids),
+    projects: (ids) => factories.projects(ids),
+    'source-dependencies': (ids) => factories.sourceDependencies(ids),
+    workspace: (ids) => factories.workspace(ids),
+  };
+
+  return factoryByKind[kind](ruleIds);
 }
 
 export function planArchitectureValidationStages(

@@ -33,17 +33,29 @@ export interface ResolveExecutionConcurrencyOptions {
   itemCount: number;
 }
 
-type ExecutionConcurrencyKind =
-  | 'checkerBuild'
-  | 'checkerTypecheck'
-  | 'packageEntries'
-  | 'releaseEntries'
-  | 'tasks';
+type ExecutionConcurrencyKind = keyof ResolvedExecutionConfig;
+
+type AutoConcurrencyResolver = (
+  parallelism: number,
+  itemCount: number,
+) => number;
+
+function resolveAvailableParallelism(
+  provider: (() => number | undefined) | undefined,
+): number {
+  const provided = provider?.();
+
+  if (provided !== undefined) {
+    return provided;
+  }
+
+  return availableParallelism();
+}
 
 function getParallelism(
   parallelismProvider: (() => number | undefined) | undefined,
 ): number {
-  return Math.max(1, parallelismProvider?.() ?? availableParallelism() ?? 4);
+  return Math.max(1, resolveAvailableParallelism(parallelismProvider));
 }
 
 function clampConcurrency(value: number, itemCount: number): number {
@@ -54,49 +66,72 @@ function clampConcurrency(value: number, itemCount: number): number {
   return Math.min(itemCount, Math.max(1, Math.floor(value)));
 }
 
+function configuredConcurrency(
+  value: ExecutionConcurrency | undefined,
+  fallback: ExecutionConcurrency,
+): ExecutionConcurrency {
+  return value === undefined ? fallback : value;
+}
+
+function getConfiguredConcurrency(
+  config: ResolvedLiminaConfig,
+  kind: ExecutionConcurrencyKind,
+): ExecutionConcurrency {
+  const configuredValue =
+    config.execution === undefined ? undefined : config.execution[kind];
+
+  return configuredConcurrency(configuredValue, defaultExecutionConfig[kind]);
+}
+
 function resolveExecutionConfig(
   config: ResolvedLiminaConfig,
 ): ResolvedExecutionConfig {
   return {
-    checkerBuild:
-      config.execution?.checkerBuild ?? defaultExecutionConfig.checkerBuild,
-    checkerTypecheck:
-      config.execution?.checkerTypecheck ??
-      defaultExecutionConfig.checkerTypecheck,
-    packageEntries:
-      config.execution?.packageEntries ?? defaultExecutionConfig.packageEntries,
-    releaseEntries:
-      config.execution?.releaseEntries ?? defaultExecutionConfig.releaseEntries,
-    tasks: config.execution?.tasks ?? defaultExecutionConfig.tasks,
+    checkerBuild: getConfiguredConcurrency(config, 'checkerBuild'),
+    checkerTypecheck: getConfiguredConcurrency(config, 'checkerTypecheck'),
+    packageEntries: getConfiguredConcurrency(config, 'packageEntries'),
+    releaseEntries: getConfiguredConcurrency(config, 'releaseEntries'),
+    tasks: getConfiguredConcurrency(config, 'tasks'),
   };
 }
+
+function resolveHalfParallelism(
+  parallelism: number,
+  itemCount: number,
+): number {
+  return clampConcurrency(Math.max(2, Math.floor(parallelism / 2)), itemCount);
+}
+
+function resolveFixedTwo(_parallelism: number, itemCount: number): number {
+  return clampConcurrency(2, itemCount);
+}
+
+function resolveFullParallelism(
+  parallelism: number,
+  itemCount: number,
+): number {
+  return clampConcurrency(parallelism, itemCount);
+}
+
+const autoConcurrencyResolvers: Record<
+  ExecutionConcurrencyKind,
+  AutoConcurrencyResolver
+> = {
+  checkerBuild: resolveFullParallelism,
+  checkerTypecheck: resolveFixedTwo,
+  packageEntries: resolveHalfParallelism,
+  releaseEntries: resolveFixedTwo,
+  tasks: resolveHalfParallelism,
+};
 
 function resolveAutoConcurrency(
   kind: ExecutionConcurrencyKind,
   options: ResolveExecutionConcurrencyOptions,
 ): number {
-  const parallelism = getParallelism(options.availableParallelism);
-
-  switch (kind) {
-    case 'checkerBuild': {
-      return clampConcurrency(parallelism, options.itemCount);
-    }
-    case 'checkerTypecheck': {
-      return clampConcurrency(2, options.itemCount);
-    }
-    case 'packageEntries':
-    case 'tasks': {
-      return clampConcurrency(
-        Math.max(2, Math.floor(parallelism / 2)),
-        options.itemCount,
-      );
-    }
-    case 'releaseEntries': {
-      return clampConcurrency(2, options.itemCount);
-    }
-  }
-
-  throw new Error(`Unsupported execution concurrency kind: ${kind}`);
+  return autoConcurrencyResolvers[kind](
+    getParallelism(options.availableParallelism),
+    options.itemCount,
+  );
 }
 
 function resolveConcurrency(
@@ -105,11 +140,9 @@ function resolveConcurrency(
 ): number {
   const value = resolveExecutionConfig(options.config)[kind];
 
-  if (value === 'auto') {
-    return resolveAutoConcurrency(kind, options);
-  }
-
-  return clampConcurrency(value, options.itemCount);
+  return value === 'auto'
+    ? resolveAutoConcurrency(kind, options)
+    : clampConcurrency(value, options.itemCount);
 }
 
 export function resolveTaskConcurrency(

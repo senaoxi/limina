@@ -16,20 +16,17 @@ export const capabilityDiscoveryExtensions: string[] = [
   '.vue',
 ];
 
+const compoundDeclarationExtensions = ['.d.cts', '.d.mts', '.d.ts'];
+
+function findCompoundDeclarationExtension(
+  fileName: string,
+): string | undefined {
+  return compoundDeclarationExtensions.find((extension) =>
+    fileName.endsWith(extension),
+  );
+}
+
 export function getFileExtension(fileName: string): string {
   const baseName = path.basename(fileName);
-
-  if (baseName.endsWith('.d.cts')) {
-    return '.d.cts';
-  }
-
-  if (baseName.endsWith('.d.mts')) {
-    return '.d.mts';
-  }
-
-  if (baseName.endsWith('.d.ts')) {
-    return '.d.ts';
-  }
-
-  return path.extname(baseName);
+  return findCompoundDeclarationExtension(baseName) ?? path.extname(baseName);
 }

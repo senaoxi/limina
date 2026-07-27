@@ -1,7 +1,4 @@
-import type {
-  PackageCheckToolSelection,
-  ResolvedLiminaConfig,
-} from '#config/runner';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
@@ -23,7 +20,6 @@ import {
   type AnalysisMetricsRecorder,
   type AnalysisRun,
   createAnalysisRun,
-  createNoopMetricsRecorder,
 } from '../application/analysis/analysis-run';
 import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
 import type { WorkspaceDependencyDeclaration } from '../core/packages/authority';
@@ -41,50 +37,28 @@ import { identifier } from '../domain/shared/identifiers';
 import {
   createPackageEntrySelectionPlan,
   type PackageEntrySelectionPlan,
-} from '../package-check/entry-selection';
+} from '../package-check/entry/selection';
 import { collectExpectedSourceFiles } from '../proof/source-files';
+import { PreflightGenerationCache } from './cache';
 import { registerPreflightGenerationAdvancer } from './generation';
-
-export interface LiminaPreflightManagerOptions {
-  config: ResolvedLiminaConfig;
-  generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
-  metrics?: AnalysisMetricsRecorder;
-  providers?: AnalysisProviderSet;
-  signal?: AbortSignal;
-}
-
-export interface PackageEntryPlanOptions {
-  cwd: string;
-  packageNames?: readonly string[];
-  requireCwdPackageMatch: boolean;
-  tool?: PackageCheckToolSelection;
-}
-
-export interface PreflightCapableOptions {
-  generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
-  preflight?: LiminaPreflightManager;
-  providers?: AnalysisProviderSet;
-}
-
-export interface MaterializationReceipt {
-  changed: boolean;
-  generation: number;
-  graph: GeneratedTsconfigGraphResult;
-}
-
-interface MaterializationSlot {
-  generation: number;
-  inFlight?: Promise<MaterializationReceipt>;
-  receipt?: MaterializationReceipt;
-}
+import { ensureMaterialization } from './materialization';
+import {
+  resolveArtifactNamespace,
+  resolveMetrics,
+  resolveProviders,
+  resolveSignal,
+} from './setup';
+import type {
+  LiminaPreflightManagerOptions,
+  MaterializationReceipt,
+  PackageEntryPlanOptions,
+  PreflightCapableOptions,
+} from './types';
 
 /**
  * Command composition boundary for the current repository generation.
- *
- * It owns no generic cache and cannot resolve arbitrary capabilities. Each
- * field represents one named preparation result. An external command advances
- * the generation and replaces the concrete provider set instead of mutating
- * cached domain data in place.
+ * Named preparation results are generation-scoped; advancing replaces the
+ * provider set rather than mutating cached domain data.
  */
 export class LiminaPreflightManager {
   artifactNamespace: LiminaArtifactNamespace;
@@ -98,57 +72,21 @@ export class LiminaPreflightManager {
   readonly #metrics: AnalysisMetricsRecorder;
   readonly #profilingMetrics: AnalysisMetricsRecorder | undefined;
   readonly #signal: AbortSignal;
-  #checkerEntryProjectRoutesPromise:
-    | Promise<CollectCheckerGraphProjectRoutesResult>
-    | undefined;
-  #checkerRouteSnapshotPromise:
-    | Promise<CheckerRouteSnapshotCollection>
-    | undefined;
-  #expectedSourceFilesPromise: Promise<Set<string>> | undefined;
-  #generatedGraphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
+  #cache = new PreflightGenerationCache(0);
   #generation = 0;
-  #graphProjectRoutesPromise:
-    | Promise<CollectCheckerGraphProjectRoutesResult>
-    | undefined;
-  #importersPromise: Promise<ImporterInfo[]> | undefined;
-  #packageOwnersPromise: Promise<PackageOwner[]> | undefined;
-  #rawWorkspacePackagesPromise: Promise<WorkspacePackage[]> | undefined;
-  #sourceGraphProjectExtensionsPromise:
-    | Promise<CollectSourceGraphProjectExtensionsResult>
-    | undefined;
-  #workspaceDependenciesPromise:
-    | Promise<WorkspaceDependencyDeclaration[]>
-    | undefined;
-  #workspaceLookupPromise: Promise<WorkspaceLookupIndex> | undefined;
-  #workspacePackagesPromise: Promise<WorkspacePackage[]> | undefined;
-  #validatedWorkspaceContextPromise:
-    | Promise<ValidatedWorkspaceContext>
-    | undefined;
-  #workspaceRegionBoundariesPromise:
-    | Promise<WorkspaceRegionBoundary[]>
-    | undefined;
-  #materializationSlot: MaterializationSlot = { generation: 0 };
   #disposed = false;
 
   constructor(options: LiminaPreflightManagerOptions) {
     this.config = options.config;
     this.#generatedGraphProvider = options.generatedGraphProvider;
-    this.#metrics = options.metrics ?? createNoopMetricsRecorder();
+    this.#metrics = resolveMetrics(options);
     this.#profilingMetrics = options.metrics;
-    this.#signal = options.signal ?? new AbortController().signal;
-    this.artifactNamespace =
-      options.providers?.artifactNamespace ??
-      createLiminaArtifactNamespace({
-        generation: 0,
-        rootDir: options.config.rootDir,
-      });
-    this.providers =
-      options.providers ??
-      createAnalysisProviders(
-        options.config,
-        this.artifactNamespace,
-        this.#profilingMetrics,
-      );
+    this.#signal = resolveSignal(options);
+    this.artifactNamespace = resolveArtifactNamespace(options);
+    this.providers = resolveProviders({
+      artifactNamespace: this.artifactNamespace,
+      managerOptions: options,
+    });
     this.run = this.#createRun();
     registerPreflightGenerationAdvancer(this, () =>
       this.#startNextGeneration(),
@@ -169,103 +107,72 @@ export class LiminaPreflightManager {
   }
 
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
-    if (!this.#generatedGraphPromise) {
+    if (this.#cache.generatedGraph === undefined) {
       const providers = this.providers;
       const generatedGraphProvider = this.#generatedGraphProvider;
-      this.#generatedGraphPromise = this.ensureWorkspaceValidated().then(
+      this.#cache.generatedGraph = this.ensureWorkspaceValidated().then(
         () => generatedGraphProvider?.() ?? providers.buildGraph.getGraph(),
       );
     }
-    return this.#generatedGraphPromise;
+    return this.#cache.generatedGraph;
   }
 
   ensureWorkspaceValidated(): Promise<ValidatedWorkspaceContext> {
-    this.#validatedWorkspaceContextPromise ??=
+    this.#cache.validatedWorkspaceContext ??=
       this.providers.workspace.getValidatedContext();
-    return this.#validatedWorkspaceContextPromise;
+    return this.#cache.validatedWorkspaceContext;
   }
 
   ensureGeneratedArtifactsMaterialized(): Promise<MaterializationReceipt> {
-    const slot = this.#materializationSlot;
+    const slot = this.#cache.materializationSlot;
     const artifactNamespace = this.artifactNamespace;
+    const metrics = this.run.metrics;
 
-    if (slot.receipt) {
-      return Promise.resolve(slot.receipt);
-    }
-
-    if (slot.inFlight) {
-      return slot.inFlight;
-    }
-
-    const inFlight = this.ensureGeneratedGraph().then(async (graph) => {
-      await materializeGeneratedArtifactPlan(
-        artifactNamespace,
-        graph.artifactPlan,
-        { metrics: this.run.metrics },
-      );
-
-      return {
-        changed: graph.changed,
-        generation: slot.generation,
-        graph,
-      } satisfies MaterializationReceipt;
+    return ensureMaterialization({
+      getCurrentSlot: () => this.#cache.materializationSlot,
+      materialize: async () => {
+        const graph = await this.ensureGeneratedGraph();
+        await materializeGeneratedArtifactPlan(
+          artifactNamespace,
+          graph.artifactPlan,
+          { metrics },
+        );
+        return { changed: graph.changed, generation: slot.generation, graph };
+      },
+      slot,
     });
-
-    slot.inFlight = inFlight;
-
-    return inFlight.then(
-      (receipt) => {
-        if (
-          this.#materializationSlot === slot &&
-          slot.inFlight === inFlight &&
-          slot.generation === receipt.generation
-        ) {
-          slot.receipt = receipt;
-          slot.inFlight = undefined;
-        }
-
-        return receipt;
-      },
-      (error: unknown) => {
-        if (this.#materializationSlot === slot && slot.inFlight === inFlight) {
-          slot.inFlight = undefined;
-        }
-
-        throw error;
-      },
-    );
   }
 
   ensureWorkspacePackages(): Promise<WorkspacePackage[]> {
-    this.#workspacePackagesPromise ??= this.ensureWorkspaceValidated().then(
+    this.#cache.workspacePackages ??= this.ensureWorkspaceValidated().then(
       (context) =>
         context.packages.map((workspacePackage) => ({
           ...workspacePackage,
           manifest: { ...workspacePackage.manifest },
         })),
     );
-    return this.#workspacePackagesPromise;
+    return this.#cache.workspacePackages;
   }
 
   ensureRawWorkspacePackages(): Promise<WorkspacePackage[]> {
-    this.#rawWorkspacePackagesPromise ??=
+    this.#cache.rawWorkspacePackages ??=
       this.providers.workspace.getRawPackages();
-    return this.#rawWorkspacePackagesPromise;
+    return this.#cache.rawWorkspacePackages;
   }
 
   ensurePackageOwners(): Promise<PackageOwner[]> {
-    this.#packageOwnersPromise ??= this.providers.workspace.getPackageOwners();
-    return this.#packageOwnersPromise;
+    this.#cache.packageOwners ??= this.providers.workspace.getPackageOwners();
+    return this.#cache.packageOwners;
   }
 
   ensureImporters(): Promise<ImporterInfo[]> {
-    this.#importersPromise ??= this.providers.workspace.getImporters();
-    return this.#importersPromise;
+    this.#cache.importers ??= this.providers.workspace.getImporters();
+    return this.#cache.importers;
   }
 
   ensureWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex> {
-    this.#workspaceLookupPromise ??= this.providers.workspace.getLookupIndex();
-    return this.#workspaceLookupPromise;
+    this.#cache.workspaceLookup ??= this.providers.workspace.getLookupIndex();
+    return this.#cache.workspaceLookup;
   }
 
   ensureWorkspacePathIndex(): Promise<WorkspaceRegionPathIndex> {
@@ -275,48 +182,48 @@ export class LiminaPreflightManager {
   ensureWorkspaceDependencyDeclarations(): Promise<
     WorkspaceDependencyDeclaration[]
   > {
-    this.#workspaceDependenciesPromise ??=
+    this.#cache.workspaceDependencies ??=
       this.providers.workspace.getWorkspaceDependencyDeclarations();
-    return this.#workspaceDependenciesPromise;
+    return this.#cache.workspaceDependencies;
   }
 
   ensureWorkspaceRegionBoundaries(): Promise<WorkspaceRegionBoundary[]> {
-    this.#workspaceRegionBoundariesPromise ??=
+    this.#cache.workspaceRegionBoundaries ??=
       this.providers.workspace.getRegionBoundaries();
-    return this.#workspaceRegionBoundariesPromise;
+    return this.#cache.workspaceRegionBoundaries;
   }
 
   async ensureSourceGraphProjectExtensions(): Promise<CollectSourceGraphProjectExtensionsResult> {
-    this.#sourceGraphProjectExtensionsPromise ??=
+    this.#cache.sourceGraphProjectExtensions ??=
       this.#ensureCheckerRouteSnapshot().then((snapshot) =>
         projectSourceGraphProjectExtensions(this.config, snapshot),
       );
-    return this.#sourceGraphProjectExtensionsPromise;
+    return this.#cache.sourceGraphProjectExtensions;
   }
 
   async ensureGraphProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
-    this.#graphProjectRoutesPromise ??= this.#ensureCheckerRouteSnapshot().then(
+    this.#cache.graphProjectRoutes ??= this.#ensureCheckerRouteSnapshot().then(
       (snapshot) => projectGraphProjectRoutes(this.config, snapshot),
     );
-    return this.#graphProjectRoutesPromise;
+    return this.#cache.graphProjectRoutes;
   }
 
   async ensureCheckerEntryProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
-    this.#checkerEntryProjectRoutesPromise ??=
+    this.#cache.checkerEntryProjectRoutes ??=
       this.#ensureCheckerRouteSnapshot().then((snapshot) =>
         projectCheckerEntryProjectRoutes(this.config, snapshot),
       );
-    return this.#checkerEntryProjectRoutesPromise;
+    return this.#cache.checkerEntryProjectRoutes;
   }
 
   ensureExpectedSourceFiles(): Promise<Set<string>> {
-    this.#expectedSourceFilesPromise ??= Promise.all([
+    this.#cache.expectedSourceFiles ??= Promise.all([
       this.ensureGeneratedGraph(),
       this.ensureWorkspaceValidated(),
     ]).then(([graph, context]) =>
       collectExpectedSourceFiles(this.config, graph, context),
     );
-    return this.#expectedSourceFilesPromise;
+    return this.#cache.expectedSourceFiles;
   }
 
   async ensurePackageEntrySelectionPlan(
@@ -338,11 +245,11 @@ export class LiminaPreflightManager {
   }
 
   #ensureCheckerRouteSnapshot(): Promise<CheckerRouteSnapshotCollection> {
-    this.#checkerRouteSnapshotPromise ??= this.ensureGeneratedGraph().then(
+    this.#cache.checkerRouteSnapshot ??= this.ensureGeneratedGraph().then(
       (graph) =>
         collectCheckerRouteSnapshot(this.config, graph, this.run.metrics),
     );
-    return this.#checkerRouteSnapshotPromise;
+    return this.#cache.checkerRouteSnapshot;
   }
 
   #startNextGeneration(): void {
@@ -352,7 +259,7 @@ export class LiminaPreflightManager {
 
     this.providers.dispose?.();
     this.#generation += 1;
-    this.#materializationSlot = { generation: this.#generation };
+    this.#cache = new PreflightGenerationCache(this.#generation);
     this.artifactNamespace = createLiminaArtifactNamespace({
       generation: this.#generation,
       rootDir: this.config.rootDir,
@@ -363,20 +270,6 @@ export class LiminaPreflightManager {
       this.#profilingMetrics,
     );
     this.run = this.#createRun();
-    this.#checkerEntryProjectRoutesPromise = undefined;
-    this.#checkerRouteSnapshotPromise = undefined;
-    this.#expectedSourceFilesPromise = undefined;
-    this.#generatedGraphPromise = undefined;
-    this.#graphProjectRoutesPromise = undefined;
-    this.#importersPromise = undefined;
-    this.#packageOwnersPromise = undefined;
-    this.#rawWorkspacePackagesPromise = undefined;
-    this.#sourceGraphProjectExtensionsPromise = undefined;
-    this.#workspaceDependenciesPromise = undefined;
-    this.#workspaceLookupPromise = undefined;
-    this.#workspacePackagesPromise = undefined;
-    this.#workspaceRegionBoundariesPromise = undefined;
-    this.#validatedWorkspaceContextPromise = undefined;
   }
 
   #createRun(): AnalysisRun {

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { collectStronglyConnectedComponents } from '../utils/strongly-connected-components';
 import { toPortablePath } from './helpers/path';
 
 const sourceRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -81,7 +82,87 @@ async function findProductionCallers(importedName: string): Promise<string[]> {
   return callers.sort();
 }
 
+function hasRuntimeImport(importDeclaration: ts.ImportDeclaration): boolean {
+  const clause = importDeclaration.importClause;
+  if (clause === undefined) return true;
+  if (clause.isTypeOnly) return false;
+  if (clause.name !== undefined) return true;
+  const bindings = clause.namedBindings;
+  if (bindings === undefined || ts.isNamespaceImport(bindings)) return true;
+  return bindings.elements.some((element) => !element.isTypeOnly);
+}
+
+function getRuntimeRelativeSpecifiers(sourceFile: ts.SourceFile): string[] {
+  const specifiers: string[] = [];
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      hasRuntimeImport(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      specifiers.push(statement.moduleSpecifier.text);
+    }
+    if (
+      ts.isExportDeclaration(statement) &&
+      !statement.isTypeOnly &&
+      statement.moduleSpecifier &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      specifiers.push(statement.moduleSpecifier.text);
+    }
+  }
+  return specifiers.filter((specifier) => specifier.startsWith('.'));
+}
+
+function resolveRelativeProductionImport(
+  importer: string,
+  specifier: string,
+  productionFiles: ReadonlySet<string>,
+): string | undefined {
+  const basePath = path.resolve(path.dirname(importer), specifier);
+  return [`${basePath}.ts`, path.join(basePath, 'index.ts')].find((candidate) =>
+    productionFiles.has(candidate),
+  );
+}
+
+async function collectRuntimeImportCycles(): Promise<string[][]> {
+  const files = await collectProductionSourceFiles();
+  const productionFiles = new Set(files);
+  const neighbors = new Map<string, string[]>();
+  for (const filePath of files) {
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      await readFile(filePath, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    neighbors.set(
+      filePath,
+      getRuntimeRelativeSpecifiers(sourceFile)
+        .map((specifier) =>
+          resolveRelativeProductionImport(filePath, specifier, productionFiles),
+        )
+        .filter((target): target is string => target !== undefined),
+    );
+  }
+  return collectStronglyConnectedComponents(
+    files,
+    (filePath) => neighbors.get(filePath) ?? [],
+  )
+    .filter((component) => component.length > 1)
+    .map((component) =>
+      component.map((filePath) =>
+        toPortablePath(path.relative(sourceRoot, filePath)),
+      ),
+    );
+}
+
 describe('production architecture boundaries', () => {
+  it('keeps the relative runtime import graph acyclic', async () => {
+    await expect(collectRuntimeImportCycles()).resolves.toEqual([]);
+  });
+
   it('keeps generated artifact application at the preflight manager boundary', async () => {
     await expect(
       findProductionCallers('materializeGeneratedArtifactPlan'),

@@ -51,26 +51,48 @@ function normalizeFilterPath(value: string, rootDir?: string): string {
   return normalizeRelativePath(normalizedValue);
 }
 
+function getScopeRoots(candidate: PathFilterCandidate): readonly string[] {
+  return candidate.scopeRelativeTo || [];
+}
+
+function resolveAbsoluteCandidatePath(
+  candidatePath: string,
+  rootDir: string | undefined,
+): string | undefined {
+  if (path.isAbsolute(candidatePath)) {
+    return candidatePath;
+  }
+
+  if (rootDir === undefined) {
+    return undefined;
+  }
+
+  return path.resolve(rootDir, candidatePath);
+}
+
+function getAlternativeScopePaths(
+  candidate: PathFilterCandidate,
+  rootDir: string | undefined,
+): string[] {
+  const scopeRoots = getScopeRoots(candidate);
+  if (scopeRoots.length === 0) {
+    return [];
+  }
+
+  const absolutePath = resolveAbsoluteCandidatePath(candidate.path, rootDir);
+  return absolutePath === undefined
+    ? []
+    : scopeRoots.map((baseDir) =>
+        normalizeRelativePath(path.relative(baseDir, absolutePath)),
+      );
+}
+
 function getScopeCandidatePaths(
   candidate: PathFilterCandidate,
   rootDir?: string,
 ): string[] {
   const rootRelativePath = normalizeCandidatePath(candidate.path, rootDir);
-
-  if (!candidate.scopeRelativeTo?.length) {
-    return [rootRelativePath];
-  }
-
-  const absoluteCandidatePath = path.isAbsolute(candidate.path)
-    ? candidate.path
-    : rootDir
-      ? path.resolve(rootDir, candidate.path)
-      : undefined;
-  const alternativePaths = absoluteCandidatePath
-    ? candidate.scopeRelativeTo.map((baseDir) =>
-        normalizeRelativePath(path.relative(baseDir, absoluteCandidatePath)),
-      )
-    : [];
+  const alternativePaths = getAlternativeScopePaths(candidate, rootDir);
 
   return [...new Set([rootRelativePath, ...alternativePaths])];
 }

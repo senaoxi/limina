@@ -22,7 +22,7 @@ import {
   executeMigrationWritePlan,
   MigrationTransactionError,
   type MigrationWritePlanItem,
-} from '../commands/migration-transaction';
+} from '../commands/migration/transaction';
 import { toPortablePath } from './helpers/path';
 
 const fixtureRoots = new Set<string>();

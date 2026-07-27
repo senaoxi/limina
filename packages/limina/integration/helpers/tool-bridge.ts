@@ -25,6 +25,8 @@ interface CreateFixtureToolBridgesOptions {
   readonly tools: readonly FixtureToolName[];
 }
 
+type PackageJsonResolver = (packageName: string) => string;
+
 function quotePosixArgument(value: string): string {
   return `'${value.replaceAll("'", String.raw`'\''`)}'`;
 }
@@ -52,7 +54,6 @@ async function createTypeScriptBridge(options: {
       `Detector fixture ${options.fixtureId} resolved TypeScript compiler is not a real file: ${compilerPath}`,
     );
   }
-
   const bridgePackageRoot = path.join(
     options.repoRoot,
     'node_modules/typescript',
@@ -61,7 +62,6 @@ async function createTypeScriptBridge(options: {
   await mkdir(bridgePackageRoot, { recursive: true });
   await copyFile(installedPackageJson, bridgePackageJson);
   await mkdir(options.binDirectory, { recursive: true });
-
   const posixShimPath = path.join(options.binDirectory, 'tsc');
   await writeFile(
     posixShimPath,
@@ -82,7 +82,6 @@ async function createTypeScriptBridge(options: {
     ].join('\r\n'),
     'utf8',
   );
-
   return bridgePackageJson;
 }
 
@@ -103,11 +102,7 @@ async function createCommonJsPackageBridge(options: {
   await writeFile(
     bridgePackageJson,
     `${JSON.stringify(
-      {
-        main: './index.cjs',
-        name: options.packageName,
-        private: true,
-      },
+      { main: './index.cjs', name: options.packageName, private: true },
       null,
       2,
     )}\n`,
@@ -118,8 +113,119 @@ async function createCommonJsPackageBridge(options: {
     `module.exports = require(${JSON.stringify(installedPackageRoot)});\n`,
     'utf8',
   );
-
   return bridgePackageJson;
+}
+
+function assertBridgeRoot(
+  repoRoot: string,
+  binDirectory: string,
+  fixtureId: string,
+): void {
+  if (isPathInsideDirectory(binDirectory, repoRoot)) return;
+  throw new Error(
+    `Detector fixture ${fixtureId} tool bridge escaped the sandbox: ${binDirectory}`,
+  );
+}
+
+function createPackageJsonResolver(
+  resolver: PackageJsonResolver | undefined,
+): PackageJsonResolver {
+  if (resolver !== undefined) return resolver;
+  const requireFromHarness = createRequire(import.meta.url);
+  return (packageName) =>
+    requireFromHarness.resolve(`${packageName}/package.json`);
+}
+
+function assertSupportedTool(tool: FixtureToolName, fixtureId: string): void {
+  if (tool === 'typescript') return;
+  if (tool === 'npm-package-json-lint') return;
+  throw new Error(
+    `Detector fixture ${fixtureId} requested unsupported tool bridge ${tool}. Only typescript and npm-package-json-lint are implemented in harness v2.`,
+  );
+}
+
+function resolveToolPackageJson(options: {
+  fixtureId: string;
+  resolvePackageJson: PackageJsonResolver;
+  tool: FixtureToolName;
+}): string {
+  try {
+    return options.resolvePackageJson(options.tool);
+  } catch (error) {
+    throw new Error(
+      `Detector fixture ${options.fixtureId} could not resolve tool ${options.tool} from the Limina development workspace: ${formatUnknownError(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+async function createToolBridge(options: {
+  binDirectory: string;
+  fixtureId: string;
+  packageJsonPath: string;
+  repoRoot: string;
+  tool: FixtureToolName;
+}): Promise<string> {
+  if (options.tool === 'typescript') {
+    return createTypeScriptBridge(options);
+  }
+  return createCommonJsPackageBridge({
+    packageJsonPath: options.packageJsonPath,
+    packageName: options.tool,
+    repoRoot: options.repoRoot,
+  });
+}
+
+async function verifyToolBridge(options: {
+  bridgePackageJson: string;
+  repoRoot: string;
+  tool: FixtureToolName;
+  fixtureId: string;
+}): Promise<void> {
+  const fixtureRequire = createRequire(
+    path.join(options.repoRoot, 'package.json'),
+  );
+  const resolvedPackageJson = await realpath(
+    fixtureRequire.resolve(`${options.tool}/package.json`),
+  );
+  const expectedPackageJson = await realpath(options.bridgePackageJson);
+  if (resolvedPackageJson === expectedPackageJson) return;
+  throw new Error(
+    `Detector fixture ${options.fixtureId} tool ${options.tool} resolved outside its sandbox bridge: ${resolvedPackageJson}`,
+  );
+}
+
+async function createToolBridges(options: {
+  binDirectory: string;
+  fixtureId: string;
+  repoRoot: string;
+  resolvePackageJson: PackageJsonResolver;
+  tools: readonly FixtureToolName[];
+}): Promise<Map<FixtureToolName, string>> {
+  const packageManifestPaths = new Map<FixtureToolName, string>();
+  for (const tool of options.tools) {
+    assertSupportedTool(tool, options.fixtureId);
+    const packageJsonPath = resolveToolPackageJson({
+      fixtureId: options.fixtureId,
+      resolvePackageJson: options.resolvePackageJson,
+      tool,
+    });
+    packageManifestPaths.set(
+      tool,
+      await createToolBridge({ ...options, packageJsonPath, tool }),
+    );
+  }
+  return packageManifestPaths;
+}
+
+async function verifyToolBridges(options: {
+  fixtureId: string;
+  packageManifestPaths: ReadonlyMap<FixtureToolName, string>;
+  repoRoot: string;
+}): Promise<void> {
+  for (const [tool, bridgePackageJson] of options.packageManifestPaths) {
+    await verifyToolBridge({ ...options, bridgePackageJson, tool });
+  }
 }
 
 export async function createFixtureToolBridges(
@@ -127,64 +233,19 @@ export async function createFixtureToolBridges(
 ): Promise<FixtureToolBridgeResult> {
   const repoRoot = await realpath(options.repoRoot);
   const binDirectory = path.join(repoRoot, 'node_modules/.bin');
-  if (!isPathInsideDirectory(binDirectory, repoRoot)) {
-    throw new Error(
-      `Detector fixture ${options.fixtureId} tool bridge escaped the sandbox: ${binDirectory}`,
-    );
-  }
-  const requireFromHarness = createRequire(import.meta.url);
-  const resolvePackageJson =
-    options.resolvePackageJson ??
-    ((packageName: string) =>
-      requireFromHarness.resolve(`${packageName}/package.json`));
-  const packageManifestPaths = new Map<FixtureToolName, string>();
-
-  for (const tool of options.tools) {
-    if (tool !== 'typescript' && tool !== 'npm-package-json-lint') {
-      throw new Error(
-        `Detector fixture ${options.fixtureId} requested unsupported tool bridge ${tool}. Only typescript and npm-package-json-lint are implemented in harness v2.`,
-      );
-    }
-
-    let packageJsonPath: string;
-    try {
-      packageJsonPath = resolvePackageJson(tool);
-    } catch (error) {
-      throw new Error(
-        `Detector fixture ${options.fixtureId} could not resolve tool ${tool} from the Limina development workspace: ${formatUnknownError(error)}`,
-        { cause: error },
-      );
-    }
-
-    const bridgePackageJson =
-      tool === 'typescript'
-        ? await createTypeScriptBridge({
-            binDirectory,
-            fixtureId: options.fixtureId,
-            packageJsonPath,
-            repoRoot,
-          })
-        : await createCommonJsPackageBridge({
-            packageJsonPath,
-            packageName: tool,
-            repoRoot,
-          });
-    packageManifestPaths.set(tool, bridgePackageJson);
-  }
-
-  for (const [tool, bridgePackageJson] of packageManifestPaths) {
-    const fixtureRequire = createRequire(path.join(repoRoot, 'package.json'));
-    const resolvedPackageJson = await realpath(
-      fixtureRequire.resolve(`${tool}/package.json`),
-    );
-    const expectedPackageJson = await realpath(bridgePackageJson);
-    if (resolvedPackageJson !== expectedPackageJson) {
-      throw new Error(
-        `Detector fixture ${options.fixtureId} tool ${tool} resolved outside its sandbox bridge: ${resolvedPackageJson}`,
-      );
-    }
-  }
-
+  assertBridgeRoot(repoRoot, binDirectory, options.fixtureId);
+  const packageManifestPaths = await createToolBridges({
+    binDirectory,
+    fixtureId: options.fixtureId,
+    repoRoot,
+    resolvePackageJson: createPackageJsonResolver(options.resolvePackageJson),
+    tools: options.tools,
+  });
+  await verifyToolBridges({
+    fixtureId: options.fixtureId,
+    packageManifestPaths,
+    repoRoot,
+  });
   return {
     binDirectory,
     bridgedTools: [...options.tools],

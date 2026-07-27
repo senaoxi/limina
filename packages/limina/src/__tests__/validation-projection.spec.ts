@@ -76,7 +76,9 @@ describe('validation projection', () => {
     await projector.get(createRun('generation-2'));
     expect(topologyLoader).toHaveBeenCalledTimes(2);
   });
+});
 
+describe('validation projection invariants', () => {
   it('rejects mutable and behavior-bearing view shapes in invariant tests', () => {
     expect(() => assertImmutableValidationValue(new Map())).toThrow(/Map/u);
     expect(() =>

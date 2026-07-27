@@ -22,10 +22,21 @@ let spinnerFrameIndex = 0;
 let spinnerTimer: NodeJS.Timeout | undefined;
 let closed = false;
 
+type RendererMessageType = FlowRendererProcessMessage['type'];
+type RendererMessageFor<Type extends RendererMessageType> = Extract<
+  FlowRendererProcessMessage,
+  { type: Type }
+>;
+type RendererMessageHandler = (message: FlowRendererProcessMessage) => void;
+
 function send(message: FlowRendererParentMessage): void {
   if (typeof process.send === 'function') {
     process.send(message);
   }
+}
+
+function isPositiveInteger(value: number): boolean {
+  return Number.isInteger(value) && value > 0;
 }
 
 function readPositiveInteger(value: string | undefined): number | undefined {
@@ -34,25 +45,36 @@ function readPositiveInteger(value: string | undefined): number | undefined {
   }
 
   const parsed = Number.parseInt(value, 10);
+  return isPositiveInteger(parsed) ? parsed : undefined;
+}
 
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+function firstDefinedNumber(
+  values: readonly (number | undefined)[],
+): number | undefined {
+  return values.find((value) => value !== undefined);
 }
 
 function getTerminalColumns(): number {
-  return Math.max(
-    1,
-    readPositiveInteger(process.env[FLOW_RENDERER_TEST_COLUMNS_ENV]) ??
-      process.stdout.columns ??
-      snapshot.terminalDimensions?.columns ??
-      DEFAULT_TERMINAL_COLUMNS,
-  );
+  const columns = firstDefinedNumber([
+    readPositiveInteger(process.env[FLOW_RENDERER_TEST_COLUMNS_ENV]),
+    process.stdout.columns,
+    snapshot.terminalDimensions?.columns,
+    DEFAULT_TERMINAL_COLUMNS,
+  ]);
+
+  return Math.max(1, columns ?? DEFAULT_TERMINAL_COLUMNS);
 }
 
 function getTerminalRows(): number | undefined {
-  return (
-    readPositiveInteger(process.env.LIMINA_FLOW_RENDERER_TEST_ROWS) ??
-    process.stdout.rows
-  );
+  return firstDefinedNumber([
+    readPositiveInteger(process.env.LIMINA_FLOW_RENDERER_TEST_ROWS),
+    process.stdout.rows,
+  ]);
+}
+
+function getRenderRows(): number | undefined {
+  const dimensions = snapshot.terminalDimensions;
+  return dimensions === undefined ? getTerminalRows() : dimensions.rows;
 }
 
 function writeTracked(message: string, stream: NodeJS.WriteStream): void {
@@ -69,94 +91,156 @@ function clearRenderedFrame(): void {
   terminalFrame.reset();
 }
 
+function renderLine(line: string): void {
+  writeTracked(`${line}\n`, process.stdout);
+}
+
 function render(): void {
   clearRenderedFrame();
 
-  const dimensions = {
-    columns: getTerminalColumns(),
-    rows: snapshot.terminalDimensions?.rows ?? getTerminalRows(),
-  };
   const renderedLines = renderSnapshotLinesForTerminal(
     snapshot,
     spinnerFrameIndex,
-    dimensions,
+    {
+      columns: getTerminalColumns(),
+      rows: getRenderRows(),
+    },
   );
 
   for (const line of renderedLines) {
-    writeTracked(`${line}\n`, process.stdout);
+    renderLine(line);
   }
+}
+
+function stopSpinnerTimer(): void {
+  const timer = spinnerTimer;
+
+  if (timer === undefined) {
+    return;
+  }
+
+  clearInterval(timer);
+  spinnerTimer = undefined;
+}
+
+function shouldStopSpinner(): boolean {
+  return closed || !hasRunningSnapshotWork(snapshot);
+}
+
+function advanceSpinner(): void {
+  spinnerFrameIndex = (spinnerFrameIndex + 1) % SPINNER_FRAMES.length;
+  render();
 }
 
 function syncSpinnerTimer(): void {
-  if (closed || !hasRunningSnapshotWork(snapshot)) {
-    if (spinnerTimer) {
-      clearInterval(spinnerTimer);
-      spinnerTimer = undefined;
-    }
+  if (shouldStopSpinner()) {
+    stopSpinnerTimer();
     return;
   }
 
-  if (spinnerTimer) {
+  if (spinnerTimer !== undefined) {
     return;
   }
 
-  spinnerTimer = setInterval(() => {
-    spinnerFrameIndex = (spinnerFrameIndex + 1) % SPINNER_FRAMES.length;
-    render();
-  }, SPINNER_INTERVAL_MS);
+  spinnerTimer = setInterval(advanceSpinner, SPINNER_INTERVAL_MS);
 }
 
-function writeOutput(message: FlowRendererProcessMessage & { type: 'output' }) {
+function getOutputStream(
+  streamName: 'stderr' | 'stdout' | undefined,
+): NodeJS.WriteStream {
+  return streamName === 'stderr' ? process.stderr : process.stdout;
+}
+
+function writeOutput(message: RendererMessageFor<'output'>): void {
   clearRenderedFrame();
-  writeTracked(
-    message.output.text,
-    message.output.stream === 'stderr' ? process.stderr : process.stdout,
-  );
+  writeTracked(message.output.text, getOutputStream(message.output.stream));
   terminalFrame.reset();
   render();
 }
 
-process.on('message', (rawMessage: FlowRendererProcessMessage) => {
-  try {
-    if (
-      process.env.LIMINA_FLOW_RENDERER_TEST_CRASH === '1' &&
-      rawMessage.type === 'snapshot'
-    ) {
-      process.exit(1);
-    }
+function requireMessage<Type extends RendererMessageType>(
+  message: FlowRendererProcessMessage,
+  type: Type,
+): RendererMessageFor<Type> {
+  if (message.type !== type) {
+    throw new Error(`Unexpected renderer message: ${message.type}.`);
+  }
 
-    switch (rawMessage.type) {
-      case 'snapshot': {
-        snapshot = rawMessage.snapshot;
-        syncSpinnerTimer();
-        render();
-        break;
-      }
-      case 'output': {
-        writeOutput(rawMessage);
-        break;
-      }
-      case 'close': {
-        closed = true;
-        snapshot = rawMessage.snapshot;
-        if (spinnerTimer) {
-          clearInterval(spinnerTimer);
-          spinnerTimer = undefined;
-        }
-        render();
-        send({ type: 'closed' });
-        setImmediate(() => {
-          process.exit(0);
-        });
-        break;
-      }
-    }
+  return message as RendererMessageFor<Type>;
+}
+
+function handleSnapshot(rawMessage: FlowRendererProcessMessage): void {
+  const message = requireMessage(rawMessage, 'snapshot');
+  snapshot = message.snapshot;
+  syncSpinnerTimer();
+  render();
+}
+
+function handleOutput(rawMessage: FlowRendererProcessMessage): void {
+  writeOutput(requireMessage(rawMessage, 'output'));
+}
+
+function disconnectRenderer(exitCode: number): void {
+  process.exitCode = exitCode;
+
+  if (process.connected) {
+    process.disconnect();
+  }
+}
+
+function exitRenderer(): void {
+  disconnectRenderer(0);
+}
+
+function handleClose(rawMessage: FlowRendererProcessMessage): void {
+  const message = requireMessage(rawMessage, 'close');
+  closed = true;
+  snapshot = message.snapshot;
+  stopSpinnerTimer();
+  render();
+  send({ type: 'closed' });
+  setImmediate(exitRenderer);
+}
+
+const messageHandlers: Readonly<
+  Record<RendererMessageType, RendererMessageHandler>
+> = {
+  close: handleClose,
+  output: handleOutput,
+  snapshot: handleSnapshot,
+};
+
+function shouldCrash(message: FlowRendererProcessMessage): boolean {
+  return (
+    process.env.LIMINA_FLOW_RENDERER_TEST_CRASH === '1' &&
+    message.type === 'snapshot'
+  );
+}
+
+function handleRendererMessage(message: FlowRendererProcessMessage): void {
+  if (shouldCrash(message)) {
+    disconnectRenderer(1);
+    return;
+  }
+
+  messageHandlers[message.type](message);
+}
+
+function formatRendererError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function handleProcessMessage(message: FlowRendererProcessMessage): void {
+  try {
+    handleRendererMessage(message);
   } catch (error) {
     send({
-      message: error instanceof Error ? error.message : String(error),
+      message: formatRendererError(error),
       type: 'failed',
     });
   }
-});
+}
+
+process.on('message', handleProcessMessage);
 
 send({ type: 'ready' });

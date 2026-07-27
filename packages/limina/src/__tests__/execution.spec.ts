@@ -357,6 +357,45 @@ describe('runPool', () => {
       }),
     ).resolves.toEqual([1, 20]);
   });
+
+  it('settles each worker result before advancing to its next item', async () => {
+    const events: string[] = [];
+
+    await expect(
+      runPool({
+        concurrency: 2,
+        items: [0, 1, 2, 3],
+        onError: (item) => {
+          events.push(`error:${item}`);
+          return -1;
+        },
+        onResult: (item, result) => {
+          events.push(`result:${item}:${result}`);
+        },
+        onStart: (item) => {
+          events.push(`start:${item}`);
+        },
+        run: async (item) => {
+          if (item === 1) {
+            throw new Error('failed');
+          }
+
+          return item * 2;
+        },
+      }),
+    ).resolves.toEqual([0, -1, 4, 6]);
+    expect(events).toEqual([
+      'start:0',
+      'start:1',
+      'result:0:0',
+      'start:2',
+      'error:1',
+      'result:2:4',
+      'start:3',
+      'result:1:-1',
+      'result:3:6',
+    ]);
+  });
 });
 
 describe('ResourceLockSet', () => {

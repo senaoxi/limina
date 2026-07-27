@@ -494,7 +494,10 @@ describe('typed Release findings', () => {
 
   it('removes Release section, body, regex, and Error.message classification', () => {
     const source = readFileSync(
-      path.join(WORKSPACE_ROOT, 'packages/limina/src/commands/release.ts'),
+      path.join(
+        WORKSPACE_ROOT,
+        'packages/limina/src/commands/release/entry.ts',
+      ),
       'utf8',
     );
 
@@ -505,6 +508,6 @@ describe('typed Release findings', () => {
     expect(source).not.toContain(
       '/content hash|local-only|remote-only|changed/iu',
     );
-    expect(source).toContain('options.error.findings');
+    expect(source).toContain('error.findings');
   });
 });

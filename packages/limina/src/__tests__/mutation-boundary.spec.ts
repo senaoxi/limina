@@ -105,7 +105,9 @@ describe('mutation boundary', () => {
       await fixture.cleanup();
     }
   });
+});
 
+describe('mutation boundary file identity', () => {
   it('rejects a final file symlink before mutation', async () => {
     const fixture = await createFixture();
     const markerPath = fixture.path('external-marker.txt');
@@ -181,7 +183,9 @@ describe('mutation boundary', () => {
       await fixture.cleanup();
     }
   });
+});
 
+describe('mutation boundary mechanical anchors', () => {
   it('does not promote a mechanically discovered parent symlink to an anchor', async () => {
     const fixture = await createFixture();
     await mkdir(fixture.path('external'), { recursive: true });

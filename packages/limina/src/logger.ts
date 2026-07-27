@@ -22,15 +22,21 @@ export const SourceLogger: ScopedLogger =
 export const TypecheckLogger: ScopedLogger =
   logger.getLoggerByGroup('task.typecheck');
 
+function canClearCliScreen(): boolean {
+  return Boolean(process.stdout.isTTY) && !process.env.CI;
+}
+
+function createScreenPadding(rows: number | undefined): string {
+  const repeatCount = (rows ?? 0) - 2;
+  return repeatCount > 0 ? '\n'.repeat(repeatCount) : '';
+}
+
 export function clearCliScreen(): void {
-  if (!process.stdout.isTTY || process.env.CI) {
+  if (!canClearCliScreen()) {
     return;
   }
 
-  const repeatCount = (process.stdout.rows ?? 0) - 2;
-  const blank = repeatCount > 0 ? '\n'.repeat(repeatCount) : '';
-
-  process.stdout.write(blank);
+  process.stdout.write(createScreenPadding(process.stdout.rows));
   readline.cursorTo(process.stdout, 0, 0);
   readline.clearScreenDown(process.stdout);
 }

@@ -41,22 +41,35 @@ interface GeneratedProjectConfig {
 
 let fixture: PreparedFixture | undefined;
 
+async function collectChildTreePaths(options: {
+  entryName: string;
+  entryPath: string;
+  entryStat: Awaited<ReturnType<typeof lstat>>;
+}): Promise<string[]> {
+  if (!options.entryStat.isDirectory()) return [];
+  if (options.entryStat.isSymbolicLink()) return [];
+  const childPaths = await collectTreePaths(options.entryPath);
+  return childPaths.map((childPath) => `${options.entryName}/${childPath}`);
+}
+
+async function collectTreeEntryPaths(
+  rootDir: string,
+  entryName: string,
+): Promise<string[]> {
+  const entryPath = path.join(rootDir, entryName);
+  const entryStat = await lstat(entryPath);
+  return [
+    toPortableRelativePath(rootDir, entryPath),
+    ...(await collectChildTreePaths({ entryName, entryPath, entryStat })),
+  ];
+}
+
 async function collectTreePaths(rootDir: string): Promise<string[]> {
-  const paths: string[] = [];
-
-  for (const entryName of await readdir(rootDir)) {
-    const entryPath = path.join(rootDir, entryName);
-    const entryStat = await lstat(entryPath);
-    paths.push(toPortableRelativePath(rootDir, entryPath));
-
-    if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
-      for (const childPath of await collectTreePaths(entryPath)) {
-        paths.push(`${entryName}/${childPath}`);
-      }
-    }
-  }
-
-  return paths.sort();
+  const entries = await readdir(rootDir);
+  const paths = await Promise.all(
+    entries.map((entryName) => collectTreeEntryPaths(rootDir, entryName)),
+  );
+  return paths.flat().sort();
 }
 
 beforeEach(async () => {

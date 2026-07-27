@@ -126,26 +126,11 @@ export class TsconfigCore {
     const normalizedFilePath = normalizeAbsolutePath(filePath);
     const { projects } = await this.getSourceGraphProjects();
     const fileOwnerLookup = createFileOwnerLookup(projects);
-    const ownerProjectPaths = fileOwnerLookup.get(normalizedFilePath);
-
-    if (!ownerProjectPaths || ownerProjectPaths.length === 0) {
-      return null;
-    }
-
-    const [projectPath] = [...ownerProjectPaths].sort((left, right) => {
-      const directoryDepthDelta =
-        path.dirname(right).length - path.dirname(left).length;
-
-      return directoryDepthDelta === 0
-        ? left.localeCompare(right)
-        : directoryDepthDelta;
-    });
-
-    return (
-      (projectPath
-        ? projects.find((project) => project.configPath === projectPath)
-        : null) ?? null
+    const ownerProjectPath = selectOwnerProjectPath(
+      fileOwnerLookup.get(normalizedFilePath),
     );
+
+    return findProjectByConfigPath(projects, ownerProjectPath);
   }
 
   async #getWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex | null> {
@@ -155,6 +140,40 @@ export class TsconfigCore {
 
     return this.#workspace.getLookupIndex();
   }
+}
+
+function compareOwnerProjectPaths(left: string, right: string): number {
+  const directoryDepthDelta =
+    path.dirname(right).length - path.dirname(left).length;
+
+  return directoryDepthDelta === 0
+    ? left.localeCompare(right)
+    : directoryDepthDelta;
+}
+
+function selectOwnerProjectPath(
+  ownerProjectPaths: readonly string[] | undefined,
+): string | null {
+  if (ownerProjectPaths === undefined) {
+    return null;
+  }
+
+  const selectedPath = [...ownerProjectPaths].sort(compareOwnerProjectPaths)[0];
+  return selectedPath === undefined ? null : selectedPath;
+}
+
+function findProjectByConfigPath(
+  projects: readonly ProjectInfo[],
+  configPath: string | null,
+): ProjectInfo | null {
+  if (configPath === null) {
+    return null;
+  }
+
+  const project = projects.find(
+    (candidate) => candidate.configPath === configPath,
+  );
+  return project === undefined ? null : project;
 }
 
 function filterProjectInfoToActivatedRegion(

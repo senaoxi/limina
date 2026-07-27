@@ -5,7 +5,7 @@ import {
   toPosixPath,
   toRelativePath,
 } from '#utils/path';
-import { createExternalArtifactStableId } from '../../../domain/artifacts/namespace';
+import { getManagedSourceRelativeDirectory } from './source-paths';
 
 export const generatedRootDirName: string = '.limina';
 export const generatedTsconfigDir: string = path.join(
@@ -48,52 +48,6 @@ function createOutputFileName(sourceFileName: string): string {
   return sourceFileName === 'tsconfig.json'
     ? 'tsconfig.output.json'
     : sourceFileName.replace(/\.json$/u, '.output.json');
-}
-
-function getManagedSourceRelativeDirectory(options: {
-  packageRootDir?: string;
-  rootDir: string;
-  sourceConfigPath: string;
-}): string {
-  const relativeSourcePath = toRelativePath(
-    options.rootDir,
-    options.sourceConfigPath,
-  );
-  const relativeDir = path.dirname(relativeSourcePath);
-  if (
-    relativeSourcePath !== '..' &&
-    !relativeSourcePath.startsWith(`..${path.sep}`)
-  ) {
-    return relativeDir === '.' ? '' : relativeDir;
-  }
-  if (!options.packageRootDir) {
-    throw new Error(
-      `External source config requires an activated package root: ${options.sourceConfigPath}.`,
-    );
-  }
-  const packageDisplayRoot = toPosixPath(
-    toRelativePath(options.rootDir, options.packageRootDir),
-  );
-  const packageRelativeSourcePath = toRelativePath(
-    options.packageRootDir,
-    options.sourceConfigPath,
-  );
-  if (
-    packageRelativeSourcePath === '..' ||
-    packageRelativeSourcePath.startsWith(`..${path.sep}`)
-  ) {
-    throw new Error(
-      'External source config is outside its activated package root.',
-    );
-  }
-  const packageRelativeDirectory = path.dirname(packageRelativeSourcePath);
-  return path.join(
-    'external',
-    createExternalArtifactStableId(packageDisplayRoot),
-    ...(packageRelativeDirectory === '.'
-      ? []
-      : packageRelativeDirectory.split(path.sep)),
-  );
 }
 
 export function getGeneratedDtsConfigPath(options: {
