@@ -1,5 +1,58 @@
 # Troubleshooting
 
+## JSON imports report `TS6307` after adopting Limina
+
+When a project only uses `tsc -p`, JSON files imported through `resolveJsonModule` do not need to appear explicitly in the source `tsconfig` `files` or `include` fields. For example:
+
+```ts
+import pkg from '../package.json' with { type: 'json' };
+```
+
+```jsonc
+{
+  "compilerOptions": {
+    "resolveJsonModule": true,
+  },
+  "include": ["src"],
+}
+```
+
+This configuration usually passes with `tsc -p`. The import adds the JSON file to the TypeScript program, but does not make it a root file selected by the source `tsconfig`.
+
+Limina generates declaration build configurations from the source `tsconfig` root file set and writes that set as explicit `files`. If the source `tsconfig` does not include the imported JSON, the generated configuration does not include it either. Running `checker:build` then reports `TS6307`:
+
+```text
+packages/example/src/cli.ts:4:17 - error TS6307: File '<workspace>/packages/example/package.json' is not listed within the file list of project '<workspace>/.limina/tsconfig/checkers/typescript/projects/tsconfig.dts.json'. Projects must list all files or use an 'include' pattern.
+
+4 import pkg from '../package.json' with { type: 'json' }
+                  ~~~~~~~~~~~~~~~~~
+```
+
+Keep `resolveJsonModule: true` in the source `tsconfig` that owns the importing source file, and include the imported JSON explicitly:
+
+```jsonc
+{
+  "compilerOptions": {
+    "resolveJsonModule": true,
+  },
+  "include": ["src", "package.json"],
+}
+```
+
+When the source scope imports several JSON files, a JSON glob can be used:
+
+```jsonc
+{
+  "compilerOptions": {
+    "resolveJsonModule": true,
+  },
+  "include": ["src", "**/*.json"],
+  "exclude": ["dist", ".limina", "**/fixtures/**"],
+}
+```
+
+`resolveJsonModule` enables TypeScript to resolve JSON modules. It does not make `include: ["src"]` match `.json` files. The imported JSON must also belong to the source `tsconfig` root file set so Limina can project it into the generated declaration configuration `files`.
+
 ## Region exclusions
 
 ### `regions.exclude[...].kind is required`
