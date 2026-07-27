@@ -1,29 +1,25 @@
 import type { RuleDescriptor, RuleOptionProblem } from './contracts';
 import { ConfigurationError } from './errors';
 
-function hasConfiguredValue(input: unknown): boolean {
-  return input !== undefined;
+function rejectUnexpectedOptions(ruleId: string, input: unknown): void {
+  if (input === undefined) {
+    return;
+  }
+
+  const problem: RuleOptionProblem = {
+    message: `Rule "${ruleId}" does not accept options.`,
+    path: [],
+  };
+
+  throw new ConfigurationError(problem.message, [problem]);
 }
 
-export function parseRuleOptions<
-  Kind extends string,
-  Options,
-  MessageId extends string,
->(
-  descriptor: RuleDescriptor<Kind, Options, MessageId>,
+function parseSchemaOptions<Options>(
+  descriptor: RuleDescriptor<string, Options, string>,
   input: unknown,
 ): Options {
-  if (descriptor.options.kind === 'none') {
-    if (hasConfiguredValue(input)) {
-      const problem: RuleOptionProblem = {
-        message: `Rule "${descriptor.id}" does not accept options.`,
-        path: [],
-      };
-
-      throw new ConfigurationError(problem.message, [problem]);
-    }
-
-    return undefined as Options;
+  if (descriptor.options.kind !== 'schema') {
+    throw new Error(`Rule "${descriptor.id}" has no options schema.`);
   }
 
   const result = descriptor.options.schema.parse(input);
@@ -36,4 +32,20 @@ export function parseRuleOptions<
   }
 
   return result.value;
+}
+
+export function parseRuleOptions<
+  Kind extends string,
+  Options,
+  MessageId extends string,
+>(
+  descriptor: RuleDescriptor<Kind, Options, MessageId>,
+  input: unknown,
+): Options {
+  if (descriptor.options.kind === 'none') {
+    rejectUnexpectedOptions(descriptor.id, input);
+    return undefined as Options;
+  }
+
+  return parseSchemaOptions(descriptor, input);
 }

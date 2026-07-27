@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import { readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'pathe';
 
@@ -14,6 +15,10 @@ export interface RuntimeTreeIdentity extends FileTreeIdentity {
   readonly packageRealPath: string;
 }
 
+interface PackageManifest {
+  readonly bin?: string | Readonly<Record<string, string>>;
+}
+
 function toPortableRelativePath(value: string): string {
   return value.split(path.sep).join('/');
 }
@@ -26,6 +31,33 @@ function isPathInsideOrEqual(parentPath: string, childPath: string): boolean {
   );
 }
 
+function assertRegularIdentityEntry(entry: Dirent, entryPath: string): void {
+  if (entry.isSymbolicLink()) {
+    throw new Error(`Identity tree contains a symbolic link: ${entryPath}.`);
+  }
+
+  if (!entry.isFile()) {
+    throw new Error(`Identity tree contains a non-regular file: ${entryPath}.`);
+  }
+}
+
+async function collectIdentityEntry(options: {
+  directoryPath: string;
+  entry: Dirent;
+  files: string[];
+  visit(directoryPath: string): Promise<void>;
+}): Promise<void> {
+  const entryPath = path.join(options.directoryPath, options.entry.name);
+
+  if (options.entry.isDirectory()) {
+    await options.visit(entryPath);
+    return;
+  }
+
+  assertRegularIdentityEntry(options.entry, entryPath);
+  options.files.push(entryPath);
+}
+
 async function collectRegularFiles(rootDir: string): Promise<string[]> {
   const files: string[] = [];
 
@@ -34,22 +66,7 @@ async function collectRegularFiles(rootDir: string): Promise<string[]> {
     entries.sort((left, right) => left.name.localeCompare(right.name));
 
     for (const entry of entries) {
-      const entryPath = path.join(directoryPath, entry.name);
-      if (entry.isSymbolicLink()) {
-        throw new Error(
-          `Identity tree contains a symbolic link: ${entryPath}.`,
-        );
-      }
-      if (entry.isDirectory()) {
-        await visit(entryPath);
-        continue;
-      }
-      if (!entry.isFile()) {
-        throw new Error(
-          `Identity tree contains a non-regular file: ${entryPath}.`,
-        );
-      }
-      files.push(entryPath);
+      await collectIdentityEntry({ directoryPath, entry, files, visit });
     }
   }
 
@@ -57,27 +74,43 @@ async function collectRegularFiles(rootDir: string): Promise<string[]> {
   return files;
 }
 
+function compareFilePaths(
+  rootDir: string,
+  left: string,
+  right: string,
+): number {
+  return toPortableRelativePath(path.relative(rootDir, left)).localeCompare(
+    toPortableRelativePath(path.relative(rootDir, right)),
+  );
+}
+
+async function hashFile(
+  treeHash: ReturnType<typeof createHash>,
+  rootDir: string,
+  filePath: string,
+): Promise<void> {
+  const relativePath = toPortableRelativePath(path.relative(rootDir, filePath));
+  const fileHash = createHash('sha256')
+    .update(await readFile(filePath))
+    .digest('hex');
+
+  treeHash.update(relativePath);
+  treeHash.update('\0');
+  treeHash.update(fileHash);
+  treeHash.update('\0');
+}
+
 async function hashFiles(
   rootDir: string,
   files: readonly string[],
 ): Promise<FileTreeIdentity> {
   const treeHash = createHash('sha256');
+  const orderedFiles = [...files].sort((left, right) =>
+    compareFilePaths(rootDir, left, right),
+  );
 
-  for (const filePath of [...files].sort((left, right) =>
-    toPortableRelativePath(path.relative(rootDir, left)).localeCompare(
-      toPortableRelativePath(path.relative(rootDir, right)),
-    ),
-  )) {
-    const relativePath = toPortableRelativePath(
-      path.relative(rootDir, filePath),
-    );
-    const fileHash = createHash('sha256')
-      .update(await readFile(filePath))
-      .digest('hex');
-    treeHash.update(relativePath);
-    treeHash.update('\0');
-    treeHash.update(fileHash);
-    treeHash.update('\0');
+  for (const filePath of orderedFiles) {
+    await hashFile(treeHash, rootDir, filePath);
   }
 
   return {
@@ -86,18 +119,52 @@ async function hashFiles(
   };
 }
 
+function getLiminaBinPath(manifest: PackageManifest): string | undefined {
+  if (typeof manifest.bin === 'string') {
+    return manifest.bin;
+  }
+
+  return manifest.bin?.limina;
+}
+
 async function readPackageBinPath(packageRoot: string): Promise<string> {
   const manifest = JSON.parse(
     await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
-  ) as { bin?: string | Record<string, string> };
-  const binPath =
-    typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.limina;
+  ) as PackageManifest;
+  const binPath = getLiminaBinPath(manifest);
+
   if (!binPath) {
     throw new Error(
       `Limina package does not declare a bin entry: ${packageRoot}.`,
     );
   }
+
   return binPath;
+}
+
+function assertExecutableMatchesPackage(options: {
+  executableLogicalPath: string;
+  executableRealPath: string;
+  expectedExecutableRealPath: string;
+}): void {
+  if (options.executableRealPath !== options.expectedExecutableRealPath) {
+    throw new Error(
+      `Limina executable does not match package.json#bin: ${options.executableLogicalPath}.`,
+    );
+  }
+}
+
+function assertExecutableInsideRuntime(options: {
+  executableRealPath: string;
+  packageRealPath: string;
+}): void {
+  if (
+    !isPathInsideOrEqual(options.packageRealPath, options.executableRealPath)
+  ) {
+    throw new Error(
+      `Limina executable is outside the linked runtime tree: ${options.executableRealPath}.`,
+    );
+  }
 }
 
 export async function collectRuntimeTreeIdentity(options: {
@@ -115,16 +182,12 @@ export async function collectRuntimeTreeIdentity(options: {
     ),
   );
 
-  if (executableRealPath !== expectedExecutableRealPath) {
-    throw new Error(
-      `Limina executable does not match package.json#bin: ${executableLogicalPath}.`,
-    );
-  }
-  if (!isPathInsideOrEqual(packageRealPath, executableRealPath)) {
-    throw new Error(
-      `Limina executable is outside the linked runtime tree: ${executableRealPath}.`,
-    );
-  }
+  assertExecutableMatchesPackage({
+    executableLogicalPath,
+    executableRealPath,
+    expectedExecutableRealPath,
+  });
+  assertExecutableInsideRuntime({ executableRealPath, packageRealPath });
 
   const files = await collectRegularFiles(packageRealPath);
   return {

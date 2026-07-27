@@ -7,23 +7,36 @@ import type {
   TaskLifecycleState,
 } from './tasks';
 
+const plannedTransitions: Partial<
+  Record<TaskLifecycleEvent['type'], TaskLifecycleState>
+> = {
+  block: 'blocked',
+  skip: 'skipped',
+  start: 'running',
+};
+
+const runningTransitions: Partial<
+  Record<TaskLifecycleEvent['type'], TaskLifecycleState>
+> = {
+  fail: 'failed',
+  pass: 'passed',
+};
+
+function getTransitionMap(
+  current: TaskLifecycleState,
+): Partial<Record<TaskLifecycleEvent['type'], TaskLifecycleState>> {
+  if (current === 'planned') {
+    return plannedTransitions;
+  }
+
+  return current === 'running' ? runningTransitions : {};
+}
+
 function nextTaskState(
   current: TaskLifecycleState,
   event: TaskLifecycleEvent,
 ): TaskLifecycleState | undefined {
-  if (current === 'planned') {
-    if (event.type === 'start') return 'running';
-    if (event.type === 'block') return 'blocked';
-    if (event.type === 'skip') return 'skipped';
-    return undefined;
-  }
-
-  if (current === 'running') {
-    if (event.type === 'pass') return 'passed';
-    if (event.type === 'fail') return 'failed';
-  }
-
-  return undefined;
+  return getTransitionMap(current)[event.type];
 }
 
 export function transitionTask(

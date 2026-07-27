@@ -35,19 +35,25 @@ function intersects(left: Set<string>, right: Set<string>): boolean {
   return false;
 }
 
+function hasAnyIntersection(
+  left: Set<string>,
+  rights: readonly Set<string>[],
+): boolean {
+  return rights.some((right) => intersects(left, right));
+}
+
 function hasConflict(
   left: NormalizedResourceRequest,
   right: NormalizedResourceRequest,
 ): boolean {
   return (
-    intersects(left.exclusive, right.exclusive) ||
-    intersects(left.exclusive, right.read) ||
-    intersects(left.exclusive, right.write) ||
-    intersects(left.read, right.exclusive) ||
-    intersects(left.read, right.write) ||
-    intersects(left.write, right.exclusive) ||
-    intersects(left.write, right.read) ||
-    intersects(left.write, right.write)
+    hasAnyIntersection(left.exclusive, [
+      right.exclusive,
+      right.read,
+      right.write,
+    ]) ||
+    hasAnyIntersection(left.read, [right.exclusive, right.write]) ||
+    hasAnyIntersection(left.write, [right.exclusive, right.read, right.write])
   );
 }
 

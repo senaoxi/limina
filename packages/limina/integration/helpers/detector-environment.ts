@@ -33,21 +33,81 @@ const RESERVED_KEYS = new Set([
   'XDG_CACHE_HOME',
 ]);
 
+function isAbsolutePathEntry(entry: string): boolean {
+  if (entry.length === 0) return false;
+  return path.isAbsolute(entry);
+}
+
+function isWorkspacePathEntry(entry: string): boolean {
+  const normalizedEntry = path.resolve(entry);
+  if (normalizedEntry.includes(`${path.sep}node_modules${path.sep}.bin`)) {
+    return true;
+  }
+  return isPathInsideDirectory(normalizedEntry, repositoryRoot);
+}
+
+function isUsableHostPathEntry(entry: string): boolean {
+  if (!isAbsolutePathEntry(entry)) return false;
+  return !isWorkspacePathEntry(entry);
+}
+
 function createSystemPath(toolBinDirectory: string): string {
   const hostEntries = (process.env.PATH ?? '')
     .split(path.delimiter)
-    .filter((entry) => {
-      if (!entry || !path.isAbsolute(entry)) {
-        return false;
-      }
-      const normalizedEntry = path.resolve(entry);
-      return (
-        !normalizedEntry.includes(`${path.sep}node_modules${path.sep}.bin`) &&
-        !isPathInsideDirectory(normalizedEntry, repositoryRoot)
-      );
-    });
-
+    .filter(isUsableHostPathEntry);
   return [toolBinDirectory, ...hostEntries].join(path.delimiter);
+}
+
+function copyHostEnvironment(): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {};
+  for (const key of COPIED_HOST_ENVIRONMENT_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) environment[key] = value;
+  }
+  return environment;
+}
+
+function applyFixtureEnvironmentEntry(options: {
+  environment: NodeJS.ProcessEnv;
+  key: string;
+  value: string;
+}): void {
+  if (RESERVED_KEYS.has(options.key.toUpperCase())) {
+    throw new Error(
+      `Detector fixture environment cannot override harness variable ${options.key}.`,
+    );
+  }
+  options.environment[options.key] = options.value;
+}
+
+function applyFixtureEnvironment(options: {
+  environment: NodeJS.ProcessEnv;
+  fixtureEnvironment: Readonly<Record<string, string>> | undefined;
+}): void {
+  if (options.fixtureEnvironment === undefined) return;
+  for (const [key, value] of Object.entries(options.fixtureEnvironment)) {
+    applyFixtureEnvironmentEntry({
+      environment: options.environment,
+      key,
+      value,
+    });
+  }
+}
+
+async function createSandboxDirectories(sandboxRoot: string): Promise<{
+  cacheDirectory: string;
+  homeDirectory: string;
+  tempDirectory: string;
+}> {
+  const homeDirectory = path.join(sandboxRoot, 'home');
+  const cacheDirectory = path.join(sandboxRoot, 'cache');
+  const tempDirectory = path.join(sandboxRoot, 'tmp');
+  await Promise.all([
+    mkdir(homeDirectory, { recursive: true }),
+    mkdir(cacheDirectory, { recursive: true }),
+    mkdir(tempDirectory, { recursive: true }),
+  ]);
+  return { cacheDirectory, homeDirectory, tempDirectory };
 }
 
 export async function createDetectorInvocationEnvironment(options: {
@@ -55,40 +115,21 @@ export async function createDetectorInvocationEnvironment(options: {
   readonly sandboxRoot: string;
   readonly toolBinDirectory: string;
 }): Promise<NodeJS.ProcessEnv> {
-  const homeDirectory = path.join(options.sandboxRoot, 'home');
-  const cacheDirectory = path.join(options.sandboxRoot, 'cache');
-  const tempDirectory = path.join(options.sandboxRoot, 'tmp');
-  await Promise.all([
-    mkdir(homeDirectory, { recursive: true }),
-    mkdir(cacheDirectory, { recursive: true }),
-    mkdir(tempDirectory, { recursive: true }),
-  ]);
-
-  const environment: NodeJS.ProcessEnv = {};
-  for (const key of COPIED_HOST_ENVIRONMENT_KEYS) {
-    const value = process.env[key];
-    if (value !== undefined) {
-      environment[key] = value;
-    }
-  }
-  for (const [key, value] of Object.entries(options.fixtureEnvironment ?? {})) {
-    if (RESERVED_KEYS.has(key.toUpperCase())) {
-      throw new Error(
-        `Detector fixture environment cannot override harness variable ${key}.`,
-      );
-    }
-    environment[key] = value;
-  }
-
+  const directories = await createSandboxDirectories(options.sandboxRoot);
+  const environment = copyHostEnvironment();
+  applyFixtureEnvironment({
+    environment,
+    fixtureEnvironment: options.fixtureEnvironment,
+  });
   return {
     ...environment,
-    HOME: homeDirectory,
-    npm_config_cache: cacheDirectory,
+    HOME: directories.homeDirectory,
+    npm_config_cache: directories.cacheDirectory,
     PATH: createSystemPath(options.toolBinDirectory),
-    TEMP: tempDirectory,
-    TMP: tempDirectory,
-    TMPDIR: tempDirectory,
-    USERPROFILE: homeDirectory,
-    XDG_CACHE_HOME: cacheDirectory,
+    TEMP: directories.tempDirectory,
+    TMP: directories.tempDirectory,
+    TMPDIR: directories.tempDirectory,
+    USERPROFILE: directories.homeDirectory,
+    XDG_CACHE_HOME: directories.cacheDirectory,
   };
 }

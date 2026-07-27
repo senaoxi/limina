@@ -1,10 +1,10 @@
-import type { ArtifactNamespaceGenerationToken } from './namespace';
+import type { ArtifactNamespaceGenerationToken } from './namespace-core';
 import {
   assertArtifactPathLexicallyContained,
   assertLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
   toArtifactNamespaceRelativePath,
-} from './namespace';
+} from './namespace-core';
 
 const artifactPlanBrand: unique symbol = Symbol('ArtifactPlan');
 const authenticatedArtifactPlans = new WeakSet<object>();

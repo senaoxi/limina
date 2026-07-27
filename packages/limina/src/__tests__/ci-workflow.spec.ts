@@ -23,39 +23,43 @@ interface WorkflowDocument {
 
 const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 
-async function readCiPathFilters(): Promise<Record<string, string[]>> {
-  const workflow = parse(
-    await readFile(
-      path.join(workspaceRoot, '.github/workflows/ci.yml'),
-      'utf8',
-    ),
-  ) as WorkflowDocument;
-  const filterSource = workflow.jobs?.changes?.steps?.find(
+function getChangesSteps(workflow: WorkflowDocument): WorkflowStep[] {
+  return workflow.jobs?.changes?.steps ?? [];
+}
+
+function getFilterSource(workflow: WorkflowDocument): string {
+  const filterStep = getChangesSteps(workflow).find(
     (step) => step.id === 'filter',
-  )?.with?.filters;
+  );
+  const filterSource = filterStep?.with?.filters;
+  if (filterSource !== undefined) return filterSource;
+  throw new Error('CI changes job is missing the paths-filter configuration.');
+}
 
-  if (!filterSource) {
-    throw new Error(
-      'CI changes job is missing the paths-filter configuration.',
-    );
-  }
+async function readCiPathFilters(): Promise<Record<string, string[]>> {
+  const workflowPath = path.join(workspaceRoot, '.github/workflows/ci.yml');
+  const workflow = parse(
+    await readFile(workflowPath, 'utf8'),
+  ) as WorkflowDocument;
+  return parse(getFilterSource(workflow)) as Record<string, string[]>;
+}
 
-  return parse(filterSource) as Record<string, string[]>;
+function applyPathPattern(
+  matched: boolean,
+  filePath: string,
+  pattern: string,
+): boolean {
+  const negated = pattern.startsWith('!');
+  const candidate = negated ? pattern.slice(1) : pattern;
+  if (!picomatch.isMatch(filePath, candidate, { dot: true })) return matched;
+  return !negated;
 }
 
 function matchesPathFilter(filePath: string, patterns: string[]): boolean {
-  let matched = false;
-
-  for (const pattern of patterns) {
-    const negated = pattern.startsWith('!');
-    const candidate = negated ? pattern.slice(1) : pattern;
-
-    if (picomatch.isMatch(filePath, candidate, { dot: true })) {
-      matched = !negated;
-    }
-  }
-
-  return matched;
+  return patterns.reduce(
+    (matched, pattern) => applyPathPattern(matched, filePath, pattern),
+    false,
+  );
 }
 
 describe('Limina CI change detection', () => {

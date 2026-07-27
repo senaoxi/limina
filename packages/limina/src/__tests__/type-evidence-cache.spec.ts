@@ -103,7 +103,9 @@ describe('type evidence generation cache', () => {
       }),
     );
   });
+});
 
+describe('type evidence cache locator identities', () => {
   it('keeps locator and cache identities stable across platform path separators', () => {
     const providerIdentity = {
       checkerName: 'typescript',
@@ -145,7 +147,9 @@ describe('type evidence generation cache', () => {
       }),
     );
   });
+});
 
+describe('type evidence cache generation disposal', () => {
   it('disposes the old generation before replacement and at manager shutdown', () => {
     const config = {
       configPath: path.join(process.cwd(), 'limina.config.mts'),

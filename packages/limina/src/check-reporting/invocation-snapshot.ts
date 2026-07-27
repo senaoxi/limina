@@ -86,45 +86,85 @@ export function getStandaloneIssueInvocationPath(
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasValidSnapshotMetadata(record: Record<string, unknown>): boolean {
+  return [
+    record.kind === 'standalone-invocation',
+    record.version === STANDALONE_ISSUE_INVOCATION_VERSION,
+    typeof record.invocationId === 'string',
+    typeof record.command === 'string',
+    typeof record.completedAt === 'string',
+    record.result === 'failed',
+  ].every(Boolean);
+}
+
+function hasValidInvocationId(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.invocationId === 'string' &&
+    isStandaloneIssueInvocationId(record.invocationId)
+  );
+}
+
+function hasValidIssues(record: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(record.issues) && record.issues.every(isLiminaCheckIssue)
+  );
+}
+
 function isStandaloneIssueInvocationSnapshot(
   value: unknown,
 ): value is StandaloneIssueInvocationSnapshot {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return false;
   }
 
-  const record = value as Record<string, unknown>;
-  return (
-    record.kind === 'standalone-invocation' &&
-    record.version === STANDALONE_ISSUE_INVOCATION_VERSION &&
-    typeof record.invocationId === 'string' &&
-    isStandaloneIssueInvocationId(record.invocationId) &&
-    typeof record.command === 'string' &&
-    typeof record.completedAt === 'string' &&
-    record.result === 'failed' &&
-    Array.isArray(record.issues) &&
-    record.issues.every(isLiminaCheckIssue)
-  );
+  return [
+    hasValidSnapshotMetadata(value),
+    hasValidInvocationId(value),
+    hasValidIssues(value),
+  ].every(Boolean);
+}
+
+function collectStructuredErrorIssues(error: unknown): LiminaCheckIssue[] {
+  return error instanceof LiminaStructuredError ? error.issues : [];
+}
+
+function addIssueIfUnique(
+  issue: LiminaCheckIssue,
+  seenIds: Set<string>,
+  merged: LiminaCheckIssue[],
+): void {
+  const issueId = issue.id;
+
+  if (issueId === undefined) {
+    merged.push(issue);
+    return;
+  }
+
+  if (seenIds.has(issueId)) {
+    return;
+  }
+
+  seenIds.add(issueId);
+  merged.push(issue);
 }
 
 export function mergeStandaloneFailureIssues(options: {
   error?: unknown;
   issues: readonly LiminaCheckIssue[];
 }): LiminaCheckIssue[] {
-  const structuredIssues =
-    options.error instanceof LiminaStructuredError ? options.error.issues : [];
   const seenIds = new Set<string>();
   const merged: LiminaCheckIssue[] = [];
+  const issues = [
+    ...options.issues,
+    ...collectStructuredErrorIssues(options.error),
+  ];
 
-  for (const issue of [...options.issues, ...structuredIssues]) {
-    if (issue.id) {
-      if (seenIds.has(issue.id)) {
-        continue;
-      }
-      seenIds.add(issue.id);
-    }
-
-    merged.push(issue);
+  for (const issue of issues) {
+    addIssueIfUnique(issue, seenIds, merged);
   }
 
   return merged;
@@ -142,6 +182,18 @@ function createInvocationId(rootDir: string): string {
   throw new Error('Unable to allocate a standalone issue invocation ID.');
 }
 
+function selectFailureIssues(options: {
+  createFallbackIssue: () => LiminaCheckIssue;
+  error?: unknown;
+  issues: readonly LiminaCheckIssue[];
+}): LiminaCheckIssue[] {
+  const mergedIssues = mergeStandaloneFailureIssues(options);
+
+  return mergedIssues.length > 0
+    ? mergedIssues
+    : [options.createFallbackIssue()];
+}
+
 export async function writeStandaloneFailureInvocation(options: {
   artifactNamespace: LiminaArtifactNamespace;
   command: string;
@@ -150,15 +202,12 @@ export async function writeStandaloneFailureInvocation(options: {
   issues: readonly LiminaCheckIssue[];
   rootDir: string;
 }): Promise<StandaloneIssueInvocationSnapshot> {
-  const mergedIssues = mergeStandaloneFailureIssues(options);
-  const issues =
-    mergedIssues.length > 0 ? mergedIssues : [options.createFallbackIssue()];
   const invocationId = createInvocationId(options.rootDir);
   const snapshot: StandaloneIssueInvocationSnapshot = {
     command: options.command,
     completedAt: new Date().toISOString(),
     invocationId,
-    issues,
+    issues: selectFailureIssues(options),
     kind: 'standalone-invocation',
     result: 'failed',
     version: STANDALONE_ISSUE_INVOCATION_VERSION,
@@ -174,6 +223,45 @@ export async function writeStandaloneFailureInvocation(options: {
   return snapshot;
 }
 
+function assertValidInvocationSnapshot(
+  parsed: unknown,
+  invocationId: string,
+): asserts parsed is StandaloneIssueInvocationSnapshot {
+  const matchesInvocation =
+    isStandaloneIssueInvocationSnapshot(parsed) &&
+    parsed.invocationId === invocationId;
+
+  if (!matchesInvocation) {
+    throw new StandaloneIssueInvocationInvalidError(
+      `Invalid standalone issue invocation record for ${invocationId}.`,
+    );
+  }
+}
+
+async function readInvocationSnapshotFile(
+  snapshotPath: string,
+  invocationId: string,
+): Promise<StandaloneIssueInvocationSnapshot> {
+  const parsed = JSON.parse(await readFile(snapshotPath, 'utf8')) as unknown;
+
+  assertValidInvocationSnapshot(parsed, invocationId);
+  return parsed;
+}
+
+function wrapInvocationReadError(
+  error: unknown,
+  invocationId: string,
+): StandaloneIssueInvocationInvalidError {
+  if (error instanceof StandaloneIssueInvocationInvalidError) {
+    return error;
+  }
+
+  return new StandaloneIssueInvocationInvalidError(
+    `Unable to read standalone issue invocation ${invocationId}.`,
+    { cause: error },
+  );
+}
+
 export async function readStandaloneIssueInvocation(
   rootDir: string,
   invocationId: string,
@@ -187,26 +275,8 @@ export async function readStandaloneIssueInvocation(
   }
 
   try {
-    const parsed = JSON.parse(await readFile(snapshotPath, 'utf8')) as unknown;
-
-    if (
-      !isStandaloneIssueInvocationSnapshot(parsed) ||
-      parsed.invocationId !== invocationId
-    ) {
-      throw new StandaloneIssueInvocationInvalidError(
-        `Invalid standalone issue invocation record for ${invocationId}.`,
-      );
-    }
-
-    return parsed;
+    return await readInvocationSnapshotFile(snapshotPath, invocationId);
   } catch (error) {
-    if (error instanceof StandaloneIssueInvocationInvalidError) {
-      throw error;
-    }
-
-    throw new StandaloneIssueInvocationInvalidError(
-      `Unable to read standalone issue invocation ${invocationId}.`,
-      { cause: error },
-    );
+    throw wrapInvocationReadError(error, invocationId);
   }
 }

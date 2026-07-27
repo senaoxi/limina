@@ -1,8 +1,7 @@
-export {
-  LiminaPreflightManager,
-  resolvePreflight,
-  type LiminaPreflightManagerOptions,
-  type MaterializationReceipt,
-  type PackageEntryPlanOptions,
-  type PreflightCapableOptions,
-} from './manager';
+export { LiminaPreflightManager, resolvePreflight } from './manager';
+export type {
+  LiminaPreflightManagerOptions,
+  MaterializationReceipt,
+  PackageEntryPlanOptions,
+  PreflightCapableOptions,
+} from './types';

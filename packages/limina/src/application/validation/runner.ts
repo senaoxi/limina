@@ -69,6 +69,10 @@ export async function runTypedValidator<
   return executeParsedValidator({ ...options, parsedOptions });
 }
 
+function isValidationCancelled(error: unknown, signal: AbortSignal): boolean {
+  return signal.aborted || error instanceof CancelledFailure;
+}
+
 async function executeParsedValidator<
   Kind extends string,
   View,
@@ -93,7 +97,7 @@ async function executeParsedValidator<
       options.parsedOptions,
     );
   } catch (error) {
-    if (options.run.signal.aborted || error instanceof CancelledFailure) {
+    if (isValidationCancelled(error, options.run.signal)) {
       throw new CancelledFailure();
     }
 

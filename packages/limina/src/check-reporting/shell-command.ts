@@ -16,17 +16,26 @@ function quotePowerShellToken(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+function isSafeShellToken(value: string): boolean {
+  return value.length > 0 && SAFE_SHELL_TOKEN.test(value);
+}
+
+function quoteUnsafeShellToken(
+  value: string,
+  dialect: ShellCommandDialect,
+): string {
+  return dialect === 'powershell'
+    ? quotePowerShellToken(value)
+    : quotePosixToken(value);
+}
+
 export function quoteShellCommandToken(
   value: string,
   dialect: ShellCommandDialect,
 ): string {
-  if (value.length > 0 && SAFE_SHELL_TOKEN.test(value)) {
-    return value;
-  }
-
-  return dialect === 'powershell'
-    ? quotePowerShellToken(value)
-    : quotePosixToken(value);
+  return isSafeShellToken(value)
+    ? value
+    : quoteUnsafeShellToken(value, dialect);
 }
 
 export function formatShellCommand(

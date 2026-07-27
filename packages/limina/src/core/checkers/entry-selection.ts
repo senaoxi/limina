@@ -7,24 +7,27 @@ import {
   toPosixPath,
   toRelativePath,
 } from '#utils/path';
-import path from 'node:path';
 import rawPicomatch from 'picomatch';
-import { escapePath } from 'tinyglobby';
 import { isDefaultSourceTsconfigPath } from '../build-graph/generated/config-readers';
+import {
+  expandTinyglobbyPattern,
+  normalizeTinyglobbyPattern,
+  normalizeWorkspaceGlob,
+  processExcludePatterns,
+} from './entry-patterns';
 
-const parentDirectoryPattern = /^(?:\/?\.\.)+/u;
-const escapingBackslashes = /\\(?=[()[\]{}!*+?@|])/gu;
+const matcherOptions = {
+  dot: false,
+  nobrace: false,
+  nocase: false,
+  noextglob: false,
+  noglobstar: false,
+  posix: true,
+} as const;
 
 const picomatch = rawPicomatch as unknown as (
   pattern: string,
-  options: {
-    dot: boolean;
-    nobrace: boolean;
-    nocase: boolean;
-    noextglob: boolean;
-    noglobstar: boolean;
-    posix: boolean;
-  },
+  options: typeof matcherOptions,
 ) => (value: string) => boolean;
 
 export interface CheckerEntrySelection {
@@ -43,101 +46,29 @@ export interface CheckerEntrySelectionOptions {
   include: readonly string[];
 }
 
-interface ProcessedExcludePatterns {
-  negative: string[];
-  positive: string[];
-}
-
-function normalizeWorkspaceGlob(value: string): string {
-  return value.trim();
-}
-
-function normalizeTinyglobbyPattern(pattern: string, cwd: string): string {
-  let result = pattern;
-
-  if (result.endsWith('/')) {
-    result = result.slice(0, -1);
-  }
-
-  const escapedCwd = escapePath(toPosixPath(cwd));
-  result = path.isAbsolute(result.replaceAll(escapingBackslashes, ''))
-    ? path.posix.relative(escapedCwd, result)
-    : path.posix.normalize(result);
-
-  const parentDirectory = parentDirectoryPattern.exec(result)?.[0];
-
-  if (!parentDirectory) {
-    return result;
-  }
-
-  const parentCount = (parentDirectory.length + 1) / 3;
-  const parts = result.split('/');
-  const cwdParts = escapedCwd.split('/');
-  let matchedParents = 0;
-
-  while (
-    matchedParents < parentCount &&
-    parts[matchedParents + parentCount] ===
-      cwdParts[cwdParts.length + matchedParents - parentCount]
-  ) {
-    const matchedPart = parts[matchedParents + parentCount]!;
-    result =
-      result.slice(0, (parentCount - matchedParents - 1) * 3) +
-        result.slice(
-          (parentCount - matchedParents) * 3 + matchedPart.length + 1,
-        ) || '.';
-    matchedParents += 1;
-  }
-
-  return result;
-}
-
-function expandTinyglobbyPattern(pattern: string): string[] {
-  if (!pattern || pattern.endsWith('*')) {
-    return [pattern];
-  }
-
-  // tinyglobby expands directories while still matching an exact file path.
-  // The crawler supplies that exact-path behavior; the in-memory matcher must
-  // represent both forms explicitly.
-  return [pattern, `${pattern}/**`];
-}
-
-function processExcludePatterns(
-  rootDir: string,
+function createMatchers(
   patterns: readonly string[],
-): ProcessedExcludePatterns {
-  const processed: ProcessedExcludePatterns = {
-    negative: [],
-    positive: [],
-  };
+): ((value: string) => boolean)[] {
+  return patterns.map((pattern) => picomatch(pattern, matcherOptions));
+}
 
-  for (const value of patterns) {
-    const pattern = normalizeWorkspaceGlob(value);
+function isExcludedEntry(options: {
+  config: ResolvedLiminaConfig;
+  entryPath: string;
+  negativeMatchers: readonly ((value: string) => boolean)[];
+  positiveMatchers: readonly ((value: string) => boolean)[];
+}): boolean {
+  const relativePath = toPosixPath(
+    toRelativePath(options.config.rootDir, options.entryPath),
+  );
+  const excluded = options.positiveMatchers.some((matches) =>
+    matches(relativePath),
+  );
+  const restored = options.negativeMatchers.some((matches) =>
+    matches(relativePath),
+  );
 
-    if (!pattern) {
-      continue;
-    }
-
-    if (pattern[0] !== '!' || pattern[1] === '(') {
-      processed.positive.push(
-        ...expandTinyglobbyPattern(
-          normalizeTinyglobbyPattern(pattern, rootDir),
-        ),
-      );
-      continue;
-    }
-
-    if (pattern[1] !== '!' || pattern[2] === '(') {
-      processed.negative.push(
-        ...expandTinyglobbyPattern(
-          normalizeTinyglobbyPattern(pattern.slice(1), rootDir),
-        ),
-      );
-    }
-  }
-
-  return processed;
+  return excluded && !restored;
 }
 
 function filterExcludedEntries(
@@ -151,82 +82,107 @@ function filterExcludedEntries(
     return [...includedEntryPaths];
   }
 
-  const matcherOptions = {
-    dot: false,
-    nobrace: false,
-    nocase: false,
-    noextglob: false,
-    noglobstar: false,
-    posix: true,
-  } as const;
-  const positiveMatchers = patterns.positive.map((pattern) =>
-    picomatch(pattern, matcherOptions),
+  const positiveMatchers = createMatchers(patterns.positive);
+  const negativeMatchers = createMatchers(patterns.negative);
+
+  return includedEntryPaths.filter(
+    (entryPath) =>
+      !isExcludedEntry({
+        config,
+        entryPath,
+        negativeMatchers,
+        positiveMatchers,
+      }),
   );
-  const negativeMatchers = patterns.negative.map((pattern) =>
-    picomatch(pattern, matcherOptions),
+}
+
+function createIncludePatterns(
+  rootDir: string,
+  patterns: readonly string[],
+): string[] {
+  return patterns
+    .map(normalizeWorkspaceGlob)
+    .flatMap((pattern) =>
+      expandTinyglobbyPattern(normalizeTinyglobbyPattern(pattern, rootDir)),
+    );
+}
+
+function matchesAnyPattern(
+  configPath: string,
+  rootDir: string,
+  matchers: readonly ((value: string) => boolean)[],
+): boolean {
+  const relativePath = toPosixPath(toRelativePath(rootDir, configPath));
+  return matchers.some((matches) => matches(relativePath));
+}
+
+function collectIncludedEntryPaths(
+  context: CheckerEntrySelectionContext,
+  includePatterns: readonly string[],
+): string[] {
+  const matchers = createMatchers(includePatterns);
+  const discoveredPaths = context.sourceConfigPaths.filter((configPath) =>
+    matchesAnyPattern(configPath, context.config.rootDir, matchers),
   );
 
-  return includedEntryPaths.filter((entryPath) => {
-    const relativePath = toPosixPath(toRelativePath(config.rootDir, entryPath));
-    const isExcluded = positiveMatchers.some((matches) =>
-      matches(relativePath),
-    );
-    const isRestored = negativeMatchers.some((matches) =>
-      matches(relativePath),
-    );
+  return [...new Set(discoveredPaths.map(normalizeAbsolutePath))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+}
 
-    return !isExcluded || isRestored;
-  });
+function formatInvalidEntryError(options: {
+  checkerName: string;
+  invalidEntryPaths: readonly string[];
+  rootDir: string;
+}): string {
+  return [
+    'Checker include matched non-entry tsconfig files:',
+    `  checker: ${options.checkerName}`,
+    ...options.invalidEntryPaths.map(
+      (configPath) => `  - ${toRelativePath(options.rootDir, configPath)}`,
+    ),
+    '  reason: checker.include may only match tsconfig.json entry files; non-standard tsconfig.*.json files become Limina-managed only when referenced from a managed tsconfig.json entry.',
+  ].join('\n');
+}
+
+function assertValidEntryPaths(options: {
+  checkerName: string;
+  entryPaths: readonly string[];
+  rootDir: string;
+}): void {
+  const invalidEntryPaths = options.entryPaths.filter(
+    (configPath) => !isDefaultSourceTsconfigPath(configPath),
+  );
+
+  if (invalidEntryPaths.length > 0) {
+    throw new Error(
+      formatInvalidEntryError({
+        checkerName: options.checkerName,
+        invalidEntryPaths,
+        rootDir: options.rootDir,
+      }),
+    );
+  }
 }
 
 export async function resolveCheckerEntrySelection(
   context: CheckerEntrySelectionContext,
   options: CheckerEntrySelectionOptions,
 ): Promise<CheckerEntrySelection> {
-  const includePatterns = options.include
-    .map(normalizeWorkspaceGlob)
-    .flatMap((pattern) =>
-      expandTinyglobbyPattern(
-        normalizeTinyglobbyPattern(pattern, context.config.rootDir),
-      ),
-    );
-  const matcherOptions = {
-    dot: false,
-    nobrace: false,
-    nocase: false,
-    noextglob: false,
-    noglobstar: false,
-    posix: true,
-  } as const;
-  const includeMatchers = includePatterns.map((pattern) =>
-    picomatch(pattern, matcherOptions),
+  const includePatterns = createIncludePatterns(
+    context.config.rootDir,
+    options.include,
   );
-  const discoveredPaths = context.sourceConfigPaths.filter((configPath) => {
-    const relativePath = toPosixPath(
-      toRelativePath(context.config.rootDir, configPath),
-    );
-    return includeMatchers.some((matches) => matches(relativePath));
-  });
-  const includedEntryPaths = [
-    ...new Set(discoveredPaths.map(normalizeAbsolutePath)),
-  ].sort((left, right) => left.localeCompare(right));
-  const invalidEntryPaths = includedEntryPaths.filter(
-    (configPath) => !isDefaultSourceTsconfigPath(configPath),
+  const includedEntryPaths = collectIncludedEntryPaths(
+    context,
+    includePatterns,
   );
 
-  if (invalidEntryPaths.length > 0) {
-    throw new Error(
-      [
-        'Checker include matched non-entry tsconfig files:',
-        `  checker: ${options.checkerName}`,
-        ...invalidEntryPaths.map(
-          (configPath) =>
-            `  - ${toRelativePath(context.config.rootDir, configPath)}`,
-        ),
-        '  reason: checker.include may only match tsconfig.json entry files; non-standard tsconfig.*.json files become Limina-managed only when referenced from a managed tsconfig.json entry.',
-      ].join('\n'),
-    );
-  }
+  assertValidEntryPaths({
+    checkerName: options.checkerName,
+    entryPaths: includedEntryPaths,
+    rootDir: context.config.rootDir,
+  });
 
   return {
     effectiveEntryPaths: filterExcludedEntries(

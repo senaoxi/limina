@@ -85,13 +85,13 @@ function isDirectoryShorthand(pattern: string): boolean {
   );
 }
 
-function normalizeSourceExcludePattern(pattern: string): string[] {
-  const normalized = pattern.replaceAll('\\', '/').replace(/\/+$/u, '');
+function expandPlainSourceExcludePattern(normalized: string): string[] {
+  return normalized.includes('/')
+    ? [normalized, `${normalized}/**`]
+    : [normalized, `**/${normalized}`];
+}
 
-  if (!normalized) {
-    return [];
-  }
-
+function normalizeNonEmptySourceExcludePattern(normalized: string): string[] {
   if (isDirectoryShorthand(normalized)) {
     return [`${normalized}/**`, `**/${normalized}/**`];
   }
@@ -100,11 +100,12 @@ function normalizeSourceExcludePattern(pattern: string): string[] {
     return [normalized];
   }
 
-  if (normalized.includes('/')) {
-    return [normalized, `${normalized}/**`];
-  }
+  return expandPlainSourceExcludePattern(normalized);
+}
 
-  return [normalized, `**/${normalized}`];
+function normalizeSourceExcludePattern(pattern: string): string[] {
+  const normalized = pattern.replaceAll('\\', '/').replace(/\/+$/u, '');
+  return normalized ? normalizeNonEmptySourceExcludePattern(normalized) : [];
 }
 
 function normalizeExactDirectoryExcludePattern(pattern: string): string[] {
@@ -168,56 +169,105 @@ function createGitignoreFilter(
     matcher.ignores(toPosixPath(toRelativePath(config.rootDir, filePath)));
 }
 
+function getConfiguredSourcePatterns(config: ResolvedLiminaConfig): {
+  exclude?: readonly string[];
+  include?: readonly string[];
+} {
+  return config.config?.source ?? {};
+}
+
+function createExcludeMatchers(
+  patterns: readonly string[],
+): ((value: string) => boolean)[] {
+  const matcherOptions = { dot: true } as const;
+  const createMatcher = rawPicomatch as unknown as (
+    pattern: string,
+    options: { dot: boolean },
+  ) => (value: string) => boolean;
+
+  return patterns.map((pattern) => createMatcher(pattern, matcherOptions));
+}
+
+function isSelectedSourceCandidate(options: {
+  configRootDir: string;
+  excludeMatchers: readonly ((value: string) => boolean)[];
+  filePath: string;
+  includeMatcher: (value: string) => boolean;
+}): boolean {
+  const relativePath = toPosixPath(
+    toRelativePath(options.configRootDir, options.filePath),
+  );
+  const isExcluded = options.excludeMatchers.some((matches) =>
+    matches(relativePath),
+  );
+
+  return options.includeMatcher(relativePath) && !isExcluded;
+}
+
+function isVisibleThroughGitignore(options: {
+  configRootDir: string;
+  filePath: string;
+  gitignoreFilter: ((filePath: string) => boolean) | null;
+}): boolean {
+  if (!isPathInsideDirectory(options.filePath, options.configRootDir)) {
+    return true;
+  }
+
+  return options.gitignoreFilter === null
+    ? true
+    : !options.gitignoreFilter(options.filePath);
+}
+
+function createOptionalGitignoreFilter(
+  config: ResolvedLiminaConfig,
+  usesDefaultBundle: boolean,
+): ((filePath: string) => boolean) | null {
+  return usesDefaultBundle ? createGitignoreFilter(config) : null;
+}
+
 export async function collectExpectedSourceFiles(
   config: ResolvedLiminaConfig,
   _generatedGraph: GeneratedTsconfigGraphResult,
   workspaceContext: ValidatedWorkspaceContext,
 ): Promise<Set<string>> {
+  const configured = getConfiguredSourcePatterns(config);
   const include = expandDefaultToken({
-    configured: config.config?.source?.include,
+    configured: configured.include,
     defaults: defaultSourceInclude,
   });
   const exclude = expandSourceExcludePatterns({
-    configured: config.config?.source?.exclude,
+    configured: configured.exclude,
     defaults: collectDefaultSourceExcludePatterns({
       config,
       outputRoots: workspaceContext.outputRoots,
     }),
   });
-  const gitignoreFilter = exclude.usesDefaultBundle
-    ? createGitignoreFilter(config)
-    : null;
-  // Public source selectors filter the island-local universe; they never
-  // become traversal roots (especially for ../ selectors).
+  const gitignoreFilter = createOptionalGitignoreFilter(
+    config,
+    exclude.usesDefaultBundle,
+  );
   const candidates =
     await collectActivatedPackageFileCandidates(workspaceContext);
-  const matcherOptions = { dot: true } as const;
   const includeMatcher = createCandidateGlobMatcher(include.patterns);
-  const excludeMatchers = exclude.patterns.map((pattern) =>
-    (
-      rawPicomatch as unknown as (
-        pattern: string,
-        options: { dot: boolean },
-      ) => (value: string) => boolean
-    )(pattern, matcherOptions),
-  );
+  const excludeMatchers = createExcludeMatchers(exclude.patterns);
   const configRootDir = normalizeAbsolutePath(config.rootDir);
 
   return new Set(
     candidates
-      .filter((filePath) => {
-        const relativePath = toPosixPath(
-          toRelativePath(configRootDir, filePath),
-        );
-        return (
-          includeMatcher(relativePath) &&
-          !excludeMatchers.some((matches) => matches(relativePath))
-        );
-      })
-      .filter(
-        (filePath) =>
-          !isPathInsideDirectory(filePath, configRootDir) ||
-          !gitignoreFilter?.(filePath),
+      .filter((filePath) =>
+        isSelectedSourceCandidate({
+          configRootDir,
+          excludeMatchers,
+          filePath,
+          includeMatcher,
+        }),
+      )
+      .filter((filePath) =>
+        isVisibleThroughGitignore({
+          configRootDir,
+          filePath,
+          gitignoreFilter,
+        }),
       )
       .sort(),
   );

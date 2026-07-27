@@ -1,6 +1,14 @@
-import { identifier } from '../shared/identifiers';
-import type { RuleDescriptor, TypedValidatorRegistration } from './contracts';
-import { locationFromFile, locationFromProject } from './helpers';
+import {
+  validateDeclarationCycles,
+  validateImportEvidenceIntegrity,
+  validateOutputBuildSelfEdges,
+  validatePackageArtifactAccess,
+  validateProjectOwnershipConflicts,
+  validateSourceDependencyResolution,
+  validateWorkspaceRegionMembership,
+} from './built-in-rule-helpers';
+import type { TypedValidatorRegistration } from './contracts';
+import { createNoOptionsDescriptor } from './descriptors';
 import type {
   DeclarationBuildValidationView,
   ImportFactsValidationView,
@@ -11,36 +19,13 @@ import type {
   WorkspaceValidationView,
 } from './views';
 
-function noOptionsDescriptor<
-  const Kind extends string,
-  MessageId extends string,
->(options: {
-  readonly category: RuleDescriptor<Kind, undefined, MessageId>['category'];
-  readonly description: string;
-  readonly documentation: string;
-  readonly id: string;
-  readonly inputKind: Kind;
-  readonly messages: RuleDescriptor<Kind, undefined, MessageId>['messages'];
-}): RuleDescriptor<Kind, undefined, MessageId> {
-  return Object.freeze({
-    category: options.category,
-    defaultSeverity: 'error',
-    description: options.description,
-    documentation: { url: options.documentation },
-    id: identifier<'RuleId'>(options.id),
-    inputKind: options.inputKind,
-    messages: options.messages,
-    options: { kind: 'none' } as const,
-  });
-}
-
 export const workspaceRegionMembershipRule: TypedValidatorRegistration<
   'workspace',
   WorkspaceValidationView,
   undefined,
   'missing' | 'multiple'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'workspace',
     description: 'Every activated workspace package belongs to one region.',
     documentation: 'https://docs.senao.me/docs-islands/limina/config/regions',
@@ -57,25 +42,7 @@ export const workspaceRegionMembershipRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    const memberships = new Map<string, number>();
-
-    for (const region of view.regions) {
-      for (const packageId of region.packageIds) {
-        memberships.set(packageId, (memberships.get(packageId) ?? 0) + 1);
-      }
-    }
-
-    for (const packageId of Object.keys(view.packages).sort()) {
-      const count = memberships.get(packageId) ?? 0;
-
-      if (count === 0) {
-        context.report({ messageId: 'missing', values: { packageId } });
-      } else if (count > 1) {
-        context.report({ messageId: 'multiple', values: { packageId } });
-      }
-    }
-  },
+  validate: validateWorkspaceRegionMembership,
 };
 
 export const projectOwnershipConflictRule: TypedValidatorRegistration<
@@ -84,7 +51,7 @@ export const projectOwnershipConflictRule: TypedValidatorRegistration<
   undefined,
   'conflict'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'ownership',
     description: 'Unique ownership domains reject conflicting candidates.',
     documentation: 'https://docs.senao.me/docs-islands/limina/concepts',
@@ -97,21 +64,7 @@ export const projectOwnershipConflictRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    for (const conflict of view.ownershipConflicts) {
-      const file = view.files[conflict.fileId];
-
-      context.report({
-        location: file ? locationFromFile(file) : undefined,
-        messageId: 'conflict',
-        values: {
-          candidates: conflict.candidateProjectIds.join(', '),
-          fileId: conflict.fileId,
-          kind: conflict.kind,
-        },
-      });
-    }
-  },
+  validate: validateProjectOwnershipConflicts,
 };
 
 export const importEvidenceIntegrityRule: TypedValidatorRegistration<
@@ -120,7 +73,7 @@ export const importEvidenceIntegrityRule: TypedValidatorRegistration<
   undefined,
   'missing-evidence'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'dependency',
     description: 'Every import occurrence has stable evidence identity.',
     documentation:
@@ -134,20 +87,7 @@ export const importEvidenceIntegrityRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    for (const occurrence of view.occurrences) {
-      if (occurrence.evidenceId.length > 0) continue;
-      const file = view.files[occurrence.fileId];
-      context.report({
-        location: file ? locationFromFile(file) : undefined,
-        messageId: 'missing-evidence',
-        values: {
-          fileId: occurrence.fileId,
-          specifier: occurrence.specifier,
-        },
-      });
-    }
-  },
+  validate: validateImportEvidenceIntegrity,
 };
 
 export const sourceDependencyResolutionRule: TypedValidatorRegistration<
@@ -156,7 +96,7 @@ export const sourceDependencyResolutionRule: TypedValidatorRegistration<
   undefined,
   'unresolved'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'dependency',
     description: 'Governed source dependencies must have classified targets.',
     documentation:
@@ -170,20 +110,7 @@ export const sourceDependencyResolutionRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    for (const edge of view.edges) {
-      if (edge.target.kind !== 'unresolved') continue;
-      const project = view.projects[edge.fromProjectId];
-      context.report({
-        location: project ? locationFromProject(project) : undefined,
-        messageId: 'unresolved',
-        values: {
-          projectId: edge.fromProjectId,
-          specifier: edge.target.specifier,
-        },
-      });
-    }
-  },
+  validate: validateSourceDependencyResolution,
 };
 
 export const declarationCycleRule: TypedValidatorRegistration<
@@ -192,7 +119,7 @@ export const declarationCycleRule: TypedValidatorRegistration<
   undefined,
   'cycle'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'build',
     description: 'Declaration build references must be acyclic.',
     documentation:
@@ -206,15 +133,7 @@ export const declarationCycleRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    for (const component of view.stronglyConnectedComponents) {
-      if (component.length < 2) continue;
-      context.report({
-        messageId: 'cycle',
-        values: { projects: component.join(' -> ') },
-      });
-    }
-  },
+  validate: validateDeclarationCycles,
 };
 
 export const outputBuildSelfEdgeRule: TypedValidatorRegistration<
@@ -223,7 +142,7 @@ export const outputBuildSelfEdgeRule: TypedValidatorRegistration<
   undefined,
   'self-edge'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'build',
     description: 'Output-build dependencies cannot point to the same package.',
     documentation: 'https://docs.senao.me/docs-islands/limina/workflows',
@@ -236,15 +155,7 @@ export const outputBuildSelfEdgeRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    for (const edge of view.edges) {
-      if (edge.fromPackageId !== edge.toPackageId) continue;
-      context.report({
-        messageId: 'self-edge',
-        values: { packageId: edge.fromPackageId },
-      });
-    }
-  },
+  validate: validateOutputBuildSelfEdges,
 };
 
 export const packageArtifactAccessRule: TypedValidatorRegistration<
@@ -253,7 +164,7 @@ export const packageArtifactAccessRule: TypedValidatorRegistration<
   undefined,
   'denied-export'
 > = {
-  descriptor: noOptionsDescriptor({
+  descriptor: createNoOptionsDescriptor({
     category: 'architecture',
     description: 'Package artifact edges use accessible public exports.',
     documentation:
@@ -267,24 +178,7 @@ export const packageArtifactAccessRule: TypedValidatorRegistration<
       },
     },
   }),
-  validate(view, context) {
-    for (const edge of view.edges) {
-      if (!edge.selectedSubpath) continue;
-      const targetPackage = view.packages[edge.toPackageId];
-      const selectedExport = targetPackage?.exports.find(
-        (entry) => entry.subpath === edge.selectedSubpath,
-      );
-
-      if (!selectedExport || selectedExport.access === 'allowed') continue;
-      context.report({
-        messageId: 'denied-export',
-        values: {
-          packageId: edge.toPackageId,
-          subpath: edge.selectedSubpath,
-        },
-      });
-    }
-  },
+  validate: validatePackageArtifactAccess,
 };
 
 export type BuiltInArchitectureValidator =

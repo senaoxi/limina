@@ -203,7 +203,7 @@ describe('Limina issue code contracts', () => {
       ],
     ).toMatchObject({
       producers: [
-        'packages/limina/src/core/workspace/validated-context.ts#createWorkspaceIssue',
+        'packages/limina/src/core/workspace/validated/shared.ts#createWorkspaceIssue',
       ],
       task: 'workspace:validate',
     });
@@ -226,6 +226,7 @@ describe('Limina issue code contracts', () => {
           ![
             'check-reporting/codes.ts',
             'check-reporting/detector-coverage.ts',
+            'check-reporting/issue-code-values.ts',
           ].includes(filePath),
       )
       .filter((filePath) =>

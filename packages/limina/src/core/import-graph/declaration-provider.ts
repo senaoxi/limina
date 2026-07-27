@@ -52,6 +52,67 @@ export function isDeclarationFileFamily(filePath: string): boolean {
   return isDeclarationFile(filePath);
 }
 
+function isResourceEvidence(
+  evidence: ImportRuntimeResolutionEvidence,
+): evidence is ImportRuntimeResolutionEvidence & {
+  classification: 'resource';
+} {
+  return evidence.classification === 'resource';
+}
+
+function createResourceResolution(options: {
+  evidence: ImportRuntimeResolutionEvidence & { classification: 'resource' };
+  oxcResolvedFilePath: string | null;
+  typeScriptResolution: ResolvedCheckerModuleName | null;
+}): DeclarationProviderResolution {
+  return {
+    evidence: options.evidence,
+    kind: 'resource',
+    oxcResolvedFilePath: options.oxcResolvedFilePath,
+    typeScriptResolution: options.typeScriptResolution,
+  };
+}
+
+function createMissingTypeScriptResolution(
+  oxcResolvedFilePath: string | null,
+): DeclarationProviderResolution {
+  return oxcResolvedFilePath === null
+    ? {
+        kind: 'unresolved',
+        oxcResolvedFilePath: null,
+        typeScriptResolution: null,
+      }
+    : {
+        kind: 'oxc-only',
+        oxcResolvedFilePath,
+        typeScriptResolution: null,
+      };
+}
+
+function createTypeScriptResolution(options: {
+  fileOwnerLookup: Map<string, string[]>;
+  oxcResolvedFilePath: string | null;
+  typeScriptResolution: ResolvedCheckerModuleName;
+}): DeclarationProviderResolution {
+  if (isDeclarationFileFamily(options.typeScriptResolution.resolvedFileName)) {
+    return {
+      kind: 'declaration',
+      oxcResolvedFilePath: options.oxcResolvedFilePath,
+      typeScriptResolution: options.typeScriptResolution,
+    };
+  }
+
+  return {
+    kind: 'source',
+    ownerProjectPaths:
+      options.fileOwnerLookup.get(
+        options.typeScriptResolution.resolvedFileName,
+      ) ?? [],
+    oxcResolvedFilePath: options.oxcResolvedFilePath,
+    typeScriptResolution: options.typeScriptResolution,
+  };
+}
+
 export function resolveDeclarationProvider(options: {
   compilerOptions: ts.CompilerOptions;
   containingFile: string;
@@ -76,45 +137,21 @@ export function resolveDeclarationProvider(options: {
     typeScriptResolution,
   });
 
-  if (evidence.classification === 'resource') {
-    return {
-      evidence: {
-        ...evidence,
-        classification: 'resource',
-      },
-      kind: 'resource',
+  if (isResourceEvidence(evidence)) {
+    return createResourceResolution({
+      evidence,
       oxcResolvedFilePath,
       typeScriptResolution,
-    };
+    });
   }
 
-  if (!typeScriptResolution) {
-    return oxcResolvedFilePath
-      ? {
-          kind: 'oxc-only',
-          oxcResolvedFilePath,
-          typeScriptResolution: null,
-        }
-      : {
-          kind: 'unresolved',
-          oxcResolvedFilePath: null,
-          typeScriptResolution: null,
-        };
+  if (typeScriptResolution === null) {
+    return createMissingTypeScriptResolution(oxcResolvedFilePath);
   }
 
-  if (isDeclarationFileFamily(typeScriptResolution.resolvedFileName)) {
-    return {
-      kind: 'declaration',
-      oxcResolvedFilePath,
-      typeScriptResolution,
-    };
-  }
-
-  return {
-    kind: 'source',
-    ownerProjectPaths:
-      options.fileOwnerLookup.get(typeScriptResolution.resolvedFileName) ?? [],
+  return createTypeScriptResolution({
+    fileOwnerLookup: options.fileOwnerLookup,
     oxcResolvedFilePath,
     typeScriptResolution,
-  };
+  });
 }

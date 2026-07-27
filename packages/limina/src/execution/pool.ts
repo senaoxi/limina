@@ -7,12 +7,16 @@ export interface RunPoolOptions<T, R> {
   run: (item: T, index: number) => Promise<R> | R;
 }
 
+function assertValidConcurrency(concurrency: number): void {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error('Pool concurrency must be an integer greater than 0.');
+  }
+}
+
 export async function runPool<T, R>(
   options: RunPoolOptions<T, R>,
 ): Promise<R[]> {
-  if (!Number.isInteger(options.concurrency) || options.concurrency < 1) {
-    throw new Error('Pool concurrency must be an integer greater than 0.');
-  }
+  assertValidConcurrency(options.concurrency);
 
   if (options.items.length === 0) {
     return [];
@@ -31,12 +35,10 @@ export async function runPool<T, R>(
       }
 
       const item = options.items[index]!;
-
       options.onStart?.(item, index);
 
       try {
         const result = await options.run(item, index);
-
         results[index] = result;
         options.onResult?.(item, result, index);
       } catch (error) {
@@ -45,18 +47,13 @@ export async function runPool<T, R>(
         }
 
         const result = await options.onError(item, error, index);
-
         results[index] = result;
         options.onResult?.(item, result, index);
       }
     }
   }
 
-  await Promise.all(
-    Array.from({
-      length: Math.min(options.concurrency, options.items.length),
-    }).map(() => runWorker()),
-  );
-
+  const workerCount = Math.min(options.concurrency, options.items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
   return results;
 }

@@ -1,15 +1,11 @@
 import nodePath from 'node:path';
 
+function findPathEnvKey(env: NodeJS.ProcessEnv): string | undefined {
+  return Object.keys(env).find((key) => key.toLowerCase() === 'path');
+}
+
 function getPathEnvValue(env: NodeJS.ProcessEnv): string | undefined {
-  if (env.PATH !== undefined) {
-    return env.PATH;
-  }
-
-  if (env.Path !== undefined) {
-    return env.Path;
-  }
-
-  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path');
+  const pathKey = findPathEnvKey(env);
 
   return pathKey ? env[pathKey] : undefined;
 }
@@ -22,34 +18,41 @@ function getPathEnvKey(env: NodeJS.ProcessEnv): string {
   return Object.keys(env).find((key) => key === 'Path') ?? 'Path';
 }
 
+function isDuplicatePathKey(key: string, pathKey: string): boolean {
+  return key !== pathKey && key.toLowerCase() === 'path';
+}
+
+function removeDuplicateWindowsPathKeys(
+  env: NodeJS.ProcessEnv,
+  pathKey: string,
+): void {
+  if (process.platform !== 'win32') {
+    return;
+  }
+
+  for (const key of Object.keys(env).filter((candidate) =>
+    isDuplicatePathKey(candidate, pathKey),
+  )) {
+    delete env[key];
+  }
+}
+
 export function prependPathEntry(
   env: NodeJS.ProcessEnv,
   entry: string,
 ): NodeJS.ProcessEnv {
   const pathKey = getPathEnvKey(env);
-  const currentPath = getPathEnvValue(env);
   const nextEnv = { ...env };
 
-  if (process.platform === 'win32') {
-    for (const key of Object.keys(nextEnv)) {
-      if (key !== pathKey && key.toLowerCase() === 'path') {
-        delete nextEnv[key];
-      }
-    }
-  }
-
-  nextEnv[pathKey] = [entry, currentPath]
+  removeDuplicateWindowsPathKeys(nextEnv, pathKey);
+  nextEnv[pathKey] = [entry, getPathEnvValue(env)]
     .filter(Boolean)
     .join(nodePath.delimiter);
 
   return nextEnv;
 }
 
-export function shouldUseShellForCommand(command: string): boolean {
-  if (process.platform !== 'win32') {
-    return false;
-  }
-
+function isWindowsShellCommand(command: string): boolean {
   const extension = nodePath.extname(command).toLowerCase();
 
   return (
@@ -57,4 +60,8 @@ export function shouldUseShellForCommand(command: string): boolean {
     extension === '.bat' ||
     extension === '.cmd'
   );
+}
+
+export function shouldUseShellForCommand(command: string): boolean {
+  return process.platform === 'win32' && isWindowsShellCommand(command);
 }

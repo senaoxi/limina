@@ -22,6 +22,26 @@ export function isInvalidConfigRootPattern(pattern: string): boolean {
   );
 }
 
+function isOwnerRootPattern(pattern: string, ownerDirectory: string): boolean {
+  return pattern === ownerDirectory;
+}
+
+function isOwnerNestedPattern(
+  pattern: string,
+  ownerDirectory: string,
+): boolean {
+  return pattern.startsWith(`${ownerDirectory}/`);
+}
+
+function resolveOwnerNestedPattern(
+  pattern: string,
+  ownerDirectory: string,
+): string | null {
+  return isOwnerNestedPattern(pattern, ownerDirectory)
+    ? pattern.slice(ownerDirectory.length + 1)
+    : null;
+}
+
 export function toOwnerRelativeEntryPattern(options: {
   config: ResolvedLiminaConfig;
   owner: PackageOwner;
@@ -36,13 +56,9 @@ export function toOwnerRelativeEntryPattern(options: {
     return options.pattern;
   }
 
-  if (options.pattern === ownerDirectory) {
+  if (isOwnerRootPattern(options.pattern, ownerDirectory)) {
     return '.';
   }
 
-  if (options.pattern.startsWith(`${ownerDirectory}/`)) {
-    return options.pattern.slice(ownerDirectory.length + 1);
-  }
-
-  return null;
+  return resolveOwnerNestedPattern(options.pattern, ownerDirectory);
 }

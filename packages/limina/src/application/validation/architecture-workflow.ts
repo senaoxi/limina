@@ -18,7 +18,7 @@ import {
   planArchitectureValidationStages,
 } from './planner';
 import { createArchitectureValidatorRegistry } from './registry';
-import { prepareTypedValidator } from './runner';
+import { type PreparedTypedValidator, prepareTypedValidator } from './runner';
 
 export interface ArchitectureValidationViewProviders {
   readonly declarationBuild: ValidationViewProvider<
@@ -42,6 +42,26 @@ export interface ArchitectureValidationViewProviders {
 
 export interface ValidationViewProvider<View> {
   get(run: AnalysisRun): Promise<View>;
+}
+
+interface PreparedArchitectureValidators {
+  readonly declarationBuild: PreparedTypedValidator<
+    ValidationViewByKind['declaration-build']
+  >;
+  readonly importFacts: PreparedTypedValidator<
+    ValidationViewByKind['import-facts']
+  >;
+  readonly outputBuild: PreparedTypedValidator<
+    ValidationViewByKind['output-build']
+  >;
+  readonly packageArtifacts: PreparedTypedValidator<
+    ValidationViewByKind['package-artifacts']
+  >;
+  readonly projects: PreparedTypedValidator<ValidationViewByKind['projects']>;
+  readonly sourceDependencies: PreparedTypedValidator<
+    ValidationViewByKind['source-dependencies']
+  >;
+  readonly workspace: PreparedTypedValidator<ValidationViewByKind['workspace']>;
 }
 
 export const architectureValidatorRegistry: readonly BuiltInArchitectureValidator[] =
@@ -93,6 +113,115 @@ function requireEnabledRuleIds(enabledRuleIds: readonly string[]): void {
   }
 }
 
+function prepareArchitectureValidators(): PreparedArchitectureValidators {
+  const origin = { kind: 'built-in', suite: 'architecture' } as const;
+
+  return {
+    declarationBuild: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: declarationCycleRule,
+    }),
+    importFacts: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: importEvidenceIntegrityRule,
+    }),
+    outputBuild: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: outputBuildSelfEdgeRule,
+    }),
+    packageArtifacts: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: packageArtifactAccessRule,
+    }),
+    projects: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: projectOwnershipConflictRule,
+    }),
+    sourceDependencies: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: sourceDependencyResolutionRule,
+    }),
+    workspace: prepareTypedValidator({
+      configuredOptions: undefined,
+      origin,
+      registration: workspaceRegionMembershipRule,
+    }),
+  };
+}
+
+function createStageFactories(
+  views: ArchitectureValidationViewProviders,
+  validators: PreparedArchitectureValidators,
+): ArchitectureValidationStageFactories {
+  return {
+    declarationBuild: (ruleIds) =>
+      createTask({
+        execute: (view, run) => validators.declarationBuild.execute(view, run),
+        inputKind: 'declaration-build',
+        prepareView: (run) => views.declarationBuild.get(run),
+        ruleIds,
+      }),
+    importFacts: (ruleIds) =>
+      createTask({
+        execute: (view, run) => validators.importFacts.execute(view, run),
+        inputKind: 'import-facts',
+        prepareView: (run) => views.importFacts.get(run),
+        ruleIds,
+      }),
+    outputBuild: (ruleIds) =>
+      createTask({
+        execute: (view, run) => validators.outputBuild.execute(view, run),
+        inputKind: 'output-build',
+        prepareView: (run) => views.outputBuild.get(run),
+        ruleIds,
+      }),
+    packageArtifacts: (ruleIds) =>
+      createTask({
+        execute: (view, run) => validators.packageArtifacts.execute(view, run),
+        inputKind: 'package-artifacts',
+        prepareView: (run) => views.packageArtifacts.get(run),
+        ruleIds,
+      }),
+    projects: (ruleIds) =>
+      createTask({
+        execute: (view, run) => validators.projects.execute(view, run),
+        inputKind: 'projects',
+        prepareView: (run) => views.projects.get(run),
+        ruleIds,
+      }),
+    sourceDependencies: (ruleIds) =>
+      createTask({
+        execute: (view, run) =>
+          validators.sourceDependencies.execute(view, run),
+        inputKind: 'source-dependencies',
+        prepareView: (run) => views.sourceDependencies.get(run),
+        ruleIds,
+      }),
+    workspace: (ruleIds) =>
+      createTask({
+        execute: (view, run) => validators.workspace.execute(view, run),
+        inputKind: 'workspace',
+        prepareView: (run) => views.workspace.get(run),
+        ruleIds,
+      }),
+  };
+}
+
+function collectEnabledRegistrations(enabledRuleIds: ReadonlySet<string>) {
+  return architectureValidatorRegistry
+    .filter((registration) => enabledRuleIds.has(registration.descriptor.id))
+    .map((registration) => ({
+      inputKind: registration.descriptor.inputKind,
+      ruleId: registration.descriptor.id,
+    }));
+}
+
 export class ArchitectureValidationWorkflow {
   readonly #views: ArchitectureValidationViewProviders;
 
@@ -105,101 +234,11 @@ export class ArchitectureValidationWorkflow {
   ): readonly ArchitectureValidationStageTask[] {
     requireEnabledRuleIds(enabledRuleIds);
     const enabled = new Set(enabledRuleIds);
-    const origin = { kind: 'built-in', suite: 'architecture' } as const;
-    const workspace = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: workspaceRegionMembershipRule,
-    });
-    const projects = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: projectOwnershipConflictRule,
-    });
-    const imports = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: importEvidenceIntegrityRule,
-    });
-    const sourceDependencies = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: sourceDependencyResolutionRule,
-    });
-    const declarationBuild = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: declarationCycleRule,
-    });
-    const outputBuild = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: outputBuildSelfEdgeRule,
-    });
-    const packageArtifacts = prepareTypedValidator({
-      configuredOptions: undefined,
-      origin,
-      registration: packageArtifactAccessRule,
-    });
-    const factories: ArchitectureValidationStageFactories = {
-      declarationBuild: (ruleIds) =>
-        createTask({
-          execute: (view, run) => declarationBuild.execute(view, run),
-          inputKind: 'declaration-build',
-          prepareView: (run) => this.#views.declarationBuild.get(run),
-          ruleIds,
-        }),
-      importFacts: (ruleIds) =>
-        createTask({
-          execute: (view, run) => imports.execute(view, run),
-          inputKind: 'import-facts',
-          prepareView: (run) => this.#views.importFacts.get(run),
-          ruleIds,
-        }),
-      outputBuild: (ruleIds) =>
-        createTask({
-          execute: (view, run) => outputBuild.execute(view, run),
-          inputKind: 'output-build',
-          prepareView: (run) => this.#views.outputBuild.get(run),
-          ruleIds,
-        }),
-      packageArtifacts: (ruleIds) =>
-        createTask({
-          execute: (view, run) => packageArtifacts.execute(view, run),
-          inputKind: 'package-artifacts',
-          prepareView: (run) => this.#views.packageArtifacts.get(run),
-          ruleIds,
-        }),
-      projects: (ruleIds) =>
-        createTask({
-          execute: (view, run) => projects.execute(view, run),
-          inputKind: 'projects',
-          prepareView: (run) => this.#views.projects.get(run),
-          ruleIds,
-        }),
-      sourceDependencies: (ruleIds) =>
-        createTask({
-          execute: (view, run) => sourceDependencies.execute(view, run),
-          inputKind: 'source-dependencies',
-          prepareView: (run) => this.#views.sourceDependencies.get(run),
-          ruleIds,
-        }),
-      workspace: (ruleIds) =>
-        createTask({
-          execute: (view, run) => workspace.execute(view, run),
-          inputKind: 'workspace',
-          prepareView: (run) => this.#views.workspace.get(run),
-          ruleIds,
-        }),
-    };
+    const validators = prepareArchitectureValidators();
+    const factories = createStageFactories(this.#views, validators);
 
     return planArchitectureValidationStages(
-      architectureValidatorRegistry
-        .filter((registration) => enabled.has(registration.descriptor.id))
-        .map((registration) => ({
-          inputKind: registration.descriptor.inputKind,
-          ruleId: registration.descriptor.id,
-        })),
+      collectEnabledRegistrations(enabled),
       factories,
     );
   }

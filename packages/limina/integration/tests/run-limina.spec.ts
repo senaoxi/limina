@@ -153,7 +153,9 @@ describe('runLimina bounded completion', () => {
       );
     }
   });
+});
 
+describe('runLimina settlement races', () => {
   it('ignores close, error, and termination completion after watchdog settlement', async () => {
     const fakeChild = createFakeChild();
     let completeTermination: (() => void) | undefined;

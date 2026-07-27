@@ -1,66 +1,79 @@
-import type {
-  ImportAnalysisContext,
-  ImportRecord,
-} from '#core/import-analysis/runner';
-import type { ProjectInfo } from '#core/import-graph/context';
+import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
-import {
-  classifyImportRuntimeEvidence,
-  type ImportResolutionEvidence,
-  type ImportRuntimeResolutionEvidence,
+import type {
+  ImportResolutionEvidence,
+  ImportRuntimeResolutionEvidence,
 } from '../import-analysis/evidence';
-import { isDeclarationFile } from '../import-graph/declaration-classifier';
-import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import {
-  createImportTypeEvidenceCacheKey,
-  createTypeEvidenceProviderCacheKey,
-  type TypeEvidence,
   TypeEvidenceGenerationCache,
   type TypeEvidenceMetricsRecorder,
 } from './cache';
-import { createTypeScriptTypeEvidenceProvider } from './typescript-provider';
 import {
-  createVueTypeEvidenceProvider,
+  resolveTypeScriptProviderEvidence,
+  resolveVueProviderEvidence,
+} from './provider-resolution';
+import type { ResolveImportEvidenceOptions } from './resolution';
+import {
+  createUnsupportedCheckerEvidence,
+  resolveConcreteTypeEvidence,
+  resolveImportPair,
+  resolveTypeScriptPreset,
+  resolveVuePreset,
+} from './resolution';
+import type { TypeEvidenceCoreOptions } from './types';
+import {
   resolveVueTypeEvidenceCapability,
   type VueTypeEvidenceCapability,
 } from './vue-provider';
 
 export * from './cache';
+export type { ResolveImportEvidenceOptions } from './resolution';
+export type { TypeEvidenceCoreOptions } from './types';
 
-export interface TypeEvidenceCoreOptions {
-  generation: number;
-  importAnalysis: ImportAnalysisContext;
-  metrics?: TypeEvidenceMetricsRecorder;
+type ResourceMetricName =
+  | 'affected-source-config-count'
+  | 'resource-import-count'
+  | 'type-evidence-query';
+
+function recordMetric(
+  metrics: TypeEvidenceMetricsRecorder | undefined,
+  name: ResourceMetricName,
+): void {
+  if (metrics !== undefined) {
+    metrics.record({ name });
+  }
 }
 
-export interface ResolveImportEvidenceOptions {
-  checkerName: string;
-  importRecord: ImportRecord;
-  managedOutputLookup?: ManagedOutputDeclarationLookup;
-  project: Pick<
-    ProjectInfo,
-    | 'checkerPresets'
-    | 'configPath'
-    | 'extensions'
-    | 'fileNames'
-    | 'options'
-    | 'resolverConfigPath'
-  >;
+function hasAffectedConfig(
+  affectedConfigs: ReadonlySet<string> | undefined,
+  configIdentity: string,
+): boolean {
+  return affectedConfigs !== undefined && affectedConfigs.has(configIdentity);
+}
+
+function addAffectedConfig(
+  affectedConfigs: Set<string> | undefined,
+  configIdentity: string,
+): void {
+  if (affectedConfigs !== undefined) {
+    affectedConfigs.add(configIdentity);
+  }
 }
 
 export class TypeEvidenceCore {
   readonly cache: TypeEvidenceGenerationCache;
   readonly #affectedSourceConfigs: Set<string> | undefined;
+  readonly #completedConfigIdentities = new Set<string>();
   readonly #generation: number;
   readonly #importAnalysis: ImportAnalysisContext;
   readonly #metrics: TypeEvidenceMetricsRecorder | undefined;
-  readonly #completedConfigIdentities = new Set<string>();
   readonly #providerKeysByConfigIdentity = new Map<string, Set<string>>();
   readonly #vueCapabilities = new Map<string, VueTypeEvidenceCapability>();
 
   constructor(options: TypeEvidenceCoreOptions) {
     this.cache = new TypeEvidenceGenerationCache(options.metrics);
-    this.#affectedSourceConfigs = options.metrics ? new Set() : undefined;
+    this.#affectedSourceConfigs =
+      options.metrics === undefined ? undefined : new Set();
     this.#generation = options.generation;
     this.#importAnalysis = options.importAnalysis;
     this.#metrics = options.metrics;
@@ -69,21 +82,10 @@ export class TypeEvidenceCore {
   classifyImportRuntime(
     options: ResolveImportEvidenceOptions,
   ): ImportRuntimeResolutionEvidence {
-    const pair = this.#importAnalysis.resolveModulePair(
-      options.importRecord.specifier,
-      options.importRecord.filePath,
-      options.project.options,
-      options.project,
-    );
-
-    return classifyImportRuntimeEvidence({
-      compilerOptions: options.project.options,
-      containingFile: options.importRecord.filePath,
-      extensions: options.project.extensions,
-      oxcResolvedFilePath: pair.oxc,
-      specifier: options.importRecord.specifier,
-      typeScriptResolution: pair.typescript,
-    });
+    return resolveImportPair({
+      importAnalysis: this.#importAnalysis,
+      request: options,
+    }).runtimeEvidence;
   }
 
   resolveImportEvidence(
@@ -92,243 +94,106 @@ export class TypeEvidenceCore {
     const configIdentity = normalizeAbsolutePathIdentity(
       options.project.configPath,
     );
+    const pair = resolveImportPair({
+      importAnalysis: this.#importAnalysis,
+      request: options,
+    });
+    this.#recordResourceImport(configIdentity, pair.runtimeEvidence);
 
-    const pair = this.#importAnalysis.resolveModulePair(
-      options.importRecord.specifier,
-      options.importRecord.filePath,
-      options.project.options,
-      options.project,
-    );
-    const runtimeEvidence = classifyImportRuntimeEvidence({
-      compilerOptions: options.project.options,
-      containingFile: options.importRecord.filePath,
-      extensions: options.project.extensions,
-      oxcResolvedFilePath: pair.oxc,
-      specifier: options.importRecord.specifier,
-      typeScriptResolution: pair.typescript,
+    const concreteTypeEvidence = resolveConcreteTypeEvidence({
+      request: options,
+      resolution: pair.typeScriptResolution,
     });
 
-    if (runtimeEvidence.classification === 'resource') {
-      this.#metrics?.record({ name: 'resource-import-count' });
-      this.#metrics?.record({ name: 'type-evidence-query' });
-
-      if (!this.#affectedSourceConfigs?.has(configIdentity)) {
-        this.#affectedSourceConfigs?.add(configIdentity);
-        this.#metrics?.record({ name: 'affected-source-config-count' });
-      }
+    if (concreteTypeEvidence !== null) {
+      return { ...pair.runtimeEvidence, type: concreteTypeEvidence };
     }
 
-    const concreteTypeEvidence = this.#resolveConcreteTypeEvidence(
-      options,
-      pair.typescript,
-    );
+    return this.#resolveProviderEvidence(options, pair.runtimeEvidence);
+  }
 
-    if (concreteTypeEvidence) {
-      return { ...runtimeEvidence, type: concreteTypeEvidence };
+  #recordResourceImport(
+    configIdentity: string,
+    runtimeEvidence: ImportRuntimeResolutionEvidence,
+  ): void {
+    if (runtimeEvidence.classification !== 'resource') {
+      return;
     }
 
-    const vuePreset = this.#resolveVuePreset(options.project.checkerPresets);
+    recordMetric(this.#metrics, 'resource-import-count');
+    recordMetric(this.#metrics, 'type-evidence-query');
 
-    if (vuePreset) {
-      return this.#resolveVueImportEvidence({
-        options,
-        preset: vuePreset,
-        runtimeEvidence,
+    if (hasAffectedConfig(this.#affectedSourceConfigs, configIdentity)) {
+      return;
+    }
+
+    addAffectedConfig(this.#affectedSourceConfigs, configIdentity);
+    recordMetric(this.#metrics, 'affected-source-config-count');
+  }
+
+  #resolveProviderEvidence(
+    options: ResolveImportEvidenceOptions,
+    runtimeEvidence: ImportRuntimeResolutionEvidence,
+  ): ImportResolutionEvidence {
+    const vuePreset = resolveVuePreset(options.project.checkerPresets);
+
+    if (vuePreset !== null) {
+      return resolveVueProviderEvidence({
+        context: this.#createVueProviderContext(),
+        input: { options, preset: vuePreset, runtimeEvidence },
       });
     }
 
-    const preset = this.#resolveTypeScriptPreset(
-      options.project.checkerPresets,
-    );
+    const preset = resolveTypeScriptPreset(options.project.checkerPresets);
 
-    if (!preset) {
+    if (preset === null) {
       return {
         ...runtimeEvidence,
-        type: {
-          checker: options.checkerName,
-          kind: 'unsupported-checker',
+        type: createUnsupportedCheckerEvidence({
+          checkerName: options.checkerName,
           reason:
             'This checker does not expose a supported resource type-evidence provider.',
-        },
-      };
-    }
-
-    return this.#resolveTypeScriptImportEvidence({
-      options,
-      preset,
-      runtimeEvidence,
-    });
-  }
-
-  #resolveTypeScriptImportEvidence(input: {
-    options: ResolveImportEvidenceOptions;
-    preset: string;
-    runtimeEvidence: ImportRuntimeResolutionEvidence;
-  }): ImportResolutionEvidence {
-    const providerKey = createTypeEvidenceProviderCacheKey({
-      checkerName: input.options.checkerName,
-      configPath: input.options.project.configPath,
-      generation: this.#generation,
-      preset: input.preset,
-    });
-    const queryKey = createImportTypeEvidenceCacheKey({
-      importRecord: input.options.importRecord,
-      providerKey,
-    });
-    const cached = this.cache.getImportEvidence(queryKey);
-
-    if (cached) {
-      return { ...input.runtimeEvidence, type: cached };
-    }
-
-    this.#assertConfigNotCompleted(input.options.project.configPath);
-    this.#trackProviderKey(input.options.project.configPath, providerKey);
-
-    const provider = this.cache.getOrCreateProvider(
-      providerKey,
-      () =>
-        createTypeScriptTypeEvidenceProvider({
-          cache: this.cache,
-          programKey: providerKey,
-          project: input.options.project,
         }),
-      input.preset,
-    );
-    const type = provider.query({
-      importRecord: input.options.importRecord,
-    });
-
-    this.cache.setImportEvidence(queryKey, type);
-    return { ...input.runtimeEvidence, type };
-  }
-
-  #resolveConcreteTypeEvidence(
-    options: ResolveImportEvidenceOptions,
-    resolution: ReturnType<ImportAnalysisContext['resolveTypeScriptImport']>,
-  ): TypeEvidence | null {
-    if (resolution?.resolvedBy === 'checker-source') {
-      return {
-        filePath: resolution.resolvedFileName,
-        kind: 'checker-source',
       };
     }
 
-    if (!resolution || !isDeclarationFile(resolution.resolvedFileName)) {
-      return null;
-    }
+    return resolveTypeScriptProviderEvidence({
+      context: this.#createProviderContext(),
+      input: { options, preset, runtimeEvidence },
+    });
+  }
 
-    const managedSource = options.managedOutputLookup?.resolve(
-      resolution.resolvedFileName,
-      options.checkerName,
-    );
-
+  #createProviderContext() {
     return {
-      filePath: resolution.resolvedFileName,
-      kind: 'concrete-declaration',
-      ...(managedSource ? { managedSource } : {}),
+      cache: this.cache,
+      generation: this.#generation,
+      prepareProvider: (configPath: string, providerKey: string) =>
+        this.#prepareProvider(configPath, providerKey),
     };
   }
 
-  #resolveTypeScriptPreset(checkerPresets: readonly string[]): string | null {
-    const presets = checkerPresets.length > 0 ? checkerPresets : ['tsc'];
-
-    if (presets.includes('vue-tsc') || presets.includes('vue-tsgo')) {
-      return null;
-    }
-
-    return (
-      presets.find((preset) => preset === 'tsc' || preset === 'tsgo') ?? null
-    );
+  #createVueProviderContext() {
+    return {
+      ...this.#createProviderContext(),
+      getCapability: (configPath: string) => this.#getVueCapability(configPath),
+    };
   }
 
-  #resolveVuePreset(checkerPresets: readonly string[]): string | null {
-    return (
-      checkerPresets.find(
-        (preset) => preset === 'vue-tsc' || preset === 'vue-tsgo',
-      ) ?? null
-    );
+  #getVueCapability(configPath: string): VueTypeEvidenceCapability {
+    const cached = this.#vueCapabilities.get(configPath);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const capability = resolveVueTypeEvidenceCapability(configPath);
+    this.#vueCapabilities.set(configPath, capability);
+    return capability;
   }
 
-  #resolveVueImportEvidence(input: {
-    options: ResolveImportEvidenceOptions;
-    preset: string;
-    runtimeEvidence: ImportRuntimeResolutionEvidence;
-  }): ImportResolutionEvidence {
-    const configPath = input.options.project.configPath;
-    let capability = this.#vueCapabilities.get(configPath);
-
-    if (!capability) {
-      capability = resolveVueTypeEvidenceCapability(configPath);
-      this.#vueCapabilities.set(configPath, capability);
-    }
-
-    const versionTuple =
-      capability.versionTuple === undefined
-        ? []
-        : [
-            capability.versionTuple.vueTsc,
-            capability.versionTuple.languageCore,
-            capability.versionTuple.volarTypeScript,
-            capability.versionTuple.typeScript,
-          ];
-    const providerKey = createTypeEvidenceProviderCacheKey({
-      checkerName: input.options.checkerName,
-      configPath,
-      generation: this.#generation,
-      preset: input.preset,
-      versionTuple,
-    });
-    const queryKey = createImportTypeEvidenceCacheKey({
-      importRecord: input.options.importRecord,
-      providerKey,
-    });
-    const cached = this.cache.getImportEvidence(queryKey);
-
-    if (cached) {
-      return { ...input.runtimeEvidence, type: cached };
-    }
-
+  #prepareProvider(configPath: string, providerKey: string): void {
     this.#assertConfigNotCompleted(configPath);
     this.#trackProviderKey(configPath, providerKey);
-
-    if (input.preset !== 'vue-tsc') {
-      const type: TypeEvidence = {
-        checker: input.options.checkerName,
-        kind: 'unsupported-checker',
-        reason: `Checker preset ${input.preset} does not have an approved Vue type-evidence adapter.`,
-      };
-
-      this.cache.setImportEvidence(queryKey, type);
-      return { ...input.runtimeEvidence, type };
-    }
-
-    if (capability.kind === 'unsupported') {
-      const type: TypeEvidence = {
-        checker: input.options.checkerName,
-        kind: 'unsupported-checker',
-        reason: capability.reason,
-      };
-
-      this.cache.setImportEvidence(queryKey, type);
-      return { ...input.runtimeEvidence, type };
-    }
-
-    const provider = this.cache.getOrCreateProvider(
-      providerKey,
-      () =>
-        createVueTypeEvidenceProvider({
-          cache: this.cache,
-          capability,
-          checkerName: input.options.checkerName,
-          programKey: providerKey,
-          project: input.options.project,
-        }),
-      input.preset,
-    );
-    const type = provider.query({ importRecord: input.options.importRecord });
-
-    this.cache.setImportEvidence(queryKey, type);
-    return { ...input.runtimeEvidence, type };
   }
 
   dispose(): void {
@@ -347,19 +212,21 @@ export class TypeEvidenceCore {
     }
 
     this.#completedConfigIdentities.add(configIdentity);
-    for (const key of this.#providerKeysByConfigIdentity.get(configIdentity) ??
-      []) {
+    for (const key of this.#getProviderKeys(configIdentity)) {
       this.cache.releaseProviderAndProgram(key);
     }
     this.#providerKeysByConfigIdentity.delete(configIdentity);
   }
 
+  #getProviderKeys(configIdentity: string): readonly string[] {
+    const keys = this.#providerKeysByConfigIdentity.get(configIdentity);
+    return keys === undefined ? [] : [...keys];
+  }
+
   #assertConfigNotCompleted(configPath: string): void {
-    if (
-      this.#completedConfigIdentities.has(
-        normalizeAbsolutePathIdentity(configPath),
-      )
-    ) {
+    const identity = normalizeAbsolutePathIdentity(configPath);
+
+    if (this.#completedConfigIdentities.has(identity)) {
       throw new Error(
         `Type evidence for ${configPath} was already completed in generation ${this.#generation}.`,
       );
@@ -370,7 +237,7 @@ export class TypeEvidenceCore {
     const configIdentity = normalizeAbsolutePathIdentity(configPath);
     const keys = this.#providerKeysByConfigIdentity.get(configIdentity);
 
-    if (keys) {
+    if (keys !== undefined) {
       keys.add(providerKey);
       return;
     }

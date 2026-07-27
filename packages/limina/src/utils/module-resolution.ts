@@ -47,24 +47,62 @@ export function resolveExistingFilePath(candidatePath: string): string | null {
   return normalizeAbsolutePath(candidatePath);
 }
 
+function matchExactPathPattern(
+  pattern: string,
+  specifier: string,
+): string | null {
+  return pattern === specifier ? '' : null;
+}
+
+function matchesWildcardBounds(
+  specifier: string,
+  prefix: string,
+  suffix: string,
+): boolean {
+  return [specifier.startsWith(prefix), specifier.endsWith(suffix)].every(
+    Boolean,
+  );
+}
+
+function matchWildcardPathPattern(
+  pattern: string,
+  specifier: string,
+  wildcardIndex: number,
+): string | null {
+  const prefix = pattern.slice(0, wildcardIndex);
+  const suffix = pattern.slice(wildcardIndex + 1);
+
+  if (!matchesWildcardBounds(specifier, prefix, suffix)) {
+    return null;
+  }
+
+  return specifier.slice(prefix.length, specifier.length - suffix.length);
+}
+
 export function matchPathPattern(
   pattern: string,
   specifier: string,
 ): string | null {
   const wildcardIndex = pattern.indexOf('*');
 
-  if (wildcardIndex === -1) {
-    return pattern === specifier ? '' : null;
+  return wildcardIndex === -1
+    ? matchExactPathPattern(pattern, specifier)
+    : matchWildcardPathPattern(pattern, specifier, wildcardIndex);
+}
+
+function resolveFirstExistingCandidate(
+  basePath: string,
+  extensions: readonly string[],
+): string | null {
+  for (const candidatePath of candidatePathsForBasePath(basePath, extensions)) {
+    const resolvedPath = resolveExistingFilePath(candidatePath);
+
+    if (resolvedPath) {
+      return resolvedPath;
+    }
   }
 
-  const prefix = pattern.slice(0, wildcardIndex);
-  const suffix = pattern.slice(wildcardIndex + 1);
-
-  if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) {
-    return null;
-  }
-
-  return specifier.slice(prefix.length, specifier.length - suffix.length);
+  return null;
 }
 
 export function resolveRelativeModuleCandidate(
@@ -79,11 +117,74 @@ export function resolveRelativeModuleCandidate(
     options.specifier,
   );
 
-  for (const candidatePath of candidatePathsForBasePath(
+  return resolveFirstExistingCandidate(
     resolvedSpecifierPath,
     options.extensions,
-  )) {
-    const resolvedPath = resolveExistingFilePath(candidatePath);
+  );
+}
+
+function getPathPrefixLength(pattern: string): number {
+  const prefix = pattern.split('*')[0];
+
+  return prefix === undefined ? pattern.length : prefix.length;
+}
+
+function comparePathEntriesBySpecificity(
+  [left]: [string, string[]],
+  [right]: [string, string[]],
+): number {
+  return getPathPrefixLength(right) - getPathPrefixLength(left);
+}
+
+function resolveMappedTargets(options: {
+  extensions: readonly string[];
+  matchedText: string;
+  pathsBasePath: string;
+  targets: readonly string[];
+}): string | null {
+  for (const target of options.targets) {
+    const resolvedPath = resolveFirstExistingCandidate(
+      path.resolve(
+        options.pathsBasePath,
+        applyPathPattern(target, options.matchedText),
+      ),
+      options.extensions,
+    );
+
+    if (resolvedPath) {
+      return resolvedPath;
+    }
+  }
+
+  return null;
+}
+
+function resolvePathEntry(
+  [alias, targets]: [string, string[]],
+  options: TypeScriptModuleCandidateResolveOptions,
+  pathsBasePath: string,
+): string | null {
+  const matchedText = matchPathPattern(alias, options.specifier);
+
+  if (matchedText === null) {
+    return null;
+  }
+
+  return resolveMappedTargets({
+    extensions: options.extensions,
+    matchedText,
+    pathsBasePath,
+    targets,
+  });
+}
+
+function resolvePathEntries(
+  entries: [string, string[]][],
+  options: TypeScriptModuleCandidateResolveOptions,
+  pathsBasePath: string,
+): string | null {
+  for (const entry of entries) {
+    const resolvedPath = resolvePathEntry(entry, options, pathsBasePath);
 
     if (resolvedPath) {
       return resolvedPath;
@@ -103,40 +204,9 @@ export function resolvePathMappedModuleCandidate(
     return null;
   }
 
-  const pathEntries = Object.entries(paths).sort(([left], [right]) => {
-    const leftPrefixLength = left.split('*')[0]?.length ?? left.length;
-    const rightPrefixLength = right.split('*')[0]?.length ?? right.length;
+  const entries = Object.entries(paths).sort(comparePathEntriesBySpecificity);
 
-    return rightPrefixLength - leftPrefixLength;
-  });
-
-  for (const [alias, targets] of pathEntries) {
-    const matchedText = matchPathPattern(alias, options.specifier);
-
-    if (matchedText === null) {
-      continue;
-    }
-
-    for (const target of targets) {
-      const resolvedTargetPath = path.resolve(
-        pathsBasePath,
-        applyPathPattern(target, matchedText),
-      );
-
-      for (const candidatePath of candidatePathsForBasePath(
-        resolvedTargetPath,
-        options.extensions,
-      )) {
-        const resolvedPath = resolveExistingFilePath(candidatePath);
-
-        if (resolvedPath) {
-          return resolvedPath;
-        }
-      }
-    }
-  }
-
-  return null;
+  return resolvePathEntries(entries, options, pathsBasePath);
 }
 
 export function resolveBaseUrlModuleCandidate(
@@ -149,23 +219,10 @@ export function resolveBaseUrlModuleCandidate(
     return null;
   }
 
-  const baseUrlPath = path.resolve(
-    options.compilerOptions.baseUrl,
-    options.specifier,
-  );
-
-  for (const candidatePath of candidatePathsForBasePath(
-    baseUrlPath,
+  return resolveFirstExistingCandidate(
+    path.resolve(options.compilerOptions.baseUrl, options.specifier),
     options.extensions,
-  )) {
-    const resolvedPath = resolveExistingFilePath(candidatePath);
-
-    if (resolvedPath) {
-      return resolvedPath;
-    }
-  }
-
-  return null;
+  );
 }
 
 function applyPathPattern(pattern: string, matchedText: string): string {

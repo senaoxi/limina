@@ -49,16 +49,6 @@ export interface TypeEvidenceProviderIdentity {
   versionTuple?: readonly string[];
 }
 
-export interface TypeEvidenceMetricsRecorder {
-  record(measurement: {
-    readonly count?: number;
-    readonly durationMs?: number;
-    readonly kind?: string;
-    readonly name: (typeof TYPE_EVIDENCE_METRIC_NAMES)[number];
-    readonly provider?: string;
-  }): void;
-}
-
 export const TYPE_EVIDENCE_METRIC_NAMES = [
   'type-evidence-provider-create',
   'type-evidence-provider-hit',
@@ -73,6 +63,18 @@ export const TYPE_EVIDENCE_METRIC_NAMES = [
   'affected-source-config-count',
   'resource-import-count',
 ] as const;
+
+interface TypeEvidenceMetricMeasurement {
+  readonly count?: number;
+  readonly durationMs?: number;
+  readonly kind?: string;
+  readonly name: (typeof TYPE_EVIDENCE_METRIC_NAMES)[number];
+  readonly provider?: string;
+}
+
+export interface TypeEvidenceMetricsRecorder {
+  record(measurement: TypeEvidenceMetricMeasurement): void;
+}
 
 export type TypeEvidenceProviderCache = Map<string, TypeEvidenceProvider>;
 export type ProgramCache = Map<string, TypeEvidenceProgramHandle>;
@@ -104,6 +106,26 @@ export function createImportTypeEvidenceCacheKey(options: {
   });
 }
 
+function getProgramCreateMetricName(
+  provider: 'typescript' | 'vue' | undefined,
+): 'typescript-program-create' | 'vue-program-create' {
+  return provider === 'vue'
+    ? 'vue-program-create'
+    : 'typescript-program-create';
+}
+
+function disposeProviders(providers: TypeEvidenceProviderCache): void {
+  for (const provider of providers.values()) {
+    provider.dispose();
+  }
+}
+
+function disposePrograms(programs: ProgramCache): void {
+  for (const program of programs.values()) {
+    program.dispose();
+  }
+}
+
 export class TypeEvidenceGenerationCache {
   readonly ambientSymbolLookupCache: AmbientSymbolLookupCache = new WeakMap();
   readonly importTypeEvidenceCache: ImportTypeEvidenceCache = new Map();
@@ -131,7 +153,7 @@ export class TypeEvidenceGenerationCache {
     const cached = this.typeEvidenceProviderCache.get(key);
 
     if (cached) {
-      this.#metrics?.record({
+      this.#record({
         name: 'type-evidence-provider-hit',
         provider: providerName,
       });
@@ -139,9 +161,8 @@ export class TypeEvidenceGenerationCache {
     }
 
     const provider = create();
-
     this.typeEvidenceProviderCache.set(key, provider);
-    this.#metrics?.record({
+    this.#record({
       name: 'type-evidence-provider-create',
       provider: providerName,
     });
@@ -162,23 +183,14 @@ export class TypeEvidenceGenerationCache {
 
     const startedAt = performance.now();
     const program = create();
-
     this.programCache.set(key, program);
-    this.#metrics?.record({
+    this.#record({
       durationMs: Math.max(0, performance.now() - startedAt),
       name: 'program-create-duration',
       provider,
     });
-    this.#metrics?.record({
-      name:
-        provider === 'vue' ? 'vue-program-create' : 'typescript-program-create',
-      provider,
-    });
-    this.#metrics?.record({
-      count: program.program.getSourceFiles().length,
-      name: 'program-source-file-count',
-      provider,
-    });
+    this.#record({ name: getProgramCreateMetricName(provider), provider });
+    this.#recordProgramSourceFileCount(program, provider);
     return program;
   }
 
@@ -187,7 +199,7 @@ export class TypeEvidenceGenerationCache {
     const evidence = this.importTypeEvidenceCache.get(key);
 
     if (evidence) {
-      this.#metrics?.record({ name: 'type-evidence-cache-hit' });
+      this.#record({ name: 'type-evidence-cache-hit' });
     }
 
     return evidence;
@@ -200,11 +212,8 @@ export class TypeEvidenceGenerationCache {
 
   releaseProviderAndProgram(key: string): void {
     this.#assertActive();
-    const provider = this.typeEvidenceProviderCache.get(key);
-    const program = this.programCache.get(key);
-
-    provider?.dispose();
-    program?.dispose();
+    this.typeEvidenceProviderCache.get(key)?.dispose();
+    this.programCache.get(key)?.dispose();
     this.typeEvidenceProviderCache.delete(key);
     this.programCache.delete(key);
   }
@@ -217,13 +226,12 @@ export class TypeEvidenceGenerationCache {
     const cached = this.ambientSymbolLookupCache.get(symbol);
 
     if (cached) {
-      this.#metrics?.record({ name: 'ambient-symbol-hit' });
+      this.#record({ name: 'ambient-symbol-hit' });
       return cached;
     }
 
-    this.#metrics?.record({ name: 'ambient-symbol-miss' });
+    this.#record({ name: 'ambient-symbol-miss' });
     const evidence = create();
-
     this.ambientSymbolLookupCache.set(symbol, evidence);
     return evidence;
   }
@@ -234,18 +242,32 @@ export class TypeEvidenceGenerationCache {
     }
 
     this.#disposed = true;
-
-    for (const provider of this.typeEvidenceProviderCache.values()) {
-      provider.dispose();
-    }
-
-    for (const program of this.programCache.values()) {
-      program.dispose();
-    }
-
+    disposeProviders(this.typeEvidenceProviderCache);
+    disposePrograms(this.programCache);
     this.typeEvidenceProviderCache.clear();
     this.programCache.clear();
     this.importTypeEvidenceCache.clear();
+  }
+
+  #recordProgramSourceFileCount(
+    program: TypeEvidenceProgramHandle,
+    provider: 'typescript' | 'vue' | undefined,
+  ): void {
+    if (!this.#metrics) {
+      return;
+    }
+
+    this.#metrics.record({
+      count: program.program.getSourceFiles().length,
+      name: 'program-source-file-count',
+      provider,
+    });
+  }
+
+  #record(measurement: TypeEvidenceMetricMeasurement): void {
+    if (this.#metrics) {
+      this.#metrics.record(measurement);
+    }
   }
 
   #assertActive(): void {

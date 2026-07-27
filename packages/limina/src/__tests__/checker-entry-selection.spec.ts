@@ -182,7 +182,9 @@ describe('checker entry selection', () => {
       }),
     ).rejects.toThrow(/Checker include matched non-entry/u);
   });
+});
 
+describe('checker entry selection across activated islands', () => {
   it('only filters descriptor candidates supplied by activated package islands', async () => {
     const fixture = await createFixture();
     const onlyCandidate = path.join(

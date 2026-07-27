@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { WorkspacePackage } from './actions';
+import type { WorkspacePackage } from './package-types';
 import { collectValidatedWorkspaceContext } from './validated-context';
 
 interface WorkspaceRegionBoundaryBase {
@@ -35,14 +35,22 @@ export type WorkspaceRegionBoundary =
   | PackageScopeRegionBoundary
   | PnpmWorkspaceRegionBoundary;
 
+function getPackageScopeExclusionReason(
+  boundary: PackageScopeRegionBoundary,
+): string | null {
+  if (!boundary.excluded) {
+    return null;
+  }
+
+  return boundary.exclusionReason ?? null;
+}
+
 export function getWorkspaceRegionBoundaryExclusionReason(
   boundary: WorkspaceRegionBoundary,
 ): string | null {
   return boundary.kind === 'pnpm-workspace'
     ? boundary.inspection.reason
-    : boundary.excluded
-      ? (boundary.exclusionReason ?? null)
-      : null;
+    : getPackageScopeExclusionReason(boundary);
 }
 
 export function isWorkspaceRegionBoundaryExcluded(

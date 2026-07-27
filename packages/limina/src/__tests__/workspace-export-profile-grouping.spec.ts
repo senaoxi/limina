@@ -7,16 +7,16 @@ import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedLiminaConfig } from '../config/runner';
 import {
-  compileWorkspaceExportResolutionGroups,
-  createTypeScriptResolutionSemanticsAdapter,
-  getWorkspaceExportSelfNameContext,
-  type WorkspaceExportSelfNameEntry,
-} from '../core/workspace/export-resolution-profiles';
-import {
   createWorkspaceExportsResolutionIndex,
   type WorkspaceExportsMetricsRecorder,
   type WorkspaceExportsResolutionProfile,
 } from '../core/workspace/exports';
+import {
+  compileWorkspaceExportResolutionGroups,
+  createTypeScriptResolutionSemanticsAdapter,
+  getWorkspaceExportSelfNameContext,
+  type WorkspaceExportSelfNameEntry,
+} from '../core/workspace/exports/profiles';
 import { toPortablePath } from './helpers/path';
 
 const fixtureRoot = path.resolve('workspace-export-profile-fixture');

@@ -44,28 +44,64 @@ export interface CheckItemAccumulatorOptions {
   progress?: TaskProgressReporter;
 }
 
+interface ActiveCheckItem {
+  name: string;
+  progressItem?: TaskProgressItem;
+}
+
+interface CheckItemAccumulatorState {
+  activeItem: ActiveCheckItem | undefined;
+  getCheckCount: () => number;
+  getIssueCount: () => number;
+  items: LiminaCheckRunCheckItemSummary[];
+  plannedProgressItems: ReadonlyMap<string, TaskProgressItem | undefined>;
+  previousCheckCount: number;
+  previousIssueCount: number;
+  previousRecordTime: number;
+  progress: TaskProgressReporter | undefined;
+}
+
+function normalizeOptionalNumber(
+  value: number | undefined,
+): number | undefined {
+  return value === undefined ? undefined : Math.max(0, value);
+}
+
+function resolvePassedCount(options: {
+  issues: number;
+  passed: number | undefined;
+  total: number;
+}): number {
+  if (options.passed !== undefined) {
+    return Math.max(0, options.passed);
+  }
+
+  return options.issues === 0 ? options.total : 0;
+}
+
+function hasPassed(total: number, issues: number, passed: number): boolean {
+  return issues === 0 && passed >= total;
+}
+
 export function createCheckItemStats(
   options: CreateCheckItemStatsOptions,
 ): LiminaCheckRunCheckItemSummary {
   const total = Math.max(0, options.total);
   const issues = Math.max(0, options.issues ?? 0);
-  const passed =
-    options.passed === undefined
-      ? issues === 0
-        ? total
-        : 0
-      : Math.max(0, options.passed);
+  const passed = resolvePassedCount({
+    issues,
+    passed: options.passed,
+    total,
+  });
 
   return {
     checksPassed: passed,
     checksTotal: total,
-    ...(options.durationMs === undefined
-      ? {}
-      : { durationMs: Math.max(0, options.durationMs) }),
+    durationMs: normalizeOptionalNumber(options.durationMs),
     issues,
     itemKind: 'check',
     name: options.name,
-    status: issues === 0 && passed >= total ? 'passed' : 'failed',
+    status: hasPassed(total, issues, passed) ? 'passed' : 'failed',
   };
 }
 
@@ -76,9 +112,7 @@ export function createSkippedCheckItemStats(options: {
   return {
     checksPassed: 0,
     checksTotal: 0,
-    ...(options.durationMs === undefined
-      ? {}
-      : { durationMs: Math.max(0, options.durationMs) }),
+    durationMs: normalizeOptionalNumber(options.durationMs),
     issues: 0,
     itemKind: 'check',
     name: options.name,
@@ -86,108 +120,160 @@ export function createSkippedCheckItemStats(options: {
   };
 }
 
+function getPlannedNames(
+  options: CheckItemAccumulatorOptions,
+): readonly string[] {
+  return options.plannedItems === undefined ? [] : options.plannedItems;
+}
+
+function getPlannedItems(
+  options: CheckItemAccumulatorOptions,
+  plannedNames: readonly string[],
+): readonly TaskProgressItem[] {
+  return options.progress === undefined
+    ? []
+    : options.progress.planItems(plannedNames);
+}
+
+function createPlannedProgressItems(
+  options: CheckItemAccumulatorOptions,
+): ReadonlyMap<string, TaskProgressItem | undefined> {
+  const plannedNames = getPlannedNames(options);
+  const plannedItems = getPlannedItems(options, plannedNames);
+
+  return new Map(
+    plannedNames.map((name, index) => [name, plannedItems[index]]),
+  );
+}
+
+function startProgressItem(
+  state: CheckItemAccumulatorState,
+  name: string,
+): TaskProgressItem | undefined {
+  const plannedItem = state.plannedProgressItems.get(name);
+
+  if (plannedItem !== undefined) {
+    plannedItem.start();
+    return plannedItem;
+  }
+
+  return state.progress?.startItem(name);
+}
+
+function captureCurrentCounts(state: CheckItemAccumulatorState): void {
+  state.previousIssueCount = state.getIssueCount();
+  state.previousCheckCount = state.getCheckCount();
+  state.previousRecordTime = performance.now();
+}
+
+function startItem(state: CheckItemAccumulatorState, name: string): void {
+  state.activeItem = {
+    name,
+    progressItem: startProgressItem(state, name),
+  };
+  captureCurrentCounts(state);
+}
+
+function ensureActiveItem(
+  state: CheckItemAccumulatorState,
+  name: string,
+): ActiveCheckItem {
+  if (state.activeItem === undefined) {
+    startItem(state, name);
+  }
+
+  if (state.activeItem === undefined) {
+    throw new Error(`Failed to start check item: ${name}`);
+  }
+
+  return state.activeItem;
+}
+
+function finishProgressItem(
+  activeItem: ActiveCheckItem,
+  item: LiminaCheckRunCheckItemSummary,
+): void {
+  const progressItem = activeItem.progressItem;
+
+  if (progressItem === undefined) {
+    return;
+  }
+
+  const details = { elapsedTimeMs: item.durationMs };
+
+  if (item.status === 'passed') {
+    progressItem.pass(undefined, details);
+    return;
+  }
+
+  progressItem.fail(undefined, details);
+}
+
+function finishItem(state: CheckItemAccumulatorState): void {
+  state.activeItem = undefined;
+  captureCurrentCounts(state);
+}
+
+function recordItem(state: CheckItemAccumulatorState, name: string): void {
+  const activeItem = ensureActiveItem(state, name);
+  const now = performance.now();
+  const nextIssueCount = state.getIssueCount();
+  const nextCheckCount = state.getCheckCount();
+  const item = createCheckItemStats({
+    durationMs: now - state.previousRecordTime,
+    issues: nextIssueCount - state.previousIssueCount,
+    name,
+    total: nextCheckCount - state.previousCheckCount,
+  });
+
+  state.items.push(item);
+  finishProgressItem(activeItem, item);
+  finishItem(state);
+}
+
+function skipItem(
+  state: CheckItemAccumulatorState,
+  name: string,
+  message: string | undefined,
+): void {
+  const activeItem = ensureActiveItem(state, name);
+  const item = createSkippedCheckItemStats({
+    durationMs: performance.now() - state.previousRecordTime,
+    name,
+  });
+
+  state.items.push(item);
+  activeItem.progressItem?.skip(message, { elapsedTimeMs: item.durationMs });
+  finishItem(state);
+}
+
+function cloneItems(
+  items: readonly LiminaCheckRunCheckItemSummary[],
+): LiminaCheckRunCheckItemSummary[] {
+  return items.map((item) => ({ ...item }));
+}
+
 export function createCheckItemAccumulator(
   getIssueCount: () => number,
   getCheckCount: () => number,
   options: CheckItemAccumulatorOptions = {},
 ): CheckItemAccumulator {
-  const items: LiminaCheckRunCheckItemSummary[] = [];
-  let activeItem: { name: string; progressItem?: TaskProgressItem } | undefined;
-  const plannedNames = options.plannedItems ?? [];
-  const plannedItems = options.progress?.planItems(plannedNames) ?? [];
-  const plannedProgressItems = new Map(
-    plannedNames.map((name, index) => [name, plannedItems[index]]),
-  );
-  let previousIssueCount = getIssueCount();
-  let previousCheckCount = getCheckCount();
-  let previousRecordTime = performance.now();
-
-  const startProgressItem = (name: string): TaskProgressItem | undefined => {
-    const plannedProgressItem = plannedProgressItems.get(name);
-
-    if (plannedProgressItem) {
-      plannedProgressItem.start();
-      return plannedProgressItem;
-    }
-
-    return options.progress?.startItem(name);
-  };
-  const startItem = (name: string): void => {
-    activeItem = {
-      name,
-      progressItem: startProgressItem(name),
-    };
-    previousIssueCount = getIssueCount();
-    previousCheckCount = getCheckCount();
-    previousRecordTime = performance.now();
+  const state: CheckItemAccumulatorState = {
+    activeItem: undefined,
+    getCheckCount,
+    getIssueCount,
+    items: [],
+    plannedProgressItems: createPlannedProgressItems(options),
+    previousCheckCount: getCheckCount(),
+    previousIssueCount: getIssueCount(),
+    previousRecordTime: performance.now(),
+    progress: options.progress,
   };
 
   return {
-    getItems(): LiminaCheckRunCheckItemSummary[] {
-      return items.map((item) => ({ ...item }));
-    },
-    record(name) {
-      if (!activeItem) {
-        startItem(name);
-      }
-      const currentItem = activeItem;
-
-      if (!currentItem) {
-        throw new Error(`Failed to start check item: ${name}`);
-      }
-      const now = performance.now();
-      const nextIssueCount = getIssueCount();
-      const nextCheckCount = getCheckCount();
-      const issues = Math.max(0, nextIssueCount - previousIssueCount);
-      const total = Math.max(0, nextCheckCount - previousCheckCount);
-      const item = createCheckItemStats({
-        durationMs: now - previousRecordTime,
-        issues,
-        name,
-        total,
-      });
-
-      items.push(item);
-      if (item.status === 'passed') {
-        currentItem.progressItem?.pass(undefined, {
-          elapsedTimeMs: item.durationMs,
-        });
-      } else {
-        currentItem.progressItem?.fail(undefined, {
-          elapsedTimeMs: item.durationMs,
-        });
-      }
-      activeItem = undefined;
-      previousIssueCount = nextIssueCount;
-      previousCheckCount = nextCheckCount;
-      previousRecordTime = now;
-    },
-    skip(name, message) {
-      if (!activeItem) {
-        startItem(name);
-      }
-      const currentItem = activeItem;
-
-      if (!currentItem) {
-        throw new Error(`Failed to start check item: ${name}`);
-      }
-      const now = performance.now();
-      const item = createSkippedCheckItemStats({
-        durationMs: now - previousRecordTime,
-        name,
-      });
-
-      items.push(item);
-      currentItem.progressItem?.skip(message, {
-        elapsedTimeMs: item.durationMs,
-      });
-      activeItem = undefined;
-      previousIssueCount = getIssueCount();
-      previousCheckCount = getCheckCount();
-      previousRecordTime = now;
-    },
-    start(name) {
-      startItem(name);
-    },
+    getItems: () => cloneItems(state.items),
+    record: (name) => recordItem(state, name),
+    skip: (name, message) => skipItem(state, name, message),
+    start: (name) => startItem(state, name),
   };
 }

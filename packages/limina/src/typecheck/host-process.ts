@@ -16,9 +16,13 @@ const liveCheckerChildren = new Set<ChildProcess>();
 let pendingSpawnCount = 0;
 let lastParentSignalAt = Date.now();
 
+function isRunningChild(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
 function exitWithCheckerCleanup(): void {
   for (const child of liveCheckerChildren) {
-    if (child.exitCode === null && child.signalCode === null) {
+    if (isRunningChild(child)) {
       child.kill();
     }
   }

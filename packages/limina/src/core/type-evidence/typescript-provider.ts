@@ -26,8 +26,6 @@ function createProgramHandle(
 
   return {
     dispose(): void {
-      // TypeScript Program has no explicit disposal API; dropping this handle
-      // releases the generation-owned reference.
       disposed = true;
     },
     get program(): ts.Program {
@@ -40,6 +38,40 @@ function createProgramHandle(
   };
 }
 
+function matchesImportRecordRange(
+  node: ts.StringLiteralLike,
+  sourceFile: ts.SourceFile,
+  importRecord: ImportRecord,
+): boolean {
+  return (
+    node.getStart(sourceFile) === importRecord.locator.sourceStart &&
+    node.getEnd() === importRecord.locator.sourceEnd
+  );
+}
+
+function matchesImportRecord(
+  node: ts.StringLiteralLike,
+  sourceFile: ts.SourceFile,
+  importRecord: ImportRecord,
+): boolean {
+  return (
+    node.text === importRecord.specifier &&
+    matchesImportRecordRange(node, sourceFile, importRecord)
+  );
+}
+
+function matchModuleSpecifierNode(
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+  importRecord: ImportRecord,
+): ts.StringLiteralLike | null {
+  if (!ts.isStringLiteralLike(node)) {
+    return null;
+  }
+
+  return matchesImportRecord(node, sourceFile, importRecord) ? node : null;
+}
+
 function findModuleSpecifierNode(
   sourceFile: ts.SourceFile,
   importRecord: ImportRecord,
@@ -50,13 +82,9 @@ function findModuleSpecifierNode(
       return;
     }
 
-    if (
-      ts.isStringLiteralLike(node) &&
-      node.text === importRecord.specifier &&
-      node.getStart(sourceFile) === importRecord.locator.sourceStart &&
-      node.getEnd() === importRecord.locator.sourceEnd
-    ) {
-      matched = node;
+    const candidate = matchModuleSpecifierNode(node, sourceFile, importRecord);
+    if (candidate) {
+      matched = candidate;
       return;
     }
 
@@ -65,6 +93,37 @@ function findModuleSpecifierNode(
 
   visit(sourceFile);
   return matched;
+}
+
+function assertProviderActive(disposed: boolean): void {
+  if (disposed) {
+    throw new Error('TypeScript type-evidence provider was disposed.');
+  }
+}
+
+function toNullableSymbol(symbol: ts.Symbol | undefined): ts.Symbol | null {
+  return symbol ?? null;
+}
+
+function findImportSymbol(
+  program: ts.Program,
+  importRecord: ImportRecord,
+): ts.Symbol | null {
+  const sourceFile = program.getSourceFile(
+    normalizeAbsolutePath(importRecord.filePath),
+  );
+  if (!sourceFile) {
+    return null;
+  }
+
+  const moduleSpecifier = findModuleSpecifierNode(sourceFile, importRecord);
+  if (!moduleSpecifier) {
+    return null;
+  }
+
+  return toNullableSymbol(
+    program.getTypeChecker().getSymbolAtLocation(moduleSpecifier),
+  );
 }
 
 export function createTypeScriptTypeEvidenceProvider(options: {
@@ -79,32 +138,13 @@ export function createTypeScriptTypeEvidenceProvider(options: {
       disposed = true;
     },
     query({ importRecord }): TypeEvidence {
-      if (disposed) {
-        throw new Error('TypeScript type-evidence provider was disposed.');
-      }
-
+      assertProviderActive(disposed);
       const programHandle = options.cache.getOrCreateProgram(
         options.programKey,
         () => createProgramHandle(options.project),
         'typescript',
       );
-      const sourceFile = programHandle.program.getSourceFile(
-        normalizeAbsolutePath(importRecord.filePath),
-      );
-
-      if (!sourceFile) {
-        return { kind: 'missing' };
-      }
-
-      const moduleSpecifier = findModuleSpecifierNode(sourceFile, importRecord);
-
-      if (!moduleSpecifier) {
-        return { kind: 'missing' };
-      }
-
-      const symbol = programHandle.program
-        .getTypeChecker()
-        .getSymbolAtLocation(moduleSpecifier);
+      const symbol = findImportSymbol(programHandle.program, importRecord);
 
       if (!symbol) {
         return { kind: 'missing' };

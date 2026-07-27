@@ -5,6 +5,16 @@ import type {
 } from '../../domain/validation/contracts';
 import type { ValidationViewByKind } from '../../domain/validation/views';
 
+interface RegistrationDescriptorValue {
+  readonly id: string;
+  readonly inputKind: string;
+}
+
+interface RegistrationValue {
+  readonly descriptor: RegistrationDescriptorValue;
+  readonly validate: (...args: never[]) => unknown;
+}
+
 export function defineArchitectureValidator<
   Kind extends ArchitectureValidationInputKind,
   Options,
@@ -26,34 +36,61 @@ export function defineArchitectureValidator<
   return Object.freeze({ descriptor, validate });
 }
 
-function assertRegistration(value: unknown): asserts value is {
-  readonly descriptor: { readonly id: string; readonly inputKind: string };
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object';
+}
+
+function hasStringProperty(
+  value: Record<string, unknown>,
+  property: string,
+): boolean {
+  return typeof value[property] === 'string';
+}
+
+function isRegistrationDescriptor(
+  value: unknown,
+): value is RegistrationDescriptorValue {
+  if (!isObjectRecord(value)) {
+    return false;
+  }
+
+  return ['id', 'inputKind'].every((property) =>
+    hasStringProperty(value, property),
+  );
+}
+
+function hasRegistrationShape(value: unknown): value is {
+  readonly descriptor: unknown;
   readonly validate: (...args: never[]) => unknown;
 } {
-  if (
-    !value ||
-    typeof value !== 'object' ||
-    !('descriptor' in value) ||
-    !('validate' in value) ||
-    typeof value.validate !== 'function'
-  ) {
+  return isObjectRecord(value) && typeof value.validate === 'function';
+}
+
+function assertRegistration(
+  value: unknown,
+): asserts value is RegistrationValue {
+  if (!hasRegistrationShape(value)) {
     throw new Error(
       'Validator registry entries require descriptor and validate.',
     );
   }
 
-  const descriptor = value.descriptor;
-
-  if (
-    !descriptor ||
-    typeof descriptor !== 'object' ||
-    !('id' in descriptor) ||
-    !('inputKind' in descriptor) ||
-    typeof descriptor.id !== 'string' ||
-    typeof descriptor.inputKind !== 'string'
-  ) {
+  if (!isRegistrationDescriptor(value.descriptor)) {
     throw new Error('Validator registry entries require a valid descriptor.');
   }
+}
+
+function assertUniqueRegistrationId(
+  ids: Set<string>,
+  registration: RegistrationValue,
+): void {
+  if (ids.has(registration.descriptor.id)) {
+    throw new Error(
+      `Duplicate validator rule id "${registration.descriptor.id}".`,
+    );
+  }
+
+  ids.add(registration.descriptor.id);
 }
 
 export function createTypedValidatorRegistry<
@@ -63,14 +100,7 @@ export function createTypedValidatorRegistry<
 
   for (const registration of registrations) {
     assertRegistration(registration);
-
-    if (ids.has(registration.descriptor.id)) {
-      throw new Error(
-        `Duplicate validator rule id "${registration.descriptor.id}".`,
-      );
-    }
-
-    ids.add(registration.descriptor.id);
+    assertUniqueRegistrationId(ids, registration);
   }
 
   return Object.freeze([

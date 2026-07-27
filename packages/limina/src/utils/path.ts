@@ -26,6 +26,20 @@ export function normalizeAbsolutePathIdentity(value: string): string {
     : normalizedPath;
 }
 
+function normalizeComparableAbsolutePath(value: string): string {
+  return normalizeAbsolutePathIdentity(
+    isAbsolute(value) ? value : resolve(value),
+  );
+}
+
+function isRelativePathInsideDirectory(relativePath: string): boolean {
+  return (
+    relativePath !== '..' &&
+    !relativePath.startsWith('../') &&
+    !isAbsolute(relativePath)
+  );
+}
+
 export function isPathInsideDirectory(
   filePath: string,
   directoryPath: string,
@@ -36,15 +50,6 @@ export function isPathInsideDirectory(
   const relativePath = relative(normalizedDirectoryPath, normalizedFilePath);
 
   return (
-    relativePath.length === 0 ||
-    (relativePath !== '..' &&
-      !relativePath.startsWith('../') &&
-      !isAbsolute(relativePath))
-  );
-}
-
-function normalizeComparableAbsolutePath(value: string): string {
-  return normalizeAbsolutePathIdentity(
-    isAbsolute(value) ? value : resolve(value),
+    relativePath.length === 0 || isRelativePathInsideDirectory(relativePath)
   );
 }

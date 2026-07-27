@@ -75,7 +75,9 @@ describe('standalone invocation generated commands', () => {
       windowsTokens,
     );
   });
+});
 
+describe('standalone invocation PowerShell transport', () => {
   it('round-trips sensitive argv through the encoded PowerShell transport', async () => {
     const { context } = createSensitiveCommand();
     const expectedArgs = [
@@ -134,7 +136,9 @@ describe('standalone invocation generated commands', () => {
       expect(rendered).toContain("'--mode' ''");
     },
   );
+});
 
+describe('standalone invocation platform variants', () => {
   it('selects one POSIX variant and two explicit Windows variants', () => {
     expect(getGeneratedCommandPresentation('darwin')).toEqual([
       { dialect: 'posix', label: 'Query' },

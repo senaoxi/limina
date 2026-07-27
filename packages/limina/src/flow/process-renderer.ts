@@ -54,6 +54,18 @@ function callWriteCallback(args: FlowWriteArgs): void {
   }
 }
 
+function getRendererCloseResult(
+  message: FlowRendererParentMessage,
+): boolean | undefined {
+  const results = {
+    closed: true,
+    failed: false,
+    ready: undefined,
+  } as const;
+
+  return results[message.type];
+}
+
 export class FlowProcessRenderer {
   readonly #child: ChildProcess;
   readonly #ready: Promise<boolean>;
@@ -74,14 +86,7 @@ export class FlowProcessRenderer {
       this.#deactivate(false);
     });
     child.on('message', (message: FlowRendererParentMessage) => {
-      if (message.type === 'ready') {
-        this.#resolveReady(true);
-        return;
-      }
-
-      if (message.type === 'closed' || message.type === 'failed') {
-        this.#deactivate(message.type === 'closed');
-      }
+      this.#handleParentMessage(message);
     });
   }
 
@@ -154,6 +159,43 @@ export class FlowProcessRenderer {
     });
   }
 
+  #handleParentMessage(message: FlowRendererParentMessage): void {
+    if (message.type === 'ready') {
+      this.#resolveReady(true);
+      return;
+    }
+
+    const closeResult = getRendererCloseResult(message);
+
+    if (closeResult !== undefined) {
+      this.#deactivate(closeResult);
+    }
+  }
+
+  #shouldKillChild(result: boolean): boolean {
+    if (result) {
+      return false;
+    }
+
+    return [
+      !this.#child.killed,
+      this.#child.exitCode === null,
+      this.#child.signalCode === null,
+    ].every(Boolean);
+  }
+
+  #restorePatchedStreams(): void {
+    const restoreStreams = this.#restoreStreams;
+    this.#restoreStreams = undefined;
+    restoreStreams?.();
+  }
+
+  #resolveClose(result: boolean): void {
+    const resolve = this.#closeResolver;
+    this.#closeResolver = undefined;
+    resolve?.(result);
+  }
+
   #deactivate(result: boolean): void {
     if (!this.#active) {
       return;
@@ -161,17 +203,13 @@ export class FlowProcessRenderer {
 
     this.#active = false;
     this.#resolveReady(false);
-    this.#restoreStreams?.();
-    if (
-      !result &&
-      !this.#child.killed &&
-      this.#child.exitCode === null &&
-      this.#child.signalCode === null
-    ) {
+    this.#restorePatchedStreams();
+
+    if (this.#shouldKillChild(result)) {
       this.#child.kill();
     }
-    this.#closeResolver?.(result);
-    this.#closeResolver = undefined;
+
+    this.#resolveClose(result);
   }
 
   #resolveReady(result: boolean): void {

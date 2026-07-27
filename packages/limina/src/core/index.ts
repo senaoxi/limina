@@ -43,6 +43,13 @@ export interface AnalysisProviderSetDependencies {
   readonly workspace?: WorkspaceCoreDependencies;
 }
 
+interface AnalysisProviderSetOptions {
+  readonly artifactNamespace: LiminaArtifactNamespace;
+  readonly config: ResolvedLiminaConfig;
+  readonly dependencies: AnalysisProviderSetDependencies;
+  readonly metrics?: AnalysisCoreMetricsRecorder;
+}
+
 export class AnalysisProviderSet {
   readonly artifactNamespace: LiminaArtifactNamespace;
   readonly buildGraph: BuildGraphCore;
@@ -53,34 +60,30 @@ export class AnalysisProviderSet {
   readonly typeEvidence: TypeEvidenceCore;
   readonly workspace: WorkspaceCore;
 
-  constructor(
-    config: ResolvedLiminaConfig,
-    artifactNamespace: LiminaArtifactNamespace = createLiminaArtifactNamespace({
-      generation: 0,
-      rootDir: config.rootDir,
-    }),
-    metrics?: AnalysisCoreMetricsRecorder,
-    dependencies: AnalysisProviderSetDependencies = {},
-  ) {
+  constructor(options: AnalysisProviderSetOptions) {
     let buildGraph: BuildGraphCore;
 
-    this.artifactNamespace = artifactNamespace;
-    this.config = config;
-    this.workspace = new WorkspaceCore(config, metrics, dependencies.workspace);
-    this.imports = new ImportCore(config, metrics);
+    this.artifactNamespace = options.artifactNamespace;
+    this.config = options.config;
+    this.workspace = new WorkspaceCore(
+      options.config,
+      options.metrics,
+      options.dependencies.workspace,
+    );
+    this.imports = new ImportCore(options.config, options.metrics);
     this.tsconfig = new TsconfigCore(
-      config,
+      options.config,
       () => buildGraph.getGraph(),
       this.workspace,
     );
     this.typeEvidence = new TypeEvidenceCore({
-      generation: artifactNamespace.generation,
+      generation: options.artifactNamespace.generation,
       importAnalysis: this.imports.context,
-      metrics,
+      metrics: options.metrics,
     });
     buildGraph = new BuildGraphCore({
-      artifactNamespace,
-      config,
+      artifactNamespace: options.artifactNamespace,
+      config: options.config,
       imports: this.imports,
       workspace: this.workspace,
     });
@@ -98,15 +101,25 @@ export class AnalysisProviderSet {
 }
 
 export function createAnalysisProviders(
-  config: ResolvedLiminaConfig,
-  artifactNamespace?: LiminaArtifactNamespace,
-  metrics?: AnalysisCoreMetricsRecorder,
-  dependencies?: AnalysisProviderSetDependencies,
+  ...args: [
+    config: ResolvedLiminaConfig,
+    artifactNamespace?: LiminaArtifactNamespace,
+    metrics?: AnalysisCoreMetricsRecorder,
+    dependencies?: AnalysisProviderSetDependencies,
+  ]
 ): AnalysisProviderSet {
-  return new AnalysisProviderSet(
-    config,
+  const [config, configuredNamespace, metrics, dependencies = {}] = args;
+  const artifactNamespace =
+    configuredNamespace ??
+    createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: config.rootDir,
+    });
+
+  return new AnalysisProviderSet({
     artifactNamespace,
-    metrics,
+    config,
     dependencies,
-  );
+    metrics,
+  });
 }
