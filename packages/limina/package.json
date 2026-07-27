@@ -97,6 +97,7 @@
     "ssri": "catalog:dev",
     "string-width": "catalog:dev",
     "typescript": "catalog:dev",
+    "vite": "catalog:dev",
     "vitest": "catalog:test"
   },
   "peerDependencies": {
