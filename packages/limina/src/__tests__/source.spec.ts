@@ -14,11 +14,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
 import { runSourceCheck } from '../commands/source';
+import { sortCollectedIssues } from '../execution/issues';
 import { createTaskProgressReporter } from '../execution/progress';
 import { LiminaOptionalToolMissingError } from '../execution/tools';
 import { LiminaFlowReporter } from '../flow';
 import { SourceLogger } from '../logger';
 import {
+  createSourceCheckIssueFromFinding,
   createSourceUnusedModuleFinding,
   createSourceUnusedWorkspaceDependencyFinding,
 } from '../source-check/findings';
@@ -465,6 +467,81 @@ describe('runSourceCheck package authority', () => {
           typeEvidenceKind: 'ambient',
         },
         task: 'source:check',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps two same-line missing resource imports distinct through source and canonical snapshots', async () => {
+    const fixture = await createFixture(
+      {
+        ...createPackageFixture({
+          source:
+            "import './missing-a.css'; import './missing-b.css';\nexport const value = true;\n",
+        }),
+        'app/src/assets.d.ts': "declare module '*.css';\n",
+      },
+      { source: { knip: false } },
+    );
+    const sourceIssues: SourceCheckIssue[] = [];
+    const onSourceSnapshot = vi.fn();
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          onSourceSnapshot,
+          report: { command: 'limina source check', defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+
+      const resourceFindings = sourceIssues.filter(
+        (issue) =>
+          issue.code === LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+      );
+      const canonical = resourceFindings.map((finding) =>
+        createSourceCheckIssueFromFinding({
+          finding,
+          rootDir: fixture.rootDir,
+        }),
+      );
+      const repeated = resourceFindings.map((finding) =>
+        createSourceCheckIssueFromFinding({
+          finding,
+          rootDir: fixture.rootDir,
+        }),
+      );
+      const deduplicated = sortCollectedIssues([
+        {
+          issues: [...canonical, ...repeated],
+          taskId: 'source',
+          taskOrder: 0,
+        },
+      ]);
+      const standaloneSnapshot = await readSourceIssueSnapshot(fixture.rootDir);
+
+      expect(resourceFindings).toHaveLength(2);
+      expect(
+        resourceFindings.map((finding) => finding.facts.specifier),
+      ).toEqual(['./missing-a.css', './missing-b.css']);
+      expect(new Set(canonical.map((issue) => issue.id))).toHaveLength(2);
+      expect(repeated.map((issue) => issue.id)).toEqual(
+        canonical.map((issue) => issue.id),
+      );
+      expect(deduplicated).toHaveLength(2);
+      expect(onSourceSnapshot).toHaveBeenCalledTimes(1);
+      expect(onSourceSnapshot).toHaveBeenCalledWith(resourceFindings);
+      expect(standaloneSnapshot).toMatchObject({
+        issues: [
+          {
+            code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+          },
+          {
+            code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+          },
+        ],
+        status: 'completed',
       });
     } finally {
       await fixture.cleanup();

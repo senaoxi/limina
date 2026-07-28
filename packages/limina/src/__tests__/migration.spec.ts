@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { parse } from 'jsonc-parser';
 import { execFile } from 'node:child_process';
 import {
   link,
@@ -502,6 +503,82 @@ describe('runMigration', () => {
       expect((await stat(sourcePath, { bigint: true })).mtimeNs).toBe(
         beforeMtime,
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves unrelated JSONC text while applying governed local edits idempotently', async () => {
+    const original = `{
+  // repository rationale stays byte-for-byte
+  "$schema" : "./legacy-schema.json",
+  "compilerOptions": {
+    /* strict mode rationale */
+    "strict" : true,
+    // output ownership moves to Limina
+    "outDir": "./dist",
+    "declaration": true,
+  },
+  "include" : ["src/**/*.ts",],
+  "references": [{"path":"../legacy"},],
+  "liminaOptions": {
+    /* existing output rationale */
+    "outputs": {"rootDir":"./existing",},
+  },
+  "custom" : {"compact":[1,2,3],},
+}
+`;
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'src/index.ts': 'export const value = 1;\n',
+      'tsconfig.json': original,
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        typescript: {
+          include: ['tsconfig.json'],
+          preset: 'tsc',
+        },
+      },
+    });
+    const configPath = path.join(fixture.rootDir, 'tsconfig.json');
+
+    try {
+      await commitFixture(fixture.rootDir);
+      await expect(runMigration(config)).resolves.toMatchObject({
+        modifiedFiles: toPortablePaths([configPath]),
+      });
+      const migrated = await readFile(configPath, 'utf8');
+      const parsed = parse(migrated) as {
+        $schema?: string;
+        compilerOptions?: Record<string, unknown>;
+        liminaOptions?: { outputs?: Record<string, unknown> };
+        references?: unknown;
+      };
+
+      expect(migrated).toContain('// repository rationale stays byte-for-byte');
+      expect(migrated).toContain('/* strict mode rationale */');
+      expect(migrated).toContain('/* existing output rationale */');
+      expect(migrated).toContain('"include" : ["src/**/*.ts",]');
+      expect(migrated).toContain('"custom" : {"compact":[1,2,3],}');
+      expect(parsed).toMatchObject({
+        $schema: rootSchemaPath,
+        compilerOptions: { strict: true },
+        liminaOptions: {
+          outputs: {
+            outDir: './dist',
+            rootDir: './existing',
+          },
+        },
+      });
+      expect(parsed.references).toBeUndefined();
+
+      await commitFixture(fixture.rootDir);
+      await expect(runMigration(config)).resolves.toMatchObject({
+        modifiedFiles: [],
+        skippedFiles: toPortablePaths([configPath]),
+      });
+      await expect(readFile(configPath, 'utf8')).resolves.toBe(migrated);
     } finally {
       await fixture.cleanup();
     }

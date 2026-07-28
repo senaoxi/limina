@@ -483,6 +483,38 @@ describe('sortCollectedIssues', () => {
       sorted.map((issue) => `${issue.code}:${issue.filePath ?? ''}`),
     ).toEqual(['Z:', 'A:a.ts', 'A:b.ts', 'B:']);
   });
+
+  it('keeps canonical non-ASCII ordering independent of localeCompare', () => {
+    const input = [
+      {
+        issues: [
+          createIssue({ filePath: 'ä.ts', id: 'umlaut' }),
+          createIssue({ filePath: 'z.ts', id: 'ascii' }),
+        ],
+        taskId: 'source',
+        taskOrder: 0,
+      },
+    ];
+    const baseline = sortCollectedIssues(input).map((issue) => issue.id);
+    const localeCompare = vi
+      .spyOn(String.prototype, 'localeCompare')
+      .mockImplementation(function invertedLocaleCompare(
+        this: string,
+        other: string,
+      ) {
+        return String(this) < other ? 1 : String(this) > other ? -1 : 0;
+      });
+
+    try {
+      expect(sortCollectedIssues(input).map((issue) => issue.id)).toEqual(
+        baseline,
+      );
+      expect(baseline).toEqual(['ascii', 'umlaut']);
+      expect(localeCompare).not.toHaveBeenCalled();
+    } finally {
+      localeCompare.mockRestore();
+    }
+  });
 });
 
 describe('execution concurrency resolution', () => {

@@ -409,7 +409,10 @@ describe('standalone invocation generated command', () => {
         /Standalone issue invocation: ([0-9a-f-]+)/u.exec(
           failedCheck.stdout,
         )?.[1] ?? '';
-      expect(invocationId).toMatch(INVOCATION_ID_PATTERN);
+      expect(
+        invocationId,
+        `${failedCheck.stdout}\n${failedCheck.stderr}`,
+      ).toMatch(INVOCATION_ID_PATTERN);
       const probeModulePath = await writeArgvProbe(outsideCwd);
 
       if (process.platform === 'win32') {

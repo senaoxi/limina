@@ -16,6 +16,7 @@ import type {
 export interface CheckerFailureIssueOptions {
   failedTargets: readonly CheckerFailureTarget[];
   fallbackFilePath?: string;
+  fallbackCheckerNames?: readonly string[];
   fallbackReason: string;
   failureKind?: CheckerFailureKind;
   fix: string;
@@ -93,9 +94,11 @@ function createProblemEvidence(
 
 function createFallbackFailureIssue(
   options: CheckerFailureIssueOptions,
+  checkerName?: string,
 ): LiminaCheckIssue {
   const problems = getVisibleProblems(options);
   return createTaskFailureIssue({
+    checkerName,
     code: getFailureCode(options),
     detailLines: problems,
     evidence: createProblemEvidence(problems),
@@ -174,13 +177,22 @@ function createTargetFailureIssue(
   });
 }
 
+function createFallbackFailureIssues(
+  options: CheckerFailureIssueOptions,
+): LiminaCheckIssue[] {
+  const checkerNames = options.fallbackCheckerNames ?? [];
+  if (checkerNames.length === 0) return [createFallbackFailureIssue(options)];
+  return checkerNames.map((checkerName) =>
+    createFallbackFailureIssue(options, checkerName),
+  );
+}
+
 export function createCheckerFailureIssues(
   options: CheckerFailureIssueOptions,
 ): LiminaCheckIssue[] {
   if (options.failedTargets.length === 0) {
-    return [createFallbackFailureIssue(options)];
+    return createFallbackFailureIssues(options);
   }
-
   return options.failedTargets.map((target) =>
     createTargetFailureIssue(target, options),
   );

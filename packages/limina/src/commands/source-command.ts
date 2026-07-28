@@ -139,6 +139,7 @@ async function executeSourceCheckImpl(
     knipRunner: options.knipRunner,
     logSuccess: shouldLogSuccess(options),
     onStats: options.onStats,
+    onSourceSnapshot: options.onSourceSnapshot,
     preflight: context.preflight,
     progress: options.progress,
     providers: options.providers,

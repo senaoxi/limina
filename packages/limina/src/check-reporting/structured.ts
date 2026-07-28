@@ -42,6 +42,7 @@ export interface CreateLiminaCheckIssueOptions {
   packageName?: string;
   reason?: string;
   rootDir: string;
+  semanticIdentity?: unknown;
   scope?: string;
   severity?: LiminaCheckIssueSeverity;
   summary?: string;
@@ -70,7 +71,10 @@ function normalizeEvidence(
   }));
 }
 
-function createIssueId(issue: Omit<CanonicalLiminaCheckIssue, 'id'>): string {
+function createIssueId(
+  issue: Omit<CanonicalLiminaCheckIssue, 'id'>,
+  semanticIdentity: unknown,
+): string {
   const hash = createHash('sha1')
     .update(
       JSON.stringify({
@@ -80,6 +84,7 @@ function createIssueId(issue: Omit<CanonicalLiminaCheckIssue, 'id'>): string {
         locations: issue.locations,
         packageManifestPath: issue.packageManifestPath,
         packageName: issue.packageName,
+        semanticIdentity,
         scope: issue.scope,
         summary: issue.summary,
         task: issue.task,
@@ -228,6 +233,9 @@ export function createLiminaCheckIssue(
   const issueWithoutId = createIssueWithoutId(options, code);
   return {
     ...issueWithoutId,
-    id: valueOrDefault(options.id, createIssueId(issueWithoutId)),
+    id: valueOrDefault(
+      options.id,
+      createIssueId(issueWithoutId, options.semanticIdentity),
+    ),
   };
 }

@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCheckRunRecorder } from '../check-reporting/run-recorder';
 import {
   readCheckIssueSnapshot,
+  readSourceIssueSnapshot,
   writeNotRunCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
@@ -677,6 +678,9 @@ describe('runPipeline', () => {
 
       expect(generatedGraphProvider).toHaveBeenCalledTimes(1);
       const snapshot = await readCheckIssueSnapshot(fixture.config.rootDir);
+      const sourceSnapshot = await readSourceIssueSnapshot(
+        fixture.config.rootDir,
+      );
 
       expect(snapshot).toMatchObject({
         run: {
@@ -730,6 +734,10 @@ describe('runPipeline', () => {
             },
           ],
         },
+      });
+      expect(sourceSnapshot).toMatchObject({
+        issues: [],
+        status: 'completed',
       });
 
       const proofTask = snapshot?.run?.tasks.find(
@@ -880,7 +888,8 @@ describe('runPipeline', () => {
         "import { createHash } from 'node:crypto';",
         "import { existsSync, writeFileSync } from 'node:fs';",
         "import path from 'node:path';",
-        'const configPath = path.resolve(process.cwd(), process.argv.at(-1));',
+        "const projectArg = process.argv.find((arg) => arg.startsWith('--project='));",
+        "const configPath = path.resolve(process.cwd(), projectArg.slice('--project='.length));",
         "const hash = createHash('sha256').update(configPath).digest('hex').slice(0, 8);",
         "const stalePath = path.join(process.cwd(), 'node_modules/.cache/vue-tsgo', hash, 'stale.txt');",
         "writeFileSync(path.join(process.cwd(), 'stale-state.txt'), String(existsSync(stalePath)));",
@@ -911,7 +920,7 @@ describe('runPipeline', () => {
     fixture.config.pipelines = {
       vue: [
         {
-          args: ['--build', 'tsconfig.vue.build.json'],
+          args: ['--project=tsconfig.vue.build.json'],
           command: 'vue-tsgo',
           type: 'command',
         },

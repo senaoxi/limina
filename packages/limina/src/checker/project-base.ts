@@ -51,11 +51,16 @@ function requireParsedCommandLine(options: {
 }
 
 function assertNoParseErrors(options: {
+  allowNoInputDiagnostics?: boolean;
   diagnostics: readonly ts.Diagnostic[];
   parsed: ts.ParsedCommandLine;
   projectRootDir: string;
 }): void {
-  const errors = [...options.diagnostics, ...options.parsed.errors];
+  const errors = [...options.diagnostics, ...options.parsed.errors].filter(
+    (diagnostic) =>
+      options.allowNoInputDiagnostics !== true ||
+      (diagnostic.code !== 18_002 && diagnostic.code !== 18_003),
+  );
   if (errors.length === 0) return;
   throw new Error(
     ts.formatDiagnosticsWithColorAndContext(
@@ -111,6 +116,7 @@ function parseTypeScriptCommandLine(options: {
     projectRootDir: options.parseOptions.projectRootDir,
   });
   assertNoParseErrors({
+    allowNoInputDiagnostics: options.parseOptions.allowNoInputDiagnostics,
     diagnostics,
     parsed,
     projectRootDir: options.parseOptions.projectRootDir,

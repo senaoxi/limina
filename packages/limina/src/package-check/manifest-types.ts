@@ -1,7 +1,7 @@
 export interface DistPackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
-  exports?: Record<string, unknown>;
+  exports?: unknown;
   imports?: Record<string, unknown>;
   name: string;
   optionalDependencies?: Record<string, string>;
@@ -16,5 +16,8 @@ export interface PackageImportTargetMatch {
 
 export interface SelfSpecifierMatchers {
   exact: Set<string>;
-  prefixes: string[];
+  patterns: {
+    prefix: string;
+    suffix: string;
+  }[];
 }

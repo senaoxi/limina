@@ -62,6 +62,7 @@ function failPeerProgress(options: {
 }
 
 export function createTypecheckPeerFailure(options: {
+  checkerNames: readonly string[];
   flowDepth: number;
   problems: readonly string[];
   projectRootDir: string;
@@ -79,6 +80,7 @@ export function createTypecheckPeerFailure(options: {
     );
   }
   return {
+    checkerNames: [...options.checkerNames],
     failedTargets: [],
     failureKind: 'peer-dependency',
     passed: false,

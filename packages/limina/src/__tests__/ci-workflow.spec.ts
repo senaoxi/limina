@@ -21,6 +21,17 @@ interface WorkflowDocument {
   >;
 }
 
+interface LiminaProject {
+  targets?: {
+    typecheck?: {
+      dependsOn?: {
+        projects?: string[];
+        target?: string;
+      }[];
+    };
+  };
+}
+
 const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 
 function getChangesSteps(workflow: WorkflowDocument): WorkflowStep[] {
@@ -42,6 +53,15 @@ async function readCiPathFilters(): Promise<Record<string, string[]>> {
     await readFile(workflowPath, 'utf8'),
   ) as WorkflowDocument;
   return parse(getFilterSource(workflow)) as Record<string, string[]>;
+}
+
+async function readLiminaProject(): Promise<LiminaProject> {
+  return JSON.parse(
+    await readFile(
+      path.join(workspaceRoot, 'packages/limina/project.json'),
+      'utf8',
+    ),
+  ) as LiminaProject;
 }
 
 function applyPathPattern(
@@ -75,5 +95,26 @@ describe('Limina CI change detection', () => {
 
     expect(filters.src).toBeDefined();
     expect(matchesPathFilter(filePath, filters.src ?? [])).toBe(true);
+  });
+
+  it('declares the global checker build artifact closure on limina:typecheck', async () => {
+    const project = await readLiminaProject();
+
+    expect(project.targets?.typecheck?.dependsOn).toEqual([
+      {
+        projects: [
+          '@docs-islands/agents',
+          '@docs-islands/core',
+          '@docs-islands/eslint-config',
+          '@docs-islands/plugin-license',
+          '@docs-islands/utils',
+          '@docs-islands/vitepress',
+          '@docs-islands/vitepress-smoke',
+          'logaria',
+          'logaria-plugin-test',
+        ],
+        target: 'build',
+      },
+    ]);
   });
 });

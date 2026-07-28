@@ -87,6 +87,7 @@
     "semver": "catalog:dev",
     "@pnpm/workspace.read-manifest": "catalog:dev",
     "yaml": "catalog:dev",
+    "jsonc-parser": "catalog:dev",
     "zod": "catalog:dev",
     "del-cli": "catalog:dev",
     "eslint": "catalog:lint",

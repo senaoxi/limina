@@ -1430,6 +1430,63 @@ describe('auditPublishedPackageBoundaries', () => {
     }
   });
 
+  it('matches self-import authority from complete exports keys instead of targets', async () => {
+    const pkg = await createOutputPackage(
+      {
+        'feature/good.js': 'export const good = true;\n',
+        'index.js': [
+          "import '@example/pkg';",
+          "import '@example/pkg/exact';",
+          "import '@example/pkg/feature/good.js';",
+          "import '@example/pkg/feature/bad.json';",
+        ].join('\n'),
+      },
+      {
+        exports: {
+          './exact': null,
+          './feature/*.js': {
+            default: './feature/*.js',
+            node: null,
+          },
+        },
+      },
+    );
+
+    try {
+      const violations = await auditPublishedPackageBoundaries({
+        outDir: pkg.outDir,
+      });
+
+      expect(violations.map((violation) => violation.specifier)).toEqual([
+        '@example/pkg',
+        '@example/pkg/feature/bad.json',
+      ]);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
+  it('keeps bare self-import compatibility when exports is absent', async () => {
+    const pkg = await createOutputPackage(
+      {
+        'index.js': "import '@example/pkg';\n",
+      },
+      {
+        exports: undefined,
+      },
+    );
+
+    try {
+      await expect(
+        auditPublishedPackageBoundaries({
+          outDir: pkg.outDir,
+        }),
+      ).resolves.toEqual([]);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
   it('reports browser node builtins, undeclared dependencies, and unexported self imports', async () => {
     const pkg = await createOutputPackage({
       'index.js':

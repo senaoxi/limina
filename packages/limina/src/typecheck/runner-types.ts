@@ -104,6 +104,7 @@ export interface RunCheckerTypecheckOptions {
 }
 
 export interface RunCheckerTypecheckResult {
+  checkerNames?: string[];
   failedTargets: CheckerFailureTarget[];
   failureKind?: CheckerFailureKind;
   passed: boolean;

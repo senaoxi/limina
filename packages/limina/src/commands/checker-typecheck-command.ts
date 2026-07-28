@@ -108,6 +108,7 @@ function createResultFailureIssues(
 ): LiminaCheckIssue[] {
   return createCheckerFailureIssues({
     failedTargets: result.failedTargets,
+    fallbackCheckerNames: result.checkerNames,
     fallbackFilePath: context.options.config.configPath,
     fallbackReason: 'Checker typecheck finished with failures.',
     failureKind: result.failureKind,

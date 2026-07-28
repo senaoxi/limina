@@ -1,4 +1,11 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import {
+  parseCheckerProjectConfigForContext,
+  resolveCheckerProjectExtensions,
+} from '#checkers';
+import type {
+  ResolvedCheckerConfig,
+  ResolvedLiminaConfig,
+} from '#config/runner';
 import {
   collectReferencePathInfosForConfig,
   isOrdinarySourceTypecheckConfigPath,
@@ -20,33 +27,33 @@ import {
   readOutputOptions,
 } from './generated/config-readers';
 import { createGeneratedGraphStructuredError } from './problems';
+import type {
+  CollectionContext,
+  ConfigVisit,
+} from './source-config-collection-types';
 import {
   getInvalidSolutionOutputProblem,
   getOutsideRegionProblem,
 } from './source-config-problems';
 import type { CheckerSourceConfigCollection } from './types';
 
-interface CollectionContext {
-  activatedRegions: WorkspaceRegionPathIndex;
-  checkerName: string;
-  collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
-  problems: string[];
-  seenConfigs: Set<string>;
-}
-
-interface ConfigVisit extends CollectionContext {
-  referencedFromConfigPath?: string;
-  sourceConfigPath: string;
-}
-
-function isEmptyLeafConfig(configObject: JsonObject): boolean {
-  const files = configObject.files;
-  return (
-    Array.isArray(files) &&
-    files.length === 0 &&
-    !Object.hasOwn(configObject, 'include')
-  );
+function hasEffectiveProjectFiles(options: ConfigVisit): boolean {
+  const configObject = readJsonConfig(options.config, options.sourceConfigPath);
+  const extensions = resolveCheckerProjectExtensions({
+    configPath: options.sourceConfigPath,
+    preset: options.checkerPreset,
+    projectRootDir: options.config.rootDir,
+  });
+  const parsed = parseCheckerProjectConfigForContext({
+    allowNoInputDiagnostics: true,
+    configPath: options.sourceConfigPath,
+    context: {
+      checkerPresets: [options.checkerPreset],
+      extensions,
+    },
+    projectRootDir: options.config.rootDir,
+  });
+  return parsed.fileNames.length > 0 || Object.hasOwn(configObject, 'include');
 }
 
 function rejectOutsideActivatedRegion(options: ConfigVisit): boolean {
@@ -153,8 +160,7 @@ function collectSolutionConfig(
 }
 
 function collectLeafConfig(options: ConfigVisit, packageRootDir: string): void {
-  const configObject = readJsonConfig(options.config, options.sourceConfigPath);
-  if (isEmptyLeafConfig(configObject)) {
+  if (!hasEffectiveProjectFiles(options)) {
     return;
   }
   options.collection.projectConfigPaths.add(options.sourceConfigPath);
@@ -222,7 +228,7 @@ function collectCheckerSourceConfigModules(options: ConfigVisit): void {
   collectValidConfig({ configObject, packageRootDir, visit: options });
 }
 
-function createEmptyCollection(
+export function createEmptySourceConfigCollection(
   entryConfigPaths: readonly string[],
 ): CheckerSourceConfigCollection {
   const normalizedEntries = uniqueSortedStrings(
@@ -242,10 +248,13 @@ function createEmptyCollection(
 export function collectCheckerSourceConfigs(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: string;
+  checkerPreset: ResolvedCheckerConfig['preset'];
   config: ResolvedLiminaConfig;
   entryConfigPaths: readonly string[];
 }): CheckerSourceConfigCollection {
-  const collection = createEmptyCollection(options.entryConfigPaths);
+  const collection = createEmptySourceConfigCollection(
+    options.entryConfigPaths,
+  );
   const problems: string[] = [];
   const context: CollectionContext = {
     ...options,
@@ -279,16 +288,11 @@ export function collectAutoSourceConfigModules(options: {
   collectCheckerSourceConfigModules({
     activatedRegions: options.activatedRegions,
     checkerName: '__auto__',
+    checkerPreset: 'tsc',
     collection: options.collection,
     config: options.config,
     problems: options.problems,
     seenConfigs: new Set(),
     sourceConfigPath: options.entryConfigPath,
   });
-}
-
-export function createEmptySourceConfigCollection(
-  entryConfigPaths: readonly string[],
-): CheckerSourceConfigCollection {
-  return createEmptyCollection(entryConfigPaths);
 }

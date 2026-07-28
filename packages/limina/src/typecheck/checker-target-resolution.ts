@@ -105,12 +105,12 @@ function appendVueCompilerSfcDependency(options: {
   });
 }
 
-export function collectCheckerPeerDependencyProblems(options: {
+export function collectCheckerPeerDependencyDetails(options: {
   checkers: ResolvedCheckerConfig[];
   imports?: ImportAnalysisConfig;
   projectRootDir: string;
   resolvePackage?: CheckerPackageResolver;
-}): string[] {
+}): ReturnType<typeof collectMissingCheckerPeerDependencies> {
   const resolvePackage = options.resolvePackage ?? resolvePackageFromRoot;
   const missingDependencies = collectMissingCheckerPeerDependencies({
     checkers: options.checkers,
@@ -129,6 +129,16 @@ export function collectCheckerPeerDependencyProblems(options: {
     resolvePackage,
   });
 
+  return missingDependencies;
+}
+
+export function collectCheckerPeerDependencyProblems(options: {
+  checkers: ResolvedCheckerConfig[];
+  imports?: ImportAnalysisConfig;
+  projectRootDir: string;
+  resolvePackage?: CheckerPackageResolver;
+}): string[] {
+  const missingDependencies = collectCheckerPeerDependencyDetails(options);
   return missingDependencies.length === 0
     ? []
     : [formatMissingCheckerPeerDependencies(missingDependencies)];

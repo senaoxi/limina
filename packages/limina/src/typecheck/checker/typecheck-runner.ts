@@ -1,3 +1,4 @@
+import { formatMissingCheckerPeerDependencies } from '#checkers';
 import { getActiveCheckers } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
@@ -22,7 +23,7 @@ import type {
 } from '../runner-types';
 import {
   type CheckerTargetId,
-  collectCheckerPeerDependencyProblems,
+  collectCheckerPeerDependencyDetails,
   createCheckerTarget,
   getExecutionCheckers,
   runTargetWithMeasuredDuration,
@@ -207,24 +208,35 @@ function createContext(
   };
 }
 
-async function runConfiguredTypecheck(
+function collectTypecheckPeerFailure(
   context: CheckerTypecheckContext,
-  preflight: ReturnType<typeof resolvePreflight>,
-): Promise<RunCheckerTypecheckResult> {
-  const problems = collectCheckerPeerDependencyProblems({
+): RunCheckerTypecheckResult | undefined {
+  const peerDependencies = collectCheckerPeerDependencyDetails({
     checkers: context.checkers,
     imports: context.options.config.config?.imports,
     projectRootDir: context.projectRootDir,
     resolvePackage: context.options.checkerPackageResolver,
   });
-  if (problems.length > 0) {
-    return createTypecheckPeerFailure({
-      flowDepth: context.flowDepth,
-      problems,
-      projectRootDir: context.projectRootDir,
-      request: context.options,
-    });
-  }
+  if (peerDependencies.length === 0) return undefined;
+  return createTypecheckPeerFailure({
+    checkerNames: [
+      ...new Set(
+        peerDependencies.flatMap((dependency) => dependency.checkerNames),
+      ),
+    ].sort(),
+    flowDepth: context.flowDepth,
+    problems: [formatMissingCheckerPeerDependencies(peerDependencies)],
+    projectRootDir: context.projectRootDir,
+    request: context.options,
+  });
+}
+
+async function runConfiguredTypecheck(
+  context: CheckerTypecheckContext,
+  preflight: ReturnType<typeof resolvePreflight>,
+): Promise<RunCheckerTypecheckResult> {
+  const peerFailure = collectTypecheckPeerFailure(context);
+  if (peerFailure !== undefined) return peerFailure;
   const generated = await preflight.ensureGeneratedArtifactsMaterialized();
   const targets = createTypecheckTargets({
     context,
