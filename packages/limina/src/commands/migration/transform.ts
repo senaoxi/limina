@@ -5,6 +5,7 @@ import {
 } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
+import { applyMigratedTsconfigText } from './text-transform';
 import type { MigrationWritePlanItem } from './transaction';
 import type { MigrationTarget } from './types';
 
@@ -24,10 +25,6 @@ const governedCompilerOptionFields = [
   'noEmit',
   'tsBuildInfoFile',
 ] as const;
-
-function stringifyJson(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
-}
 
 function assertPlainObjectField(options: {
   configPath: string;
@@ -189,18 +186,33 @@ export function migrateTsconfigObject(options: {
   });
 }
 
+function migrateTsconfigText(options: {
+  configObject: JsonObject;
+  configPath: string;
+  isSolutionStyle: boolean;
+  originalContent: string;
+  rootDir: string;
+}): string {
+  const migratedConfig = migrateTsconfigObject(options);
+  return applyMigratedTsconfigText({
+    configObject: options.configObject,
+    isSolutionStyle: options.isSolutionStyle,
+    migratedConfig,
+    originalContent: options.originalContent,
+  });
+}
+
 export function createMigrationWritePlanItem(options: {
   config: ResolvedLiminaConfig;
   target: MigrationTarget;
 }): MigrationWritePlanItem {
-  const nextContent = stringifyJson(
-    migrateTsconfigObject({
-      configObject: options.target.configObject,
-      configPath: options.target.configPath,
-      isSolutionStyle: options.target.isSolutionStyle,
-      rootDir: options.config.rootDir,
-    }),
-  );
+  const nextContent = migrateTsconfigText({
+    configObject: options.target.configObject,
+    configPath: options.target.configPath,
+    isSolutionStyle: options.target.isSolutionStyle,
+    originalContent: options.target.originalContent,
+    rootDir: options.config.rootDir,
+  });
   return {
     configPath: options.target.configPath,
     nextContent,

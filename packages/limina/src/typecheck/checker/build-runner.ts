@@ -192,7 +192,7 @@ async function runGeneratedCheckerBuild(
   const peerFailure = createCheckerBuildPeerFailure({
     flowDepth: context.flowDepth,
     problems: getCheckerBuildPeerProblems({
-      checkers: context.allCheckers,
+      checkers: context.buildCheckers,
       projectRootDir: context.projectRootDir,
       request: context.options,
     }),

@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '../check-reporting/inventory/location';
 import type { LiminaCheckIssue } from '../check-reporting/snapshot';
 
 export interface CollectedTaskIssues {
@@ -10,7 +11,7 @@ function compareStrings(
   left: string | undefined,
   right: string | undefined,
 ): number {
-  return (left ?? '').localeCompare(right ?? '');
+  return compareCodeUnits(left ?? '', right ?? '');
 }
 
 function firstNonZero(comparisons: readonly number[]): number {

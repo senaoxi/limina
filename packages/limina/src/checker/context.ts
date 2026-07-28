@@ -52,6 +52,7 @@ function getConfigIdentity(options: {
 }
 
 function createParsedProjectConfigCacheKey(options: {
+  allowNoInputDiagnostics?: boolean;
   checkerPresets: CheckerPreset[];
   configPath: string;
   extensions: string[];
@@ -64,6 +65,7 @@ function createParsedProjectConfigCacheKey(options: {
     virtualContent,
   });
   return JSON.stringify({
+    allowNoInputDiagnostics: options.allowNoInputDiagnostics,
     checkerPresets: options.checkerPresets,
     configPath: normalizeAbsolutePath(options.configPath),
     configSize: identity.size,
@@ -103,6 +105,7 @@ function mergeParsedProjectConfigs(options: {
 }
 
 function parseWithPreset(options: {
+  allowNoInputDiagnostics?: boolean;
   configPath: string;
   extensions: string[];
   preset: CheckerPreset;
@@ -114,6 +117,7 @@ function parseWithPreset(options: {
     throw new Error(`Checker preset "${options.preset}" is not supported.`);
   }
   return adapter.parseProjectConfig({
+    allowNoInputDiagnostics: options.allowNoInputDiagnostics,
     configPath: options.configPath,
     extensions: options.extensions,
     projectRootDir: options.projectRootDir,
@@ -122,6 +126,7 @@ function parseWithPreset(options: {
 }
 
 function parseContextConfigs(options: {
+  allowNoInputDiagnostics?: boolean;
   checkerPresets: CheckerPreset[];
   configPath: string;
   context: CheckerProjectParseContext;
@@ -130,6 +135,7 @@ function parseContextConfigs(options: {
 }): ParsedCheckerProjectConfig[] {
   return options.checkerPresets.map((preset) =>
     parseWithPreset({
+      allowNoInputDiagnostics: options.allowNoInputDiagnostics,
       configPath: options.configPath,
       extensions: options.context.extensions,
       preset,
@@ -159,6 +165,7 @@ function cacheParsedConfig(
 }
 
 function createParsedProjectConfig(options: {
+  allowNoInputDiagnostics?: boolean;
   checkerPresets: CheckerPreset[];
   configPath: string;
   context: CheckerProjectParseContext;
@@ -173,6 +180,7 @@ function createParsedProjectConfig(options: {
 }
 
 function resolveCacheMiss(options: {
+  allowNoInputDiagnostics?: boolean;
   cacheKey: string;
   checkerPresets: CheckerPreset[];
   configPath: string;
@@ -185,6 +193,7 @@ function resolveCacheMiss(options: {
 }
 
 function resolveCachedProjectConfig(options: {
+  allowNoInputDiagnostics?: boolean;
   cached: ParsedCheckerProjectConfig | undefined;
   cacheKey: string;
   checkerPresets: CheckerPreset[];
@@ -198,6 +207,7 @@ function resolveCachedProjectConfig(options: {
 }
 
 function resolveParsedProjectConfig(options: {
+  allowNoInputDiagnostics?: boolean;
   cacheKey: string;
   checkerPresets: CheckerPreset[];
   configPath: string;
@@ -210,11 +220,13 @@ function resolveParsedProjectConfig(options: {
 }
 
 function createContextParseRequest(options: {
+  allowNoInputDiagnostics?: boolean;
   configPath: string;
   context: CheckerProjectParseContext;
   projectRootDir: string;
   virtualFiles?: ReadonlyMap<string, string>;
 }): {
+  allowNoInputDiagnostics?: boolean;
   cacheKey: string;
   checkerPresets: CheckerPreset[];
   configPath: string;
@@ -224,6 +236,7 @@ function createContextParseRequest(options: {
 } {
   const checkerPresets = resolveContextCheckerPresets(options.context);
   const cacheKey = createParsedProjectConfigCacheKey({
+    allowNoInputDiagnostics: options.allowNoInputDiagnostics,
     checkerPresets,
     configPath: options.configPath,
     extensions: options.context.extensions,
@@ -234,6 +247,7 @@ function createContextParseRequest(options: {
 }
 
 export function parseCheckerProjectConfigForContext(options: {
+  allowNoInputDiagnostics?: boolean;
   configPath: string;
   context: CheckerProjectParseContext;
   projectRootDir: string;

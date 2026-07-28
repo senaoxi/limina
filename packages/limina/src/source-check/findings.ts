@@ -170,6 +170,7 @@ export function createSourceCheckIssueFromFinding(options: {
     reason: options.finding.reason,
     rootDir: options.rootDir,
     scope: options.finding.scope,
+    semanticIdentity: options.finding.facts,
     summary: options.finding.summary,
     task: options.finding.task,
     title: options.finding.title,

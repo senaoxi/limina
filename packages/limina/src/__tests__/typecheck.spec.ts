@@ -221,6 +221,91 @@ describe('runCheckerBuild', () => {
     }
   });
 
+  it('preflights only build-executing checkers while typecheck owns missing typecheck peers', async () => {
+    const buildCalls: TypecheckTarget[] = [];
+    const typecheckCalls: TypecheckTarget[] = [];
+    const typecheckIssues: LiminaCheckIssue[] = [];
+    const fixture = await createFixture({
+      'src/index.ts': 'export const value = 1;\n',
+      'svelte/src/index.ts': 'export const svelteValue = 1;\n',
+      'svelte/tsconfig.json': tsconfig({
+        include: ['src/**/*.ts'],
+      }),
+      'tsconfig.json': tsconfig({
+        include: ['src/**/*.ts'],
+      }),
+      'tsconfig.build.json': tsconfig({ files: [] }),
+      'tsconfig.svelte.build.json': tsconfig({ files: [] }),
+    });
+    const config: ResolvedLiminaConfig = {
+      config: {
+        checkers: {
+          svelte: {
+            include: ['svelte/tsconfig.json'],
+            preset: 'svelte-check',
+          },
+          typescript: {
+            include: ['tsconfig.json'],
+            preset: 'tsc',
+          },
+        },
+      },
+      configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+      rootDir: fixture.rootDir,
+    };
+    const resolveOnlyTypeScript: CheckerPackageResolver = ({ packageName }) =>
+      packageName === 'typescript' ? packageName : undefined;
+
+    try {
+      await expect(
+        runCheckerBuildCommand({
+          checkerPackageResolver: resolveOnlyTypeScript,
+          config,
+          cwd: fixture.rootDir,
+          runner: passingRunner(buildCalls),
+        }),
+      ).resolves.toMatchObject({ passed: true });
+      await expect(
+        runCheckerBuildCommand({
+          checkerPackageResolver: resolveOnlyTypeScript,
+          config,
+          configPath: 'tsconfig.json',
+          cwd: fixture.rootDir,
+          runner: passingRunner(buildCalls),
+        }),
+      ).resolves.toMatchObject({ passed: true });
+      await expect(
+        runCheckerTypecheckCommand({
+          checkerPackageResolver: resolveOnlyTypeScript,
+          config,
+          cwd: fixture.rootDir,
+          deferSnapshot: true,
+          issues: typecheckIssues,
+          report: { defer: true },
+          runner: passingRunner(typecheckCalls),
+        }),
+      ).resolves.toMatchObject({
+        failureKind: 'peer-dependency',
+        passed: false,
+      });
+
+      expect(buildCalls.map((target) => target.command)).toEqual([
+        'tsc',
+        'tsc',
+      ]);
+      expect(typecheckCalls).toEqual([]);
+      expect(typecheckIssues).toMatchObject([
+        {
+          checkerName: 'svelte',
+          code: LIMINA_CHECK_ISSUE_CODES.checkerTypecheckFailed,
+          task: 'checker:typecheck',
+        },
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('runs first-class build checker entries with default concurrency', async () => {
     const calls: TypecheckTarget[] = [];
     const delayed = delayedRunner({

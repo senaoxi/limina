@@ -57,6 +57,7 @@ export function prepareCheckerGraph(options: {
   const collection = collectCheckerSourceConfigs({
     activatedRegions: options.activatedRegions,
     checkerName: options.selection.checker.name,
+    checkerPreset: options.selection.checker.preset,
     config: options.config,
     entryConfigPaths: options.selection.selection.effectiveEntryPaths,
   });

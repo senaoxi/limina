@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'pathe';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import {
   type CheckIssueInventoryView,
@@ -23,6 +23,7 @@ import {
 } from '../check-reporting/snapshot';
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { sortCollectedIssues } from '../execution/issues';
 import { SOURCE_ISSUE_CODES } from '../source-check/report';
 import {
   formatSourceIssueSnapshotInventory,
@@ -1367,6 +1368,93 @@ describe('check issue snapshots', () => {
       code: 'LIMINA_PACKAGE_PUBLINT',
       id: issue.id,
     });
+  });
+
+  it('keeps completed, JSON, NDJSON, and human issue order independent of localeCompare', () => {
+    const issues = ['ä.ts', 'z.ts'].map((filePath) =>
+      createLiminaCheckIssue({
+        code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
+        filePath,
+        reason: `${filePath} failed.`,
+        rootDir: '/repo',
+        task: 'source:check',
+        title: 'Source issue',
+      }),
+    );
+    const render = (): {
+      completed: string;
+      human: string;
+      ids: string[];
+      json: string;
+      ndjson: string;
+    } => {
+      const ordered = sortCollectedIssues([
+        {
+          issues,
+          taskId: 'source',
+          taskOrder: 0,
+        },
+      ]);
+      const snapshot = createCheckSnapshot(ordered);
+      return {
+        completed: JSON.stringify(snapshot),
+        human: formatHumanInventory({
+          color: false,
+          limit: null,
+          snapshot,
+          verbose: true,
+        }),
+        ids: ordered
+          .map((issue) => issue.id)
+          .filter((id): id is string => id !== undefined),
+        json: formatCheckIssueSnapshotInventory({
+          format: 'json',
+          snapshot,
+        }),
+        ndjson: formatCheckIssueSnapshotInventory({
+          format: 'ndjson',
+          snapshot,
+        }),
+      };
+    };
+    const baseline = render();
+    const localeCompare = vi
+      .spyOn(String.prototype, 'localeCompare')
+      .mockImplementation(function invertedLocaleCompare(
+        this: string,
+        other: string,
+      ) {
+        return String(this) < other ? 1 : String(this) > other ? -1 : 0;
+      });
+
+    try {
+      const inverted = render();
+      expect(inverted).toEqual(baseline);
+      expect(localeCompare).not.toHaveBeenCalled();
+      expect(baseline.ids).toEqual(
+        issues.toReversed().map((issue) => issue.id),
+      );
+      expect(baseline.human.indexOf('z.ts')).toBeLessThan(
+        baseline.human.indexOf('ä.ts'),
+      );
+      expect(
+        (
+          JSON.parse(baseline.json) as {
+            issues: CheckIssueSnapshot['issues'];
+          }
+        ).issues.map((issue) => issue.id),
+      ).toEqual(baseline.ids);
+      expect(
+        baseline.ndjson
+          .split('\n')
+          .map(
+            (line) =>
+              (JSON.parse(line) as CheckIssueSnapshot['issues'][number]).id,
+          ),
+      ).toEqual(baseline.ids);
+    } finally {
+      localeCompare.mockRestore();
+    }
   });
 
   it('preserves resource module source codes in JSON and NDJSON inventories', () => {

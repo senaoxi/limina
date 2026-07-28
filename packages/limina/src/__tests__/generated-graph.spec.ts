@@ -127,6 +127,91 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it('keeps a leaf with files empty when an extended config supplies the effective include', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/base.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        extends: './base.json',
+        files: [],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(generatedConfigPath).toBeDefined();
+      expect(
+        parseProject(fixture.config, generatedConfigPath!).fileNames.map(
+          normalizeAbsolutePath,
+        ),
+      ).toContain(
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
+        ),
+      );
+      expect(
+        result.manifest.checkers.typescript?.sourceToDts[
+          'packages/pkg/tsconfig.json'
+        ],
+      ).toBeDefined();
+      expect(result.manifest.checkers.typescript?.roots).toEqual([
+        'packages/pkg/tsconfig.json',
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not register a truly empty leaf as a generated project', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+
+      expect(result.sourceToDts.get('typescript')?.has(sourceConfigPath)).toBe(
+        false,
+      );
+      expect(
+        result.manifest.checkers.typescript?.sourceToDts[
+          'packages/pkg/tsconfig.json'
+        ],
+      ).toBeUndefined();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('disables relative import rewriting for generated declaration projects', async () => {
     const fixture = await createFixture({
       'packages/pkg/package.json': json({

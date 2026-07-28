@@ -29,7 +29,10 @@ function addExportMatcher(
 
   const wildcardIndex = subpath.indexOf('*');
   if (wildcardIndex !== -1) {
-    matchers.prefixes.push(`${packageName}/${subpath.slice(0, wildcardIndex)}`);
+    matchers.patterns.push({
+      prefix: `${packageName}/${subpath.slice(0, wildcardIndex)}`,
+      suffix: subpath.slice(wildcardIndex + 1),
+    });
     return;
   }
 
@@ -47,24 +50,52 @@ function addExportKeyMatcher(
   }
 }
 
+function hasSubpathExportKeys(exportKeys: readonly string[]): boolean {
+  return exportKeys.some((key) => key.startsWith('.'));
+}
+
+function collectObjectExportMatchers(
+  packageName: string,
+  exportsField: Record<string, unknown>,
+  matchers: SelfSpecifierMatchers,
+): SelfSpecifierMatchers {
+  const exportKeys = Object.keys(exportsField);
+  if (!hasSubpathExportKeys(exportKeys)) {
+    matchers.exact.add(packageName);
+    return matchers;
+  }
+  for (const exportKey of exportKeys) {
+    addExportKeyMatcher(packageName, exportKey, matchers);
+  }
+  return matchers;
+}
+
+function collectNonObjectExportMatchers(
+  packageName: string,
+  exportsField: unknown,
+  matchers: SelfSpecifierMatchers,
+): SelfSpecifierMatchers {
+  if (exportsField !== null) matchers.exact.add(packageName);
+  return matchers;
+}
+
 export function collectSelfSpecifierMatchers(
   packageName: string,
   exportsField: DistPackageJson['exports'],
 ): SelfSpecifierMatchers {
   const matchers: SelfSpecifierMatchers = {
-    exact: new Set([packageName]),
-    prefixes: [],
+    exact: new Set(),
+    patterns: [],
   };
 
-  if (!isPlainRecord(exportsField)) {
+  if (exportsField === undefined) {
+    matchers.exact.add(packageName);
     return matchers;
   }
-
-  for (const exportKey of Object.keys(exportsField)) {
-    addExportKeyMatcher(packageName, exportKey, matchers);
+  if (!isPlainRecord(exportsField)) {
+    return collectNonObjectExportMatchers(packageName, exportsField, matchers);
   }
-
-  return matchers;
+  return collectObjectExportMatchers(packageName, exportsField, matchers);
 }
 
 export function isAllowedSelfSpecifier(
@@ -73,6 +104,11 @@ export function isAllowedSelfSpecifier(
 ): boolean {
   return (
     matchers.exact.has(specifier) ||
-    matchers.prefixes.some((prefix) => specifier.startsWith(prefix))
+    matchers.patterns.some(
+      ({ prefix, suffix }) =>
+        specifier.startsWith(prefix) &&
+        specifier.endsWith(suffix) &&
+        specifier.length >= prefix.length + suffix.length,
+    )
   );
 }

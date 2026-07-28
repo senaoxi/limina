@@ -22,6 +22,7 @@ export interface CheckerCommandTargetOptions {
 }
 
 export interface CheckerProjectConfigParseOptions {
+  allowNoInputDiagnostics?: boolean;
   configPath: string;
   extensions?: string[];
   projectRootDir: string;

@@ -34,15 +34,44 @@ function getConfigPathAfterFlag(options: {
   return configArg.startsWith('-') ? undefined : configArg;
 }
 
+function getEqualsConfigPath(arg: string, cwd: string): string | undefined {
+  if (!arg.startsWith('--project=')) return undefined;
+  const configArg = arg.slice('--project='.length);
+  if (configArg.length === 0) return undefined;
+  return path.resolve(cwd, configArg);
+}
+
+function getSeparatedConfigPath(options: {
+  arg: string;
+  args: readonly string[];
+  cwd: string;
+  index: number;
+}): string | undefined {
+  if (!configArgumentFlags.has(options.arg)) return undefined;
+  const configArg = getConfigPathAfterFlag(options);
+  return configArg === undefined
+    ? undefined
+    : path.resolve(options.cwd, configArg);
+}
+
+function getExplicitConfigPath(options: {
+  arg: string;
+  args: readonly string[];
+  cwd: string;
+  index: number;
+}): string | undefined {
+  const equalsPath = getEqualsConfigPath(options.arg, options.cwd);
+  if (equalsPath !== undefined) return equalsPath;
+  return getSeparatedConfigPath(options);
+}
+
 function collectExplicitConfigPaths(
   args: readonly string[],
   cwd: string,
 ): string[] {
-  return args.flatMap((arg, index) => {
-    if (!configArgumentFlags.has(arg)) return [];
-    const configArg = getConfigPathAfterFlag({ args, index });
-    return configArg === undefined ? [] : [path.resolve(cwd, configArg)];
-  });
+  return args
+    .map((arg, index) => getExplicitConfigPath({ arg, args, cwd, index }))
+    .filter((configPath) => configPath !== undefined);
 }
 
 function getStepArgs(step: CommandPipelineStep): readonly string[] {
@@ -87,7 +116,7 @@ function createCommandCacheTarget(options: {
   };
 }
 
-function createCommandCacheTargets(
+export function createCommandCacheTargets(
   step: CommandPipelineStep,
   cwd: string,
 ): TypecheckTarget[] {

@@ -200,13 +200,19 @@ export function resolveVueProjectExtensionsForChecker(
 }
 
 function assertNoVueParseErrors(options: {
+  allowNoInputDiagnostics?: boolean;
   errors: readonly ts.Diagnostic[];
   projectRootDir: string;
 }): void {
-  if (options.errors.length === 0) return;
+  const errors = options.errors.filter(
+    (diagnostic) =>
+      options.allowNoInputDiagnostics !== true ||
+      (diagnostic.code !== 18_002 && diagnostic.code !== 18_003),
+  );
+  if (errors.length === 0) return;
   throw new Error(
     ts.formatDiagnosticsWithColorAndContext(
-      options.errors,
+      errors,
       createFormatHost(options.projectRootDir),
     ),
   );
@@ -240,6 +246,7 @@ export function parseVueProjectConfig(
     createExtraFileExtensions(extensions),
   );
   assertNoVueParseErrors({
+    allowNoInputDiagnostics: options.allowNoInputDiagnostics,
     errors: parsed.errors,
     projectRootDir: options.projectRootDir,
   });

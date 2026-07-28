@@ -16,6 +16,7 @@ import {
 } from './target-types';
 
 export {
+  collectCheckerPeerDependencyDetails,
   collectCheckerPeerDependencyProblems,
   getExecutionCheckers,
 } from './checker-target-resolution';

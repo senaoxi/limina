@@ -9,6 +9,24 @@
           "target": "build"
         }
       ]
+    },
+    "typecheck": {
+      "dependsOn": [
+        {
+          "projects": [
+            "@docs-islands/agents",
+            "@docs-islands/core",
+            "@docs-islands/eslint-config",
+            "@docs-islands/plugin-license",
+            "@docs-islands/utils",
+            "@docs-islands/vitepress",
+            "@docs-islands/vitepress-smoke",
+            "logaria",
+            "logaria-plugin-test"
+          ],
+          "target": "build"
+        }
+      ]
     }
   }
 }
