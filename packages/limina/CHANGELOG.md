@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-28
+
+### Bug Fixes
+
+- fix(limina): prevent Windows CLI test timeouts ([ebe9ade9](https://github.com/senaoxi/docs-islands/commit/ebe9ade9))
+- fix(limina): harden runtime checks and integration coverage ([2119b531](https://github.com/senaoxi/docs-islands/commit/2119b531))
+
+### Documentation
+
+- docs: adopt Project Context Records (PCR) for agent workflow ([0939343c](https://github.com/senaoxi/docs-islands/commit/0939343c))
+
+### Maintenance
+
+- ci: add autofix and scheduled dependency-update workflows ([02361888](https://github.com/senaoxi/docs-islands/commit/02361888))
+- refactor(limina): decompose monolithic modules into focused units ([76e93ced](https://github.com/senaoxi/docs-islands/commit/76e93ced))
+
 ## [0.2.0] - 2026-07-23
 
 ### Features
