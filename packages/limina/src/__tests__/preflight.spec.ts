@@ -123,10 +123,6 @@ describe('LiminaPreflightManager', () => {
     const manager = new LiminaPreflightManager({
       config: fixture.config,
       generatedGraphProvider: getGraph,
-      providers: createFakeCore({
-        config: fixture.config,
-        namespace,
-      }),
     });
 
     try {
@@ -292,10 +288,6 @@ describe('LiminaPreflightManager', () => {
 
   it('does not let old generation rejection or resolution replace the new slot', async () => {
     const fixture = await createFixture();
-    const namespace = createLiminaArtifactNamespace({
-      generation: 0,
-      rootDir: fixture.rootDir,
-    });
     const oldGraph = deferred<GeneratedTsconfigGraphResult>();
     const newGraph = deferred<GeneratedTsconfigGraphResult>();
     const provider = vi
@@ -305,10 +297,6 @@ describe('LiminaPreflightManager', () => {
     const manager = new LiminaPreflightManager({
       config: fixture.config,
       generatedGraphProvider: provider,
-      providers: createFakeCore({
-        config: fixture.config,
-        namespace,
-      }),
     });
 
     try {
@@ -454,14 +442,17 @@ describe('LiminaPreflightManager', () => {
       generatedFiles: new Map<string, string>(),
     } as GeneratedTsconfigGraphResult;
     const metrics = createProfilingMetricsRecorder();
+    const customProviders = createFakeCore({
+      config: fixture.config,
+      namespace,
+    });
+    const dispose = vi.fn();
+    customProviders.dispose = dispose;
     const manager = new LiminaPreflightManager({
       config: fixture.config,
       generatedGraphProvider: vi.fn(async () => graph),
       metrics,
-      providers: createFakeCore({
-        config: fixture.config,
-        namespace,
-      }),
+      providers: customProviders,
     });
 
     try {
@@ -517,17 +508,15 @@ describe('LiminaPreflightManager', () => {
         countMetric('checker-route-projection', 'unique-entry-root') ?? 0,
       );
 
-      createPreflightGenerationController(manager).startNextGeneration();
-      await manager.ensureGraphProjectRoutes();
-      expect(
-        metrics
-          .snapshot()
-          .find(
-            (metric) =>
-              metric.name === 'checker-route-traversal' &&
-              metric.kind === 'traversal',
-          )?.count,
-      ).toBe(2);
+      const providers = manager.providers;
+      expect(() =>
+        createPreflightGenerationController(manager).startNextGeneration(),
+      ).toThrow(
+        'Custom analysis providers support generation 0 only and cannot advance.',
+      );
+      expect(manager.providers).toBe(providers);
+      expect(manager.run.generation).toBe('0');
+      expect(dispose).not.toHaveBeenCalled();
     } finally {
       await fixture.cleanup();
     }

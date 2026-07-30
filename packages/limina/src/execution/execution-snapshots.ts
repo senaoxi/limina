@@ -2,15 +2,25 @@ import { SerialSnapshotWriterQueue } from '../check-reporting/atomic-writer';
 import {
   assertCompletedRunSummary,
   CHECK_ISSUE_SNAPSHOT_VERSION,
+  type CheckIssueSnapshot,
   createCompletedSourceIssueSnapshot,
   createNotRunSourceIssueSnapshot,
   type LiminaCheckIssue,
   writeCheckIssueSnapshotOnly,
   writeSourceIssueSnapshotOnly,
 } from '../check-reporting/snapshot';
+import {
+  completeCheckAttempt,
+  failCheckAttemptPersistence,
+  type PublishedCheckAttempt,
+} from '../source-check/snapshot/check-attempt-io';
 import type { RunExecutionPlanOptions } from './executor-types';
 import { nowIso } from './task-observers';
 import type { ExecutionTask, StartedTaskResult } from './tasks';
+
+function ignoreError(error: unknown): void {
+  String(error);
+}
 
 function hasSourceTask(tasks: readonly ExecutionTask[]): boolean {
   return tasks.some((task) => task.issueTask === 'source:check');
@@ -74,8 +84,8 @@ async function enqueueSourceSnapshot(options: {
   sourceTask: ExecutionTask | undefined;
   tasks: readonly ExecutionTask[];
   writer: SerialSnapshotWriterQueue;
-}): Promise<void> {
-  if (!hasSourceTask(options.tasks)) return;
+}): Promise<boolean> {
+  if (!hasSourceTask(options.tasks)) return false;
   const sourceSnapshot = createSourceSnapshot({
     command: options.execution.command,
     finalRepositoryGeneration: options.finalRepositoryGeneration,
@@ -87,6 +97,7 @@ async function enqueueSourceSnapshot(options: {
   await options.writer.enqueue(() =>
     writeSource(options.execution.preflight.artifactNamespace, sourceSnapshot),
   );
+  return true;
 }
 
 const missingRunSummary = new Map().get('missing');
@@ -100,25 +111,36 @@ function getCompletedRunSummary(execution: RunExecutionPlanOptions) {
 }
 
 async function enqueueCheckSnapshot(options: {
+  attempt: PublishedCheckAttempt;
   execution: RunExecutionPlanOptions;
   issues: readonly LiminaCheckIssue[];
+  sourceSnapshotPersisted: boolean;
   writer: SerialSnapshotWriterQueue;
 }): Promise<void> {
   const writeCheck = getCheckWriter(options.execution);
   const run = getCompletedRunSummary(options.execution);
+  const snapshot: CheckIssueSnapshot = {
+    command: options.execution.command,
+    createdAt: nowIso(),
+    issues: [...options.issues],
+    run,
+    status: 'completed' as const,
+    version: CHECK_ISSUE_SNAPSHOT_VERSION,
+  };
   await options.writer.enqueue(() =>
-    writeCheck(options.execution.preflight.artifactNamespace, {
-      command: options.execution.command,
-      createdAt: nowIso(),
-      issues: [...options.issues],
-      run,
-      status: 'completed',
-      version: CHECK_ISSUE_SNAPSHOT_VERSION,
+    completeCheckAttempt({
+      attempt: options.attempt,
+      namespace: options.execution.preflight.artifactNamespace,
+      snapshot,
+      sourceSnapshotPersisted: options.sourceSnapshotPersisted,
+      warn: (message) => options.execution.flow?.warn(message),
+      writeSnapshot: writeCheck,
     }),
   );
 }
 
 export async function writeExecutionSnapshots(options: {
+  attempt: PublishedCheckAttempt;
   execution: RunExecutionPlanOptions;
   finalRepositoryGeneration: number;
   issues: readonly LiminaCheckIssue[];
@@ -127,13 +149,29 @@ export async function writeExecutionSnapshots(options: {
   tasks: readonly ExecutionTask[];
 }): Promise<void> {
   const writer = new SerialSnapshotWriterQueue();
-  await enqueueSourceSnapshot({ ...options, writer });
-  await enqueueCheckSnapshot({
-    execution: options.execution,
-    issues: options.issues,
-    writer,
-  });
-  await writer.flush();
+  let sourceSnapshotPersisted = false;
+  try {
+    sourceSnapshotPersisted = await enqueueSourceSnapshot({
+      ...options,
+      writer,
+    });
+    await enqueueCheckSnapshot({
+      attempt: options.attempt,
+      execution: options.execution,
+      issues: options.issues,
+      sourceSnapshotPersisted,
+      writer,
+    });
+    await writer.flush();
+  } catch (error) {
+    await failCheckAttemptPersistence({
+      attempt: options.attempt,
+      error,
+      namespace: options.execution.preflight.artifactNamespace,
+      sourceSnapshotPersisted,
+    }).catch(ignoreError);
+    throw error;
+  }
 }
 
 function formatSnapshotError(error: unknown): string {
@@ -161,6 +199,7 @@ function handleSnapshotWriteFailure(options: {
 }
 
 export async function writeSnapshotsPreservingFailure(options: {
+  attempt: PublishedCheckAttempt;
   completedState: 'blocked' | 'failed' | 'passed';
   execution: RunExecutionPlanOptions;
   finalRepositoryGeneration: number;

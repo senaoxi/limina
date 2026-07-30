@@ -279,11 +279,10 @@ describe('AnalysisProviderSet', () => {
 
   it('starts a new analysis generation after external commands', async () => {
     const fixture = await createCoreFixture();
-    const core = fixture.core;
     const preflight = new LiminaPreflightManager({
       config: fixture.config,
-      providers: core,
     });
+    const initialProviders = preflight.providers;
     const initialRunId = preflight.run.id;
     fixture.config.pipelines = {
       demo: [
@@ -299,12 +298,11 @@ describe('AnalysisProviderSet', () => {
       await expect(
         runPipeline(fixture.config, 'demo', {
           preflight,
-          providers: core,
         }),
       ).resolves.toBe(true);
       expect(preflight.run.generation).toBe('1');
       expect(preflight.run.id).not.toBe(initialRunId);
-      expect(preflight.providers).not.toBe(core);
+      expect(preflight.providers).not.toBe(initialProviders);
     } finally {
       await fixture.cleanup();
     }

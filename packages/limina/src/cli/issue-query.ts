@@ -6,12 +6,15 @@ import {
   type CheckIssueSnapshot,
   formatCheckIssueSnapshotInventory,
   locateCheckIssueWorkspace,
-  readCheckIssueSnapshot,
   readStandaloneIssueInvocation,
   type StandaloneIssueInvocationSnapshot,
   toCheckIssueInventoryInvocationMetadata,
   toCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
+import {
+  type CheckAttemptQueryResult,
+  queryLatestCheckAttempt,
+} from '../source-check/snapshot/check-attempt-query';
 import {
   assertHumanIssueInventoryLimit,
   assertKnownCheckRuleCodes,
@@ -23,6 +26,7 @@ import { parsePackageNames, parseRepeatedStrings } from './parse';
 import type { CheckFlags } from './types';
 
 interface InventoryInput {
+  attemptQuery?: CheckAttemptQueryResult;
   invocation?: StandaloneIssueInvocationSnapshot;
   snapshot: CheckIssueSnapshot | null;
 }
@@ -98,7 +102,8 @@ async function readInventoryInput(options: {
   rootDir: string;
 }): Promise<InventoryInput> {
   if (options.invocationId === undefined) {
-    return { snapshot: await readCheckIssueSnapshot(options.rootDir) };
+    const attemptQuery = await queryLatestCheckAttempt(options.rootDir);
+    return { attemptQuery, snapshot: attemptQuery.snapshot };
   }
   const invocation = await readStandaloneIssueInvocation(
     options.rootDir,
@@ -108,6 +113,31 @@ async function readInventoryInput(options: {
     invocation,
     snapshot: toCheckIssueSnapshot(invocation),
   };
+}
+
+function isUnavailableAttemptQuery(
+  query: CheckAttemptQueryResult | undefined,
+): query is Extract<CheckAttemptQueryResult, { snapshot: null }> {
+  if (query === undefined) return false;
+  return query.state !== 'completed' && query.state !== 'legacy';
+}
+
+function formatUnavailableInventory(options: {
+  format: 'human' | 'json' | 'ndjson';
+  query: Extract<CheckAttemptQueryResult, { snapshot: null }>;
+}): string {
+  if (options.format === 'human') {
+    return `Issue inventory unavailable: ${options.query.message}`;
+  }
+  const status = {
+    issueCount: 0,
+    issues: [],
+    message: options.query.message,
+    status: options.query.state,
+    version: 1,
+  };
+  if (options.format === 'json') return JSON.stringify(status, null, 2);
+  return JSON.stringify({ ...status, type: 'inventory-status' });
 }
 
 function getInvocationMetadata(
@@ -205,6 +235,16 @@ export async function showIssueInventory(flags: CheckFlags): Promise<void> {
     limit,
     limitExplicit,
   });
+  if (isUnavailableAttemptQuery(input.attemptQuery)) {
+    process.exitCode = 1;
+    process.stdout.write(
+      `${formatUnavailableInventory({
+        format,
+        query: input.attemptQuery,
+      })}\n`,
+    );
+    return;
+  }
   const output = formatInventory({
     filters,
     flags,

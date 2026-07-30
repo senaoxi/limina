@@ -5,6 +5,7 @@ import {
   createImportRecord,
   type ImportRecordKind,
 } from './records';
+import { collectRequireImports } from './require-bindings';
 
 interface TypeScriptImportCollectionOptions {
   filePath: string;
@@ -130,45 +131,6 @@ function collectDynamicImport(node: ts.Node, add: AddImport): void {
   addNodeSpecifier({ add, kind: 'dynamic', node: getCallArgument(node) });
 }
 
-function isNamedIdentifier(node: ts.Node, name: string): boolean {
-  if (!ts.isIdentifier(node)) return false;
-  return node.text === name;
-}
-
-function isRequireCall(node: ts.CallExpression): boolean {
-  return isNamedIdentifier(node.expression, 'require');
-}
-
-function collectRequireCall(node: ts.Node, add: AddImport): void {
-  if (!ts.isCallExpression(node)) return;
-  if (!isRequireCall(node)) return;
-  addNodeSpecifier({ add, kind: 'commonjs', node: getCallArgument(node) });
-}
-
-function isRequireObject(node: ts.PropertyAccessExpression): boolean {
-  return isNamedIdentifier(node.expression, 'require');
-}
-
-function isResolveProperty(node: ts.PropertyAccessExpression): boolean {
-  return node.name.text === 'resolve';
-}
-
-function isRequireResolveCall(node: ts.CallExpression): boolean {
-  if (!ts.isPropertyAccessExpression(node.expression)) return false;
-  if (!isRequireObject(node.expression)) return false;
-  return isResolveProperty(node.expression);
-}
-
-function collectRequireResolve(node: ts.Node, add: AddImport): void {
-  if (!ts.isCallExpression(node)) return;
-  if (!isRequireResolveCall(node)) return;
-  addNodeSpecifier({
-    add,
-    kind: 'require-resolve',
-    node: getCallArgument(node),
-  });
-}
-
 function getImportEqualsExpression(
   node: ts.ImportEqualsDeclaration,
 ): ts.Expression | undefined {
@@ -190,8 +152,6 @@ const NODE_COLLECTORS: readonly NodeCollector[] = [
   collectExportDeclaration,
   collectImportTypeNode,
   collectDynamicImport,
-  collectRequireCall,
-  collectRequireResolve,
   collectImportEquals,
 ];
 
@@ -244,5 +204,5 @@ export function collectTypeScriptImports(
     sourceFile,
   });
   visitNode({ add, node: sourceFile });
-  return imports;
+  return [...imports, ...collectRequireImports(options)];
 }

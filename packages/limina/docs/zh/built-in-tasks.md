@@ -53,6 +53,8 @@ export default defineConfig({
 
 表中每个任务都会复用当前 generation 已验证的工作区上下文。验证失败时，依赖工作会被阻塞，主要工作区问题仍可安全写入 `.limina/check/last-run.json`；后续 snapshot 写入失败不会替换最初的验证错误。
 
+生成的检查器配置由 canonical workspace 上的跨进程 reader/writer lease 保护。managed build 与 typecheck 进程会在完整消费期间持有 read lease；物化会等待 reader 退出，并在修改产物前发布 in-progress marker。如果 writer 中途退出，reader 会 fail closed，不会读取混合状态的文件树。下一个执行物化的 writer 会按当前完整 plan 重写目标、删除不再归属的旧文件，完成后才允许 reader 继续。lease 等待上限为 30 秒。
+
 核心任务是 `graph:check`、`source:check`、`proof:check`、`checker:build` 和 `checker:typecheck`。`package:check` 与 `release:check` 是发布期补充任务，适合放进发布流水线，但不应放大成 Limina 的核心能力。
 
 ## 生成图是后续检查的基础

@@ -9,6 +9,7 @@ type TsconfigGovernancePhaseInput = Readonly<
     | 'checkItems'
     | 'checks'
     | 'config'
+    | 'core'
     | 'findings'
     | 'generatedGraph'
     | 'workspaceLookup'
@@ -26,6 +27,7 @@ export async function runTsconfigGovernancePhase(
     configPaths: collectGeneratedSourceConfigPaths(state.generatedGraph),
     findings: state.findings,
     generatedGraph: state.generatedGraph,
+    projectConfigCache: state.core.projectConfigs,
     workspaceLookup: state.workspaceLookup,
   });
   state.checkItems.record('tsconfig governance');

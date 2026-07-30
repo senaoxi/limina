@@ -902,7 +902,7 @@ export default {
     });
   }, 60_000);
 
-  it('keeps the last completed check when a running check is terminated', async () => {
+  it('keeps the completed snapshot but fails issue queries closed when a running check is terminated', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
       const barrierScript = path.join(rootDir, 'slow-check.cjs');
       const configPath = path.join(rootDir, 'limina.config.mjs');
@@ -991,17 +991,18 @@ export default {
         await closed;
 
         expect(await readFile(lastRunPath, 'utf8')).toBe(completedCheck);
-        const query = await execFileAsync(
-          process.execPath,
-          [cliPath, 'check', '--issues', '--format', 'json'],
-          {
-            cwd: rootDir,
-            env: { ...process.env, CI: 'true' },
-          },
-        );
-        expect(JSON.parse(query.stdout)).toMatchObject({
-          issueCount: 1,
-          issues: [{ id: 'completed-check-a' }],
+        await expect(
+          execFileAsync(
+            process.execPath,
+            [cliPath, 'check', '--issues', '--format', 'json'],
+            {
+              cwd: rootDir,
+              env: { ...process.env, CI: 'true' },
+            },
+          ),
+        ).rejects.toMatchObject({
+          code: 1,
+          stdout: expect.stringContaining('"status": "interrupted"'),
         });
       } finally {
         if (child.exitCode === null && child.signalCode === null) {

@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
   resolveCheckerProjectExtensions,
@@ -36,6 +37,7 @@ export function createSourceProject(options: {
   checkerPreset: SourceProject['context']['checkerPresets'][number];
   config: ResolvedLiminaConfig;
   packageRootDir: string;
+  projectConfigCache?: CheckerProjectConfigCache;
   sourceConfigPath: string;
 }): SourceProject {
   const extensions = resolveCheckerProjectExtensions({
@@ -48,6 +50,7 @@ export function createSourceProject(options: {
     extensions,
   };
   const parsed = parseCheckerProjectConfigForContext({
+    cache: options.projectConfigCache,
     configPath: options.sourceConfigPath,
     context,
     projectRootDir: options.config.rootDir,

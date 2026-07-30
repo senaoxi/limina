@@ -48,6 +48,7 @@ async function resolveExplicitCheckerSelections(options: {
 export async function resolveGeneratedGraphCheckerSelections(options: {
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceContext: NonNullable<
     PrepareGeneratedTsconfigGraphOptions['workspaceContext']
   >;
@@ -61,6 +62,7 @@ export async function resolveGeneratedGraphCheckerSelections(options: {
       activatedRegions,
       config: options.config,
       importAnalysisContext: options.importAnalysisContext,
+      projectConfigCache: options.projectConfigCache,
       workspaceSourceConfigPaths: options.workspaceContext.sourceConfigPaths,
     });
   }
@@ -74,7 +76,10 @@ export async function resolveGeneratedGraphCheckers(
   config: ResolvedLiminaConfig,
   options: Pick<
     PrepareGeneratedTsconfigGraphOptions,
-    'importAnalysisContext' | 'workspaceContext' | 'workspacePathIndex'
+    | 'importAnalysisContext'
+    | 'projectConfigCache'
+    | 'workspaceContext'
+    | 'workspacePathIndex'
   > = {},
 ): Promise<ResolvedCheckerConfig[]> {
   const workspaceContext =
@@ -86,6 +91,7 @@ export async function resolveGeneratedGraphCheckers(
   const selections = await resolveGeneratedGraphCheckerSelections({
     config,
     importAnalysisContext: options.importAnalysisContext,
+    projectConfigCache: options.projectConfigCache,
     workspaceContext,
     workspacePathIndex: options.workspacePathIndex,
   });

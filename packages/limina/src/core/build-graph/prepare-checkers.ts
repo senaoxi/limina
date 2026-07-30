@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { getGeneratedCheckerEntryPath } from './generated/paths';
@@ -20,6 +21,7 @@ function createCheckerSolutions(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   collection: PreparedCheckerGraph['collection'];
   config: ResolvedLiminaConfig;
+  projectConfigCache?: CheckerProjectConfigCache;
   selection: ResolvedCheckerEntrySelection;
 }): ReturnType<typeof createSolutionProject>[] {
   return [...options.collection.solutionConfigPaths]
@@ -52,6 +54,7 @@ function getRootBuildPaths(
 export function prepareCheckerGraph(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
+  projectConfigCache?: CheckerProjectConfigCache;
   selection: ResolvedCheckerEntrySelection;
 }): PreparedCheckerGraph {
   const collection = collectCheckerSourceConfigs({
@@ -60,6 +63,7 @@ export function prepareCheckerGraph(options: {
     checkerPreset: options.selection.checker.preset,
     config: options.config,
     entryConfigPaths: options.selection.selection.effectiveEntryPaths,
+    projectConfigCache: options.projectConfigCache,
   });
   const projects = [...collection.projectConfigPaths]
     .sort()
@@ -72,6 +76,7 @@ export function prepareCheckerGraph(options: {
           activatedRegions: options.activatedRegions,
           sourceConfigPath,
         }),
+        projectConfigCache: options.projectConfigCache,
         sourceConfigPath,
       }),
     );
@@ -96,6 +101,7 @@ export function prepareCheckerGraph(options: {
 export function prepareCheckerGraphs(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
+  projectConfigCache?: CheckerProjectConfigCache;
   selections: ResolvedCheckerEntrySelection[];
 }): PreparedCheckerGraph[] {
   return options.selections.map((selection) =>

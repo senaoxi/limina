@@ -3,6 +3,7 @@ import { getActiveCheckers } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
+import { withGeneratedArtifactReadLease } from '../../core/build-graph/materializer';
 import { resolveCheckerTypecheckConcurrency } from '../../execution/config';
 import { runPool } from '../../execution/pool';
 import type { TaskProgressItem } from '../../execution/progress';
@@ -238,26 +239,31 @@ async function runConfiguredTypecheck(
   const peerFailure = collectTypecheckPeerFailure(context);
   if (peerFailure !== undefined) return peerFailure;
   const generated = await preflight.ensureGeneratedArtifactsMaterialized();
-  const targets = createTypecheckTargets({
-    context,
-    generatedGraph: generated.graph,
-  });
-  logTypecheckStart({ context, targets });
-  const results = await executeTypecheckTargets({ context, targets });
-  const failedResults = results.filter((result) => result.status !== 0);
-  reportTypecheckResult({
-    failedResults,
-    projectRootDir: context.projectRootDir,
-    request: context.options,
-    targetCount: targets.length,
-  });
-  return {
-    failedTargets: collectFailedCheckerTargets(targets, failedResults),
-    passed: failedResults.length === 0,
-    projectRootDir: context.projectRootDir,
-    rootConfigPaths: context.rootConfigPaths,
-    targetResults: results,
-  };
+  return withGeneratedArtifactReadLease(
+    preflight.artifactNamespace,
+    async () => {
+      const targets = createTypecheckTargets({
+        context,
+        generatedGraph: generated.graph,
+      });
+      logTypecheckStart({ context, targets });
+      const results = await executeTypecheckTargets({ context, targets });
+      const failedResults = results.filter((result) => result.status !== 0);
+      reportTypecheckResult({
+        failedResults,
+        projectRootDir: context.projectRootDir,
+        request: context.options,
+        targetCount: targets.length,
+      });
+      return {
+        failedTargets: collectFailedCheckerTargets(targets, failedResults),
+        passed: failedResults.length === 0,
+        projectRootDir: context.projectRootDir,
+        rootConfigPaths: context.rootConfigPaths,
+        targetResults: results,
+      };
+    },
+  );
 }
 
 export async function runCheckerTypecheckImpl(

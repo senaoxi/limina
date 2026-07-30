@@ -2,10 +2,6 @@ import {
   parseCheckerProjectConfigForContext,
   resolveCheckerProjectExtensions,
 } from '#checkers';
-import type {
-  ResolvedCheckerConfig,
-  ResolvedLiminaConfig,
-} from '#config/runner';
 import {
   collectReferencePathInfosForConfig,
   isOrdinarySourceTypecheckConfigPath,
@@ -16,7 +12,6 @@ import {
 import { uniqueSortedStrings } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
-import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
   createProjectBuildModule,
   createSolutionBuildModule,
@@ -28,6 +23,8 @@ import {
 } from './generated/config-readers';
 import { createGeneratedGraphStructuredError } from './problems';
 import type {
+  CollectAutoSourceConfigModulesOptions,
+  CollectCheckerSourceConfigsOptions,
   CollectionContext,
   ConfigVisit,
 } from './source-config-collection-types';
@@ -46,6 +43,7 @@ function hasEffectiveProjectFiles(options: ConfigVisit): boolean {
   });
   const parsed = parseCheckerProjectConfigForContext({
     allowNoInputDiagnostics: true,
+    cache: options.projectConfigCache,
     configPath: options.sourceConfigPath,
     context: {
       checkerPresets: [options.checkerPreset],
@@ -245,13 +243,9 @@ export function createEmptySourceConfigCollection(
   };
 }
 
-export function collectCheckerSourceConfigs(options: {
-  activatedRegions: WorkspaceRegionPathIndex;
-  checkerName: string;
-  checkerPreset: ResolvedCheckerConfig['preset'];
-  config: ResolvedLiminaConfig;
-  entryConfigPaths: readonly string[];
-}): CheckerSourceConfigCollection {
+export function collectCheckerSourceConfigs(
+  options: CollectCheckerSourceConfigsOptions,
+): CheckerSourceConfigCollection {
   const collection = createEmptySourceConfigCollection(
     options.entryConfigPaths,
   );
@@ -278,13 +272,9 @@ export function collectCheckerSourceConfigs(options: {
   return collection;
 }
 
-export function collectAutoSourceConfigModules(options: {
-  activatedRegions: WorkspaceRegionPathIndex;
-  collection: CheckerSourceConfigCollection;
-  config: ResolvedLiminaConfig;
-  entryConfigPath: string;
-  problems: string[];
-}): void {
+export function collectAutoSourceConfigModules(
+  options: CollectAutoSourceConfigModulesOptions,
+): void {
   collectCheckerSourceConfigModules({
     activatedRegions: options.activatedRegions,
     checkerName: '__auto__',
@@ -292,6 +282,7 @@ export function collectAutoSourceConfigModules(options: {
     collection: options.collection,
     config: options.config,
     problems: options.problems,
+    projectConfigCache: options.projectConfigCache,
     seenConfigs: new Set(),
     sourceConfigPath: options.entryConfigPath,
   });

@@ -45,6 +45,8 @@ import {
   type SourceCheckIssue,
 } from '../source-check/report';
 import type { LiminaCheckIssue } from '../source-check/snapshot';
+import { getCheckAttemptPaths } from '../source-check/snapshot/check-attempt-io';
+import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
 import { createCheckerTargetId } from '../typecheck/targets';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
@@ -96,7 +98,6 @@ function createPreflight(rootDir: string): LiminaPreflightManager {
     },
     generatedGraphProvider: async () =>
       ({ artifactPlan: { changes: [] } }) as never,
-    providers: {} as never,
   });
 }
 
@@ -574,6 +575,51 @@ describe('execution concurrency resolution', () => {
 });
 
 describe('runExecutionTasks', () => {
+  it('does not publish an attempt when execution plan validation fails', async () => {
+    await withTempRoot(async (rootDir) => {
+      const task = createTask({ id: 'duplicate', order: 0 });
+
+      await expect(
+        runExecutionTasks({
+          command: 'limina check',
+          preflight: createPreflight(rootDir),
+          rootDir,
+          tasks: [task, { ...task }],
+        }),
+      ).rejects.toThrow();
+      await expect(
+        access(getCheckAttemptPaths(rootDir).latestAttempt),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
+  it('does not create scheduler context or start tasks when attempt publication fails', async () => {
+    await withTempRoot(async (rootDir) => {
+      const paths = getCheckAttemptPaths(rootDir);
+      await mkdir(paths.checkDir, { recursive: true });
+      await writeFile(paths.latestAttempt, '{broken\n');
+      let ran = false;
+
+      await expect(
+        runExecutionTasks({
+          command: 'limina check',
+          preflight: createPreflight(rootDir),
+          rootDir,
+          tasks: [
+            createTask({
+              id: 'must-not-run',
+              onRun: () => {
+                ran = true;
+              },
+              order: 0,
+            }),
+          ],
+        }),
+      ).rejects.toThrow('cannot be allocated safely');
+      expect(ran).toBe(false);
+    });
+  });
+
   it('renders task tree progress without replaying completed stats items', async () => {
     await withTempRoot(async (rootDir) => {
       const { chunks, flow } = createBufferedTtyFlow();
@@ -1630,6 +1676,10 @@ describe('runExecutionTasks', () => {
         undefined,
       );
       await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+        snapshot: null,
+        state: 'persistence-failed',
+      });
 
       await writeFile(
         path.join(rootDir, 'limina.config.mjs'),
@@ -1642,23 +1692,27 @@ describe('runExecutionTasks', () => {
       const cliPath = fileURLToPath(
         new URL('../../bin/limina.js', import.meta.url),
       );
-      const cliResult = await execFileAsync(
-        process.execPath,
-        [
-          cliPath,
-          '--config',
-          path.join(rootDir, 'limina.config.mjs'),
-          'check',
-          '--issues',
-        ],
-        {
-          cwd: rootDir,
-          env: { ...process.env, CI: 'true' },
-        },
-      );
-
-      expect(cliResult.stdout).toContain('No check issue snapshot found.');
-      expect(cliResult.stdout).not.toContain(SOURCE_ISSUE_CODES.unusedModule);
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDir, 'limina.config.mjs'),
+            'check',
+            '--issues',
+          ],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: 1,
+        stdout: expect.stringContaining(
+          'latest check attempt could not persist',
+        ),
+      });
       await expect(readSourceIssueSnapshot(rootDir)).resolves.toMatchObject({
         issues: [
           {

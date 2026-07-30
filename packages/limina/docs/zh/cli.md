@@ -86,6 +86,10 @@ pnpm exec limina check --issues --format json
 pnpm exec limina check --issues --invocation <uuid>
 ```
 
+不带 invocation 的查询会验证 freshness。check attempt 一旦发布，只有同一 attempt 已完成，且其 metadata 与 version-7 snapshot 一致时，`--issues` 才会返回 inventory。最新 attempt 处于 running、interrupted、aborted、persistence-failed，或 freshness metadata 缺失、损坏、不匹配时，查询都会 fail closed 并以退出码 `1` 结束，绝不会回退到更早的 completed issues。human、JSON 与 NDJSON 输出都会明确报告不可用状态。
+
+在 attempt 发布前发生的配置发现、配置验证或执行计划失败，不会替换上一份 completed inventory。如果进程恰好在写入 `last-run.json` 与 freshness index 之间退出，后续更高 sequence 的成功 check 会完整覆盖这两个文件，并自动恢复查询。
+
 当你只想构建 Limina 内部声明图时，使用 `checker build`。当你需要构建用户可消费的产物时，使用顶层 `build` 命令：
 
 ```sh

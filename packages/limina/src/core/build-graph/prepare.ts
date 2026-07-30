@@ -58,6 +58,7 @@ export async function prepareGeneratedTsconfigGraph(
   const checkerSelections = await resolveGeneratedGraphCheckerSelections({
     config,
     importAnalysisContext: options.importAnalysisContext,
+    projectConfigCache: options.projectConfigCache,
     workspaceContext,
     workspacePathIndex: activatedRegions,
   });
@@ -66,6 +67,7 @@ export async function prepareGeneratedTsconfigGraph(
   const preparedCheckers = prepareCheckerGraphs({
     activatedRegions,
     config,
+    projectConfigCache: options.projectConfigCache,
     selections: checkerSelections,
   });
   for (const preparedChecker of preparedCheckers) {
@@ -76,6 +78,7 @@ export async function prepareGeneratedTsconfigGraph(
     checkers,
     config,
     importAnalysisContext: options.importAnalysisContext,
+    projectConfigCache: options.projectConfigCache,
     state,
   });
   const generatedKnip = prepareGeneratedKnipPackageConfigs({

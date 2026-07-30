@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   type CheckerGraphProjectRoute,
@@ -43,6 +44,7 @@ function createProjectOwnerEntries(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   route: CheckerGraphProjectRoute;
+  projectConfigCache?: CheckerProjectConfigCache;
   sourceFiles: Set<string>;
   virtualFiles: ReadonlyMap<string, string>;
 }): OwnerEntry[] {
@@ -61,6 +63,7 @@ function createProjectOwnerEntries(options: {
     config: options.config,
     configPath: options.configPath,
     context: projectContext,
+    projectConfigCache: options.projectConfigCache,
     virtualFiles: options.virtualFiles,
   });
   const owner: ConfigFileOwner = {
@@ -87,6 +90,7 @@ function createProjectOwnerEntries(options: {
 function collectOwnerEntries(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
+  projectConfigCache?: CheckerProjectConfigCache;
   sourceFiles: Set<string>;
   virtualFiles: ReadonlyMap<string, string>;
 }): OwnerEntry[] {
@@ -106,6 +110,7 @@ function collectOwnerEntries(options: {
 export function collectConfigFileOwners(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
+  projectConfigCache?: CheckerProjectConfigCache;
   sourceFiles: Set<string>;
   virtualFiles: ReadonlyMap<string, string>;
 }): ConfigFileOwners {

@@ -548,6 +548,29 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
+  it('keeps exact stable identities for two unused workspace dependencies in one manifest', () => {
+    const createIssue = (dependencyName: string) =>
+      createSourceCheckIssueFromFinding({
+        finding: createSourceUnusedWorkspaceDependencyFinding({
+          dependencyName,
+          externalCode: 'dependencies',
+          ownerName: '@example/app',
+          packageJsonPath: '/workspace/packages/app/package.json',
+          sectionName: 'dependencies',
+          specifier: 'workspace:*',
+        }),
+        rootDir: '/workspace',
+      });
+
+    expect([
+      createIssue('@example/alpha').id,
+      createIssue('@example/beta').id,
+    ]).toEqual([
+      'source:check:LIMINA_SOURCE_UNUSED_WORKSPACE_DEPENDENCY:5738e640eeed',
+      'source:check:LIMINA_SOURCE_UNUSED_WORKSPACE_DEPENDENCY:3c3bda96cdfb',
+    ]);
+  });
+
   it('reports an existing physical resource without current-project type evidence', async () => {
     const fixture = await createFixture(
       {

@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
@@ -130,6 +131,7 @@ function normalizeProjectFileNames(options: {
 }
 
 function resolveOwnedParsedProject(options: {
+  cache?: CheckerProjectConfigCache;
   config: ResolvedLiminaConfig;
   context: CheckerProjectParseContext;
   normalizedConfigPath: string;
@@ -142,6 +144,7 @@ function resolveOwnedParsedProject(options: {
   }
 
   return parseCheckerProjectConfigForContext({
+    cache: options.cache,
     configPath: options.resolverConfigPath,
     context: options.context,
     projectRootDir: options.config.rootDir,
@@ -154,12 +157,14 @@ type ParseProjectArgs = [
   configPath: string,
   contextOrExtensions?: CheckerProjectParseContext | string[],
   virtualFiles?: ReadonlyMap<string, string>,
+  cache?: CheckerProjectConfigCache,
 ];
 
 export function parseProject(...args: ParseProjectArgs): ProjectInfo {
-  const [config, configPath, contextOrExtensions, virtualFiles] = args;
+  const [config, configPath, contextOrExtensions, virtualFiles, cache] = args;
   const context = resolveParseContext(contextOrExtensions);
   const parsed = parseCheckerProjectConfigForContext({
+    cache,
     configPath,
     context,
     projectRootDir: config.rootDir,
@@ -171,6 +176,7 @@ export function parseProject(...args: ParseProjectArgs): ProjectInfo {
     : normalizedConfigPath;
   const ownedParsed = resolveOwnedParsedProject({
     config,
+    cache,
     context,
     normalizedConfigPath,
     parsed,

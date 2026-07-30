@@ -80,6 +80,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
     findings: state.findings,
     graphProjectPaths: new Set(state.entryProjectPaths),
     projectContextsByPath: projectContexts,
+    projectConfigCache: state.preflight.providers.projectConfigs,
     virtualFiles: state.generatedGraph.generatedFiles,
     workspaceLookup: state.workspaceLookup,
   });
@@ -115,6 +116,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
     findings: state.findings,
     generatedGraph: state.generatedGraph,
     ordinaryConfigPaths: state.ordinaryConfigPaths,
+    projectConfigCache: state.preflight.providers.projectConfigs,
     workspaceLookup: state.workspaceLookup,
   });
 }
@@ -169,6 +171,7 @@ function addCoverageFindings(options: {
     ownersByFile: collectConfigFileOwners({
       config: options.state.config,
       graphRoutes: options.state.graphRoutes,
+      projectConfigCache: options.state.preflight.providers.projectConfigs,
       sourceFiles: options.sourceFiles,
       virtualFiles: options.state.generatedGraph.generatedFiles,
     }),
@@ -205,6 +208,7 @@ async function runCoveragePhase(state: ProofRunState): Promise<boolean> {
     config: state.config,
     graphRoutes: state.graphRoutes,
     outsideSourceCoverageByFile: outsideCoverage,
+    projectConfigCache: state.preflight.providers.projectConfigs,
     sourceFiles,
     virtualFiles: state.generatedGraph.generatedFiles,
   });

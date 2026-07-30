@@ -5,16 +5,16 @@ import type {
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
-import { createArtifactPlan } from '../../domain/artifacts/plan';
+import { createRevisionedArtifactPlan } from '../../domain/artifacts/plan';
 import {
   createOwnedArtifactLedger,
-  readPreviousOwnedArtifactPaths,
   removeStaleGeneratedFiles,
 } from './artifact-ledger';
 import { writeGeneratedJson } from './artifact-writer';
 import type { prepareGeneratedKnipPackageConfigs } from './generated-knip';
 import { generatedManifestPath } from './generated/paths';
 import { createManifest } from './manifest';
+import { readMaterializationStateSnapshot } from './materialization-state';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 import { createResult } from './result';
 import type { GeneratedTsconfigGraphResult } from './types';
@@ -55,10 +55,14 @@ export async function finalizeGeneratedGraph(options: {
     rootDir: options.config.rootDir,
     sourceToBuildByChecker: options.state.sourceToBuildByChecker,
   });
-  const previousOwnedPaths = await readPreviousOwnedArtifactPaths({
-    artifactNamespace: options.artifactNamespace,
-    manifestPath,
-  });
+  const baseState = await readMaterializationStateSnapshot(
+    options.artifactNamespace,
+  );
+  const previousOwnedPaths = baseState.ownedPaths.map((relativePath) =>
+    normalizeAbsolutePath(
+      path.join(options.artifactNamespace.rootDir, relativePath),
+    ),
+  );
   await writeGeneratedJson({
     context: options.state.writeContext,
     filePath: manifestPath,
@@ -68,10 +72,14 @@ export async function finalizeGeneratedGraph(options: {
     context: options.state.writeContext,
     previousOwnedPaths,
   });
-  const artifactPlan = createArtifactPlan(
+  const artifactPlan = createRevisionedArtifactPlan(
     options.artifactNamespace,
     options.state.writeContext.changes,
-    [...options.state.writeContext.expectedFiles],
+    {
+      baseOwnedPaths: previousOwnedPaths,
+      baseRevision: baseState.revision,
+      ownedPaths: [...options.state.writeContext.expectedFiles],
+    },
   );
   return createResult({
     artifactPlan,

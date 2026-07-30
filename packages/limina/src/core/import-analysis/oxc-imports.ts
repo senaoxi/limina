@@ -15,6 +15,7 @@ import {
   finalizeImportRecords,
   type ImportRecord,
 } from './records';
+import { collectRequireImports } from './require-bindings';
 import {
   collectTypeScriptImports,
   getSourceFileKind,
@@ -80,6 +81,12 @@ export function collectOxcImports(
   collectStaticExports(context, result);
   collectDynamicImports({ context, result, sourceText: options.sourceText });
   collectOxcProgramRecords({ context, program: result.program });
+  context.records.push(
+    ...collectRequireImports({
+      ...options,
+      scriptKind: getSourceFileKind(options.filePath),
+    }),
+  );
   return context.records;
 }
 

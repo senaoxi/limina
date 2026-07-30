@@ -28,6 +28,7 @@ export async function runSourceCheckImpl(
     checkItems: state.checkItems,
     checks: state.checks,
     config: state.config,
+    core: state.core,
     findings: state.findings,
     generatedGraph: state.generatedGraph,
     workspaceLookup: state.workspaceLookup,

@@ -8,10 +8,11 @@ import {
 import {
   LIMINA_CHECK_TASK_NAMES,
   locateCheckIssueWorkspace,
-  readCheckIssueSnapshot,
+  type readCheckIssueSnapshot,
   readStandaloneIssueInvocation,
   toCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
+import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
 import {
   parseCheckIssueFilterHelpKind,
   readArgvOptionValue,
@@ -73,7 +74,7 @@ async function readRequestedSnapshot(
   });
   const invocationId = readArgvOptionValue(argv, '--invocation');
   if (invocationId === undefined) {
-    return readCheckIssueSnapshot(location.rootDir);
+    return (await queryLatestCheckAttempt(location.rootDir)).snapshot;
   }
   const invocation = await readStandaloneIssueInvocation(
     location.rootDir,

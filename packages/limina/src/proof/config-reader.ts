@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
@@ -59,6 +60,7 @@ export function parseProofConfig(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   context?: CheckerProjectParseContext;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles?: ReadonlyMap<string, string>;
 }): ParsedProofConfig {
   const context = options.context ?? {
@@ -66,6 +68,7 @@ export function parseProofConfig(options: {
     extensions: [],
   };
   const parsed = parseCheckerProjectConfigForContext({
+    cache: options.projectConfigCache,
     configPath: options.configPath,
     context,
     projectRootDir: options.config.rootDir,
