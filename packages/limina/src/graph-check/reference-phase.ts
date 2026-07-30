@@ -82,6 +82,7 @@ function validateProjectReferences(
     state.findings,
     state.checks,
     checkerName,
+    state.preflight.providers.projectConfigs,
   );
   addDeniedReferenceProblems({
     checks: state.checks,

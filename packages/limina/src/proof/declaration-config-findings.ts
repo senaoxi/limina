@@ -1,4 +1,7 @@
-import type { CheckerProjectParseContext } from '#checkers';
+import type {
+  CheckerProjectConfigCache,
+  CheckerProjectParseContext,
+} from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
@@ -159,6 +162,7 @@ function validateManagedDeclarationConfig(options: {
   configPath: string;
   findings: ProofFinding[];
   projectContext?: CheckerProjectParseContext;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
@@ -196,12 +200,14 @@ function validateManagedDeclarationConfig(options: {
     config: options.config,
     configPath: options.configPath,
     context: options.projectContext,
+    projectConfigCache: options.projectConfigCache,
     virtualFiles: options.virtualFiles,
   });
   const localConfig = parseProofConfig({
     config: options.config,
     configPath: localConfigPath,
     context: options.projectContext,
+    projectConfigCache: options.projectConfigCache,
   });
 
   addDeclarationCompilerOptionFindings({
@@ -230,6 +236,7 @@ export function addDtsConfigFindings(options: {
   graphProjectPaths: Set<string>;
   dtsConfigPaths: string[];
   projectContextsByPath: Map<string, CheckerProjectParseContext>;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {

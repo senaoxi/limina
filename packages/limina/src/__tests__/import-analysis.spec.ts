@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { collectOxcImports } from '../core/import-analysis/oxc-imports';
+import { collectTypeScriptImports } from '../core/import-analysis/typescript-imports';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
 
@@ -161,6 +163,87 @@ describe('import analysis', () => {
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
+  });
+
+  it('collects only unshadowed require bindings and direct immutable createRequire aliases', () => {
+    const sourceText = [
+      "import { createRequire as makeRequire } from 'node:module';",
+      'const local = makeRequire(import.meta.url);',
+      "const direct = require('./global');",
+      "const resolved = require.resolve('./global-resolved');",
+      "const localValue = local('./local');",
+      "const localResolved = local.resolve('./local-resolved');",
+      "{ const require = () => null; require('./block-shadow'); }",
+      "function parameter(require: (id: string) => unknown) { require('./parameter-shadow'); }",
+      "function nested() { const local = () => null; local('./nested-shadow'); }",
+      "const transitive = local; transitive('./transitive');",
+      "const { resolve } = local; resolve('./destructured');",
+      "require['resolve']('./computed');",
+      "require?.('./optional');",
+      "(0, require)('./indirect');",
+      'void [direct, resolved, localValue, localResolved, parameter, nested];',
+    ].join('\n');
+    const options = {
+      filePath: '/fixture/imports.ts',
+      scriptKind: ts.ScriptKind.TS,
+      sourceText,
+    };
+    const expected = [
+      ['commonjs', './global'],
+      ['require-resolve', './global-resolved'],
+      ['commonjs', './local'],
+      ['require-resolve', './local-resolved'],
+    ];
+
+    expect(
+      collectOxcImports(options)
+        ?.filter((record) =>
+          ['commonjs', 'require-resolve'].includes(record.kind),
+        )
+        .map((record) => [record.kind, record.specifier]),
+    ).toEqual(expected);
+    expect(
+      collectTypeScriptImports(options)
+        .filter((record) =>
+          ['commonjs', 'require-resolve'].includes(record.kind),
+        )
+        .map((record) => [record.kind, record.specifier]),
+    ).toEqual(expected);
+  });
+
+  it('excludes root imports, declarations, and reassigned createRequire aliases in both parser paths', () => {
+    const validSource = [
+      "import { require } from './shim';",
+      "require('./import-shadow');",
+      'function require() {}',
+      "require.resolve('./function-shadow');",
+    ].join('\n');
+    const fallbackSource = [
+      "import { createRequire } from 'node:module';",
+      'const local = createRequire(import.meta.url);',
+      "local('./before-reassignment');",
+      'local = replacement;',
+      "local.resolve('./after-reassignment');",
+      'const = ;',
+    ].join('\n');
+
+    expect(
+      collectOxcImports({
+        filePath: '/fixture/shadowed.ts',
+        sourceText: validSource,
+      })?.filter((record) =>
+        ['commonjs', 'require-resolve'].includes(record.kind),
+      ),
+    ).toEqual([]);
+    expect(
+      collectTypeScriptImports({
+        filePath: '/fixture/fallback.ts',
+        scriptKind: ts.ScriptKind.TS,
+        sourceText: fallbackSource,
+      }).filter((record) =>
+        ['commonjs', 'require-resolve'].includes(record.kind),
+      ),
+    ).toEqual([]);
   });
 
   it('collects dependency pragmas from comments', async () => {

@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   normalizeExtensions,
   parseCheckerProjectConfigForContext,
@@ -71,9 +72,11 @@ export function parseProjectCoverageFileNames(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   context: CheckerProjectParseContext;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
 }): string[] {
   return parseCheckerProjectConfigForContext({
+    cache: options.projectConfigCache,
     configPath: options.configPath,
     context: options.context,
     projectRootDir: options.config.rootDir,
@@ -85,9 +88,11 @@ export function parseProjectCoverage(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   context: CheckerProjectParseContext;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
 }): { fileNames: string[]; ownerRootDir: string } {
   const parsed = parseCheckerProjectConfigForContext({
+    cache: options.projectConfigCache,
     configPath: options.configPath,
     context: options.context,
     projectRootDir: options.config.rootDir,
@@ -95,6 +100,7 @@ export function parseProjectCoverage(options: {
   });
   const coverageParsed = isDtsConfigPath(options.configPath)
     ? parseCheckerProjectConfigForContext({
+        cache: options.projectConfigCache,
         configPath: getProofCompanionConfigPath(
           options.configPath,
           options.virtualFiles,

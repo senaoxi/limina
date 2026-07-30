@@ -1,5 +1,5 @@
 import {
-  clearCheckerProjectConfigCache,
+  CheckerProjectConfigCache,
   parseCheckerProjectConfigForContext,
   resolveModuleNameWithCheckersDetailed,
 } from '#checkers';
@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath, toPortableRelativePaths } from './helpers/path';
 
@@ -89,14 +89,6 @@ async function assertCheckerModuleResolution(options: {
   }
 }
 
-beforeEach(() => {
-  clearCheckerProjectConfigCache();
-});
-
-afterEach(() => {
-  clearCheckerProjectConfigCache();
-});
-
 describe('checker project config parsing', () => {
   it('collects Vue root file names through the Vue language core compiler API', async () => {
     const fixture = await createFixture({
@@ -148,7 +140,9 @@ describe('checker project config parsing', () => {
       }),
     });
     const configPath = path.join(fixture.rootDir, 'tsconfig.json');
+    const cache = new CheckerProjectConfigCache();
     const parseOptions = {
+      cache,
       configPath,
       context: {
         checkerPresets: ['tsc' as const],
@@ -189,6 +183,102 @@ describe('checker project config parsing', () => {
           parseCheckerProjectConfigForContext(parseOptions).fileNames,
         ),
       ).toEqual(['src/b.ts']);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps glob and extends snapshots within one cache generation and refreshes them with a new cache', async () => {
+    const fixture = await createFixture({
+      'src/a.ts': 'export const a = 1;\n',
+      'src/b.ts': 'export const b = 1;\n',
+      'tsconfig.base.json': tsconfig({ include: ['src/a.ts'] }),
+      'tsconfig.json': tsconfig({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          noEmit: true,
+          target: 'ES2023',
+          types: [],
+        },
+        extends: './tsconfig.base.json',
+      }),
+    });
+    const configPath = path.join(fixture.rootDir, 'tsconfig.json');
+    const parseWith = (cache?: CheckerProjectConfigCache) =>
+      toPortableRelativePaths(
+        fixture.rootDir,
+        parseCheckerProjectConfigForContext({
+          cache,
+          configPath,
+          context: {
+            checkerPresets: ['tsc'],
+            extensions: [],
+          },
+          projectRootDir: fixture.rootDir,
+        }).fileNames,
+      );
+
+    try {
+      const generationZero = new CheckerProjectConfigCache();
+      expect(parseWith(generationZero)).toEqual(['src/a.ts']);
+      await writeText(
+        path.join(fixture.rootDir, 'tsconfig.base.json'),
+        tsconfig({ include: ['src/*.ts'] }),
+      );
+
+      expect(parseWith(generationZero)).toEqual(['src/a.ts']);
+      const generationOne = new CheckerProjectConfigCache();
+      expect(parseWith(generationOne)).toEqual(['src/a.ts', 'src/b.ts']);
+
+      await rm(path.join(fixture.rootDir, 'src/a.ts'));
+      expect(parseWith(generationOne)).toEqual(['src/a.ts', 'src/b.ts']);
+      expect(parseWith(new CheckerProjectConfigCache())).toEqual(['src/b.ts']);
+      expect(parseWith()).toEqual(['src/b.ts']);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('isolates physical, virtual, and independent generation caches', async () => {
+    const fixture = await createFixture({
+      'src/physical.ts': 'export const physical = true;\n',
+      'src/virtual.ts': 'export const virtual = true;\n',
+      'tsconfig.json': tsconfig({ include: ['src/physical.ts'] }),
+    });
+    const configPath = path.join(fixture.rootDir, 'tsconfig.json');
+    const cache = new CheckerProjectConfigCache();
+    const parse = (virtualFiles?: ReadonlyMap<string, string>) =>
+      toPortableRelativePaths(
+        fixture.rootDir,
+        parseCheckerProjectConfigForContext({
+          cache,
+          configPath,
+          context: {
+            checkerPresets: ['tsc'],
+            extensions: [],
+          },
+          projectRootDir: fixture.rootDir,
+          virtualFiles,
+        }).fileNames,
+      );
+
+    try {
+      expect(parse()).toEqual(['src/physical.ts']);
+      expect(
+        parse(
+          new Map([[configPath, tsconfig({ include: ['src/virtual.ts'] })]]),
+        ),
+      ).toEqual(['src/virtual.ts']);
+
+      cache.set('manager-a-only', {
+        extensions: [],
+        fileNames: [],
+        options: {},
+      });
+      expect(new CheckerProjectConfigCache().get('manager-a-only')).toBe(
+        undefined,
+      );
     } finally {
       await fixture.cleanup();
     }

@@ -53,6 +53,8 @@ Besides built-in tasks, pipeline steps may also be external commands. Built-in t
 
 Before every task in this table, Limina reuses the current generation's validated workspace context. If validation fails, dependent work is blocked and the primary workspace issue can still be written safely to `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
 
+Generated checker configs are protected by a canonical-workspace cross-process reader/writer lease. Managed build and typecheck processes hold a read lease while consuming those files; materialization waits for readers and publishes an in-progress marker before changing artifacts. If a writer stops partway through, readers fail closed instead of consuming a mixed tree. The next materializing writer rebuilds the complete current plan and removes obsolete owned files before readers resume. Lease waits are bounded to 30 seconds.
+
 The core tasks are `graph:check`, `source:check`, `proof:check`, `checker:build`, and `checker:typecheck`. `package:check` and `release:check` are supplemental release-phase tasks. They fit well in release pipelines, but should not be overstated as Limina's core capability.
 
 ## The Generated Graph Is the Basis for Later Checks

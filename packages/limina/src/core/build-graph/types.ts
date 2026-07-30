@@ -1,4 +1,8 @@
-import type { CheckerBuildEngine, CheckerProjectParseContext } from '#checkers';
+import type {
+  CheckerBuildEngine,
+  CheckerProjectConfigCache,
+  CheckerProjectParseContext,
+} from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import type ts from 'typescript';
@@ -100,6 +104,7 @@ export interface GeneratedTsconfigGraphResult {
 export interface PrepareGeneratedTsconfigGraphOptions {
   artifactNamespace: LiminaArtifactNamespace;
   importAnalysisContext?: ImportAnalysisContext;
+  projectConfigCache?: CheckerProjectConfigCache;
   workspaceContext?: ValidatedWorkspaceContext;
   workspacePathIndex?: WorkspaceRegionPathIndex;
 }

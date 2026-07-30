@@ -81,6 +81,9 @@ const moduleConfig: RolldownOptions = defineConfig({
   external: isPackageExternal,
   plugins: [
     cleanDistPlugin(),
+    // Prefer jsonc-parser's ESM `module` entry because its 3.x UMD `main` entry
+    // uses indirect `require` calls that cannot be reliably analyzed by bundlers.
+    // Remove this override after upgrading to the ESM-only jsonc-parser 4.x.
     jsoncParserEsmPlugin(),
     packagePlugin(),
     licensePlugin(

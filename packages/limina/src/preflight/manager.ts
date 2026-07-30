@@ -52,20 +52,13 @@ import type {
   LiminaPreflightManagerOptions,
   MaterializationReceipt,
   PackageEntryPlanOptions,
-  PreflightCapableOptions,
 } from './types';
 
-/**
- * Command composition boundary for the current repository generation.
- * Named preparation results are generation-scoped; advancing replaces the
- * provider set rather than mutating cached domain data.
- */
 export class LiminaPreflightManager {
   artifactNamespace: LiminaArtifactNamespace;
   readonly config: ResolvedLiminaConfig;
   providers: AnalysisProviderSet;
   run: AnalysisRun;
-
   readonly #generatedGraphProvider:
     | (() => Promise<GeneratedTsconfigGraphResult>)
     | undefined;
@@ -74,14 +67,16 @@ export class LiminaPreflightManager {
   readonly #signal: AbortSignal;
   #cache = new PreflightGenerationCache(0);
   #generation = 0;
+  #providerGeneration = 0;
+  readonly #usesCustomProviders: boolean;
   #disposed = false;
-
   constructor(options: LiminaPreflightManagerOptions) {
     this.config = options.config;
     this.#generatedGraphProvider = options.generatedGraphProvider;
     this.#metrics = resolveMetrics(options);
     this.#profilingMetrics = options.metrics;
     this.#signal = resolveSignal(options);
+    this.#usesCustomProviders = options.providers !== undefined;
     this.artifactNamespace = resolveArtifactNamespace(options);
     this.providers = resolveProviders({
       artifactNamespace: this.artifactNamespace,
@@ -92,7 +87,6 @@ export class LiminaPreflightManager {
       this.#startNextGeneration(),
     );
   }
-
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
   }
@@ -105,7 +99,6 @@ export class LiminaPreflightManager {
     this.#disposed = true;
     this.providers.dispose?.();
   }
-
   ensureGeneratedGraph(): Promise<GeneratedTsconfigGraphResult> {
     if (this.#cache.generatedGraph === undefined) {
       const providers = this.providers;
@@ -116,13 +109,11 @@ export class LiminaPreflightManager {
     }
     return this.#cache.generatedGraph;
   }
-
   ensureWorkspaceValidated(): Promise<ValidatedWorkspaceContext> {
     this.#cache.validatedWorkspaceContext ??=
       this.providers.workspace.getValidatedContext();
     return this.#cache.validatedWorkspaceContext;
   }
-
   ensureGeneratedArtifactsMaterialized(): Promise<MaterializationReceipt> {
     const slot = this.#cache.materializationSlot;
     const artifactNamespace = this.artifactNamespace;
@@ -131,18 +122,32 @@ export class LiminaPreflightManager {
     return ensureMaterialization({
       getCurrentSlot: () => this.#cache.materializationSlot,
       materialize: async () => {
-        const graph = await this.ensureGeneratedGraph();
-        await materializeGeneratedArtifactPlan(
+        let graph = await this.ensureGeneratedGraph();
+        const materialized = await materializeGeneratedArtifactPlan(
           artifactNamespace,
           graph.artifactPlan,
-          { metrics },
+          {
+            metrics,
+            replan: async () => {
+              this.#refreshProviderGenerationForMaterialization();
+              graph = await this.ensureGeneratedGraph();
+              return {
+                namespace: this.artifactNamespace,
+                plan: graph.artifactPlan,
+              };
+            },
+          },
         );
+        if (materialized.plan !== graph.artifactPlan) {
+          throw new Error(
+            'Materialization selected a plan outside the preflight graph generation.',
+          );
+        }
         return { changed: graph.changed, generation: slot.generation, graph };
       },
       slot,
     });
   }
-
   ensureWorkspacePackages(): Promise<WorkspacePackage[]> {
     this.#cache.workspacePackages ??= this.ensureWorkspaceValidated().then(
       (context) =>
@@ -153,32 +158,26 @@ export class LiminaPreflightManager {
     );
     return this.#cache.workspacePackages;
   }
-
   ensureRawWorkspacePackages(): Promise<WorkspacePackage[]> {
     this.#cache.rawWorkspacePackages ??=
       this.providers.workspace.getRawPackages();
     return this.#cache.rawWorkspacePackages;
   }
-
   ensurePackageOwners(): Promise<PackageOwner[]> {
     this.#cache.packageOwners ??= this.providers.workspace.getPackageOwners();
     return this.#cache.packageOwners;
   }
-
   ensureImporters(): Promise<ImporterInfo[]> {
     this.#cache.importers ??= this.providers.workspace.getImporters();
     return this.#cache.importers;
   }
-
   ensureWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex> {
     this.#cache.workspaceLookup ??= this.providers.workspace.getLookupIndex();
     return this.#cache.workspaceLookup;
   }
-
   ensureWorkspacePathIndex(): Promise<WorkspaceRegionPathIndex> {
     return this.providers.workspace.getPathIndex();
   }
-
   ensureWorkspaceDependencyDeclarations(): Promise<
     WorkspaceDependencyDeclaration[]
   > {
@@ -186,13 +185,11 @@ export class LiminaPreflightManager {
       this.providers.workspace.getWorkspaceDependencyDeclarations();
     return this.#cache.workspaceDependencies;
   }
-
   ensureWorkspaceRegionBoundaries(): Promise<WorkspaceRegionBoundary[]> {
     this.#cache.workspaceRegionBoundaries ??=
       this.providers.workspace.getRegionBoundaries();
     return this.#cache.workspaceRegionBoundaries;
   }
-
   async ensureSourceGraphProjectExtensions(): Promise<CollectSourceGraphProjectExtensionsResult> {
     this.#cache.sourceGraphProjectExtensions ??=
       this.#ensureCheckerRouteSnapshot().then((snapshot) =>
@@ -200,14 +197,12 @@ export class LiminaPreflightManager {
       );
     return this.#cache.sourceGraphProjectExtensions;
   }
-
   async ensureGraphProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
     this.#cache.graphProjectRoutes ??= this.#ensureCheckerRouteSnapshot().then(
       (snapshot) => projectGraphProjectRoutes(this.config, snapshot),
     );
     return this.#cache.graphProjectRoutes;
   }
-
   async ensureCheckerEntryProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
     this.#cache.checkerEntryProjectRoutes ??=
       this.#ensureCheckerRouteSnapshot().then((snapshot) =>
@@ -253,15 +248,31 @@ export class LiminaPreflightManager {
   }
 
   #startNextGeneration(): void {
+    this.#replaceProviderGeneration(true);
+  }
+
+  #assertDefaultProvidersCanAdvance(): void {
+    if (!this.#usesCustomProviders) return;
+    throw new Error(
+      'Custom analysis providers support generation 0 only and cannot advance.',
+    );
+  }
+
+  #refreshProviderGenerationForMaterialization(): void {
+    this.#replaceProviderGeneration(false);
+  }
+
+  #replaceProviderGeneration(advanceCommandGeneration: boolean): void {
     if (this.#disposed) {
       throw new Error('Preflight manager has been disposed.');
     }
-
-    this.providers.dispose?.();
-    this.#generation += 1;
+    this.#assertDefaultProvidersCanAdvance();
+    this.#disposeProviders();
+    if (advanceCommandGeneration) this.#generation += 1;
+    this.#providerGeneration += 1;
     this.#cache = new PreflightGenerationCache(this.#generation);
     this.artifactNamespace = createLiminaArtifactNamespace({
-      generation: this.#generation,
+      generation: this.#providerGeneration,
       rootDir: this.config.rootDir,
     });
     this.providers = createAnalysisProviders(
@@ -272,28 +283,18 @@ export class LiminaPreflightManager {
     this.run = this.#createRun();
   }
 
+  #disposeProviders(): void {
+    this.providers.dispose?.();
+  }
+
   #createRun(): AnalysisRun {
     return createAnalysisRun({
       generation: identifier<'AnalysisGeneration'>(String(this.#generation)),
       metrics: this.#metrics,
       signal: this.#signal,
       snapshotToken: identifier<'RepositorySnapshotToken'>(
-        `${this.config.rootDir}:${this.#generation}`,
+        `${this.config.rootDir}:${this.#generation}:${this.#providerGeneration}`,
       ),
     });
   }
-}
-
-export function resolvePreflight(
-  config: ResolvedLiminaConfig,
-  options: PreflightCapableOptions = {},
-): LiminaPreflightManager {
-  return (
-    options.preflight ??
-    new LiminaPreflightManager({
-      config,
-      generatedGraphProvider: options.generatedGraphProvider,
-      providers: options.providers,
-    })
-  );
 }

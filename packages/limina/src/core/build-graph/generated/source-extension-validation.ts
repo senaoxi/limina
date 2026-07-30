@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
@@ -93,6 +94,7 @@ function addUnsupportedFile(options: {
 function collectUnsupportedFiles(options: {
   config: ResolvedLiminaConfig;
   projects: readonly SourceProjectLike[];
+  projectConfigCache?: CheckerProjectConfigCache;
   sourceConfigPath: string;
 }): Map<string, string[]> {
   const neutralContext: CheckerProjectParseContext = {
@@ -100,6 +102,7 @@ function collectUnsupportedFiles(options: {
     extensions: capabilityDiscoveryExtensions,
   };
   const neutralParsed = parseCheckerProjectConfigForContext({
+    cache: options.projectConfigCache,
     configPath: options.sourceConfigPath,
     context: neutralContext,
     projectRootDir: options.config.rootDir,
@@ -186,6 +189,7 @@ export function addUnsupportedSourceConfigExtensionProblems(options: {
   config: ResolvedLiminaConfig;
   problems: string[];
   projects: SourceProjectLike[];
+  projectConfigCache?: CheckerProjectConfigCache;
 }): void {
   const projectsBySourcePath = createProjectsBySourcePath(options.projects);
 

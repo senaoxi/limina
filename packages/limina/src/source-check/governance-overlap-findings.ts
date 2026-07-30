@@ -1,4 +1,7 @@
-import type { CheckerProjectParseContext } from '#checkers';
+import type {
+  CheckerProjectConfigCache,
+  CheckerProjectParseContext,
+} from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { parseProject } from '#core/import-graph/context';
 import { uniqueValues } from '#utils/collections';
@@ -18,6 +21,7 @@ function createProjectFileSetReader(options: {
   cache: Map<string, Set<string>>;
   config: ResolvedLiminaConfig;
   context: CheckerProjectParseContext;
+  projectConfigCache?: CheckerProjectConfigCache;
 }): (configPath: string) => Set<string> {
   return (configPath) => {
     const normalizedPath = normalizeAbsolutePath(configPath);
@@ -27,7 +31,13 @@ function createProjectFileSetReader(options: {
     }
 
     const fileSet = new Set(
-      parseProject(options.config, normalizedPath, options.context).fileNames,
+      parseProject(
+        options.config,
+        normalizedPath,
+        options.context,
+        undefined,
+        options.projectConfigCache,
+      ).fileNames,
     );
     options.cache.set(normalizedPath, fileSet);
     return fileSet;
@@ -206,11 +216,13 @@ export function addGovernanceOverlapFindings(options: {
   findings: SourceFinding[];
   governanceUnitsByFile: GovernanceUnitsByFile;
   projectFileSetsByConfigPath: Map<string, Set<string>>;
+  projectConfigCache?: CheckerProjectConfigCache;
 }): void {
   const getProjectFileSet = createProjectFileSetReader({
     cache: options.projectFileSetsByConfigPath,
     config: options.config,
     context: options.context,
+    projectConfigCache: options.projectConfigCache,
   });
   const entries = [...options.governanceUnitsByFile.entries()].sort(
     ([left], [right]) =>

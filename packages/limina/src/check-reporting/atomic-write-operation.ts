@@ -16,6 +16,7 @@ export type AtomicFileHandle = Pick<
 >;
 
 export interface AtomicWriteOptions {
+  appendNewline?: boolean;
   createTempPath?: (attempt: number) => string;
   openTemp?: (path: string, flags: 'wx') => Promise<AtomicFileHandle>;
   removeTemp?: (path: string) => Promise<void>;
@@ -192,7 +193,11 @@ async function writeAndCloseTempFile(
   state: AtomicWriteState,
 ): Promise<void> {
   const handle = requireHandle(context, state);
-  await handle.writeFile(`${serializeValue(context)}\n`, 'utf8');
+  const content = serializeValue(context);
+  await handle.writeFile(
+    context.options.appendNewline === false ? content : `${content}\n`,
+    'utf8',
+  );
   await handle.sync();
   await handle.close();
   state.handle = undefined;

@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   normalizeExtensions,
 } from '#checkers';
@@ -28,6 +29,7 @@ interface CollectionOptions {
   configPaths: string[];
   findings: SourceFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
+  projectConfigCache?: CheckerProjectConfigCache;
   workspaceLookup: WorkspaceLookupIndex;
 }
 
@@ -247,6 +249,8 @@ function collectConfig(options: {
     options.base.config,
     options.configPath,
     options.collection.context,
+    undefined,
+    options.base.projectConfigCache,
   );
   options.collection.projectFileSetsByConfigPath.set(
     options.configPath,

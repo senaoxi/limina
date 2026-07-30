@@ -1,4 +1,5 @@
 import {
+  type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   getBuildCheckerSupportedExtensions,
   parseCheckerProjectConfigForContext,
@@ -20,12 +21,14 @@ import type { AutoCheckerPreset, AutoScope, AutoScopeProject } from './types';
 function createAutoScopeProject(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
+  projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScopeProject {
   const context: CheckerProjectParseContext = {
     checkerPresets: ['tsc'],
     extensions: capabilityDiscoveryExtensions,
   };
   const parsed = parseCheckerProjectConfigForContext({
+    cache: options.projectConfigCache,
     configPath: options.configPath,
     context,
     projectRootDir: options.config.rootDir,
@@ -49,6 +52,7 @@ function createAutoScope(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
   entryConfigPath: string;
+  projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope {
   const collection = createEmptySourceConfigCollection([
     options.entryConfigPath,
@@ -60,6 +64,7 @@ function createAutoScope(options: {
     config: options.config,
     entryConfigPath: options.entryConfigPath,
     problems,
+    projectConfigCache: options.projectConfigCache,
   });
   if (problems.length > 0) {
     throw createGeneratedGraphStructuredError({
@@ -75,7 +80,11 @@ function createAutoScope(options: {
     projects: [...collection.projectConfigPaths]
       .sort((left, right) => left.localeCompare(right))
       .map((configPath) =>
-        createAutoScopeProject({ config: options.config, configPath }),
+        createAutoScopeProject({
+          config: options.config,
+          configPath,
+          projectConfigCache: options.projectConfigCache,
+        }),
       ),
   };
   setAutoRootConfigPaths(scope);
@@ -86,6 +95,7 @@ export function collectAutoScope(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
   entryConfigPath: string;
+  projectConfigCache?: CheckerProjectConfigCache;
 }): AutoScope | null {
   const scope = createAutoScope(options);
   return scope.collection.projectConfigPaths.size > 0 ? scope : null;

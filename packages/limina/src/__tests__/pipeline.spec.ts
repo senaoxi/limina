@@ -563,13 +563,13 @@ describe('runPipeline', () => {
         generatedGraphProvider,
       });
 
-      expect(chunks.join('')).toContain('◇      graph check\n');
-      expect(chunks.join('')).toContain('◇      source check\n');
-      expect(chunks.join('')).toContain('◇      proof check\n');
-      expect(chunks.join('')).toContain('◇      checker build\n');
-      expect(chunks.join('')).toContain('◇      checker typecheck\n');
-
       await vi.waitFor(() => {
+        const output = chunks.join('');
+        expect(output).toContain('◇      graph check\n');
+        expect(output).toContain('◇      source check\n');
+        expect(output).toContain('◇      proof check\n');
+        expect(output).toContain('◇      checker build\n');
+        expect(output).toContain('◇      checker typecheck\n');
         expect(generatedGraphProvider).toHaveBeenCalledTimes(1);
       });
       rejectGeneratedGraph?.(new Error('delayed generated graph'));

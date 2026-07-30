@@ -3,7 +3,7 @@ import { getCheckerAdapter } from './checker/registry';
 
 export { getCheckerExtensions, getResolvedCheckers } from './checker/config';
 export {
-  clearCheckerProjectConfigCache,
+  CheckerProjectConfigCache,
   parseCheckerProjectConfigForContext,
 } from './checker/context';
 export {

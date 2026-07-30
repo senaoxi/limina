@@ -1,3 +1,4 @@
+import { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   createLiminaArtifactNamespace,
@@ -56,6 +57,7 @@ export class AnalysisProviderSet {
   readonly config: ResolvedLiminaConfig;
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
+  readonly projectConfigs: CheckerProjectConfigCache;
   readonly tsconfig: TsconfigCore;
   readonly typeEvidence: TypeEvidenceCore;
   readonly workspace: WorkspaceCore;
@@ -65,17 +67,19 @@ export class AnalysisProviderSet {
 
     this.artifactNamespace = options.artifactNamespace;
     this.config = options.config;
+    this.projectConfigs = new CheckerProjectConfigCache();
     this.workspace = new WorkspaceCore(
       options.config,
       options.metrics,
       options.dependencies.workspace,
     );
     this.imports = new ImportCore(options.config, options.metrics);
-    this.tsconfig = new TsconfigCore(
-      options.config,
-      () => buildGraph.getGraph(),
-      this.workspace,
-    );
+    this.tsconfig = new TsconfigCore({
+      config: options.config,
+      generatedGraphProvider: () => buildGraph.getGraph(),
+      projectConfigCache: this.projectConfigs,
+      workspace: this.workspace,
+    });
     this.typeEvidence = new TypeEvidenceCore({
       generation: options.artifactNamespace.generation,
       importAnalysis: this.imports.context,
@@ -85,6 +89,7 @@ export class AnalysisProviderSet {
       artifactNamespace: options.artifactNamespace,
       config: options.config,
       imports: this.imports,
+      projectConfigs: this.projectConfigs,
       workspace: this.workspace,
     });
     this.buildGraph = buildGraph;

@@ -139,6 +139,7 @@ function collectAutoScopes(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
   entryConfigPaths: readonly string[];
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
 }): AutoScope[] {
   return options.entryConfigPaths
     .map((entryConfigPath) => collectAutoScope({ ...options, entryConfigPath }))
@@ -161,6 +162,7 @@ export async function resolveAutoCheckerSelections(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
 }): Promise<ResolvedCheckerEntrySelection[]> {
   const autoExclude = getAutoCheckerExclude(options.config);
@@ -179,6 +181,7 @@ export async function resolveAutoCheckerSelections(options: {
     activatedRegions: options.activatedRegions,
     config: options.config,
     entryConfigPaths: selection.effectiveEntryPaths,
+    projectConfigCache: options.projectConfigCache,
   });
   const kindsByEntry = classifyAutoScopes({ config: options.config, scopes });
   promoteAutoScopes({

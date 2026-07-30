@@ -86,6 +86,10 @@ pnpm exec limina check --issues --format json
 pnpm exec limina check --issues --invocation <uuid>
 ```
 
+The unqualified query is freshness-aware. Once a check attempt has been published, `--issues` returns inventory only when that same attempt completed and its metadata matches the version-7 snapshot. A running, interrupted, aborted, or persistence-failed latest attempt—and any missing, corrupt, or mismatched freshness metadata—makes the query fail closed with exit code `1`; it never falls back to issues from an older completed attempt. Human, JSON, and NDJSON output all report the unavailable state explicitly.
+
+Configuration discovery, validation, and execution-plan failures that happen before an attempt is published do not replace the previous completed inventory. If a process stops between the `last-run.json` and freshness-index writes, a later successful check with a higher sequence rewrites both files and restores query availability automatically.
+
 When you only want to build Limina's internal declaration graph, use `checker build`. When you need to build user-consumable artifacts, use the top-level `build` command:
 
 ```sh

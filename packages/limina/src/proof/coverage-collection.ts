@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { CheckerGraphProjectRoute } from '#core/tsconfig/actions';
 import { isDtsConfigPath } from '#core/tsconfig/actions';
@@ -42,6 +43,7 @@ function recordCoverage(
 function createGraphProjectCoverageEntries(options: {
   config: ResolvedLiminaConfig;
   graphProjectPath: string;
+  projectConfigCache?: CheckerProjectConfigCache;
   route: CheckerGraphProjectRoute;
   virtualFiles: ReadonlyMap<string, string>;
 }): CoverageEntry[] {
@@ -56,6 +58,7 @@ function createGraphProjectCoverageEntries(options: {
     config: options.config,
     configPath: options.graphProjectPath,
     context: projectContext,
+    projectConfigCache: options.projectConfigCache,
     virtualFiles: options.virtualFiles,
   });
   const source: CoverageSource = {
@@ -77,6 +80,7 @@ function createGraphProjectCoverageEntries(options: {
 function createGraphCoverageEntries(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
 }): CoverageEntry[] {
   return options.graphRoutes.flatMap((route) =>
@@ -95,6 +99,7 @@ function createCheckerProjectCoverageEntries(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   target: CheckerCoverageTarget;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
 }): CoverageEntry[] {
   const projectContext = createCheckerProjectContext({
@@ -116,6 +121,7 @@ function createCheckerProjectCoverageEntries(options: {
     config: options.config,
     configPath: options.configPath,
     context: projectContext,
+    projectConfigCache: options.projectConfigCache,
     virtualFiles: options.virtualFiles,
   }).map((filePath) => ({ filePath, source }));
 }
@@ -123,6 +129,7 @@ function createCheckerProjectCoverageEntries(options: {
 function createCheckerCoverageEntries(options: {
   checkerTargets: CheckerCoverageTarget[];
   config: ResolvedLiminaConfig;
+  projectConfigCache?: CheckerProjectConfigCache;
   virtualFiles: ReadonlyMap<string, string>;
 }): CoverageEntry[] {
   return options.checkerTargets.flatMap((target) =>
@@ -142,6 +149,7 @@ export function collectCoverage(options: {
   graphRoutes: CheckerGraphProjectRoute[];
   checkerTargets: CheckerCoverageTarget[];
   outsideSourceCoverageByFile?: Map<string, CoverageSource[]>;
+  projectConfigCache?: CheckerProjectConfigCache;
   sourceFiles: Set<string>;
   virtualFiles: ReadonlyMap<string, string>;
 }): Map<string, CoverageSource[]> {

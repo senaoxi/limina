@@ -29,6 +29,7 @@ function getAllProjects(
 function addCheckerOwnershipProblems(options: {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
   const base = {
@@ -45,6 +46,7 @@ function addProjectValidationProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   allProjects: ReturnType<typeof getAllProjects>;
   config: ResolvedLiminaConfig;
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
   addActivatedRegionSourceProjectProblems({
@@ -61,6 +63,7 @@ function addProjectValidationProblems(options: {
   addUnsupportedSourceConfigExtensionProblems({
     config: options.config,
     problems: options.state.problems,
+    projectConfigCache: options.projectConfigCache,
     projects: options.allProjects,
   });
 }
@@ -71,6 +74,7 @@ function addInferredReferences(options: {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
   for (const checker of options.checkers) {
@@ -163,6 +167,7 @@ export function validateAndCompleteGeneratedGraph(options: {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
   addCheckerOwnershipProblems(options);

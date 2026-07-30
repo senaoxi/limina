@@ -1,4 +1,7 @@
-import type { CheckerProjectParseContext } from '#checkers';
+import type {
+  CheckerProjectConfigCache,
+  CheckerProjectParseContext,
+} from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
@@ -21,9 +24,17 @@ export interface SourceGraphProjects {
   projects: ProjectInfo[];
 }
 
+interface TsconfigCoreOptions {
+  config: ResolvedLiminaConfig;
+  generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>;
+  projectConfigCache: CheckerProjectConfigCache;
+  workspace?: WorkspaceCore;
+}
+
 export class TsconfigCore {
   readonly #config: ResolvedLiminaConfig;
   readonly #generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>;
+  readonly #projectConfigCache: CheckerProjectConfigCache;
   readonly #workspace: WorkspaceCore | undefined;
   #projectCache = new Map<string, Promise<ProjectInfo>>();
   #referenceGraphCache = new Map<
@@ -32,14 +43,11 @@ export class TsconfigCore {
   >();
   #sourceGraphProjectsPromise: Promise<SourceGraphProjects> | undefined;
 
-  constructor(
-    config: ResolvedLiminaConfig,
-    generatedGraphProvider: () => Promise<GeneratedTsconfigGraphResult>,
-    workspace?: WorkspaceCore,
-  ) {
-    this.#config = config;
-    this.#generatedGraphProvider = generatedGraphProvider;
-    this.#workspace = workspace;
+  constructor(options: TsconfigCoreOptions) {
+    this.#config = options.config;
+    this.#generatedGraphProvider = options.generatedGraphProvider;
+    this.#projectConfigCache = options.projectConfigCache;
+    this.#workspace = options.workspace;
   }
 
   async getProject(
@@ -55,6 +63,7 @@ export class TsconfigCore {
           normalizeAbsolutePath(configPath),
           contextOrExtensions,
           generatedGraph.generatedFiles,
+          this.#projectConfigCache,
         ),
       );
 

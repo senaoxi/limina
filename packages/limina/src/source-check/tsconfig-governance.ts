@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { CheckCounter } from '../check-reporting/stats';
@@ -15,6 +16,7 @@ export async function addTsconfigGovernanceProblems(options: {
   configPaths: string[];
   findings: SourceFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
+  projectConfigCache?: CheckerProjectConfigCache;
   workspaceLookup: WorkspaceLookupIndex;
 }): Promise<void> {
   const collection = collectTsconfigGovernance(options);
@@ -33,5 +35,6 @@ export async function addTsconfigGovernanceProblems(options: {
     findings: options.findings,
     governanceUnitsByFile: collection.governanceUnitsByFile,
     projectFileSetsByConfigPath: collection.projectFileSetsByConfigPath,
+    projectConfigCache: options.projectConfigCache,
   });
 }

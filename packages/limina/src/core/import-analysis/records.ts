@@ -72,7 +72,7 @@ export function buildLineStarts(sourceText: string): number[] {
   return starts;
 }
 
-export function getLine(lineStarts: number[], pos: number): number {
+export function getLine(lineStarts: readonly number[], pos: number): number {
   let low = 0;
   let high = lineStarts.length - 1;
 
@@ -94,7 +94,7 @@ export function createImportRecord(options: {
   filePath: string;
   kind: ImportRecordKind;
   lineOffset: number;
-  lineStarts: number[];
+  lineStarts: readonly number[];
   pos: number;
   sourceOffset: number;
   specifier: string;

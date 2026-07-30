@@ -1,3 +1,4 @@
+import { withGeneratedArtifactReadLease } from '../core/build-graph/materializer';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import type { LiminaPreflightManager } from '../preflight';
 import { runOutputDeclarationCopyPostBuild } from './build/output-copy';
@@ -143,19 +144,23 @@ export async function runManagedBuild(options: {
     rootConfigPaths,
     targetCount: targets.length,
   });
-  const execution = await executeCheckerBuildTargets({
-    allCheckers: options.target.allCheckers,
-    config: options.request.config,
-    flowDepth: context.flowDepth,
-    generatedGraph: options.target.generatedGraph,
-    label: 'build',
-    preflight: options.preflight,
-    projectRootDir: options.projectRootDir,
-    runnerOptions: toCheckerBuildOptions(options.request),
-    targets,
-    watch: options.request.watch,
-    workspaceContext: options.workspaceContext,
-  });
+  const execution = await withGeneratedArtifactReadLease(
+    options.preflight.artifactNamespace,
+    () =>
+      executeCheckerBuildTargets({
+        allCheckers: options.target.allCheckers,
+        config: options.request.config,
+        flowDepth: context.flowDepth,
+        generatedGraph: options.target.generatedGraph,
+        label: 'build',
+        preflight: options.preflight,
+        projectRootDir: options.projectRootDir,
+        runnerOptions: toCheckerBuildOptions(options.request),
+        targets,
+        watch: options.request.watch,
+        workspaceContext: options.workspaceContext,
+      }),
+  );
   return completeManagedBuild({
     context,
     descriptors,

@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
@@ -37,6 +38,7 @@ function collectConfigOwnerEntries(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   generatedGraph: GeneratedTsconfigGraphResult;
+  projectConfigCache?: CheckerProjectConfigCache;
 }): SourceOwnerEntry[] {
   if (isDefaultTypecheckAggregator(options)) {
     return [];
@@ -51,6 +53,7 @@ function collectConfigOwnerEntries(options: {
     config: options.config,
     configPath: options.configPath,
     context,
+    projectConfigCache: options.projectConfigCache,
   })
     .fileNames.filter(isOrdinarySourceOwnershipCandidate)
     .map((fileName) => ({ configPath: options.configPath, fileName }));
@@ -60,6 +63,7 @@ function collectFileOwners(options: {
   config: ResolvedLiminaConfig;
   generatedGraph: GeneratedTsconfigGraphResult;
   ordinaryConfigPaths: string[];
+  projectConfigCache?: CheckerProjectConfigCache;
 }): Map<string, string[]> {
   const fileOwners = new Map<string, string[]>();
   const entries = options.ordinaryConfigPaths.flatMap((configPath) =>
@@ -167,6 +171,7 @@ export function addDuplicateTypecheckOwnershipFindings(options: {
   findings: ProofFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
   ordinaryConfigPaths: string[];
+  projectConfigCache?: CheckerProjectConfigCache;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const fileOwners = collectFileOwners(options);

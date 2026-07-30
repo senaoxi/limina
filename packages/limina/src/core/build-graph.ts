@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   type GeneratedProviderEdge,
@@ -11,6 +12,7 @@ import type { WorkspaceCore } from './workspace';
 export class BuildGraphCore {
   readonly #config: ResolvedLiminaConfig;
   readonly #imports: ImportCore;
+  readonly #projectConfigs: CheckerProjectConfigCache;
   readonly #workspace: WorkspaceCore;
   readonly #artifactNamespace: LiminaArtifactNamespace;
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
@@ -19,11 +21,13 @@ export class BuildGraphCore {
     artifactNamespace: LiminaArtifactNamespace;
     config: ResolvedLiminaConfig;
     imports: ImportCore;
+    projectConfigs: CheckerProjectConfigCache;
     workspace: WorkspaceCore;
   }) {
     this.#artifactNamespace = options.artifactNamespace;
     this.#config = options.config;
     this.#imports = options.imports;
+    this.#projectConfigs = options.projectConfigs;
     this.#workspace = options.workspace;
   }
 
@@ -41,6 +45,7 @@ export class BuildGraphCore {
       prepareGeneratedTsconfigGraph(this.#config, {
         artifactNamespace: this.#artifactNamespace,
         importAnalysisContext: this.#imports.context,
+        projectConfigCache: this.#projectConfigs,
         workspaceContext: topology,
         workspacePathIndex,
       }),

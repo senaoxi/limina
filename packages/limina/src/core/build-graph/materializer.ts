@@ -1,19 +1,35 @@
-import { rm, writeFile } from 'node:fs/promises';
 import {
   type ArtifactSafetyMetricsRecorder,
-  assertArtifactPathLexicallyContained,
-  assertArtifactPathOperationSafe,
-  assertArtifactPlanPathsOperationSafe,
   assertLiminaArtifactNamespace,
-  ensureArtifactParentDirectory,
   type LiminaArtifactNamespace,
-  resolveArtifactNamespaceRelativePath,
+  toArtifactNamespaceRelativePath,
 } from '../../domain/artifacts/namespace';
 import {
   type ArtifactChange,
   type ArtifactPlan,
   assertArtifactPlan,
 } from '../../domain/artifacts/plan';
+import {
+  acquireCrossProcessReadLease,
+  acquireCrossProcessWriteLease,
+  type CrossProcessLeaseOptions,
+} from '../../utils/mutation/cross-process-lease';
+import {
+  deleteNonTargetOwnedPaths,
+  getTargetArtifacts,
+  orderArtifactChanges,
+  validateArtifactPlanSafety,
+  verifyDesiredTree,
+  writeTargetArtifacts,
+} from './materialization-operations';
+import {
+  createMaterializationMarker,
+  MaterializationRecoveryRequired,
+  readMaterializationMarker,
+  readMaterializationStateSnapshot,
+  removeMaterializationMarker,
+  writeMaterializationMarker,
+} from './materialization-state';
 
 interface ArtifactMaterializationMetricsRecorder
   extends ArtifactSafetyMetricsRecorder {
@@ -33,33 +49,13 @@ export interface MaterializeGeneratedArtifactPlanOptions {
   readonly afterPlanSafetyValidation?: () => Promise<void> | void;
   readonly beforeMutation?: (change: ArtifactChange) => Promise<void> | void;
   readonly metrics?: ArtifactMaterializationMetricsRecorder;
-}
-
-function isGeneratedManifestChange(change: ArtifactChange): boolean {
-  return (
-    change.status !== 'delete' && change.artifact.kind === 'generated-manifest'
-  );
-}
-
-function getArtifactChangePath(change: ArtifactChange): string {
-  return change.status === 'delete' ? change.path : change.artifact.path;
-}
-
-function compareArtifactChanges(
-  left: ArtifactChange,
-  right: ArtifactChange,
-): number {
-  const manifestDifference =
-    Number(isGeneratedManifestChange(left)) -
-    Number(isGeneratedManifestChange(right));
-
-  return manifestDifference === 0
-    ? getArtifactChangePath(left).localeCompare(getArtifactChangePath(right))
-    : manifestDifference;
-}
-
-function orderArtifactChanges(plan: ArtifactPlan): ArtifactChange[] {
-  return [...plan.changes].sort(compareArtifactChanges);
+  /** Failure injection seam for marker cleanup regression tests. */
+  readonly removeMarker?: (namespace: LiminaArtifactNamespace) => Promise<void>;
+  readonly replan?: () => Promise<{
+    namespace: LiminaArtifactNamespace;
+    plan: ArtifactPlan;
+  }>;
+  readonly lease?: CrossProcessLeaseOptions;
 }
 
 function assertMatchingGeneration(
@@ -73,132 +69,225 @@ function assertMatchingGeneration(
   }
 }
 
-function assertTargetPathsContained(
-  namespace: LiminaArtifactNamespace,
-  targetPaths: readonly string[],
-): void {
-  for (const targetPath of targetPaths) {
-    assertArtifactPathLexicallyContained(namespace, targetPath);
-  }
+function revisionsMatch(
+  left: ArtifactPlan['baseRevision'],
+  right: ArtifactPlan['baseRevision'],
+): boolean {
+  return left === right;
 }
 
-function assertOwnedPathsContained(
-  namespace: LiminaArtifactNamespace,
-  ownedPaths: readonly string[],
-): void {
-  for (const ownedPath of ownedPaths) {
-    const absoluteOwnedPath = resolveArtifactNamespaceRelativePath(
-      namespace,
-      ownedPath,
-    );
-    assertArtifactPathLexicallyContained(namespace, absoluteOwnedPath);
-  }
-}
-
-function recordMutation(
-  options: MaterializeGeneratedArtifactPlanOptions,
-  kind: string,
-): void {
-  options.metrics?.record({
-    kind,
-    name: 'artifact-mutation',
-    provider: 'artifact-materializer',
-  });
-}
-
-async function applyDeleteChange(
-  namespace: LiminaArtifactNamespace,
-  change: Extract<ArtifactChange, { status: 'delete' }>,
-  options: MaterializeGeneratedArtifactPlanOptions,
-): Promise<void> {
-  await assertArtifactPathOperationSafe(namespace, change.path, {
-    metrics: options.metrics,
-    phase: 'immediate',
-    targetKind: 'file',
-  });
-  await options.beforeMutation?.(change);
-  recordMutation(options, 'delete');
-  await rm(change.path, { force: true });
-}
-
-async function applyWriteChange(
-  namespace: LiminaArtifactNamespace,
-  change: Exclude<ArtifactChange, { status: 'delete' | 'unchanged' }>,
-  options: MaterializeGeneratedArtifactPlanOptions,
-): Promise<void> {
-  await ensureArtifactParentDirectory(namespace, change.artifact.path, {
-    metrics: options.metrics,
-  });
-  await assertArtifactPathOperationSafe(namespace, change.artifact.path, {
-    metrics: options.metrics,
-    phase: 'immediate',
-    targetKind: 'file',
-  });
-  await options.beforeMutation?.(change);
-  recordMutation(options, change.status);
-  await writeFile(change.artifact.path, change.artifact.content);
-}
-
-async function applyArtifactChange(
-  namespace: LiminaArtifactNamespace,
-  change: ArtifactChange,
-  options: MaterializeGeneratedArtifactPlanOptions,
-): Promise<void> {
-  if (change.status === 'unchanged') {
-    return;
-  }
-
-  if (change.status === 'delete') {
-    await applyDeleteChange(namespace, change, options);
-    return;
-  }
-
-  await applyWriteChange(namespace, change, options);
-}
-
-async function validateArtifactPlanSafety(options: {
-  materialization: MaterializeGeneratedArtifactPlanOptions;
-  namespace: LiminaArtifactNamespace;
-  orderedChanges: readonly ArtifactChange[];
-  plan: ArtifactPlan;
-}): Promise<void> {
-  const targetPaths = options.orderedChanges.map(getArtifactChangePath);
-  assertTargetPathsContained(options.namespace, targetPaths);
-  assertOwnedPathsContained(options.namespace, options.plan.ownedPaths);
-  await assertArtifactPlanPathsOperationSafe(options.namespace, targetPaths, {
-    metrics: options.materialization.metrics,
-  });
-  await options.materialization.afterPlanSafetyValidation?.();
-}
-
-async function applyGeneratedArtifactPlan(
+async function readPlanBaseState(
   namespace: LiminaArtifactNamespace,
   plan: ArtifactPlan,
-  options: MaterializeGeneratedArtifactPlanOptions,
-): Promise<void> {
-  assertLiminaArtifactNamespace(namespace);
-  assertArtifactPlan(plan);
-  assertMatchingGeneration(namespace, plan);
-
-  const orderedChanges = orderArtifactChanges(plan);
-  await validateArtifactPlanSafety({
-    materialization: options,
-    namespace,
-    orderedChanges,
-    plan,
-  });
-
-  for (const change of orderedChanges) {
-    await applyArtifactChange(namespace, change, options);
+) {
+  if (plan.revisionValidated) {
+    return readMaterializationStateSnapshot(namespace);
   }
+  return { ownedPaths: [...plan.baseOwnedPaths], revision: plan.baseRevision };
+}
+
+function requiresReplan(options: {
+  currentRevision: ArtifactPlan['baseRevision'];
+  markerPresent: boolean;
+  plan: ArtifactPlan;
+}): boolean {
+  if (options.markerPresent && options.plan.revisionValidated) return true;
+  return !revisionsMatch(options.currentRevision, options.plan.baseRevision);
+}
+
+function requireReplan(
+  replan: MaterializeGeneratedArtifactPlanOptions['replan'],
+): NonNullable<MaterializeGeneratedArtifactPlanOptions['replan']> {
+  if (replan !== undefined) return replan;
+  throw new Error(
+    'Generated-artifact base revision changed before materialization.',
+  );
+}
+
+function assertSameCanonicalRoot(
+  original: LiminaArtifactNamespace,
+  replanned: LiminaArtifactNamespace,
+): void {
+  if (replanned.canonicalRootDir === original.canonicalRootDir) return;
+  throw new Error(
+    'Generated-artifact replan changed the canonical lease root.',
+  );
+}
+
+function assertReplannedRevision(
+  plan: ArtifactPlan,
+  currentRevision: ArtifactPlan['baseRevision'],
+): void {
+  if (revisionsMatch(currentRevision, plan.baseRevision)) return;
+  throw new Error(
+    'Generated-artifact base revision changed after the single allowed replan.',
+  );
+}
+
+async function replanOnce(options: {
+  namespace: LiminaArtifactNamespace;
+  replan: NonNullable<MaterializeGeneratedArtifactPlanOptions['replan']>;
+}) {
+  const replanned = await options.replan();
+  assertSameCanonicalRoot(options.namespace, replanned.namespace);
+  const current = await readPlanBaseState(replanned.namespace, replanned.plan);
+  assertReplannedRevision(replanned.plan, current.revision);
+  return replanned;
+}
+
+async function selectValidatedPlan(options: {
+  markerPresent: boolean;
+  namespace: LiminaArtifactNamespace;
+  plan: ArtifactPlan;
+  replan?: MaterializeGeneratedArtifactPlanOptions['replan'];
+}): Promise<{
+  namespace: LiminaArtifactNamespace;
+  plan: ArtifactPlan;
+  recovered: boolean;
+}> {
+  const current = await readPlanBaseState(options.namespace, options.plan);
+  const needsReplan = requiresReplan({
+    currentRevision: current.revision,
+    markerPresent: options.markerPresent,
+    plan: options.plan,
+  });
+  if (!needsReplan) {
+    return {
+      namespace: options.namespace,
+      plan: options.plan,
+      recovered: options.markerPresent,
+    };
+  }
+  const replanned = await replanOnce({
+    namespace: options.namespace,
+    replan: requireReplan(options.replan),
+  });
+  return { ...replanned, recovered: options.markerPresent };
+}
+
+async function materializeUnderWriteLease(options: {
+  leaseOwner: Awaited<
+    ReturnType<typeof acquireCrossProcessWriteLease>
+  >['owner'];
+  materialization: MaterializeGeneratedArtifactPlanOptions;
+  namespace: LiminaArtifactNamespace;
+  plan: ArtifactPlan;
+}): Promise<{ namespace: LiminaArtifactNamespace; plan: ArtifactPlan }> {
+  const oldMarker = await readMaterializationMarker(options.namespace);
+  const selected = await selectValidatedPlan({
+    markerPresent: oldMarker !== null,
+    namespace: options.namespace,
+    plan: options.plan,
+    replan: options.materialization.replan,
+  });
+  assertLiminaArtifactNamespace(selected.namespace);
+  assertArtifactPlan(selected.plan);
+  assertMatchingGeneration(selected.namespace, selected.plan);
+  const current = selected.plan.revisionValidated
+    ? await readMaterializationStateSnapshot(selected.namespace)
+    : {
+        ownedPaths: [...selected.plan.baseOwnedPaths],
+        revision: selected.plan.baseRevision,
+      };
+  const orderedChanges = orderArtifactChanges(selected.plan);
+  await validateArtifactPlanSafety({
+    materialization: options.materialization,
+    namespace: selected.namespace,
+    orderedChanges,
+    plan: selected.plan,
+  });
+  const marker = createMaterializationMarker({
+    baseRevision: selected.plan.baseRevision,
+    currentOwnedPaths: current.ownedPaths,
+    desiredRevision: selected.plan.desiredRevision,
+    oldMarker,
+    owner: options.leaseOwner,
+    planBaseOwnedPaths: selected.plan.baseOwnedPaths,
+    planDeletePaths: selected.plan.changes.flatMap((change) =>
+      change.status === 'delete'
+        ? [toArtifactNamespaceRelativePath(selected.namespace, change.path)]
+        : [],
+    ),
+    targetOwnedPaths: selected.plan.ownedPaths,
+  });
+  await writeMaterializationMarker({
+    marker,
+    namespace: selected.namespace,
+  });
+  const targetArtifacts = getTargetArtifacts(selected.namespace, selected.plan);
+  await writeTargetArtifacts({
+    force: selected.recovered,
+    manifestOnly: false,
+    materialization: options.materialization,
+    namespace: selected.namespace,
+    plan: selected.plan,
+  });
+  await deleteNonTargetOwnedPaths({
+    materialization: options.materialization,
+    namespace: selected.namespace,
+    ownedPathUniverse: marker.ownedPathUniverse,
+    targetOwnedPaths: new Set(marker.targetOwnedPaths),
+  });
+  await writeTargetArtifacts({
+    force: selected.recovered,
+    manifestOnly: true,
+    materialization: options.materialization,
+    namespace: selected.namespace,
+    plan: selected.plan,
+  });
+  await verifyDesiredTree({
+    namespace: selected.namespace,
+    plan: selected.plan,
+    targetArtifacts,
+  });
+  await (options.materialization.removeMarker ?? removeMaterializationMarker)(
+    selected.namespace,
+  );
+  return { namespace: selected.namespace, plan: selected.plan };
 }
 
 export async function materializeGeneratedArtifactPlan(
   namespace: LiminaArtifactNamespace,
   plan: ArtifactPlan,
   options: MaterializeGeneratedArtifactPlanOptions = {},
-): Promise<void> {
-  await applyGeneratedArtifactPlan(namespace, plan, options);
+): Promise<{ namespace: LiminaArtifactNamespace; plan: ArtifactPlan }> {
+  assertLiminaArtifactNamespace(namespace);
+  assertArtifactPlan(plan);
+  assertMatchingGeneration(namespace, plan);
+  const lease = await acquireCrossProcessWriteLease(
+    namespace.canonicalRootDir,
+    options.lease,
+  );
+  try {
+    return await materializeUnderWriteLease({
+      leaseOwner: lease.owner,
+      materialization: options,
+      namespace,
+      plan,
+    });
+  } finally {
+    await lease.release();
+  }
 }
 
-/** @internal Test support for the low-level graph planner. */
+export async function withGeneratedArtifactReadLease<T>(
+  namespace: LiminaArtifactNamespace,
+  operation: () => Promise<T>,
+  options: CrossProcessLeaseOptions = {},
+): Promise<T> {
+  const lease = await acquireCrossProcessReadLease(
+    namespace.canonicalRootDir,
+    options,
+  );
+  try {
+    const marker = await readMaterializationMarker(namespace);
+    if (marker !== null) {
+      throw new MaterializationRecoveryRequired(
+        'Generated-artifact materialization was interrupted; a writer must recover it before readers can continue.',
+      );
+    }
+    return await operation();
+  } finally {
+    await lease.release();
+  }
+}

@@ -1,3 +1,4 @@
+import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   isDtsProjectConfig,
@@ -21,6 +22,7 @@ type AddTypecheckParityProblemsArgs = [
   findings: GraphFinding[],
   checks: CheckCounter,
   checkerName?: string,
+  projectConfigCache?: CheckerProjectConfigCache,
 ];
 
 interface ParityContext {
@@ -29,6 +31,7 @@ interface ParityContext {
   config: ResolvedLiminaConfig;
   dtsProject: ProjectInfo;
   findings: GraphFinding[];
+  projectConfigCache?: CheckerProjectConfigCache;
   typecheckConfigPath: string;
 }
 
@@ -84,6 +87,8 @@ function resolveTypecheckProject(context: ParityContext): ProjectInfo | null {
       context.config,
       context.typecheckConfigPath,
       context.dtsProject,
+      undefined,
+      context.projectConfigCache,
     );
   }
 
@@ -264,11 +269,16 @@ function addFileParityProblem(
 export function addTypecheckParityProblems(
   ...args: AddTypecheckParityProblemsArgs
 ): void {
-  const [config, dtsProject, findings, checks, checkerName] = args;
+  const [
+    config,
+    dtsProject,
+    findings,
+    checks,
+    checkerName,
+    projectConfigCache,
+  ] = args;
 
-  if (!isDtsProjectConfig(dtsProject.configPath)) {
-    return;
-  }
+  if (!isDtsProjectConfig(dtsProject.configPath)) return;
 
   const context: ParityContext = {
     checkerName,
@@ -276,13 +286,12 @@ export function addTypecheckParityProblems(
     config,
     dtsProject,
     findings,
+    projectConfigCache,
     typecheckConfigPath: dtsProject.resolverConfigPath,
   };
   const typecheckProject = resolveTypecheckProject(context);
 
-  if (typecheckProject === null) {
-    return;
-  }
+  if (typecheckProject === null) return;
 
   addOptionParityProblems(context, typecheckProject);
   addFileParityProblem(context, typecheckProject);
