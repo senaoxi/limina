@@ -11,6 +11,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { collectOxcImports } from '../core/import-analysis/oxc-imports';
+import { collectRequireImportsFromSourceFile } from '../core/import-analysis/require-bindings';
 import { collectTypeScriptImports } from '../core/import-analysis/typescript-imports';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
@@ -244,6 +245,28 @@ describe('import analysis', () => {
         ['commonjs', 'require-resolve'].includes(record.kind),
       ),
     ).toEqual([]);
+  });
+
+  it('reuses the TypeScript fallback SourceFile for require collection', () => {
+    const sourceText = "const = ;\nrequire('./fallback');\n";
+    const options = {
+      filePath: '/fixture/fallback.ts',
+      scriptKind: ts.ScriptKind.TS,
+      sourceText,
+    };
+    const sourceFile = ts.createSourceFile(
+      options.filePath,
+      sourceText,
+      ts.ScriptTarget.Latest,
+      true,
+      options.scriptKind,
+    );
+
+    expect(
+      collectRequireImportsFromSourceFile({ ...options, sourceFile }).map(
+        (record) => [record.kind, record.specifier],
+      ),
+    ).toEqual([['commonjs', './fallback']]);
   });
 
   it('collects dependency pragmas from comments', async () => {

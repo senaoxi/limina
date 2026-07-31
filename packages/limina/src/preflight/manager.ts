@@ -246,31 +246,31 @@ export class LiminaPreflightManager {
     );
     return this.#cache.checkerRouteSnapshot;
   }
-
   #startNextGeneration(): void {
     this.#replaceProviderGeneration(true);
   }
-
   #assertDefaultProvidersCanAdvance(): void {
     if (!this.#usesCustomProviders) return;
     throw new Error(
       'Custom analysis providers support generation 0 only and cannot advance.',
     );
   }
-
   #refreshProviderGenerationForMaterialization(): void {
-    this.#replaceProviderGeneration(false);
+    this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
   }
 
-  #replaceProviderGeneration(advanceCommandGeneration: boolean): void {
+  #replaceProviderGeneration(
+    advance: boolean,
+    slot?: PreflightGenerationCache['materializationSlot'],
+  ): void {
     if (this.#disposed) {
       throw new Error('Preflight manager has been disposed.');
     }
     this.#assertDefaultProvidersCanAdvance();
     this.#disposeProviders();
-    if (advanceCommandGeneration) this.#generation += 1;
+    if (advance) this.#generation += 1;
     this.#providerGeneration += 1;
-    this.#cache = new PreflightGenerationCache(this.#generation);
+    this.#cache = new PreflightGenerationCache(this.#generation, slot);
     this.artifactNamespace = createLiminaArtifactNamespace({
       generation: this.#providerGeneration,
       rootDir: this.config.rootDir,

@@ -10,7 +10,11 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { toPortablePath, toPortableRelativePaths } from './helpers/path';
+import {
+  createFixturePathResolver,
+  toPortablePath,
+  toPortableRelativePaths,
+} from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -19,6 +23,7 @@ async function writeText(filePath: string, text: string): Promise<void> {
 
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
+  path: (...segments: string[]) => string;
   rootDir: string;
 }> {
   const rootDir = await realpath(
@@ -33,6 +38,7 @@ async function createFixture(files: Record<string, string>): Promise<{
     cleanup: async () => {
       await rm(rootDir, { force: true, recursive: true });
     },
+    path: createFixturePathResolver(rootDir),
     rootDir,
   };
 }
@@ -139,7 +145,7 @@ describe('checker project config parsing', () => {
         include: ['src/a.ts'],
       }),
     });
-    const configPath = path.join(fixture.rootDir, 'tsconfig.json');
+    const configPath = fixture.path('tsconfig.json');
     const cache = new CheckerProjectConfigCache();
     const parseOptions = {
       cache,
@@ -246,7 +252,7 @@ describe('checker project config parsing', () => {
       'src/virtual.ts': 'export const virtual = true;\n',
       'tsconfig.json': tsconfig({ include: ['src/physical.ts'] }),
     });
-    const configPath = path.join(fixture.rootDir, 'tsconfig.json');
+    const configPath = fixture.path('tsconfig.json');
     const cache = new CheckerProjectConfigCache();
     const parse = (virtualFiles?: ReadonlyMap<string, string>) =>
       toPortableRelativePaths(

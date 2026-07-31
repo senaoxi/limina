@@ -155,9 +155,15 @@ export function collectRequireImports(
     true,
     options.scriptKind,
   );
+  return collectRequireImportsFromSourceFile({ ...options, sourceFile });
+}
+
+export function collectRequireImportsFromSourceFile(
+  options: RequireImportCollectionOptions & { sourceFile: ts.SourceFile },
+): CollectedImportRecord[] {
   return collectRequireRecords({
-    bindings: prepareRequireBindings(sourceFile),
+    bindings: prepareRequireBindings(options.sourceFile),
     collection: options,
-    sourceFile,
+    sourceFile: options.sourceFile,
   });
 }

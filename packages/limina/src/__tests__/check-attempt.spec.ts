@@ -14,6 +14,7 @@ import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import {
   abortCheckAttempt,
   completeCheckAttempt,
+  failCheckAttemptPersistence,
   getCheckAttemptPaths,
   publishCheckAttempt,
 } from '../source-check/snapshot/check-attempt-io';
@@ -460,6 +461,99 @@ describe('check attempt freshness', () => {
             ...(format === 'ndjson' ? { type: 'inventory-status' } : {}),
           });
         }
+      });
+    },
+  );
+
+  it.each([
+    {
+      expectedMessage: 'latest check attempt is still running',
+      state: 'running',
+    },
+    {
+      expectedMessage: 'latest check attempt was interrupted',
+      state: 'interrupted',
+    },
+    {
+      expectedMessage: 'latest check attempt could not persist',
+      state: 'persistence-failed',
+    },
+    {
+      expectedMessage: 'latest-attempt.json is corrupt',
+      state: 'latest-attempt-corrupt',
+    },
+  ] as const)(
+    'fails filter help closed for a $state latest attempt',
+    async ({ expectedMessage, state }) => {
+      await withTempRoot(async (rootDir) => {
+        const namespace = createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir,
+        });
+        const paths = getCheckAttemptPaths(rootDir);
+        if (state === 'latest-attempt-corrupt') {
+          await mkdir(path.dirname(paths.latestAttempt), { recursive: true });
+          await writeFile(paths.latestAttempt, '{broken\n');
+        } else {
+          const attempt = await publishCheckAttempt({
+            command: 'limina check',
+            namespace,
+          });
+          if (state === 'interrupted') {
+            await writeJson(
+              path.join(
+                paths.attemptsDir,
+                attempt.latest.attemptId,
+                'started.json',
+              ),
+              {
+                ...attempt.started,
+                owner: {
+                  ...attempt.started.owner,
+                  pid: 2_147_483_647,
+                },
+              },
+            );
+          }
+          if (state === 'persistence-failed') {
+            await failCheckAttemptPersistence({
+              attempt,
+              error: new Error('disk unavailable'),
+              namespace,
+              sourceSnapshotPersisted: false,
+            });
+          }
+        }
+        await writeFile(
+          path.join(rootDir, 'limina.config.mjs'),
+          'export default {};\n',
+        );
+        await writeFile(
+          path.join(rootDir, 'pnpm-workspace.yaml'),
+          'packages: []\n',
+        );
+        const cliPath = fileURLToPath(
+          new URL('../../bin/limina.js', import.meta.url),
+        );
+
+        await expect(
+          execFileAsync(
+            process.execPath,
+            [
+              cliPath,
+              '--config',
+              path.join(rootDir, 'limina.config.mjs'),
+              'check',
+              '--issues',
+              '--task',
+              '--help',
+            ],
+            { cwd: rootDir, env: { ...process.env, CI: 'true' } },
+          ),
+        ).rejects.toMatchObject({
+          code: 1,
+          stdout: expect.stringContaining(expectedMessage),
+        });
       });
     },
   );

@@ -5,7 +5,7 @@ import {
   createImportRecord,
   type ImportRecordKind,
 } from './records';
-import { collectRequireImports } from './require-bindings';
+import { collectRequireImportsFromSourceFile } from './require-bindings';
 
 interface TypeScriptImportCollectionOptions {
   filePath: string;
@@ -204,5 +204,8 @@ export function collectTypeScriptImports(
     sourceFile,
   });
   visitNode({ add, node: sourceFile });
-  return [...imports, ...collectRequireImports(options)];
+  return [
+    ...imports,
+    ...collectRequireImportsFromSourceFile({ ...options, sourceFile }),
+  ];
 }

@@ -13,6 +13,7 @@ import {
   toCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
 import { queryLatestCheckAttempt } from '../source-check/snapshot/check-attempt-query';
+import type { CheckAttemptQueryResult } from '../source-check/snapshot/check-attempt-query-types';
 import {
   parseCheckIssueFilterHelpKind,
   readArgvOptionValue,
@@ -20,6 +21,10 @@ import {
 } from './argv';
 
 type Snapshot = Awaited<ReturnType<typeof readCheckIssueSnapshot>>;
+interface RequestedSnapshot {
+  attemptQuery?: CheckAttemptQueryResult;
+  snapshot: Snapshot;
+}
 
 function uniqueSortedValues(
   values: readonly (string | undefined)[],
@@ -67,20 +72,28 @@ function getFilterHelpValues(options: {
 
 async function readRequestedSnapshot(
   argv: readonly string[],
-): Promise<Snapshot> {
+): Promise<RequestedSnapshot> {
   const globalFlags = readGlobalFlagsFromArgv(argv);
   const location = locateCheckIssueWorkspace({
     configPath: globalFlags.config,
   });
   const invocationId = readArgvOptionValue(argv, '--invocation');
   if (invocationId === undefined) {
-    return (await queryLatestCheckAttempt(location.rootDir)).snapshot;
+    const attemptQuery = await queryLatestCheckAttempt(location.rootDir);
+    return { attemptQuery, snapshot: attemptQuery.snapshot };
   }
   const invocation = await readStandaloneIssueInvocation(
     location.rootDir,
     invocationId,
   );
-  return toCheckIssueSnapshot(invocation);
+  return { snapshot: toCheckIssueSnapshot(invocation) };
+}
+
+function isUnavailableAttemptQuery(
+  query: CheckAttemptQueryResult | undefined,
+): query is Extract<CheckAttemptQueryResult, { snapshot: null }> {
+  if (query === undefined) return false;
+  return query.state !== 'completed' && query.state !== 'legacy';
 }
 
 function printRuleHelp(): void {
@@ -91,7 +104,15 @@ async function printSnapshotHelp(options: {
   argv: readonly string[];
   helpKind: Exclude<CheckIssueFilterHelpKind, 'rule'>;
 }): Promise<void> {
-  const snapshot = await readRequestedSnapshot(options.argv);
+  const input = await readRequestedSnapshot(options.argv);
+  if (isUnavailableAttemptQuery(input.attemptQuery)) {
+    process.exitCode = 1;
+    process.stdout.write(
+      `Issue inventory unavailable: ${input.attemptQuery.message}\n`,
+    );
+    return;
+  }
+  const snapshot = input.snapshot;
   process.stdout.write(
     `${formatCheckIssueSnapshotFilterHelp({
       availableValues: getFilterHelpValues({
