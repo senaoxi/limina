@@ -1,5 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
+import {
+  compareCodeUnits,
+  uniqueCodeUnitSortedStrings as uniqueSortedStrings,
+  uniqueValues,
+} from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckIssueLocation } from '../check-reporting/snapshot';
@@ -197,7 +201,7 @@ export function addSourceBoundaryMismatchFindings(options: {
 }): void {
   const outsideSourceFiles = [
     ...options.outsideSourceCoverageByFile.entries(),
-  ].sort(([left], [right]) => left.localeCompare(right));
+  ].sort(([left], [right]) => compareCodeUnits(left, right));
 
   if (outsideSourceFiles.length === 0) {
     return;

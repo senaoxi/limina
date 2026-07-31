@@ -1,5 +1,6 @@
 import type { CheckerBuildEngine } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { getGeneratedOutputTsBuildInfoPath } from './generated/paths';
 import {
@@ -14,8 +15,8 @@ export function sortSourceProjectsByChecker(
 ): SourceProject[] {
   return [...projects].sort(
     (left, right) =>
-      left.checkerName.localeCompare(right.checkerName) ||
-      left.configPath.localeCompare(right.configPath),
+      compareCodeUnits(left.checkerName, right.checkerName) ||
+      compareCodeUnits(left.configPath, right.configPath),
   );
 }
 
@@ -46,8 +47,8 @@ function collectProviderProjects(options: {
     .filter(isBuildCapableProject)
     .sort(
       (left, right) =>
-        left.checkerName.localeCompare(right.checkerName) ||
-        left.configPath.localeCompare(right.configPath),
+        compareCodeUnits(left.checkerName, right.checkerName) ||
+        compareCodeUnits(left.configPath, right.configPath),
     );
 }
 

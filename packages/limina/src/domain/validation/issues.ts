@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { createHash } from 'node:crypto';
 import type { GovernanceIssueId, RuleId } from '../shared/identifiers';
 import { identifier } from '../shared/identifiers';
@@ -159,11 +160,11 @@ export function compareGovernanceIssues(
   right: GovernanceIssue,
 ): number {
   return firstNonZero([
-    left.ruleId.localeCompare(right.ruleId),
-    getLocationPath(left).localeCompare(getLocationPath(right)),
+    compareCodeUnits(left.ruleId, right.ruleId),
+    compareCodeUnits(getLocationPath(left), getLocationPath(right)),
     getLocationLine(left) - getLocationLine(right),
-    left.message.localeCompare(right.message),
-    left.id.localeCompare(right.id),
+    compareCodeUnits(left.message, right.message),
+    compareCodeUnits(left.id, right.id),
   ]);
 }
 

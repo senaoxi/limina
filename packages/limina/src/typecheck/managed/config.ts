@@ -1,4 +1,5 @@
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import ts from 'typescript';
@@ -118,7 +119,7 @@ export function parseConfigWithDependencyProof(
   reads.add(normalizeAbsolutePath(configPath));
   return {
     configDependencies: [...reads]
-      .sort((left, right) => left.localeCompare(right))
+      .sort(compareCodeUnits)
       .map(captureConfigDependencyIdentity),
     parsed,
   };
@@ -237,10 +238,8 @@ export function collectTargetLeafConfigs(options: {
   }
   return {
     dependencies: [...state.dependencies.values()].sort((left, right) =>
-      left.path.localeCompare(right.path),
+      compareCodeUnits(left.path, right.path),
     ),
-    leafPaths: [...state.leafPaths].sort((left, right) =>
-      left.localeCompare(right),
-    ),
+    leafPaths: [...state.leafPaths].sort(compareCodeUnits),
   };
 }

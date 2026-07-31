@@ -3,6 +3,7 @@ import {
   isNamedWorkspacePackage,
   type WorkspacePackage,
 } from '#core/workspace/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import type {
   DependencyGraphEdge,
@@ -26,7 +27,7 @@ export function createNodes(
       name: workspacePackage.name,
       path: toRelativePath(config.rootDir, workspacePackage.directory),
     }))
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => compareCodeUnits(left.id, right.id));
 }
 
 function createEdgeKey(
@@ -82,15 +83,15 @@ function compareEvidence(
   left: DependencyGraphEvidence,
   right: DependencyGraphEvidence,
 ): number {
-  const importerOrder = left.importer.localeCompare(right.importer);
+  const importerOrder = compareCodeUnits(left.importer, right.importer);
 
   if (importerOrder !== 0) {
     return importerOrder;
   }
 
-  const specifierOrder = left.specifier.localeCompare(right.specifier);
+  const specifierOrder = compareCodeUnits(left.specifier, right.specifier);
   return specifierOrder === 0
-    ? left.resolvedPath.localeCompare(right.resolvedPath)
+    ? compareCodeUnits(left.resolvedPath, right.resolvedPath)
     : specifierOrder;
 }
 
@@ -102,14 +103,14 @@ function compareEdges(
   left: DependencyGraphEdge,
   right: DependencyGraphEdge,
 ): number {
-  const fromOrder = left.from.localeCompare(right.from);
+  const fromOrder = compareCodeUnits(left.from, right.from);
 
   if (fromOrder !== 0) {
     return fromOrder;
   }
 
-  const toOrder = left.to.localeCompare(right.to);
-  return toOrder === 0 ? left.kind.localeCompare(right.kind) : toOrder;
+  const toOrder = compareCodeUnits(left.to, right.to);
+  return toOrder === 0 ? compareCodeUnits(left.kind, right.kind) : toOrder;
 }
 
 export function sortEdges(edges: DependencyGraphEdge[]): DependencyGraphEdge[] {

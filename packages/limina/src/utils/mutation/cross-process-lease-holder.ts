@@ -99,8 +99,28 @@ export async function removeDeadHolder(holderPath: string): Promise<boolean> {
   return true;
 }
 
-function isHolderCollision(error: unknown): boolean {
-  return hasCode(error, 'EEXIST') || hasCode(error, 'ENOTEMPTY');
+const retryableHolderPublicationCodes = new Set([
+  'EACCES',
+  'EBUSY',
+  'EEXIST',
+  'ENOTEMPTY',
+  'EPERM',
+]);
+
+function isRetryableHolderPublicationError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    retryableHolderPublicationCodes.has(String(error.code))
+  );
+}
+
+async function isHolderCollision(
+  error: unknown,
+  holderPath: string,
+): Promise<boolean> {
+  if (!isRetryableHolderPublicationError(error)) return false;
+  return holderExists(holderPath);
 }
 
 export async function publishHolder(options: {
@@ -123,7 +143,7 @@ export async function publishHolder(options: {
     return true;
   } catch (error) {
     await rm(candidatePath, { force: true, recursive: true });
-    if (isHolderCollision(error)) return false;
+    if (await isHolderCollision(error, options.holderPath)) return false;
     throw error;
   }
 }

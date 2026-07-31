@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import {
   LIMINA_CHECK_ISSUE_CODES,
   type LiminaCheckIssueCode,
@@ -43,7 +44,7 @@ export function isLiminaCheckIssueCode(
 }
 
 export function listLiminaCheckIssueCodes(): readonly LiminaCheckIssueCode[] {
-  return [...LIMINA_CHECK_ISSUE_CODE_VALUES].sort();
+  return [...LIMINA_CHECK_ISSUE_CODE_VALUES].sort(compareCodeUnits);
 }
 
 function getIssueRuleStatus(
@@ -74,9 +75,9 @@ function compareRuleMetadata(
   left: LiminaCheckIssueRuleMetadata,
   right: LiminaCheckIssueRuleMetadata,
 ): number {
-  const taskComparison = left.task.localeCompare(right.task);
+  const taskComparison = compareCodeUnits(left.task, right.task);
   return taskComparison === 0
-    ? left.code.localeCompare(right.code)
+    ? compareCodeUnits(left.code, right.code)
     : taskComparison;
 }
 

@@ -3,6 +3,7 @@ import {
   createFileOwnerLookup,
   createImportAnalysisContext,
 } from '#core/import-graph/context';
+import { compareCodeUnits } from '#utils/collections';
 import { createManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { addImplicitProjectReferences } from './implicit-references';
@@ -65,12 +66,12 @@ function compareProviderEdges(
   right: GeneratedProviderEdge,
 ): number {
   const comparisons = [
-    left.fromChecker.localeCompare(right.fromChecker),
-    left.fromConfigPath.localeCompare(right.fromConfigPath),
-    left.toChecker.localeCompare(right.toChecker),
-    left.toConfigPath.localeCompare(right.toConfigPath),
-    left.file.localeCompare(right.file),
-    left.importedSpecifier.localeCompare(right.importedSpecifier),
+    compareCodeUnits(left.fromChecker, right.fromChecker),
+    compareCodeUnits(left.fromConfigPath, right.fromConfigPath),
+    compareCodeUnits(left.toChecker, right.toChecker),
+    compareCodeUnits(left.toConfigPath, right.toConfigPath),
+    compareCodeUnits(left.file, right.file),
+    compareCodeUnits(left.importedSpecifier, right.importedSpecifier),
   ];
   return comparisons.find((comparison) => comparison !== 0) ?? 0;
 }

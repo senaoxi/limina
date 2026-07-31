@@ -1,6 +1,5 @@
-import { countDefinedBy } from '#utils/collections';
+import { compareCodeUnits, countDefinedBy } from '#utils/collections';
 import path from 'pathe';
-import { compareCodeUnits } from '../inventory-presentation';
 import type { LiminaCheckIssue } from '../snapshot';
 
 const TOP_BLOCKER_LIMIT = 5;
@@ -53,13 +52,13 @@ type IssueValueSelector = (
 function compareCountEntries(left: CountEntry, right: CountEntry): number {
   const countOrder = right.count - left.count;
   if (countOrder !== 0) return countOrder;
-  return left.name.localeCompare(right.name);
+  return compareCodeUnits(left.name, right.name);
 }
 
 function compareHumanCountEntries(left: CountEntry, right: CountEntry): number {
   const countOrder = right.count - left.count;
   if (countOrder !== 0) return countOrder;
-  return compareCodeUnits(left.name, right.name);
+  return left.name.localeCompare(right.name);
 }
 
 function createCountEntries(
@@ -248,9 +247,9 @@ function compareBlockers(
     right.count - left.count,
     right.affectedPackages - left.affectedPackages,
     right.affectedFiles - left.affectedFiles,
-    left.task.localeCompare(right.task),
-    left.code.localeCompare(right.code),
-    left.title.localeCompare(right.title),
+    compareCodeUnits(left.task, right.task),
+    compareCodeUnits(left.code, right.code),
+    compareCodeUnits(left.title, right.title),
   ]);
 }
 

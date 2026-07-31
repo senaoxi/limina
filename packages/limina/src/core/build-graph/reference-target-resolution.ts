@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import path from 'pathe';
 import {
   type DeclarationProviderResolution,
@@ -66,7 +67,7 @@ function chooseSourceOwner(options: {
     .sort(
       (left, right) =>
         path.dirname(right).length - path.dirname(left).length ||
-        left.localeCompare(right),
+        compareCodeUnits(left, right),
     );
   return candidates[0] ?? null;
 }

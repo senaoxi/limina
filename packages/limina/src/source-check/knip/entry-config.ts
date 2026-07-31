@@ -1,4 +1,4 @@
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import {
   isInvalidConfigRootPattern,

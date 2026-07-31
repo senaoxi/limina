@@ -12,7 +12,7 @@ export async function runBuildImpl(
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
   const preflight = resolvePreflight(options.config, options);
-  const workspaceContext = await preflight.ensureWorkspaceValidated();
+  await preflight.ensureWorkspaceValidated();
   const target = await resolveBuildTarget({
     checker: options.checker,
     config: options.config,
@@ -27,6 +27,7 @@ export async function runBuildImpl(
   if (target.kind === 'raw') {
     return runRawBuild({ cwd, request: options, target });
   }
+  const workspaceContext = await preflight.ensureWorkspaceValidated();
   return runManagedBuild({
     cwd,
     preflight,

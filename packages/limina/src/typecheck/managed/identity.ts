@@ -1,5 +1,6 @@
 import { getCheckerAdapter } from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import type { Stats } from 'node:fs';
@@ -21,7 +22,7 @@ function canonicalizeRecord(value: Record<string, unknown>): unknown {
   return Object.fromEntries(
     Object.entries(value)
       .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
+      .sort(([left], [right]) => compareCodeUnits(left, right))
       .map(([key, entry]) => [key, canonicalize(entry)]),
   );
 }

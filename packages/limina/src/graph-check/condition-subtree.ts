@@ -3,7 +3,7 @@ import {
   isDtsProjectConfig,
   type ProjectInfo,
 } from '#core/import-graph/context';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { isDeepStrictEqual } from 'node:util';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';

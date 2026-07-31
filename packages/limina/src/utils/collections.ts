@@ -2,6 +2,11 @@ export function uniqueValues<T>(values: Iterable<T>): T[] {
   return [...new Set(values)];
 }
 
+export function compareCodeUnits(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 function incrementCount(counts: Map<string, number>, key: string): void {
   counts.set(key, (counts.get(key) ?? 0) + 1);
 }
@@ -23,6 +28,12 @@ export function countDefinedBy<T>(
   }
 
   return counts;
+}
+
+export function uniqueCodeUnitSortedStrings(
+  values: Iterable<string>,
+): string[] {
+  return uniqueValues(values).sort(compareCodeUnits);
 }
 
 export function uniqueSortedStrings(values: Iterable<string>): string[] {

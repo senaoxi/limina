@@ -11,6 +11,7 @@ import {
   resolveReferencePath,
   validateUserMaintainedLiminaTsconfigMetadata,
 } from '#core/tsconfig/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
@@ -76,7 +77,9 @@ export function parseProofConfig(options: {
   });
 
   return {
-    fileNames: parsed.fileNames.map(normalizeAbsolutePath).sort(),
+    fileNames: parsed.fileNames
+      .map(normalizeAbsolutePath)
+      .sort(compareCodeUnits),
     options: parsed.options,
   };
 }
@@ -174,7 +177,9 @@ function normalizeCompilerOptionObject(
   value: Record<string, unknown>,
 ): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(value).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(value).sort(([left], [right]) =>
+      compareCodeUnits(left, right),
+    ),
   );
 }
 

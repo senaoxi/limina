@@ -1,5 +1,5 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { ArtifactPlan } from '../../domain/artifacts/plan';

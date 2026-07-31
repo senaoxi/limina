@@ -1,4 +1,4 @@
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { isDeepStrictEqual } from 'node:util';
 import type ts from 'typescript';
 

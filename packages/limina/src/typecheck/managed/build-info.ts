@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import {
   type MutationBoundarySnapshot,
   type MutationBoundaryTarget,
@@ -73,7 +74,7 @@ function collectStaleBuildInfoTargets(
     addStaleBuildInfoTargets(proof, targetsByPath);
   }
   return [...targetsByPath.values()].sort((left, right) =>
-    left.path.localeCompare(right.path),
+    compareCodeUnits(left.path, right.path),
   );
 }
 

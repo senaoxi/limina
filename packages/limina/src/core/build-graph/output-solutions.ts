@@ -2,6 +2,7 @@ import type {
   ResolvedCheckerConfig,
   ResolvedLiminaConfig,
 } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { createOutputSolutionBuildModule } from './build-modules';
 import { getGeneratedOutputSolutionConfigPath } from './generated/paths';
 import type {
@@ -120,7 +121,7 @@ export function collectFlattenedOutputSolutionReferences(options: {
       seenConfigPaths,
     });
   }
-  return [...outputReferences].sort((left, right) => left.localeCompare(right));
+  return [...outputReferences].sort(compareCodeUnits);
 }
 
 function createSolutionCopyContexts(options: {
@@ -138,7 +139,7 @@ function createSolutionCopyContexts(options: {
         Boolean(copyContext),
     )
     .sort((left, right) =>
-      left.sourceConfigPath.localeCompare(right.sourceConfigPath),
+      compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath),
     );
 }
 

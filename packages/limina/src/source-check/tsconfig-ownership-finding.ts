@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { createSourceDiagnosticFinding } from './finding-utils';
@@ -14,7 +15,8 @@ function formatConfigPathList(
 
   return configPaths
     .sort((left, right) =>
-      toRelativePath(config.rootDir, left).localeCompare(
+      compareCodeUnits(
+        toRelativePath(config.rootDir, left),
         toRelativePath(config.rootDir, right),
       ),
     )

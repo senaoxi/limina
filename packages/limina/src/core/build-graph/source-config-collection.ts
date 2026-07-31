@@ -9,7 +9,7 @@ import {
   readJsonConfig,
   validateUserMaintainedLiminaTsconfigMetadata,
 } from '#core/tsconfig/actions';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import {

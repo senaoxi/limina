@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import type { MutationAuthority } from '#utils/mutation-boundary';
 import {
   isPathInsideDirectory,
@@ -178,7 +179,7 @@ function compareEntries(
   left: OutputDeclarationCopyPlanEntry,
   right: OutputDeclarationCopyPlanEntry,
 ): number {
-  return left.targetPath.localeCompare(right.targetPath);
+  return compareCodeUnits(left.targetPath, right.targetPath);
 }
 
 function getProblemTarget(problem: OutputDeclarationCopyProblem): string {
@@ -189,11 +190,11 @@ function compareProblems(
   left: OutputDeclarationCopyProblem,
   right: OutputDeclarationCopyProblem,
 ): number {
-  const severity = left.severity.localeCompare(right.severity);
+  const severity = compareCodeUnits(left.severity, right.severity);
   if (severity !== 0) return severity;
-  const filePath = left.filePath.localeCompare(right.filePath);
+  const filePath = compareCodeUnits(left.filePath, right.filePath);
   if (filePath !== 0) return filePath;
-  return getProblemTarget(left).localeCompare(getProblemTarget(right));
+  return compareCodeUnits(getProblemTarget(left), getProblemTarget(right));
 }
 
 function createPlanResult(

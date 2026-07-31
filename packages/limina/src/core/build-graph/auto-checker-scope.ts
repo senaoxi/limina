@@ -5,6 +5,7 @@ import {
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
@@ -78,7 +79,7 @@ function createAutoScope(options: {
     collection,
     entryConfigPath: options.entryConfigPath,
     projects: [...collection.projectConfigPaths]
-      .sort((left, right) => left.localeCompare(right))
+      .sort(compareCodeUnits)
       .map((configPath) =>
         createAutoScopeProject({
           config: options.config,

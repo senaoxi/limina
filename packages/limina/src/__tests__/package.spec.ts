@@ -1,7 +1,14 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +45,9 @@ const packageCheckMocks = vi.hoisted(() => ({
   >(),
   packedTarballManifests: new Map<string, Record<string, unknown>>(),
   packCalls: [] as string[],
+  packDestinations: [] as string[],
+  packError: undefined as Error | undefined,
+  packReturnsMissingTarball: false,
   publintCalls: [] as unknown[],
   publintMessages: [] as unknown[],
   publintRenderedMessages: new Map<string, string>(),
@@ -110,7 +120,12 @@ vi.mock('@publint/pack', async () => {
         const normalizedOutDir = pathModule.normalize(outDir);
 
         packageCheckMocks.packCalls.push(normalizedOutDir);
+        packageCheckMocks.packDestinations.push(options.destination);
+        if (packageCheckMocks.packError !== undefined) {
+          throw packageCheckMocks.packError;
+        }
         const tarballPath = pathModule.join(options.destination, 'package.tgz');
+        if (packageCheckMocks.packReturnsMissingTarball) return tarballPath;
         const packageJson = JSON.parse(
           await fs.readFile(pathModule.join(outDir, 'package.json'), 'utf8'),
         ) as Record<string, unknown>;
@@ -601,6 +616,9 @@ beforeEach(() => {
   packageCheckMocks.packedTarballFiles.clear();
   packageCheckMocks.packedTarballManifests.clear();
   packageCheckMocks.packCalls = [];
+  packageCheckMocks.packDestinations = [];
+  packageCheckMocks.packError = undefined;
+  packageCheckMocks.packReturnsMissingTarball = false;
   packageCheckMocks.publintCalls = [];
   packageCheckMocks.publintMessages = [];
   packageCheckMocks.publintRenderedMessages.clear();
@@ -681,6 +699,49 @@ beforeEach(() => {
       };
     }),
   );
+});
+
+describe('packOutputTarball', () => {
+  it('removes the destination and preserves the original pack error', async () => {
+    const fixture = await createOutputPackage({
+      'index.d.ts': 'export declare const value: number;\n',
+      'index.js': 'export const value = 1;\n',
+    });
+    const packError = new Error('pack failed');
+    packageCheckMocks.packError = packError;
+
+    try {
+      await expect(packOutputTarball(fixture.outDir)).rejects.toBe(packError);
+      const destination = packageCheckMocks.packDestinations[0];
+      expect(destination).toBeDefined();
+      await expect(access(destination!)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('removes the destination and preserves the tarball read error', async () => {
+    const fixture = await createOutputPackage({
+      'index.d.ts': 'export declare const value: number;\n',
+      'index.js': 'export const value = 1;\n',
+    });
+    packageCheckMocks.packReturnsMissingTarball = true;
+
+    try {
+      await expect(packOutputTarball(fixture.outDir)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+      const destination = packageCheckMocks.packDestinations[0];
+      expect(destination).toBeDefined();
+      await expect(access(destination!)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
 });
 
 describe('typed Release finding producers', () => {
@@ -1557,12 +1618,12 @@ describe('auditPublishedPackageBoundaries', () => {
       });
 
       expect(violations.map((violation) => violation.specifier)).toEqual([
-        '@example/direct-missing',
         '#blocked',
         '#conditional-bad',
         '#escape',
         '#missing-dependency',
         '#unknown',
+        '@example/direct-missing',
       ]);
     } finally {
       await pkg.cleanup();

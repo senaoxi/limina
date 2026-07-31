@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import path from 'pathe';
 import type {
   ArtifactSafetyMetricsRecorder,
@@ -86,7 +87,7 @@ function comparePlanNodes(
 ): number {
   const depthComparison =
     getPathDepth(namespace, left) - getPathDepth(namespace, right);
-  return depthComparison || left.localeCompare(right);
+  return depthComparison || compareCodeUnits(left, right);
 }
 
 function sortPlanNodes(

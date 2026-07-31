@@ -3,6 +3,7 @@ import {
   isDtsProjectConfig,
   type ProjectInfo,
 } from '#core/import-graph/context';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -73,7 +74,8 @@ function getGeneratedReferenceCycleEdges(
     )
     .sort(
       (left, right) =>
-        left.from.localeCompare(right.from) || left.to.localeCompare(right.to),
+        compareCodeUnits(left.from, right.from) ||
+        compareCodeUnits(left.to, right.to),
     );
 }
 

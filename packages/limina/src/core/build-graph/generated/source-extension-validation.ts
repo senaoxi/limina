@@ -4,6 +4,7 @@ import {
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import {
   capabilityDiscoveryExtensions,
@@ -138,7 +139,7 @@ function formatExtensionLines(
   fileNamesByExtension: ReadonlyMap<string, string[]>,
 ): string[] {
   return [...fileNamesByExtension.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareCodeUnits(left, right))
     .flatMap(([extension, fileNames]) => [
       `  - extension: ${extension}`,
       `    example: ${toRelativePath(config.rootDir, fileNames[0]!)}`,
@@ -154,7 +155,7 @@ function formatUnsupportedSourceConfigProblem(options: {
 }): string {
   const checkerLabels = options.projects
     .map(getCheckerPresetLabel)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareCodeUnits);
 
   return [
     'Source config contains files unsupported by its checker coverage:',

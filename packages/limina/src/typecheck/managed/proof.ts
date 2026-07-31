@@ -1,5 +1,6 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import { compareCodeUnits } from '#utils/collections';
 import ts from 'typescript';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
@@ -108,12 +109,12 @@ function mergeDependencies(options: {
     }
   }
   return [...dependencies.values()].sort((left, right) =>
-    left.path.localeCompare(right.path),
+    compareCodeUnits(left.path, right.path),
   );
 }
 
 function collectUniqueSorted(values: readonly string[]): string[] {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values)].sort(compareCodeUnits);
 }
 
 function createCombinedProof(options: {
@@ -133,7 +134,9 @@ function createCombinedProof(options: {
     options.leafProofs.flatMap((leaf) => leaf.projectedOutputPaths),
   );
   const effectiveOptionsFingerprint = hashValue(
-    options.leafProofs.map((leaf) => leaf.effectiveOptionsFingerprint).sort(),
+    options.leafProofs
+      .map((leaf) => leaf.effectiveOptionsFingerprint)
+      .sort(compareCodeUnits),
   );
   return {
     buildStateProofs: options.leafProofs.map((leaf) => leaf.buildStateProof),

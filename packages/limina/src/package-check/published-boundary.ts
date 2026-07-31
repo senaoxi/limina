@@ -1,4 +1,5 @@
 import type { RuntimeEnvironment } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { init, parse } from 'es-module-lexer';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'pathe';
@@ -151,9 +152,9 @@ function sortViolations(
 ): PublishedPackageBoundaryViolation[] {
   return violations.toSorted((left, right) => {
     if (left.filePath === right.filePath) {
-      return left.specifier.localeCompare(right.specifier);
+      return compareCodeUnits(left.specifier, right.specifier);
     }
-    return left.filePath.localeCompare(right.filePath);
+    return compareCodeUnits(left.filePath, right.filePath);
   });
 }
 

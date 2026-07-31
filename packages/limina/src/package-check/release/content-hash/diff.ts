@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { isPlainRecord } from '#utils/values';
 import { createHash } from 'node:crypto';
 import type {
@@ -26,7 +27,7 @@ function compareDiffPath(
   left: ContentHashDiff,
   right: ContentHashDiff,
 ): number {
-  return left.relativePath.localeCompare(right.relativePath);
+  return compareCodeUnits(left.relativePath, right.relativePath);
 }
 
 function sortContentHashDiffGroup(group: ContentHashDiffGroup): void {
@@ -202,12 +203,10 @@ export function createContentHashDiffs(options: {
     ...options.localArtifact.filesByPath.keys(),
     ...options.remoteArtifact.filesByPath.keys(),
   ]);
-  return [...paths]
-    .sort((left, right) => left.localeCompare(right))
-    .flatMap((relativePath) => {
-      const diff = createPathDiff({ ...options, relativePath });
-      return diff === null ? [] : [diff];
-    });
+  return [...paths].sort(compareCodeUnits).flatMap((relativePath) => {
+    const diff = createPathDiff({ ...options, relativePath });
+    return diff === null ? [] : [diff];
+  });
 }
 
 function getIgnoredGroupIndex(options: {

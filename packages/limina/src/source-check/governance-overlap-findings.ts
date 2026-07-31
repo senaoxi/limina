@@ -4,7 +4,7 @@ import type {
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { parseProject } from '#core/import-graph/context';
-import { uniqueValues } from '#utils/collections';
+import { compareCodeUnits, uniqueValues } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
@@ -96,7 +96,8 @@ function collectConfigPaths(
   return [...units.values()]
     .flatMap((unit) => unit.configPaths)
     .sort((left, right) =>
-      toRelativePath(config.rootDir, left).localeCompare(
+      compareCodeUnits(
+        toRelativePath(config.rootDir, left),
         toRelativePath(config.rootDir, right),
       ),
     );
@@ -161,7 +162,8 @@ function addMultipleOwnerFinding(options: {
   }
 
   const sortedOwners = uniqueOwners.sort((left, right) =>
-    toRelativePath(options.config.rootDir, left).localeCompare(
+    compareCodeUnits(
+      toRelativePath(options.config.rootDir, left),
       toRelativePath(options.config.rootDir, right),
     ),
   );
@@ -226,7 +228,8 @@ export function addGovernanceOverlapFindings(options: {
   });
   const entries = [...options.governanceUnitsByFile.entries()].sort(
     ([left], [right]) =>
-      toRelativePath(options.config.rootDir, left).localeCompare(
+      compareCodeUnits(
+        toRelativePath(options.config.rootDir, left),
         toRelativePath(options.config.rootDir, right),
       ),
   );

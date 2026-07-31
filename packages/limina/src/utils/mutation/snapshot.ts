@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { compareCodeUnits } from '../collections';
 import { normalizeAbsolutePath } from '../path';
 import {
   assertMutationAuthority,
@@ -29,8 +30,8 @@ function normalizeTargets(
     }))
     .sort(
       (left, right) =>
-        left.path.localeCompare(right.path) ||
-        left.kind.localeCompare(right.kind),
+        compareCodeUnits(left.path, right.path) ||
+        compareCodeUnits(left.kind, right.kind),
     );
 }
 
@@ -107,7 +108,7 @@ function createOrderedEntries(
   entries: ReadonlyMap<string, MutationNodeIdentity>,
 ): MutationBoundarySnapshot['entries'] {
   return [...entries.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => compareCodeUnits(left, right))
     .map(([entryPath, identity]) => ({ identity, path: entryPath }));
 }
 
@@ -163,7 +164,9 @@ async function captureBoundarySnapshot(
   }
 
   const entries = createOrderedEntries(state.entries);
-  const authorityFingerprints = [...state.authorityFingerprints].sort();
+  const authorityFingerprints = [...state.authorityFingerprints].sort(
+    compareCodeUnits,
+  );
   return {
     authorityFingerprints,
     entries,

@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import { readdir, readFile, realpath } from 'node:fs/promises';
@@ -63,7 +64,7 @@ async function collectRegularFiles(rootDir: string): Promise<string[]> {
 
   async function visit(directoryPath: string): Promise<void> {
     const entries = await readdir(directoryPath, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
+    entries.sort((left, right) => compareCodeUnits(left.name, right.name));
 
     for (const entry of entries) {
       await collectIdentityEntry({ directoryPath, entry, files, visit });
@@ -79,7 +80,8 @@ function compareFilePaths(
   left: string,
   right: string,
 ): number {
-  return toPortableRelativePath(path.relative(rootDir, left)).localeCompare(
+  return compareCodeUnits(
+    toPortableRelativePath(path.relative(rootDir, left)),
     toPortableRelativePath(path.relative(rootDir, right)),
   );
 }

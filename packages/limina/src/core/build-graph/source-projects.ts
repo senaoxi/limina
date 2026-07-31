@@ -5,7 +5,7 @@ import {
   resolveCheckerProjectExtensions,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,

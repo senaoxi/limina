@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import type {
   LiminaCheckIssue,
   LiminaCheckIssueLocation,
@@ -32,10 +33,7 @@ function optionalArray<T>(value: readonly T[] | undefined): readonly T[] {
   return value === undefined ? [] : value;
 }
 
-export function compareCodeUnits(left: string, right: string): number {
-  if (left === right) return 0;
-  return left < right ? -1 : 1;
-}
+export { compareCodeUnits } from '#utils/collections';
 
 export function getIssueSeverityRank(
   severity: LiminaCheckIssueSeverity | undefined,
