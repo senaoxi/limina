@@ -26,13 +26,14 @@ import {
   type RunCheckerTypecheckOptions,
 } from '../commands/typecheck';
 import { TypecheckLogger } from '../logger';
+import { LiminaPreflightManager } from '../preflight';
 import type {
   TypecheckRunner,
   TypecheckRunnerResult,
   TypecheckTarget,
 } from '../typecheck/targets';
 import { createVueTsgoCachePaths } from '../typecheck/targets';
-import { toPortablePath } from './helpers/path';
+import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -912,9 +913,287 @@ describe('runCheckerBuild', () => {
       await fixture.cleanup();
     }
   });
+
+  it('uses the replanned provider generation for standalone checker build mutation authority', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/vite-env.d.ts':
+        '/// <reference types="vite/client" />\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: { outDir: './dist', rootDir: './src' },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts', 'src/**/*.d.ts'],
+      }),
+    });
+    const fixturePath = createFixturePathResolver(fixture.rootDir);
+    const config: ResolvedLiminaConfig = {
+      config: {
+        checkers: {
+          typescript: {
+            include: ['packages/pkg/tsconfig.json'],
+            preset: 'tsc',
+          },
+        },
+      },
+      configPath: fixturePath('limina.config.mjs'),
+      rootDir: fixture.rootDir,
+    };
+    const sourceConfigPath = fixturePath(
+      'packages',
+      'pkg',
+      'tsconfig.lib.json',
+    );
+    const managerA = new LiminaPreflightManager({ config });
+    let managerB: LiminaPreflightManager | undefined;
+    let materializationCompleted = false;
+    const workspaceReads: {
+      context: Awaited<ReturnType<typeof managerA.ensureWorkspaceValidated>>;
+      materializationCompleted: boolean;
+    }[] = [];
+
+    try {
+      const staleWorkspaceContext = await managerA.ensureWorkspaceValidated();
+      const staleGraph = await managerA.ensureGeneratedGraph();
+
+      await writeFile(
+        sourceConfigPath,
+        tsconfig({
+          liminaOptions: {
+            outputs: { outDir: './lib', rootDir: './src' },
+          },
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts', 'src/**/*.d.ts'],
+        }),
+      );
+
+      managerB = new LiminaPreflightManager({ config });
+      await managerB.ensureGeneratedArtifactsMaterialized();
+
+      const ensureWorkspaceValidated =
+        managerA.ensureWorkspaceValidated.bind(managerA);
+      const workspaceSpy = vi
+        .spyOn(managerA, 'ensureWorkspaceValidated')
+        .mockImplementation(async () => {
+          const context = await ensureWorkspaceValidated();
+          workspaceReads.push({ context, materializationCompleted });
+          return context;
+        });
+      const ensureGeneratedArtifactsMaterialized =
+        managerA.ensureGeneratedArtifactsMaterialized.bind(managerA);
+      const materializationSpy = vi
+        .spyOn(managerA, 'ensureGeneratedArtifactsMaterialized')
+        .mockImplementation(async () => {
+          const receipt = await ensureGeneratedArtifactsMaterialized();
+          materializationCompleted = true;
+          return receipt;
+        });
+
+      const result = await runCheckerBuild({
+        config,
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        preflight: managerA,
+        runner: passingRunner(calls),
+      });
+      const currentGraph = await managerA.ensureGeneratedGraph();
+      const currentWorkspaceContext = workspaceReads.find(
+        (read) => read.materializationCompleted,
+      )?.context;
+      expect(currentWorkspaceContext).toBeDefined();
+      if (currentWorkspaceContext === undefined) {
+        throw new Error(
+          'Expected workspace validation after artifact materialization.',
+        );
+      }
+      const outputCopy = currentGraph.outputDeclarationCopies
+        .get('typescript')
+        ?.get(sourceConfigPath)?.[0];
+      const outputAuthority =
+        currentWorkspaceContext.outputMutationAuthorities?.get(
+          sourceConfigPath,
+        );
+
+      expect(result.passed).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(currentGraph).not.toBe(staleGraph);
+      expect(currentWorkspaceContext).not.toBe(staleWorkspaceContext);
+      expect(outputCopy?.outDir).toBe(fixturePath('packages', 'pkg', 'lib'));
+      expect(outputAuthority?.outputRoot).toBe(
+        fixturePath('packages', 'pkg', 'lib'),
+      );
+      expect(currentGraph.artifactPlan.generationToken).toBe(
+        managerA.artifactNamespace.generationToken,
+      );
+      materializationSpy.mockRestore();
+      workspaceSpy.mockRestore();
+    } finally {
+      managerB?.dispose();
+      managerA.dispose();
+      await fixture.cleanup();
+    }
+  });
 });
 
 describe('runBuild', () => {
+  it('uses the replanned provider generation for managed build mutation authority', async () => {
+    const calls: TypecheckTarget[] = [];
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/src/vite-env.d.ts':
+        '/// <reference types="vite/client" />\n',
+      'packages/pkg/tsconfig.json': tsconfig({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/pkg/tsconfig.lib.json': tsconfig({
+        liminaOptions: {
+          outputs: { outDir: './dist', rootDir: './src' },
+        },
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts', 'src/**/*.d.ts'],
+      }),
+    });
+    const fixturePath = createFixturePathResolver(fixture.rootDir);
+    const config: ResolvedLiminaConfig = {
+      config: {
+        checkers: {
+          typescript: {
+            include: ['packages/pkg/tsconfig.json'],
+            preset: 'tsc',
+          },
+        },
+      },
+      configPath: fixturePath('limina.config.mjs'),
+      rootDir: fixture.rootDir,
+    };
+    const sourceConfigPath = fixturePath(
+      'packages',
+      'pkg',
+      'tsconfig.lib.json',
+    );
+    const managerA = new LiminaPreflightManager({ config });
+    let managerB: LiminaPreflightManager | undefined;
+    let materializationCompleted = false;
+    const workspaceReads: {
+      context: Awaited<ReturnType<typeof managerA.ensureWorkspaceValidated>>;
+      materializationCompleted: boolean;
+    }[] = [];
+
+    try {
+      const staleWorkspaceContext = await managerA.ensureWorkspaceValidated();
+      const staleGraph = await managerA.ensureGeneratedGraph();
+
+      await writeFile(
+        sourceConfigPath,
+        tsconfig({
+          liminaOptions: {
+            outputs: { outDir: './lib', rootDir: './src' },
+          },
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts', 'src/**/*.d.ts'],
+        }),
+      );
+
+      managerB = new LiminaPreflightManager({ config });
+      await managerB.ensureGeneratedArtifactsMaterialized();
+
+      const ensureWorkspaceValidated =
+        managerA.ensureWorkspaceValidated.bind(managerA);
+      const workspaceSpy = vi
+        .spyOn(managerA, 'ensureWorkspaceValidated')
+        .mockImplementation(async () => {
+          const context = await ensureWorkspaceValidated();
+          workspaceReads.push({ context, materializationCompleted });
+          return context;
+        });
+      const ensureGeneratedArtifactsMaterialized =
+        managerA.ensureGeneratedArtifactsMaterialized.bind(managerA);
+      const materializationSpy = vi
+        .spyOn(managerA, 'ensureGeneratedArtifactsMaterialized')
+        .mockImplementation(async () => {
+          const receipt = await ensureGeneratedArtifactsMaterialized();
+          materializationCompleted = true;
+          return receipt;
+        });
+
+      const result = await runBuild({
+        config,
+        configPath: 'packages/pkg/tsconfig.lib.json',
+        cwd: fixture.rootDir,
+        preflight: managerA,
+        runner: passingRunner(calls),
+      });
+      const currentGraph = await managerA.ensureGeneratedGraph();
+      const currentWorkspaceContext = workspaceReads.find(
+        (read) => read.materializationCompleted,
+      )?.context;
+      expect(currentWorkspaceContext).toBeDefined();
+      if (currentWorkspaceContext === undefined) {
+        throw new Error(
+          'Expected workspace validation after managed target materialization.',
+        );
+      }
+      const outputAuthority =
+        currentWorkspaceContext.outputMutationAuthorities?.get(
+          sourceConfigPath,
+        );
+
+      expect(result.passed).toBe(true);
+      expect(calls).toHaveLength(1);
+      expect(currentGraph).not.toBe(staleGraph);
+      expect(currentWorkspaceContext).not.toBe(staleWorkspaceContext);
+      expect(outputAuthority?.outputRoot).toBe(
+        fixturePath('packages', 'pkg', 'lib'),
+      );
+      expect(currentGraph.artifactPlan.generationToken).toBe(
+        managerA.artifactNamespace.generationToken,
+      );
+      await expect(
+        readFile(
+          fixturePath('packages', 'pkg', 'lib', 'vite-env.d.ts'),
+          'utf8',
+        ),
+      ).resolves.toBe('/// <reference types="vite/client" />\n');
+      materializationSpy.mockRestore();
+      workspaceSpy.mockRestore();
+    } finally {
+      managerB?.dispose();
+      managerA.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('builds the nearest solution tsconfig from cwd', async () => {
     const calls: TypecheckTarget[] = [];
     const fixture = await createFixture({

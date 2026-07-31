@@ -1,4 +1,5 @@
 import type { GeneratedOutputDeclarationCopyContext } from '#core/build-graph/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { CheckIssueReportOptions } from '../../check-reporting/human';
 import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
@@ -45,7 +46,7 @@ export function collectOutputDeclarationCopyContexts(
     }
   }
   return [...contextsByKey.values()].sort((left, right) =>
-    left.sourceConfigPath.localeCompare(right.sourceConfigPath),
+    compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath),
   );
 }
 

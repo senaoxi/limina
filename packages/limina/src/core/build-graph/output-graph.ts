@@ -3,6 +3,7 @@ import type {
   ResolvedCheckerConfig,
   ResolvedLiminaConfig,
 } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { createOutputProjectBuildModule } from './build-modules';
 import {
@@ -164,7 +165,7 @@ function addAllOutputSolutions(options: {
   state: OutputGraphState;
 }): void {
   const sourceConfigPaths = [...options.collection.solutionConfigPaths].sort(
-    (left, right) => left.localeCompare(right),
+    compareCodeUnits,
   );
   for (const sourceConfigPath of sourceConfigPaths) {
     addOutputSolution({

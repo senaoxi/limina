@@ -12,19 +12,26 @@ export async function packOutputTarball(
   outDir: string,
 ): Promise<PackedPackageTarball> {
   const destination = await mkdtemp(path.join(tmpdir(), '__LIMINA_PACKAGE__'));
-  const tarballPath = await pack(outDir, {
-    destination,
-    ignoreScripts: true,
-    packageManager: 'pnpm',
-  });
-  const tarball = await readFile(tarballPath);
-  return {
-    cleanup: async () => {
-      await rm(destination, { force: true, recursive: true }).catch(() => null);
-    },
-    tarball,
-    tarballPath,
+  const cleanupDestination = async (): Promise<void> => {
+    await rm(destination, { force: true, recursive: true }).catch(() => null);
   };
+
+  try {
+    const tarballPath = await pack(outDir, {
+      destination,
+      ignoreScripts: true,
+      packageManager: 'pnpm',
+    });
+    const tarball = await readFile(tarballPath);
+    return {
+      cleanup: cleanupDestination,
+      tarball,
+      tarballPath,
+    };
+  } catch (error) {
+    await cleanupDestination();
+    throw error;
+  }
 }
 
 function getEntryLabel(label: string | undefined): string {

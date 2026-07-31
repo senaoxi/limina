@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import {
   createFixturePathResolver,
@@ -242,6 +242,47 @@ describe('checker project config parsing', () => {
       expect(parseWith(new CheckerProjectConfigCache())).toEqual(['src/b.ts']);
       expect(parseWith()).toEqual(['src/b.ts']);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps virtual-file cache identity independent of localeCompare', async () => {
+    const fixture = await createFixture({
+      'src/a.ts': 'export const a = true;\n',
+      'src/z.ts': 'export const z = true;\n',
+      'src/ä.ts': 'export const umlaut = true;\n',
+      'tsconfig.json': tsconfig({ include: ['src/*.ts'] }),
+    });
+    const configPath = fixture.path('tsconfig.json');
+    const virtualFiles = new Map([
+      [fixture.path('z.ts'), 'export const z = true;\n'],
+      [fixture.path('ä.ts'), 'export const umlaut = true;\n'],
+      [fixture.path('a.ts'), 'export const a = true;\n'],
+      [configPath, tsconfig({ include: ['src/*.ts'] })],
+    ]);
+    const localeCompare = vi
+      .spyOn(String.prototype, 'localeCompare')
+      .mockImplementation(() => {
+        throw new Error('checker cache identity used localeCompare');
+      });
+
+    try {
+      const parsed = parseCheckerProjectConfigForContext({
+        cache: new CheckerProjectConfigCache(),
+        configPath,
+        context: {
+          checkerPresets: ['tsc'],
+          extensions: [],
+        },
+        projectRootDir: fixture.rootDir,
+        virtualFiles,
+      });
+
+      expect(
+        toPortableRelativePaths(fixture.rootDir, parsed.fileNames),
+      ).toEqual(['src/a.ts', 'src/z.ts', 'src/ä.ts']);
+    } finally {
+      localeCompare.mockRestore();
       await fixture.cleanup();
     }
   });

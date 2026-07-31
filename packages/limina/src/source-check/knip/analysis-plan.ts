@@ -1,7 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import type { WorkspaceDependencyDeclaration } from '../../core/packages/authority';
 import type { SourceFinding } from '../findings';
 import type { KnipOwnerProject, KnipSourceAnalysisGroup } from '../knip';

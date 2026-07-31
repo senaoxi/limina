@@ -1,7 +1,11 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
+import {
+  compareCodeUnits,
+  uniqueCodeUnitSortedStrings,
+  uniqueValues,
+} from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -88,7 +92,7 @@ function getCheckerNamesForOwners(
   generatedGraph: GeneratedTsconfigGraphResult,
   ownerPaths: string[],
 ): string[] {
-  return uniqueSortedStrings(
+  return uniqueCodeUnitSortedStrings(
     [...generatedGraph.sourceToBuild].flatMap(([checkerName, sourceToBuild]) =>
       ownerPaths.some((configPath) => sourceToBuild.has(configPath))
         ? [checkerName]
@@ -112,7 +116,8 @@ function addDuplicateTypecheckOwnerFinding(options: {
   }
 
   const sortedOwners = uniqueOwners.sort((left, right) =>
-    toRelativePath(options.config.rootDir, left).localeCompare(
+    compareCodeUnits(
+      toRelativePath(options.config.rootDir, left),
       toRelativePath(options.config.rootDir, right),
     ),
   );
@@ -176,7 +181,8 @@ export function addDuplicateTypecheckOwnershipFindings(options: {
 }): void {
   const fileOwners = collectFileOwners(options);
   const entries = [...fileOwners].sort(([left], [right]) =>
-    toRelativePath(options.config.rootDir, left).localeCompare(
+    compareCodeUnits(
+      toRelativePath(options.config.rootDir, left),
       toRelativePath(options.config.rootDir, right),
     ),
   );

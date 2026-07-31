@@ -1,5 +1,5 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 
 interface CheckerSourceConfigCollectionLike {

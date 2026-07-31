@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { readFile, rm } from 'node:fs/promises';
 import { performAtomicJsonWrite } from '../../check-reporting/atomic-write-operation';
 import {
@@ -33,7 +34,10 @@ function compareArtifactChanges(
     Number(isGeneratedManifestChange(left)) -
     Number(isGeneratedManifestChange(right));
   return manifestDifference === 0
-    ? getArtifactChangePath(left).localeCompare(getArtifactChangePath(right))
+    ? compareCodeUnits(
+        getArtifactChangePath(left),
+        getArtifactChangePath(right),
+      )
     : manifestDifference;
 }
 

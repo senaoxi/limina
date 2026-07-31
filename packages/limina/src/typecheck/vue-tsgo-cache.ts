@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import {
   createExplicitMutationAuthority,
   type MutationBoundarySnapshot,
@@ -134,7 +135,7 @@ export class VueTsgoCacheBatchCoordinator {
         await preflightMutationBoundary(
           [...cachePaths]
             .map((cachePath) => boundaryTargetsByPath.get(cachePath)!)
-            .sort((left, right) => left.path.localeCompare(right.path)),
+            .sort((left, right) => compareCodeUnits(left.path, right.path)),
         ),
       );
     }

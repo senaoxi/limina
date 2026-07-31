@@ -12,6 +12,7 @@ import type {
   ImportAnalysisConfig,
   ResolvedCheckerConfig,
 } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 
 export function getExecutionCheckers(options: {
   checkers: ResolvedCheckerConfig[];
@@ -99,7 +100,7 @@ function appendVueCompilerSfcDependency(options: {
   options.missingDependencies.push({
     checkerNames: options.checkers
       .map((checker) => checker.name)
-      .sort((left, right) => left.localeCompare(right)),
+      .sort(compareCodeUnits),
     packageName: '@vue/compiler-sfc',
     reason: 'enabled by config.imports.vue: "compiler-sfc"',
   });

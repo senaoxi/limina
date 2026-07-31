@@ -7,6 +7,7 @@ import {
   isNamedWorkspacePackage,
   type WorkspacePackage,
 } from '#core/workspace/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import {
@@ -138,9 +139,9 @@ function createPackageConfig(
       path.join(workspacePackage.directory, 'package.json'),
     ),
     packageName: workspacePackage.name,
-    references: [...state.references].sort(),
+    references: [...state.references].sort(compareCodeUnits),
     scripts: state.scripts.sort((left, right) =>
-      left.name.localeCompare(right.name),
+      compareCodeUnits(left.name, right.name),
     ),
   };
 }
@@ -179,13 +180,17 @@ function compareDiagnostics(
   left: GeneratedKnipPackageDiagnostic,
   right: GeneratedKnipPackageDiagnostic,
 ): number {
-  const pathOrder = left.packageJsonPath.localeCompare(right.packageJsonPath);
+  const pathOrder = compareCodeUnits(
+    left.packageJsonPath,
+    right.packageJsonPath,
+  );
 
   if (pathOrder !== 0) {
     return pathOrder;
   }
 
-  return getDiagnosticScriptName(left).localeCompare(
+  return compareCodeUnits(
+    getDiagnosticScriptName(left),
     getDiagnosticScriptName(right),
   );
 }

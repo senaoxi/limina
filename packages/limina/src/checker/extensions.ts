@@ -1,4 +1,4 @@
-import { uniqueValues } from '#utils/collections';
+import { compareCodeUnits, uniqueValues } from '#utils/collections';
 import ts from 'typescript';
 import type { CheckerProjectConfigParseOptions } from './types';
 
@@ -126,7 +126,7 @@ export function resolveExtensionsForChecker(
 function compareExtensions(left: string, right: string): number {
   const lengthDelta = right.length - left.length;
   if (lengthDelta !== 0) return lengthDelta;
-  return left.localeCompare(right);
+  return compareCodeUnits(left, right);
 }
 
 export function normalizeExtensions(extensions: string[]): string[] {

@@ -1,5 +1,5 @@
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { isPathInsideDirectory } from '#utils/path';
 import type { BuildGraphCore } from './build-graph';
 import type { WorkspaceDependencyDeclaration } from './packages/authority';

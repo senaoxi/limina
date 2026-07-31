@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import type {
   AnalysisMetricMeasurement,
   AnalysisMetricsRecorder,
@@ -73,7 +74,7 @@ function copyAndSortMeasurements(
 ): AnalysisMetricAggregate[] {
   return [...measurements.values()]
     .map((measurement) => ({ ...measurement }))
-    .sort((left, right) => metricKey(left).localeCompare(metricKey(right)));
+    .sort((left, right) => compareCodeUnits(metricKey(left), metricKey(right)));
 }
 
 export function createProfilingMetricsRecorder(): ProfilingMetricsRecorder {

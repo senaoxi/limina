@@ -1,6 +1,7 @@
 import { getCheckerAdapter } from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import { compareCodeUnits } from '#utils/collections';
 import {
   type BuildTargetDescriptor,
   getBuildTargetDescriptorKey,
@@ -84,9 +85,9 @@ function compareDescriptors(
   left: BuildTargetDescriptor,
   right: BuildTargetDescriptor,
 ): number {
-  const checkerOrder = left.checker.name.localeCompare(right.checker.name);
+  const checkerOrder = compareCodeUnits(left.checker.name, right.checker.name);
   if (checkerOrder !== 0) return checkerOrder;
-  return left.sourceConfigPath.localeCompare(right.sourceConfigPath);
+  return compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath);
 }
 
 function seedDescriptorMap(

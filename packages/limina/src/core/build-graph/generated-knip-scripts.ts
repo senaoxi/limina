@@ -4,6 +4,7 @@ import type {
 } from '#config/runner';
 import type { GeneratedBuildModule } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { isPathInsideDirectory, toRelativePath } from '#utils/path';
 import { existsSync, statSync } from 'node:fs';
 import path from 'pathe';
@@ -80,7 +81,7 @@ export function resolveManagedBuildConfigPaths(options: {
         )
         .filter((value): value is string => value !== undefined),
     ),
-  ].sort((left, right) => left.localeCompare(right));
+  ].sort(compareCodeUnits);
 }
 
 function createScriptDiagnostic(

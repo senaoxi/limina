@@ -242,8 +242,8 @@ async function createCheckerBuildContext(
   options: RunCheckerBuildOptions,
 ): Promise<CheckerBuildContext> {
   const preflight = resolvePreflight(options.config, options);
-  const workspaceContext = await preflight.ensureWorkspaceValidated();
   const generated = await preflight.ensureGeneratedArtifactsMaterialized();
+  const workspaceContext = await preflight.ensureWorkspaceValidated();
   const allCheckers = generated.graph.checkers;
   return {
     allCheckers,

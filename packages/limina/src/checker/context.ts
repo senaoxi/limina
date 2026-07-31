@@ -1,5 +1,5 @@
 import type { CheckerPreset } from '#config/runner';
-import { uniqueValues } from '#utils/collections';
+import { compareCodeUnits, uniqueValues } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
@@ -33,9 +33,7 @@ export class CheckerProjectConfigCache {
 function uniqueSortedPresets(
   presets: readonly CheckerPreset[],
 ): CheckerPreset[] {
-  return uniqueValues([...presets]).sort((left, right) =>
-    left.localeCompare(right),
-  );
+  return uniqueValues([...presets]).sort(compareCodeUnits);
 }
 
 function resolveContextCheckerPresets(
@@ -61,7 +59,7 @@ function createVirtualFilesIdentity(
   if (virtualFiles === undefined) return undefined;
   const hash = createHash('sha256');
   for (const [filePath, content] of [...virtualFiles.entries()].sort(
-    ([left], [right]) => left.localeCompare(right),
+    ([left], [right]) => compareCodeUnits(left, right),
   )) {
     hash.update(normalizeAbsolutePath(filePath));
     hash.update('\0');
@@ -130,7 +128,7 @@ function mergeParsedProjectConfigs(options: {
     ]),
     fileNames: uniqueValues(
       options.parsedConfigs.flatMap((config) => config.fileNames),
-    ).sort((left, right) => left.localeCompare(right)),
+    ).sort(compareCodeUnits),
     options: firstConfig.options,
   };
 }

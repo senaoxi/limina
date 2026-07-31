@@ -1,5 +1,6 @@
 import { getBuildCheckerSupportedExtensions } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { getFileExtension } from './generated/file-extensions';
 import type { GeneratedProviderEdge, SourceProject } from './types';
@@ -123,9 +124,9 @@ function sortUnsupportedFiles(
 ): UnsupportedCrossCheckerProviderFile[] {
   return files.sort(
     (left, right) =>
-      left.generatedConfigPath.localeCompare(right.generatedConfigPath) ||
-      left.extension.localeCompare(right.extension) ||
-      left.fileName.localeCompare(right.fileName),
+      compareCodeUnits(left.generatedConfigPath, right.generatedConfigPath) ||
+      compareCodeUnits(left.extension, right.extension) ||
+      compareCodeUnits(left.fileName, right.fileName),
   );
 }
 

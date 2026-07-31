@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
@@ -26,7 +27,7 @@ function sortConsumers(
   consumers: Map<string, GovernanceUnit>,
 ): GovernanceUnit[] {
   return [...consumers.values()].sort((left, right) =>
-    left.owner.packageJsonPath.localeCompare(right.owner.packageJsonPath),
+    compareCodeUnits(left.owner.packageJsonPath, right.owner.packageJsonPath),
   );
 }
 
@@ -37,7 +38,7 @@ function createConsumerLines(
   return consumers.flatMap((consumer) => [
     `    - ${toRelativePath(config.rootDir, consumer.owner.packageJsonPath)}`,
     ...consumer.configPaths
-      .sort((left, right) => left.localeCompare(right))
+      .sort(compareCodeUnits)
       .map(
         (configPath) =>
           `      config: ${toRelativePath(config.rootDir, configPath)}`,
@@ -119,7 +120,7 @@ export function addAmbientSharingFindings(options: {
   findings: SourceFinding[];
 }): void {
   const entries = [...options.ambientConsumersByFile.entries()].sort(
-    ([left], [right]) => left.localeCompare(right),
+    ([left], [right]) => compareCodeUnits(left, right),
   );
 
   for (const [fileName, consumers] of entries) {

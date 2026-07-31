@@ -3,13 +3,14 @@ import {
   type ImporterInfo,
   type WorkspacePackage,
 } from '#core/workspace/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { ProjectInfo } from './project-types';
 
 function compareOwningProjectPaths(left: string, right: string): number {
   const depthOrder = path.dirname(right).length - path.dirname(left).length;
-  return depthOrder === 0 ? left.localeCompare(right) : depthOrder;
+  return depthOrder === 0 ? compareCodeUnits(left, right) : depthOrder;
 }
 
 function chooseOwningProject(projectPaths: readonly string[]): string {

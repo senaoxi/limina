@@ -5,7 +5,7 @@ import {
   type CheckerGraphProjectRoute,
   isDtsConfigPath,
 } from '#core/tsconfig/actions';
-import { uniqueSortedStrings } from '#utils/collections';
+import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import {
   appendCheckIssues,
   type LiminaCheckIssue,

@@ -4,7 +4,11 @@ import {
   type CheckerGraphProjectRoute,
   isDtsConfigPath,
 } from '#core/tsconfig/actions';
-import { uniqueSortedStrings, uniqueValues } from '#utils/collections';
+import {
+  compareCodeUnits,
+  uniqueCodeUnitSortedStrings as uniqueSortedStrings,
+  uniqueValues,
+} from '#utils/collections';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
@@ -157,7 +161,8 @@ function addDuplicateOwnerGroupFinding(options: {
   }
 
   const sortedOwners = uniqueOwners.sort((left, right) =>
-    toRelativePath(options.config.rootDir, left).localeCompare(
+    compareCodeUnits(
+      toRelativePath(options.config.rootDir, left),
       toRelativePath(options.config.rootDir, right),
     ),
   );
@@ -224,7 +229,8 @@ export function addDuplicateGraphCoverageFindings(options: {
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const entries = [...options.ownersByFile].sort(([left], [right]) =>
-    toRelativePath(options.config.rootDir, left).localeCompare(
+    compareCodeUnits(
+      toRelativePath(options.config.rootDir, left),
       toRelativePath(options.config.rootDir, right),
     ),
   );

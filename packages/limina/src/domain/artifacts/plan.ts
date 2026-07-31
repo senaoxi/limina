@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { createHash } from 'node:crypto';
 import {
   identifier,
@@ -75,7 +76,7 @@ export function createMaterializationRevision(
 ): MaterializationRevision {
   const hash = createHash('sha256');
   for (const entry of [...entries].sort((left, right) =>
-    left.path.localeCompare(right.path),
+    compareCodeUnits(left.path, right.path),
   )) {
     hash.update(entry.path);
     hash.update('\0');
@@ -146,7 +147,7 @@ function normalizeOwnedPaths(options: {
       toArtifactNamespaceRelativePath(options.namespace, ownedPath),
     )
     .filter((ownedPath) => !options.deletedPaths.has(ownedPath))
-    .sort();
+    .sort(compareCodeUnits);
 }
 
 function normalizeBaseOwnedPaths(
@@ -155,12 +156,12 @@ function normalizeBaseOwnedPaths(
 ): string[] {
   return ownedPaths
     .map((ownedPath) => toArtifactNamespaceRelativePath(namespace, ownedPath))
-    .sort();
+    .sort(compareCodeUnits);
 }
 
 function sortChanges(changes: readonly ArtifactChange[]): ArtifactChange[] {
   return [...changes].sort((left, right) =>
-    getChangePath(left).localeCompare(getChangePath(right)),
+    compareCodeUnits(getChangePath(left), getChangePath(right)),
   );
 }
 

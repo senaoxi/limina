@@ -1,4 +1,5 @@
 import type { ImportRecord } from '#core/import-analysis/runner';
+import { compareCodeUnits } from '#utils/collections';
 import type ts from 'typescript';
 import { createAmbientTypeEvidence } from './ambient-symbol';
 import type {
@@ -86,9 +87,7 @@ function canonicalAmbientIdentity(evidence: TypeEvidence): string | null {
   }
   return JSON.stringify([
     evidence.modulePattern,
-    [...evidence.declarationFilePaths].sort((left, right) =>
-      left.localeCompare(right),
-    ),
+    [...evidence.declarationFilePaths].sort(compareCodeUnits),
   ]);
 }
 

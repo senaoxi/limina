@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import {
   createExplicitMutationAuthority,
   type MutationAuthority,
@@ -168,7 +169,7 @@ function comparePreparedEntries(
   left: PreparedDeclarationEntry,
   right: PreparedDeclarationEntry,
 ): number {
-  return left.entry.targetPath.localeCompare(right.entry.targetPath);
+  return compareCodeUnits(left.entry.targetPath, right.entry.targetPath);
 }
 
 export async function prepareDeclarationEntries(options: {
