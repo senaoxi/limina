@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-01
+
+### Features
+
+- feat(limina): add JSONC migration utilities and improve checker source accuracy ([088088f1](https://github.com/senaoxi/docs-islands/commit/088088f1))
+
+### Bug Fixes
+
+- fix(limina): harden build consistency and reproducibility ([33935071](https://github.com/senaoxi/docs-islands/commit/33935071))
+- fix(limina): prevent duplicate materialization after replanning ([c2ae34e3](https://github.com/senaoxi/docs-islands/commit/c2ae34e3))
+- fix(limina): harden analysis and artifact state ([b06fca9a](https://github.com/senaoxi/docs-islands/commit/b06fca9a))
+
 ## [0.2.1] - 2026-07-28
 
 ### Bug Fixes
