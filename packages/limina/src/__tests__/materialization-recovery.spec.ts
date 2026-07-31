@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import {
   access,
   mkdir,
@@ -11,7 +11,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -25,6 +24,7 @@ import {
 import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
+  resolveArtifactNamespaceRelativePath,
 } from '../domain/artifacts/namespace';
 import {
   type ArtifactChange,
@@ -37,6 +37,99 @@ import {
 } from '../utils/mutation/cross-process-lease';
 
 const execFileAsync = promisify(execFile);
+
+function createMaterializerChildScript(body: string): string {
+  const materializerModule = new URL(
+    '../core/build-graph/materializer.ts',
+    import.meta.url,
+  ).href;
+  const namespaceModule = new URL(
+    '../domain/artifacts/namespace.ts',
+    import.meta.url,
+  ).href;
+  const planModule = new URL('../domain/artifacts/plan.ts', import.meta.url)
+    .href;
+  const stateModule = new URL(
+    '../core/build-graph/materialization-state.ts',
+    import.meta.url,
+  ).href;
+  return `
+    import { existsSync } from 'node:fs';
+    import { writeFile } from 'node:fs/promises';
+    const { materializeGeneratedArtifactPlan } = await import(${JSON.stringify(materializerModule)});
+    const {
+      createLiminaArtifactNamespace,
+      resolveArtifactNamespaceRelativePath,
+    } = await import(${JSON.stringify(namespaceModule)});
+    const { createRevisionedArtifactPlan } = await import(${JSON.stringify(planModule)});
+    const { readMaterializationStateSnapshot } = await import(${JSON.stringify(stateModule)});
+    const namespace = createLiminaArtifactNamespace({
+      generation: Number(process.env.GENERATION ?? '0'),
+      rootDir: process.env.ROOT_DIR,
+    });
+    const manifestContent = (ownedArtifacts) =>
+      JSON.stringify({
+        version: 3,
+        generatedBy: 'limina',
+        checkers: {},
+        knip: { diagnostics: [], packages: [] },
+        ownedArtifacts,
+        providerEdges: [],
+      }, null, 2) + '\\n';
+    const createPlan = async (artifacts) => {
+      const base = await readMaterializationStateSnapshot(namespace);
+      const ownedArtifacts = [...Object.keys(artifacts), 'manifest.json'].sort();
+      const changes = [
+        ...Object.entries(artifacts).map(([relativePath, content]) => ({
+          artifact: {
+            content,
+            kind: 'generated-config',
+            origin: { domain: 'child-test' },
+            path: resolveArtifactNamespaceRelativePath(namespace, relativePath),
+          },
+          status: 'update',
+        })),
+        {
+          artifact: {
+            content: manifestContent(ownedArtifacts),
+            kind: 'generated-manifest',
+            origin: { domain: 'child-test' },
+            path: resolveArtifactNamespaceRelativePath(namespace, 'manifest.json'),
+          },
+          status: 'update',
+        },
+      ];
+      return createRevisionedArtifactPlan(namespace, changes, {
+        baseOwnedPaths: base.ownedPaths.map((relativePath) =>
+          resolveArtifactNamespaceRelativePath(namespace, relativePath)
+        ),
+        baseRevision: base.revision,
+        ownedPaths: ownedArtifacts.map((relativePath) =>
+          resolveArtifactNamespaceRelativePath(namespace, relativePath)
+        ),
+      });
+    };
+    ${body}
+  `;
+}
+
+function collectChildResult(child: ChildProcess): Promise<{
+  code: number | null;
+  stderr: string;
+  stdout: string;
+}> {
+  let stderr = '';
+  let stdout = '';
+  child.stderr?.on('data', (chunk: Buffer | string) => {
+    stderr += chunk.toString();
+  });
+  child.stdout?.on('data', (chunk: Buffer | string) => {
+    stdout += chunk.toString();
+  });
+  return new Promise((resolve) => {
+    child.once('exit', (code) => resolve({ code, stderr, stdout }));
+  });
+}
 
 async function createFixture(): Promise<{
   cleanup(): Promise<void>;
@@ -76,8 +169,14 @@ async function createCompletePlan(options: {
   content: string;
   namespace: LiminaArtifactNamespace;
 }): Promise<ArtifactPlan> {
-  const generatedPath = path.join(options.namespace.rootDir, 'generated.json');
-  const manifestPath = path.join(options.namespace.rootDir, 'manifest.json');
+  const generatedPath = resolveArtifactNamespaceRelativePath(
+    options.namespace,
+    'generated.json',
+  );
+  const manifestPath = resolveArtifactNamespaceRelativePath(
+    options.namespace,
+    'manifest.json',
+  );
   const base = await readMaterializationStateSnapshot(options.namespace);
   const changes: ArtifactChange[] = [
     {
@@ -101,7 +200,7 @@ async function createCompletePlan(options: {
   ];
   return createRevisionedArtifactPlan(options.namespace, changes, {
     baseOwnedPaths: base.ownedPaths.map((relativePath) =>
-      path.join(options.namespace.rootDir, relativePath),
+      resolveArtifactNamespaceRelativePath(options.namespace, relativePath),
     ),
     baseRevision: base.revision,
     ownedPaths: [generatedPath, manifestPath],
@@ -124,7 +223,10 @@ async function createArtifactSetPlan(options: {
           content,
           kind: 'generated-config',
           origin: { domain: 'test' },
-          path: path.join(options.namespace.rootDir, relativePath),
+          path: resolveArtifactNamespaceRelativePath(
+            options.namespace,
+            relativePath,
+          ),
         },
         status: 'update',
       }),
@@ -134,18 +236,21 @@ async function createArtifactSetPlan(options: {
         content: manifestContent(ownedArtifacts),
         kind: 'generated-manifest',
         origin: { domain: 'test' },
-        path: path.join(options.namespace.rootDir, 'manifest.json'),
+        path: resolveArtifactNamespaceRelativePath(
+          options.namespace,
+          'manifest.json',
+        ),
       },
       status: 'update',
     },
   ];
   return createRevisionedArtifactPlan(options.namespace, changes, {
     baseOwnedPaths: base.ownedPaths.map((relativePath) =>
-      path.join(options.namespace.rootDir, relativePath),
+      resolveArtifactNamespaceRelativePath(options.namespace, relativePath),
     ),
     baseRevision: base.revision,
     ownedPaths: ownedArtifacts.map((relativePath) =>
-      path.join(options.namespace.rootDir, relativePath),
+      resolveArtifactNamespaceRelativePath(options.namespace, relativePath),
     ),
   });
 }
@@ -396,9 +501,10 @@ describe('generated artifact materialization recovery', () => {
     const fixture = await createFixture();
     const readyPath = path.join(fixture.rootDir, 'writer-ready');
     const releasePath = path.join(fixture.rootDir, 'writer-release');
-    const leaseModule = fileURLToPath(
-      new URL('../utils/mutation/cross-process-lease.ts', import.meta.url),
-    );
+    const leaseModule = new URL(
+      '../utils/mutation/cross-process-lease.ts',
+      import.meta.url,
+    ).href;
     const writerScript = `
       import { existsSync } from 'node:fs';
       import { writeFile } from 'node:fs/promises';
@@ -464,4 +570,207 @@ describe('generated artifact materialization recovery', () => {
       await fixture.cleanup();
     }
   });
+
+  it('replans a different desired tree in a second independent materializer', async () => {
+    const fixture = await createFixture();
+    const writerReady = path.join(fixture.rootDir, 'writer-a-ready');
+    const writerRelease = path.join(fixture.rootDir, 'writer-a-release');
+    const contenderReady = path.join(fixture.rootDir, 'writer-b-ready');
+    const writerScript = createMaterializerChildScript(`
+      const plan = await createPlan({ 'a-only.json': 'writer-a\\n' });
+      let paused = false;
+      await materializeGeneratedArtifactPlan(namespace, plan, {
+        async beforeMutation() {
+          if (paused) return;
+          paused = true;
+          await writeFile(process.env.READY_PATH, 'ready\\n');
+          while (!existsSync(process.env.RELEASE_PATH)) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+        },
+      });
+    `);
+    const contenderScript = createMaterializerChildScript(`
+      const artifacts = { 'b-only.json': 'writer-b\\n' };
+      const optimistic = await createPlan(artifacts);
+      await writeFile(process.env.READY_PATH, 'ready\\n');
+      let replans = 0;
+      await materializeGeneratedArtifactPlan(namespace, optimistic, {
+        replan: async () => {
+          replans += 1;
+          return { namespace, plan: await createPlan(artifacts) };
+        },
+      });
+      console.log(JSON.stringify({ replans }));
+    `);
+    const childOptions = {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
+    };
+    const writer = spawn(
+      process.execPath,
+      ['--import', 'tsx', '--input-type=module', '--eval', writerScript],
+      {
+        ...childOptions,
+        env: {
+          ...process.env,
+          GENERATION: '1',
+          READY_PATH: writerReady,
+          RELEASE_PATH: writerRelease,
+          ROOT_DIR: fixture.rootDir,
+        },
+      },
+    );
+    const writerResult = collectChildResult(writer);
+    let contender: ChildProcess | undefined;
+
+    try {
+      await vi.waitFor(
+        () => expect(access(writerReady)).resolves.toBeUndefined(),
+        {
+          timeout: 5000,
+        },
+      );
+      const contenderChild = spawn(
+        process.execPath,
+        ['--import', 'tsx', '--input-type=module', '--eval', contenderScript],
+        {
+          ...childOptions,
+          env: {
+            ...process.env,
+            GENERATION: '2',
+            READY_PATH: contenderReady,
+            ROOT_DIR: fixture.rootDir,
+          },
+        },
+      );
+      contender = contenderChild;
+      const contenderResult = collectChildResult(contenderChild);
+      await vi.waitFor(
+        () => expect(access(contenderReady)).resolves.toBeUndefined(),
+        { timeout: 5000 },
+      );
+      await writeFile(writerRelease, 'release\n');
+
+      await expect(writerResult).resolves.toMatchObject({ code: 0 });
+      const second = await contenderResult;
+      expect(second).toMatchObject({ code: 0 });
+      expect(JSON.parse(second.stdout)).toEqual({ replans: 1 });
+      await expect(
+        readFile(path.join(fixture.namespace.rootDir, 'b-only.json'), 'utf8'),
+      ).resolves.toBe('writer-b\n');
+      await expect(
+        access(path.join(fixture.namespace.rootDir, 'a-only.json')),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(
+        readFile(path.join(fixture.namespace.rootDir, 'manifest.json'), 'utf8'),
+      ).resolves.toContain('b-only.json');
+    } finally {
+      await writeFile(writerRelease, 'release\n').catch((error: unknown) =>
+        String(error),
+      );
+      writer.kill('SIGKILL');
+      contender?.kill('SIGKILL');
+      await fixture.cleanup();
+    }
+  }, 20_000);
+
+  it('lets a fresh independent writer recover after a materializer process is killed', async () => {
+    const fixture = await createFixture();
+    const crashReady = path.join(fixture.rootDir, 'crash-ready');
+    await materializeGeneratedArtifactPlan(
+      fixture.namespace,
+      await createArtifactSetPlan({
+        artifacts: { 'obsolete.json': 'obsolete\n' },
+        namespace: fixture.namespace,
+      }),
+    );
+    const crashScript = createMaterializerChildScript(`
+      const plan = await createPlan({ 'crash-only.json': 'crash\\n' });
+      let mutations = 0;
+      await materializeGeneratedArtifactPlan(namespace, plan, {
+        async beforeMutation() {
+          mutations += 1;
+          if (mutations !== 2) return;
+          await writeFile(process.env.READY_PATH, 'ready\\n');
+          await new Promise(() => {});
+        },
+      });
+    `);
+    const recoveryScript = createMaterializerChildScript(`
+      const artifacts = { 'fresh.json': 'fresh\\n' };
+      const optimistic = await createPlan(artifacts);
+      let replans = 0;
+      await materializeGeneratedArtifactPlan(namespace, optimistic, {
+        replan: async () => {
+          replans += 1;
+          return { namespace, plan: await createPlan(artifacts) };
+        },
+      });
+      console.log(JSON.stringify({ replans }));
+    `);
+    const crashed = spawn(
+      process.execPath,
+      ['--import', 'tsx', '--input-type=module', '--eval', crashScript],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          GENERATION: '3',
+          READY_PATH: crashReady,
+          ROOT_DIR: fixture.rootDir,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const crashedResult = collectChildResult(crashed);
+
+    try {
+      await vi.waitFor(
+        () => expect(access(crashReady)).resolves.toBeUndefined(),
+        {
+          timeout: 5000,
+        },
+      );
+      crashed.kill('SIGKILL');
+      await expect(crashedResult).resolves.not.toMatchObject({ code: 0 });
+      await expect(
+        access(path.join(fixture.namespace.rootDir, 'crash-only.json')),
+      ).resolves.toBeUndefined();
+      await expect(
+        access(getMaterializationMarkerPath(fixture.namespace)),
+      ).resolves.toBeUndefined();
+
+      const recovered = await execFileAsync(
+        process.execPath,
+        ['--import', 'tsx', '--input-type=module', '--eval', recoveryScript],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            GENERATION: '4',
+            ROOT_DIR: fixture.rootDir,
+          },
+        },
+      );
+      expect(JSON.parse(recovered.stdout)).toEqual({ replans: 1 });
+      await expect(
+        readFile(path.join(fixture.namespace.rootDir, 'fresh.json'), 'utf8'),
+      ).resolves.toBe('fresh\n');
+      for (const removed of ['crash-only.json', 'obsolete.json']) {
+        await expect(
+          access(path.join(fixture.namespace.rootDir, removed)),
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+      await expect(
+        access(getMaterializationMarkerPath(fixture.namespace)),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(
+        withGeneratedArtifactReadLease(fixture.namespace, async () => true),
+      ).resolves.toBe(true);
+    } finally {
+      crashed.kill('SIGKILL');
+      await fixture.cleanup();
+    }
+  }, 20_000);
 });

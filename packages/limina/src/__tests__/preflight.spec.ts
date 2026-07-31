@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
 import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
@@ -18,12 +19,24 @@ import {
 } from '../domain/artifacts/plan';
 import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { toPortablePath } from './helpers/path';
+import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
-function createConfig(rootDir: string): ResolvedLiminaConfig {
+vi.mock('../core/build-graph/materializer', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../core/build-graph/materializer')>();
   return {
-    configPath: path.join(rootDir, 'limina.config.mjs'),
+    ...actual,
+    materializeGeneratedArtifactPlan: vi.fn(
+      actual.materializeGeneratedArtifactPlan,
+    ),
+  };
+});
+
+function createConfig(rootDir: string): ResolvedLiminaConfig {
+  const fixturePath = createFixturePathResolver(rootDir);
+  return {
+    configPath: fixturePath('limina.config.mjs'),
     package: {
       entries: [
         {
@@ -77,6 +90,7 @@ function createFakeCore(options: {
 async function createFixture(): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
+  path: (...segments: string[]) => string;
   rootDir: string;
 }> {
   const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-preflight-'));
@@ -107,6 +121,7 @@ async function createFixture(): Promise<{
       });
     },
     config: createConfig(rootDir),
+    path: createFixturePathResolver(rootDir),
     rootDir,
   };
 }
@@ -184,7 +199,7 @@ describe('LiminaPreflightManager', () => {
       generation: 0,
       rootDir: fixture.rootDir,
     });
-    const generatedPath = path.join(fixture.rootDir, '.limina/generated.json');
+    const generatedPath = fixture.path('.limina', 'generated.json');
     const graph = createGraph(
       namespace,
       [
@@ -224,13 +239,125 @@ describe('LiminaPreflightManager', () => {
     }
   });
 
+  it('hands an in-flight materialization slot across provider-only replan but not a new command generation', async () => {
+    const fixture = await createFixture();
+    let manager!: LiminaPreflightManager;
+    const replanStarted = deferred<void>();
+    const releaseReplan = deferred<void>();
+    const generatedGraphProvider = vi.fn(async () => {
+      const graph = await manager.providers.buildGraph.getGraph();
+      if (generatedGraphProvider.mock.calls.length === 2) {
+        replanStarted.resolve();
+        await releaseReplan.promise;
+      }
+      return graph;
+    });
+    manager = new LiminaPreflightManager({
+      config: fixture.config,
+      generatedGraphProvider,
+    });
+    const initialNamespace = manager.artifactNamespace;
+    const initialGraph = await manager.ensureGeneratedGraph();
+    const competingNamespace = createLiminaArtifactNamespace({
+      generation: 99,
+      rootDir: fixture.rootDir,
+    });
+    const competingProviders = createAnalysisProviders(
+      fixture.config,
+      competingNamespace,
+    );
+
+    try {
+      await competingProviders.workspace.getValidatedContext();
+      const competingGraph = await competingProviders.buildGraph.getGraph();
+      await materializeGeneratedArtifactPlan(
+        competingNamespace,
+        competingGraph.artifactPlan,
+      );
+      vi.mocked(materializeGeneratedArtifactPlan).mockClear();
+
+      const preparation = manager.ensureGeneratedArtifactsMaterialized();
+      await replanStarted.promise;
+      expect(manager.artifactNamespace).not.toBe(initialNamespace);
+
+      const whileReplanning = manager.ensureGeneratedArtifactsMaterialized();
+      expect(materializeGeneratedArtifactPlan).toHaveBeenCalledTimes(1);
+
+      releaseReplan.resolve();
+      const [preparationReceipt, concurrentReceipt] = await Promise.all([
+        preparation,
+        whileReplanning,
+      ]);
+      expect(concurrentReceipt).toBe(preparationReceipt);
+      expect(preparationReceipt.graph).not.toBe(initialGraph);
+      expect(generatedGraphProvider).toHaveBeenCalledTimes(2);
+      expect(materializeGeneratedArtifactPlan).toHaveBeenCalledTimes(1);
+
+      const observations = await Promise.all(
+        [
+          'graph:check',
+          'source:check',
+          'proof:check',
+          'graph:prepare',
+          'checker:build',
+          'checker:typecheck',
+        ].map(async (issueTask) => ({
+          graph: await manager.ensureGeneratedGraph(),
+          namespace: manager.artifactNamespace,
+          providers: manager.providers,
+          receipt:
+            issueTask.startsWith('checker:') || issueTask === 'graph:prepare'
+              ? await manager.ensureGeneratedArtifactsMaterialized()
+              : undefined,
+          run: manager.run,
+        })),
+      );
+      for (const observation of observations) {
+        expect(observation.graph).toBe(preparationReceipt.graph);
+        expect(observation.namespace).toBe(manager.artifactNamespace);
+        expect(observation.providers).toBe(manager.providers);
+        expect(observation.run).toBe(manager.run);
+        if (observation.receipt !== undefined) {
+          expect(observation.receipt).toBe(preparationReceipt);
+        }
+      }
+      expect(preparationReceipt.graph.artifactPlan.generationToken).toBe(
+        manager.artifactNamespace.generationToken,
+      );
+
+      const cachedReceipts = await Promise.all([
+        manager.ensureGeneratedArtifactsMaterialized(),
+        manager.ensureGeneratedArtifactsMaterialized(),
+        manager.ensureGeneratedArtifactsMaterialized(),
+      ]);
+      expect(cachedReceipts).toEqual([
+        preparationReceipt,
+        preparationReceipt,
+        preparationReceipt,
+      ]);
+      expect(materializeGeneratedArtifactPlan).toHaveBeenCalledTimes(1);
+
+      createPreflightGenerationController(manager).startNextGeneration();
+      const nextGenerationReceipt =
+        await manager.ensureGeneratedArtifactsMaterialized();
+      expect(nextGenerationReceipt).not.toBe(preparationReceipt);
+      expect(nextGenerationReceipt.generation).toBe(1);
+      expect(generatedGraphProvider).toHaveBeenCalledTimes(3);
+      expect(materializeGeneratedArtifactPlan).toHaveBeenCalledTimes(2);
+    } finally {
+      competingProviders.dispose();
+      manager.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it('clears a failed materialization slot so a later call can retry', async () => {
     const fixture = await createFixture();
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
       rootDir: fixture.rootDir,
     });
-    const collisionPath = path.join(fixture.rootDir, '.limina/collision.json');
+    const collisionPath = fixture.path('.limina', 'collision.json');
     await mkdir(collisionPath, { recursive: true });
     const graph = createGraph(namespace, [
       {
@@ -256,10 +383,7 @@ describe('LiminaPreflightManager', () => {
       await expect(
         manager.ensureGeneratedArtifactsMaterialized(),
       ).rejects.toBeDefined();
-      const generatedPath = path.join(
-        fixture.rootDir,
-        '.limina/generated.json',
-      );
+      const generatedPath = fixture.path('.limina', 'generated.json');
       (
         graph as { artifactPlan: GeneratedTsconfigGraphResult['artifactPlan'] }
       ).artifactPlan = createArtifactPlan(
@@ -554,11 +678,8 @@ describe('LiminaPreflightManager', () => {
     const graph = {
       ...createGraph(namespace),
       checkerEntries: new Map([
-        ['vue', path.join(fixture.rootDir, '.limina/missing-vue.build.json')],
-        [
-          'svelte',
-          path.join(fixture.rootDir, '.limina/missing-svelte.build.json'),
-        ],
+        ['vue', fixture.path('.limina', 'missing-vue.build.json')],
+        ['svelte', fixture.path('.limina', 'missing-svelte.build.json')],
       ]),
       checkers,
       generatedFiles: new Map<string, string>(),

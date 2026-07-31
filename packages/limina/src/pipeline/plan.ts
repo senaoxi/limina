@@ -199,7 +199,7 @@ function addPreparationTasks(options: {
   });
   materialization.after = [validation.id];
   materialization.requiresSuccessOf = [validation.id];
-  requireTaskSuccess(dependentTasks, materialization);
+  requireTaskSuccess(options.segment.tasks, materialization);
   options.output.push(materialization);
 }
 

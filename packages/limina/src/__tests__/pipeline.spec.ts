@@ -21,6 +21,7 @@ import {
   writeNotRunCheckIssueSnapshot,
 } from '../check-reporting/snapshot';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { runExecutionTasks } from '../execution/executor';
 import { ResourceLockSet } from '../execution/resources';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 import {
@@ -34,6 +35,14 @@ import {
 import { LiminaPreflightManager } from '../preflight/manager';
 
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
 
 describe('ExecutionPlan construction', () => {
   it('inserts one generation-specific materializer per filesystem segment', async () => {
@@ -87,7 +96,7 @@ describe('ExecutionPlan construction', () => {
     }
   });
 
-  it('shares one materializer across default build and typecheck tasks', async () => {
+  it('makes every default segment task depend on one materializer', async () => {
     const fixture = await createConfig();
     try {
       const plan = createDefaultExecutionPlan(fixture.config);
@@ -97,10 +106,83 @@ describe('ExecutionPlan construction', () => {
       expect(materializer).toHaveLength(1);
       expect(
         plan.tasks
-          .filter((task) => task.issueTask.startsWith('checker:'))
-          .map((task) => task.requiresSuccessOf),
-      ).toEqual([[materializer[0]!.id], [materializer[0]!.id]]);
+          .filter((task) => task.kind === 'task')
+          .map((task) => [task.issueTask, task.requiresSuccessOf]),
+      ).toEqual(
+        expect.arrayContaining(
+          [
+            'graph:check',
+            'source:check',
+            'proof:check',
+            'checker:build',
+            'checker:typecheck',
+          ].map((issueTask) => [issueTask, [materializer[0]!.id]]),
+        ),
+      );
     } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not add a materializer to a segment without generated-file consumers', async () => {
+    const fixture = await createConfig();
+    fixture.config.pipelines = {
+      demo: ['graph:check', 'source:check', 'proof:check'],
+    };
+    try {
+      const plan = createExecutionPlan(fixture.config, 'demo');
+      expect(
+        plan.tasks.some((task) => task.issueTask === 'graph:materialize'),
+      ).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not start any segment user task while materialization is deferred', async () => {
+    const fixture = await createConfig();
+    const plan = createDefaultExecutionPlan(fixture.config);
+    const materializerStarted = deferred<void>();
+    const releaseMaterializer = deferred<void>();
+    const validation = plan.tasks.find(
+      (task) => task.issueTask === 'workspace:validate',
+    )!;
+    const materializer = plan.tasks.find(
+      (task) => task.issueTask === 'graph:materialize',
+    )!;
+    validation.run = async () => ({ issues: [], status: 'passed' });
+    materializer.run = async () => {
+      materializerStarted.resolve();
+      await releaseMaterializer.promise;
+      return { issues: [], status: 'passed' };
+    };
+    const userRuns = plan.tasks
+      .filter((task) => task.kind === 'task')
+      .map((task) => {
+        const run = vi.fn();
+        task.run = async () => {
+          run();
+          return { issues: [], status: 'passed' };
+        };
+        return run;
+      });
+    const preflight = new LiminaPreflightManager({ config: fixture.config });
+
+    try {
+      const execution = runExecutionTasks({
+        command: 'limina check',
+        preflight,
+        rootDir: fixture.config.rootDir,
+        tasks: plan.tasks,
+      });
+      await materializerStarted.promise;
+      for (const run of userRuns) expect(run).not.toHaveBeenCalled();
+
+      releaseMaterializer.resolve();
+      await expect(execution).resolves.toMatchObject({ passed: true });
+      for (const run of userRuns) expect(run).toHaveBeenCalledOnce();
+    } finally {
+      preflight.dispose();
       await fixture.cleanup();
     }
   });

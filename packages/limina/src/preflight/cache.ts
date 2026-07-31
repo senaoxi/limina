@@ -32,7 +32,10 @@ export class PreflightGenerationCache {
   workspacePackages?: Promise<WorkspacePackage[]>;
   workspaceRegionBoundaries?: Promise<WorkspaceRegionBoundary[]>;
 
-  constructor(generation: number) {
-    this.materializationSlot = { generation };
+  constructor(
+    generation: number,
+    materializationSlot: MaterializationSlot = { generation },
+  ) {
+    this.materializationSlot = materializationSlot;
   }
 }

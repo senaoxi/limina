@@ -951,7 +951,7 @@ describe('runExecutionTasks', () => {
     ).toThrow('missing its root cause');
   });
 
-  it('classifies materializer rejection and blocks its checker consumer', async () => {
+  it('classifies materializer rejection and blocks every segment consumer', async () => {
     await withTempRoot(async (rootDir) => {
       const materializer = createTask({ id: 'materializer', order: 0 });
       materializer.issueTask = 'graph:materialize';
@@ -960,12 +960,30 @@ describe('runExecutionTasks', () => {
       materializer.run = async () => {
         throw new Error('disk rejected generated artifacts');
       };
-      const checker = createTask({ id: 'checker', order: 1 });
-      checker.issueTask = 'checker:build';
-      checker.requiresSuccessOf = [materializer.id];
+      const consumerNames = [
+        'graph:check',
+        'source:check',
+        'proof:check',
+        'graph:prepare',
+        'checker:build',
+        'checker:typecheck',
+      ] as const;
+      const consumerRuns = consumerNames.map(() => vi.fn());
+      const consumers = consumerNames.map((issueTask, index) => {
+        const consumer = createTask({
+          id: `consumer-${index}`,
+          onRun: consumerRuns[index],
+          order: index + 1,
+        });
+        consumer.issueTask = issueTask;
+        consumer.label = issueTask;
+        consumer.requiresSuccessOf = [materializer.id];
+        return consumer;
+      });
+      const tasks = [materializer, ...consumers];
       const recorder = createCheckRunRecorder({
         command: 'limina check',
-        plannedTasks: [materializer, checker],
+        plannedTasks: tasks,
         rootDir,
       });
 
@@ -974,14 +992,15 @@ describe('runExecutionTasks', () => {
         command: 'limina check',
         preflight: createPreflight(rootDir),
         rootDir,
-        tasks: [materializer, checker],
+        tasks,
       });
       const snapshot = await readCheckIssueSnapshot(rootDir);
 
       expect(result.results.map((entry) => entry.status)).toEqual([
         'failed',
-        'blocked',
+        ...consumerNames.map(() => 'blocked' as const),
       ]);
+      for (const run of consumerRuns) expect(run).not.toHaveBeenCalled();
       expect(snapshot?.issues[0]).toMatchObject({
         code: 'LIMINA_GRAPH_MATERIALIZE_FAILED',
         domain: 'graph',
@@ -989,13 +1008,15 @@ describe('runExecutionTasks', () => {
         severity: 'error',
         task: 'graph:materialize',
       });
-      expect(snapshot?.run?.tasks[1]).toMatchObject({
-        blockedBy: {
-          id: materializer.id,
-          label: materializer.label,
-        },
-        state: 'blocked',
-      });
+      for (const task of snapshot?.run?.tasks.slice(1) ?? []) {
+        expect(task).toMatchObject({
+          blockedBy: {
+            id: materializer.id,
+            label: materializer.label,
+          },
+          state: 'blocked',
+        });
+      }
     });
   });
 
