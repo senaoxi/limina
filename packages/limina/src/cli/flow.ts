@@ -3,7 +3,8 @@ import {
   createLiminaFlowReporter,
   type LiminaFlowReporter,
 } from '../flow';
-import { clearCliScreen } from '../logger';
+
+const CLI_RESERVED_TOP_ROWS = 1;
 
 export interface CliFlowBoundary {
   close(): Promise<void>;
@@ -42,20 +43,19 @@ async function runClose(flow: CliFlowBoundary): Promise<FlowCleanupResult> {
 }
 
 export function createCliFlow(
-  options: { check?: boolean; clearScreen?: boolean } = {},
+  options: { check?: boolean } = {},
 ): LiminaFlowReporter {
-  clearCliScreenWhenEnabled(options.clearScreen);
   return selectCliFlowReporter(options.check);
-}
-
-function clearCliScreenWhenEnabled(clearScreen: boolean | undefined): void {
-  if (clearScreen !== false) clearCliScreen();
 }
 
 function selectCliFlowReporter(check: boolean | undefined): LiminaFlowReporter {
   return check === true
-    ? createLiminaCheckFlowReporter()
-    : createLiminaFlowReporter();
+    ? createLiminaCheckFlowReporter({
+        reservedTopRows: CLI_RESERVED_TOP_ROWS,
+      })
+    : createLiminaFlowReporter({
+        reservedTopRows: CLI_RESERVED_TOP_ROWS,
+      });
 }
 
 export async function closeCliFlow(

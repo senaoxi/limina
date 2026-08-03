@@ -1,4 +1,5 @@
 import * as prompts from '@clack/prompts';
+import { supportsInteractiveTerminal } from '../../terminal-environment';
 import { FlowProcessRenderer } from '../process-renderer';
 import {
   type FlowRenderSnapshot,
@@ -17,25 +18,7 @@ import type {
   LiminaFlowReporterOptions,
 } from './types';
 
-const DEFAULT_CI_ENV_VALUES = new Set(['1', 'true']);
 const FLOW_RENDERER_TEST_ROWS_ENV = 'LIMINA_FLOW_RENDERER_TEST_ROWS';
-
-function isEnabledCiValue(value: string | undefined): boolean {
-  return DEFAULT_CI_ENV_VALUES.has(String(value).toLowerCase());
-}
-
-function isCiEnvironment(env: NodeJS.ProcessEnv): boolean {
-  return isEnabledCiValue(env.CI) || isEnabledCiValue(env.CODEX_CI);
-}
-
-function supportsInteractiveTerminal(
-  env: NodeJS.ProcessEnv,
-  stdout: FlowWriteStream,
-): boolean {
-  if (!stdout.isTTY) return false;
-  if (isCiEnvironment(env)) return false;
-  return String(env.TERM).toLowerCase() !== 'dumb';
-}
 
 function createDefaultOutput(stdout: FlowWriteStream): FlowOutput {
   return {
@@ -123,6 +106,18 @@ function resolveStderr(options: LiminaFlowReporterOptions): FlowWriteStream {
   return process.stderr;
 }
 
+function isInteger(value: number | undefined): value is number {
+  return Number.isInteger(value);
+}
+
+function resolveReservedTopRows(value: number | undefined): number {
+  if (!isInteger(value)) {
+    return 0;
+  }
+
+  return Math.max(0, value);
+}
+
 function resolveInteractive(options: {
   env: NodeJS.ProcessEnv;
   reporterOptions: LiminaFlowReporterOptions;
@@ -176,6 +171,9 @@ export function createFlowReporterState(options: {
     output: resolveOutput({ reporterOptions: options.reporterOptions, stdout }),
     processRenderer,
     processTransientHistory: [],
+    reservedTopRows: resolveReservedTopRows(
+      options.reporterOptions.reservedTopRows,
+    ),
     restoreWriteStreams: undefined,
     spinnerFrameIndex: 0,
     spinnerTimer: undefined,
@@ -200,10 +198,20 @@ function getTerminalColumns(state: FlowReporterState): number | undefined {
   return state.stdout?.columns;
 }
 
-function getTerminalRows(state: FlowReporterState): number | undefined {
+function getPhysicalTerminalRows(state: FlowReporterState): number | undefined {
   const testRows = readPositiveInteger(state.env[FLOW_RENDERER_TEST_ROWS_ENV]);
   if (testRows !== undefined) return testRows;
   return state.stdout?.rows;
+}
+
+function getTerminalRows(state: FlowReporterState): number | undefined {
+  const rows = getPhysicalTerminalRows(state);
+
+  if (rows === undefined) {
+    return undefined;
+  }
+
+  return Math.max(1, rows - state.reservedTopRows);
 }
 
 export function getTerminalDimensions(

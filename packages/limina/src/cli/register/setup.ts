@@ -9,6 +9,7 @@ type LiminaCli = ReturnType<typeof cac>;
 
 async function runInitAction(flags: InitFlags): Promise<void> {
   await runInit({
+    clearScreen: false,
     cwd: process.cwd(),
     yes: flags.yes,
   });

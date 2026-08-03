@@ -266,7 +266,7 @@ async function createExecutionContext(options: {
   return {
     command,
     config,
-    flow: createCliFlow({ check: true, clearScreen: false }),
+    flow: createCliFlow({ check: true }),
     pipeline: options.pipeline,
     plan: createPlan({ config, pipeline: options.pipeline, planOptions }),
     planOptions,
