@@ -515,8 +515,7 @@ describe('runMigration', () => {
   "compilerOptions": {
     /* strict mode rationale */
     "strict" : true,
-    // output ownership moves to Limina
-    "outDir": "./dist",
+    "outDir": "./dist", // output ownership moves to Limina
     "declaration": true,
   },
   "include" : ["src/**/*.ts",],
@@ -556,9 +555,31 @@ describe('runMigration', () => {
         references?: unknown;
       };
 
+      expect(migrated).toBe(`{
+  // repository rationale stays byte-for-byte
+  "$schema" : "./node_modules/limina/schemas/tsconfig-schema.json",
+  "compilerOptions": {
+    /* strict mode rationale */
+    "strict" : true,
+  },
+  "include" : ["src/**/*.ts",],
+  "liminaOptions": {
+    /* existing output rationale */
+    "outputs": {
+      "rootDir": "./existing",
+      "outDir": "./dist",
+    },
+  },
+  "custom" : {"compact":[1,2,3],},
+}
+`);
+      expect(migrated).not.toMatch(
+        /"compilerOptions": \{\r?\n(?:[ \t]*\r?\n)+/u,
+      );
       expect(migrated).toContain('// repository rationale stays byte-for-byte');
       expect(migrated).toContain('/* strict mode rationale */');
       expect(migrated).toContain('/* existing output rationale */');
+      expect(migrated).not.toContain('// output ownership moves to Limina');
       expect(migrated).toContain('"include" : ["src/**/*.ts",]');
       expect(migrated).toContain('"custom" : {"compact":[1,2,3],}');
       expect(parsed).toMatchObject({

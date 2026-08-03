@@ -4,9 +4,11 @@ import {
   type Node,
   parseTree,
 } from 'jsonc-parser';
+import type { CommaToken, TextEdit } from './jsonc-delete-ranges';
+import { applyTextEdits, findLineAlignedDeletion } from './jsonc-delete-ranges';
 
-const jsoncTriviaTokenKinds = new Set([12, 13, 14, 15]);
 const jsoncCommaTokenKind = 5;
+const jsoncTriviaTokenKinds = new Set([12, 13, 14, 15]);
 
 function findPropertyNode(
   content: string,
@@ -18,34 +20,17 @@ function findPropertyNode(
   return valueNode?.parent;
 }
 
-function isPropertyNode(node: Node | undefined): node is Node {
-  if (node === undefined) return false;
-  return node.type === 'property';
-}
-
-function isObjectNode(node: Node | undefined): node is Node {
-  if (node === undefined) return false;
-  return node.type === 'object';
-}
-
 function isObjectProperty(node: Node | undefined): node is Node {
-  if (!isPropertyNode(node)) return false;
-  return isObjectNode(node.parent);
+  return node?.parent?.type === 'object';
 }
 
-function findFollowingComma(
-  content: string,
-  start: number,
-): { length: number; offset: number } | null {
+function findFollowingComma(content: string, start: number): CommaToken | null {
   const scanner = createScanner(content, false);
   scanner.setPosition(start);
   let token = scanner.scan();
   while (jsoncTriviaTokenKinds.has(token)) token = scanner.scan();
   return token === jsoncCommaTokenKind
-    ? {
-        length: scanner.getTokenLength(),
-        offset: scanner.getTokenOffset(),
-      }
+    ? { length: scanner.getTokenLength(), offset: scanner.getTokenOffset() }
     : null;
 }
 
@@ -53,10 +38,10 @@ function findPrecedingComma(
   content: string,
   start: number,
   end: number,
-): { length: number; offset: number } | null {
+): CommaToken | null {
   const scanner = createScanner(content, false);
   scanner.setPosition(start);
-  let comma: { length: number; offset: number } | null = null;
+  let comma: CommaToken | null = null;
   while (scanner.getPosition() < end) {
     if (scanner.scan() === jsoncCommaTokenKind) {
       comma = {
@@ -68,36 +53,61 @@ function findPrecedingComma(
   return comma;
 }
 
-function deleteWithFollowingComma(
+function getParentOffset(property: Node): number {
+  const parent = property.parent;
+  if (parent !== undefined) return parent.offset;
+  return property.offset;
+}
+
+function getPrecedingCommaEdit(
   content: string,
   property: Node,
-  followingComma: { length: number; offset: number },
-): string {
-  return `${content.slice(0, property.offset)}${content.slice(
-    followingComma.offset + followingComma.length,
-  )}`;
-}
-
-function getParentOffset(property: Node): number {
-  if (property.parent === undefined) return property.offset;
-  return property.parent.offset;
-}
-
-function getDeletionStart(property: Node, precedingOffset?: number): number {
-  if (precedingOffset === undefined) return property.offset;
-  return precedingOffset;
-}
-
-function deleteLastProperty(content: string, property: Node): string {
+): TextEdit | null {
   const precedingComma = findPrecedingComma(
     content,
     getParentOffset(property),
     property.offset,
   );
-  const deletionStart = getDeletionStart(property, precedingComma?.offset);
-  return `${content.slice(0, deletionStart)}${content.slice(
-    property.offset + property.length,
-  )}`;
+  return precedingComma === null
+    ? null
+    : { length: precedingComma.length, offset: precedingComma.offset };
+}
+
+function deleteLineProperty(
+  content: string,
+  property: Node,
+  context: {
+    followingComma: CommaToken | null;
+    lineDeletion: TextEdit;
+  },
+): string {
+  const edits: TextEdit[] = [context.lineDeletion];
+  if (context.followingComma === null) {
+    const precedingComma = getPrecedingCommaEdit(content, property);
+    if (precedingComma !== null) edits.push(precedingComma);
+  }
+  return applyTextEdits(content, edits);
+}
+
+function deleteInlineProperty(
+  content: string,
+  property: Node,
+  followingComma: CommaToken | null,
+): string {
+  if (followingComma !== null) {
+    return applyTextEdits(content, [
+      {
+        length: followingComma.offset + followingComma.length - property.offset,
+        offset: property.offset,
+      },
+    ]);
+  }
+  const edits: TextEdit[] = [
+    { length: property.length, offset: property.offset },
+  ];
+  const precedingComma = getPrecedingCommaEdit(content, property);
+  if (precedingComma !== null) edits.push(precedingComma);
+  return applyTextEdits(content, edits);
 }
 
 export function deleteJsoncProperty(
@@ -110,7 +120,16 @@ export function deleteJsoncProperty(
     content,
     property.offset + property.length,
   );
-  return followingComma === null
-    ? deleteLastProperty(content, property)
-    : deleteWithFollowingComma(content, property, followingComma);
+  const lineDeletion = findLineAlignedDeletion(
+    content,
+    property,
+    followingComma,
+  );
+  if (lineDeletion !== null) {
+    return deleteLineProperty(content, property, {
+      followingComma,
+      lineDeletion,
+    });
+  }
+  return deleteInlineProperty(content, property, followingComma);
 }
