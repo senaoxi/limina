@@ -412,6 +412,101 @@ describe('LiminaFlowReporter', () => {
     expect(lastFrame).not.toContain('second-class checker entries');
   });
 
+  it('reserves the shell command row for public CLI check flows', async () => {
+    const cliFlowModuleUrl = new URL('../cli/flow.ts', import.meta.url).href;
+    const { stdout } = await runFlowFixture(
+      `
+        import { createCliFlow } from ${JSON.stringify(cliFlowModuleUrl)};
+
+        void (async () => {
+          Object.defineProperty(process.stdout, 'isTTY', {
+            configurable: true,
+            value: true,
+          });
+          Object.defineProperty(process.stdout, 'columns', {
+            configurable: true,
+            value: 36,
+          });
+          Object.defineProperty(process.stdout, 'rows', {
+            configurable: true,
+            value: 9,
+          });
+
+          const flow = createCliFlow({ check: true });
+          await flow.waitForRendererReady();
+          flow.intro('limina check');
+          const root = flow.tree('default check');
+          const [graph, source, proof, checkerBuild, checkerTypecheck] = root.children([
+            'graph check',
+            'source check',
+            'proof check',
+            'checker build',
+            'checker typecheck',
+          ]);
+          const [routes, references, conditions] = graph.children([
+            'source graph routes',
+            'project references',
+            'condition domains',
+          ]);
+          const [projectRoutes, checkerCoverage] = proof.children([
+            'project routes and configs',
+            'checker coverage targets',
+          ]);
+          const [typescriptEntry, vueEntry] = checkerBuild.children([
+            'typescript checker entry',
+            'vue checker entry',
+          ]);
+          const [secondClassEntries] = checkerTypecheck.children([
+            'second-class checker entries',
+          ]);
+
+          root.start();
+          graph.start();
+          routes.start();
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          routes.fail(undefined, { elapsedTimeMs: 30 });
+          references.pass(undefined, { elapsedTimeMs: 12 });
+          conditions.pass(undefined, { elapsedTimeMs: 0 });
+          graph.fail(undefined, { elapsedTimeMs: 200 });
+          source.start();
+          source.fail(undefined, { elapsedTimeMs: 300 });
+          proof.start();
+          projectRoutes.pass(undefined, { elapsedTimeMs: 36 });
+          checkerCoverage.pass(undefined, { elapsedTimeMs: 0 });
+          proof.pass(undefined, { elapsedTimeMs: 400 });
+          checkerBuild.start();
+          typescriptEntry.pass(undefined, { elapsedTimeMs: 427 });
+          vueEntry.pass(undefined, { elapsedTimeMs: 427 });
+          checkerBuild.pass(undefined, { elapsedTimeMs: 500 });
+          checkerTypecheck.start();
+          secondClassEntries.pass(undefined, { elapsedTimeMs: 0 });
+          checkerTypecheck.pass(undefined, { elapsedTimeMs: 1 });
+          root.fail(undefined, { elapsedTimeMs: 900 });
+          flow.outro('limina check failed');
+          await flow.close();
+        })();
+      `,
+      {
+        env: {
+          CI: '',
+          CODEX_CI: '',
+          LIMINA_FLOW_RENDERER_TEST_COLUMNS: '36',
+          LIMINA_FLOW_RENDERER_TEST_ROWS: '9',
+          TERM: 'xterm-256color',
+        },
+      },
+    );
+
+    const lastFrame = getLastRenderedFrame(stdout);
+
+    expect(getMaxCursorUpLineCount(stdout)).toBeLessThanOrEqual(7);
+    expect(lastFrame).toContain('┌  limina check\n');
+    expect(lastFrame).toContain('✕    default check (900ms)\n');
+    expect(lastFrame).toContain('└  limina check failed\n');
+    expect(lastFrame).not.toContain('project routes and configs');
+    expect(lastFrame).not.toContain('second-class checker entries');
+  });
+
   it('compacts check-flow history to direct task states in short terminals', async () => {
     const flowModuleUrl = new URL('../flow.ts', import.meta.url).href;
     const { stdout } = await runFlowFixture(

@@ -31,6 +31,7 @@ export interface LiminaFlowReporterOptions {
   env?: NodeJS.ProcessEnv;
   forceTty?: boolean;
   output?: FlowOutput;
+  reservedTopRows?: number;
   renderer?: 'auto' | 'inline' | 'process';
   stderr?: FlowWriteStream;
   stdout?: FlowWriteStream;
@@ -107,6 +108,7 @@ export interface FlowReporterState {
   output: FlowOutput;
   processRenderer: FlowProcessRenderer | undefined;
   processTransientHistory: ProcessTransientHistoryEntry[];
+  reservedTopRows: number;
   restoreWriteStreams: (() => void) | undefined;
   spinnerFrameIndex: number;
   spinnerTimer: NodeJS.Timeout | undefined;

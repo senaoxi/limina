@@ -2,6 +2,7 @@ import { createLogger } from 'logaria';
 
 import type { ScopedLogger } from 'logaria/types';
 import readline from 'node:readline';
+import { supportsInteractiveTerminal } from './terminal-environment';
 
 const logger = createLogger({
   main: 'limina',
@@ -23,12 +24,31 @@ export const TypecheckLogger: ScopedLogger =
   logger.getLoggerByGroup('task.typecheck');
 
 function canClearCliScreen(): boolean {
-  return Boolean(process.stdout.isTTY) && !process.env.CI;
+  return supportsInteractiveTerminal(process.env, process.stdout);
 }
 
-function createScreenPadding(rows: number | undefined): string {
-  const repeatCount = (rows ?? 0) - 2;
+function isIntegerCliScreenRows(rows: number | undefined): rows is number {
+  return Number.isInteger(rows);
+}
+
+function resolveCliScreenRows(rows: number | undefined): number | undefined {
+  if (!isIntegerCliScreenRows(rows)) {
+    return undefined;
+  }
+
+  return rows >= 2 ? rows : undefined;
+}
+
+function createScreenPadding(rows: number): string {
+  const repeatCount = rows - 2;
   return repeatCount > 0 ? '\n'.repeat(repeatCount) : '';
+}
+
+function writeScreenPadding(rows: number): void {
+  const padding = createScreenPadding(rows);
+  if (padding.length > 0) {
+    process.stdout.write(padding);
+  }
 }
 
 export function clearCliScreen(): void {
@@ -36,8 +56,13 @@ export function clearCliScreen(): void {
     return;
   }
 
-  process.stdout.write(createScreenPadding(process.stdout.rows));
-  readline.cursorTo(process.stdout, 0, 0);
+  const rows = resolveCliScreenRows(process.stdout.rows);
+  if (rows === undefined) {
+    return;
+  }
+
+  writeScreenPadding(rows);
+  readline.cursorTo(process.stdout, 0, 1);
   readline.clearScreenDown(process.stdout);
 }
 
