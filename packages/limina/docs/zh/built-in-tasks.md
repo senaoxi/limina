@@ -178,7 +178,7 @@ import { helper } from '@acme/core';
 
 ### Knip 支持的使用分析是辅助信号
 
-`source:check` 可以使用 `Knip` 支持的分析结果报告两类问题：
+只有在 `source.knip` 明确写为 `true` 或拥有 `workspaces` 的对象时，`source:check` 才会使用 `Knip` 支持的分析结果报告两类问题：
 
 - 已声明但未被源码使用到的工作区依赖；
 - 从包入口、二进制入口、脚本、插件入口或显式入口不可达的源码模块。

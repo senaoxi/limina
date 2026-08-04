@@ -38,6 +38,7 @@ export interface RunPipelineOptions {
   generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
   packageNames?: readonly string[];
   preflight?: LiminaPreflightManager;
+  resolveKnipCliPath?: () => string;
   progress?: TaskProgressReporter;
   sourceIssueReport?: SourceIssueReportOptions;
   executionPlan?: ExecutionPlan;

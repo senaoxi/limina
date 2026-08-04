@@ -137,6 +137,7 @@ async function executeSourceCheckImpl(
     deferSnapshot: options.deferSnapshot,
     generatedGraphProvider: options.generatedGraphProvider,
     knipRunner: options.knipRunner,
+    resolveKnipCliPath: options.resolveKnipCliPath,
     logSuccess: shouldLogSuccess(options),
     onStats: options.onStats,
     onSourceSnapshot: options.onSourceSnapshot,

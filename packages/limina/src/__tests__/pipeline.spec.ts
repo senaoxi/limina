@@ -23,6 +23,7 @@ import {
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { runExecutionTasks } from '../execution/executor';
 import { ResourceLockSet } from '../execution/resources';
+import { LiminaOptionalToolMissingError } from '../execution/tools';
 import { createLiminaCheckFlowReporter, LiminaFlowReporter } from '../flow';
 import {
   createDefaultExecutionPlan,
@@ -31,6 +32,7 @@ import {
   normalizePipelineStep,
   runDefaultCheck,
   runPipeline,
+  runPipelineWithResult,
 } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
 
@@ -837,6 +839,58 @@ describe('runPipeline', () => {
 
       expect(proofTask.checksPassed).toBe(proofItemTotal);
       expect(proofTask.checksTotal).toBe(proofItemTotal);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('isolates an enabled Knip dependency failure from independent builtin tasks', async () => {
+    const fixture = await createPassingCheckPipelineConfig();
+    fixture.config.source = { knip: true };
+    fixture.config.pipelines = {
+      demo: ['graph:check', 'source:check', 'proof:check'],
+    };
+    const core = createAnalysisProviders(fixture.config);
+    const generatedGraphProvider = vi.fn(() => core.buildGraph.getGraph());
+    const resolveKnipCliPath = vi.fn(() => {
+      throw new LiminaOptionalToolMissingError({
+        command: 'source check',
+        error: new Error('Cannot find package "knip"'),
+        packageName: 'knip',
+      });
+    });
+    const plan = createExecutionPlan(fixture.config, 'demo', {
+      resolveKnipCliPath,
+    });
+
+    try {
+      const execution = await runPipelineWithResult(fixture.config, 'demo', {
+        executionPlan: plan,
+        generatedGraphProvider,
+        providers: core,
+        resolveKnipCliPath,
+      });
+      const statuses = new Map(
+        execution.results.map((result) => [result.label, result.status]),
+      );
+
+      expect(statuses.get('graph:check')).toBe('passed');
+      expect(statuses.get('proof:check')).toBe('passed');
+      expect(statuses.get('source:check')).toBe('failed');
+      expect(resolveKnipCliPath).toHaveBeenCalledOnce();
+      expect(plan.tasks.filter((task) => task.kind === 'task')).toHaveLength(3);
+      expect(plan.tasks.some((task) => task.label.includes('knip'))).toBe(
+        false,
+      );
+      expect(execution.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_SOURCE_CHECK_FAILED',
+            task: 'source:check',
+            reason: expect.stringContaining('Missing peer dependency "knip"'),
+          }),
+        ]),
+      );
     } finally {
       await fixture.cleanup();
     }

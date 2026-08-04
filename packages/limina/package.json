@@ -80,7 +80,7 @@
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",
     "pathe": "catalog:dev",
-    "ignore": "catalog:prod",
+    "ignore": "catalog:dev",
     "knip": "catalog:lint",
     "npm-package-json-lint": "catalog:lint",
     "publint": "catalog:lint",

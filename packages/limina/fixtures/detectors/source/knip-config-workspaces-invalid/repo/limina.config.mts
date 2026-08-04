@@ -12,7 +12,9 @@ export default {
   },
   source: {
     knip: {
-      workspaces: [],
+      workspaces: {
+        '@fixture/source-knip-config': [],
+      },
     },
   },
 };

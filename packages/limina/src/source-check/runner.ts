@@ -1,6 +1,7 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import { runTsconfigGovernancePhase } from './governance-phase';
 import { runSourceImportAuthorityPhase } from './import-phase';
+import { resolveKnipCliPath } from './knip';
 import { runKnipSourcePhase } from './knip/phase';
 import { runSourceProjectOwnershipPhase } from './project-phase';
 import { finishSourceCheck } from './result-reporting';
@@ -10,10 +11,27 @@ import type { RunSourceCheckImplOptions } from './runner-types';
 
 export type { RunSourceCheckOptions } from './runner-types';
 
+function resolveKnipDependency(
+  resolveCliPath: RunSourceCheckImplOptions['resolveKnipCliPath'],
+): void {
+  const resolver = resolveCliPath ?? resolveKnipCliPath;
+  resolver();
+}
+
+function precheckKnipDependency(
+  config: ResolvedLiminaConfig,
+  options: RunSourceCheckImplOptions,
+): void {
+  if (options.knipRunner !== undefined) return;
+  if (!isSourceKnipEnabled(config)) return;
+  resolveKnipDependency(options.resolveKnipCliPath);
+}
+
 export async function runSourceCheckImpl(
   config: ResolvedLiminaConfig,
   options: RunSourceCheckImplOptions = {},
 ): Promise<boolean> {
+  precheckKnipDependency(config, options);
   const state = await createSourceCheckState(config, options);
 
   await runSourceRoutePhase({

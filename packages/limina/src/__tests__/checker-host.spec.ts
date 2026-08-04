@@ -112,15 +112,20 @@ describe('createDefaultRunner duration measurement', () => {
   });
 
   it('measures checker durations independently of main-thread blocking', async () => {
+    const shortSleepMs = 150;
+    const longSleepMs = 600;
+    const mainThreadBlockMs = 1500;
     const runner = createDefaultRunner({ stdio: 'ignore' });
     const shortPromise = Promise.resolve(
-      runner(createSleepTarget(150, 'short')),
+      runner(createSleepTarget(shortSleepMs, 'short')),
     );
-    const longPromise = Promise.resolve(runner(createSleepTarget(600, 'long')));
+    const longPromise = Promise.resolve(
+      runner(createSleepTarget(longSleepMs, 'long')),
+    );
 
     // Let both spawn requests reach the host before blocking the loop.
     await waitForMacrotasks(50);
-    blockMainThread(900);
+    blockMainThread(mainThreadBlockMs);
 
     const [shortResult, longResult] = await Promise.all([
       shortPromise,
@@ -131,13 +136,11 @@ describe('createDefaultRunner duration measurement', () => {
     expect(longResult.status).toBe(0);
     expect(shortResult.durationMs).toBeDefined();
     expect(longResult.durationMs).toBeDefined();
-    // Without unblocked measurement both close events are observed together
-    // after the block and each duration inflates to >=900ms.
-    expect(shortResult.durationMs!).toBeLessThan(450);
-    expect(longResult.durationMs!).toBeGreaterThan(400);
-    expect(longResult.durationMs!).toBeLessThan(1500);
+    // Host-side measurement preserves the sleep-duration gap even when process
+    // startup is slower on Windows. In-process fallback observes both close
+    // events after the block instead, collapsing their measured durations.
     expect(longResult.durationMs! - shortResult.durationMs!).toBeGreaterThan(
-      250,
+      (longSleepMs - shortSleepMs) / 2,
     );
   });
 

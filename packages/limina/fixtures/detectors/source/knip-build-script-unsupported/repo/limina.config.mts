@@ -10,4 +10,7 @@ export default {
   pipelines: {
     detector: ['source:check'],
   },
+  source: {
+    knip: true,
+  },
 };

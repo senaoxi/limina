@@ -9,8 +9,8 @@ export default defineDetectorFixture({
     issues: [
       {
         code: LIMINA_CHECK_ISSUE_CODES.sourceKnipConfigInvalid,
-        packageName: '<workspace>',
-        scope: 'source.knip.workspaces',
+        packageName: '@fixture/source-knip-config',
+        scope: 'source.knip.workspaces["@fixture/source-knip-config"]',
         task: 'source:check',
       },
     ],

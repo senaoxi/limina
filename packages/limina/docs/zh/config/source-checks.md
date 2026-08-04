@@ -137,11 +137,11 @@ export default defineConfig({
 ## knip
 
 - **类型：** `boolean | SourceKnipCheckConfig`
-- **默认值：** `true`
+- **默认值：** 关闭（省略 `source.knip` 或写为 `false`）
 
 `source.knip` 控制 `source:check` 中由 `Knip` 驱动的部分：未使用工作区依赖和未使用源码模块。
 
-省略该选项或写 `knip: true` 时，Limina 使用自动生成的默认 `Knip` 配置。写 `knip: false` 时，会跳过这些 `Knip` 驱动的检查。对象形式表示按工作区包名配置 Limina 语义 `Knip` 规则：
+写 `knip: true` 时，Limina 使用自动生成的默认 `Knip` 配置。省略该选项或写 `knip: false` 时，会关闭这些 `Knip` 驱动的检查。对象形式会启用检查，并按工作区包名配置 Limina 语义 `Knip` 规则；对象必须拥有 `workspaces` 字段。没有工作区级规则时使用 `{ workspaces: {} }`：
 
 ```ts
 interface SourceKnipEntryConfig {
@@ -166,9 +166,11 @@ interface SourceKnipWorkspaceConfig {
 }
 
 interface SourceKnipCheckConfig {
-  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
+  workspaces: Record<string, SourceKnipWorkspaceConfig>;
 }
 ```
+
+`source.knip` 只接受 `true`、`false` 或上面的对象形式。空对象、`null`、数组、标量、未知字段，以及不是对象的 `workspaces` 值，都会被判定为无效配置。
 
 `source.knip.workspaces` 的 `key` 是当前治理区域内的具名源码归属方，例如 `@acme/app`。未知或已排除的包名会让 `source check` 失败。没有 `name` 的工作区包仍然可以成为源码归属方，但不能放进 `source.knip.workspaces`，因为它没有稳定的包名 `key`。
 
@@ -187,7 +189,7 @@ interface SourceKnipCheckConfig {
 `<config>` 会从这个包目录解析。它必须是工作区内的 `JSON` 文件。托管脚本必须指向 Limina 管理且存在输出构建模块的配置。原始包脚本必须使用 `--raw --preset <tsc|tsgo|vue-tsc>`，配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 只支持 `limina build tsconfig.json`、`limina build tsconfig.dts.json --raw --preset tsgo`、`pnpm limina build tsconfig.json`、`pnpm exec limina build tsconfig.json` 这类直接静态写法。像 `limina build $CONFIG` 这样的动态 Shell 脚本会被报告为不支持。
 
 ::: warning
-`knip` 是 Limina 的可选对等依赖。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，Limina 会把 Knip 支撑的部分记为 `skipped`，然后继续其他源码检查。因此，仅缺少 `knip` 不会让 `source check` 以非零状态退出；如果 CI 必须覆盖未使用依赖和未使用模块检查，应显式安装并校验 `knip`。
+`knip` 是 Limina 的可选对等依赖。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，`source check` 会在源码分析开始前以缺少对等依赖错误失败。关闭 `source.knip` 时，Limina 不会解析或运行 Knip。如果 CI 必须覆盖未使用依赖和未使用模块检查，应显式安装并校验 `knip`。
 :::
 
 Limina 会为受治理的源码归属方工作区写入 `entry: []`，从而关闭 `Knip` 隐式的 `index` / `main` / `cli` 入口猜测。默认可达性仍然包含包清单入口（`exports`、`main`、`module`、`browser`、`bin`、`types`、`typings`）、`Knip` 插件推断入口、包脚本，以及 Limina 为应用型源码归属方生成的虚拟入口。

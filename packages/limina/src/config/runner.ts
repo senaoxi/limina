@@ -11,5 +11,6 @@ export {
   getActiveCheckerExtensions,
   getActiveCheckers,
   isAutoCheckerConfigMode,
+  isSourceKnipEnabled,
 } from './runtime';
 export type * from './source-types';

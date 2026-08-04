@@ -1,11 +1,19 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import { LiminaOptionalToolMissingError } from '../../execution/tools';
 import type { KnipCliInvocation, KnipCliRunner } from './types';
 
 const requireFromLimina = createRequire(import.meta.url);
+
+function ensureKnipCliPathExists(cliPath: string): string {
+  if (!existsSync(cliPath)) {
+    throw new Error(`Resolved Knip CLI path does not exist: ${cliPath}`);
+  }
+  return cliPath;
+}
 
 export function resolveKnipCliPath(
   resolvePackage: (
@@ -14,9 +22,10 @@ export function resolveKnipCliPath(
 ): string {
   try {
     const knipEntryPath = resolvePackage('knip');
-    return normalizeAbsolutePath(
+    const cliPath = normalizeAbsolutePath(
       path.resolve(path.dirname(knipEntryPath), '../bin/knip.js'),
     );
+    return ensureKnipCliPathExists(cliPath);
   } catch (error) {
     throw new LiminaOptionalToolMissingError({
       command: 'source check',

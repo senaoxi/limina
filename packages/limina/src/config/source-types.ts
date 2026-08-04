@@ -25,7 +25,7 @@ export interface SourceKnipWorkspaceConfig {
 }
 
 export interface SourceKnipCheckConfig {
-  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
+  workspaces: Record<string, SourceKnipWorkspaceConfig>;
 }
 
 export interface SourceImportAuthorityWorkspaceRootGrant {

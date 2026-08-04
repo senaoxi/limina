@@ -2,9 +2,11 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
   chmod,
+  cp,
   lstat,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -59,6 +61,51 @@ async function writeBinShim(
     path.join(rootDir, 'node_modules/.bin', `${command}.cmd`),
     ['@ECHO OFF', `node "%~dp0${command}.cjs" %*`, ''].join('\r\n'),
   );
+}
+
+async function createIsolatedLiminaCli(rootDir: string): Promise<string> {
+  const packageRoot = path.join(rootDir, 'limina');
+  const sourcePackageRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const sourceNodeModules = path.join(sourcePackageRoot, 'node_modules');
+
+  await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
+  await cp(path.join(sourcePackageRoot, 'src'), path.join(packageRoot, 'src'), {
+    recursive: true,
+  });
+  await cp(
+    path.join(sourcePackageRoot, 'bin/limina.js'),
+    path.join(packageRoot, 'bin/limina.js'),
+  );
+  await cp(
+    path.join(sourcePackageRoot, 'package.json'),
+    path.join(packageRoot, 'package.json'),
+  );
+
+  const packageModules = path.join(packageRoot, 'node_modules');
+  await mkdir(packageModules, { recursive: true });
+  for (const entry of await readdir(sourceNodeModules, {
+    withFileTypes: true,
+  })) {
+    if (entry.name === 'knip') continue;
+
+    const sourceEntry = path.join(sourceNodeModules, entry.name);
+    const packageEntry = path.join(packageModules, entry.name);
+    if (entry.name.startsWith('@') && entry.isDirectory()) {
+      await mkdir(packageEntry, { recursive: true });
+      for (const packageName of await readdir(sourceEntry)) {
+        await symlink(
+          path.join(sourceEntry, packageName),
+          path.join(packageEntry, packageName),
+          'junction',
+        );
+      }
+      continue;
+    }
+
+    await symlink(sourceEntry, packageEntry, 'junction');
+  }
+
+  return path.join(packageRoot, 'bin/limina.js');
 }
 
 const buildCompilerOptions = {
@@ -2009,6 +2056,126 @@ export default {
     }
   }, 15_000);
 
+  it('hard-fails standalone source check when isolated Knip resolution is missing', async () => {
+    const rootDir = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-cli-knip-missing-')),
+    );
+    const cliPath = await createIsolatedLiminaCli(rootDir);
+    const configPath = path.join(rootDir, 'limina.config.mjs');
+
+    try {
+      await writeText(
+        path.join(rootDir, 'pnpm-workspace.yaml'),
+        'packages:\n  - app\n',
+      );
+      await writeText(
+        path.join(rootDir, 'package.json'),
+        stringifyConfig({ name: 'root', private: true }),
+      );
+      await writeText(
+        path.join(rootDir, 'app/package.json'),
+        stringifyConfig({ name: '@example/app', private: true }),
+      );
+      await writeText(
+        configPath,
+        'export default { source: { knip: true } };\n',
+      );
+
+      let failure:
+        | { code?: number; stderr?: string; stdout?: string }
+        | undefined;
+      try {
+        await execFileAsync(
+          process.execPath,
+          [cliPath, '--config', configPath, 'source', 'check'],
+          {
+            cwd: rootDir,
+            env: { ...process.env, CI: 'true' },
+          },
+        );
+      } catch (error) {
+        failure = error as typeof failure;
+      }
+
+      expect(failure?.code).toBe(1);
+      const output = stripAnsi(
+        `${failure?.stdout ?? ''}\n${failure?.stderr ?? ''}`,
+      );
+      expect(output).toContain('Missing peer dependency "knip"');
+      expect(output).toContain('pnpm add -D knip');
+      expect(output).not.toContain('skipping check');
+      expect(output).not.toContain('Checked ');
+
+      const invocationId = /Standalone issue invocation: ([0-9a-f-]+)/u.exec(
+        output,
+      )?.[1];
+      expect(invocationId).toEqual(expect.any(String));
+      const invocation = JSON.parse(
+        await readFile(
+          path.join(
+            rootDir,
+            '.limina/check/invocations',
+            `${invocationId}.json`,
+          ),
+          'utf8',
+        ),
+      ) as { issues: { code: string; reason?: string; task?: string }[] };
+      expect(invocation.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_SOURCE_CHECK_FAILED',
+            reason: expect.stringContaining('Missing peer dependency "knip"'),
+            task: 'source:check',
+          }),
+        ]),
+      );
+
+      const sourceSnapshot = JSON.parse(
+        await readFile(
+          path.join(rootDir, '.limina/source-check/last-run.json'),
+          'utf8',
+        ),
+      ) as { issues: unknown[]; status: string };
+      expect(sourceSnapshot).toMatchObject({ issues: [], status: 'not-run' });
+
+      const query = await execFileAsync(
+        process.execPath,
+        [
+          cliPath,
+          '--config',
+          configPath,
+          'check',
+          '--issues',
+          '--invocation',
+          invocationId!,
+          '--format',
+          'json',
+        ],
+        {
+          cwd: rootDir,
+          env: { ...process.env, CI: 'true' },
+        },
+      );
+      const queryPayload = JSON.parse(query.stdout) as {
+        issues: { code: string; reason?: string; task?: string }[];
+      };
+      expect(queryPayload.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: 'LIMINA_SOURCE_CHECK_FAILED',
+            reason: expect.stringContaining('Missing peer dependency "knip"'),
+            task: 'source:check',
+          }),
+        ]),
+      );
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  }, 40_000);
+
   it('prints source and Proof issue filters from the last run', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-')),
@@ -2047,6 +2214,9 @@ export default {
                   preset: 'tsc',
                 },
               },
+            },
+            source: {
+              knip: true,
             },
           },
           null,

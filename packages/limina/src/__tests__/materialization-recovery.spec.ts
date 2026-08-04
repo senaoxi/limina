@@ -54,7 +54,6 @@ function createMaterializerChildScript(body: string): string {
     import.meta.url,
   ).href;
   return `
-    import { existsSync } from 'node:fs';
     import { writeFile } from 'node:fs/promises';
     const { materializeGeneratedArtifactPlan } = await import(${JSON.stringify(materializerModule)});
     const {
@@ -113,11 +112,13 @@ function createMaterializerChildScript(body: string): string {
   `;
 }
 
-function collectChildResult(child: ChildProcess): Promise<{
+interface ChildResult {
   code: number | null;
   stderr: string;
   stdout: string;
-}> {
+}
+
+function collectChildResult(child: ChildProcess): Promise<ChildResult> {
   let stderr = '';
   let stdout = '';
   child.stderr?.on('data', (chunk: Buffer | string) => {
@@ -127,8 +128,20 @@ function collectChildResult(child: ChildProcess): Promise<{
     stdout += chunk.toString();
   });
   return new Promise((resolve) => {
-    child.once('exit', (code) => resolve({ code, stderr, stdout }));
+    child.once('close', (code) => resolve({ code, stderr, stdout }));
   });
+}
+
+function expectChildSuccess(result: ChildResult): void {
+  const diagnostics = [result.stderr, result.stdout]
+    .filter((output) => output.length > 0)
+    .join('\n');
+  expect(
+    result.code,
+    diagnostics.length > 0
+      ? `Child process output:\n${diagnostics}`
+      : 'Child process exited without diagnostics',
+  ).toBe(0);
 }
 
 async function createFixture(): Promise<{
@@ -574,7 +587,6 @@ describe('generated artifact materialization recovery', () => {
   it('replans a different desired tree in a second independent materializer', async () => {
     const fixture = await createFixture();
     const writerReady = path.join(fixture.rootDir, 'writer-a-ready');
-    const writerRelease = path.join(fixture.rootDir, 'writer-a-release');
     const contenderReady = path.join(fixture.rootDir, 'writer-b-ready');
     const writerScript = createMaterializerChildScript(`
       const plan = await createPlan({ 'a-only.json': 'writer-a\\n' });
@@ -584,9 +596,7 @@ describe('generated artifact materialization recovery', () => {
           if (paused) return;
           paused = true;
           await writeFile(process.env.READY_PATH, 'ready\\n');
-          while (!existsSync(process.env.RELEASE_PATH)) {
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
+          await new Promise((resolve) => process.stdin.once('data', resolve));
         },
       });
     `);
@@ -612,11 +622,11 @@ describe('generated artifact materialization recovery', () => {
       ['--import', 'tsx', '--input-type=module', '--eval', writerScript],
       {
         ...childOptions,
+        stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
           GENERATION: '1',
           READY_PATH: writerReady,
-          RELEASE_PATH: writerRelease,
           ROOT_DIR: fixture.rootDir,
         },
       },
@@ -650,11 +660,11 @@ describe('generated artifact materialization recovery', () => {
         () => expect(access(contenderReady)).resolves.toBeUndefined(),
         { timeout: 5000 },
       );
-      await writeFile(writerRelease, 'release\n');
+      writer.stdin?.end('release\n');
 
-      await expect(writerResult).resolves.toMatchObject({ code: 0 });
+      expectChildSuccess(await writerResult);
       const second = await contenderResult;
-      expect(second).toMatchObject({ code: 0 });
+      expectChildSuccess(second);
       expect(JSON.parse(second.stdout)).toEqual({ replans: 1 });
       await expect(
         readFile(path.join(fixture.namespace.rootDir, 'b-only.json'), 'utf8'),
@@ -666,9 +676,9 @@ describe('generated artifact materialization recovery', () => {
         readFile(path.join(fixture.namespace.rootDir, 'manifest.json'), 'utf8'),
       ).resolves.toContain('b-only.json');
     } finally {
-      await writeFile(writerRelease, 'release\n').catch((error: unknown) =>
-        String(error),
-      );
+      if (writer.stdin !== null && !writer.stdin.writableEnded) {
+        writer.stdin.end('release\n');
+      }
       writer.kill('SIGKILL');
       contender?.kill('SIGKILL');
       await fixture.cleanup();

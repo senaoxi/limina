@@ -137,11 +137,11 @@ export default defineConfig({
 ## knip
 
 - **Type:** `boolean | SourceKnipCheckConfig`
-- **Default:** `true`
+- **Default:** disabled (`source.knip` omitted or set to `false`)
 
 `source.knip` controls the `Knip`-backed parts of `source:check`: unused workspace dependencies and unused source modules.
 
-Use `knip: true` or omit the option to use Limina's generated default `Knip` config. Use `knip: false` to skip these `Knip`-backed checks. Use an object to configure Limina's semantic `Knip` rules by workspace package name:
+Use `knip: true` to use Limina's generated default `Knip` config. Use `knip: false` or omit the option to disable these `Knip`-backed checks. Object form enables the checks and configures Limina's semantic `Knip` rules by workspace package name; the object must own a `workspaces` field. Use `{ workspaces: {} }` when no workspace-specific rules are needed:
 
 ```ts
 interface SourceKnipEntryConfig {
@@ -166,9 +166,11 @@ interface SourceKnipWorkspaceConfig {
 }
 
 interface SourceKnipCheckConfig {
-  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
+  workspaces: Record<string, SourceKnipWorkspaceConfig>;
 }
 ```
+
+`source.knip` accepts only `true`, `false`, or the object form above. An empty object, `null`, arrays, scalars, unknown fields, and a non-object `workspaces` value are invalid configuration.
 
 `source.knip.workspaces` keys are named source owners that remain in the current governed region, such as `@acme/app`. Unknown or excluded package names fail `source check`. Nameless workspace packages can still be source owners, but they cannot be configured under `source.knip.workspaces` because there is no stable package name `key`.
 
@@ -187,7 +189,7 @@ A static package script can override that default and give Limina a package-spec
 The `<config>` path is resolved from the package directory. It must be a `JSON` file inside the workspace. Managed scripts must point at a Limina-managed config whose output build module exists. Raw package-script configs must use `--raw --preset <tsc|tsgo|vue-tsc>`, stay inside the owning package directory, and never point at generated `.limina` configs. Limina supports only direct static forms such as `limina build tsconfig.json`, `limina build tsconfig.dts.json --raw --preset tsgo`, `pnpm limina build tsconfig.json`, and `pnpm exec limina build tsconfig.json`. Dynamic Shell scripts such as `limina build $CONFIG` are reported as unsupported.
 
 ::: warning
-`knip` is an optional peer dependency of Limina. If `source.knip` is enabled but `knip` is not installed in the workspace running Limina, Limina reports the Knip-backed portion as `skipped` and continues with the other source checks. A missing `knip` package alone therefore does not make `source check` exit non-zero. Install and verify `knip` explicitly in CI when unused-dependency and unused-module coverage is required.
+`knip` is an optional peer dependency of Limina. If `source.knip` is enabled but `knip` is not installed in the workspace running Limina, `source check` fails with a missing peer dependency error before source analysis starts. When `source.knip` is disabled, Limina does not resolve or run Knip. Install and verify `knip` explicitly in CI when unused-dependency and unused-module coverage is required.
 :::
 
 Limina disables `Knip`'s implicit `index` / `main` / `cli` entry guessing by writing `entry: []` for governed owner workspaces. Default reachability still includes package manifest entries (`exports`, `main`, `module`, `browser`, `bin`, `types`, `typings`), `Knip` plugin-discovered entries, package scripts, and Limina-generated virtual entries for application-style owners.

@@ -3178,6 +3178,7 @@ packages:
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
       }),
+      { source: { knip: true } },
     );
 
     try {
@@ -3192,6 +3193,7 @@ packages:
       createRootWorkspaceDependencyFiles({
         rootSource: 'export const value = 1;\n',
       }),
+      { source: { knip: true } },
     );
 
     try {
@@ -3278,6 +3280,7 @@ packages:
           },
         },
       }),
+      { source: { knip: true } },
     );
 
     try {
@@ -3366,44 +3369,166 @@ packages:
     }
   });
 
-  it('skips Knip-backed unused dependency checks when source.knip is false', async () => {
+  it.each([
+    { name: 'omitted', knip: undefined },
+    { name: 'false', knip: false },
+  ])('records disabled Knip phase for $name', async ({ knip }) => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: 'export const value = 1;\n',
       }),
-      {
-        source: {
-          knip: false,
-        },
-      },
+      knip === undefined ? {} : { source: { knip } },
     );
+    const resolveKnipCliPath = vi.fn(() => {
+      throw new Error('Knip resolver should not run while disabled.');
+    });
+    const knipRunner = vi.fn(async () => '{"issues":[]}');
+    let stats: LiminaCheckRunTaskStats | undefined;
+    const chunks: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: { CI: 'true' },
+      output: { write: (message) => chunks.push(message) },
+      stdout: { isTTY: false },
+    });
+    const sourceTask = flow.tree('source check');
+    sourceTask.start();
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(
+        runSourceCheck(fixture.config, {
+          knipRunner,
+          onStats: (nextStats) => {
+            stats = nextStats;
+          },
+          progress: createTaskProgressReporter(sourceTask),
+          report: { defer: true },
+          resolveKnipCliPath,
+        }),
+      ).resolves.toBe(true);
+
+      const knipItems = (stats?.items ?? []).filter(
+        (item) => item.name === 'knip source usage',
+      );
+      expect(knipItems).toHaveLength(1);
+      expect(knipItems[0]).toMatchObject({
+        checksPassed: 0,
+        checksTotal: 0,
+        issues: 0,
+        status: 'skipped',
+      });
+      expect(knipItems.some((item) => item.status === 'passed')).toBe(false);
+      expect(resolveKnipCliPath).not.toHaveBeenCalled();
+      expect(knipRunner).not.toHaveBeenCalled();
+      expect(stripAnsi(chunks.join(''))).toContain('source.knip is disabled');
+      expect(stripAnsi(chunks.join(''))).not.toContain('skipping check');
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('skips Knip-backed source usage when knip is not installed', async () => {
+  it('hard-fails before source run-state creation when enabled Knip is missing', async () => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource: "export { internalValue } from '@example/internal';\n",
       }),
+      { source: { knip: true } },
+    );
+    const resolveKnipCliPath = vi.fn(() => {
+      throw new LiminaOptionalToolMissingError({
+        command: 'source check',
+        error: new Error('Cannot find package "knip"'),
+        packageName: 'knip',
+      });
+    });
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          report: {
+            defer: true,
+          },
+          resolveKnipCliPath,
+        }),
+      ).rejects.toThrow('Missing peer dependency "knip"');
+      expect(resolveKnipCliPath).toHaveBeenCalledOnce();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('runs the enabled source precheck before generated graph preparation', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      { source: { knip: true } },
+    );
+    let generatedGraphCalled = false;
+    const resolveKnipCliPath = vi.fn(() => {
+      throw new LiminaOptionalToolMissingError({
+        command: 'source check',
+        error: new Error('Cannot find package "knip"'),
+        packageName: 'knip',
+      });
+    });
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          generatedGraphProvider: async () => {
+            generatedGraphCalled = true;
+            throw new Error('Generated graph should not run.');
+          },
+          report: { defer: true },
+          resolveKnipCliPath,
+        }),
+      ).rejects.toThrow('Missing peer dependency "knip"');
+      expect(generatedGraphCalled).toBe(false);
+      expect(resolveKnipCliPath).toHaveBeenCalledOnce();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('bypasses Knip resolution when an injected runner is provided', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      { source: { knip: true } },
+    );
+    const resolveKnipCliPath = vi.fn(() => {
+      throw new Error('Injected runner should bypass Knip resolution.');
+    });
+    const knipRunner = vi.fn(async () => '{"issues":[]}');
+
+    try {
+      await expect(
+        runSourceCheck(fixture.config, {
+          knipRunner,
+          report: { defer: true },
+          resolveKnipCliPath,
+        }),
+      ).resolves.toBe(true);
+      expect(resolveKnipCliPath).not.toHaveBeenCalled();
+      expect(knipRunner).toHaveBeenCalled();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('propagates a runtime Knip missing-tool failure instead of soft-skipping', async () => {
+    const fixture = await createFixture(
+      createWorkspacePackageFiles({
+        appSource: "export { internalValue } from '@example/internal';\n",
+      }),
+      { source: { knip: true } },
     );
     const chunks: string[] = [];
     const flow = new LiminaFlowReporter({
-      env: {
-        CI: 'true',
-      },
-      output: {
-        write: (message) => {
-          chunks.push(message);
-        },
-      },
-      stdout: {
-        isTTY: false,
-      },
+      env: { CI: 'true' },
+      output: { write: (message) => chunks.push(message) },
+      stdout: { isTTY: false },
     });
     const sourceTask = flow.tree('source check');
     let stats: LiminaCheckRunTaskStats | undefined;
@@ -3424,23 +3549,12 @@ packages:
             stats = nextStats;
           },
           progress: createTaskProgressReporter(sourceTask),
-          report: {
-            defer: true,
-          },
+          report: { defer: true },
         }),
-      ).resolves.toBe(true);
+      ).rejects.toThrow('Missing peer dependency "knip"');
 
-      expect(stripAnsi(chunks.join(''))).toContain(
-        '[skip] knip is not installed; skipping check',
-      );
-      expect(
-        stats?.items?.find((item) => item.name === 'knip source usage'),
-      ).toMatchObject({
-        checksPassed: 0,
-        checksTotal: 0,
-        issues: 0,
-        status: 'skipped',
-      });
+      expect(stripAnsi(chunks.join(''))).not.toContain('skipping check');
+      expect(stats).toBeUndefined();
     } finally {
       await fixture.cleanup();
     }
@@ -3503,10 +3617,9 @@ packages:
       {
         source: {
           knip: {
-            workspaces: [] as unknown as Record<
-              string,
-              SourceKnipWorkspaceConfig
-            >,
+            workspaces: {
+              '@example/app': [],
+            } as unknown as Record<string, SourceKnipWorkspaceConfig>,
           },
         },
       },
@@ -3603,6 +3716,7 @@ packages:
         },
         appSource: "export { internalValue } from '@example/internal';\n",
       }),
+      { source: { knip: true } },
     );
 
     try {
@@ -3654,13 +3768,16 @@ packages:
   });
 
   it('does not count workspace dependency usage from files unreachable from package entries', async () => {
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: 'export const value = 1;\n',
-      }),
-      'packages/app/src/dead.ts':
-        "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: 'export const value = 1;\n',
+        }),
+        'packages/app/src/dead.ts':
+          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
@@ -3670,18 +3787,21 @@ packages:
   });
 
   it('does not use Knip implicit index entry guessing', async () => {
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appManifest: {
-          exports: {
-            '.': './src/public.ts',
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appManifest: {
+            exports: {
+              '.': './src/public.ts',
+            },
           },
-        },
-        appSource:
-          "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
-      }),
-      'packages/app/src/public.ts': 'export const publicValue = 1;\n',
-    });
+          appSource:
+            "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
+        }),
+        'packages/app/src/public.ts': 'export const publicValue = 1;\n',
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
@@ -3717,6 +3837,7 @@ packages:
         },
         appSource: 'export const value = 1;\n',
       }),
+      { source: { knip: true } },
     );
 
     try {
@@ -3806,17 +3927,20 @@ packages:
 
   it('falls back to Knip default tsconfig when package build scripts do not declare a Knip tsconfig source', async () => {
     const invocations: KnipCliInvocation[] = [];
-    const fixture = await createFixture({
-      'app/package.json': stringifyConfig({
-        exports: {
-          '.': './src/index.ts',
-        },
-        name: '@example/app',
-        type: 'module',
-      }),
-      'app/src/index.ts': 'export const value = 1;\n',
-      'app/tsconfig.json': typecheckConfig(['src/**/*.ts']),
-    });
+    const fixture = await createFixture(
+      {
+        'app/package.json': stringifyConfig({
+          exports: {
+            '.': './src/index.ts',
+          },
+          name: '@example/app',
+          type: 'module',
+        }),
+        'app/src/index.ts': 'export const value = 1;\n',
+        'app/tsconfig.json': typecheckConfig(['src/**/*.ts']),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -3842,20 +3966,23 @@ packages:
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
-    const fixture = await createFixture({
-      'app/package.json': stringifyConfig({
-        exports: {
-          '.': './src/index.ts',
-        },
-        name: '@example/app',
-        scripts: {
-          build: 'limina build $CONFIG',
-        },
-        type: 'module',
-      }),
-      'app/src/index.ts': 'export const value = 1;\n',
-      'app/tsconfig.json': typecheckConfig(['src/**/*.ts']),
-    });
+    const fixture = await createFixture(
+      {
+        'app/package.json': stringifyConfig({
+          exports: {
+            '.': './src/index.ts',
+          },
+          name: '@example/app',
+          scripts: {
+            build: 'limina build $CONFIG',
+          },
+          type: 'module',
+        }),
+        'app/src/index.ts': 'export const value = 1;\n',
+        'app/tsconfig.json': typecheckConfig(['src/**/*.ts']),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -3880,83 +4007,86 @@ packages:
 
   it('mixes generated Knip tsconfig groups with default Knip tsconfig fallback groups', async () => {
     const invocations: KnipCliInvocation[] = [];
-    const fixture = await createFixture({
-      ...createWorkspaceRootFiles(),
-      'packages/app/package.json': stringifyConfig({
-        exports: {
-          '.': './dist/index.js',
-        },
-        name: '@example/app',
-        scripts: {
-          build: 'limina build tsconfig.dts.json --raw --preset tsc',
-        },
-        type: 'module',
-      }),
-      'packages/app/src/index.ts': 'export const appValue = 1;\n',
-      'packages/app/tsconfig.dts.json': buildConfig({
-        compilerOptions: {
-          outDir: './dist',
-          rootDir: './src',
-        },
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './dist/.tsbuildinfo',
-      }),
-      'packages/app/tsconfig.json': stringifyConfig({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
+    const fixture = await createFixture(
+      {
+        ...createWorkspaceRootFiles(),
+        'packages/app/package.json': stringifyConfig({
+          exports: {
+            '.': './dist/index.js',
           },
-        ],
-      }),
-      'packages/app/tsconfig.lib.dts.json': buildConfig({
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
-      }),
-      'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
-      'packages/tool/package.json': stringifyConfig({
-        exports: {
-          '.': './src/index.ts',
-        },
-        name: '@example/tool',
-        type: 'module',
-      }),
-      'packages/tool/src/index.ts': 'export const toolValue = 1;\n',
-      'packages/tool/tsconfig.json': stringifyConfig({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
+          name: '@example/app',
+          scripts: {
+            build: 'limina build tsconfig.dts.json --raw --preset tsc',
           },
-        ],
-      }),
-      'packages/tool/tsconfig.lib.dts.json': buildConfig({
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
-      }),
-      'packages/tool/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
-      'packages/cli/package.json': stringifyConfig({
-        exports: {
-          '.': './src/index.ts',
-        },
-        name: '@example/cli',
-        type: 'module',
-      }),
-      'packages/cli/src/index.ts': 'export const cliValue = 1;\n',
-      'packages/cli/tsconfig.json': stringifyConfig({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
+          type: 'module',
+        }),
+        'packages/app/src/index.ts': 'export const appValue = 1;\n',
+        'packages/app/tsconfig.dts.json': buildConfig({
+          compilerOptions: {
+            outDir: './dist',
+            rootDir: './src',
           },
-        ],
-      }),
-      'packages/cli/tsconfig.lib.dts.json': buildConfig({
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
-      }),
-      'packages/cli/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
-    });
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './dist/.tsbuildinfo',
+        }),
+        'packages/app/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/app/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        }),
+        'packages/app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+        'packages/tool/package.json': stringifyConfig({
+          exports: {
+            '.': './src/index.ts',
+          },
+          name: '@example/tool',
+          type: 'module',
+        }),
+        'packages/tool/src/index.ts': 'export const toolValue = 1;\n',
+        'packages/tool/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/tool/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        }),
+        'packages/tool/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+        'packages/cli/package.json': stringifyConfig({
+          exports: {
+            '.': './src/index.ts',
+          },
+          name: '@example/cli',
+          type: 'module',
+        }),
+        'packages/cli/src/index.ts': 'export const cliValue = 1;\n',
+        'packages/cli/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/cli/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        }),
+        'packages/cli/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -3989,63 +4119,66 @@ packages:
   });
 
   it('merges Knip results for workspaces using different generated Knip tsconfigs', async () => {
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appManifest: {
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appManifest: {
+            exports: {
+              '.': './dist/index.js',
+            },
+            scripts: {
+              build: 'limina build tsconfig.dts.json --raw --preset tsc',
+            },
+          },
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/tsconfig.dts.json': buildConfig({
+          compilerOptions: {
+            outDir: './dist',
+            rootDir: './src',
+          },
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './dist/.tsbuildinfo',
+        }),
+        'packages/tool/package.json': stringifyConfig({
+          dependencies: {
+            '@example/internal': 'workspace:*',
+          },
           exports: {
-            '.': './dist/index.js',
+            '.': './lib/index.js',
           },
+          name: '@example/tool',
           scripts: {
-            build: 'limina build tsconfig.dts.json --raw --preset tsc',
+            build: 'limina build tsconfig.custom.json --raw --preset tsc',
           },
-        },
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      'packages/app/tsconfig.dts.json': buildConfig({
-        compilerOptions: {
-          outDir: './dist',
-          rootDir: './src',
-        },
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './dist/.tsbuildinfo',
-      }),
-      'packages/tool/package.json': stringifyConfig({
-        dependencies: {
-          '@example/internal': 'workspace:*',
-        },
-        exports: {
-          '.': './lib/index.js',
-        },
-        name: '@example/tool',
-        scripts: {
-          build: 'limina build tsconfig.custom.json --raw --preset tsc',
-        },
-        type: 'module',
-      }),
-      'packages/tool/src/index.ts':
-        "export { internalValue } from '@example/internal';\n",
-      'packages/tool/tsconfig.custom.json': buildConfig({
-        compilerOptions: {
-          outDir: './lib',
-          rootDir: './src',
-        },
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './lib/.tsbuildinfo',
-      }),
-      'packages/tool/tsconfig.json': stringifyConfig({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
+          type: 'module',
+        }),
+        'packages/tool/src/index.ts':
+          "export { internalValue } from '@example/internal';\n",
+        'packages/tool/tsconfig.custom.json': buildConfig({
+          compilerOptions: {
+            outDir: './lib',
+            rootDir: './src',
           },
-        ],
-      }),
-      'packages/tool/tsconfig.lib.dts.json': buildConfig({
-        include: ['src/**/*.ts'],
-        tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
-      }),
-      'packages/tool/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
-    });
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './lib/.tsbuildinfo',
+        }),
+        'packages/tool/tsconfig.json': stringifyConfig({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/tool/tsconfig.lib.dts.json': buildConfig({
+          include: ['src/**/*.ts'],
+          tsBuildInfoFile: './.tsbuild/lib.tsbuildinfo',
+        }),
+        'packages/tool/tsconfig.lib.json': typecheckConfig(['src/**/*.ts']),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
@@ -4058,12 +4191,15 @@ packages:
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
+      },
+      { source: { knip: true } },
+    );
     const sourceIssues: SourceCheckIssue[] = [];
 
     try {
@@ -4108,6 +4244,7 @@ packages:
       createWorkspacePackageFiles({
         appSource: 'export const appValue = 1;\n',
       }),
+      { source: { knip: true } },
     );
     const sourceIssues: SourceCheckIssue[] = [];
 
@@ -4195,12 +4332,15 @@ packages:
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -4264,17 +4404,20 @@ packages:
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      'packages/app/src/dead-a.ts': 'export const deadA = 1;\n',
-      'packages/app/src/dead-b.ts': 'export const deadB = 1;\n',
-      'packages/app/src/dead-c.ts': 'export const deadC = 1;\n',
-      'packages/app/src/dead-d.ts': 'export const deadD = 1;\n',
-      'packages/app/src/dead-e.ts': 'export const deadE = 1;\n',
-      'packages/app/src/dead-f.ts': 'export const deadF = 1;\n',
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/dead-a.ts': 'export const deadA = 1;\n',
+        'packages/app/src/dead-b.ts': 'export const deadB = 1;\n',
+        'packages/app/src/dead-c.ts': 'export const deadC = 1;\n',
+        'packages/app/src/dead-d.ts': 'export const deadD = 1;\n',
+        'packages/app/src/dead-e.ts': 'export const deadE = 1;\n',
+        'packages/app/src/dead-f.ts': 'export const deadF = 1;\n',
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -4313,12 +4456,15 @@ packages:
       .mockImplementation(() => {});
     const longUnusedFilePath =
       'packages/app/src/features/really/deeply/nested/module/with/an/excessively/descriptive/generated-unused-component-entry-point.ts';
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      [longUnusedFilePath]: 'export const deadValue = 1;\n',
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        [longUnusedFilePath]: 'export const deadValue = 1;\n',
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -4351,14 +4497,17 @@ packages:
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      'packages/app/src/theme/button.ts': 'export const button = 1;\n',
-      'packages/app/src/theme/card.ts': 'export const card = 1;\n',
-      'packages/app/src/other.ts': 'export const other = 1;\n',
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/theme/button.ts': 'export const button = 1;\n',
+        'packages/app/src/theme/card.ts': 'export const card = 1;\n',
+        'packages/app/src/other.ts': 'export const other = 1;\n',
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(
@@ -4395,12 +4544,15 @@ packages:
     const errorSpy = vi
       .spyOn(SourceLogger, 'error')
       .mockImplementation(() => {});
-    const fixture = await createFixture({
-      ...createWorkspacePackageFiles({
-        appSource: "export { internalValue } from '@example/internal';\n",
-      }),
-      'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
-    });
+    const fixture = await createFixture(
+      {
+        ...createWorkspacePackageFiles({
+          appSource: "export { internalValue } from '@example/internal';\n",
+        }),
+        'packages/app/src/dead.ts': 'export const deadValue = 1;\n',
+      },
+      { source: { knip: true } },
+    );
 
     try {
       await expect(

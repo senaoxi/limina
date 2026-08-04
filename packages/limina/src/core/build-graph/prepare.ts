@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import {
   collectValidatedWorkspaceContext,
@@ -81,12 +81,14 @@ export async function prepareGeneratedTsconfigGraph(
     projectConfigCache: options.projectConfigCache,
     state,
   });
-  const generatedKnip = prepareGeneratedKnipPackageConfigs({
-    checkers,
-    config,
-    configToOutputBuildByChecker: state.configToOutputBuildByChecker,
-    workspacePackages: workspaceContext.packages,
-  });
+  const generatedKnip = isSourceKnipEnabled(config)
+    ? prepareGeneratedKnipPackageConfigs({
+        checkers,
+        config,
+        configToOutputBuildByChecker: state.configToOutputBuildByChecker,
+        workspacePackages: workspaceContext.packages,
+      })
+    : { configs: [], diagnostics: [] };
   await writeGeneratedGraphConfigs({
     checkers,
     config,
