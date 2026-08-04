@@ -13,6 +13,7 @@ import {
 } from './shared';
 import { validateSourceImportAuthorityConfig } from './source-authority';
 import { validateSourceDeclarationsConfig } from './source-declarations';
+import { validateSourceKnipConfig } from './source-knip';
 
 const liminaConfigKeys = new Set([
   'config',
@@ -45,6 +46,7 @@ function validateSourceConfig(
   });
   validateSourceImportAuthorityConfig(value.importAuthority, ctx);
   validateSourceDeclarationsConfig(value.declarations, ctx);
+  validateSourceKnipConfig(value.knip, ctx);
 }
 
 export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z

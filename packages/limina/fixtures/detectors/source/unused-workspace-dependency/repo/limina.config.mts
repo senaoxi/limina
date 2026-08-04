@@ -11,6 +11,6 @@ export default {
     detector: ['source:check'],
   },
   source: {
-    knip: {},
+    knip: { workspaces: {} },
   },
 };

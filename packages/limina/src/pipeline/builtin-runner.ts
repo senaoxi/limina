@@ -66,6 +66,7 @@ function createCommonCheckOptions(context: BuiltinRunContext) {
     preflight: context.options.preflight,
     progress: context.options.progress,
     providers: context.options.providers,
+    resolveKnipCliPath: context.options.resolveKnipCliPath,
     report: context.options.checkIssueReport,
   };
 }

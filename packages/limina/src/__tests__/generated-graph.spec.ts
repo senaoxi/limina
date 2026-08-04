@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import type { ResolvedLiminaConfig, SourceCheckConfig } from '#config/runner';
 import { resolveGeneratedGraphCheckers } from '#core/build-graph/runner';
 import { parseProject } from '#core/import-graph/context';
 import { normalizeAbsolutePath } from '#utils/path';
@@ -25,7 +25,10 @@ async function writeText(filePath: string, text: string): Promise<void> {
   await writeFile(filePath, text);
 }
 
-async function createFixture(files: Record<string, string>): Promise<{
+async function createFixture(
+  files: Record<string, string>,
+  options: { source?: SourceCheckConfig } = {},
+): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
   rootDir: string;
@@ -65,6 +68,7 @@ async function createFixture(files: Record<string, string>): Promise<{
       },
       configPath: path.join(rootDir, 'limina.config.mjs'),
       rootDir,
+      source: options.source,
     },
     rootDir,
   };
@@ -1321,42 +1325,45 @@ describe('prepareGeneratedTsconfigGraph', () => {
   });
 
   it('generates per-package Knip tsconfig entries from static package build scripts', async () => {
-    const fixture = await createFixture({
-      'package.json': json({
-        name: '@example/root',
-        private: true,
-        workspaces: ['packages/*'],
-      }),
-      'packages/pkg/package.json': json({
-        name: '@example/pkg',
-        scripts: {
-          build: 'limina build tsconfig.json',
-        },
-        type: 'module',
-      }),
-      'packages/pkg/src/index.ts': 'export const value = 1;\n',
-      'packages/pkg/tsconfig.json': json({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/pkg/package.json': json({
+          name: '@example/pkg',
+          scripts: {
+            build: 'limina build tsconfig.json',
           },
-        ],
-      }),
-      'packages/pkg/tsconfig.lib.json': json({
-        liminaOptions: {
-          outputs: {},
-        },
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          target: 'ES2023',
-          types: [],
-        },
-        include: ['src/**/*.ts'],
-      }),
-    });
+          type: 'module',
+        }),
+        'packages/pkg/src/index.ts': 'export const value = 1;\n',
+        'packages/pkg/tsconfig.json': json({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/pkg/tsconfig.lib.json': json({
+          liminaOptions: {
+            outputs: {},
+          },
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       const result = await prepareGeneratedTsconfigGraph(fixture.config);
@@ -1404,42 +1411,45 @@ describe('prepareGeneratedTsconfigGraph', () => {
   });
 
   it('accepts watch flags in static package build scripts', async () => {
-    const fixture = await createFixture({
-      'package.json': json({
-        name: '@example/root',
-        private: true,
-        workspaces: ['packages/*'],
-      }),
-      'packages/pkg/package.json': json({
-        name: '@example/pkg',
-        scripts: {
-          'build:watch': 'limina build tsconfig.json --preset tsc -w',
-        },
-        type: 'module',
-      }),
-      'packages/pkg/src/index.ts': 'export const value = 1;\n',
-      'packages/pkg/tsconfig.json': json({
-        files: [],
-        references: [
-          {
-            path: './tsconfig.lib.json',
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/pkg/package.json': json({
+          name: '@example/pkg',
+          scripts: {
+            'build:watch': 'limina build tsconfig.json --preset tsc -w',
           },
-        ],
-      }),
-      'packages/pkg/tsconfig.lib.json': json({
-        liminaOptions: {
-          outputs: {},
-        },
-        compilerOptions: {
-          module: 'ESNext',
-          moduleResolution: 'bundler',
-          strict: true,
-          target: 'ES2023',
-          types: [],
-        },
-        include: ['src/**/*.ts'],
-      }),
-    });
+          type: 'module',
+        }),
+        'packages/pkg/src/index.ts': 'export const value = 1;\n',
+        'packages/pkg/tsconfig.json': json({
+          files: [],
+          references: [
+            {
+              path: './tsconfig.lib.json',
+            },
+          ],
+        }),
+        'packages/pkg/tsconfig.lib.json': json({
+          liminaOptions: {
+            outputs: {},
+          },
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
+      },
+      { source: { knip: { workspaces: {} } } },
+    );
 
     try {
       const result = await prepareGeneratedTsconfigGraph(fixture.config);
@@ -1492,21 +1502,142 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it.each([
+    { name: 'omitted', source: undefined },
+    { name: 'false', source: { knip: false } },
+  ])('does not prepare Knip metadata when $name', async ({ source }) => {
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/pkg/package.json': json({
+          name: '@example/pkg',
+          scripts: {
+            build: 'limina build tsconfig.json',
+          },
+          type: 'module',
+        }),
+        'packages/pkg/src/index.ts': 'export const value = 1;\n',
+        'packages/pkg/tsconfig.json': json({
+          files: [],
+          references: [{ path: './tsconfig.lib.json' }],
+        }),
+        'packages/pkg/tsconfig.lib.json': json({
+          liminaOptions: { outputs: {} },
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
+      },
+      source === undefined ? {} : { source },
+    );
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+
+      expect(result.generatedKnipConfigs).toEqual([]);
+      expect(result.generatedKnipDiagnostics).toEqual([]);
+      expect(result.manifest.knip).toEqual({
+        diagnostics: [],
+        packages: [],
+      });
+      expect(
+        existsSync(
+          path.join(
+            fixture.rootDir,
+            '.limina/knip/packages/pkg/tsconfig.knip.json',
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('removes previously owned Knip files after disabling the feature', async () => {
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/pkg/package.json': json({
+          name: '@example/pkg',
+          scripts: {
+            build: 'limina build tsconfig.json',
+          },
+          type: 'module',
+        }),
+        'packages/pkg/src/index.ts': 'export const value = 1;\n',
+        'packages/pkg/tsconfig.json': json({
+          files: [],
+          references: [{ path: './tsconfig.lib.json' }],
+        }),
+        'packages/pkg/tsconfig.lib.json': json({
+          liminaOptions: { outputs: {} },
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'bundler',
+            strict: true,
+            target: 'ES2023',
+            types: [],
+          },
+          include: ['src/**/*.ts'],
+        }),
+      },
+      { source: { knip: true } },
+    );
+    const generatedPath = path.join(
+      fixture.rootDir,
+      '.limina/knip/packages/pkg/tsconfig.knip.json',
+    );
+
+    try {
+      await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(existsSync(generatedPath)).toBe(true);
+
+      fixture.config.source = { knip: false };
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(result.manifest.knip).toEqual({
+        diagnostics: [],
+        packages: [],
+      });
+      expect(existsSync(generatedPath)).toBe(false);
+      expect(result.manifest.ownedArtifacts).not.toContain(
+        '.limina/knip/packages/pkg/tsconfig.knip.json',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('records diagnostics for dynamic package build scripts without generating Knip configs', async () => {
-    const fixture = await createFixture({
-      'package.json': json({
-        name: '@example/root',
-        private: true,
-        workspaces: ['packages/*'],
-      }),
-      'packages/pkg/package.json': json({
-        name: '@example/pkg',
-        scripts: {
-          build: 'limina build $CONFIG',
-        },
-        type: 'module',
-      }),
-    });
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/pkg/package.json': json({
+          name: '@example/pkg',
+          scripts: {
+            build: 'limina build $CONFIG',
+          },
+          type: 'module',
+        }),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       const result = await prepareGeneratedTsconfigGraph(fixture.config);
@@ -1529,21 +1660,24 @@ describe('prepareGeneratedTsconfigGraph', () => {
   });
 
   it('records diagnostics for unsupported package build scripts without generating Knip configs', async () => {
-    const fixture = await createFixture({
-      'package.json': json({
-        name: '@example/root',
-        private: true,
-        workspaces: ['packages/*'],
-      }),
-      'packages/pkg/package.json': json({
-        name: '@example/pkg',
-        scripts: {
-          build: 'pnpm run limina build tsconfig.json',
-          'build:checker': 'limina build tsconfig.json --checker tsgo',
-        },
-        type: 'module',
-      }),
-    });
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/pkg/package.json': json({
+          name: '@example/pkg',
+          scripts: {
+            build: 'pnpm run limina build tsconfig.json',
+            'build:checker': 'limina build tsconfig.json --checker tsgo',
+          },
+          type: 'module',
+        }),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       const result = await prepareGeneratedTsconfigGraph(fixture.config);
@@ -1572,28 +1706,31 @@ describe('prepareGeneratedTsconfigGraph', () => {
   });
 
   it('records diagnostics for raw package build scripts that leave the package owner', async () => {
-    const fixture = await createFixture({
-      'package.json': json({
-        name: '@example/root',
-        private: true,
-        workspaces: ['packages/*'],
-      }),
-      'packages/app/package.json': json({
-        name: '@example/app',
-        scripts: {
-          build:
-            'limina build ../internal/tsconfig.raw.json --raw --preset tsc',
-        },
-        type: 'module',
-      }),
-      'packages/internal/package.json': json({
-        name: '@example/internal',
-        type: 'module',
-      }),
-      'packages/internal/tsconfig.raw.json': json({
-        include: ['src/**/*.ts'],
-      }),
-    });
+    const fixture = await createFixture(
+      {
+        'package.json': json({
+          name: '@example/root',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+        'packages/app/package.json': json({
+          name: '@example/app',
+          scripts: {
+            build:
+              'limina build ../internal/tsconfig.raw.json --raw --preset tsc',
+          },
+          type: 'module',
+        }),
+        'packages/internal/package.json': json({
+          name: '@example/internal',
+          type: 'module',
+        }),
+        'packages/internal/tsconfig.raw.json': json({
+          include: ['src/**/*.ts'],
+        }),
+      },
+      { source: { knip: true } },
+    );
 
     try {
       const result = await prepareGeneratedTsconfigGraph(fixture.config);

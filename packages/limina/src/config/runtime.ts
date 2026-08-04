@@ -13,6 +13,18 @@ import type {
   LiminaConfigFnPromise,
 } from './root-types';
 
+function isSourceKnipConfig(value: unknown): boolean {
+  return typeof value === 'object' && value !== null;
+}
+
+export function isSourceKnipEnabled(
+  config: Pick<LiminaConfig, 'source'>,
+): boolean {
+  const knip = config.source?.knip;
+  if (knip === true) return true;
+  return isSourceKnipConfig(knip);
+}
+
 export function isAutoCheckerConfigMode(
   checkers: CheckerConfigMode | undefined,
 ): checkers is AutoCheckerConfig {

@@ -2,7 +2,9 @@ import {
   defineConfig,
   getActiveCheckers,
   isAutoCheckerConfigMode,
+  isSourceKnipEnabled,
   loadConfig,
+  type SourceKnipCheckConfig,
   validateLiminaConfig,
 } from '#config/runner';
 import { prepareGeneratedTsconfigGraph } from '#core/build-graph/runner';
@@ -527,6 +529,120 @@ describe('defineConfig', () => {
         },
       },
     });
+  });
+});
+
+describe('source.knip configuration contract', () => {
+  const validConfigs: {
+    name: string;
+    value: boolean | SourceKnipCheckConfig | undefined;
+  }[] = [
+    { name: 'omitted', value: undefined },
+    { name: 'false', value: false },
+    { name: 'true', value: true },
+    { name: 'empty workspaces', value: { workspaces: {} } },
+    {
+      name: 'workspace rules',
+      value: {
+        workspaces: {
+          '@example/app': {
+            entry: [
+              {
+                files: ['src/**/*.spec.ts'],
+                reason: 'Tests are loaded directly.',
+              },
+            ],
+          },
+        },
+      },
+    },
+  ];
+
+  it.each(validConfigs)('accepts $name', ({ value }) => {
+    expect(() =>
+      validateLiminaConfig(
+        value === undefined ? {} : { source: { knip: value } },
+      ),
+    ).not.toThrow();
+  });
+
+  it.each([
+    {
+      name: 'missing workspaces',
+      value: {},
+      error:
+        'source.knip.workspaces is required when source.knip uses object form',
+    },
+    {
+      name: 'null',
+      value: null,
+      error:
+        'source.knip must be true, false, or an object containing workspaces',
+    },
+    {
+      name: 'array',
+      value: [],
+      error:
+        'source.knip must be true, false, or an object containing workspaces',
+    },
+    {
+      name: 'string',
+      value: 'true',
+      error:
+        'source.knip must be true, false, or an object containing workspaces',
+    },
+    {
+      name: 'number',
+      value: 1,
+      error:
+        'source.knip must be true, false, or an object containing workspaces',
+    },
+    {
+      name: 'undefined workspaces',
+      value: { workspaces: undefined },
+      error:
+        'source.knip.workspaces must be an object keyed by workspace package name',
+    },
+    {
+      name: 'array workspaces',
+      value: { workspaces: [] },
+      error:
+        'source.knip.workspaces must be an object keyed by workspace package name',
+    },
+    {
+      name: 'unknown field',
+      value: { unknown: true },
+      error: 'unknown source.knip config field',
+    },
+    {
+      name: 'unknown field alongside workspaces',
+      value: { workspaces: {}, unknown: true },
+      error: 'unknown source.knip config field',
+    },
+  ])('rejects $name', ({ value, error }) => {
+    expect(() =>
+      validateLiminaConfig({ source: { knip: value } } as never),
+    ).toThrow(error);
+  });
+
+  it('uses one helper for the four enablement states', () => {
+    expect(isSourceKnipEnabled({})).toBe(false);
+    expect(isSourceKnipEnabled({ source: { knip: false } })).toBe(false);
+    expect(isSourceKnipEnabled({ source: { knip: true } })).toBe(true);
+    expect(isSourceKnipEnabled({ source: { knip: { workspaces: {} } } })).toBe(
+      true,
+    );
+  });
+
+  it('enables a schema-valid object with a custom toStringTag', () => {
+    const knip: SourceKnipCheckConfig = { workspaces: {} };
+    Object.defineProperty(knip, Symbol.toStringTag, {
+      configurable: true,
+      value: 'CustomKnip',
+    });
+
+    expect(() => validateLiminaConfig({ source: { knip } })).not.toThrow();
+    expect(isSourceKnipEnabled({ source: { knip } })).toBe(true);
   });
 });
 

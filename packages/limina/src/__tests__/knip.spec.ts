@@ -83,6 +83,18 @@ describe('resolveKnipCliPath', () => {
       'Missing peer dependency "knip" required by limina source check.',
     );
   });
+
+  it('reports a resolved but missing Knip CLI path as a missing peer dependency', () => {
+    const entryPath = path.join(
+      tmpdir(),
+      'limina-knip-missing',
+      'node_modules/knip/dist/index.js',
+    );
+
+    expect(() => resolveKnipCliPath(() => entryPath)).toThrow(
+      'Missing peer dependency "knip" required by limina source check.',
+    );
+  });
 });
 
 describe('collectKnipSourceIssues', () => {

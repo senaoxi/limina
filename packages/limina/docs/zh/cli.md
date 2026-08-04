@@ -263,7 +263,7 @@ pnpm exec limina source check --scope 'packages/app/**' --verbose
 
 它检查源码文件是否属于 `pnpm` 工作区源码拥有者，非聚合型 `tsconfig` 是否混合多个源码拥有者，普通相对导入是否越过最近的 `package.json` 包边界，裸包导入是否由最近的源码拥有者或显式规则授权，`#...` 包导入是否保持在声明包范围内，以及 `Knip` 支撑的源码使用情况。
 
-`Knip` 相关检查依赖 `knip` 这个对等依赖，并受 `source.knip` 配置影响。关闭或调整 `Knip` 配置只影响这部分源码使用检查，不会关闭图检查、覆盖证明检查或检查器执行。
+`Knip` 相关检查依赖 `knip` 这个对等依赖，只有在 `source.knip` 明确写为 `true` 或拥有 `workspaces` 的对象时才运行。省略 `source.knip` 或写为 `false` 会关闭这部分源码使用检查，但不会关闭图检查、覆盖证明检查或检查器执行。启用后缺少 `knip` 对等依赖，会在源码分析开始前让 `source check` 失败。
 
 `source check` 不替代 `ESLint`、测试框架或运行时检查。它主要把源码归属、包边界和依赖声明关系转化为可过滤的问题报告。
 
@@ -372,7 +372,8 @@ pnpm exec limina release check --package @scope/pkg --verbose
 | `No package checks are enabled`                                                         | 选中的包条目没有启用任何包检查                             | 检查 `package.entries[].checks`，或移除不需要的包检查任务                                                                     |
 | `outDir package.json not found`                                                         | 包产物尚未构建，或 `outDir` 配置不正确                     | 先运行项目构建，再检查 `package.entries[].outDir`                                                                             |
 | `Missing peer dependency ...`                                                           | 已配置的检查器或已启用的发布集成未安装                     | 按报告提示安装对应依赖，例如 `typescript`、`vue-tsc`、`@typescript/native-preview`、`svelte-check` 或 `npm-package-json-lint` |
-| `knip`、`publint` 或 `@arethetypeswrong/core` is not installed; skipping check          | 已启用的可选 analyzer 未安装                               | CI 要求这类覆盖时应安装对应 analyzer；单独发生 skip 不会让命令以非零状态退出                                                  |
+| `publint` 或 `@arethetypeswrong/core` is not installed; skipping check                  | 已启用的可选发布 analyzer 未安装                           | CI 要求这类覆盖时应安装对应 analyzer；单独发生 skip 不会让命令以非零状态退出                                                  |
+| `source.knip` is enabled but `knip` is not installed                                    | 已明确启用的 Knip 源码使用功能缺少对等依赖                 | 安装 `knip`，或将 `source.knip` 设为 `false`/省略以关闭该功能                                                                 |
 | `limina check --task, --checker, --format, --invocation, and --limit require --issues.` | 把 snapshot 查询选项用于重新检查命令                       | 添加 `--issues`，或移除这些查询选项                                                                                           |
 | `limina check --issues does not accept a pipeline name.`                                | `--issues` 读取最近快照，不运行流水线                      | 使用 `limina check --issues`，不要加流水线名                                                                                  |
 | `Invalid check --issues --limit ...`                                                    | limit 为零、负数、小数、指数写法、非数字或超出安全整数范围 | 使用十进制正整数或 `all`                                                                                                      |

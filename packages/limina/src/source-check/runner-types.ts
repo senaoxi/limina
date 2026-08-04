@@ -18,6 +18,7 @@ export interface RunSourceCheckOptions {
   generatedGraphProvider?: () => Promise<GeneratedTsconfigGraphResult>;
   issues?: LiminaCheckIssue[];
   knipRunner?: KnipCliRunner;
+  resolveKnipCliPath?: () => string;
   onStats?: (stats: LiminaCheckRunTaskStats) => void;
   onSourceSnapshot?: (issues: readonly SourceCheckIssue[]) => void;
   preflight?: LiminaPreflightManager;

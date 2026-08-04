@@ -178,7 +178,7 @@ No matching entry reports `Unauthorized package import specifier:` and points to
 
 ### Knip-Backed Usage Analysis Is an Auxiliary Signal
 
-`source:check` can use `Knip`-backed analysis results to report two categories:
+When `source.knip` is explicitly enabled with `true` or an object containing `workspaces`, `source:check` can use `Knip`-backed analysis results to report two categories:
 
 - workspace dependencies that are declared but not used by source;
 - source modules unreachable from package entries, binary entries, scripts, plugin entries, or explicitly configured extra entries.

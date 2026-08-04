@@ -1,4 +1,4 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
+import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../../check-reporting/stats';
@@ -29,10 +29,6 @@ interface KnipValidationOptions {
 
 interface PreparedKnipAnalysis {
   plan: KnipAnalysisPlan;
-}
-
-function isKnipEnabled(config: ResolvedLiminaConfig): boolean {
-  return config.source?.knip !== false;
 }
 
 function hasKnipWork(plan: KnipAnalysisPlan): boolean {
@@ -105,7 +101,7 @@ async function runPreparedKnipAnalysis(options: {
 export async function addKnipBackedSourceProblems(
   options: KnipValidationOptions,
 ): Promise<void> {
-  if (!isKnipEnabled(options.config)) {
+  if (!isSourceKnipEnabled(options.config)) {
     return;
   }
 
