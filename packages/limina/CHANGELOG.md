@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-04
+
+### Features
+
+- feat(limina): make knip source checks explicit opt-in ([fb7719ff](https://github.com/senaoxi/docs-islands/commit/fb7719ff))
+
+### Bug Fixes
+
+- fix(limina): preserve shell command during CLI screen clearing ([aea5a7b7](https://github.com/senaoxi/docs-islands/commit/aea5a7b7))
+- fix(limina): avoid blank lines after migration removes fields ([7c7e67ed](https://github.com/senaoxi/docs-islands/commit/7c7e67ed))
+
 ## [0.2.2] - 2026-08-01
 
 ### Features
