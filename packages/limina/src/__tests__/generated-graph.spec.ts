@@ -191,6 +191,217 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('does not override explicitly configured typeRoots in generated declarations', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/custom-types/index.d.ts': 'declare const custom: true;\n',
+      'packages/pkg/node_modules/placeholder/index.d.ts': 'export {};\n',
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          typeRoots: ['./custom-types'],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(generatedConfigPath).toBeDefined();
+      if (generatedConfigPath === undefined) return;
+
+      const generatedConfig = JSON.parse(
+        await readFile(generatedConfigPath, 'utf8'),
+      ) as { compilerOptions: Record<string, unknown> };
+      expect(generatedConfig.compilerOptions.typeRoots).toBeUndefined();
+      expect(
+        parseProject(fixture.config, generatedConfigPath).options.typeRoots,
+      ).toEqual([
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/custom-types'),
+        ),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves the nearest inherited typeRoots without merging the chain', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/base-a.json': json({
+        extends: './base-b.json',
+      }),
+      'packages/pkg/base-b.json': json({
+        compilerOptions: {
+          typeRoots: ['./base-b-types'],
+        },
+        extends: './root.json',
+      }),
+      'packages/pkg/base-b-types/index.d.ts': 'declare const baseB: true;\n',
+      'packages/pkg/node_modules/placeholder/index.d.ts': 'export {};\n',
+      'packages/pkg/root-types/index.d.ts': 'declare const root: true;\n',
+      'packages/pkg/root.json': json({
+        compilerOptions: {
+          typeRoots: ['./root-types'],
+        },
+      }),
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        extends: './base-a.json',
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(generatedConfigPath).toBeDefined();
+      if (generatedConfigPath === undefined) return;
+
+      const generatedConfig = JSON.parse(
+        await readFile(generatedConfigPath, 'utf8'),
+      ) as { compilerOptions: Record<string, unknown> };
+      expect(generatedConfig.compilerOptions.typeRoots).toBeUndefined();
+      expect(
+        parseProject(fixture.config, generatedConfigPath).options.typeRoots,
+      ).toEqual([
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/base-b-types'),
+        ),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps an explicitly empty typeRoots array disabled in generated declarations', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/node_modules/placeholder/index.d.ts': 'export {};\n',
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          typeRoots: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(generatedConfigPath).toBeDefined();
+      if (generatedConfigPath === undefined) return;
+
+      const generatedConfig = JSON.parse(
+        await readFile(generatedConfigPath, 'utf8'),
+      ) as { compilerOptions: Record<string, unknown> };
+      expect(generatedConfig.compilerOptions.typeRoots).toBeUndefined();
+      expect(
+        parseProject(fixture.config, generatedConfigPath).options.typeRoots,
+      ).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('orders standard @types roots before bare node_modules fallbacks', async () => {
+    const fixture = await createFixture({
+      'node_modules/@types/root/index.d.ts': 'export {};\n',
+      'node_modules/root-package/index.d.ts': 'export {};\n',
+      'packages/pkg/node_modules/@types/local/index.d.ts': 'export {};\n',
+      'packages/pkg/node_modules/vite/client.d.ts': 'export {};\n',
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(generatedConfigPath).toBeDefined();
+      if (generatedConfigPath === undefined) return;
+
+      const generatedConfig = JSON.parse(
+        await readFile(generatedConfigPath, 'utf8'),
+      ) as { compilerOptions: { typeRoots?: string[] } };
+      expect(
+        generatedConfig.compilerOptions.typeRoots?.map((typeRoot) =>
+          normalizeAbsolutePath(
+            path.resolve(path.dirname(generatedConfigPath), typeRoot),
+          ),
+        ),
+      ).toEqual([
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/node_modules/@types'),
+        ),
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/node_modules'),
+        ),
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'node_modules/@types'),
+        ),
+        normalizeAbsolutePath(path.join(fixture.rootDir, 'node_modules')),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('does not register a truly empty leaf as a generated project', async () => {
     const fixture = await createFixture({
       'packages/pkg/package.json': json({

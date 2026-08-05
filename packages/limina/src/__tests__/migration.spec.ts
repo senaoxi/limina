@@ -18,7 +18,7 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createLiminaCli } from '../cli';
 import { runMigration } from '../commands/migration';
-import { toPortablePaths } from './helpers/path';
+import { createFixturePathResolver, toPortablePaths } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
 const nestedPackageSchemaPath =
@@ -49,6 +49,7 @@ async function removeFixtureDirectory(rootDir: string): Promise<void> {
 
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
+  path: (...segments: string[]) => string;
   rootDir: string;
 }> {
   const rootDir = await realpath(
@@ -70,6 +71,7 @@ async function createFixture(files: Record<string, string>): Promise<{
 
   return {
     cleanup: () => removeFixtureDirectory(rootDir),
+    path: createFixturePathResolver(rootDir),
     rootDir,
   };
 }
@@ -1127,7 +1129,7 @@ describe('runMigration', () => {
       const content = await readFile(configPath, 'utf8');
       await writeText(
         configPath,
-        content.replace('__FIXTURE_ROOT__', fixture.rootDir),
+        content.replace('__FIXTURE_ROOT__/dist', fixture.path('dist')),
       );
       await commitFixture(fixture.rootDir);
       await expect(runMigration(config)).resolves.toMatchObject({
@@ -1170,7 +1172,7 @@ describe('runMigration', () => {
       const content = await readFile(configPath, 'utf8');
       await writeText(
         configPath,
-        content.replace('__FIXTURE_ROOT__', fixture.rootDir),
+        content.replace('__FIXTURE_ROOT__/types', fixture.path('types')),
       );
       await commitFixture(fixture.rootDir);
       const before = await readFile(configPath);

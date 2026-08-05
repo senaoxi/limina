@@ -27,6 +27,29 @@ function isPortableTypeName(typeName: unknown): boolean {
   return !typeName.startsWith('./') && !typeName.startsWith('../');
 }
 
+function createGeneratedTypeRootOverrides(options: {
+  config: ResolvedLiminaConfig;
+  project: SourceProject;
+}): Record<string, unknown> {
+  if (options.project.options.typeRoots !== undefined) {
+    return {};
+  }
+
+  const typeRoots = collectTypeRootCandidates({
+    rootDir: options.config.rootDir,
+    sourceConfigPath: options.project.configPath,
+  });
+  if (typeRoots.length === 0) {
+    return {};
+  }
+
+  return {
+    typeRoots: typeRoots.map((typeRoot) =>
+      createRelativePath(options.project.dtsConfigPath, typeRoot),
+    ),
+  };
+}
+
 export function createGeneratedCompilerOptionOverrides(options: {
   config: ResolvedLiminaConfig;
   project: SourceProject;
@@ -41,15 +64,7 @@ export function createGeneratedCompilerOptionOverrides(options: {
     output.types = types.filter(isPortableTypeName);
   }
 
-  const typeRoots = collectTypeRootCandidates({
-    rootDir: options.config.rootDir,
-    sourceConfigPath: options.project.configPath,
-  });
-  if (typeRoots.length > 0) {
-    output.typeRoots = typeRoots.map((typeRoot) =>
-      createRelativePath(options.project.dtsConfigPath, typeRoot),
-    );
-  }
+  Object.assign(output, createGeneratedTypeRootOverrides(options));
 
   return output;
 }

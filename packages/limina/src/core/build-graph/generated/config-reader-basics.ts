@@ -137,7 +137,7 @@ function collectAncestorDirectories(
 
 function getTypeRootCandidates(directory: string): string[] {
   const nodeModulesDir = path.join(directory, 'node_modules');
-  return [nodeModulesDir, path.join(nodeModulesDir, '@types')];
+  return [path.join(nodeModulesDir, '@types'), nodeModulesDir];
 }
 
 export function collectTypeRootCandidates(options: {
