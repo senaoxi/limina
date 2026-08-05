@@ -1,4 +1,5 @@
 import type { JsonObject } from '#core/tsconfig/actions';
+import type ts from 'typescript';
 import type { LiminaFlowReporter } from '../../flow';
 import type { PreflightCapableOptions } from '../../preflight';
 import type { MigrationCleanupWarning } from './transaction';
@@ -29,9 +30,15 @@ export interface MigrationEntryCollection {
   mode: 'auto' | 'explicit';
 }
 
+export interface MigrationEffectiveConfig {
+  fileNames: string[];
+  options: ts.CompilerOptions;
+}
+
 export interface MigrationTarget {
   configObject: JsonObject;
   configPath: string;
+  effectiveConfig: MigrationEffectiveConfig;
   isSolutionStyle: boolean;
   originalBytes: Buffer;
   originalContent: string;

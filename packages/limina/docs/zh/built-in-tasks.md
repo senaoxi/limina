@@ -71,7 +71,7 @@ Limina 的治理建立在生成图之上。生成图来自普通源码 `tsconfig
 - 生成清单；
 - 供源码使用分析使用的生成配置。
 
-生成的声明构建配置会继承对应源码配置，并写入适合声明构建的选项，例如 `composite`、`incremental`、`declaration`、`emitDeclarationOnly`、`noEmit: false`、`rootDir`、`outDir` 和 `tsBuildInfoFile`。
+生成的声明构建配置会继承对应源码配置，并写入适合声明构建的选项，例如 `composite`、`incremental`、`declaration`、`emitDeclarationOnly`、`noEmit: false`、`rootDir`、`outDir`、`declarationDir` 和 `tsBuildInfoFile`。生成配置中的 `outDir` 与 `declarationDir` 始终是同一个 Limina 受管根目录。
 
 这不是在扩展 `TypeScript` 项目引用本身的表达能力。更准确地说，Limina 把“哪些源码关系应该进入 `references` 图”这件事从人工判断和手写维护，转成由源码导入、配置入口和显式例外共同生成，再由检查任务验证。
 

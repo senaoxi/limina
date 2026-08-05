@@ -5,9 +5,13 @@ import {
 } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
+import {
+  planDeclarationDir,
+  readExistingOutputOptions,
+} from './declaration-dir';
 import { applyMigratedTsconfigText } from './text-transform';
 import type { MigrationWritePlanItem } from './transaction';
-import type { MigrationTarget } from './types';
+import type { MigrationEffectiveConfig, MigrationTarget } from './types';
 
 type CompilerOutputField = 'declarationMap' | 'outDir' | 'rootDir' | 'target';
 
@@ -25,6 +29,12 @@ const governedCompilerOptionFields = [
   'noEmit',
   'tsBuildInfoFile',
 ] as const;
+
+function getEffectiveConfig(
+  effectiveConfig: MigrationEffectiveConfig | undefined,
+): MigrationEffectiveConfig {
+  return effectiveConfig ?? { fileNames: [], options: {} };
+}
 
 function assertPlainObjectField(options: {
   configPath: string;
@@ -107,15 +117,13 @@ function removeGovernedCompilerOptions(
   }
 }
 
-function migrateCompilerOptions(options: {
+function readDirectCompilerOptions(options: {
   configPath: string;
   rootDir: string;
   tsconfig: JsonObject;
 }): Record<string, unknown> {
-  if (options.tsconfig.compilerOptions === undefined) {
-    return {};
-  }
-  const compilerOptions = {
+  if (options.tsconfig.compilerOptions === undefined) return {};
+  return {
     ...assertPlainObjectField({
       configPath: options.configPath,
       field: 'compilerOptions',
@@ -123,14 +131,50 @@ function migrateCompilerOptions(options: {
       value: options.tsconfig.compilerOptions,
     }),
   };
-  const movedOutputs = moveCompilerOutputs(compilerOptions);
-  removeGovernedCompilerOptions(compilerOptions);
+}
+
+function applyDeclarationDirPlan(
+  compilerOptions: Record<string, unknown>,
+  removeDeclarationDir: boolean,
+): void {
+  if (removeDeclarationDir) delete compilerOptions.declarationDir;
+}
+
+function writeCompilerOptions(
+  tsconfig: JsonObject,
+  compilerOptions: Record<string, unknown>,
+): void {
   if (Object.keys(compilerOptions).length === 0) {
-    delete options.tsconfig.compilerOptions;
-  } else {
-    options.tsconfig.compilerOptions = compilerOptions;
+    delete tsconfig.compilerOptions;
+    return;
   }
-  return movedOutputs;
+  tsconfig.compilerOptions = compilerOptions;
+}
+
+function migrateCompilerOptions(options: {
+  configPath: string;
+  effectiveConfig: MigrationEffectiveConfig;
+  isSolutionStyle: boolean;
+  rootDir: string;
+  tsconfig: JsonObject;
+}): { movedOutputs: Record<string, unknown> } {
+  const compilerOptions = readDirectCompilerOptions(options);
+  const directOutDir = compilerOptions.outDir;
+  const movedOutputs = moveCompilerOutputs(compilerOptions);
+  const plan = planDeclarationDir({
+    compilerOptions,
+    configPath: options.configPath,
+    directOutDir,
+    effectiveConfig: options.effectiveConfig,
+    existingOutputs: readExistingOutputOptions(options.tsconfig),
+    isSolutionStyle: options.isSolutionStyle,
+    movedOutputs,
+    rootDir: options.rootDir,
+  });
+  removeGovernedCompilerOptions(compilerOptions);
+  applyDeclarationDirPlan(compilerOptions, plan.removeDeclarationDir);
+  writeCompilerOptions(options.tsconfig, compilerOptions);
+  return { movedOutputs: plan.movedOutputs };
 }
 
 function removeSourceReferences(
@@ -161,19 +205,22 @@ function applySchema(options: {
 export function migrateTsconfigObject(options: {
   configObject: JsonObject;
   configPath: string;
+  effectiveConfig?: MigrationEffectiveConfig;
   isSolutionStyle: boolean;
   rootDir: string;
 }): JsonObject {
   const nextConfig: JsonObject = { ...options.configObject };
-  const movedOutputs = migrateCompilerOptions({
+  const migration = migrateCompilerOptions({
     configPath: options.configPath,
+    effectiveConfig: getEffectiveConfig(options.effectiveConfig),
+    isSolutionStyle: options.isSolutionStyle,
     rootDir: options.rootDir,
     tsconfig: nextConfig,
   });
   if (!options.isSolutionStyle) {
     mergeOutputOptions({
       configPath: options.configPath,
-      movedOutputs,
+      movedOutputs: migration.movedOutputs,
       rootDir: options.rootDir,
       tsconfig: nextConfig,
     });
@@ -189,6 +236,7 @@ export function migrateTsconfigObject(options: {
 function migrateTsconfigText(options: {
   configObject: JsonObject;
   configPath: string;
+  effectiveConfig?: MigrationEffectiveConfig;
   isSolutionStyle: boolean;
   originalContent: string;
   rootDir: string;
@@ -209,6 +257,7 @@ export function createMigrationWritePlanItem(options: {
   const nextContent = migrateTsconfigText({
     configObject: options.target.configObject,
     configPath: options.target.configPath,
+    effectiveConfig: options.target.effectiveConfig,
     isSolutionStyle: options.target.isSolutionStyle,
     originalContent: options.target.originalContent,
     rootDir: options.config.rootDir,

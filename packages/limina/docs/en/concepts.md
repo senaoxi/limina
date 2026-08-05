@@ -110,6 +110,7 @@ Project-level declaration build configs extend the corresponding source config a
     "declarationMap": false,
     "rootDir": "...",
     "outDir": "...",
+    "declarationDir": "...",
     "tsBuildInfoFile": "...",
   },
   "liminaOptions": {
@@ -120,7 +121,7 @@ Project-level declaration build configs extend the corresponding source config a
 }
 ```
 
-Declaration files are written under `.limina/dts/checkers/<checker>/...`, and build cache files are written under `.limina/tsbuildinfo/checkers/<checker>/...`. These paths are Limina internal outputs. Do not edit them by hand, and do not write them into user-maintained source configs.
+Declaration files are written under `.limina/dts/checkers/<checker>/...`, and build cache files are written under `.limina/tsbuildinfo/checkers/<checker>/...`. Generated declaration configs set both `outDir` and `declarationDir` to that same managed root, so an inherited source `declarationDir` cannot redirect the checker output. These paths are Limina internal outputs. Do not edit them by hand, and do not write them into user-maintained source configs.
 
 Generated `references` come from two kinds of facts: a source import resolves through `TypeScript` to a Limina-managed source provider, or a source config explicitly declares `liminaOptions.implicitRefs`. If an import resolves to a `.d.ts`-family declaration file, Limina treats it as declaration consumption, not a source project reference.
 
@@ -149,6 +150,8 @@ pnpm exec limina build packages/core/tsconfig.lib.json
 ```
 
 Limina generates output build configs under `.limina/tsconfig/checkers/<checker>/outputs/...` and executes them with a build-capable checker. Output build cache files are written under `.limina/tsbuildinfo/build/...` and are managed by Limina. A source config without `liminaOptions.outputs` cannot be used as a managed artifact build target for `limina build <config>`. If you only want to invoke a checker directly on a raw config, use `limina build <config> --raw --preset <tsc|tsgo|vue-tsc>`.
+
+The generated user-output config sets both `outDir` and `declarationDir` to `liminaOptions.outputs.outDir`. Limina currently supports one managed artifact output root; it does not model split JavaScript and declaration directories.
 
 ## Source Edges, Declaration Edges, and Artifact Edges
 

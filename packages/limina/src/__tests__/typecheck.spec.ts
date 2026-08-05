@@ -222,6 +222,73 @@ describe('runCheckerBuild', () => {
     }
   });
 
+  it('runs a managed tsc checker into Limina declarations when the source inherits declarationDir', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/legacy-types/existing.d.ts':
+        'export declare const old: 1;\n',
+      'packages/app/tsconfig.base.json': tsconfig({
+        compilerOptions: { declarationDir: './legacy-types' },
+      }),
+      'packages/app/tsconfig.json': tsconfig({
+        extends: './tsconfig.base.json',
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+    const config: ResolvedLiminaConfig = {
+      config: {
+        checkers: {
+          typescript: {
+            include: ['packages/app/tsconfig.json'],
+            preset: 'tsc',
+          },
+        },
+      },
+      configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+      rootDir: fixture.rootDir,
+    };
+
+    try {
+      await expect(
+        runCheckerBuild({
+          config,
+          cwd: fixture.rootDir,
+          report: { defer: true },
+        }),
+      ).resolves.toMatchObject({ passed: true });
+      expect(
+        existsSync(
+          path.join(
+            fixture.rootDir,
+            '.limina/dts/checkers/typescript/packages/app/tsconfig/index.d.ts',
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        existsSync(
+          path.join(fixture.rootDir, 'packages/app/legacy-types/existing.d.ts'),
+        ),
+      ).toBe(true);
+      expect(
+        existsSync(
+          path.join(
+            fixture.rootDir,
+            'packages/app/legacy-types/src/index.d.ts',
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('preflights only build-executing checkers while typecheck owns missing typecheck peers', async () => {
     const buildCalls: TypecheckTarget[] = [];
     const typecheckCalls: TypecheckTarget[] = [];

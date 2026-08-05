@@ -1,3 +1,4 @@
+import { parseCheckerProjectConfigForContext } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   collectReferencePathInfosForConfig,
@@ -8,6 +9,7 @@ import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { isSolutionStyleTsconfig } from '../../core/build-graph/generated/config-readers';
+import { capabilityDiscoveryExtensions } from '../../core/build-graph/generated/file-extensions';
 import { getWorkspaceRegionBoundaryExclusionReason } from '../../core/workspace/regions';
 import {
   type ValidatedWorkspaceContext,
@@ -43,9 +45,23 @@ async function readMigrationTarget(options: {
     configPath,
     options.planningVirtualFiles,
   );
+  const parsed = parseCheckerProjectConfigForContext({
+    allowNoInputDiagnostics: true,
+    configPath,
+    context: {
+      checkerPresets: ['tsc'],
+      extensions: capabilityDiscoveryExtensions,
+    },
+    projectRootDir: options.config.rootDir,
+    virtualFiles: options.planningVirtualFiles,
+  });
   return {
     configObject,
     configPath,
+    effectiveConfig: {
+      fileNames: parsed.fileNames,
+      options: parsed.options,
+    },
     isSolutionStyle: isSolutionStyleTsconfig(configPath, configObject),
     originalBytes,
     originalContent,
