@@ -71,7 +71,7 @@ Limina's governance is built on the generated graph. The graph comes from ordina
 - the generated manifest;
 - generated configs used by source usage analysis.
 
-Generated declaration build configs inherit from their corresponding source configs and write options suitable for declaration builds, such as `composite`, `incremental`, `declaration`, `emitDeclarationOnly`, `noEmit: false`, `rootDir`, `outDir`, and `tsBuildInfoFile`.
+Generated declaration build configs inherit from their corresponding source configs and write options suitable for declaration builds, such as `composite`, `incremental`, `declaration`, `emitDeclarationOnly`, `noEmit: false`, `rootDir`, `outDir`, `declarationDir`, and `tsBuildInfoFile`. The generated `outDir` and `declarationDir` are always the same Limina-managed root.
 
 This is not an extension of `TypeScript` project references themselves. More precisely, Limina turns the question “which source relationships should enter the `references` graph” from manual judgment and handwritten maintenance into a generated result based on source imports, configuration entries, and explicit exceptions, and then verifies it through check tasks.
 

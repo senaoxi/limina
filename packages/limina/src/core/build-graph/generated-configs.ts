@@ -79,6 +79,16 @@ export function createGeneratedDtsConfig(options: {
   project: SourceProject;
 }): Record<string, unknown> {
   const { config, project } = options;
+  const managedOutDir = getGeneratedOutDir({
+    checkerName: project.checkerName,
+    packageRootDir: project.packageRootDir,
+    rootDir: config.rootDir,
+    sourceConfigPath: project.configPath,
+  });
+  const relativeManagedOutDir = createRelativePath(
+    project.dtsConfigPath,
+    managedOutDir,
+  );
   return {
     $schema: createLiminaTsconfigSchemaPath(
       config.rootDir,
@@ -102,15 +112,8 @@ export function createGeneratedDtsConfig(options: {
         project.dtsConfigPath,
         getCommonSourceRootDir(project),
       ),
-      outDir: createRelativePath(
-        project.dtsConfigPath,
-        getGeneratedOutDir({
-          checkerName: project.checkerName,
-          packageRootDir: project.packageRootDir,
-          rootDir: config.rootDir,
-          sourceConfigPath: project.configPath,
-        }),
-      ),
+      outDir: relativeManagedOutDir,
+      declarationDir: relativeManagedOutDir,
       tsBuildInfoFile: createRelativePath(
         project.dtsConfigPath,
         getGeneratedTsBuildInfoPath({

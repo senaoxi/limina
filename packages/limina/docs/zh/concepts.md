@@ -110,6 +110,7 @@ Limina 允许默认入口 `tsconfig.json` 作为聚合器。运行 `limina graph
     "declarationMap": false,
     "rootDir": "...",
     "outDir": "...",
+    "declarationDir": "...",
     "tsBuildInfoFile": "...",
   },
   "liminaOptions": {
@@ -120,7 +121,7 @@ Limina 允许默认入口 `tsconfig.json` 作为聚合器。运行 `limina graph
 }
 ```
 
-声明文件会写到 `.limina/dts/checkers/<checker>/...`，构建缓存会写到 `.limina/tsbuildinfo/checkers/<checker>/...`。这些路径属于 Limina 的内部输出，不应该手工编辑，也不应该写进用户维护的源码配置。
+声明文件会写到 `.limina/dts/checkers/<checker>/...`，构建缓存会写到 `.limina/tsbuildinfo/checkers/<checker>/...`。生成的声明配置会把 `outDir` 和 `declarationDir` 同时设为这个受管根目录，因此源码配置继承的 `declarationDir` 不会把检查器输出重定向到用户目录。这些路径属于 Limina 的内部输出，不应该手工编辑，也不应该写进用户维护的源码配置。
 
 生成的 `references` 来自两类事实：源码导入经过 TypeScript 解析后落到 Limina 管理的源码提供者，或源码配置显式声明了 `liminaOptions.implicitRefs`。如果导入解析到 `.d.ts` 系列声明文件，Limina 会把它视为声明消费，而不是源码项目引用。
 
@@ -149,6 +150,8 @@ pnpm exec limina build packages/core/tsconfig.lib.json
 ```
 
 Limina 会在 `.limina/tsconfig/checkers/<checker>/outputs/...` 下生成输出构建配置，并用构建类检查器执行它。输出构建缓存会写到 `.limina/tsbuildinfo/build/...`，并由 Limina 管理。没有声明 `liminaOptions.outputs` 的源码配置不能作为 `limina build <config>` 的受管产物构建目标；如果只是想直接调用检查器构建某个原始配置，应使用 `limina build <config> --raw --preset <tsc|tsgo|vue-tsc>`。
+
+生成的用户产物配置会把 `outDir` 与 `declarationDir` 同时设为 `liminaOptions.outputs.outDir`。Limina 当前只支持一个受管产物输出根目录，不表达 JavaScript 与声明文件分离的输出目录。
 
 ## 源码边、声明边与产物边
 

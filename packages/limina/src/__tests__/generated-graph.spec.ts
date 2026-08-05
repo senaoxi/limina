@@ -2,6 +2,7 @@ import type { ResolvedLiminaConfig, SourceCheckConfig } from '#config/runner';
 import { resolveGeneratedGraphCheckers } from '#core/build-graph/runner';
 import { parseProject } from '#core/import-graph/context';
 import { normalizeAbsolutePath } from '#utils/path';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import {
   mkdir,
@@ -14,11 +15,15 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { toPortablePath } from './helpers/path';
+
+const execFileAsync = promisify(execFile);
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -1324,6 +1329,252 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('overrides direct and inherited declarationDir in generated declaration projects', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.base.json': json({
+        compilerOptions: {
+          declarationDir: './legacy-declarations',
+          outDir: './legacy-output',
+        },
+      }),
+      'packages/pkg/tsconfig.mid.json': json({
+        extends: './tsconfig.base.json',
+        compilerOptions: {
+          declarationDir: './mid-declarations',
+        },
+      }),
+      'packages/pkg/tsconfig.json': json({
+        extends: './tsconfig.mid.json',
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        extends: './tsconfig.mid.json',
+        compilerOptions: {
+          declarationDir: './leaf-declarations',
+          outDir: './leaf-output',
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.lib.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+
+      expect(generatedConfigPath).toBeDefined();
+      const parsed = parseProject(fixture.config, generatedConfigPath!);
+      const generatedRoot = normalizeAbsolutePath(
+        path.join(
+          fixture.rootDir,
+          '.limina/dts/checkers/typescript/packages/pkg/lib',
+        ),
+      );
+
+      expect(parsed.options.outDir).toBe(generatedRoot);
+      expect(parsed.options.declarationDir).toBe(generatedRoot);
+      expect(parsed.options.outDir).not.toBe(
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/leaf-output'),
+        ),
+      );
+      expect(parsed.options.declarationDir).not.toBe(
+        normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/pkg/leaf-declarations'),
+        ),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('emits the managed declaration root for a leaf direct declarationDir', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          declarationDir: './legacy-declarations',
+          outDir: './legacy-output',
+          ...managedOutputCompilerOptions(),
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const sourceConfigPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(sourceConfigPath);
+      expect(generatedConfigPath).toBeDefined();
+
+      const parsed = parseProject(fixture.config, generatedConfigPath!);
+      const generatedRoot = normalizeAbsolutePath(
+        path.join(
+          fixture.rootDir,
+          '.limina/dts/checkers/typescript/packages/pkg/tsconfig',
+        ),
+      );
+      expect(parsed.options.outDir).toBe(generatedRoot);
+      expect(parsed.options.declarationDir).toBe(generatedRoot);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('emits the managed declaration root for a leaf inheriting declarationDir from its base', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.base.json': json({
+        compilerOptions: { declarationDir: './legacy-declarations' },
+      }),
+      'packages/pkg/tsconfig.json': json({
+        extends: './tsconfig.base.json',
+        compilerOptions: {
+          outDir: './legacy-output',
+          ...managedOutputCompilerOptions(),
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(
+          normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+          ),
+        );
+      expect(generatedConfigPath).toBeDefined();
+      const parsed = parseProject(fixture.config, generatedConfigPath!);
+      expect(parsed.options.outDir).toBe(parsed.options.declarationDir);
+      expect(parsed.options.declarationDir).toContain(
+        normalizeAbsolutePath(path.join(fixture.rootDir, '.limina/dts')),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('emits the managed declaration root for multi-level inherited declarationDir', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.base.json': json({
+        compilerOptions: { declarationDir: './legacy-declarations' },
+      }),
+      'packages/pkg/tsconfig.mid.json': json({
+        extends: './tsconfig.base.json',
+      }),
+      'packages/pkg/tsconfig.json': json({
+        extends: './tsconfig.mid.json',
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(
+          normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+          ),
+        );
+      expect(generatedConfigPath).toBeDefined();
+      const parsed = parseProject(fixture.config, generatedConfigPath!);
+      expect(parsed.options.outDir).toBe(parsed.options.declarationDir);
+      expect(parsed.options.declarationDir).toContain(
+        normalizeAbsolutePath(path.join(fixture.rootDir, '.limina/dts')),
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes managed declarations when source configs inherit declarationDir', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.base.json': json({
+        compilerOptions: { declarationDir: './legacy-declarations' },
+      }),
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        extends: './tsconfig.base.json',
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          outDir: './legacy-output',
+          strict: true,
+          target: 'ES2023',
+          types: [],
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const generatedConfigPath = result.sourceToDts
+        .get('typescript')
+        ?.get(
+          normalizeAbsolutePath(
+            path.join(fixture.rootDir, 'packages/pkg/tsconfig.lib.json'),
+          ),
+        );
+      expect(generatedConfigPath).toBeDefined();
+
+      await execFileAsync(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL('../../node_modules/typescript/bin/tsc', import.meta.url),
+          ),
+          '-b',
+          '--pretty',
+          'false',
+          generatedConfigPath!,
+        ],
+        { cwd: fixture.rootDir },
+      );
+
+      const managedDeclaration = path.join(
+        fixture.rootDir,
+        '.limina/dts/checkers/typescript/packages/pkg/lib/index.d.ts',
+      );
+      expect(existsSync(managedDeclaration)).toBe(true);
+      expect(
+        existsSync(
+          path.join(
+            fixture.rootDir,
+            'packages/pkg/legacy-declarations/src/index.d.ts',
+          ),
+        ),
+      ).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('generates per-package Knip tsconfig entries from static package build scripts', async () => {
     const fixture = await createFixture(
       {
@@ -1847,6 +2098,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ),
         ),
       });
+      expect(outputConfig.compilerOptions.declarationDir).toBe(
+        outputConfig.compilerOptions.outDir,
+      );
       expect(outputConfig.extends).toEqual([
         toPortablePath(
           path.relative(

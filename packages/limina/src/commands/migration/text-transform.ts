@@ -73,6 +73,47 @@ function getRecordChild(
   return isPlainRecord(value) ? value : undefined;
 }
 
+function hasOwnRecordField(
+  record: Record<string, unknown> | undefined,
+  field: string,
+): boolean {
+  return record !== undefined && Object.hasOwn(record, field);
+}
+
+function sourceHasDeclarationDirWithoutOutDir(
+  compilerOptions: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    compilerOptions !== undefined &&
+    Object.hasOwn(compilerOptions, 'declarationDir') &&
+    !Object.hasOwn(compilerOptions, 'outDir')
+  );
+}
+
+function migratedPlanIntroducesOutDir(options: {
+  migratedOutputs: Record<string, unknown>;
+  originalOutputs: Record<string, unknown> | undefined;
+}): boolean {
+  return (
+    hasOwnRecordField(options.migratedOutputs, 'outDir') &&
+    !hasOwnRecordField(options.originalOutputs, 'outDir')
+  );
+}
+
+function shouldInsertDeclarationOnlyOutDir(options: {
+  originalCompilerOptions: Record<string, unknown> | undefined;
+  originalOutputs: Record<string, unknown> | undefined;
+  migratedOutputs: Record<string, unknown>;
+}): boolean {
+  return (
+    sourceHasDeclarationDirWithoutOutDir(options.originalCompilerOptions) &&
+    migratedPlanIntroducesOutDir({
+      migratedOutputs: options.migratedOutputs,
+      originalOutputs: options.originalOutputs,
+    })
+  );
+}
+
 function applyMovedOutputField(options: {
   content: string;
   field: (typeof compilerOutputFields)[number];
@@ -82,6 +123,41 @@ function applyMovedOutputField(options: {
     content: options.content,
     path: ['liminaOptions', 'outputs', options.field],
     value: options.outputs[options.field],
+  });
+}
+
+function hasMovedOutputEditInputs(options: {
+  migratedOutputs: Record<string, unknown> | undefined;
+  originalCompilerOptions: Record<string, unknown> | undefined;
+}): options is {
+  migratedOutputs: Record<string, unknown>;
+  originalCompilerOptions: Record<string, unknown>;
+} {
+  return (
+    options.originalCompilerOptions !== undefined &&
+    options.migratedOutputs !== undefined
+  );
+}
+
+function applyDeclarationOnlyOutDir(options: {
+  content: string;
+  migratedOutputs: Record<string, unknown>;
+  originalCompilerOptions: Record<string, unknown>;
+  originalOutputs: Record<string, unknown> | undefined;
+}): string {
+  if (
+    !shouldInsertDeclarationOnlyOutDir({
+      migratedOutputs: options.migratedOutputs,
+      originalCompilerOptions: options.originalCompilerOptions,
+      originalOutputs: options.originalOutputs,
+    })
+  ) {
+    return options.content;
+  }
+  return applyMovedOutputField({
+    content: options.content,
+    field: 'outDir',
+    outputs: options.migratedOutputs,
   });
 }
 
@@ -99,16 +175,30 @@ function applyMovedOutputEdits(options: {
     'liminaOptions',
   );
   const migratedOutputs = getRecordChild(migratedLiminaOptions, 'outputs');
-  if (originalCompilerOptions === undefined) return options.content;
-  if (migratedOutputs === undefined) return options.content;
+  const editInputs = { migratedOutputs, originalCompilerOptions };
+  if (!hasMovedOutputEditInputs(editInputs)) {
+    return options.content;
+  }
+  const editableCompilerOptions = editInputs.originalCompilerOptions;
+  const editableOutputs = editInputs.migratedOutputs;
   const movedFields = compilerOutputFields.filter((field) =>
-    Object.hasOwn(originalCompilerOptions, field),
+    Object.hasOwn(editableCompilerOptions, field),
   );
-  return movedFields.reduce(
+  const movedContent = movedFields.reduce(
     (content, field) =>
-      applyMovedOutputField({ content, field, outputs: migratedOutputs }),
+      applyMovedOutputField({ content, field, outputs: editableOutputs }),
     options.content,
   );
+  const originalOutputs = getRecordChild(
+    getRecordField(options.originalConfig, 'liminaOptions'),
+    'outputs',
+  );
+  return applyDeclarationOnlyOutDir({
+    content: movedContent,
+    migratedOutputs: editableOutputs,
+    originalCompilerOptions: editableCompilerOptions,
+    originalOutputs,
+  });
 }
 
 function removeCompilerOptionField(content: string, field: string): string {
@@ -143,6 +233,7 @@ function applyCompilerOptionEdits(options: {
   const removedFields = [
     ...compilerOutputFields,
     ...governedCompilerOptionFields,
+    'declarationDir',
   ].filter((field) => Object.hasOwn(originalCompilerOptions, field));
   return removedFields.reduce(removeCompilerOptionField, options.content);
 }

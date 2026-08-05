@@ -158,6 +158,8 @@ pnpm exec limina migration
 
 迁移选择与图准备使用相同的 package-island 可见性和 checker selector。即使祖先模式可以匹配，迁移也不会读取或修改 owner-local 边界后的配置。
 
+迁移会在规划写入前读取每个目标的 TypeScript 有效配置（包括继承的选项）。如果直接声明的 `compilerOptions.declarationDir` 与计划的受管输出根等价，迁移会删除这个字段；如果它是唯一的输出设置，迁移会把它的相对路径写入 `liminaOptions.outputs.outDir`，因此迁移后 JavaScript 与声明文件共置于一个产物目录。JavaScript 与声明分离输出、有效的 `outFile`、混合型 solution 聚合器、非法 `declarationDir`，或没有既有等价受管根的绝对 `declarationDir`，都会在写入任何目标前失败。继承的 `declarationDir` 会保留在 base 配置中，不会复制到叶子。迁移不会删除已有的用户输出文件。
+
 ### limina check [pipeline]
 
 `check` 是日常入口。

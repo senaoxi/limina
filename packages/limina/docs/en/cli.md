@@ -158,6 +158,8 @@ External activated packages are supported, including a migration whose targets b
 
 Migration selection follows the same package-island visibility and checker selectors as graph preparation. It never reads or edits a config behind an owner-local boundary merely because an ancestor pattern could match it.
 
+Migration reads each target's effective TypeScript config, including inherited options, before it plans any write. A direct `compilerOptions.declarationDir` is removed when it is equivalent to the planned managed output root; when it is the only output setting, its relative value becomes `liminaOptions.outputs.outDir`, so JavaScript and declarations share one artifact directory after migration. Split JavaScript/declaration output, an effective `outFile`, a mixed solution aggregator, an invalid declaration directory, or an absolute declaration directory without an existing equivalent managed root fails before any target is written. Inherited `declarationDir` stays in its base config and is not copied into leaves. Migration does not delete existing user output files.
+
 ### limina check [pipeline]
 
 `check` is the daily entry point.

@@ -316,6 +316,17 @@ describe('workspace-export TypeScript profile compilation', () => {
     expect(groups.typescriptGroups.size).toBe(1);
   });
 
+  it('keeps declarationDir cleanup out of workspace export matching', () => {
+    const groups = compileWorkspaceExportResolutionGroups([
+      createProfile('before-migration', {
+        declarationDir: './dist',
+      }),
+      createProfile('after-migration', {}),
+    ]);
+
+    expect(groups.typescriptGroups.size).toBe(1);
+  });
+
   it('uses a fallback-only group when no checker adapter is active', () => {
     const groups = compileWorkspaceExportResolutionGroups([
       createProfile('a', {}, { checkerPresets: ['unknown-checker' as never] }),
