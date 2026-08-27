@@ -18,7 +18,11 @@ import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { collectCoverage } from '../proof/coverage-collection';
 import { createSourceCheckState } from '../source-check/run-state';
-import { toPortablePath, toPortablePaths } from './helpers/path';
+import {
+  createFixturePathResolver,
+  toPortablePath,
+  toPortablePaths,
+} from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
 
@@ -335,14 +339,9 @@ describe('AnalysisProviderSet', () => {
     'governs pure .%s sources across ownership, graph, proof, and package domains',
     async (family) => {
       const fixture = await createCoreFixture();
-      const sourceConfigPath = path.join(
-        fixture.rootDir,
-        'packages/a/tsconfig.lib.json',
-      );
-      const sourceFilePath = path.join(
-        fixture.rootDir,
-        `packages/a/src/App.${family}`,
-      );
+      const fixturePath = createFixturePathResolver(fixture.rootDir);
+      const sourceConfigPath = fixturePath('packages/a/tsconfig.lib.json');
+      const sourceFilePath = fixturePath(`packages/a/src/App.${family}`);
       fixture.config.config = {
         ...fixture.config.config,
         checkers: {

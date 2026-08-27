@@ -6,7 +6,7 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
-import { toRelativePath } from '#utils/path';
+import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -235,13 +235,14 @@ function resolveLocalFilesystemResource(options: {
     path.dirname(options.importRecord.filePath),
     options.specifier,
   );
+  const portableCheckedPath = normalizeAbsolutePath(checkedPath);
   return existsSync(checkedPath)
     ? {
         authority: 'filesystem',
-        filePath: checkedPath,
+        filePath: portableCheckedPath,
         kind: 'file',
       }
-    : { checkedPath, kind: 'missing' };
+    : { checkedPath: portableCheckedPath, kind: 'missing' };
 }
 
 function resolvePackageFilesystemResource(options: {
@@ -249,11 +250,12 @@ function resolvePackageFilesystemResource(options: {
   specifier: string;
 }): RuntimeEvidence {
   try {
+    const filePath = createRequire(options.importRecord.filePath).resolve(
+      options.specifier,
+    );
     return {
       authority: 'package-export',
-      filePath: createRequire(options.importRecord.filePath).resolve(
-        options.specifier,
-      ),
+      filePath: normalizeAbsolutePath(filePath),
       kind: 'file',
     };
   } catch {

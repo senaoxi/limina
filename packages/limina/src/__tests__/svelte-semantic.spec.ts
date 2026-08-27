@@ -10,6 +10,7 @@ import { svelte2tsx } from 'svelte2tsx';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ImportRecord } from '../core/import-analysis/runner';
+import { createGeneratedSemanticScript } from '../core/svelte-semantic/generated-script';
 import { prepareSvelteSemanticDependencies } from '../core/svelte-semantic/preparation';
 import { mapGeneratedRange } from '../core/svelte-semantic/source-mapping';
 import { isSvelteTypeScriptSource } from '../core/svelte-semantic/source-records';
@@ -18,6 +19,7 @@ import {
   SVELTE_SEMANTIC_ADAPTER_VERSION,
   type SvelteSemanticProject,
 } from '../core/svelte-semantic/types';
+import { createFixturePathResolver } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
 const requireFromSvelte2Tsx = createRequire(
@@ -90,11 +92,15 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
   project: SvelteSemanticProject;
   sourceText: string;
 }> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-svelte-semantic-'));
-  temporaryDirectories.push(rootDir);
-  const appPath = path.join(rootDir, 'App.svelte');
-  const childPath = path.join(rootDir, 'Child.svelte');
-  const declarationPath = path.join(rootDir, 'globals.d.ts');
+  const temporaryRoot = await mkdtemp(
+    path.join(tmpdir(), 'limina-svelte-semantic-'),
+  );
+  temporaryDirectories.push(temporaryRoot);
+  const fixturePath = createFixturePathResolver(temporaryRoot);
+  const rootDir = fixturePath();
+  const appPath = fixturePath('App.svelte');
+  const childPath = fixturePath('Child.svelte');
+  const declarationPath = fixturePath('globals.d.ts');
   const sourceText = [
     '<script lang="ts">',
     '/// <reference types="vitest" />',
@@ -118,7 +124,7 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
     appPath,
     project: {
       adapterVersion: SVELTE_SEMANTIC_ADAPTER_VERSION,
-      configPath: path.join(rootDir, 'tsconfig.json'),
+      configPath: fixturePath('tsconfig.json'),
       extensions: ['.svelte'],
       fileNames,
       generation: 1,
@@ -131,7 +137,7 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
         target: ts.ScriptTarget.ESNext,
       },
       packageRootDir: rootDir,
-      resolverConfigPath: path.join(rootDir, 'tsconfig.json'),
+      resolverConfigPath: fixturePath('tsconfig.json'),
     },
     sourceText,
   };
@@ -216,6 +222,24 @@ describe('Svelte strict generated dependency provenance', () => {
 });
 
 describe('Svelte public bounded semantic adapter', () => {
+  it('keeps absolute Windows source-map paths from being rebased', () => {
+    const filePath = 'C:/Users/runneradmin/App.svelte';
+    const sourceText = '<script lang="ts">export const value = true</script>';
+    const toolchain = createToolchain();
+    const generated = createGeneratedSemanticScript({
+      filePath,
+      generated: toolchain.transform(sourceText, {
+        filename: filePath,
+        isTsFile: true,
+        parse: toolchain.compiler.parse as never,
+        version: toolchain.compilerVersion,
+      }),
+      toolchain,
+    });
+
+    expect(generated.trace.resolvedSources).toEqual([filePath]);
+  });
+
   it('uses the real public svelte2tsx tuple and generated semantic spelling', async () => {
     const fixture = await createProject();
     const preparation = prepareSvelteSemanticDependencies({

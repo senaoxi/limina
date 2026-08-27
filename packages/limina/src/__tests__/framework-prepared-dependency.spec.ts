@@ -1,4 +1,4 @@
-import path from 'node:path';
+import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import type {
@@ -161,17 +161,17 @@ describe('prepared framework dependency canonical merge', () => {
     ).statements[0]!;
     const sourceFiles = new Map([
       [
-        path.normalize(first.containingSourceFile.fileName),
+        normalizeAbsolutePath(first.containingSourceFile.fileName),
         first.containingSourceFile,
       ],
       [
-        path.normalize(second.containingSourceFile.fileName),
+        normalizeAbsolutePath(second.containingSourceFile.fileName),
         second.containingSourceFile,
       ],
     ]);
     const program = {
       getSourceFile: (fileName: string) =>
-        sourceFiles.get(path.normalize(fileName)),
+        sourceFiles.get(normalizeAbsolutePath(fileName)),
       getTypeChecker: () => ({
         getSymbolAtLocation: (literal: ts.Node) => ({
           declarations: [

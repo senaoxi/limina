@@ -1,6 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { TraceMap } from '@jridgewell/trace-mapping';
-import path from 'node:path';
 import type ts from 'typescript';
 import { buildLineStarts } from '../import-analysis/records';
 import type { SvelteSemanticToolchain } from './toolchain';
@@ -30,10 +29,7 @@ export function createGeneratedSemanticScript(options: {
     filePath,
     lineStarts: buildLineStarts(options.generated.code),
     sourceFile,
-    trace: new TraceMap(
-      { ...options.generated.map, version: 3 as const },
-      path.dirname(options.filePath),
-    ),
+    trace: new TraceMap({ ...options.generated.map, version: 3 as const }),
   };
 }
 
