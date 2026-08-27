@@ -53,7 +53,7 @@ function commonFindingFields(title: string) {
 
 const graphCoverage = {
   checkerEntryPath: '/repo/.limina/tsconfig.typescript.build.json',
-  checkerName: 'typescript',
+  checkerName: 'tsc',
   checkerPreset: 'tsc',
   label: 'packages/app/tsconfig.lib.dts.json',
   projectPath: '/repo/packages/app/tsconfig.lib.dts.json',
@@ -81,10 +81,10 @@ const findingByCode = {
   }),
   [LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid]: createProofFinding({
     ...commonFindingFields('Checker entry references a missing tsconfig'),
-    checkerName: 'typescript',
+    checkerName: 'tsc',
     code: LIMINA_CHECK_ISSUE_CODES.proofCheckerCoverageInvalid,
     facts: {
-      checkerName: 'typescript',
+      checkerName: 'tsc',
       configPath: '/repo/.limina/tsconfig.typescript.build.json',
       kind: 'checker-entry',
       violation: 'missing-config',

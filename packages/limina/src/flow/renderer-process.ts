@@ -21,6 +21,7 @@ const FLOW_RENDERER_TEST_COLUMNS_ENV = 'LIMINA_FLOW_RENDERER_TEST_COLUMNS';
 let spinnerFrameIndex = 0;
 let spinnerTimer: NodeJS.Timeout | undefined;
 let closed = false;
+let suspended = false;
 
 type RendererMessageType = FlowRendererProcessMessage['type'];
 type RendererMessageFor<Type extends RendererMessageType> = Extract<
@@ -96,6 +97,7 @@ function renderLine(line: string): void {
 }
 
 function render(): void {
+  if (suspended) return;
   clearRenderedFrame();
 
   const renderedLines = renderSnapshotLinesForTerminal(
@@ -124,7 +126,7 @@ function stopSpinnerTimer(): void {
 }
 
 function shouldStopSpinner(): boolean {
-  return closed || !hasRunningSnapshotWork(snapshot);
+  return closed || suspended || !hasRunningSnapshotWork(snapshot);
 }
 
 function advanceSpinner(): void {
@@ -155,7 +157,7 @@ function writeOutput(message: RendererMessageFor<'output'>): void {
   clearRenderedFrame();
   writeTracked(message.output.text, getOutputStream(message.output.stream));
   terminalFrame.reset();
-  render();
+  if (!suspended) render();
 }
 
 function requireMessage<Type extends RendererMessageType>(
@@ -174,6 +176,22 @@ function handleSnapshot(rawMessage: FlowRendererProcessMessage): void {
   snapshot = message.snapshot;
   syncSpinnerTimer();
   render();
+}
+
+function handleResume(rawMessage: FlowRendererProcessMessage): void {
+  const message = requireMessage(rawMessage, 'resume');
+  snapshot = message.snapshot;
+  suspended = false;
+  syncSpinnerTimer();
+  render();
+}
+
+function handleSuspend(rawMessage: FlowRendererProcessMessage): void {
+  requireMessage(rawMessage, 'suspend');
+  stopSpinnerTimer();
+  clearRenderedFrame();
+  suspended = true;
+  send({ type: 'suspended' });
 }
 
 function handleOutput(rawMessage: FlowRendererProcessMessage): void {
@@ -195,6 +213,7 @@ function exitRenderer(): void {
 function handleClose(rawMessage: FlowRendererProcessMessage): void {
   const message = requireMessage(rawMessage, 'close');
   closed = true;
+  suspended = false;
   snapshot = message.snapshot;
   stopSpinnerTimer();
   render();
@@ -207,7 +226,9 @@ const messageHandlers: Readonly<
 > = {
   close: handleClose,
   output: handleOutput,
+  resume: handleResume,
   snapshot: handleSnapshot,
+  suspend: handleSuspend,
 };
 
 function shouldCrash(message: FlowRendererProcessMessage): boolean {

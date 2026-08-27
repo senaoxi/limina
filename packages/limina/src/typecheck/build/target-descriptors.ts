@@ -29,12 +29,12 @@ export function createRawBuildChecker(options: {
   return {
     exclude: [],
     extensions: getCheckerExtensions(
-      { include: [], preset: options.preset },
+      options.preset,
+      { include: [] },
       { projectRootDir: options.projectRootDir },
     ),
     include: [],
     name: options.preset,
-    preset: options.preset,
   };
 }
 
@@ -106,12 +106,18 @@ function collectManagedOutputBuildTargets(options: {
 export function getManagedBuildTargets(options: {
   allCheckers: readonly ResolvedCheckerConfig[];
   generatedGraph: GeneratedTsconfigGraphResult;
+  rootDir: string;
   sourceConfigPath: string;
 }): {
   declarationTargets: BuildTargetDescriptor[];
   outputTargets: BuildTargetDescriptor[];
 } {
-  if (!isOrdinarySourceTypecheckConfigPath(options.sourceConfigPath)) {
+  if (
+    !isOrdinarySourceTypecheckConfigPath(
+      options.sourceConfigPath,
+      options.rootDir,
+    )
+  ) {
     return { declarationTargets: [], outputTargets: [] };
   }
   return {

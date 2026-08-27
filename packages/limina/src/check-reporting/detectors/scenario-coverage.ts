@@ -8,12 +8,6 @@ export const LIMINA_DETECTOR_SCENARIO_COVERAGE: DetectorScenarioCoverageRegistry
       kind: 'passing-control',
       reason: 'Confirms a real TypeScript checker build produces no issue.',
     },
-    'fault-injection/cleanup-descriptor-execution': {
-      fixturePath:
-        'packages/limina/fixtures/detectors/fault-injection/cleanup-descriptor-execution/case.mts',
-      kind: 'fault-boundary',
-      reason: 'Constrains cleanup descriptor accounting after finalization.',
-    },
     'fault-injection/cleanup-success': {
       fixturePath:
         'packages/limina/fixtures/detectors/fault-injection/cleanup-success/case.mts',

@@ -1,10 +1,15 @@
 import type {
-  BuiltinCheckerPreset,
+  BuildCheckerName,
   CheckerExecutionKind,
   CheckerPreset,
   ResolvedCheckerConfig,
 } from '#config/runner';
 import type ts from 'typescript';
+import type {
+  LiminaDependencyFailureKind,
+  LiminaDependencyOwnership,
+} from '../dependency-contract';
+import type { VueProjectSemanticIdentity } from './vue-semantic-types';
 
 export interface CheckerCommandTarget {
   args: string[];
@@ -26,18 +31,28 @@ export interface CheckerProjectConfigParseOptions {
   configPath: string;
   extensions?: string[];
   projectRootDir: string;
+  generation?: number;
   virtualFiles?: ReadonlyMap<string, string>;
+  vueSemanticIdentity?: VueProjectSemanticIdentity;
+}
+
+export interface CheckerConfigClosureEntry {
+  contentHash: string;
+  filePath: string;
 }
 
 export interface ParsedCheckerProjectConfig {
+  configClosure: CheckerConfigClosureEntry[];
   extensions: string[];
   fileNames: string[];
   options: ts.CompilerOptions;
+  vueSemanticIdentity?: VueProjectSemanticIdentity;
 }
 
 export interface CheckerProjectParseContext {
   checkerPresets: CheckerPreset[];
   extensions: string[];
+  vueSemanticIdentity?: VueProjectSemanticIdentity;
 }
 
 export interface CheckerModuleResolutionMetricsRecorder {
@@ -59,6 +74,7 @@ export interface CheckerModuleResolveOptions {
   metrics?: CheckerModuleResolutionMetricsRecorder;
   moduleResolutionCache?: ts.ModuleResolutionCache;
   specifier: string;
+  tsModule?: typeof ts;
 }
 
 export interface ResolvedCheckerModuleName {
@@ -74,19 +90,40 @@ export interface CheckerAdapter {
   extensions: (options: CheckerProjectConfigParseOptions) => string[];
   execution: CheckerExecutionKind;
   emitProjection: 'typescript' | 'vue-bounded';
-  packageNames: string[];
+  dependencies: CheckerDependencies;
   parseProjectConfig: (
     options: CheckerProjectConfigParseOptions,
   ) => ParsedCheckerProjectConfig;
-  preset: BuiltinCheckerPreset;
+  name: BuildCheckerName;
   resolveModuleName: (options: CheckerModuleResolveOptions) => string | null;
   sourceGraph: boolean;
 }
 
+export interface CheckerDependencies {
+  externalCheckerPackages: string[];
+  liminaRuntimePackages: string[];
+}
+
+export type CheckerDependencyCategory =
+  | 'checker-binary'
+  | 'checker-runtime'
+  | 'external-checker'
+  | 'limina-runtime';
+
+export interface CheckerDependencyRequirement {
+  category: CheckerDependencyCategory;
+  packageName: string;
+}
+
 export interface MissingCheckerPeerDependency {
   checkerNames: string[];
+  failureKind: LiminaDependencyFailureKind;
+  installedVersion?: string;
+  ownership: LiminaDependencyOwnership;
   packageName: string;
   reason?: string;
+  resolutionScope: string;
+  supportedRange?: string;
 }
 
 export type CheckerPackageResolver = (options: {

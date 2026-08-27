@@ -168,9 +168,8 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
       {
         config: {
           checkers: {
-            typescript: {
+            tsc: {
               include: ['packages/pkg/tsconfig.json'],
-              preset: 'tsc',
             },
           },
         },
@@ -192,7 +191,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
   await writeText(
     path.join(rootDir, 'node_modules/typescript/package.json'),
     stringifyConfig({
-      name: 'typescript',
+      name: 'tsc',
       version: '0.0.0-test',
     }),
   );
@@ -210,14 +209,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     path.join(rootDir, 'node_modules/vue-tsc/package.json'),
     stringifyConfig({
       name: 'vue-tsc',
-      version: '0.0.0-test',
-    }),
-  );
-  await writeText(
-    path.join(rootDir, 'node_modules/@vue/compiler-sfc/package.json'),
-    stringifyConfig({
-      name: '@vue/compiler-sfc',
-      version: '0.0.0-test',
+      version: '3.2.4',
     }),
   );
   await writeText(
@@ -518,7 +510,7 @@ describe('limina CLI', () => {
       expect(result.stdout).toContain('limina checker build');
       expect(result.stdout).toContain('limina checker passed');
       expect(tscArgs).toContain(
-        '.limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.lib.dts.json',
+        '.limina/tsconfig/checkers/tsc/projects/packages/pkg/tsconfig.lib.dts.json',
       );
     });
   });
@@ -530,16 +522,11 @@ describe('limina CLI', () => {
       await writeText(
         tsConfigPath,
         `
-enum Preset {
-  Tsc = 'tsc',
-}
-
 export default {
   config: {
     checkers: {
-      typescript: {
+      tsc: {
         include: ['packages/pkg/tsconfig.json'],
-        preset: Preset.Tsc,
       },
     },
   },
@@ -573,7 +560,7 @@ export default {
       );
 
       expect(tscArgs).toContain(
-        '.limina/tsconfig/checkers/typescript/tsconfig.build.json',
+        '.limina/tsconfig/checkers/tsc/tsconfig.build.json',
       );
     });
   });
@@ -604,7 +591,7 @@ export default {
       );
 
       expect(globalTscArgs).toContain(
-        '.limina/tsconfig/checkers/typescript/tsconfig.build.json',
+        '.limina/tsconfig/checkers/tsc/tsconfig.build.json',
       );
     });
   });
@@ -642,7 +629,7 @@ export default {
               },
             ],
             status: 'completed',
-            version: 7,
+            version: 8,
           }),
         );
         const seedSnapshot = await readFile(lastRunPath, 'utf8');
@@ -663,9 +650,8 @@ export default {
             {
               config: {
                 checkers: {
-                  typescript: {
+                  tsc: {
                     include: ['packages/**/tsconfig.json'],
-                    preset: 'tsc',
                   },
                 },
               },
@@ -998,7 +984,7 @@ export default {
             },
           ],
           status: 'completed',
-          version: 7,
+          version: 8,
         }),
       );
       const completedCheck = await readFile(lastRunPath, 'utf8');
@@ -1108,9 +1094,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['packages/*/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -1152,7 +1137,7 @@ export default {
           createdAt: '2026-07-17T00:00:00.000Z',
           issues: [],
           status: 'completed',
-          version: 7,
+          version: 8,
         }),
       );
       const seedSnapshot = await readFile(lastRunPath, 'utf8');
@@ -1383,7 +1368,7 @@ export default {
       expect(result.stdout).toContain('limina build');
       expect(result.stdout).toContain('limina build passed');
       expect(tscArgs).toContain(
-        '.limina/tsconfig/checkers/typescript/outputs/projects/packages/pkg/tsconfig.lib.output.json',
+        '.limina/tsconfig/checkers/tsc/outputs/projects/packages/pkg/tsconfig.lib.output.json',
       );
     });
   });
@@ -1895,6 +1880,18 @@ export default {
           'checker build --watch requires a config argument.',
         ),
       }),
+      expect(
+        execFileAsync(process.execPath, [
+          cliPath,
+          'checker',
+          'typecheck',
+          '--watch',
+        ]),
+      ).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          'checker typecheck does not accept --watch; rerun it after source config, parser package, generated type, or framework source changes.',
+        ),
+      }),
       ...removedOptions.map(assertRemovedOption),
       expect(
         execFileAsync(process.execPath, [
@@ -1960,9 +1957,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['app/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -2101,7 +2097,7 @@ export default {
       const output = stripAnsi(
         `${failure?.stdout ?? ''}\n${failure?.stderr ?? ''}`,
       );
-      expect(output).toContain('Missing peer dependency "knip"');
+      expect(output).toContain('Missing Limina runtime dependency:');
       expect(output).toContain('pnpm add -D knip');
       expect(output).not.toContain('skipping check');
       expect(output).not.toContain('Checked ');
@@ -2124,7 +2120,9 @@ export default {
         expect.arrayContaining([
           expect.objectContaining({
             code: 'LIMINA_SOURCE_CHECK_FAILED',
-            reason: expect.stringContaining('Missing peer dependency "knip"'),
+            reason: expect.stringContaining(
+              'Missing Limina runtime dependency:',
+            ),
             task: 'source:check',
           }),
         ]),
@@ -2163,7 +2161,9 @@ export default {
         expect.arrayContaining([
           expect.objectContaining({
             code: 'LIMINA_SOURCE_CHECK_FAILED',
-            reason: expect.stringContaining('Missing peer dependency "knip"'),
+            reason: expect.stringContaining(
+              'Missing Limina runtime dependency:',
+            ),
             task: 'source:check',
           }),
         ]),
@@ -2209,9 +2209,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['app/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -2366,10 +2365,10 @@ export default {
         ]);
 
         expect(JSON.parse(explicitQuery.stdout)).toMatchObject({
-          issueCount: 3,
+          issueCount: 2,
         });
         expect(JSON.parse(defaultNestedQuery.stdout)).toMatchObject({
-          issueCount: 3,
+          issueCount: 2,
         });
       }
 
@@ -2433,17 +2432,16 @@ export default {
       ]);
 
       expect(JSON.parse(missingConfigQuery.stdout)).toMatchObject({
-        issueCount: 3,
+        issueCount: 2,
       });
 
       const plainResult = stripAnsi(result.stdout);
 
       expect(plainResult).toContain('Limina check issue summary');
-      expect(plainResult).toContain('Matched: 3 / 3 issues');
+      expect(plainResult).toContain('Matched: 2 / 2 issues');
       expect(plainResult).toContain('Command: limina check');
       expect(plainResult).toContain('Issue overview:');
       expect(plainResult).toContain('source:check (1)');
-      expect(plainResult).toContain('checker:build (1)');
       expect(plainResult).toContain('proof:check (1)');
       expect(plainResult).toContain('Packages: @example/app (1)');
       expect(plainResult).toContain('1  LIMINA_SOURCE_UNUSED_MODULE');
@@ -2457,7 +2455,7 @@ export default {
 
       const plainDetailsResult = stripAnsi(detailsResult.stdout);
 
-      expect(plainDetailsResult).toContain('Showing 3 of 3 issues');
+      expect(plainDetailsResult).toContain('Showing 2 of 2 issues');
       expect(plainDetailsResult).toContain('Unused source module');
       expect(plainDetailsResult).toContain('fix steps:');
 
@@ -2469,9 +2467,9 @@ export default {
       };
 
       expect(jsonPayload).toMatchObject({
-        issueCount: 3,
+        issueCount: 2,
         overview: {
-          issueCount: 3,
+          issueCount: 2,
         },
       });
       expect(jsonPayload.issues).toEqual(
@@ -2483,10 +2481,6 @@ export default {
           expect.objectContaining({
             code: 'LIMINA_PROOF_DEFAULT_TSCONFIG_INVALID',
             task: 'proof:check',
-          }),
-          expect.objectContaining({
-            code: 'LIMINA_CHECKER_PEER_DEPENDENCY_MISSING',
-            task: 'checker:build',
           }),
         ]),
       );
@@ -2524,7 +2518,7 @@ export default {
       expect(plainRuleFilteredResult).toContain(
         'rule: LIMINA_SOURCE_UNUSED_MODULE',
       );
-      expect(plainRuleFilteredResult).toContain('Matched: 1 / 3 issues');
+      expect(plainRuleFilteredResult).toContain('Matched: 1 / 2 issues');
       expect(plainRuleFilteredResult).toContain(
         '1  LIMINA_SOURCE_UNUSED_MODULE',
       );
@@ -2535,13 +2529,13 @@ export default {
 
       expect(plainPackageFilteredResult).toContain('Filters:');
       expect(plainPackageFilteredResult).toContain('package: @example/app');
-      expect(plainPackageFilteredResult).toContain('Matched: 2 / 3 issues');
+      expect(plainPackageFilteredResult).toContain('Matched: 2 / 2 issues');
 
       const plainUnmatchedRuleOutput = stripAnsi(unmatchedRuleResult.stdout);
       const normalizedUnmatchedRuleOutput = plainUnmatchedRuleOutput
         .replaceAll(/\s*│\s*/gu, ' ')
         .replaceAll(/\s+/gu, ' ');
-      expect(plainUnmatchedRuleOutput).toContain('Matched: 0 / 3 issues');
+      expect(plainUnmatchedRuleOutput).toContain('Matched: 0 / 2 issues');
       expect(plainUnmatchedRuleOutput).toContain(
         'rule: LIMINA_GRAPH_CHECK_FAILED',
       );
@@ -2597,7 +2591,7 @@ export default {
             title: 'Unused source module',
           })),
           status: 'completed',
-          version: 7,
+          version: 8,
         }),
       );
       const invocationId = '00000000-0000-4000-8000-000000000000';
@@ -2848,7 +2842,7 @@ export default {
             ],
           },
           status: 'completed',
-          version: 7,
+          version: 8,
         }),
       );
 
@@ -2976,7 +2970,7 @@ export default {
           createdAt: '2026-06-21T00:00:00.000Z',
           issues: [
             {
-              checkerName: 'typescript',
+              checkerName: 'tsc',
               code: 'LIMINA_CHECKER_BUILD_FAILED',
               packageName: '@example/app',
               reason: 'Checker build failed.',
@@ -2985,7 +2979,7 @@ export default {
             },
           ],
           status: 'completed',
-          version: 7,
+          version: 8,
         }),
       );
 
@@ -3093,7 +3087,7 @@ export default {
       const checkerHelpPlainStdout = stripAnsi(checkerHelpResult.stdout);
       expect(checkerHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(checkerHelpPlainStdout).toContain('Check issue checkers:');
-      expect(checkerHelpPlainStdout).toContain('- typescript  1 issue');
+      expect(checkerHelpPlainStdout).toContain('- tsc  1 issue');
 
       await expect(
         execFileAsync(process.execPath, [cliPath, 'check', 'demo', '--issues']),
@@ -3395,9 +3389,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['packages/**/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -3533,9 +3526,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['packages/**/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -3682,9 +3674,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['app/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -3754,7 +3745,7 @@ export default {
         await readFile(
           path.join(
             rootDir,
-            '.limina/tsconfig/checkers/typescript/projects/app/tsconfig.runtime.dts.json',
+            '.limina/tsconfig/checkers/tsc/projects/app/tsconfig.runtime.dts.json',
           ),
           'utf8',
         ),
@@ -3793,9 +3784,8 @@ export default {
           {
             config: {
               checkers: {
-                typescript: {
+                tsc: {
                   include: ['packages/**/tsconfig.json'],
-                  preset: 'tsc',
                 },
               },
             },
@@ -4055,7 +4045,7 @@ export default {
       expect(stdout).not.toContain('[start]');
       expect(
         await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
-      ).toContain("mode: 'auto'");
+      ).toContain('auto: {');
       expect(
         await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
       ).toContain('exclude: []');

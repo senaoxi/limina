@@ -7,18 +7,24 @@ import { parse } from 'yaml';
 
 interface WorkflowStep {
   id?: string;
+  name?: string;
+  run?: string;
+  uses?: string;
   with?: {
     filters?: string;
+    name?: string;
+    path?: string;
   };
 }
 
+interface WorkflowJob {
+  if?: string;
+  needs?: string | string[];
+  steps?: WorkflowStep[];
+}
+
 interface WorkflowDocument {
-  jobs?: Record<
-    string,
-    {
-      steps?: WorkflowStep[];
-    }
-  >;
+  jobs?: Record<string, WorkflowJob>;
 }
 
 interface LiminaProject {
@@ -116,5 +122,51 @@ describe('Limina CI change detection', () => {
         target: 'build',
       },
     ]);
+  });
+
+  it('runs the exact Vue semantic adapter matrix from built artifacts', async () => {
+    const workflowPath = path.join(workspaceRoot, '.github/workflows/ci.yml');
+    const runnerPath = path.join(
+      workspaceRoot,
+      'packages/limina/fixtures/vue-semantic-matrix/run-matrix.mjs',
+    );
+    const [workflowSource, runnerSource] = await Promise.all([
+      readFile(workflowPath, 'utf8'),
+      readFile(runnerPath, 'utf8'),
+    ]);
+    const workflow = parse(workflowSource) as WorkflowDocument;
+    const buildArtifacts = workflow.jobs?.['build-artifacts'];
+    const matrix = workflow.jobs?.['limina-vue-semantic-matrix'];
+    const commands =
+      matrix?.steps
+        ?.map((step) => step.run)
+        .filter((command): command is string => command !== undefined) ?? [];
+    const artifactUpload = buildArtifacts?.steps?.find(
+      (step) => step.with?.name === 'packages-build-artifacts',
+    );
+    const artifactDownload = matrix?.steps?.find((step) =>
+      step.uses?.startsWith('actions/download-artifact@'),
+    );
+
+    expect(matrix?.needs).toEqual(['changes', 'build-artifacts']);
+    expect(buildArtifacts?.if).toBe(matrix?.if);
+    expect(buildArtifacts?.if).not.toContain('always()');
+    expect(artifactUpload?.with?.path).toContain('packages/*/dist/**');
+    expect(artifactDownload?.with).toMatchObject({
+      name: 'packages-build-artifacts',
+      path: '.',
+    });
+    expect(commands).toContain(
+      'pnpm --dir packages/limina/fixtures/vue-semantic-matrix install --frozen-lockfile --ignore-scripts',
+    );
+    expect(commands).toContain(
+      'pnpm --dir packages/limina/fixtures/vue-semantic-matrix matrix',
+    );
+    expect(runnerSource).toContain(
+      "requireFromCase.resolve('limina/package.json')",
+    );
+    expect(runnerSource).toContain('installed.liminaCli');
+    expect(runnerSource).not.toContain("new URL('../../dist/bin/limina.js'");
+    expect(runnerSource).not.toContain("new URL('../../bin/limina.js'");
   });
 });

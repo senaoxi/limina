@@ -50,6 +50,12 @@ function createOutputFileName(sourceFileName: string): string {
     : sourceFileName.replace(/\.json$/u, '.output.json');
 }
 
+function createBuildFileName(sourceFileName: string): string {
+  return sourceFileName === 'tsconfig.json'
+    ? 'tsconfig.build.json'
+    : sourceFileName.replace(/\.json$/u, '.build.json');
+}
+
 export function getGeneratedDtsConfigPath(options: {
   checkerName: string;
   packageRootDir?: string;
@@ -93,6 +99,27 @@ export function getGeneratedSolutionBuildConfigPath(options: {
       'solutions',
       relativeDir === '.' ? '' : relativeDir,
       'tsconfig.build.json',
+    ),
+  );
+}
+
+export function getGeneratedLeafSolutionBuildConfigPath(options: {
+  checkerName: string;
+  packageRootDir?: string;
+  rootDir: string;
+  sourceConfigPath: string;
+}): string {
+  const relativeDir = getManagedSourceRelativeDirectory(options);
+
+  return normalizeAbsolutePath(
+    path.join(
+      options.rootDir,
+      generatedTsconfigDir,
+      'checkers',
+      options.checkerName,
+      'solutions',
+      relativeDir === '.' ? '' : relativeDir,
+      createBuildFileName(path.basename(options.sourceConfigPath)),
     ),
   );
 }

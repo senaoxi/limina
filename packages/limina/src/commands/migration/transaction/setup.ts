@@ -1,12 +1,14 @@
 import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import { mkdtemp, open, readFile, realpath, rm } from 'node:fs/promises';
 import { TerminalReplacementValidationError } from '../../../check-reporting/atomic-writer';
+import { assertUniquePhysicalTargets } from './cleanup';
 import { collectModifiedSnapshot } from './file-validation';
 import type {
   MigrationTransactionExecutionResult,
   MigrationTransactionOptions,
   MigrationWritePlanItem,
   ModifiedTargetSnapshot,
+  PreparedMigrationPlan,
   TransactionRuntimeOptions,
 } from './types';
 
@@ -39,6 +41,11 @@ export function resolveTransactionRuntimeOptions(
     retryDelaysMs: withDefault(
       options.retryDelaysMs,
       verificationRetryDelaysMs,
+    ),
+    writeAt: withDefault(
+      options.writeAt,
+      ({ bytes, handle, length, offset, position }) =>
+        handle.write(bytes, offset, length, position),
     ),
   };
 }
@@ -130,5 +137,45 @@ export function partitionMigrationPlan(
 export function createEmptyMigrationResult(
   skippedFiles: string[],
 ): MigrationTransactionExecutionResult {
-  return { cleanupWarnings: [], modifiedFiles: [], skippedFiles };
+  return {
+    cleanupWarnings: [],
+    hardlinkRewrittenFiles: [],
+    hardlinkSkippedFiles: [],
+    modifiedFiles: [],
+    skippedFiles,
+  };
+}
+
+export async function prepareMigrationWritePlan(
+  allowedRootDirs: string | readonly string[],
+  plan: readonly MigrationWritePlanItem[],
+  transactionOptions: MigrationTransactionOptions = {},
+): Promise<PreparedMigrationPlan> {
+  const { modifiedItems, skippedFiles } = partitionMigrationPlan(plan);
+  if (modifiedItems.length === 0) {
+    return {
+      atomicSnapshots: [],
+      hardlinkSnapshots: [],
+      normalizedRootDirs: [],
+      skippedFiles,
+    };
+  }
+  const runtime = resolveTransactionRuntimeOptions(transactionOptions);
+  const allowedRoots = await resolveAllowedRoots(allowedRootDirs);
+  const snapshots = await collectModifiedSnapshots({
+    allowedRoots: allowedRoots.roots,
+    items: modifiedItems,
+    runtime,
+  });
+  assertUniquePhysicalTargets(snapshots);
+  return {
+    atomicSnapshots: snapshots.filter(
+      (snapshot) => snapshot.writeStrategy === 'atomic-replace',
+    ),
+    hardlinkSnapshots: snapshots.filter(
+      (snapshot) => snapshot.writeStrategy === 'in-place',
+    ),
+    normalizedRootDirs: allowedRoots.normalizedRootDirs,
+    skippedFiles,
+  };
 }

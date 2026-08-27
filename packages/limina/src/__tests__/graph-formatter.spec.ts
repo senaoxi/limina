@@ -24,7 +24,7 @@ function stripAnsi(value: string): string {
 }
 
 const finding: GraphReferenceMissingFinding = {
-  checkerName: 'typescript',
+  checkerName: 'tsc',
   code: LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
   evidence: [
     {

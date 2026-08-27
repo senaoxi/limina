@@ -1,3 +1,4 @@
+import { isCheckerCacheReusable } from '#checkers';
 import { formatImportRecordLocation } from '#core/import-graph/context';
 import { toRelativePath } from '#utils/path';
 import {
@@ -16,7 +17,7 @@ import type {
 } from './reference-import-types';
 import { isDeniedGeneratedReference } from './reference-policy';
 import type {
-  GeneratedProviderEdge,
+  GeneratedDependencyEdge,
   ProviderSelectionResult,
   SourceProject,
 } from './types';
@@ -56,12 +57,18 @@ function addSelectionProblem(options: {
   );
 }
 
-function createProviderEdge(options: {
+function createDependencyEdge(options: {
   base: ReferenceImportOptions;
   providerProject: SourceProject;
   target: ReferenceTarget;
-}): GeneratedProviderEdge {
+}): GeneratedDependencyEdge {
   return {
+    cacheReuse: isCheckerCacheReusable({
+      consumer: options.base.project.checkerName,
+      provider: options.providerProject.checkerName,
+    })
+      ? 'reusable'
+      : 'non-reusable',
     file: formatImportRecordLocation(
       options.base.context.config.rootDir,
       options.base.importRecord,
@@ -69,13 +76,14 @@ function createProviderEdge(options: {
     fromChecker: options.base.project.checkerName,
     fromConfigPath: options.base.project.configPath,
     importedSpecifier: options.base.importRecord.specifier,
+    kind: 'declaration-provider',
     resolvedFilePath: options.target.resolvedFilePath,
     toChecker: options.providerProject.checkerName,
     toConfigPath: options.target.targetSourceConfigPath,
   };
 }
 
-function createProviderEdgeKey(edge: GeneratedProviderEdge): string {
+function createDependencyEdgeKey(edge: GeneratedDependencyEdge): string {
   return JSON.stringify([
     edge.fromChecker,
     edge.fromConfigPath,
@@ -106,9 +114,9 @@ function addSelectedProviderReference(options: {
   if (isTargetDenied(options)) {
     return;
   }
-  const edge = createProviderEdge(options);
-  options.base.context.providerEdgesByKey.set(
-    createProviderEdgeKey(edge),
+  const edge = createDependencyEdge(options);
+  options.base.context.dependencyEdgesByKey.set(
+    createDependencyEdgeKey(edge),
     edge,
   );
   options.base.project.references.add(options.providerProject.dtsConfigPath);
@@ -177,8 +185,17 @@ export function addMappedReference(options: {
     addCrossCheckerReference(options);
     return;
   }
-  if (isTargetDenied(options)) {
+  const providerProject = getDtsProjectsForSourcePath({
+    dtsProjectsBySourcePath: options.base.context.dtsProjectsBySourcePath,
+    sourceConfigPath: options.target.targetSourceConfigPath,
+  }).find(
+    (project) =>
+      project.checkerName === options.base.project.checkerName &&
+      project.dtsConfigPath === targetDtsConfigPath,
+  );
+  if (providerProject === undefined) {
+    options.base.context.problems.push(formatUnmappedImport(options));
     return;
   }
-  options.base.project.references.add(targetDtsConfigPath);
+  addSelectedProviderReference({ ...options, providerProject });
 }

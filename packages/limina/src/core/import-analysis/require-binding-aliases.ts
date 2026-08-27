@@ -1,4 +1,4 @@
-import ts from 'typescript';
+import type ts from 'typescript';
 import {
   createRequireScopeGraph,
   type PreparedRequireBindings,
@@ -9,26 +9,27 @@ import {
 
 function isPlainSingleArgumentCall(
   node: ts.Expression,
+  tsModule: typeof ts,
 ): node is ts.CallExpression {
   return (
-    ts.isCallExpression(node) &&
+    tsModule.isCallExpression(node) &&
     node.questionDotToken === undefined &&
     node.arguments.length === 1
   );
 }
 
-function isImportMeta(node: ts.Expression): boolean {
-  if (!ts.isMetaProperty(node)) return false;
+function isImportMeta(node: ts.Expression, tsModule: typeof ts): boolean {
+  if (!tsModule.isMetaProperty(node)) return false;
   return (
-    node.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    node.keywordToken === tsModule.SyntaxKind.ImportKeyword &&
     node.name.text === 'meta'
   );
 }
 
-function isImportMetaUrl(node: ts.Expression): boolean {
-  if (!ts.isPropertyAccessExpression(node)) return false;
+function isImportMetaUrl(node: ts.Expression, tsModule: typeof ts): boolean {
+  if (!tsModule.isPropertyAccessExpression(node)) return false;
   if (!isPlainUrlAccess(node)) return false;
-  return isImportMeta(node.expression);
+  return isImportMeta(node.expression, tsModule);
 }
 
 function isPlainUrlAccess(node: ts.PropertyAccessExpression): boolean {
@@ -38,8 +39,9 @@ function isPlainUrlAccess(node: ts.PropertyAccessExpression): boolean {
 function isCreateRequireCallee(
   graph: RequireScopeGraph,
   node: ts.Expression,
+  tsModule: typeof ts,
 ): boolean {
-  if (!ts.isIdentifier(node)) return false;
+  if (!tsModule.isIdentifier(node)) return false;
   return (
     resolveRequireBinding(graph, node, node.text)?.kind ===
     'create-require-import'
@@ -49,40 +51,49 @@ function isCreateRequireCallee(
 function isDirectCreateRequireCall(
   graph: RequireScopeGraph,
   node: ts.Expression,
+  tsModule: typeof ts,
 ): boolean {
-  if (!isPlainSingleArgumentCall(node)) return false;
-  if (!isImportMetaUrl(node.arguments[0]!)) return false;
-  return isCreateRequireCallee(graph, node.expression);
+  if (!isPlainSingleArgumentCall(node, tsModule)) return false;
+  if (!isImportMetaUrl(node.arguments[0]!, tsModule)) return false;
+  return isCreateRequireCallee(graph, node.expression, tsModule);
 }
 
-function isConstDeclaration(node: ts.VariableDeclaration): boolean {
+function isConstDeclaration(
+  node: ts.VariableDeclaration,
+  tsModule: typeof ts,
+): boolean {
   return (
-    ts.isVariableDeclarationList(node.parent) &&
-    (node.parent.flags & ts.NodeFlags.Const) !== 0
+    tsModule.isVariableDeclarationList(node.parent) &&
+    (node.parent.flags & tsModule.NodeFlags.Const) !== 0
   );
 }
 
 function hasDirectCreateRequireInitializer(
   graph: RequireScopeGraph,
   node: ts.VariableDeclaration,
+  tsModule: typeof ts,
 ): boolean {
   if (node.initializer === undefined) return false;
-  if (!isConstDeclaration(node)) return false;
-  return isDirectCreateRequireCall(graph, node.initializer);
+  if (!isConstDeclaration(node, tsModule)) return false;
+  return isDirectCreateRequireCall(graph, node.initializer, tsModule);
 }
 
 function getRequireAliasDeclaration(
   graph: RequireScopeGraph,
   node: ts.Node,
+  tsModule: typeof ts,
 ): ts.VariableDeclaration | null {
-  if (!isIdentifierVariableDeclaration(node)) return null;
-  return hasDirectCreateRequireInitializer(graph, node) ? node : null;
+  if (!isIdentifierVariableDeclaration(node, tsModule)) return null;
+  return hasDirectCreateRequireInitializer(graph, node, tsModule) ? node : null;
 }
 
 function isIdentifierVariableDeclaration(
   node: ts.Node,
+  tsModule: typeof ts,
 ): node is ts.VariableDeclaration & { name: ts.Identifier } {
-  return ts.isVariableDeclaration(node) && ts.isIdentifier(node.name);
+  return (
+    tsModule.isVariableDeclaration(node) && tsModule.isIdentifier(node.name)
+  );
 }
 
 function isOnlyBindingDeclaration(
@@ -105,64 +116,91 @@ function markRequireAlias(
 function registerRequireAliases(
   graph: RequireScopeGraph,
   sourceFile: ts.SourceFile,
+  tsModule: typeof ts,
 ): void {
   const visit = (node: ts.Node): void => {
-    const declaration = getRequireAliasDeclaration(graph, node);
+    const declaration = getRequireAliasDeclaration(graph, node, tsModule);
     if (declaration !== null) markRequireAlias(graph, declaration);
-    ts.forEachChild(node, visit);
+    tsModule.forEachChild(node, visit);
   };
   visit(sourceFile);
 }
 
-function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
+function isAssignmentOperator(
+  kind: ts.SyntaxKind,
+  tsModule: typeof ts,
+): boolean {
   return (
-    kind >= ts.SyntaxKind.FirstAssignment &&
-    kind <= ts.SyntaxKind.LastAssignment
+    kind >= tsModule.SyntaxKind.FirstAssignment &&
+    kind <= tsModule.SyntaxKind.LastAssignment
   );
 }
 
-function getBinaryAssignmentTarget(node: ts.Node): ts.Expression | null {
-  if (!ts.isBinaryExpression(node)) return null;
-  if (!isAssignmentOperator(node.operatorToken.kind)) return null;
+function getBinaryAssignmentTarget(
+  node: ts.Node,
+  tsModule: typeof ts,
+): ts.Expression | null {
+  if (!tsModule.isBinaryExpression(node)) return null;
+  if (!isAssignmentOperator(node.operatorToken.kind, tsModule)) return null;
   return node.left;
 }
 
-function isUpdateOperator(kind: ts.SyntaxKind): boolean {
-  return [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(
-    kind,
-  );
+function isUpdateOperator(kind: ts.SyntaxKind, tsModule: typeof ts): boolean {
+  return [
+    tsModule.SyntaxKind.PlusPlusToken,
+    tsModule.SyntaxKind.MinusMinusToken,
+  ].includes(kind);
 }
 
-function getUnaryAssignmentTarget(node: ts.Node): ts.Expression | null {
-  if (!isUnaryUpdateExpression(node)) return null;
-  if (!isUpdateOperator(node.operator)) return null;
+function getUnaryAssignmentTarget(
+  node: ts.Node,
+  tsModule: typeof ts,
+): ts.Expression | null {
+  if (!isUnaryUpdateExpression(node, tsModule)) return null;
+  if (!isUpdateOperator(node.operator, tsModule)) return null;
   return node.operand;
 }
 
 function isUnaryUpdateExpression(
   node: ts.Node,
+  tsModule: typeof ts,
 ): node is ts.PrefixUnaryExpression | ts.PostfixUnaryExpression {
-  return ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node);
+  return (
+    tsModule.isPrefixUnaryExpression(node) ||
+    tsModule.isPostfixUnaryExpression(node)
+  );
 }
 
-function getAssignmentTarget(node: ts.Node): ts.Expression | null {
-  return getBinaryAssignmentTarget(node) ?? getUnaryAssignmentTarget(node);
+function getAssignmentTarget(
+  node: ts.Node,
+  tsModule: typeof ts,
+): ts.Expression | null {
+  return (
+    getBinaryAssignmentTarget(node, tsModule) ??
+    getUnaryAssignmentTarget(node, tsModule)
+  );
 }
 
-function recordReassignedBinding(
-  graph: RequireScopeGraph,
-  reassigned: Set<RequireBinding>,
-  node: ts.Expression,
-): void {
-  const binding = getRequireAliasBinding(graph, node);
-  if (binding !== undefined) reassigned.add(binding);
+function recordReassignedBinding(options: {
+  graph: RequireScopeGraph;
+  node: ts.Expression;
+  reassigned: Set<RequireBinding>;
+  tsModule: typeof ts;
+}): void {
+  const binding = getRequireAliasBinding(
+    options.graph,
+    options.node,
+    options.tsModule,
+  );
+  if (binding !== undefined) options.reassigned.add(binding);
 }
 
 function getRequireAliasBinding(
   graph: RequireScopeGraph,
   node: ts.Expression,
+  tsModule: typeof ts,
 ): RequireBinding | undefined {
-  if (!ts.isIdentifier(node)) return undefined;
+  if (!tsModule.isIdentifier(node)) return undefined;
   const binding = resolveRequireBinding(graph, node, node.text);
   return asRequireAlias(binding);
 }
@@ -177,12 +215,14 @@ function asRequireAlias(
 function collectReassignedBindings(
   graph: RequireScopeGraph,
   sourceFile: ts.SourceFile,
+  tsModule: typeof ts,
 ): Set<RequireBinding> {
   const reassigned = new Set<RequireBinding>();
   const visit = (node: ts.Node): void => {
-    const target = getAssignmentTarget(node);
-    if (target !== null) recordReassignedBinding(graph, reassigned, target);
-    ts.forEachChild(node, visit);
+    const target = getAssignmentTarget(node, tsModule);
+    if (target !== null)
+      recordReassignedBinding({ graph, node: target, reassigned, tsModule });
+    tsModule.forEachChild(node, visit);
   };
   visit(sourceFile);
   return reassigned;
@@ -190,8 +230,12 @@ function collectReassignedBindings(
 
 export function prepareRequireBindings(
   sourceFile: ts.SourceFile,
+  tsModule: typeof ts,
 ): PreparedRequireBindings {
-  const graph = createRequireScopeGraph(sourceFile);
-  registerRequireAliases(graph, sourceFile);
-  return { graph, reassigned: collectReassignedBindings(graph, sourceFile) };
+  const graph = createRequireScopeGraph(sourceFile, tsModule);
+  registerRequireAliases(graph, sourceFile, tsModule);
+  return {
+    graph,
+    reassigned: collectReassignedBindings(graph, sourceFile, tsModule),
+  };
 }

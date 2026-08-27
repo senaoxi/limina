@@ -107,7 +107,6 @@ function getManagedPeerProblems(options: {
 }): string[] {
   return collectCheckerPeerDependencyProblems({
     checkers: options.descriptors.map(({ checker }) => checker),
-    imports: options.context.options.config.config?.imports,
     projectRootDir: options.context.projectRootDir,
     resolvePackage: options.context.options.checkerPackageResolver,
   });

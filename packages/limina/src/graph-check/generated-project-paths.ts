@@ -1,4 +1,7 @@
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
+} from '#core/build-graph/runner';
 
 export function getGeneratedCheckerNamespace(
   configPath: string,
@@ -101,12 +104,57 @@ export function createGeneratedProjectCheckerNamesByPath(
 ): Map<string, string> {
   const checkerNamesByPath = new Map<string, string>();
 
+  addGovernedProjectCheckerNames(generatedGraph, checkerNamesByPath);
+  addDeclarationProjectCheckerNames(generatedGraph, checkerNamesByPath);
+
+  return checkerNamesByPath;
+}
+
+function addGovernedProjectCheckerNames(
+  generatedGraph: GeneratedTsconfigGraphResult,
+  checkerNamesByPath: Map<string, string>,
+): void {
+  for (const [checkerName, governedSources] of generatedGraph.governedSources) {
+    addGovernedCheckerProjectNames({
+      checkerName,
+      checkerNamesByPath,
+      governedSources,
+    });
+  }
+}
+
+function addGovernedCheckerProjectNames(options: {
+  checkerName: string;
+  checkerNamesByPath: Map<string, string>;
+  governedSources: ReadonlyMap<string, GovernedSourceUnit>;
+}): void {
+  for (const unit of options.governedSources.values()) {
+    options.checkerNamesByPath.set(unit.configPath, options.checkerName);
+    addGovernedProjectionCheckerName({ ...options, unit });
+  }
+}
+
+function addGovernedProjectionCheckerName(options: {
+  checkerName: string;
+  checkerNamesByPath: Map<string, string>;
+  unit: GovernedSourceUnit;
+}): void {
+  if (options.unit.buildProjection.kind === 'framework-checker') return;
+  options.checkerNamesByPath.set(
+    'buildConfigPath' in options.unit.buildProjection
+      ? options.unit.buildProjection.buildConfigPath
+      : options.unit.buildProjection.dtsConfigPath,
+    options.checkerName,
+  );
+}
+
+function addDeclarationProjectCheckerNames(
+  generatedGraph: GeneratedTsconfigGraphResult,
+  checkerNamesByPath: Map<string, string>,
+): void {
   for (const [checkerName, sourceToDts] of generatedGraph.sourceToDts) {
-    for (const [sourceConfigPath, dtsConfigPath] of sourceToDts) {
-      checkerNamesByPath.set(sourceConfigPath, checkerName);
+    for (const dtsConfigPath of sourceToDts.values()) {
       checkerNamesByPath.set(dtsConfigPath, checkerName);
     }
   }
-
-  return checkerNamesByPath;
 }

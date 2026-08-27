@@ -1,7 +1,10 @@
 import type { CheckerProjectParseContext } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
+} from '#core/build-graph/runner';
 import {
   isDtsProjectConfig,
   type ProjectInfo,
@@ -68,16 +71,56 @@ function addCheckerMappings(options: {
   namesByPath: Map<string, string[]>;
   sourceToDts: Map<string, string>;
 }): void {
-  for (const [sourceConfigPath, dtsConfigPath] of options.sourceToDts) {
-    addCheckerName(options.namesByPath, sourceConfigPath, options.checkerName);
+  for (const dtsConfigPath of options.sourceToDts.values()) {
     addCheckerName(options.namesByPath, dtsConfigPath, options.checkerName);
   }
+}
+
+function addGovernedCheckerMappings(options: {
+  generatedGraph: GeneratedTsconfigGraphResult;
+  namesByPath: Map<string, string[]>;
+}): void {
+  for (const [checkerName, governedSources] of options.generatedGraph
+    .governedSources) {
+    addGovernedCheckerUnitMappings({
+      checkerName,
+      governedSources,
+      namesByPath: options.namesByPath,
+    });
+  }
+}
+
+function addGovernedCheckerUnitMappings(options: {
+  checkerName: string;
+  governedSources: ReadonlyMap<string, GovernedSourceUnit>;
+  namesByPath: Map<string, string[]>;
+}): void {
+  for (const unit of options.governedSources.values()) {
+    addCheckerName(options.namesByPath, unit.configPath, options.checkerName);
+    addGovernedProjectionMapping({ ...options, unit });
+  }
+}
+
+function addGovernedProjectionMapping(options: {
+  checkerName: string;
+  namesByPath: Map<string, string[]>;
+  unit: GovernedSourceUnit;
+}): void {
+  if (options.unit.buildProjection.kind === 'framework-checker') return;
+  addCheckerName(
+    options.namesByPath,
+    'buildConfigPath' in options.unit.buildProjection
+      ? options.unit.buildProjection.buildConfigPath
+      : options.unit.buildProjection.dtsConfigPath,
+    options.checkerName,
+  );
 }
 
 export function createGeneratedProjectCheckerNamesByPath(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): Map<string, string[]> {
   const namesByPath = new Map<string, string[]>();
+  addGovernedCheckerMappings({ generatedGraph, namesByPath });
 
   for (const [checkerName, sourceToDts] of generatedGraph.sourceToDts) {
     addCheckerMappings({ checkerName, namesByPath, sourceToDts });
@@ -129,12 +172,8 @@ export async function createSourceProjectEntries(options: {
   providers: AnalysisProviderSet;
   workspaceLookup: WorkspaceLookupIndex;
 }): Promise<SourceProjectEntry[]> {
-  const dtsProjects = options.projects.filter((project) =>
-    isDtsProjectConfig(project.configPath),
-  );
-
   return Promise.all(
-    dtsProjects.map((project) =>
+    options.projects.map((project) =>
       createSourceProjectEntry({ ...options, project }),
     ),
   );
@@ -171,7 +210,7 @@ function addProjectLabelFinding(options: {
   );
 }
 
-async function addProjectOwnership(options: {
+interface ProjectOwnershipOptions {
   ambientDeclarations: AmbientDeclarationIndex;
   checks: CheckCounter;
   config: ResolvedLiminaConfig;
@@ -179,28 +218,21 @@ async function addProjectOwnership(options: {
   project: ProjectInfo;
   providers: AnalysisProviderSet;
   workspaceLookup: WorkspaceLookupIndex;
-}): Promise<void> {
-  addProjectLabelFinding(options);
-  if (!isDtsProjectConfig(options.project.configPath)) {
-    return;
-  }
+}
 
-  addProjectOwnerProblems({
-    ambientDeclarations: options.ambientDeclarations,
-    checks: options.checks,
-    config: options.config,
-    configPath: options.project.configPath,
-    fileNames: options.project.fileNames,
-    findings: options.findings,
-    role: 'declaration leaf',
-    workspaceLookup: options.workspaceLookup,
-  });
+function getProjectOwnershipRole(
+  isDtsProject: boolean,
+): 'declaration leaf' | 'governed source' {
+  return isDtsProject ? 'declaration leaf' : 'governed source';
+}
 
+async function addCompanionProjectOwnership(
+  options: ProjectOwnershipOptions,
+  isDtsProject: boolean,
+): Promise<void> {
+  if (!isDtsProject) return;
   const typecheckConfigPath = options.project.resolverConfigPath;
-  if (!existsSync(typecheckConfigPath)) {
-    return;
-  }
-
+  if (!existsSync(typecheckConfigPath)) return;
   const companion = await options.providers.tsconfig.getProject(
     typecheckConfigPath,
     options.project,
@@ -215,6 +247,24 @@ async function addProjectOwnership(options: {
     role: 'typecheck companion',
     workspaceLookup: options.workspaceLookup,
   });
+}
+
+async function addProjectOwnership(
+  options: ProjectOwnershipOptions,
+): Promise<void> {
+  addProjectLabelFinding(options);
+  const isDtsProject = isDtsProjectConfig(options.project.configPath);
+  addProjectOwnerProblems({
+    ambientDeclarations: options.ambientDeclarations,
+    checks: options.checks,
+    config: options.config,
+    configPath: options.project.configPath,
+    fileNames: options.project.fileNames,
+    findings: options.findings,
+    role: getProjectOwnershipRole(isDtsProject),
+    workspaceLookup: options.workspaceLookup,
+  });
+  await addCompanionProjectOwnership(options, isDtsProject);
 }
 
 export async function addSourceProjectOwnerProblems(options: {

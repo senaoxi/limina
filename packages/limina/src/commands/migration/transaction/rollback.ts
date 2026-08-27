@@ -12,6 +12,13 @@ import {
   validationIo,
 } from './file-stat';
 import { validateCanonicalTarget, validateFile } from './file-validation';
+import {
+  closeTargetHandle,
+  openValidatedInPlaceTarget,
+  rewriteOpenTarget,
+} from './in-place';
+import { verifyRestoredInPlaceTarget } from './in-place-verification';
+import { resolveTransactionRuntimeOptions } from './setup';
 import type { MigrationTransactionOptions, TransactionItem } from './types';
 
 function shouldRetryVerification(
@@ -71,13 +78,66 @@ async function verifyWithRetry(
   await retryVerification({ attempt, error, operation, retryDelaysMs });
 }
 
+function hasWrittenIdentity(item: TransactionItem): boolean {
+  if (item.snapshot.writeStrategy === 'atomic-replace') {
+    return item.nextIdentity !== undefined;
+  }
+  return item.writtenIdentity !== undefined;
+}
+
 function requireRollbackIdentities(item: TransactionItem): void {
-  if (item.backupIdentity !== undefined && item.nextIdentity !== undefined) {
+  if (item.backupIdentity !== undefined && hasWrittenIdentity(item)) {
     return;
   }
   throw new Error(
     `Rollback identities are missing for ${item.snapshot.item.configPath}`,
   );
+}
+
+async function rollbackInPlace(options: {
+  item: TransactionItem;
+  openFile: NonNullable<MigrationTransactionOptions['openFile']>;
+  readFileBytes: NonNullable<MigrationTransactionOptions['readFileBytes']>;
+  retryDelaysMs: readonly number[];
+  trackedHandles: Set<FileHandle>;
+}): Promise<void> {
+  const runtime = resolveTransactionRuntimeOptions({
+    openFile: options.openFile,
+    readFileBytes: options.readFileBytes,
+    retryDelaysMs: options.retryDelaysMs,
+  });
+  const handle = await openValidatedInPlaceTarget({
+    expected: options.item.writtenIdentity!,
+    item: options.item,
+    runtime,
+    trackedHandles: options.trackedHandles,
+  });
+  await rewriteOpenTarget({
+    bytes: options.item.snapshot.item.originalBytes,
+    handle,
+    restoreTimestamp: true,
+    snapshot: options.item.snapshot,
+    writeAt: runtime.writeAt,
+  });
+  await closeTargetHandle({
+    handle,
+    item: options.item,
+    trackedHandles: options.trackedHandles,
+  });
+  try {
+    await verifyWithRetry(
+      () =>
+        verifyRestoredInPlaceTarget({
+          item: options.item,
+          readFileBytes: options.readFileBytes,
+        }),
+      options.retryDelaysMs,
+    );
+  } catch (error) {
+    options.item.state = 'rollback-postverify-failed';
+    throw error;
+  }
+  options.item.state = 'rolled-back';
 }
 
 function fullComparison() {
@@ -96,9 +156,9 @@ async function prepareRollbackFile(options: {
   options.item.rollbackIdentity = await prepareFile({
     bytes: options.item.snapshot.item.originalBytes,
     filePath: options.item.rollbackPath,
+    metadataProfile: { kind: 'target-metadata', restoreTimestamp: true },
     openFile: options.openFile,
     readFileBytes: options.readFileBytes,
-    restoreTimestamp: true,
     snapshot: options.item.snapshot,
     trackedHandles: options.trackedHandles,
   });
@@ -223,6 +283,10 @@ export async function rollbackItem(options: {
     filePath: options.item.backupPath,
     readFileBytes: options.readFileBytes,
   });
+  if (options.item.snapshot.writeStrategy === 'in-place') {
+    await rollbackInPlace(options);
+    return;
+  }
   await prepareRollbackFile(options);
   await replaceRollbackTarget(options);
   await postVerifyRollback(options);

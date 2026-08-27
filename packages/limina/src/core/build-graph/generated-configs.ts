@@ -1,8 +1,10 @@
+import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createLiminaTsconfigSchemaPath } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { createGeneratedCompilerOptionOverrides } from './compiler-overrides';
+import { readGraphRules } from './generated/config-readers';
 import {
   createRelativePath,
   getGeneratedOutDir,
@@ -60,6 +62,17 @@ function getCommonSourceRootDir(project: SourceProject): string {
   return findCommonDirectory(fileDirectories[0]!, fileDirectories);
 }
 
+function assertDeclarationInputFiles(project: SourceProject): void {
+  if (!isBuildCapablePreset(project.context.checkerPresets[0]!)) return;
+  const frameworkFile = project.fileNames.find(
+    (fileName) => fileName.endsWith('.astro') || fileName.endsWith('.svelte'),
+  );
+  if (frameworkFile === undefined) return;
+  throw new Error(
+    `Generated declaration project cannot include framework source: ${frameworkFile}`,
+  );
+}
+
 function createDtsLiminaOptions(
   project: SourceProject,
 ): Record<string, unknown> {
@@ -74,11 +87,19 @@ function createDtsLiminaOptions(
   return options;
 }
 
+function createRelativeImportRewriteOverride(
+  project: SourceProject,
+): Record<string, unknown> {
+  if (project.options.rewriteRelativeImportExtensions !== true) return {};
+  return { rewriteRelativeImportExtensions: false };
+}
+
 export function createGeneratedDtsConfig(options: {
   config: ResolvedLiminaConfig;
   project: SourceProject;
 }): Record<string, unknown> {
   const { config, project } = options;
+  assertDeclarationInputFiles(project);
   const managedOutDir = getGeneratedOutDir({
     checkerName: project.checkerName,
     packageRootDir: project.packageRootDir,
@@ -107,7 +128,7 @@ export function createGeneratedDtsConfig(options: {
       declaration: true,
       emitDeclarationOnly: true,
       declarationMap: false,
-      rewriteRelativeImportExtensions: false,
+      ...createRelativeImportRewriteOverride(project),
       rootDir: createRelativePath(
         project.dtsConfigPath,
         getCommonSourceRootDir(project),
@@ -206,6 +227,19 @@ function createGeneratedSolutionConfig(options: {
   config: ResolvedLiminaConfig;
   solution: SolutionProject | OutputSolutionProject;
 }): Record<string, unknown> {
+  const liminaOptions: Record<string, unknown> = {
+    generated: true,
+    checker: options.solution.checkerName,
+    sourceConfig: createRelativePath(
+      options.solution.buildConfigPath,
+      options.solution.configPath,
+    ),
+  };
+  const graphRules = readGraphRules(
+    options.config,
+    options.solution.configPath,
+  );
+  if (graphRules.length > 0) liminaOptions.graphRules = graphRules;
   return {
     $schema: createLiminaTsconfigSchemaPath(
       options.config.rootDir,
@@ -220,14 +254,7 @@ function createGeneratedSolutionConfig(options: {
           referencePath,
         ),
       })),
-    liminaOptions: {
-      generated: true,
-      checker: options.solution.checkerName,
-      sourceConfig: createRelativePath(
-        options.solution.buildConfigPath,
-        options.solution.configPath,
-      ),
-    },
+    liminaOptions,
   };
 }
 

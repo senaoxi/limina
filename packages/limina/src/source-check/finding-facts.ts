@@ -104,7 +104,10 @@ export type SourceOwnerInvalidFacts =
       readonly configPath: string;
       readonly filePaths: readonly string[];
       readonly kind: 'missing-owner';
-      readonly role: 'declaration leaf' | 'typecheck companion';
+      readonly role:
+        | 'declaration leaf'
+        | 'governed source'
+        | 'typecheck companion';
     }
   | {
       readonly importerPath: string;
@@ -232,7 +235,10 @@ export type SourceTsconfigGovernanceFacts =
         | 'config-mixed-owners'
         | 'config-owner-scope';
       readonly packageManifestPaths?: readonly string[];
-      readonly role?: 'declaration leaf' | 'typecheck companion';
+      readonly role?:
+        | 'declaration leaf'
+        | 'governed source'
+        | 'typecheck companion';
     }
   | {
       readonly candidateConfigPaths: readonly string[];

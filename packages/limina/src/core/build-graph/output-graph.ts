@@ -29,7 +29,7 @@ function createEmptyOutputGraph(): CheckerOutputGraph {
 }
 
 function isBuildChecker(checker: ResolvedCheckerConfig): boolean {
-  const adapter = getCheckerAdapter(checker.preset);
+  const adapter = getCheckerAdapter(checker.name);
   return adapter ? adapter.execution === 'build' : false;
 }
 

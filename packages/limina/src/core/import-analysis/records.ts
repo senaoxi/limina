@@ -10,7 +10,17 @@ export type ImportRecordKind =
   | 'triple-slash-path'
   | 'triple-slash-types'
   | 'jsx-import-source'
-  | 'environment-pragma';
+  | 'environment-pragma'
+  | 'vue-script-src'
+  | 'vue-generic-type';
+
+export type ImportDomain =
+  | 'typescript'
+  | 'vue-script'
+  | 'vue-script-attribute'
+  | 'vue-generic-attribute'
+  | 'astro-frontmatter'
+  | 'astro-client-script';
 
 export interface ImportLocator {
   occurrence: number;
@@ -19,6 +29,7 @@ export interface ImportLocator {
 }
 
 export interface ImportRecord {
+  domain: ImportDomain;
   filePath: string;
   kind: ImportRecordKind;
   line: number;
@@ -48,6 +59,7 @@ export function finalizeImportRecords(
       occurrenceByIdentity.set(identity, occurrence + 1);
 
       return {
+        domain: record.domain,
         filePath: record.filePath,
         kind: record.kind,
         line: record.line,
@@ -60,13 +72,22 @@ export function finalizeImportRecords(
     });
 }
 
+function getLineTerminatorLength(sourceText: string, index: number): number {
+  const codePoint = sourceText.codePointAt(index);
+  if (codePoint === 10) return 1;
+  if (codePoint === 13)
+    return 1 + Number(sourceText.codePointAt(index + 1) === 10);
+  return 0;
+}
+
 export function buildLineStarts(sourceText: string): number[] {
   const starts = [0];
 
   for (let index = 0; index < sourceText.length; index += 1) {
-    if (sourceText.codePointAt(index) === 10) {
-      starts.push(index + 1);
-    }
+    const length = getLineTerminatorLength(sourceText, index);
+    if (length === 0) continue;
+    index += length - 1;
+    starts.push(index + 1);
   }
 
   return starts;
@@ -90,6 +111,7 @@ export function getLine(lineStarts: readonly number[], pos: number): number {
 }
 
 export function createImportRecord(options: {
+  domain?: ImportDomain;
   end?: number;
   filePath: string;
   kind: ImportRecordKind;
@@ -100,6 +122,7 @@ export function createImportRecord(options: {
   specifier: string;
 }): CollectedImportRecord {
   return {
+    domain: options.domain ?? 'typescript',
     filePath: options.filePath,
     kind: options.kind,
     line: options.lineOffset + getLine(options.lineStarts, options.pos),
@@ -113,4 +136,11 @@ export function createImportRecord(options: {
     pos: options.sourceOffset + options.pos,
     specifier: options.specifier,
   };
+}
+
+export function setImportRecordDomain(
+  records: readonly ImportRecord[],
+  domain: ImportDomain,
+): ImportRecord[] {
+  return records.map((record) => ({ ...record, domain }));
 }

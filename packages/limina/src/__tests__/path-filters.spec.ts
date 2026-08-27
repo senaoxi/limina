@@ -41,7 +41,7 @@ function formatIssueIds(options: {
         createdAt: '2026-07-17T00:00:00.000Z',
         issues: [issue],
         status: 'completed',
-        version: 7,
+        version: 8,
       },
     }),
   ) as { issues: { id?: string }[] };
@@ -148,7 +148,7 @@ describe('check issue scope path matching', () => {
           createdAt: '2026-07-17T00:00:00.000Z',
           issues: [issue],
           status: 'completed',
-          version: 7,
+          version: 8,
         },
       }),
     ) as { issueCount: number };

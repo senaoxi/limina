@@ -1,8 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import {
-  type CommandPipelineStep,
-  prepareCommandCacheTargets,
-} from './command-cache';
+import type { CommandPipelineStep } from './command-cache';
 import { createCommandExecutionContext } from './command-context';
 import { runInteractiveCommand } from './command-interactive';
 import { runSynchronousCommand } from './command-sync';
@@ -20,11 +17,6 @@ export async function runCommandStep(
   const context = createCommandExecutionContext({
     config,
     pipelineOptions: options,
-    step,
-  });
-  await prepareCommandCacheTargets({
-    cleanup: options.vueTsgoCacheCleanup,
-    cwd: context.cwd,
     step,
   });
   if (usesInteractiveFlow(options)) return runInteractiveCommand(context);

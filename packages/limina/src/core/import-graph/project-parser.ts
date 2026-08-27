@@ -71,7 +71,9 @@ function getProjectResolverConfigPath(
   const virtualContent = getVirtualContent(virtualFiles, configPath);
 
   if (virtualContent === undefined) {
-    return getTypecheckConfigPath(configPath);
+    return isDtsProjectConfig(configPath)
+      ? getTypecheckConfigPath(configPath)
+      : configPath;
   }
 
   return resolveReferencePath(
@@ -160,20 +162,52 @@ type ParseProjectArgs = [
   cache?: CheckerProjectConfigCache,
 ];
 
+function getParsedProjectOptions(options: {
+  normalizedConfigPath: string;
+  ownedParsed: ReturnType<typeof parseCheckerProjectConfigForContext>;
+  parsed: ReturnType<typeof parseCheckerProjectConfigForContext>;
+  resolverConfigPath: string;
+}): ProjectInfo['options'] {
+  if (options.resolverConfigPath === options.normalizedConfigPath) {
+    return options.parsed.options;
+  }
+  return isDtsProjectConfig(options.normalizedConfigPath)
+    ? options.parsed.options
+    : options.ownedParsed.options;
+}
+
+function shouldAllowNoInputDiagnostics(
+  virtualFiles: ReadonlyMap<string, string> | undefined,
+  configPath: string,
+): boolean {
+  if (virtualFiles === undefined) return false;
+  return virtualFiles.has(configPath);
+}
+
+function getAnalysisGeneration(cache: CheckerProjectConfigCache | undefined) {
+  if (cache === undefined) return 0;
+  return cache.generation;
+}
+
 export function parseProject(...args: ParseProjectArgs): ProjectInfo {
   const [config, configPath, contextOrExtensions, virtualFiles, cache] = args;
   const context = resolveParseContext(contextOrExtensions);
+  const normalizedConfigPath = normalizeAbsolutePath(configPath);
   const parsed = parseCheckerProjectConfigForContext({
+    allowNoInputDiagnostics: shouldAllowNoInputDiagnostics(
+      virtualFiles,
+      normalizedConfigPath,
+    ),
     cache,
     configPath,
     context,
     projectRootDir: config.rootDir,
     virtualFiles,
   });
-  const normalizedConfigPath = normalizeAbsolutePath(configPath);
-  const resolverConfigPath = isDtsProjectConfig(normalizedConfigPath)
-    ? getProjectResolverConfigPath(normalizedConfigPath, virtualFiles)
-    : normalizedConfigPath;
+  const resolverConfigPath = getProjectResolverConfigPath(
+    normalizedConfigPath,
+    virtualFiles,
+  );
   const ownedParsed = resolveOwnedParsedProject({
     config,
     cache,
@@ -190,7 +224,9 @@ export function parseProject(...args: ParseProjectArgs): ProjectInfo {
   });
 
   return {
+    analysisGeneration: getAnalysisGeneration(cache),
     checkerPresets: context.checkerPresets,
+    configClosure: ownedParsed.configClosure.map((entry) => ({ ...entry })),
     configPath: normalizedConfigPath,
     extensions: parsed.extensions,
     fileNames: normalizeProjectFileNames({
@@ -204,10 +240,16 @@ export function parseProject(...args: ParseProjectArgs): ProjectInfo {
       extensions: parsed.extensions,
       fileNames: ownedParsed.fileNames,
     }),
-    options: parsed.options,
+    options: getParsedProjectOptions({
+      normalizedConfigPath,
+      ownedParsed,
+      parsed,
+      resolverConfigPath,
+    }),
     references: new Set(
       getProjectReferencePaths({ config, configPath, virtualFiles }),
     ),
     resolverConfigPath,
+    vueSemanticIdentity: ownedParsed.vueSemanticIdentity,
   };
 }

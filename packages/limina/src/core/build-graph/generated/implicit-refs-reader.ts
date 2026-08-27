@@ -25,6 +25,7 @@ type ImplicitRefEntriesResult =
   | { entries: unknown[]; kind: 'value' };
 
 interface RefTargetValidationOptions {
+  rootDir: string;
   sourceConfigPath: string;
   targetConfigPath: string;
 }
@@ -126,7 +127,7 @@ const validateExistingTarget: RefTargetValidator = (options) =>
     : 'implicitRefs path must point to an existing ordinary source tsconfig.';
 
 const validateOrdinarySourceTarget: RefTargetValidator = (options) =>
-  isOrdinarySourceTypecheckConfigPath(options.targetConfigPath)
+  isOrdinarySourceTypecheckConfigPath(options.targetConfigPath, options.rootDir)
     ? null
     : 'implicitRefs path must point to an ordinary source tsconfig*.json file, not a generated, declaration, build, base, or check config.';
 
@@ -180,6 +181,7 @@ function createValidatedImplicitRef(options: {
     options.pathValue,
   );
   const problem = findTargetProblem({
+    rootDir: options.context.config.rootDir,
     sourceConfigPath: options.context.sourceConfigPath,
     targetConfigPath,
   });

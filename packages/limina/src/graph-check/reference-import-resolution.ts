@@ -1,5 +1,5 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
-import { resolveDeclarationProvider } from '../core/import-graph/declaration-provider';
+import type { ProjectDependency } from '../core/project-dependencies/contracts';
 import { addDeniedDepImportProblem } from './import-access-denied';
 import { getResolvedWorkspacePackage } from './import-resolution-utils';
 import {
@@ -10,10 +10,6 @@ import type {
   ExpectedReferenceCollectionContext,
   GraphImportResolution,
 } from './reference-types';
-import {
-  addOxcOnlyDeclarationProviderProblem,
-  addUnresolvedWorkspaceImportProblem,
-} from './unresolved-import-findings';
 import {
   addWorkspacePackageExportWithoutTypeEntryProblem,
   getDeniedDepRuleForResolvedPackage,
@@ -26,53 +22,11 @@ interface ImportResolutionOptions {
   filePath: string;
   importRecord: ImportRecord;
   project: ProjectInfo;
+  projectDependency: ProjectDependency;
 }
-
-type DeclarationProvider = ReturnType<typeof resolveDeclarationProvider>;
 type WorkspaceExportResolution = ReturnType<
   typeof getWorkspaceExportResolution
 >;
-
-function getProviderResolvedPath(options: {
-  provider: DeclarationProvider;
-  workspaceResolvedPath: string | null;
-}): string | null {
-  if (
-    options.provider.kind === 'declaration' ||
-    options.provider.kind === 'source'
-  ) {
-    return options.provider.typeScriptResolution.resolvedFileName;
-  }
-
-  return options.workspaceResolvedPath;
-}
-
-function reportMissingProvider(options: {
-  provider: DeclarationProvider;
-  resolutionOptions: ImportResolutionOptions;
-}): void {
-  if (options.provider.kind === 'oxc-only') {
-    addOxcOnlyDeclarationProviderProblem({
-      context: options.resolutionOptions.context,
-      importRecord: options.resolutionOptions.importRecord,
-      oxcResolvedFilePath: options.provider.oxcResolvedFilePath,
-      project: options.resolutionOptions.project,
-    });
-    return;
-  }
-
-  if (options.provider.kind === 'unresolved') {
-    addUnresolvedWorkspaceImportProblem({
-      context: options.resolutionOptions.context,
-      importRecord: options.resolutionOptions.importRecord,
-      project: options.resolutionOptions.project,
-      targetPackage:
-        options.resolutionOptions.context.workspaceLookup.findPackageForSpecifier(
-          options.resolutionOptions.importRecord.specifier,
-        ),
-    });
-  }
-}
 
 function isUnstableWorkspaceExport(
   resolution: WorkspaceExportResolution,
@@ -82,57 +36,6 @@ function isUnstableWorkspaceExport(
   }
 
   return !resolution.hasTypeScriptStableEntry;
-}
-
-function getWorkspaceResolvedPath(
-  resolution: WorkspaceExportResolution,
-): string | null {
-  return resolution?.typeScriptResolvedFileName ?? null;
-}
-
-function reportMissingProviderWhenNeeded(options: {
-  provider: DeclarationProvider;
-  resolutionOptions: ImportResolutionOptions;
-  resolvedPath: string | null;
-}): void {
-  if (options.resolvedPath) {
-    return;
-  }
-
-  reportMissingProvider(options);
-}
-
-function resolveProviderPath(options: {
-  provider: DeclarationProvider;
-  resolutionOptions: ImportResolutionOptions;
-  workspaceExportResolution: WorkspaceExportResolution;
-}): string | null {
-  if (options.provider.kind === 'resource') {
-    return null;
-  }
-
-  if (isUnstableWorkspaceExport(options.workspaceExportResolution)) {
-    addWorkspacePackageExportWithoutTypeEntryProblem({
-      context: options.resolutionOptions.context,
-      importRecord: options.resolutionOptions.importRecord,
-      project: options.resolutionOptions.project,
-      resolution: options.workspaceExportResolution!,
-    });
-    return null;
-  }
-
-  const resolvedPath = getProviderResolvedPath({
-    provider: options.provider,
-    workspaceResolvedPath: getWorkspaceResolvedPath(
-      options.workspaceExportResolution,
-    ),
-  });
-  reportMissingProviderWhenNeeded({
-    provider: options.provider,
-    resolutionOptions: options.resolutionOptions,
-    resolvedPath,
-  });
-  return resolvedPath;
 }
 
 function createAllowedResolution(options: {
@@ -184,17 +87,21 @@ function createAllowedResolution(options: {
   };
 }
 
-function resolveDeclarationProviderForImport(
-  options: ImportResolutionOptions,
-): DeclarationProvider {
-  return resolveDeclarationProvider({
-    compilerOptions: options.project.options,
-    containingFile: options.filePath,
-    fileOwnerLookup: options.context.fileOwnerLookup,
-    importAnalysis: options.context.importAnalysis,
-    importRecord: options.importRecord,
-    project: options.project,
-  });
+function resolveProjectDependencyPath(options: {
+  dependency: ProjectDependency;
+  resolutionOptions: ImportResolutionOptions;
+  workspaceExportResolution: WorkspaceExportResolution;
+}): string | null {
+  if (isUnstableWorkspaceExport(options.workspaceExportResolution)) {
+    addWorkspacePackageExportWithoutTypeEntryProblem({
+      context: options.resolutionOptions.context,
+      importRecord: options.resolutionOptions.importRecord,
+      project: options.resolutionOptions.project,
+      resolution: options.workspaceExportResolution!,
+    });
+    return null;
+  }
+  return options.dependency.resolvedFilePath;
 }
 
 export function resolveImportForReferenceExpectation(
@@ -207,8 +114,8 @@ export function resolveImportForReferenceExpectation(
     ...options,
     targetPackage,
   });
-  const graphResolvedFilePath = resolveProviderPath({
-    provider: resolveDeclarationProviderForImport(options),
+  const graphResolvedFilePath = resolveProjectDependencyPath({
+    dependency: options.projectDependency,
     resolutionOptions: options,
     workspaceExportResolution,
   });
@@ -219,7 +126,6 @@ export function resolveImportForReferenceExpectation(
   const managed = resolveManagedOutput({
     context: options.context,
     graphResolvedFilePath,
-    importRecord: options.importRecord,
     project: options.project,
   });
   if (!managed) {

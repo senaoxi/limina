@@ -1,5 +1,6 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { CheckerGraphProjectRoute } from '#core/tsconfig/actions';
 import { isDtsConfigPath } from '#core/tsconfig/actions';
 import { isPathInsideDirectory, toRelativePath } from '#utils/path';
@@ -95,6 +96,44 @@ function createGraphCoverageEntries(options: {
   );
 }
 
+function createGovernedCoverageEntries(options: {
+  config: ResolvedLiminaConfig;
+  generatedGraph: GeneratedTsconfigGraphResult;
+}): CoverageEntry[] {
+  return [...options.generatedGraph.governedSources.entries()].flatMap(
+    ([checkerName, governedSources]) =>
+      [...governedSources.values()].flatMap((unit) => {
+        const source: CoverageSource = {
+          checkerEntryPath:
+            options.generatedGraph.checkerEntries.get(checkerName) ??
+            unit.configPath,
+          checkerName,
+          checkerPreset: unit.primaryCheckerName,
+          label: toRelativePath(options.config.rootDir, unit.configPath),
+          projectPath: unit.configPath,
+          type: 'graph',
+        };
+        return unit.ownedFileNames
+          .filter((filePath) =>
+            isPathInsideDirectory(filePath, unit.packageRootDir),
+          )
+          .map((filePath) => ({ filePath, source }));
+      }),
+  );
+}
+
+function hasGovernedSources(
+  generatedGraph: GeneratedTsconfigGraphResult | undefined,
+): generatedGraph is GeneratedTsconfigGraphResult {
+  return (
+    generatedGraph !== undefined &&
+    generatedGraph.governedSources instanceof Map &&
+    [...generatedGraph.governedSources.values()].some(
+      (governedSources) => governedSources.size > 0,
+    )
+  );
+}
+
 function createCheckerProjectCoverageEntries(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
@@ -106,7 +145,7 @@ function createCheckerProjectCoverageEntries(options: {
     config: options.config,
     configPath: options.configPath,
     extensions: options.target.checker.extensions,
-    preset: options.target.checker.preset,
+    preset: options.target.checker.name,
     virtualFiles: options.virtualFiles,
   });
   const source: CoverageSource = {
@@ -147,6 +186,7 @@ function createCheckerCoverageEntries(options: {
 export function collectCoverage(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
+  generatedGraph?: GeneratedTsconfigGraphResult;
   checkerTargets: CheckerCoverageTarget[];
   outsideSourceCoverageByFile?: Map<string, CoverageSource[]>;
   projectConfigCache?: CheckerProjectConfigCache;
@@ -160,7 +200,12 @@ export function collectCoverage(options: {
     sourceFiles: options.sourceFiles,
   };
   const entries = [
-    ...createGraphCoverageEntries(options),
+    ...(hasGovernedSources(options.generatedGraph)
+      ? createGovernedCoverageEntries({
+          config: options.config,
+          generatedGraph: options.generatedGraph,
+        })
+      : createGraphCoverageEntries(options)),
     ...createCheckerCoverageEntries(options),
   ];
 

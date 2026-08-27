@@ -74,11 +74,4 @@ export default defineConfig([
       complexity: ['error', 20],
     },
   },
-  {
-    name: 'Limina authenticated cache transaction budget',
-    files: ['src/typecheck/vue-tsgo-cache.ts'],
-    rules: {
-      complexity: ['error', 17],
-    },
-  },
 ]);

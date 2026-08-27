@@ -1,3 +1,4 @@
+import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { toRelativePath } from '#utils/path';
@@ -22,7 +23,7 @@ function shouldProjectChecker(
   projection: RouteProjection,
 ): boolean {
   if (projection === 'entry') {
-    return true;
+    return isBuildCapablePreset(checker.checkerPreset);
   }
   return checker.supportsSourceGraph;
 }

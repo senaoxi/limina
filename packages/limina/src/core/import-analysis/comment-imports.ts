@@ -16,19 +16,6 @@ const tripleSlashPathReferenceRE =
 const tripleSlashTypesReferenceRE =
   /\/\/\/\s*<reference\s+types\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
 
-const TRIVIA_KINDS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.WhitespaceTrivia,
-  ts.SyntaxKind.NewLineTrivia,
-  ts.SyntaxKind.SingleLineCommentTrivia,
-  ts.SyntaxKind.MultiLineCommentTrivia,
-  ts.SyntaxKind.ShebangTrivia,
-  ts.SyntaxKind.ConflictMarkerTrivia,
-]);
-const COMMENT_KINDS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.SingleLineCommentTrivia,
-  ts.SyntaxKind.MultiLineCommentTrivia,
-]);
-
 interface CommentImportOptions {
   commentStart: number;
   filePath: string;
@@ -42,19 +29,41 @@ interface CommentImportOptions {
   text: string;
 }
 
-function getFirstNonTriviaStart(sourceText: string): number {
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
+function getTriviaKinds(tsModule: typeof ts): ReadonlySet<ts.SyntaxKind> {
+  return new Set([
+    tsModule.SyntaxKind.WhitespaceTrivia,
+    tsModule.SyntaxKind.NewLineTrivia,
+    tsModule.SyntaxKind.SingleLineCommentTrivia,
+    tsModule.SyntaxKind.MultiLineCommentTrivia,
+    tsModule.SyntaxKind.ShebangTrivia,
+    tsModule.SyntaxKind.ConflictMarkerTrivia,
+  ]);
+}
+
+function getCommentKinds(tsModule: typeof ts): ReadonlySet<ts.SyntaxKind> {
+  return new Set([
+    tsModule.SyntaxKind.SingleLineCommentTrivia,
+    tsModule.SyntaxKind.MultiLineCommentTrivia,
+  ]);
+}
+
+function getFirstNonTriviaStart(
+  sourceText: string,
+  tsModule: typeof ts,
+): number {
+  const triviaKinds = getTriviaKinds(tsModule);
+  const scanner = tsModule.createScanner(
+    tsModule.ScriptTarget.Latest,
     false,
-    ts.LanguageVariant.Standard,
+    tsModule.LanguageVariant.Standard,
     sourceText,
   );
   for (
     let token = scanner.scan();
-    token !== ts.SyntaxKind.EndOfFileToken;
+    token !== tsModule.SyntaxKind.EndOfFileToken;
     token = scanner.scan()
   ) {
-    if (!TRIVIA_KINDS.has(token)) return scanner.getTokenPos();
+    if (!triviaKinds.has(token)) return scanner.getTokenPos();
   }
   return sourceText.length;
 }
@@ -232,15 +241,17 @@ interface CommentScanContext {
   records: CollectedImportRecord[];
   scanner: ts.Scanner;
   sourceOffset: number;
+  tsModule: typeof ts;
 }
 
 function scanCommentTokens(context: CommentScanContext): void {
+  const commentKinds = getCommentKinds(context.tsModule);
   for (
     let token = context.scanner.scan();
-    token !== ts.SyntaxKind.EndOfFileToken;
+    token !== context.tsModule.SyntaxKind.EndOfFileToken;
     token = context.scanner.scan()
   ) {
-    if (COMMENT_KINDS.has(token)) processCommentToken(context);
+    if (commentKinds.has(token)) processCommentToken(context);
   }
 }
 
@@ -254,22 +265,25 @@ export function collectCommentImports(options: {
   lineOffset?: number;
   sourceOffset?: number;
   sourceText: string;
+  tsModule?: typeof ts;
 }): CollectedImportRecord[] {
+  const tsModule = options.tsModule ?? ts;
   const records: CollectedImportRecord[] = [];
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
+  const scanner = tsModule.createScanner(
+    tsModule.ScriptTarget.Latest,
     false,
-    ts.LanguageVariant.Standard,
+    tsModule.LanguageVariant.Standard,
     options.sourceText,
   );
   scanCommentTokens({
     filePath: options.filePath,
-    firstNonTriviaStart: getFirstNonTriviaStart(options.sourceText),
+    firstNonTriviaStart: getFirstNonTriviaStart(options.sourceText, tsModule),
     lineOffset: getLineOffset(options.lineOffset),
     lineStarts: buildLineStarts(options.sourceText),
     records,
     scanner,
     sourceOffset: getLineOffset(options.sourceOffset),
+    tsModule,
   });
   return records;
 }

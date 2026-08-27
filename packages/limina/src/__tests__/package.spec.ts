@@ -1682,7 +1682,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         createdAt: '2026-07-17T00:00:00.000Z',
         issues,
         status: 'completed' as const,
-        version: 7 as const,
+        version: 8 as const,
       };
       const byFile = JSON.parse(
         formatCheckIssueSnapshotInventory({
@@ -2398,6 +2398,74 @@ describe('runPackageCheck and runReleaseCheck', () => {
           'const block = "/*# sourceMappingURL=block.js.map */";',
           'const template = `\\n//# sourceMappingURL=template.js.map`;',
           'const regexp = /\\/\\/# sourceMappingURL=regexp\\.js\\.map/;',
+          'module.exports = { block, line, regexp, template };',
+          '',
+        ].join('\n'),
+      );
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('fails release checks when malformed JavaScript contains a sourceMappingURL comment', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      await writeText(
+        path.join(outDir, 'index.js'),
+        'export const = ;\n//# sourceMappingURL=index.js.map\n',
+      );
+
+      await expect(
+        runReleaseCheck({
+          config: createConfig(rootDir, [
+            {
+              name: '@example/a',
+              outDir,
+            },
+          ]),
+          packageNames: ['@example/a'],
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await rm(rootDir, {
+        force: true,
+        recursive: true,
+      });
+    }
+  });
+
+  it('allows sourceMappingURL text in malformed JavaScript literals', async () => {
+    const rootDir = await createWorkspaceRoot();
+
+    try {
+      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+
+      await writeText(
+        path.join(outDir, 'index.cjs'),
+        [
+          "const line = '//# sourceMappingURL=line.js.map';",
+          'const block = "/*# sourceMappingURL=block.js.map */";',
+          'const template = `\\n//# sourceMappingURL=template.js.map`;',
+          'const regexp = /\\/\\/# sourceMappingURL=regexp\\.js\\.map/;',
+          'const = ;',
           'module.exports = { block, line, regexp, template };',
           '',
         ].join('\n'),

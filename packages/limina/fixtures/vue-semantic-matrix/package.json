@@ -1,0 +1,8 @@
+{
+  "name": "limina-vue-semantic-matrix",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "matrix": "node run-matrix.mjs"
+  }
+}

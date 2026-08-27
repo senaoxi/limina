@@ -4,22 +4,27 @@ import {
   type CheckerHostResponse,
   type CheckerHostSpawnMeasurement,
   type CheckerHostSpawnSpec,
+  createCancelledCheckerMeasurement,
   spawnAndMeasure,
 } from './host-protocol';
 import {
-  createCheckerHostMeasurement,
+  cancelPendingCheckerSpawn,
+  type CheckerHostDegradationListener,
+  configurePendingAbort,
+  createPendingCheckerSpawn,
+  drainPendingCheckerSpawns,
+  listenForPendingAbort,
+  type PendingCheckerSpawn,
+  removePendingAbortListener,
+  resolvePendingCheckerMeasurement,
+} from './process-host-pending';
+import {
   isChildProcessRunning,
   refChildProcess,
   unrefChildProcess,
 } from './process-host-utils';
 
-export type CheckerHostDegradationListener = (reason: string) => void;
-
-interface PendingCheckerSpawn {
-  onDegraded?: CheckerHostDegradationListener;
-  resolve: (measurement: CheckerHostSpawnMeasurement) => void;
-  spec: CheckerHostSpawnSpec;
-}
+export type { CheckerHostDegradationListener } from './process-host-pending';
 
 let degradationNoticeSent = false;
 
@@ -52,6 +57,10 @@ function notifyDeactivated(listener: (() => void) | undefined): void {
   if (listener) {
     listener();
   }
+}
+
+function isSignalAborted(signal: AbortSignal | undefined): boolean {
+  return signal === undefined ? false : signal.aborted;
 }
 
 export class CheckerProcessHost {
@@ -109,18 +118,55 @@ export class CheckerProcessHost {
   spawnMeasured(
     spec: CheckerHostSpawnSpec,
     onDegraded: CheckerHostDegradationListener | undefined,
+    signal?: AbortSignal,
   ): Promise<CheckerHostSpawnMeasurement> {
     if (!this.#active) {
-      return spawnAndMeasure(spec);
+      return spawnAndMeasure(spec, { signal });
+    }
+    if (isSignalAborted(signal)) {
+      return Promise.resolve(createCancelledCheckerMeasurement(signal!));
     }
 
-    return new Promise((resolve) => {
-      const id = this.#nextRequestId;
-      this.#nextRequestId += 1;
-      this.#pending.set(id, { onDegraded, resolve, spec });
-      this.#updateRefState();
-      this.#send({ ...spec, id, type: 'spawn' });
+    return new Promise((resolve) =>
+      this.#startPendingSpawn({ onDegraded, resolve, signal, spec }),
+    );
+  }
+
+  #createAbortHandler(options: {
+    id: number;
+    signal: AbortSignal;
+  }): () => void {
+    return () =>
+      cancelPendingCheckerSpawn({
+        id: options.id,
+        pendingById: this.#pending,
+        sendCancel: () => this.#send({ id: options.id, type: 'cancel' }),
+        signal: options.signal,
+      });
+  }
+
+  #startPendingSpawn(options: {
+    onDegraded: CheckerHostDegradationListener | undefined;
+    resolve: (measurement: CheckerHostSpawnMeasurement) => void;
+    signal: AbortSignal | undefined;
+    spec: CheckerHostSpawnSpec;
+  }): void {
+    const id = this.#nextRequestId;
+    this.#nextRequestId += 1;
+    const pending = createPendingCheckerSpawn(options);
+    const handleAbort = this.#createAbortHandler({
+      id,
+      signal: options.signal!,
     });
+    configurePendingAbort({
+      handleAbort,
+      pending,
+      signal: options.signal,
+    });
+    this.#pending.set(id, pending);
+    this.#updateRefState();
+    this.#send({ ...options.spec, id, type: 'spawn' });
+    listenForPendingAbort({ handleAbort, signal: options.signal });
   }
 
   #handleProtocolMessage(
@@ -138,8 +184,9 @@ export class CheckerProcessHost {
     }
 
     this.#pending.delete(message.id);
+    removePendingAbortListener(pending);
     this.#updateRefState();
-    pending.resolve(createCheckerHostMeasurement(message));
+    pending.resolve(resolvePendingCheckerMeasurement(pending, message));
   }
 
   #isInactiveAndIdle(): boolean {
@@ -156,8 +203,7 @@ export class CheckerProcessHost {
     this.#removeExitHook();
     notifyDeactivated(this.#onDeactivate);
 
-    const pending = [...this.#pending.values()];
-    this.#pending.clear();
+    const pending = drainPendingCheckerSpawns(this.#pending);
     this.#updateRefState();
 
     if (this.#disposed) {
@@ -169,11 +215,15 @@ export class CheckerProcessHost {
 
   #retryPending(reason: string, pending: readonly PendingCheckerSpawn[]): void {
     for (const entry of pending) {
+      if (entry.cancelledMeasurement !== undefined) {
+        entry.resolve(entry.cancelledMeasurement);
+        continue;
+      }
       notifyCheckerHostDegraded(
         `${reason} — pending checkers retried in-process`,
         entry.onDegraded,
       );
-      spawnAndMeasure(entry.spec).then(entry.resolve);
+      spawnAndMeasure(entry.spec, { signal: entry.signal }).then(entry.resolve);
     }
   }
 

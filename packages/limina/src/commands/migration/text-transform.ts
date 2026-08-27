@@ -241,9 +241,9 @@ function applyCompilerOptionEdits(options: {
 function applyReferenceEdit(options: {
   configObject: JsonObject;
   content: string;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
 }): string {
-  if (options.isSolutionStyle) return options.content;
+  if (options.isLiminaSolution) return options.content;
   return Object.hasOwn(options.configObject, 'references')
     ? applyJsoncModification({
         content: options.content,
@@ -255,7 +255,7 @@ function applyReferenceEdit(options: {
 
 export function applyMigratedTsconfigText(options: {
   configObject: JsonObject;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
   migratedConfig: JsonObject;
   originalContent: string;
 }): string {
@@ -272,7 +272,7 @@ export function applyMigratedTsconfigText(options: {
   const referenceContent = applyReferenceEdit({
     configObject: options.configObject,
     content: compilerContent,
-    isSolutionStyle: options.isSolutionStyle,
+    isLiminaSolution: options.isLiminaSolution,
   });
   return applyJsoncModification({
     content: referenceContent,

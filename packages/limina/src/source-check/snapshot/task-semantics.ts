@@ -23,6 +23,16 @@ function getStartedTaskTimingProblem(
   ]);
 }
 
+const successfulStartedStates = new Set(['disabled', 'passed']);
+
+function successfulTaskHasReason(task: LiminaCheckRunTaskSummary): boolean {
+  return successfulStartedStates.has(task.state) && task.reason !== undefined;
+}
+
+function disabledTaskHasStatistics(task: LiminaCheckRunTaskSummary): boolean {
+  return task.state === 'disabled' && hasRunnerStatistics(task);
+}
+
 function getStartedTaskMetadataProblem(
   task: LiminaCheckRunTaskSummary,
 ): string | null {
@@ -32,8 +42,12 @@ function getStartedTaskMetadataProblem(
       `Started task "${task.label}" must not carry blockedBy.`,
     ),
     problemWhen(
-      task.state === 'passed' && task.reason !== undefined,
-      `Passed task "${task.label}" must not carry reason.`,
+      successfulTaskHasReason(task),
+      `Passed or disabled task "${task.label}" must not carry reason.`,
+    ),
+    problemWhen(
+      disabledTaskHasStatistics(task),
+      `Disabled task "${task.label}" must not carry runner statistics.`,
     ),
   ]);
 }
@@ -84,7 +98,7 @@ function getSyntheticTaskProblem(
 }
 
 function isStartedTask(task: LiminaCheckRunTaskSummary): boolean {
-  return task.state === 'passed' || task.state === 'failed';
+  return ['disabled', 'failed', 'passed'].includes(task.state);
 }
 
 function getTaskLifecycleProblem(

@@ -29,6 +29,7 @@ export interface TypecheckLifecycleOptions extends DeferredCheckIssueOptions {
 export interface TypecheckCommandTask {
   fail(reason: string, details?: { error: unknown }): void;
   pass(): void;
+  skip(reason: string): void;
 }
 
 export function isTypecheckReportDeferred(
@@ -110,6 +111,12 @@ export function passTypecheckTask(
   task: TypecheckCommandTask | undefined,
 ): void {
   task?.pass();
+}
+
+export function disableTypecheckTask(
+  task: TypecheckCommandTask | undefined,
+): void {
+  task?.skip('disabled: no framework targets');
 }
 
 export function failTypecheckTask(options: {

@@ -154,7 +154,7 @@ function writeCompilerOptions(
 function migrateCompilerOptions(options: {
   configPath: string;
   effectiveConfig: MigrationEffectiveConfig;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
   rootDir: string;
   tsconfig: JsonObject;
 }): { movedOutputs: Record<string, unknown> } {
@@ -167,7 +167,7 @@ function migrateCompilerOptions(options: {
     directOutDir,
     effectiveConfig: options.effectiveConfig,
     existingOutputs: readExistingOutputOptions(options.tsconfig),
-    isSolutionStyle: options.isSolutionStyle,
+    isLiminaSolution: options.isLiminaSolution,
     movedOutputs,
     rootDir: options.rootDir,
   });
@@ -179,9 +179,9 @@ function migrateCompilerOptions(options: {
 
 function removeSourceReferences(
   tsconfig: JsonObject,
-  isSolutionStyle: boolean,
+  isLiminaSolution: boolean,
 ): void {
-  if (!isSolutionStyle && Object.hasOwn(tsconfig, 'references')) {
+  if (!isLiminaSolution && Object.hasOwn(tsconfig, 'references')) {
     delete tsconfig.references;
   }
 }
@@ -206,18 +206,18 @@ export function migrateTsconfigObject(options: {
   configObject: JsonObject;
   configPath: string;
   effectiveConfig?: MigrationEffectiveConfig;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
   rootDir: string;
 }): JsonObject {
   const nextConfig: JsonObject = { ...options.configObject };
   const migration = migrateCompilerOptions({
     configPath: options.configPath,
     effectiveConfig: getEffectiveConfig(options.effectiveConfig),
-    isSolutionStyle: options.isSolutionStyle,
+    isLiminaSolution: options.isLiminaSolution,
     rootDir: options.rootDir,
     tsconfig: nextConfig,
   });
-  if (!options.isSolutionStyle) {
+  if (!options.isLiminaSolution) {
     mergeOutputOptions({
       configPath: options.configPath,
       movedOutputs: migration.movedOutputs,
@@ -225,7 +225,7 @@ export function migrateTsconfigObject(options: {
       tsconfig: nextConfig,
     });
   }
-  removeSourceReferences(nextConfig, options.isSolutionStyle);
+  removeSourceReferences(nextConfig, options.isLiminaSolution);
   return applySchema({
     configPath: options.configPath,
     rootDir: options.rootDir,
@@ -237,14 +237,14 @@ function migrateTsconfigText(options: {
   configObject: JsonObject;
   configPath: string;
   effectiveConfig?: MigrationEffectiveConfig;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
   originalContent: string;
   rootDir: string;
 }): string {
   const migratedConfig = migrateTsconfigObject(options);
   return applyMigratedTsconfigText({
     configObject: options.configObject,
-    isSolutionStyle: options.isSolutionStyle,
+    isLiminaSolution: options.isLiminaSolution,
     migratedConfig,
     originalContent: options.originalContent,
   });
@@ -258,7 +258,7 @@ export function createMigrationWritePlanItem(options: {
     configObject: options.target.configObject,
     configPath: options.target.configPath,
     effectiveConfig: options.target.effectiveConfig,
-    isSolutionStyle: options.target.isSolutionStyle,
+    isLiminaSolution: options.target.isLiminaSolution,
     originalContent: options.target.originalContent,
     rootDir: options.config.rootDir,
   });

@@ -9,7 +9,6 @@ export const FIXTURE_TOOL_NAMES = [
   'typescript',
   'tsgo',
   'vue-tsc',
-  'vue-tsgo',
   'svelte-check',
   'knip',
   'publint',

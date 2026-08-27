@@ -1,8 +1,8 @@
 import { formatUnknownValue } from '#utils/values';
 import type { z } from 'zod';
 import {
-  autoCheckerMixedConfigReason,
-  unsupportedCheckerPresetReason,
+  legacyAutoCheckerConfigReason,
+  unsupportedCheckerNameReason,
 } from './checkers';
 
 interface IssueFormatContext {
@@ -115,7 +115,8 @@ function getCheckerField(context: IssueFormatContext): string {
 function formatCheckerEntry(context: IssueFormatContext): string {
   const checkerField = getCheckerField(context);
   const reason =
-    context.issue.message === autoCheckerMixedConfigReason
+    context.issue.message === legacyAutoCheckerConfigReason ||
+    context.issue.message === unsupportedCheckerNameReason
       ? context.issue.message
       : 'checker entries must be objects.';
   return formatConfigProblem({
@@ -125,26 +126,17 @@ function formatCheckerEntry(context: IssueFormatContext): string {
   });
 }
 
-function formatCheckerPreset(context: IssueFormatContext): string {
-  const field = `${getCheckerField(context)}.preset`;
-  if (context.issue.message === unsupportedCheckerPresetReason) {
-    return formatConfigProblem({
-      context: { ...context, field },
-      reason: context.issue.message,
-      title: 'Unsupported Limina checker preset:',
-    });
-  }
-  return formatConfigProblem({
-    context: { ...context, field },
-    reason: 'checker preset must be a non-empty string.',
-    title: 'Invalid Limina checker config:',
-  });
-}
-
 function formatNamedCheckerIssue(context: IssueFormatContext): string {
   if (context.pathSegments.length === 3) return formatCheckerEntry(context);
-  if (context.pathSegments[3] === 'preset') return formatCheckerPreset(context);
   return formatIssueReason(context, 'Invalid Limina checker config:');
+}
+
+function formatCheckerCollection(context: IssueFormatContext): string {
+  return formatConfigProblem({
+    context,
+    reason: 'config.checkers must be an object keyed by auto or checker name.',
+    title: 'Invalid Limina checker config:',
+  });
 }
 
 function isReleaseIgnorePattern(context: IssueFormatContext): boolean {
@@ -168,18 +160,20 @@ const issueFormatters: readonly IssueFormatter[] = [
     field: 'execution',
     title: 'Invalid Limina execution config:',
   }),
-  createExactFormatter({
-    field: 'config.checkers',
-    reason:
-      'config.checkers must be an object auto config or an object keyed by checker name.',
-    title: 'Invalid Limina checker config:',
-  }),
+  {
+    format: formatCheckerCollection,
+    matches: (context) => matchesField(context, 'config.checkers'),
+  },
   createTreeFormatter({
     field: 'config.checkers.mode',
     title: 'Invalid Limina checker config:',
   }),
   createTreeFormatter({
     field: 'config.checkers.exclude',
+    title: 'Invalid Limina checker config:',
+  }),
+  createTreeFormatter({
+    field: 'config.checkers.useTsgo',
     title: 'Invalid Limina checker config:',
   }),
   createTreeFormatter({

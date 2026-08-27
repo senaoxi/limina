@@ -9,6 +9,7 @@ import {
   type LiminaCheckIssueLocation,
 } from '../check-reporting/snapshot';
 import type { CoverageSource } from './coverage';
+import type { FrameworkGovernanceProofFacts } from './framework-governance-types';
 
 export type ProofSemanticIssueCode =
   | typeof LIMINA_CHECK_ISSUE_CODES.proofAllowlistInvalid
@@ -59,6 +60,7 @@ export type ProofAllowlistInvalidFacts =
     };
 
 export type ProofCheckerCoverageInvalidFacts =
+  | FrameworkGovernanceProofFacts
   | {
       readonly checkerName: string;
       readonly configPath?: string;

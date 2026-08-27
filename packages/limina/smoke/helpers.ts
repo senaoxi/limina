@@ -23,8 +23,10 @@ export interface ConsumerFixture {
 export interface DistPackageJson {
   bin?: Record<string, string>;
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
   exports?: Record<string, unknown>;
   name: string;
+  optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   types?: string;
@@ -45,6 +47,23 @@ const REQUIRED_DIST_FILES = [
   'index.js',
   'index.d.ts',
   'schemas/tsconfig-schema.json',
+] as const;
+const EXPECTED_PEER_RANGES = {
+  '@arethetypeswrong/core': '^0.18.0',
+  '@astrojs/check': '0.9.10',
+  '@typescript/native-preview': '>=7.0.0-dev.20260421.2 <7.0.0',
+  knip: '>=6.0.0 <7.0.0',
+  'npm-package-json-lint': '>=9.1.0 <10.0.0',
+  publint: '>=0.3.0 <0.4.0',
+  svelte2tsx: '^0.7.61',
+  'svelte-check': '>=4.0.0 <5.0.0',
+  tsx: '^4.9.0',
+  typescript: '>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0',
+  'vue-tsc': '>=2.2.0 <=2.2.12 || >=3.2.0 <=3.2.4',
+} as const;
+const CHECKER_INTERNAL_PACKAGES = [
+  '@volar/typescript',
+  '@vue/language-core',
 ] as const;
 
 function stringifyJson(value: unknown): string {
@@ -222,19 +241,63 @@ export function assertDistArtifacts(): DistPackageJson {
     throw new Error('Expected dist package.json to expose ./index.d.ts.');
   }
 
-  getPeerDependencyRange(manifest, 'typescript');
-  if (manifest.peerDependenciesMeta?.typescript?.optional === true) {
+  const expectedPeerNames = Object.keys(EXPECTED_PEER_RANGES).toSorted();
+  const actualPeerNames = Object.keys(
+    manifest.peerDependencies ?? {},
+  ).toSorted();
+  if (JSON.stringify(actualPeerNames) !== JSON.stringify(expectedPeerNames)) {
     throw new Error(
-      'Expected dist package.json to declare TypeScript as a required peer dependency.',
+      `Expected dist package.json to expose exactly ${expectedPeerNames.join(', ')} as peers, got ${actualPeerNames.join(', ')}.`,
+    );
+  }
+  const expectedOptionalPeerNames = expectedPeerNames.filter(
+    (packageName) => packageName !== 'typescript',
+  );
+  const actualPeerMetaNames = Object.keys(
+    manifest.peerDependenciesMeta ?? {},
+  ).toSorted();
+  if (
+    JSON.stringify(actualPeerMetaNames) !==
+    JSON.stringify(expectedOptionalPeerNames)
+  ) {
+    throw new Error(
+      `Expected dist package.json peer metadata for exactly ${expectedOptionalPeerNames.join(', ')}, got ${actualPeerMetaNames.join(', ')}.`,
     );
   }
 
-  if (
-    manifest.peerDependenciesMeta?.['npm-package-json-lint']?.optional !== true
-  ) {
-    throw new Error(
-      'Expected dist package.json to mark npm-package-json-lint as an optional peer dependency.',
-    );
+  for (const [packageName, expectedRange] of Object.entries(
+    EXPECTED_PEER_RANGES,
+  )) {
+    const actualRange = getPeerDependencyRange(manifest, packageName);
+    if (actualRange !== expectedRange) {
+      throw new Error(
+        `Expected dist package.json peerDependencies.${packageName} to equal "${expectedRange}", got "${actualRange}".`,
+      );
+    }
+    const expectedOptional = packageName !== 'typescript';
+    const actualOptional =
+      manifest.peerDependenciesMeta?.[packageName]?.optional === true;
+    if (actualOptional !== expectedOptional) {
+      throw new Error(
+        `Expected dist package.json peer ${packageName} optional=${expectedOptional}, got optional=${actualOptional}.`,
+      );
+    }
+  }
+
+  for (const packageName of CHECKER_INTERNAL_PACKAGES) {
+    for (const [sectionName, section] of Object.entries({
+      dependencies: manifest.dependencies,
+      devDependencies: manifest.devDependencies,
+      optionalDependencies: manifest.optionalDependencies,
+      peerDependencies: manifest.peerDependencies,
+      peerDependenciesMeta: manifest.peerDependenciesMeta,
+    })) {
+      if (section?.[packageName] !== undefined) {
+        throw new Error(
+          `Expected dist package.json not to declare checker-internal package ${packageName} in ${sectionName}.`,
+        );
+      }
+    }
   }
 
   return manifest;
@@ -342,6 +405,7 @@ async function writeConsumerPackageManagerConfig(
 async function writeConsumerFiles(
   fixtureDir: string,
   configFileName: string,
+  options: { astroSemanticFixture: boolean },
 ): Promise<void> {
   const pnpmVersionResult = await runPnpm(['--version'], {
     cwd: fixtureDir,
@@ -377,8 +441,7 @@ async function writeConsumerFiles(
 export default defineConfig({
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
+      tsc: {
         include: ['app/tsconfig.json'],
       },
     },
@@ -435,7 +498,7 @@ export default defineConfig({
         target: 'ES2023',
         types: [],
       },
-      include: ['src/**/*.ts'],
+      include: [options.astroSemanticFixture ? 'src/**/*' : 'src/**/*.ts'],
     }),
     'utf8',
   );
@@ -518,6 +581,14 @@ if (manifest.name !== 'limina') {
 if (!schema || typeof schema !== 'object') {
   throw new Error('limina schema export did not resolve to JSON content.');
 }
+try {
+  import.meta.resolve('svelte2tsx');
+  throw new Error('The non-Svelte consumer unexpectedly installed svelte2tsx.');
+} catch (error) {
+  if (error instanceof Error && error.message.includes('unexpectedly installed')) {
+    throw error;
+  }
+}
 
 console.log('limina exports ok');
 `,
@@ -526,6 +597,7 @@ console.log('limina exports ok');
 }
 
 export async function installConsumerDependencies(options: {
+  astroSemanticFixture: boolean;
   fixtureDir: string;
   manifest: DistPackageJson;
   tarballPath: string;
@@ -552,9 +624,31 @@ export async function installConsumerDependencies(options: {
       timeout: 300_000,
     },
   );
+
+  if (options.astroSemanticFixture) {
+    await runPnpm(
+      [
+        '--filter',
+        '@limina-smoke/app',
+        'add',
+        '--save-dev',
+        '--prefer-offline',
+        '--ignore-scripts',
+        'astro@7.2.0',
+        '@astrojs/check@0.9.10',
+        'typescript@6.0.3',
+      ],
+      {
+        cwd: options.fixtureDir,
+        inherit: true,
+        timeout: 300_000,
+      },
+    );
+  }
 }
 
 export async function createConsumerFixture(options: {
+  astroSemanticFixture?: boolean;
   configFileName?: string;
   directoryName?: string;
   manifest: DistPackageJson;
@@ -569,7 +663,9 @@ export async function createConsumerFixture(options: {
     await mkdir(fixtureDir, {
       recursive: true,
     });
-    await writeConsumerFiles(fixtureDir, configFileName);
+    await writeConsumerFiles(fixtureDir, configFileName, {
+      astroSemanticFixture: options.astroSemanticFixture === true,
+    });
     if (options.sourceText !== undefined) {
       await writeFile(
         path.join(fixtureDir, 'app', 'src', 'index.ts'),
@@ -578,6 +674,7 @@ export async function createConsumerFixture(options: {
       );
     }
     await installConsumerDependencies({
+      astroSemanticFixture: options.astroSemanticFixture === true,
       fixtureDir,
       manifest: options.manifest,
       tarballPath: options.tarballPath,

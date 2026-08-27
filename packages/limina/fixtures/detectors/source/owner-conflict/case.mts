@@ -68,9 +68,9 @@ export default defineDetectorFixture({
           },
         ],
         filePath:
-          '.limina/tsconfig/checkers/typescript/projects/packages/a/tsconfig.dts.json',
+          '.limina/tsconfig/checkers/tsc/projects/packages/a/tsconfig.dts.json',
         packageName: '<workspace>',
-        scope: '.limina/tsconfig/checkers/typescript/projects/packages/a',
+        scope: '.limina/tsconfig/checkers/tsc/projects/packages/a',
         task: 'source:check',
       },
       {
@@ -82,9 +82,9 @@ export default defineDetectorFixture({
           },
         ],
         filePath:
-          '.limina/tsconfig/checkers/typescript/projects/packages/b/tsconfig.dts.json',
+          '.limina/tsconfig/checkers/tsc/projects/packages/b/tsconfig.dts.json',
         packageName: '<workspace>',
-        scope: '.limina/tsconfig/checkers/typescript/projects/packages/b',
+        scope: '.limina/tsconfig/checkers/tsc/projects/packages/b',
         task: 'source:check',
       },
       {

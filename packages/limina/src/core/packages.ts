@@ -2,9 +2,9 @@ import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { isPathInsideDirectory } from '#utils/path';
 import type { BuildGraphCore } from './build-graph';
+import { collectGovernedSourceConfigPaths } from './build-graph/runner';
 import type { WorkspaceDependencyDeclaration } from './packages/authority';
 import type { ResolvedPackageTarget } from './packages/owners';
-import type { TsconfigCore } from './tsconfig';
 import type { WorkspaceCore } from './workspace';
 
 export interface PackageDomain {
@@ -16,17 +16,14 @@ export interface PackageDomain {
 
 export class PackageDomainCore {
   readonly #buildGraph: BuildGraphCore;
-  readonly #tsconfig: TsconfigCore;
   readonly #workspace: WorkspaceCore;
   #domainCache = new Map<string, Promise<PackageDomain>>();
 
   constructor(options: {
     buildGraph: BuildGraphCore;
-    tsconfig: TsconfigCore;
     workspace: WorkspaceCore;
   }) {
     this.#buildGraph = options.buildGraph;
-    this.#tsconfig = options.tsconfig;
     this.#workspace = options.workspace;
   }
 
@@ -86,20 +83,14 @@ export class PackageDomainCore {
       owners.find((candidate) =>
         isPathInsideDirectory(workspacePackage.directory, candidate.directory),
       ) ?? null;
-    const sourceConfigPaths = uniqueSortedStrings(
-      [...graph.sourceToDts.values()].flatMap((sourceToDts) => [
-        ...sourceToDts.keys(),
-      ]),
-    ).filter((configPath) =>
-      isPathInsideDirectory(configPath, workspacePackage.directory),
-    );
-    const projects = await Promise.all(
-      sourceConfigPaths.map((configPath) =>
-        this.#tsconfig.getProject(configPath),
-      ),
+    const sourceConfigPaths = collectGovernedSourceConfigPaths(graph).filter(
+      (configPath) =>
+        isPathInsideDirectory(configPath, workspacePackage.directory),
     );
     const sourceModulePaths = uniqueSortedStrings(
-      projects.flatMap((project) => project.ownedFileNames),
+      [...graph.governedSources.values()].flatMap((governedSources) =>
+        [...governedSources.values()].flatMap((unit) => unit.ownedFileNames),
+      ),
     ).filter((filePath) =>
       isPathInsideDirectory(filePath, workspacePackage.directory),
     );

@@ -3,12 +3,15 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
+import { toRelativePath } from '#utils/path';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
-import { addCrossCheckerProviderCompatibilityProblems } from './cross-checker-compatibility';
+import {
+  addFrameworkOutputProblems,
+  synchronizeProjectionSolutionReferences,
+} from './build-projections';
 import {
   addDuplicateCheckerOwnershipProblems,
   addOverlappingCheckerEntryProblems,
-  addUnsupportedSourceConfigExtensionProblems,
 } from './generated/validation';
 import { createCheckerOutputGraph } from './output-graph';
 import type { GeneratedGraphPreparationState } from './prepare-state';
@@ -17,7 +20,7 @@ import { createGeneratedGraphStructuredError } from './problems';
 import { createSourceProjectsByDtsPath } from './project-indexes';
 import { addOutputBuildOwnerCollisionProblems } from './provider-selection';
 import { inferProjectReferences } from './reference-inference';
-import { createEmptySourceConfigCollection } from './source-config-collection';
+import { createEmptySourceConfigCollection } from './source-config-root-collection';
 import { addActivatedRegionSourceProjectProblems } from './source-projects';
 import type { PrepareGeneratedTsconfigGraphOptions } from './types';
 
@@ -25,6 +28,30 @@ function getAllProjects(
   state: GeneratedGraphPreparationState,
 ): ReturnType<typeof getCheckerProjects> {
   return [...state.projectsByChecker.values()].flat();
+}
+
+function getAllPrimaryProjects(
+  state: GeneratedGraphPreparationState,
+): ReturnType<typeof getCheckerProjects> {
+  return [...state.primaryProjectsByChecker.values()].flat();
+}
+
+function getAllGovernedSources(state: GeneratedGraphPreparationState) {
+  return [...state.governedSourcesByChecker.values()].flat();
+}
+
+function getCheckerGovernedSources(options: {
+  checkerName: string;
+  state: GeneratedGraphPreparationState;
+}) {
+  return options.state.governedSourcesByChecker.get(options.checkerName) ?? [];
+}
+
+function getCheckerPrimaryProjects(options: {
+  checkerName: string;
+  state: GeneratedGraphPreparationState;
+}) {
+  return options.state.primaryProjectsByChecker.get(options.checkerName) ?? [];
 }
 
 function addCheckerOwnershipProblems(options: {
@@ -46,6 +73,7 @@ function addCheckerOwnershipProblems(options: {
 function addProjectValidationProblems(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   allProjects: ReturnType<typeof getAllProjects>;
+  allPrimaryProjects: ReturnType<typeof getAllPrimaryProjects>;
   config: ResolvedLiminaConfig;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
@@ -61,17 +89,46 @@ function addProjectValidationProblems(options: {
     problems: options.state.problems,
     projects: options.allProjects,
   });
-  addUnsupportedSourceConfigExtensionProblems({
-    config: options.config,
-    problems: options.state.problems,
-    projectConfigCache: options.projectConfigCache,
-    projects: options.allProjects,
-  });
+}
+
+function addDeclarationCheckerInvariantProblems(options: {
+  config: ResolvedLiminaConfig;
+  state: GeneratedGraphPreparationState;
+}): void {
+  options.state.problems.push(
+    ...options.state.dependencyEdges
+      .filter(isInvalidDeclarationCheckerEdge)
+      .map((edge) => formatDeclarationCheckerInvariant(options.config, edge)),
+  );
+}
+
+function isInvalidDeclarationCheckerEdge(
+  edge: GeneratedGraphPreparationState['dependencyEdges'][number],
+): boolean {
+  return (
+    edge.kind === 'declaration-provider' &&
+    (edge.fromChecker !== edge.toChecker || edge.cacheReuse !== 'reusable')
+  );
+}
+
+function formatDeclarationCheckerInvariant(
+  config: ResolvedLiminaConfig,
+  edge: GeneratedGraphPreparationState['dependencyEdges'][number],
+): string {
+  return [
+    'Build checker ownership invariant failed:',
+    `  consumer: ${edge.fromChecker} (${toRelativePath(config.rootDir, edge.fromConfigPath)})`,
+    `  provider: ${edge.toChecker} (${toRelativePath(config.rootDir, edge.toConfigPath)})`,
+    `  import: ${edge.file} -> ${edge.importedSpecifier}`,
+    '  reason: every internal declaration-provider edge must use one identical build checker and reusable cache domain.',
+    '  fix: align checker ownership or split the declaration boundary.',
+  ].join('\n');
 }
 
 function addInferredReferences(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   allProjects: ReturnType<typeof getAllProjects>;
+  allGovernedSources: ReturnType<typeof getAllGovernedSources>;
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
@@ -83,11 +140,32 @@ function addInferredReferences(options: {
       activatedRegions: options.activatedRegions,
       config: options.config,
       importAnalysisContext: options.importAnalysisContext,
+      governedSources: getCheckerGovernedSources({
+        checkerName: checker.name,
+        state: options.state,
+      }),
+      ownerGovernedSources: options.allGovernedSources,
       ownerProjects: options.allProjects,
+      primaryProjects: getCheckerPrimaryProjects({
+        checkerName: checker.name,
+        state: options.state,
+      }),
       projects: getCheckerProjects({ checker, state: options.state }),
+      sourceToBuildByChecker: options.state.sourceToBuildByChecker,
     });
     options.state.problems.push(...collection.problems);
-    options.state.providerEdges.push(...collection.providerEdges);
+    options.state.dependencyEdges.push(...collection.dependencyEdges);
+  }
+}
+
+function synchronizeBuildProjectionSolutions(
+  state: GeneratedGraphPreparationState,
+): void {
+  for (const [checkerName, governedSources] of state.governedSourcesByChecker) {
+    synchronizeProjectionSolutionReferences({
+      governedSources,
+      solutions: state.solutionsByChecker.get(checkerName) ?? [],
+    });
   }
 }
 
@@ -148,9 +226,9 @@ function addCheckerOutputGraphs(options: {
   }
 }
 
-function compareProviderEdges(
-  left: GeneratedGraphPreparationState['providerEdges'][number],
-  right: GeneratedGraphPreparationState['providerEdges'][number],
+function compareDependencyEdges(
+  left: GeneratedGraphPreparationState['dependencyEdges'][number],
+  right: GeneratedGraphPreparationState['dependencyEdges'][number],
 ): number {
   const comparisons = [
     compareCodeUnits(left.fromChecker, right.fromChecker),
@@ -173,16 +251,27 @@ export function validateAndCompleteGeneratedGraph(options: {
 }): void {
   addCheckerOwnershipProblems(options);
   const allProjects = getAllProjects(options.state);
-  addProjectValidationProblems({ ...options, allProjects });
-  addInferredReferences({ ...options, allProjects });
-  addCrossCheckerProviderCompatibilityProblems({
-    config: options.config,
-    problems: options.state.problems,
-    projects: allProjects,
-    providerEdges: options.state.providerEdges,
+  const allPrimaryProjects = getAllPrimaryProjects(options.state);
+  const allGovernedSources = getAllGovernedSources(options.state);
+  addProjectValidationProblems({
+    ...options,
+    allPrimaryProjects,
+    allProjects,
   });
+  addFrameworkOutputProblems({
+    config: options.config,
+    governedSources: allGovernedSources,
+    problems: options.state.problems,
+  });
+  addInferredReferences({
+    ...options,
+    allGovernedSources,
+    allProjects,
+  });
+  synchronizeBuildProjectionSolutions(options.state);
+  addDeclarationCheckerInvariantProblems(options);
   addCheckerOutputGraphs({ ...options, allProjects });
-  options.state.providerEdges.sort(compareProviderEdges);
+  options.state.dependencyEdges.sort(compareDependencyEdges);
   if (options.state.problems.length > 0) {
     throw createGeneratedGraphStructuredError({
       config: options.config,

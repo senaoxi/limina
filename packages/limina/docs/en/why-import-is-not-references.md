@@ -88,8 +88,7 @@ Limina narrows the scope instead. Users first declare which tsconfigs are source
 export default defineConfig({
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
+      tsc: {
         include: ['packages/*/tsconfig.json'],
       },
     },

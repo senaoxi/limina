@@ -1,27 +1,64 @@
 import type {
+  AstroSemanticProject,
   CheckerProjectParseContext,
   ResolvedCheckerModuleName,
+  VueSourceProfile,
 } from '#checkers';
-import type { VueImportParser } from '#config/runner';
 import type { ResolverFactory } from 'oxc-resolver';
 import type ts from 'typescript';
+import type { AstroSemanticContextManager } from '../astro-semantic/context';
+import type {
+  FrameworkSemanticDependencyPreparation,
+  FrameworkSemanticEvidence,
+  FrameworkSemanticFailure,
+} from '../framework-semantic/contracts';
+import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
+import type { SvelteSemanticContextManager } from '../svelte-semantic/context';
+import type { SvelteSemanticProject } from '../svelte-semantic/types';
+import type { VueSemanticContextManager } from '../vue-semantic/context';
+import type { ImportRuntimeResolutionEvidence } from './evidence';
 import type { ImportRecord } from './records';
+import type { SemanticEligibility } from './semantic-eligibility';
 
 export interface ModuleResolutionPair {
   oxc: string | null;
+  semanticEvidence?: FrameworkSemanticEvidence;
+  semanticFailure?: FrameworkSemanticFailure;
   typescript: ResolvedCheckerModuleName | null;
 }
 
+export interface CanonicalImportResolutionEvidence {
+  eligibility: SemanticEligibility;
+  oxcResolvedFilePath: string | null;
+  runtimeEvidence: ImportRuntimeResolutionEvidence;
+  semanticEvidence?: FrameworkSemanticEvidence;
+  semanticFailure?: FrameworkSemanticFailure;
+  typeScriptResolution: ResolvedCheckerModuleName | null;
+}
+
 export interface ImportResolveContextFields
-  extends Pick<CheckerProjectParseContext, 'checkerPresets' | 'extensions'> {
+  extends Pick<
+    CheckerProjectParseContext,
+    'checkerPresets' | 'extensions' | 'vueSemanticIdentity'
+  > {
+  astroSemanticProject?: AstroSemanticProject;
   configPath?: string;
   resolverConfigPath?: string;
+  semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
+  svelteSemanticProject?: SvelteSemanticProject;
 }
 
 export type ImportResolveContextInput = ImportResolveContextFields | string[];
 
 export type ImportResolutionArguments = [
   specifier: string,
+  containingFile: string,
+  options: ts.CompilerOptions,
+  contextOrExtensions?: ImportResolveContextInput,
+];
+
+export type ImportRecordResolutionArguments = [
+  importRecord: ImportRecord,
   containingFile: string,
   options: ts.CompilerOptions,
   contextOrExtensions?: ImportResolveContextInput,
@@ -37,8 +74,24 @@ export type StandaloneInternalImportArguments = [
 
 export interface ImportAnalysisContext {
   clearOxcResolverCaches?: () => void;
-  collectImportsFromFile: (filePath: string, rootDir: string) => ImportRecord[];
+  collectImportsFromFile: (
+    filePath: string,
+    packageRootDir: string,
+    sourceProfile?: VueSourceProfile,
+  ) => ImportRecord[];
+  dispose?: () => void;
+  prepareCheckerSemanticDependencies: (options: {
+    context: ImportResolveContextFields;
+    filePath: string;
+    managedOutputLookup?: ManagedOutputDeclarationLookup;
+  }) => FrameworkSemanticDependencyPreparation;
+  resolveCheckerImportEvidence: (
+    ...args: ImportRecordResolutionArguments
+  ) => CanonicalImportResolutionEvidence;
   resolveInternalImport: (...args: ImportResolutionArguments) => string | null;
+  resolveImportEvidence: (
+    ...args: ImportRecordResolutionArguments
+  ) => CanonicalImportResolutionEvidence;
   resolveOxcImport: (...args: ImportResolutionArguments) => string | null;
   resolveModulePair: (
     ...args: ImportResolutionArguments
@@ -49,9 +102,11 @@ export interface ImportAnalysisContext {
 }
 
 export interface CreateImportAnalysisContextOptions {
+  astroSemanticContexts?: AstroSemanticContextManager;
   metrics?: ImportAnalysisMetricsRecorder;
   projectRootDir?: string;
-  vueParser?: VueImportParser;
+  svelteSemanticContexts?: SvelteSemanticContextManager;
+  vueSemanticContexts?: VueSemanticContextManager;
 }
 
 export interface ImportAnalysisMetricsRecorder {
@@ -59,6 +114,14 @@ export interface ImportAnalysisMetricsRecorder {
     readonly count?: number;
     readonly kind?: string;
     readonly name:
+      | 'astro-candidate-count'
+      | 'astro-context-dispose'
+      | 'astro-context-materialize'
+      | 'astro-context-reuse'
+      | 'astro-semantic-cache-hit'
+      | 'astro-semantic-cache-miss'
+      | 'astro-semantic-failure'
+      | 'astro-semantic-host-resolution'
       | 'import-resolution-cache-hit'
       | 'import-resolution-cache-miss'
       | 'internal-import-resolution'
@@ -89,8 +152,11 @@ export interface OxcResolverProfileIdentity {
 }
 
 export type ResolvedImportContext = CheckerProjectParseContext & {
+  astroSemanticProject?: AstroSemanticProject;
   configPath?: string;
   resolverConfigPath?: string;
+  semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
+  svelteSemanticProject?: SvelteSemanticProject;
 };
 
 export interface LazyModuleResolutionRecord {
@@ -107,41 +173,19 @@ export interface NormalizedModuleResolutionRequest {
   containingFile: string;
   context: ResolvedImportContext;
   record: LazyModuleResolutionRecord;
+  resolverIdentity: number;
   specifier: string;
 }
 
 export interface ImportAnalysisCaches {
   importsCache: Map<string, ImportRecord[]>;
+  importsPromiseCache: Map<string, Promise<ImportRecord[]>>;
+  canonicalResolutionIndex: Map<string, CanonicalImportResolutionEvidence>;
+  checkerResolutionIndex: Map<string, CanonicalImportResolutionEvidence>;
   moduleResolutionIndex: Map<string, LazyModuleResolutionRecord>;
   moduleResolverIdentityCache: Map<string, number>;
   nextModuleResolverIdentity: number;
   resolverCache: Map<string, ResolverFactory>;
   sourceTextCache: Map<string, string>;
   typeScriptModuleResolutionCache: Map<string, ts.ModuleResolutionCache>;
-}
-
-export interface VueCompilerSfcBlock {
-  attrs?: Record<string, string | true>;
-  content: string;
-  lang?: string;
-  loc?: {
-    start?: {
-      line?: number;
-      offset?: number;
-    };
-  };
-  src?: string;
-}
-
-export interface VueCompilerSfc {
-  parse: (
-    source: string,
-    options?: { filename?: string },
-  ) => {
-    descriptor: {
-      script: VueCompilerSfcBlock | null;
-      scriptSetup: VueCompilerSfcBlock | null;
-    };
-    errors: unknown[];
-  };
 }

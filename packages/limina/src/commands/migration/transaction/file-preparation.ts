@@ -37,7 +37,7 @@ async function applyOwnership(
   await handle.chown(ownership.uid, ownership.gid);
 }
 
-async function restoreTimestamp(
+export async function restoreOriginalTimestamp(
   handle: FileHandle,
   snapshot: ModifiedTargetSnapshot,
 ): Promise<void> {
@@ -46,7 +46,7 @@ async function restoreTimestamp(
   await handle.utimes(atimeSeconds, mtimeSeconds);
 }
 
-async function applySupportedMetadata(options: {
+export async function applySupportedMetadata(options: {
   handle: FileHandle;
   restoreTimestamp: boolean;
   snapshot: ModifiedTargetSnapshot;
@@ -54,8 +54,28 @@ async function applySupportedMetadata(options: {
   await applyOwnership(options.handle, options.snapshot);
   await options.handle.chmod(options.snapshot.stat.permissionMode);
   if (options.restoreTimestamp) {
-    await restoreTimestamp(options.handle, options.snapshot);
+    await restoreOriginalTimestamp(options.handle, options.snapshot);
   }
+}
+
+export type PreparedFileMetadataProfile =
+  | { kind: 'private-artifact' }
+  | { kind: 'target-metadata'; restoreTimestamp: boolean };
+
+async function applyPreparedFileMetadata(options: {
+  handle: FileHandle;
+  metadataProfile: PreparedFileMetadataProfile;
+  snapshot: ModifiedTargetSnapshot;
+}): Promise<void> {
+  if (options.metadataProfile.kind === 'private-artifact') {
+    if (process.platform !== 'win32') await options.handle.chmod(0o600);
+    return;
+  }
+  await applySupportedMetadata({
+    handle: options.handle,
+    restoreTimestamp: options.metadataProfile.restoreTimestamp,
+    snapshot: options.snapshot,
+  });
 }
 
 async function closePreparedHandle(options: {
@@ -82,13 +102,13 @@ async function writePreparedFile(options: {
   bytes: Buffer;
   filePath: string;
   handle: FileHandle;
-  restoreTimestamp: boolean;
+  metadataProfile: PreparedFileMetadataProfile;
   snapshot: ModifiedTargetSnapshot;
   trackedHandles: Set<FileHandle>;
 }): Promise<void> {
   try {
     await options.handle.writeFile(options.bytes);
-    await applySupportedMetadata(options);
+    await applyPreparedFileMetadata(options);
     await options.handle.sync();
     await closePreparedHandle(options);
   } catch (error) {
@@ -97,7 +117,20 @@ async function writePreparedFile(options: {
   }
 }
 
-function assertPreparedMetadata(options: {
+function assertPrivateArtifactMetadata(options: {
+  filePath: string;
+  identity: PreparedFileIdentity;
+}): void {
+  if (process.platform === 'win32') return;
+  assertEqual({
+    actual: options.identity.stat.permissionMode,
+    expected: 0o600,
+    filePath: options.filePath,
+    label: 'private artifact permission mode',
+  });
+}
+
+function assertTargetMetadata(options: {
   filePath: string;
   identity: PreparedFileIdentity;
   restoreTimestamp: boolean;
@@ -125,12 +158,30 @@ function assertPreparedMetadata(options: {
   }
 }
 
+function assertPreparedMetadata(options: {
+  filePath: string;
+  identity: PreparedFileIdentity;
+  metadataProfile: PreparedFileMetadataProfile;
+  snapshot: ModifiedTargetSnapshot;
+}): void {
+  if (options.metadataProfile.kind === 'private-artifact') {
+    assertPrivateArtifactMetadata(options);
+    return;
+  }
+  assertTargetMetadata({
+    filePath: options.filePath,
+    identity: options.identity,
+    restoreTimestamp: options.metadataProfile.restoreTimestamp,
+    snapshot: options.snapshot,
+  });
+}
+
 export async function prepareFile(options: {
   bytes: Buffer;
   filePath: string;
+  metadataProfile: PreparedFileMetadataProfile;
   openFile: NonNullable<MigrationTransactionOptions['openFile']>;
   readFileBytes: NonNullable<MigrationTransactionOptions['readFileBytes']>;
-  restoreTimestamp: boolean;
   snapshot: ModifiedTargetSnapshot;
   trackedHandles: Set<FileHandle>;
 }): Promise<PreparedFileIdentity> {
@@ -150,7 +201,7 @@ export async function prepareFile(options: {
   assertPreparedMetadata({
     filePath: options.filePath,
     identity,
-    restoreTimestamp: options.restoreTimestamp,
+    metadataProfile: options.metadataProfile,
     snapshot: options.snapshot,
   });
   return identity;

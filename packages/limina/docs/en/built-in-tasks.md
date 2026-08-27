@@ -40,16 +40,16 @@ Besides built-in tasks, pipeline steps may also be external commands. Built-in t
 
 ## Task Overview
 
-| Task                | Default check | Main concern                                                                                            | How to understand it                                                                                                                |
-| ------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `graph:prepare`     | No            | Generates the engineering graph, declaration build configs, and related generated files under `.limina` | Materializes the generated graph; not the same as checking whether the graph satisfies rules                                        |
-| `graph:check`       | Yes           | Project references, workspace imports, export resolution, graph rules, and condition domains            | Checks whether the `TypeScript` project reference graph is consistent with source imports and configured rules                      |
-| `source:check`      | Yes           | Source ownership, package boundaries, dependency declarations, and `Knip`-backed source usage analysis  | Checks whether source dependency relationships can be explained by package ownership and manifests                                  |
-| `proof:check`       | Yes           | Source coverage proof and `tsconfig` roles                                                              | Checks whether source enters the type-check scope governed by Limina; concrete diagnostics are defined by the implementation output |
-| `checker:build`     | Yes           | Build-capable checkers                                                                                  | Calls build mode of underlying checkers, usually emitting declaration files and build info                                          |
-| `checker:typecheck` | Yes           | Typecheck-only checkers                                                                                 | Calls checkers that cannot act as build graph providers, such as some framework checkers                                            |
-| `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                                      |
-| `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                                      |
+| Task                | Default check | Main concern                                                                                            | How to understand it                                                                                           |
+| ------------------- | ------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `graph:prepare`     | No            | Generates the engineering graph, declaration build configs, and related generated files under `.limina` | Materializes the generated graph; not the same as checking whether the graph satisfies rules                   |
+| `graph:check`       | Yes           | Project references, workspace imports, export resolution, graph rules, and condition domains            | Checks whether the `TypeScript` project reference graph is consistent with source imports and configured rules |
+| `source:check`      | Yes           | Source ownership, package boundaries, dependency declarations, and `Knip`-backed source usage analysis  | Checks whether source dependency relationships can be explained by package ownership and manifests             |
+| `proof:check`       | Yes           | Source coverage, `tsconfig` roles, and framework projections                                            | Checks whether source and framework capabilities enter one consistent, executable check scope                  |
+| `checker:build`     | Yes           | Build-capable checkers                                                                                  | Calls build mode of underlying checkers, usually emitting declaration files and build info                     |
+| `checker:typecheck` | Yes           | Framework-owned type-config leaves                                                                      | Calls `astro` or `svelte-check` once per owned leaf without declaration output                                 |
+| `package:check`     | No            | Built package artifacts                                                                                 | Runs package-shape, type-resolution, and artifact import-boundary checks on `outDir` artifacts                 |
+| `release:check`     | No            | Release-phase artifact consistency                                                                      | Supplemental pre-release checks; not a publishing system or security guarantee                                 |
 
 Before every task in this table, Limina reuses the current generation's validated workspace context. If validation fails, dependent work is blocked and the primary workspace issue can still be written safely to `.limina/check/last-run.json`; a secondary snapshot-write failure does not replace the original validation error.
 
@@ -61,13 +61,13 @@ The core tasks are `graph:check`, `source:check`, `proof:check`, `checker:build`
 
 Limina's governance is built on the generated graph. The graph comes from ordinary source `tsconfig.json` entries, source `tsconfig` files referenced by those entries, source-file import relationships, and a small amount of explicit configuration.
 
-`checker.include` selects ordinary source-level `tsconfig.json` entries. Ordinary leaf configs should not hand-write `TypeScript references`; if a directory needs to aggregate multiple type-check environments, use the default `tsconfig.json` as an aggregator and let it point to leaf configs through `references`. Limina then generates its own declaration build graph from those source configs.
+Each named checker `include` selects ordinary source-level `tsconfig.json` entries. Ordinary leaf configs should not hand-write `TypeScript references`; if a directory needs to aggregate multiple type-check environments, use the default `tsconfig.json` as an aggregator and let it point to leaf configs through `references`. Limina then generates its ownership and dependency plans from those source configs.
 
 `graph:prepare` writes these relationships under `.limina`, including:
 
 - checker build entries;
 - generated declaration build `tsconfig` files;
-- solution-style build aggregator configs;
+- supported `tsconfig.json` solution build aggregator configs;
 - the generated manifest;
 - generated configs used by source usage analysis.
 
@@ -198,11 +198,13 @@ In a monorepo using `TypeScript` project references, a missing source file may n
 
 If a file truly should not enter the regular check scope, use an allowlist entry with a reason rather than letting it float naturally outside the engineering graph.
 
+For framework source, proof also checks that each type config has exactly one checker owner, every governed framework source belongs to that owner's effective file set, every framework target is executable from its leaf package, every solution has a consistent leaf owner, and generated declaration configs contain no `.astro` or `.svelte` inputs.
+
 `proof:check` has many diagnostic branches, not all listed here. When reading diagnostics, understand it under one principle: every source file and every `tsconfig` should have a clear role; the same file should not produce duplicate or conflicting ownership inside the same check domain.
 
 ## checker:build: Call Build-Capable Checkers
 
-`checker:build` calls build-capable checkers. Built-in build-capable `preset`s in the source include:
+`checker:build` calls the configured build checker identities:
 
 - `tsc`
 - `tsgo`
@@ -216,16 +218,13 @@ This is important: Limina does not replace `TypeScript`, `Vue` checkers, or nati
 
 Before running, Limina checks whether `peer dependency` packages required by configured checkers are resolvable. Missing dependencies fail before checker execution and include installation guidance.
 
-## checker:typecheck: Call Check-Only Checkers
+## checker:typecheck: Run Framework-Owned Leaves
 
-`checker:typecheck` targets presets whose execution kind is check-only. Built-in presets of this kind in the source include:
+`checker:typecheck` runs each type config whose final owner is `astro` or `svelte-check`, deduplicated by normalized config path. A leaf executes exactly one of `astro check --noSync --root <leaf> --tsconfig <config>` or `svelte-check --workspace <leaf> --tsconfig <config>`; it cannot be targeted by both checkers. Solution configs are expanded by Limina and are not passed to framework checkers as recursive execution targets. These tasks do not emit declaration files.
 
-- `vue-tsgo`
-- `svelte-check`
+Framework targets resolve their dependencies from the leaf package. Astro requires `astro`, `@astrojs/check`, `typescript`, and an existing `.astro/types.d.ts`; Svelte requires `svelte-check`, `svelte2tsx`, `svelte`, and `typescript`. Limina never runs `astro sync`, never enables a Svelte checker cache, and does not accept `--watch` for this command. Rerun the whole command after source config, parser dependency, generated type, or framework source changes.
 
-They run through their own commands, such as `vue-tsgo --project` or `svelte-check --tsconfig`. These tasks supplement diagnostics for framework files or secondary checkers, but do not emit declaration files.
-
-If a project configures only build-capable checkers, `checker:typecheck` may have no real target. That should not be interpreted as missing `TypeScript` checking; type builds are handled by `checker:build`.
+If no managed type config is owned by Astro or Svelte, `checker:typecheck` is recorded as disabled, skips peer preflight and artifact materialization, and exits successfully. Build-capable owners continue to run through `checker:build`.
 
 ## graph:prepare and graph export
 

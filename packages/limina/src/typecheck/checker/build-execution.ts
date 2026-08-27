@@ -140,7 +140,7 @@ export async function executeCheckerBuildTargets(options: {
   });
   const results = await runBuildTargets(
     [...options.targets],
-    options.generatedGraph.providerEdges,
+    options.generatedGraph.dependencyEdges,
     resolveTypecheckRunner(options.runnerOptions),
     {
       beforeLayerRun: (targets) => mutationCoordinator.beforeLayerRun(targets),

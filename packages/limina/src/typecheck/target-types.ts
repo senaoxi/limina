@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import type { CheckerDependencyRequirement } from '#checkers';
 import type { CheckerExecutionKind } from '#config/runner';
 
 declare const checkerTargetIdBrand: unique symbol;
@@ -25,14 +26,19 @@ export function createCheckerTargetId(
 
 export interface TypecheckTarget {
   args: string[];
+  checkerFamily?: 'astro' | 'svelte';
   checkerName?: string;
   command: string;
   configPath: string;
   cwd: string;
+  dependencyRequirements?: readonly CheckerDependencyRequirement[];
+  dependencyRootDir?: string;
+  executionRootDir?: string;
   executionKind?: CheckerExecutionKind;
   id: CheckerTargetId;
   label?: string;
   sourceConfigPath?: string;
+  workspaceRootDir?: string;
 }
 
 export interface TypecheckTargetResult {
@@ -71,6 +77,7 @@ export type CheckerTargetOutcome =
 
 export type TypecheckRunner = (
   target: TypecheckTarget,
+  options?: { signal?: AbortSignal },
 ) => Promise<TypecheckRunnerResult> | TypecheckRunnerResult;
 
 function assertMatchingTargetIdentity(

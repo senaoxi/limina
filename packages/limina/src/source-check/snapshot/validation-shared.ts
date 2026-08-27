@@ -61,12 +61,14 @@ const TASK_KINDS = new Set<LiminaCheckRunTaskKind>([
 ]);
 const CHECK_ITEM_STATUSES = new Set<LiminaCheckRunCheckItemStatus>([
   'blocked',
+  'disabled',
   'failed',
   'passed',
   'skipped',
 ]);
 const TASK_STATUSES = new Set<LiminaCheckRunTaskStatus>([
   'blocked',
+  'disabled',
   'failed',
   'passed',
   'planned',

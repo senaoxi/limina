@@ -94,7 +94,11 @@ export function readProofConfig(
     ? (JSON.parse(content) as JsonObject)
     : readJsonConfig(config, configPath);
 
-  validateUserMaintainedLiminaTsconfigMetadata({ configObject, configPath });
+  validateUserMaintainedLiminaTsconfigMetadata({
+    configObject,
+    configPath,
+    rootDir: config.rootDir,
+  });
 
   return configObject;
 }
@@ -108,14 +112,11 @@ function getSourceConfigMetadata(configObject: JsonObject): unknown {
 }
 
 export function getProofCompanionConfigPath(
+  config: ResolvedLiminaConfig,
   configPath: string,
   virtualFiles: ReadonlyMap<string, string>,
 ): string {
-  const configObject = readProofConfig(
-    { rootDir: path.dirname(configPath) } as ResolvedLiminaConfig,
-    configPath,
-    virtualFiles,
-  );
+  const configObject = readProofConfig(config, configPath, virtualFiles);
   const sourceConfig = getSourceConfigMetadata(configObject);
 
   if (typeof sourceConfig === 'string') {

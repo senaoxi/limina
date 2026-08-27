@@ -8,7 +8,7 @@ It does not replace `TypeScript`, framework checkers, bundlers, test frameworks,
 
 A [checker entry](./config/checkers.md) tells Limina which source `tsconfig.json` files should be handled by which checker.
 
-When `config.checkers` is omitted, Limina uses the default `auto` mode. Auto mode discovers ordinary `tsconfig.json` files and chooses an appropriate checker between `tsc` and `vue-tsc` based on source-file capability. Switch to explicit checker configuration when you need `tsgo`, `vue-tsgo`, `svelte-check`, or precise control over the entry range.
+Auto discovery is always enabled, including when named checker scopes are present. It discovers ordinary `tsconfig.json` entries and assigns each reachable type config exactly one owner from `tsc`, `tsgo`, `vue-tsc`, `astro`, or `svelte-check`. Use `auto.useTsgo: true` to choose `tsgo` as the ordinary TypeScript fallback; named scopes provide direct ownership evidence for selected default entries.
 
 ```js
 import { defineConfig } from 'limina';
@@ -16,13 +16,14 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
-        include: ['tsconfig.json', 'packages/**/tsconfig.json'],
+      auto: {
         exclude: ['**/docs/**'],
+        useTsgo: false,
       },
-      vue: {
-        preset: 'vue-tsc',
+      tsc: {
+        include: ['tsconfig.json', 'packages/**/tsconfig.json'],
+      },
+      'vue-tsc': {
         include: ['packages/app/tsconfig.json'],
       },
     },
@@ -30,15 +31,14 @@ export default defineConfig({
 });
 ```
 
-Entry selection is region-scoped: Limina first limits discovery to activated workspace package regions, applies `include`, and then subtracts `exclude`. Paths below an excluded or inaccessible region are therefore outside `include` by construction and do not need a duplicate checker exclusion. Do not list `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, or generated configs under `.limina` directly in `checker.include`. These non-entry source configs enter Limina's managed scope only when they are reached through `references` from a selected `tsconfig.json` entry. References are not filtered by checker `exclude`; an existing ordinary source config reached outside the activated regions is reported as a cross-region reference.
+Entry selection is region-scoped. Named `include` fields only select default source `tsconfig.json` entries, while `auto.exclude` filters automatic root discovery. Do not list `tsconfig.lib.json`, `tsconfig.test.json`, `tsconfig.build.json`, or generated configs under `.limina` directly in a named checker scope. These non-entry source configs enter Limina's managed scope only when reached through `references` from a selected `tsconfig.json` entry. Neither `auto.exclude` nor a named scope's `exclude` cuts an established references closure; an existing ordinary source config reached outside the activated regions is reported as a cross-region reference.
 
-Checker presets have different capabilities:
+Fixed checker identities have different roles:
 
-- `tsc`, `tsgo`, and `vue-tsc` are build-capable presets that can execute Limina's generated declaration build entries;
-- `vue-tsgo` is used as a `Vue` type-check executor. Selected source configs can still participate in Limina graph checks and coverage proof, but it is not run as an incremental declaration build preset;
-- `svelte-check` is primarily a type-check executor and does not provide `TypeScript` project-reference-style declaration build semantics.
+- `tsc`, `tsgo`, and `vue-tsc` own source configs and execute generated declaration build entries;
+- `svelte-check` and `astro` own complete framework type configs and execute them per leaf without declaration output.
 
-This distinction affects later commands. `limina checker build` can only use build-capable presets. Source configs covered only by check-only presets cannot be used as declaration build targets.
+This distinction affects later commands. `limina checker build` runs declaration-capable owners, while `limina checker typecheck` runs framework-owned leaves.
 
 ## Source Config
 
@@ -74,7 +74,7 @@ The `path` of an `implicitRefs` entry must point to an ordinary source `tsconfig
 
 ## Aggregator Config
 
-An aggregator is a `tsconfig` that contains only `files: []` and `references`. It owns no source files and only groups several source configs into one entry.
+Limina treats a config as a TypeScript solution when the checker-resolved file set is empty and the config directly declares `references`. The resolved file set is computed with the active checker, so `extends`, framework extensions such as `.vue`, and other TypeScript project rules are included in this decision. `files: []` is the clearest way to make that intent explicit, but it is not the only accepted spelling.
 
 ```jsonc
 {
@@ -83,7 +83,9 @@ An aggregator is a `tsconfig` that contains only `files: []` and `references`. I
 }
 ```
 
-Limina allows the default entry `tsconfig.json` to act as an aggregator. When `limina graph prepare` runs, Limina starts from checker entries, follows these `references` to expand source configs, and generates the build graph actually consumed by checkers under `.limina/`.
+Only a solution at a path named exactly `tsconfig.json` is a Limina-managed aggregator. A default `tsconfig.json` that resolves any source file is an ordinary source leaf; if it also declares `references`, Limina reports the source-reference violation instead of treating it as an aggregator. A named config such as `tsconfig.solution.json` can still be a TypeScript solution according to the compiler, but it is not a supported Limina solution entry and must not be used as one.
+
+When `limina graph prepare` runs, Limina starts from checker entries, follows valid `references` from the supported `tsconfig.json` solutions, and generates the build graph consumed by checkers.
 
 Do not treat an aggregator as a source owner. When different runtime environments, test scopes, or build targets need to be separated, let the aggregator reference multiple source leaf configs instead of making one config both aggregate projects and own source files.
 

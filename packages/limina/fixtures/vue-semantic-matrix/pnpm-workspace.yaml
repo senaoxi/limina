@@ -1,0 +1,10 @@
+packages:
+  - cases/*
+
+autoInstallPeers: false
+strictPeerDependencies: true
+
+overrides:
+  'vue-tsc@2.2.0>@volar/typescript': 2.4.11
+  'vue-tsc@2.2.10>@volar/typescript': 2.4.11
+  'vue-tsc@2.2.12>@volar/typescript': 2.4.28

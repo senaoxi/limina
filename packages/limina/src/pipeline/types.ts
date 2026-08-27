@@ -26,7 +26,6 @@ import type {
 import type { LiminaCheckIssue } from '../source-check/snapshot';
 import type { CheckerFailureTarget } from '../typecheck/runner';
 import type { TypecheckTargetResult } from '../typecheck/targets';
-import type { VueTsgoCacheCleanupDependencies } from '../typecheck/vue-tsgo-cache';
 
 export interface RunPipelineOptions {
   checkRunRecorder?: CheckRunRecorder;
@@ -43,7 +42,6 @@ export interface RunPipelineOptions {
   sourceIssueReport?: SourceIssueReportOptions;
   executionPlan?: ExecutionPlan;
   snapshotWriters?: RunExecutionPlanOptions['snapshotWriters'];
-  vueTsgoCacheCleanup?: VueTsgoCacheCleanupDependencies;
 }
 
 export interface CommandProcessDependencies {
@@ -67,6 +65,7 @@ export interface CommandProcessDependencies {
 export type NormalizedPipelineStep = Exclude<PipelineStep, string>;
 
 export interface BuiltinTaskResult {
+  disabled?: boolean;
   issues: readonly LiminaCheckIssue[];
   passed: boolean;
   sourceSnapshot?: {
@@ -77,6 +76,7 @@ export interface BuiltinTaskResult {
 }
 
 export interface CheckerTaskStatsInput {
+  disabled?: boolean;
   failedTargets: readonly CheckerFailureTarget[];
   passed: boolean;
   problems?: readonly string[];

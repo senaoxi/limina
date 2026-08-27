@@ -3,11 +3,11 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import type { GeneratedBuildModule } from '#core/build-graph/runner';
+import { isLiminaArtifactPath } from '#core/tsconfig/actions';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { isPathInsideDirectory, toRelativePath } from '#utils/path';
 import { existsSync, statSync } from 'node:fs';
-import path from 'pathe';
 import type {
   PackageBuildScript,
   PackageBuildScriptDiagnostic,
@@ -50,7 +50,7 @@ function checkerMatchesScript(
   checker: ResolvedCheckerConfig,
   script: PackageBuildScript,
 ): boolean {
-  return script.checker === undefined || checker.preset === script.checker;
+  return script.checker === undefined || checker.name === script.checker;
 }
 
 function getOutputModulePath(options: {
@@ -112,8 +112,8 @@ const validateJsonConfig: BuildScriptValidator = ({ config, script }) =>
     ? null
     : `build config must be a JSON file: ${toRelativePath(config.rootDir, script.configPath)}`;
 
-const validateSourceConfig: BuildScriptValidator = ({ script }) =>
-  script.configPath.split(path.sep).includes('.limina')
+const validateSourceConfig: BuildScriptValidator = ({ config, script }) =>
+  isLiminaArtifactPath(script.configPath, config.rootDir)
     ? 'build config must not point at .limina generated configs; use the source config in package scripts.'
     : null;
 

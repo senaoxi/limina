@@ -51,7 +51,9 @@ export interface LiminaFlowFailureOptions extends LiminaFlowMessageOptions {
 export interface LiminaFlowTask {
   fail: (message?: string, options?: LiminaFlowFailureOptions) => void;
   info: (message: string, options?: LiminaFlowMessageOptions) => void;
+  pause: () => Promise<void>;
   pass: (message?: string, options?: LiminaFlowMessageOptions) => void;
+  resume: () => void;
   skip: (message?: string, options?: LiminaFlowMessageOptions) => void;
   warn: (message: string, options?: LiminaFlowMessageOptions) => void;
 }

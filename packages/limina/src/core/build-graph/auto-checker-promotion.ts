@@ -1,43 +1,48 @@
-import type { AutoCheckerPreset } from './types';
-
-function shouldPromoteAutoScope(options: {
+function findEligibleProvider(options: {
   dependencies: ReadonlySet<string>;
-  entryConfigPath: string;
-  kindsByEntry: ReadonlyMap<string, AutoCheckerPreset>;
-}): boolean {
-  if (options.kindsByEntry.get(options.entryConfigPath) !== 'tsc') {
-    return false;
-  }
-  return [...options.dependencies].some(
-    (dependencyPath) => options.kindsByEntry.get(dependencyPath) === 'vue-tsc',
-  );
+  isEligibleProvider: (providerPath: string) => boolean;
+}): string | undefined {
+  return [...options.dependencies].find(options.isEligibleProvider);
 }
 
-function promoteAutoScopePass(options: {
-  dependenciesByEntry: ReadonlyMap<string, Set<string>>;
-  kindsByEntry: Map<string, AutoCheckerPreset>;
+function promoteDirectedConsumer(options: {
+  consumerPath: string;
+  dependencies: ReadonlySet<string>;
+  isEligibleProvider: (providerPath: string) => boolean;
+  promoteConsumer: (consumerPath: string, providerPath: string) => boolean;
+}): boolean {
+  const providerPath = findEligibleProvider(options);
+  if (providerPath === undefined) return false;
+  return options.promoteConsumer(options.consumerPath, providerPath);
+}
+
+function promoteDirectedPass(options: {
+  dependenciesByConsumer: ReadonlyMap<string, Set<string>>;
+  isEligibleProvider: (providerPath: string) => boolean;
+  promoteConsumer: (consumerPath: string, providerPath: string) => boolean;
 }): boolean {
   let changed = false;
-  for (const [entryConfigPath, dependencies] of options.dependenciesByEntry) {
+  for (const [consumerPath, dependencies] of options.dependenciesByConsumer) {
     if (
-      shouldPromoteAutoScope({
+      promoteDirectedConsumer({
+        consumerPath,
         dependencies,
-        entryConfigPath,
-        kindsByEntry: options.kindsByEntry,
+        isEligibleProvider: options.isEligibleProvider,
+        promoteConsumer: options.promoteConsumer,
       })
-    ) {
-      options.kindsByEntry.set(entryConfigPath, 'vue-tsc');
+    )
       changed = true;
-    }
   }
   return changed;
 }
 
-export function promoteAutoScopes(options: {
-  dependenciesByEntry: ReadonlyMap<string, Set<string>>;
-  kindsByEntry: Map<string, AutoCheckerPreset>;
+export function promoteDirectedCheckerDependencies(options: {
+  dependenciesByConsumer: ReadonlyMap<string, Set<string>>;
+  isEligibleProvider: (providerPath: string) => boolean;
+  onPass: () => void;
+  promoteConsumer: (consumerPath: string, providerPath: string) => boolean;
 }): void {
-  while (promoteAutoScopePass(options)) {
-    // Repeat until the transitive checker capability reaches a fixed point.
+  while (promoteDirectedPass(options)) {
+    options.onPass();
   }
 }

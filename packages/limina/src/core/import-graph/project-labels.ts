@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { isDtsConfigPath, readJsonConfig } from '#core/tsconfig/actions';
+import { readJsonConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import type {
@@ -170,10 +170,6 @@ export function readProjectGraphRules(options: {
   configPath: string;
   virtualFiles?: ReadonlyMap<string, string>;
 }): ProjectGraphRuleInfo {
-  if (!isDtsConfigPath(options.configPath)) {
-    return createEmptyRuleInfo();
-  }
-
   const configObject = readProjectConfigObject({
     config: options.config,
     configPath: options.configPath,

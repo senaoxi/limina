@@ -26,6 +26,7 @@ describe('user-maintained Limina tsconfig metadata', () => {
           limina: 'runtime',
         },
         configPath: path.join('/workspace', 'tsconfig.json'),
+        rootDir: '/workspace',
       }),
     ).toThrow(removedMetadataError);
   });
@@ -39,6 +40,7 @@ describe('user-maintained Limina tsconfig metadata', () => {
           },
         },
         configPath: path.join('/workspace', 'tsconfig.json'),
+        rootDir: '/workspace',
       }),
     ).not.toThrow();
   });
@@ -55,6 +57,7 @@ describe('user-maintained Limina tsconfig metadata', () => {
           },
         },
         configPath: path.join('/workspace', 'tsconfig.json'),
+        rootDir: '/workspace',
       }),
     ).not.toThrow();
   });
@@ -79,8 +82,27 @@ describe('user-maintained Limina tsconfig metadata', () => {
           'projects',
           'tsconfig.dts.json',
         ),
+        rootDir: '/workspace',
       }),
     ).not.toThrow();
+  });
+
+  it('applies the user metadata contract below an ancestor .limina directory', () => {
+    const rootDir = path.join(
+      '/workspace',
+      '.limina',
+      'integration',
+      'runtime',
+      'repo',
+    );
+
+    expect(() =>
+      validateUserMaintainedLiminaTsconfigMetadata({
+        configObject: { limina: 'runtime' },
+        configPath: path.join(rootDir, 'tsconfig.json'),
+        rootDir,
+      }),
+    ).toThrow(removedMetadataError);
   });
 
   it('rejects removed metadata on an activated user graph route', async () => {

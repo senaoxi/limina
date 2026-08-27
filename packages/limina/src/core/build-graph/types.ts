@@ -1,5 +1,6 @@
 import type {
-  CheckerBuildEngine,
+  AstroConfigClosureEntry,
+  AstroSemanticProject,
   CheckerProjectConfigCache,
   CheckerProjectParseContext,
 } from '#checkers';
@@ -9,37 +10,28 @@ import type ts from 'typescript';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { ArtifactChange, ArtifactPlan } from '../../domain/artifacts/plan';
 import type { CheckerEntrySelection } from '../checkers/entry-selection';
+import type { SvelteSemanticProject } from '../svelte-semantic/types';
 import type {
   ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../workspace/validated-context';
+import type { AutoScopeProject } from './auto-checker-types';
+import type {
+  CheckerOwnershipPlan,
+  LockedSemanticAuthority,
+} from './checker-ownership-types';
 import type {
   GeneratedKnipPackageConfig,
   GeneratedKnipPackageDiagnostic,
 } from './generated-knip';
 import type { OutputOptions } from './generated/config-readers';
+import type { GeneratedTsconfigGraphManifest } from './manifest-types';
+import type { AutoFrameworkEvidence } from './source-capabilities';
 
-interface GeneratedCheckerManifest {
-  configToOutputBuild: Record<string, GeneratedBuildModuleManifest>;
-  preset: string;
-  entry: string;
-  roots: string[];
-  sourceToBuild: Record<string, GeneratedBuildModuleManifest>;
-  sourceToDts: Record<string, string>;
-  dtsToSource: Record<string, string>;
-}
+export type { AutoScopeProject } from './auto-checker-types';
+export type { GeneratedTsconfigGraphManifest } from './manifest-types';
 
-interface GeneratedProviderEdgeManifest {
-  file: string;
-  fromChecker: string;
-  fromConfig: string;
-  importedSpecifier: string;
-  resolvedFile: string;
-  toChecker: string;
-  toConfig: string;
-}
-
-export interface GeneratedProviderEdge {
+interface GeneratedDependencyEdgeBase {
   file: string;
   fromChecker: string;
   fromConfigPath: string;
@@ -48,6 +40,19 @@ export interface GeneratedProviderEdge {
   toChecker: string;
   toConfigPath: string;
 }
+
+export interface DeclarationProviderEdge extends GeneratedDependencyEdgeBase {
+  cacheReuse: 'non-reusable' | 'reusable';
+  kind: 'declaration-provider';
+}
+
+export interface FrameworkScheduleEdge extends GeneratedDependencyEdgeBase {
+  kind: 'framework-schedule';
+}
+
+export type GeneratedDependencyEdge =
+  | DeclarationProviderEdge
+  | FrameworkScheduleEdge;
 
 export type GeneratedBuildModuleKind = 'project' | 'solution';
 
@@ -68,18 +73,6 @@ export interface GeneratedOutputDeclarationCopyContext {
   sourceConfigPath: string;
 }
 
-export interface GeneratedTsconfigGraphManifest {
-  version: 3;
-  generatedBy: 'limina';
-  checkers: Record<string, GeneratedCheckerManifest>;
-  knip: {
-    diagnostics: GeneratedKnipPackageDiagnostic[];
-    packages: GeneratedKnipPackageConfig[];
-  };
-  ownedArtifacts: string[];
-  providerEdges: GeneratedProviderEdgeManifest[];
-}
-
 export interface GeneratedTsconfigGraphResult {
   artifactPlan: ArtifactPlan;
   changed: boolean;
@@ -96,8 +89,10 @@ export interface GeneratedTsconfigGraphResult {
   dtsToSource: Map<string, Map<string, string>>;
   generatedKnipConfigs: GeneratedKnipPackageConfig[];
   generatedKnipDiagnostics: GeneratedKnipPackageDiagnostic[];
-  providerEdges: GeneratedProviderEdge[];
+  governedSources: Map<string, Map<string, GovernedSourceUnit>>;
+  dependencyEdges: GeneratedDependencyEdge[];
   manifest: GeneratedTsconfigGraphManifest;
+  ownershipPlan: CheckerOwnershipPlan;
   generatedFiles: ReadonlyMap<string, string>;
 }
 
@@ -110,8 +105,9 @@ export interface PrepareGeneratedTsconfigGraphOptions {
 }
 
 export interface SourceProject {
-  checkerName: string;
+  checkerName: ResolvedCheckerConfig['name'];
   configPath: string;
+  configClosure: AstroConfigClosureEntry[];
   context: CheckerProjectParseContext;
   dtsConfigPath: string;
   fileNames: string[];
@@ -123,6 +119,46 @@ export interface SourceProject {
   packageRootDir: string;
   options: ts.CompilerOptions;
   references: Set<string>;
+  semanticAuthority: LockedSemanticAuthority;
+}
+
+export interface FrameworkCapabilityDescriptor {
+  family: 'astro' | 'svelte';
+  packageRootDir: string;
+  sourceConfigPath: string;
+}
+
+export type SourceBuildProjection =
+  | {
+      dtsConfigPath: string;
+      kind: 'declaration-project';
+    }
+  | {
+      buildConfigPath: string;
+      kind: 'transparent-solution';
+    }
+  | {
+      buildConfigPath: string;
+      dtsConfigPath: string;
+      kind: 'wrapped-project';
+    }
+  | {
+      kind: 'framework-checker';
+    };
+
+export interface GovernedSourceUnit {
+  astroSemanticProject?: AstroSemanticProject;
+  buildProjection: SourceBuildProjection;
+  configPath: string;
+  context: CheckerProjectParseContext;
+  declarationFileNames: string[];
+  declarationReferences: Set<string>;
+  frameworkCapabilities: FrameworkCapabilityDescriptor[];
+  ownedFileNames: string[];
+  packageRootDir: string;
+  primaryCheckerName: ResolvedCheckerConfig['name'];
+  semanticAuthority: LockedSemanticAuthority;
+  svelteSemanticProject?: SvelteSemanticProject;
 }
 
 export interface SolutionProject {
@@ -148,7 +184,14 @@ export interface CheckerSourceConfigCollection {
   packageRootBySourcePath: Map<string, string>;
   rootConfigPaths: string[];
   solutionConfigPaths: Set<string>;
+  crossCheckerReferences: CrossCheckerSourceReference[];
   solutionReferencesBySourcePath: Map<string, string[]>;
+}
+
+export interface CrossCheckerSourceReference {
+  fromConfigPath: string;
+  toChecker: ResolvedCheckerConfig['name'];
+  toConfigPath: string;
 }
 
 export interface GeneratedGraphWriteContext {
@@ -163,6 +206,9 @@ export interface PreparedCheckerGraph {
   checker: ResolvedCheckerConfig;
   collection: CheckerSourceConfigCollection;
   entryPath: string;
+  governedSources: GovernedSourceUnit[];
+  dependencyEdges: GeneratedDependencyEdge[];
+  primaryProjects: SourceProject[];
   projects: SourceProject[];
   rootBuildPaths: string[];
   solutions: SolutionProject[];
@@ -171,6 +217,11 @@ export interface PreparedCheckerGraph {
 export interface ResolvedCheckerEntrySelection {
   checker: ResolvedCheckerConfig;
   selection: CheckerEntrySelection;
+}
+
+export interface CheckerSelectionResolution {
+  ownershipPlan: CheckerOwnershipPlan;
+  selections: ResolvedCheckerEntrySelection[];
 }
 
 export interface CheckerOutputGraph {
@@ -182,7 +233,7 @@ export interface CheckerOutputGraph {
 
 export interface InferredProjectReferenceCollection {
   problems: string[];
-  providerEdges: GeneratedProviderEdge[];
+  dependencyEdges: GeneratedDependencyEdge[];
 }
 
 export type ProviderSelectionResult =
@@ -207,22 +258,10 @@ export type ProviderSelectionResult =
       reason: string;
     };
 
-export type AutoCheckerPreset = 'tsc' | 'vue-tsc';
-
-export interface AutoScopeProject {
-  configPath: string;
-  context: CheckerProjectParseContext;
-  fileNames: string[];
-  options: ts.CompilerOptions;
-}
-
 export interface AutoScope {
+  authoritativeChecker?: ResolvedCheckerConfig['name'];
   collection: CheckerSourceConfigCollection;
   entryConfigPath: string;
+  frameworkEvidence: AutoFrameworkEvidence[];
   projects: AutoScopeProject[];
-}
-
-export interface ProviderEngineGroup {
-  engine: CheckerBuildEngine;
-  projects: SourceProject[];
 }

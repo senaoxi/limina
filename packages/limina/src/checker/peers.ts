@@ -1,108 +1,260 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
 import { createRequire } from 'node:module';
 import path from 'pathe';
+import {
+  getExternalCheckerDependencyContract,
+  getLiminaRuntimeDependencyContract,
+  isSupportedDependencyVersion,
+  type LiminaDependencyContract,
+  readResolvedPackageVersion,
+} from '../dependency-contract';
 import { getCheckerAdapter } from './registry';
 import type {
   CheckerPackageResolver,
   MissingCheckerPeerDependency,
 } from './types';
 
-function hasErrorCode(error: Error): error is Error & { code: unknown } {
-  return 'code' in error;
+interface AccumulatedDependencyProblem
+  extends Omit<MissingCheckerPeerDependency, 'checkerNames'> {
+  checkerNames: Set<string>;
 }
+
+const requireFromLimina = createRequire(import.meta.url);
 
 function getErrorCode(error: unknown): string | undefined {
-  if (!(error instanceof Error)) return undefined;
-  if (!hasErrorCode(error)) return undefined;
-  return `${error.code}`;
+  return error instanceof Error && 'code' in error
+    ? String(error.code)
+    : undefined;
 }
 
-function handleCheckerPackageResolutionError(
-  error: unknown,
-  packageName: string,
-): string | undefined {
-  const code = getErrorCode(error);
-  if (code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') return packageName;
-  if (code === 'MODULE_NOT_FOUND') return undefined;
-  throw error;
+function resolvePackageEntryFallback(options: {
+  packageName: string;
+  requireFromRoot: NodeRequire;
+}): string | undefined {
+  try {
+    return options.requireFromRoot.resolve(options.packageName);
+  } catch (error) {
+    if (getErrorCode(error) === 'MODULE_NOT_FOUND') return undefined;
+    throw error;
+  }
+}
+
+function resolvePackageWithRequire(options: {
+  packageName: string;
+  requireFrom: NodeRequire;
+}): string | undefined {
+  try {
+    return options.requireFrom.resolve(`${options.packageName}/package.json`);
+  } catch (error) {
+    return handlePackageResolutionError({ error, ...options });
+  }
+}
+
+function handlePackageResolutionError(options: {
+  error: unknown;
+  packageName: string;
+  requireFrom: NodeRequire;
+}): string | undefined {
+  if (getErrorCode(options.error) === 'ERR_PACKAGE_PATH_NOT_EXPORTED') {
+    return resolvePackageEntryFallback({
+      packageName: options.packageName,
+      requireFromRoot: options.requireFrom,
+    });
+  }
+  if (getErrorCode(options.error) === 'MODULE_NOT_FOUND') return undefined;
+  throw options.error;
 }
 
 function resolveCheckerPackageFromRoot(options: {
   packageName: string;
   projectRootDir: string;
 }): string | undefined {
-  const requireFromRoot = createRequire(
-    path.join(options.projectRootDir, 'package.json'),
-  );
-  try {
-    return requireFromRoot.resolve(`${options.packageName}/package.json`);
-  } catch (error) {
-    return handleCheckerPackageResolutionError(error, options.packageName);
-  }
+  return resolvePackageWithRequire({
+    packageName: options.packageName,
+    requireFrom: createRequire(
+      path.join(options.projectRootDir, 'package.json'),
+    ),
+  });
 }
 
-function getPackageResolver(
-  resolver: CheckerPackageResolver | undefined,
-): CheckerPackageResolver {
-  return resolver === undefined ? resolveCheckerPackageFromRoot : resolver;
+function resolveDependency(options: {
+  contract: LiminaDependencyContract;
+  projectRootDir: string;
+  resolvePackage?: CheckerPackageResolver;
+}): string | undefined {
+  if (options.resolvePackage !== undefined) {
+    return options.resolvePackage({
+      packageName: options.contract.packageName,
+      projectRootDir: options.projectRootDir,
+    });
+  }
+  if (options.contract.ownership === 'limina-runtime') {
+    return resolvePackageWithRequire({
+      packageName: options.contract.packageName,
+      requireFrom: requireFromLimina,
+    });
+  }
+  return resolveCheckerPackageFromRoot({
+    packageName: options.contract.packageName,
+    projectRootDir: options.projectRootDir,
+  });
+}
+
+function getResolutionScope(options: {
+  contract: LiminaDependencyContract;
+  projectRootDir: string;
+}): string {
+  return options.contract.ownership === 'limina-runtime'
+    ? 'limina-install'
+    : options.projectRootDir;
 }
 
 function getPackageNames(checker: ResolvedCheckerConfig): string[] {
-  const adapter = getCheckerAdapter(checker.preset);
-  return adapter === null ? [] : adapter.packageNames;
+  const adapter = getCheckerAdapter(checker.name);
+  return adapter === null
+    ? []
+    : [
+        ...adapter.dependencies.externalCheckerPackages,
+        ...adapter.dependencies.liminaRuntimePackages,
+      ];
 }
 
-function getOrCreateCheckerNames(
-  missingByPackage: Map<string, Set<string>>,
+function requireDependencyContract(
   packageName: string,
-): Set<string> {
-  const checkerNames = missingByPackage.get(packageName);
-  if (checkerNames !== undefined) return checkerNames;
-  const created = new Set<string>();
-  missingByPackage.set(packageName, created);
-  return created;
-}
-
-function isPackageResolved(options: {
-  checkerPackageResolver: CheckerPackageResolver;
-  packageName: string;
-  projectRootDir: string;
-}): boolean {
-  return (
-    options.checkerPackageResolver({
-      packageName: options.packageName,
-      projectRootDir: options.projectRootDir,
-    }) !== undefined
+): LiminaDependencyContract {
+  const contract =
+    getExternalCheckerDependencyContract(packageName) ??
+    getLiminaRuntimeDependencyContract(packageName);
+  if (contract !== undefined) return contract;
+  throw new Error(
+    `Checker dependency ${packageName} has no ownership contract.`,
   );
 }
 
-function collectCheckerMissingPackages(options: {
-  checker: ResolvedCheckerConfig;
-  missingByPackage: Map<string, Set<string>>;
-  projectRootDir: string;
-  resolvePackage: CheckerPackageResolver;
-}): void {
-  for (const packageName of getPackageNames(options.checker)) {
-    if (
-      isPackageResolved({
-        checkerPackageResolver: options.resolvePackage,
-        packageName,
-        projectRootDir: options.projectRootDir,
-      })
-    ) {
-      continue;
-    }
-    getOrCreateCheckerNames(options.missingByPackage, packageName).add(
-      options.checker.name,
-    );
+function createDependencyProblem(options: {
+  checkerName: string;
+  contract: LiminaDependencyContract;
+  resolutionScope: string;
+  resolvedPath: string | undefined;
+}): AccumulatedDependencyProblem | undefined {
+  if (options.resolvedPath === undefined) {
+    return createMissingDependencyProblem(options);
+  }
+  return createInstalledDependencyProblem({
+    checkerName: options.checkerName,
+    contract: options.contract,
+    resolutionScope: options.resolutionScope,
+    resolvedPath: options.resolvedPath,
+  });
+}
+
+function createMissingDependencyProblem(options: {
+  checkerName: string;
+  contract: LiminaDependencyContract;
+  resolutionScope: string;
+}): AccumulatedDependencyProblem {
+  return {
+    checkerNames: new Set([options.checkerName]),
+    failureKind: 'missing',
+    ownership: options.contract.ownership,
+    packageName: options.contract.packageName,
+    resolutionScope: options.resolutionScope,
+    supportedRange: options.contract.supportedRange,
+  };
+}
+
+function createInstalledDependencyProblem(options: {
+  checkerName: string;
+  contract: LiminaDependencyContract;
+  resolutionScope: string;
+  resolvedPath: string;
+}): AccumulatedDependencyProblem | undefined {
+  const installedVersion = readResolvedPackageVersion({
+    packageName: options.contract.packageName,
+    resolvedPath: options.resolvedPath,
+  });
+  if (installedVersion === undefined) return undefined;
+  if (
+    isSupportedDependencyVersion({
+      contract: options.contract,
+      version: installedVersion,
+    })
+  ) {
+    return undefined;
+  }
+  return {
+    checkerNames: new Set([options.checkerName]),
+    failureKind: 'unsupported',
+    installedVersion,
+    ownership: options.contract.ownership,
+    packageName: options.contract.packageName,
+    reason: `installed version ${installedVersion} is outside ${options.contract.supportedRange}`,
+    resolutionScope: options.resolutionScope,
+    supportedRange: options.contract.supportedRange,
+  };
+}
+
+function dependencyProblemKey(problem: AccumulatedDependencyProblem): string {
+  return JSON.stringify({
+    failureKind: problem.failureKind,
+    ownership: problem.ownership,
+    packageName: problem.packageName,
+    resolutionScope: problem.resolutionScope,
+    version: problem.installedVersion,
+  });
+}
+
+function registerDependencyProblem(
+  problemsByKey: Map<string, AccumulatedDependencyProblem>,
+  problem: AccumulatedDependencyProblem,
+): void {
+  const key = dependencyProblemKey(problem);
+  const current = problemsByKey.get(key);
+  if (current === undefined) {
+    problemsByKey.set(key, problem);
+    return;
+  }
+  for (const checkerName of problem.checkerNames) {
+    current.checkerNames.add(checkerName);
   }
 }
 
-function compareMissingDependencies(
+function collectCheckerDependencyProblems(options: {
+  checker: ResolvedCheckerConfig;
+  problemsByKey: Map<string, AccumulatedDependencyProblem>;
+  projectRootDir: string;
+  resolvePackage?: CheckerPackageResolver;
+}): void {
+  for (const packageName of getPackageNames(options.checker)) {
+    const contract = requireDependencyContract(packageName);
+    const problem = createDependencyProblem({
+      checkerName: options.checker.name,
+      contract,
+      resolutionScope: getResolutionScope({
+        contract,
+        projectRootDir: options.projectRootDir,
+      }),
+      resolvedPath: resolveDependency({
+        contract,
+        projectRootDir: options.projectRootDir,
+        resolvePackage: options.resolvePackage,
+      }),
+    });
+    if (problem !== undefined) {
+      registerDependencyProblem(options.problemsByKey, problem);
+    }
+  }
+}
+
+function compareDependencyProblems(
   left: MissingCheckerPeerDependency,
   right: MissingCheckerPeerDependency,
 ): number {
-  return left.packageName.localeCompare(right.packageName);
+  return (
+    left.ownership.localeCompare(right.ownership) ||
+    left.failureKind.localeCompare(right.failureKind) ||
+    left.packageName.localeCompare(right.packageName)
+  );
 }
 
 export function collectMissingCheckerPeerDependencies(options: {
@@ -110,66 +262,23 @@ export function collectMissingCheckerPeerDependencies(options: {
   projectRootDir: string;
   resolvePackage?: CheckerPackageResolver;
 }): MissingCheckerPeerDependency[] {
-  const missingByPackage = new Map<string, Set<string>>();
-  const resolvePackage = getPackageResolver(options.resolvePackage);
+  const problemsByKey = new Map<string, AccumulatedDependencyProblem>();
   for (const checker of options.checkers) {
-    collectCheckerMissingPackages({
+    collectCheckerDependencyProblems({
       checker,
-      missingByPackage,
+      problemsByKey,
       projectRootDir: options.projectRootDir,
-      resolvePackage,
+      resolvePackage: options.resolvePackage,
     });
   }
-  return [...missingByPackage.entries()]
-    .map(([packageName, checkerNames]) => ({
-      checkerNames: [...checkerNames].sort((left, right) =>
+  return [...problemsByKey.values()]
+    .map((problem) => ({
+      ...problem,
+      checkerNames: [...problem.checkerNames].sort((left, right) =>
         left.localeCompare(right),
       ),
-      packageName,
     }))
-    .sort(compareMissingDependencies);
+    .sort(compareDependencyProblems);
 }
 
-function formatCheckerList(checkerNames: readonly string[]): string {
-  return checkerNames.map((name) => `"${name}"`).join(', ');
-}
-
-function formatReason(reason: string | undefined): string {
-  return reason === undefined ? '' : `; ${reason}`;
-}
-
-function formatMissingDependency(
-  dependency: MissingCheckerPeerDependency,
-): string {
-  return `  - ${dependency.packageName} (used by checker ${formatCheckerList(
-    dependency.checkerNames,
-  )}${formatReason(dependency.reason)})`;
-}
-
-function collectPackageNames(
-  dependencies: readonly MissingCheckerPeerDependency[],
-): string[] {
-  return dependencies.map((dependency) => dependency.packageName);
-}
-
-function collectMissingDependencyLines(
-  dependencies: readonly MissingCheckerPeerDependency[],
-): string[] {
-  return dependencies.map(formatMissingDependency);
-}
-
-function joinMessageLines(lines: readonly string[]): string {
-  return lines.join('\n');
-}
-
-export function formatMissingCheckerPeerDependencies(
-  missingDependencies: MissingCheckerPeerDependency[],
-): string {
-  const packageNames = collectPackageNames(missingDependencies);
-  const dependencyLines = collectMissingDependencyLines(missingDependencies);
-  return joinMessageLines([
-    'Missing checker peer dependencies:',
-    ...dependencyLines,
-    `Fix: pnpm add -D ${packageNames.join(' ')}`,
-  ]);
-}
+export { formatMissingCheckerPeerDependencies } from './dependency-diagnostics';

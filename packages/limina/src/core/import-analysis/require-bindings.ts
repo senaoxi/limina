@@ -17,6 +17,7 @@ export interface RequireImportCollectionOptions {
   scriptKind: ts.ScriptKind;
   sourceOffset?: number;
   sourceText: string;
+  tsModule?: typeof ts;
 }
 
 function isUsableRequireBinding(
@@ -35,19 +36,21 @@ function isUsableRequireBinding(
 
 function isRequireResolveAccess(
   expression: ts.Expression,
+  tsModule: typeof ts,
 ): expression is ts.PropertyAccessExpression & {
   expression: ts.Identifier;
 } {
-  if (!isPlainPropertyAccess(expression)) return false;
+  if (!isPlainPropertyAccess(expression, tsModule)) return false;
   if (expression.name.text !== 'resolve') return false;
-  return ts.isIdentifier(expression.expression);
+  return tsModule.isIdentifier(expression.expression);
 }
 
 function isPlainPropertyAccess(
   expression: ts.Expression,
+  tsModule: typeof ts,
 ): expression is ts.PropertyAccessExpression {
   return (
-    ts.isPropertyAccessExpression(expression) &&
+    tsModule.isPropertyAccessExpression(expression) &&
     expression.questionDotToken === undefined
   );
 }
@@ -62,8 +65,9 @@ function getIdentifierRequireKind(
 function getResolveRequireKind(
   bindings: PreparedRequireBindings,
   expression: ts.Expression,
+  tsModule: typeof ts,
 ): ImportRecordKind | null {
-  if (!isRequireResolveAccess(expression)) return null;
+  if (!isRequireResolveAccess(expression, tsModule)) return null;
   return isUsableRequireBinding(bindings, expression.expression)
     ? 'require-resolve'
     : null;
@@ -72,19 +76,21 @@ function getResolveRequireKind(
 function getRequireCallKind(options: {
   bindings: PreparedRequireBindings;
   node: ts.CallExpression;
+  tsModule: typeof ts;
 }): ImportRecordKind | null {
   if (options.node.questionDotToken !== undefined) return null;
   const expression = options.node.expression;
-  return ts.isIdentifier(expression)
+  return options.tsModule.isIdentifier(expression)
     ? getIdentifierRequireKind(options.bindings, expression)
-    : getResolveRequireKind(options.bindings, expression);
+    : getResolveRequireKind(options.bindings, expression, options.tsModule);
 }
 
 function getLiteralArgument(
   node: ts.CallExpression,
+  tsModule: typeof ts,
 ): ts.StringLiteralLike | null {
   const argument = node.arguments[0];
-  return argument !== undefined && ts.isStringLiteralLike(argument)
+  return argument !== undefined && tsModule.isStringLiteralLike(argument)
     ? argument
     : null;
 }
@@ -95,13 +101,15 @@ function collectCallRecord(options: {
   lineStarts: readonly number[];
   node: ts.CallExpression;
   sourceFile: ts.SourceFile;
+  tsModule: typeof ts;
 }): CollectedImportRecord | null {
   const kind = getRequireCallKind({
     bindings: options.bindings,
     node: options.node,
+    tsModule: options.tsModule,
   });
   if (kind === null) return null;
-  const argument = getLiteralArgument(options.node);
+  const argument = getLiteralArgument(options.node, options.tsModule);
   if (argument === null) return null;
   return createRequireImportRecord(options, argument, kind);
 }
@@ -131,15 +139,16 @@ function collectRequireRecords(options: {
   bindings: PreparedRequireBindings;
   collection: RequireImportCollectionOptions;
   sourceFile: ts.SourceFile;
+  tsModule: typeof ts;
 }): CollectedImportRecord[] {
   const records: CollectedImportRecord[] = [];
   const lineStarts = buildLineStarts(options.collection.sourceText);
   const visit = (node: ts.Node): void => {
-    const record = ts.isCallExpression(node)
+    const record = options.tsModule.isCallExpression(node)
       ? collectCallRecord({ ...options, lineStarts, node })
       : null;
     if (record !== null) records.push(record);
-    ts.forEachChild(node, visit);
+    options.tsModule.forEachChild(node, visit);
   };
   visit(options.sourceFile);
   return records;
@@ -148,22 +157,29 @@ function collectRequireRecords(options: {
 export function collectRequireImports(
   options: RequireImportCollectionOptions,
 ): CollectedImportRecord[] {
-  const sourceFile = ts.createSourceFile(
+  const tsModule = options.tsModule ?? ts;
+  const sourceFile = tsModule.createSourceFile(
     options.filePath,
     options.sourceText,
-    ts.ScriptTarget.Latest,
+    tsModule.ScriptTarget.Latest,
     true,
     options.scriptKind,
   );
-  return collectRequireImportsFromSourceFile({ ...options, sourceFile });
+  return collectRequireImportsFromSourceFile({
+    ...options,
+    sourceFile,
+    tsModule,
+  });
 }
 
 export function collectRequireImportsFromSourceFile(
   options: RequireImportCollectionOptions & { sourceFile: ts.SourceFile },
 ): CollectedImportRecord[] {
+  const tsModule = options.tsModule ?? ts;
   return collectRequireRecords({
-    bindings: prepareRequireBindings(options.sourceFile),
+    bindings: prepareRequireBindings(options.sourceFile, tsModule),
     collection: options,
     sourceFile: options.sourceFile,
+    tsModule,
   });
 }

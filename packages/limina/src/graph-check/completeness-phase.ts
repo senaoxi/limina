@@ -1,3 +1,4 @@
+import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import { collectExpectedReferences } from './expected-reference-collection';
 import { addReferenceCompletenessProblems } from './reference-completeness';
 import type { GraphCheckState } from './run-state';
@@ -13,6 +14,7 @@ export function runReferenceCompletenessPhase(state: GraphCheckState): void {
     managedOutputLookup: state.managedOutputLookup,
     packages: state.packages,
     projectCheckerNamesByPath: state.projectCheckerNamesByPath,
+    projectDependencyCaches: createProjectDependencyCaches(),
     findings: state.findings,
     projectPaths: state.projectPaths,
     projects: state.projects,

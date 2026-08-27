@@ -96,7 +96,7 @@ function isRegularTargetPair(fileTypes: readonly string[]): boolean {
   return fileTypes.every((fileType) => fileType === 'regular');
 }
 
-async function readRegularSingleLinkTarget(
+async function readRegularTarget(
   configPath: string,
 ): Promise<ReturnType<typeof normalizeStat>> {
   const targetLstat = normalizeStat(
@@ -114,11 +114,6 @@ async function readRegularSingleLinkTarget(
       `Migration only supports regular config files: ${configPath}`,
     );
   }
-  if (targetStat.nlink !== 1n) {
-    throw new TerminalReplacementValidationError(
-      `Migration only supports single-link config files: ${configPath} has ${targetStat.nlink} links`,
-    );
-  }
   return targetStat;
 }
 
@@ -133,7 +128,7 @@ export async function collectModifiedSnapshot(options: {
     configPath: options.item.configPath,
     rootDir: options.rootDir,
   });
-  const targetStat = await readRegularSingleLinkTarget(options.item.configPath);
+  const targetStat = await readRegularTarget(options.item.configPath);
   await assertWritable({
     filePath: options.item.configPath,
     openFile: options.validation.openFile,
@@ -153,6 +148,7 @@ export async function collectModifiedSnapshot(options: {
     allowedRootDir: normalizeAbsolutePath(options.rootDir),
     canonicalPath: normalizeAbsolutePath(canonicalPath),
     item: options.item,
+    writeStrategy: targetStat.nlink === 1n ? 'atomic-replace' : 'in-place',
   };
 }
 
@@ -203,6 +199,24 @@ export async function validateFile(options: {
   assertContentMatches({
     bytes,
     expected: options.expected,
+    filePath: options.filePath,
+  });
+}
+
+export async function validateTargetStat(options: {
+  comparison: StatComparisonOptions;
+  expected: PreparedFileIdentity;
+  filePath: string;
+}): Promise<void> {
+  const currentStat = normalizeStat(
+    await validationIo(`Unable to stat ${options.filePath}`, () =>
+      stat(options.filePath, { bigint: true }),
+    ),
+  );
+  assertStatMatches({
+    actual: currentStat,
+    comparison: options.comparison,
+    expected: options.expected.stat,
     filePath: options.filePath,
   });
 }

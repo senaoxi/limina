@@ -29,7 +29,7 @@ yarn add -D limina@latest typescript
 
 ## Pick an Adoption Path
 
-If your workspace does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mts` that uses automatic mode (`mode: 'auto'`), adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
+If your workspace does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mts` with the flat `checkers.auto` configuration, adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
 
 If your repository already has a clear `tsconfig` convention, writing the minimal `limina.config.mts` directly is faster. Automatic checker discovery is enough for many workspaces; use [Checker Entries](./config/checkers.md) only when you need explicit checker routing.
 
@@ -89,13 +89,13 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     checkers: {
-      mode: 'auto',
+      auto: {},
     },
   },
 });
 ```
 
-Writing `mode: 'auto'` explicitly makes the config state Limina's behavior directly: Limina will find source `tsconfig.json` files inside activated workspace package regions and send each one to `tsc` or `vue-tsc` based on its contents. If individual entries inside those regions should stay out of that scan for now, put them in `exclude`. Entire excluded or inaccessible regions are already outside discovery and do not need duplicate exclude patterns.
+Auto discovery is always enabled. Limina finds default source `tsconfig.json` entries inside activated workspace package regions, resolves framework ownership before the ordinary TypeScript fallback, and recursively follows managed references. If individual automatic entries should stay out of root discovery for now, put them in `auto.exclude`; this never cuts the references closure of an entry already in scope.
 
 ```js
 import { defineConfig } from 'limina';
@@ -103,8 +103,9 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     checkers: {
-      mode: 'auto',
-      exclude: ['**/__tests__/**', 'playground/**'], // [!code focus]
+      auto: {
+        exclude: ['**/__tests__/**', 'playground/**'], // [!code focus]
+      },
     },
   },
 });
@@ -118,8 +119,9 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     checkers: {
-      mode: 'auto',
-      exclude: [], // [!code focus]
+      auto: {
+        exclude: [], // [!code focus]
+      },
     },
   },
 });
@@ -169,15 +171,15 @@ Common next steps:
 
 - `graph:check` failures usually mean source import relationships are not aligned with the TypeScript project graph that Limina generated or validated. First check whether project references inferred from static imports are missing or extra, whether cross-workspace-package references have matching dependency declarations, whether graph rules or labels deny the current dependency edge, and whether workspace imports can be resolved and mapped to the source graph consistently.
 - `source:check` failures usually mean source file ownership or source import authorization did not pass. First check source owners, tsconfig governance, whether relative imports cross the nearest `package.json` package boundary, whether `#...` imports match the current source owner's `package.json#imports`, whether bare package imports are authorized by dependency declarations or `source.importAuthority.allow`, and whether Knip reported unused source files or unused dependencies.
-- `proof:check` failures usually mean Limina cannot prove that the actual source files are covered by type checking. First check whether checker entries generated the corresponding tsconfig files, whether declaration build configs match their companion typecheck configs, whether files in `config.source` are covered by checkers, the graph, or `proof.allowlist`, and whether the same source file is covered by multiple graph or typecheck owners.
+- `proof:check` failures usually mean Limina cannot prove that the actual source files are covered by type checking. First check whether ownership is unique, solution leaves have one final owner, declaration build configs match their companion typecheck configs, Astro or Svelte owners have an executable leaf target, and files in `config.source` are covered by checkers, the graph, or `proof.allowlist`.
 - `checker:build` failures mean a build-capable checker did not pass. Common causes include non-zero exits from external `tsc`, `tsgo`, or `vue-tsc` commands, missing checker dependencies, or Limina being unable to select a valid build target for the current target. Check the checker, config path, and exit code in the Limina summary first, then inspect the corresponding checker raw log.
-- `checker:typecheck` failures mean a typecheck-only checker did not pass. Common causes include non-zero exits from external `vue-tsgo` or `svelte-check` commands, missing checker dependencies, or a generated checker entry that cannot execute correctly. Use the Limina summary to identify the runner and config path, then inspect the corresponding issue or raw log.
+- `checker:typecheck` failures mean a framework-owned leaf did not pass. Common causes include non-zero exits from `astro check` or `svelte-check`, missing leaf-local checker or parser dependencies, or missing Astro generated types. Use the Limina summary to identify the owner and config path, then inspect the corresponding issue or raw log.
 
 As a general order, handle structural problems from `graph:check`, `source:check`, and `proof:check` before executor failures from `checker:build` and `checker:typecheck`. The structural checks determine how Limina understands the project graph, source ownership, import authorization, and type-checking coverage; checker failures are usually the result of concrete source or framework type constraints. The default check displays and records issues in the task order above, but tasks can still run concurrently when resources allow it, so this order is an issue-reading and remediation order rather than a guarantee that later tasks are blocked by earlier tasks.
 
-## Add Framework Checkers
+## Configure Checker Ownership
 
-Limina can also run framework-aware checkers. Add another checker entry when part of the workspace needs it:
+Use fixed checker keys when different parts of the workspace need different build owners:
 
 ```js
 import { defineConfig } from 'limina';
@@ -185,13 +187,11 @@ import { defineConfig } from 'limina';
 export default defineConfig({
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
+      tsc: {
         include: ['packages/**/tsconfig.json'],
         exclude: ['packages/web/tsconfig.json'],
       },
-      vue: {
-        preset: 'vue-tsc',
+      'vue-tsc': {
         include: ['packages/web/tsconfig.json'],
       },
     },
@@ -201,4 +201,4 @@ export default defineConfig({
 
 Checker entries are always `tsconfig.json` files. If a package has `tsconfig.lib.json` or `tsconfig.test.json`, declare those project references through `references` from that package's `tsconfig.json`; Limina will follow the project references even when a referenced path matches checker `exclude`. Keep every referenced ordinary source config inside an activated region.
 
-Built-in presets are `tsc`, `tsgo`, `vue-tsc`, `vue-tsgo`, and `svelte-check`. Install the matching package when you enable a checker; `tsgo` and `vue-tsgo` require `@typescript/native-preview`. Limina parses Vue SFC imports with its built-in heuristic rules by default. If you opt into `config.imports.vue: 'compiler-sfc'`, also install `@vue/compiler-sfc`.
+Checker identities are `tsc`, `tsgo`, `vue-tsc`, `astro`, and `svelte-check`; every managed type config finishes with exactly one of them. The first three can emit declarations, while Astro and Svelte execute per leaf without declaration projection. Install the matching package when an owner is active; `tsgo` requires `@typescript/native-preview`. Astro checks and semantic graph analysis require `astro`, `@astrojs/check`, and `typescript` in the owning leaf. Limina obtains Astro's compiler through the installed `@astrojs/check` Language Server toolchain and does not declare a separate `@astrojs/compiler` peer or runtime. Svelte checks and semantic graph analysis require `svelte-check`, `svelte2tsx`, `svelte`, and `typescript` in the owning leaf. Vue semantic graph analysis resolves a supported `vue-tsc` from the checker execution scope and its internal toolchain from that checker installation; applications do not install Language Core or Volar TypeScript for Limina. Standalone import collection accepts only native JavaScript and TypeScript files; framework files require project/checker context.

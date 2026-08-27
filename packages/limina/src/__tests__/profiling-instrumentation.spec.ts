@@ -604,7 +604,7 @@ describe('type evidence profiling instrumentation', () => {
       for (const importRecord of imports) {
         expect(
           core.classifyImportRuntime({
-            checkerName: 'typescript',
+            checkerName: 'tsc',
             importRecord,
             project,
           }).classification,
@@ -653,7 +653,7 @@ describe('type evidence profiling instrumentation', () => {
 
       expect(
         core.classifyImportRuntime({
-          checkerName: 'typescript',
+          checkerName: 'tsc',
           importRecord: importRecord!,
           project: createTypeEvidenceProject({
             configPath,
@@ -694,7 +694,7 @@ describe('type evidence profiling instrumentation', () => {
 
       expect(
         core.classifyImportRuntime({
-          checkerName: 'typescript',
+          checkerName: 'tsc',
           importRecord: importRecord!,
           project: createTypeEvidenceProject({
             configPath,
@@ -744,7 +744,7 @@ describe('type evidence profiling instrumentation', () => {
 
       expect(
         core.resolveImportEvidence({
-          checkerName: 'typescript',
+          checkerName: 'tsc',
           importRecord: importRecord!,
           project: createTypeEvidenceProject({
             configPath,
@@ -802,7 +802,7 @@ describe('type evidence profiling instrumentation', () => {
       for (const importRecord of [...imports, imports[0]!]) {
         expect(
           core.resolveImportEvidence({
-            checkerName: 'typescript',
+            checkerName: 'tsc',
             importRecord,
             project,
           }).type.kind,
@@ -870,7 +870,7 @@ describe('type evidence profiling instrumentation', () => {
 
         expect(
           core.resolveImportEvidence({
-            checkerName: 'typescript',
+            checkerName: 'tsc',
             importRecord: importRecord!,
             project: createTypeEvidenceProject({
               configPath,

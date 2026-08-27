@@ -1,5 +1,8 @@
 import type { BuildCheckerPreset, ResolvedCheckerConfig } from '#config/runner';
-import { resolveProjectConfigPath } from '#core/tsconfig/actions';
+import {
+  isLiminaArtifactPath,
+  resolveProjectConfigPath,
+} from '#core/tsconfig/actions';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
@@ -166,7 +169,7 @@ function assertUserConfig(options: {
   rootDir: string;
   targetConfigPath: string;
 }): void {
-  if (!options.targetConfigPath.split(path.sep).includes('.limina')) return;
+  if (!isLiminaArtifactPath(options.targetConfigPath, options.rootDir)) return;
   throw new Error(
     [
       'Invalid checker build config:',
@@ -218,7 +221,7 @@ export function formatTypecheckOnlyBuildProblem(options: {
     '  reason: the matching checker(s) are typecheck-only and cannot run checker build.',
     '  matching checkers:',
     ...options.checkers.map(
-      (checker) => `    - config.checkers.${checker.name} (${checker.preset})`,
+      (checker) => `    - config.checkers.${checker.name} (${checker.name})`,
     ),
     '  fix: configure a build-capable checker such as tsc, tsgo, or vue-tsc for this tsconfig.',
   ].join('\n');

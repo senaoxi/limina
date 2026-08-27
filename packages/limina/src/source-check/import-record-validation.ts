@@ -1,10 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { AnalysisProviderSet } from '#core';
-import {
-  type ImportRecord,
-  type ProjectInfo,
-  resolveInternalImport,
-} from '#core/import-graph/context';
+import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import {
   getPackageRootSpecifier,
   type PackageOwner,
@@ -34,7 +29,6 @@ interface ImportRecordOptions {
   ambientDeclarations: AmbientDeclarationIndex;
   config: ResolvedLiminaConfig;
   filePath: string;
-  importAnalysis: AnalysisProviderSet['imports']['context'];
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   importRecord: ImportRecord;
   owner: PackageOwner;
@@ -44,16 +38,7 @@ interface ImportRecordOptions {
   project: ProjectInfo;
   rootPackage: WorkspacePackage | null;
   workspaceLookup: WorkspaceLookupIndex;
-}
-
-function resolveImport(options: ImportRecordOptions): string | null {
-  return resolveInternalImport(
-    options.importRecord.specifier,
-    options.filePath,
-    options.project.options,
-    options.project,
-    options.importAnalysis,
-  );
+  resolvedFilePath: string | null;
 }
 
 function addOutsideActivatedRegionProblem(options: {
@@ -192,7 +177,7 @@ function addImportKindProblem(options: {
 export function addImportRecordProblems(options: ImportRecordOptions): void {
   const context = {
     base: options,
-    resolvedFilePath: resolveImport(options),
+    resolvedFilePath: options.resolvedFilePath,
   };
 
   if (!addBoundaryProblemIfNeeded(context)) {

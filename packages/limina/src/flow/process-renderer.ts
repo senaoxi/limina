@@ -3,23 +3,15 @@ import {
   type InternalProcessEntry,
   resolveInternalProcessEntry,
 } from '../execution/internal-process-entry';
+import { patchRendererWriteStream } from './process-renderer-stream';
 import type {
   FlowOutputMessage,
   FlowRendererParentMessage,
   FlowRendererProcessMessage,
   FlowRenderSnapshot,
 } from './render-model';
-import { toWritableText } from './render-model';
-import type {
-  FlowWrite,
-  FlowWriteArgs,
-  FlowWriteCallback,
-} from './terminal-frame';
-import { writeWithFlowArgs } from './terminal-frame';
 
 type RendererEntry = InternalProcessEntry;
-
-type WriteStreamName = 'stderr' | 'stdout';
 
 function resolveRendererEntry(
   moduleUrl: string = import.meta.url,
@@ -34,26 +26,6 @@ function resolveRendererEntry(
 export const resolveRendererEntryForTesting: typeof resolveRendererEntry =
   resolveRendererEntry;
 
-function getWriteCallback(args: FlowWriteArgs): FlowWriteCallback | undefined {
-  if (args.length === 3) {
-    return args[2];
-  }
-
-  if (typeof args[1] === 'function') {
-    return args[1];
-  }
-
-  return undefined;
-}
-
-function callWriteCallback(args: FlowWriteArgs): void {
-  const callback = getWriteCallback(args);
-
-  if (callback) {
-    queueMicrotask(callback);
-  }
-}
-
 function getRendererCloseResult(
   message: FlowRendererParentMessage,
 ): boolean | undefined {
@@ -61,6 +33,7 @@ function getRendererCloseResult(
     closed: true,
     failed: false,
     ready: undefined,
+    suspended: undefined,
   } as const;
 
   return results[message.type];
@@ -73,6 +46,8 @@ export class FlowProcessRenderer {
   #active = true;
   #closeResolver: ((value: boolean) => void) | undefined;
   #readyResolver: ((value: boolean) => void) | undefined;
+  #suspendPromise: Promise<boolean> | undefined;
+  #suspendResolver: ((value: boolean) => void) | undefined;
 
   private constructor(child: ChildProcess) {
     this.#child = child;
@@ -103,15 +78,7 @@ export class FlowProcessRenderer {
     });
 
     const renderer = new FlowProcessRenderer(child);
-    // In real TTY sessions this keeps command output and live flow redraws from
-    // fighting over the same terminal frame.
-    const restoreStdout = renderer.#patchWriteStream(process.stdout, 'stdout');
-    const restoreStderr = renderer.#patchWriteStream(process.stderr, 'stderr');
-
-    renderer.#restoreStreams = () => {
-      restoreStdout();
-      restoreStderr();
-    };
+    renderer.#patchWriteStreams();
 
     return renderer;
   }
@@ -152,6 +119,35 @@ export class FlowProcessRenderer {
     });
   }
 
+  suspend(): Promise<boolean> {
+    if (!this.active) {
+      return Promise.resolve(false);
+    }
+    if (this.#suspendPromise !== undefined) {
+      return this.#suspendPromise;
+    }
+
+    this.#suspendPromise = new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.#deactivate(false);
+      }, 1000);
+
+      this.#suspendResolver = (value) => {
+        clearTimeout(timeout);
+        this.#suspendPromise = undefined;
+        resolve(value);
+      };
+      this.#send({ type: 'suspend' });
+    });
+    return this.#suspendPromise;
+  }
+
+  resume(snapshot: FlowRenderSnapshot): void {
+    if (!this.active) return;
+    this.#patchWriteStreams();
+    this.#send({ snapshot, type: 'resume' });
+  }
+
   writeOutput(output: FlowOutputMessage): void {
     this.#send({
       output,
@@ -160,15 +156,22 @@ export class FlowProcessRenderer {
   }
 
   #handleParentMessage(message: FlowRendererParentMessage): void {
+    const closeResult = getRendererCloseResult(message);
+    if (closeResult !== undefined) {
+      this.#deactivate(closeResult);
+      return;
+    }
+    this.#handleRendererStateMessage(message);
+  }
+
+  #handleRendererStateMessage(message: FlowRendererParentMessage): void {
     if (message.type === 'ready') {
       this.#resolveReady(true);
       return;
     }
-
-    const closeResult = getRendererCloseResult(message);
-
-    if (closeResult !== undefined) {
-      this.#deactivate(closeResult);
+    if (message.type === 'suspended') {
+      this.#restorePatchedStreams();
+      this.#resolveSuspend(true);
     }
   }
 
@@ -204,6 +207,7 @@ export class FlowProcessRenderer {
     this.#active = false;
     this.#resolveReady(false);
     this.#restorePatchedStreams();
+    this.#resolveSuspend(false);
 
     if (this.#shouldKillChild(result)) {
       this.#child.kill();
@@ -217,27 +221,32 @@ export class FlowProcessRenderer {
     this.#readyResolver = undefined;
   }
 
-  #patchWriteStream(
-    stream: NodeJS.WriteStream,
-    streamName: WriteStreamName,
-  ): () => void {
-    const originalWrite = stream.write;
+  #resolveSuspend(result: boolean): void {
+    const resolve = this.#suspendResolver;
+    this.#suspendResolver = undefined;
+    resolve?.(result);
+  }
 
-    stream.write = ((...args: FlowWriteArgs) => {
-      if (this.active) {
-        this.writeOutput({
-          stream: streamName,
-          text: toWritableText(args[0]),
-        });
-        callWriteCallback(args);
-        return true;
-      }
+  #patchWriteStreams(): void {
+    if (this.#restoreStreams !== undefined) return;
+    // In real TTY sessions this keeps command output and live flow redraws from
+    // fighting over the same terminal frame.
+    const patch = (
+      stream: NodeJS.WriteStream,
+      streamName: 'stderr' | 'stdout',
+    ) =>
+      patchRendererWriteStream({
+        active: () => this.active,
+        output: (output) => this.writeOutput(output),
+        stream,
+        streamName,
+      });
+    const restoreStdout = patch(process.stdout, 'stdout');
+    const restoreStderr = patch(process.stderr, 'stderr');
 
-      return writeWithFlowArgs(originalWrite as FlowWrite, args);
-    }) as NodeJS.WriteStream['write'];
-
-    return () => {
-      stream.write = originalWrite;
+    this.#restoreStreams = () => {
+      restoreStdout();
+      restoreStderr();
     };
   }
 

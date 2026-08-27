@@ -2,7 +2,6 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { isOrdinarySourceTypecheckConfigPath } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { isSolutionStyleTsconfig } from '../core/build-graph/generated/config-readers';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import { readProofConfig } from './config-reader';
 import { isPlainRecord } from './config-values';
@@ -72,7 +71,7 @@ function addSolutionImplicitRefsFinding(options: {
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const reason =
-    'solution-style tsconfig.json files aggregate typecheck configs and do not own source files, so implicitRefs must live on the source typecheck config that needs the extra edge.';
+    'Supported tsconfig.json solution configs aggregate typecheck configs and do not own source files, so implicitRefs must live on the source typecheck config that needs the extra edge.';
   const detailLines = [
     'Solution tsconfig declares Limina implicit references:',
     `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
@@ -105,6 +104,7 @@ function addSolutionImplicitRefsFinding(options: {
 function getReferenceRoleValidation(
   configPath: string,
   configObject: ReturnType<typeof readProofConfig>,
+  solutionConfigPaths: ReadonlySet<string>,
 ):
   | ((options: Parameters<typeof addSourceLeafReferenceFinding>[0]) => void)
   | undefined {
@@ -112,7 +112,7 @@ function getReferenceRoleValidation(
     return undefined;
   }
 
-  return isSolutionStyleTsconfig(configPath, configObject)
+  return solutionConfigPaths.has(configPath)
     ? (options) => {
         if (hasImplicitRefs(configObject)) {
           addSolutionImplicitRefsFinding(options);
@@ -125,10 +125,15 @@ function validateSourceReferenceConfig(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   findings: ProofFinding[];
+  solutionConfigPaths: ReadonlySet<string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
   const configObject = readProofConfig(options.config, options.configPath);
-  const validate = getReferenceRoleValidation(options.configPath, configObject);
+  const validate = getReferenceRoleValidation(
+    options.configPath,
+    configObject,
+    options.solutionConfigPaths,
+  );
 
   validate?.(options);
 }
@@ -137,10 +142,11 @@ export function addSourceReferenceRoleFindings(options: {
   config: ResolvedLiminaConfig;
   findings: ProofFinding[];
   ordinaryConfigPaths: string[];
+  solutionConfigPaths: ReadonlySet<string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  const sourceConfigPaths = options.ordinaryConfigPaths.filter(
-    isOrdinarySourceTypecheckConfigPath,
+  const sourceConfigPaths = options.ordinaryConfigPaths.filter((configPath) =>
+    isOrdinarySourceTypecheckConfigPath(configPath, options.config.rootDir),
   );
 
   for (const configPath of sourceConfigPaths) {
@@ -148,6 +154,7 @@ export function addSourceReferenceRoleFindings(options: {
       config: options.config,
       configPath,
       findings: options.findings,
+      solutionConfigPaths: options.solutionConfigPaths,
       workspaceLookup: options.workspaceLookup,
     });
   }

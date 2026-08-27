@@ -14,7 +14,7 @@ export const checkerPackageProofIssueRules: readonly LiminaCheckIssueRuleDefinit
     defineIssueRule({
       code: C.checkerPeerDependencyMissing,
       description:
-        'A configured checker is missing a required peer dependency.',
+        'A configured checker is missing or cannot use its required runtime or external checker dependency.',
       task: 'checker:build',
     }),
     defineIssueRule({

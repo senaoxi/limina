@@ -2,6 +2,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   isBuildGraphConfigPath,
   isDtsConfigPath,
+  isLiminaArtifactPath,
   resolveReferencePath,
 } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
@@ -138,7 +139,7 @@ function validateBuildGraphConfig(options: {
   virtualFiles: ReadonlyMap<string, string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  if (!options.configPath.includes('/.limina/')) {
+  if (!isLiminaArtifactPath(options.configPath, options.config.rootDir)) {
     addManagedBoundaryFinding(options);
     return;
   }

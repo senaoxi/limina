@@ -1,6 +1,7 @@
 import path from 'pathe';
 
 export const capabilityDiscoveryExtensions: string[] = [
+  '.astro',
   '.cts',
   '.d.cts',
   '.d.mts',

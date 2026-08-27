@@ -13,6 +13,7 @@ export interface TypeScriptTypeEvidenceProject {
   configPath: string;
   fileNames: readonly string[];
   options: ts.CompilerOptions;
+  projectReferences?: readonly ts.ProjectReference[];
 }
 
 function createProgramHandle(
@@ -20,6 +21,7 @@ function createProgramHandle(
 ): TypeEvidenceProgramHandle {
   const program = ts.createProgram({
     options: project.options,
+    projectReferences: project.projectReferences,
     rootNames: [...project.fileNames],
   });
   let disposed = false;

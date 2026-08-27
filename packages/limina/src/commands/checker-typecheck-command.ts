@@ -17,6 +17,7 @@ import {
   completeCheckSnapshotIfNeeded,
   createTypecheckTask,
   type DeferredCheckIssueOptions,
+  disableTypecheckTask,
   failTypecheckTask,
   getTypecheckReportCommand,
   initializeTypecheckCommand,
@@ -102,6 +103,14 @@ async function handlePassedTypecheck(
   return result;
 }
 
+function handleDisabledTypecheck(
+  context: CheckerTypecheckContext,
+  result: RunCheckerTypecheckResult,
+): RunCheckerTypecheckResult {
+  disableTypecheckTask(context.task);
+  return result;
+}
+
 function createResultFailureIssues(
   context: CheckerTypecheckContext,
   result: RunCheckerTypecheckResult,
@@ -175,6 +184,18 @@ async function handleTypecheckError(
   throw error;
 }
 
+function handleTypecheckResult(
+  context: CheckerTypecheckContext,
+  result: RunCheckerTypecheckResult,
+): Promise<RunCheckerTypecheckResult> {
+  if (result.disabled) {
+    return Promise.resolve(handleDisabledTypecheck(context, result));
+  }
+  return result.passed
+    ? handlePassedTypecheck(context, result)
+    : handleFailedTypecheck(context, result);
+}
+
 export async function runCheckerTypecheck(
   options: CheckerTypecheckCommandOptions,
 ): Promise<RunCheckerTypecheckResult> {
@@ -185,9 +206,7 @@ export async function runCheckerTypecheck(
       ...options,
       preflight: context.preflight,
     });
-    return result.passed
-      ? handlePassedTypecheck(context, result)
-      : handleFailedTypecheck(context, result);
+    return handleTypecheckResult(context, result);
   } catch (error) {
     return handleTypecheckError(context, error);
   }

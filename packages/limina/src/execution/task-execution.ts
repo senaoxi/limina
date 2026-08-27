@@ -63,7 +63,8 @@ function assertRunnerStatus(
   result: ExecutionTaskRunResult,
   task: ExecutionTask,
 ): void {
-  if (result.status === 'passed' || result.status === 'failed') return;
+  const runnerStatuses = new Set(['disabled', 'failed', 'passed']);
+  if (runnerStatuses.has(result.status)) return;
   throw new Error(
     `Task runner "${task.label}" returned scheduler-owned status.`,
   );

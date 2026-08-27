@@ -1,9 +1,8 @@
 export default {
   config: {
     checkers: {
-      typescript: {
+      tsc: {
         include: ['packages/*/tsconfig.json', '../external/*/tsconfig.json'],
-        preset: 'tsc',
       },
     },
   },

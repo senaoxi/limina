@@ -1,12 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createAnalysisProviders } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import { createHash } from 'node:crypto';
 import {
   chmod,
   mkdir,
   mkdtemp,
-  readFile,
   realpath,
   rm,
   writeFile,
@@ -362,7 +360,7 @@ async function createPassingCheckPipelineConfig(): Promise<{
   await writeText(
     path.join(rootDir, 'node_modules/typescript/package.json'),
     stringifyJson({
-      name: 'typescript',
+      name: 'tsc',
       version: '0.0.0-fixture',
     }),
   );
@@ -395,9 +393,8 @@ async function createPassingCheckPipelineConfig(): Promise<{
 
   fixture.config.config = {
     checkers: {
-      typescript: {
+      tsc: {
         include: ['tsconfig.json', '**/tsconfig.json'],
-        preset: 'tsc',
       },
     },
     source: {
@@ -570,20 +567,18 @@ describe('runPipeline', () => {
 
     fixture.config.config = {
       checkers: {
-        svelte: {
+        'svelte-check': {
           include: ['tsconfig.svelte.json'],
-          preset: 'svelte-check',
         },
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     };
 
     try {
       await expect(runDefaultCheck(fixture.config, { flow })).resolves.toBe(
-        false,
+        true,
       );
 
       expect(
@@ -591,33 +586,25 @@ describe('runPipeline', () => {
       ).toBe(true);
       expect(
         chunks.some((chunk) =>
-          chunk.includes('first-class build execution: typescript (tsc)'),
+          chunk.includes('build checker execution: (none)'),
         ),
       ).toBe(true);
       expect(
         chunks.some((chunk) =>
-          chunk.includes(
-            'second-class typecheck execution: svelte (svelte-check)',
-          ),
+          chunk.includes('framework checker execution: (none)'),
         ),
       ).toBe(true);
       expect(
-        chunks.some((chunk) =>
-          chunk.includes('source graph: typescript (tsc)'),
-        ),
+        chunks.some((chunk) => chunk.includes('source graph: (none)')),
       ).toBe(true);
       expect(
-        chunks.some((chunk) =>
-          chunk.includes('no source graph: svelte (svelte-check)'),
-        ),
+        chunks.some((chunk) => chunk.includes('no source graph: (none)')),
       ).toBe(true);
       expect(
         chunks.some((chunk) => chunk.includes('[start] graph check')),
       ).toBe(true);
       expect(
-        chunks.some((chunk) =>
-          chunk.includes('[fail] default check finished with failures'),
-        ),
+        chunks.some((chunk) => chunk.includes('[pass] default check')),
       ).toBe(true);
       expect(
         chunks.some((chunk) => chunk.includes('[start] checker build')),
@@ -810,7 +797,7 @@ describe('runPipeline', () => {
             {
               checkItems: expect.arrayContaining([
                 expect.objectContaining({
-                  name: 'typescript checker entry',
+                  name: 'tsc checker entry',
                   status: 'passed',
                 }),
               ]),
@@ -887,7 +874,9 @@ describe('runPipeline', () => {
           expect.objectContaining({
             code: 'LIMINA_SOURCE_CHECK_FAILED',
             task: 'source:check',
-            reason: expect.stringContaining('Missing peer dependency "knip"'),
+            reason: expect.stringContaining(
+              'Missing Limina runtime dependency:',
+            ),
           }),
         ]),
       );
@@ -953,7 +942,7 @@ describe('runPipeline', () => {
           ],
         },
         status: 'completed',
-        version: 7,
+        version: 8,
       });
     } finally {
       await fixture.cleanup();
@@ -991,83 +980,6 @@ describe('runPipeline', () => {
       ).resolves.toBe(true);
 
       expect(generatedGraphProvider).toHaveBeenCalledTimes(2);
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it('clears stale vue-tsgo cache before command steps', async () => {
-    const fixture = await createConfig();
-
-    await writeText(
-      path.join(fixture.config.rootDir, 'package.json'),
-      JSON.stringify({
-        name: 'fixture',
-        type: 'module',
-      }),
-    );
-    await writeText(
-      path.join(fixture.config.rootDir, 'tsconfig.vue.build.json'),
-      JSON.stringify({ files: [] }),
-    );
-    await writeText(
-      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo'),
-      [
-        '#!/usr/bin/env sh',
-        'exec node "$(dirname "$0")/vue-tsgo.js" "$@"',
-        '',
-      ].join('\n'),
-    );
-    await writeText(
-      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo.js'),
-      [
-        "import { createHash } from 'node:crypto';",
-        "import { existsSync, writeFileSync } from 'node:fs';",
-        "import path from 'node:path';",
-        "const projectArg = process.argv.find((arg) => arg.startsWith('--project='));",
-        "const configPath = path.resolve(process.cwd(), projectArg.slice('--project='.length));",
-        "const hash = createHash('sha256').update(configPath).digest('hex').slice(0, 8);",
-        "const stalePath = path.join(process.cwd(), 'node_modules/.cache/vue-tsgo', hash, 'stale.txt');",
-        "writeFileSync(path.join(process.cwd(), 'stale-state.txt'), String(existsSync(stalePath)));",
-        '',
-      ].join('\n'),
-    );
-    await writeText(
-      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo.cmd'),
-      ['@ECHO OFF', 'node "%~dp0vue-tsgo.js" %*', ''].join('\r\n'),
-    );
-    await chmod(
-      path.join(fixture.config.rootDir, 'node_modules/.bin/vue-tsgo'),
-      0o755,
-    );
-    await writeText(
-      path.join(
-        fixture.config.rootDir,
-        'node_modules/.cache/vue-tsgo',
-        createHash('sha256')
-          .update(path.join(fixture.config.rootDir, 'tsconfig.vue.build.json'))
-          .digest('hex')
-          .slice(0, 8),
-        'stale.txt',
-      ),
-      'stale\n',
-    );
-
-    fixture.config.pipelines = {
-      vue: [
-        {
-          args: ['--project=tsconfig.vue.build.json'],
-          command: 'vue-tsgo',
-          type: 'command',
-        },
-      ],
-    };
-
-    try {
-      await expect(runPipeline(fixture.config, 'vue')).resolves.toBe(true);
-      await expect(
-        readFile(path.join(fixture.config.rootDir, 'stale-state.txt'), 'utf8'),
-      ).resolves.toBe('false');
     } finally {
       await fixture.cleanup();
     }

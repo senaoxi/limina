@@ -4,6 +4,7 @@ import {
   resolveArtifactNamespaceRelativePath,
   toArtifactNamespaceRelativePath,
 } from '../../domain/artifacts/namespace';
+import { isOwnedArtifactLedgerVersion } from './manifest-version';
 import type { GeneratedGraphWriteContext } from './types';
 
 function isMissingFileError(error: unknown): boolean {
@@ -13,17 +14,11 @@ function isMissingFileError(error: unknown): boolean {
   return 'code' in error && error.code === 'ENOENT';
 }
 
-function isUnreadableManifestError(error: unknown): boolean {
-  return error instanceof SyntaxError || isMissingFileError(error);
-}
-
 async function readManifestValue(manifestPath: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(manifestPath, 'utf8'));
   } catch (error) {
-    if (isUnreadableManifestError(error)) {
-      return null;
-    }
+    if (isMissingFileError(error)) return null;
     throw error;
   }
 }
@@ -33,7 +28,10 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasManifestIdentity(value: Record<string, unknown>): boolean {
-  return value.version === 3 && value.generatedBy === 'limina';
+  return [
+    isOwnedArtifactLedgerVersion(value.version),
+    value.generatedBy === 'limina',
+  ].every(Boolean);
 }
 
 function getOwnedArtifactValue(value: unknown): unknown {
@@ -59,9 +57,12 @@ export async function readPreviousOwnedArtifactPaths(options: {
   manifestPath: string;
 }): Promise<string[]> {
   const value = await readManifestValue(options.manifestPath);
+  if (value === null) return [];
   const ownedArtifacts = getOwnedArtifacts(value);
   if (!ownedArtifacts) {
-    return [];
+    throw new Error(
+      'Generated-artifact manifest is malformed or uses an unsupported future version.',
+    );
   }
   return ownedArtifacts.map((relativePath) =>
     resolveArtifactNamespaceRelativePath(

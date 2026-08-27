@@ -2,16 +2,27 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type {
   ImportAnalysisContext,
   ImportRecord,
+  ResolvedCheckerModuleName,
 } from '#core/import-analysis/runner';
-import type { DeclarationProviderResolution } from '../import-graph/declaration-provider';
-import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
+import type {
+  ProjectDependency,
+  ProjectDependencyCaches,
+} from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
-import type { GeneratedProviderEdge, SourceProject } from './types';
+import type { GeneratedDependencyEdge, SourceProject } from './types';
 
-export type ResolvedProvider = Extract<
-  DeclarationProviderResolution,
-  { kind: 'declaration' | 'source' }
->;
+export type ResolvedProvider =
+  | {
+      kind: 'declaration';
+      oxcResolvedFilePath: null;
+      typeScriptResolution: ResolvedCheckerModuleName;
+    }
+  | {
+      kind: 'source';
+      ownerProjectPaths: string[];
+      oxcResolvedFilePath: null;
+      typeScriptResolution: ResolvedCheckerModuleName;
+    };
 
 export interface ReferenceImportContext {
   activatedRegions: WorkspaceRegionPathIndex;
@@ -19,15 +30,16 @@ export interface ReferenceImportContext {
   dtsProjectsBySourcePath: Map<string, SourceProject[]>;
   fileOwnerLookup: Map<string, string[]>;
   importAnalysis: ImportAnalysisContext;
-  managedOutputLookup: ManagedOutputDeclarationLookup;
+  projectDependencyCaches: ProjectDependencyCaches;
   problems: string[];
-  providerEdgesByKey: Map<string, GeneratedProviderEdge>;
+  dependencyEdgesByKey: Map<string, GeneratedDependencyEdge>;
 }
 
 export interface ReferenceImportOptions {
   context: ReferenceImportContext;
   fileName: string;
   importRecord: ImportRecord;
+  projectDependency: ProjectDependency;
   project: SourceProject;
 }
 

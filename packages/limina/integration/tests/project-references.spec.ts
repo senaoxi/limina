@@ -19,7 +19,7 @@ interface GeneratedSolutionConfig {
 
 interface GeneratedManifest {
   checkers: {
-    typescript: {
+    tsc: {
       entry: string;
       roots: string[];
       sourceToBuild: Record<
@@ -71,19 +71,19 @@ describe('project references public CLI integration', () => {
   it('expands nested solutions and builds both declaration leaves', async () => {
     const preparedFixture = fixture!;
     const rootSolutionPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/solutions/tsconfig.build.json',
+      'repo/.limina/tsconfig/checkers/tsc/solutions/tsconfig.build.json',
     );
     const packageSolutionPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/solutions/packages/app/tsconfig.build.json',
+      'repo/.limina/tsconfig/checkers/tsc/solutions/packages/app/tsconfig.build.json',
     );
     const libProjectPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json',
+      'repo/.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json',
     );
     const testProjectPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.test.dts.json',
+      'repo/.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.test.dts.json',
     );
     const checkerEntryPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/tsconfig.build.json',
+      'repo/.limina/tsconfig/checkers/tsc/tsconfig.build.json',
     );
 
     const prepareResult = await runFixtureLimina(preparedFixture, [
@@ -125,38 +125,38 @@ describe('project references public CLI integration', () => {
     const manifest = await readJson<GeneratedManifest>(
       preparedFixture.path('repo/.limina/manifest.json'),
     );
-    expect(manifest.version).toBe(3);
+    expect(manifest.version).toBe(5);
     expect(manifest.generatedBy).toBe('limina');
-    expect(manifest.checkers.typescript.entry).toBe(
-      '.limina/tsconfig/checkers/typescript/tsconfig.build.json',
+    expect(manifest.checkers.tsc.entry).toBe(
+      '.limina/tsconfig/checkers/tsc/tsconfig.build.json',
     );
-    expect(manifest.checkers.typescript.roots).toEqual([
+    expect(manifest.checkers.tsc.roots).toEqual([
       'packages/app/tsconfig.lib.json',
       'packages/app/tsconfig.test.json',
     ]);
-    expect(manifest.checkers.typescript.sourceToBuild).toMatchObject({
+    expect(manifest.checkers.tsc.sourceToBuild).toMatchObject({
       'packages/app/tsconfig.json': {
         kind: 'solution',
-        path: '.limina/tsconfig/checkers/typescript/solutions/packages/app/tsconfig.build.json',
+        path: '.limina/tsconfig/checkers/tsc/solutions/packages/app/tsconfig.build.json',
       },
       'packages/app/tsconfig.lib.json': {
         kind: 'project',
-        path: '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json',
+        path: '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json',
       },
       'packages/app/tsconfig.test.json': {
         kind: 'project',
-        path: '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.test.dts.json',
+        path: '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.test.dts.json',
       },
       'tsconfig.json': {
         kind: 'solution',
-        path: '.limina/tsconfig/checkers/typescript/solutions/tsconfig.build.json',
+        path: '.limina/tsconfig/checkers/tsc/solutions/tsconfig.build.json',
       },
     });
-    expect(manifest.checkers.typescript.sourceToDts).toEqual({
+    expect(manifest.checkers.tsc.sourceToDts).toEqual({
       'packages/app/tsconfig.lib.json':
-        '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json',
+        '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json',
       'packages/app/tsconfig.test.json':
-        '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.test.dts.json',
+        '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.test.dts.json',
     });
 
     const buildResult = await runFixtureLimina(preparedFixture, [
@@ -166,10 +166,10 @@ describe('project references public CLI integration', () => {
     expectLiminaSuccess(buildResult);
 
     const libDeclarationPath = preparedFixture.path(
-      'repo/.limina/dts/checkers/typescript/packages/app/lib/index.d.ts',
+      'repo/.limina/dts/checkers/tsc/packages/app/lib/index.d.ts',
     );
     const testDeclarationPath = preparedFixture.path(
-      'repo/.limina/dts/checkers/typescript/packages/app/test/index.test.d.ts',
+      'repo/.limina/dts/checkers/tsc/packages/app/test/index.test.d.ts',
     );
     expect(await readFile(libDeclarationPath, 'utf8')).toContain(
       'export declare const libraryValue: "library";',
@@ -180,14 +180,14 @@ describe('project references public CLI integration', () => {
     expect(
       await exists(
         preparedFixture.path(
-          'repo/.limina/tsbuildinfo/checkers/typescript/packages/app/lib.tsbuildinfo',
+          'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/lib.tsbuildinfo',
         ),
       ),
     ).toBe(true);
     expect(
       await exists(
         preparedFixture.path(
-          'repo/.limina/tsbuildinfo/checkers/typescript/packages/app/test.tsbuildinfo',
+          'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/test.tsbuildinfo',
         ),
       ),
     ).toBe(true);

@@ -1,4 +1,8 @@
 import { emitFlow } from './rendering';
+import {
+  resumeInteractiveRendering,
+  suspendInteractiveRendering,
+} from './suspension';
 import { finishFailure, finishPass, finishSkip } from './task-finish';
 import type { FlowTaskState } from './task-types';
 import { beginTerminalTracking } from './tracking';
@@ -51,6 +55,7 @@ function createFlowTaskState(options: {
     completed: false,
     depth: getTaskDepth(options.taskOptions),
     message: options.message,
+    paused: false,
     persistedStart: undefined,
     processTransientTaskId: reserveTransientTaskId({
       shouldTrack,
@@ -117,6 +122,24 @@ function emitNestedStatus(options: {
   });
 }
 
+async function pauseTask(options: {
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): Promise<void> {
+  if (options.taskState.completed || options.taskState.paused) return;
+  options.taskState.paused = true;
+  await suspendInteractiveRendering(options.reporterState);
+}
+
+function resumeTask(options: {
+  reporterState: FlowReporterState;
+  taskState: FlowTaskState;
+}): void {
+  if (options.taskState.completed || !options.taskState.paused) return;
+  options.taskState.paused = false;
+  resumeInteractiveRendering(options.reporterState);
+}
+
 export function createFlowTask(options: {
   message: string;
   reporterState: FlowReporterState;
@@ -144,10 +167,20 @@ export function createFlowTask(options: {
         status: 'info',
         taskState,
       }),
+    pause: () =>
+      pauseTask({
+        reporterState: options.reporterState,
+        taskState,
+      }),
     pass: (message, finishOptions) =>
       finishPass({
         finishOptions,
         message,
+        reporterState: options.reporterState,
+        taskState,
+      }),
+    resume: () =>
+      resumeTask({
         reporterState: options.reporterState,
         taskState,
       }),

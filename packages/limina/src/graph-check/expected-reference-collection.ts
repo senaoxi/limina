@@ -1,9 +1,11 @@
-import {
-  collectImportsFromFile,
-  type ImportRecord,
-  type ProjectInfo,
-} from '#core/import-graph/context';
+import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../core/import-graph/declaration-reference-evidence';
+import {
+  collectProjectDependencies,
+  createParsedProjectSemanticContext,
+  type ProjectDependency,
+  type ProjectDependencyObservation,
+} from '../core/project-dependencies/runner';
 import { addDeniedDepImportProblem } from './import-access-denied';
 import { resolveImportForReferenceExpectation } from './reference-import-resolution';
 import {
@@ -17,6 +19,7 @@ import type {
   GraphImportResolution,
 } from './reference-types';
 import { getDeniedDepRuleForSpecifier } from './rules';
+import { addUnresolvedWorkspaceImportProblem } from './workspace-import-findings';
 
 function createExpectedReferenceCollectionContext(
   options: ExpectedReferenceCollectionOptions,
@@ -39,6 +42,7 @@ function addRawDeniedImportIfNeeded(options: {
   context: ExpectedReferenceCollectionContext;
   importRecord: ImportRecord;
   project: ProjectInfo;
+  projectDependency?: ProjectDependency;
 }): boolean {
   const rule = getDeniedDepRuleForSpecifier(
     options.context.graphRules,
@@ -82,6 +86,7 @@ function resolveExpectedTarget(options: {
   filePath: string;
   importRecord: ImportRecord;
   project: ProjectInfo;
+  projectDependency: ProjectDependency;
 }): {
   resolution: GraphImportResolution;
   targetProjectPath: string;
@@ -111,6 +116,7 @@ function collectExpectedReferenceForImport(options: {
   filePath: string;
   importRecord: ImportRecord;
   project: ProjectInfo;
+  projectDependency: ProjectDependency;
 }): void {
   if (addRawDeniedImportIfNeeded(options)) {
     return;
@@ -130,32 +136,152 @@ function collectExpectedReferenceForImport(options: {
   });
 }
 
-function collectExpectedReferencesForFile(options: {
+function collectExpectedReferencesForDependency(options: {
   context: ExpectedReferenceCollectionContext;
-  filePath: string;
+  project: ProjectInfo;
+  projectDependency: ProjectDependency;
+}): void {
+  collectExpectedReferenceForImport({
+    ...options,
+    filePath: options.projectDependency.importRecord.filePath,
+    importRecord: options.projectDependency.importRecord,
+  });
+}
+
+function collectExpectedReferencesForObservation(options: {
+  context: ExpectedReferenceCollectionContext;
+  observation: ProjectDependencyObservation;
   project: ProjectInfo;
 }): void {
-  const imports = collectImportsFromFile(
-    options.filePath,
-    options.context.config.rootDir,
-    options.context.importAnalysis,
-  );
+  const observation = options.observation;
+  if (observation.kind === 'unmapped-generated') return;
+  collectExpectedReferencesForMappedObservation({
+    context: options.context,
+    importRecord: observation.importRecord,
+    observation,
+    project: options.project,
+  });
+}
 
-  for (const importRecord of imports) {
-    collectExpectedReferenceForImport({ ...options, importRecord });
-  }
+function collectExpectedReferencesForMappedObservation(options: {
+  context: ExpectedReferenceCollectionContext;
+  importRecord: ImportRecord;
+  observation: Exclude<
+    ProjectDependencyObservation,
+    { kind: 'unmapped-generated' }
+  >;
+  project: ProjectInfo;
+}): void {
+  const importRecord = options.observation.importRecord;
+  if (addRawDeniedImportIfNeeded({ ...options, importRecord })) return;
+  addMissingObservationProblem({ ...options, importRecord });
+}
+
+function addMissingObservationProblem(options: {
+  context: ExpectedReferenceCollectionContext;
+  importRecord: ImportRecord;
+  observation: Exclude<
+    ProjectDependencyObservation,
+    { kind: 'unmapped-generated' }
+  >;
+  project: ProjectInfo;
+}): void {
+  const importRecord = options.importRecord;
+  if (!shouldInferDeclarationReferenceFromImportRecord(importRecord)) return;
+  if (options.observation.kind !== 'missing') return;
+  addUnresolvedWorkspaceImportProblem({
+    ...options,
+    importRecord,
+    targetPackage: options.context.workspaceLookup.findPackageForSpecifier(
+      importRecord.specifier,
+    ),
+  });
+}
+
+function getGraphAuthority(project: ProjectInfo) {
+  const authority = project.semanticAuthority;
+  if (authority !== undefined) return authority;
+  throw new Error(
+    `Missing frozen semantic authority for graph-check project ${project.configPath}.`,
+  );
+}
+
+function getGraphPackageRoot(
+  context: ExpectedReferenceCollectionContext,
+  project: ProjectInfo,
+): string {
+  const owner = context.workspaceLookup.findOwnerForFile(project.configPath);
+  return owner === null ? context.config.rootDir : owner.directory;
+}
+
+function assertGraphCollection(
+  collection: ReturnType<typeof collectProjectDependencies>,
+): void {
+  const failure = collection.failures[0];
+  if (failure === undefined) return;
+  throw new Error(
+    `Graph-check semantic dependency collection failed at ${failure.stage}: ${failure.reason}`,
+  );
+}
+
+function collectProjectDependenciesForGraph(options: {
+  context: ExpectedReferenceCollectionContext;
+  project: ProjectInfo;
+}) {
+  const authority = getGraphAuthority(options.project);
+  const packageRootDir = getGraphPackageRoot(options.context, options.project);
+  return collectProjectDependencies({
+    caches: options.context.projectDependencyCaches,
+    context: createParsedProjectSemanticContext({
+      authority,
+      packageRootDir,
+      project: options.project,
+    }),
+    importAnalysis: options.context.importAnalysis,
+    resolveWorkspaceTypeScriptExport: (specifier) =>
+      options.context.workspaceExports.get(
+        options.project.configPath,
+        specifier,
+      )?.typeScriptResolvedFileName ?? null,
+  });
 }
 
 function collectExpectedReferencesForProject(
   context: ExpectedReferenceCollectionContext,
   project: ProjectInfo,
 ): void {
-  if (!isProjectSelected(context, project)) {
-    return;
-  }
+  if (!isProjectSelected(context, project)) return;
+  const collection = collectProjectDependenciesForGraph({ context, project });
+  assertGraphCollection(collection);
+  collectExpectedDependencies(context, project, collection.dependencies);
+  collectExpectedObservations(context, project, collection.observations);
+}
 
-  for (const filePath of project.ownedFileNames) {
-    collectExpectedReferencesForFile({ context, filePath, project });
+function collectExpectedDependencies(
+  context: ExpectedReferenceCollectionContext,
+  project: ProjectInfo,
+  dependencies: readonly ProjectDependency[],
+): void {
+  for (const projectDependency of dependencies) {
+    collectExpectedReferencesForDependency({
+      context,
+      project,
+      projectDependency,
+    });
+  }
+}
+
+function collectExpectedObservations(
+  context: ExpectedReferenceCollectionContext,
+  project: ProjectInfo,
+  observations: readonly ProjectDependencyObservation[],
+): void {
+  for (const observation of observations) {
+    collectExpectedReferencesForObservation({
+      context,
+      observation,
+      project,
+    });
   }
 }
 

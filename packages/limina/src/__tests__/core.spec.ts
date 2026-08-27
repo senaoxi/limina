@@ -1,14 +1,26 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
-import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync } from 'node:fs';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runPipeline } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { collectCoverage } from '../proof/coverage-collection';
+import { createSourceCheckState } from '../source-check/run-state';
 import { toPortablePath, toPortablePaths } from './helpers/path';
+
+const requireFromTest = createRequire(import.meta.url);
 
 const buildCompilerOptions = {
   composite: true,
@@ -30,6 +42,93 @@ async function writeText(filePath: string, text: string): Promise<void> {
   await writeFile(filePath, text);
 }
 
+async function linkInstalledPackage(options: {
+  installedName: string;
+  packageName: string;
+  rootDir: string;
+}): Promise<void> {
+  const readPackageName = (manifestPath: string): string | undefined => {
+    try {
+      return (
+        JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: string }
+      ).name;
+    } catch {
+      return undefined;
+    }
+  };
+  let packageRoot: string | undefined;
+  try {
+    const manifestPath = requireFromTest.resolve(
+      `${options.installedName}/package.json`,
+    );
+    if (readPackageName(manifestPath) === options.packageName) {
+      packageRoot = path.dirname(manifestPath);
+    }
+  } catch {
+    // Some supported checker packages hide package.json behind exports.
+  }
+  let directory = path.dirname(requireFromTest.resolve(options.installedName));
+  while (packageRoot === undefined) {
+    if (
+      readPackageName(path.join(directory, 'package.json')) ===
+      options.packageName
+    ) {
+      packageRoot = directory;
+      break;
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) {
+      throw new Error(
+        `Unable to find ${options.packageName} for ${options.installedName}.`,
+      );
+    }
+    directory = parent;
+  }
+  const segments = options.packageName.split('/');
+  const packageBaseName = segments.pop()!;
+  const nodeModulesDir = path.join(
+    options.rootDir,
+    'node_modules',
+    ...segments,
+  );
+  await mkdir(nodeModulesDir, { recursive: true });
+  await symlink(
+    packageRoot,
+    path.join(nodeModulesDir, packageBaseName),
+    'junction',
+  );
+}
+
+async function linkFrameworkToolchains(packageRootDir: string): Promise<void> {
+  await Promise.all([
+    linkInstalledPackage({
+      installedName: '@astrojs/check',
+      packageName: '@astrojs/check',
+      rootDir: packageRootDir,
+    }),
+    linkInstalledPackage({
+      installedName: 'astro-v7-current',
+      packageName: 'astro',
+      rootDir: packageRootDir,
+    }),
+    linkInstalledPackage({
+      installedName: 'svelte-v4-min',
+      packageName: 'svelte',
+      rootDir: packageRootDir,
+    }),
+    linkInstalledPackage({
+      installedName: 'svelte2tsx',
+      packageName: 'svelte2tsx',
+      rootDir: packageRootDir,
+    }),
+    linkInstalledPackage({
+      installedName: 'typescript',
+      packageName: 'typescript',
+      rootDir: packageRootDir,
+    }),
+  ]);
+}
+
 function stringifyJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
@@ -46,9 +145,8 @@ async function createCoreFixture(): Promise<{
   const config: ResolvedLiminaConfig = {
     config: {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/a/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     },
@@ -71,10 +169,17 @@ async function createCoreFixture(): Promise<{
   await writeText(
     path.join(rootDir, 'packages/a/package.json'),
     stringifyJson({
+      dependencies: {
+        '@astrojs/check': '0.9.10',
+        astro: '7.2.0',
+        svelte: '4.0.0',
+        typescript: '6.0.3',
+      },
       name: '@fixture/a',
       version: '1.0.0',
     }),
   );
+  await linkFrameworkToolchains(path.join(rootDir, 'packages/a'));
   await writeText(
     path.join(rootDir, 'packages/a/tsconfig.json'),
     stringifyJson({
@@ -225,6 +330,101 @@ describe('AnalysisProviderSet', () => {
       await fixture.cleanup();
     }
   });
+
+  it.each(['astro', 'svelte'] as const)(
+    'governs pure .%s sources across ownership, graph, proof, and package domains',
+    async (family) => {
+      const fixture = await createCoreFixture();
+      const sourceConfigPath = path.join(
+        fixture.rootDir,
+        'packages/a/tsconfig.lib.json',
+      );
+      const sourceFilePath = path.join(
+        fixture.rootDir,
+        `packages/a/src/App.${family}`,
+      );
+      fixture.config.config = {
+        ...fixture.config.config,
+        checkers: {
+          [family === 'astro' ? 'astro' : 'svelte-check']: {
+            include: ['packages/a/tsconfig.json'],
+          },
+        },
+        source: { include: [`**/*.${family}`] },
+      };
+      await writeText(
+        sourceConfigPath,
+        stringifyJson({
+          compilerOptions: buildCompilerOptions,
+          include: [`src/**/*.${family}`],
+          liminaOptions: { graphRules: ['framework'] },
+        }),
+      );
+      await writeText(sourceFilePath, '<h1>Framework source</h1>\n');
+
+      try {
+        const graph = await fixture.core.buildGraph.getGraph();
+        const checkerName = family === 'astro' ? 'astro' : 'svelte-check';
+        const unit = graph.governedSources
+          .get(checkerName)
+          ?.get(sourceConfigPath);
+        const projection = unit?.buildProjection;
+        const projectedConfigPath =
+          projection === undefined
+            ? sourceConfigPath
+            : 'buildConfigPath' in projection
+              ? projection.buildConfigPath
+              : projection.kind === 'framework-checker'
+                ? sourceConfigPath
+                : projection.dtsConfigPath;
+        const sourceGraph =
+          await fixture.core.tsconfig.getSourceGraphProjects();
+        const sourceProject = sourceGraph.projects.find(
+          (project) => project.configPath === projectedConfigPath,
+        );
+        const owner =
+          await fixture.core.tsconfig.findOwningProject(sourceFilePath);
+        const preflight = new LiminaPreflightManager({
+          config: fixture.config,
+          providers: fixture.core,
+        });
+        const sourceState = await createSourceCheckState(fixture.config, {
+          preflight,
+        });
+        const coverage = collectCoverage({
+          checkerTargets: [],
+          config: fixture.config,
+          generatedGraph: graph,
+          graphRoutes: [],
+          sourceFiles: new Set([sourceFilePath]),
+          virtualFiles: graph.generatedFiles,
+        });
+        const domain =
+          await fixture.core.packages.getPackageDomain('@fixture/a');
+
+        expect(unit?.ownedFileNames).toEqual([sourceFilePath]);
+        expect(sourceProject?.ownedFileNames).toEqual([sourceFilePath]);
+        expect(sourceProject?.labels).toEqual(['framework']);
+        expect(owner?.resolverConfigPath).toBe(sourceConfigPath);
+        expect(
+          sourceState.sourceProjectEntries.find(
+            (entry) => entry.project.configPath === projectedConfigPath,
+          )?.fileNames,
+        ).toEqual([sourceFilePath]);
+        expect(coverage.get(sourceFilePath)).toMatchObject([
+          {
+            checkerName,
+            projectPath: sourceConfigPath,
+            type: 'graph',
+          },
+        ]);
+        expect(domain.sourceConfigPaths).toContain(sourceConfigPath);
+        expect(domain.sourceModulePaths).toContain(sourceFilePath);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('shares one workspace path and lookup index within a provider generation', async () => {
     const fixture = await createCoreFixture();

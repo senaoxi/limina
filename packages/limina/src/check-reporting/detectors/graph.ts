@@ -196,8 +196,7 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     kind: 'fixture',
     producers: [
       'packages/limina/src/graph-check/workspace-import-findings.ts#addWorkspacePackageExportWithoutTypeEntryProblem',
-      'packages/limina/src/graph-check/unresolved-import-findings.ts#addUnresolvedWorkspaceImportProblem',
-      'packages/limina/src/graph-check/unresolved-import-findings.ts#addOxcOnlyDeclarationProviderProblem',
+      'packages/limina/src/graph-check/workspace-import-findings.ts#addUnresolvedWorkspaceImportProblem',
     ],
     task: 'graph:check',
     tests: [

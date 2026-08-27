@@ -14,6 +14,13 @@ function createCompletionEvent(options: {
   task: ExecutionTask;
 }): TaskLifecycleEvent {
   const completedAt = nowIso();
+  if (options.outcome.status === 'disabled') {
+    return {
+      completedAt,
+      durationMs: options.outcome.durationMs,
+      type: 'disable',
+    };
+  }
   if (options.outcome.status === 'passed') {
     return {
       completedAt,

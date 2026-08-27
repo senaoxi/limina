@@ -61,25 +61,3 @@ export function createVueTscCommandTarget(
     label: `${options.checker.name}: vue-tsc -b ${relativeConfigPath}${getWatchLabel(options.watch)}`,
   };
 }
-
-export function createVueTsgoCommandTarget(
-  options: CheckerCommandTargetOptions,
-): CheckerCommandTarget {
-  const relativeConfigPath = getRelativeConfigPath(options);
-  return {
-    args: ['--project', relativeConfigPath],
-    command: 'vue-tsgo',
-    label: `${options.checker.name}: vue-tsgo --project ${relativeConfigPath}`,
-  };
-}
-
-export function createSvelteCheckCommandTarget(
-  options: CheckerCommandTargetOptions,
-): CheckerCommandTarget {
-  const relativeConfigPath = getRelativeConfigPath(options);
-  return {
-    args: ['--tsconfig', relativeConfigPath],
-    command: 'svelte-check',
-    label: `${options.checker.name}: svelte-check --tsconfig ${relativeConfigPath}`,
-  };
-}

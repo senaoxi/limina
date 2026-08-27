@@ -240,6 +240,7 @@ function expandOriginalResults(options: {
 export function resolveWorkspaceExportEntry(options: {
   entry: PackageExportEntry;
   groups: WorkspaceExportResolutionGroups;
+  includeOxc: boolean;
   importAnalysis: ImportAnalysisContext;
   metrics: WorkspaceExportsMetricsRecorder | undefined;
   profiles: readonly WorkspaceExportsResolutionProfile[];
@@ -250,6 +251,6 @@ export function resolveWorkspaceExportEntry(options: {
 }): EntryResolutionOutcome {
   const buffers = createResolutionBuffers(options.profiles.length);
   resolveTypeScriptResults({ ...options, buffers });
-  resolveOxcResults({ ...options, buffers });
+  if (options.includeOxc) resolveOxcResults({ ...options, buffers });
   return expandOriginalResults({ ...options, buffers });
 }

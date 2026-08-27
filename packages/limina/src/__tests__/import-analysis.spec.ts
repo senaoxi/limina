@@ -4,19 +4,17 @@ import {
   createImportAnalysisContext,
   resolveInternalImport,
 } from '#core/import-graph/context';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
-import { collectOxcImports } from '../core/import-analysis/oxc-imports';
-import { collectRequireImportsFromSourceFile } from '../core/import-analysis/require-bindings';
-import { collectTypeScriptImports } from '../core/import-analysis/typescript-imports';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  collectTypeScriptImports,
+  collectTypeScriptSourceFileImports,
+} from '../core/import-analysis/typescript-imports';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
-
-const requireFromTest = createRequire(import.meta.url);
 
 async function createTempDir(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), 'limina-import-analysis-'));
@@ -31,23 +29,45 @@ async function writeText(rootDir: string, filePath: string, text: string) {
   return absolutePath;
 }
 
-async function linkCompilerSfc(rootDir: string): Promise<void> {
-  const compilerPackagePath = requireFromTest.resolve(
-    '@vue/compiler-sfc/package.json',
-  );
-  const nodeModulesDir = path.join(rootDir, 'node_modules', '@vue');
-
-  await mkdir(nodeModulesDir, {
-    recursive: true,
-  });
-  await symlink(
-    path.dirname(compilerPackagePath),
-    path.join(nodeModulesDir, 'compiler-sfc'),
-    'dir',
-  );
-}
-
 describe('import analysis', () => {
+  it('uses the injected TypeScript module for AST, scanner, and CommonJS enumeration', () => {
+    const isImportDeclaration = vi.fn(ts.isImportDeclaration);
+    const createScanner = vi.fn(ts.createScanner);
+    const forEachChild = vi.fn(ts.forEachChild);
+    const tsModule = {
+      ...ts,
+      createScanner,
+      forEachChild,
+      isImportDeclaration,
+    } as unknown as typeof ts;
+    const sourceFile = tsModule.createSourceFile(
+      '/generated/App.vue.ts',
+      [
+        '/** @type {import("./types").Types} */',
+        "import './esm';",
+        "require('./commonjs');",
+      ].join('\n'),
+      tsModule.ScriptTarget.Latest,
+      true,
+      tsModule.ScriptKind.TS,
+    );
+
+    expect(
+      collectTypeScriptSourceFileImports({
+        filePath: sourceFile.fileName,
+        sourceFile,
+        tsModule,
+      }).map(({ kind, specifier }) => ({ kind, specifier })),
+    ).toEqual([
+      { kind: 'jsdoc-import', specifier: './types' },
+      { kind: 'static', specifier: './esm' },
+      { kind: 'commonjs', specifier: './commonjs' },
+    ]);
+    expect(isImportDeclaration).toHaveBeenCalled();
+    expect(forEachChild).toHaveBeenCalled();
+    expect(createScanner).toHaveBeenCalled();
+  });
+
   it('keeps full UTF-16 string-token locators and duplicate occurrences stable', async () => {
     const rootDir = await createTempDir();
     const sourceText = [
@@ -115,6 +135,67 @@ describe('import analysis', () => {
         { kind: 'dynamic', line: 4, specifier: './lazy' },
         { kind: 'import-type', line: 5, specifier: './import-type' },
       ]);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('emits one export record per source literal and preserves statement occurrences', async () => {
+    const rootDir = await createTempDir();
+    const sourceText = [
+      "export { first, second } from './shared';",
+      "export { third } from './shared';",
+      '',
+    ].join('\n');
+
+    try {
+      const filePath = await writeText(rootDir, 'src/reexports.ts', sourceText);
+
+      expect(
+        collectImportsFromFile(filePath, rootDir).map((record) => ({
+          kind: record.kind,
+          occurrence: record.locator.occurrence,
+          specifier: record.specifier,
+          token: sourceText.slice(
+            record.locator.sourceStart,
+            record.locator.sourceEnd,
+          ),
+        })),
+      ).toEqual([
+        {
+          kind: 'export',
+          occurrence: 0,
+          specifier: './shared',
+          token: "'./shared'",
+        },
+        {
+          kind: 'export',
+          occurrence: 1,
+          specifier: './shared',
+          token: "'./shared'",
+        },
+      ]);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it('collects import types from declaration files', async () => {
+    const rootDir = await createTempDir();
+
+    try {
+      const filePath = await writeText(
+        rootDir,
+        'src/import-type.d.ts',
+        "export type VueModule = typeof import('vue');\n",
+      );
+
+      expect(
+        collectImportsFromFile(filePath, rootDir).map((record) => ({
+          kind: record.kind,
+          specifier: record.specifier,
+        })),
+      ).toEqual([{ kind: 'import-type', specifier: 'vue' }]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
@@ -197,13 +278,6 @@ describe('import analysis', () => {
     ];
 
     expect(
-      collectOxcImports(options)
-        ?.filter((record) =>
-          ['commonjs', 'require-resolve'].includes(record.kind),
-        )
-        .map((record) => [record.kind, record.specifier]),
-    ).toEqual(expected);
-    expect(
       collectTypeScriptImports(options)
         .filter((record) =>
           ['commonjs', 'require-resolve'].includes(record.kind),
@@ -212,7 +286,7 @@ describe('import analysis', () => {
     ).toEqual(expected);
   });
 
-  it('excludes root imports, declarations, and reassigned createRequire aliases in both parser paths', () => {
+  it('excludes imported, declared, and reassigned require bindings during tolerant TypeScript parsing', () => {
     const validSource = [
       "import { require } from './shim';",
       "require('./import-shadow');",
@@ -229,10 +303,11 @@ describe('import analysis', () => {
     ].join('\n');
 
     expect(
-      collectOxcImports({
+      collectTypeScriptImports({
         filePath: '/fixture/shadowed.ts',
+        scriptKind: ts.ScriptKind.TS,
         sourceText: validSource,
-      })?.filter((record) =>
+      }).filter((record) =>
         ['commonjs', 'require-resolve'].includes(record.kind),
       ),
     ).toEqual([]);
@@ -245,28 +320,6 @@ describe('import analysis', () => {
         ['commonjs', 'require-resolve'].includes(record.kind),
       ),
     ).toEqual([]);
-  });
-
-  it('reuses the TypeScript fallback SourceFile for require collection', () => {
-    const sourceText = "const = ;\nrequire('./fallback');\n";
-    const options = {
-      filePath: '/fixture/fallback.ts',
-      scriptKind: ts.ScriptKind.TS,
-      sourceText,
-    };
-    const sourceFile = ts.createSourceFile(
-      options.filePath,
-      sourceText,
-      ts.ScriptTarget.Latest,
-      true,
-      options.scriptKind,
-    );
-
-    expect(
-      collectRequireImportsFromSourceFile({ ...options, sourceFile }).map(
-        (record) => [record.kind, record.specifier],
-      ),
-    ).toEqual([['commonjs', './fallback']]);
   });
 
   it('collects dependency pragmas from comments', async () => {
@@ -317,177 +370,41 @@ describe('import analysis', () => {
     }
   });
 
-  it('collects Vue inline script imports and skips src scripts', async () => {
+  it.each(['App.vue', 'Page.astro', 'Widget.svelte'])(
+    'rejects standalone framework source %s with a stable project-context error',
+    async (name) => {
+      const rootDir = await createTempDir();
+      try {
+        const filePath = await writeText(rootDir, name, 'export {}\n');
+        expect(() => collectImportsFromFile(filePath, rootDir)).toThrow(
+          'Framework source requires project/checker context; use getResolvedImports(file, project).',
+        );
+      } finally {
+        await rm(rootDir, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it('rejects an explicit framework source profile on the standalone API', async () => {
     const rootDir = await createTempDir();
-
     try {
-      const filePath = await writeText(
-        rootDir,
-        'src/App.vue',
-        [
-          '<template><div /></template>',
-          '<script setup lang="ts" generic="T extends Record<string, value>">',
-          "import value from './value';",
-          "import Equal = require('./equal');",
-          "const cjs = require('./cjs');",
-          "const resolved = require.resolve('./resolved');",
-          '// @jsxImportSource @emotion/react',
-          "type Imported = import('./types').Imported;",
-          '</script>',
-          '<script src="./external.ts"></script>',
-          '<script lang="tsx">',
-          "export { Widget } from './Widget';",
-          "void import('./lazy');",
-          '</script>',
-        ].join('\n'),
-      );
-
-      expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => ({
-          kind: item.kind,
-          line: item.line,
-          specifier: item.specifier,
-        })),
-      ).toEqual([
-        { kind: 'static', line: 3, specifier: './value' },
-        { kind: 'import-equals', line: 4, specifier: './equal' },
-        { kind: 'commonjs', line: 5, specifier: './cjs' },
-        { kind: 'require-resolve', line: 6, specifier: './resolved' },
-        { kind: 'jsx-import-source', line: 7, specifier: '@emotion/react' },
-        { kind: 'import-type', line: 8, specifier: './types' },
-        { kind: 'export', line: 12, specifier: './Widget' },
-        { kind: 'dynamic', line: 13, specifier: './lazy' },
-      ]);
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
-
-  it('keeps Vue SFC locators in original-source UTF-16 coordinates', async () => {
-    const rootDir = await createTempDir();
-    const sourceText = [
-      '<template><div>資源😀</div></template>',
-      '<script setup lang="ts">',
-      "import './style.css';",
-      "import './style.css';",
-      '</script>',
-      '',
-    ].join('\r\n');
-
-    try {
-      const filePath = await writeText(rootDir, 'src/Locator.vue', sourceText);
-      const records = collectImportsFromFile(filePath, rootDir);
-
-      expect(
-        records.map((record) => ({
-          occurrence: record.locator.occurrence,
-          token: sourceText.slice(
-            record.locator.sourceStart,
-            record.locator.sourceEnd,
-          ),
-        })),
-      ).toEqual([
-        { occurrence: 0, token: "'./style.css'" },
-        { occurrence: 1, token: "'./style.css'" },
-      ]);
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
-
-  it('collects Vue imports with the compiler-sfc parser when configured', async () => {
-    const rootDir = await createTempDir();
-
-    try {
-      await linkCompilerSfc(rootDir);
-      const filePath = await writeText(
-        rootDir,
-        'src/App.vue',
-        [
-          '<template><div /></template>',
-          '<script setup lang="ts" generic="T extends Record<string, value>">',
-          "import value from './value';",
-          "import Equal = require('./equal');",
-          "type Imported = import('./types').Imported;",
-          '</script>',
-          '<script lang="tsx">',
-          "export { Widget } from './Widget';",
-          "void import('./lazy');",
-          '</script>',
-        ].join('\n'),
-      );
-      const context = createImportAnalysisContext({
-        projectRootDir: rootDir,
-        vueParser: 'compiler-sfc',
-      });
-
-      expect(
-        collectImportsFromFile(filePath, rootDir, context).map((item) => ({
-          kind: item.kind,
-          line: item.line,
-          specifier: item.specifier,
-        })),
-      ).toEqual([
-        { kind: 'static', line: 3, specifier: './value' },
-        { kind: 'import-equals', line: 4, specifier: './equal' },
-        { kind: 'import-type', line: 5, specifier: './types' },
-        { kind: 'export', line: 8, specifier: './Widget' },
-        { kind: 'dynamic', line: 9, specifier: './lazy' },
-      ]);
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
-
-  it('fails compiler-sfc Vue import analysis when the peer is missing', async () => {
-    const rootDir = await createTempDir();
-
-    try {
-      const filePath = await writeText(
-        rootDir,
-        'src/App.vue',
-        '<script setup lang="ts">import value from "./value";</script>\n',
-      );
-      const context = createImportAnalysisContext({
-        projectRootDir: rootDir,
-        vueParser: 'compiler-sfc',
-      });
-
-      expect(() => collectImportsFromFile(filePath, rootDir, context)).toThrow(
-        /Unable to load Vue SFC compiler for import analysis/u,
+      const filePath = await writeText(rootDir, 'Page.md', '# Page\n');
+      expect(() =>
+        collectImportsFromFile(
+          filePath,
+          rootDir,
+          undefined,
+          'vitepress-markdown',
+        ),
+      ).toThrow(
+        'Framework source requires project/checker context; use getResolvedImports(file, project).',
       );
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
   });
 
-  it('fails compiler-sfc Vue import analysis on SFC parse errors', async () => {
-    const rootDir = await createTempDir();
-
-    try {
-      await linkCompilerSfc(rootDir);
-      const filePath = await writeText(
-        rootDir,
-        'src/App.vue',
-        [
-          '<script setup lang="ts">import one from "./one";</script>',
-          '<script setup lang="ts">import two from "./two";</script>',
-        ].join('\n'),
-      );
-      const context = createImportAnalysisContext({
-        projectRootDir: rootDir,
-        vueParser: 'compiler-sfc',
-      });
-
-      expect(() => collectImportsFromFile(filePath, rootDir, context)).toThrow(
-        /Unable to parse Vue SFC for import analysis/u,
-      );
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
-
-  it('falls back to TypeScript import collection when OXC rejects a file', async () => {
+  it('collects imports from files with recoverable TypeScript syntax errors', async () => {
     const rootDir = await createTempDir();
 
     try {

@@ -69,7 +69,7 @@ export function getInvalidSolutionOutputProblem(options: {
     'Invalid Limina output options:',
     `  config: ${toRelativePath(options.config.rootDir, options.sourceConfigPath)}`,
     '  field: liminaOptions.outputs',
-    '  reason: liminaOptions.outputs is only allowed on ordinary source leaf configs, not solution-style configs.',
+    '  reason: liminaOptions.outputs is only allowed on ordinary source leaf configs, not TypeScript solution configs.',
     '  fix: move liminaOptions.outputs to one or more referenced source leaf tsconfigs.',
   ].join('\n');
 }

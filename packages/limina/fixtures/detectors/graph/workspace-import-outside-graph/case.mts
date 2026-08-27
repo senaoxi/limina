@@ -13,7 +13,7 @@ export default defineDetectorFixture({
     exitCode: 1,
     issues: [
       {
-        checkerName: 'typescript',
+        checkerName: 'tsc',
         code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportOutsideGraph,
         evidence: [
           {

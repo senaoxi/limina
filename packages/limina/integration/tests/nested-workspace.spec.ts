@@ -26,7 +26,7 @@ interface DependencyGraphDocument {
 
 interface GeneratedManifest {
   checkers: {
-    typescript: {
+    tsc: {
       roots: string[];
       sourceToBuild: Record<string, { kind: string; path: string }>;
       sourceToDts: Record<string, string>;
@@ -111,10 +111,10 @@ describe('nested workspace public CLI integration', () => {
     expectLiminaSuccess(prepareResult);
 
     const parentProjectPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/packages/parent/tsconfig.dts.json',
+      'repo/.limina/tsconfig/checkers/tsc/projects/packages/parent/tsconfig.dts.json',
     );
     const nestedProjectPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/packages/parent/nested/tsconfig.dts.json',
+      'repo/.limina/tsconfig/checkers/tsc/projects/packages/parent/nested/tsconfig.dts.json',
     );
     expect(await exists(parentProjectPath)).toBe(true);
     expect(await exists(nestedProjectPath)).toBe(false);
@@ -122,18 +122,18 @@ describe('nested workspace public CLI integration', () => {
     const manifest = await readJson<GeneratedManifest>(
       preparedFixture.path('repo/.limina/manifest.json'),
     );
-    expect(manifest.checkers.typescript.roots).toEqual([
+    expect(manifest.checkers.tsc.roots).toEqual([
       'packages/parent/tsconfig.json',
     ]);
-    expect(manifest.checkers.typescript.sourceToBuild).toEqual({
+    expect(manifest.checkers.tsc.sourceToBuild).toEqual({
       'packages/parent/tsconfig.json': {
         kind: 'project',
-        path: '.limina/tsconfig/checkers/typescript/projects/packages/parent/tsconfig.dts.json',
+        path: '.limina/tsconfig/checkers/tsc/projects/packages/parent/tsconfig.dts.json',
       },
     });
-    expect(manifest.checkers.typescript.sourceToDts).toEqual({
+    expect(manifest.checkers.tsc.sourceToDts).toEqual({
       'packages/parent/tsconfig.json':
-        '.limina/tsconfig/checkers/typescript/projects/packages/parent/tsconfig.dts.json',
+        '.limina/tsconfig/checkers/tsc/projects/packages/parent/tsconfig.dts.json',
     });
     expect(JSON.stringify(manifest)).not.toContain(
       'packages/parent/nested/tsconfig.json',

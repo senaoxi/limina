@@ -120,7 +120,7 @@ export function inferPackageProject(
 
 function getProjectOwnerRootDir(project: ProjectInfo): string {
   return project.options.rootDir === undefined
-    ? path.dirname(project.configPath)
+    ? path.dirname(project.resolverConfigPath)
     : normalizeAbsolutePath(project.options.rootDir);
 }
 

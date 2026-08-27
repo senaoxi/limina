@@ -20,9 +20,95 @@ describe('limina published package smoke', () => {
 
     try {
       fixture = await createConsumerFixture({
+        astroSemanticFixture: true,
         manifest,
         tarballPath: packedDist.tarballPath,
       });
+
+      const installedManifest = JSON.parse(
+        await readFile(
+          path.join(fixture.fixtureDir, 'node_modules/limina/package.json'),
+          'utf8',
+        ),
+      ) as typeof manifest;
+      expect(installedManifest.peerDependencies).toEqual(
+        manifest.peerDependencies,
+      );
+      expect(installedManifest.devDependencies).toEqual(
+        manifest.devDependencies,
+      );
+      expect(installedManifest.peerDependenciesMeta).toEqual(
+        manifest.peerDependenciesMeta,
+      );
+      for (const packageManifest of [manifest, installedManifest]) {
+        for (const section of [
+          packageManifest.dependencies,
+          packageManifest.devDependencies,
+          packageManifest.optionalDependencies,
+          packageManifest.peerDependencies,
+          packageManifest.peerDependenciesMeta,
+        ]) {
+          expect(section?.['oxc-parser']).toBeUndefined();
+          expect(section?.['@astrojs/compiler']).toBeUndefined();
+        }
+        for (const section of [
+          packageManifest.dependencies,
+          packageManifest.optionalDependencies,
+          packageManifest.peerDependencies,
+          packageManifest.peerDependenciesMeta,
+        ]) {
+          expect(section?.['@jridgewell/trace-mapping']).toBeUndefined();
+        }
+        expect(
+          packageManifest.devDependencies?.['@jridgewell/trace-mapping'],
+        ).toBe('^0.3.31');
+        for (const section of [
+          packageManifest.dependencies,
+          packageManifest.optionalDependencies,
+        ]) {
+          expect(section?.svelte2tsx).toBeUndefined();
+        }
+        expect(packageManifest.devDependencies?.svelte2tsx).toBe('^0.7.61');
+        expect(packageManifest.peerDependencies?.svelte2tsx).toBe('^0.7.61');
+        expect(packageManifest.peerDependenciesMeta?.svelte2tsx?.optional).toBe(
+          true,
+        );
+        expect(packageManifest.peerDependencies?.['@astrojs/check']).toBe(
+          '0.9.10',
+        );
+        expect(
+          packageManifest.peerDependenciesMeta?.['@astrojs/check']?.optional,
+        ).toBe(true);
+        for (const workspacePackageName of [
+          '@docs-islands/eslint-config',
+          '@docs-islands/plugin-license',
+          '@docs-islands/utils',
+        ]) {
+          expect(
+            packageManifest.devDependencies?.[workspacePackageName],
+          ).toBeUndefined();
+        }
+        expect(packageManifest.devDependencies?.logaria).toBe('0.0.3');
+      }
+      expect(manifest.dependencies?.['oxc-resolver']).toBeDefined();
+      expect(installedManifest.dependencies?.['oxc-resolver']).toBe(
+        manifest.dependencies?.['oxc-resolver'],
+      );
+      for (const packageName of ['@vue/language-core', '@volar/typescript']) {
+        expect(installedManifest.dependencies?.[packageName]).toBeUndefined();
+        expect(
+          installedManifest.devDependencies?.[packageName],
+        ).toBeUndefined();
+        expect(
+          installedManifest.optionalDependencies?.[packageName],
+        ).toBeUndefined();
+        expect(
+          installedManifest.peerDependencies?.[packageName],
+        ).toBeUndefined();
+        expect(
+          installedManifest.peerDependenciesMeta?.[packageName],
+        ).toBeUndefined();
+      }
 
       const helpResult = await runPnpm(['exec', 'limina', '--help'], {
         cwd: fixture.fixtureDir,
@@ -54,6 +140,46 @@ describe('limina published package smoke', () => {
 
       expect(sourceCheckResult.stdout).toContain('limina source check');
       expect(sourceCheckResult.stdout).toContain('limina source passed');
+
+      await writeFile(
+        path.join(fixture.fixtureDir, 'app/src/Page.astro'),
+        [
+          '---',
+          "import { value } from './index.ts';",
+          'void value;',
+          '---',
+          '<h1>Packed Astro owner</h1>',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+
+      const rootConsumerManifest = JSON.parse(
+        await readFile(path.join(fixture.fixtureDir, 'package.json'), 'utf8'),
+      ) as { devDependencies?: Record<string, string> };
+      const leafConsumerManifest = JSON.parse(
+        await readFile(
+          path.join(fixture.fixtureDir, 'app/package.json'),
+          'utf8',
+        ),
+      ) as { devDependencies?: Record<string, string> };
+      expect(rootConsumerManifest.devDependencies?.astro).toBeUndefined();
+      expect(
+        rootConsumerManifest.devDependencies?.['@astrojs/check'],
+      ).toBeUndefined();
+      expect(leafConsumerManifest.devDependencies).toMatchObject({
+        '@astrojs/check': expect.any(String),
+        astro: expect.any(String),
+        typescript: expect.any(String),
+      });
+
+      const graphCheckResult = await runPnpm(
+        ['exec', 'limina', '--config', './limina.config.mjs', 'graph', 'check'],
+        { cwd: fixture.fixtureDir },
+      );
+
+      expect(graphCheckResult.stdout).toContain('limina graph check');
+      expect(graphCheckResult.stdout).toContain('limina graph passed');
 
       const releaseCheckArgs = [
         'exec',
@@ -113,9 +239,8 @@ describe('limina published package smoke', () => {
       const missingPeerOutput = `${missingPeerResult.stdout}\n${missingPeerResult.stderr}`;
 
       expect(missingPeerResult.exitCode).toBe(1);
-      expect(missingPeerOutput).toContain(
-        'Missing peer dependency "npm-package-json-lint"',
-      );
+      expect(missingPeerOutput).toContain('Missing Limina runtime dependency:');
+      expect(missingPeerOutput).toContain('package: npm-package-json-lint');
 
       await runPnpm(
         [

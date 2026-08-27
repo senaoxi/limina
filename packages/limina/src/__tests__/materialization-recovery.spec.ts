@@ -73,7 +73,7 @@ function createMaterializerChildScript(body: string): string {
         checkers: {},
         knip: { diagnostics: [], packages: [] },
         ownedArtifacts,
-        providerEdges: [],
+        dependencyEdges: [],
       }, null, 2) + '\\n';
     const createPlan = async (artifacts) => {
       const base = await readMaterializationStateSnapshot(namespace);
@@ -171,7 +171,7 @@ function manifestContent(ownedArtifacts: string[]): string {
       checkers: {},
       knip: { diagnostics: [], packages: [] },
       ownedArtifacts,
-      providerEdges: [],
+      dependencyEdges: [],
     },
     null,
     2,

@@ -45,7 +45,7 @@ Limina 只在 `source:check` 中报告这两类问题：
 
 对于 `?raw`、`?url` 和 `?worker` 导入，Limina 会检查基础物理文件是否存在，以及 checker 工程是否提供匹配的类型声明；这不表示某个特定 bundler transformer 一定已经安装。虚拟模块和框架注入模块的运行时行为仍不受支持；只有 ambient declaration 不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
 
-Vue 资源类型证据适用于已验证的 checker 组合：`vue-tsc` 3.2.x、`@vue/language-core` 3.2.x、`@volar/typescript` 2.4.x，以及 TypeScript 5.9 或 6.0。其他 Vue checker 版本组合会被视为 unsupported，不会误报成缺少类型声明。
+Vue 资源类型证据与 graph analysis 使用同一套有界 semantic adapter matrix：`vue-tsc` 2.2.0–2.2.12 搭配相同版本的 `@vue/language-core` 和 `@volar/typescript` 2.4.11–2.4.28，或 `vue-tsc` 3.2.0–3.2.4 搭配相同版本的 Language Core 和 Volar TypeScript 2.4.27。两个 family 都接受 TypeScript 5.4.x–5.9.x 或 6.0.x。其他 Vue checker tuple 会被视为 unsupported，不会误报成缺少类型声明。
 
 ## importAuthority
 

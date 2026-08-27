@@ -1,4 +1,5 @@
 import type {
+  CheckerScope,
   ResolvedCheckerConfig,
   ResolvedLiminaConfig,
 } from '#config/runner';
@@ -151,7 +152,7 @@ function assertValidEntryPaths(options: {
   rootDir: string;
 }): void {
   const invalidEntryPaths = options.entryPaths.filter(
-    (configPath) => !isDefaultSourceTsconfigPath(configPath),
+    (configPath) => !isDefaultSourceTsconfigPath(configPath, options.rootDir),
   );
 
   if (invalidEntryPaths.length > 0) {
@@ -202,4 +203,30 @@ export function createCheckerEntrySelectionOptions(
     exclude: checker.exclude,
     include: checker.include,
   };
+}
+
+export function matchesCheckerScope(options: {
+  config: ResolvedLiminaConfig;
+  configPath: string;
+  scope: CheckerScope;
+}): boolean {
+  const includeMatchers = createMatchers(
+    createIncludePatterns(options.config.rootDir, options.scope.include),
+  );
+  if (
+    !matchesAnyPattern(
+      options.configPath,
+      options.config.rootDir,
+      includeMatchers,
+    )
+  ) {
+    return false;
+  }
+  return (
+    filterExcludedEntries(
+      options.config,
+      [options.configPath],
+      options.scope.exclude ?? [],
+    ).length > 0
+  );
 }

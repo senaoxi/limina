@@ -32,7 +32,7 @@ interface LeafPreparation {
 }
 
 function requireBuildAdapter(checker: ResolvedCheckerConfig): BuildAdapter {
-  const adapter = getCheckerAdapter(checker.preset);
+  const adapter = getCheckerAdapter(checker.name);
   if (adapter !== null) {
     if (adapter.execution === 'build') return adapter;
   }

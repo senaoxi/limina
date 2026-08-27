@@ -207,6 +207,16 @@ function applyFailEvent(
   applyTaskStats(context.task, event.stats);
 }
 
+function applyDisableEvent(
+  context: TaskProjectionContext,
+  rawEvent: TaskLifecycleEvent,
+): void {
+  const event = requireEvent(rawEvent, 'disable');
+  context.task.completedAt = event.completedAt;
+  context.task.durationMs = event.durationMs;
+  context.task.state = context.nextState;
+}
+
 function applyBlockEvent(
   context: TaskProjectionContext,
   rawEvent: TaskLifecycleEvent,
@@ -227,6 +237,7 @@ function applySkipEvent(
 
 const taskEventProjectors: Readonly<Record<EventType, TaskEventProjector>> = {
   block: applyBlockEvent,
+  disable: applyDisableEvent,
   fail: applyFailEvent,
   pass: applyPassEvent,
   skip: applySkipEvent,

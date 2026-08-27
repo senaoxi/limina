@@ -60,6 +60,7 @@ function validateUserConfig(
       options.virtualFiles,
     ),
     configPath: normalizedPath,
+    rootDir: options.rootDir,
   });
 }
 

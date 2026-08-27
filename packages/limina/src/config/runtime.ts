@@ -3,6 +3,8 @@ import { validateLiminaConfig } from '#config/schema';
 import type {
   AutoCheckerConfig,
   CheckerConfigMode,
+  CheckerName,
+  CheckerScope,
   ResolvedCheckerConfig,
 } from './pipeline-checker-types';
 import type {
@@ -25,11 +27,27 @@ export function isSourceKnipEnabled(
   return isSourceKnipConfig(knip);
 }
 
+/** @deprecated Auto discovery is always active in the flat checker model. */
 export function isAutoCheckerConfigMode(
+  _checkers: CheckerConfigMode | undefined,
+): boolean {
+  if (_checkers === undefined) return false;
+  return false;
+}
+
+export function getAutoCheckerConfig(
   checkers: CheckerConfigMode | undefined,
-): checkers is AutoCheckerConfig {
-  if (checkers === undefined) return false;
-  return checkers.mode === 'auto';
+): AutoCheckerConfig {
+  return checkers?.auto ?? {};
+}
+
+export function getNamedCheckerConfigs(
+  checkers: CheckerConfigMode | undefined,
+): Partial<Record<CheckerName, CheckerScope>> {
+  if (checkers === undefined) return {};
+  const named = { ...checkers };
+  delete named.auto;
+  return named;
 }
 
 export function defineConfig(config: LiminaConfig): LiminaConfig;
