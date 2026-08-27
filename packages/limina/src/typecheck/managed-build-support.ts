@@ -154,6 +154,7 @@ export function logManagedBuildStart(options: {
   TypecheckLogger.info(
     [
       `Running build for ${options.targetCount} generated target(s).`,
+      ...getManagedDependencyDescription(options.context.target),
       `Source: ${toRelativePath(
         options.context.projectRootDir,
         options.context.target.sourceConfigPath,
@@ -166,6 +167,16 @@ export function logManagedBuildStart(options: {
         .join(', ')}`,
     ].join('\n'),
   );
+}
+
+function getManagedDependencyDescription(
+  target: ManagedBuildContext['target'],
+): string[] {
+  return target.resolutionKind === 'managed-dependency'
+    ? [
+        'Target: TypeScript dependency solution (framework application build is not included).',
+      ]
+    : [];
 }
 
 export function toCheckerBuildOptions(

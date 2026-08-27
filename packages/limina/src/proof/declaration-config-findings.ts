@@ -172,6 +172,7 @@ function validateManagedDeclarationConfig(options: {
     options.virtualFiles,
   );
   const localConfigPath = getProofCompanionConfigPath(
+    options.config,
     options.configPath,
     options.virtualFiles,
   );

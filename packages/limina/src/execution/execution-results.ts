@@ -48,6 +48,7 @@ const rootBlockerResolvers: Record<
   RootBlockerResolver
 > = {
   blocked: resolveBlockedBlocker as RootBlockerResolver,
+  disabled: resolvePassedBlocker,
   failed: resolveFailedBlocker,
   passed: resolvePassedBlocker,
   skipped: resolveSkippedBlocker as RootBlockerResolver,
@@ -145,11 +146,13 @@ export function createCompletedRunOutcome(
   return hasFailedOutcome(options) ? { state: 'failed' } : { state: 'passed' };
 }
 
+const startedOutcomeStatuses = new Set(['disabled', 'failed', 'passed']);
+
 function isStartedOutcome(
   outcome: ExecutionTaskOutcome | undefined,
 ): outcome is StartedTaskResult {
   if (outcome === undefined) return false;
-  return outcome.status === 'passed' || outcome.status === 'failed';
+  return startedOutcomeStatuses.has(outcome.status);
 }
 
 export function collectExecutionIssues(options: {
@@ -185,7 +188,9 @@ function createStartedResultView(options: {
     id: options.task.id,
     issues: options.outcome.issues,
     label: options.task.label,
-    passed: options.outcome.status === 'passed',
+    passed:
+      options.outcome.status === 'passed' ||
+      options.outcome.status === 'disabled',
     status: options.outcome.status,
   };
 }

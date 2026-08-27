@@ -174,14 +174,20 @@ export interface GraphConfigInvalidFinding
 export interface GraphImportTargetUnmappedFinding
   extends GraphFindingBase<
     typeof LIMINA_CHECK_ISSUE_CODES.graphImportTargetUnmapped,
-    {
-      readonly import: GraphImportFact;
-      readonly importingProjectPath: string;
-      readonly resolvedFilePath: string;
-      readonly targetPackageName: string;
-    }
+    | {
+        readonly import: GraphImportFact;
+        readonly importingProjectPath: string;
+        readonly resolvedFilePath: string;
+        readonly targetPackageName: string;
+      }
+    | {
+        readonly import: GraphImportFact;
+        readonly importingProjectPath: string;
+        readonly kind: 'vue-semantic-dependency';
+        readonly reason: string;
+      }
   > {
-  readonly packageName: string;
+  readonly packageName?: string;
 }
 
 export type GraphReferenceCycleFinding = GraphFindingBase<

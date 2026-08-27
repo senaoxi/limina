@@ -30,7 +30,7 @@ function toExecutionTaskRunResult(
     issues: result.issues,
     sourceSnapshot: result.sourceSnapshot,
     stats: result.stats,
-    status: result.passed ? 'passed' : 'failed',
+    status: result.disabled ? 'disabled' : result.passed ? 'passed' : 'failed',
   };
 }
 

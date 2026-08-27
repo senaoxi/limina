@@ -94,6 +94,7 @@ function emitCompletedTask(options: {
     });
   }
   finishTrackedTask(options);
+  options.taskState.completed = true;
 }
 
 function resolveTaskMessage(

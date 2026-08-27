@@ -9,7 +9,7 @@ import {
 } from './target-resolution';
 
 function isBuildCapableChecker(checker: ResolvedCheckerConfig): boolean {
-  const adapter = getCheckerAdapter(checker.preset);
+  const adapter = getCheckerAdapter(checker.name);
   if (adapter === null) return false;
   return adapter.execution === 'build';
 }
@@ -25,7 +25,7 @@ function getBuildCapableChecker(options: {
 
 function getProviderBuildModule(options: {
   checker: ResolvedCheckerConfig;
-  edge: GeneratedTsconfigGraphResult['providerEdges'][number];
+  edge: GeneratedTsconfigGraphResult['dependencyEdges'][number];
   generatedGraph: GeneratedTsconfigGraphResult;
 }) {
   return options.generatedGraph.configToOutputBuild
@@ -35,7 +35,7 @@ function getProviderBuildModule(options: {
 
 function createProviderDescriptor(options: {
   checkerByName: ReadonlyMap<string, ResolvedCheckerConfig>;
-  edge: GeneratedTsconfigGraphResult['providerEdges'][number];
+  edge: GeneratedTsconfigGraphResult['dependencyEdges'][number];
   generatedGraph: GeneratedTsconfigGraphResult;
 }): BuildTargetDescriptor | null {
   const checker = getBuildCapableChecker({
@@ -59,7 +59,7 @@ function createProviderDescriptor(options: {
 
 function edgeStartsAtDescriptor(options: {
   descriptor: BuildTargetDescriptor;
-  edge: GeneratedTsconfigGraphResult['providerEdges'][number];
+  edge: GeneratedTsconfigGraphResult['dependencyEdges'][number];
 }): boolean {
   if (options.edge.fromChecker !== options.descriptor.checker.name)
     return false;
@@ -71,7 +71,7 @@ function getProviderDescriptors(options: {
   descriptor: BuildTargetDescriptor;
   generatedGraph: GeneratedTsconfigGraphResult;
 }): BuildTargetDescriptor[] {
-  return options.generatedGraph.providerEdges
+  return options.generatedGraph.dependencyEdges
     .filter((edge) =>
       edgeStartsAtDescriptor({ descriptor: options.descriptor, edge }),
     )

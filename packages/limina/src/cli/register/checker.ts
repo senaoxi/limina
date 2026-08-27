@@ -56,7 +56,9 @@ function assertTypecheckHasNoPreset(options: CheckerTargetOptions): void {
 
 function assertTypecheckHasNoWatch(options: CheckerTargetOptions): void {
   if (!getCheckerWatchFlag(options.flags)) return;
-  throw new Error('checker typecheck does not accept --watch.');
+  throw new Error(
+    'checker typecheck does not accept --watch; rerun it after source config, parser package, generated type, or framework source changes.',
+  );
 }
 
 function validateCheckerTypecheckFlags(options: CheckerTargetOptions): void {

@@ -95,7 +95,7 @@ describe('managed outputs public CLI integration', () => {
       'repo/packages/library/src/environment.d.ts',
     );
     const outputConfigPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/outputs/projects/packages/library/tsconfig.output.json',
+      'repo/.limina/tsconfig/checkers/tsc/outputs/projects/packages/library/tsconfig.output.json',
     );
     const outputRoot = preparedFixture.path('repo/packages/library/dist');
     const jsPath = preparedFixture.path('repo/packages/library/dist/index.js');
@@ -253,7 +253,7 @@ describe('managed outputs public CLI integration', () => {
     expect(
       await collectNamedEntries(
         preparedFixture.path(
-          'repo/.limina/tsconfig/checkers/typescript/outputs/projects',
+          'repo/.limina/tsconfig/checkers/tsc/outputs/projects',
         ),
         (entryName) => entryName.endsWith('.output.json'),
       ),

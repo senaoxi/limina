@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { GeneratedProviderEdge } from '#core/build-graph/runner';
+import type { GeneratedDependencyEdge } from '#core/build-graph/runner';
 import type {
   CheckerTargetId,
   TypecheckRunner,
@@ -23,7 +23,7 @@ export interface RunBuildTargetsOptions {
 
 export type RunBuildTargetsArgs = [
   targets: TypecheckTarget[],
-  providerEdges: GeneratedProviderEdge[],
+  dependencyEdges: GeneratedDependencyEdge[],
   runner: TypecheckRunner,
   options: RunBuildTargetsOptions,
 ];
@@ -51,13 +51,13 @@ function createWatchBuildPlan(targets: TypecheckTarget[]): BuildDependencyPlan {
 }
 
 function resolveBuildPlan(options: {
-  providerEdges: GeneratedProviderEdge[];
+  dependencyEdges: GeneratedDependencyEdge[];
   targets: TypecheckTarget[];
   watch: boolean | undefined;
 }): BuildDependencyPlan {
   return options.watch === true
     ? createWatchBuildPlan(options.targets)
-    : createBuildDependencyPlan(options.targets, options.providerEdges);
+    : createBuildDependencyPlan(options.targets, options.dependencyEdges);
 }
 
 function getTargetOrder(
@@ -221,14 +221,14 @@ export function createFailedTargetResult(
 }
 
 export function createBuildRunState(options: {
-  providerEdges: GeneratedProviderEdge[];
+  dependencyEdges: GeneratedDependencyEdge[];
   runner: TypecheckRunner;
   runOptions: RunBuildTargetsOptions;
   targets: TypecheckTarget[];
 }): BuildRunState {
   return {
     buildPlan: resolveBuildPlan({
-      providerEdges: options.providerEdges,
+      dependencyEdges: options.dependencyEdges,
       targets: options.targets,
       watch: options.runOptions.watch,
     }),

@@ -72,6 +72,13 @@ export type FlowRendererProcessMessage =
     }
   | {
       snapshot: FlowRenderSnapshot;
+      type: 'resume';
+    }
+  | {
+      type: 'suspend';
+    }
+  | {
+      snapshot: FlowRenderSnapshot;
       type: 'snapshot';
     };
 
@@ -81,6 +88,9 @@ export type FlowRendererParentMessage =
     }
   | {
       type: 'closed';
+    }
+  | {
+      type: 'suspended';
     }
   | {
       message: string;

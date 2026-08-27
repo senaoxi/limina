@@ -2,7 +2,6 @@ import {
   type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   parseCheckerProjectConfigForContext,
-  resolveCheckerProjectExtensions,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
@@ -12,6 +11,7 @@ import {
   toRelativePath,
 } from '#utils/path';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import type { LockedSemanticAuthority } from './checker-ownership-types';
 import {
   readGraphRules,
   readOutputOptions,
@@ -33,28 +33,31 @@ export function isInsideNodeModules(filePath: string): boolean {
 }
 
 export function createSourceProject(options: {
-  checkerName: string;
+  checkerName: SourceProject['checkerName'];
   checkerPreset: SourceProject['context']['checkerPresets'][number];
   config: ResolvedLiminaConfig;
+  discoveryExtensions?: string[];
   packageRootDir: string;
   projectConfigCache?: CheckerProjectConfigCache;
   sourceConfigPath: string;
+  semanticAuthority: LockedSemanticAuthority;
 }): SourceProject {
-  const extensions = resolveCheckerProjectExtensions({
+  const parseContext: CheckerProjectParseContext = {
+    checkerPresets: [options.checkerPreset],
+    extensions: options.discoveryExtensions ?? [],
+  };
+  const parsed = parseCheckerProjectConfigForContext({
+    allowNoInputDiagnostics: true,
+    cache: options.projectConfigCache,
     configPath: options.sourceConfigPath,
-    preset: options.checkerPreset,
+    context: parseContext,
     projectRootDir: options.config.rootDir,
   });
   const context: CheckerProjectParseContext = {
-    checkerPresets: [options.checkerPreset],
-    extensions,
+    ...parseContext,
+    extensions: [...parsed.extensions],
+    vueSemanticIdentity: parsed.vueSemanticIdentity,
   };
-  const parsed = parseCheckerProjectConfigForContext({
-    cache: options.projectConfigCache,
-    configPath: options.sourceConfigPath,
-    context,
-    projectRootDir: options.config.rootDir,
-  });
   const ownedFileNames = parsed.fileNames
     .map(normalizeAbsolutePath)
     .filter((fileName) => !isInsideNodeModules(fileName))
@@ -66,6 +69,7 @@ export function createSourceProject(options: {
 
   return {
     checkerName: options.checkerName,
+    configClosure: parsed.configClosure.map((entry) => ({ ...entry })),
     configPath: options.sourceConfigPath,
     context,
     dtsConfigPath: getGeneratedDtsConfigPath({
@@ -91,6 +95,7 @@ export function createSourceProject(options: {
     packageRootDir: options.packageRootDir,
     options: parsed.options,
     references: new Set(),
+    semanticAuthority: { ...options.semanticAuthority },
   };
 }
 

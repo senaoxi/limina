@@ -1,5 +1,8 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
+} from '#core/build-graph/runner';
 import type { ProjectInfo } from '#core/import-graph/context';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readOutputOptions } from '../core/build-graph/generated/config-readers';
@@ -21,6 +24,56 @@ export function filterProjectInfoToActivatedRegion(
       workspaceLookup.isInsideActivatedRegion(fileName),
     ),
   };
+}
+
+function getGovernedProjectPaths(unit: GovernedSourceUnit): string[] {
+  const projection = unit.buildProjection;
+  return [
+    unit.configPath,
+    'buildConfigPath' in projection ? projection.buildConfigPath : undefined,
+    'dtsConfigPath' in projection ? projection.dtsConfigPath : undefined,
+  ].filter((filePath): filePath is string => filePath !== undefined);
+}
+
+function registerFinalOwnedFileNames(options: {
+  ownedByProjectPath: Map<string, ReadonlySet<string>>;
+  unit: GovernedSourceUnit;
+}): void {
+  const ownedFileNames = new Set(options.unit.ownedFileNames);
+  for (const projectPath of getGovernedProjectPaths(options.unit)) {
+    options.ownedByProjectPath.set(projectPath, ownedFileNames);
+  }
+}
+
+function createFinalOwnedFileNamesByProjectPath(
+  generatedGraph: GeneratedTsconfigGraphResult,
+): Map<string, ReadonlySet<string>> {
+  const ownedByProjectPath = new Map<string, ReadonlySet<string>>();
+  for (const sources of generatedGraph.governedSources.values()) {
+    for (const unit of sources.values()) {
+      registerFinalOwnedFileNames({ ownedByProjectPath, unit });
+    }
+  }
+  return ownedByProjectPath;
+}
+
+export function alignProjectOwnedFilesWithGeneratedGraph(options: {
+  generatedGraph: GeneratedTsconfigGraphResult;
+  projects: readonly ProjectInfo[];
+}): ProjectInfo[] {
+  const ownedByProjectPath = createFinalOwnedFileNamesByProjectPath(
+    options.generatedGraph,
+  );
+  return options.projects.map((project) => {
+    const finalOwnedFileNames = ownedByProjectPath.get(project.configPath);
+    if (finalOwnedFileNames === undefined) return project;
+    return {
+      ...project,
+      ownedFileNames: project.ownedFileNames.filter((fileName) =>
+        finalOwnedFileNames.has(fileName),
+      ),
+    };
+  });
 }
 
 export function createWorkspaceExportsResolutionProfiles(

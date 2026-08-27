@@ -177,9 +177,9 @@ function requireTargetResult(
 export async function executeBuildTargets(
   ...args: RunBuildTargetsArgs
 ): Promise<TypecheckTargetResult[]> {
-  const [targets, providerEdges, runner, options] = args;
+  const [targets, dependencyEdges, runner, options] = args;
   const state = createBuildRunState({
-    providerEdges,
+    dependencyEdges,
     runner,
     runOptions: options,
     targets,

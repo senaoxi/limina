@@ -69,7 +69,8 @@ jobs:
 
 ::: tip
 
-- 保持源码 `tsconfig.json` 聚合器只包含 `files: []` 和 `references`。
+- 保持源码 `tsconfig.json` 聚合器经检查器解析后的文件集合为空，并直接声明 `references`；`files: []` 是最清楚的写法。
+- Solution 配置应放在名称恰好为 `tsconfig.json` 的入口。解析后无文件且声明 `references` 的 `tsconfig.*.json` 虽然是 TypeScript solution，但不是 Limina 支持的 solution 名称。
 - 保持源码 `tsconfig` 文件集合意图清晰，并让 Limina 管理 `.limina/` 下的声明构建配置。
 - 工作区包导出要保持意图明确：源码入口被消费时，需要由真实导入或 `implicitRefs` 补充出对应引用；产物入口被消费时，会作为限定架构事实出现在 `limina graph export --view artifact` 中。
 - 源码检查、包检查和发布检查覆盖不同层面；发布相关检查应放在产物构建之后运行。
@@ -79,9 +80,17 @@ jobs:
 
 ## 常见问题
 
+### Limina 如何识别 solution 配置？
+
+Limina 会使用当前检查器解析每个可达配置。解析后的有效文件列表为空、且配置直接声明 `references` 时，它就是 TypeScript solution；`extends` 或检查器支持的框架文件也会参与这个判断。只有路径 basename 恰好为 `tsconfig.json` 时，Limina 才会展开这个角色。迁移命令会先汇总所有可达的带名称 solution，再进行任何 worktree 或文件修改。可以把它重命名为 `tsconfig.json`，把引用合并到目录已有的默认入口，或移除 `references` 并把它改成具有明确源码边界的叶子配置。
+
 ### limina checker build 和 checker typecheck 如何选择目标？
 
-`checker build` 会运行支持构建模式的预设，也就是 `tsc -b`、`tsgo -b` 和 `vue-tsc -b`。`tsgo` 由 `Microsoft` 的 `@typescript/native-preview` 包提供。`checker typecheck` 会运行只做类型检查的预设，目前是 `vue-tsgo --project <entry>` 和 `svelte-check --tsconfig <entry>`。Limina 有意不让 `vue-tsgo` 进入 `checker build`：当前 `vue-tsgo --build` 不能保持 `TypeScript` 项目引用边界，也不具备增量构建语义；但它配置的 `tsconfig` 入口仍会参与 Limina 图检查和覆盖证明。`Vue` 的构建类检查优先使用 `vue-tsc`。
+`checker build` 会运行 final build owner，也就是 `tsc -b`、`tsgo -b` 和 `vue-tsc -b`。`tsgo` 由 Microsoft 的 `@typescript/native-preview` package 提供。`checker typecheck` 会对 final owner 为 Astro 或 Svelte 的 config 按 leaf 执行一次；solution closure 由 Limina 自己展开，共享 leaf 会去重。
+
+Named checker entry 会锁定完整 terminal-leaf closure；自动 evidence 只处理仍为 pending 的 config。创建 target 前，solution leaf 与有效 declaration relation 会按 component 统一染色，因此每条内部 declaration-provider relationship 都使用完全相同的 build-checker identity。
+
+Module semantics 会更早确定，并与 target ownership 分开冻结。只有显式 selection、checker-specific config、effective root file，或已确认的 pending framework dependency 可以锁定 semantic authority。Vue promotion、component coloring、fallback 与 final build owner 都不能改变它。例如，一个 TypeScript-semantic config 可以被染色进 `vue-tsc` build component，但其 import 不会因此被重新解释成 Vue source。
 
 ### 为什么包检查需要先构建？
 
@@ -91,11 +100,13 @@ jobs:
 
 ### 工作区导出可以指向 dist 吗？
 
-可以。工作区包导出可以指向源码入口，也可以指向构建产物。Limina 会先要求当前解析配置能解析每个公开导出。只有实际导入的入口解析到声明项目管辖的文件时，生成图才要求对应引用；真实存在但静态导入无法证明的动态或虚拟边，可以用 `liminaOptions.implicitRefs` 补充。`dist/*.d.ts` 这类构建声明不要求项目引用。当某个导入实际解析到 `dist` 时，Limina 会在导入方 `tsconfig` 的条件域内报告产物边。这条边可用于审查和诊断，但不是任务编排保证。
+可以。工作区包导出可以指向源码入口，也可以指向构建产物。Limina 会先要求当前解析配置能解析每个公开导出。只有实际导入的入口解析到声明项目管辖的源码时，生成图才要求对应引用；真实存在但静态导入无法证明的动态或虚拟边，可以用 `liminaOptions.implicitRefs` 补充。`dist/*.d.ts` 这类构建声明属于产物边界：它们不会创建 manifest `declaration-provider` edge、生成项目引用或 output-build 引用。Limina 可以为了类型证据或诊断把 managed declaration 反向归因到源码，但这类归因不是构建依赖，也不提供任务编排保证。
 
 ### Vue 或 Svelte 文件应该放进 TypeScript 图吗？
 
-框架文件应该由对应框架检查器入口覆盖。Limina 可以通过 `vue-tsc`、`vue-tsgo` 或 `svelte-check` 证明覆盖，不需要把这些文件假装成普通 `tsc -b` 声明构建项目。
+在自动 scope 中，包含 Vue root 的 type config 由 `vue-tsc` 负责；包含 Astro 或 Svelte root 的 config 由对应 framework checker 负责。显式 owner 则具有权威性：Astro 只在 TypeScript 基础上增加 `.astro` 观测，Svelte 只增加 `.svelte`；其他已配置源码扩展会成为 proof 覆盖缺口。Astro/Svelte-owned config 不生成声明，需要 emit declaration 的 TypeScript 必须拆到独立 `tsc`、`tsgo` 或 `vue-tsc` boundary。
+
+对于 project dependency，locked semantic authority 才是边界。Vue 与 Astro dependency 来自各自 generated service script；Svelte dependency 来自所属 leaf 的公共 `svelte2tsx` peer 输出。Limina 使用 checker toolchain 枚举 generated TypeScript，要求严格反向 provenance 到源码，并把 synthetic generated import 限定为 observation。Checker-semantic miss 或 mapping failure 不会由 Oxc rescue。只有自动 config 仍处于 pending、且 TypeScript type evidence 为 `missing` 时，Oxc 才能用于识别 governed framework candidate。
 
 ### `--mode` 有什么用途？
 

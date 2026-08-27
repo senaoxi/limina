@@ -22,7 +22,7 @@ function createPreflightStats(
       createCheckItemStats({
         issues: getPreflightIssueCount(result),
         name: result.passed
-          ? 'second-class checker entries'
+          ? 'framework checker entries'
           : 'checker dependency preflight',
         total,
       }),
@@ -125,6 +125,9 @@ function countPassedTargets(
 export function createCheckerTaskStats(
   result: CheckerTaskStatsInput,
 ): LiminaCheckRunTaskStats {
+  if (result.disabled === true) {
+    throw new Error('Disabled checker tasks do not produce statistics.');
+  }
   if (result.rootConfigPaths.length === 0) return createPreflightStats(result);
   const targetNamesById = createTargetNameMap(result);
   return {

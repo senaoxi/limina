@@ -16,13 +16,14 @@ export type { IssueSeverity } from './domain/validation/contracts';
 
 export type {
   AutoCheckerConfig,
-  BuildCheckerPreset,
-  BuiltinCheckerPreset,
+  BuildCheckerName,
   BuiltinTaskName,
   CheckerConfig,
   CheckerConfigMode,
   CheckerExecutionKind,
-  CheckerPreset,
+  CheckerName,
+  CheckerScope,
+  FrameworkCheckerName,
   GraphConditionDomain,
   GraphConfig,
   GraphRule,
@@ -31,7 +32,6 @@ export type {
   GraphRuleDepDenyEntry,
   GraphRuleRefAllowEntry,
   GraphRuleRefDenyEntry,
-  ImportAnalysisConfig,
   LiminaCommand,
   LiminaConfig,
   LiminaConfigEnv,
@@ -75,5 +75,4 @@ export type {
   SourceKnipIgnoredDependencyConfig,
   SourceKnipIgnoredFileConfig,
   SourceKnipWorkspaceConfig,
-  VueImportParser,
 } from '#config/runner';

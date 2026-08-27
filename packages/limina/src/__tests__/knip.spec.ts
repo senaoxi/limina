@@ -79,9 +79,7 @@ describe('resolveKnipCliPath', () => {
       resolveKnipCliPath(() => {
         throw new Error('Cannot find package "knip"');
       }),
-    ).toThrow(
-      'Missing peer dependency "knip" required by limina source check.',
-    );
+    ).toThrow(/Missing Limina runtime dependency:[\s\S]*package: knip/u);
   });
 
   it('reports a resolved but missing Knip CLI path as a missing peer dependency', () => {
@@ -92,7 +90,7 @@ describe('resolveKnipCliPath', () => {
     );
 
     expect(() => resolveKnipCliPath(() => entryPath)).toThrow(
-      'Missing peer dependency "knip" required by limina source check.',
+      /Missing Limina runtime dependency:[\s\S]*package: knip/u,
     );
   });
 });

@@ -1,49 +1,20 @@
-import {
-  getActiveCheckers,
-  isAutoCheckerConfigMode,
-  type ResolvedCheckerConfig,
-  type ResolvedLiminaConfig,
+import type {
+  ResolvedCheckerConfig,
+  ResolvedLiminaConfig,
 } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
-import {
-  createCheckerEntrySelectionOptions,
-  resolveCheckerEntrySelection,
-} from '../checkers/entry-selection';
+import { SvelteSemanticContextManager } from '../svelte-semantic/context';
+import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../workspace/validated-context';
-import { resolveAutoCheckerSelections } from './auto-checker-resolution';
+import { resolveCheckerOwnership } from './checker-ownership-resolution';
+import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
 import type {
+  CheckerSelectionResolution,
   PrepareGeneratedTsconfigGraphOptions,
-  ResolvedCheckerEntrySelection,
 } from './types';
-
-function isAutoCheckerMode(config: ResolvedLiminaConfig): boolean {
-  if (!config.config) {
-    return true;
-  }
-  const checkers = config.config.checkers;
-  return checkers === undefined || isAutoCheckerConfigMode(checkers);
-}
-
-async function resolveExplicitCheckerSelections(options: {
-  config: ResolvedLiminaConfig;
-  sourceConfigPaths: readonly string[];
-}): Promise<ResolvedCheckerEntrySelection[]> {
-  return Promise.all(
-    getActiveCheckers(options.config).map(async (checker) => ({
-      checker,
-      selection: await resolveCheckerEntrySelection(
-        {
-          config: options.config,
-          sourceConfigPaths: options.sourceConfigPaths,
-        },
-        createCheckerEntrySelectionOptions(checker),
-      ),
-    })),
-  );
-}
 
 export async function resolveGeneratedGraphCheckerSelections(options: {
   config: ResolvedLiminaConfig;
@@ -53,22 +24,16 @@ export async function resolveGeneratedGraphCheckerSelections(options: {
     PrepareGeneratedTsconfigGraphOptions['workspaceContext']
   >;
   workspacePathIndex?: WorkspaceRegionPathIndex;
-}): Promise<ResolvedCheckerEntrySelection[]> {
+}): Promise<CheckerSelectionResolution> {
   const activatedRegions =
     options.workspacePathIndex ??
     new WorkspaceRegionPathIndex(options.workspaceContext);
-  if (isAutoCheckerMode(options.config)) {
-    return resolveAutoCheckerSelections({
-      activatedRegions,
-      config: options.config,
-      importAnalysisContext: options.importAnalysisContext,
-      projectConfigCache: options.projectConfigCache,
-      workspaceSourceConfigPaths: options.workspaceContext.sourceConfigPaths,
-    });
-  }
-  return resolveExplicitCheckerSelections({
+  return resolveCheckerOwnership({
+    activatedRegions,
     config: options.config,
-    sourceConfigPaths: options.workspaceContext.sourceConfigPaths,
+    importAnalysisContext: resolveBuildGraphImportAnalysis(options),
+    projectConfigCache: options.projectConfigCache,
+    workspaceSourceConfigPaths: options.workspaceContext.sourceConfigPaths,
   });
 }
 
@@ -82,18 +47,75 @@ export async function resolveGeneratedGraphCheckers(
     | 'workspacePathIndex'
   > = {},
 ): Promise<ResolvedCheckerConfig[]> {
-  const workspaceContext =
-    options.workspaceContext ??
-    (await collectValidatedWorkspaceContext({
-      config,
-      rawPackages: await collectRawWorkspacePackages(config),
-    }));
-  const selections = await resolveGeneratedGraphCheckerSelections({
+  const workspaceContext = await resolveCheckerWorkspaceContext({
+    config,
+    workspaceContext: options.workspaceContext,
+  });
+  const ownedImportAnalysis = createOwnedImportAnalysis({
     config,
     importAnalysisContext: options.importAnalysisContext,
-    projectConfigCache: options.projectConfigCache,
-    workspaceContext,
-    workspacePathIndex: options.workspacePathIndex,
   });
-  return selections.map(({ checker }) => checker);
+  try {
+    const resolution = await resolveGeneratedGraphCheckerSelections({
+      config,
+      importAnalysisContext: ownedImportAnalysis.context,
+      projectConfigCache: options.projectConfigCache,
+      workspaceContext,
+      workspacePathIndex: options.workspacePathIndex,
+    });
+    return resolution.selections.map(({ checker }) => checker);
+  } finally {
+    disposeOwnedImportAnalysis(ownedImportAnalysis);
+  }
+}
+
+async function resolveCheckerWorkspaceContext(options: {
+  config: ResolvedLiminaConfig;
+  workspaceContext: PrepareGeneratedTsconfigGraphOptions['workspaceContext'];
+}): Promise<
+  NonNullable<PrepareGeneratedTsconfigGraphOptions['workspaceContext']>
+> {
+  if (options.workspaceContext !== undefined) {
+    return options.workspaceContext;
+  }
+  return collectValidatedWorkspaceContext({
+    config: options.config,
+    rawPackages: await collectRawWorkspacePackages(options.config),
+  });
+}
+
+function createOwnedImportAnalysis(options: {
+  config: ResolvedLiminaConfig;
+  importAnalysisContext: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+}): {
+  context: NonNullable<
+    PrepareGeneratedTsconfigGraphOptions['importAnalysisContext']
+  >;
+  dispose?: () => void;
+} {
+  if (options.importAnalysisContext !== undefined) {
+    return {
+      context: options.importAnalysisContext,
+    };
+  }
+
+  const vueSemanticContexts = new VueSemanticContextManager();
+  const svelteSemanticContexts = new SvelteSemanticContextManager();
+  return {
+    context: resolveBuildGraphImportAnalysis({
+      config: options.config,
+      svelteSemanticContexts,
+      vueSemanticContexts,
+    }),
+    dispose: () => {
+      svelteSemanticContexts.dispose();
+      vueSemanticContexts.dispose();
+    },
+  };
+}
+
+function disposeOwnedImportAnalysis(options: { dispose?: () => void }): void {
+  if (options.dispose) {
+    options.dispose();
+  }
 }

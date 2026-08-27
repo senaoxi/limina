@@ -93,15 +93,20 @@ export function createExtensionPattern(extensions: string[]): RegExp {
   );
 }
 
-function isGeneratedLiminaConfigPath(configPath: string): boolean {
-  return configPath.split(/[\\/]/u).includes('.limina');
+export function isLiminaArtifactPath(
+  configPath: string,
+  rootDir: string,
+): boolean {
+  const candidatePath = path.relative(rootDir, configPath);
+  return candidatePath.split(/[\\/]/u).includes('.limina');
 }
 
 export function validateUserMaintainedLiminaTsconfigMetadata(options: {
   configObject: JsonObject;
   configPath: string;
+  rootDir: string;
 }): void {
-  if (isGeneratedLiminaConfigPath(options.configPath)) {
+  if (isLiminaArtifactPath(options.configPath, options.rootDir)) {
     return;
   }
   if (Object.hasOwn(options.configObject, 'limina')) {
@@ -212,9 +217,10 @@ export function isOrdinaryTypecheckConfigPath(configPath: string): boolean {
 
 export function isOrdinarySourceTypecheckConfigPath(
   configPath: string,
+  rootDir: string,
 ): boolean {
   if (!isOrdinaryTypecheckConfigPath(configPath)) {
     return false;
   }
-  return !configPath.split(path.sep).includes('.limina');
+  return !isLiminaArtifactPath(configPath, rootDir);
 }

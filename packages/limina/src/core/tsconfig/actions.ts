@@ -9,6 +9,7 @@ export * from './config-paths';
 export { collectGraphProjectRouteFromRoot } from './graph-route-traversal';
 export { formatReferences } from './reference-format';
 export * from './reference-paths';
+export * from './solution-role';
 export {
   collectSourceGraphProjectExtensions,
   projectSourceGraphProjectExtensions,

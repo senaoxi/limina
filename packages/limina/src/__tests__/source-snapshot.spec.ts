@@ -1118,9 +1118,9 @@ describe('check issue snapshots', () => {
           title: 'Uncovered source file',
         },
         {
-          checkerName: 'typescript',
+          checkerName: 'tsc',
           code: 'LIMINA_CHECKER_BUILD_FAILED',
-          filePath: '.limina/checkers/typescript/tsconfig.json',
+          filePath: '.limina/checkers/tsc/tsconfig.json',
           reason: 'build failed',
           task: 'checker:build',
           title: 'Checker build failed',
@@ -1460,7 +1460,7 @@ describe('check issue snapshots', () => {
   it('preserves resource module source codes in JSON and NDJSON inventories', () => {
     const issues = [
       createLiminaCheckIssue({
-        checkerName: 'typescript',
+        checkerName: 'tsc',
         code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
         filePath: 'packages/app/src/index.ts',
         reason: 'The physical resource is missing.',
@@ -1469,7 +1469,7 @@ describe('check issue snapshots', () => {
         title: 'Resource module was not found',
       }),
       createLiminaCheckIssue({
-        checkerName: 'vue',
+        checkerName: 'vue-tsc',
         code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
         filePath: 'packages/web/src/App.vue',
         reason: 'The current Vue checker project has no declaration.',
@@ -1494,12 +1494,12 @@ describe('check issue snapshots', () => {
     );
     expect(ndjson).toEqual([
       expect.objectContaining({
-        checkerName: 'typescript',
+        checkerName: 'tsc',
         code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
         task: 'source:check',
       }),
       expect.objectContaining({
-        checkerName: 'vue',
+        checkerName: 'vue-tsc',
         code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
         task: 'source:check',
       }),
@@ -1712,9 +1712,9 @@ describe('check issue snapshots', () => {
   it('filters unified inventory by rule, file, scope, package, task, and checker', () => {
     const snapshot = createCheckSnapshot([
       createLiminaCheckIssue({
-        checkerName: 'typescript',
+        checkerName: 'tsc',
         code: 'LIMINA_CHECKER_BUILD_FAILED',
-        filePath: '/repo/.limina/checkers/typescript/tsconfig.json',
+        filePath: '/repo/.limina/checkers/tsc/tsconfig.json',
         packageName: '@example/app',
         reason: 'build failed',
         rootDir: '/repo',
@@ -1735,8 +1735,8 @@ describe('check issue snapshots', () => {
     ]);
     const output = formatHumanInventory({
       filters: {
-        checkerNames: ['typescript'],
-        files: ['.limina/checkers/typescript/tsconfig.json'],
+        checkerNames: ['tsc'],
+        files: ['.limina/checkers/tsc/tsconfig.json'],
         packageNames: ['@example/app'],
         rules: ['LIMINA_CHECKER_BUILD_FAILED'],
         scopes: ['.limina/checkers'],
@@ -1759,9 +1759,9 @@ describe('check issue snapshots', () => {
   it('reports unmatched human filter values with help commands', () => {
     const snapshot = createCheckSnapshot([
       createLiminaCheckIssue({
-        checkerName: 'typescript',
+        checkerName: 'tsc',
         code: 'LIMINA_CHECKER_BUILD_FAILED',
-        filePath: '/repo/.limina/checkers/typescript/tsconfig.json',
+        filePath: '/repo/.limina/checkers/tsc/tsconfig.json',
         packageName: '@example/app',
         reason: 'build failed',
         rootDir: '/repo',

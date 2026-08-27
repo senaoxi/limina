@@ -38,7 +38,7 @@ function presentation(title: string): GraphFindingPresentation {
 
 function commonFindingFields(title: string) {
   return {
-    checkerName: 'typescript',
+    checkerName: 'tsc',
     evidence: [
       {
         label: 'semantic-only evidence',

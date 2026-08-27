@@ -90,9 +90,8 @@ async function createFixture(): Promise<{
     config: {
       config: {
         checkers: {
-          typescript: {
+          tsc: {
             include: ['packages/app/tsconfig.json'],
-            preset: 'tsc',
           },
         },
       },
@@ -116,11 +115,9 @@ async function prepareManagedTarget(
   const manager = new LiminaPreflightManager({ config: fixture.config });
   const workspaceContext = await manager.ensureWorkspaceValidated();
   const { graph } = await manager.ensureGeneratedArtifactsMaterialized();
-  const checker = graph.checkers.find(
-    (candidate) => candidate.name === 'typescript',
-  )!;
+  const checker = graph.checkers.find((candidate) => candidate.name === 'tsc')!;
   const buildModule = graph.configToOutputBuild
-    .get('typescript')
+    .get('tsc')
     ?.get(fixture.sourceConfigPath);
   if (!buildModule || buildModule.kind !== 'project') {
     throw new Error('Missing generated output project for test fixture.');
@@ -151,10 +148,10 @@ describe('managed checker mutation proof', () => {
       const workspaceContext = await manager.ensureWorkspaceValidated();
       const { graph } = await manager.ensureGeneratedArtifactsMaterialized();
       const checker = graph.checkers.find(
-        (candidate) => candidate.name === 'typescript',
+        (candidate) => candidate.name === 'tsc',
       )!;
       const buildModule = graph.configToOutputBuild
-        .get('typescript')
+        .get('tsc')
         ?.get(fixture.sourceConfigPath);
       if (!buildModule || buildModule.kind !== 'project') {
         throw new Error('Missing generated output project for test fixture.');
@@ -190,9 +187,7 @@ describe('managed checker mutation proof', () => {
       expect(proof.effectiveOptionsFingerprint).toMatch(/^[\da-f]{64}$/u);
       expect(proof.checkerImplementationFingerprint).toMatch(/^[\da-f]{64}$/u);
 
-      const dtsConfigPath = [
-        ...(graph.dtsToSource.get('typescript') ?? []),
-      ].find(
+      const dtsConfigPath = [...(graph.dtsToSource.get('tsc') ?? [])].find(
         ([, sourceConfigPath]) =>
           normalizeAbsolutePath(sourceConfigPath) === fixture.sourceConfigPath,
       )?.[0];
@@ -220,8 +215,8 @@ describe('managed checker mutation proof', () => {
         ),
       ).toEqual(
         expect.arrayContaining([
-          '.limina/dts/checkers/typescript/packages/app/tsconfig/index.d.ts',
-          '.limina/tsbuildinfo/checkers/typescript/packages/app/tsconfig.tsbuildinfo',
+          '.limina/dts/checkers/tsc/packages/app/tsconfig/index.d.ts',
+          '.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.tsbuildinfo',
         ]),
       );
     } finally {

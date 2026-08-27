@@ -7,7 +7,11 @@ import {
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import type { RuntimeEvidence } from '../core/import-analysis/evidence';
 import type { SourceResourceTypeEvidenceKind } from './finding-facts';
 import { createSourceDiagnosticFinding } from './finding-utils';
 import type { SourceFinding } from './findings';
@@ -22,20 +26,35 @@ interface ResourceModuleOptions {
   typeEvidence: AnalysisProviderSet['typeEvidence'];
 }
 
+const NON_PHYSICAL_RUNTIME_KINDS = new Set(['asserted-virtual', 'unsupported']);
+
+function hasRequireResolveRuntime(options: {
+  importRecord: ImportRecord;
+  runtimeKind: string;
+}): boolean {
+  return (
+    options.importRecord.kind === 'require-resolve' &&
+    options.runtimeKind !== 'missing'
+  );
+}
+
 function isResourceImport(options: ResourceModuleOptions): boolean {
   const runtimeEvidence = options.typeEvidence.classifyImportRuntime({
     checkerName: options.checkerName,
     importRecord: options.importRecord,
     project: options.project,
+    resolutionMode: 'checker-only',
   });
   if (runtimeEvidence.classification !== 'resource') {
     return false;
   }
-
-  const requireResolveHasRuntime =
-    options.importRecord.kind === 'require-resolve' &&
-    runtimeEvidence.runtime.kind !== 'missing';
-  return !requireResolveHasRuntime;
+  if (NON_PHYSICAL_RUNTIME_KINDS.has(runtimeEvidence.runtime.kind)) {
+    return false;
+  }
+  return !hasRequireResolveRuntime({
+    importRecord: options.importRecord,
+    runtimeKind: runtimeEvidence.runtime.kind,
+  });
 }
 
 function addMissingResourceFinding(options: {
@@ -177,6 +196,17 @@ function addResolvedResourceProblem(
     return;
   }
 
+  addExistingResourceProblem(options, evidence);
+}
+
+function addExistingResourceProblem(
+  options: ResourceModuleOptions,
+  evidence: ResourceImportEvidence,
+): void {
+  if (options.importRecord.kind === 'require-resolve') {
+    return;
+  }
+
   if (!hasUndeclaredResourceType(evidence)) {
     return;
   }
@@ -189,6 +219,58 @@ function addResolvedResourceProblem(
   });
 }
 
+function stripResourceQuery(specifier: string): string {
+  return specifier.split(/[?#]/u)[0]!;
+}
+
+function isLocalResourceSpecifier(specifier: string): boolean {
+  return specifier.startsWith('.') || path.isAbsolute(specifier);
+}
+
+function resolveLocalFilesystemResource(options: {
+  importRecord: ImportRecord;
+  specifier: string;
+}): RuntimeEvidence {
+  const checkedPath = path.resolve(
+    path.dirname(options.importRecord.filePath),
+    options.specifier,
+  );
+  return existsSync(checkedPath)
+    ? {
+        authority: 'filesystem',
+        filePath: checkedPath,
+        kind: 'file',
+      }
+    : { checkedPath, kind: 'missing' };
+}
+
+function resolvePackageFilesystemResource(options: {
+  importRecord: ImportRecord;
+  specifier: string;
+}): RuntimeEvidence {
+  try {
+    return {
+      authority: 'package-export',
+      filePath: createRequire(options.importRecord.filePath).resolve(
+        options.specifier,
+      ),
+      kind: 'file',
+    };
+  } catch {
+    return { kind: 'missing' };
+  }
+}
+
+function resolveFilesystemResource(
+  importRecord: ImportRecord,
+): RuntimeEvidence {
+  const specifier = stripResourceQuery(importRecord.specifier);
+  const options = { importRecord, specifier };
+  return isLocalResourceSpecifier(specifier)
+    ? resolveLocalFilesystemResource(options)
+    : resolvePackageFilesystemResource(options);
+}
+
 export function addResourceModuleProblems(
   options: ResourceModuleOptions,
 ): void {
@@ -196,12 +278,15 @@ export function addResourceModuleProblems(
     return;
   }
 
-  addResolvedResourceProblem(
-    options,
-    options.typeEvidence.resolveImportEvidence({
-      checkerName: options.checkerName,
-      importRecord: options.importRecord,
-      project: options.project,
-    }),
-  );
+  const evidence = options.typeEvidence.resolveImportEvidence({
+    checkerName: options.checkerName,
+    importRecord: options.importRecord,
+    project: options.project,
+    resolutionMode: 'checker-only',
+  });
+  if (evidence.type.kind === 'checker-source') return;
+  addResolvedResourceProblem(options, {
+    ...evidence,
+    runtime: resolveFilesystemResource(options.importRecord),
+  });
 }

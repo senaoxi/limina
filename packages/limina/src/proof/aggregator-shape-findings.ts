@@ -9,7 +9,7 @@ import {
 } from './finding-utils';
 import type { ProofFinding } from './findings';
 
-export type AggregatorConfigRole = 'build graph' | 'tsconfig.json';
+export type AggregatorConfigRole = 'build graph';
 
 const allowedAggregatorKeys = new Set([
   '$schema',
@@ -54,10 +54,8 @@ function collectExtraFieldsIssueLines(extraKeys: string[]): string[] {
   ];
 }
 
-function getRoleLabel(role: AggregatorConfigRole): string {
-  return role === 'build graph'
-    ? 'Build graph config'
-    : 'Default tsconfig.json';
+function getRoleLabel(): string {
+  return 'Build graph config';
 }
 
 function createCommonFindingOptions(options: {
@@ -69,7 +67,7 @@ function createCommonFindingOptions(options: {
   role: AggregatorConfigRole;
   workspaceLookup: WorkspaceLookupIndex;
 }) {
-  const roleLabel = getRoleLabel(options.role);
+  const roleLabel = getRoleLabel();
   const detailLines = [
     `${roleLabel} is not a pure aggregator:`,
     `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
@@ -113,28 +111,6 @@ function addBuildAggregatorFinding(options: {
   );
 }
 
-function addDefaultAggregatorFinding(options: {
-  common: ReturnType<typeof createCommonFindingOptions>;
-  configObject: Record<string, unknown>;
-  configPath: string;
-  extraKeys: string[];
-  findings: ProofFinding[];
-}): void {
-  options.findings.push(
-    createProofDiagnosticFinding({
-      ...options.common,
-      code: LIMINA_CHECK_ISSUE_CODES.proofDefaultTsconfigInvalid,
-      facts: {
-        actualFiles: options.configObject.files,
-        configPath: options.configPath,
-        extraFields: options.extraKeys,
-        kind: 'aggregator-shape',
-        missingFilesField: !Object.hasOwn(options.configObject, 'files'),
-      },
-    }),
-  );
-}
-
 export function addPureAggregatorFindings(options: {
   config: ResolvedLiminaConfig;
   configObject: Record<string, unknown>;
@@ -165,18 +141,7 @@ export function addPureAggregatorFindings(options: {
     workspaceLookup: options.workspaceLookup,
   });
 
-  if (options.role === 'build graph') {
-    addBuildAggregatorFinding({
-      common,
-      configObject: options.configObject,
-      configPath: options.configPath,
-      extraKeys,
-      findings: options.findings,
-    });
-    return;
-  }
-
-  addDefaultAggregatorFinding({
+  addBuildAggregatorFinding({
     common,
     configObject: options.configObject,
     configPath: options.configPath,

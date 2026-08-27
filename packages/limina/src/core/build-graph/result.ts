@@ -3,6 +3,7 @@ import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/colle
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { ArtifactPlan } from '../../domain/artifacts/plan';
+import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import {
   resolveGeneratedKnipPackageConfigs,
   resolveGeneratedKnipPackageDiagnostics,
@@ -13,6 +14,7 @@ import type {
   GeneratedOutputDeclarationCopyContext,
   GeneratedTsconfigGraphManifest,
   GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
 } from './types';
 
 function toAbsolutePath(rootDir: string, relativePath: string): string {
@@ -122,19 +124,24 @@ function createResultMaps(options: {
   return maps;
 }
 
-function createProviderEdges(options: {
+function createDependencyEdges(options: {
   manifest: GeneratedTsconfigGraphManifest;
   rootDir: string;
-}): GeneratedTsconfigGraphResult['providerEdges'] {
-  return options.manifest.providerEdges.map((edge) => ({
-    file: edge.file,
-    fromChecker: edge.fromChecker,
-    fromConfigPath: toAbsolutePath(options.rootDir, edge.fromConfig),
-    importedSpecifier: edge.importedSpecifier,
-    resolvedFilePath: toAbsolutePath(options.rootDir, edge.resolvedFile),
-    toChecker: edge.toChecker,
-    toConfigPath: toAbsolutePath(options.rootDir, edge.toConfig),
-  }));
+}): GeneratedTsconfigGraphResult['dependencyEdges'] {
+  return options.manifest.dependencyEdges.map((edge) => {
+    const base = {
+      file: edge.file,
+      fromChecker: edge.fromChecker,
+      fromConfigPath: toAbsolutePath(options.rootDir, edge.fromConfig),
+      importedSpecifier: edge.importedSpecifier,
+      resolvedFilePath: toAbsolutePath(options.rootDir, edge.resolvedFile),
+      toChecker: edge.toChecker,
+      toConfigPath: toAbsolutePath(options.rootDir, edge.toConfig),
+    };
+    return edge.kind === 'declaration-provider'
+      ? { ...base, cacheReuse: edge.cacheReuse, kind: edge.kind }
+      : { ...base, kind: edge.kind };
+  });
 }
 
 function cloneOutputDeclarationCopies(
@@ -160,17 +167,50 @@ function cloneOutputDeclarationCopies(
   );
 }
 
+function cloneGovernedSource(unit: GovernedSourceUnit): GovernedSourceUnit {
+  return {
+    ...unit,
+    buildProjection: { ...unit.buildProjection },
+    context: {
+      checkerPresets: [...unit.context.checkerPresets],
+      extensions: [...unit.context.extensions],
+      vueSemanticIdentity: unit.context.vueSemanticIdentity,
+    },
+    declarationFileNames: [...unit.declarationFileNames],
+    declarationReferences: new Set(unit.declarationReferences),
+    frameworkCapabilities: unit.frameworkCapabilities.map((capability) => ({
+      ...capability,
+    })),
+    ownedFileNames: [...unit.ownedFileNames],
+  };
+}
+
+function createGovernedSourceMap(
+  governedSourcesByChecker: ReadonlyMap<string, readonly GovernedSourceUnit[]>,
+): GeneratedTsconfigGraphResult['governedSources'] {
+  return new Map(
+    [...governedSourcesByChecker].map(([checkerName, units]) => [
+      checkerName,
+      new Map(
+        units.map((unit) => [unit.configPath, cloneGovernedSource(unit)]),
+      ),
+    ]),
+  );
+}
+
 export function createResult(options: {
   artifactPlan: ArtifactPlan;
   changed: boolean;
   checkers: ResolvedCheckerConfig[];
   generatedFiles: ReadonlyMap<string, string>;
+  governedSourcesByChecker: ReadonlyMap<string, readonly GovernedSourceUnit[]>;
   manifest: GeneratedTsconfigGraphManifest;
   manifestPath: string;
   outputDeclarationCopiesByChecker: Map<
     string,
     Map<string, GeneratedOutputDeclarationCopyContext[]>
   >;
+  ownershipPlan: CheckerOwnershipPlan;
   rootDir: string;
 }): GeneratedTsconfigGraphResult {
   const maps = createResultMaps(options);
@@ -195,8 +235,10 @@ export function createResult(options: {
       diagnostics: options.manifest.knip.diagnostics,
       rootDir: options.rootDir,
     }),
-    providerEdges: createProviderEdges(options),
+    governedSources: createGovernedSourceMap(options.governedSourcesByChecker),
+    dependencyEdges: createDependencyEdges(options),
     manifest: options.manifest,
+    ownershipPlan: options.ownershipPlan,
     generatedFiles: new Map(options.generatedFiles),
   };
 }
@@ -207,6 +249,16 @@ export function collectGeneratedSourceConfigPaths(
   return uniqueSortedStrings(
     [...generatedGraph.sourceToBuild.values()].flatMap((sourceToBuild) => [
       ...sourceToBuild.keys(),
+    ]),
+  );
+}
+
+export function collectGovernedSourceConfigPaths(
+  generatedGraph: GeneratedTsconfigGraphResult,
+): string[] {
+  return uniqueSortedStrings(
+    [...generatedGraph.governedSources.values()].flatMap((governedSources) => [
+      ...governedSources.keys(),
     ]),
   );
 }

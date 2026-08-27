@@ -1,13 +1,8 @@
 export default {
   config: {
     checkers: {
-      stable: {
-        include: ['alpha/tsconfig.json'],
-        preset: 'tsc',
-      },
-      native: {
-        include: ['beta/tsconfig.json'],
-        preset: 'tsgo',
+      tsc: {
+        include: ['alpha/tsconfig.json', 'beta/tsconfig.json'],
       },
     },
     source: {

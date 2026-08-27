@@ -27,6 +27,7 @@ export type TaskLifecycleState =
   | 'running'
   | 'passed'
   | 'failed'
+  | 'disabled'
   | 'blocked'
   | 'skipped';
 export type RunLifecycleState =
@@ -58,7 +59,7 @@ export interface ExecutionTaskRunResult {
   issues: readonly LiminaCheckIssue[];
   sourceSnapshot?: AuthoritativeSourceSnapshotPayload;
   stats?: LiminaCheckRunTaskStats;
-  status: 'failed' | 'passed';
+  status: 'disabled' | 'failed' | 'passed';
 }
 
 export interface StartedTaskResult extends ExecutionTaskRunResult {
@@ -90,6 +91,7 @@ export type TaskLifecycleEvent =
       stats?: LiminaCheckRunTaskStats;
       type: 'fail';
     }
+  | { completedAt: string; durationMs: number; type: 'disable' }
   | { blockedBy: TaskReference; type: 'block' }
   | { reason: string; type: 'skip' };
 

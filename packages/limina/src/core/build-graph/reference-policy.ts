@@ -57,11 +57,23 @@ export function isDeniedGeneratedReference(options: {
   project: SourceProject;
   targetSourceConfigPath: string;
 }): boolean {
+  return isDeniedGeneratedReferenceForConfig({
+    config: options.config,
+    graphRules: options.project.graphRules,
+    targetSourceConfigPath: options.targetSourceConfigPath,
+  });
+}
+
+export function isDeniedGeneratedReferenceForConfig(options: {
+  config: ResolvedLiminaConfig;
+  graphRules: readonly string[];
+  targetSourceConfigPath: string;
+}): boolean {
   const rules = options.config.graph?.rules;
   if (!rules) {
     return false;
   }
-  return options.project.graphRules.some((label) =>
+  return options.graphRules.some((label) =>
     labelDeniesReference({ ...options, label, rules }),
   );
 }

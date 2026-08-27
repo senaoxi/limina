@@ -16,6 +16,7 @@ import {
 } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
+import { alignProjectWithFrozenSemanticAuthority } from './project-dependencies/project-alignment';
 import type { WorkspaceCore } from './workspace';
 import type { WorkspaceLookupIndex } from './workspace/lookup';
 
@@ -58,13 +59,16 @@ export class TsconfigCore {
     const projectPromise =
       this.#projectCache.get(cacheKey) ??
       this.#generatedGraphProvider().then((generatedGraph) =>
-        parseProject(
-          this.#config,
-          normalizeAbsolutePath(configPath),
-          contextOrExtensions,
-          generatedGraph.generatedFiles,
-          this.#projectConfigCache,
-        ),
+        alignProjectWithFrozenSemanticAuthority({
+          generatedGraph,
+          project: parseProject(
+            this.#config,
+            normalizeAbsolutePath(configPath),
+            contextOrExtensions,
+            generatedGraph.generatedFiles,
+            this.#projectConfigCache,
+          ),
+        }),
       );
 
     this.#projectCache.set(cacheKey, projectPromise);
@@ -225,11 +229,16 @@ export function cloneProjectInfo(project: ProjectInfo): ProjectInfo {
   return {
     ...project,
     checkerPresets: [...project.checkerPresets],
+    configClosure: project.configClosure.map((entry) => ({ ...entry })),
     extensions: [...project.extensions],
     fileNames: [...project.fileNames],
     labels: [...project.labels],
     ownedFileNames: [...project.ownedFileNames],
     references: new Set(project.references),
+    semanticAuthority:
+      project.semanticAuthority === undefined
+        ? undefined
+        : { ...project.semanticAuthority },
   };
 }
 

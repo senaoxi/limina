@@ -43,7 +43,7 @@ function getSourceGovernanceContext(
       : getActiveCheckers(config);
 
   return {
-    checkerPresets: uniqueValues(checkers.map((checker) => checker.preset)),
+    checkerPresets: uniqueValues(checkers.map((checker) => checker.name)),
     extensions: normalizeExtensions(
       checkers.flatMap((checker) => checker.extensions),
     ),

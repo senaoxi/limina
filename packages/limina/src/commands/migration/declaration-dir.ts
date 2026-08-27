@@ -14,7 +14,7 @@ export interface DeclarationDirPlanOptions {
   directOutDir: unknown;
   effectiveConfig: MigrationEffectiveConfig;
   existingOutputs: Record<string, unknown> | undefined;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
   movedOutputs: Record<string, unknown>;
   rootDir: string;
 }
@@ -121,8 +121,8 @@ function planSolutionDeclarationDir(
       directDeclarationDir,
       plannedManagedRoot: undefined,
       reason:
-        'this solution-style config is a mixed aggregator with effective source inputs; Limina cannot migrate it as a pure solution.',
-      fix: 'move source inputs to ordinary leaf configs and keep the solution config as files: [] with references only.',
+        'a Limina solution config owns effective source files, which violates the internal solution-role invariant.',
+      fix: 'move source inputs to an ordinary leaf config and keep the solution config source-free.',
     });
   }
   return { movedOutputs: options.movedOutputs, removeDeclarationDir: true };
@@ -279,7 +279,7 @@ export function planDeclarationDir(
   }
   const directDeclarationDir = requireDirectDeclarationDir(options);
   assertNoEffectiveOutFile(options, directDeclarationDir);
-  return options.isSolutionStyle
+  return options.isLiminaSolution
     ? planSolutionDeclarationDir(options, directDeclarationDir)
     : planLeafDeclarationDir(options, directDeclarationDir);
 }

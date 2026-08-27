@@ -11,6 +11,9 @@ import type {
 export function createImportAnalysisCaches(): ImportAnalysisCaches {
   return {
     importsCache: new Map(),
+    importsPromiseCache: new Map(),
+    canonicalResolutionIndex: new Map(),
+    checkerResolutionIndex: new Map(),
     moduleResolutionIndex: new Map(),
     moduleResolverIdentityCache: new Map(),
     nextModuleResolverIdentity: 0,
@@ -20,15 +23,51 @@ export function createImportAnalysisCaches(): ImportAnalysisCaches {
   };
 }
 
+function optionalString(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  return value;
+}
+
+function getVueSemanticIdentityId(
+  context: ResolvedImportContext,
+): string | null {
+  const identity = context.vueSemanticIdentity;
+  if (identity === undefined) return null;
+  return identity.id;
+}
+
+function getAstroSemanticIdentityId(
+  context: ResolvedImportContext,
+): string | null {
+  return context.astroSemanticProject?.seed.id ?? null;
+}
+
+function getSvelteSemanticIdentityId(
+  context: ResolvedImportContext,
+): string | null {
+  const project = context.svelteSemanticProject;
+  if (project === undefined) return null;
+  return JSON.stringify({
+    adapterVersion: project.adapterVersion,
+    configPath: project.configPath,
+    generation: project.generation,
+    packageRootDir: project.packageRootDir,
+  });
+}
+
 function createTypeScriptModuleResolutionCacheKey(options: {
   compilerOptions: ts.CompilerOptions;
   context: ResolvedImportContext;
 }): string {
   return JSON.stringify({
+    astroSemanticIdentity: getAstroSemanticIdentityId(options.context),
     compilerOptions: options.compilerOptions,
-    configPath: options.context.configPath ?? null,
+    configPath: optionalString(options.context.configPath),
     extensions: getResolverExtensions(options),
-    resolverConfigPath: options.context.resolverConfigPath ?? null,
+    resolverConfigPath: optionalString(options.context.resolverConfigPath),
+    semanticFamily: optionalString(options.context.semanticFamily),
+    svelteSemanticIdentity: getSvelteSemanticIdentityId(options.context),
+    vueSemanticIdentity: getVueSemanticIdentityId(options.context),
   });
 }
 
@@ -37,11 +76,15 @@ function createResolverIdentityKey(options: {
   context: ResolvedImportContext;
 }): string {
   return JSON.stringify({
+    astroSemanticIdentity: getAstroSemanticIdentityId(options.context),
     checkerPresets: options.context.checkerPresets,
     compilerOptions: options.compilerOptions,
-    configPath: options.context.configPath ?? null,
+    configPath: optionalString(options.context.configPath),
     extensions: getResolverExtensions(options),
-    resolverConfigPath: options.context.resolverConfigPath ?? null,
+    resolverConfigPath: optionalString(options.context.resolverConfigPath),
+    semanticFamily: optionalString(options.context.semanticFamily),
+    svelteSemanticIdentity: getSvelteSemanticIdentityId(options.context),
+    vueSemanticIdentity: getVueSemanticIdentityId(options.context),
   });
 }
 

@@ -1,5 +1,6 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
   type CheckerGraphProjectRoute,
   isDtsConfigPath,
@@ -26,7 +27,10 @@ import {
   getProofPackageIdentity,
 } from './finding-utils';
 import type { ProofFinding } from './findings';
-import { isCheckerGraphDeclarationOwnerCandidate } from './ownership-candidates';
+import {
+  isCheckerGraphDeclarationOwnerCandidate,
+  isDeclarationInputFile,
+} from './ownership-candidates';
 import type { ConfigFileOwner, ConfigFileOwners } from './runner-types';
 
 interface OwnerEntry {
@@ -111,23 +115,70 @@ function collectOwnerEntries(options: {
   );
 }
 
+function collectGovernedOwnerEntries(options: {
+  generatedGraph: GeneratedTsconfigGraphResult;
+  sourceFiles: Set<string>;
+}): OwnerEntry[] {
+  return [...options.generatedGraph.governedSources.entries()].flatMap(
+    ([checkerName, governedSources]) =>
+      [...governedSources.values()].flatMap((unit) => {
+        const owner: ConfigFileOwner = {
+          checkerEntryPath:
+            options.generatedGraph.checkerEntries.get(checkerName) ??
+            unit.configPath,
+          checkerName,
+          checkerPreset: unit.primaryCheckerName,
+          configPath:
+            'dtsConfigPath' in unit.buildProjection
+              ? unit.buildProjection.dtsConfigPath
+              : unit.configPath,
+        };
+        return unit.ownedFileNames
+          .filter((filePath) => options.sourceFiles.has(filePath))
+          .filter((filePath) => !isDeclarationInputFile(filePath))
+          .map((filePath) => ({ filePath, owner }));
+      }),
+  );
+}
+
+function hasGovernedSources(
+  generatedGraph: GeneratedTsconfigGraphResult | undefined,
+): generatedGraph is GeneratedTsconfigGraphResult {
+  return (
+    generatedGraph !== undefined &&
+    generatedGraph.governedSources instanceof Map &&
+    [...generatedGraph.governedSources.values()].some(
+      (governedSources) => governedSources.size > 0,
+    )
+  );
+}
+
 export function collectConfigFileOwners(options: {
   config: ResolvedLiminaConfig;
   graphRoutes: CheckerGraphProjectRoute[];
+  generatedGraph?: GeneratedTsconfigGraphResult;
   projectConfigCache?: CheckerProjectConfigCache;
   sourceFiles: Set<string>;
   virtualFiles: ReadonlyMap<string, string>;
 }): ConfigFileOwners {
   const ownersByFile: ConfigFileOwners = new Map();
-
-  for (const entry of collectOwnerEntries(options)) {
+  for (const entry of resolveOwnerEntries(options)) {
     const owners = ownersByFile.get(entry.filePath) ?? [];
-
     owners.push(entry.owner);
     ownersByFile.set(entry.filePath, owners);
   }
-
   return ownersByFile;
+}
+
+function resolveOwnerEntries(
+  options: Parameters<typeof collectConfigFileOwners>[0],
+): OwnerEntry[] {
+  return hasGovernedSources(options.generatedGraph)
+    ? collectGovernedOwnerEntries({
+        generatedGraph: options.generatedGraph,
+        sourceFiles: options.sourceFiles,
+      })
+    : collectOwnerEntries(options);
 }
 
 function groupOwnersByPreset(

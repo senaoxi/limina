@@ -3,6 +3,7 @@ import {
   type ImportRecord,
   type ProjectInfo,
 } from '#core/import-graph/context';
+import { formatReferences } from '#core/tsconfig/actions';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
@@ -125,6 +126,65 @@ function getPackageName(packageInfo: WorkspacePackage | null): string | null {
   }
 
   return packageInfo.name ?? null;
+}
+
+export function addUnresolvedWorkspaceImportProblem(options: {
+  context: ExpectedReferenceCollectionContext;
+  importRecord: ImportRecord;
+  project: ProjectInfo;
+  targetPackage: WorkspacePackage | null;
+}): void {
+  const packageName = getPackageName(options.targetPackage);
+  if (!packageName) return;
+  const detailLines = [
+    'Unresolved workspace import:',
+    `  importing project: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+    `  file: ${formatImportRecordLocation(options.context.config.rootDir, options.importRecord)}`,
+    `  imported specifier: ${options.importRecord.specifier}`,
+    `  matched workspace package: ${packageName}`,
+    `  current references: ${formatReferences(options.context.config.rootDir, options.project.references)}`,
+  ];
+  options.context.findings.push({
+    checkerName: getProjectCheckerName(
+      options.context.projectCheckerNamesByPath,
+      options.project.configPath,
+    ),
+    code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+    evidence: [
+      {
+        label: 'import',
+        lines: [
+          `file: ${options.importRecord.filePath}`,
+          `line: ${options.importRecord.line}`,
+          `kind: ${options.importRecord.kind}`,
+        ],
+        value: options.importRecord.specifier,
+      },
+    ],
+    facts: {
+      import: createGraphImportFact(options.importRecord),
+      importingProjectPath: options.project.configPath,
+      kind: 'unresolved',
+      targetPackageName: packageName,
+    },
+    filePath: options.importRecord.filePath,
+    locations: [
+      {
+        filePath: options.importRecord.filePath,
+        label: 'import',
+        line: options.importRecord.line,
+      },
+      { filePath: options.project.configPath, label: 'importing project' },
+    ],
+    packageName,
+    presentation: {
+      detailLines,
+      reason:
+        'Graph check found architecture, dependency, resolver, or config violations.',
+      title: 'Unresolved workspace import',
+    },
+    task: 'graph:check',
+  } satisfies GraphWorkspaceImportUnresolvedFinding);
 }
 
 function hasWorkspaceExportTarget(options: {

@@ -88,8 +88,7 @@ Limina 选择把范围收窄。用户先在配置里声明哪些 `tsconfig` 是 
 export default defineConfig({
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
+      tsc: {
         include: ['packages/*/tsconfig.json'],
       },
     },

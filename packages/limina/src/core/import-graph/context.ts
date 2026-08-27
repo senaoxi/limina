@@ -20,6 +20,7 @@ export {
   resolveInternalImport,
   type CreateImportAnalysisContextOptions,
   type ImportAnalysisContext,
+  type ImportDomain,
   type ImportRecord,
   type ImportRecordKind,
 } from '#core/import-analysis/runner';

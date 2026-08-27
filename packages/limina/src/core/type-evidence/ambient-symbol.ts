@@ -8,18 +8,22 @@ type StringNamedModuleDeclaration = ts.ModuleDeclaration & {
 
 function isStringNamedModuleDeclaration(
   declaration: ts.Declaration,
+  tsModule: typeof ts,
 ): declaration is StringNamedModuleDeclaration {
-  if (!ts.isModuleDeclaration(declaration)) {
+  if (!tsModule.isModuleDeclaration(declaration)) {
     return false;
   }
 
-  return ts.isStringLiteral(declaration.name);
+  return tsModule.isStringLiteral(declaration.name);
 }
 
 function collectAmbientDeclarations(
   symbol: ts.Symbol,
+  tsModule: typeof ts,
 ): StringNamedModuleDeclaration[] {
-  return (symbol.declarations ?? []).filter(isStringNamedModuleDeclaration);
+  return (symbol.declarations ?? []).filter((declaration) =>
+    isStringNamedModuleDeclaration(declaration, tsModule),
+  );
 }
 
 function collectDeclarationFilePaths(
@@ -34,13 +38,16 @@ function collectDeclarationFilePaths(
   ].sort((left, right) => left.localeCompare(right));
 }
 
-export function createAmbientTypeEvidence(symbol: ts.Symbol): TypeEvidence {
-  const declarations = collectAmbientDeclarations(symbol);
+export function createAmbientTypeEvidence(
+  symbol: ts.Symbol,
+  tsModule: typeof ts = ts,
+): TypeEvidence {
+  const declarations = collectAmbientDeclarations(symbol, tsModule);
   const modulePatterns = [
     ...new Set(declarations.map((declaration) => declaration.name.text)),
   ];
 
-  if (modulePatterns.length !== 1 || declarations.length === 0) {
+  if (![modulePatterns.length === 1, declarations.length > 0].every(Boolean)) {
     return { kind: 'missing' };
   }
 

@@ -18,8 +18,8 @@ export default defineDetectorFixture({
           {
             label: 'diagnostic',
             lines: [
-              '    - .limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.alpha.dts.json',
-              '    - .limina/tsconfig/checkers/typescript/projects/packages/pkg/tsconfig.beta.dts.json',
+              '    - .limina/tsconfig/checkers/tsc/projects/packages/pkg/tsconfig.alpha.dts.json',
+              '    - .limina/tsconfig/checkers/tsc/projects/packages/pkg/tsconfig.beta.dts.json',
             ],
           },
         ],

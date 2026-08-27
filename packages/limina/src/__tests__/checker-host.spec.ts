@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { GeneratedDependencyEdge } from '../core/build-graph/runner';
 import { runBuildTargets } from '../typecheck/build/plan';
 import {
   disposeCheckerProcessHostForTesting,
@@ -50,6 +51,27 @@ async function waitForMacrotasks(durationMs: number): Promise<void> {
   await new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });
+}
+
+async function waitForFile(filePath: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (existsSync(filePath)) return;
+    await waitForMacrotasks(20);
+  }
+  throw new Error(`Timed out waiting for ${filePath}.`);
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !(
+      error instanceof Error &&
+      'code' in error &&
+      String(error.code) === 'ESRCH'
+    );
+  }
 }
 
 afterEach(() => {
@@ -160,6 +182,65 @@ describe('createDefaultRunner duration measurement', () => {
     expect(result.durationMs).toBeDefined();
   });
 
+  it('cancels an active checker child through the shared host', async () => {
+    const controller = new AbortController();
+    const runner = createDefaultRunner({ stdio: 'ignore' });
+    const startedAt = performance.now();
+    const resultPromise = Promise.resolve(
+      runner(createSleepTarget(5000, 'cancelled'), {
+        signal: controller.signal,
+      }),
+    );
+
+    await waitForMacrotasks(100);
+    controller.abort(new Error('cancel checker target'));
+    const result = await resultPromise;
+
+    expect(result.status).toBe(1);
+    expect(result.error?.message).toBe('cancel checker target');
+    expect(performance.now() - startedAt).toBeLessThan(3000);
+  });
+
+  it('waits for a stubborn checker process tree to exit before resolving cancellation', async () => {
+    const rootDir = await mkdtemp(
+      path.join(tmpdir(), 'limina-host-cancellation-'),
+    );
+    const pidPath = path.join(rootDir, 'checker.pid');
+
+    try {
+      const controller = new AbortController();
+      const runner = createDefaultRunner({ stdio: 'ignore' });
+      const target: TypecheckTarget = {
+        args: [
+          '-e',
+          [
+            `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+            "process.on('SIGTERM', () => undefined);",
+            'setInterval(() => undefined, 1000);',
+          ].join(''),
+        ],
+        command: process.execPath,
+        configPath: '/virtual/stubborn/tsconfig.json',
+        cwd: process.cwd(),
+        id: createCheckerTargetId(['test', 'stubborn']),
+      };
+      const resultPromise = Promise.resolve(
+        runner(target, { signal: controller.signal }),
+      );
+      await waitForFile(pidPath);
+      const pid = Number.parseInt(await readFile(pidPath, 'utf8'), 10);
+
+      controller.abort(new Error('cancel stubborn checker'));
+      const result = await resultPromise;
+
+      expect(result.error?.message).toBe('cancel stubborn checker');
+      expect(result.status).toBe(1);
+      expect(isProcessRunning(pid)).toBe(false);
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it('runs inline with a single degradation notice when LIMINA_CHECKER_HOST=off', async () => {
     process.env.LIMINA_CHECKER_HOST = 'off';
 
@@ -246,15 +327,31 @@ describe('runBuildTargets provider blocking', () => {
     };
   }
 
-  function edge(from: string, to: string) {
+  function edge(from: string, to: string): GeneratedDependencyEdge {
     return {
+      cacheReuse: 'non-reusable',
       file: `/virtual/${from}/src.ts`,
       fromChecker: from,
       fromConfigPath: `/virtual/${from}/source.json`,
       importedSpecifier: to,
+      kind: 'declaration-provider',
       resolvedFilePath: `/virtual/${to}/dist.d.ts`,
       toChecker: to,
       toConfigPath: `/virtual/${to}/source.json`,
+    };
+  }
+
+  function schedulingEdge(from: string, to: string): GeneratedDependencyEdge {
+    const declarationEdge = edge(from, to);
+    return {
+      file: declarationEdge.file,
+      fromChecker: declarationEdge.fromChecker,
+      fromConfigPath: declarationEdge.fromConfigPath,
+      importedSpecifier: declarationEdge.importedSpecifier,
+      kind: 'framework-schedule',
+      resolvedFilePath: declarationEdge.resolvedFilePath,
+      toChecker: declarationEdge.toChecker,
+      toConfigPath: declarationEdge.toConfigPath,
     };
   }
 
@@ -312,7 +409,7 @@ describe('runBuildTargets provider blocking', () => {
     const calls: string[] = [];
     const results = await runBuildTargets(
       [first, second],
-      [edge('first', 'second'), edge('second', 'first')],
+      [schedulingEdge('first', 'second'), schedulingEdge('second', 'first')],
       async (target) => {
         calls.push(target.id);
         return {
@@ -338,7 +435,7 @@ describe('runBuildTargets provider blocking', () => {
 
     await runBuildTargets(
       [first, second],
-      [edge('first', 'second'), edge('second', 'first')],
+      [schedulingEdge('first', 'second'), schedulingEdge('second', 'first')],
       async (target) => {
         calls.push(target.id);
         return {
@@ -359,8 +456,8 @@ describe('runBuildTargets provider blocking', () => {
     const results = await runBuildTargets(
       [first, second, consumer],
       [
-        edge('first', 'second'),
-        edge('second', 'first'),
+        schedulingEdge('first', 'second'),
+        schedulingEdge('second', 'first'),
         edge('consumer', 'first'),
       ],
       async (target) => ({
@@ -383,8 +480,8 @@ describe('runBuildTargets provider blocking', () => {
     const results = await runBuildTargets(
       [first, second, consumer],
       [
-        edge('first', 'second'),
-        edge('second', 'first'),
+        schedulingEdge('first', 'second'),
+        schedulingEdge('second', 'first'),
         edge('consumer', 'first'),
       ],
       async (target) => ({

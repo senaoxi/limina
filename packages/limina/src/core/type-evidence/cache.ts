@@ -46,6 +46,7 @@ export interface TypeEvidenceProviderIdentity {
   configPath: string;
   generation: number;
   preset: string;
+  projectIdentity?: string;
   versionTuple?: readonly string[];
 }
 
@@ -89,6 +90,7 @@ export function createTypeEvidenceProviderCacheKey(
     configPath: normalizeAbsolutePathIdentity(identity.configPath),
     generation: identity.generation,
     preset: identity.preset,
+    projectIdentity: identity.projectIdentity,
     versionTuple: identity.versionTuple ?? [],
   });
 }

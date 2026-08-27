@@ -1,4 +1,6 @@
+import type { VueProjectSemanticIdentity } from '#checkers';
 import type { ImportResolutionEvidence } from '../import-analysis/evidence';
+import type { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   createImportTypeEvidenceCacheKey,
   createTypeEvidenceProviderCacheKey,
@@ -23,7 +25,10 @@ interface ProviderResolutionContext {
 }
 
 interface VueProviderResolutionContext extends ProviderResolutionContext {
-  getCapability(configPath: string): VueTypeEvidenceCapability;
+  contexts: VueSemanticContextManager;
+  getCapability(
+    identity: VueProjectSemanticIdentity | undefined,
+  ): VueTypeEvidenceCapability;
 }
 
 type SupportedVueTypeEvidenceCapability = Extract<
@@ -42,6 +47,7 @@ function assertSupportedVueCapability(
 function createProviderKey(options: {
   generation: number;
   input: ProviderEvidenceInput;
+  projectIdentity?: string;
   versionTuple?: readonly string[];
 }): string {
   return createTypeEvidenceProviderCacheKey({
@@ -49,6 +55,7 @@ function createProviderKey(options: {
     configPath: options.input.options.project.configPath,
     generation: options.generation,
     preset: options.input.preset,
+    projectIdentity: options.projectIdentity,
     versionTuple: options.versionTuple ?? [],
   });
 }
@@ -82,6 +89,13 @@ function cacheEvidence(options: {
 }): ImportResolutionEvidence {
   options.cache.setImportEvidence(options.queryKey, options.type);
   return { ...options.input.runtimeEvidence, type: options.type };
+}
+
+function getProjectIdentity(
+  identity: VueProjectSemanticIdentity | undefined,
+): string | undefined {
+  if (identity === undefined) return undefined;
+  return identity.id;
 }
 
 export function resolveTypeScriptProviderEvidence(options: {
@@ -134,10 +148,15 @@ export function resolveVueProviderEvidence(options: {
   input: ProviderEvidenceInput;
 }): ImportResolutionEvidence {
   const configPath = options.input.options.project.configPath;
-  const capability = options.context.getCapability(configPath);
+  const capability = options.context.getCapability(
+    options.input.options.project.vueSemanticIdentity,
+  );
   const providerKey = createProviderKey({
     generation: options.context.generation,
     input: options.input,
+    projectIdentity: getProjectIdentity(
+      options.input.options.project.vueSemanticIdentity,
+    ),
     versionTuple: createVueVersionTuple(capability),
   });
   const queryKey = createQueryKey(options.input, providerKey);
@@ -175,8 +194,7 @@ export function resolveVueProviderEvidence(options: {
         cache: options.context.cache,
         capability,
         checkerName: options.input.options.checkerName,
-        programKey: providerKey,
-        project: options.input.options.project,
+        contexts: options.context.contexts,
       }),
     options.input.preset,
   );

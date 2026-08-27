@@ -2,15 +2,17 @@ import { parseCheckerProjectConfigForContext } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   collectReferencePathInfosForConfig,
+  isLiminaSolutionConfig,
   isOrdinarySourceTypecheckConfigPath,
+  isTypeScriptSolutionConfig,
+  isUnsupportedNamedSolutionConfig,
   readJsonConfig,
 } from '#core/tsconfig/actions';
-import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { compareCodeUnits } from '#utils/collections';
+import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { isSolutionStyleTsconfig } from '../../core/build-graph/generated/config-readers';
 import { capabilityDiscoveryExtensions } from '../../core/build-graph/generated/file-extensions';
-import { getWorkspaceRegionBoundaryExclusionReason } from '../../core/workspace/regions';
 import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
@@ -19,15 +21,15 @@ import {
   collectMigrationEntries,
   createNoMigrationEntryError,
 } from './entries';
+import {
+  createBoundaryError,
+  createUnsupportedNamedSolutionError,
+} from './errors';
 import type {
   MigrationEntry,
   MigrationTarget,
   MigrationTargetCollection,
 } from './types';
-
-function formatConfigPath(config: ResolvedLiminaConfig, configPath: string) {
-  return toRelativePath(config.rootDir, configPath);
-}
 
 async function readMigrationTarget(options: {
   config: ResolvedLiminaConfig;
@@ -62,58 +64,28 @@ async function readMigrationTarget(options: {
       fileNames: parsed.fileNames,
       options: parsed.options,
     },
-    isSolutionStyle: isSolutionStyleTsconfig(configPath, configObject),
+    isLiminaSolution: isLiminaSolutionConfig({
+      configObject,
+      configPath,
+      fileNames: parsed.fileNames,
+    }),
+    isTypeScriptSolution: isTypeScriptSolutionConfig({
+      configObject,
+      configPath,
+      fileNames: parsed.fileNames,
+    }),
     originalBytes,
     originalContent,
   };
 }
 
-function createBoundaryDetails(options: {
-  config: ResolvedLiminaConfig;
-  pathIndex: WorkspaceRegionPathIndex;
-  referencePath: string;
-}): string[] {
-  const boundary = options.pathIndex.findBoundaryForPath(options.referencePath);
-  if (boundary === null) {
-    return [
-      '  reason: the referenced config is not owned by any current-run activated workspace package.',
-    ];
-  }
-  const details = [
-    `  boundary kind: ${boundary.kind}`,
-    `  boundary root: ${formatConfigPath(options.config, boundary.rootDir)}`,
-  ];
-  const reason = getWorkspaceRegionBoundaryExclusionReason(boundary);
-  if (reason !== null) {
-    details.push(`  boundary exclusion reason: ${reason}`);
-  }
-  details.push(
-    '  reason: the referenced config is outside the current activated workspace package region.',
-  );
-  return details;
-}
-
-function createBoundaryError(options: {
-  config: ResolvedLiminaConfig;
-  pathIndex: WorkspaceRegionPathIndex;
-  referencePath: string;
-  sourceConfigPath: string;
-}): Error {
-  const details = createBoundaryDetails(options);
-  return new Error(
-    [
-      'Referenced checker source config is outside activated workspace package regions:',
-      `  from config: ${formatConfigPath(options.config, options.sourceConfigPath)}`,
-      `  referenced config: ${formatConfigPath(options.config, options.referencePath)}`,
-      ...details,
-    ].join('\n'),
-  );
-}
-
-function isEligibleReferencePath(referencePath: string): boolean {
+function isEligibleReferencePath(
+  referencePath: string,
+  rootDir: string,
+): boolean {
   return (
     existsSync(referencePath) &&
-    isOrdinarySourceTypecheckConfigPath(referencePath)
+    isOrdinarySourceTypecheckConfigPath(referencePath, rootDir)
   );
 }
 
@@ -123,7 +95,7 @@ function validateReferencePath(options: {
   referencePath: string;
   sourceConfigPath: string;
 }): string | null {
-  if (!isEligibleReferencePath(options.referencePath)) {
+  if (!isEligibleReferencePath(options.referencePath, options.config.rootDir)) {
     return null;
   }
   if (!options.pathIndex.isSourceConfigPath(options.referencePath)) {
@@ -164,6 +136,7 @@ interface TargetCollectionState {
   queued: MigrationEntry[];
   queuedConfigPaths: Set<string>;
   recursiveReferencePaths: Set<string>;
+  unsupportedNamedSolutionPaths: Set<string>;
   targetsByPath: Map<string, MigrationTarget>;
 }
 
@@ -177,6 +150,7 @@ function createTargetCollectionState(
     queued: [...entries],
     queuedConfigPaths: new Set(entries.map((entry) => entry.configPath)),
     recursiveReferencePaths: new Set(),
+    unsupportedNamedSolutionPaths: new Set(),
     targetsByPath: new Map(),
   };
 }
@@ -218,7 +192,7 @@ function shouldExpandSolution(options: {
   target: MigrationTarget;
 }): boolean {
   return (
-    options.target.isSolutionStyle &&
+    options.target.isTypeScriptSolution &&
     !options.state.expandedSolutions.has(options.entry.configPath)
   );
 }
@@ -245,6 +219,49 @@ async function expandSolutionTarget(options: {
   }
 }
 
+function recordUnsupportedNamedSolution(
+  rootDir: string,
+  state: TargetCollectionState,
+  target: MigrationTarget,
+): void {
+  if (
+    isUnsupportedNamedSolutionConfig({
+      configObject: target.configObject,
+      configPath: target.configPath,
+      fileNames: target.effectiveConfig.fileNames,
+      rootDir,
+    })
+  ) {
+    state.unsupportedNamedSolutionPaths.add(target.configPath);
+  }
+}
+
+async function collectTargetClosure(options: {
+  config: ResolvedLiminaConfig;
+  pathIndex: WorkspaceRegionPathIndex;
+  state: TargetCollectionState;
+}): Promise<void> {
+  for (const entry of options.state.queued) {
+    const target = await ensureTarget({
+      config: options.config,
+      configPath: entry.configPath,
+      state: options.state,
+    });
+    recordUnsupportedNamedSolution(
+      options.config.rootDir,
+      options.state,
+      target,
+    );
+    await expandSolutionTarget({
+      config: options.config,
+      entry,
+      pathIndex: options.pathIndex,
+      state: options.state,
+      target,
+    });
+  }
+}
+
 export async function collectMigrationTargets(
   config: ResolvedLiminaConfig,
   context: ValidatedWorkspaceContext,
@@ -258,21 +275,19 @@ export async function collectMigrationTargets(
   }
   const pathIndex = new WorkspaceRegionPathIndex(context);
   const state = createTargetCollectionState(entryCollection.entries);
-
-  for (const entry of state.queued) {
-    const target = await ensureTarget({
+  await collectTargetClosure({ config, pathIndex, state });
+  if (state.unsupportedNamedSolutionPaths.size > 0) {
+    throw createUnsupportedNamedSolutionError(
       config,
-      configPath: entry.configPath,
-      state,
-    });
-    await expandSolutionTarget({ config, entry, pathIndex, state, target });
+      state.unsupportedNamedSolutionPaths,
+    );
   }
 
   return {
     checkerEntryCount: state.entryConfigPaths.size,
     recursiveReferenceCount: state.recursiveReferencePaths.size,
     targets: [...state.targetsByPath.values()].sort((left, right) =>
-      left.configPath.localeCompare(right.configPath),
+      compareCodeUnits(left.configPath, right.configPath),
     ),
   };
 }

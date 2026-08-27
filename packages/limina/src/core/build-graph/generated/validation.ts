@@ -1,5 +1,9 @@
+import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedCheckerConfig } from '#config/runner';
-import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
+import {
+  compareCodeUnits,
+  uniqueCodeUnitSortedStrings as uniqueSortedStrings,
+} from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 
 interface CheckerSourceConfigCollectionLike {
@@ -8,8 +12,7 @@ interface CheckerSourceConfigCollectionLike {
 }
 
 interface CheckerOwnership {
-  checkerNames: string[];
-  preset: string;
+  owners: { checkerName: string; preset: string }[];
   sourceConfigPath: string;
 }
 
@@ -18,7 +21,7 @@ function getOrCreateOwnership(
   checker: ResolvedCheckerConfig,
   sourceConfigPath: string,
 ): CheckerOwnership {
-  const key = JSON.stringify([checker.preset, sourceConfigPath]);
+  const key = sourceConfigPath;
   const existing = ownershipByKey.get(key);
 
   if (existing) {
@@ -26,8 +29,7 @@ function getOrCreateOwnership(
   }
 
   const created = {
-    checkerNames: [],
-    preset: checker.preset,
+    owners: [],
     sourceConfigPath,
   };
   ownershipByKey.set(key, created);
@@ -39,31 +41,47 @@ function collectCheckerOwnership(options: {
   collection: CheckerSourceConfigCollectionLike | undefined;
   ownershipByKey: Map<string, CheckerOwnership>;
 }): void {
-  if (!options.collection) {
-    return;
-  }
+  const collection = getPrimaryCheckerCollection(options);
+  if (!collection) return;
 
-  for (const sourceConfigPath of options.collection.buildModulesBySourcePath.keys()) {
+  for (const sourceConfigPath of collection.buildModulesBySourcePath.keys()) {
     getOrCreateOwnership(
       options.ownershipByKey,
       options.checker,
       sourceConfigPath,
-    ).checkerNames.push(options.checker.name);
+    ).owners.push({
+      checkerName: options.checker.name,
+      preset: options.checker.name,
+    });
   }
 }
 
+function getPrimaryCheckerCollection(options: {
+  checker: ResolvedCheckerConfig;
+  collection: CheckerSourceConfigCollectionLike | undefined;
+}): CheckerSourceConfigCollectionLike | undefined {
+  return isBuildCapablePreset(options.checker.name)
+    ? options.collection
+    : undefined;
+}
+
 function formatDuplicateOwnershipProblem(options: {
-  checkerNames: readonly string[];
   ownership: CheckerOwnership;
   rootDir: string;
 }): string {
+  const owners = [...options.ownership.owners]
+    .sort((left, right) =>
+      left.checkerName === right.checkerName
+        ? compareCodeUnits(left.preset, right.preset)
+        : compareCodeUnits(left.checkerName, right.checkerName),
+    )
+    .map((owner) => `${owner.checkerName} (${owner.preset})`);
   return [
     'Duplicate Limina checker ownership:',
-    `  preset: ${options.ownership.preset}`,
     `  source config: ${toRelativePath(options.rootDir, options.ownership.sourceConfigPath)}`,
-    `  checkers: ${options.checkerNames.join(', ')}`,
-    '  reason: checkers with the same preset must not govern the same source tsconfig after solution references are expanded.',
-    '  fix: narrow config.checkers.<checker>.include or config.checkers.<checker>.exclude so only one checker owns this tsconfig for the preset.',
+    `  primary owners: ${owners.join(', ')}`,
+    '  reason: each source tsconfig must have exactly one checker owner after solution references are expanded.',
+    '  fix: narrow config.checkers.<checker>.include or config.checkers.<checker>.exclude so only one checker owns this tsconfig.',
   ].join('\n');
 }
 
@@ -72,12 +90,13 @@ function addDuplicateOwnershipProblem(options: {
   problems: string[];
   rootDir: string;
 }): void {
-  const checkerNames = uniqueSortedStrings(options.ownership.checkerNames);
+  const checkerNames = uniqueSortedStrings(
+    options.ownership.owners.map((owner) => owner.checkerName),
+  );
 
   if (checkerNames.length > 1) {
     options.problems.push(
       formatDuplicateOwnershipProblem({
-        checkerNames,
         ownership: options.ownership,
         rootDir: options.rootDir,
       }),
@@ -184,8 +203,3 @@ export function addOverlappingCheckerEntryProblems(options: {
     });
   }
 }
-
-export {
-  addUnsupportedSourceConfigExtensionProblems,
-  type SourceProjectLike,
-} from './source-extension-validation';

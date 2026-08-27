@@ -1,9 +1,12 @@
+import type { VueProjectSemanticIdentity } from '#checkers';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
+import { formatFrameworkSemanticFailure } from '../framework-semantic/contracts';
 import type {
   ImportResolutionEvidence,
   ImportRuntimeResolutionEvidence,
 } from '../import-analysis/evidence';
+import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   TypeEvidenceGenerationCache,
   type TypeEvidenceMetricsRecorder,
@@ -60,6 +63,13 @@ function addAffectedConfig(
   }
 }
 
+function getVueCapabilityKey(
+  identity: VueProjectSemanticIdentity | undefined,
+): string {
+  if (identity === undefined) return '<missing>';
+  return identity.id;
+}
+
 export class TypeEvidenceCore {
   readonly cache: TypeEvidenceGenerationCache;
   readonly #affectedSourceConfigs: Set<string> | undefined;
@@ -69,6 +79,8 @@ export class TypeEvidenceCore {
   readonly #metrics: TypeEvidenceMetricsRecorder | undefined;
   readonly #providerKeysByConfigIdentity = new Map<string, Set<string>>();
   readonly #vueCapabilities = new Map<string, VueTypeEvidenceCapability>();
+  readonly #vueSemanticContexts: VueSemanticContextManager;
+  readonly #ownsVueSemanticContexts: boolean;
 
   constructor(options: TypeEvidenceCoreOptions) {
     this.cache = new TypeEvidenceGenerationCache(options.metrics);
@@ -77,6 +89,10 @@ export class TypeEvidenceCore {
     this.#generation = options.generation;
     this.#importAnalysis = options.importAnalysis;
     this.#metrics = options.metrics;
+    this.#ownsVueSemanticContexts = options.vueSemanticContexts === undefined;
+    this.#vueSemanticContexts =
+      options.vueSemanticContexts ??
+      new VueSemanticContextManager(options.metrics);
   }
 
   classifyImportRuntime(
@@ -99,6 +115,16 @@ export class TypeEvidenceCore {
       request: options,
     });
     this.#recordResourceImport(configIdentity, pair.runtimeEvidence);
+
+    if (pair.semanticFailure !== undefined) {
+      return {
+        ...pair.runtimeEvidence,
+        type: createUnsupportedCheckerEvidence({
+          checkerName: options.checkerName,
+          reason: formatFrameworkSemanticFailure(pair.semanticFailure),
+        }),
+      };
+    }
 
     const concreteTypeEvidence = resolveConcreteTypeEvidence({
       request: options,
@@ -175,19 +201,24 @@ export class TypeEvidenceCore {
   #createVueProviderContext() {
     return {
       ...this.#createProviderContext(),
-      getCapability: (configPath: string) => this.#getVueCapability(configPath),
+      contexts: this.#vueSemanticContexts,
+      getCapability: (identity: VueProjectSemanticIdentity | undefined) =>
+        this.#getVueCapability(identity),
     };
   }
 
-  #getVueCapability(configPath: string): VueTypeEvidenceCapability {
-    const cached = this.#vueCapabilities.get(configPath);
+  #getVueCapability(
+    identity: VueProjectSemanticIdentity | undefined,
+  ): VueTypeEvidenceCapability {
+    const key = getVueCapabilityKey(identity);
+    const cached = this.#vueCapabilities.get(key);
 
     if (cached !== undefined) {
       return cached;
     }
 
-    const capability = resolveVueTypeEvidenceCapability(configPath);
-    this.#vueCapabilities.set(configPath, capability);
+    const capability = resolveVueTypeEvidenceCapability(identity);
+    this.#vueCapabilities.set(key, capability);
     return capability;
   }
 
@@ -202,6 +233,9 @@ export class TypeEvidenceCore {
     this.#completedConfigIdentities.clear();
     this.#providerKeysByConfigIdentity.clear();
     this.#vueCapabilities.clear();
+    if (this.#ownsVueSemanticContexts) {
+      this.#vueSemanticContexts.dispose();
+    }
   }
 
   completeProject(configPath: string): void {

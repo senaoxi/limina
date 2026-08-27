@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createManifest } from '../core/build-graph/manifest';
 import type {
   GeneratedBuildModule,
-  GeneratedProviderEdge,
+  GeneratedDependencyEdge,
   GeneratedTsconfigGraphManifest,
 } from '../core/build-graph/runner';
 import { findTargetProject } from '../core/import-graph/project-lookup';
@@ -34,8 +34,7 @@ function createChecker(): ResolvedCheckerConfig {
     exclude: [],
     extensions: ['.ts'],
     include: ['packages/*/tsconfig.json'],
-    name: 'typescript',
-    preset: 'tsc',
+    name: 'tsc',
   };
 }
 
@@ -61,15 +60,16 @@ function createTestManifest(
   const checker = createChecker();
   const vueChecker: ResolvedCheckerConfig = {
     ...checker,
-    name: 'vue',
-    preset: 'vue-tsc',
+    name: 'vue-tsc',
   };
   const modules = createBuildModules(rootDir, values);
-  const providerEdges: GeneratedProviderEdge[] = values.map((value) => ({
+  const dependencyEdges: GeneratedDependencyEdge[] = values.map((value) => ({
+    cacheReuse: 'reusable',
     file: `${rootDir}/packages/${value}/src/index.ts`,
     fromChecker: value,
     fromConfigPath: `${rootDir}/packages/${value}/tsconfig.json`,
     importedSpecifier: value,
+    kind: 'declaration-provider',
     resolvedFilePath: `${rootDir}/packages/${value}/src/value.ts`,
     toChecker: value,
     toConfigPath: `${rootDir}/packages/${value}/tsconfig.lib.json`,
@@ -102,9 +102,10 @@ function createTestManifest(
         name: scriptValue,
       })),
     })),
+    governedSourcesByChecker: new Map(),
     ownedArtifacts: values.map((value) => `${value}.json`),
     projectsByChecker: new Map(),
-    providerEdges,
+    dependencyEdges,
     rootDir,
     sourceToBuildByChecker: new Map([[checker.name, modules]]),
   });
@@ -343,12 +344,12 @@ describe('canonical code-unit ordering', () => {
       expect(JSON.stringify({ edges: sortedEdges, nodes })).toBe(
         JSON.stringify({ edges: reversedEdges, nodes: reversedNodes }),
       );
-      expect(Object.keys(manifest.checkers.typescript!.sourceToBuild)).toEqual([
+      expect(Object.keys(manifest.checkers.tsc!.sourceToBuild)).toEqual([
         'packages/a/tsconfig.json',
         'packages/z/tsconfig.json',
         'packages/ä/tsconfig.json',
       ]);
-      expect(Object.keys(manifest.checkers)).toEqual(['typescript', 'vue']);
+      expect(Object.keys(manifest.checkers)).toEqual(['tsc', 'vue-tsc']);
       expect(manifest.ownedArtifacts).toEqual(['a.json', 'z.json', 'ä.json']);
       expect(manifest.knip.packages.map((entry) => entry.packageName)).toEqual([
         'a',
@@ -366,7 +367,7 @@ describe('canonical code-unit ordering', () => {
       expect(
         manifest.knip.diagnostics.map((entry) => entry.packageName),
       ).toEqual(['a', 'z', 'ä']);
-      expect(manifest.providerEdges.map((edge) => edge.fromChecker)).toEqual([
+      expect(manifest.dependencyEdges.map((edge) => edge.fromChecker)).toEqual([
         'a',
         'z',
         'ä',

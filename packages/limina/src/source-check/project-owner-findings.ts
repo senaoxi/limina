@@ -20,7 +20,7 @@ interface ProjectOwnerOptions {
   configPath: string;
   fileNames: string[];
   findings: SourceFinding[];
-  role: 'declaration leaf' | 'typecheck companion';
+  role: 'declaration leaf' | 'governed source' | 'typecheck companion';
   workspaceLookup: WorkspaceLookupIndex;
 }
 

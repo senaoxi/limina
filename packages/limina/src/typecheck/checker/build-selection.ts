@@ -30,7 +30,7 @@ function getBuildCapableTargets(
   targets: readonly ManagedDeclarationBuildTarget[],
 ): ManagedDeclarationBuildTarget[] {
   return targets.filter(({ checker }) => {
-    const adapter = getCheckerAdapter(checker.preset);
+    const adapter = getCheckerAdapter(checker.name);
     return adapter?.execution === 'build';
   });
 }
@@ -41,7 +41,7 @@ function filterSelectedChecker(options: {
 }): ManagedDeclarationBuildTarget[] {
   if (options.checker === undefined) return [...options.targets];
   return options.targets.filter(
-    ({ checker }) => checker.preset === options.checker,
+    ({ checker }) => checker.name === options.checker,
   );
 }
 
@@ -115,7 +115,7 @@ export function selectManagedCheckerBuildTargets(options: {
     kind: 'problem',
     problem: createSelectionProblem({
       availableCheckers: uniqueSortedStrings(
-        buildCapable.map(({ checker }) => checker.preset),
+        buildCapable.map(({ checker }) => checker.name),
       ),
       checker: options.checker,
       managedTargets,

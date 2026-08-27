@@ -53,7 +53,6 @@ import type {
   MaterializationReceipt,
   PackageEntryPlanOptions,
 } from './types';
-
 export class LiminaPreflightManager {
   artifactNamespace: LiminaArtifactNamespace;
   readonly config: ResolvedLiminaConfig;
@@ -90,7 +89,6 @@ export class LiminaPreflightManager {
   get profilingMetrics(): AnalysisMetricsRecorder | undefined {
     return this.#profilingMetrics;
   }
-
   dispose(): void {
     if (this.#disposed) {
       return;
@@ -191,10 +189,16 @@ export class LiminaPreflightManager {
     return this.#cache.workspaceRegionBoundaries;
   }
   async ensureSourceGraphProjectExtensions(): Promise<CollectSourceGraphProjectExtensionsResult> {
-    this.#cache.sourceGraphProjectExtensions ??=
-      this.#ensureCheckerRouteSnapshot().then((snapshot) =>
-        projectSourceGraphProjectExtensions(this.config, snapshot),
-      );
+    this.#cache.sourceGraphProjectExtensions ??= Promise.all([
+      this.#ensureCheckerRouteSnapshot(),
+      this.ensureGeneratedGraph(),
+    ]).then(([snapshot, generatedGraph]) =>
+      projectSourceGraphProjectExtensions(
+        this.config,
+        snapshot,
+        generatedGraph,
+      ),
+    );
     return this.#cache.sourceGraphProjectExtensions;
   }
   async ensureGraphProjectRoutes(): Promise<CollectCheckerGraphProjectRoutesResult> {
@@ -210,7 +214,6 @@ export class LiminaPreflightManager {
       );
     return this.#cache.checkerEntryProjectRoutes;
   }
-
   ensureExpectedSourceFiles(): Promise<Set<string>> {
     this.#cache.expectedSourceFiles ??= Promise.all([
       this.ensureGeneratedGraph(),
@@ -220,7 +223,6 @@ export class LiminaPreflightManager {
     );
     return this.#cache.expectedSourceFiles;
   }
-
   async ensurePackageEntrySelectionPlan(
     options: PackageEntryPlanOptions,
   ): Promise<PackageEntrySelectionPlan> {
@@ -234,11 +236,9 @@ export class LiminaPreflightManager {
       workspaceContext: context,
     });
   }
-
   get importAnalysis(): ImportAnalysisContext {
     return this.providers.imports.context;
   }
-
   #ensureCheckerRouteSnapshot(): Promise<CheckerRouteSnapshotCollection> {
     this.#cache.checkerRouteSnapshot ??= this.ensureGeneratedGraph().then(
       (graph) =>
@@ -258,7 +258,6 @@ export class LiminaPreflightManager {
   #refreshProviderGenerationForMaterialization(): void {
     this.#replaceProviderGeneration(false, this.#cache.materializationSlot);
   }
-
   #replaceProviderGeneration(
     advance: boolean,
     slot?: PreflightGenerationCache['materializationSlot'],

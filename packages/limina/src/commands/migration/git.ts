@@ -10,6 +10,11 @@ interface GitCommandResult {
   stdout: string;
 }
 
+export interface DirtyGitWorkspace {
+  rootDir: string;
+  statusLines: string[];
+}
+
 function appendNonEmptyDetail(
   lines: string[],
   label: string,
@@ -89,20 +94,45 @@ function getStatusLines(output: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function createDirtyWorkspaceError(statusLines: readonly string[]): Error {
-  const overflow = statusLines.length - 20;
+function formatDirtyWorkspaceStatus(
+  workspaces: readonly DirtyGitWorkspace[],
+): string[] {
+  return workspaces.flatMap((workspace) => {
+    const overflow = workspace.statusLines.length - 10;
+    return [
+      `  root: ${workspace.rootDir}`,
+      ...workspace.statusLines.slice(0, 10).map((line) => `    ${line}`),
+      ...(overflow > 0 ? [`    ... and ${overflow} more`] : []),
+    ];
+  });
+}
+
+export function createDirtyWorkspacePrompt(
+  workspaces: readonly DirtyGitWorkspace[],
+): string {
+  return [
+    'Git working tree changes were found. Continue and write the planned tsconfig*.json changes?',
+    'git status:',
+    ...formatDirtyWorkspaceStatus(workspaces),
+  ].join('\n');
+}
+
+export function createDirtyWorkspaceDeclinedError(
+  workspaces: readonly DirtyGitWorkspace[],
+): Error {
   return new Error(
     [
-      'limina migration requires a clean git working tree before editing tsconfig files.',
-      'Commit, stash, or discard these changes, then rerun npx limina migration.',
+      'limina migration stopped without writing tsconfig files because continuing with Git working tree changes was not approved.',
+      'Keep every involved Git working tree clean by committing, stashing, or removing changes, then rerun npx limina migration.',
       'git status:',
-      ...statusLines.slice(0, 20).map((line) => `  ${line}`),
-      ...(overflow > 0 ? [`  ... and ${overflow} more`] : []),
+      ...formatDirtyWorkspaceStatus(workspaces),
     ].join('\n'),
   );
 }
 
-export async function assertCleanGitWorkspace(rootDir: string): Promise<void> {
+export async function inspectGitWorkspace(
+  rootDir: string,
+): Promise<DirtyGitWorkspace | undefined> {
   let result: GitCommandResult;
 
   try {
@@ -124,7 +154,5 @@ export async function assertCleanGitWorkspace(rootDir: string): Promise<void> {
   }
 
   const statusLines = getStatusLines(result.stdout);
-  if (statusLines.length > 0) {
-    throw createDirtyWorkspaceError(statusLines);
-  }
+  return statusLines.length === 0 ? undefined : { rootDir, statusLines };
 }

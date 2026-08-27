@@ -24,45 +24,41 @@ export type PipelineStep =
       type: 'task';
     };
 
-export type BuiltinCheckerPreset =
-  | 'svelte-check'
-  | 'tsc'
-  | 'tsgo'
-  | 'vue-tsc'
-  | 'vue-tsgo';
+export type BuildCheckerName = 'tsc' | 'tsgo' | 'vue-tsc';
+export type FrameworkCheckerName = 'svelte-check' | 'astro';
+export type CheckerName = BuildCheckerName | FrameworkCheckerName;
 
-export type CheckerPreset = BuiltinCheckerPreset;
-export type BuildCheckerPreset = Extract<
-  BuiltinCheckerPreset,
-  'tsc' | 'tsgo' | 'vue-tsc'
->;
+/** Internal parser/CLI compatibility aliases. Config does not expose presets. */
+export type BuiltinCheckerPreset = CheckerName;
+export type CheckerPreset = CheckerName;
+export type BuildCheckerPreset = BuildCheckerName;
 export type CheckerExecutionKind = 'build' | 'typecheck';
 
-export interface CheckerConfig {
+export interface CheckerScope {
   exclude?: string[];
   include: string[];
-  preset: CheckerPreset;
 }
+
+export type CheckerConfig = CheckerScope;
 
 export interface AutoCheckerConfig {
   exclude?: string[];
-  mode: 'auto';
+  useTsgo?: boolean;
 }
 
-export type CheckerConfigMode =
-  | AutoCheckerConfig
-  | Record<string, CheckerConfig>;
+export type NamedCheckerConfig = Partial<Record<CheckerName, CheckerScope>>;
 
-export type VueImportParser = 'compiler-sfc' | 'heuristic';
-
-export interface ImportAnalysisConfig {
-  vue?: VueImportParser;
-}
+/**
+ * Unified checker configuration. Named checker scopes establish explicit
+ * ownership; `auto` discovers and classifies the remaining active roots.
+ */
+export type CheckerConfigMode = NamedCheckerConfig & {
+  auto?: AutoCheckerConfig;
+};
 
 export interface ResolvedCheckerConfig {
   exclude: string[];
   extensions: string[];
   include: string[];
-  name: string;
-  preset: CheckerPreset;
+  name: CheckerName;
 }

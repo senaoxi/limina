@@ -1,10 +1,14 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
-import { collectImportsFromFile } from '#core/import-graph/context';
 import {
   findPackageForSpecifier,
   type WorkspacePackage,
 } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
+import {
+  collectProjectDependencies,
+  createParsedProjectSemanticContext,
+  type ProjectDependency,
+} from '../core/project-dependencies/runner';
 import type { DependencyGraphCollectionContext } from './collection-types';
 import {
   classifyEdge,
@@ -30,6 +34,7 @@ interface ImportProcessingOptions {
   fileName: string;
   importerPackage: WorkspacePackage;
   importRecord: ImportRecord;
+  projectDependency: ProjectDependency;
   project: ProjectInfo;
 }
 
@@ -40,7 +45,9 @@ function resolveExternalCandidate(
     options.importRecord.specifier,
     options.context.workspacePackages,
   );
-  const paths = resolveImportPaths({ ...options, declaredTargetPackage });
+  const paths = resolveImportPaths({
+    projectDependency: options.projectDependency,
+  });
 
   if (paths === null) {
     return null;
@@ -146,36 +153,98 @@ function processImportRecord(options: ImportProcessingOptions): void {
   }
 }
 
-function collectFileEdges(options: {
-  context: DependencyGraphCollectionContext;
-  fileName: string;
-  project: ProjectInfo;
-}): void {
-  const importerPackage = options.context.workspaceLookup.findPackageForFile(
-    options.fileName,
-  );
-
-  if (importerPackage === null) {
-    return;
-  }
-
-  const imports = collectImportsFromFile(
-    options.fileName,
-    options.context.config.rootDir,
-    options.context.importAnalysis,
-  );
-
-  for (const importRecord of imports) {
-    processImportRecord({ ...options, importerPackage, importRecord });
-  }
-}
-
 function collectProjectEdges(
   context: DependencyGraphCollectionContext,
   project: ProjectInfo,
 ): void {
-  for (const fileName of project.ownedFileNames) {
-    collectFileEdges({ context, fileName, project });
+  const authority = getDependencyGraphAuthority(context, project);
+  if (authority === null) {
+    return;
+  }
+  const collection = collectDependencyGraphProject({
+    authority,
+    context,
+    project,
+  });
+  collectDependencyGraphFailures(context, collection.failures);
+  collectDependencyGraphDependencies({ collection, context, project });
+}
+
+function getDependencyGraphAuthority(
+  context: DependencyGraphCollectionContext,
+  project: ProjectInfo,
+) {
+  const authority = project.semanticAuthority;
+  if (authority === undefined) {
+    context.problems.push(
+      `Missing frozen semantic authority for dependency graph project ${project.configPath}.`,
+    );
+    return null;
+  }
+  return authority;
+}
+
+function collectDependencyGraphProject(options: {
+  authority: NonNullable<ProjectInfo['semanticAuthority']>;
+  context: DependencyGraphCollectionContext;
+  project: ProjectInfo;
+}) {
+  const owner = options.context.workspaceLookup.findPackageForFile(
+    options.project.configPath,
+  );
+  const packageRootDir =
+    owner === null ? options.context.config.rootDir : owner.directory;
+  return collectProjectDependencies({
+    caches: options.context.projectDependencyCaches,
+    context: createParsedProjectSemanticContext({
+      authority: options.authority,
+      packageRootDir,
+      project: options.project,
+    }),
+    importAnalysis: options.context.importAnalysis,
+    resolveWorkspaceTypeScriptExport: (specifier) =>
+      options.context.workspaceExports.get(
+        options.project.configPath,
+        specifier,
+      )?.typeScriptResolvedFileName ?? null,
+  });
+}
+
+function collectDependencyGraphFailures(
+  context: DependencyGraphCollectionContext,
+  failures: ReturnType<typeof collectProjectDependencies>['failures'],
+): void {
+  for (const failure of failures) {
+    context.problems.push(
+      [
+        'Dependency graph semantic collection failed:',
+        `  config: ${toRelativePath(context.config.rootDir, failure.configPath)}`,
+        `  framework: ${failure.framework}`,
+        `  stage: ${failure.stage}`,
+        `  reason: ${failure.reason}`,
+      ].join('\n'),
+    );
+  }
+}
+
+function collectDependencyGraphDependencies(options: {
+  collection: ReturnType<typeof collectProjectDependencies>;
+  context: DependencyGraphCollectionContext;
+  project: ProjectInfo;
+}): void {
+  for (const projectDependency of options.collection.dependencies) {
+    const fileName = projectDependency.importRecord.filePath;
+    const importerPackage =
+      options.context.workspaceLookup.findPackageForFile(fileName);
+    if (importerPackage === null) continue;
+    processImportRecord({
+      context: options.context,
+      fileName,
+      importerPackage,
+      importRecord: projectDependency.importRecord,
+      project: options.project,
+      projectDependency,
+    });
   }
 }
 

@@ -102,7 +102,7 @@ describe('trusted artifact namespace', () => {
     await mkdir(path.dirname(sourceConfigPath), { recursive: true });
     await writeFile(sourceConfigPath, '{}\n');
     const sharedOptions = {
-      checkerName: 'typescript',
+      checkerName: 'tsc',
       packageRootDir: externalRoot,
       rootDir: fixture.rootDir,
       sourceConfigPath,
@@ -149,7 +149,7 @@ describe('trusted artifact namespace', () => {
     try {
       expect(() =>
         getGeneratedDtsConfigPath({
-          checkerName: 'typescript',
+          checkerName: 'tsc',
           packageRootDir: externalRoot,
           rootDir: fixture.rootDir,
           sourceConfigPath: path.join(outsideRoot, 'tsconfig.json'),

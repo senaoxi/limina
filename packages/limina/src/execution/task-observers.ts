@@ -41,6 +41,11 @@ function projectFlowFail(options: FlowProjectionOptions): void {
   }
 }
 
+function projectFlowDisable(options: FlowProjectionOptions): void {
+  if (options.event.type !== 'disable') return;
+  options.flowNode?.skip(`${formatFlowTaskName(options.task)} (disabled)`);
+}
+
 function projectFlowBlock(options: FlowProjectionOptions): void {
   if (options.event.type !== 'block') return;
   if (options.flowNode === undefined) return;
@@ -59,6 +64,7 @@ function projectFlowSkip(options: FlowProjectionOptions): void {
 
 const flowProjections: Record<TaskLifecycleEvent['type'], FlowProjection> = {
   block: projectFlowBlock,
+  disable: projectFlowDisable,
   fail: projectFlowFail,
   pass: projectFlowPass,
   skip: projectFlowSkip,

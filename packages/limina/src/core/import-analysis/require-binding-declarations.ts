@@ -1,14 +1,19 @@
-import ts from 'typescript';
+import type ts from 'typescript';
 import type {
   BindingKind,
   LexicalScope,
   RequireBinding,
 } from './require-binding-scope';
 
-export function getBindingNames(name: ts.BindingName): ts.Identifier[] {
-  if (ts.isIdentifier(name)) return [name];
+export function getBindingNames(
+  name: ts.BindingName,
+  tsModule: typeof ts,
+): ts.Identifier[] {
+  if (tsModule.isIdentifier(name)) return [name];
   return name.elements.flatMap((element) =>
-    ts.isOmittedExpression(element) ? [] : getBindingNames(element.name),
+    tsModule.isOmittedExpression(element)
+      ? []
+      : getBindingNames(element.name, tsModule),
   );
 }
 
@@ -36,85 +41,111 @@ function getFunctionScope(scope: LexicalScope): LexicalScope {
   return current;
 }
 
-function isVarDeclaration(node: ts.VariableDeclaration): boolean {
+function isVarDeclaration(
+  node: ts.VariableDeclaration,
+  tsModule: typeof ts,
+): boolean {
   return (
-    ts.isVariableDeclarationList(node.parent) &&
-    (node.parent.flags & ts.NodeFlags.BlockScoped) === 0
+    tsModule.isVariableDeclarationList(node.parent) &&
+    (node.parent.flags & tsModule.NodeFlags.BlockScoped) === 0
   );
 }
 
 function registerVariableDeclaration(
   node: ts.VariableDeclaration,
   scope: LexicalScope,
+  tsModule: typeof ts,
 ): void {
-  const target = isVarDeclaration(node) ? getFunctionScope(scope) : scope;
-  for (const identifier of getBindingNames(node.name)) {
+  const target = isVarDeclaration(node, tsModule)
+    ? getFunctionScope(scope)
+    : scope;
+  for (const identifier of getBindingNames(node.name, tsModule)) {
     registerBinding(target, identifier);
   }
 }
 
 function getImportDeclaration(
   node: ts.ImportSpecifier,
+  tsModule: typeof ts,
 ): ts.ImportDeclaration | null {
   const declaration = node.parent.parent.parent;
-  return ts.isImportDeclaration(declaration) ? declaration : null;
+  return tsModule.isImportDeclaration(declaration) ? declaration : null;
 }
 
-function isCreateRequireModule(declaration: ts.ImportDeclaration): boolean {
-  if (!ts.isStringLiteral(declaration.moduleSpecifier)) return false;
+function isCreateRequireModule(
+  declaration: ts.ImportDeclaration,
+  tsModule: typeof ts,
+): boolean {
+  if (!tsModule.isStringLiteral(declaration.moduleSpecifier)) return false;
   return ['module', 'node:module'].includes(declaration.moduleSpecifier.text);
 }
 
-function isCreateRequireImport(node: ts.ImportSpecifier): boolean {
-  const declaration = getImportDeclaration(node);
+function isCreateRequireImport(
+  node: ts.ImportSpecifier,
+  tsModule: typeof ts,
+): boolean {
+  const declaration = getImportDeclaration(node, tsModule);
   return (
-    isCreateRequireImportDeclaration(declaration) &&
+    isCreateRequireImportDeclaration(declaration, tsModule) &&
     getImportedName(node) === 'createRequire'
   );
 }
 
 function isCreateRequireImportDeclaration(
   declaration: ts.ImportDeclaration | null,
+  tsModule: typeof ts,
 ): declaration is ts.ImportDeclaration {
   if (declaration === null) return false;
-  return isCreateRequireModule(declaration);
+  return isCreateRequireModule(declaration, tsModule);
 }
 
 function getImportedName(node: ts.ImportSpecifier): string {
   return node.propertyName?.text ?? node.name.text;
 }
 
-function getImportSpecifierKind(node: ts.ImportSpecifier): BindingKind {
-  return isCreateRequireImport(node) ? 'create-require-import' : 'normal';
+function getImportSpecifierKind(
+  node: ts.ImportSpecifier,
+  tsModule: typeof ts,
+): BindingKind {
+  return isCreateRequireImport(node, tsModule)
+    ? 'create-require-import'
+    : 'normal';
 }
 
 function registerImportSpecifier(
   element: ts.ImportSpecifier,
   scope: LexicalScope,
+  tsModule: typeof ts,
 ): void {
   if (element.isTypeOnly) return;
-  registerBinding(scope, element.name, getImportSpecifierKind(element));
+  registerBinding(
+    scope,
+    element.name,
+    getImportSpecifierKind(element, tsModule),
+  );
 }
 
 function registerImportSpecifiers(
   named: ts.NamedImports,
   scope: LexicalScope,
+  tsModule: typeof ts,
 ): void {
   for (const element of named.elements) {
-    registerImportSpecifier(element, scope);
+    registerImportSpecifier(element, scope, tsModule);
   }
 }
 
 function registerNamedImportBindings(
   named: ts.NamedImportBindings | undefined,
   scope: LexicalScope,
+  tsModule: typeof ts,
 ): void {
   if (named === undefined) return;
-  if (ts.isNamespaceImport(named)) {
+  if (tsModule.isNamespaceImport(named)) {
     registerBinding(scope, named.name);
     return;
   }
-  registerImportSpecifiers(named, scope);
+  registerImportSpecifiers(named, scope, tsModule);
 }
 
 function registerDefaultImportBinding(
@@ -127,52 +158,63 @@ function registerDefaultImportBinding(
 function registerImportBindings(
   node: ts.ImportDeclaration,
   scope: LexicalScope,
+  tsModule: typeof ts,
 ): void {
   const clause = node.importClause;
   if (clause === undefined) return;
   if (clause.isTypeOnly) return;
   registerDefaultImportBinding(clause, scope);
-  registerNamedImportBindings(clause.namedBindings, scope);
+  registerNamedImportBindings(clause.namedBindings, scope, tsModule);
 }
 
-type DeclarationRegistrar = (node: ts.Node, scope: LexicalScope) => boolean;
+type DeclarationRegistrar = (
+  node: ts.Node,
+  scope: LexicalScope,
+  tsModule: typeof ts,
+) => boolean;
 
 const declarationRegistrars: readonly DeclarationRegistrar[] = [
-  (node, scope) => {
-    if (!ts.isVariableDeclaration(node)) return false;
-    registerVariableDeclaration(node, scope);
+  (node, scope, tsModule) => {
+    if (!tsModule.isVariableDeclaration(node)) return false;
+    registerVariableDeclaration(node, scope, tsModule);
     return true;
   },
-  (node, scope) => {
-    if (!ts.isFunctionDeclaration(node) || node.name === undefined)
+  (node, scope, tsModule) => {
+    if (!tsModule.isFunctionDeclaration(node) || node.name === undefined)
       return false;
     registerBinding(scope, node.name);
     return true;
   },
-  (node, scope) => {
-    if (!ts.isClassDeclaration(node) || node.name === undefined) return false;
+  (node, scope, tsModule) => {
+    if (!tsModule.isClassDeclaration(node) || node.name === undefined)
+      return false;
     registerBinding(scope, node.name);
     return true;
   },
-  (node, scope) => {
-    if (!ts.isEnumDeclaration(node)) return false;
+  (node, scope, tsModule) => {
+    if (!tsModule.isEnumDeclaration(node)) return false;
     registerBinding(scope, node.name);
     return true;
   },
-  (node, scope) => {
-    if (!ts.isImportDeclaration(node)) return false;
-    registerImportBindings(node, scope);
+  (node, scope, tsModule) => {
+    if (!tsModule.isImportDeclaration(node)) return false;
+    registerImportBindings(node, scope, tsModule);
     return true;
   },
-  (node, scope) => {
-    if (!ts.isImportEqualsDeclaration(node) || node.isTypeOnly) return false;
+  (node, scope, tsModule) => {
+    if (!tsModule.isImportEqualsDeclaration(node) || node.isTypeOnly)
+      return false;
     registerBinding(scope, node.name);
     return true;
   },
 ];
 
-export function registerDeclaration(node: ts.Node, scope: LexicalScope): void {
+export function registerDeclaration(
+  node: ts.Node,
+  scope: LexicalScope,
+  tsModule: typeof ts,
+): void {
   for (const register of declarationRegistrars) {
-    if (register(node, scope)) return;
+    if (register(node, scope, tsModule)) return;
   }
 }

@@ -192,7 +192,7 @@ function reportConfiguredCheckerCapabilities(
   config: ResolvedLiminaConfig,
   options: RunPipelineOptions,
 ): boolean {
-  const auto = usesAutoCheckers(config);
+  const auto = usesAutoCheckers();
   if (!auto) reportCheckerCapabilities(config, options.flow);
   return auto;
 }

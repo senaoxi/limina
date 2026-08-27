@@ -29,7 +29,7 @@ export interface ProofPackageIdentity {
 export interface ConfigFileOwner {
   checkerEntryPath: string;
   checkerName: string;
-  checkerPreset: ResolvedCheckerConfig['preset'];
+  checkerPreset: ResolvedCheckerConfig['name'];
   configPath: string;
 }
 

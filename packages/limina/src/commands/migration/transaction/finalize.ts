@@ -41,6 +41,8 @@ async function cleanupCommittedState(options: {
 
 export async function finalizeCommittedState(options: {
   fallbackPath: string;
+  hardlinkRewrittenFiles: string[];
+  hardlinkSkippedFiles: string[];
   modifiedItems: readonly MigrationWritePlanItem[];
   runtime: TransactionRuntimeOptions;
   skippedFiles: string[];
@@ -59,6 +61,8 @@ export async function finalizeCommittedState(options: {
       fallbackPath: options.fallbackPath,
       items: options.state.items,
     }),
+    hardlinkRewrittenFiles: options.hardlinkRewrittenFiles,
+    hardlinkSkippedFiles: options.hardlinkSkippedFiles,
     modifiedFiles: options.modifiedItems.map((item) => item.configPath),
     skippedFiles: options.skippedFiles,
   };

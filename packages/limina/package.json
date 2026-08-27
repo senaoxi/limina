@@ -60,20 +60,18 @@
   "dependencies": {
     "picomatch": "catalog:prod",
     "tinyglobby": "catalog:prod",
-    "oxc-parser": "catalog:prod",
     "oxc-resolver": "catalog:prod"
   },
   "devDependencies": {
     "@types/picomatch": "catalog:dev",
     "@types/semver": "catalog:dev",
     "@types/ssri": "catalog:dev",
+    "@types/node": "catalog:dev",
     "@docs-islands/eslint-config": "workspace:*",
     "@docs-islands/utils": "workspace:*",
     "@docs-islands/plugin-license": "workspace:*",
-    "@vue/compiler-sfc": "catalog:dev",
-    "@types/node": "catalog:dev",
-    "@arethetypeswrong/core": "catalog:lint",
     "@clack/prompts": "catalog:dev",
+    "@jridgewell/trace-mapping": "catalog:dev",
     "boxen": "catalog:dev",
     "logaria": "workspace:*",
     "@publint/pack": "catalog:lint",
@@ -97,31 +95,38 @@
     "shescape": "catalog:dev",
     "ssri": "catalog:dev",
     "string-width": "catalog:dev",
+    "@arethetypeswrong/core": "catalog:lint",
+    "@astrojs/check": "catalog:dev",
+    "svelte2tsx": "catalog:dev",
+    "astro-v7-current": "catalog:test",
+    "astro-v7-min": "catalog:test",
+    "svelte-check-v4-min": "catalog:test",
+    "svelte-v4-min": "catalog:test",
     "typescript": "catalog:dev",
     "vite": "catalog:dev",
     "vitest": "catalog:test"
   },
   "peerDependencies": {
     "@arethetypeswrong/core": "^0.18.0",
-    "@typescript/native-preview": ">=7.0.0-dev.20260421.2 <7.0.0",
-    "@vue/compiler-sfc": ">=3.0.0 <4.0.0",
     "knip": ">=6.0.0 <7.0.0",
     "npm-package-json-lint": ">=9.1.0 <10.0.0",
     "publint": ">=0.3.0 <0.4.0",
-    "svelte-check": ">=4.0.0 <5.0.0",
     "tsx": "^4.9.0",
-    "typescript": "^5.4.0 || ^6.0.0",
-    "vue-tsc": "^2.1.2 || ^3.0.0",
-    "vue-tsgo": "*"
+    "typescript": ">=5.4.0 <5.10.0 || >=6.0.0 <6.1.0",
+    "@typescript/native-preview": ">=7.0.0-dev.20260421.2 <7.0.0",
+    "vue-tsc": ">=2.2.0 <=2.2.12 || >=3.2.0 <=3.2.4",
+    "@astrojs/check": "0.9.10",
+    "svelte-check": ">=4.0.0 <5.0.0",
+    "svelte2tsx": "^0.7.61"
   },
   "peerDependenciesMeta": {
     "@arethetypeswrong/core": {
       "optional": true
     },
-    "@typescript/native-preview": {
+    "@astrojs/check": {
       "optional": true
     },
-    "@vue/compiler-sfc": {
+    "@typescript/native-preview": {
       "optional": true
     },
     "knip": {
@@ -133,6 +138,9 @@
     "publint": {
       "optional": true
     },
+    "svelte2tsx": {
+      "optional": true
+    },
     "svelte-check": {
       "optional": true
     },
@@ -140,9 +148,6 @@
       "optional": true
     },
     "vue-tsc": {
-      "optional": true
-    },
-    "vue-tsgo": {
       "optional": true
     }
   },

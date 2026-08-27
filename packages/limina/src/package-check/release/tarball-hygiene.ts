@@ -1,5 +1,5 @@
-import { parseSync } from 'oxc-parser';
 import path from 'pathe';
+import ts from 'typescript';
 import { addTarballHygieneFinding } from './consistency/findings';
 import type {
   PackedPackageContentFile,
@@ -7,38 +7,53 @@ import type {
 } from './consistency/types';
 
 const REQUIRED_RELEASE_FILES = ['README.md', 'LICENSE.md'] as const;
-const SOURCE_MAPPING_URL_SOURCE_PATTERN =
-  /\/\/\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=/u;
 const SOURCE_MAPPING_URL_COMMENT_PATTERN = /^\s*#\s*sourceMappingURL\s*=/u;
 
 function isJavaScriptPackageFile(relativePath: string): boolean {
   return /\.(?:cjs|mjs|js)$/u.test(relativePath);
 }
 
-function parsedCommentsContainSourceMap(options: {
-  relativePath: string;
-  source: string;
-}): boolean | null {
-  try {
-    const parseResult = parseSync(options.relativePath, options.source, {
-      sourceType: 'unambiguous',
-    });
-    if (parseResult.errors.length > 0) return null;
-    return parseResult.comments.some((comment) =>
-      SOURCE_MAPPING_URL_COMMENT_PATTERN.test(comment.value),
-    );
-  } catch {
-    return null;
+function getCommentValue(token: ts.SyntaxKind, tokenText: string): string {
+  if (token === ts.SyntaxKind.SingleLineCommentTrivia) {
+    return tokenText.slice(2);
   }
+  return tokenText.slice(2, -2);
 }
 
-function hasSourceMappingUrlDirective(options: {
-  relativePath: string;
-  source: string;
-}): boolean {
-  const parsed = parsedCommentsContainSourceMap(options);
-  if (parsed !== null) return parsed;
-  return SOURCE_MAPPING_URL_SOURCE_PATTERN.test(options.source);
+function commentContainsSourceMappingUrl(
+  token: ts.SyntaxKind,
+  tokenText: string,
+): boolean {
+  if (
+    token !== ts.SyntaxKind.SingleLineCommentTrivia &&
+    token !== ts.SyntaxKind.MultiLineCommentTrivia
+  ) {
+    return false;
+  }
+  return SOURCE_MAPPING_URL_COMMENT_PATTERN.test(
+    getCommentValue(token, tokenText),
+  );
+}
+
+function hasSourceMappingUrlDirective(source: string): boolean {
+  const scanner = ts.createScanner(
+    ts.ScriptTarget.Latest,
+    false,
+    ts.LanguageVariant.Standard,
+    source,
+  );
+
+  for (
+    let token = scanner.scan();
+    token !== ts.SyntaxKind.EndOfFileToken;
+    token = scanner.scan()
+  ) {
+    if (commentContainsSourceMappingUrl(token, scanner.getTokenText())) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function addMissingFilesFinding(options: {
@@ -113,10 +128,7 @@ function validateJavaScriptContent(options: {
 }): void {
   if (!isJavaScriptPackageFile(options.file.relativePath)) return;
   const source = Buffer.from(options.file.data).toString('utf8');
-  const hasDirective = hasSourceMappingUrlDirective({
-    relativePath: options.file.relativePath,
-    source,
-  });
+  const hasDirective = hasSourceMappingUrlDirective(source);
   if (hasDirective) addSourceMappingUrlFinding(options);
 }
 

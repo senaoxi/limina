@@ -1,0 +1,11 @@
+{
+  "name": "@limina-vue-matrix/vue-3.2.4-ts-6.0.3",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "limina": "file:../../../../dist",
+    "typescript": "6.0.3",
+    "vue": "3.5.28",
+    "vue-tsc": "3.2.4"
+  }
+}

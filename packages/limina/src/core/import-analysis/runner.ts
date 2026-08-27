@@ -1,3 +1,4 @@
+import type { VueSourceProfile } from '#checkers';
 import { createImportAnalysisContext } from './context';
 import type { ImportRecord } from './records';
 import type {
@@ -8,9 +9,16 @@ import type {
 export type { ResolvedCheckerModuleName } from '#checkers';
 export { createImportAnalysisContext } from './context';
 export { resolveModuleNameWithOxc } from './oxc-resolution';
-export type { ImportLocator, ImportRecord, ImportRecordKind } from './records';
-export { createOxcResolverProfileIdentity } from './resolver-profile';
 export type {
+  ImportDomain,
+  ImportLocator,
+  ImportRecord,
+  ImportRecordKind,
+} from './records';
+export { createOxcResolverProfileIdentity } from './resolver-profile';
+export type { SemanticEligibility } from './semantic-eligibility';
+export type {
+  CanonicalImportResolutionEvidence,
   CreateImportAnalysisContextOptions,
   ImportAnalysisContext,
   ImportAnalysisMetricsRecorder,
@@ -21,12 +29,16 @@ export type {
 } from './types';
 
 export function collectImportsFromFile(
-  filePath: string,
-  rootDir: string,
-  context?: ImportAnalysisContext,
+  ...args: [
+    filePath: string,
+    rootDir: string,
+    context?: ImportAnalysisContext,
+    sourceProfile?: VueSourceProfile,
+  ]
 ): ImportRecord[] {
+  const [filePath, rootDir, context, sourceProfile] = args;
   const provider = context ?? createImportAnalysisContext();
-  return provider.collectImportsFromFile(filePath, rootDir);
+  return provider.collectImportsFromFile(filePath, rootDir, sourceProfile);
 }
 
 export function resolveInternalImport(

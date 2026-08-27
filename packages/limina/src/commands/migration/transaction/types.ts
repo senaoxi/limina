@@ -15,9 +15,15 @@ export interface MigrationCleanupWarning {
 
 export interface MigrationTransactionExecutionResult {
   cleanupWarnings: MigrationCleanupWarning[];
+  hardlinkRewrittenFiles: string[];
+  hardlinkSkippedFiles: string[];
   modifiedFiles: string[];
   skippedFiles: string[];
 }
+
+export type MigrationWriteStrategy = 'atomic-replace' | 'in-place';
+
+export type HardlinkWritePolicy = 'rewrite' | 'skip';
 
 export interface OriginalTimestampSnapshot {
   observedMtimeNs?: bigint;
@@ -54,14 +60,23 @@ export interface ModifiedTargetSnapshot extends PreparedFileIdentity {
   allowedRootDir: string;
   canonicalPath: string;
   item: MigrationWritePlanItem;
+  writeStrategy: MigrationWriteStrategy;
+}
+
+export interface PreparedMigrationPlan {
+  atomicSnapshots: ModifiedTargetSnapshot[];
+  hardlinkSnapshots: ModifiedTargetSnapshot[];
+  normalizedRootDirs: string[];
+  skippedFiles: string[];
 }
 
 export type TransactionItemState =
   | 'committed'
-  | 'never-replaced'
+  | 'mutated'
+  | 'mutation-started'
+  | 'never-mutated'
   | 'prepared'
   | 'preparing'
-  | 'replaced'
   | 'rollback-failed'
   | 'rollback-postverify-failed'
   | 'rolled-back';
@@ -71,11 +86,14 @@ export interface TransactionItem {
   backupPath: string;
   nextIdentity?: PreparedFileIdentity;
   nextPath: string;
+  recoveryFailure?: Error;
   rollbackIdentity?: PreparedFileIdentity;
   rollbackPath: string;
   snapshot: ModifiedTargetSnapshot;
   state: TransactionItemState;
+  targetHandle?: FileHandle;
   transactionDirectory: string;
+  writtenIdentity?: PreparedFileIdentity;
 }
 
 export interface MigrationTransactionOptions {
@@ -84,6 +102,7 @@ export interface MigrationTransactionOptions {
     index: number,
   ) => Promise<void>;
   makeTransactionDirectory?: (prefix: string) => Promise<string>;
+  hardlinkPolicy?: HardlinkWritePolicy;
   openFile?: (
     filePath: string,
     flags: 'r+' | 'wx',
@@ -93,6 +112,13 @@ export interface MigrationTransactionOptions {
   removePath?: (filePath: string) => Promise<void>;
   replace?: (sourcePath: string, targetPath: string) => Promise<void>;
   retryDelaysMs?: readonly number[];
+  writeAt?: (options: {
+    bytes: Buffer;
+    handle: FileHandle;
+    length: number;
+    offset: number;
+    position: number;
+  }) => Promise<{ bytesWritten: number }>;
 }
 
 export interface TransactionRuntimeOptions {
@@ -103,6 +129,7 @@ export interface TransactionRuntimeOptions {
   readFileBytes: NonNullable<MigrationTransactionOptions['readFileBytes']>;
   removePath: NonNullable<MigrationTransactionOptions['removePath']>;
   retryDelaysMs: readonly number[];
+  writeAt: NonNullable<MigrationTransactionOptions['writeAt']>;
 }
 
 export interface FileValidationOptions {

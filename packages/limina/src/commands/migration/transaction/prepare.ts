@@ -10,9 +10,16 @@ import type {
   TransactionRuntimeOptions,
 } from './types';
 
+function getArtifactMetadataProfile(snapshot: ModifiedTargetSnapshot) {
+  return snapshot.writeStrategy === 'in-place'
+    ? ({ kind: 'private-artifact' } as const)
+    : ({ kind: 'target-metadata', restoreTimestamp: false } as const);
+}
+
 export interface TransactionPreparationState {
   createdDirectories: string[];
   items: TransactionItem[];
+  mutationOrder: TransactionItem[];
   trackedHandles: Set<FileHandle>;
 }
 
@@ -74,9 +81,9 @@ async function prepareNextIdentity(options: {
   options.item.nextIdentity = await prepareFile({
     bytes: Buffer.from(options.item.snapshot.item.nextContent),
     filePath: options.item.nextPath,
+    metadataProfile: getArtifactMetadataProfile(options.item.snapshot),
     openFile: options.runtime.openFile,
     readFileBytes: options.runtime.readFileBytes,
-    restoreTimestamp: false,
     snapshot: options.item.snapshot,
     trackedHandles: options.trackedHandles,
   });
@@ -90,9 +97,12 @@ async function prepareBackupIdentity(options: {
   options.item.backupIdentity = await prepareFile({
     bytes: options.item.snapshot.item.originalBytes,
     filePath: options.item.backupPath,
+    metadataProfile:
+      options.item.snapshot.writeStrategy === 'in-place'
+        ? { kind: 'private-artifact' }
+        : { kind: 'target-metadata', restoreTimestamp: true },
     openFile: options.runtime.openFile,
     readFileBytes: options.runtime.readFileBytes,
-    restoreTimestamp: true,
     snapshot: options.item.snapshot,
     trackedHandles: options.trackedHandles,
   });

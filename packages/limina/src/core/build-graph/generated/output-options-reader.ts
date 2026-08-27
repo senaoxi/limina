@@ -1,5 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { readJsonConfig } from '#core/tsconfig/actions';
+import { type JsonObject, readJsonConfig } from '#core/tsconfig/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import { readExplicitSourceCompilerTarget } from './compiler-target';
@@ -101,6 +101,7 @@ function createOutputResult(options: {
 export function readOutputOptions(
   config: ResolvedLiminaConfig,
   sourceConfigPath: string,
+  configObject: JsonObject = readJsonConfig(config, sourceConfigPath),
 ): {
   diagnostics: OutputOptionsProblem[];
   outputs: OutputOptions | null;
@@ -112,10 +113,7 @@ export function readOutputOptions(
     problems: [],
     sourceConfigPath,
   };
-  const outputRecord = resolveOutputRecord(
-    readJsonConfig(config, sourceConfigPath),
-    context,
-  );
+  const outputRecord = resolveOutputRecord(configObject, context);
   if (outputRecord.kind !== 'value') {
     return createEmptyResult(context);
   }

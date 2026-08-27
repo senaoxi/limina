@@ -109,15 +109,18 @@ function resolveSharedCheckerHost(
 
 export async function runCheckerSpawnMeasured(
   spec: CheckerHostSpawnSpec,
-  options: { onDegraded?: CheckerHostDegradationListener } = {},
+  options: {
+    onDegraded?: CheckerHostDegradationListener;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<CheckerHostSpawnMeasurement> {
   const host = resolveSharedCheckerHost(options.onDegraded);
 
   if (!host) {
-    return spawnAndMeasure(spec);
+    return spawnAndMeasure(spec, { signal: options.signal });
   }
 
-  return host.spawnMeasured(spec, options.onDegraded);
+  return host.spawnMeasured(spec, options.onDegraded, options.signal);
 }
 
 export async function runCheckerHostProtocolProbeForTesting(options: {

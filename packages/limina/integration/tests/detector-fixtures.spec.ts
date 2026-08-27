@@ -42,8 +42,6 @@ describe('declarative detector fixtures', () => {
       'checker/target-selection-preset',
       'fault-injection/checker-build-throw',
       'fault-injection/checker-typecheck-throw',
-      'fault-injection/cleanup-descriptor-execution',
-      'fault-injection/cleanup-descriptor-failure',
       'fault-injection/cleanup-secondary-after-task-failure',
       'fault-injection/cleanup-success',
       'fault-injection/command-throw',

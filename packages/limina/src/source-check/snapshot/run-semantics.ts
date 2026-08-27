@@ -11,10 +11,14 @@ import {
 } from './validation-shared';
 
 function getPassedRunProblem(run: LiminaCheckRunSummary): string | null {
-  const message = 'Passed run must contain only passed tasks and no blocker.';
+  const message =
+    'Passed run must contain only passed or disabled tasks and no blocker.';
   return firstProblem([
     problemWhen(run.blockedBy !== undefined, message),
-    problemWhen(!run.tasks.every((task) => task.state === 'passed'), message),
+    problemWhen(
+      !run.tasks.every((task) => ['disabled', 'passed'].includes(task.state)),
+      message,
+    ),
   ]);
 }
 

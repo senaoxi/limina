@@ -95,12 +95,9 @@ function getProjectsForEngine(
   return projectsByEngine.get(engine) ?? [];
 }
 
-export function selectProviderProject(options: {
-  consumerProject: SourceProject;
-  providerSourceFilePath: string;
-  targetProjects: SourceProject[];
-}): ProviderSelectionResult {
-  const providerProjects = collectProviderProjects(options);
+function selectByProviderCount(
+  providerProjects: SourceProject[],
+): ProviderSelectionResult | null {
   if (providerProjects.length === 0) {
     return {
       candidates: [],
@@ -109,6 +106,25 @@ export function selectProviderProject(options: {
         'no other build-capable checker owns the resolved provider source file.',
     };
   }
+  if (providerProjects.length === 1) {
+    return {
+      kind: 'selected',
+      project: providerProjects[0]!,
+      reason:
+        'exactly one build-capable checker owns the resolved provider source file.',
+    };
+  }
+  return null;
+}
+
+export function selectProviderProject(options: {
+  consumerProject: SourceProject;
+  providerSourceFilePath: string;
+  targetProjects: SourceProject[];
+}): ProviderSelectionResult {
+  const providerProjects = collectProviderProjects(options);
+  const selection = selectByProviderCount(providerProjects);
+  if (selection) return selection;
   const projectsByEngine = groupProjectsByEngine(providerProjects);
   const consumerEngine = getSourceProjectBuildEngine(options.consumerProject);
   const sameEngine = selectSameEngineProvider({
@@ -120,9 +136,9 @@ export function selectProviderProject(options: {
   }
   return {
     candidates: providerProjects,
-    kind: 'unsafe-cross-engine',
+    kind: 'ambiguous',
     reason:
-      'only different-engine build-capable provider checkers own the resolved provider source file.',
+      'multiple different checker identities own the resolved provider source file.',
   };
 }
 

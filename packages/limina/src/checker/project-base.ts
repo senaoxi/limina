@@ -1,4 +1,6 @@
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
+import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import {
   createExtraFileExtensions,
@@ -6,24 +8,47 @@ import {
   resolveExtensionsForChecker,
 } from './extensions';
 import type {
+  CheckerConfigClosureEntry,
   CheckerProjectConfigParseOptions,
   ParsedCheckerProjectConfig,
 } from './types';
 
+interface ConfigReadRecorder {
+  contentByPath: Map<string, string>;
+}
+
+function hashText(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 export function createProjectParseHost(
   virtualFiles: ReadonlyMap<string, string> | undefined,
+  recorder?: ConfigReadRecorder,
 ): typeof ts.sys {
-  if (virtualFiles === undefined) return ts.sys;
+  const base =
+    virtualFiles === undefined
+      ? ts.sys
+      : {
+          ...ts.sys,
+          fileExists(fileName: string): boolean {
+            if (virtualFiles.has(normalizeAbsolutePath(fileName))) return true;
+            return ts.sys.fileExists(fileName);
+          },
+          readFile(fileName: string, encoding?: string): string | undefined {
+            const content = virtualFiles.get(normalizeAbsolutePath(fileName));
+            if (content !== undefined) return content;
+            return ts.sys.readFile(fileName, encoding);
+          },
+        };
+  if (recorder === undefined) return base;
   return {
-    ...ts.sys,
-    fileExists(fileName): boolean {
-      if (virtualFiles.has(normalizeAbsolutePath(fileName))) return true;
-      return ts.sys.fileExists(fileName);
-    },
+    ...base,
     readFile(fileName, encoding): string | undefined {
-      const content = virtualFiles.get(normalizeAbsolutePath(fileName));
-      if (content !== undefined) return content;
-      return ts.sys.readFile(fileName, encoding);
+      const content = base.readFile(fileName, encoding);
+      if (content !== undefined) {
+        recorder.contentByPath.set(normalizeAbsolutePath(fileName), content);
+      }
+      return content;
     },
   };
 }
@@ -71,11 +96,13 @@ function assertNoParseErrors(options: {
 }
 
 export function createParsedCheckerProjectConfig(options: {
+  configClosure: CheckerConfigClosureEntry[];
   extensions: string[];
   fileNames: string[];
   parsed: ts.ParsedCommandLine;
 }): ParsedCheckerProjectConfig {
   return {
+    configClosure: options.configClosure.map((entry) => ({ ...entry })),
     extensions: normalizeExtensions(options.extensions),
     fileNames: options.fileNames.map(normalizeAbsolutePath).sort(),
     options: options.parsed.options,
@@ -86,18 +113,54 @@ export function cloneParsedCheckerProjectConfig(
   parsedConfig: ParsedCheckerProjectConfig,
 ): ParsedCheckerProjectConfig {
   return {
+    configClosure: parsedConfig.configClosure.map((entry) => ({ ...entry })),
     extensions: [...parsedConfig.extensions],
     fileNames: [...parsedConfig.fileNames],
     options: { ...parsedConfig.options },
+    vueSemanticIdentity: parsedConfig.vueSemanticIdentity,
   };
+}
+
+function createConfigClosure(options: {
+  configFileName: string;
+  contentByPath: ReadonlyMap<string, string>;
+  extendedConfigCache: ReadonlyMap<string, ts.ExtendedConfigCacheEntry>;
+  host: typeof ts.sys;
+}): CheckerConfigClosureEntry[] {
+  const filePaths = new Set([
+    normalizeAbsolutePath(options.configFileName),
+    ...[...options.extendedConfigCache.values()].map((entry) =>
+      normalizeAbsolutePath(entry.extendedResult.fileName),
+    ),
+  ]);
+  return [...filePaths]
+    .map((filePath) => {
+      const content =
+        options.contentByPath.get(filePath) ?? options.host.readFile(filePath);
+      if (content === undefined) {
+        throw new Error(
+          `Parsed TypeScript config closure entry is unreadable: ${filePath}`,
+        );
+      }
+      return { contentHash: hashText(content), filePath };
+    })
+    .sort((left, right) => compareCodeUnits(left.filePath, right.filePath));
 }
 
 function parseTypeScriptCommandLine(options: {
   extraFileExtensions?: readonly ts.FileExtensionInfo[];
   parseOptions: CheckerProjectConfigParseOptions;
-}): ts.ParsedCommandLine {
+}): {
+  configClosure: CheckerConfigClosureEntry[];
+  parsed: ts.ParsedCommandLine;
+} {
   const diagnostics: ts.Diagnostic[] = [];
-  const host = createProjectParseHost(options.parseOptions.virtualFiles);
+  const recorder: ConfigReadRecorder = { contentByPath: new Map() };
+  const host = createProjectParseHost(
+    options.parseOptions.virtualFiles,
+    recorder,
+  );
+  const extendedConfigCache = new Map<string, ts.ExtendedConfigCacheEntry>();
   const parsed = requireParsedCommandLine({
     diagnostics,
     parsed: ts.getParsedCommandLineOfConfigFile(
@@ -109,7 +172,7 @@ function parseTypeScriptCommandLine(options: {
           diagnostics.push(diagnostic);
         },
       },
-      undefined,
+      extendedConfigCache,
       undefined,
       options.extraFileExtensions,
     ),
@@ -121,7 +184,15 @@ function parseTypeScriptCommandLine(options: {
     parsed,
     projectRootDir: options.parseOptions.projectRootDir,
   });
-  return parsed;
+  return {
+    configClosure: createConfigClosure({
+      configFileName: options.parseOptions.configPath,
+      contentByPath: recorder.contentByPath,
+      extendedConfigCache,
+      host,
+    }),
+    parsed,
+  };
 }
 
 export function parseProjectConfigWithExtensions(
@@ -130,12 +201,13 @@ export function parseProjectConfigWithExtensions(
 ): ParsedCheckerProjectConfig {
   const resolvedExtensions = resolveExtensionsForChecker(options, extensions);
   const extraFileExtensions = createExtraFileExtensions(resolvedExtensions);
-  const parsed = parseTypeScriptCommandLine({
+  const { configClosure, parsed } = parseTypeScriptCommandLine({
     extraFileExtensions:
       extraFileExtensions.length === 0 ? undefined : extraFileExtensions,
     parseOptions: options,
   });
   return createParsedCheckerProjectConfig({
+    configClosure,
     extensions: resolvedExtensions,
     fileNames: parsed.fileNames,
     parsed,

@@ -96,8 +96,7 @@ packages/core/
 export default defineConfig(({ command }) => ({
   config: {
     checkers: {
-      typescript: {
-        preset: 'tsc',
+      tsc: {
         include: ['packages/**/tsconfig.json'],
       },
     },

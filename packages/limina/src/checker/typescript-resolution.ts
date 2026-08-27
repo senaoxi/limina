@@ -23,7 +23,7 @@ function hasNativeCacheHit(options: CheckerModuleResolveOptions): boolean {
   const cache = options.moduleResolutionCache;
   if (cache === undefined) return false;
   return (
-    ts.resolveModuleNameFromCache(
+    (options.tsModule ?? ts).resolveModuleNameFromCache(
       options.specifier,
       options.containingFile,
       cache,
@@ -52,11 +52,12 @@ function recordCacheState(options: CheckerModuleResolveOptions): void {
 function resolveNativeModule(
   options: CheckerModuleResolveOptions,
 ): ResolvedCheckerModuleName | null {
-  const resolved = ts.resolveModuleName(
+  const tsModule = options.tsModule ?? ts;
+  const resolved = tsModule.resolveModuleName(
     options.specifier,
     options.containingFile,
     options.compilerOptions,
-    ts.sys,
+    tsModule.sys,
     options.moduleResolutionCache,
   ).resolvedModule;
   if (resolved === undefined) return null;

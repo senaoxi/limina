@@ -62,7 +62,7 @@ async function getExternalHashes(
 ): Promise<string[]> {
   const entries = await readdir(
     preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/external',
+      'repo/.limina/tsconfig/checkers/tsc/projects/external',
     ),
     { withFileTypes: true },
   );
@@ -84,18 +84,18 @@ async function discoverExternalProject(
 
   return {
     declarationDir: preparedFixture.path(
-      'repo/.limina/dts/checkers/typescript/external',
+      'repo/.limina/dts/checkers/tsc/external',
       hash,
       'tsconfig',
     ),
     generatedConfigPath: preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/external',
+      'repo/.limina/tsconfig/checkers/tsc/projects/external',
       hash,
       'tsconfig.dts.json',
     ),
     hash,
     tsBuildInfoPath: preparedFixture.path(
-      'repo/.limina/tsbuildinfo/checkers/typescript/external',
+      'repo/.limina/tsbuildinfo/checkers/tsc/external',
       hash,
       'tsconfig.tsbuildinfo',
     ),
@@ -199,7 +199,7 @@ describe('external workspace public CLI integration', () => {
 
     const manifestPath = preparedFixture.path('repo/.limina/manifest.json');
     const internalConfigPath = preparedFixture.path(
-      'repo/.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.dts.json',
+      'repo/.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.dts.json',
     );
     const externalProject = await discoverExternalProject(preparedFixture);
 
@@ -263,7 +263,7 @@ describe('external workspace public CLI integration', () => {
       'index.d.ts',
     );
     const internalDeclarationPath = preparedFixture.path(
-      'repo/.limina/dts/checkers/typescript/packages/app/tsconfig/index.d.ts',
+      'repo/.limina/dts/checkers/tsc/packages/app/tsconfig/index.d.ts',
     );
 
     expect((await lstat(externalProject.declarationDir)).isDirectory()).toBe(

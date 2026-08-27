@@ -1,11 +1,17 @@
 import ts from 'typescript';
+import { collectCommentImports } from './comment-imports';
 import {
   buildLineStarts,
   type CollectedImportRecord,
   createImportRecord,
-  type ImportRecordKind,
+  finalizeImportRecords,
+  type ImportRecord,
 } from './records';
 import { collectRequireImportsFromSourceFile } from './require-bindings';
+import {
+  type AddTypeScriptImport,
+  visitTypeScriptImportNodes,
+} from './typescript-node-collectors';
 
 interface TypeScriptImportCollectionOptions {
   filePath: string;
@@ -13,23 +19,11 @@ interface TypeScriptImportCollectionOptions {
   scriptKind: ts.ScriptKind;
   sourceOffset?: number;
   sourceText: string;
+  tsModule?: typeof ts;
 }
 
-type AddImport = (
-  specifier: string,
-  node: ts.Node,
-  kind: ImportRecordKind,
-) => void;
-
-type NodeCollector = (node: ts.Node, add: AddImport) => void;
-
-const SCRIPT_KIND_BY_EXTENSION = new Map<string, ts.ScriptKind>([
-  ['.cjs', ts.ScriptKind.JS],
-  ['.js', ts.ScriptKind.JS],
-  ['.jsx', ts.ScriptKind.JSX],
-  ['.mjs', ts.ScriptKind.JS],
-  ['.tsx', ts.ScriptKind.TSX],
-]);
+type NormalizedTypeScriptImportCollectionOptions =
+  TypeScriptImportCollectionOptions & { tsModule: typeof ts };
 
 function getFileExtension(filePath: string): string {
   const index = filePath.lastIndexOf('.');
@@ -37,130 +31,26 @@ function getFileExtension(filePath: string): string {
   return filePath.slice(index);
 }
 
-export function getSourceFileKind(filePath: string): ts.ScriptKind {
-  return (
-    SCRIPT_KIND_BY_EXTENSION.get(getFileExtension(filePath)) ?? ts.ScriptKind.TS
-  );
+export function getSourceFileKind(
+  filePath: string,
+  tsModule: typeof ts = ts,
+): ts.ScriptKind {
+  const scriptKinds = new Map<string, ts.ScriptKind>([
+    ['.cjs', tsModule.ScriptKind.JS],
+    ['.js', tsModule.ScriptKind.JS],
+    ['.jsx', tsModule.ScriptKind.JSX],
+    ['.mjs', tsModule.ScriptKind.JS],
+    ['.tsx', tsModule.ScriptKind.TSX],
+  ]);
+  return scriptKinds.get(getFileExtension(filePath)) ?? tsModule.ScriptKind.TS;
 }
-
-function getStringLiteralValue(node: ts.Node | undefined): string | null {
-  if (node === undefined) return null;
-  if (!ts.isStringLiteralLike(node)) return null;
-  return node.text;
-}
-
-function hasNamedBindings(
-  clause: ts.ImportClause,
-): clause is ts.ImportClause & { namedBindings: ts.NamedImportBindings } {
-  return clause.namedBindings !== undefined;
-}
-
-function hasOnlyTypeElements(bindings: ts.NamedImportBindings): boolean {
-  if (!ts.isNamedImports(bindings)) return false;
-  if (bindings.elements.length === 0) return false;
-  return bindings.elements.every((element) => element.isTypeOnly);
-}
-
-function isNamedBindingOnlyClause(clause: ts.ImportClause): boolean {
-  if (clause.name !== undefined) return false;
-  if (!hasNamedBindings(clause)) return false;
-  return hasOnlyTypeElements(clause.namedBindings);
-}
-
-function isTypeOnlyClause(clause: ts.ImportClause): boolean {
-  if (clause.isTypeOnly) return true;
-  return isNamedBindingOnlyClause(clause);
-}
-
-function getImportKind(node: ts.ImportDeclaration): ImportRecordKind {
-  const clause = node.importClause;
-  if (clause === undefined) return 'static';
-  return isTypeOnlyClause(clause) ? 'import-type' : 'static';
-}
-
-function addNodeSpecifier(options: {
-  add: AddImport;
-  kind: ImportRecordKind;
-  node: ts.Node | undefined;
-}): void {
-  const specifier = getStringLiteralValue(options.node);
-  if (options.node === undefined) return;
-  if (specifier === null) return;
-  options.add(specifier, options.node, options.kind);
-}
-
-function collectImportDeclaration(node: ts.Node, add: AddImport): void {
-  if (!ts.isImportDeclaration(node)) return;
-  addNodeSpecifier({
-    add,
-    kind: getImportKind(node),
-    node: node.moduleSpecifier,
-  });
-}
-
-function collectExportDeclaration(node: ts.Node, add: AddImport): void {
-  if (!ts.isExportDeclaration(node)) return;
-  addNodeSpecifier({ add, kind: 'export', node: node.moduleSpecifier });
-}
-
-function getImportTypeLiteral(node: ts.ImportTypeNode): ts.Node | undefined {
-  if (!ts.isLiteralTypeNode(node.argument)) return undefined;
-  return node.argument.literal;
-}
-
-function collectImportTypeNode(node: ts.Node, add: AddImport): void {
-  if (!ts.isImportTypeNode(node)) return;
-  addNodeSpecifier({
-    add,
-    kind: 'import-type',
-    node: getImportTypeLiteral(node),
-  });
-}
-
-function getCallArgument(node: ts.CallExpression): ts.Expression | undefined {
-  return node.arguments[0];
-}
-
-function isDynamicImportCall(node: ts.CallExpression): boolean {
-  return node.expression.kind === ts.SyntaxKind.ImportKeyword;
-}
-
-function collectDynamicImport(node: ts.Node, add: AddImport): void {
-  if (!ts.isCallExpression(node)) return;
-  if (!isDynamicImportCall(node)) return;
-  addNodeSpecifier({ add, kind: 'dynamic', node: getCallArgument(node) });
-}
-
-function getImportEqualsExpression(
-  node: ts.ImportEqualsDeclaration,
-): ts.Expression | undefined {
-  if (!ts.isExternalModuleReference(node.moduleReference)) return undefined;
-  return node.moduleReference.expression;
-}
-
-function collectImportEquals(node: ts.Node, add: AddImport): void {
-  if (!ts.isImportEqualsDeclaration(node)) return;
-  addNodeSpecifier({
-    add,
-    kind: 'import-equals',
-    node: getImportEqualsExpression(node),
-  });
-}
-
-const NODE_COLLECTORS: readonly NodeCollector[] = [
-  collectImportDeclaration,
-  collectExportDeclaration,
-  collectImportTypeNode,
-  collectDynamicImport,
-  collectImportEquals,
-];
 
 function createAddImport(options: {
-  collection: TypeScriptImportCollectionOptions;
+  collection: NormalizedTypeScriptImportCollectionOptions;
   imports: CollectedImportRecord[];
   lineStarts: number[];
   sourceFile: ts.SourceFile;
-}): AddImport {
+}): AddTypeScriptImport {
   const lineOffset = options.collection.lineOffset ?? 0;
   const sourceOffset = options.collection.sourceOffset ?? 0;
   return (specifier, node, kind) => {
@@ -179,33 +69,99 @@ function createAddImport(options: {
   };
 }
 
-function visitNode(options: { add: AddImport; node: ts.Node }): void {
-  for (const collect of NODE_COLLECTORS) collect(options.node, options.add);
-  ts.forEachChild(options.node, (child) =>
-    visitNode({ add: options.add, node: child }),
-  );
-}
-
 export function collectTypeScriptImports(
   options: TypeScriptImportCollectionOptions,
 ): CollectedImportRecord[] {
-  const sourceFile = ts.createSourceFile(
+  const tsModule = options.tsModule ?? ts;
+  const sourceFile = tsModule.createSourceFile(
     options.filePath,
     options.sourceText,
-    ts.ScriptTarget.Latest,
+    tsModule.ScriptTarget.Latest,
     true,
     options.scriptKind,
   );
+  return collectTypeScriptImportsFromSourceFile({
+    ...options,
+    sourceFile,
+    tsModule,
+  });
+}
+
+function collectTypeScriptImportsFromSourceFile(
+  options: NormalizedTypeScriptImportCollectionOptions & {
+    sourceFile: ts.SourceFile;
+  },
+): CollectedImportRecord[] {
   const imports: CollectedImportRecord[] = [];
   const add = createAddImport({
     collection: options,
     imports,
     lineStarts: buildLineStarts(options.sourceText),
-    sourceFile,
+    sourceFile: options.sourceFile,
   });
-  visitNode({ add, node: sourceFile });
-  return [
-    ...imports,
-    ...collectRequireImportsFromSourceFile({ ...options, sourceFile }),
-  ];
+  visitTypeScriptImportNodes({
+    add,
+    node: options.sourceFile,
+    tsModule: options.tsModule,
+  });
+  return [...imports, ...collectRequireImportsFromSourceFile(options)];
+}
+
+export function collectTypeScriptSourceTextImports(options: {
+  filePath: string;
+  lineOffset?: number;
+  scriptKind?: ts.ScriptKind;
+  sourceOffset?: number;
+  sourceText: string;
+  tsModule?: typeof ts;
+}): ImportRecord[] {
+  const tsModule = options.tsModule ?? ts;
+  const syntax = collectTypeScriptImports({
+    ...options,
+    scriptKind:
+      options.scriptKind ?? getSourceFileKind(options.filePath, tsModule),
+    tsModule,
+  });
+  return finalizeImportRecords([
+    ...syntax,
+    ...collectCommentImports({ ...options, tsModule }),
+  ]);
+}
+
+export function collectTypeScriptSourceFileImports(options: {
+  filePath: string;
+  sourceFile: ts.SourceFile;
+  tsModule?: typeof ts;
+}): ImportRecord[] {
+  const tsModule = options.tsModule ?? ts;
+  ensureParentPointers(options.sourceFile, tsModule);
+  const sourceText = options.sourceFile.text;
+  const syntax = collectTypeScriptImportsFromSourceFile({
+    filePath: options.filePath,
+    scriptKind: getSourceFileKind(options.filePath, tsModule),
+    sourceFile: options.sourceFile,
+    sourceText,
+    tsModule,
+  });
+  return finalizeImportRecords([
+    ...syntax,
+    ...collectCommentImports({
+      filePath: options.filePath,
+      sourceText,
+      tsModule,
+    }),
+  ]);
+}
+
+function ensureParentPointers(
+  sourceFile: ts.SourceFile,
+  tsModule: typeof ts,
+): void {
+  const visit = (node: ts.Node, parent?: ts.Node): void => {
+    if (parent !== undefined && node.parent === undefined) {
+      (node as unknown as { parent: ts.Node }).parent = parent;
+    }
+    tsModule.forEachChild(node, (child) => visit(child, node));
+  };
+  visit(sourceFile);
 }

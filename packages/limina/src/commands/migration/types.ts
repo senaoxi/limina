@@ -5,12 +5,20 @@ import type { PreflightCapableOptions } from '../../preflight';
 import type { MigrationCleanupWarning } from './transaction';
 
 export interface RunMigrationOptions extends PreflightCapableOptions {
+  confirmDirtyWorkspace?: (message: string) => Promise<boolean>;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
+  selectHardlinkStrategy?: (
+    message: string,
+  ) => Promise<HardlinkMigrationDecision>;
 }
+
+export type HardlinkMigrationDecision = 'cancel' | 'rewrite' | 'skip';
 
 export interface RunMigrationResult {
   checkerEntryCount: number;
+  hardlinkRewrittenFiles: string[];
+  hardlinkSkippedFiles: string[];
   modifiedFiles: string[];
   recursiveReferenceCount: number;
   rootDir: string;
@@ -27,7 +35,7 @@ export interface MigrationEntryCollection {
   entries: MigrationEntry[];
   excludePatterns: string[];
   includePatterns: string[];
-  mode: 'auto' | 'explicit';
+  mode: 'auto' | 'unified';
 }
 
 export interface MigrationEffectiveConfig {
@@ -39,7 +47,8 @@ export interface MigrationTarget {
   configObject: JsonObject;
   configPath: string;
   effectiveConfig: MigrationEffectiveConfig;
-  isSolutionStyle: boolean;
+  isLiminaSolution: boolean;
+  isTypeScriptSolution: boolean;
   originalBytes: Buffer;
   originalContent: string;
 }

@@ -325,6 +325,40 @@ describe('LiminaFlowReporter', () => {
     );
   });
 
+  it('suspends process rendering while interactive output owns the terminal', async () => {
+    const flowModuleUrl = new URL('../flow.ts', import.meta.url).href;
+    const { stdout } = await runFlowFixture(String.raw`
+      import { createLiminaFlowReporter } from ${JSON.stringify(flowModuleUrl)};
+
+      void (async () => {
+        const flow = createLiminaFlowReporter({ forceTty: true });
+        await flow.waitForRendererReady();
+        const task = flow.start('migrate tsconfig files', {
+          collapseOnSuccess: false,
+          depth: 1,
+        });
+        await task.pause();
+        process.stdout.write('PROMPT_START\n');
+        process.stdout.write('○ Rewrite hard-linked files in place');
+        process.stdout.write('\r\u001B[2K');
+        process.stdout.write('● Cancel migration\n');
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        process.stdout.write('PROMPT_END\n');
+        task.resume();
+        task.pass('migration complete', { depth: 1, elapsedTimeMs: 120 });
+        await flow.close();
+      })();
+    `);
+
+    const promptOutput = stdout.slice(
+      stdout.indexOf('PROMPT_START'),
+      stdout.indexOf('PROMPT_END'),
+    );
+    expect(promptOutput).not.toContain('migrate tsconfig files');
+    expect(promptOutput).toContain('● Cancel migration');
+    expect(stdout).toContain(`${green('◆')}      migration complete (120ms)\n`);
+  });
+
   it('keeps process-rendered live frames within the terminal height', async () => {
     const flowModuleUrl = new URL('../flow.ts', import.meta.url).href;
     const { stdout } = await runFlowFixture(
@@ -362,7 +396,7 @@ describe('LiminaFlowReporter', () => {
             'vue checker entry',
           ]);
           const [secondClassEntries] = checkerTypecheck.children([
-            'second-class checker entries',
+            'framework checker entries',
           ]);
 
           root.start();
@@ -409,7 +443,7 @@ describe('LiminaFlowReporter', () => {
     expect(lastFrame).toContain('◆      checker build (500ms)\n');
     expect(lastFrame).toContain('└  limina check failed\n');
     expect(lastFrame).not.toContain('project routes and configs');
-    expect(lastFrame).not.toContain('second-class checker entries');
+    expect(lastFrame).not.toContain('framework checker entries');
   });
 
   it('reserves the shell command row for public CLI check flows', async () => {
@@ -457,7 +491,7 @@ describe('LiminaFlowReporter', () => {
             'vue checker entry',
           ]);
           const [secondClassEntries] = checkerTypecheck.children([
-            'second-class checker entries',
+            'framework checker entries',
           ]);
 
           root.start();
@@ -504,7 +538,7 @@ describe('LiminaFlowReporter', () => {
     expect(lastFrame).toContain('✕    default check (900ms)\n');
     expect(lastFrame).toContain('└  limina check failed\n');
     expect(lastFrame).not.toContain('project routes and configs');
-    expect(lastFrame).not.toContain('second-class checker entries');
+    expect(lastFrame).not.toContain('framework checker entries');
   });
 
   it('compacts check-flow history to direct task states in short terminals', async () => {
@@ -549,8 +583,8 @@ describe('LiminaFlowReporter', () => {
           checkerBuild.pass('checker build', { depth: 1, elapsedTimeMs: 14010 });
 
           const checkerTypecheck = flow.start('checker typecheck', { depth: 1 });
-          const secondClassEntries = flow.start('second-class checker entries', { depth: 2 });
-          secondClassEntries.pass('second-class checker entries', { depth: 2, elapsedTimeMs: 0 });
+          const frameworkEntries = flow.start('framework checker entries', { depth: 2 });
+          frameworkEntries.pass('framework checker entries', { depth: 2, elapsedTimeMs: 0 });
           checkerTypecheck.pass('checker typecheck', { depth: 1, elapsedTimeMs: 1 });
 
           defaultCheck.pass('default check', { elapsedTimeMs: 14120 });
@@ -579,7 +613,7 @@ describe('LiminaFlowReporter', () => {
     expect(lastFrame).toContain('└  limina check passed\n');
     expect(lastFrame).not.toContain('source graph routes');
     expect(lastFrame).not.toContain('project routes and configs');
-    expect(lastFrame).not.toContain('second-class checker entries');
+    expect(lastFrame).not.toContain('framework checker entries');
   });
 
   it('compacts process-rendered final check-flow frames when terminal rows are unavailable', async () => {
@@ -1017,6 +1051,52 @@ describe('LiminaFlowReporter', () => {
       expect(chunks.join('')).toContain(
         `${green('◆')}    default check (1.00s)\n`,
       );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears an inline live frame without redrawing until resumed', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const chunks: string[] = [];
+      const flow = new LiminaFlowReporter({
+        env: {},
+        forceTty: true,
+        output: {
+          write: (message) => {
+            chunks.push(message);
+          },
+        },
+        stdout: {
+          columns: 80,
+          isTTY: true,
+        },
+      });
+      const task = flow.start('migrate tsconfig files', {
+        collapseOnSuccess: false,
+        depth: 1,
+      });
+
+      await task.pause();
+      expect(chunks.at(-1)).toBe('\r\u001B[1A\u001B[J');
+
+      const pausedOutput = chunks.join('');
+      vi.advanceTimersByTime(160);
+      expect(chunks.join('')).toBe(pausedOutput);
+
+      task.resume();
+      expect(getLastRenderedFrame(chunks.join(''))).toBe(
+        `${spinner}      migrate tsconfig files\n`,
+      );
+
+      vi.advanceTimersByTime(80);
+      expect(getLastRenderedFrame(chunks.join(''))).toBe(
+        '⠙      migrate tsconfig files\n',
+      );
+
+      task.pass('migration complete', { elapsedTimeMs: 1000 });
     } finally {
       vi.useRealTimers();
     }

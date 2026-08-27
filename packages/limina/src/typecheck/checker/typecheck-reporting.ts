@@ -14,14 +14,12 @@ function reportNoCheckerProgress(options: {
   flowDepth: number;
   request: RunCheckerTypecheckOptions;
 }): void {
-  const progress = options.request.progress;
-  if (progress !== undefined) {
-    progress.startItem('second-class checker entries').pass();
-    return;
-  }
-  options.request.flow?.info('no second-class checker entries configured', {
-    depth: options.flowDepth + 1,
-  });
+  options.request.flow?.info(
+    'checker typecheck is disabled (no framework targets)',
+    {
+      depth: options.flowDepth + 1,
+    },
+  );
 }
 
 function shouldLogSuccess(request: RunCheckerTypecheckOptions): boolean {
@@ -36,9 +34,12 @@ export function createNoTypecheckCheckerResult(options: {
 }): RunCheckerTypecheckResult {
   reportNoCheckerProgress(options);
   if (shouldLogSuccess(options.request)) {
-    TypecheckLogger.success('No second-class checker entries configured.');
+    TypecheckLogger.info(
+      'checker typecheck is disabled: no Svelte or Astro targets were discovered.',
+    );
   }
   return {
+    disabled: true,
     failedTargets: [],
     passed: true,
     projectRootDir: options.projectRootDir,
@@ -81,6 +82,7 @@ export function createTypecheckPeerFailure(options: {
   }
   return {
     checkerNames: [...options.checkerNames],
+    disabled: false,
     failedTargets: [],
     failureKind: 'peer-dependency',
     passed: false,

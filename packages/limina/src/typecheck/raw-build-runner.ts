@@ -220,7 +220,6 @@ export async function runRawBuild(options: {
     context,
     problems: collectCheckerPeerDependencyProblems({
       checkers: [checker],
-      imports: context.options.config.config?.imports,
       projectRootDir: context.projectRootDir,
       resolvePackage: context.options.checkerPackageResolver,
     }),

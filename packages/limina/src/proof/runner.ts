@@ -18,6 +18,7 @@ import { addDtsConfigFindings } from './declaration-config-findings';
 import { addDefaultTsconfigEnvironmentFindings } from './default-tsconfig-environment-findings';
 import { addDefaultTsconfigShapeFindings } from './default-tsconfig-shape-findings';
 import type { ProofFinding } from './findings';
+import { addFrameworkGovernanceFindings } from './framework-governance-findings';
 import {
   addDuplicateGraphCoverageFindings,
   collectConfigFileOwners,
@@ -38,6 +39,17 @@ import { logProofSuccess } from './success-report';
 import { addDuplicateTypecheckOwnershipFindings } from './typecheck-ownership';
 
 export type { RunProofCheckOptions } from './runner-types';
+
+function collectSolutionConfigPaths(
+  generatedGraph: ProofRunState['generatedGraph'],
+): ReadonlySet<string> {
+  return new Set(
+    [...generatedGraph.sourceToBuild.values()]
+      .flatMap((sourceToBuild) => [...sourceToBuild])
+      .filter(([, module]) => module.kind === 'solution')
+      .map(([configPath]) => configPath),
+  );
+}
 
 async function addRouteFindings(state: ProofRunState): Promise<void> {
   const [graphCollection, entryCollection] = await Promise.all([
@@ -67,9 +79,10 @@ async function addRouteFindings(state: ProofRunState): Promise<void> {
 
 function addProjectConfigFindings(state: ProofRunState): void {
   const projectContexts = collectProjectContextsByPath(
-    state.config,
     state.entryRoutes,
+    state.generatedGraph,
   );
+  const solutionConfigPaths = collectSolutionConfigPaths(state.generatedGraph);
   const defaultTsconfigPaths = state.ordinaryConfigPaths.filter(
     (configPath) => path.basename(configPath) === 'tsconfig.json',
   );
@@ -96,6 +109,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
   addDefaultTsconfigShapeFindings({
     config: state.config,
     findings: state.findings,
+    solutionConfigPaths,
     tsconfigPaths: defaultTsconfigPaths,
     workspaceLookup: state.workspaceLookup,
   });
@@ -103,6 +117,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
     config: state.config,
     findings: state.findings,
     ordinaryConfigPaths: state.ordinaryConfigPaths,
+    solutionConfigPaths,
     workspaceLookup: state.workspaceLookup,
   });
   addDefaultTsconfigEnvironmentFindings({
@@ -119,6 +134,14 @@ function addProjectConfigFindings(state: ProofRunState): void {
     projectConfigCache: state.preflight.providers.projectConfigs,
     workspaceLookup: state.workspaceLookup,
   });
+  state.checks.add(
+    addFrameworkGovernanceFindings({
+      config: state.config,
+      findings: state.findings,
+      generatedGraph: state.generatedGraph,
+      workspaceLookup: state.workspaceLookup,
+    }),
+  );
 }
 
 async function runProjectConfigPhase(state: ProofRunState): Promise<boolean> {
@@ -170,6 +193,7 @@ function addCoverageFindings(options: {
     findings: options.state.findings,
     ownersByFile: collectConfigFileOwners({
       config: options.state.config,
+      generatedGraph: options.state.generatedGraph,
       graphRoutes: options.state.graphRoutes,
       projectConfigCache: options.state.preflight.providers.projectConfigs,
       sourceFiles: options.sourceFiles,
@@ -206,6 +230,7 @@ async function runCoveragePhase(state: ProofRunState): Promise<boolean> {
   const baseCoverageByFile = collectCoverage({
     checkerTargets: state.checkerTargets,
     config: state.config,
+    generatedGraph: state.generatedGraph,
     graphRoutes: state.graphRoutes,
     outsideSourceCoverageByFile: outsideCoverage,
     projectConfigCache: state.preflight.providers.projectConfigs,

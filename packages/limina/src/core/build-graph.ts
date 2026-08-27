@@ -1,7 +1,7 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
-  type GeneratedProviderEdge,
+  type GeneratedDependencyEdge,
   type GeneratedTsconfigGraphResult,
   prepareGeneratedTsconfigGraph,
 } from '#core/build-graph/runner';
@@ -58,9 +58,9 @@ export class BuildGraphCore {
     return new Map(graph.sourceToDts.get(checkerName));
   }
 
-  async getProviderEdges(): Promise<GeneratedProviderEdge[]> {
+  async getDependencyEdges(): Promise<GeneratedDependencyEdge[]> {
     const graph = await this.getGraph();
 
-    return graph.providerEdges.map((edge) => ({ ...edge }));
+    return graph.dependencyEdges.map((edge) => ({ ...edge }));
   }
 }

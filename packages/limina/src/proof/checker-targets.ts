@@ -1,5 +1,12 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import { isBuildCapablePreset } from '#checkers';
+import type {
+  ResolvedCheckerConfig,
+  ResolvedLiminaConfig,
+} from '#config/runner';
+import type {
+  GeneratedTsconfigGraphResult,
+  GovernedSourceUnit,
+} from '#core/build-graph/runner';
 import {
   type CheckerGraphRouteDiagnostic,
   collectGraphProjectRouteFromRoot,
@@ -195,6 +202,46 @@ function resolveCheckerTarget(options: {
   };
 }
 
+function addFrameworkCoverageTargets(options: {
+  checker: ResolvedCheckerConfig;
+  generatedGraph: GeneratedTsconfigGraphResult;
+  targets: CheckerCoverageTarget[];
+}): void {
+  for (const unit of getFrameworkCoverageUnits(
+    options.generatedGraph,
+    options.checker.name,
+  )) {
+    options.targets.push({
+      checker: options.checker,
+      configPath: unit.configPath,
+      coverageConfigPaths: [unit.configPath],
+      label: `${options.checker.name}:${unit.configPath}`,
+    });
+  }
+}
+
+function getFrameworkCoverageUnits(
+  generatedGraph: GeneratedTsconfigGraphResult,
+  checkerName: string,
+): GovernedSourceUnit[] {
+  const governedSources = generatedGraph.governedSources.get(checkerName);
+  if (governedSources === undefined) return [];
+  return [...governedSources.values()];
+}
+
+function addBuildCoverageTarget(options: {
+  checker: ResolvedCheckerConfig;
+  config: ResolvedLiminaConfig;
+  findings: ProofFinding[];
+  generatedGraph: GeneratedTsconfigGraphResult;
+  targets: CheckerCoverageTarget[];
+  workspaceLookup: WorkspaceLookupIndex;
+}): void {
+  const resolved = resolveCheckerTarget(options);
+  options.findings.push(...resolved.findings);
+  if (resolved.target) options.targets.push(resolved.target);
+}
+
 export function collectCheckerCoverageTargets(
   config: ResolvedLiminaConfig,
   generatedGraph: GeneratedTsconfigGraphResult,
@@ -204,17 +251,18 @@ export function collectCheckerCoverageTargets(
   const targets: CheckerCoverageTarget[] = [];
 
   for (const checker of generatedGraph.checkers) {
-    const resolved = resolveCheckerTarget({
+    if (!isBuildCapablePreset(checker.name)) {
+      addFrameworkCoverageTargets({ checker, generatedGraph, targets });
+      continue;
+    }
+    addBuildCoverageTarget({
       checker,
       config,
+      findings,
       generatedGraph,
+      targets,
       workspaceLookup,
     });
-
-    findings.push(...resolved.findings);
-    if (resolved.target) {
-      targets.push(resolved.target);
-    }
   }
 
   return { findings, targets };

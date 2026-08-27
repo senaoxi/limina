@@ -36,6 +36,7 @@ interface WorkspaceExportIndexState {
 interface WorkspaceExportIndexContext {
   config: ResolvedLiminaConfig;
   groups: ReturnType<typeof compileWorkspaceExportResolutionGroups>;
+  includeOxc: boolean;
   importAnalysis: ImportAnalysisContext;
   metrics: WorkspaceExportsMetricsRecorder | undefined;
   profiles: readonly WorkspaceExportsResolutionProfile[];
@@ -85,6 +86,7 @@ function resolveEntry(
   const outcome = resolveWorkspaceExportEntry({
     entry,
     groups: context.groups,
+    includeOxc: context.includeOxc,
     importAnalysis: context.importAnalysis,
     metrics: context.metrics,
     profiles: context.profiles,
@@ -96,6 +98,7 @@ function resolveEntry(
     entry,
     hasOxcResolution: outcome.hasOxcResolution,
     hasTypeScriptResolution: outcome.hasTypeScriptResolution,
+    includeOxc: context.includeOxc,
     problems: context.state.problems,
     profiles: context.profiles,
   });
@@ -139,6 +142,7 @@ function recordProfileMetrics(options: {
 
 export async function createWorkspaceExportsResolutionIndex(options: {
   config: ResolvedLiminaConfig;
+  includeOxc?: boolean;
   importAnalysis: ImportAnalysisContext;
   metrics?: WorkspaceExportsMetricsRecorder;
   packages: WorkspacePackage[];
@@ -149,6 +153,7 @@ export async function createWorkspaceExportsResolutionIndex(options: {
   const context: WorkspaceExportIndexContext = {
     config: options.config,
     groups,
+    includeOxc: options.includeOxc ?? true,
     importAnalysis: options.importAnalysis,
     metrics: options.metrics,
     profiles: options.profiles,

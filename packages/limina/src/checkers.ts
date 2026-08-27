@@ -1,6 +1,27 @@
 import type { CheckerPreset } from '#config/runner';
 import { getCheckerAdapter } from './checker/registry';
 
+export {
+  createAstroMaterializedIdentity,
+  createAstroSemanticProject,
+  materializeAstroSemanticProject,
+} from './checker/astro-semantic-identity';
+export { resolveAstroSemanticToolchain } from './checker/astro-semantic-toolchain';
+export type {
+  AstroConfigClosureEntry,
+  AstroLanguage,
+  AstroLanguagePlugin,
+  AstroMaterializedProject,
+  AstroSemanticProject,
+  AstroSemanticProjectSnapshot,
+  AstroSemanticProjectSnapshotInput,
+  AstroSemanticSeed,
+  AstroSemanticToolchain,
+  AstroServiceScript,
+  AstroSourceScript,
+  AstroUri,
+  AstroVirtualCode,
+} from './checker/astro-semantic-types';
 export { getCheckerExtensions, getResolvedCheckers } from './checker/config';
 export {
   CheckerProjectConfigCache,
@@ -31,6 +52,7 @@ export {
   getCheckerBuildEngine,
   getCheckerCapabilityFamily,
   isBuildCapablePreset,
+  isCheckerCacheReusable,
 } from './checker/registry';
 export type {
   CheckerAdapter,
@@ -38,6 +60,9 @@ export type {
   CheckerCapabilityFamily,
   CheckerCommandTarget,
   CheckerCommandTargetOptions,
+  CheckerDependencies,
+  CheckerDependencyCategory,
+  CheckerDependencyRequirement,
   CheckerModuleResolutionMetricsRecorder,
   CheckerModuleResolveOptions,
   CheckerPackageResolver,
@@ -48,6 +73,23 @@ export type {
   ResolvedCheckerModuleName,
   VueLanguageCore,
 } from './checker/types';
+export {
+  isSupportedVueSemanticVersionTuple,
+  resolveVueSemanticAdapter,
+  resolveVueSourceProfile,
+} from './checker/vue-semantic-identity';
+export type {
+  VolarLanguage,
+  VolarSourceScript,
+  VueLanguageServiceHost,
+  VueProjectSemanticIdentity,
+  VueResolvedModule,
+  VueSemanticAdapter,
+  VueSemanticAdapterFamily,
+  VueSemanticToolchain,
+  VueSemanticVersionTuple,
+  VueSourceProfile,
+} from './checker/vue-semantic-types';
 
 export function resolveCheckerProjectExtensions(options: {
   configPath: string;

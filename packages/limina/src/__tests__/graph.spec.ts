@@ -38,8 +38,7 @@ const ANSI_PATTERN = new RegExp(
 );
 const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
   {
-    typescript: {
-      preset: 'tsc',
+    tsc: {
       include: ['tsconfig.json', '**/tsconfig.json'],
     },
   };
@@ -129,6 +128,14 @@ async function createFixture(
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
     await writeText(path.join(rootDir, relativePath), text);
   }
+  const vueTscPackagePath = requireFromTest.resolve('vue-tsc/package.json');
+  const nodeModulesDir = path.join(rootDir, 'node_modules');
+  await mkdir(nodeModulesDir, { recursive: true });
+  await symlink(
+    path.dirname(vueTscPackagePath),
+    path.join(nodeModulesDir, 'vue-tsc'),
+    'junction',
+  );
 
   return {
     cleanup: async () => {
@@ -167,21 +174,6 @@ async function linkWorkspacePackage(
   await symlink(
     path.relative(nodeModulesDir, path.join(rootDir, target)),
     path.join(nodeModulesDir, name ?? packageName),
-  );
-}
-
-async function linkCompilerSfc(rootDir: string): Promise<void> {
-  const compilerPackagePath = requireFromTest.resolve(
-    '@vue/compiler-sfc/package.json',
-  );
-  const nodeModulesDir = path.join(rootDir, 'node_modules', '@vue');
-
-  await mkdir(nodeModulesDir, {
-    recursive: true,
-  });
-  await symlink(
-    path.relative(nodeModulesDir, path.dirname(compilerPackagePath)),
-    path.join(nodeModulesDir, 'compiler-sfc'),
   );
 }
 
@@ -300,18 +292,14 @@ function createManualGeneratedGraph(
     artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([
-      [
-        'typescript',
-        normalizeAbsolutePath(path.join(rootDir, entryRelativePath)),
-      ],
+      ['tsc', normalizeAbsolutePath(path.join(rootDir, entryRelativePath))],
     ]),
     checkers: [
       {
         exclude: [],
         extensions: [],
         include: [entryRelativePath],
-        name: 'typescript',
-        preset: 'tsc',
+        name: 'tsc',
       },
     ],
     configToOutputBuild: new Map(),
@@ -319,6 +307,7 @@ function createManualGeneratedGraph(
     generatedKnipConfigs: [],
     generatedKnipDiagnostics: [],
     generatedFiles: new Map(),
+    governedSources: new Map(),
     manifest: {
       checkers: {},
       generatedBy: 'limina',
@@ -327,12 +316,20 @@ function createManualGeneratedGraph(
         packages: [],
       },
       ownedArtifacts: [],
-      providerEdges: [],
-      version: 3,
+      ownership: { configs: [], solutions: [] },
+      targets: { build: [], framework: [] },
+      dependencyEdges: [],
+      version: 5,
     },
     manifestPath: path.join(rootDir, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),
-    providerEdges: [],
+    ownershipPlan: {
+      dependencyFacts: [],
+      entryOwnerByConfigPath: new Map(),
+      solutions: new Map(),
+      typeConfigs: new Map(),
+    },
+    dependencyEdges: [],
     sourceToBuild: new Map(),
     sourceToDts: new Map(),
   };
@@ -1585,7 +1582,7 @@ packages:
     }
   });
 
-  it('accepts prepared refs for managed output declaration package providers', async () => {
+  it('does not reverse-map managed declarations into project references', async () => {
     const fixture = await createFixture(
       createManagedOutputWorkspacePackageFiles(),
     );
@@ -1598,7 +1595,26 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      const generatedGraph = await prepareGeneratedTsconfigGraph(
+        fixture.config,
+      );
+      const appGeneratedConfig = JSON.parse(
+        await readFile(
+          path.join(
+            fixture.rootDir,
+            '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json',
+          ),
+          'utf8',
+        ),
+      ) as { references: { path: string }[] };
+
+      expect(generatedGraph.manifest.dependencyEdges).toEqual([]);
+      expect(appGeneratedConfig.references).toEqual([]);
+      await expect(
+        runGraphCheck(fixture.config, {
+          generatedGraphProvider: async () => generatedGraph,
+        }),
+      ).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1622,7 +1638,7 @@ packages:
       );
       const appGeneratedConfigPath = path.join(
         fixture.rootDir,
-        '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json',
+        '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json',
       );
       const appGeneratedConfig = JSON.parse(
         await readFile(appGeneratedConfigPath, 'utf8'),
@@ -1670,7 +1686,7 @@ packages:
     }
   });
 
-  it('reports workspace package exports unresolved by TypeScript', async () => {
+  it('reports workspace package exports unresolved by TypeScript without consulting Oxc', async () => {
     const fixture = await createFixture({
       'packages/internal/package.json': stringifyConfig({
         main: 'lib/index.js',
@@ -1740,23 +1756,16 @@ packages:
       );
       expect(
         declarationIssue?.detailLines?.some((line) =>
-          line.startsWith('    - .limina/tsconfig/checkers/typescript/'),
+          line.startsWith('    - .limina/tsconfig/checkers/tsc/'),
         ),
       ).toBe(true);
-      expect(runtimeIssue?.detailLines).toEqual(
-        expect.arrayContaining([
-          '  resolver: Oxc runtime resolver',
-          '  expected runtime candidates:',
-          '    - packages/internal/lib/index.js',
-          '  reason: package.json#exports declares this public entry, but no active checker profile can resolve it.',
-        ]),
-      );
+      expect(runtimeIssue).toBeUndefined();
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('reports source package exports unresolved by Oxc', async () => {
+  it('accepts source package exports resolved by TypeScript without consulting Oxc', async () => {
     const fixture = await createFixture({
       'packages/internal/package.json': stringifyConfig({
         exports: {
@@ -1789,33 +1798,8 @@ packages:
 
     try {
       const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
-      const issue = issues.find(
-        (item) =>
-          item.title ===
-          'Workspace package export points to an unresolved public entry',
-      );
-
-      expect(passed).toBe(false);
-      expect(issue).toEqual(
-        expect.objectContaining({
-          packageManifestPath: 'packages/internal/package.json',
-          packageName: '@example/internal',
-          task: 'graph:check',
-        }),
-      );
-      expect(issue?.detailLines).toEqual(
-        expect.arrayContaining([
-          '  check: graph:check workspace exports preflight',
-          '  package: @example/internal',
-          '  package.json: packages/internal/package.json',
-          '  export: .',
-          '  specifier: @example/internal',
-          '  declared targets:',
-          '    - ./src/index.ts',
-          '  resolver: Oxc runtime resolver',
-          '  reason: package.json#exports declares this public entry, but no active checker profile can resolve it.',
-        ]),
-      );
+      expect(passed).toBe(true);
+      expect(issues).toEqual([]);
     } finally {
       await fixture.cleanup();
     }
@@ -2017,7 +2001,7 @@ packages:
         "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
     });
     const generatedAppDtsRelativePath =
-      '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.lib.dts.json';
+      '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json';
     files[generatedAppDtsRelativePath] = generatedDtsConfig({
       include: ['../../../../../../packages/app/src/**/*.ts'],
       sourceConfig: '../../../../../../packages/app/tsconfig.lib.json',
@@ -2056,18 +2040,18 @@ packages:
       const unreachableInternalDtsConfigPath = normalizeAbsolutePath(
         path.join(
           fixture.rootDir,
-          '.limina/tsconfig/checkers/typescript/projects/packages/internal/tsconfig.lib.dts.json',
+          '.limina/tsconfig/checkers/tsc/projects/packages/internal/tsconfig.lib.dts.json',
         ),
       );
       generatedGraph.sourceToDts.set(
-        'typescript',
+        'tsc',
         new Map([
           [appSourceConfigPath, appDtsConfigPath],
           [internalSourceConfigPath, unreachableInternalDtsConfigPath],
         ]),
       );
       generatedGraph.dtsToSource.set(
-        'typescript',
+        'tsc',
         new Map([
           [appDtsConfigPath, appSourceConfigPath],
           [internalDtsConfigPath, internalSourceConfigPath],
@@ -2155,7 +2139,7 @@ packages:
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appSource:
-          "export const internalPath = require.resolve('@example/internal');\n",
+          "export const internalPath = require.resolve('@example/internal/runtime');\n",
       }),
     );
 
@@ -2173,6 +2157,11 @@ packages:
       expect(issues).not.toContainEqual(
         expect.objectContaining({
           code: LIMINA_CHECK_ISSUE_CODES.graphReferenceMissing,
+        }),
+      );
+      expect(issues).not.toContainEqual(
+        expect.objectContaining({
+          code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
         }),
       );
     } finally {
@@ -2203,7 +2192,7 @@ packages:
     }
   });
 
-  it('accepts same-engine cross-checker provider edges without TypeScript project references', async () => {
+  it('rejects cross-checker declaration-provider components', async () => {
     const fixture = await createFixture(
       {
         'packages/app/src/index.ts':
@@ -2222,13 +2211,46 @@ packages:
       },
       undefined,
       {
-        typescript: {
+        tsc: {
           include: ['packages/app/tsconfig.json'],
-          preset: 'tsc',
         },
-        themeTypescript: {
+        tsgo: {
           include: ['packages/theme/tsconfig.json'],
-          preset: 'tsc',
+        },
+      },
+    );
+
+    try {
+      await expect(runGraphCheck(fixture.config)).rejects.toThrow(
+        'Build checker ownership conflict',
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not analyze an Astro file outside an explicit tsc owner observation set', async () => {
+    const fixture = await createFixture(
+      {
+        'app/package.json': stringifyConfig({
+          name: '@fixture/app',
+          private: true,
+        }),
+        'app/src/index.ts': 'export const value = 1;\n',
+        'app/src/Page.astro': [
+          '---',
+          "import { value } from './index.ts';",
+          'void value;',
+          '---',
+          '<h1>Astro</h1>',
+          '',
+        ].join('\n'),
+        'app/tsconfig.json': typecheckConfig(['src/**/*']),
+      },
+      undefined,
+      {
+        tsc: {
+          include: ['app/tsconfig.json'],
         },
       },
     );
@@ -3228,8 +3250,7 @@ describe('runGraphCheck graph rules', () => {
       createVueExportWorkspacePackageFiles(),
       undefined,
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3239,7 +3260,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
       await linkWorkspacePackage(
         fixture.rootDir,
         'packages/app',
@@ -3260,8 +3280,7 @@ describe('runGraphCheck graph rules', () => {
       }),
       undefined,
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3271,7 +3290,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
       await linkWorkspacePackage(
         fixture.rootDir,
         'packages/app',
@@ -3285,7 +3303,7 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
-  it('allows different checker coverage through separate entries', async () => {
+  it('rejects different primary checker owners reached through separate entries', async () => {
     const fixture = await createFixture(
       {
         'packages/ts/tsconfig.json': stringifyConfig({
@@ -3315,21 +3333,19 @@ describe('runGraphCheck graph rules', () => {
       },
       undefined,
       {
-        typescript: {
-          preset: 'tsc',
+        tsc: {
           include: ['packages/ts/tsconfig.json'],
         },
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: ['packages/vue/tsconfig.json'],
         },
       },
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
-
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(runGraphCheck(fixture.config)).rejects.toThrow(
+        /Checker ownership conflict[\s\S]*checker: tsc[\s\S]*checker: vue-tsc/u,
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -3343,8 +3359,7 @@ describe('runGraphCheck graph rules', () => {
       }),
       undefined,
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3354,7 +3369,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
       await linkWorkspacePackage(
         fixture.rootDir,
         'packages/app',
@@ -3377,8 +3391,7 @@ describe('runGraphCheck graph rules', () => {
       }),
       undefined,
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3388,7 +3401,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
       await linkWorkspacePackage(
         fixture.rootDir,
         'packages/app',
@@ -3425,8 +3437,7 @@ describe('runGraphCheck graph rules', () => {
         },
       },
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3436,7 +3447,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
       await linkWorkspacePackage(
         fixture.rootDir,
         'packages/app',
@@ -3459,8 +3469,7 @@ describe('runGraphCheck graph rules', () => {
       }),
       undefined,
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3470,8 +3479,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
-
       await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
@@ -3486,8 +3493,7 @@ describe('runGraphCheck graph rules', () => {
       }),
       undefined,
       {
-        vue: {
-          preset: 'vue-tsc',
+        'vue-tsc': {
           include: [
             'packages/app/tsconfig.json',
             'packages/internal/tsconfig.json',
@@ -3497,7 +3503,6 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await linkCompilerSfc(fixture.rootDir);
       await linkWorkspacePackage(
         fixture.rootDir,
         'packages/app',

@@ -190,9 +190,10 @@ async function runCheckerTypecheckTask(
 ): Promise<BuiltinTaskResult> {
   const result = await runCheckerTypecheck(createCheckerOptions(context));
   return {
+    disabled: result.disabled,
     issues: context.issues,
     passed: result.passed,
-    stats: createCheckerTaskStats(result),
+    stats: result.disabled ? undefined : createCheckerTaskStats(result),
   };
 }
 

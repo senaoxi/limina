@@ -75,7 +75,7 @@ async function resolveSelection(options: {
       sourceConfigPaths,
     },
     {
-      checkerName: 'typescript',
+      checkerName: 'tsc',
       exclude: options.exclude,
       include: options.include ?? ['**/tsconfig.json'],
     },

@@ -65,7 +65,6 @@ export const CHECKER_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     tests: [
       FALLBACK_CONTRACT_TEST,
       'packages/limina/fixtures/detectors/fault-injection/command-throw/case.mts',
-      'packages/limina/fixtures/detectors/fault-injection/cleanup-descriptor-failure/case.mts',
       'packages/limina/fixtures/detectors/fault-injection/process-spawn-enoent/case.mts',
       'packages/limina/fixtures/detectors/fault-injection/process-nonzero-exit/case.mts',
       'packages/limina/fixtures/detectors/fault-injection/process-signal-termination/case.mts',

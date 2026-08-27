@@ -1,6 +1,6 @@
 import {
   getActiveCheckers,
-  isAutoCheckerConfigMode,
+  getAutoCheckerConfig,
   type ResolvedLiminaConfig,
 } from '#config/runner';
 import {
@@ -9,13 +9,6 @@ import {
 } from '../../core/checkers/entry-selection';
 import type { MigrationEntry, MigrationEntryCollection } from './types';
 
-function isAutoCheckerMode(config: ResolvedLiminaConfig): boolean {
-  return (
-    config.config?.checkers === undefined ||
-    isAutoCheckerConfigMode(config.config.checkers)
-  );
-}
-
 function getConfiguredCheckers(
   config: ResolvedLiminaConfig,
 ): NonNullable<ResolvedLiminaConfig['config']>['checkers'] | undefined {
@@ -23,14 +16,9 @@ function getConfiguredCheckers(
   return rootConfig === undefined ? undefined : rootConfig.checkers;
 }
 
-function getExcludePatterns(checkers: { exclude?: string[] }): string[] {
-  const exclude = checkers.exclude;
-  return exclude === undefined ? [] : exclude;
-}
-
 function getAutoExcludePatterns(config: ResolvedLiminaConfig): string[] {
   const checkers = getConfiguredCheckers(config);
-  return isAutoCheckerConfigMode(checkers) ? getExcludePatterns(checkers) : [];
+  return getAutoCheckerConfig(checkers).exclude ?? [];
 }
 
 async function collectAutoMigrationEntries(
@@ -70,7 +58,6 @@ async function collectCheckerEntries(options: {
   config: ResolvedLiminaConfig;
   sourceConfigPaths: readonly string[];
 }): Promise<{
-  candidateCount: number;
   entries: MigrationEntry[];
 }> {
   const selection = await resolveCheckerEntrySelection(
@@ -78,14 +65,13 @@ async function collectCheckerEntries(options: {
     createCheckerEntrySelectionOptions(options.checker),
   );
   return {
-    candidateCount: selection.includedEntryPaths.length,
     entries: selection.effectiveEntryPaths.map((configPath) => ({
       configPath,
     })),
   };
 }
 
-async function collectExplicitMigrationEntries(
+async function collectUnifiedMigrationEntries(
   config: ResolvedLiminaConfig,
   sourceConfigPaths: readonly string[],
 ): Promise<MigrationEntryCollection> {
@@ -93,7 +79,6 @@ async function collectExplicitMigrationEntries(
   const includePatterns = new Set<string>();
   const excludePatterns = new Set<string>();
   const entries: MigrationEntry[] = [];
-  let candidateEntryCount = 0;
 
   for (const checker of checkers) {
     addPatterns(includePatterns, checker.include);
@@ -103,17 +88,29 @@ async function collectExplicitMigrationEntries(
       config,
       sourceConfigPaths,
     });
-    candidateEntryCount += collected.candidateCount;
     entries.push(...collected.entries);
   }
 
+  const auto = await collectAutoMigrationEntries(config, sourceConfigPaths);
+  const entriesByPath = new Map(
+    [...auto.entries, ...entries].map((entry) => [entry.configPath, entry]),
+  );
   return {
-    activeCheckerCount: checkers.length,
-    candidateEntryCount,
-    entries,
-    excludePatterns: [...excludePatterns].sort(),
-    includePatterns: [...includePatterns].sort(),
-    mode: 'explicit',
+    activeCheckerCount: checkers.length + 1,
+    candidateEntryCount: new Set([
+      ...auto.entries.map((entry) => entry.configPath),
+      ...entries.map((entry) => entry.configPath),
+    ]).size,
+    entries: [...entriesByPath.values()].sort((left, right) =>
+      left.configPath.localeCompare(right.configPath),
+    ),
+    excludePatterns: [
+      ...new Set([...auto.excludePatterns, ...excludePatterns]),
+    ].sort(),
+    includePatterns: [
+      ...new Set([...auto.includePatterns, ...includePatterns]),
+    ].sort(),
+    mode: 'unified',
   };
 }
 
@@ -121,9 +118,9 @@ export async function collectMigrationEntries(
   config: ResolvedLiminaConfig,
   sourceConfigPaths: readonly string[],
 ): Promise<MigrationEntryCollection> {
-  return isAutoCheckerMode(config)
+  return getActiveCheckers(config).length === 0
     ? collectAutoMigrationEntries(config, sourceConfigPaths)
-    : collectExplicitMigrationEntries(config, sourceConfigPaths);
+    : collectUnifiedMigrationEntries(config, sourceConfigPaths);
 }
 
 function formatPatternList(patterns: readonly string[]): string {
@@ -137,7 +134,7 @@ export function createNoMigrationEntryError(
   const modeReason =
     collection.mode === 'auto'
       ? 'auto mode scans user-side **/tsconfig.json entries inside activated regions, then applies config.checkers.exclude.'
-      : 'explicit checker mode expands config.checkers.<name>.include inside activated regions, then applies each checker exclude.';
+      : 'unified checker discovery merges automatic tsconfig.json roots with named checker entries; named entries remain active even when auto.exclude filters them.';
   return new Error(
     [
       'Limina migration found no tsconfig.json entries to migrate.',
@@ -149,7 +146,7 @@ export function createNoMigrationEntryError(
       `  candidate entries before exclude: ${collection.candidateEntryCount}`,
       '  active entries after exclude: 0',
       `  reason: ${modeReason}`,
-      '  fix: check Limina config.checkers include/exclude, or switch from auto mode to explicit checker includes for the tsconfig.json entries Limina should govern.',
+      '  fix: check config.checkers.auto.exclude and named checker include/exclude scopes for the tsconfig.json entries Limina should govern.',
     ].join('\n'),
   );
 }

@@ -5,6 +5,7 @@ import {
   link,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -18,6 +19,7 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { createLiminaCli } from '../cli';
 import { runMigration } from '../commands/migration';
+import { LiminaFlowReporter } from '../flow';
 import { createFixturePathResolver, toPortablePaths } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
@@ -101,6 +103,83 @@ async function commitFixture(rootDir: string): Promise<void> {
   );
 }
 
+async function collectMigrationTransactionDirectories(
+  rootDir: string,
+): Promise<string[]> {
+  const output: string[] = [];
+  async function visit(directory: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const entryPath = path.join(directory, entry.name);
+      if (entry.name.startsWith('.limina-migration-')) {
+        output.push(entryPath);
+      }
+      await visit(entryPath);
+    }
+  }
+  await visit(rootDir);
+  return output.sort();
+}
+
+async function createHardlinkMigrationFixture(count: number): Promise<{
+  aliases: string[];
+  cleanup: () => Promise<void>;
+  config: ResolvedLiminaConfig;
+  rootDir: string;
+  targets: string[];
+}> {
+  const files: Record<string, string> = {
+    'limina.config.mjs': 'export default {};\n',
+  };
+  for (let index = 0; index < count; index += 1) {
+    files[`packages/pkg-${index}/package.json`] = json({
+      name: `@example/pkg-${index}`,
+      private: true,
+      type: 'module',
+    });
+    files[`packages/pkg-${index}/src/index.ts`] = 'export {};\n';
+    files[`packages/pkg-${index}/tsconfig.json`] = json({
+      compilerOptions: {
+        outDir: './dist',
+        rootDir: './src',
+        target: 'ES2023',
+      },
+      include: ['src/**/*.ts'],
+    });
+  }
+  const fixture = await createFixture(files);
+  const targets: string[] = [];
+  const aliases: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const targetPath = fixture.path(
+      'packages',
+      `pkg-${index}`,
+      'tsconfig.json',
+    );
+    const aliasPath = fixture.path('aliases', `pkg-${index}.json`);
+    await mkdir(path.dirname(aliasPath), { recursive: true });
+    await link(targetPath, aliasPath);
+    targets.push(targetPath);
+    aliases.push(aliasPath);
+  }
+  await commitFixture(fixture.rootDir);
+  return {
+    aliases,
+    cleanup: fixture.cleanup,
+    config: createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        tsc: {
+          include: targets.map((targetPath) =>
+            path.relative(fixture.rootDir, targetPath),
+          ),
+        },
+      },
+    }),
+    rootDir: fixture.rootDir,
+    targets,
+  };
+}
+
 function createResolvedConfig(
   rootDir: string,
   config: NonNullable<ResolvedLiminaConfig['config']>,
@@ -166,9 +245,8 @@ async function createMultipleWorktreeFixture(
     cleanup: () => removeFixtureDirectory(parentDir),
     config: createResolvedConfig(rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json', '../external/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     }),
@@ -195,9 +273,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/pkg/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -206,7 +283,6 @@ describe('runMigration', () => {
       'packages/pkg/tsconfig.json',
     );
     const before = await readFile(tsconfigPath, 'utf8');
-
     try {
       await expect(runMigration(config)).rejects.toThrow(
         /Unable to resolve the Git worktree/u,
@@ -217,7 +293,7 @@ describe('runMigration', () => {
     }
   });
 
-  it('fails before writing when the git workspace is dirty', async () => {
+  it('stops without writing when a dirty git workspace is not approved', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
@@ -232,9 +308,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/pkg/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -243,15 +318,100 @@ describe('runMigration', () => {
       'packages/pkg/tsconfig.json',
     );
     const before = await readFile(tsconfigPath, 'utf8');
+    const flowOutput: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: {},
+      forceTty: true,
+      output: {
+        write: (message) => {
+          flowOutput.push(message);
+        },
+      },
+      stdout: {
+        columns: 80,
+        isTTY: true,
+      },
+    });
+    let promptFlowLine: string | undefined;
 
     try {
       await commitFixture(fixture.rootDir);
-      await writeText(path.join(fixture.rootDir, 'dirty.txt'), 'dirty\n');
-
-      await expect(runMigration(config)).rejects.toThrow(
-        /requires a clean git working tree/u,
+      await writeText(
+        path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
+        'export const value = 2;\n',
       );
+
+      const confirmationMessages: string[] = [];
+      await expect(
+        runMigration(config, {
+          flow,
+          flowDepth: 1,
+          confirmDirtyWorkspace: async (message) => {
+            confirmationMessages.push(message);
+            promptFlowLine = flowOutput.at(-1);
+            return false;
+          },
+        }),
+      ).rejects.toThrow(/Keep every involved Git working tree clean/u);
+      expect(confirmationMessages).toHaveLength(1);
+      expect(confirmationMessages[0]).toMatch(
+        /Continue and write the planned tsconfig\*\.json changes\?/u,
+      );
+      expect(confirmationMessages[0]).toContain(' M packages/pkg/src/index.ts');
+      expect(promptFlowLine).toBe('\r\u001B[1A\u001B[J');
+      expect(flowOutput.join('')).toContain('migration failed');
       await expect(readFile(tsconfigPath, 'utf8')).resolves.toBe(before);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('writes the planned tsconfig changes when a dirty workspace is approved', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/pkg/src/index.ts': 'export const value = 1;\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          outDir: './dist',
+          rootDir: './src',
+          target: 'ES2023',
+        },
+        include: ['src/**/*.ts'],
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        tsc: {
+          include: ['packages/pkg/tsconfig.json'],
+        },
+      },
+    });
+    const tsconfigPath = fixture.path('packages/pkg/tsconfig.json');
+
+    try {
+      await commitFixture(fixture.rootDir);
+      await writeText(
+        fixture.path('packages/pkg/src/index.ts'),
+        'export const value = 2;\n',
+      );
+
+      await expect(
+        runMigration(config, {
+          confirmDirtyWorkspace: async () => true,
+        }),
+      ).resolves.toMatchObject({
+        modifiedFiles: toPortablePaths([tsconfigPath]),
+      });
+      await expect(
+        readJson<{ liminaOptions?: { outputs?: { outDir?: string } } }>(
+          tsconfigPath,
+        ),
+      ).resolves.toMatchObject({
+        liminaOptions: { outputs: { outDir: './dist' } },
+      });
+      await expect(
+        readFile(fixture.path('packages/pkg/src/index.ts'), 'utf8'),
+      ).resolves.toBe('export const value = 2;\n');
     } finally {
       await fixture.cleanup();
     }
@@ -285,20 +445,37 @@ describe('runMigration', () => {
     }
   });
 
-  it('checks every involved Git worktree for cleanliness before any write', async () => {
+  it('checks every involved Git worktree before asking once and writing nothing when declined', async () => {
     const fixture = await createMultipleWorktreeFixture();
     const rootBefore = await readFile(fixture.rootConfigPath, 'utf8');
     const externalBefore = await readFile(fixture.externalConfigPath, 'utf8');
 
     try {
       await writeText(
-        path.join(fixture.externalRootDir, 'dirty.txt'),
-        'dirty\n',
+        path.join(fixture.externalRootDir, 'src/index.ts'),
+        'export const value = 2;\n',
       );
 
-      await expect(runMigration(fixture.config)).rejects.toThrow(
-        /requires a clean git working tree/u,
+      await writeText(
+        path.join(fixture.rootDir, 'src/index.ts'),
+        'export const value = 2;\n',
       );
+      const confirmationMessages: string[] = [];
+      await expect(
+        runMigration(fixture.config, {
+          confirmDirtyWorkspace: async (message) => {
+            confirmationMessages.push(message);
+            return false;
+          },
+        }),
+      ).rejects.toThrow(/stopped without writing tsconfig files/u);
+      expect(confirmationMessages).toHaveLength(1);
+      const [rootDir, externalRootDir] = toPortablePaths([
+        fixture.rootDir,
+        fixture.externalRootDir,
+      ]);
+      expect(confirmationMessages[0]).toContain(rootDir);
+      expect(confirmationMessages[0]).toContain(externalRootDir);
       await expect(readFile(fixture.rootConfigPath, 'utf8')).resolves.toBe(
         rootBefore,
       );
@@ -347,7 +524,7 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        mode: 'auto',
+        auto: {},
       },
     });
 
@@ -380,9 +557,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/*/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -418,9 +594,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/pkg/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -464,9 +639,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/*/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -483,6 +657,157 @@ describe('runMigration', () => {
       );
       await expect(readFile(firstPath)).resolves.toEqual(firstBefore);
       await expect(readFile(laterPath)).resolves.toEqual(laterBefore);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('cancels a hardlink migration before creating transaction artifacts', async () => {
+    const fixture = await createHardlinkMigrationFixture(1);
+    const before = await readFile(fixture.targets[0]!);
+    const beforeStat = await stat(fixture.targets[0]!, { bigint: true });
+    const messages: string[] = [];
+    const flowOutput: string[] = [];
+    const flow = new LiminaFlowReporter({
+      env: {},
+      forceTty: true,
+      output: {
+        write: (message) => {
+          flowOutput.push(message);
+        },
+      },
+      stdout: {
+        columns: 80,
+        isTTY: true,
+      },
+    });
+    let promptFlowLine: string | undefined;
+
+    try {
+      await expect(
+        runMigration(fixture.config, {
+          flow,
+          flowDepth: 1,
+          selectHardlinkStrategy: async (message) => {
+            messages.push(message);
+            promptFlowLine = flowOutput.at(-1);
+            return 'cancel';
+          },
+        }),
+      ).rejects.toThrow(/canceled before writing/u);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain('packages/pkg-0/tsconfig.json');
+      expect(promptFlowLine).toBe('\r\u001B[1A\u001B[J');
+      expect(await readFile(fixture.targets[0]!)).toEqual(before);
+      expect((await stat(fixture.targets[0]!, { bigint: true })).ino).toBe(
+        beforeStat.ino,
+      );
+      expect(
+        await collectMigrationTransactionDirectories(fixture.rootDir),
+      ).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('shows at most five hardlink paths in one strategy prompt', async () => {
+    const fixture = await createHardlinkMigrationFixture(6);
+    const messages: string[] = [];
+
+    try {
+      await expect(
+        runMigration(fixture.config, {
+          selectHardlinkStrategy: async (message) => {
+            messages.push(message);
+            return 'cancel';
+          },
+        }),
+      ).rejects.toThrow(/canceled before writing/u);
+      expect(messages).toHaveLength(1);
+      for (let index = 0; index < 5; index += 1) {
+        expect(messages[0]).toContain(`packages/pkg-${index}/tsconfig.json`);
+      }
+      expect(messages[0]).not.toContain('packages/pkg-5/tsconfig.json');
+      expect(messages[0]).toContain('... and 1 more');
+      expect(
+        await collectMigrationTransactionDirectories(fixture.rootDir),
+      ).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('fails without writes when hardlink policy cannot be requested non-interactively', async () => {
+    const fixture = await createHardlinkMigrationFixture(1);
+    const before = await readFile(fixture.targets[0]!);
+
+    try {
+      await expect(runMigration(fixture.config)).rejects.toThrow(
+        /cannot request a write strategy in a non-interactive environment/u,
+      );
+      expect(await readFile(fixture.targets[0]!)).toEqual(before);
+      expect(
+        await collectMigrationTransactionDirectories(fixture.rootDir),
+      ).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports hardlink skips separately while migrating ordinary configs', async () => {
+    const fixture = await createHardlinkMigrationFixture(2);
+    await rm(fixture.aliases[1]!);
+    const hardlinkBefore = await readFile(fixture.targets[0]!);
+    const ordinaryBeforeStat = await stat(fixture.targets[1]!, {
+      bigint: true,
+    });
+
+    try {
+      const result = await runMigration(fixture.config, {
+        confirmDirtyWorkspace: async () => true,
+        selectHardlinkStrategy: async () => 'skip',
+      });
+
+      expect(result.hardlinkSkippedFiles).toEqual(
+        toPortablePaths([fixture.targets[0]!]),
+      );
+      expect(result.hardlinkRewrittenFiles).toEqual([]);
+      expect(result.modifiedFiles).toEqual(
+        toPortablePaths([fixture.targets[1]!]),
+      );
+      expect(result.skippedFiles).toEqual([]);
+      expect(await readFile(fixture.targets[0]!)).toEqual(hardlinkBefore);
+      expect((await stat(fixture.targets[1]!, { bigint: true })).ino).not.toBe(
+        ordinaryBeforeStat.ino,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports hardlink rewrites and preserves every alias', async () => {
+    const fixture = await createHardlinkMigrationFixture(1);
+    const before = await stat(fixture.targets[0]!, { bigint: true });
+
+    try {
+      const result = await runMigration(fixture.config, {
+        selectHardlinkStrategy: async () => 'rewrite',
+      });
+      const targetAfter = await stat(fixture.targets[0]!, { bigint: true });
+      const aliasAfter = await stat(fixture.aliases[0]!, { bigint: true });
+
+      expect(result.hardlinkRewrittenFiles).toEqual(
+        toPortablePaths([fixture.targets[0]!]),
+      );
+      expect(result.hardlinkSkippedFiles).toEqual([]);
+      expect(result.modifiedFiles).toEqual(
+        toPortablePaths([fixture.targets[0]!]),
+      );
+      expect(targetAfter.ino).toBe(before.ino);
+      expect(aliasAfter.ino).toBe(before.ino);
+      expect(await readFile(fixture.aliases[0]!)).toEqual(
+        await readFile(fixture.targets[0]!),
+      );
     } finally {
       await fixture.cleanup();
     }
@@ -512,12 +837,14 @@ describe('runMigration', () => {
     );
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        auto: {
+          exclude: ['storage/tsconfig.json'],
+        },
+        tsc: {
           include: [
             'packages/symlink/tsconfig.json',
             'packages/hardlink/tsconfig.json',
           ],
-          preset: 'tsc',
         },
       },
     });
@@ -569,9 +896,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -653,9 +979,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -712,9 +1037,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -763,9 +1087,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -803,9 +1126,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/*/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -843,9 +1165,8 @@ describe('runMigration', () => {
       });
       const config = createResolvedConfig(fixture.rootDir, {
         checkers: {
-          typescript: {
+          tsc: {
             include: ['tsconfig.json'],
-            preset: 'tsc',
           },
         },
       });
@@ -885,9 +1206,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -928,9 +1248,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -975,9 +1294,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1007,9 +1325,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1046,9 +1363,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1083,9 +1399,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1117,9 +1432,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1160,9 +1474,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1196,9 +1509,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1228,9 +1540,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1263,9 +1574,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/app/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1295,7 +1605,7 @@ describe('runMigration', () => {
     }
   });
 
-  it('does not apply declarationDir-only mixed-solution validation without a direct field', async () => {
+  it('treats a default config with effective sources and references as a leaf', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'packages/app/src/index.ts': 'export const value = 1;\n',
@@ -1311,9 +1621,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/app/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1330,22 +1639,27 @@ describe('runMigration', () => {
       await commitFixture(fixture.rootDir);
       await expect(runMigration(config)).resolves.toMatchObject({
         checkerEntryCount: 1,
-        modifiedFiles: toPortablePaths([solutionPath, leafPath]),
+        modifiedFiles: toPortablePaths([solutionPath]),
+      });
+      await expect(
+        readJson<Record<string, unknown>>(solutionPath),
+      ).resolves.toMatchObject({
+        include: ['src/**/*.ts'],
       });
       await expect(readFile(solutionPath, 'utf8')).resolves.not.toContain(
-        'mixed aggregator with effective source inputs',
+        'references',
       );
       await expect(
         readJson<Record<string, unknown>>(leafPath),
       ).resolves.toMatchObject({
-        liminaOptions: { outputs: { outDir: './dist' } },
+        compilerOptions: { outDir: './dist' },
       });
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('treats .vue inputs as effective mixed-solution sources', async () => {
+  it('treats .vue inputs as effective leaf sources', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'packages/app/src/App.vue': '<script setup lang="ts">\n</script>\n',
@@ -1361,9 +1675,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/app/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1380,17 +1693,24 @@ describe('runMigration', () => {
 
     try {
       await commitFixture(fixture.rootDir);
-      await expect(runMigration(config)).rejects.toThrow(
-        /mixed aggregator with effective source inputs/u,
-      );
-      await expect(readFile(solutionPath)).resolves.toEqual(solutionBefore);
+      await expect(runMigration(config)).resolves.toMatchObject({
+        checkerEntryCount: 1,
+        modifiedFiles: toPortablePaths([solutionPath]),
+      });
+      await expect(readFile(solutionPath)).resolves.not.toEqual(solutionBefore);
+      await expect(
+        readJson<Record<string, unknown>>(solutionPath),
+      ).resolves.toMatchObject({
+        include: ['src/**/*.vue'],
+        liminaOptions: { outputs: { outDir: './types' } },
+      });
       await expect(readFile(leafPath)).resolves.toEqual(leafBefore);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('rejects a mixed solution with direct declarationDir before writing', async () => {
+  it('migrates a default leaf with effective sources and direct declarationDir', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'packages/app/src/index.ts': 'export const value = 1;\n',
@@ -1406,9 +1726,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['packages/app/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1419,11 +1738,16 @@ describe('runMigration', () => {
 
     try {
       await commitFixture(fixture.rootDir);
-      const before = await readFile(solutionPath);
-      await expect(runMigration(config)).rejects.toThrow(
-        /mixed aggregator with effective source inputs/u,
-      );
-      await expect(readFile(solutionPath)).resolves.toEqual(before);
+      await expect(runMigration(config)).resolves.toMatchObject({
+        checkerEntryCount: 1,
+        modifiedFiles: toPortablePaths([solutionPath]),
+      });
+      await expect(
+        readJson<Record<string, unknown>>(solutionPath),
+      ).resolves.toMatchObject({
+        include: ['src/**/*.ts'],
+        liminaOptions: { outputs: { outDir: './types' } },
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -1444,9 +1768,8 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        tsc: {
           include: ['tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1544,10 +1867,12 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        auto: {
+          exclude: ['packages/ignored/**'],
+        },
+        tsc: {
           exclude: ['packages/ignored/**'],
           include: ['packages/*/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1629,6 +1954,144 @@ describe('runMigration', () => {
     }
   });
 
+  it('fails closed on one reachable named semantic solution before writing', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': json({
+        files: [],
+        references: [{ path: './tsconfig.solution.json' }],
+      }),
+      'packages/app/tsconfig.solution.json': json({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/app/tsconfig.lib.json': json({
+        include: ['src/**/*.ts'],
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        tsc: {
+          include: ['packages/app/tsconfig.json'],
+        },
+      },
+    });
+    const solutionPath = path.join(
+      fixture.rootDir,
+      'packages/app/tsconfig.solution.json',
+    );
+    const before = await Promise.all([
+      readFile(path.join(fixture.rootDir, 'packages/app/tsconfig.json')),
+      readFile(solutionPath),
+      readFile(path.join(fixture.rootDir, 'packages/app/tsconfig.lib.json')),
+    ]);
+
+    try {
+      await commitFixture(fixture.rootDir);
+      await expect(runMigration(config)).rejects.toThrow(
+        /Migration found TypeScript solution configs with unsupported filenames:\n {2}- packages\/app\/tsconfig\.solution\.json\n/u,
+      );
+      await expect(
+        Promise.all([
+          readFile(path.join(fixture.rootDir, 'packages/app/tsconfig.json')),
+          readFile(solutionPath),
+          readFile(
+            path.join(fixture.rootDir, 'packages/app/tsconfig.lib.json'),
+          ),
+        ]),
+      ).resolves.toEqual(before);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('reports all reachable named semantic solutions in stable portable order', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': json({
+        files: [],
+        references: [
+          { path: './tsconfig.zeta.json' },
+          { path: './tsconfig.alpha.json' },
+        ],
+      }),
+      'packages/app/tsconfig.alpha.json': json({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/app/tsconfig.zeta.json': json({
+        files: [],
+        references: [{ path: './tsconfig.alpha.json' }],
+      }),
+      'packages/app/tsconfig.lib.json': json({
+        include: ['src/**/*.ts'],
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        tsc: {
+          include: ['packages/app/tsconfig.json'],
+        },
+      },
+    });
+
+    try {
+      await commitFixture(fixture.rootDir);
+      await expect(runMigration(config)).rejects.toThrow(
+        /Migration found TypeScript solution configs with unsupported filenames:\n {2}- packages\/app\/tsconfig\.alpha\.json\n {2}- packages\/app\/tsconfig\.zeta\.json\n/u,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not diagnose reserved or unreachable named configs', async () => {
+    const fixture = await createFixture({
+      'limina.config.mjs': 'export default {};\n',
+      'packages/app/src/index.ts': 'export const value = 1;\n',
+      'packages/app/tsconfig.json': json({
+        files: [],
+        references: [
+          { path: './tsconfig.build.json' },
+          { path: './tsconfig.lib.json' },
+        ],
+      }),
+      'packages/app/tsconfig.build.json': json({
+        files: [],
+        references: [{ path: './tsconfig.solution.json' }],
+      }),
+      'packages/app/tsconfig.solution.json': json({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/app/tsconfig.lib.json': json({
+        include: ['src/**/*.ts'],
+      }),
+      'packages/isolated/tsconfig.solution.json': json({
+        files: [],
+        references: [{ path: '../app/tsconfig.lib.json' }],
+      }),
+    });
+    const config = createResolvedConfig(fixture.rootDir, {
+      checkers: {
+        tsc: {
+          include: ['packages/app/tsconfig.json'],
+        },
+      },
+    });
+
+    try {
+      await commitFixture(fixture.rootDir);
+      await expect(runMigration(config)).resolves.toMatchObject({
+        checkerEntryCount: 1,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('migrates source tsconfig.json files that still declare tsc -b references', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
@@ -1666,9 +2129,11 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        typescript: {
+        auto: {
+          exclude: ['packages/dep/tsconfig.json'],
+        },
+        tsc: {
           include: ['packages/app/tsconfig.json'],
-          preset: 'tsc',
         },
       },
     });
@@ -1733,8 +2198,7 @@ describe('runMigration', () => {
     });
     const config = createResolvedConfig(fixture.rootDir, {
       checkers: {
-        exclude: ['packages/skip/**'],
-        mode: 'auto',
+        auto: { exclude: ['packages/skip/**'] },
       },
     });
 

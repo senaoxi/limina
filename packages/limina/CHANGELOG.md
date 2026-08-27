@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** locked Vue, Astro, and Svelte dependency analysis now uses the official generated TypeScript representation as its only semantic authority. Framework `ImportRecord.specifier` and reported `importedSpecifier` values use the generated semantic spelling, while file and line locations still point to user source.
+- Standalone import APIs now reject `.vue`, `.astro`, and `.svelte` files and require the project-aware checker entry point.
+- Removed the Vue, Astro, and Svelte lightweight dependency collectors and Limina's direct `@astrojs/compiler` contract. Astro's compiler is resolved only from the installed `@astrojs/check` Language Server toolchain.
+- Locked framework resource and virtual-module classification now requires checker target or existing TypeScript `TypeEvidence`; file existence, extension heuristics, workspace resolution, and Oxc cannot rescue a checker miss.
+
 ## [0.2.3] - 2026-08-04
 
 ### Features

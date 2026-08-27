@@ -17,6 +17,7 @@ import {
   isStringArray,
   matchesRecordSchema,
 } from '../../utils/validation/record-schema';
+import { isOwnedArtifactLedgerVersion } from './manifest-version';
 
 export const materializationMarkerRelativePath: string = path.join(
   '.state',
@@ -151,12 +152,12 @@ export async function removeMaterializationMarker(
 function isManifest(value: unknown): value is {
   generatedBy: 'limina';
   ownedArtifacts: string[];
-  version: 3;
+  version: number;
 } {
   return matchesRecordSchema(value, {
     generatedBy: (generatedBy) => generatedBy === 'limina',
     ownedArtifacts: isStringArray,
-    version: (version) => version === 3,
+    version: isOwnedArtifactLedgerVersion,
   });
 }
 

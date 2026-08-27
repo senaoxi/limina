@@ -10,6 +10,8 @@ export {
   defineConfig,
   getActiveCheckerExtensions,
   getActiveCheckers,
+  getAutoCheckerConfig,
+  getNamedCheckerConfigs,
   isAutoCheckerConfigMode,
   isSourceKnipEnabled,
 } from './runtime';

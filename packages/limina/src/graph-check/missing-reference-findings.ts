@@ -37,18 +37,18 @@ function formatImportRecordLines(
     : lines;
 }
 
-interface ProviderEdgeIdentity {
+interface DependencyEdgeIdentity {
   fromChecker: string;
   fromConfigPath: string;
   toChecker: string;
   toConfigPath: string;
 }
 
-function createProviderEdgeIdentity(options: {
+function createDependencyEdgeIdentity(options: {
   expectation: ReferenceExpectation;
   fromProjectPath: string;
   generatedGraph: GeneratedTsconfigGraphResult;
-}): ProviderEdgeIdentity | null {
+}): DependencyEdgeIdentity | null {
   const identity = {
     fromChecker: getGeneratedCheckerNamespace(options.fromProjectPath),
     fromConfigPath: getGeneratedSourceConfigPath(
@@ -68,14 +68,15 @@ function createProviderEdgeIdentity(options: {
     return null;
   }
 
-  return identity as ProviderEdgeIdentity;
+  return identity as DependencyEdgeIdentity;
 }
 
-function matchesProviderEdge(
-  edge: GeneratedTsconfigGraphResult['providerEdges'][number],
-  identity: ProviderEdgeIdentity,
+function matchesDependencyEdge(
+  edge: GeneratedTsconfigGraphResult['dependencyEdges'][number],
+  identity: DependencyEdgeIdentity,
 ): boolean {
   return [
+    edge.kind === 'declaration-provider',
     edge.fromChecker === identity.fromChecker,
     edge.toChecker === identity.toChecker,
     edge.fromConfigPath === identity.fromConfigPath,
@@ -83,18 +84,18 @@ function matchesProviderEdge(
   ].every(Boolean);
 }
 
-function hasProviderEdgeForReferenceExpectation(options: {
+function hasDependencyEdgeForReferenceExpectation(options: {
   expectation: ReferenceExpectation;
   fromProjectPath: string;
   generatedGraph: GeneratedTsconfigGraphResult;
 }): boolean {
-  const identity = createProviderEdgeIdentity(options);
+  const identity = createDependencyEdgeIdentity(options);
   if (!identity) {
     return false;
   }
 
-  return options.generatedGraph.providerEdges.some((edge) =>
-    matchesProviderEdge(edge, identity),
+  return options.generatedGraph.dependencyEdges.some((edge) =>
+    matchesDependencyEdge(edge, identity),
   );
 }
 
@@ -107,7 +108,7 @@ function isExpectedReferenceSatisfied(options: {
     return true;
   }
 
-  return hasProviderEdgeForReferenceExpectation({
+  return hasDependencyEdgeForReferenceExpectation({
     expectation: options.expectation,
     fromProjectPath: options.project.configPath,
     generatedGraph: options.generatedGraph,

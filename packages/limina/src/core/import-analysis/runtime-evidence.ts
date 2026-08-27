@@ -17,6 +17,7 @@ import type {
   ImportRuntimeResolutionEvidence,
   RuntimeEvidence,
 } from './evidence';
+import { isKnownFrameworkVirtualSpecifier } from './virtual-modules';
 interface RuntimeClassificationContext {
   baseSpecifier: string;
   checkedPath: string | undefined;
@@ -64,9 +65,13 @@ function hasSupportedCheckerSourceExtension(
   );
 }
 function isKnownCheckerSourcePath(filePath: string): boolean {
-  return hasSupportedCheckerSourceExtension(
-    filePath,
-    getBuildCheckerSupportedExtensions('vue-tsc'),
+  return (
+    filePath.toLowerCase().endsWith('.astro') ||
+    filePath.toLowerCase().endsWith('.svelte') ||
+    hasSupportedCheckerSourceExtension(
+      filePath,
+      getBuildCheckerSupportedExtensions('vue-tsc'),
+    )
   );
 }
 
@@ -112,10 +117,6 @@ function getExtensionTarget(specifier: string): string {
 function isExplicitPathExtension(specifier: string): boolean {
   return path.extname(getExtensionTarget(specifier)).length > 0;
 }
-function isKnownUnsupportedVirtualSpecifier(specifier: string): boolean {
-  return specifier.startsWith('\0') || specifier.startsWith('virtual:');
-}
-
 function classifyCheckerSourceResolution(
   resolution: ResolvedCheckerModuleName | null,
 ): ImportRuntimeResolutionEvidence | undefined {
@@ -136,7 +137,7 @@ function classifyCheckerSourceResolution(
 function classifyUnsupportedVirtualSpecifier(
   specifier: string,
 ): ImportRuntimeResolutionEvidence | undefined {
-  if (!isKnownUnsupportedVirtualSpecifier(specifier)) {
+  if (!isKnownFrameworkVirtualSpecifier(specifier)) {
     return undefined;
   }
 

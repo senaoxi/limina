@@ -244,7 +244,7 @@ export function replaceInteractiveHistoryLine(options: {
   syncSpinnerTimer(options.state);
 }
 
-function stopSpinner(state: FlowReporterState): void {
+export function stopSpinner(state: FlowReporterState): void {
   if (state.spinnerTimer === undefined) return;
   clearInterval(state.spinnerTimer);
   state.spinnerTimer = undefined;

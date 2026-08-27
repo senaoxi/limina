@@ -18,15 +18,19 @@ export async function collectDependencyGraph(
     config,
     graphOptions: options,
   });
-  collectDependencyGraphEdges(context);
-  assertDependencyGraphProblemsEmpty(context);
-  return {
-    edges: sortEdges([...context.edgesByKey.values()]),
-    nodes: createNodes(config, context.workspacePackages),
-    rootDir: '.',
-    schemaVersion: 1,
-    view: context.view,
-  };
+  try {
+    collectDependencyGraphEdges(context);
+    assertDependencyGraphProblemsEmpty(context);
+    return {
+      edges: sortEdges([...context.edgesByKey.values()]),
+      nodes: createNodes(config, context.workspacePackages),
+      rootDir: '.',
+      schemaVersion: 1,
+      view: context.view,
+    };
+  } finally {
+    if (context.ownsCore) context.core.dispose();
+  }
 }
 
 export function stringifyDependencyGraph(

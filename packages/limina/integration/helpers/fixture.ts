@@ -171,7 +171,7 @@ async function assertFixtureSource(sourceDir: string): Promise<void> {
 }
 
 async function createRuntimeDirectory(fixtureName: string): Promise<string> {
-  const runtimeRoot = path.join(repositoryRoot, '.limina-integration');
+  const runtimeRoot = path.join(repositoryRoot, '.limina', 'integration');
   await mkdir(runtimeRoot, { recursive: true });
   return realpath(
     await mkdtemp(path.join(runtimeRoot, `limina-integration-${fixtureName}-`)),

@@ -78,20 +78,3 @@ export function formatUnsafeCrossEngineProviderProblem(options: {
     '  fix: make the target config owned by the consumer checker, choose one build checker owner, or split the dependency through an explicit declaration/artifact boundary.',
   ].join('\n');
 }
-
-export function formatOxcOnlyDeclarationProviderProblem(options: {
-  config: ResolvedLiminaConfig;
-  importRecord: ImportRecord;
-  oxcResolvedFilePath: string;
-  project: SourceProject;
-}): string {
-  return [
-    'Oxc can resolve this specifier, but TypeScript cannot:',
-    `  importing config: ${toRelativePath(options.config.rootDir, options.project.configPath)}`,
-    `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
-    `  imported specifier: ${options.importRecord.specifier}`,
-    `  Oxc resolved file: ${toRelativePath(options.config.rootDir, options.oxcResolvedFilePath)}`,
-    '  reason: generated declaration references follow the checker-aware TypeScript declaration provider, not the Oxc runtime-like resolver.',
-    '  fix: check moduleResolution, exports.types/types conditions, paths, customConditions, and package boundaries.',
-  ].join('\n');
-}

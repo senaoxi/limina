@@ -1,17 +1,38 @@
+import type { VueSourceProfile } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { collectSourceTextImports } from './oxc-imports';
 import type { ImportRecord } from './records';
 import type {
   CreateImportAnalysisContextOptions,
   ImportAnalysisCaches,
   ImportAnalysisMetricsRecorder,
 } from './types';
-import { collectVueImports } from './vue-imports';
+import { collectTypeScriptSourceTextImports } from './typescript-imports';
 
 interface SourceProvider {
-  collectImportsFromFile(filePath: string, rootDir: string): ImportRecord[];
+  collectImportsFromFile(
+    filePath: string,
+    rootDir: string,
+    sourceProfile?: VueSourceProfile,
+  ): ImportRecord[];
+}
+
+const FRAMEWORK_EXTENSIONS = new Set(['.astro', '.svelte', '.vue']);
+
+export const FRAMEWORK_CONTEXT_REQUIRED_MESSAGE =
+  'Framework source requires project/checker context; use getResolvedImports(file, project).';
+
+function assertStandaloneSource(options: {
+  filePath: string;
+  sourceProfile?: VueSourceProfile;
+}): void {
+  if (
+    options.sourceProfile !== undefined ||
+    FRAMEWORK_EXTENSIONS.has(path.extname(options.filePath).toLowerCase())
+  ) {
+    throw new Error(FRAMEWORK_CONTEXT_REQUIRED_MESSAGE);
+  }
 }
 
 function recordCacheAccess(options: {
@@ -61,55 +82,6 @@ function createSourceTextReader(options: {
   };
 }
 
-function resolveProjectRoot(options: {
-  configuredRoot: string | undefined;
-  rootDir: string;
-}): string {
-  if (options.configuredRoot !== undefined) {
-    return normalizeAbsolutePath(options.configuredRoot);
-  }
-  return normalizeAbsolutePath(options.rootDir);
-}
-
-function createImportsCacheKey(options: {
-  filePath: string;
-  projectRootDir: string;
-  vueParser: string;
-}): string {
-  return JSON.stringify(options);
-}
-
-function isVueFile(filePath: string): boolean {
-  return filePath.endsWith('.vue');
-}
-
-function collectFileImports(options: {
-  filePath: string;
-  projectRootDir: string;
-  sourceText: string;
-  vueParser: NonNullable<CreateImportAnalysisContextOptions['vueParser']>;
-}): ImportRecord[] {
-  if (isVueFile(options.filePath)) {
-    return collectVueImports({
-      filePath: options.filePath,
-      parser: options.vueParser,
-      projectRootDir: options.projectRootDir,
-      sourceText: options.sourceText,
-    });
-  }
-  return collectSourceTextImports({
-    filePath: options.filePath,
-    sourceText: options.sourceText,
-  });
-}
-
-function getVueParser(
-  value: CreateImportAnalysisContextOptions['vueParser'],
-): NonNullable<CreateImportAnalysisContextOptions['vueParser']> {
-  if (value !== undefined) return value;
-  return 'heuristic';
-}
-
 export function createSourceProvider(options: {
   caches: ImportAnalysisCaches;
   contextOptions: CreateImportAnalysisContextOptions;
@@ -119,39 +91,40 @@ export function createSourceProvider(options: {
     caches: options.caches,
     metrics,
   });
-  const vueParser = getVueParser(options.contextOptions.vueParser);
+
+  function collect(
+    filePath: string,
+    rootDir: string,
+    sourceProfile?: VueSourceProfile,
+  ): ImportRecord[] {
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    assertStandaloneSource({ filePath: normalizedFilePath, sourceProfile });
+    const cacheKey = JSON.stringify({
+      filePath: normalizedFilePath,
+      packageRootDir: normalizeAbsolutePath(rootDir),
+      parser: 'typescript-ast-v1',
+    });
+    const cached = options.caches.importsCache.get(cacheKey);
+    recordCacheAccess({
+      hit: cached !== undefined,
+      kind: 'imports',
+      metrics,
+    });
+    if (cached !== undefined) return cached;
+    const imports = collectTypeScriptSourceTextImports({
+      filePath: normalizedFilePath,
+      sourceText: readSourceText(normalizedFilePath),
+    });
+    recordSourceOperation({
+      filePath: normalizedFilePath,
+      metrics,
+      name: 'source-parse',
+    });
+    options.caches.importsCache.set(cacheKey, imports);
+    return imports;
+  }
+
   return {
-    collectImportsFromFile: (filePath, rootDir) => {
-      const normalizedFilePath = normalizeAbsolutePath(filePath);
-      const projectRootDir = resolveProjectRoot({
-        configuredRoot: options.contextOptions.projectRootDir,
-        rootDir,
-      });
-      const cacheKey = createImportsCacheKey({
-        filePath: normalizedFilePath,
-        projectRootDir,
-        vueParser,
-      });
-      const cached = options.caches.importsCache.get(cacheKey);
-      recordCacheAccess({
-        hit: cached !== undefined,
-        kind: 'imports',
-        metrics,
-      });
-      if (cached !== undefined) return cached;
-      const imports = collectFileImports({
-        filePath: normalizedFilePath,
-        projectRootDir,
-        sourceText: readSourceText(normalizedFilePath),
-        vueParser,
-      });
-      recordSourceOperation({
-        filePath: normalizedFilePath,
-        metrics,
-        name: 'source-parse',
-      });
-      options.caches.importsCache.set(cacheKey, imports);
-      return imports;
-    },
+    collectImportsFromFile: collect,
   };
 }

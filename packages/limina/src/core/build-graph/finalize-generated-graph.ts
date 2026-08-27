@@ -45,13 +45,15 @@ export async function finalizeGeneratedGraph(options: {
     generatedKnipPackageConfigs: options.generatedKnip.configs.map(
       (entry) => entry.config,
     ),
+    governedSourcesByChecker: options.state.governedSourcesByChecker,
     ownedArtifacts: createOwnedArtifactLedger({
       artifactNamespace: options.artifactNamespace,
       expectedFiles: options.state.writeContext.expectedFiles,
       manifestPath,
     }),
+    ownershipPlan: options.state.checkerOwnershipPlan,
     projectsByChecker: options.state.projectsByChecker,
-    providerEdges: options.state.providerEdges,
+    dependencyEdges: options.state.dependencyEdges,
     rootDir: options.config.rootDir,
     sourceToBuildByChecker: options.state.sourceToBuildByChecker,
   });
@@ -86,10 +88,12 @@ export async function finalizeGeneratedGraph(options: {
     changed: options.state.writeContext.changed,
     checkers: options.checkers,
     generatedFiles: options.state.writeContext.files,
+    governedSourcesByChecker: options.state.governedSourcesByChecker,
     manifest,
     manifestPath,
     outputDeclarationCopiesByChecker:
       options.state.outputDeclarationCopiesByChecker,
+    ownershipPlan: options.state.checkerOwnershipPlan,
     rootDir: options.config.rootDir,
   });
 }

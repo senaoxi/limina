@@ -61,9 +61,9 @@ Source file
 
 The first step only collects statically identifiable module specifiers from source code, such as static imports, re-exports, type-only imports, module strings in dynamic imports, and some statically recognizable `CommonJS` forms. At this stage, Limina only records source facts: which file contains the import, what kind of import it is, and which module specifier it uses. It does not decide whether the import is valid, and it does not decide whether a `reference` should be generated.
 
-If the project configures import collection for `Vue` files, Limina can collect imports from `<script>` content. This is still only import collection. It is not Vue compilation, and it does not replace type checking by tools such as `vue-tsc`.
+For locked Vue, Astro, and Svelte sources, this first step runs against the official generated TypeScript representation rather than a lightweight framework collector. Limina enumerates generated dependencies with the owning toolchain's TypeScript instance, proves source provenance through strict reverse mapping, and records the generated semantic spelling. For example, source `<script src="./entry.ts">` may be reported as `./entry.js`; the file and line still identify the original framework source. Synthetic dependencies without a source projection remain non-edge observations.
 
-The second step asks TypeScript, under the current checker and `tsconfig` context, where the type entry for the import resolves. The result can be roughly classified as follows:
+The second step obtains two results for the already-enumerated generated literal: the checker/toolchain module target and existing `TypeEvidence` from the same Program and TypeChecker. This is not another source-to-generated resolution pass. The prepared pair is classified as follows:
 
 | TypeScript type resolution result                      | Limina interpretation                                | Generate declaration project reference? |
 | ------------------------------------------------------ | ---------------------------------------------------- | --------------------------------------- |
@@ -71,11 +71,12 @@ The second step asks TypeScript, under the current checker and `tsconfig` contex
 | Source file within the current scope                   | Owned by the current scope                           | No                                      |
 | Source file in another Limina-managed source scope     | Requires another scope to produce declaration output | Yes                                     |
 | External package declaration or external package entry | External dependency                                  | No                                      |
-| Unresolved                                             | Declaration provider cannot be determined            | No, and report diagnostics              |
+| No target, ambient module evidence                     | Typed non-source resource or virtual module          | No                                      |
+| No target and missing evidence                         | Genuine missing dependency                           | No, and report diagnostics              |
 
 The third step enters Limina’s generated graph. If the declaration provider is another managed source scope, Limina maps the target source `tsconfig` to the corresponding generated `.dts.json`, and then adds that `.dts.json` to the current generated declaration configuration’s `references`.
 
-This is also where Limina differs from a general-purpose module resolver. `Oxc` can help Limina collect imports and provide runtime resolution clues for diagnostics, but the declaration `references` generated under `.limina` are not determined by Oxc’s resolution result. The reference graph is determined by the TypeScript declaration provider under the current checker and `tsconfig`.
+This is also where Limina differs from a general-purpose module resolver. After framework authority is locked, a checker miss cannot be rescued by Oxc, workspace export resolution, file existence, resource-extension heuristics, or a virtual-module allowlist. Classification may continue from checker/type evidence, but resolution cannot invent a new target. Oxc remains limited to missing-only pending-ownership bootstrap.
 
 ## Cases That Matter When Generating the Reference Graph
 
@@ -434,14 +435,14 @@ Do not think of Limina as a stronger module resolver. A more accurate model is t
 Each tool is responsible for a different part:
 
 ```text
-oxc-parser
-  -> collect import/export module specifiers from source code
+TypeScript syntax AST and scanner
+  -> collect source-authored import, export, import-type, and CommonJS evidence
 
-TypeScript resolver
+Checker-semantic TypeScript resolver
   -> determine declaration providers under the current checker and tsconfig
 
 Oxc resolver
-  -> provide general source graph, runtime resolution clues, and diagnostics
+  -> qualify physical framework candidates only during pending ownership discovery
 
 Limina graph model
   -> map declaration providers to project references, declaration-file consumption, or diagnostics
@@ -452,5 +453,7 @@ This boundary avoids several common misunderstandings.
 First, a file being resolvable at runtime does not mean the declaration build should reference the `tsconfig` that owns that source file.
 
 Second, resolving to `.d.ts` does not mean Limina will automatically build that declaration file. It only means current project-reference inference does not need to treat that edge as a source-provider project reference.
+
+Once a project has a locked semantic authority, an unresolved checker-semantic import remains unresolved. Oxc does not rescue that import or turn it into graph or declaration-provider evidence.
 
 Third, source-level `import` relationships may be more conservative than the minimal dependency relation of the final `.d.ts`. Limina currently trusts source-level declaration provider relationships by default, rather than tree-shaking the reference graph based on final declaration output.

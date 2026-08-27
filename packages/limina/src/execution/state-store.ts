@@ -18,6 +18,7 @@ const plannedTransitions: Partial<
 const runningTransitions: Partial<
   Record<TaskLifecycleEvent['type'], TaskLifecycleState>
 > = {
+  disable: 'disabled',
   fail: 'failed',
   pass: 'passed',
 };

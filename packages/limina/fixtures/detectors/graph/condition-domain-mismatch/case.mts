@@ -13,10 +13,10 @@ export default defineDetectorFixture({
     exitCode: 1,
     issues: [
       {
-        checkerName: 'typescript',
+        checkerName: 'tsc',
         code: LIMINA_CHECK_ISSUE_CODES.graphConditionDomainMismatch,
         filePath:
-          '.limina/tsconfig/checkers/typescript/projects/packages/app/tsconfig.web.dts.json',
+          '.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.web.dts.json',
         task: 'graph:check',
       },
     ],

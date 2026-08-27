@@ -5,9 +5,7 @@ import {
 } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { isSolutionStyleTsconfig } from '../core/build-graph/generated/config-readers';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import { addPureAggregatorFindings } from './aggregator-shape-findings';
 import { readProofConfig } from './config-reader';
 import { isPlainRecord } from './config-values';
 import {
@@ -89,36 +87,17 @@ function addInvalidReferenceFinding(options: {
   );
 }
 
-function shouldValidateDefaultTsconfig(
-  configObject: ReturnType<typeof readProofConfig>,
-  configPath: string,
-): boolean {
-  return (
-    Object.hasOwn(configObject, 'references') &&
-    isSolutionStyleTsconfig(configPath, configObject)
-  );
-}
-
 function validateDefaultTsconfig(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   findings: ProofFinding[];
+  solutionConfigPaths: ReadonlySet<string>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  const configObject = readProofConfig(options.config, options.configPath);
-
-  if (!shouldValidateDefaultTsconfig(configObject, options.configPath)) {
+  if (!options.solutionConfigPaths.has(options.configPath)) {
     return;
   }
-
-  addPureAggregatorFindings({
-    config: options.config,
-    configObject,
-    configPath: options.configPath,
-    findings: options.findings,
-    role: 'tsconfig.json',
-    workspaceLookup: options.workspaceLookup,
-  });
+  const configObject = readProofConfig(options.config, options.configPath);
 
   const invalidReferences = collectReferenceEntries(
     options.configPath,
@@ -133,6 +112,7 @@ function validateDefaultTsconfig(options: {
 export function addDefaultTsconfigShapeFindings(options: {
   config: ResolvedLiminaConfig;
   findings: ProofFinding[];
+  solutionConfigPaths: ReadonlySet<string>;
   tsconfigPaths: string[];
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
@@ -141,6 +121,7 @@ export function addDefaultTsconfigShapeFindings(options: {
       config: options.config,
       configPath,
       findings: options.findings,
+      solutionConfigPaths: options.solutionConfigPaths,
       workspaceLookup: options.workspaceLookup,
     });
   }

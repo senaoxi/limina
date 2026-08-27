@@ -87,7 +87,7 @@ function isVisibleExecutionTask(task: LiminaCheckRunTaskSummary): boolean {
 }
 
 function isExecutedTask(task: LiminaCheckRunTaskSummary): boolean {
-  return task.state === 'failed' || task.state === 'passed';
+  return ['disabled', 'failed', 'passed'].includes(task.state);
 }
 
 function isPassedTask(task: LiminaCheckRunTaskSummary): boolean {

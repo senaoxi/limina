@@ -43,7 +43,7 @@ function createFingerprint(options: {
     checker: {
       implementation: options.checkerImplementationFingerprint,
       name: options.checker.name,
-      preset: options.checker.preset,
+      preset: options.checker.name,
       typescriptVersion: ts.version,
     },
     configDependencies: options.configDependencies,

@@ -78,7 +78,6 @@ export function getCheckerBuildPeerProblems(options: {
 }): string[] {
   return collectCheckerPeerDependencyProblems({
     checkers: [...options.checkers],
-    imports: options.request.config.config?.imports,
     projectRootDir: options.projectRootDir,
     resolvePackage: options.request.checkerPackageResolver,
   });

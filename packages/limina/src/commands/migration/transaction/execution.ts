@@ -1,13 +1,7 @@
 import type { FileHandle } from 'node:fs/promises';
-import { rename } from 'node:fs/promises';
-import { replaceFileWithRetry } from '../../../check-reporting/atomic-writer';
-import {
-  assertUniquePhysicalTargets,
-  cleanupTransactionArtifacts,
-  closeTrackedHandles,
-} from './cleanup';
+import { cleanupTransactionArtifacts, closeTrackedHandles } from './cleanup';
+import { commitAll } from './commit';
 import { formatUnknownError, MigrationTransactionError } from './error';
-import { validateFile, validateOriginalTarget } from './file-validation';
 import { finalizeCommittedState } from './finalize';
 import {
   prepareTransactionItems,
@@ -15,16 +9,15 @@ import {
 } from './prepare';
 import { rollbackItem } from './rollback';
 import {
-  collectModifiedSnapshots,
   createEmptyMigrationResult,
-  partitionMigrationPlan,
-  resolveAllowedRoots,
+  prepareMigrationWritePlan,
   resolveTransactionRuntimeOptions,
 } from './setup';
 import type {
   MigrationTransactionExecutionResult,
   MigrationTransactionOptions,
   MigrationWritePlanItem,
+  PreparedMigrationPlan,
   TransactionItem,
   TransactionItemState,
   TransactionRuntimeOptions,
@@ -34,6 +27,7 @@ function createPreparationState(): TransactionPreparationState {
   return {
     createdDirectories: [],
     items: [],
+    mutationOrder: [],
     trackedHandles: new Set<FileHandle>(),
   };
 }
@@ -56,7 +50,7 @@ async function cleanupState(options: {
 
 async function prepareAll(options: {
   runtime: TransactionRuntimeOptions;
-  snapshots: Awaited<ReturnType<typeof collectModifiedSnapshots>>;
+  snapshots: PreparedMigrationPlan['atomicSnapshots'];
   state: TransactionPreparationState;
   transactionOptions: MigrationTransactionOptions;
 }): Promise<void> {
@@ -82,51 +76,6 @@ async function prepareAll(options: {
   }
 }
 
-function fullComparison() {
-  return {
-    compareObservedMtime: true,
-    compareRestorableMtime: true,
-  } as const;
-}
-
-async function commitItem(options: {
-  item: TransactionItem;
-  runtime: TransactionRuntimeOptions;
-  transactionOptions: MigrationTransactionOptions;
-}): Promise<void> {
-  await replaceFileWithRetry(
-    options.item.nextPath,
-    options.item.snapshot.item.configPath,
-    {
-      beforeAttempt: async () => {
-        await validateOriginalTarget({
-          snapshot: options.item.snapshot,
-          validation: options.runtime,
-        });
-        await validateFile({
-          comparison: fullComparison(),
-          expected: options.item.nextIdentity!,
-          filePath: options.item.nextPath,
-          readFileBytes: options.runtime.readFileBytes,
-        });
-      },
-      replace: options.transactionOptions.replace ?? rename,
-      retryDelaysMs: options.runtime.retryDelaysMs,
-    },
-  );
-  options.item.state = 'replaced';
-}
-
-async function commitAll(options: {
-  runtime: TransactionRuntimeOptions;
-  state: TransactionPreparationState;
-  transactionOptions: MigrationTransactionOptions;
-}): Promise<void> {
-  for (const item of options.state.items) {
-    await commitItem({ ...options, item });
-  }
-}
-
 function markRollbackFailure(
   item: TransactionItem,
   error: unknown,
@@ -144,17 +93,29 @@ function markRollbackFailure(
   );
 }
 
-async function rollbackReplacedItem(options: {
+async function rollbackMutatedItem(options: {
   failures: Error[];
   item: TransactionItem;
   runtime: TransactionRuntimeOptions;
   transactionOptions: MigrationTransactionOptions;
   trackedHandles: Set<FileHandle>;
 }): Promise<void> {
-  if (options.item.state !== 'replaced') {
-    options.item.state = 'never-replaced';
+  const existingFailure = getExistingRecoveryFailure(options.item);
+  if (existingFailure !== undefined) {
+    options.failures.push(existingFailure);
     return;
   }
+  if (!shouldRollbackItem(options.item)) return;
+  await attemptRollbackItem(options);
+}
+
+async function attemptRollbackItem(options: {
+  failures: Error[];
+  item: TransactionItem;
+  runtime: TransactionRuntimeOptions;
+  transactionOptions: MigrationTransactionOptions;
+  trackedHandles: Set<FileHandle>;
+}): Promise<void> {
   try {
     await rollbackItem({
       item: options.item,
@@ -169,14 +130,32 @@ async function rollbackReplacedItem(options: {
   }
 }
 
+function getExistingRecoveryFailure(item: TransactionItem): Error | undefined {
+  if (item.state !== 'rollback-failed') return undefined;
+  return (
+    item.recoveryFailure ??
+    new Error(
+      `Unable to recover ${item.snapshot.item.configPath}; recovery backup retained at ${item.backupPath}`,
+    )
+  );
+}
+
+function shouldRollbackItem(item: TransactionItem): boolean {
+  return item.state === 'mutated';
+}
+
+function markNeverMutated(item: TransactionItem): void {
+  if (item.state === 'prepared') item.state = 'never-mutated';
+}
+
 async function rollbackAll(options: {
   runtime: TransactionRuntimeOptions;
   state: TransactionPreparationState;
   transactionOptions: MigrationTransactionOptions;
 }): Promise<Error[]> {
   const failures: Error[] = [];
-  for (const item of options.state.items.toReversed()) {
-    await rollbackReplacedItem({
+  for (const item of options.state.mutationOrder.toReversed()) {
+    await rollbackMutatedItem({
       failures,
       item,
       runtime: options.runtime,
@@ -184,6 +163,7 @@ async function rollbackAll(options: {
       trackedHandles: options.state.trackedHandles,
     });
   }
+  for (const item of options.state.items) markNeverMutated(item);
   return failures;
 }
 
@@ -230,31 +210,90 @@ async function commitPreparedState(options: {
   }
 }
 
+function assertHardlinkPolicyAvailable(
+  plan: PreparedMigrationPlan,
+  hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
+): void {
+  if (plan.hardlinkSnapshots.length > 0 && hardlinkPolicy === undefined) {
+    throw new Error(
+      'Hard-linked migration targets require an explicit skip or rewrite policy.',
+    );
+  }
+}
+
+function selectHardlinkSnapshots(
+  plan: PreparedMigrationPlan,
+  hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
+) {
+  if (hardlinkPolicy === 'rewrite') return plan.hardlinkSnapshots;
+  return [];
+}
+
+function collectHardlinkSkippedFiles(
+  plan: PreparedMigrationPlan,
+  hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
+): string[] {
+  if (hardlinkPolicy !== 'skip') return [];
+  return plan.hardlinkSnapshots.map((snapshot) => snapshot.item.configPath);
+}
+
+function selectSnapshots(
+  plan: PreparedMigrationPlan,
+  hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
+) {
+  assertHardlinkPolicyAvailable(plan, hardlinkPolicy);
+  const selectedHardlinks = selectHardlinkSnapshots(plan, hardlinkPolicy);
+  return {
+    hardlinkSkippedFiles: collectHardlinkSkippedFiles(plan, hardlinkPolicy),
+    selectedSnapshots: [...plan.atomicSnapshots, ...selectedHardlinks],
+  };
+}
+
+export async function executePreparedMigrationPlan(
+  plan: PreparedMigrationPlan,
+  transactionOptions: MigrationTransactionOptions = {},
+): Promise<MigrationTransactionExecutionResult> {
+  const selection = selectSnapshots(plan, transactionOptions.hardlinkPolicy);
+  if (selection.selectedSnapshots.length === 0) {
+    return {
+      ...createEmptyMigrationResult(plan.skippedFiles),
+      hardlinkSkippedFiles: selection.hardlinkSkippedFiles,
+    };
+  }
+  const runtime = resolveTransactionRuntimeOptions(transactionOptions);
+  const state = createPreparationState();
+  await prepareAll({
+    runtime,
+    snapshots: selection.selectedSnapshots,
+    state,
+    transactionOptions,
+  });
+  await commitPreparedState({ runtime, state, transactionOptions });
+  const modifiedItems = selection.selectedSnapshots.map(
+    (snapshot) => snapshot.item,
+  );
+  return finalizeCommittedState({
+    fallbackPath: plan.normalizedRootDirs[0]!,
+    hardlinkRewrittenFiles: state.items
+      .filter((item) => item.snapshot.writeStrategy === 'in-place')
+      .map((item) => item.snapshot.item.configPath),
+    hardlinkSkippedFiles: selection.hardlinkSkippedFiles,
+    modifiedItems,
+    runtime,
+    skippedFiles: plan.skippedFiles,
+    state,
+  });
+}
+
 export async function executeMigrationWritePlan(
   allowedRootDirs: string | readonly string[],
   plan: readonly MigrationWritePlanItem[],
   transactionOptions: MigrationTransactionOptions = {},
 ): Promise<MigrationTransactionExecutionResult> {
-  const { modifiedItems, skippedFiles } = partitionMigrationPlan(plan);
-  if (modifiedItems.length === 0) {
-    return createEmptyMigrationResult(skippedFiles);
-  }
-  const runtime = resolveTransactionRuntimeOptions(transactionOptions);
-  const allowedRoots = await resolveAllowedRoots(allowedRootDirs);
-  const snapshots = await collectModifiedSnapshots({
-    allowedRoots: allowedRoots.roots,
-    items: modifiedItems,
-    runtime,
-  });
-  assertUniquePhysicalTargets(snapshots);
-  const state = createPreparationState();
-  await prepareAll({ runtime, snapshots, state, transactionOptions });
-  await commitPreparedState({ runtime, state, transactionOptions });
-  return finalizeCommittedState({
-    fallbackPath: allowedRoots.normalizedRootDirs[0]!,
-    modifiedItems,
-    runtime,
-    skippedFiles,
-    state,
-  });
+  const preparedPlan = await prepareMigrationWritePlan(
+    allowedRootDirs,
+    plan,
+    transactionOptions,
+  );
+  return executePreparedMigrationPlan(preparedPlan, transactionOptions);
 }

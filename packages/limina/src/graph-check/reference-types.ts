@@ -7,6 +7,7 @@ import type {
   ManagedOutputDeclarationLookup,
   ManagedOutputDeclarationProvider,
 } from '../core/import-graph/managed-output-provider';
+import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
 import type {
   WorkspaceExportsResolutionIndex,
   WorkspacePackageExportResolution,
@@ -34,6 +35,7 @@ export interface ExpectedReferenceCollectionOptions {
   managedOutputLookup: ManagedOutputDeclarationLookup;
   packages: WorkspacePackage[];
   projectCheckerNamesByPath: Map<string, string>;
+  projectDependencyCaches: ProjectDependencyCaches;
   findings: GraphFinding[];
   projectPaths: string[];
   projects: ProjectInfo[];

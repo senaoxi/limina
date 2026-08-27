@@ -3,10 +3,9 @@ import type {
   ImportRecord,
 } from '#core/import-analysis/runner';
 import type { ProjectInfo } from '#core/import-graph/context';
-import {
-  classifyImportRuntimeEvidence,
-  type ImportRuntimeResolutionEvidence,
-} from '../import-analysis/evidence';
+import type ts from 'typescript';
+import type { FrameworkSemanticFailure } from '../framework-semantic/contracts';
+import type { ImportRuntimeResolutionEvidence } from '../import-analysis/evidence';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { TypeEvidence } from './cache';
@@ -19,16 +18,24 @@ export interface ResolveImportEvidenceOptions {
   project: Pick<
     ProjectInfo,
     | 'checkerPresets'
+    | 'astroSemanticProject'
     | 'configPath'
     | 'extensions'
     | 'fileNames'
     | 'options'
     | 'resolverConfigPath'
-  >;
+    | 'svelteSemanticProject'
+    | 'vueSemanticIdentity'
+  > & {
+    projectReferences?: readonly ts.ProjectReference[];
+    semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
+  };
+  resolutionMode?: 'canonical' | 'checker-only';
 }
 
 export interface ResolvedImportPair {
   runtimeEvidence: ImportRuntimeResolutionEvidence;
+  semanticFailure?: FrameworkSemanticFailure;
   typeScriptResolution: ReturnType<
     ImportAnalysisContext['resolveTypeScriptImport']
   >;
@@ -38,30 +45,28 @@ export function resolveImportPair(options: {
   importAnalysis: ImportAnalysisContext;
   request: ResolveImportEvidenceOptions;
 }): ResolvedImportPair {
-  const pair = options.importAnalysis.resolveModulePair(
-    options.request.importRecord.specifier,
+  const resolve =
+    options.request.resolutionMode === 'checker-only'
+      ? options.importAnalysis.resolveCheckerImportEvidence
+      : options.importAnalysis.resolveImportEvidence;
+  const evidence = resolve(
+    options.request.importRecord,
     options.request.importRecord.filePath,
     options.request.project.options,
     options.request.project,
   );
 
   return {
-    runtimeEvidence: classifyImportRuntimeEvidence({
-      compilerOptions: options.request.project.options,
-      containingFile: options.request.importRecord.filePath,
-      extensions: options.request.project.extensions,
-      oxcResolvedFilePath: pair.oxc,
-      specifier: options.request.importRecord.specifier,
-      typeScriptResolution: pair.typescript,
-    }),
-    typeScriptResolution: pair.typescript,
+    runtimeEvidence: evidence.runtimeEvidence,
+    semanticFailure: evidence.semanticFailure,
+    typeScriptResolution: evidence.typeScriptResolution,
   };
 }
 
 function resolveCheckerSourceEvidence(
   resolution: ResolvedImportPair['typeScriptResolution'],
 ): TypeEvidence | null {
-  return resolution?.resolvedBy === 'checker-source'
+  return resolution !== null && !isDeclarationFile(resolution.resolvedFileName)
     ? {
         filePath: resolution.resolvedFileName,
         kind: 'checker-source',
@@ -141,7 +146,7 @@ function getEffectivePresets(
 }
 
 function isVuePreset(preset: string): boolean {
-  return preset === 'vue-tsc' || preset === 'vue-tsgo';
+  return preset === 'vue-tsc';
 }
 
 function isTypeScriptPreset(preset: string): boolean {

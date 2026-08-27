@@ -1,12 +1,13 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisProviderSet } from '#core';
-import {
-  collectImportsFromFile,
-  type ImportRecord,
-  type ProjectInfo,
-} from '#core/import-graph/context';
+import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../check-reporting/stats';
+import {
+  collectProjectDependencies,
+  createParsedProjectSemanticContext,
+  type ProjectDependencyCaches,
+} from '../core/project-dependencies/runner';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
@@ -26,10 +27,49 @@ interface SourceImportOptions {
   importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
   packages: WorkspacePackage[];
   pathIndex: WorkspaceRegionPathIndex;
+  projectDependencyCaches: ProjectDependencyCaches;
   findings: SourceFinding[];
   rootPackage: WorkspacePackage | null;
   typeEvidence: AnalysisProviderSet['typeEvidence'];
   workspaceLookup: WorkspaceLookupIndex;
+}
+
+function getSourceAuthority(entry: SourceProjectEntry) {
+  const authority = entry.project.semanticAuthority;
+  if (authority !== undefined) return authority;
+  throw new Error(
+    `Missing frozen semantic authority for source-check project ${entry.project.configPath}.`,
+  );
+}
+
+function getSourcePackageRoot(
+  base: SourceImportOptions,
+  entry: SourceProjectEntry,
+): string {
+  return getSourceOwner(base, entry)?.directory ?? base.config.rootDir;
+}
+
+function getSourceOwner(
+  base: SourceImportOptions,
+  entry: SourceProjectEntry,
+): WorkspacePackage | null {
+  const projectOwner = base.workspaceLookup.findOwnerForFile(
+    entry.project.configPath,
+  );
+  if (projectOwner !== null) return projectOwner;
+  const firstFileName = entry.fileNames[0];
+  if (firstFileName === undefined) return null;
+  return base.workspaceLookup.findOwnerForFile(firstFileName);
+}
+
+function assertSourceCollection(
+  collection: ReturnType<typeof collectProjectDependencies>,
+): void {
+  const failure = collection.failures[0];
+  if (failure === undefined) return;
+  throw new Error(
+    `Source-check semantic dependency collection failed at ${failure.stage}: ${failure.reason}`,
+  );
 }
 
 function addResourceProblemsForCheckers(options: {
@@ -59,6 +99,7 @@ function processImportRecord(options: {
   importRecord: ImportRecord;
   owner: PackageOwner;
   project: ProjectInfo;
+  resolvedFilePath: string | null;
 }): void {
   options.base.checks.add();
   addResourceProblemsForCheckers(options);
@@ -66,7 +107,6 @@ function processImportRecord(options: {
     ambientDeclarations: options.base.ambientDeclarations,
     config: options.base.config,
     filePath: options.filePath,
-    importAnalysis: options.base.importAnalysis,
     importAuthorityAllowRules: options.base.importAuthorityAllowRules,
     importRecord: options.importRecord,
     owner: options.owner,
@@ -74,46 +114,96 @@ function processImportRecord(options: {
     pathIndex: options.base.pathIndex,
     findings: options.base.findings,
     project: options.project,
+    resolvedFilePath: options.resolvedFilePath,
     rootPackage: options.base.rootPackage,
     workspaceLookup: options.base.workspaceLookup,
   });
-}
-
-function processSourceFile(options: {
-  base: SourceImportOptions;
-  checkerNames: string[];
-  filePath: string;
-  project: ProjectInfo;
-}): void {
-  const owner = options.base.workspaceLookup.findOwnerForFile(options.filePath);
-  if (!owner) {
-    return;
-  }
-
-  const imports = collectImportsFromFile(
-    options.filePath,
-    options.base.config.rootDir,
-    options.base.importAnalysis,
-  );
-  for (const importRecord of imports) {
-    processImportRecord({ ...options, importRecord, owner });
-  }
 }
 
 function processSourceProject(
   base: SourceImportOptions,
   entry: SourceProjectEntry,
 ): void {
-  for (const filePath of entry.fileNames) {
-    processSourceFile({
-      base,
-      checkerNames: entry.checkerNames,
-      filePath,
-      project: entry.project,
-    });
-  }
+  const authority = getSourceAuthority(entry);
+  const packageRootDir = getSourcePackageRoot(base, entry);
+  const project = {
+    ...entry.project,
+    fileNames: [...entry.fileNames],
+    ownedFileNames: [...entry.fileNames],
+  };
+  const collection = collectProjectDependencies({
+    caches: base.projectDependencyCaches,
+    context: createParsedProjectSemanticContext({
+      authority,
+      packageRootDir,
+      project,
+    }),
+    importAnalysis: base.importAnalysis,
+  });
+  assertSourceCollection(collection);
+  processSourceDependencies({ base, collection, entry, project });
+  processSourceObservations({ base, collection, entry, project });
 
   base.typeEvidence.completeProject(entry.project.configPath);
+}
+
+function processSourceDependencies(options: {
+  base: SourceImportOptions;
+  collection: ReturnType<typeof collectProjectDependencies>;
+  entry: SourceProjectEntry;
+  project: ProjectInfo;
+}): void {
+  for (const dependency of options.collection.dependencies) {
+    processCollectedImport({
+      base: options.base,
+      checkerNames: options.entry.checkerNames,
+      importRecord: dependency.importRecord,
+      project: options.project,
+      resolvedFilePath: dependency.resolvedFilePath,
+    });
+  }
+}
+
+function processSourceObservations(options: {
+  base: SourceImportOptions;
+  collection: ReturnType<typeof collectProjectDependencies>;
+  entry: SourceProjectEntry;
+  project: ProjectInfo;
+}): void {
+  for (const observation of options.collection.observations) {
+    processSourceObservation({ ...options, observation });
+  }
+}
+
+function processSourceObservation(options: {
+  base: SourceImportOptions;
+  entry: SourceProjectEntry;
+  observation: ReturnType<
+    typeof collectProjectDependencies
+  >['observations'][number];
+  project: ProjectInfo;
+}): void {
+  if (options.observation.kind === 'unmapped-generated') return;
+  processCollectedImport({
+    base: options.base,
+    checkerNames: options.entry.checkerNames,
+    importRecord: options.observation.importRecord,
+    project: options.project,
+    resolvedFilePath: null,
+  });
+}
+
+function processCollectedImport(options: {
+  base: SourceImportOptions;
+  checkerNames: string[];
+  importRecord: ImportRecord;
+  project: ProjectInfo;
+  resolvedFilePath: string | null;
+}): void {
+  const filePath = options.importRecord.filePath;
+  const owner = options.base.workspaceLookup.findOwnerForFile(filePath);
+  if (owner === null) return;
+  processImportRecord({ ...options, filePath, owner });
 }
 
 export function addSourceImportProblems(

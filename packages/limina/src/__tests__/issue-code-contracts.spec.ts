@@ -111,7 +111,7 @@ describe('Limina issue code contracts', () => {
       unit: 5,
     });
 
-    expect(Object.keys(LIMINA_DETECTOR_SCENARIO_COVERAGE)).toHaveLength(19);
+    expect(Object.keys(LIMINA_DETECTOR_SCENARIO_COVERAGE)).toHaveLength(18);
     for (const [id, scenario] of Object.entries(
       LIMINA_DETECTOR_SCENARIO_COVERAGE,
     )) {

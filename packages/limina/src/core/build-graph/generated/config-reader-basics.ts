@@ -13,25 +13,13 @@ export function isDefaultTsconfigPath(configPath: string): boolean {
   return path.basename(configPath) === 'tsconfig.json';
 }
 
-export function isDefaultSourceTsconfigPath(configPath: string): boolean {
-  return (
-    isOrdinarySourceTypecheckConfigPath(configPath) &&
-    isDefaultTsconfigPath(configPath)
-  );
-}
-
-function hasEmptyFiles(configObject: Record<string, unknown>): boolean {
-  return Array.isArray(configObject.files) && configObject.files.length === 0;
-}
-
-export function isSolutionStyleTsconfig(
+export function isDefaultSourceTsconfigPath(
   configPath: string,
-  configObject: Record<string, unknown>,
+  rootDir: string,
 ): boolean {
   return (
-    isDefaultTsconfigPath(configPath) &&
-    hasEmptyFiles(configObject) &&
-    Object.hasOwn(configObject, 'references')
+    isOrdinarySourceTypecheckConfigPath(configPath, rootDir) &&
+    isDefaultTsconfigPath(configPath)
   );
 }
 
@@ -62,15 +50,14 @@ export function readGraphRules(
 
 export function addSourceReferenceConfigProblems(options: {
   config: ResolvedLiminaConfig;
+  configObject?: Record<string, unknown>;
   problems: string[];
   sourceConfigPath: string;
 }): void {
-  const configObject = readJsonConfig(options.config, options.sourceConfigPath);
+  const configObject =
+    options.configObject ??
+    readJsonConfig(options.config, options.sourceConfigPath);
   if (!Object.hasOwn(configObject, 'references')) {
-    return;
-  }
-
-  if (isSolutionStyleTsconfig(options.sourceConfigPath, configObject)) {
     return;
   }
 

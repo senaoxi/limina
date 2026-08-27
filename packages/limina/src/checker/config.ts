@@ -1,10 +1,11 @@
 import type {
+  BuildCheckerName,
   CheckerConfig,
   CheckerConfigMode,
   LiminaConfig,
   ResolvedCheckerConfig,
 } from '#config/runner';
-import { isAutoCheckerConfigMode } from '#config/runner';
+import { getNamedCheckerConfigs } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import {
@@ -14,9 +15,8 @@ import {
 import { getCheckerAdapter } from './registry';
 import type { CheckerAdapter } from './types';
 
-function isVueCheckerPreset(preset: string): boolean {
-  if (preset === 'vue-tsc') return true;
-  return preset === 'vue-tsgo';
+function isVueCheckerName(name: string): boolean {
+  return name === 'vue-tsc';
 }
 
 function getProjectRootDir(options: { projectRootDir?: string }): string {
@@ -65,33 +65,35 @@ function resolveNonVueExtensions(context: CheckerExtensionContext): string[] {
   });
 }
 
-function getExtensionResolver(preset: string): CheckerExtensionResolver {
-  return isVueCheckerPreset(preset)
+function getExtensionResolver(name: string): CheckerExtensionResolver {
+  return isVueCheckerName(name)
     ? resolveVueExtensions
     : resolveNonVueExtensions;
 }
 
 function createExtensionContext(
+  name: BuildCheckerName,
   checker: CheckerConfig,
   options: { projectRootDir?: string },
 ): CheckerExtensionContext {
   return {
-    adapter: requireCheckerAdapter(checker.preset),
+    adapter: requireCheckerAdapter(name),
     checker,
     projectRootDir: getProjectRootDir(options),
   };
 }
 
 function resolveCheckerExtensions(context: CheckerExtensionContext): string[] {
-  const resolver = getExtensionResolver(context.checker.preset);
+  const resolver = getExtensionResolver(context.adapter.name);
   return resolver(context);
 }
 
 export function getCheckerExtensions(
+  name: BuildCheckerName,
   checker: CheckerConfig,
   options: { projectRootDir?: string } = {},
 ): string[] {
-  const context = createExtensionContext(checker, options);
+  const context = createExtensionContext(name, checker, options);
   return resolveCheckerExtensions(context);
 }
 
@@ -102,19 +104,13 @@ function getConfiguredCheckerMode(
   return shared === undefined ? undefined : shared.checkers;
 }
 
-function getExplicitCheckerMapFromMode(
-  checkers: CheckerConfigMode,
-): Record<string, CheckerConfig> | undefined {
-  if (isAutoCheckerConfigMode(checkers)) return undefined;
-  return checkers;
-}
-
 function getExplicitCheckerMap(
   config: LiminaConfig,
-): Record<string, CheckerConfig> | undefined {
+): Partial<Record<string, CheckerConfig>> | undefined {
   const checkers = getConfiguredCheckerMode(config);
   if (checkers === undefined) return undefined;
-  return getExplicitCheckerMapFromMode(checkers);
+  const named = getNamedCheckerConfigs(checkers);
+  return Object.keys(named).length === 0 ? undefined : named;
 }
 
 function trimPatterns(patterns: readonly string[] | undefined): string[] {
@@ -124,17 +120,19 @@ function trimPatterns(patterns: readonly string[] | undefined): string[] {
 
 function createResolvedChecker(options: {
   checker: CheckerConfig;
-  name: string;
+  name: ResolvedCheckerConfig['name'];
   projectRootDir: string | undefined;
 }): ResolvedCheckerConfig {
   return {
     exclude: trimPatterns(options.checker.exclude),
-    extensions: getCheckerExtensions(options.checker, {
-      projectRootDir: options.projectRootDir,
-    }),
+    extensions:
+      options.name === 'svelte-check' || options.name === 'astro'
+        ? []
+        : getCheckerExtensions(options.name, options.checker, {
+            projectRootDir: options.projectRootDir,
+          }),
     include: trimPatterns(options.checker.include),
     name: options.name,
-    preset: options.checker.preset,
   };
 }
 
@@ -150,6 +148,10 @@ export function getResolvedCheckers(
   if (checkerMap === undefined) return [];
   const projectRootDir = getResolvedProjectRoot(config);
   return Object.entries(checkerMap)
+    .filter(
+      (entry): entry is [ResolvedCheckerConfig['name'], CheckerConfig] =>
+        entry[1] !== undefined,
+    )
     .map(([name, checker]) =>
       createResolvedChecker({ checker, name, projectRootDir }),
     )

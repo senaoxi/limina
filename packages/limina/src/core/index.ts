@@ -4,13 +4,16 @@ import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
 } from '../domain/artifacts/namespace';
+import { AstroSemanticContextManager } from './astro-semantic/context';
 import { BuildGraphCore } from './build-graph';
 import type { ImportAnalysisMetricsRecorder } from './import-analysis/runner';
 import { ImportCore } from './imports';
 import { PackageDomainCore } from './packages';
+import { SvelteSemanticContextManager } from './svelte-semantic/context';
 import { TsconfigCore } from './tsconfig';
 import { TypeEvidenceCore } from './type-evidence';
 import type { TypeEvidenceMetricsRecorder } from './type-evidence/cache';
+import { VueSemanticContextManager } from './vue-semantic/context';
 import {
   WorkspaceCore,
   type WorkspaceCoreDependencies,
@@ -53,27 +56,42 @@ interface AnalysisProviderSetOptions {
 
 export class AnalysisProviderSet {
   readonly artifactNamespace: LiminaArtifactNamespace;
+  readonly astroSemanticContexts: AstroSemanticContextManager;
   readonly buildGraph: BuildGraphCore;
   readonly config: ResolvedLiminaConfig;
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
   readonly projectConfigs: CheckerProjectConfigCache;
+  readonly svelteSemanticContexts: SvelteSemanticContextManager;
   readonly tsconfig: TsconfigCore;
   readonly typeEvidence: TypeEvidenceCore;
   readonly workspace: WorkspaceCore;
+  readonly vueSemanticContexts: VueSemanticContextManager;
 
   constructor(options: AnalysisProviderSetOptions) {
     let buildGraph: BuildGraphCore;
 
     this.artifactNamespace = options.artifactNamespace;
     this.config = options.config;
-    this.projectConfigs = new CheckerProjectConfigCache();
+    this.projectConfigs = new CheckerProjectConfigCache(
+      options.artifactNamespace.generation,
+    );
     this.workspace = new WorkspaceCore(
       options.config,
       options.metrics,
       options.dependencies.workspace,
     );
-    this.imports = new ImportCore(options.config, options.metrics);
+    this.vueSemanticContexts = new VueSemanticContextManager(options.metrics);
+    this.astroSemanticContexts = new AstroSemanticContextManager({
+      metrics: options.metrics,
+    });
+    this.svelteSemanticContexts = new SvelteSemanticContextManager();
+    this.imports = new ImportCore(options.config, {
+      astroSemanticContexts: this.astroSemanticContexts,
+      metrics: options.metrics,
+      svelteSemanticContexts: this.svelteSemanticContexts,
+      vueSemanticContexts: this.vueSemanticContexts,
+    });
     this.tsconfig = new TsconfigCore({
       config: options.config,
       generatedGraphProvider: () => buildGraph.getGraph(),
@@ -84,6 +102,7 @@ export class AnalysisProviderSet {
       generation: options.artifactNamespace.generation,
       importAnalysis: this.imports.context,
       metrics: options.metrics,
+      vueSemanticContexts: this.vueSemanticContexts,
     });
     buildGraph = new BuildGraphCore({
       artifactNamespace: options.artifactNamespace,
@@ -95,13 +114,15 @@ export class AnalysisProviderSet {
     this.buildGraph = buildGraph;
     this.packages = new PackageDomainCore({
       buildGraph: this.buildGraph,
-      tsconfig: this.tsconfig,
       workspace: this.workspace,
     });
   }
 
   dispose(): void {
     this.typeEvidence.dispose();
+    this.astroSemanticContexts.dispose();
+    this.svelteSemanticContexts.dispose();
+    this.vueSemanticContexts.dispose();
   }
 }
 

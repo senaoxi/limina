@@ -1,15 +1,23 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toPosixPath, toRelativePath } from '#utils/path';
+import type { CheckerOwnershipPlan } from './checker-ownership-types';
+import { compareDependencyEdges } from './dependency-edge-order';
 import type {
   GeneratedKnipPackageConfig,
   GeneratedKnipPackageDiagnostic,
 } from './generated-knip';
+import {
+  createExecutionTargets,
+  createOwnershipManifest,
+} from './manifest-ownership';
+import { generatedGraphManifestVersion } from './manifest-version';
 import type {
   GeneratedBuildModule,
   GeneratedBuildModuleManifest,
-  GeneratedProviderEdge,
+  GeneratedDependencyEdge,
   GeneratedTsconfigGraphManifest,
+  GovernedSourceUnit,
   SourceProject,
 } from './types';
 
@@ -71,6 +79,13 @@ function getModuleMap(options: {
   return options.modulesByChecker.get(options.checkerName) ?? new Map();
 }
 
+function getCheckerValues<T>(
+  valuesByChecker: ReadonlyMap<string, T[]>,
+  checkerName: string,
+): T[] {
+  return valuesByChecker.get(checkerName) ?? [];
+}
+
 function createCheckerManifest(options: {
   checker: ResolvedCheckerConfig;
   checkerEntries: ReadonlyMap<string, string>;
@@ -78,6 +93,7 @@ function createCheckerManifest(options: {
     string,
     Map<string, GeneratedBuildModule>
   >;
+  governedSourcesByChecker: ReadonlyMap<string, GovernedSourceUnit[]>;
   projectsByChecker: ReadonlyMap<string, SourceProject[]>;
   rootDir: string;
   sourceToBuildByChecker: ReadonlyMap<
@@ -89,7 +105,10 @@ function createCheckerManifest(options: {
   if (!entryPath) {
     return null;
   }
-  const projects = options.projectsByChecker.get(options.checker.name) ?? [];
+  const projects = getCheckerValues(
+    options.projectsByChecker,
+    options.checker.name,
+  );
   const sourceDtsRecords = createSourceDtsRecords({
     projects,
     rootDir: options.rootDir,
@@ -102,10 +121,13 @@ function createCheckerManifest(options: {
       }),
       rootDir: options.rootDir,
     }),
-    preset: options.checker.preset,
     entry: toManifestPath(options.rootDir, entryPath),
-    roots: projects
-      .map((project) => toManifestPath(options.rootDir, project.configPath))
+    name: options.checker.name,
+    roots: getCheckerValues(
+      options.governedSourcesByChecker,
+      options.checker.name,
+    )
+      .map((unit) => toManifestPath(options.rootDir, unit.configPath))
       .sort(compareCodeUnits),
     sourceToBuild: createBuildModuleRecord({
       modules: getModuleMap({
@@ -126,6 +148,7 @@ function createManifestCheckers(options: {
     string,
     Map<string, GeneratedBuildModule>
   >;
+  governedSourcesByChecker: ReadonlyMap<string, GovernedSourceUnit[]>;
   projectsByChecker: ReadonlyMap<string, SourceProject[]>;
   rootDir: string;
   sourceToBuildByChecker: ReadonlyMap<
@@ -145,19 +168,23 @@ function createManifestCheckers(options: {
   return manifestCheckers;
 }
 
-function createProviderEdgeManifest(
-  edge: GeneratedProviderEdge,
+function createDependencyEdgeManifest(
+  edge: GeneratedDependencyEdge,
   rootDir: string,
-): GeneratedTsconfigGraphManifest['providerEdges'][number] {
-  return {
+): GeneratedTsconfigGraphManifest['dependencyEdges'][number] {
+  const base = {
     file: edge.file,
     fromChecker: edge.fromChecker,
     fromConfig: toManifestPath(rootDir, edge.fromConfigPath),
     importedSpecifier: edge.importedSpecifier,
+    kind: edge.kind,
     resolvedFile: toManifestPath(rootDir, edge.resolvedFilePath),
     toChecker: edge.toChecker,
     toConfig: toManifestPath(rootDir, edge.toConfigPath),
   };
+  return edge.kind === 'declaration-provider'
+    ? { ...base, cacheReuse: edge.cacheReuse, kind: edge.kind }
+    : { ...base, kind: edge.kind };
 }
 
 function optionalString(value: string | null | undefined): string {
@@ -231,37 +258,25 @@ function compareKnipDiagnostics(
   ]);
 }
 
-function compareProviderEdges(
-  left: GeneratedProviderEdge,
-  right: GeneratedProviderEdge,
-): number {
-  return firstNonZero([
-    compareCodeUnits(left.fromChecker, right.fromChecker),
-    compareCodeUnits(left.fromConfigPath, right.fromConfigPath),
-    compareCodeUnits(left.toChecker, right.toChecker),
-    compareCodeUnits(left.toConfigPath, right.toConfigPath),
-    compareCodeUnits(left.file, right.file),
-    compareCodeUnits(left.importedSpecifier, right.importedSpecifier),
-    compareCodeUnits(left.resolvedFilePath, right.resolvedFilePath),
-  ]);
-}
-
 export function createManifest(options: {
   checkerEntries: Map<string, string>;
   checkers: ResolvedCheckerConfig[];
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   generatedKnipDiagnostics: GeneratedKnipPackageDiagnostic[];
   generatedKnipPackageConfigs: GeneratedKnipPackageConfig[];
+  governedSourcesByChecker: Map<string, GovernedSourceUnit[]>;
   ownedArtifacts: string[];
+  ownershipPlan?: CheckerOwnershipPlan;
   projectsByChecker: Map<string, SourceProject[]>;
-  providerEdges: GeneratedProviderEdge[];
+  dependencyEdges: GeneratedDependencyEdge[];
   rootDir: string;
   sourceToBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
 }): GeneratedTsconfigGraphManifest {
+  const checkers = createManifestCheckers(options);
   return {
-    version: 3,
+    version: generatedGraphManifestVersion,
     generatedBy: 'limina',
-    checkers: createManifestCheckers(options),
+    checkers,
     knip: {
       diagnostics: [...options.generatedKnipDiagnostics].sort(
         compareKnipDiagnostics,
@@ -271,8 +286,14 @@ export function createManifest(options: {
         .sort(compareKnipPackageConfigs),
     },
     ownedArtifacts: [...options.ownedArtifacts].sort(compareCodeUnits),
-    providerEdges: [...options.providerEdges]
-      .sort(compareProviderEdges)
-      .map((edge) => createProviderEdgeManifest(edge, options.rootDir)),
+    ownership: createOwnershipManifest(options),
+    targets: createExecutionTargets({
+      checkers,
+      governedSourcesByChecker: options.governedSourcesByChecker,
+      rootDir: options.rootDir,
+    }),
+    dependencyEdges: [...options.dependencyEdges]
+      .sort(compareDependencyEdges)
+      .map((edge) => createDependencyEdgeManifest(edge, options.rootDir)),
   };
 }

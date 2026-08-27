@@ -7,8 +7,7 @@ import { loadConfig } from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import { spawn, type SpawnOptions } from 'node:child_process';
-import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import type { AtomicWriteOptions } from '../../src/check-reporting/atomic-writer';
@@ -35,8 +34,6 @@ import {
 } from '../../src/pipeline/runner';
 import { LiminaPreflightManager } from '../../src/preflight';
 import { runCheckerHostProtocolProbeForTesting } from '../../src/typecheck/process-host';
-import { createVueTsgoCachePaths } from '../../src/typecheck/targets';
-import type { VueTsgoCacheCleanupDependencies } from '../../src/typecheck/vue-tsgo-cache';
 import type { FaultInjectionDefinition } from './detector-fixture-types';
 import {
   createInjectedFaultError,
@@ -173,14 +170,6 @@ function createHelperCommand(mode: string, value?: string): PipelineStep {
   };
 }
 
-function createVueTsgoCleanupCommand(): PipelineStep {
-  return {
-    args: ['--project', 'tsconfig.json'],
-    command: 'vue-tsgo',
-    type: 'command',
-  };
-}
-
 function injectProtocolFault(options: {
   readonly boundaryErrors: Error[];
   readonly config: ResolvedLiminaConfig;
@@ -274,7 +263,7 @@ function selectPipelineStep(
         definition.point === 'cleanup.execute' ||
         definition.point === 'execution.finalize'
       ) {
-        return createVueTsgoCleanupCommand();
+        return createHelperCommand('success');
       }
       if (definition.point === 'process.wait') {
         if (fault.kind === 'process-exit') {
@@ -363,7 +352,7 @@ function createFilesystemReadProviders(options: {
   });
 }
 
-function usesVueTsgoCleanupCommand(
+function usesCleanupFault(
   definitions: readonly FaultInjectionDefinition[],
 ): boolean {
   return definitions.some(
@@ -374,69 +363,6 @@ function usesVueTsgoCleanupCommand(
   );
 }
 
-async function createVueTsgoCleanupDependencies(options: {
-  readonly boundary: MutableBoundaryReceipt;
-  readonly config: ResolvedLiminaConfig;
-  readonly controller: FaultInjectionController;
-  readonly definitions: readonly FaultInjectionDefinition[];
-}): Promise<VueTsgoCacheCleanupDependencies | undefined> {
-  if (!usesVueTsgoCleanupCommand(options.definitions)) return undefined;
-
-  const configPath = path.join(options.config.rootDir, 'tsconfig.json');
-  const expectedResourcePaths = new Set(createVueTsgoCachePaths(configPath));
-  if (expectedResourcePaths.size !== 1) {
-    throw new Error(
-      `Expected one vue-tsgo cache cleanup resource, received ${expectedResourcePaths.size}.`,
-    );
-  }
-  for (const resourcePath of expectedResourcePaths) {
-    await mkdir(resourcePath, { recursive: true });
-    await writeFile(
-      path.join(resourcePath, 'stale.txt'),
-      'controlled stale vue-tsgo cache bytes\n',
-      'utf8',
-    );
-  }
-
-  const observedGenerations = new Set<string>();
-  return {
-    afterDirectoryCleanup() {
-      options.boundary.cleanupResourcesRemoved += 1;
-      for (const definition of options.definitions) {
-        if (
-          definition.point !== 'cleanup.execute' ||
-          definition.task !== 'command'
-        ) {
-          continue;
-        }
-        options.controller.throwIfRequested('cleanup.execute', definition.task);
-      }
-    },
-    observeDescriptor(descriptor) {
-      if (
-        !expectedResourcePaths.has(descriptor.path) ||
-        descriptor.authority.logicalMutationRoot !== descriptor.path ||
-        descriptor.authority.scope !== 'directory' ||
-        descriptor.kind !== 'directory' ||
-        descriptor.recursive !== true
-      ) {
-        throw new Error(
-          `Unexpected vue-tsgo cleanup descriptor: ${JSON.stringify({
-            kind: descriptor.kind,
-            path: descriptor.path,
-            recursive: descriptor.recursive,
-            scope: descriptor.authority.scope,
-          })}.`,
-        );
-      }
-      options.boundary.cleanupDescriptorCount += 1;
-      options.boundary.cleanupDirectoryDescriptorCount += 1;
-      observedGenerations.add(descriptor.authority.generation);
-      options.boundary.cleanupGenerationCount = observedGenerations.size;
-    },
-  };
-}
-
 function createFaultProcessDependencies(options: {
   readonly boundaryErrors: Error[];
   readonly controller: FaultInjectionController;
@@ -445,8 +371,7 @@ function createFaultProcessDependencies(options: {
   const processFaults = options.definitions.filter((definition) =>
     definition.point.startsWith('process.'),
   );
-  const usesCleanupCommand = usesVueTsgoCleanupCommand(options.definitions);
-  if (processFaults.length === 0 && !usesCleanupCommand) return undefined;
+  if (processFaults.length === 0) return undefined;
 
   const timeoutFault = processFaults.find(
     (definition) =>
@@ -456,17 +381,6 @@ function createFaultProcessDependencies(options: {
 
   return {
     spawn(command, args, spawnOptions: SpawnOptions) {
-      if (
-        usesCleanupCommand &&
-        ['vue-tsgo', 'vue-tsgo.cmd'].includes(
-          path.basename(command).toLowerCase(),
-        )
-      ) {
-        return spawn(process.execPath, [getHelperPath(), 'success'], {
-          ...spawnOptions,
-          shell: false,
-        });
-      }
       injectMatchingThrow(options.controller, processFaults, 'process.spawn');
 
       for (const definition of processFaults) {
@@ -751,12 +665,6 @@ async function main(): Promise<void> {
       config,
       ...(providers ? { providers } : {}),
     });
-    const vueTsgoCacheCleanup = await createVueTsgoCleanupDependencies({
-      boundary,
-      config,
-      controller,
-      definitions,
-    });
     const commandProcess = createFaultProcessDependencies({
       boundaryErrors,
       controller,
@@ -765,7 +673,6 @@ async function main(): Promise<void> {
     const plan = createExecutionPlan(config, 'fault-injection', {
       ...(commandProcess ? { commandProcess } : {}),
       preflight,
-      ...(vueTsgoCacheCleanup ? { vueTsgoCacheCleanup } : {}),
     });
     injectExecutionBoundaryFault(plan, controller, planDocument.fault);
     injectProtocolFault({
@@ -808,7 +715,7 @@ async function main(): Promise<void> {
     });
     const flow = new LiminaFlowReporter({
       forceTty:
-        usesVueTsgoCleanupCommand(definitions) ||
+        usesCleanupFault(definitions) ||
         definitions.some((definition) =>
           definition.point.startsWith('process.'),
         ),
@@ -838,7 +745,6 @@ async function main(): Promise<void> {
           flow,
           preflight,
           ...(snapshotWriters ? { snapshotWriters } : {}),
-          ...(vueTsgoCacheCleanup ? { vueTsgoCacheCleanup } : {}),
         });
         return execution.passed;
       },

@@ -25,7 +25,7 @@ interface SnapshotBuildContext {
 }
 
 function supportsSourceGraph(checker: ResolvedCheckerConfig): boolean {
-  const adapter = getCheckerAdapter(checker.preset);
+  const adapter = getCheckerAdapter(checker.name);
   return adapter?.sourceGraph === true;
 }
 
@@ -39,7 +39,7 @@ function createCheckerRouteSnapshot(options: {
 }): CheckerRouteSnapshot {
   return Object.freeze({
     checkerName: options.checker.name,
-    checkerPreset: options.checker.preset,
+    checkerPreset: options.checker.name,
     entryAvailability: options.entryAvailability,
     extensions: Object.freeze([...options.checker.extensions]),
     normalizedRootConfigPath: options.normalizedRootConfigPath,

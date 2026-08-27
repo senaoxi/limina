@@ -1,7 +1,7 @@
+import { LiminaDependencyError } from '../dependency-contract';
 import { formatErrorMessage } from '../logger';
 
-export class LiminaOptionalToolMissingError extends Error {
-  readonly packageName: string;
+export class LiminaOptionalToolMissingError extends LiminaDependencyError {
   readonly toolName: string;
 
   constructor(options: {
@@ -13,17 +13,22 @@ export class LiminaOptionalToolMissingError extends Error {
   }) {
     const toolName = options.toolName ?? options.packageName;
 
-    super(
-      [
-        `Missing peer dependency "${options.packageName}" required by limina ${options.command}.`,
+    super({
+      failureKind: 'missing',
+      message: [
+        'Missing Limina runtime dependency:',
+        `  package: ${options.packageName}`,
+        `  command: limina ${options.command}`,
         ...(options.reason ? [`  reason: ${options.reason}`] : []),
         `  fix: install it in the workspace running Limina, for example with \`pnpm add -D ${options.packageName}\`.`,
         `  error: ${formatErrorMessage(options.error)}`,
       ].join('\n'),
-    );
+      ownership: 'limina-runtime',
+      packageName: options.packageName,
+      scope: 'limina-install',
+    });
 
     this.name = 'LiminaOptionalToolMissingError';
-    this.packageName = options.packageName;
     this.toolName = toolName;
   }
 }

@@ -4,7 +4,15 @@ import type {
 } from '#config/runner';
 import { type AnalysisProviderSet, createAnalysisProviders } from '#core';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -21,6 +29,8 @@ import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
+
+const requireFromTest = createRequire(import.meta.url);
 
 vi.mock('../core/build-graph/materializer', async (importOriginal) => {
   const actual =
@@ -111,6 +121,13 @@ async function createFixture(): Promise<{
   await writeFile(
     path.join(rootDir, 'packages/pkg/package.json'),
     '{"name":"@fixture/pkg","private":true}\n',
+  );
+  const vueTscManifest = requireFromTest.resolve('vue-tsc/package.json');
+  await mkdir(path.join(rootDir, 'node_modules'), { recursive: true });
+  await symlink(
+    path.dirname(vueTscManifest),
+    path.join(rootDir, 'node_modules/vue-tsc'),
+    'junction',
   );
 
   return {
@@ -537,30 +554,27 @@ describe('LiminaPreflightManager', () => {
         exclude: [],
         extensions: ['.ts'],
         include: [],
-        name: 'typescript',
-        preset: 'tsgo',
+        name: 'tsgo',
       },
       {
         exclude: [],
         extensions: ['.ts', '.vue'],
         include: [],
-        name: 'vue',
-        preset: 'vue-tsc',
+        name: 'vue-tsc',
       },
       {
         exclude: [],
-        extensions: ['.svelte'],
+        extensions: ['.ts'],
         include: [],
-        name: 'svelte',
-        preset: 'svelte-check',
+        name: 'tsc',
       },
     ];
     const graph = {
       ...createGraph(namespace),
       checkerEntries: new Map([
-        ['typescript', rootConfigPath],
-        ['vue', rootConfigAlias],
-        ['svelte', rootConfigPath],
+        ['tsgo', rootConfigPath],
+        ['vue-tsc', rootConfigAlias],
+        ['tsc', rootConfigPath],
       ]),
       checkers,
       generatedFiles: new Map<string, string>(),
@@ -588,20 +602,21 @@ describe('LiminaPreflightManager', () => {
 
       expect(graphRoutes.problems).toEqual([]);
       expect(graphRoutes.routes.map((route) => route.checkerName)).toEqual([
-        'typescript',
-        'vue',
+        'tsgo',
+        'vue-tsc',
+        'tsc',
       ]);
       expect(entryRoutes.problems).toEqual([]);
       expect(entryRoutes.routes.map((route) => route.checkerName)).toEqual([
-        'typescript',
-        'vue',
-        'svelte',
+        'tsgo',
+        'vue-tsc',
+        'tsc',
       ]);
       const portableProjectConfigPath = toPortablePath(projectConfigPath);
       expect(
         sourceExtensions.projectContextsByPath.get(portableProjectConfigPath)
           ?.checkerPresets,
-      ).toEqual(['tsgo', 'vue-tsc']);
+      ).toEqual(['tsgo', 'vue-tsc', 'tsc']);
       expect(
         sourceExtensions.projectExtensionsByPath.get(portableProjectConfigPath),
       ).toEqual(expect.arrayContaining(['.ts', '.vue']));
@@ -657,29 +672,26 @@ describe('LiminaPreflightManager', () => {
         exclude: [],
         extensions: ['.ts'],
         include: [],
-        name: 'typescript',
-        preset: 'tsgo',
+        name: 'tsgo',
       },
       {
         exclude: [],
         extensions: ['.ts', '.vue'],
         include: [],
-        name: 'vue',
-        preset: 'vue-tsc',
+        name: 'vue-tsc',
       },
       {
         exclude: [],
-        extensions: ['.svelte'],
+        extensions: ['.ts'],
         include: [],
-        name: 'svelte',
-        preset: 'svelte-check',
+        name: 'tsc',
       },
     ];
     const graph = {
       ...createGraph(namespace),
       checkerEntries: new Map([
-        ['vue', fixture.path('.limina', 'missing-vue.build.json')],
-        ['svelte', fixture.path('.limina', 'missing-svelte.build.json')],
+        ['vue-tsc', fixture.path('.limina', 'missing-vue.build.json')],
+        ['tsc', fixture.path('.limina', 'missing-tsc.build.json')],
       ]),
       checkers,
       generatedFiles: new Map<string, string>(),
@@ -701,30 +713,35 @@ describe('LiminaPreflightManager', () => {
       expect(graphRoutes.problems).toEqual([
         [
           'Missing generated checker graph entry:',
-          '  checker: typescript',
+          '  checker: tsgo',
           '  reason: run limina graph prepare before collecting checker graph routes.',
         ].join('\n'),
         [
           'Checker graph entry references a missing tsconfig:',
-          '  checker: vue',
+          '  checker: vue-tsc',
           '  config: .limina/missing-vue.build.json',
+        ].join('\n'),
+        [
+          'Checker graph entry references a missing tsconfig:',
+          '  checker: tsc',
+          '  config: .limina/missing-tsc.build.json',
         ].join('\n'),
       ]);
       expect(entryRoutes.problems).toEqual([
         [
           'Missing generated checker entry:',
-          '  checker: typescript',
+          '  checker: tsgo',
           '  reason: run limina graph prepare before collecting checker entry routes.',
         ].join('\n'),
         [
           'Checker entry references a missing tsconfig:',
-          '  checker: vue',
+          '  checker: vue-tsc',
           '  config: .limina/missing-vue.build.json',
         ].join('\n'),
         [
           'Checker entry references a missing tsconfig:',
-          '  checker: svelte',
-          '  config: .limina/missing-svelte.build.json',
+          '  checker: tsc',
+          '  config: .limina/missing-tsc.build.json',
         ].join('\n'),
       ]);
       expect(sourceExtensions.problems).toEqual(graphRoutes.problems);

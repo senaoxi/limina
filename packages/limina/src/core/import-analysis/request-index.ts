@@ -68,12 +68,13 @@ export function createModuleResolutionRequestIndex(options: {
         args;
       const normalizedContainingFile = normalizeAbsolutePath(containingFile);
       const context = normalizeContextInput(contextOrExtensions);
+      const resolverIdentity = getModuleResolverIdentity(options.caches, {
+        compilerOptions,
+        context,
+      });
       const cacheKey = createModuleResolutionRequestKey({
         containingFile: normalizedContainingFile,
-        resolverIdentity: getModuleResolverIdentity(options.caches, {
-          compilerOptions,
-          context,
-        }),
+        resolverIdentity,
         specifier,
       });
       return {
@@ -81,6 +82,7 @@ export function createModuleResolutionRequestIndex(options: {
         containingFile: normalizedContainingFile,
         context,
         record: getOrCreateRecord({ cacheKey, caches: options.caches }),
+        resolverIdentity,
         specifier,
       };
     },

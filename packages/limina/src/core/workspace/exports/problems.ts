@@ -157,6 +157,7 @@ interface EntryProblemOptions {
   entry: PackageExportEntry;
   hasOxcResolution: boolean;
   hasTypeScriptResolution: boolean;
+  includeOxc: boolean;
   problems: string[];
   profiles: readonly WorkspaceExportsResolutionProfile[];
 }
@@ -181,5 +182,5 @@ function addOxcProblem(options: EntryProblemOptions): void {
 
 export function addEntryProblems(options: EntryProblemOptions): void {
   addTypeScriptProblem(options);
-  addOxcProblem(options);
+  if (options.includeOxc) addOxcProblem(options);
 }

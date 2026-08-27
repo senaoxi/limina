@@ -4,7 +4,15 @@ import {
   resolveModuleNameWithCheckersDetailed,
 } from '#checkers';
 import type { CheckerPreset } from '#config/runner';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import ts from 'typescript';
@@ -15,6 +23,8 @@ import {
   toPortablePath,
   toPortableRelativePaths,
 } from './helpers/path';
+
+const requireFromTest = createRequire(import.meta.url);
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -41,6 +51,13 @@ async function createFixture(files: Record<string, string>): Promise<{
     path: createFixturePathResolver(rootDir),
     rootDir,
   };
+}
+
+async function linkVueToolchain(rootDir: string): Promise<void> {
+  const manifestPath = requireFromTest.resolve('vue-tsc/package.json');
+  const targetPath = path.join(rootDir, 'node_modules', 'vue-tsc');
+  await mkdir(path.dirname(targetPath), { recursive: true });
+  await symlink(path.dirname(manifestPath), targetPath, 'junction');
 }
 
 function tsconfig(value: unknown): string {
@@ -112,6 +129,7 @@ describe('checker project config parsing', () => {
     });
 
     try {
+      await linkVueToolchain(fixture.rootDir);
       const parsed = parseCheckerProjectConfigForContext({
         configPath: path.join(fixture.rootDir, 'tsconfig.json'),
         context: {
@@ -122,6 +140,10 @@ describe('checker project config parsing', () => {
       });
 
       expect(parsed.extensions).toContain('.vue');
+      expect(parsed.vueSemanticIdentity?.toolchain.adapter).toEqual({
+        family: 'vue-tsc-3.2',
+        kind: 'supported',
+      });
       expect(
         toPortableRelativePaths(fixture.rootDir, parsed.fileNames),
       ).toEqual(['src/App.vue']);
@@ -246,6 +268,61 @@ describe('checker project config parsing', () => {
     }
   });
 
+  it('captures the root and extended config closure as normalized content fingerprints', async () => {
+    const fixture = await createFixture({
+      'src/index.ts': 'export const value = true;\n',
+      'tsconfig.base.json': tsconfig({ include: ['src/index.ts'] }),
+      'tsconfig.json': tsconfig({ extends: './tsconfig.base.json' }),
+    });
+
+    try {
+      const parse = () =>
+        parseCheckerProjectConfigForContext({
+          cache: new CheckerProjectConfigCache(),
+          configPath: fixture.path('tsconfig.json'),
+          context: {
+            checkerPresets: ['tsc'],
+            extensions: [],
+          },
+          projectRootDir: fixture.rootDir,
+        });
+      const first = parse();
+
+      expect(
+        first.configClosure.map((entry) =>
+          toPortablePath(path.relative(fixture.rootDir, entry.filePath)),
+        ),
+      ).toEqual(['tsconfig.base.json', 'tsconfig.json']);
+      expect(first.configClosure).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            contentHash: expect.stringMatching(/^[a-f\d]{64}$/),
+          }),
+        ]),
+      );
+
+      const originalBaseHash = first.configClosure.find((entry) =>
+        entry.filePath.endsWith('tsconfig.base.json'),
+      )?.contentHash;
+      await writeText(
+        fixture.path('tsconfig.base.json'),
+        tsconfig({
+          compilerOptions: { strict: true },
+          include: ['src/index.ts'],
+        }),
+      );
+      const second = parse();
+
+      expect(
+        second.configClosure.find((entry) =>
+          entry.filePath.endsWith('tsconfig.base.json'),
+        )?.contentHash,
+      ).not.toBe(originalBaseHash);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('keeps virtual-file cache identity independent of localeCompare', async () => {
     const fixture = await createFixture({
       'src/a.ts': 'export const a = true;\n',
@@ -319,6 +396,7 @@ describe('checker project config parsing', () => {
       ).toEqual(['src/virtual.ts']);
 
       cache.set('manager-a-only', {
+        configClosure: [],
         extensions: [],
         fileNames: [],
         options: {},

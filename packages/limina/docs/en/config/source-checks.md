@@ -45,7 +45,7 @@ Resource imports do not become declaration providers, provider edges, or project
 
 For `?raw`, `?url`, and `?worker` imports, Limina checks that the base physical file exists and that the checker project provides a matching type declaration. This does not assert that a particular bundler transformer is installed. Virtual and framework-injected module runtime behavior remains unsupported; an ambient declaration alone does not make such a runtime module valid, and Limina does not report it as a missing physical resource.
 
-Vue resource type evidence is available with the verified Vue checker family: `vue-tsc` 3.2.x, `@vue/language-core` 3.2.x, `@volar/typescript` 2.4.x, and TypeScript 5.9 or 6.0. Other Vue checker tuples are treated as unsupported rather than being reported as missing declarations.
+Vue resource type evidence uses the same bounded semantic adapter matrix as graph analysis: `vue-tsc` 2.2.0–2.2.12 with matching `@vue/language-core` and `@volar/typescript` 2.4.11–2.4.28, or `vue-tsc` 3.2.0–3.2.4 with matching Language Core and Volar TypeScript 2.4.27. Both families accept TypeScript 5.4.x–5.9.x or 6.0.x. Other Vue checker tuples are treated as unsupported rather than being reported as missing declarations.
 
 ## importAuthority
 

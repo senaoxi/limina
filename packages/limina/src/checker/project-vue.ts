@@ -1,258 +1,104 @@
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
-import { createRequire } from 'node:module';
-import path from 'pathe';
-import ts from 'typescript';
-import {
-  createExtraFileExtensions,
-  getTypeScriptCheckerExtensions,
-  normalizeExtensions,
-} from './extensions';
-import {
-  createFormatHost,
-  createParsedCheckerProjectConfig,
-  createProjectParseHost,
-} from './project-base';
+import type ts from 'typescript';
+import { createFormatHost } from './project-base';
 import type {
   CheckerProjectConfigParseOptions,
   ParsedCheckerProjectConfig,
-  VueLanguageCore,
 } from './types';
+import { parseVueProjectWithSemanticIdentity } from './vue-semantic-identity';
 
-function getErrorCode(error: unknown): string | undefined {
-  if (!(error instanceof Error)) return undefined;
-  if (!('code' in error)) return undefined;
-  return String(error.code);
-}
+type VueSemanticParseResult = ReturnType<
+  typeof parseVueProjectWithSemanticIdentity
+>;
 
-function isModuleNotFoundError(error: unknown): boolean {
-  return getErrorCode(error) === 'MODULE_NOT_FOUND';
-}
-
-function isPackagePathExportError(error: unknown): boolean {
-  return getErrorCode(error) === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
-}
-
-function recoverPackageRequire(options: {
-  error: unknown;
-  packageName: string;
-  requireFromBase: ReturnType<typeof createRequire>;
-}): ReturnType<typeof createRequire> | null {
-  if (isPackagePathExportError(options.error)) {
-    return createRequire(options.requireFromBase.resolve(options.packageName));
-  }
-  if (isModuleNotFoundError(options.error)) return null;
-  throw options.error;
-}
-
-function createPackageRequireFromBase(options: {
-  basePath: string;
-  packageName: string;
-}): ReturnType<typeof createRequire> | null {
-  const requireFromBase = createRequire(options.basePath);
-  try {
-    return createRequire(
-      requireFromBase.resolve(`${options.packageName}/package.json`),
-    );
-  } catch (error) {
-    return recoverPackageRequire({
-      error,
-      packageName: options.packageName,
-      requireFromBase,
-    });
-  }
-}
-
-function createRequireCandidate(options: {
-  basePath: string;
-  packageName: string;
-  projectRootDir: string;
-}): ReturnType<typeof createRequire> | null {
-  return createPackageRequireFromBase(options);
-}
-
-function findRequireCandidate(
-  candidates: readonly (ReturnType<typeof createRequire> | null)[],
-): ReturnType<typeof createRequire> | null {
-  return candidates.find((candidate) => candidate !== null) ?? null;
-}
-
-function getCheckerBasePaths(projectRootDir: string): string[] {
-  return [path.join(projectRootDir, 'package.json'), import.meta.url];
-}
-
-function resolveRequireCandidates(options: {
-  basePaths: readonly string[];
-  packageName: string;
-  projectRootDir: string;
-}): ReturnType<typeof createRequire> | null {
-  const candidates = options.basePaths.map((basePath) =>
-    createRequireCandidate({ ...options, basePath }),
+function isIgnoredNoInputDiagnostic(
+  diagnostic: ts.Diagnostic,
+  allowNoInputDiagnostics: boolean | undefined,
+): boolean {
+  return (
+    allowNoInputDiagnostics === true &&
+    (diagnostic.code === 18_002 || diagnostic.code === 18_003)
   );
-  return findRequireCandidate(candidates);
 }
 
-function createCheckerPackageRequire(options: {
-  packageName: string;
+function assertNoVueParseErrors(options: {
+  allowNoInputDiagnostics?: boolean;
   projectRootDir: string;
-}): ReturnType<typeof createRequire> | null {
-  const basePaths = getCheckerBasePaths(options.projectRootDir);
-  return resolveRequireCandidates({ ...options, basePaths });
-}
-
-function requireCheckerPackage(options: {
-  packageName: string;
-  projectRootDir: string;
-}): ReturnType<typeof createRequire> {
-  const checkerRequire = createCheckerPackageRequire(options);
-  if (checkerRequire !== null) return checkerRequire;
+  result: VueSemanticParseResult;
+}): void {
+  const diagnostics = options.result.diagnostics.filter(
+    (diagnostic) =>
+      !isIgnoredNoInputDiagnostic(diagnostic, options.allowNoInputDiagnostics),
+  );
+  if (diagnostics.length === 0) return;
   throw new Error(
-    [
-      'Unable to resolve Vue checker package:',
-      `  package: ${options.packageName}`,
-      `  root: ${options.projectRootDir}`,
-    ].join('\n'),
+    options.result.identity.toolchain.tsModule.formatDiagnosticsWithColorAndContext(
+      diagnostics,
+      createFormatHost(options.projectRootDir),
+    ),
   );
 }
 
-function getVueLanguageCore(options: {
+function createSemanticParseResult(options: {
   packageName: string;
-  projectRootDir: string;
-}): VueLanguageCore {
-  const requireFromChecker = requireCheckerPackage(options);
+  parseOptions: CheckerProjectConfigParseOptions;
+}): VueSemanticParseResult {
   try {
-    return requireFromChecker('@vue/language-core') as VueLanguageCore;
+    return parseVueProjectWithSemanticIdentity(options.parseOptions);
   } catch (error) {
-    if (!isModuleNotFoundError(error)) throw error;
     throw new Error(
       [
-        'Unable to resolve Vue checker language core:',
+        'Unable to initialize Vue project semantics:',
         `  checker package: ${options.packageName}`,
-        '  required package: @vue/language-core',
+        `  config: ${toRelativePath(options.parseOptions.projectRootDir, options.parseOptions.configPath)}`,
+        `  reason: ${error instanceof Error ? error.message : String(error)}`,
       ].join('\n'),
+      { cause: error },
     );
   }
 }
 
-function createVueParsedCommandLine(options: {
-  configPath: string;
+function parseSemanticProject(options: {
   packageName: string;
-  projectRootDir: string;
-  virtualFiles?: ReadonlyMap<string, string>;
-}): {
-  commandLine: ReturnType<VueLanguageCore['createParsedCommandLine']>;
-  configPath: string;
-  vueLanguageCore: VueLanguageCore;
-} {
-  const vueLanguageCore = getVueLanguageCore(options);
-  const configPath = normalizeAbsolutePath(options.configPath);
-  return {
-    commandLine: vueLanguageCore.createParsedCommandLine(
-      ts,
-      createProjectParseHost(options.virtualFiles),
-      configPath,
-    ),
-    configPath,
-    vueLanguageCore,
-  };
+  parseOptions: CheckerProjectConfigParseOptions;
+}): VueSemanticParseResult {
+  const result = createSemanticParseResult(options);
+  assertNoVueParseErrors({
+    allowNoInputDiagnostics: options.parseOptions.allowNoInputDiagnostics,
+    projectRootDir: options.parseOptions.projectRootDir,
+    result,
+  });
+  return result;
 }
 
 export function resolveVueProjectExtensions(
   options: CheckerProjectConfigParseOptions,
   packageName: string,
 ): string[] {
-  const { commandLine, vueLanguageCore } = createVueParsedCommandLine({
-    configPath: options.configPath,
-    packageName,
-    projectRootDir: options.projectRootDir,
-    virtualFiles: options.virtualFiles,
-  });
-  try {
-    return normalizeExtensions([
-      ...getTypeScriptCheckerExtensions(),
-      ...vueLanguageCore.getAllExtensions(commandLine.vueOptions),
-    ]);
-  } catch (error) {
-    throw new Error(
-      [
-        'Unable to resolve Vue checker extensions:',
-        `  checker package: ${packageName}`,
-        `  config: ${toRelativePath(options.projectRootDir, options.configPath)}`,
-        `  reason: ${String(error)}`,
-      ].join('\n'),
-    );
-  }
-}
-
-function getConfiguredExtensions(
-  options: CheckerProjectConfigParseOptions,
-): string[] {
-  return options.extensions === undefined ? [] : options.extensions;
+  return [
+    ...parseSemanticProject({ packageName, parseOptions: options }).extensions,
+  ];
 }
 
 export function resolveVueProjectExtensionsForChecker(
   options: CheckerProjectConfigParseOptions,
   packageName: string,
 ): string[] {
-  return normalizeExtensions([
-    ...getConfiguredExtensions(options),
-    ...resolveVueProjectExtensions(options, packageName),
-  ]);
-}
-
-function assertNoVueParseErrors(options: {
-  allowNoInputDiagnostics?: boolean;
-  errors: readonly ts.Diagnostic[];
-  projectRootDir: string;
-}): void {
-  const errors = options.errors.filter(
-    (diagnostic) =>
-      options.allowNoInputDiagnostics !== true ||
-      (diagnostic.code !== 18_002 && diagnostic.code !== 18_003),
-  );
-  if (errors.length === 0) return;
-  throw new Error(
-    ts.formatDiagnosticsWithColorAndContext(
-      errors,
-      createFormatHost(options.projectRootDir),
-    ),
-  );
+  return resolveVueProjectExtensions(options, packageName);
 }
 
 export function parseVueProjectConfig(
   options: CheckerProjectConfigParseOptions,
   packageName: string,
 ): ParsedCheckerProjectConfig {
-  const { commandLine, configPath, vueLanguageCore } =
-    createVueParsedCommandLine({
-      configPath: options.configPath,
-      packageName,
-      projectRootDir: options.projectRootDir,
-      virtualFiles: options.virtualFiles,
-    });
-  const extensions = normalizeExtensions([
-    ...getConfiguredExtensions(options),
-    ...getTypeScriptCheckerExtensions(),
-    ...vueLanguageCore.getAllExtensions(commandLine.vueOptions),
-  ]);
-  const host = createProjectParseHost(options.virtualFiles);
-  const configFile = ts.readJsonConfigFile(configPath, host.readFile);
-  const parsed = ts.parseJsonSourceFileConfigFileContent(
-    configFile,
-    host,
-    path.dirname(configPath),
-    {},
-    configPath,
-    undefined,
-    createExtraFileExtensions(extensions),
-  );
-  assertNoVueParseErrors({
-    allowNoInputDiagnostics: options.allowNoInputDiagnostics,
-    errors: parsed.errors,
-    projectRootDir: options.projectRootDir,
-  });
-  return createParsedCheckerProjectConfig({
-    extensions,
-    fileNames: parsed.fileNames,
-    parsed,
-  });
+  const result = parseSemanticProject({ packageName, parseOptions: options });
+  return {
+    configClosure: result.identity.configClosure.map((entry) => ({
+      ...entry,
+    })),
+    extensions: [...result.extensions],
+    fileNames: result.parsed.fileNames.map(normalizeAbsolutePath).sort(),
+    options: { ...result.parsed.options },
+    vueSemanticIdentity: result.identity,
+  };
 }
