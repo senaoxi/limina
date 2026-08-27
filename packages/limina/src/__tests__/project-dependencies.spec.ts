@@ -16,6 +16,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PreparedDependencyFact } from '../core/framework-semantic/contracts';
 import { cloneProjectDependencyPreparation } from '../core/project-dependencies/cache';
+import { createFixturePathResolver } from './helpers/path';
 
 const temporaryRoots: string[] = [];
 
@@ -35,20 +36,25 @@ function createSemanticContext(options: {
   fileName: string;
   rootDir: string;
 }): ProjectSemanticContext {
+  const fixturePath = createFixturePathResolver(options.rootDir);
+  const fileName = createFixturePathResolver(path.dirname(options.fileName))(
+    path.basename(options.fileName),
+  );
+  const rootDir = fixturePath();
   const context: ProjectSemanticContext = {
     compilerOptions: {
       module: 99,
       moduleResolution: 100,
       target: 99,
     },
-    configPath: path.join(options.rootDir, 'tsconfig.json'),
+    configPath: fixturePath('tsconfig.json'),
     extensions: options.family === 'vue' ? ['.vue'] : [],
-    fileNames: [options.fileName],
+    fileNames: [fileName],
     generation: 1,
-    packageRootByFileName: new Map([[options.fileName, options.rootDir]]),
-    packageRootDir: options.rootDir,
+    packageRootByFileName: new Map([[fileName, rootDir]]),
+    packageRootDir: rootDir,
     references: [],
-    resolverConfigPath: path.join(options.rootDir, 'tsconfig.json'),
+    resolverConfigPath: fixturePath('tsconfig.json'),
     semanticAuthority: {
       family: options.family,
       kind: 'locked',
@@ -57,7 +63,7 @@ function createSemanticContext(options: {
   };
   if (options.family === 'vue') {
     context.vueSemanticIdentity = {
-      profilesByFileName: new Map([[options.fileName, 'vue-sfc']]),
+      profilesByFileName: new Map([[fileName, 'vue-sfc']]),
     } as unknown as ProjectSemanticContext['vueSemanticIdentity'];
   }
   return context;
@@ -140,10 +146,14 @@ afterEach(async () => {
 
 describe('project dependency authority', () => {
   it('uses TypeScript AST plus checker resolution for direct-source dependencies', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-project-deps-'));
-    temporaryRoots.push(rootDir);
-    const sourceFile = path.join(rootDir, 'index.ts');
-    const targetFile = path.join(rootDir, 'target.ts');
+    const temporaryRoot = await mkdtemp(
+      path.join(tmpdir(), 'limina-project-deps-'),
+    );
+    temporaryRoots.push(temporaryRoot);
+    const fixturePath = createFixturePathResolver(temporaryRoot);
+    const rootDir = fixturePath();
+    const sourceFile = fixturePath('index.ts');
+    const targetFile = fixturePath('target.ts');
     await writeFile(sourceFile, "import './target';\n", 'utf8');
     await writeFile(targetFile, 'export const target = true;\n', 'utf8');
     const base = createImportAnalysisContext();
@@ -172,9 +182,10 @@ describe('project dependency authority', () => {
   });
 
   it('consumes a prepared source target without framework re-resolution', () => {
-    const rootDir = '/virtual/mapped-vue';
-    const sourceFile = path.join(rootDir, 'App.vue');
-    const targetFile = path.join(rootDir, 'target.ts');
+    const fixturePath = createFixturePathResolver('/virtual/mapped-vue');
+    const rootDir = fixturePath();
+    const sourceFile = fixturePath('App.vue');
+    const targetFile = fixturePath('target.ts');
     const record = createRecord(sourceFile, './target.ts');
     const fact = createFact({ record, target: createTarget(targetFile) });
     const analysis = withPreparedFact(fact);
