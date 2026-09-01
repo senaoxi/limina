@@ -37,6 +37,7 @@ export {
   resolveExtensionsForChecker,
 } from './checker/extensions';
 export {
+  resolveCheckerSourceModuleName,
   resolveModuleNameWithCheckers,
   resolveModuleNameWithCheckersDetailed,
   resolveTypeScriptModuleName,

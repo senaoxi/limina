@@ -8,6 +8,7 @@ import type {
   ProjectDependency,
   ProjectDependencyCaches,
 } from '../project-dependencies/contracts';
+import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { GeneratedDependencyEdge, SourceProject } from './types';
 
@@ -33,6 +34,7 @@ export interface ReferenceImportContext {
   projectDependencyCaches: ProjectDependencyCaches;
   problems: string[];
   dependencyEdgesByKey: Map<string, GeneratedDependencyEdge>;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 export interface ReferenceImportOptions {

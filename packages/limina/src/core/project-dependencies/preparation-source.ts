@@ -8,7 +8,10 @@ import type {
   SourceEvidence,
 } from './contracts';
 import { createProjectDependencyFailure } from './failure';
-import { collectSourceEvidence } from './source-evidence';
+import {
+  collectSourceEvidence,
+  isTypeScriptSemanticSource,
+} from './source-evidence';
 
 export interface FilePreparationOptions {
   collection: ProjectDependencyCollection;
@@ -104,6 +107,8 @@ export function collectFileSourceEvidence(
   options: FilePreparationOptions,
 ): SourceEvidence {
   const { request } = options;
+  const semanticSource = collectSemanticSourceEvidence(options);
+  if (semanticSource !== null) return semanticSource;
   const source = collectSourceEvidence({
     cache: request.caches?.sourceEvidenceCache,
     cacheIdentity: createProjectSemanticCacheIdentity(request.context),
@@ -118,6 +123,53 @@ export function collectFileSourceEvidence(
   });
   addSourceDiagnostics({ base: options, diagnostics: source.diagnostics });
   return source;
+}
+
+function collectSemanticSourceEvidence(
+  options: FilePreparationOptions,
+): SourceEvidence | null {
+  const context = getNativeSemanticContext(options);
+  if (context === undefined) return null;
+  const sourceFile = context.getSourceFile(options.fileName);
+  const diagnostics = createSemanticSourceDiagnostics(
+    options.fileName,
+    sourceFile,
+  );
+  addSourceDiagnostics({ base: options, diagnostics });
+  return {
+    diagnostics,
+    filePath: options.fileName,
+    records: getSemanticSourceRecords({
+      context,
+      fileName: options.fileName,
+      sourceFile,
+    }),
+  };
+}
+
+function getNativeSemanticContext(options: FilePreparationOptions) {
+  return isTypeScriptSemanticSource(options.fileName)
+    ? options.request.typeScriptSemanticContext
+    : undefined;
+}
+
+function getSemanticSourceRecords(options: {
+  context: NonNullable<ProjectDependencyRequest['typeScriptSemanticContext']>;
+  fileName: string;
+  sourceFile: unknown;
+}): SourceEvidence['records'] {
+  if (options.sourceFile === undefined) return [];
+  return [...options.context.getImportRecords(options.fileName)];
+}
+
+function createSemanticSourceDiagnostics(
+  fileName: string,
+  sourceFile: unknown,
+): string[] {
+  if (sourceFile !== undefined) return [];
+  return [
+    `Bounded TypeScript semantic context did not admit root ${fileName}.`,
+  ];
 }
 
 function requiresAstroPreparation(fileName: string): boolean {

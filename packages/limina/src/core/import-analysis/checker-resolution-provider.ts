@@ -2,9 +2,9 @@ import { createFrameworkSemanticFailure } from '../framework-semantic/contracts'
 import { resolveSvelteSemanticImport } from '../svelte-semantic/resolution';
 import { resolveAstroSemanticPair } from './astro-pair-resolution';
 import { cloneCheckerResolutionEvidence } from './checker-resolution-clone';
+import { resolveNativeTypeScriptTarget } from './native-typescript-target';
 import type { ImportRecord } from './records';
 import type { ProviderDependencies } from './resolution-provider-types';
-import { resolveTypeScriptResult } from './resolution-results';
 import { classifyImportRuntimeEvidence } from './runtime-evidence';
 import { classifyAstroSemanticEligibility } from './semantic-eligibility';
 import type {
@@ -15,7 +15,7 @@ import type {
 } from './types';
 import { resolveVueSemanticPair } from './vue-pair-resolution';
 
-const TYPESCRIPT_SUB_SEMANTIC_KINDS = new Set<ImportRecord['kind']>([
+const NATIVE_TYPESCRIPT_CHANNEL_KINDS = new Set<ImportRecord['kind']>([
   'environment-pragma',
   'jsx-import-source',
   'triple-slash-path',
@@ -39,12 +39,13 @@ function createCacheKey(options: {
 
 function resolveTypeScriptPair(options: {
   dependencies: ProviderDependencies;
+  importRecord: ImportRecord;
   request: NormalizedModuleResolutionRequest;
 }): ModuleResolutionPair {
   options.dependencies.requests.recordRequest('typescript');
   return {
     oxc: null,
-    typescript: resolveTypeScriptResult(options.dependencies, options.request),
+    typescript: resolveNativeTypeScriptTarget(options),
   };
 }
 
@@ -80,7 +81,7 @@ function resolveVuePair(options: {
       request: options.request,
     });
   }
-  if (TYPESCRIPT_SUB_SEMANTIC_KINDS.has(options.importRecord.kind)) {
+  if (NATIVE_TYPESCRIPT_CHANNEL_KINDS.has(options.importRecord.kind)) {
     return resolveTypeScriptPair(options);
   }
   options.dependencies.requests.recordRequest('typescript');
@@ -97,7 +98,7 @@ function resolveAstroPair(options: {
   importRecord: ImportRecord;
   request: NormalizedModuleResolutionRequest;
 }): ModuleResolutionPair {
-  if (TYPESCRIPT_SUB_SEMANTIC_KINDS.has(options.importRecord.kind)) {
+  if (NATIVE_TYPESCRIPT_CHANNEL_KINDS.has(options.importRecord.kind)) {
     return resolveTypeScriptPair(options);
   }
   const project = options.request.context.astroSemanticProject;
@@ -186,7 +187,7 @@ function createSveltePair(options: {
 }
 
 function resolveSveltePair(options: SveltePairOptions): ModuleResolutionPair {
-  if (TYPESCRIPT_SUB_SEMANTIC_KINDS.has(options.importRecord.kind)) {
+  if (NATIVE_TYPESCRIPT_CHANNEL_KINDS.has(options.importRecord.kind)) {
     return resolveTypeScriptPair(options);
   }
   if (!options.importRecord.filePath.toLowerCase().endsWith('.svelte')) {

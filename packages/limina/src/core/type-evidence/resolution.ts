@@ -8,6 +8,7 @@ import type { FrameworkSemanticFailure } from '../framework-semantic/contracts';
 import type { ImportRuntimeResolutionEvidence } from '../import-analysis/evidence';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
+import type { TypeScriptSemanticContext } from '../typescript-semantic';
 import type { TypeEvidence } from './cache';
 import type { VueTypeEvidenceCapability } from './vue-provider';
 
@@ -44,6 +45,7 @@ export interface ResolvedImportPair {
 export function resolveImportPair(options: {
   importAnalysis: ImportAnalysisContext;
   request: ResolveImportEvidenceOptions;
+  typeScriptSemanticContext?: TypeScriptSemanticContext;
 }): ResolvedImportPair {
   const resolve =
     options.request.resolutionMode === 'checker-only'
@@ -53,7 +55,10 @@ export function resolveImportPair(options: {
     options.request.importRecord,
     options.request.importRecord.filePath,
     options.request.project.options,
-    options.request.project,
+    {
+      ...options.request.project,
+      typeScriptSemanticContext: options.typeScriptSemanticContext,
+    },
   );
 
   return {

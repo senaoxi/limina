@@ -13,6 +13,10 @@ import { SvelteSemanticContextManager } from './svelte-semantic/context';
 import { TsconfigCore } from './tsconfig';
 import { TypeEvidenceCore } from './type-evidence';
 import type { TypeEvidenceMetricsRecorder } from './type-evidence/cache';
+import {
+  createWorkspaceSourceBoundary,
+  type WorkspaceSourceBoundary,
+} from './typescript-semantic';
 import { VueSemanticContextManager } from './vue-semantic/context';
 import {
   WorkspaceCore,
@@ -70,6 +74,27 @@ export class AnalysisProviderSet {
 
   constructor(options: AnalysisProviderSetOptions) {
     let buildGraph: BuildGraphCore;
+    let workspaceSourceBoundary: WorkspaceSourceBoundary | undefined;
+    const setWorkspaceSourceBoundary = (
+      generatedGraph: Awaited<ReturnType<BuildGraphCore['getGraph']>>,
+    ): void => {
+      workspaceSourceBoundary = createWorkspaceSourceBoundary(
+        [...generatedGraph.governedSources.values()].flatMap((sources) =>
+          [...sources.values()].flatMap((source) => [
+            ...source.ownedFileNames,
+            ...source.declarationFileNames,
+          ]),
+        ),
+      );
+    };
+    const getWorkspaceSourceBoundary = (): WorkspaceSourceBoundary => {
+      if (workspaceSourceBoundary !== undefined) {
+        return workspaceSourceBoundary;
+      }
+      throw new Error(
+        'Workspace source boundary is unavailable before generated graph preparation.',
+      );
+    };
 
     this.artifactNamespace = options.artifactNamespace;
     this.config = options.config;
@@ -91,6 +116,7 @@ export class AnalysisProviderSet {
       metrics: options.metrics,
       svelteSemanticContexts: this.svelteSemanticContexts,
       vueSemanticContexts: this.vueSemanticContexts,
+      workspaceSourceBoundaryProvider: getWorkspaceSourceBoundary,
     });
     this.tsconfig = new TsconfigCore({
       config: options.config,
@@ -103,6 +129,7 @@ export class AnalysisProviderSet {
       importAnalysis: this.imports.context,
       metrics: options.metrics,
       vueSemanticContexts: this.vueSemanticContexts,
+      workspaceSourceBoundaryProvider: getWorkspaceSourceBoundary,
     });
     buildGraph = new BuildGraphCore({
       artifactNamespace: options.artifactNamespace,
@@ -110,6 +137,7 @@ export class AnalysisProviderSet {
       imports: this.imports,
       projectConfigs: this.projectConfigs,
       workspace: this.workspace,
+      onGraphPrepared: setWorkspaceSourceBoundary,
     });
     this.buildGraph = buildGraph;
     this.packages = new PackageDomainCore({

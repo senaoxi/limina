@@ -200,6 +200,7 @@ function collectDependencyGraphProject(options: {
       authority: options.authority,
       packageRootDir,
       project: options.project,
+      workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
     importAnalysis: options.context.importAnalysis,
     resolveWorkspaceTypeScriptExport: (specifier) =>

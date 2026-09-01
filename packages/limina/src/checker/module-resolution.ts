@@ -7,6 +7,7 @@ import type {
   ResolvedCheckerModuleName,
 } from './types';
 import { resolveTypeScriptModuleNameDetailed } from './typescript-resolution';
+export { resolveCheckerSourceModuleName } from './typescript-resolution';
 
 export {
   resolveTypeScriptModuleName,

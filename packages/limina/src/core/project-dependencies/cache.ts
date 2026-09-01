@@ -9,7 +9,8 @@ import type {
   SourceEvidence,
 } from './contracts';
 
-export const PROJECT_DEPENDENCY_ADAPTER_VERSION = 'service-script-facts-v2';
+export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
+  'service-script-facts-v3-kind-aware-typescript';
 
 export function createProjectDependencyCaches(): ProjectDependencyCaches {
   return {
@@ -54,6 +55,7 @@ export function createProjectSemanticCacheIdentity(
     resolverConfigPath: context.resolverConfigPath,
     svelte: getSvelteCacheIdentity(context),
     vue: getVueCacheIdentity(context),
+    workspaceSourceBoundary: context.workspaceSourceBoundary.identity,
   });
 }
 

@@ -12,6 +12,10 @@ import type { PreparedDependencyFact } from '../framework-semantic/contracts';
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type {
+  TypeScriptSemanticContext,
+  WorkspaceSourceBoundary,
+} from '../typescript-semantic';
 
 export interface ProjectSemanticContext {
   astroSemanticProject?: AstroSemanticProject;
@@ -27,6 +31,7 @@ export interface ProjectSemanticContext {
   semanticAuthority: LockedSemanticAuthority;
   svelteSemanticProject?: SvelteSemanticProject;
   vueSemanticIdentity?: VueProjectSemanticIdentity;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 interface ProjectDependencyBase {
@@ -115,6 +120,7 @@ export interface ProjectDependencyRequest {
   importAnalysis: ImportAnalysisContext;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
   resolveWorkspaceTypeScriptExport?: (specifier: string) => string | null;
+  typeScriptSemanticContext?: TypeScriptSemanticContext;
 }
 
 export interface ProjectDependencyCaches {

@@ -15,6 +15,7 @@ export class BuildGraphCore {
   readonly #projectConfigs: CheckerProjectConfigCache;
   readonly #workspace: WorkspaceCore;
   readonly #artifactNamespace: LiminaArtifactNamespace;
+  readonly #onGraphPrepared: (graph: GeneratedTsconfigGraphResult) => void;
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
 
   constructor(options: {
@@ -23,12 +24,14 @@ export class BuildGraphCore {
     imports: ImportCore;
     projectConfigs: CheckerProjectConfigCache;
     workspace: WorkspaceCore;
+    onGraphPrepared(graph: GeneratedTsconfigGraphResult): void;
   }) {
     this.#artifactNamespace = options.artifactNamespace;
     this.#config = options.config;
     this.#imports = options.imports;
     this.#projectConfigs = options.projectConfigs;
     this.#workspace = options.workspace;
+    this.#onGraphPrepared = options.onGraphPrepared;
   }
 
   getGraph(): Promise<GeneratedTsconfigGraphResult> {
@@ -41,15 +44,20 @@ export class BuildGraphCore {
     return Promise.all([
       this.#workspace.getValidatedContext(),
       this.#workspace.getPathIndex(),
-    ]).then(([topology, workspacePathIndex]) =>
-      prepareGeneratedTsconfigGraph(this.#config, {
-        artifactNamespace: this.#artifactNamespace,
-        importAnalysisContext: this.#imports.context,
-        projectConfigCache: this.#projectConfigs,
-        workspaceContext: topology,
-        workspacePathIndex,
-      }),
-    );
+    ])
+      .then(([topology, workspacePathIndex]) =>
+        prepareGeneratedTsconfigGraph(this.#config, {
+          artifactNamespace: this.#artifactNamespace,
+          importAnalysisContext: this.#imports.context,
+          projectConfigCache: this.#projectConfigs,
+          workspaceContext: topology,
+          workspacePathIndex,
+        }),
+      )
+      .then((graph) => {
+        this.#onGraphPrepared(graph);
+        return graph;
+      });
   }
 
   async getSourceToDts(checkerName: string): Promise<Map<string, string>> {

@@ -129,7 +129,7 @@ function createCheckerSourceResolution(options: {
   };
 }
 
-function resolveCheckerSourceModuleName(
+export function resolveCheckerSourceModuleName(
   options: CheckerModuleResolveOptions,
 ): ResolvedCheckerModuleName | null {
   const checkerOnlyExtensions = getCheckerOnlyExtensions(options.extensions);

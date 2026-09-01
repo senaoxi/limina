@@ -6,6 +6,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { TypeEvidenceCore } from '../core/type-evidence';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import { toPortablePath } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -73,6 +74,8 @@ function createCore(rootDir: string): TypeEvidenceCore {
   return new TypeEvidenceCore({
     generation: 0,
     importAnalysis: createImportAnalysisContext({ projectRootDir: rootDir }),
+    workspaceSourceBoundaryProvider: (project) =>
+      createWorkspaceSourceBoundary(project.fileNames),
   });
 }
 
@@ -106,7 +109,7 @@ describe('TypeScript resource type evidence', () => {
         kind: 'checker-source',
       });
       expect(core.cache.typeEvidenceProviderCache.size).toBe(0);
-      expect(core.cache.programCache.size).toBe(0);
+      expect(core.cache.programCache.size).toBe(1);
     } finally {
       core.dispose();
       await fixture.cleanup();
@@ -343,7 +346,7 @@ describe('TypeScript resource type evidence', () => {
     }
   });
 
-  it('returns concrete arbitrary-extension declarations without a Program', async () => {
+  it('returns concrete arbitrary-extension declarations from the shared Program context', async () => {
     const fixture = await createFixture({
       'src/button.css': '.button {}\n',
       'src/button.d.css.ts':
@@ -375,7 +378,7 @@ describe('TypeScript resource type evidence', () => {
         kind: 'concrete-declaration',
       });
       expect(core.cache.typeEvidenceProviderCache.size).toBe(0);
-      expect(core.cache.programCache.size).toBe(0);
+      expect(core.cache.programCache.size).toBe(1);
     } finally {
       core.dispose();
       await fixture.cleanup();

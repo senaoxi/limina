@@ -3,13 +3,15 @@ import {
   createAstroSemanticProject,
 } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
-import type ts from 'typescript';
+import ts from 'typescript';
 import type { AutoScopeProject } from '../build-graph/auto-checker-types';
 import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-types';
 import type { GovernedSourceUnit, SourceProject } from '../build-graph/types';
 import type { ProjectInfo } from '../import-graph/project-types';
 import { createSvelteSemanticProject } from '../svelte-semantic/project';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
+import type { WorkspaceSourceBoundary } from '../typescript-semantic';
+import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import type { ProjectSemanticContext } from './contracts';
 
 interface SemanticContextProject {
@@ -25,6 +27,7 @@ interface SemanticContextProject {
   resolverConfigPath: string;
   svelteSemanticProject?: SvelteSemanticProject;
   vueSemanticIdentity?: ProjectSemanticContext['vueSemanticIdentity'];
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 function createContext(options: {
@@ -49,6 +52,7 @@ function createContext(options: {
     semanticAuthority: { ...options.authority },
     svelteSemanticProject: options.project.svelteSemanticProject,
     vueSemanticIdentity: options.project.vueSemanticIdentity,
+    workspaceSourceBoundary: options.project.workspaceSourceBoundary,
   };
 }
 
@@ -80,9 +84,19 @@ function getSourceSvelteProject(
   return source?.svelteSemanticProject;
 }
 
+function getRawProjectReferences(
+  configPath: string,
+): readonly ts.ProjectReference[] {
+  return (
+    parseTypeScriptProjectConfig({ configPath, tsModule: ts })
+      ?.projectReferences ?? []
+  );
+}
+
 export function createAutoProjectSemanticContext(options: {
   authority: LockedSemanticAuthority;
   project: AutoScopeProject;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): ProjectSemanticContext {
   return createContext({
     authority: options.authority,
@@ -124,6 +138,7 @@ export function createAutoProjectSemanticContext(options: {
             })
           : undefined,
       vueSemanticIdentity: options.project.context.vueSemanticIdentity,
+      workspaceSourceBoundary: options.workspaceSourceBoundary,
     },
   });
 }
@@ -132,6 +147,7 @@ export function createSourceProjectSemanticContext(options: {
   authority: LockedSemanticAuthority;
   project: SourceProject;
   source?: GovernedSourceUnit;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): ProjectSemanticContext {
   return createContext({
     authority: options.authority,
@@ -147,10 +163,11 @@ export function createSourceProjectSemanticContext(options: {
         options.project.packageRootDir,
       ),
       packageRootDir: options.project.packageRootDir,
-      references: [...options.project.references].map((path) => ({ path })),
+      references: getRawProjectReferences(options.project.configPath),
       resolverConfigPath: options.project.configPath,
       svelteSemanticProject: getSourceSvelteProject(options.source),
       vueSemanticIdentity: options.project.context.vueSemanticIdentity,
+      workspaceSourceBoundary: options.workspaceSourceBoundary,
     },
   });
 }
@@ -159,6 +176,7 @@ export function createParsedProjectSemanticContext(options: {
   authority: LockedSemanticAuthority;
   packageRootDir: string;
   project: ProjectInfo;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): ProjectSemanticContext {
   return createContext({
     authority: options.authority,
@@ -174,10 +192,11 @@ export function createParsedProjectSemanticContext(options: {
         options.packageRootDir,
       ),
       packageRootDir: options.packageRootDir,
-      references: [...options.project.references].map((path) => ({ path })),
+      references: getRawProjectReferences(options.project.resolverConfigPath),
       resolverConfigPath: options.project.resolverConfigPath,
       svelteSemanticProject: options.project.svelteSemanticProject,
       vueSemanticIdentity: options.project.vueSemanticIdentity,
+      workspaceSourceBoundary: options.workspaceSourceBoundary,
     },
   });
 }

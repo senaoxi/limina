@@ -13,7 +13,9 @@ import { describe, expect, it } from 'vitest';
 import {
   TYPE_EVIDENCE_METRIC_NAMES,
   TypeEvidenceCore,
+  type TypeEvidenceCoreOptions,
 } from '../core/type-evidence';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import {
   createWorkspaceExportsResolutionIndex,
   type WorkspaceExportsResolutionProfile,
@@ -23,6 +25,9 @@ import {
   createProfilingMetricsRecorder,
 } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
+
+const workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'] =
+  (project) => createWorkspaceSourceBoundary(project.fileNames);
 
 async function writeText(
   rootDir: string,
@@ -550,6 +555,7 @@ describe('type evidence profiling instrumentation', () => {
         projectRootDir: process.cwd(),
       }),
       metrics,
+      workspaceSourceBoundaryProvider,
     });
 
     expect(
@@ -595,6 +601,7 @@ describe('type evidence profiling instrumentation', () => {
           projectRootDir: rootDir,
         }),
         metrics,
+        workspaceSourceBoundaryProvider,
       });
       const project = createTypeEvidenceProject({
         configPath,
@@ -649,6 +656,7 @@ describe('type evidence profiling instrumentation', () => {
       const core = new TypeEvidenceCore({
         generation: 0,
         importAnalysis,
+        workspaceSourceBoundaryProvider,
       });
 
       expect(
@@ -690,6 +698,7 @@ describe('type evidence profiling instrumentation', () => {
       const core = new TypeEvidenceCore({
         generation: 0,
         importAnalysis,
+        workspaceSourceBoundaryProvider,
       });
 
       expect(
@@ -709,7 +718,7 @@ describe('type evidence profiling instrumentation', () => {
     }
   });
 
-  it('records concrete resource queries without creating a provider or Program', async () => {
+  it('records concrete resource queries through one shared Program without a provider', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-concrete-metrics-')),
     );
@@ -740,6 +749,7 @@ describe('type evidence profiling instrumentation', () => {
         generation: 0,
         importAnalysis,
         metrics,
+        workspaceSourceBoundaryProvider,
       });
 
       expect(
@@ -758,7 +768,7 @@ describe('type evidence profiling instrumentation', () => {
       expect(metricCount(snapshot, 'type-evidence-query')).toBe(1);
       expect(metricCount(snapshot, 'affected-source-config-count')).toBe(1);
       expect(metricCount(snapshot, 'type-evidence-provider-create')).toBe(0);
-      expect(metricCount(snapshot, 'typescript-program-create')).toBe(0);
+      expect(metricCount(snapshot, 'typescript-program-create')).toBe(1);
       core.dispose();
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -793,6 +803,7 @@ describe('type evidence profiling instrumentation', () => {
         generation: 0,
         importAnalysis,
         metrics,
+        workspaceSourceBoundaryProvider,
       });
       const project = createTypeEvidenceProject({
         configPath,
@@ -844,6 +855,7 @@ describe('type evidence profiling instrumentation', () => {
         generation: 0,
         importAnalysis,
         metrics,
+        workspaceSourceBoundaryProvider,
       });
 
       for (const projectName of ['a', 'b']) {

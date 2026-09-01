@@ -1,4 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import ts from 'typescript';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
 import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { TypeEvidence } from '../type-evidence/cache';
@@ -33,10 +34,38 @@ function createDirectTypeEvidence(resolvedFilePath: string): TypeEvidence {
     : { filePath, kind: 'checker-source' };
 }
 
-function getDirectResolutionMode(
+function getDirectResolutionMode(options: {
+  evidence: CanonicalImportResolutionEvidence;
+  importRecord: DirectSourceDependency['importRecord'];
+  request: ProjectDependencyRequest;
+}): string {
+  const frameworkMode = getFrameworkResolutionMode(options.evidence);
+  if (frameworkMode !== undefined) return frameworkMode;
+  const mode = getTypeScriptResolutionMode(options);
+  return formatTypeScriptResolutionMode(mode);
+}
+
+function getFrameworkResolutionMode(
   evidence: CanonicalImportResolutionEvidence,
+): string | undefined {
+  return evidence.semanticEvidence?.resolutionMode;
+}
+
+function getTypeScriptResolutionMode(options: {
+  importRecord: DirectSourceDependency['importRecord'];
+  request: ProjectDependencyRequest;
+}): ts.ResolutionMode | undefined {
+  return options.request.typeScriptSemanticContext?.resolveImportRecord(
+    options.importRecord,
+  ).resolutionMode;
+}
+
+function formatTypeScriptResolutionMode(
+  mode: ts.ResolutionMode | undefined,
 ): string {
-  return evidence.semanticEvidence?.resolutionMode ?? 'default';
+  if (mode === undefined) return 'default';
+  if (mode === ts.ModuleKind.CommonJS) return 'require';
+  return 'import';
 }
 
 function getDirectSemanticSpecifier(options: {
@@ -52,13 +81,14 @@ function getDirectSemanticSpecifier(options: {
 function createDirectDependency(options: {
   evidence: CanonicalImportResolutionEvidence;
   importRecord: DirectSourceDependency['importRecord'];
+  request: ProjectDependencyRequest;
   resolvedFilePath: string;
 }): DirectSourceDependency {
   const resolvedFilePath = normalizeAbsolutePath(options.resolvedFilePath);
   return {
     importRecord: options.importRecord,
     provenance: 'direct-source',
-    resolutionMode: getDirectResolutionMode(options.evidence),
+    resolutionMode: getDirectResolutionMode(options),
     resolvedFilePath,
     semanticSpecifier: getDirectSemanticSpecifier(options),
     targetKind: getTargetKind(resolvedFilePath),
@@ -128,6 +158,7 @@ function resolveDirectCheckerEvidence(options: CollectRecordOptions) {
       resolverConfigPath: options.request.context.resolverConfigPath,
       semanticFamily: options.request.context.semanticAuthority.family,
       svelteSemanticProject: options.request.context.svelteSemanticProject,
+      typeScriptSemanticContext: options.request.typeScriptSemanticContext,
       vueSemanticIdentity: options.request.context.vueSemanticIdentity,
     },
   );
@@ -221,6 +252,7 @@ function addDirectDependencyIfNative(options: {
     createDirectDependency({
       evidence: options.evidence,
       importRecord: options.base.importRecord,
+      request: options.base.request,
       resolvedFilePath: options.resolvedFilePath,
     }),
   );

@@ -8,6 +8,7 @@ import type { CheckerName } from '#config/runner';
 import type ts from 'typescript';
 import { createAutoProjectSemanticContext } from '../project-dependencies/context';
 import type { ProjectSemanticContext } from '../project-dependencies/contracts';
+import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   SemanticFamily,
@@ -108,11 +109,13 @@ function getEvidenceSemanticFamily(
 function createEvidenceSemanticContext(options: {
   project: AutoScopeProject;
   state: TypeConfigOwnershipState;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): ProjectSemanticContext | undefined {
   if (options.state.semanticAuthority.kind !== 'locked') return undefined;
   return createAutoProjectSemanticContext({
     authority: options.state.semanticAuthority,
     project: options.project,
+    workspaceSourceBoundary: options.workspaceSourceBoundary,
   });
 }
 
@@ -142,6 +145,7 @@ export function createEvidenceProject(options: {
   projectConfigCache?: CheckerProjectConfigCache;
   rootDir: string;
   state: TypeConfigOwnershipState;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): EvidenceProject {
   const checkerName = getEvidenceChecker(options.state);
   const context = createParseContext(

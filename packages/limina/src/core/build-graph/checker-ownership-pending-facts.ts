@@ -1,11 +1,13 @@
 import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
-import ts from 'typescript';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
-import { collectTypeScriptSourceFileImports } from '../import-analysis/typescript-imports';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import type { TypeEvidenceCore } from '../type-evidence';
+import type {
+  TypeScriptSemanticContext,
+  WorkspaceSourceBoundary,
+} from '../typescript-semantic';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import {
@@ -32,6 +34,8 @@ interface FactCollectionContext {
   project: AutoScopeProject;
   semantic: EvidenceProject;
   state: TypeConfigOwnershipState;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
+  typeScriptSemanticContext: TypeScriptSemanticContext;
 }
 
 interface CollectPendingOptions {
@@ -44,6 +48,7 @@ interface CollectPendingOptions {
   project: AutoScopeProject;
   projectConfigCache?: CheckerProjectConfigCache;
   state: TypeConfigOwnershipState;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 interface PhysicalTarget {
@@ -196,10 +201,10 @@ function assertTypeScriptFactFile(
 }
 
 function getProgramSourceFile(
-  program: ts.Program,
+  context: TypeScriptSemanticContext,
   fileName: string,
-): ts.SourceFile {
-  const sourceFile = program.getSourceFile(normalizeAbsolutePath(fileName));
+) {
+  const sourceFile = context.getSourceFile(normalizeAbsolutePath(fileName));
   if (sourceFile !== undefined) return sourceFile;
   throw new Error(
     `Pending TypeScript Program did not contain an effective source file: ${fileName}`,
@@ -209,20 +214,23 @@ function getProgramSourceFile(
 function collectFileImportRecords(options: {
   context: FactCollectionContext;
   fileName: string;
-  program: ts.Program;
 }): CheckerDependencyFact['importRecord'][] {
   assertTypeScriptFactFile(options.context, options.fileName);
-  return collectTypeScriptSourceFileImports({
-    filePath: options.fileName,
-    sourceFile: getProgramSourceFile(options.program, options.fileName),
-  });
+  getProgramSourceFile(
+    options.context.typeScriptSemanticContext,
+    options.fileName,
+  );
+  return [
+    ...options.context.typeScriptSemanticContext.getImportRecords(
+      options.fileName,
+    ),
+  ];
 }
 
 function collectFileFacts(options: {
   context: FactCollectionContext;
   facts: CheckerDependencyFact[];
   fileName: string;
-  program: ts.Program;
   problems: string[];
 }): void {
   for (const importRecord of collectFileImportRecords(options)) {
@@ -235,24 +243,29 @@ function collectProjectFacts(
 ): PendingOwnershipEvidence {
   const facts: CheckerDependencyFact[] = [];
   const problems: string[] = [];
+  const semantic = createEvidenceProject({
+    project: options.project,
+    projectConfigCache: options.projectConfigCache,
+    rootDir: options.config.rootDir,
+    state: options.state,
+    workspaceSourceBoundary: options.workspaceSourceBoundary,
+  });
+  const typeScriptSemanticContext = options.core.getTypeScriptSemanticContext({
+    checkerName: semantic.checkerName,
+    project: semantic.project,
+  });
   const context: FactCollectionContext = {
     ...options,
-    semantic: createEvidenceProject({
-      project: options.project,
-      projectConfigCache: options.projectConfigCache,
-      rootDir: options.config.rootDir,
-      state: options.state,
-    }),
+    semantic,
+    typeScriptSemanticContext,
   };
-  const program = ts.createProgram({
-    options: context.semantic.project.options,
-    projectReferences: options.project.references,
-    rootNames: context.semantic.project.fileNames,
-  });
-  for (const fileName of options.project.filePartition.typescriptFiles) {
-    collectFileFacts({ context, facts, fileName, problems, program });
+  try {
+    for (const fileName of options.project.filePartition.typescriptFiles) {
+      collectFileFacts({ context, facts, fileName, problems });
+    }
+  } finally {
+    options.core.completeProject(options.project.configPath);
   }
-  options.core.completeProject(options.project.configPath);
   return { facts, problems };
 }
 
@@ -277,7 +290,7 @@ function assertPendingAuthority(state: TypeConfigOwnershipState): void {
 
 function createPendingCacheKey(options: CollectPendingOptions): string {
   return JSON.stringify({
-    adapterVersion: 'pending-typescript-v1',
+    adapterVersion: 'pending-typescript-v2-kind-aware',
     authority: options.state.semanticAuthority,
     configPath: options.project.configPath,
     fileNames: options.project.filePartition.typescriptFiles,

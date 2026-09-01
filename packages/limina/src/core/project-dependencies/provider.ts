@@ -1,3 +1,4 @@
+import { createBoundedTypeScriptSemanticContext } from '../typescript-semantic';
 import {
   cloneProjectDependencyCollection,
   createProjectSemanticCacheIdentity,
@@ -49,8 +50,24 @@ function collectUncachedProjectDependencies(
   request: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
   const collection = createEmptyCollection();
-  for (const fileName of request.context.fileNames) {
-    collectProjectDependencyFile({ collection, fileName, request });
+  const typeScriptSemanticContext = createBoundedTypeScriptSemanticContext({
+    configPath: request.context.configPath,
+    fileNames: request.context.fileNames,
+    options: request.context.compilerOptions,
+    projectReferences: request.context.references,
+    workspaceSourceBoundary: request.context.workspaceSourceBoundary,
+  });
+  const semanticRequest = { ...request, typeScriptSemanticContext };
+  try {
+    for (const fileName of request.context.fileNames) {
+      collectProjectDependencyFile({
+        collection,
+        fileName,
+        request: semanticRequest,
+      });
+    }
+  } finally {
+    typeScriptSemanticContext.dispose();
   }
   deduplicateFailures(collection);
   return collection;

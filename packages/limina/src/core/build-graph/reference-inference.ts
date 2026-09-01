@@ -1,6 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
+import { createWorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
   type GovernedBuildOwner,
@@ -164,6 +165,10 @@ export function inferProjectReferences(options: {
     projectDependencyCaches: createProjectDependencyCaches(),
     problems,
     dependencyEdgesByKey,
+    workspaceSourceBoundary: createWorkspaceSourceBoundary([
+      ...ownerProjects.flatMap((project) => project.fileNames),
+      ...ownerGovernedSources.flatMap((source) => source.ownedFileNames),
+    ]),
   };
   processReferenceImports({
     context,
