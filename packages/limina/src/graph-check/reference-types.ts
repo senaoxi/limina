@@ -8,6 +8,7 @@ import type {
   ManagedOutputDeclarationProvider,
 } from '../core/import-graph/managed-output-provider';
 import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
+import type { WorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type {
   WorkspaceExportsResolutionIndex,
   WorkspacePackageExportResolution,
@@ -43,6 +44,7 @@ export interface ExpectedReferenceCollectionOptions {
   selectedProjectPaths?: Set<string>;
   workspaceExports: WorkspaceExportsResolutionIndex;
   workspaceLookup: WorkspaceLookupIndex;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 export interface ExpectedReferenceCollectionContext

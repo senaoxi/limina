@@ -6,6 +6,7 @@ import type {
   ImportResolutionEvidence,
   ImportRuntimeResolutionEvidence,
 } from '../import-analysis/evidence';
+import type { TypeScriptSemanticContext } from '../typescript-semantic';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   TypeEvidenceGenerationCache,
@@ -23,45 +24,25 @@ import {
   resolveTypeScriptPreset,
   resolveVuePreset,
 } from './resolution';
-import type { TypeEvidenceCoreOptions } from './types';
+import {
+  addAffectedConfig,
+  hasAffectedConfig,
+  recordMetric,
+} from './resource-metrics';
+import type {
+  TypeEvidenceCoreOptions,
+  WorkspaceBoundedImportEvidenceOptions,
+} from './types';
+import { getCoreTypeScriptSemanticContext } from './typescript-context-resolution';
 import {
   resolveVueTypeEvidenceCapability,
   type VueTypeEvidenceCapability,
 } from './vue-provider';
+import { addWorkspaceSourceBoundary } from './workspace-boundary';
 
 export * from './cache';
 export type { ResolveImportEvidenceOptions } from './resolution';
 export type { TypeEvidenceCoreOptions } from './types';
-
-type ResourceMetricName =
-  | 'affected-source-config-count'
-  | 'resource-import-count'
-  | 'type-evidence-query';
-
-function recordMetric(
-  metrics: TypeEvidenceMetricsRecorder | undefined,
-  name: ResourceMetricName,
-): void {
-  if (metrics !== undefined) {
-    metrics.record({ name });
-  }
-}
-
-function hasAffectedConfig(
-  affectedConfigs: ReadonlySet<string> | undefined,
-  configIdentity: string,
-): boolean {
-  return affectedConfigs !== undefined && affectedConfigs.has(configIdentity);
-}
-
-function addAffectedConfig(
-  affectedConfigs: Set<string> | undefined,
-  configIdentity: string,
-): void {
-  if (affectedConfigs !== undefined) {
-    affectedConfigs.add(configIdentity);
-  }
-}
 
 function getVueCapabilityKey(
   identity: VueProjectSemanticIdentity | undefined,
@@ -81,7 +62,7 @@ export class TypeEvidenceCore {
   readonly #vueCapabilities = new Map<string, VueTypeEvidenceCapability>();
   readonly #vueSemanticContexts: VueSemanticContextManager;
   readonly #ownsVueSemanticContexts: boolean;
-
+  readonly #workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'];
   constructor(options: TypeEvidenceCoreOptions) {
     this.cache = new TypeEvidenceGenerationCache(options.metrics);
     this.#affectedSourceConfigs =
@@ -93,8 +74,9 @@ export class TypeEvidenceCore {
     this.#vueSemanticContexts =
       options.vueSemanticContexts ??
       new VueSemanticContextManager(options.metrics);
+    this.#workspaceSourceBoundaryProvider =
+      options.workspaceSourceBoundaryProvider;
   }
-
   classifyImportRuntime(
     options: ResolveImportEvidenceOptions,
   ): ImportRuntimeResolutionEvidence {
@@ -103,16 +85,22 @@ export class TypeEvidenceCore {
       request: options,
     }).runtimeEvidence;
   }
-
   resolveImportEvidence(
     options: ResolveImportEvidenceOptions,
   ): ImportResolutionEvidence {
+    const boundedOptions = addWorkspaceSourceBoundary({
+      input: options,
+      provider: this.#workspaceSourceBoundaryProvider,
+    });
     const configIdentity = normalizeAbsolutePathIdentity(
       options.project.configPath,
     );
+    const typeScriptSemanticContext =
+      this.#getNativeTypeScriptSemanticContext(boundedOptions);
     const pair = resolveImportPair({
       importAnalysis: this.#importAnalysis,
-      request: options,
+      request: boundedOptions,
+      typeScriptSemanticContext,
     });
     this.#recordResourceImport(configIdentity, pair.runtimeEvidence);
 
@@ -127,7 +115,7 @@ export class TypeEvidenceCore {
     }
 
     const concreteTypeEvidence = resolveConcreteTypeEvidence({
-      request: options,
+      request: boundedOptions,
       resolution: pair.typeScriptResolution,
     });
 
@@ -135,7 +123,35 @@ export class TypeEvidenceCore {
       return { ...pair.runtimeEvidence, type: concreteTypeEvidence };
     }
 
-    return this.#resolveProviderEvidence(options, pair.runtimeEvidence);
+    return this.#resolveProviderEvidence(boundedOptions, pair.runtimeEvidence);
+  }
+
+  getTypeScriptSemanticContext(options: {
+    checkerName: string;
+    project: ResolveImportEvidenceOptions['project'];
+  }): TypeScriptSemanticContext {
+    return getCoreTypeScriptSemanticContext({
+      cache: this.cache,
+      checkerName: options.checkerName,
+      generation: this.#generation,
+      prepareProvider: (configPath, providerKey) =>
+        this.#prepareProvider(configPath, providerKey),
+      project: {
+        ...options.project,
+        workspaceSourceBoundary: this.#workspaceSourceBoundaryProvider(
+          options.project,
+        ),
+      },
+    });
+  }
+
+  #getNativeTypeScriptSemanticContext(
+    options: WorkspaceBoundedImportEvidenceOptions,
+  ): TypeScriptSemanticContext | undefined {
+    if (resolveTypeScriptPreset(options.project.checkerPresets) === null) {
+      return undefined;
+    }
+    return this.getTypeScriptSemanticContext(options);
   }
 
   #recordResourceImport(
@@ -158,7 +174,7 @@ export class TypeEvidenceCore {
   }
 
   #resolveProviderEvidence(
-    options: ResolveImportEvidenceOptions,
+    options: WorkspaceBoundedImportEvidenceOptions,
     runtimeEvidence: ImportRuntimeResolutionEvidence,
   ): ImportResolutionEvidence {
     const vuePreset = resolveVuePreset(options.project.checkerPresets);

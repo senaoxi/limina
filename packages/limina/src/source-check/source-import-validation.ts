@@ -8,6 +8,10 @@ import {
   createParsedProjectSemanticContext,
   type ProjectDependencyCaches,
 } from '../core/project-dependencies/runner';
+import {
+  createWorkspaceSourceBoundary,
+  type WorkspaceSourceBoundary,
+} from '../core/typescript-semantic';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
@@ -32,6 +36,7 @@ interface SourceImportOptions {
   rootPackage: WorkspacePackage | null;
   typeEvidence: AnalysisProviderSet['typeEvidence'];
   workspaceLookup: WorkspaceLookupIndex;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 function getSourceAuthority(entry: SourceProjectEntry) {
@@ -137,6 +142,7 @@ function processSourceProject(
       authority,
       packageRootDir,
       project,
+      workspaceSourceBoundary: base.workspaceSourceBoundary,
     }),
     importAnalysis: base.importAnalysis,
   });
@@ -207,11 +213,17 @@ function processCollectedImport(options: {
 }
 
 export function addSourceImportProblems(
-  options: SourceImportOptions & {
+  options: Omit<SourceImportOptions, 'workspaceSourceBoundary'> & {
     sourceProjectEntries: SourceProjectEntry[];
   },
 ): void {
+  const base: SourceImportOptions = {
+    ...options,
+    workspaceSourceBoundary: createWorkspaceSourceBoundary(
+      options.sourceProjectEntries.flatMap((entry) => entry.fileNames),
+    ),
+  };
   for (const entry of options.sourceProjectEntries) {
-    processSourceProject(options, entry);
+    processSourceProject(base, entry);
   }
 }

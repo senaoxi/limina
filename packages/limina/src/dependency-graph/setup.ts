@@ -6,6 +6,7 @@ import {
 } from '#core/import-graph/context';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
+import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import {
   createWorkspaceExportsResolutionIndex,
   type WorkspaceExportsResolutionProfile,
@@ -133,6 +134,8 @@ export async function createDependencyGraphCollectionContext(options: {
       workspaceExports,
       workspaceLookup,
       workspacePackages,
+      workspaceSourceBoundary:
+        createWorkspaceSourceBoundaryFromProjects(projects),
     };
   } catch (error) {
     if (ownsCore) core.dispose();

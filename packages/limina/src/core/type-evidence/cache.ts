@@ -2,6 +2,7 @@ import type { ImportRecord } from '#core/import-analysis/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
 import type ts from 'typescript';
 import type { ManagedOutputDeclarationProvider } from '../import-graph/managed-output-provider';
+import type { TypeScriptSemanticContext } from '../typescript-semantic';
 
 export type TypeEvidence =
   | {
@@ -39,6 +40,7 @@ export interface TypeEvidenceProvider {
 export interface TypeEvidenceProgramHandle {
   dispose(): void;
   program: ts.Program;
+  typeScriptSemanticContext?: TypeScriptSemanticContext;
 }
 
 export interface TypeEvidenceProviderIdentity {

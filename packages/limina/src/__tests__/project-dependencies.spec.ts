@@ -10,13 +10,15 @@ import {
   type ProjectDependencyPreparation,
   type ProjectSemanticContext,
 } from '#core/project-dependencies/runner';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PreparedDependencyFact } from '../core/framework-semantic/contracts';
 import { cloneProjectDependencyPreparation } from '../core/project-dependencies/cache';
-import { createFixturePathResolver } from './helpers/path';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
+import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const temporaryRoots: string[] = [];
 
@@ -60,6 +62,7 @@ function createSemanticContext(options: {
       kind: 'locked',
       source: 'explicit',
     },
+    workspaceSourceBoundary: createWorkspaceSourceBoundary([fileName]),
   };
   if (options.family === 'vue') {
     context.vueSemanticIdentity = {
@@ -179,6 +182,154 @@ describe('project dependency authority', () => {
       },
     ]);
     expect(resolveOxcImport).not.toHaveBeenCalled();
+  });
+
+  it('uses the admitted triple-slash path target without module reinterpretation', async () => {
+    const temporaryRoot = await mkdtemp(
+      path.join(tmpdir(), 'limina-project-deps-triple-'),
+    );
+    temporaryRoots.push(temporaryRoot);
+    const fixturePath = createFixturePathResolver(temporaryRoot);
+    const rootDir = fixturePath();
+    const sourceFile = fixturePath('index.ts');
+    const targetFile = fixturePath('env.d.ts');
+    await writeFile(
+      sourceFile,
+      '/// <reference path="./env.d.ts" />\nexport {};\n',
+      'utf8',
+    );
+    await writeFile(targetFile, 'declare const environment: true;\n', 'utf8');
+    const base = createImportAnalysisContext();
+    const channels: string[] = [];
+    const importAnalysis = {
+      ...base,
+      resolveCheckerImportEvidence: vi.fn(
+        (
+          ...args: Parameters<
+            ImportAnalysisContext['resolveCheckerImportEvidence']
+          >
+        ) => {
+          const record = args[0];
+          const context = args[3];
+          const semanticContext = Array.isArray(context)
+            ? undefined
+            : context?.typeScriptSemanticContext;
+          channels.push(semanticContext!.resolveImportRecord(record).channel);
+          return base.resolveCheckerImportEvidence(...args);
+        },
+      ),
+    } satisfies ImportAnalysisContext;
+
+    const collection = collectProjectDependencies({
+      context: createSemanticContext({
+        family: 'typescript',
+        fileName: sourceFile,
+        rootDir,
+      }),
+      importAnalysis,
+    });
+
+    expect(collection.failures).toEqual([]);
+    expect(collection.dependencies).toMatchObject([
+      {
+        importRecord: { kind: 'triple-slash-path' },
+        provenance: 'direct-source',
+        resolutionMode: 'default',
+        resolvedFilePath: targetFile,
+        targetKind: 'declaration',
+      },
+    ]);
+    expect(channels).toEqual(['triple-slash-path']);
+  });
+
+  it('uses occurrence-specific NodeNext modes in locked dependency collection', async () => {
+    const temporaryRoot = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-project-deps-nodenext-')),
+    );
+    temporaryRoots.push(temporaryRoot);
+    const fixturePath = createFixturePathResolver(temporaryRoot);
+    const rootDir = fixturePath();
+    const sourceFile = fixturePath('index.mts');
+    await mkdir(fixturePath('node_modules/dual'), { recursive: true });
+    await writeFile(
+      sourceFile,
+      [
+        "import imported from 'dual';",
+        "import required = require('dual');",
+        'void imported;',
+        'void required;',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    await writeFile(
+      fixturePath('node_modules/dual/package.json'),
+      JSON.stringify({
+        exports: {
+          '.': {
+            import: { default: './import.js', types: './import.d.mts' },
+            require: { default: './require.cjs', types: './require.d.cts' },
+          },
+        },
+        name: 'dual',
+        type: 'module',
+        version: '1.0.0',
+      }),
+      'utf8',
+    );
+    await writeFile(
+      fixturePath('node_modules/dual/import.d.mts'),
+      'declare const value: "import"; export default value;\n',
+      'utf8',
+    );
+    await writeFile(
+      fixturePath('node_modules/dual/import.js'),
+      'export default "import";\n',
+      'utf8',
+    );
+    await writeFile(
+      fixturePath('node_modules/dual/require.d.cts'),
+      'declare const value: "require"; export = value;\n',
+      'utf8',
+    );
+    await writeFile(
+      fixturePath('node_modules/dual/require.cjs'),
+      'module.exports = "require";\n',
+      'utf8',
+    );
+    const context = createSemanticContext({
+      family: 'typescript',
+      fileName: sourceFile,
+      rootDir,
+    });
+    context.compilerOptions = {
+      module: ts.ModuleKind.NodeNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      target: ts.ScriptTarget.ES2023,
+    };
+
+    const collection = collectProjectDependencies({
+      context,
+      importAnalysis: createImportAnalysisContext(),
+    });
+
+    expect(collection.failures).toEqual([]);
+    expect(collection.dependencies).toMatchObject([
+      {
+        importRecord: { kind: 'static', specifier: 'dual' },
+        resolutionMode: 'import',
+        resolvedFilePath: toPortablePath(
+          fixturePath('node_modules/dual/import.d.mts'),
+        ),
+      },
+      {
+        importRecord: { kind: 'import-equals', specifier: 'dual' },
+        resolutionMode: 'require',
+        resolvedFilePath: toPortablePath(
+          fixturePath('node_modules/dual/require.d.cts'),
+        ),
+      },
+    ]);
   });
 
   it('consumes a prepared source target without framework re-resolution', () => {

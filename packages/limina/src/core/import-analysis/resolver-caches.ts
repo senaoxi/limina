@@ -67,6 +67,8 @@ function createTypeScriptModuleResolutionCacheKey(options: {
     resolverConfigPath: optionalString(options.context.resolverConfigPath),
     semanticFamily: optionalString(options.context.semanticFamily),
     svelteSemanticIdentity: getSvelteSemanticIdentityId(options.context),
+    typeScriptSemanticIdentity:
+      options.context.typeScriptSemanticContext?.identity ?? null,
     vueSemanticIdentity: getVueSemanticIdentityId(options.context),
   });
 }
@@ -84,6 +86,8 @@ function createResolverIdentityKey(options: {
     resolverConfigPath: optionalString(options.context.resolverConfigPath),
     semanticFamily: optionalString(options.context.semanticFamily),
     svelteSemanticIdentity: getSvelteSemanticIdentityId(options.context),
+    typeScriptSemanticIdentity:
+      options.context.typeScriptSemanticContext?.identity ?? null,
     vueSemanticIdentity: getVueSemanticIdentityId(options.context),
   });
 }

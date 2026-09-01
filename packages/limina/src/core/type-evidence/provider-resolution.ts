@@ -1,5 +1,9 @@
 import type { VueProjectSemanticIdentity } from '#checkers';
 import type { ImportResolutionEvidence } from '../import-analysis/evidence';
+import {
+  createTypeScriptSemanticContextIdentity,
+  type TypeScriptSemanticProject,
+} from '../typescript-semantic';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   createImportTypeEvidenceCacheKey,
@@ -44,7 +48,7 @@ function assertSupportedVueCapability(
   }
 }
 
-function createProviderKey(options: {
+export function createProviderKey(options: {
   generation: number;
   input: ProviderEvidenceInput;
   projectIdentity?: string;
@@ -57,6 +61,22 @@ function createProviderKey(options: {
     preset: options.input.preset,
     projectIdentity: options.projectIdentity,
     versionTuple: options.versionTuple ?? [],
+  });
+}
+
+export function createTypeScriptProviderKey(options: {
+  checkerName: string;
+  configPath: string;
+  generation: number;
+  preset: string;
+  project: TypeScriptSemanticProject;
+}): string {
+  return createTypeEvidenceProviderCacheKey({
+    checkerName: options.checkerName,
+    configPath: options.configPath,
+    generation: options.generation,
+    preset: options.preset,
+    projectIdentity: createTypeScriptSemanticContextIdentity(options.project),
   });
 }
 
@@ -102,9 +122,12 @@ export function resolveTypeScriptProviderEvidence(options: {
   context: ProviderResolutionContext;
   input: ProviderEvidenceInput;
 }): ImportResolutionEvidence {
-  const providerKey = createProviderKey({
+  const providerKey = createTypeScriptProviderKey({
+    checkerName: options.input.options.checkerName,
+    configPath: options.input.options.project.configPath,
     generation: options.context.generation,
-    input: options.input,
+    preset: options.input.preset,
+    project: options.input.options.project,
   });
   const queryKey = createQueryKey(options.input, providerKey);
   const cached = getCachedEvidence({

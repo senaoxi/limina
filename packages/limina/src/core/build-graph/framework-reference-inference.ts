@@ -245,6 +245,7 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
       authority: options.source.semanticAuthority,
       project,
       source: options.source,
+      workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
     importAnalysis: options.context.importAnalysis,
   });

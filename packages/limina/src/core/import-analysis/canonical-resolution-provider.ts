@@ -124,12 +124,13 @@ function resolveNonAstroPair(options: {
 }): ModuleResolutionPair {
   options.dependencies.requests.recordRequest('typescript');
   if (!shouldUseVueSemanticResolution(options)) {
+    const semanticContext = options.request.context.typeScriptSemanticContext;
     return {
       oxc: options.oxc,
-      typescript: resolveTypeScriptResult(
-        options.dependencies,
-        options.request,
-      ),
+      typescript:
+        semanticContext === undefined
+          ? resolveTypeScriptResult(options.dependencies, options.request)
+          : semanticContext.resolveImportRecord(options.importRecord).target,
     };
   }
   return resolveVueSemanticPair({

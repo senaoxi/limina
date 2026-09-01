@@ -40,6 +40,7 @@ function addProjectDependencyFailures(options: {
       authority: options.project.semanticAuthority,
       project: options.project,
       source: options.source,
+      workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
     importAnalysis: options.context.importAnalysis,
   });

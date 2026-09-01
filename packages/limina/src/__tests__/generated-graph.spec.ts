@@ -350,6 +350,44 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('keeps an explicit JSON effective root in auto-checker semantic preparation', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/package.json': json({
+        name: '@example/pkg',
+        private: true,
+      }),
+      'packages/pkg/src/data.json': '{"value":true}\n',
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          resolveJsonModule: true,
+        },
+        files: ['src/data.json'],
+      }),
+    });
+
+    try {
+      const result = await prepareGeneratedTsconfigGraph({
+        ...fixture.config,
+        config: { checkers: { auto: {} } },
+      });
+      const configPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/tsconfig.json'),
+      );
+      const jsonPath = normalizeAbsolutePath(
+        path.join(fixture.rootDir, 'packages/pkg/src/data.json'),
+      );
+
+      expect(result.sourceToDts.get('tsc')?.get(configPath)).toBeDefined();
+      expect(
+        result.governedSources.get('tsc')?.get(configPath)?.ownedFileNames,
+      ).toContain(jsonPath);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('does not override explicitly configured typeRoots in generated declarations', async () => {
     const fixture = await createFixture({
       'packages/pkg/package.json': json({
@@ -5958,6 +5996,104 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await fixture.cleanup();
     }
   });
+
+  it.each([false, true])(
+    'does not admit governed workspace source through node_modules with preserveSymlinks=%s',
+    async (preserveSymlinks) => {
+      const fixture = await createFixture({
+        'packages/app/package.json': json({
+          name: '@example/app',
+          private: true,
+          type: 'module',
+        }),
+        'packages/app/src/index.ts': [
+          "import { providerValue } from '@example/provider';",
+          "import virtualValue from 'virtual-foreign';",
+          'void providerValue;',
+          'void virtualValue;',
+          '',
+        ].join('\n'),
+        'packages/app/tsconfig.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            preserveSymlinks,
+          },
+          include: ['src/**/*.ts'],
+        }),
+        'packages/provider/package.json': json({
+          exports: { '.': './src/index.ts' },
+          name: '@example/provider',
+          type: 'module',
+        }),
+        'packages/provider/src/env.d.ts': [
+          "declare module 'virtual-foreign' {",
+          '  const value: true;',
+          '  export default value;',
+          '}',
+          '',
+        ].join('\n'),
+        'packages/provider/src/index.ts': [
+          '/// <reference path="./env.d.ts" />',
+          'export const providerValue = 1;',
+          '',
+        ].join('\n'),
+        'packages/provider/tsconfig.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+          },
+          include: ['src/**/*.ts'],
+        }),
+      });
+
+      try {
+        await linkWorkspacePackage(
+          fixture.rootDir,
+          'packages/app',
+          'packages/provider',
+          '@example/provider',
+        );
+        const result = await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: {
+            checkers: {
+              tsc: {
+                include: [
+                  'packages/app/tsconfig.json',
+                  'packages/provider/tsconfig.json',
+                ],
+              },
+            },
+          },
+        });
+        const appConfigPath = normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/app/tsconfig.json'),
+        );
+        const facts = result.ownershipPlan.dependencyFacts.filter(
+          (fact) => fact.consumerConfigPath === appConfigPath,
+        );
+
+        expect(
+          facts.find(
+            (fact) => fact.importRecord.specifier === '@example/provider',
+          ),
+        ).toMatchObject({
+          physicalTargetProvenance: 'checker-source',
+          typeEvidenceKind: 'checker-source',
+        });
+        expect(
+          facts.filter(
+            (fact) => fact.importRecord.specifier === 'virtual-foreign',
+          ),
+        ).toEqual([]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('keeps same-checker managed output declarations as artifact boundaries', async () => {
     const fixture = await createFixture({

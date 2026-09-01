@@ -4,6 +4,10 @@ import { compareCodeUnits } from '#utils/collections';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import { TypeEvidenceCore } from '../type-evidence';
+import {
+  createWorkspaceSourceBoundaryFromProjects,
+  type WorkspaceSourceBoundary,
+} from '../typescript-semantic';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { collectLockedProjectFacts } from './checker-ownership-locked-facts';
@@ -21,6 +25,7 @@ interface FactCollectionOptions {
   importAnalysis: ImportAnalysisContext;
   membership: ReadonlyMap<string, string[]>;
   projectConfigCache?: CheckerProjectConfigCache;
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
 
 interface ProjectFacts {
@@ -59,6 +64,7 @@ function collectProjectFacts(options: {
         { kind: 'locked' }
       >;
     },
+    workspaceSourceBoundary: options.base.workspaceSourceBoundary,
   });
 }
 
@@ -83,9 +89,13 @@ export async function collectCheckerDependencyFacts(options: {
   importAnalysis: ImportAnalysisContext;
   projectConfigCache?: CheckerProjectConfigCache;
 }): Promise<string[]> {
+  const workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
+    options.discovery.projectByConfigPath.values(),
+  );
   const core = new TypeEvidenceCore({
     generation: getGeneration(options.projectConfigCache),
     importAnalysis: options.importAnalysis,
+    workspaceSourceBoundaryProvider: () => workspaceSourceBoundary,
   });
   try {
     const collected = collectAllProjectFacts({
@@ -94,6 +104,7 @@ export async function collectCheckerDependencyFacts(options: {
       membership: createActualMembershipIndex(
         options.discovery.projectByConfigPath,
       ),
+      workspaceSourceBoundary,
     });
     options.discovery.plan.dependencyFacts = collected.facts;
     return collected.problems;

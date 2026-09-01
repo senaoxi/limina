@@ -36,6 +36,7 @@ function normalizeFieldContext(
     resolverConfigPath: getNormalizedPath(context.resolverConfigPath),
     semanticFamily: context.semanticFamily,
     svelteSemanticProject: context.svelteSemanticProject,
+    typeScriptSemanticContext: context.typeScriptSemanticContext,
     vueSemanticIdentity: context.vueSemanticIdentity,
   };
 }

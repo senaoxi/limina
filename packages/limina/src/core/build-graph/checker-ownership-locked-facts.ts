@@ -9,6 +9,7 @@ import {
   type ProjectDependency,
   type ProjectDependencyFailure,
 } from '../project-dependencies/runner';
+import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   CheckerDependencyFact,
@@ -67,6 +68,7 @@ export function collectLockedProjectFacts(options: {
       { kind: 'locked' }
     >;
   };
+  workspaceSourceBoundary: WorkspaceSourceBoundary;
 }): { facts: CheckerDependencyFact[]; problems: string[] } {
   const facts: CheckerDependencyFact[] = [];
   const collection = collectProjectDependencies({
@@ -74,6 +76,7 @@ export function collectLockedProjectFacts(options: {
     context: createAutoProjectSemanticContext({
       authority: options.state.semanticAuthority,
       project: options.project,
+      workspaceSourceBoundary: options.workspaceSourceBoundary,
     }),
     importAnalysis: options.importAnalysis,
   });

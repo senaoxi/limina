@@ -16,6 +16,7 @@ import {
   type ProjectDependencyCollection,
 } from './project-dependencies/runner';
 import type { SvelteSemanticContextManager } from './svelte-semantic/context';
+import type { WorkspaceSourceBoundary } from './typescript-semantic';
 import type { VueSemanticContextManager } from './vue-semantic/context';
 
 export interface ResolveImportOptions {
@@ -34,6 +35,9 @@ interface ImportCoreOptions {
   metrics?: ImportAnalysisMetricsRecorder;
   svelteSemanticContexts?: SvelteSemanticContextManager;
   vueSemanticContexts?: VueSemanticContextManager;
+  workspaceSourceBoundaryProvider(
+    project: ProjectInfo,
+  ): WorkspaceSourceBoundary;
 }
 
 function getProjectSemanticAuthority(project: ProjectInfo) {
@@ -90,10 +94,13 @@ export class ImportCore {
   readonly #config: ResolvedLiminaConfig;
   #context: ImportAnalysisContext;
   readonly #projectDependencyCaches = createProjectDependencyCaches();
+  readonly #workspaceSourceBoundaryProvider: ImportCoreOptions['workspaceSourceBoundaryProvider'];
 
-  constructor(config: ResolvedLiminaConfig, options: ImportCoreOptions = {}) {
+  constructor(config: ResolvedLiminaConfig, options: ImportCoreOptions) {
     this.#config = config;
     this.#context = this.#createContext(options);
+    this.#workspaceSourceBoundaryProvider =
+      options.workspaceSourceBoundaryProvider;
   }
 
   get context(): ImportAnalysisContext {
@@ -172,6 +179,7 @@ export class ImportCore {
         authority,
         packageRootDir,
         project,
+        workspaceSourceBoundary: this.#workspaceSourceBoundaryProvider(project),
       }),
       importAnalysis: this.#context,
     });

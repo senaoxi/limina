@@ -15,6 +15,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TypeEvidenceCore } from '../core/type-evidence';
 import { isSupportedVueTypeEvidenceVersionTuple } from '../core/type-evidence/vue-provider';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
 import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation';
 import {
@@ -335,6 +336,8 @@ describe('Vue resource type evidence', () => {
         importAnalysis,
         metrics,
         vueSemanticContexts: contexts,
+        workspaceSourceBoundaryProvider: (project) =>
+          createWorkspaceSourceBoundary(project.fileNames),
       });
 
       expect(
