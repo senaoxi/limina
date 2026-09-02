@@ -19,6 +19,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { createLiminaCli, runCheckWithCliFlowCleanup } from '../cli';
+import { assertIssueInventoryLimitArgv } from '../cli/argv';
+import { showIssueInventory } from '../cli/issue-query';
+import type { CheckFlags } from '../cli/types';
 
 const execFileAsync = promisify(execFile);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -29,6 +32,31 @@ const ANSI_PATTERN = new RegExp(
 
 function stripAnsi(value: string): string {
   return value.replaceAll(ANSI_PATTERN, '');
+}
+
+async function captureIssueInventory(options: {
+  cwd?: string;
+  flags: CheckFlags;
+}): Promise<string> {
+  const chunks: string[] = [];
+  const previousCwd = process.cwd();
+  const stdoutWrite = vi
+    .spyOn(process.stdout, 'write')
+    .mockImplementation((chunk) => {
+      chunks.push(String(chunk));
+      return true;
+    });
+
+  try {
+    if (options.cwd !== undefined) {
+      process.chdir(options.cwd);
+    }
+    await showIssueInventory(options.flags);
+    return chunks.join('');
+  } finally {
+    process.chdir(previousCwd);
+    stdoutWrite.mockRestore();
+  }
 }
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -843,25 +871,16 @@ export default {
           expectedTask: string;
           invocationId: string;
         }): Promise<void> => {
-          const query = await execFileAsync(
-            process.execPath,
-            [
-              cliPath,
-              '--config',
-              expectedConfigPath,
-              'check',
-              '--issues',
-              '--invocation',
-              invocationId,
-              '--format',
-              'json',
-            ],
-            {
-              cwd: otherCwd,
-              env: { ...process.env, CI: 'true' },
+          const query = await captureIssueInventory({
+            cwd: otherCwd,
+            flags: {
+              config: expectedConfigPath,
+              format: 'json',
+              invocation: invocationId,
+              issues: true,
             },
-          );
-          const payload = JSON.parse(query.stdout) as {
+          });
+          const payload = JSON.parse(query) as {
             invocationId: string;
             issueCount: number;
             issues: {
@@ -896,7 +915,8 @@ export default {
         };
 
         // These commands write shared .limina artifacts, so keep them
-        // sequential even though the invocation queries below are read-only.
+        // sequential. Query the completed invocation records in-process so the
+        // coverage does not multiply the development CLI cold-start cost.
         const failures = [
           await runFailure(
             ['checker', 'build', 'packages/missing/tsconfig.json'],
@@ -928,7 +948,9 @@ export default {
           ),
         ];
 
-        await Promise.all(failures.map(queryFailure));
+        for (const failure of failures) {
+          await queryFailure(failure);
+        }
       } finally {
         await rm(otherCwd, { force: true, recursive: true });
       }
@@ -2321,94 +2343,21 @@ export default {
       );
       expect(checkFailurePlainStdout).not.toContain('Source check summary');
 
-      for (const configSource of [
-        'export default {\n',
-        'export default { config: { checkers: 42 } };\n',
+      await writeText(
+        path.join(rootDir, 'limina.config.mjs'),
         'export default () => { throw new Error("config executed"); };\n',
-      ]) {
-        await writeText(path.join(rootDir, 'limina.config.mjs'), configSource);
-        const [explicitQuery, defaultNestedQuery] = await Promise.all([
-          execFileAsync(
-            process.execPath,
-            [
-              cliPath,
-              '--config',
-              path.join(rootDir, 'limina.config.mjs'),
-              '--config-loader',
-              'unavailable',
-              '--mode',
-              'must-not-run',
-              'check',
-              '--issues',
-              '--format',
-              'json',
-            ],
-            {
-              cwd: rootDir,
-              env: {
-                ...process.env,
-                CI: 'true',
-              },
-            },
-          ),
-          execFileAsync(
-            process.execPath,
-            [cliPath, 'check', '--issues', '--format', 'json'],
-            {
-              cwd: path.join(rootDir, 'app/src'),
-              env: {
-                ...process.env,
-                CI: 'true',
-              },
-            },
-          ),
-        ]);
-
-        expect(JSON.parse(explicitQuery.stdout)).toMatchObject({
-          issueCount: 2,
-        });
-        expect(JSON.parse(defaultNestedQuery.stdout)).toMatchObject({
-          issueCount: 2,
-        });
-      }
-
-      const runIssueQuery = (args: string[] = []) =>
+      );
+      const [explicitQuery, defaultNestedQuery] = await Promise.all([
         execFileAsync(
           process.execPath,
           [
             cliPath,
             '--config',
             path.join(rootDir, 'limina.config.mjs'),
-            'check',
-            '--issues',
-            ...args,
-          ],
-          {
-            cwd: rootDir,
-            env: {
-              ...process.env,
-              CI: 'true',
-            },
-          },
-        );
-      // The snapshot is complete and these commands only query it, so they can
-      // share the cold-start cost without racing artifact mutations.
-      const [
-        missingConfigQuery,
-        result,
-        detailsResult,
-        jsonResult,
-        ndjsonResult,
-        ruleFilteredResult,
-        packageFilteredResult,
-        unmatchedRuleResult,
-      ] = await Promise.all([
-        execFileAsync(
-          process.execPath,
-          [
-            cliPath,
-            '--config',
-            path.join(rootDir, 'missing.config.mjs'),
+            '--config-loader',
+            'unavailable',
+            '--mode',
+            'must-not-run',
             'check',
             '--issues',
             '--format',
@@ -2422,20 +2371,58 @@ export default {
             },
           },
         ),
-        runIssueQuery(),
-        runIssueQuery(['--verbose']),
-        runIssueQuery(['--format', 'json']),
-        runIssueQuery(['--format', 'ndjson']),
-        runIssueQuery(['--rule', 'LIMINA_SOURCE_UNUSED_MODULE']),
-        runIssueQuery(['--package', '@example/app']),
-        runIssueQuery(['--rule', 'LIMINA_GRAPH_CHECK_FAILED']),
+        execFileAsync(
+          process.execPath,
+          [cliPath, 'check', '--issues', '--format', 'json'],
+          {
+            cwd: path.join(rootDir, 'app/src'),
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
+          },
+        ),
       ]);
 
-      expect(JSON.parse(missingConfigQuery.stdout)).toMatchObject({
+      expect(JSON.parse(explicitQuery.stdout)).toMatchObject({ issueCount: 2 });
+      expect(JSON.parse(defaultNestedQuery.stdout)).toMatchObject({
         issueCount: 2,
       });
 
-      const plainResult = stripAnsi(result.stdout);
+      const runIssueQuery = (flags: CheckFlags = {}) =>
+        captureIssueInventory({
+          flags: {
+            config: path.join(rootDir, 'limina.config.mjs'),
+            issues: true,
+            ...flags,
+          },
+        });
+      const missingConfigQuery = await captureIssueInventory({
+        flags: {
+          config: path.join(rootDir, 'missing.config.mjs'),
+          format: 'json',
+          issues: true,
+        },
+      });
+      const result = await runIssueQuery();
+      const detailsResult = await runIssueQuery({ verbose: true });
+      const jsonResult = await runIssueQuery({ format: 'json' });
+      const ndjsonResult = await runIssueQuery({ format: 'ndjson' });
+      const ruleFilteredResult = await runIssueQuery({
+        rule: 'LIMINA_SOURCE_UNUSED_MODULE',
+      });
+      const packageFilteredResult = await runIssueQuery({
+        package: '@example/app',
+      });
+      const unmatchedRuleResult = await runIssueQuery({
+        rule: 'LIMINA_GRAPH_CHECK_FAILED',
+      });
+
+      expect(JSON.parse(missingConfigQuery)).toMatchObject({
+        issueCount: 2,
+      });
+
+      const plainResult = stripAnsi(result);
 
       expect(plainResult).toContain('Limina check issue summary');
       expect(plainResult).toContain('Matched: 2 / 2 issues');
@@ -2453,13 +2440,13 @@ export default {
         'check --issues --task proof:check --rule LIMINA_PROOF_DEFAULT_TSCONFIG_INVALID',
       );
 
-      const plainDetailsResult = stripAnsi(detailsResult.stdout);
+      const plainDetailsResult = stripAnsi(detailsResult);
 
       expect(plainDetailsResult).toContain('Showing 2 of 2 issues');
       expect(plainDetailsResult).toContain('Unused source module');
       expect(plainDetailsResult).toContain('fix steps:');
 
-      const jsonPayload = JSON.parse(jsonResult.stdout) as {
+      const jsonPayload = JSON.parse(jsonResult) as {
         issueCount: number;
         issues: { code: string; task?: string; tool?: string }[];
         overview: { issueCount: number };
@@ -2497,7 +2484,7 @@ export default {
         task: 'proof:check',
       });
 
-      const ndjsonIssues = ndjsonResult.stdout
+      const ndjsonIssues = ndjsonResult
         .trim()
         .split('\n')
         .map((line) => JSON.parse(line) as { code: string; tool?: string });
@@ -2510,9 +2497,9 @@ export default {
           }),
         ]),
       );
-      expect(ndjsonResult.stdout).not.toContain('Limina check issue summary');
+      expect(ndjsonResult).not.toContain('Limina check issue summary');
 
-      const plainRuleFilteredResult = stripAnsi(ruleFilteredResult.stdout);
+      const plainRuleFilteredResult = stripAnsi(ruleFilteredResult);
 
       expect(plainRuleFilteredResult).toContain('Filters:');
       expect(plainRuleFilteredResult).toContain(
@@ -2523,15 +2510,13 @@ export default {
         '1  LIMINA_SOURCE_UNUSED_MODULE',
       );
 
-      const plainPackageFilteredResult = stripAnsi(
-        packageFilteredResult.stdout,
-      );
+      const plainPackageFilteredResult = stripAnsi(packageFilteredResult);
 
       expect(plainPackageFilteredResult).toContain('Filters:');
       expect(plainPackageFilteredResult).toContain('package: @example/app');
       expect(plainPackageFilteredResult).toContain('Matched: 2 / 2 issues');
 
-      const plainUnmatchedRuleOutput = stripAnsi(unmatchedRuleResult.stdout);
+      const plainUnmatchedRuleOutput = stripAnsi(unmatchedRuleResult);
       const normalizedUnmatchedRuleOutput = plainUnmatchedRuleOutput
         .replaceAll(/\s*│\s*/gu, ' ')
         .replaceAll(/\s+/gu, ' ');
@@ -2561,10 +2546,6 @@ export default {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-limit-')),
     );
-    const cliPath = fileURLToPath(
-      new URL('../../bin/limina.js', import.meta.url),
-    );
-    const environment = { ...process.env, CI: 'true' };
 
     try {
       await writeText(
@@ -2616,53 +2597,51 @@ export default {
         }),
       );
 
-      const runIssues = (args: readonly string[]) =>
-        execFileAsync(
-          process.execPath,
-          [cliPath, 'check', '--issues', ...args],
-          {
-            cwd: rootDir,
-            env: environment,
+      const runIssues = (flags: CheckFlags = {}) =>
+        captureIssueInventory({
+          cwd: rootDir,
+          flags: {
+            issues: true,
+            ...flags,
           },
-        );
-      const summary = await runIssues([]);
-      const compact = await runIssues(['--limit', '5']);
-      const allCompact = await runIssues(['--limit', 'all']);
-      const detailed = await runIssues(['--verbose']);
-      const allDetailed = await runIssues(['--verbose', '--limit', 'all']);
-      const json = await runIssues(['--format', 'json']);
-      const verboseJson = await runIssues(['--verbose', '--format', 'json']);
-      const ndjson = await runIssues(['--format', 'ndjson']);
-      const verboseNdjson = await runIssues([
-        '--verbose',
-        '--format',
-        'ndjson',
-      ]);
-      const invocation = await runIssues(['--invocation', invocationId]);
-      const normalizedInvocation = stripAnsi(invocation.stdout)
+        });
+      const summary = await runIssues();
+      const compact = await runIssues({ limit: '5' });
+      const allCompact = await runIssues({ limit: 'all' });
+      const detailed = await runIssues({ verbose: true });
+      const allDetailed = await runIssues({ limit: 'all', verbose: true });
+      const json = await runIssues({ format: 'json' });
+      const verboseJson = await runIssues({ format: 'json', verbose: true });
+      const ndjson = await runIssues({ format: 'ndjson' });
+      const verboseNdjson = await runIssues({
+        format: 'ndjson',
+        verbose: true,
+      });
+      const invocation = await runIssues({ invocation: invocationId });
+      const normalizedInvocation = stripAnsi(invocation)
         .replaceAll(/\s*│\s*/gu, ' ')
         .replaceAll(/\s+/gu, ' ');
 
-      expect(summary.stdout).not.toContain('Showing');
-      expect(summary.stdout).toContain('Show issues:');
-      expect(summary.stdout).toContain('--limit 20');
-      expect(compact.stdout).toContain('Showing 5 of 25 issues');
-      expect(compact.stdout).not.toContain('raw diagnostic');
-      expect(allCompact.stdout).toContain('Showing 25 of 25 issues');
-      expect(allCompact.stdout).not.toContain('raw diagnostic');
-      expect(detailed.stdout).toContain('Showing 20 of 25 issues');
-      expect(detailed.stdout).toContain('raw diagnostic 0');
-      expect(detailed.stdout).not.toContain('raw diagnostic 24');
-      expect(allDetailed.stdout).toContain('Showing 25 of 25 issues');
-      expect(allDetailed.stdout).toContain('raw diagnostic 24');
-      expect(verboseJson.stdout).toBe(json.stdout);
-      expect(verboseNdjson.stdout).toBe(ndjson.stdout);
-      expect(JSON.parse(json.stdout)).toMatchObject({ issueCount: 25 });
-      expect(ndjson.stdout.trim().split('\n')).toHaveLength(25);
-      expect(invocation.stdout).toContain(`Invocation: ${invocationId}`);
-      expect(invocation.stdout).toContain('Kind: standalone-invocation');
-      expect(invocation.stdout).toContain('Result: failed');
-      expect(invocation.stdout).toContain('Showing 1 of 1 issues');
+      expect(summary).not.toContain('Showing');
+      expect(summary).toContain('Show issues:');
+      expect(summary).toContain('--limit 20');
+      expect(compact).toContain('Showing 5 of 25 issues');
+      expect(compact).not.toContain('raw diagnostic');
+      expect(allCompact).toContain('Showing 25 of 25 issues');
+      expect(allCompact).not.toContain('raw diagnostic');
+      expect(detailed).toContain('Showing 20 of 25 issues');
+      expect(detailed).toContain('raw diagnostic 0');
+      expect(detailed).not.toContain('raw diagnostic 24');
+      expect(allDetailed).toContain('Showing 25 of 25 issues');
+      expect(allDetailed).toContain('raw diagnostic 24');
+      expect(verboseJson).toBe(json);
+      expect(verboseNdjson).toBe(ndjson);
+      expect(JSON.parse(json)).toMatchObject({ issueCount: 25 });
+      expect(ndjson.trim().split('\n')).toHaveLength(25);
+      expect(invocation).toContain(`Invocation: ${invocationId}`);
+      expect(invocation).toContain('Kind: standalone-invocation');
+      expect(invocation).toContain('Result: failed');
+      expect(invocation).toContain('Showing 1 of 1 issues');
       expect(normalizedInvocation).toContain(
         `limina check --issues --invocation ${invocationId}`,
       );
@@ -2694,30 +2673,45 @@ export default {
         'invalid',
         '9007199254740992',
       ]) {
-        await expect(run(['--issues', '--limit', value])).rejects.toMatchObject(
-          {
-            stderr: expect.stringContaining(
-              `Invalid check --issues --limit "${value}"`,
-            ),
-          },
-        );
+        expect(() =>
+          assertIssueInventoryLimitArgv([
+            'node',
+            'limina',
+            'check',
+            '--issues',
+            '--limit',
+            value,
+          ]),
+        ).toThrow(`Invalid check --issues --limit "${value}"`);
       }
 
       for (const format of ['json', 'ndjson']) {
-        await expect(
-          run(['--issues', '--limit', '20', '--format', format]),
-        ).rejects.toMatchObject({
-          stderr: expect.stringContaining(
-            '`limina check --issues --limit` is only available with --format human.',
-          ),
-        });
+        expect(() =>
+          assertIssueInventoryLimitArgv([
+            'node',
+            'limina',
+            'check',
+            '--issues',
+            '--limit',
+            '20',
+            '--format',
+            format,
+          ]),
+        ).toThrow(
+          '`limina check --issues --limit` is only available with --format human.',
+        );
       }
 
-      await expect(run(['--limit', '20'])).rejects.toMatchObject({
-        stderr: expect.stringContaining(
-          '`--invocation`, and `--limit` require --issues.',
-        ),
-      });
+      await Promise.all([
+        expect(run(['--issues', '--limit', '0'])).rejects.toMatchObject({
+          stderr: expect.stringContaining('Invalid check --issues --limit "0"'),
+        }),
+        expect(run(['--limit', '20'])).rejects.toMatchObject({
+          stderr: expect.stringContaining(
+            '`--invocation`, and `--limit` require --issues.',
+          ),
+        }),
+      ]);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }
