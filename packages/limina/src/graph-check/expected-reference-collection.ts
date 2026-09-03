@@ -244,6 +244,7 @@ function collectProjectDependenciesForGraph(options: {
         options.project.configPath,
         specifier,
       )?.typeScriptResolvedFileName ?? null,
+    workspaceTypeScriptExportCacheIdentity: 'graph-check-workspace-exports',
   });
 }
 

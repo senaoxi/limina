@@ -7,12 +7,14 @@ import {
 } from '#core/build-graph/runner';
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { ImportCore } from './imports';
+import type { ProjectDependencyCaches } from './project-dependencies/contracts';
 import type { WorkspaceCore } from './workspace';
 
 export class BuildGraphCore {
   readonly #config: ResolvedLiminaConfig;
   readonly #imports: ImportCore;
   readonly #projectConfigs: CheckerProjectConfigCache;
+  readonly #projectDependencies: ProjectDependencyCaches;
   readonly #workspace: WorkspaceCore;
   readonly #artifactNamespace: LiminaArtifactNamespace;
   readonly #onGraphPrepared: (graph: GeneratedTsconfigGraphResult) => void;
@@ -22,6 +24,7 @@ export class BuildGraphCore {
     artifactNamespace: LiminaArtifactNamespace;
     config: ResolvedLiminaConfig;
     imports: ImportCore;
+    projectDependencies: ProjectDependencyCaches;
     projectConfigs: CheckerProjectConfigCache;
     workspace: WorkspaceCore;
     onGraphPrepared(graph: GeneratedTsconfigGraphResult): void;
@@ -30,6 +33,7 @@ export class BuildGraphCore {
     this.#config = options.config;
     this.#imports = options.imports;
     this.#projectConfigs = options.projectConfigs;
+    this.#projectDependencies = options.projectDependencies;
     this.#workspace = options.workspace;
     this.#onGraphPrepared = options.onGraphPrepared;
   }
@@ -49,6 +53,7 @@ export class BuildGraphCore {
         prepareGeneratedTsconfigGraph(this.#config, {
           artifactNamespace: this.#artifactNamespace,
           importAnalysisContext: this.#imports.context,
+          projectDependencyCaches: this.#projectDependencies,
           projectConfigCache: this.#projectConfigs,
           workspaceContext: topology,
           workspacePathIndex,

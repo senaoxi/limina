@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import { promoteDirectedCheckerDependencies } from './auto-checker-promotion';
 import { colorBuildCheckerComponents } from './checker-build-coloring';
@@ -146,6 +147,7 @@ export async function resolveCheckerOwnership(options: {
   importAnalysisContext: NonNullable<
     PrepareGeneratedTsconfigGraphOptions['importAnalysisContext']
   >;
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceSourceConfigPaths: readonly string[];
 }): Promise<CheckerSelectionResolution> {
@@ -176,6 +178,7 @@ export async function resolveCheckerOwnership(options: {
       config: options.config,
       discovery,
       importAnalysis: options.importAnalysisContext,
+      projectDependencyCaches: options.projectDependencyCaches,
       projectConfigCache: options.projectConfigCache,
     }),
   });

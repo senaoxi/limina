@@ -10,6 +10,7 @@ import type ts from 'typescript';
 import type { LiminaArtifactNamespace } from '../../domain/artifacts/namespace';
 import type { ArtifactChange, ArtifactPlan } from '../../domain/artifacts/plan';
 import type { CheckerEntrySelection } from '../checkers/entry-selection';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
 import type {
   ValidatedWorkspaceContext,
@@ -99,6 +100,7 @@ export interface GeneratedTsconfigGraphResult {
 export interface PrepareGeneratedTsconfigGraphOptions {
   artifactNamespace: LiminaArtifactNamespace;
   importAnalysisContext?: ImportAnalysisContext;
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: CheckerProjectConfigCache;
   workspaceContext?: ValidatedWorkspaceContext;
   workspacePathIndex?: WorkspaceRegionPathIndex;

@@ -1,6 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
-import { createProjectDependencyCaches } from '../project-dependencies/runner';
+import {
+  createProjectDependencyCaches,
+  type ProjectDependencyCaches,
+} from '../project-dependencies/runner';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
@@ -128,6 +131,12 @@ function processReferenceImports(options: {
   }
 }
 
+function resolveProjectDependencyCaches(
+  caches: ProjectDependencyCaches | undefined,
+): ProjectDependencyCaches {
+  return caches ?? createProjectDependencyCaches();
+}
+
 export function inferProjectReferences(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
@@ -135,6 +144,7 @@ export function inferProjectReferences(options: {
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
   ownerGovernedSources?: GovernedSourceUnit[];
   ownerProjects?: SourceProject[];
+  projectDependencyCaches?: ProjectDependencyCaches;
   primaryProjects: SourceProject[];
   projects: SourceProject[];
   sourceToBuildByChecker: ReadonlyMap<
@@ -162,7 +172,9 @@ export function inferProjectReferences(options: {
     dtsProjectsBySourcePath: createDtsProjectsBySourcePath(ownerProjects),
     fileOwnerLookup: createOwnerLookup(ownerGovernedSources),
     importAnalysis: resolveBuildGraphImportAnalysis(options),
-    projectDependencyCaches: createProjectDependencyCaches(),
+    projectDependencyCaches: resolveProjectDependencyCaches(
+      options.projectDependencyCaches,
+    ),
     problems,
     dependencyEdgesByKey,
     workspaceSourceBoundary: createWorkspaceSourceBoundary([

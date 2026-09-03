@@ -1,6 +1,10 @@
 export * from './context';
 export type * from './contracts';
-export { createTypeScriptSemanticContextIdentity } from './identity';
+export {
+  createTypeScriptProjectDependencyFactsIdentity,
+  createTypeScriptSemanticContextIdentity,
+} from './identity';
+export { createTypeScriptSemanticDependencySnapshot } from './snapshot';
 export {
   createWorkspaceSourceBoundary,
   createWorkspaceSourceBoundaryFromProjects,

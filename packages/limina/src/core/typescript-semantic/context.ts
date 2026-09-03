@@ -92,6 +92,11 @@ export class BoundedTypeScriptSemanticContext
     return this.program.getSourceFile(normalizeAbsolutePath(fileName));
   }
 
+  hasSourceFile(fileName: string): boolean {
+    this.#assertActive();
+    return this.#getRegisteredSourceFile(fileName) !== undefined;
+  }
+
   getSymbolAtImportRecord(importRecord: ImportRecord): ts.Symbol | undefined {
     this.#assertActive();
     const location = this.#resolver.getSymbolLocation(importRecord);
@@ -145,6 +150,10 @@ export class BoundedTypeScriptSemanticContext
 
 export function createBoundedTypeScriptSemanticContext(
   project: TypeScriptSemanticProject,
+  options: { dependencyFactsOnly?: boolean } = {},
 ): TypeScriptSemanticContext {
-  return new BoundedTypeScriptSemanticContext(project);
+  return new BoundedTypeScriptSemanticContext({
+    ...project,
+    admissionMode: options.dependencyFactsOnly ? 'root-facts' : 'full-program',
+  });
 }

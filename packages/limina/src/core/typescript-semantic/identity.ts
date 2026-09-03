@@ -1,4 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import { createHash } from 'node:crypto';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeScriptSemanticProject } from './contracts';
@@ -13,11 +14,18 @@ function normalizeReference(reference: ts.ProjectReference) {
   };
 }
 
+function createIdentity(prefix: string, value: unknown): string {
+  return `${prefix}:${createHash('sha256')
+    .update(JSON.stringify(value))
+    .digest('hex')}`;
+}
+
 export function createTypeScriptSemanticContextIdentity(
   project: TypeScriptSemanticProject,
 ): string {
-  return JSON.stringify({
+  return createIdentity('bounded-typescript-semantic', {
     adapterVersion: 'bounded-typescript-semantic-v2-workspace-boundary',
+    admissionMode: project.admissionMode ?? 'full-program',
     configPath: normalizeAbsolutePath(project.configPath),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
     options: project.options,
@@ -25,6 +33,23 @@ export function createTypeScriptSemanticContextIdentity(
       normalizeReference,
     ),
     workspaceSourceBoundary: project.workspaceSourceBoundary.identity,
+  });
+}
+
+export function createTypeScriptProjectDependencyFactsIdentity(
+  project: TypeScriptSemanticProject,
+): string {
+  // Project-dependency facts contain root syntax and TypeScript's raw semantic
+  // resolutions. The workspace boundary only controls which resolved targets
+  // the Program may load transitively; it does not change those root facts.
+  return createIdentity('typescript-project-dependency-facts', {
+    adapterVersion: 'typescript-project-dependency-facts-v1',
+    configPath: normalizeAbsolutePath(project.configPath),
+    fileNames: project.fileNames.map(normalizeAbsolutePath),
+    options: project.options,
+    projectReferences: (project.projectReferences ?? []).map(
+      normalizeReference,
+    ),
   });
 }
 

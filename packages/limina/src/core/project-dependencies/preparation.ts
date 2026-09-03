@@ -1,7 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import {
   cloneProjectDependencyPreparation,
-  createProjectSemanticCacheIdentity,
+  getProjectSemanticCacheIdentity,
 } from './cache';
 import type {
   ProjectDependencyPreparation,
@@ -207,7 +207,7 @@ function prepareProjectFile(
   const observationStart = options.collection.observations.length;
   const cacheKey = JSON.stringify({
     fileName: normalizeAbsolutePath(options.fileName),
-    project: createProjectSemanticCacheIdentity(options.request.context),
+    project: getProjectSemanticCacheIdentity(options.request),
     stage: 'generated-dependency-preparation',
   });
   const base = { base: options, cacheKey, failureStart, observationStart };

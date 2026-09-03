@@ -2,6 +2,7 @@ import type { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import { TypeEvidenceCore } from '../type-evidence';
 import {
@@ -24,6 +25,7 @@ interface FactCollectionOptions {
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
   membership: ReadonlyMap<string, string[]>;
+  projectDependencyCaches: ProjectDependencyCaches;
   projectConfigCache?: CheckerProjectConfigCache;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
@@ -74,7 +76,7 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
   const projects = [...options.discovery.projectByConfigPath.values()].sort(
     (left, right) => compareCodeUnits(left.configPath, right.configPath),
   );
-  const caches = createProjectDependencyCaches();
+  const caches = options.projectDependencyCaches;
   for (const project of projects) {
     const collected = collectProjectFacts({ base: options, caches, project });
     facts.push(...collected.facts);
@@ -87,6 +89,7 @@ export async function collectCheckerDependencyFacts(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: CheckerProjectConfigCache;
 }): Promise<string[]> {
   const workspaceSourceBoundary = createWorkspaceSourceBoundaryFromProjects(
@@ -104,6 +107,8 @@ export async function collectCheckerDependencyFacts(options: {
       membership: createActualMembershipIndex(
         options.discovery.projectByConfigPath,
       ),
+      projectDependencyCaches:
+        options.projectDependencyCaches ?? createProjectDependencyCaches(),
       workspaceSourceBoundary,
     });
     options.discovery.plan.dependencyFacts = collected.facts;

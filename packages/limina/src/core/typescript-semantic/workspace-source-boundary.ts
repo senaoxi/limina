@@ -19,9 +19,18 @@ export interface WorkspaceSourceBoundary {
 export function createWorkspaceSourceBoundary(
   fileNames: Iterable<string>,
 ): WorkspaceSourceBoundary {
+  const pathIdentitiesByFileName = new Map<string, readonly string[]>();
+  const getCachedPathIdentities = (fileName: string): readonly string[] => {
+    const normalized = normalizeAbsolutePath(fileName);
+    const cached = pathIdentitiesByFileName.get(normalized);
+    if (cached !== undefined) return cached;
+    const resolved = getPathIdentities(normalized);
+    pathIdentitiesByFileName.set(normalized, resolved);
+    return resolved;
+  };
   const identities = new Set<string>();
   for (const fileName of fileNames) {
-    for (const identity of getPathIdentities(fileName)) {
+    for (const identity of getCachedPathIdentities(fileName)) {
       identities.add(identity);
     }
   }
@@ -32,7 +41,7 @@ export function createWorkspaceSourceBoundary(
       fileNames: sortedIdentities,
     }),
     has(fileName: string): boolean {
-      return getPathIdentities(fileName).some((identity) =>
+      return getCachedPathIdentities(fileName).some((identity) =>
         identities.has(identity),
       );
     },

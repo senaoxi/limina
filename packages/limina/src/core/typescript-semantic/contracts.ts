@@ -11,7 +11,10 @@ export type TypeScriptSemanticChannel =
   | 'triple-slash-path'
   | 'triple-slash-types';
 
+export type TypeScriptSemanticAdmissionMode = 'full-program' | 'root-facts';
+
 export interface TypeScriptSemanticProject {
+  admissionMode?: TypeScriptSemanticAdmissionMode;
   configPath: string;
   fileNames: readonly string[];
   options: ts.CompilerOptions;
@@ -27,12 +30,21 @@ export interface TypeScriptSemanticResolution {
   target: ResolvedCheckerModuleName | null;
 }
 
-export interface TypeScriptSemanticContext {
+export interface TypeScriptSemanticResolutionContext {
   readonly identity: string;
+  resolveImportRecord(importRecord: ImportRecord): TypeScriptSemanticResolution;
+}
+
+export interface TypeScriptSemanticDependencyContext
+  extends TypeScriptSemanticResolutionContext {
+  getImportRecords(fileName: string): readonly ImportRecord[];
+  hasSourceFile(fileName: string): boolean;
+}
+
+export interface TypeScriptSemanticContext
+  extends TypeScriptSemanticDependencyContext {
   readonly program: ts.Program;
   dispose(): void;
-  getImportRecords(fileName: string): readonly ImportRecord[];
   getSourceFile(fileName: string): ts.SourceFile | undefined;
   getSymbolAtImportRecord(importRecord: ImportRecord): ts.Symbol | undefined;
-  resolveImportRecord(importRecord: ImportRecord): TypeScriptSemanticResolution;
 }

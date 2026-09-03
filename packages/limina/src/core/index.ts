@@ -9,6 +9,10 @@ import { BuildGraphCore } from './build-graph';
 import type { ImportAnalysisMetricsRecorder } from './import-analysis/runner';
 import { ImportCore } from './imports';
 import { PackageDomainCore } from './packages';
+import {
+  createProjectDependencyCaches,
+  type ProjectDependencyCaches,
+} from './project-dependencies/runner';
 import { SvelteSemanticContextManager } from './svelte-semantic/context';
 import { TsconfigCore } from './tsconfig';
 import { TypeEvidenceCore } from './type-evidence';
@@ -66,6 +70,7 @@ export class AnalysisProviderSet {
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
   readonly projectConfigs: CheckerProjectConfigCache;
+  readonly projectDependencies: ProjectDependencyCaches;
   readonly svelteSemanticContexts: SvelteSemanticContextManager;
   readonly tsconfig: TsconfigCore;
   readonly typeEvidence: TypeEvidenceCore;
@@ -101,6 +106,7 @@ export class AnalysisProviderSet {
     this.projectConfigs = new CheckerProjectConfigCache(
       options.artifactNamespace.generation,
     );
+    this.projectDependencies = createProjectDependencyCaches();
     this.workspace = new WorkspaceCore(
       options.config,
       options.metrics,
@@ -135,6 +141,7 @@ export class AnalysisProviderSet {
       artifactNamespace: options.artifactNamespace,
       config: options.config,
       imports: this.imports,
+      projectDependencies: this.projectDependencies,
       projectConfigs: this.projectConfigs,
       workspace: this.workspace,
       onGraphPrepared: setWorkspaceSourceBoundary,
