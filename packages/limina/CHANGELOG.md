@@ -10,10 +10,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- **Breaking:** locked Vue, Astro, and Svelte dependency analysis now uses the official generated TypeScript representation as its only semantic authority. Framework `ImportRecord.specifier` and reported `importedSpecifier` values use the generated semantic spelling, while file and line locations still point to user source.
-- Standalone import APIs now reject `.vue`, `.astro`, and `.svelte` files and require the project-aware checker entry point.
-- Removed the Vue, Astro, and Svelte lightweight dependency collectors and Limina's direct `@astrojs/compiler` contract. Astro's compiler is resolved only from the installed `@astrojs/check` Language Server toolchain.
-- Locked framework resource and virtual-module classification now requires checker target or existing TypeScript `TypeEvidence`; file existence, extension heuristics, workspace resolution, and Oxc cannot rescue a checker miss.
+## [0.3.0] - 2026-09-03
+
+### Features
+
+- feat(limina)!: make checker governance semantic-first (#97) ([e1e7ee40](https://github.com/senaoxi/docs-islands/commit/e1e7ee40))
+
+### Bug Fixes
+
+- fix(limina): avoid CLI test timeouts on Windows ([92a07b70](https://github.com/senaoxi/docs-islands/commit/92a07b70))
+- fix(limina): align dependency analysis with TypeScript semantics ([7b2ecc40](https://github.com/senaoxi/docs-islands/commit/7b2ecc40))
+- fix(limina): preserve portable paths across analysis ([b0451964](https://github.com/senaoxi/docs-islands/commit/b0451964))
+- fix(limina): respect configured typeRoots and prioritize @types ([7db3f420](https://github.com/senaoxi/docs-islands/commit/7db3f420))
+- fix(limina): manage declarationDir output paths ([082368fa](https://github.com/senaoxi/docs-islands/commit/082368fa))
+
+### Other Changes
+
+- perf(limina): reuse project dependency semantic facts ([15f0d00b](https://github.com/senaoxi/docs-islands/commit/15f0d00b))
 
 ## [0.2.3] - 2026-08-04
 
