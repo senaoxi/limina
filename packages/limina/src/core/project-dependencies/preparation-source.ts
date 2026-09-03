@@ -1,7 +1,10 @@
 import { createAstroSemanticProject, resolveVueSourceProfile } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createSvelteSemanticProject } from '../svelte-semantic/project';
-import { createProjectSemanticCacheIdentity } from './cache';
+import {
+  createProjectSemanticCacheIdentity,
+  getProjectSemanticCacheIdentity,
+} from './cache';
 import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
@@ -71,14 +74,23 @@ export function createFileRequest(
 ): ProjectDependencyRequest {
   const packageRootDir = getPackageRoot(request, fileName);
   const options = { packageRootDir, request };
+  const astroSemanticProject = getAstroProjectForRoot(options);
+  const svelteSemanticProject = getSvelteProjectForRoot(options);
+  const context = {
+    ...request.context,
+    astroSemanticProject,
+    packageRootDir,
+    svelteSemanticProject,
+  };
+  const preservesSemanticIdentity =
+    astroSemanticProject === request.context.astroSemanticProject &&
+    svelteSemanticProject === request.context.svelteSemanticProject;
   return {
     ...request,
-    context: {
-      ...request.context,
-      astroSemanticProject: getAstroProjectForRoot(options),
-      packageRootDir,
-      svelteSemanticProject: getSvelteProjectForRoot(options),
-    },
+    context,
+    projectSemanticCacheIdentity: preservesSemanticIdentity
+      ? getProjectSemanticCacheIdentity(request)
+      : createProjectSemanticCacheIdentity(context),
   };
 }
 
@@ -111,7 +123,7 @@ export function collectFileSourceEvidence(
   if (semanticSource !== null) return semanticSource;
   const source = collectSourceEvidence({
     cache: request.caches?.sourceEvidenceCache,
-    cacheIdentity: createProjectSemanticCacheIdentity(request.context),
+    cacheIdentity: getProjectSemanticCacheIdentity(request),
     filePath: options.fileName,
     importAnalysis: request.importAnalysis,
     packageRootDir: request.context.packageRootDir,
@@ -130,10 +142,10 @@ function collectSemanticSourceEvidence(
 ): SourceEvidence | null {
   const context = getNativeSemanticContext(options);
   if (context === undefined) return null;
-  const sourceFile = context.getSourceFile(options.fileName);
+  const hasSourceFile = context.hasSourceFile(options.fileName);
   const diagnostics = createSemanticSourceDiagnostics(
     options.fileName,
-    sourceFile,
+    hasSourceFile,
   );
   addSourceDiagnostics({ base: options, diagnostics });
   return {
@@ -142,7 +154,7 @@ function collectSemanticSourceEvidence(
     records: getSemanticSourceRecords({
       context,
       fileName: options.fileName,
-      sourceFile,
+      hasSourceFile,
     }),
   };
 }
@@ -156,17 +168,17 @@ function getNativeSemanticContext(options: FilePreparationOptions) {
 function getSemanticSourceRecords(options: {
   context: NonNullable<ProjectDependencyRequest['typeScriptSemanticContext']>;
   fileName: string;
-  sourceFile: unknown;
+  hasSourceFile: boolean;
 }): SourceEvidence['records'] {
-  if (options.sourceFile === undefined) return [];
+  if (!options.hasSourceFile) return [];
   return [...options.context.getImportRecords(options.fileName)];
 }
 
 function createSemanticSourceDiagnostics(
   fileName: string,
-  sourceFile: unknown,
+  hasSourceFile: boolean,
 ): string[] {
-  if (sourceFile !== undefined) return [];
+  if (hasSourceFile) return [];
   return [
     `Bounded TypeScript semantic context did not admit root ${fileName}.`,
   ];

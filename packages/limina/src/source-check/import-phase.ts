@@ -1,4 +1,3 @@
-import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import { addImportAuthorityOwnerConfigProblems } from './import-authority-config-findings';
 import {
   addImportAuthorityRootManifestConfigProblems,
@@ -67,7 +66,7 @@ export async function runSourceImportAuthorityPhase(
     importAuthorityAllowRules,
     packages: state.packages,
     pathIndex: state.workspacePathIndex,
-    projectDependencyCaches: createProjectDependencyCaches(),
+    projectDependencyCaches: state.preflight.providers.projectDependencies,
     findings: state.findings,
     rootPackage: state.rootPackage,
     sourceProjectEntries: state.sourceProjectEntries,

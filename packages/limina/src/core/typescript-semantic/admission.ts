@@ -38,15 +38,26 @@ function resolveLibFileName(options: {
 
 export class TypeScriptInclusionLedger {
   readonly #defaultLibDirectory: string;
+  readonly #mode: NonNullable<TypeScriptSemanticProject['admissionMode']>;
   readonly #project: TypeScriptSemanticProject;
+  readonly #pathIdentitiesByFileName = new Map<string, readonly string[]>();
   readonly #reasons = new Map<string, Set<InclusionReason>>();
 
   constructor(project: TypeScriptSemanticProject, tsModule: typeof ts) {
     this.#project = project;
+    this.#mode = project.admissionMode ?? 'full-program';
     this.#defaultLibDirectory = path.dirname(
       tsModule.getDefaultLibFilePath(project.options),
     );
     this.#addProjectRoots(project.fileNames);
+    this.#addInitialTransitiveFiles(project, tsModule);
+  }
+
+  #addInitialTransitiveFiles(
+    project: TypeScriptSemanticProject,
+    tsModule: typeof ts,
+  ): void {
+    if (this.#mode === 'root-facts') return;
     this.#addProjectReferences(project, tsModule);
     this.#addConfiguredLibs(project.options.lib ?? []);
   }
@@ -76,7 +87,7 @@ export class TypeScriptInclusionLedger {
   }
 
   add(fileName: string, reason: InclusionReason): void {
-    for (const identity of getPathIdentities(fileName)) {
+    for (const identity of this.#getPathIdentities(fileName)) {
       const reasons = this.#reasons.get(identity) ?? new Set();
       reasons.add(reason);
       this.#reasons.set(identity, reasons);
@@ -84,15 +95,15 @@ export class TypeScriptInclusionLedger {
   }
 
   addExplicitReference(fileName: string): void {
-    this.add(fileName, 'explicit-reference-path');
+    this.#addTransitiveFile(fileName, 'explicit-reference-path');
   }
 
   addDefaultLib(fileName: string): void {
-    this.add(fileName, 'lib-environment');
+    this.#addTransitiveFile(fileName, 'lib-environment');
   }
 
   addLibReference(name: string): void {
-    this.add(
+    this.#addTransitiveFile(
       resolveLibFileName({
         defaultLibDirectory: this.#defaultLibDirectory,
         name,
@@ -102,14 +113,15 @@ export class TypeScriptInclusionLedger {
   }
 
   addResolvedLibrary(fileName: string): void {
-    this.add(fileName, 'lib-environment');
+    this.#addTransitiveFile(fileName, 'lib-environment');
   }
 
   addTypeReference(fileName: string): void {
-    this.add(fileName, 'type-reference');
+    this.#addTransitiveFile(fileName, 'type-reference');
   }
 
   allowDefaultLib(fileName: string): boolean {
+    if (this.#mode === 'root-facts') return false;
     if (!isPathInsideDirectory(fileName, this.#defaultLibDirectory))
       return false;
     this.addDefaultLib(fileName);
@@ -118,7 +130,13 @@ export class TypeScriptInclusionLedger {
 
   allowModuleTarget(resolution: ts.ResolvedModuleFull): boolean {
     if (this.has(resolution.resolvedFileName)) return true;
+    if (this.#mode === 'root-facts') return false;
     return this.#allowExternalModuleTarget(resolution);
+  }
+
+  #addTransitiveFile(fileName: string, reason: InclusionReason): void {
+    if (this.#mode === 'root-facts') return;
+    this.add(fileName, reason);
   }
 
   #allowExternalModuleTarget(resolution: ts.ResolvedModuleFull): boolean {
@@ -133,8 +151,17 @@ export class TypeScriptInclusionLedger {
   }
 
   has(fileName: string): boolean {
-    return getPathIdentities(fileName).some((identity) =>
+    return this.#getPathIdentities(fileName).some((identity) =>
       this.#reasons.has(identity),
     );
+  }
+
+  #getPathIdentities(fileName: string): readonly string[] {
+    const normalized = normalizeAbsolutePath(fileName);
+    const cached = this.#pathIdentitiesByFileName.get(normalized);
+    if (cached !== undefined) return cached;
+    const resolved = getPathIdentities(normalized);
+    this.#pathIdentitiesByFileName.set(normalized, resolved);
+    return resolved;
   }
 }

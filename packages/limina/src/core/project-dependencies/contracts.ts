@@ -13,7 +13,7 @@ import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-out
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
 import type { TypeEvidence } from '../type-evidence/cache';
 import type {
-  TypeScriptSemanticContext,
+  TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
 
@@ -119,8 +119,10 @@ export interface ProjectDependencyRequest {
   context: ProjectSemanticContext;
   importAnalysis: ImportAnalysisContext;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
+  projectSemanticCacheIdentity?: string;
   resolveWorkspaceTypeScriptExport?: (specifier: string) => string | null;
-  typeScriptSemanticContext?: TypeScriptSemanticContext;
+  typeScriptSemanticContext?: TypeScriptSemanticDependencyContext;
+  workspaceTypeScriptExportCacheIdentity?: string;
 }
 
 export interface ProjectDependencyCaches {
@@ -128,6 +130,10 @@ export interface ProjectDependencyCaches {
   projectDependencyCache: Map<string, ProjectDependencyCollection>;
   projectDependencyPreparationCache: Map<string, ProjectDependencyPreparation>;
   sourceEvidenceCache: Map<string, SourceEvidence>;
+  typeScriptSemanticFactsCache: Map<
+    string,
+    TypeScriptSemanticDependencyContext
+  >;
 }
 
 export interface ProjectDependencyProvider {

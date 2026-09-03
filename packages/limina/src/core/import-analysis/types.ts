@@ -15,7 +15,7 @@ import type {
 import type { ManagedOutputDeclarationLookup } from '../import-graph/managed-output-provider';
 import type { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
-import type { TypeScriptSemanticContext } from '../typescript-semantic';
+import type { TypeScriptSemanticResolutionContext } from '../typescript-semantic';
 import type { VueSemanticContextManager } from '../vue-semantic/context';
 import type { ImportRuntimeResolutionEvidence } from './evidence';
 import type { ImportRecord } from './records';
@@ -47,7 +47,7 @@ export interface ImportResolveContextFields
   resolverConfigPath?: string;
   semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
   svelteSemanticProject?: SvelteSemanticProject;
-  typeScriptSemanticContext?: TypeScriptSemanticContext;
+  typeScriptSemanticContext?: TypeScriptSemanticResolutionContext;
 }
 
 export type ImportResolveContextInput = ImportResolveContextFields | string[];
@@ -159,7 +159,7 @@ export type ResolvedImportContext = CheckerProjectParseContext & {
   resolverConfigPath?: string;
   semanticFamily?: 'astro' | 'svelte' | 'typescript' | 'vue';
   svelteSemanticProject?: SvelteSemanticProject;
-  typeScriptSemanticContext?: TypeScriptSemanticContext;
+  typeScriptSemanticContext?: TypeScriptSemanticResolutionContext;
 };
 
 export interface LazyModuleResolutionRecord {

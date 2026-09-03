@@ -6,6 +6,7 @@ import {
 } from '#core/import-analysis/runner';
 import {
   collectProjectDependencies,
+  createProjectDependencyCaches,
   projectDependencyCreatesSourceEdge,
   type ProjectDependencyPreparation,
   type ProjectSemanticContext,
@@ -330,6 +331,74 @@ describe('project dependency authority', () => {
         ),
       },
     ]);
+  });
+
+  it('reuses generation-scoped TypeScript facts without mixing workspace export policies', async () => {
+    const temporaryRoot = await realpath(
+      await mkdtemp(path.join(tmpdir(), 'limina-project-deps-cache-')),
+    );
+    temporaryRoots.push(temporaryRoot);
+    const fixturePath = createFixturePathResolver(temporaryRoot);
+    const sourceFile = fixturePath('index.ts');
+    const firstTarget = fixturePath('first.d.ts');
+    const secondTarget = fixturePath('second.d.ts');
+    await writeFile(sourceFile, "import 'workspace-package';\n", 'utf8');
+    await writeFile(firstTarget, 'export declare const first: true;\n');
+    await writeFile(secondTarget, 'export declare const second: true;\n');
+    const caches = createProjectDependencyCaches();
+    const context = createSemanticContext({
+      family: 'typescript',
+      fileName: sourceFile,
+      rootDir: temporaryRoot,
+    });
+    const importAnalysis = createImportAnalysisContext();
+
+    const first = collectProjectDependencies({
+      caches,
+      context,
+      importAnalysis,
+      resolveWorkspaceTypeScriptExport: () => firstTarget,
+      workspaceTypeScriptExportCacheIdentity: 'first-policy',
+    });
+    const semanticSnapshot = [
+      ...caches.typeScriptSemanticFactsCache.values(),
+    ][0]!;
+    const resolveImportRecord = vi.fn(
+      semanticSnapshot.resolveImportRecord.bind(semanticSnapshot),
+    );
+    caches.typeScriptSemanticFactsCache.set(
+      [...caches.typeScriptSemanticFactsCache.keys()][0]!,
+      { ...semanticSnapshot, resolveImportRecord },
+    );
+    const secondContext = {
+      ...context,
+      workspaceSourceBoundary: createWorkspaceSourceBoundary([
+        sourceFile,
+        secondTarget,
+      ]),
+    };
+    const second = collectProjectDependencies({
+      caches,
+      context: secondContext,
+      importAnalysis,
+      resolveWorkspaceTypeScriptExport: () => secondTarget,
+      workspaceTypeScriptExportCacheIdentity: 'second-policy',
+    });
+    const cachedFirst = collectProjectDependencies({
+      caches,
+      context,
+      importAnalysis,
+      resolveWorkspaceTypeScriptExport: () => {
+        throw new Error('matching policy should reuse its final collection');
+      },
+      workspaceTypeScriptExportCacheIdentity: 'first-policy',
+    });
+
+    expect(caches.typeScriptSemanticFactsCache.size).toBe(1);
+    expect(resolveImportRecord).toHaveBeenCalled();
+    expect(first.dependencies[0]?.resolvedFilePath).toBe(firstTarget);
+    expect(second.dependencies[0]?.resolvedFilePath).toBe(secondTarget);
+    expect(cachedFirst.dependencies[0]?.resolvedFilePath).toBe(firstTarget);
   });
 
   it('consumes a prepared source target without framework re-resolution', () => {

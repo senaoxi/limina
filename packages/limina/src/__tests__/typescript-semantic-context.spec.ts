@@ -30,6 +30,7 @@ async function createFixture(files: Record<string, string>): Promise<string> {
 }
 
 function createContext(options: {
+  admissionMode?: 'full-program' | 'root-facts';
   fileNames: string[];
   options: ts.CompilerOptions;
   projectReferences?: readonly ts.ProjectReference[];
@@ -39,6 +40,7 @@ function createContext(options: {
 }): BoundedTypeScriptSemanticContext {
   return new BoundedTypeScriptSemanticContext(
     {
+      admissionMode: options.admissionMode,
       configPath: path.join(options.rootDir, 'tsconfig.json'),
       fileNames: options.fileNames,
       options: {
@@ -204,6 +206,71 @@ describe('bounded TypeScript semantic context', () => {
 
     try {
       expect(context.program.getSourceFile(internalFile)).toBeDefined();
+    } finally {
+      context.dispose();
+    }
+  });
+
+  it('retains root dependency facts without admitting the dependency closure', async () => {
+    const rootDir = await createFixture({
+      'node_modules/pkg/index.d.ts': "export * from './internal';\n",
+      'node_modules/pkg/internal.d.ts':
+        'export declare const internal: true;\n',
+      'node_modules/pkg/package.json': JSON.stringify({
+        name: 'pkg',
+        types: './index.d.ts',
+        version: '1.0.0',
+      }),
+      'src/env.d.ts': 'declare const fromPath: true;\n',
+      'src/index.ts': [
+        '/// <reference path="./env.d.ts" />',
+        "import { internal } from 'pkg';",
+        'void internal;',
+        '',
+      ].join('\n'),
+      'tsconfig.json': '{}\n',
+    });
+    const sourceFile = path.join(rootDir, 'src/index.ts');
+    const packageEntry = normalizeAbsolutePath(
+      path.join(rootDir, 'node_modules/pkg/index.d.ts'),
+    );
+    const packageInternal = normalizeAbsolutePath(
+      path.join(rootDir, 'node_modules/pkg/internal.d.ts'),
+    );
+    const referencedFile = normalizeAbsolutePath(
+      path.join(rootDir, 'src/env.d.ts'),
+    );
+    const context = createContext({
+      admissionMode: 'root-facts',
+      fileNames: [sourceFile],
+      options: {
+        module: ts.ModuleKind.ESNext,
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+      },
+      rootDir,
+    });
+
+    try {
+      const moduleRecord = findRecord(context, sourceFile, 'static');
+      const pathRecord = findRecord(context, sourceFile, 'triple-slash-path');
+
+      expect(
+        context.resolveImportRecord(moduleRecord).target?.resolvedFileName,
+      ).toBe(packageEntry);
+      expect(
+        context.resolveImportRecord(pathRecord).target?.resolvedFileName,
+      ).toBe(referencedFile);
+      expect(context.program.getSourceFile(sourceFile)).toBeDefined();
+      expect(context.program.getSourceFile(packageEntry)).toBeUndefined();
+      expect(context.program.getSourceFile(packageInternal)).toBeUndefined();
+      expect(context.program.getSourceFile(referencedFile)).toBeUndefined();
+      expect(
+        context.program
+          .getSourceFiles()
+          .some((sourceFile) =>
+            path.basename(sourceFile.fileName).startsWith('lib.'),
+          ),
+      ).toBe(false);
     } finally {
       context.dispose();
     }

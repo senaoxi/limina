@@ -3,6 +3,7 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
@@ -19,6 +20,7 @@ import type {
 export async function resolveGeneratedGraphCheckerSelections(options: {
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   workspaceContext: NonNullable<
     PrepareGeneratedTsconfigGraphOptions['workspaceContext']
@@ -32,6 +34,7 @@ export async function resolveGeneratedGraphCheckerSelections(options: {
     activatedRegions,
     config: options.config,
     importAnalysisContext: resolveBuildGraphImportAnalysis(options),
+    projectDependencyCaches: options.projectDependencyCaches,
     projectConfigCache: options.projectConfigCache,
     workspaceSourceConfigPaths: options.workspaceContext.sourceConfigPaths,
   });

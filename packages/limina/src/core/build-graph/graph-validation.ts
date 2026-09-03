@@ -4,6 +4,7 @@ import type {
 } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
+import type { ProjectDependencyCaches } from '../project-dependencies/contracts';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
   addFrameworkOutputProblems,
@@ -132,6 +133,7 @@ function addInferredReferences(options: {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {
@@ -150,6 +152,7 @@ function addInferredReferences(options: {
         checkerName: checker.name,
         state: options.state,
       }),
+      projectDependencyCaches: options.projectDependencyCaches,
       projects: getCheckerProjects({ checker, state: options.state }),
       sourceToBuildByChecker: options.state.sourceToBuildByChecker,
     });
@@ -246,6 +249,7 @@ export function validateAndCompleteGeneratedGraph(options: {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
   importAnalysisContext?: PrepareGeneratedTsconfigGraphOptions['importAnalysisContext'];
+  projectDependencyCaches?: ProjectDependencyCaches;
   projectConfigCache?: PrepareGeneratedTsconfigGraphOptions['projectConfigCache'];
   state: GeneratedGraphPreparationState;
 }): void {

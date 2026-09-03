@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import type { ImportRecord } from '../import-analysis/records';
 import type {
@@ -5,6 +6,7 @@ import type {
   ProjectDependencyCollection,
   ProjectDependencyObservation,
   ProjectDependencyPreparation,
+  ProjectDependencyRequest,
   ProjectSemanticContext,
   SourceEvidence,
 } from './contracts';
@@ -18,6 +20,7 @@ export function createProjectDependencyCaches(): ProjectDependencyCaches {
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),
     sourceEvidenceCache: new Map(),
+    typeScriptSemanticFactsCache: new Map(),
   };
 }
 
@@ -42,7 +45,7 @@ function getVueCacheIdentity(context: ProjectSemanticContext): string | null {
 export function createProjectSemanticCacheIdentity(
   context: ProjectSemanticContext,
 ): string {
-  return JSON.stringify({
+  const canonicalIdentity = JSON.stringify({
     adapterContractVersion: PROJECT_DEPENDENCY_ADAPTER_VERSION,
     astro: getAstroCacheIdentity(context),
     authority: context.semanticAuthority,
@@ -57,6 +60,18 @@ export function createProjectSemanticCacheIdentity(
     vue: getVueCacheIdentity(context),
     workspaceSourceBoundary: context.workspaceSourceBoundary.identity,
   });
+  return `project-dependencies:${createHash('sha256')
+    .update(canonicalIdentity)
+    .digest('hex')}`;
+}
+
+export function getProjectSemanticCacheIdentity(
+  request: ProjectDependencyRequest,
+): string {
+  return (
+    request.projectSemanticCacheIdentity ??
+    createProjectSemanticCacheIdentity(request.context)
+  );
 }
 
 export function cloneProjectDependencyCollection(

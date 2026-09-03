@@ -1,4 +1,3 @@
-import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import { collectExpectedReferences } from './expected-reference-collection';
 import { addReferenceCompletenessProblems } from './reference-completeness';
@@ -15,7 +14,7 @@ export function runReferenceCompletenessPhase(state: GraphCheckState): void {
     managedOutputLookup: state.managedOutputLookup,
     packages: state.packages,
     projectCheckerNamesByPath: state.projectCheckerNamesByPath,
-    projectDependencyCaches: createProjectDependencyCaches(),
+    projectDependencyCaches: state.preflight.providers.projectDependencies,
     findings: state.findings,
     projectPaths: state.projectPaths,
     projects: state.projects,

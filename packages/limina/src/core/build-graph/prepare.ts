@@ -1,6 +1,7 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
 import { AstroSemanticContextManager } from '../astro-semantic/context';
+import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import { SvelteSemanticContextManager } from '../svelte-semantic/context';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
@@ -131,10 +132,13 @@ export async function prepareGeneratedTsconfigGraph(
     svelteSemanticContexts: ownedSvelteSemanticContexts,
     vueSemanticContexts: ownedVueSemanticContexts,
   });
+  const projectDependencyCaches =
+    options.projectDependencyCaches ?? createProjectDependencyCaches();
   try {
     const checkerResolution = await resolveGeneratedGraphCheckerSelections({
       config,
       importAnalysisContext,
+      projectDependencyCaches,
       projectConfigCache: options.projectConfigCache,
       workspaceContext,
       workspacePathIndex: activatedRegions,
@@ -160,6 +164,7 @@ export async function prepareGeneratedTsconfigGraph(
       checkers,
       config,
       importAnalysisContext,
+      projectDependencyCaches,
       projectConfigCache: options.projectConfigCache,
       state,
     });
