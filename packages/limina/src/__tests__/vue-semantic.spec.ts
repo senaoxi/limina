@@ -1,4 +1,6 @@
 import { parseCheckerProjectConfigForContext } from '#checkers';
+import type { ResolvedLiminaConfig } from '#config/runner';
+import { createAnalysisProviders } from '#core';
 import {
   mkdir,
   mkdtemp,
@@ -10,13 +12,15 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createUnsupportedVueToolchainCompatibilityError,
   resolveVueSemanticAdapter,
 } from '../checker/vue-semantic-toolchain';
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
 import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation';
+import { runGraphExportImpl } from '../graph-check/runner';
+import { LiminaPreflightManager } from '../preflight/manager';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
@@ -103,6 +107,105 @@ function parseIdentity(options: {
 }
 
 describe('Vue semantic architecture', () => {
+  async function createExportFixture() {
+    const fixture = await createFixture({
+      'pnpm-workspace.yaml': 'packages: []\n',
+      'package.json': '{"name":"fixture","private":true,"type":"module"}\n',
+      'src/App.vue':
+        '<script setup lang="ts">import value from "./value";</script><template>{{ value }}</template>\n',
+      'src/value.ts': 'export default 1;\n',
+      'tsconfig.json': config(),
+    });
+    const liminaConfig: ResolvedLiminaConfig = {
+      config: { checkers: { 'vue-tsc': { include: ['tsconfig.json'] } } },
+      configPath: fixture.path('limina.config.mjs'),
+      rootDir: fixture.rootDir,
+    };
+    return { ...fixture, config: liminaConfig };
+  }
+
+  it.each([false, true])(
+    'releases internally owned graph-export contexts after success or failure (%s)',
+    async (failOutput) => {
+      const fixture = await createExportFixture();
+      const acquire = vi.spyOn(VueSemanticContextManager.prototype, 'acquire');
+      const dispose = vi.spyOn(LiminaPreflightManager.prototype, 'dispose');
+      const identities = new Set<string>();
+
+      try {
+        for (let iteration = 0; iteration < 3; iteration += 1) {
+          acquire.mockClear();
+          const exportGraph = runGraphExportImpl(fixture.config, {
+            outputPath: failOutput
+              ? fixture.path('src/App.vue/graph.json')
+              : undefined,
+          });
+          await (failOutput
+            ? expect(exportGraph).rejects.toThrow()
+            : expect(exportGraph).resolves.toMatchObject({ schemaVersion: 1 }));
+
+          expect(acquire).toHaveBeenCalled();
+          for (const result of acquire.mock.results) {
+            if (result.type !== 'return') throw result.value;
+            identities.add(result.value.identity.id);
+            // Any unreleased process-wide owner would keep this context active.
+            expect(() => result.value.assertActive()).toThrow('disposed');
+          }
+          expect(dispose).toHaveBeenCalledTimes(iteration + 1);
+        }
+        expect(identities.size).toBe(1);
+      } finally {
+        acquire.mockRestore();
+        dispose.mockRestore();
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['preflight', 'providers'] as const)(
+    'keeps borrowed %s usable across graph exports until caller disposal',
+    async (borrowed) => {
+      const fixture = await createExportFixture();
+      const providers = createAnalysisProviders(fixture.config);
+      const preflight = new LiminaPreflightManager({
+        config: fixture.config,
+        providers,
+      });
+      const dispose = vi.spyOn(providers, 'dispose');
+      const acquire = vi.spyOn(VueSemanticContextManager.prototype, 'acquire');
+      const options = borrowed === 'preflight' ? { preflight } : { providers };
+
+      try {
+        const first = await runGraphExportImpl(fixture.config, options);
+        const context = acquire.mock.results.find(
+          (result) => result.type === 'return',
+        )?.value;
+        expect(context).toBeDefined();
+        const workspace = await preflight.ensureWorkspaceValidated();
+        await expect(
+          runGraphExportImpl(fixture.config, options),
+        ).resolves.toEqual(first);
+        expect(dispose).not.toHaveBeenCalled();
+        expect(preflight.providers).toBe(providers);
+        await expect(preflight.ensureWorkspaceValidated()).resolves.toBe(
+          workspace,
+        );
+        for (const result of acquire.mock.results) {
+          expect(result.value).toBe(context);
+        }
+        expect(() => context!.assertActive()).not.toThrow();
+        preflight.dispose();
+        expect(dispose).toHaveBeenCalledOnce();
+        expect(() => context!.assertActive()).toThrow('disposed');
+      } finally {
+        preflight.dispose();
+        dispose.mockRestore();
+        acquire.mockRestore();
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('roots vue-tsc at the checker execution scope and resolves only its internal toolchain', async () => {
     const fixture = await createFixture({
       'packages/app/node_modules/vue-tsc/package.json':

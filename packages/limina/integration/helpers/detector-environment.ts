@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +21,8 @@ const COPIED_HOST_ENVIRONMENT_KEYS = [
   'WINDIR',
 ] as const;
 const RESERVED_KEYS = new Set([
+  'COREPACK_DEFAULT_TO_LATEST',
+  'COREPACK_HOME',
   'HOME',
   INTERNAL_RELEASE_REGISTRY_TIMEOUT_ENV,
   INTERNAL_RELEASE_REGISTRY_URL_ENV,
@@ -65,6 +68,24 @@ function copyHostEnvironment(): NodeJS.ProcessEnv {
     if (value !== undefined) environment[key] = value;
   }
   return environment;
+}
+
+function getHostCorepackHome(): string {
+  // Corepack's prepared package managers belong to the host toolchain. Resolve
+  // its cache before replacing HOME/XDG_CACHE_HOME, or an unpinned fixture can
+  // download a different pnpm instead of using the version activated by CI.
+  return (
+    process.env.COREPACK_HOME ??
+    path.join(
+      process.env.XDG_CACHE_HOME ??
+        process.env.LOCALAPPDATA ??
+        path.join(
+          homedir(),
+          process.platform === 'win32' ? 'AppData/Local' : '.cache',
+        ),
+      'node/corepack',
+    )
+  );
 }
 
 function applyFixtureEnvironmentEntry(options: {
@@ -123,6 +144,8 @@ export async function createDetectorInvocationEnvironment(options: {
   });
   return {
     ...environment,
+    COREPACK_DEFAULT_TO_LATEST: '0',
+    COREPACK_HOME: getHostCorepackHome(),
     HOME: directories.homeDirectory,
     npm_config_cache: directories.cacheDirectory,
     PATH: createSystemPath(options.toolBinDirectory),

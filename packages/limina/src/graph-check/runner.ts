@@ -7,7 +7,7 @@ import {
   type DependencyGraphDocument,
   stringifyDependencyGraph,
 } from '../dependency-graph/runner';
-import { resolvePreflight } from '../preflight';
+import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import { runReferenceCompletenessPhase } from './completeness-phase';
 import { runConditionDomainPhase } from './condition-phase';
 import { runProjectReferencePhase } from './reference-phase';
@@ -47,22 +47,36 @@ export async function runGraphPrepareImpl(
   return (await preflight.ensureGeneratedArtifactsMaterialized()).graph;
 }
 
+function disposeOwnedGraphExportPreflight(
+  preflight: LiminaPreflightManager,
+  options: RunGraphExportOptions,
+): void {
+  // Caller-supplied managers and providers retain their caller-owned lifetime.
+  if (options.preflight === undefined && options.providers === undefined) {
+    preflight.dispose();
+  }
+}
+
 export async function runGraphExportImpl(
   config: ResolvedLiminaConfig,
   options: RunGraphExportOptions = {},
 ): Promise<DependencyGraphDocument> {
   const preflight = resolvePreflight(config, options);
 
-  await preflight.ensureWorkspaceValidated();
-  const graph = await collectDependencyGraph(config, {
-    providers: preflight.providers,
-    view: options.view,
-  });
+  try {
+    await preflight.ensureWorkspaceValidated();
+    const graph = await collectDependencyGraph(config, {
+      providers: preflight.providers,
+      view: options.view,
+    });
 
-  if (options.outputPath) {
-    await mkdir(path.dirname(options.outputPath), { recursive: true });
-    await writeFile(options.outputPath, stringifyDependencyGraph(graph));
+    if (options.outputPath) {
+      await mkdir(path.dirname(options.outputPath), { recursive: true });
+      await writeFile(options.outputPath, stringifyDependencyGraph(graph));
+    }
+
+    return graph;
+  } finally {
+    disposeOwnedGraphExportPreflight(preflight, options);
   }
-
-  return graph;
 }

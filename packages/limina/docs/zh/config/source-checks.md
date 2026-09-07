@@ -43,7 +43,9 @@ Limina 只在 `source:check` 中报告这两类问题：
 
 资源导入不会成为声明 provider、provider edge 或 project reference；资源缺失也不会阻止 `graph prepare`。普通 TypeScript、JavaScript、JSON 和框架源码仍由已配置的 checker 按原有方式解析。
 
-对于 `?raw`、`?url` 和 `?worker` 导入，Limina 会检查基础物理文件是否存在，以及 checker 工程是否提供匹配的类型声明；这不表示某个特定 bundler transformer 一定已经安装。虚拟模块和框架注入模块的运行时行为仍不受支持；只有 ambient declaration 不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
+对于 `./foo.svg?raw` 或 `./foo.svg#fragment` 这类相对资源导入，Limina 会检查基础物理文件，并要求匹配的类型声明。对于 `#assets/logo.svg` 这类 `package.json#imports` 资源，物理路径查找会保留完整映射键，包括其中的 `?` 或额外的 `#`。匹配的类型证据和 package import authority 仍然必须满足。物理路径查找成功不表示 checker 支持所有键的拼写，也不表示已安装相应 bundler transformer。
+
+虚拟模块和框架注入模块的运行时行为仍不受支持；只有 ambient declaration 不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
 
 Vue 资源类型证据与 graph analysis 使用同一套有界 semantic adapter matrix：`vue-tsc` 2.2.0–2.2.12 搭配相同版本的 `@vue/language-core` 和 `@volar/typescript` 2.4.11–2.4.28，或 `vue-tsc` 3.2.0–3.2.4 搭配相同版本的 Language Core 和 Volar TypeScript 2.4.27。两个 family 都接受 TypeScript 5.4.x–5.9.x 或 6.0.x。其他 Vue checker tuple 会被视为 unsupported，不会误报成缺少类型声明。
 

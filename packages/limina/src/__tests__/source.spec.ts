@@ -35,6 +35,7 @@ import {
   readCheckIssueSnapshot,
   readSourceIssueSnapshot,
 } from '../source-check/snapshot';
+import { createFixturePathResolver } from './helpers/path';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(
@@ -64,6 +65,7 @@ async function createFixture(
 ): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
+  path: (...segments: string[]) => string;
   rootDir: string;
 }> {
   const rootDir = await realpath(
@@ -122,6 +124,7 @@ async function createFixture(
       rootDir,
       source,
     },
+    path: createFixturePathResolver(rootDir),
     rootDir,
   };
 }
@@ -428,6 +431,106 @@ packages:
 }
 
 describe('runSourceCheck package authority', () => {
+  it.each([
+    { physical: true, declaration: true, codes: [] },
+    {
+      physical: false,
+      declaration: true,
+      codes: [LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound],
+    },
+    {
+      physical: true,
+      declaration: false,
+      codes: [
+        LIMINA_CHECK_ISSUE_CODES.sourcePackageImportInvalid,
+        LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+      ],
+    },
+  ])(
+    'validates package-import resources independently of declarations ($physical, $declaration)',
+    async ({ physical, declaration, codes }) => {
+      const fixture = await createFixture(
+        {
+          ...createPackageFixture({
+            manifest: { imports: { '#assets/*': './src/assets/*' } },
+            source: "import logo from '#assets/logo.svg';\nexport { logo };\n",
+          }),
+          'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], {
+            allowArbitraryExtensions: true,
+          }),
+          ...(physical ? { 'app/src/assets/logo.svg': '<svg />\n' } : {}),
+          ...(declaration
+            ? {
+                'app/src/assets/logo.d.svg.ts':
+                  'declare const logo: string;\nexport default logo;\n',
+              }
+            : {}),
+        },
+        { source: { knip: false } },
+      );
+      const sourceIssues: SourceCheckIssue[] = [];
+
+      try {
+        const passed = await runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        });
+        expect(sourceIssues.map(({ code }) => code).sort()).toEqual(
+          [...codes].sort(),
+        );
+        expect(passed).toBe(codes.length === 0);
+        if (!declaration) {
+          expect(
+            sourceIssues.find(
+              ({ code }) =>
+                code ===
+                LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+            ),
+          ).toMatchObject({
+            facts: {
+              runtimeAuthority: 'package-export',
+              runtimeFilePath: fixture.path('app/src/assets/logo.svg'),
+              specifier: '#assets/logo.svg',
+              typeEvidenceKind: 'missing',
+            },
+          });
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['?raw', '#fragment'])(
+    'keeps relative resource filesystem-base checks for %s',
+    async (suffix) => {
+      const fixture = await createFixture(
+        {
+          ...createPackageFixture({
+            source: `import logo from './logo.svg${suffix}';\nexport { logo };\n`,
+          }),
+          'app/src/assets.d.ts': `declare module '*${suffix}' { const value: string; export default value; }\n`,
+          'app/src/logo.svg': '<svg />\n',
+        },
+        { source: { knip: false } },
+      );
+      const sourceIssues: SourceCheckIssue[] = [];
+      try {
+        await expect(
+          runSourceCheck(fixture.config, {
+            deferSnapshot: true,
+            report: { defer: true },
+            sourceIssues,
+          }),
+        ).resolves.toBe(true);
+        expect(sourceIssues).toEqual([]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('reports a missing physical resource even when ambient type evidence exists', async () => {
     const fixture = await createFixture(
       {
