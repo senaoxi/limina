@@ -1,3 +1,4 @@
+import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   mkdir,
   mkdtemp,
@@ -15,7 +16,10 @@ import {
   resolveAstroSemanticAdapter,
   resolveAstroSemanticToolchain,
 } from '../checker/astro-semantic-toolchain';
+import { runSourceCheck } from '../commands/source';
 import { LiminaDependencyError } from '../dependency-contract';
+import { LiminaPreflightManager } from '../preflight/manager';
+import type { SourceCheckIssue } from '../source-check/report';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -231,6 +235,127 @@ async function createToolchainFixture(
 }
 
 describe('Astro semantic toolchain', () => {
+  it('retains package-import Astro facts and scheduling edges through source checking', async () => {
+    const fixture = await createInstalledToolchainFixture({
+      astroInstalledName: 'astro-v7-current',
+      astroVersion: '7.2.0',
+    });
+    const fixturePath = createFixturePathResolver(fixture.rootDir);
+    const config: ResolvedLiminaConfig = {
+      config: { checkers: { astro: { include: ['tsconfig.json'] } } },
+      configPath: fixturePath('limina.config.mjs'),
+      rootDir: fixture.rootDir,
+      source: { knip: false },
+    };
+    const preflight = new LiminaPreflightManager({ config });
+    try {
+      await writeText(fixturePath('pnpm-workspace.yaml'), 'packages: []\n');
+      await writeText(
+        fixturePath('package.json'),
+        JSON.stringify({
+          name: 'installed-toolchain-fixture',
+          type: 'module',
+          imports: { '#component': './src/Component.astro' },
+          dependencies: {
+            astro: '7.2.0',
+            '@astrojs/check': '0.9.10',
+            typescript: '6.0.3',
+          },
+        }),
+      );
+      await writeText(
+        fixturePath('src/Entry.astro'),
+        '---\nimport Component from "#component";\n---\n<Component />\n',
+      );
+      await writeText(fixturePath('src/Component.astro'), '<div>Hello</div>\n');
+      await writeText(
+        fixturePath('tsconfig.json'),
+        JSON.stringify({
+          files: [],
+          references: [
+            { path: './tsconfig.entry.json' },
+            { path: './tsconfig.component.json' },
+          ],
+        }),
+      );
+      for (const [name, file] of [
+        ['entry', 'Entry'],
+        ['component', 'Component'],
+      ]) {
+        await writeText(
+          fixturePath(`tsconfig.${name}.json`),
+          JSON.stringify({
+            compilerOptions: {
+              module: 'ESNext',
+              moduleResolution: 'Bundler',
+              strict: true,
+              noEmit: true,
+              types: [],
+              allowArbitraryExtensions: true,
+            },
+            include: [`src/${file}.astro`],
+          }),
+        );
+      }
+
+      const sourceIssues: SourceCheckIssue[] = [];
+      await expect(
+        runSourceCheck(config, {
+          preflight,
+          sourceIssues,
+          deferSnapshot: true,
+          report: { defer: true },
+        }),
+      ).resolves.toBe(true);
+      expect(sourceIssues).toEqual([]);
+      const caches = preflight.providers.projectDependencies;
+      const fact = [...caches.projectDependencyPreparationCache.values()]
+        .flatMap(({ facts }) => facts)
+        .find(({ semanticSpecifier }) => semanticSpecifier === '#component');
+      expect(fact).toMatchObject({
+        framework: 'astro',
+        provenance: 'strict-source-map',
+        importRecord: {
+          domain: 'typescript',
+          filePath: fixturePath('src/Entry.astro'),
+          specifier: '#component',
+        },
+        target: { resolvedFileName: fixturePath('src/Component.astro') },
+        typeEvidence: { kind: 'checker-source' },
+      });
+      expect(
+        [...caches.projectDependencyCache.values()].flatMap(
+          ({ dependencies }) => dependencies,
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            framework: 'astro',
+            provenance: 'strict-source-map',
+            semanticSpecifier: '#component',
+            resolvedFilePath: fixturePath('src/Component.astro'),
+            targetKind: 'source',
+          }),
+        ]),
+      );
+      const graph = await preflight.ensureGeneratedGraph();
+      expect(graph.dependencyEdges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'framework-schedule',
+            importedSpecifier: '#component',
+            fromConfigPath: fixturePath('tsconfig.entry.json'),
+            toConfigPath: fixturePath('tsconfig.component.json'),
+            resolvedFilePath: fixturePath('src/Component.astro'),
+          }),
+        ]),
+      );
+    } finally {
+      preflight.dispose();
+      await fixture.cleanup();
+    }
+  });
+
   it.each([
     ['astro-v7-min', '7.0.0'],
     ['astro-v7-current', '7.2.0'],

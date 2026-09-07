@@ -6,6 +6,7 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
+import { isPackageImportSpecifier } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -220,6 +221,8 @@ function addExistingResourceProblem(
 }
 
 function stripResourceQuery(specifier: string): string {
+  // Node package imports may use ? and # as part of an exact mapping key.
+  if (isPackageImportSpecifier(specifier)) return specifier;
   return specifier.split(/[?#]/u)[0]!;
 }
 

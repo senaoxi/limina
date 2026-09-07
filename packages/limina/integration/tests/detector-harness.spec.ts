@@ -13,7 +13,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -1029,6 +1029,67 @@ describe('minimal tool bridge and invocation boundary', () => {
     );
     expect(process.env.PATH).toBe(parentPath);
   });
+
+  it.each(['explicit', 'xdg', 'local-app-data', 'home'])(
+    'preserves the prepared Corepack tool cache with %s host configuration',
+    async (configuration) => {
+      const sandboxRoot = await createTemporaryRoot('corepack-env');
+      const hostCache = path.join(sandboxRoot, 'host-cache');
+      try {
+        vi.stubEnv(
+          'COREPACK_HOME',
+          configuration === 'explicit' ? hostCache : undefined,
+        );
+        vi.stubEnv(
+          'XDG_CACHE_HOME',
+          configuration === 'xdg' ? hostCache : undefined,
+        );
+        vi.stubEnv(
+          'LOCALAPPDATA',
+          configuration === 'local-app-data' ? hostCache : undefined,
+        );
+        const expectedCache =
+          configuration === 'explicit'
+            ? hostCache
+            : path.join(
+                configuration === 'home'
+                  ? path.join(
+                      homedir(),
+                      process.platform === 'win32' ? 'AppData/Local' : '.cache',
+                    )
+                  : hostCache,
+                'node/corepack',
+              );
+        const parentEnvironment = { ...process.env };
+        const environment = await createDetectorInvocationEnvironment({
+          sandboxRoot,
+          toolBinDirectory: path.join(sandboxRoot, 'repo/node_modules/.bin'),
+        });
+        expect(toPortablePath(environment.COREPACK_HOME ?? '')).toBe(
+          toPortablePath(expectedCache),
+        );
+        expect(environment.COREPACK_DEFAULT_TO_LATEST).toBe('0');
+        expect(toPortablePath(environment.npm_config_cache ?? '')).toBe(
+          toPortablePath(path.join(sandboxRoot, 'cache')),
+        );
+        expect(process.env).toEqual(parentEnvironment);
+        for (const key of ['COREPACK_HOME', 'COREPACK_DEFAULT_TO_LATEST']) {
+          await expect(
+            createDetectorInvocationEnvironment({
+              fixtureEnvironment: { [key]: 'unsafe' },
+              sandboxRoot,
+              toolBinDirectory: path.join(
+                sandboxRoot,
+                'repo/node_modules/.bin',
+              ),
+            }),
+          ).rejects.toThrow(`cannot override harness variable ${key}`);
+        }
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it('isolates HOME/cache and rejects PATH overrides without mutating process.env', async () => {
     const sandboxRoot = await createTemporaryRoot('invocation-env');
