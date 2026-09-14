@@ -1,5 +1,13 @@
 # General Guidelines for working with Limina
 
+## Architecture knowledge maintenance
+
+- Start from [the Limina PCR map](../../.agents/docs/limina.md) for architecture work; establish behavior from the current working tree before reconciling prose.
+- When changing identity, authority, phase contracts, dependency relations, cache/context lifetime, failure semantics or artifact mutation, identify affected [core invariants](../../.agents/docs/limina-invariants.md) and update the owning PCR page and the nearest relevant executable guard in the same change.
+- Use the [review workflow](../../.agents/docs/limina-architecture-workflow.md) to explain invariant impact, concrete counterexamples, validation and remaining uncertainty. A behavior-preserving move needs link maintenance, not a new architectural rule.
+- Every PCR update must synchronously maintain the complete English/Chinese pair with the same filename in `.agents/docs/` and `.agents/docs/zh/`, both tracked by Git; follow the [repository bilingual rule](../../AGENTS.md#bilingual-pcr-maintenance).
+- Keep each current truth in one prose owner. Do not turn unstamped interpretation into human intent or a permanent compatibility promise.
+
 ## Path contracts in tests
 
 - Limina absolute path values are canonical portable paths and use `/` separators on every platform.
