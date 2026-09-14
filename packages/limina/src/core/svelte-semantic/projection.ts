@@ -1,4 +1,3 @@
-import { resolveTypeScriptModuleNameDetailed } from '#checkers';
 import type ts from 'typescript';
 import type {
   FrameworkSemanticCandidate,
@@ -11,6 +10,7 @@ import {
   type ImportRecord,
 } from '../import-analysis/records';
 import type { GeneratedSemanticScript } from './generated-script';
+import { resolveSvelteModuleOccurrence } from './module-resolution';
 import { mapGeneratedRange } from './source-mapping';
 import type { SvelteSemanticToolchain } from './toolchain';
 import type { SvelteSemanticProject } from './types';
@@ -23,7 +23,7 @@ type SvelteCandidate = FrameworkSemanticCandidate<
 export interface MappedCandidate {
   candidate: SvelteCandidate;
   resolutionMode: string;
-  target: ReturnType<typeof resolveTypeScriptModuleNameDetailed>;
+  target: ReturnType<typeof resolveSvelteModuleOccurrence>['target'];
 }
 
 type ProjectionFailure = Extract<
@@ -64,31 +64,6 @@ function createSourceRecord(options: {
   };
 }
 
-function getResolutionMode(options: {
-  candidate: SvelteCandidate;
-  project: SvelteSemanticProject;
-  tsModule: typeof ts;
-}): string {
-  const resolver = (
-    options.tsModule as typeof ts & {
-      getModeForUsageLocation?: (
-        sourceFile: ts.SourceFile,
-        literal: ts.StringLiteralLike,
-        compilerOptions: ts.CompilerOptions,
-      ) => unknown;
-    }
-  ).getModeForUsageLocation;
-  return resolver === undefined
-    ? 'default'
-    : String(
-        resolver(
-          options.candidate.containingSourceFile,
-          options.candidate.literal,
-          options.project.options,
-        ),
-      );
-}
-
 function createMappedCandidate(options: {
   generated: GeneratedSemanticScript;
   generatedDependency: GeneratedSemanticDependency;
@@ -117,16 +92,12 @@ function createMappedCandidate(options: {
   };
   return {
     candidate,
-    resolutionMode: getResolutionMode({
-      candidate,
+    ...resolveSvelteModuleOccurrence({
+      host: options.generated.resolutionHost,
+      cache: options.generated.resolutionCache,
+      sourceFile: candidate.containingSourceFile,
+      literal: candidate.literal,
       project: options.project,
-      tsModule: options.toolchain.tsModule,
-    }),
-    target: resolveTypeScriptModuleNameDetailed({
-      compilerOptions: options.project.options,
-      containingFile: options.generated.sourceFile.fileName,
-      extensions: [...options.project.extensions],
-      specifier: candidate.semanticSpecifier,
       tsModule: options.toolchain.tsModule,
     }),
   };

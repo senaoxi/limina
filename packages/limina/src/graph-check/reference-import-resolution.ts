@@ -132,10 +132,19 @@ export function resolveImportForReferenceExpectation(
     return null;
   }
 
-  return createAllowedResolution({
+  return createExpectedDeclarationResolution({
     base: options,
     managed,
     targetPackage,
     workspaceExportResolution,
   });
+}
+
+function createExpectedDeclarationResolution(
+  options: Parameters<typeof createAllowedResolution>[0],
+): GraphImportResolution | null {
+  const resolution = createAllowedResolution(options);
+  return options.base.projectDependency.referenceRequirement === null
+    ? null
+    : resolution;
 }

@@ -25,6 +25,9 @@ function createIdentity(options: {
     compilerPath: options.toolchain.compilerPath,
     compilerVersion: options.toolchain.compilerVersion,
     configPath: options.project.configPath,
+    configClosure: options.project.configClosure,
+    packageIdentity: options.project.packageIdentity,
+    compilerOptions: options.project.options,
     generation: options.project.generation,
     transformPath: options.toolchain.transformPath,
     transformVersion: options.toolchain.transformVersion,
@@ -111,6 +114,7 @@ function prepareUnchecked(options: {
   const generated = createGeneratedSemanticScript({
     filePath,
     generated: generatedOutput,
+    project: options.project,
     toolchain: options.toolchain,
   });
   const dependencies = enumerateGeneratedSemanticDependencies({

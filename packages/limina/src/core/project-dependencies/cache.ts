@@ -12,7 +12,7 @@ import type {
 } from './contracts';
 
 export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
-  'service-script-facts-v3-kind-aware-typescript';
+  'service-script-facts-v4-native-requirements';
 
 export function createProjectDependencyCaches(): ProjectDependencyCaches {
   return {
@@ -34,6 +34,9 @@ function getSvelteCacheIdentity(context: ProjectSemanticContext) {
     ? null
     : {
         adapterVersion: project.adapterVersion,
+        configClosure: project.configClosure,
+        packageIdentity: project.packageIdentity,
+        options: project.options,
         generation: project.generation,
       };
 }
@@ -50,6 +53,8 @@ export function createProjectSemanticCacheIdentity(
     astro: getAstroCacheIdentity(context),
     authority: context.semanticAuthority,
     configPath: context.configPath,
+    compilerOptions: context.compilerOptions,
+    references: context.references,
     fileNames: context.fileNames,
     generation: context.generation,
     packageRoots: [...context.packageRootByFileName.entries()].sort(
@@ -80,10 +85,15 @@ export function cloneProjectDependencyCollection(
   return {
     dependencies: collection.dependencies.map((dependency) => ({
       ...dependency,
-      importRecord: {
-        ...dependency.importRecord,
-        locator: { ...dependency.importRecord.locator },
-      },
+      nativeFact:
+        dependency.nativeFact === undefined
+          ? undefined
+          : structuredClone(dependency.nativeFact),
+      referenceRequirement:
+        dependency.referenceRequirement === null
+          ? null
+          : { ...dependency.referenceRequirement },
+      importRecord: structuredClone(dependency.importRecord),
       typeEvidence: cloneTypeEvidence(dependency.typeEvidence),
     })),
     failures: collection.failures.map((failure) => ({
@@ -91,10 +101,7 @@ export function cloneProjectDependencyCollection(
       importRecord:
         failure.importRecord === undefined
           ? undefined
-          : {
-              ...failure.importRecord,
-              locator: { ...failure.importRecord.locator },
-            },
+          : structuredClone(failure.importRecord),
     })),
     observations: collection.observations.map(cloneObservation),
   };
@@ -104,16 +111,12 @@ export function cloneProjectDependencyPreparation(
   preparation: ProjectDependencyPreparation,
 ): ProjectDependencyPreparation {
   return {
-    directSourceRecords: preparation.directSourceRecords.map((record) => ({
-      ...record,
-      locator: { ...record.locator },
-    })),
+    directSourceRecords: preparation.directSourceRecords.map((record) =>
+      structuredClone(record),
+    ),
     facts: preparation.facts.map((fact) => ({
       ...fact,
-      importRecord: {
-        ...fact.importRecord,
-        locator: { ...fact.importRecord.locator },
-      },
+      importRecord: structuredClone(fact.importRecord),
       target: fact.target === null ? null : { ...fact.target },
       typeEvidence: cloneTypeEvidence(fact.typeEvidence),
     })),
@@ -122,10 +125,7 @@ export function cloneProjectDependencyPreparation(
       importRecord:
         failure.importRecord === undefined
           ? undefined
-          : {
-              ...failure.importRecord,
-              locator: { ...failure.importRecord.locator },
-            },
+          : structuredClone(failure.importRecord),
     })),
     observations: preparation.observations.map(cloneObservation),
     ready: preparation.ready,
@@ -173,10 +173,7 @@ function cloneMappedObservation(
     { kind: 'unmapped-generated' }
   >,
 ): ProjectDependencyObservation {
-  const importRecord = {
-    ...observation.importRecord,
-    locator: { ...observation.importRecord.locator },
-  };
+  const importRecord = structuredClone(observation.importRecord);
   if (observation.kind === 'missing') {
     return cloneMissingObservation(observation, importRecord);
   }
@@ -187,9 +184,6 @@ export function cloneSourceEvidence(evidence: SourceEvidence): SourceEvidence {
   return {
     diagnostics: [...evidence.diagnostics],
     filePath: evidence.filePath,
-    records: evidence.records.map((record) => ({
-      ...record,
-      locator: { ...record.locator },
-    })),
+    records: evidence.records.map((record) => structuredClone(record)),
   };
 }

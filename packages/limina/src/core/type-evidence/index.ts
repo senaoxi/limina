@@ -12,6 +12,7 @@ import {
   TypeEvidenceGenerationCache,
   type TypeEvidenceMetricsRecorder,
 } from './cache';
+import { resolveNativeOrConcreteEvidence } from './native-evidence';
 import {
   resolveTypeScriptProviderEvidence,
   resolveVueProviderEvidence,
@@ -19,7 +20,6 @@ import {
 import type { ResolveImportEvidenceOptions } from './resolution';
 import {
   createUnsupportedCheckerEvidence,
-  resolveConcreteTypeEvidence,
   resolveImportPair,
   resolveTypeScriptPreset,
   resolveVuePreset,
@@ -114,7 +114,8 @@ export class TypeEvidenceCore {
       };
     }
 
-    const concreteTypeEvidence = resolveConcreteTypeEvidence({
+    const concreteTypeEvidence = resolveNativeOrConcreteEvidence({
+      context: typeScriptSemanticContext,
       request: boundedOptions,
       resolution: pair.typeScriptResolution,
     });
@@ -269,8 +270,7 @@ export class TypeEvidenceCore {
   }
 
   #getProviderKeys(configIdentity: string): readonly string[] {
-    const keys = this.#providerKeysByConfigIdentity.get(configIdentity);
-    return keys === undefined ? [] : [...keys];
+    return [...(this.#providerKeysByConfigIdentity.get(configIdentity) ?? [])];
   }
 
   #assertConfigNotCompleted(configPath: string): void {

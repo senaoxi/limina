@@ -1,11 +1,15 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import { TraceMap } from '@jridgewell/trace-mapping';
+import path from 'node:path';
 import type ts from 'typescript';
 import { buildLineStarts } from '../import-analysis/records';
+import { createSvelteResolutionHost } from './module-resolution';
 import type { SvelteSemanticToolchain } from './toolchain';
 import type { SvelteSemanticProject } from './types';
 
 export interface GeneratedSemanticScript {
+  resolutionHost: ts.ModuleResolutionHost;
+  resolutionCache: ts.ModuleResolutionCache;
   filePath: string;
   lineStarts: readonly number[];
   sourceFile: ts.SourceFile;
@@ -16,8 +20,10 @@ export function createGeneratedSemanticScript(options: {
   filePath: string;
   generated: ReturnType<SvelteSemanticToolchain['transform']>;
   toolchain: SvelteSemanticToolchain;
+  project: SvelteSemanticProject;
 }): GeneratedSemanticScript {
   const filePath = `${options.filePath}.tsx`;
+  const resolutionHost = createSvelteResolutionHost(options.toolchain.tsModule);
   const sourceFile = options.toolchain.tsModule.createSourceFile(
     filePath,
     options.generated.code,
@@ -25,7 +31,20 @@ export function createGeneratedSemanticScript(options: {
     true,
     options.toolchain.tsModule.ScriptKind.TSX,
   );
+  sourceFile.impliedNodeFormat =
+    options.toolchain.tsModule.getImpliedNodeFormatForFile(
+      filePath as ts.Path,
+      undefined,
+      options.toolchain.tsModule.sys,
+      options.project.options,
+    );
   return {
+    resolutionHost,
+    resolutionCache: options.toolchain.tsModule.createModuleResolutionCache(
+      path.dirname(options.project.configPath),
+      (fileName) => fileName,
+      options.project.options,
+    ),
     filePath,
     lineStarts: buildLineStarts(options.generated.code),
     sourceFile,

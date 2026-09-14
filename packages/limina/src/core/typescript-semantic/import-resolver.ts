@@ -17,6 +17,7 @@ import type {
 import { createImportRecordIdentity } from './import-record';
 import { resolveTypeScriptLibrary } from './library-resolution';
 import {
+  createConfiguredJsxRecord,
   createSyntheticImportRecord,
   findSemanticModuleRecord,
   getStandaloneModuleLocation,
@@ -33,6 +34,7 @@ export interface TypeScriptImportResolverOptions {
   admission: TypeScriptInclusionLedger;
   contextIdentity: string;
   getHost(): ts.ModuleResolutionHost;
+  addRecord(record: ImportRecord): void;
   getRecords(fileName: string): readonly ImportRecord[];
   getSourceFile(fileName: string): ts.SourceFile | undefined;
   ledger: TypeScriptResolutionLedger;
@@ -125,25 +127,41 @@ export class TypeScriptImportResolver {
     literal: ts.StringLiteralLike;
     records: readonly ImportRecord[];
   }): ts.ResolvedModuleWithFailedLookupLocations {
-    const record = findSemanticModuleRecord({
-      literal: options.literal,
-      records: options.records,
-      sourceFile: options.input.sourceFile,
-    });
+    const record =
+      findSemanticModuleRecord({
+        literal: options.literal,
+        records: options.records,
+        sourceFile: options.input.sourceFile,
+      }) ??
+      createConfiguredJsxRecord({
+        configPath: this.options.project.configPath,
+        containingFile: options.input.containingFile,
+        literal: options.literal,
+        resolutionMode: this.options.tsModule.getModeForUsageLocation(
+          options.input.sourceFile,
+          options.literal,
+          options.input.compilerOptions,
+        ),
+      });
     const result = this.#resolveModule({
       ...options.input,
       literal: options.literal,
       record,
     });
-    return this.#admitHostModuleResult(result.raw);
+    return this.#admitHostModuleResult(
+      result.raw,
+      options.input.containingFile,
+    );
   }
 
   #admitHostModuleResult(
     result: ts.ResolvedModuleWithFailedLookupLocations,
+    containingFile: string,
   ): ts.ResolvedModuleWithFailedLookupLocations {
     const resolved = result.resolvedModule;
     if (resolved === undefined) return result;
-    if (this.options.admission.allowModuleTarget(resolved)) return result;
+    if (this.options.admission.allowModuleTarget(resolved, containingFile))
+      return result;
     return { ...result, resolvedModule: undefined };
   }
 
@@ -191,6 +209,7 @@ export class TypeScriptImportResolver {
     literal: ts.StringLiteralLike,
     resolution: TypeScriptSemanticResolution,
   ): void {
+    this.options.addRecord(importRecord);
     this.options.ledger.set(importRecord, resolution);
     this.#symbolLocations.set(
       createImportRecordIdentity(importRecord),

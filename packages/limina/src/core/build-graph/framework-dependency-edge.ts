@@ -1,5 +1,6 @@
 import { formatImportRecordLocation } from '#core/import-graph/context';
 import { toRelativePath } from '#utils/path';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { ReferenceImportContext } from './reference-import-types';
 import type { GeneratedDependencyEdge, GovernedSourceUnit } from './types';
 
@@ -32,6 +33,10 @@ export function recordFrameworkDependencyEdge(
   context: ReferenceImportContext,
   edge: GeneratedDependencyEdge,
 ): void {
+  if (isDeclarationFile(edge.resolvedFilePath))
+    throw new Error(
+      'Framework scheduling requires a source implementation target.',
+    );
   const key = JSON.stringify([
     edge.fromChecker,
     edge.fromConfigPath,

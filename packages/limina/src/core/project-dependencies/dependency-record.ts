@@ -124,6 +124,10 @@ function addMappedDependency(options: CollectFactOptions): void {
     framework: options.fact.framework,
     importRecord: options.fact.importRecord,
     provenance: 'strict-source-map',
+    referenceRequirement:
+      options.fact.typeEvidence.kind === 'checker-source'
+        ? { kind: 'source-semantic', targetFileName: resolvedFilePath }
+        : null,
     resolutionMode: options.fact.resolutionMode,
     resolvedFilePath,
     semanticSpecifier: options.fact.semanticSpecifier,

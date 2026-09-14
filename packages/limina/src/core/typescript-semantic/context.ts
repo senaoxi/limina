@@ -8,6 +8,11 @@ import type {
   TypeScriptSemanticProject,
   TypeScriptSemanticResolution,
 } from './contracts';
+import {
+  collectNativeDependencyFact,
+  type NativeDependencyFact,
+} from './dependency-fact';
+import { getEffectiveImporterRoots } from './effective-roots';
 import { createTypeScriptSemanticHost } from './host';
 import { createTypeScriptSemanticContextIdentity } from './identity';
 import { TypeScriptImportResolver } from './import-resolver';
@@ -19,7 +24,9 @@ function normalizeProject(
 ): TypeScriptSemanticProject {
   return {
     ...project,
-    fileNames: project.fileNames.filter(isNativeTypeScriptProjectInput),
+    fileNames: getEffectiveImporterRoots(project).filter(
+      isNativeTypeScriptProjectInput,
+    ),
   };
 }
 
@@ -44,6 +51,7 @@ export class BoundedTypeScriptSemanticContext
     this.identity = createTypeScriptSemanticContextIdentity(this.project);
     this.#admission = new TypeScriptInclusionLedger(this.project, tsModule);
     this.#resolver = new TypeScriptImportResolver({
+      addRecord: (record) => this.#addRecord(record),
       admission: this.#admission,
       contextIdentity: this.identity,
       getHost: () => this.#host,
@@ -80,6 +88,14 @@ export class BoundedTypeScriptSemanticContext
     this.#recordsByFile.clear();
     this.#resolver.dispose();
     this.#sourceFiles.clear();
+  }
+
+  getDependencyFact(record: ImportRecord): NativeDependencyFact {
+    return collectNativeDependencyFact({
+      context: this,
+      record,
+      tsModule: this.tsModule,
+    });
   }
 
   getImportRecords(fileName: string): readonly ImportRecord[] {
@@ -131,6 +147,12 @@ export class BoundedTypeScriptSemanticContext
         tsModule: this.tsModule,
       }),
     );
+  }
+
+  #addRecord(record: ImportRecord): void {
+    const records = this.#getRecords(record.filePath);
+    if (records.includes(record)) return;
+    this.#recordsByFile.set(record.filePath, [...records, record]);
   }
 
   #getRecords(fileName: string): readonly ImportRecord[] {

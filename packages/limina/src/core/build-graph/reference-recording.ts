@@ -114,6 +114,10 @@ function addSelectedProviderReference(options: {
   if (isTargetDenied(options)) {
     return;
   }
+  if (options.base.projectDependency.referenceRequirement === null)
+    throw new Error(
+      'Declaration reference requires an explicit semantic or compiler membership requirement.',
+    );
   const edge = createDependencyEdge(options);
   options.base.context.dependencyEdgesByKey.set(
     createDependencyEdgeKey(edge),

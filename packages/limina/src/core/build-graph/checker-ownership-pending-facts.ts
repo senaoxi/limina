@@ -1,4 +1,7 @@
-import type { CheckerProjectConfigCache } from '#checkers';
+import {
+  type CheckerProjectConfigCache,
+  isNativeTypeScriptProjectInput,
+} from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
@@ -91,16 +94,6 @@ function collectUnsupportedEvidence(options: {
   return true;
 }
 
-function getCheckerSourceTarget(
-  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>,
-): PhysicalTarget | null {
-  if (evidence.type.kind !== 'checker-source') return null;
-  return {
-    path: normalizeAbsolutePath(evidence.type.filePath),
-    provenance: 'checker-source',
-  };
-}
-
 function getPendingFrameworkTarget(options: {
   context: FactCollectionContext;
   evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>;
@@ -122,8 +115,12 @@ function getPhysicalTarget(options: {
   importRecord: CheckerDependencyFact['importRecord'];
   problems: string[];
 }): PhysicalTarget | null {
-  const checkerSource = getCheckerSourceTarget(options.evidence);
-  if (checkerSource !== null) return checkerSource;
+  const requirement =
+    options.context.typeScriptSemanticContext.getDependencyFact(
+      options.importRecord,
+    ).referenceRequirement;
+  if (requirement !== null)
+    return { path: requirement.targetFileName, provenance: 'checker-source' };
   return getPendingFrameworkTarget(options);
 }
 
@@ -140,6 +137,10 @@ function collectTypeEvidenceFact(options: {
     resolutionMode: 'checker-only',
   });
   const base = {
+    referenceRequirement:
+      options.context.typeScriptSemanticContext.getDependencyFact(
+        options.importRecord,
+      ).referenceRequirement,
     consumerConfigPath: options.context.project.configPath,
     importRecord: options.importRecord,
     physicalTargetPath: null,
@@ -190,16 +191,6 @@ function collectImportFact(options: {
   collectTypeEvidenceFact(options);
 }
 
-function assertTypeScriptFactFile(
-  context: FactCollectionContext,
-  fileName: string,
-): void {
-  if (context.project.filePartition.typescriptFiles.includes(fileName)) return;
-  throw new Error(
-    `Pending ownership evidence received a non-TypeScript source: ${fileName}`,
-  );
-}
-
 function getProgramSourceFile(
   context: TypeScriptSemanticContext,
   fileName: string,
@@ -215,7 +206,6 @@ function collectFileImportRecords(options: {
   context: FactCollectionContext;
   fileName: string;
 }): CheckerDependencyFact['importRecord'][] {
-  assertTypeScriptFactFile(options.context, options.fileName);
   getProgramSourceFile(
     options.context.typeScriptSemanticContext,
     options.fileName,
@@ -260,7 +250,9 @@ function collectProjectFacts(
     typeScriptSemanticContext,
   };
   try {
-    for (const fileName of options.project.filePartition.typescriptFiles) {
+    for (const fileName of semantic.project.fileNames.filter(
+      isNativeTypeScriptProjectInput,
+    )) {
       collectFileFacts({ context, facts, fileName, problems });
     }
   } finally {
@@ -290,7 +282,7 @@ function assertPendingAuthority(state: TypeConfigOwnershipState): void {
 
 function createPendingCacheKey(options: CollectPendingOptions): string {
   return JSON.stringify({
-    adapterVersion: 'pending-typescript-v2-kind-aware',
+    adapterVersion: 'pending-typescript-v3-native-requirements',
     authority: options.state.semanticAuthority,
     configPath: options.project.configPath,
     fileNames: options.project.filePartition.typescriptFiles,

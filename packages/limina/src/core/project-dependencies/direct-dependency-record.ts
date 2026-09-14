@@ -9,6 +9,13 @@ import type {
   ProjectDependencyRequest,
 } from './contracts';
 import { createProjectDependencyFailure } from './failure';
+import {
+  collectAmbientNativeObservation,
+  getDirectNativeFact,
+  getNativeReferenceRequirement,
+  getNativeTargetPath,
+  getNativeTypeEvidence,
+} from './native-dependency';
 import { isTypeScriptSemanticSource } from './source-evidence';
 
 interface CollectRecordOptions {
@@ -20,12 +27,6 @@ interface CollectRecordOptions {
 type SemanticResolutionTarget = NonNullable<
   CanonicalImportResolutionEvidence['semanticEvidence']
 >['target'];
-
-function getTargetKind(
-  resolvedFilePath: string,
-): DirectSourceDependency['targetKind'] {
-  return isDeclarationFile(resolvedFilePath) ? 'declaration' : 'source';
-}
 
 function createDirectTypeEvidence(resolvedFilePath: string): TypeEvidence {
   const filePath = normalizeAbsolutePath(resolvedFilePath);
@@ -85,14 +86,24 @@ function createDirectDependency(options: {
   resolvedFilePath: string;
 }): DirectSourceDependency {
   const resolvedFilePath = normalizeAbsolutePath(options.resolvedFilePath);
+  const nativeFact = getDirectNativeFact(options);
+  const typeEvidence =
+    getNativeTypeEvidence(nativeFact) ??
+    createDirectTypeEvidence(resolvedFilePath);
   return {
+    nativeFact,
+    referenceRequirement: getNativeReferenceRequirement(
+      nativeFact,
+      typeEvidence,
+    ),
     importRecord: options.importRecord,
     provenance: 'direct-source',
     resolutionMode: getDirectResolutionMode(options),
     resolvedFilePath,
     semanticSpecifier: getDirectSemanticSpecifier(options),
-    targetKind: getTargetKind(resolvedFilePath),
-    typeEvidence: createDirectTypeEvidence(resolvedFilePath),
+    targetKind:
+      typeEvidence.kind === 'concrete-declaration' ? 'declaration' : 'source',
+    typeEvidence,
   };
 }
 
@@ -125,6 +136,8 @@ function getDirectResolvedFilePath(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
 ): string | undefined {
+  const nativeFact = getDirectNativeFact(options);
+  if (nativeFact !== undefined) return getNativeTargetPath(nativeFact);
   const checkerResolution = [
     getSemanticResolvedFilePath(evidence),
     getTypeScriptResolvedFilePath(evidence),
@@ -190,6 +203,8 @@ function addDirectObservation(options: {
   const hasResourceEvidence = [
     options.evidence.runtimeEvidence.classification === 'resource',
     options.resolvedFilePath !== undefined,
+    // A raw framework lookup can explain runtime presence, never a source edge.
+    options.evidence.typeScriptResolution?.resolvedBy === 'checker-source',
   ].some(Boolean);
   options.base.collection.observations.push({
     importRecord: options.base.importRecord,
@@ -263,11 +278,19 @@ export function collectProjectDependencyRecord(
   options: CollectRecordOptions,
 ): void {
   const evidence = resolveDirectCheckerEvidence(options);
-  if (collectDirectFailure({ base: options, evidence })) return;
+  if (collectNonDependency(options, evidence)) return;
   const resolvedFilePath = getDirectResolvedFilePath(options, evidence);
   if (
     addDirectDependencyIfNative({ base: options, evidence, resolvedFilePath })
   )
     return;
   addDirectObservation({ base: options, evidence, resolvedFilePath });
+}
+
+function collectNonDependency(
+  options: CollectRecordOptions,
+  evidence: CanonicalImportResolutionEvidence,
+): boolean {
+  if (collectDirectFailure({ base: options, evidence })) return true;
+  return collectAmbientNativeObservation(options);
 }

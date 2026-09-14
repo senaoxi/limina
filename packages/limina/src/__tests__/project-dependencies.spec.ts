@@ -333,7 +333,7 @@ describe('project dependency authority', () => {
     ]);
   });
 
-  it('reuses generation-scoped TypeScript facts without mixing workspace export policies', async () => {
+  it('isolates admission-sensitive snapshots and does not rescue checker misses with workspace exports', async () => {
     const temporaryRoot = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-project-deps-cache-')),
     );
@@ -394,11 +394,20 @@ describe('project dependency authority', () => {
       workspaceTypeScriptExportCacheIdentity: 'first-policy',
     });
 
-    expect(caches.typeScriptSemanticFactsCache.size).toBe(1);
-    expect(resolveImportRecord).toHaveBeenCalled();
-    expect(first.dependencies[0]?.resolvedFilePath).toBe(firstTarget);
-    expect(second.dependencies[0]?.resolvedFilePath).toBe(secondTarget);
-    expect(cachedFirst.dependencies[0]?.resolvedFilePath).toBe(firstTarget);
+    expect(
+      ts.resolveModuleName(
+        'workspace-package',
+        sourceFile,
+        context.compilerOptions,
+        ts.sys,
+      ).resolvedModule,
+    ).toBeUndefined();
+    expect(caches.typeScriptSemanticFactsCache.size).toBe(2);
+    expect(resolveImportRecord).not.toHaveBeenCalled();
+    expect(first.dependencies).toEqual([]);
+    expect(second.dependencies).toEqual([]);
+    expect(cachedFirst.dependencies).toEqual([]);
+    expect(first.observations).toMatchObject([{ kind: 'missing' }]);
   });
 
   it('consumes a prepared source target without framework re-resolution', () => {

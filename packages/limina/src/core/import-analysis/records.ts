@@ -29,6 +29,11 @@ export interface ImportLocator {
 }
 
 export interface ImportRecord {
+  configurationSource?: {
+    configPath: string;
+    option: 'jsxImportSource';
+    resolutionMode: number | undefined;
+  };
   domain: ImportDomain;
   filePath: string;
   kind: ImportRecordKind;

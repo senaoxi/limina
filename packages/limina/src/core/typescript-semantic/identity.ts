@@ -24,7 +24,7 @@ export function createTypeScriptSemanticContextIdentity(
   project: TypeScriptSemanticProject,
 ): string {
   return createIdentity('bounded-typescript-semantic', {
-    adapterVersion: 'bounded-typescript-semantic-v2-workspace-boundary',
+    adapterVersion: 'bounded-typescript-semantic-v3-evidence',
     admissionMode: project.admissionMode ?? 'full-program',
     configPath: normalizeAbsolutePath(project.configPath),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
@@ -39,11 +39,10 @@ export function createTypeScriptSemanticContextIdentity(
 export function createTypeScriptProjectDependencyFactsIdentity(
   project: TypeScriptSemanticProject,
 ): string {
-  // Project-dependency facts contain root syntax and TypeScript's raw semantic
-  // resolutions. The workspace boundary only controls which resolved targets
-  // the Program may load transitively; it does not change those root facts.
+  // Evidence depends on admitted ambient declarations as well as raw resolution.
   return createIdentity('typescript-project-dependency-facts', {
-    adapterVersion: 'typescript-project-dependency-facts-v1',
+    adapterVersion: 'typescript-project-dependency-facts-v2-evidence',
+    workspaceSourceBoundary: project.workspaceSourceBoundary.identity,
     configPath: normalizeAbsolutePath(project.configPath),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
     options: project.options,

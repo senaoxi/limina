@@ -42,7 +42,7 @@ export function createAmbientTypeEvidence(
   symbol: ts.Symbol,
   tsModule: typeof ts = ts,
 ): TypeEvidence {
-  const declarations = collectAmbientDeclarations(symbol, tsModule);
+  const declarations = collectPureAmbientDeclarations(symbol, tsModule);
   const modulePatterns = [
     ...new Set(declarations.map((declaration) => declaration.name.text)),
   ];
@@ -56,4 +56,16 @@ export function createAmbientTypeEvidence(
     kind: 'ambient',
     modulePattern: modulePatterns[0]!,
   };
+}
+
+function collectPureAmbientDeclarations(
+  symbol: ts.Symbol,
+  tsModule: typeof ts,
+) {
+  const declarations = symbol.declarations ?? [];
+  if (declarations.some((declaration) => tsModule.isSourceFile(declaration)))
+    return [];
+  return collectAmbientDeclarations(symbol, tsModule).filter(
+    (declaration) => !tsModule.isExternalModule(declaration.getSourceFile()),
+  );
 }
