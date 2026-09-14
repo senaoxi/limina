@@ -199,7 +199,7 @@ function createFakeToolchain(
     },
     astroInstall: {
       directory: '/virtual/astro',
-      version: new semver.SemVer('7.2.0'),
+      version: new semver.SemVer('7.3.2'),
     },
     languageCore: {
       createLanguage(plugins, registry, sync) {
@@ -229,7 +229,7 @@ function createFakeToolchain(
     sveltePlugin: { getLanguagePlugin: () => plugin },
     tsModule: instrumentedTypeScript,
     versions: {
-      astro: '7.2.0',
+      astro: '7.3.2',
       check: '0.9.10',
       compiler: '2.13.1',
       languageCore: '2.4.28',

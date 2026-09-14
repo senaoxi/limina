@@ -49,7 +49,7 @@ const REQUIRED_DIST_FILES = [
   'schemas/tsconfig-schema.json',
 ] as const;
 const EXPECTED_PEER_RANGES = {
-  '@arethetypeswrong/core': '^0.18.0',
+  '@arethetypeswrong/core': '^0.18.3',
   '@astrojs/check': '0.9.10',
   '@typescript/native-preview': '>=7.0.0-dev.20260421.2 <7.0.0',
   knip: '>=6.0.0 <7.0.0',
@@ -634,7 +634,7 @@ export async function installConsumerDependencies(options: {
         '--save-dev',
         '--prefer-offline',
         '--ignore-scripts',
-        'astro@7.2.0',
+        'astro@7.3.2',
         '@astrojs/check@0.9.10',
         'typescript@6.0.3',
       ],

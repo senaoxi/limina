@@ -256,6 +256,73 @@ describe('LiminaPreflightManager', () => {
     }
   });
 
+  it('rebuilds region events and canonical projection on provider-only materialization replan', async () => {
+    const fixture = await createFixture();
+    const manager = new LiminaPreflightManager({ config: fixture.config });
+    const competingNamespace = createLiminaArtifactNamespace({
+      generation: 99,
+      rootDir: fixture.rootDir,
+    });
+    const competingProviders = createAnalysisProviders(
+      fixture.config,
+      competingNamespace,
+    );
+    try {
+      await mkdir(fixture.path('packages/pkg/live'), { recursive: true });
+      await mkdir(fixture.path('packages/pkg/blocked'), { recursive: true });
+      await symlink(
+        fixture.path('packages/pkg/live'),
+        fixture.path('alias'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      const initialIndex = await manager.ensureWorkspacePathIndex();
+      const aliasPath = fixture.path('alias/missing.ts');
+      const before = initialIndex.classifyPath(aliasPath);
+      expect(before.package?.name).toBe('@fixture/pkg');
+      const initialProviders = manager.providers;
+      await manager.ensureGeneratedGraph();
+      await competingProviders.workspace.getValidatedContext();
+      const competingGraph = await competingProviders.buildGraph.getGraph();
+      await materializeGeneratedArtifactPlan(
+        competingNamespace,
+        competingGraph.artifactPlan,
+      );
+
+      await rm(fixture.path('alias'));
+      await symlink(
+        fixture.path('packages/pkg/blocked'),
+        fixture.path('alias'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      await writeFile(
+        fixture.path('packages/pkg/blocked/package.json'),
+        '{"private":true}\n',
+      );
+      const receipt = await manager.ensureGeneratedArtifactsMaterialized();
+      expect(receipt.generation).toBe(0);
+      expect(manager.providers).not.toBe(initialProviders);
+      const refreshedIndex = await manager.ensureWorkspacePathIndex();
+      expect(refreshedIndex).not.toBe(initialIndex);
+      expect(await manager.ensureWorkspacePathIndex()).toBe(refreshedIndex);
+      const after = refreshedIndex.classifyPath(aliasPath);
+      expect(after.package).toBeNull();
+      expect(after.boundary?.rootDir).toBe(
+        fixture.path('packages/pkg/blocked'),
+      );
+      expect(after.canonicalPath).not.toBe(before.canonicalPath);
+      expect(after.canonicalPath).toBe(
+        refreshedIndex.classifyPath(
+          fixture.path('packages/pkg/blocked/missing.ts'),
+        ).canonicalPath,
+      );
+      expect(initialIndex.classifyPath(aliasPath)).toBe(before);
+    } finally {
+      manager.dispose();
+      competingProviders.dispose?.();
+      await fixture.cleanup();
+    }
+  });
+
   it('hands an in-flight materialization slot across provider-only replan but not a new command generation', async () => {
     const fixture = await createFixture();
     let manager!: LiminaPreflightManager;

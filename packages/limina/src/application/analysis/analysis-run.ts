@@ -66,7 +66,7 @@ export type AnalysisMetricName =
   | 'workspace-export-typescript-semantic-profile-count'
   | 'workspace-importer-ancestor-visit'
   | 'workspace-negative-lookup'
-  | 'workspace-path-ancestor-visit'
+  | 'workspace-path-trie-segment-visit'
   | 'workspace-path-classification-hit'
   | 'workspace-path-classification-miss'
   | 'validator';

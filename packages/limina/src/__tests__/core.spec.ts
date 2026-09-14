@@ -175,7 +175,7 @@ async function createCoreFixture(): Promise<{
     stringifyJson({
       dependencies: {
         '@astrojs/check': '0.9.10',
-        astro: '7.2.0',
+        astro: '7.3.2',
         svelte: '4.0.0',
         typescript: '6.0.3',
       },

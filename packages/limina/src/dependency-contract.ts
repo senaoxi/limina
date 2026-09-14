@@ -37,7 +37,7 @@ export const liminaRuntimeDependencyContracts: Readonly<
     optional: true,
     ownership: 'limina-runtime',
     packageName: '@arethetypeswrong/core',
-    supportedRange: '^0.18.0',
+    supportedRange: '^0.18.3',
   },
   knip: {
     optional: true,

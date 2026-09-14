@@ -159,7 +159,7 @@ async function createFixture(
         dependencies: hasAstro
           ? {
               '@astrojs/check': '0.9.10',
-              astro: '7.2.0',
+              astro: '7.3.2',
               typescript: '6.0.3',
             }
           : undefined,
@@ -1300,7 +1300,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'packages/app/package.json': json({
           dependencies: {
             '@astrojs/check': '0.9.10',
-            astro: '7.2.0',
+            astro: '7.3.2',
             typescript: '6.0.3',
           },
           name: '@fixture/app',
@@ -7616,7 +7616,7 @@ describe('reference graph repair compiler differentials', () => {
             framework === 'astro'
               ? {
                   '@astrojs/check': '0.9.10',
-                  astro: '7.2.0',
+                  astro: '7.3.2',
                   typescript: '6.0.3',
                 }
               : { svelte: '4.0.0', svelte2tsx: '0.7.61', typescript: '6.0.3' },

@@ -128,7 +128,7 @@ async function createToolchainFixture(
   const files: Record<string, string> = {
     'package.json': manifest({
       dependencies: {
-        astro: '7.2.0',
+        astro: '7.3.2',
         ...(options.declareCheck === false
           ? {}
           : { '@astrojs/check': '0.9.10' }),
@@ -142,7 +142,7 @@ async function createToolchainFixture(
     }),
     'node_modules/astro/package.json': manifest({
       name: 'astro',
-      version: '7.2.0',
+      version: '7.3.2',
     }),
     'node_modules/typescript/index.cjs': `module.exports = require(${JSON.stringify(realTypeScriptEntry)});\n`,
     'node_modules/typescript/package.json': manifest({
@@ -238,7 +238,7 @@ describe('Astro semantic toolchain', () => {
   it('retains package-import Astro facts and scheduling edges through source checking', async () => {
     const fixture = await createInstalledToolchainFixture({
       astroInstalledName: 'astro-v7-current',
-      astroVersion: '7.2.0',
+      astroVersion: '7.3.2',
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
     const config: ResolvedLiminaConfig = {
@@ -257,7 +257,7 @@ describe('Astro semantic toolchain', () => {
           type: 'module',
           imports: { '#component': './src/Component.astro' },
           dependencies: {
-            astro: '7.2.0',
+            astro: '7.3.2',
             '@astrojs/check': '0.9.10',
             typescript: '6.0.3',
           },
@@ -358,7 +358,7 @@ describe('Astro semantic toolchain', () => {
 
   it.each([
     ['astro-v7-min', '7.0.0'],
-    ['astro-v7-current', '7.2.0'],
+    ['astro-v7-current', '7.3.2'],
   ])(
     'loads the real %s owner chain as a supported Astro %s fixture',
     async (astroInstalledName, astroVersion) => {
@@ -409,7 +409,7 @@ describe('Astro semantic toolchain', () => {
 
   it('treats Astro 7.0.0 as a floor and checks each split TypeScript version against the declared range', () => {
     const base = {
-      astro: '7.2.0',
+      astro: '7.3.2',
       check: '0.9.10',
       compiler: '2.13.1',
       languageCore: '2.4.28',
@@ -446,7 +446,7 @@ describe('Astro semantic toolchain', () => {
     ['volarTypeScript', '2.4.27'],
   ] as const)('rejects an unsupported exact %s tuple member', (key, value) => {
     const tuple = {
-      astro: '7.2.0',
+      astro: '7.3.2',
       check: '0.9.10',
       compiler: '2.13.1',
       languageCore: '2.4.28',

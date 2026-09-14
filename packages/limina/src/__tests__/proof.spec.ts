@@ -1992,7 +1992,7 @@ describe('runProofCheck dts config semantics', () => {
       'packages/app/package.json': JSON.stringify({
         devDependencies: {
           '@astrojs/check': '0.9.10',
-          astro: '7.2.0',
+          astro: '7.3.2',
           typescript: '6.0.3',
         },
         name: '@fixture/app',

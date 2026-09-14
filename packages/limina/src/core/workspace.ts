@@ -50,7 +50,7 @@ export interface WorkspaceCoreMetricsRecorder {
       | 'workspace-directory-index-entry'
       | 'workspace-importer-ancestor-visit'
       | 'workspace-negative-lookup'
-      | 'workspace-path-ancestor-visit'
+      | 'workspace-path-trie-segment-visit'
       | 'workspace-path-classification-hit'
       | 'workspace-path-classification-miss';
     readonly provider?: string;

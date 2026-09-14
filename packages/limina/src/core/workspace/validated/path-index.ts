@@ -1,7 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import path from 'pathe';
 import type { WorkspacePackage } from '../actions';
 import type { WorkspaceRegionBoundary } from '../regions';
+import { classifyGovernancePath } from './governance-trie';
 import {
   createWorkspacePathIndexState,
   type WorkspacePathIndexState,
@@ -10,7 +10,6 @@ import { canonicalProjectedPathSync } from './shared';
 import type {
   ValidatedWorkspaceContext,
   WorkspaceIndexMetricsRecorder,
-  WorkspacePackageIdentity,
   WorkspacePathClassification,
 } from './types';
 
@@ -27,101 +26,6 @@ function recordMetric(
 ): void {
   if (metrics === undefined) return;
   metrics.record(measurement);
-}
-
-function collectAncestorDirectories(directory: string): string[] {
-  const directories: string[] = [];
-  let currentDirectory = directory;
-  while (true) {
-    directories.push(currentDirectory);
-    const parentDirectory = path.dirname(currentDirectory);
-    if (parentDirectory === currentDirectory) return directories;
-    currentDirectory = parentDirectory;
-  }
-}
-
-function recordAncestorVisit(
-  metrics: WorkspaceIndexMetricsRecorder | undefined,
-): void {
-  recordMetric(metrics, {
-    kind: 'package-boundary',
-    name: 'workspace-path-ancestor-visit',
-    provider: 'workspace-path-index',
-  });
-}
-
-function findNearestIdentity(options: {
-  canonicalPath: string;
-  identities: ReadonlyMap<string, WorkspacePackageIdentity>;
-  metrics?: WorkspaceIndexMetricsRecorder;
-}): WorkspacePackageIdentity | undefined {
-  for (const directory of collectAncestorDirectories(options.canonicalPath)) {
-    recordAncestorVisit(options.metrics);
-    const identity = options.identities.get(directory);
-    if (identity !== undefined) return identity;
-  }
-  return undefined;
-}
-
-function getBoundaryIndex(
-  boundaries: ReadonlyMap<string, WorkspaceRegionBoundary> | undefined,
-): ReadonlyMap<string, WorkspaceRegionBoundary> {
-  if (boundaries !== undefined) return boundaries;
-  return new Map();
-}
-
-function findBoundaryInAncestors(options: {
-  boundaries: ReadonlyMap<string, WorkspaceRegionBoundary>;
-  canonicalPath: string;
-  metrics?: WorkspaceIndexMetricsRecorder;
-}): WorkspaceRegionBoundary | null {
-  for (const directory of collectAncestorDirectories(options.canonicalPath)) {
-    recordAncestorVisit(options.metrics);
-    const boundary = options.boundaries.get(directory);
-    if (boundary !== undefined) return boundary;
-  }
-  return null;
-}
-
-function findNearestBoundary(options: {
-  boundaries: ReadonlyMap<string, WorkspaceRegionBoundary> | undefined;
-  canonicalPath: string;
-  metrics?: WorkspaceIndexMetricsRecorder;
-}): WorkspaceRegionBoundary | null {
-  const boundaries = getBoundaryIndex(options.boundaries);
-  if (boundaries.size === 0) return null;
-  return findBoundaryInAncestors({ ...options, boundaries });
-}
-
-function createClassification(options: {
-  canonicalPath: string;
-  metrics?: WorkspaceIndexMetricsRecorder;
-  state: WorkspacePathIndexState;
-}): WorkspacePathClassification {
-  const identity = findNearestIdentity({
-    canonicalPath: options.canonicalPath,
-    identities: options.state.identityByCanonicalDirectory,
-    metrics: options.metrics,
-  });
-  if (identity === undefined) {
-    return {
-      boundary: null,
-      canonicalPath: options.canonicalPath,
-      package: null,
-    };
-  }
-  const boundary = findNearestBoundary({
-    boundaries: options.state.boundariesByOwner.get(
-      identity.canonicalDirectory,
-    ),
-    canonicalPath: options.canonicalPath,
-    metrics: options.metrics,
-  });
-  return {
-    boundary,
-    canonicalPath: options.canonicalPath,
-    package: boundary === null ? identity.package : null,
-  };
 }
 
 function getClassificationMetricName(
@@ -166,10 +70,7 @@ export class WorkspaceRegionPathIndex {
     );
     this.packages = this.#state.packages;
     this.rootDir = this.#state.rootDir;
-    this.#recordIndexSize(
-      'package',
-      this.#state.identityByCanonicalDirectory.size,
-    );
+    this.#recordIndexSize('package', this.#state.packageEntryCount);
     this.#recordIndexSize('boundary', this.#state.boundaryEntryCount);
   }
 
@@ -180,10 +81,10 @@ export class WorkspaceRegionPathIndex {
       this.#recordClassification('hit', cached);
       return cached;
     }
-    const classification = createClassification({
+    const classification = classifyGovernancePath({
       canonicalPath: this.#canonicalProjectedPath(normalizedFilePath),
       metrics: this.#metrics,
-      state: this.#state,
+      root: this.#state.root,
     });
     this.#classificationCache.set(normalizedFilePath, classification);
     this.#recordClassification('miss', classification);
