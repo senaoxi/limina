@@ -16,6 +16,10 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import type ts from 'typescript';
+import {
+  isRelativeTypeName,
+  readRelativeTypeRoots,
+} from '../core/typescript-semantic/effective-roots';
 import { isPlainRecord } from './config-values';
 
 export interface ParsedProofConfig {
@@ -126,40 +130,11 @@ export function getProofCompanionConfigPath(
   return getDtsCompanionConfigPath(configPath);
 }
 
-function getCompilerOptionTypes(configObject: JsonObject): unknown {
-  if (!isPlainRecord(configObject.compilerOptions)) {
-    return undefined;
-  }
-
-  return configObject.compilerOptions.types;
-}
-
-function isRelativeTypeName(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    (value.startsWith('./') || value.startsWith('../'))
-  );
-}
-
 export function readRelativeTypeFiles(
-  config: ResolvedLiminaConfig,
+  _config: ResolvedLiminaConfig,
   sourceConfigPath: string,
 ): string[] {
-  const types = getCompilerOptionTypes(
-    readProofConfig(config, sourceConfigPath),
-  );
-
-  if (!Array.isArray(types)) {
-    return [];
-  }
-
-  return types
-    .filter(isRelativeTypeName)
-    .map((typeName) =>
-      normalizeAbsolutePath(
-        path.resolve(path.dirname(sourceConfigPath), typeName),
-      ),
-    );
+  return readRelativeTypeRoots(sourceConfigPath);
 }
 
 export function normalizeGeneratedDtsTypes(value: unknown): unknown {

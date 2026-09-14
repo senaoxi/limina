@@ -176,9 +176,10 @@ function createGovernedSvelteSemanticProject(options: {
   if (options.project.semanticAuthority.family !== 'svelte') return undefined;
   if (options.capability === undefined) return undefined;
   return createSvelteSemanticProject({
+    configClosure: options.project.configClosure,
     configPath: options.project.configPath,
     extensions: options.project.context.extensions,
-    fileNames: options.ownedFileNames,
+    fileNames: options.project.fileNames,
     generation: getSemanticGeneration(options.projectConfigCache),
     options: options.project.options,
     packageRootDir: options.capability.packageRootDir,

@@ -20,6 +20,7 @@ import {
   type SvelteSemanticProject,
 } from '../core/svelte-semantic/types';
 import { createFixturePathResolver } from './helpers/path';
+import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const requireFromTest = createRequire(import.meta.url);
 const requireFromSvelte2Tsx = createRequire(
@@ -235,6 +236,16 @@ describe('Svelte public bounded semantic adapter', () => {
         version: toolchain.compilerVersion,
       }),
       toolchain,
+      project: {
+        adapterVersion: SVELTE_SEMANTIC_ADAPTER_VERSION,
+        configPath: 'C:/Users/runneradmin/tsconfig.json',
+        extensions: ['.svelte'],
+        fileNames: [filePath],
+        generation: 0,
+        options: {},
+        packageRootDir: 'C:/Users/runneradmin',
+        resolverConfigPath: 'C:/Users/runneradmin/tsconfig.json',
+      },
     });
 
     expect(generated.trace.resolvedSources).toEqual([filePath]);
@@ -304,4 +315,133 @@ describe('Svelte public bounded semantic adapter', () => {
       isSvelteTypeScriptSource('<script type="text/typescript"></script>'),
     ).toBe(false);
   });
+});
+
+describe('Svelte occurrence-specific conditional exports', () => {
+  it.each(['nodenext-static', 'node16-dynamic', 'bundler-require'])(
+    'agrees with the generated TypeScript Program: %s',
+    async (variant) => {
+      const sourceText =
+        variant === 'nodenext-static'
+          ? '<script lang="ts">import type { Branch } from "dep"; let branch: Branch = "import";</script><p>{branch}</p>'
+          : variant === 'node16-dynamic'
+            ? '<script lang="ts">async function load() { const module = await import("dep"); const branch: "import" = module.branch; return branch; }</script><p>{load()}</p>'
+            : '<script lang="ts">import type { Branch } from "dep" with { "resolution-mode": "require" }; let branch: Branch = "require";</script><p>{branch}</p>';
+      const fixture = await createSemanticRepairFixture({
+        'package.json': '{"type":"module"}',
+        'App.svelte': sourceText,
+        'node_modules/dep/package.json':
+          '{"name":"dep","type":"module","exports":{"import":"./import.mts","require":"./require.cts"}}',
+        'node_modules/dep/import.mts':
+          'export type Branch = "import"; export const branch: Branch = "import";',
+        'node_modules/dep/require.cts':
+          'export type Branch = "require"; export const branch: Branch = "require";',
+      });
+      const compilerOptions: ts.CompilerOptions = {
+        module:
+          variant === 'bundler-require'
+            ? ts.ModuleKind.ESNext
+            : variant === 'node16-dynamic'
+              ? ts.ModuleKind.Node16
+              : ts.ModuleKind.NodeNext,
+        moduleResolution:
+          variant === 'bundler-require'
+            ? ts.ModuleResolutionKind.Bundler
+            : variant === 'node16-dynamic'
+              ? ts.ModuleResolutionKind.Node16
+              : ts.ModuleResolutionKind.NodeNext,
+        target: ts.ScriptTarget.ES2022,
+        types: [],
+        noEmit: true,
+      };
+      const project: SvelteSemanticProject = {
+        adapterVersion: SVELTE_SEMANTIC_ADAPTER_VERSION,
+        configPath: fixture.path('tsconfig.json'),
+        extensions: ['.svelte'],
+        fileNames: [fixture.path('App.svelte')],
+        generation: 0,
+        options: compilerOptions,
+        packageRootDir: fixture.root,
+        resolverConfigPath: fixture.path('tsconfig.json'),
+      };
+      try {
+        const toolchain = createToolchain();
+        const generated = toolchain.transform(sourceText, {
+          filename: fixture.path('App.svelte'),
+          isTsFile: true,
+          parse: compiler.parse as never,
+          version: toolchain.compilerVersion,
+        });
+        await writeFile(fixture.path('App.svelte.tsx'), generated.code);
+        const captured: {
+          target: string | undefined;
+          mode: ts.ResolutionMode;
+        }[] = [];
+        const host = ts.createCompilerHost(compilerOptions);
+        host.resolveModuleNameLiterals = (
+          literals,
+          containingFile,
+          redirectedReference,
+          options,
+          sourceFile,
+        ) =>
+          literals.map((literal) => {
+            const mode = ts.getModeForUsageLocation(
+              sourceFile,
+              literal,
+              options,
+            );
+            const resolved = ts.resolveModuleName(
+              literal.text,
+              containingFile,
+              options,
+              host,
+              undefined,
+              redirectedReference,
+              mode,
+            );
+            if (literal.text === 'dep')
+              captured.push({
+                target: resolved.resolvedModule?.resolvedFileName,
+                mode,
+              });
+            return resolved;
+          });
+        ts.createProgram({
+          rootNames: [fixture.path('App.svelte.tsx')],
+          options: compilerOptions,
+          host,
+        });
+        const preparation = prepareSvelteSemanticDependencies({
+          filePath: fixture.path('App.svelte'),
+          project,
+          sourceText,
+          toolchain,
+        });
+        expect(preparation.kind).toBe('supported');
+        if (preparation.kind !== 'supported')
+          throw new Error(preparation.reason);
+        const fact = preparation.facts.find(
+          (fact) => fact.semanticSpecifier === 'dep',
+        )!;
+        const expectedTarget = fixture.path(
+          'node_modules/dep',
+          variant === 'bundler-require' ? 'require.cts' : 'import.mts',
+        );
+        expect(captured).toEqual([
+          {
+            target: expectedTarget,
+            mode:
+              variant === 'bundler-require'
+                ? ts.ModuleKind.CommonJS
+                : ts.ModuleKind.ESNext,
+          },
+        ]);
+        expect(fact.target?.resolvedFileName).toBe(expectedTarget);
+        expect(fact.resolutionMode).toBe(String(captured[0]!.mode));
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 });

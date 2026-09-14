@@ -11,6 +11,7 @@ import type { ProjectInfo } from '../import-graph/project-types';
 import { createSvelteSemanticProject } from '../svelte-semantic/project';
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
+import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-references';
 import type { ProjectSemanticContext } from './contracts';
 
@@ -39,7 +40,7 @@ function createContext(options: {
     compilerOptions: options.project.options,
     configPath: normalizeAbsolutePath(options.project.configPath),
     extensions: [...options.project.extensions],
-    fileNames: options.project.fileNames.map(normalizeAbsolutePath),
+    fileNames: getEffectiveImporterRoots(options.project),
     generation: options.project.analysisGeneration,
     packageRootByFileName: new Map(options.project.packageRootByFileName),
     packageRootDir: normalizeAbsolutePath(options.project.packageRootDir),
@@ -129,6 +130,7 @@ export function createAutoProjectSemanticContext(options: {
       svelteSemanticProject:
         options.authority.family === 'svelte'
           ? createSvelteSemanticProject({
+              configClosure: options.project.configClosure,
               configPath: options.project.configPath,
               extensions: options.project.context.extensions,
               fileNames: options.project.fileNames,
@@ -156,7 +158,7 @@ export function createSourceProjectSemanticContext(options: {
       astroSemanticProject: getSourceAstroProject(options.source),
       configPath: options.project.configPath,
       extensions: options.project.context.extensions,
-      fileNames: options.project.ownedFileNames,
+      fileNames: options.project.fileNames,
       options: options.project.options,
       packageRootByFileName: packageRootsForFiles(
         options.project.ownedFileNames,
@@ -185,7 +187,7 @@ export function createParsedProjectSemanticContext(options: {
       astroSemanticProject: options.project.astroSemanticProject,
       configPath: options.project.configPath,
       extensions: options.project.extensions,
-      fileNames: options.project.ownedFileNames,
+      fileNames: options.project.fileNames,
       options: options.project.options,
       packageRootByFileName: packageRootsForFiles(
         options.project.ownedFileNames,

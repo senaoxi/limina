@@ -8,6 +8,7 @@ import {
   type DependencyGraphDocument,
   type DependencyGraphEdgeKind,
 } from '../dependency-graph/runner';
+import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
 const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
   {
@@ -244,6 +245,7 @@ describe('collectDependencyGraph', () => {
     });
 
     try {
+      await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
       const graph = await collectDependencyGraph(fixture.config);
       const edge = findEdge(
         graph,
@@ -289,6 +291,7 @@ describe('collectDependencyGraph', () => {
     });
 
     try {
+      await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
       const graph = await collectDependencyGraph(fixture.config);
       const edge = findEdge(
         graph,
@@ -340,6 +343,7 @@ describe('collectDependencyGraph', () => {
     });
 
     try {
+      await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
       const graph = await collectDependencyGraph(fixture.config);
       const edge = findEdge(
         graph,
@@ -389,6 +393,7 @@ describe('collectDependencyGraph', () => {
     });
 
     try {
+      await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
       const graph = await collectDependencyGraph(fixture.config);
 
       expect(
@@ -473,6 +478,7 @@ describe('collectDependencyGraph', () => {
     });
 
     try {
+      await linkSemanticWorkspacePackages(fixture.rootDir, ['b', 'c']);
       const sourceGraph = await collectDependencyGraph(fixture.config, {
         view: 'source',
       });
@@ -528,6 +534,7 @@ describe('collectDependencyGraph', () => {
     });
 
     try {
+      await linkSemanticWorkspacePackages(fixture.rootDir, ['a', 'b']);
       const graph = await collectDependencyGraph(fixture.config, {
         view: 'artifact',
       });

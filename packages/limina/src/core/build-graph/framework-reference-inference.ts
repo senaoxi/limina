@@ -160,9 +160,12 @@ function processFrameworkImport(options: FrameworkImportOptions): void {
   recordFrameworkSchedulingDependency(options, target);
 }
 
-function getFrameworkSourceFileNames(source: GovernedSourceUnit): string[] {
+function getFrameworkSourceFileNames(
+  source: GovernedSourceUnit,
+  project: SourceProject,
+): string[] {
   if (!isBuildCapablePreset(source.primaryCheckerName)) {
-    return source.ownedFileNames;
+    return project.fileNames;
   }
   return source.ownedFileNames.filter(isFrameworkFile);
 }
@@ -191,6 +194,7 @@ function processFrameworkDependency(options: {
   project: SourceProject;
   projectDependency: ProjectDependency;
 }): void {
+  if (!hasSourceRequirement(options.projectDependency)) return;
   const fileName = options.projectDependency.importRecord.filePath;
   if (!options.frameworkFiles.has(fileName)) return;
   processFrameworkImport({
@@ -238,7 +242,9 @@ function processFrameworkSource(options: FrameworkSourceOptions): void {
     options.source.configPath,
   );
   if (project === undefined) return;
-  const frameworkFiles = new Set(getFrameworkSourceFileNames(options.source));
+  const frameworkFiles = new Set(
+    getFrameworkSourceFileNames(options.source, project),
+  );
   const collection = collectProjectDependencies({
     caches: options.context.projectDependencyCaches,
     context: createSourceProjectSemanticContext({
@@ -272,4 +278,11 @@ export function processFrameworkSourceReferences(options: {
   for (const source of options.governedSources) {
     processFrameworkSource({ ...options, source });
   }
+}
+
+function hasSourceRequirement(dependency: ProjectDependency): boolean {
+  return (
+    dependency.targetKind === 'source' &&
+    dependency.referenceRequirement?.kind === 'source-semantic'
+  );
 }

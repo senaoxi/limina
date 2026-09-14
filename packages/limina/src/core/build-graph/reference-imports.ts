@@ -22,6 +22,7 @@ export type { ReferenceImportContext } from './reference-import-types';
 export function processDeclarationProviderImport(
   options: ReferenceImportOptions,
 ): void {
+  if (options.projectDependency.referenceRequirement === null) return;
   const provider = resolveUsableProvider(options);
   const target = createReferenceTarget({ base: options, provider });
   if (isValidReferenceTarget(options.project.configPath, target)) {

@@ -4,10 +4,11 @@ import {
   readJsonConfig,
 } from '#core/tsconfig/actions';
 import { uniqueValues } from '#utils/collections';
-import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
+import { readRelativeTypeRoots } from '../../typescript-semantic/effective-roots';
 
 export function isDefaultTsconfigPath(configPath: string): boolean {
   return path.basename(configPath) === 'tsconfig.json';
@@ -72,34 +73,11 @@ export function addSourceReferenceConfigProblems(options: {
   );
 }
 
-function getConfiguredTypes(configObject: Record<string, unknown>): unknown[] {
-  const compilerOptions = configObject.compilerOptions;
-  if (!isPlainRecord(compilerOptions)) {
-    return [];
-  }
-
-  return Array.isArray(compilerOptions.types) ? compilerOptions.types : [];
-}
-
-function isRelativeTypeName(value: unknown): value is string {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  return value.startsWith('./') || value.startsWith('../');
-}
-
 export function readRelativeTypeFiles(
-  config: ResolvedLiminaConfig,
+  _config: ResolvedLiminaConfig,
   sourceConfigPath: string,
 ): string[] {
-  return getConfiguredTypes(readJsonConfig(config, sourceConfigPath))
-    .filter(isRelativeTypeName)
-    .map((typeName) =>
-      normalizeAbsolutePath(
-        path.resolve(path.dirname(sourceConfigPath), typeName),
-      ),
-    );
+  return readRelativeTypeRoots(sourceConfigPath);
 }
 
 function isTraversalBoundary(currentDir: string, rootDir: string): boolean {

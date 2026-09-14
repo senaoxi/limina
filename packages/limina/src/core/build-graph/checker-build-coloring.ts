@@ -96,7 +96,7 @@ function getSingleOwner(owners: string[] | undefined): string | null {
 }
 
 function isDeclarationRelationFact(fact: CheckerDependencyFact): boolean {
-  return fact.typeEvidenceKind === 'checker-source';
+  return fact.referenceRequirement != null;
 }
 
 function createBuildDependencyEdge(options: {

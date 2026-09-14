@@ -17,6 +17,11 @@ import type {
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
 
+import type {
+  DeclarationReferenceRequirement,
+  NativeDependencyFact,
+} from '../typescript-semantic/dependency-fact';
+
 export interface ProjectSemanticContext {
   astroSemanticProject?: AstroSemanticProject;
   compilerOptions: ts.CompilerOptions;
@@ -35,6 +40,8 @@ export interface ProjectSemanticContext {
 }
 
 interface ProjectDependencyBase {
+  nativeFact?: NativeDependencyFact;
+  referenceRequirement: DeclarationReferenceRequirement | null;
   importRecord: ImportRecord;
   resolutionMode: string;
   resolvedFilePath: string;

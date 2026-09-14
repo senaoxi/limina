@@ -9,6 +9,7 @@ import type ts from 'typescript';
 import { createAutoProjectSemanticContext } from '../project-dependencies/context';
 import type { ProjectSemanticContext } from '../project-dependencies/contracts';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
+import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   SemanticFamily,
@@ -171,7 +172,11 @@ export function createEvidenceProject(options: {
       extensions: [
         ...getSemanticExtensions(checkerName, options.project, options.state),
       ],
-      fileNames: [...parsed.fileNames],
+      fileNames: getEffectiveImporterRoots({
+        configPath: options.project.configPath,
+        fileNames: parsed.fileNames,
+        options: parsed.options,
+      }),
       options: parsed.options,
       projectReferences: options.project.references,
       resolverConfigPath: options.project.configPath,

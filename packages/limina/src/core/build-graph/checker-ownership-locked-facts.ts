@@ -45,7 +45,8 @@ function createLockedDependencyFact(
       importRecord: dependency.importRecord,
       physicalTargetPath: dependency.resolvedFilePath,
       physicalTargetProvenance: 'checker-source',
-      typeEvidenceKind: 'checker-source',
+      typeEvidenceKind: getSupportedEvidenceKind(dependency),
+      referenceRequirement: dependency.referenceRequirement,
     };
   }
   return {
@@ -53,7 +54,8 @@ function createLockedDependencyFact(
     importRecord: dependency.importRecord,
     physicalTargetPath: null,
     physicalTargetProvenance: null,
-    typeEvidenceKind: 'concrete-declaration',
+    typeEvidenceKind: getSupportedEvidenceKind(dependency),
+    referenceRequirement: dependency.referenceRequirement,
   };
 }
 
@@ -92,4 +94,14 @@ export function collectLockedProjectFacts(options: {
     facts.push(createLockedDependencyFact(options.project, dependency));
   }
   return { facts, problems };
+}
+
+function getSupportedEvidenceKind(
+  dependency: ProjectDependency,
+): CheckerDependencyFact['typeEvidenceKind'] {
+  if (dependency.typeEvidence.kind === 'unsupported-checker')
+    throw new Error(
+      'Unsupported evidence cannot become a locked dependency fact.',
+    );
+  return dependency.typeEvidence.kind;
 }

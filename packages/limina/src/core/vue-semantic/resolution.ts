@@ -1,5 +1,6 @@
 import type {
   ResolvedCheckerModuleName,
+  VolarSourceScript,
   VueProjectSemanticIdentity,
 } from '#checkers';
 import type { ImportRecord } from '#core/import-analysis/runner';
@@ -59,14 +60,32 @@ function getResolutionMode(options: {
 
 function isCheckerSource(options: {
   fileName: string;
-  identity: VueProjectSemanticIdentity;
+  context: ReturnType<VueSemanticContextManager['acquire']>;
 }): boolean {
   const normalized = normalizeAbsolutePath(options.fileName);
-  return options.identity.profilesByFileName.has(normalized);
+  const generated = options.context.language.scripts.get(normalized)?.generated;
+  if (generated === undefined) return classifyMissingScript(options);
+  return hasServiceScript(generated);
+}
+
+function classifyMissingScript(options: {
+  fileName: string;
+  context: ReturnType<VueSemanticContextManager['acquire']>;
+}): false {
+  const { identity } = options.context;
+  const extensions = identity.toolchain.languageCore.getAllExtensions(
+    identity.vueOptions,
+  );
+  if (extensions.some((extension) => options.fileName.endsWith(extension))) {
+    throw new Error(
+      `Resolved Vue target has no Language source script: ${options.fileName}`,
+    );
+  }
+  return false;
 }
 
 function createCheckerResolution(options: {
-  identity: VueProjectSemanticIdentity;
+  context: ReturnType<VueSemanticContextManager['acquire']>;
   resolvedModule: ts.ResolvedModuleFull;
 }): ResolvedCheckerModuleName {
   const resolvedFileName = normalizeAbsolutePath(
@@ -77,7 +96,7 @@ function createCheckerResolution(options: {
       options.resolvedModule.isExternalLibraryImport === true,
     resolvedBy: isCheckerSource({
       fileName: resolvedFileName,
-      identity: options.identity,
+      context: options.context,
     })
       ? 'checker-source'
       : 'typescript',
@@ -165,7 +184,7 @@ function createResolvedCandidate(options: {
     resolvedModule === undefined
       ? null
       : createCheckerResolution({
-          identity: options.identity,
+          context: options.context,
           resolvedModule,
         });
   return {
@@ -207,4 +226,17 @@ function resolveWithContext(options: {
 function formatResolutionError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function hasServiceScript(
+  generated: NonNullable<VolarSourceScript['generated']>,
+): boolean {
+  const service = generated.languagePlugin.typescript?.getServiceScript(
+    generated.root,
+  );
+  if (service === undefined)
+    throw new Error(
+      'Resolved Vue source script has no TypeScript service script.',
+    );
+  return true;
 }

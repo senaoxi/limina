@@ -58,6 +58,7 @@ function getSvelteProjectForRoot(options: {
   if (project === undefined) return project;
   if (project.packageRootDir === options.packageRootDir) return project;
   return createSvelteSemanticProject({
+    configClosure: project.configClosure,
     configPath: project.configPath,
     extensions: project.extensions,
     fileNames: project.fileNames,

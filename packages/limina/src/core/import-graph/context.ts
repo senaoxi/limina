@@ -11,6 +11,9 @@ export function formatImportRecordLocation(
   rootDir: string,
   importRecord: ImportLocationRecord,
 ): string {
+  if (importRecord.configurationSource !== undefined) {
+    return `${toRelativePath(rootDir, importRecord.filePath)} (compiler option: ${toRelativePath(rootDir, importRecord.configurationSource.configPath)}#${importRecord.configurationSource.option})`;
+  }
   return `${toRelativePath(rootDir, importRecord.filePath)}:${importRecord.line} (kind: ${importRecord.kind})`;
 }
 

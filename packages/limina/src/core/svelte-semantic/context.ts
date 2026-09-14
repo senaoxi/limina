@@ -18,6 +18,10 @@ function projectIdentity(project: SvelteSemanticProject): string {
   return JSON.stringify({
     adapterVersion: project.adapterVersion,
     configPath: project.configPath,
+    configClosure: project.configClosure,
+    packageIdentity: project.packageIdentity,
+    options: project.options,
+    fileNames: project.fileNames,
     generation: project.generation,
     packageRootDir: project.packageRootDir,
     resolverConfigPath: project.resolverConfigPath,

@@ -2,6 +2,7 @@ import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import type ts from 'typescript';
+import { isDeclarationFile } from '../import-graph/declaration-classifier';
 import type { TypeScriptSemanticProject } from './contracts';
 import { getProjectReferenceSemanticFiles } from './project-references';
 
@@ -128,10 +129,13 @@ export class TypeScriptInclusionLedger {
     return true;
   }
 
-  allowModuleTarget(resolution: ts.ResolvedModuleFull): boolean {
+  allowModuleTarget(
+    resolution: ts.ResolvedModuleFull,
+    containingFile?: string,
+  ): boolean {
     if (this.has(resolution.resolvedFileName)) return true;
     if (this.#mode === 'root-facts') return false;
-    return this.#allowExternalModuleTarget(resolution);
+    return this.#allowExternalModuleTarget(resolution, containingFile);
   }
 
   #addTransitiveFile(fileName: string, reason: InclusionReason): void {
@@ -139,8 +143,12 @@ export class TypeScriptInclusionLedger {
     this.add(fileName, reason);
   }
 
-  #allowExternalModuleTarget(resolution: ts.ResolvedModuleFull): boolean {
-    if (resolution.isExternalLibraryImport !== true) return false;
+  #allowExternalModuleTarget(
+    resolution: ts.ResolvedModuleFull,
+    containingFile?: string,
+  ): boolean {
+    if (!this.#isExternalDeclarationTarget(resolution, containingFile))
+      return false;
     if (
       this.#project.workspaceSourceBoundary.has(resolution.resolvedFileName)
     ) {
@@ -148,6 +156,26 @@ export class TypeScriptInclusionLedger {
     }
     this.add(resolution.resolvedFileName, 'external-module-target');
     return true;
+  }
+
+  #isExternalDeclarationTarget(
+    resolution: ts.ResolvedModuleFull,
+    containingFile?: string,
+  ): boolean {
+    if (resolution.isExternalLibraryImport === true) return true;
+    if (!isDeclarationFile(resolution.resolvedFileName)) return false;
+    return this.#isExternalDeclarationImporter(containingFile);
+  }
+
+  #isExternalDeclarationImporter(fileName: string | undefined): boolean {
+    if (fileName === undefined) return false;
+    if (!isDeclarationFile(fileName)) return false;
+    return this.#getPathIdentities(fileName).some((identity) => {
+      const reasons = this.#reasons.get(identity);
+      return ['external-module-target', 'type-reference'].some((reason) =>
+        reasons?.has(reason as InclusionReason),
+      );
+    });
   }
 
   has(fileName: string): boolean {

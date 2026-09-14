@@ -100,16 +100,13 @@ function collectProjectDependenciesWithNewContext(options: {
   request: ProjectDependencyRequest;
 }): ProjectDependencyCollection {
   const collection = createEmptyCollection();
-  const typeScriptSemanticContext = createBoundedTypeScriptSemanticContext(
-    {
-      configPath: options.request.context.configPath,
-      fileNames: options.request.context.fileNames,
-      options: options.request.context.compilerOptions,
-      projectReferences: options.request.context.references,
-      workspaceSourceBoundary: options.request.context.workspaceSourceBoundary,
-    },
-    { dependencyFactsOnly: true },
-  );
+  const typeScriptSemanticContext = createBoundedTypeScriptSemanticContext({
+    configPath: options.request.context.configPath,
+    fileNames: options.request.context.fileNames,
+    options: options.request.context.compilerOptions,
+    projectReferences: options.request.context.references,
+    workspaceSourceBoundary: options.request.context.workspaceSourceBoundary,
+  });
   const semanticRequest = {
     ...options.request,
     typeScriptSemanticContext,

@@ -1,5 +1,6 @@
 import type { CheckerName } from '#config/runner';
 import type { ImportRecord } from '#core/import-analysis/runner';
+import type { DeclarationReferenceRequirement } from '../typescript-semantic/dependency-fact';
 
 export type CheckerOwner =
   | { kind: 'pending' }
@@ -62,6 +63,7 @@ export interface SolutionOwnershipState {
 }
 
 export interface CheckerDependencyFact {
+  referenceRequirement?: DeclarationReferenceRequirement | null;
   consumerConfigPath: string;
   importRecord: ImportRecord;
   physicalTargetPath: string | null;

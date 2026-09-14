@@ -5,10 +5,11 @@ import type {
   TypeScriptSemanticDependencyContext,
   TypeScriptSemanticResolution,
 } from './contracts';
+import type { NativeDependencyFact } from './dependency-fact';
 import { createImportRecordIdentity } from './import-record';
 
 function cloneImportRecord(record: ImportRecord): ImportRecord {
-  return { ...record, locator: { ...record.locator } };
+  return structuredClone(record);
 }
 
 function cloneResolution(
@@ -23,6 +24,7 @@ function cloneResolution(
 function captureSourceFile(options: {
   context: TypeScriptSemanticContext;
   fileName: string;
+  facts: Map<string, NativeDependencyFact>;
   recordsByFileName: Map<string, readonly ImportRecord[]>;
   resolutionsByImportRecord: Map<string, TypeScriptSemanticResolution>;
   sourceFileNames: Set<string>;
@@ -35,6 +37,10 @@ function captureSourceFile(options: {
     .map(cloneImportRecord);
   options.recordsByFileName.set(normalized, records);
   for (const record of records) {
+    options.facts.set(
+      createImportRecordIdentity(record),
+      structuredClone(options.context.getDependencyFact(record)),
+    );
     options.resolutionsByImportRecord.set(
       createImportRecordIdentity(record),
       cloneResolution(options.context.resolveImportRecord(record)),
@@ -46,6 +52,7 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
   context: TypeScriptSemanticContext;
   fileNames: readonly string[];
 }): TypeScriptSemanticDependencyContext {
+  const facts = new Map<string, NativeDependencyFact>();
   const recordsByFileName = new Map<string, readonly ImportRecord[]>();
   const resolutionsByImportRecord = new Map<
     string,
@@ -56,6 +63,7 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
   for (const fileName of options.fileNames) {
     captureSourceFile({
       context: options.context,
+      facts,
       fileName,
       recordsByFileName,
       resolutionsByImportRecord,
@@ -65,8 +73,18 @@ export function createTypeScriptSemanticDependencySnapshot(options: {
 
   return {
     identity: options.context.identity,
+    getDependencyFact(record) {
+      const fact = facts.get(createImportRecordIdentity(record));
+      if (fact === undefined)
+        throw new Error(
+          'Native dependency fact is absent from the semantic snapshot.',
+        );
+      return structuredClone(fact);
+    },
     getImportRecords(fileName) {
-      return recordsByFileName.get(normalizeAbsolutePath(fileName)) ?? [];
+      return (recordsByFileName.get(normalizeAbsolutePath(fileName)) ?? []).map(
+        cloneImportRecord,
+      );
     },
     hasSourceFile(fileName) {
       return sourceFileNames.has(normalizeAbsolutePath(fileName));

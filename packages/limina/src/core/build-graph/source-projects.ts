@@ -4,19 +4,15 @@ import {
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
-import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
   toRelativePath,
 } from '#utils/path';
+import { getEffectiveImporterRoots } from '../typescript-semantic/effective-roots';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { LockedSemanticAuthority } from './checker-ownership-types';
-import {
-  readGraphRules,
-  readOutputOptions,
-  readRelativeTypeFiles,
-} from './generated/config-readers';
+import { readGraphRules, readOutputOptions } from './generated/config-readers';
 import {
   getGeneratedDtsConfigPath,
   getGeneratedOutputProjectConfigPath,
@@ -78,10 +74,11 @@ export function createSourceProject(options: {
       rootDir: options.config.rootDir,
       sourceConfigPath: options.sourceConfigPath,
     }),
-    fileNames: uniqueSortedStrings([
-      ...ownedFileNames,
-      ...readRelativeTypeFiles(options.config, options.sourceConfigPath),
-    ]),
+    fileNames: getEffectiveImporterRoots({
+      configPath: options.sourceConfigPath,
+      fileNames: ownedFileNames,
+      options: parsed.options,
+    }),
     graphRules: readGraphRules(options.config, options.sourceConfigPath),
     ownedFileNames,
     outputConfigPath: getGeneratedOutputProjectConfigPath({

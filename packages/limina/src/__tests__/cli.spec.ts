@@ -22,6 +22,7 @@ import { createLiminaCli, runCheckWithCliFlowCleanup } from '../cli';
 import { assertIssueInventoryLimitArgv } from '../cli/argv';
 import { showIssueInventory } from '../cli/issue-query';
 import type { CheckFlags } from '../cli/types';
+import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
 const execFileAsync = promisify(execFile);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -3485,7 +3486,8 @@ export default {
       expect(result.code).toBe(1);
       expect(result.output).toContain('Graph check summary');
       expect(result.output).toContain('details:');
-      expect(result.output).toContain('Missing project reference');
+      // With no installed package, the checker has no target to reference.
+      expect(result.output).toContain('Unresolved workspace import');
     } finally {
       await rm(rootDir, {
         force: true,
@@ -3591,6 +3593,7 @@ export default {
         }),
       );
 
+      await linkSemanticWorkspacePackages(rootDir, ['b']);
       const result = await execFileAsync(
         process.execPath,
         [
@@ -3860,6 +3863,7 @@ export default {
         }),
       );
 
+      await linkSemanticWorkspacePackages(rootDir, ['b']);
       const result = await execFileAsync(
         process.execPath,
         [

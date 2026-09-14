@@ -25,7 +25,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
-import { toPortablePath } from './helpers/path';
+import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
 const requireFromTest = createRequire(import.meta.url);
@@ -7461,4 +7461,361 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await fixture.cleanup();
     }
   });
+});
+
+describe('reference graph repair compiler differentials', () => {
+  it.each([
+    'relative-types',
+    'relative-types-extends',
+    'jsx-runtime',
+    'jsx-dev-runtime',
+    'vue-direct',
+  ])(
+    'builds same-package named leaves from inferred references: %s',
+    async (variant) => {
+      const vue = variant === 'vue-direct';
+      const compilerOptions = {
+        target: 'ES2022',
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        strict: true,
+        noEmit: true,
+        skipLibCheck: vue,
+        types: [],
+        jsx: 'preserve',
+      };
+      const files: Record<string, string> = {
+        'packages/p/package.json': json({ name: '@repair/p', type: 'module' }),
+        'packages/p/tsconfig.json': json({
+          files: [],
+          references: [
+            { path: './tsconfig.a.json' },
+            { path: './tsconfig.b.json' },
+          ],
+        }),
+        'packages/p/tsconfig.a.json': json({
+          compilerOptions,
+          include: ['a/src/**/*'],
+        }),
+        'packages/p/tsconfig.b.json': json({
+          compilerOptions,
+          include: ['b/src/**/*'],
+        }),
+        'packages/p/a/src/index.ts': 'export const value = 1;',
+        'packages/p/b/src/value.ts': 'export interface Value { value: number }',
+      };
+      if (variant.startsWith('relative-types')) {
+        files['packages/p/tsconfig.a.json'] = json({
+          compilerOptions: { ...compilerOptions, types: ['./a/env'] },
+          include: ['a/src/**/*'],
+        });
+        files['packages/p/a/env.d.ts'] =
+          "import type { Value } from '../b/src/value.js'; declare global { type FromB = Value }";
+        files['packages/p/a/src/index.ts'] =
+          'export const value: FromB = { value: 1 };';
+        if (variant === 'relative-types-extends') {
+          files['packages/p/config/base.json'] = json({
+            compilerOptions: { ...compilerOptions, types: ['./a/env'] },
+          });
+          files['packages/p/tsconfig.a.json'] = json({
+            extends: './config/base.json',
+            include: ['a/src/**/*'],
+          });
+        }
+      } else if (vue) {
+        files['packages/p/a/src/index.ts'] =
+          "export { default as Child } from '../../b/src/Child.vue';";
+        files['packages/p/b/src/Child.vue'] =
+          '<script setup lang="ts">defineProps<{ value?: number }>()</script><template><div /></template>';
+      } else {
+        delete files['packages/p/a/src/index.ts'];
+        files['packages/p/a/src/index.tsx'] = 'export const value = <div />;';
+        files['packages/p/tsconfig.a.json'] = json({
+          compilerOptions: {
+            ...compilerOptions,
+            jsx: variant === 'jsx-runtime' ? 'react-jsx' : 'react-jsxdev',
+            jsxImportSource: 'repair-runtime',
+            paths: { 'repair-runtime/*': ['./b/src/*'] },
+          },
+          include: ['a/src/**/*'],
+        });
+        files[`packages/p/b/src/${variant}.ts`] =
+          'export const jsx: any = null, jsxs: any = null; export namespace JSX { export interface IntrinsicElements { div: {} } }';
+      }
+      const fixture = await createFixture(files);
+      const fixturePath = createFixturePathResolver(fixture.rootDir);
+      const checker = vue ? 'vue-tsc' : 'tsc';
+      fixture.config.config!.checkers = {
+        [checker]: { include: ['packages/**/tsconfig.json'] },
+      };
+      try {
+        if (vue) {
+          const vueRequire = createRequire(
+            new URL('../../../vitepress/package.json', import.meta.url),
+          );
+          await linkInstalledPackage({
+            installedName: path.dirname(vueRequire.resolve('vue/package.json')),
+            packageName: 'vue',
+            rootDir: fixture.rootDir,
+          });
+        }
+        const generated = await prepareGeneratedTsconfigGraph(fixture.config);
+        const mapping = generated.sourceToDts.get(checker)!;
+        const importer = mapping.get(
+          fixturePath('packages/p/tsconfig.a.json'),
+        )!;
+        const provider = mapping.get(
+          fixturePath('packages/p/tsconfig.b.json'),
+        )!;
+        const config = JSON.parse(await readFile(importer, 'utf8'));
+        expect(
+          config.references.map((reference: { path: string }) =>
+            normalizeAbsolutePath(
+              path.resolve(path.dirname(importer), reference.path),
+            ),
+          ),
+        ).toEqual([provider]);
+        expect(generated.dependencyEdges).toContainEqual(
+          expect.objectContaining({
+            fromConfigPath: fixturePath('packages/p/tsconfig.a.json'),
+            toConfigPath: fixturePath('packages/p/tsconfig.b.json'),
+            kind: 'declaration-provider',
+          }),
+        );
+        const bin = requireFromTest.resolve(
+          vue ? 'vue-tsc/bin/vue-tsc.js' : 'typescript/bin/tsc',
+        );
+        const build = await execFileAsync(
+          process.execPath,
+          [bin, '-b', importer, '--pretty', 'false', '--force'],
+          { cwd: fixture.rootDir },
+        );
+        expect(build.stderr).toBe('');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    30_000,
+  );
+
+  it.each(
+    ['svelte', 'astro'].flatMap((framework) =>
+      ['declaration', 'ambient-membership'].map((kind) => ({
+        framework,
+        kind,
+      })),
+    ),
+  )(
+    'excludes $framework $kind evidence from source scheduling',
+    async ({ framework, kind }) => {
+      const files: Record<string, string> = {
+        'packages/a/package.json': json({
+          name: '@repair/a',
+          type: 'module',
+          dependencies:
+            framework === 'astro'
+              ? {
+                  '@astrojs/check': '0.9.10',
+                  astro: '7.2.0',
+                  typescript: '6.0.3',
+                }
+              : { svelte: '4.0.0', svelte2tsx: '0.7.61', typescript: '6.0.3' },
+        }),
+        'packages/b/package.json': json({ name: '@repair/b', type: 'module' }),
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          include: ['src/**/*'],
+        }),
+        'packages/b/tsconfig.json': json({
+          compilerOptions: {
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            types: [],
+          },
+          include: ['src/**/*'],
+        }),
+        [`packages/a/src/Entry.${framework}`]:
+          framework === 'svelte'
+            ? '<script lang="ts">import type { Value } from "../../b/src/value.js"; let value: Value = 1;</script><p>{value}</p>'
+            : '---\nimport type { Value } from "../../b/src/value.js"; const value: Value = 1;\n---\n<p>{value}</p>',
+        'packages/b/src/value.d.ts': 'export type Value = number;',
+      };
+      if (kind === 'ambient-membership') {
+        delete files['packages/b/src/value.d.ts'];
+        files['packages/b/src/value.ts'] =
+          'export type Value = { source: true };';
+        files[`packages/a/src/Entry.${framework}`] = '<p>Component</p>';
+        files['packages/a/src/index.ts'] =
+          "import type { Value } from 'dep'; export const value: Value = 1;";
+        files['packages/a/src/env.d.ts'] =
+          "declare module 'dep' { export type Value = number; }";
+        const config = JSON.parse(files['packages/a/tsconfig.json']!);
+        config.compilerOptions.paths = { dep: ['../b/src/value.ts'] };
+        files['packages/a/tsconfig.json'] = json(config);
+      }
+      const fixture = await createFixture(files);
+      fixture.config.config!.checkers = {
+        [framework === 'svelte' ? 'svelte-check' : 'astro']: {
+          include: ['packages/a/tsconfig.json'],
+        },
+        tsc: { include: ['packages/b/tsconfig.json'] },
+      };
+      try {
+        const leafRoot = path.join(fixture.rootDir, 'packages/a');
+        if (framework === 'astro') await linkAstroToolchain(leafRoot);
+        else {
+          await linkInstalledPackage({
+            installedName: 'svelte-v4-min',
+            packageName: 'svelte',
+            rootDir: leafRoot,
+          });
+          await linkInstalledPackage({
+            installedName: 'svelte2tsx',
+            packageName: 'svelte2tsx',
+            rootDir: leafRoot,
+          });
+          await linkInstalledPackage({
+            installedName: 'typescript',
+            packageName: 'typescript',
+            rootDir: leafRoot,
+          });
+        }
+        const generated = await prepareGeneratedTsconfigGraph(fixture.config);
+        expect(generated.dependencyEdges).toEqual([]);
+        if (kind === 'ambient-membership') {
+          expect(generated.ownershipPlan.dependencyFacts).toContainEqual(
+            expect.objectContaining({
+              typeEvidenceKind: 'ambient',
+              referenceRequirement: expect.objectContaining({
+                kind: 'compiler-membership',
+              }),
+            }),
+          );
+          const result = await execFileAsync(
+            process.execPath,
+            [
+              requireFromTest.resolve('typescript/bin/tsc'),
+              '-p',
+              path.join(leafRoot, 'tsconfig.json'),
+              '--noEmit',
+              '--pretty',
+              'false',
+            ],
+            { cwd: fixture.rootDir },
+          );
+          expect(result.stderr).toBe('');
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+});
+
+describe('ambient references and compiler membership', () => {
+  it.each(['type-only', 'dynamic', 'cjs', 'paths', 'augmentation'])(
+    'retains actual evidence through graph coloring and build: %s',
+    async (variant) => {
+      const membership = variant === 'paths' || variant === 'augmentation';
+      const extension = variant === 'cjs' ? 'cts' : 'ts';
+      const compilerOptions = {
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        target: 'ES2022',
+        strict: true,
+        noEmit: true,
+        types: [],
+      };
+      const code =
+        variant === 'dynamic'
+          ? "export async function answer(): Promise<true> { const b = await import('@repair/b'); return b.value.ambient; }"
+          : "type B = import('@repair/b').B; const b: B = { ambient: true }; export const answer: true = b.ambient;";
+      const fixture = await createFixture({
+        'packages/a/package.json': json({ name: '@repair/a', type: 'module' }),
+        'packages/b/package.json': json({
+          name: '@repair/b',
+          type: 'module',
+          exports: './src/value.ts',
+        }),
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            ...compilerOptions,
+            paths: membership
+              ? { '@repair/b': ['../b/src/value.ts'] }
+              : undefined,
+          },
+          include: ['src/**/*'],
+        }),
+        'packages/b/tsconfig.json': json({
+          compilerOptions,
+          include: ['src/**/*'],
+        }),
+        [`packages/a/src/index.${extension}`]: code,
+        'packages/a/src/env.d.ts': `${variant === 'augmentation' ? "import '@repair/b';" : ''}declare module '@repair/b' { export interface B { ambient: true } export const value: { ambient: true } }`,
+        'packages/b/src/value.ts': membership
+          ? 'export interface B {}'
+          : `import type { answer } from '../../a/src/index.${extension === 'cts' ? 'cjs' : 'js'}'; export interface B { physical: true } export type Answer = typeof answer;`,
+      });
+      const fixturePath = createFixturePathResolver(fixture.rootDir);
+      try {
+        await linkWorkspacePackage(
+          fixture.rootDir,
+          'packages/a',
+          'packages/b',
+          '@repair/b',
+        );
+        const generated = await prepareGeneratedTsconfigGraph(fixture.config);
+        const pair = [
+          fixturePath(`packages/${membership ? 'a' : 'b'}/tsconfig.json`),
+          fixturePath(`packages/${membership ? 'b' : 'a'}/tsconfig.json`),
+        ];
+        expect(
+          generated.dependencyEdges.map((edge) => [
+            edge.fromConfigPath,
+            edge.toConfigPath,
+          ]),
+        ).toEqual(variant === 'augmentation' ? [pair, pair] : [pair]);
+        const facts = generated.ownershipPlan.dependencyFacts.filter(
+          (fact) =>
+            fact.consumerConfigPath === fixturePath('packages/a/tsconfig.json'),
+        );
+        if (membership) {
+          expect(facts).toHaveLength(variant === 'augmentation' ? 2 : 1);
+          for (const fact of facts) {
+            expect(fact.typeEvidenceKind).toBe(
+              variant === 'augmentation' ? 'checker-source' : 'ambient',
+            );
+            expect(fact.referenceRequirement?.kind).toBe(
+              variant === 'augmentation'
+                ? 'source-semantic'
+                : 'compiler-membership',
+            );
+          }
+        } else expect(facts).toEqual([]);
+        const importer = generated.sourceToDts
+          .get('tsc')!
+          .get(
+            fixturePath(`packages/${membership ? 'a' : 'b'}/tsconfig.json`),
+          )!;
+        await execFileAsync(
+          process.execPath,
+          [
+            requireFromTest.resolve('typescript/bin/tsc'),
+            '-b',
+            importer,
+            '--pretty',
+            'false',
+            '--force',
+          ],
+          { cwd: fixture.rootDir },
+        );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 });
