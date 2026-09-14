@@ -587,7 +587,7 @@ packages:
     engines: { node: ^22.18.0 || >=24.11.0 }
     hasBin: true
     peerDependencies:
-      '@arethetypeswrong/core': ^0.18.0
+      '@arethetypeswrong/core': ^0.18.3
       '@astrojs/check': 0.9.10
       '@typescript/native-preview': '>=7.0.0-dev.20260421.2 <7.0.0'
       knip: '>=6.0.0 <7.0.0'

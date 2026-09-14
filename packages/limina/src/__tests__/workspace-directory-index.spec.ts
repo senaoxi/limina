@@ -5,8 +5,16 @@ import type {
   WorkspacePackage,
 } from '#core/workspace/actions';
 import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
-import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import nativePath from 'node:path';
 import path from 'pathe';
 import { describe, expect, it } from 'vitest';
 import { createWorkspaceLookupIndex } from '../core/workspace/lookup';
@@ -16,10 +24,12 @@ import {
   type WorkspacePackageIdentity,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
+import { canonicalProjectedPathSync } from '../core/workspace/validated/shared';
 import {
   createProfilingMetricsRecorder,
   type ProfilingMetricsRecorder,
 } from '../profiling/metrics';
+import { createFixturePathResolver } from './helpers/path';
 
 interface LinearClassification {
   boundary: WorkspaceRegionBoundary | null;
@@ -28,6 +38,7 @@ interface LinearClassification {
 
 async function createFixture(): Promise<{
   cleanup: () => Promise<void>;
+  path: (...segments: string[]) => string;
   rootDir: string;
 }> {
   const rootDir = await realpath(
@@ -35,6 +46,7 @@ async function createFixture(): Promise<{
   );
   return {
     cleanup: () => rm(rootDir, { force: true, recursive: true }),
+    path: createFixturePathResolver(rootDir),
     rootDir,
   };
 }
@@ -97,53 +109,44 @@ function createContext(options: {
   };
 }
 
+function containsCanonicalPath(filePath: string, directory: string): boolean {
+  return (
+    filePath === directory ||
+    filePath.startsWith(directory.endsWith('/') ? directory : `${directory}/`)
+  );
+}
+
 function linearClassify(
   context: ValidatedWorkspaceContext,
   canonicalPath: string,
 ): LinearClassification {
-  const identities = [...context.packageIdentities].sort(
-    (left, right) =>
-      right.canonicalDirectory.length - left.canonicalDirectory.length,
-  );
-  const boundariesByOwner = new Map<
-    string,
-    { boundary: WorkspaceRegionBoundary; canonicalRootDir: string }[]
-  >();
-
-  for (const identity of identities) {
-    boundariesByOwner.set(
-      identity.canonicalDirectory,
-      context.boundaries
-        .filter((boundary) =>
-          isPathInsideDirectory(boundary.rootDir, identity.package.directory),
-        )
-        .map((boundary) => ({
-          boundary,
-          canonicalRootDir: normalizeAbsolutePath(boundary.rootDir),
-        })),
-    );
-  }
-
-  const identity = identities.find((candidate) =>
-    isPathInsideDirectory(canonicalPath, candidate.canonicalDirectory),
-  );
-  if (!identity) return { boundary: null, package: null };
-
-  const matchingBoundaries = (
-    boundariesByOwner.get(identity.canonicalDirectory) ?? []
-  )
-    .filter(({ canonicalRootDir }) =>
-      isPathInsideDirectory(canonicalPath, canonicalRootDir),
-    )
+  const identity = [...context.packageIdentities]
     .sort(
       (left, right) =>
-        right.canonicalRootDir.length - left.canonicalRootDir.length,
+        right.canonicalDirectory.length - left.canonicalDirectory.length,
+    )
+    .find((candidate) =>
+      containsCanonicalPath(canonicalPath, candidate.canonicalDirectory),
     );
-  const boundary = matchingBoundaries[0]?.boundary ?? null;
-  return {
-    boundary,
-    package: boundary ? null : identity.package,
-  };
+  if (!identity) return { boundary: null, package: null };
+
+  const boundary =
+    context.boundaries
+      .filter((candidate) =>
+        containsCanonicalPath(candidate.rootDir, identity.package.directory),
+      )
+      .map((candidate) => ({
+        boundary: candidate,
+        canonicalRootDir: canonicalProjectedPathSync(candidate.rootDir),
+      }))
+      .sort(
+        (left, right) =>
+          right.canonicalRootDir.length - left.canonicalRootDir.length,
+      )
+      .find((candidate) =>
+        containsCanonicalPath(canonicalPath, candidate.canonicalRootDir),
+      )?.boundary ?? null;
+  return { boundary, package: boundary ? null : identity.package };
 }
 
 function createOwner(workspacePackage: WorkspacePackage): PackageOwner {
@@ -442,7 +445,11 @@ describe('workspace canonical directory indexes', () => {
     try {
       await mkdir(path.join(physicalRoot, 'generated'), { recursive: true });
       const aliasRoot = path.join(fixture.rootDir, 'alias');
-      await symlink(physicalRoot, aliasRoot);
+      await symlink(
+        physicalRoot,
+        aliasRoot,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
       const workspacePackage = createPackage(
         fixture.rootDir,
         'alias',
@@ -643,7 +650,7 @@ describe('workspace canonical directory indexes', () => {
     }
   });
 
-  it('scales query visits with path depth instead of collection size', async () => {
+  it('stops region visits at the governance prefix regardless of source depth', async () => {
     const fixture = await createFixture();
     try {
       const packageCount = 1000;
@@ -676,17 +683,11 @@ describe('workspace canonical directory indexes', () => {
       expect(
         metricCount(
           metrics,
-          'workspace-path-ancestor-visit',
+          'workspace-path-trie-segment-visit',
           'package-boundary',
         ),
-      ).toBe(queryCount * 3);
-      expect(
-        metricCount(
-          metrics,
-          'workspace-path-ancestor-visit',
-          'package-identity',
-        ),
-      ).toBe(0);
+      ).toBe(queryCount * (targetPackage.directory.split('/').length + 1));
+      expect(metricCount(metrics, 'workspace-path-ancestor-visit')).toBe(0);
       expect(
         metricCount(
           metrics,
@@ -695,6 +696,29 @@ describe('workspace canonical directory indexes', () => {
           'workspace-path-index',
         ),
       ).toBe(packageCount);
+
+      const visitsBeforeDeepQuery = metricCount(
+        metrics,
+        'workspace-path-trie-segment-visit',
+      );
+      const deepFile = path.join(
+        targetPackage.directory,
+        'src/features/editor/components/internal/views/missing.ts',
+      );
+      const deepClassification = pathIndex.classifyPath(deepFile);
+      expect(deepClassification.package).toBe(targetPackage);
+      expect(
+        metricCount(metrics, 'workspace-path-trie-segment-visit') -
+          visitsBeforeDeepQuery,
+      ).toBe(targetPackage.directory.split('/').length + 1);
+      const visitsAfterDeepQuery = metricCount(
+        metrics,
+        'workspace-path-trie-segment-visit',
+      );
+      expect(pathIndex.classifyPath(deepFile)).toBe(deepClassification);
+      expect(metricCount(metrics, 'workspace-path-trie-segment-visit')).toBe(
+        visitsAfterDeepQuery,
+      );
 
       const rootPackage = createPackage(fixture.rootDir, '.', 'root');
       const importerMetrics = createProfilingMetricsRecorder();
@@ -749,6 +773,293 @@ describe('workspace canonical directory indexes', () => {
           'workspace-lookup-index',
         ),
       ).toBe(packageCount);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+function expectDifferentialClassifications(
+  context: ValidatedWorkspaceContext,
+  paths: string[],
+): void {
+  const current = new WorkspaceRegionPathIndex(context);
+  for (const filePath of paths) {
+    const canonicalPath = canonicalProjectedPathSync(filePath);
+    const expected = linearClassify(context, canonicalPath);
+    const actual = current.classifyPath(filePath);
+    expect(actual.package, filePath).toBe(expected.package);
+    expect(actual.boundary, filePath).toBe(expected.boundary);
+  }
+}
+
+describe('workspace region adversarial cases', () => {
+  it('preserves empty, root-package, drive-prefix and same-root cut semantics', async () => {
+    const fixture = await createFixture();
+    try {
+      const rootDir = fixture.path();
+      const rootPackage = createPackage(rootDir, '.', 'root');
+      const paths = [
+        rootDir,
+        `${rootDir}/`,
+        fixture.path('missing.ts'),
+        fixture.path('foo/bar.ts'),
+      ];
+      expectDifferentialClassifications(
+        createContext({ packages: [], rootDir }),
+        paths,
+      );
+      expectDifferentialClassifications(
+        createContext({ packages: [rootPackage], rootDir }),
+        paths,
+      );
+      expectDifferentialClassifications(
+        createContext({
+          boundaries: [createBoundary(rootDir)],
+          packages: [rootPackage],
+          rootDir,
+        }),
+        paths,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+    const packages = [
+      createPackage('C:/', 'repo/foo', 'c'),
+      createPackage('D:/', 'repo/foo', 'd'),
+    ];
+    expectDifferentialClassifications(
+      createContext({ packages, rootDir: 'C:/repo' }),
+      [
+        'C:\\repo\\foo\\src.ts',
+        'D:/repo/foo/src.ts',
+        'C:/repo/foobar/src.ts',
+        'E:/repo/foo/src.ts',
+        'C:/repo/foo/',
+      ],
+    );
+  });
+
+  it('restores owner cuts before visiting sibling governance branches', async () => {
+    const fixture = await createFixture();
+    try {
+      const owner = createPackage(fixture.rootDir, 'a', 'owner');
+      const reentry = createPackage(
+        fixture.rootDir,
+        'a/cut/reentry',
+        'reentry',
+      );
+      const sibling = createPackage(
+        fixture.rootDir,
+        'a/branch/leaf',
+        'sibling',
+      );
+      const boundary = createBoundary(fixture.path('a/cut'));
+      const paths = [
+        fixture.path('a/cut/missing.ts'),
+        fixture.path('a/cut/reentry/src.ts'),
+        fixture.path('a/branch/missing.ts'),
+        fixture.path('a/branch/leaf/src.ts'),
+      ];
+      // The cut subtree is inserted first, then becomes one of two children.
+      // Its owner-scoped cut must not leak to the sibling's intermediate node.
+      for (const packages of [
+        [owner, reentry, sibling],
+        [sibling, reentry, owner],
+      ]) {
+        const context = createContext({
+          boundaries: [boundary],
+          packages,
+          rootDir: fixture.rootDir,
+        });
+        expectDifferentialClassifications(context, paths);
+        const index = new WorkspaceRegionPathIndex(context);
+        expect(
+          index.findPackageForPath(fixture.path('a/branch/missing.ts')),
+        ).toBe(owner);
+        expect(
+          index.findBoundaryForPath(fixture.path('a/branch/missing.ts')),
+        ).toBeNull();
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('selects the nearest owner cut before and after repeated re-entry', async () => {
+    const fixture = await createFixture();
+    try {
+      const a = createPackage(fixture.rootDir, 'a', 'a');
+      const c = createPackage(fixture.rootDir, 'a/b/c', 'c');
+      const external = createPackage(
+        fixture.rootDir,
+        '../external',
+        'external',
+      );
+      const boundaries = ['a/b', 'a/b/deeper', 'a/b/c/d', 'a/b/c/d/deeper'].map(
+        (relative) => createBoundary(fixture.path(relative)),
+      );
+      const paths = [
+        'a',
+        'a/src.ts',
+        'a/b',
+        'a/b/src.ts',
+        'a/b/deeper/src.ts',
+        'a/b/c',
+        'a/b/c/src.ts',
+        'a/b/c/d',
+        'a/b/c/d/src.ts',
+        'a/b/c/d/deeper/src.ts',
+        'a/b/c/different/src.ts',
+        'ab/src.ts',
+        '../external/src.ts',
+      ].map((relative) => fixture.path(relative));
+      for (const ordered of [boundaries, boundaries.toReversed()]) {
+        expectDifferentialClassifications(
+          createContext({
+            boundaries: ordered,
+            packages: [a, c, external],
+            rootDir: fixture.rootDir,
+          }),
+          paths,
+        );
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('challenges event ordering and missing descendants across generated topologies', async () => {
+    const fixture = await createFixture();
+    try {
+      // Enumerate activation/cut combinations independently at three nested roots.
+      // This includes cuts without owners, same-root cuts, repeated cuts, and re-entry.
+      for (let mask = 0; mask < 64; mask += 1) {
+        const directories = ['a', 'a/b', 'a/b/c'];
+        const packages = directories
+          .filter((_, index) => mask & (1 << index))
+          .map((directory) =>
+            createPackage(fixture.rootDir, directory, directory),
+          );
+        const boundaries = directories
+          .filter((_, index) => mask & (1 << (index + 3)))
+          .map((directory) => createBoundary(fixture.path(directory)));
+        expectDifferentialClassifications(
+          createContext({ boundaries, packages, rootDir: fixture.rootDir }),
+          directories.flatMap((directory) => [
+            fixture.path(directory),
+            fixture.path(directory, 'missing/deep/file.ts'),
+            fixture.path(`${directory}bar`, 'file.ts'),
+          ]),
+        );
+      }
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps canonical owner attribution when a lexical cut projects above activation', async () => {
+    const fixture = await createFixture();
+    try {
+      await mkdir(fixture.path('physical/owner'), { recursive: true });
+      await symlink(
+        fixture.path('physical'),
+        fixture.path('physical/owner/back'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      const owner = createPackage(fixture.rootDir, 'physical/owner', 'owner');
+      const boundary = createBoundary(fixture.path('physical/owner/back'));
+      const context = createContext({
+        boundaries: [boundary],
+        packages: [owner],
+        rootDir: fixture.rootDir,
+      });
+      expectDifferentialClassifications(context, [
+        fixture.path('physical/owner/missing.ts'),
+        fixture.path('physical/owner/back/owner/missing.ts'),
+        fixture.path('physical/outside.ts'),
+      ]);
+      expect(
+        new WorkspaceRegionPathIndex(context).findBoundaryForPath(
+          fixture.path('physical/owner/missing.ts'),
+        ),
+      ).toBe(boundary);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('preserves source config aliases, missing tails, lexical cache identity and filesystem errors', async () => {
+    const fixture = await createFixture();
+    try {
+      await mkdir(fixture.path('physical/generated'), { recursive: true });
+      await writeFile(fixture.path('physical/tsconfig.json'), '{}');
+      await writeFile(fixture.path('physical/generated/tsconfig.json'), '{}');
+      await symlink(
+        fixture.path('physical'),
+        fixture.path('alias'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+      const owner = createPackage(fixture.rootDir, 'alias', 'owner');
+      const context = {
+        ...createContext({
+          boundaries: [createBoundary(fixture.path('alias/generated'))],
+          packages: [owner],
+          identities: [
+            createIdentity(fixture.rootDir, owner, fixture.path('physical')),
+          ],
+          rootDir: fixture.rootDir,
+        }),
+        sourceConfigPaths: [
+          fixture.path('alias/tsconfig.json'),
+          fixture.path('alias/generated/tsconfig.json'),
+        ],
+      };
+      const metrics = createProfilingMetricsRecorder();
+      const index = new WorkspaceRegionPathIndex(context, metrics);
+      const nativeAliasConfig = nativePath.join(
+        fixture.rootDir,
+        'alias',
+        'tsconfig.json',
+      );
+      expect(index.isSourceConfigPath(nativeAliasConfig)).toBe(true);
+      expect(index.classifyPath(nativeAliasConfig)).toBe(
+        index.classifyPath(fixture.path('alias/tsconfig.json')),
+      );
+      for (const relative of ['alias/tsconfig.json', 'physical/tsconfig.json'])
+        expect(index.isSourceConfigPath(fixture.path(relative))).toBe(true);
+      for (const relative of [
+        'alias/generated/tsconfig.json',
+        'physical/generated/tsconfig.json',
+        'physical/other.json',
+      ])
+        expect(index.isSourceConfigPath(fixture.path(relative))).toBe(false);
+      const paths = [
+        'alias/missing/deep.ts',
+        'physical/missing/deep.ts',
+        'alias/generated/missing.ts',
+        'outside.ts',
+      ].map((relative) => fixture.path(relative));
+      expectDifferentialClassifications(context, paths);
+      for (const filePath of paths) {
+        const first = index.classifyPath(filePath);
+        const before = metrics.snapshot();
+        expect(index.classifyPath(filePath)).toBe(first);
+        expect(
+          metrics
+            .snapshot()
+            .filter((metric) => metric.name.startsWith('canonical-')),
+        ).toEqual(
+          before.filter((metric) => metric.name.startsWith('canonical-')),
+        );
+      }
+      // A link loop produces ELOOP, not a missing-tail projection or outside result.
+      if (process.platform !== 'win32') {
+        await symlink(fixture.path('loop'), fixture.path('loop'), 'dir');
+        expect(() => index.classifyPath(fixture.path('loop/file.ts'))).toThrow(
+          expect.objectContaining({ code: 'ELOOP' }),
+        );
+      }
     } finally {
       await fixture.cleanup();
     }

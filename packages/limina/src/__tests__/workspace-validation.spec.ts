@@ -277,7 +277,9 @@ describe('validated workspace context', () => {
       expect(
         metricCount('workspace-path-classification-hit', 'package-boundary'),
       ).toBe(4);
-      expect(metricCount('workspace-path-ancestor-visit')).toBeGreaterThan(2);
+      expect(metricCount('workspace-path-trie-segment-visit')).toBeGreaterThan(
+        2,
+      );
     } finally {
       await fixture.cleanup();
     }

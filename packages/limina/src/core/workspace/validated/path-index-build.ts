@@ -2,15 +2,23 @@ import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import type { WorkspacePackage } from '../actions';
 import type { WorkspaceRegionBoundary } from '../regions';
+import {
+  createGovernanceTrieNode,
+  getGovernanceEvent,
+  type GovernanceTrieEvents,
+  type GovernanceTrieNode,
+  insertGovernancePath,
+  precomputeGovernanceState,
+} from './governance-trie';
 import type {
   ValidatedWorkspaceContext,
   WorkspacePackageIdentity,
 } from './types';
 
 export interface WorkspacePathIndexState {
-  boundariesByOwner: Map<string, Map<string, WorkspaceRegionBoundary>>;
   boundaryEntryCount: number;
-  identityByCanonicalDirectory: Map<string, WorkspacePackageIdentity>;
+  packageEntryCount: number;
+  root: GovernanceTrieNode;
   packages: WorkspacePackage[];
   rootDir: string;
   sourceConfigIdentities: Set<string>;
@@ -70,90 +78,82 @@ function findBoundaryOwners(options: {
   );
 }
 
-function addBoundaryForOwner(options: {
-  boundariesByOwner: Map<string, Map<string, WorkspaceRegionBoundary>>;
-  boundary: WorkspaceRegionBoundary;
-  canonicalBoundaryRoot: string;
-  owner: string;
-}): boolean {
-  const boundaryIndex = options.boundariesByOwner.get(options.owner);
-  if (boundaryIndex === undefined) return false;
-  if (boundaryIndex.has(options.canonicalBoundaryRoot)) return false;
-  boundaryIndex.set(options.canonicalBoundaryRoot, options.boundary);
-  return true;
+function addBoundaryCuts(
+  cuts: Map<string, WorkspaceRegionBoundary>,
+  owners: readonly string[],
+  boundary: WorkspaceRegionBoundary,
+): number {
+  let count = 0;
+  for (const owner of owners) {
+    if (cuts.has(owner)) continue;
+    cuts.set(owner, boundary);
+    count += 1;
+  }
+  return count;
 }
 
-function addBoundaryToIndexes(options: {
-  boundariesByOwner: Map<string, Map<string, WorkspaceRegionBoundary>>;
+function insertBoundary(options: {
   boundary: WorkspaceRegionBoundary;
-  canonicalize: (filePath: string) => string;
+  canonicalRoot: string;
+  events: GovernanceTrieEvents;
   ownersByLexicalDirectory: ReadonlyMap<string, readonly string[]>;
+  root: GovernanceTrieNode;
 }): number {
-  const canonicalBoundaryRoot = options.canonicalize(options.boundary.rootDir);
-  const owners = findBoundaryOwners({
-    boundary: options.boundary,
-    ownersByLexicalDirectory: options.ownersByLexicalDirectory,
-  });
-  return owners.filter((owner) =>
-    addBoundaryForOwner({
-      boundariesByOwner: options.boundariesByOwner,
-      boundary: options.boundary,
-      canonicalBoundaryRoot,
-      owner,
-    }),
-  ).length;
+  const owners = findBoundaryOwners(options);
+  if (owners.length === 0) return 0;
+  const node = insertGovernancePath(options.root, options.canonicalRoot);
+  const event = getGovernanceEvent(options.events, node);
+  event.cuts ??= new Map();
+  return addBoundaryCuts(event.cuts, owners, options.boundary);
 }
 
-function createBoundaryIndexes(options: {
+function insertBoundaries(options: {
   boundaries: readonly WorkspaceRegionBoundary[];
   canonicalize: (filePath: string) => string;
+  events: GovernanceTrieEvents;
   identities: ReadonlyMap<string, WorkspacePackageIdentity>;
-}): {
-  boundariesByOwner: Map<string, Map<string, WorkspaceRegionBoundary>>;
-  boundaryEntryCount: number;
-} {
-  const boundariesByOwner = new Map<
-    string,
-    Map<string, WorkspaceRegionBoundary>
-  >();
-  for (const canonicalDirectory of options.identities.keys()) {
-    boundariesByOwner.set(canonicalDirectory, new Map());
-  }
+  root: GovernanceTrieNode;
+}): number {
   const ownersByLexicalDirectory = groupOwnerCanonicalDirectories(
     options.identities,
   );
-  const boundaryEntryCount = options.boundaries.reduce(
-    (count, boundary) =>
-      count +
-      addBoundaryToIndexes({
-        boundariesByOwner,
-        boundary,
-        canonicalize: options.canonicalize,
-        ownersByLexicalDirectory,
-      }),
-    0,
-  );
-  return { boundariesByOwner, boundaryEntryCount };
+  let count = 0;
+  for (const boundary of options.boundaries) {
+    count += insertBoundary({
+      boundary,
+      canonicalRoot: options.canonicalize(boundary.rootDir),
+      events: options.events,
+      ownersByLexicalDirectory,
+      root: options.root,
+    });
+  }
+  return count;
 }
 
 export function createWorkspacePathIndexState(
   context: ValidatedWorkspaceContext,
   canonicalize: (filePath: string) => string,
 ): WorkspacePathIndexState {
-  const identities = [...context.packageIdentities].sort(
-    (left, right) =>
-      right.canonicalDirectory.length - left.canonicalDirectory.length,
-  );
-  const identityByCanonicalDirectory = createIdentityIndex(identities);
-  const boundaryIndexes = createBoundaryIndexes({
+  const root = createGovernanceTrieNode('');
+  const events: GovernanceTrieEvents = new Map();
+  const identities = createIdentityIndex(context.packageIdentities);
+  for (const identity of identities.values()) {
+    const node = insertGovernancePath(root, identity.canonicalDirectory);
+    getGovernanceEvent(events, node).activation = identity;
+  }
+  const boundaryEntryCount = insertBoundaries({
     boundaries: context.boundaries,
     canonicalize,
-    identities: identityByCanonicalDirectory,
+    events,
+    identities,
+    root,
   });
+  precomputeGovernanceState(root, events);
   return {
-    ...boundaryIndexes,
-    identityByCanonicalDirectory,
+    boundaryEntryCount,
+    packageEntryCount: identities.size,
     packages: clonePackages(context.packages),
+    root,
     rootDir: normalizeAbsolutePath(context.configRootDir),
     sourceConfigIdentities: new Set(
       context.sourceConfigPaths.map(canonicalize),
