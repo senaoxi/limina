@@ -103,8 +103,25 @@ export class WorkspacePackageScopeLookup {
       bounds,
       cache,
       options,
-      startDirectory,
+      startDirectory: this.#getSearchStartDirectory(startDirectory, bounds),
     });
+  }
+
+  #getSearchStartDirectory(
+    directory: string,
+    bounds: PackageLookupBounds,
+  ): string {
+    const packageRoot = bounds.activatedPackageRoot;
+    if (packageRoot === null) return directory;
+
+    // The trie already selected the package. Rebase aliases (including aliases
+    // into subdirectories) onto its retained path so the walk reaches its root
+    // and returned manifest paths preserve workspace package identity.
+    const canonicalRoot = this.#region.classifyPath(packageRoot).canonicalPath;
+    const canonicalPath = this.#region.classifyPath(directory).canonicalPath;
+    return normalizeAbsolutePath(
+      path.join(packageRoot, path.relative(canonicalRoot, canonicalPath)),
+    );
   }
 
   #searchDirectories(options: {

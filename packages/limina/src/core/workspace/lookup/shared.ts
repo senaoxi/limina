@@ -33,32 +33,6 @@ export function getAncestorDirectories(filePath: string): string[] {
   }
 }
 
-function getDirectoryLookupStart<T>(
-  filePath: string,
-  itemsByDirectory: ReadonlyMap<string, T>,
-): string {
-  const normalizedPath = normalizeAbsolutePath(filePath);
-  return itemsByDirectory.has(normalizedPath)
-    ? normalizedPath
-    : normalizeAbsolutePath(path.dirname(normalizedPath));
-}
-
-export function findNearestDirectoryItem<T>(
-  filePath: string,
-  itemsByDirectory: ReadonlyMap<string, T>,
-): T | null {
-  const startDirectory = getDirectoryLookupStart(filePath, itemsByDirectory);
-
-  for (const directory of getAncestorDirectories(startDirectory)) {
-    const item = itemsByDirectory.get(directory);
-    if (item !== undefined) {
-      return item;
-    }
-  }
-
-  return null;
-}
-
 export function getManifestPackageName(
   manifest: PackageManifest,
 ): string | undefined {

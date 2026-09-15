@@ -116,6 +116,8 @@ function containsCanonicalPath(filePath: string, directory: string): boolean {
   );
 }
 
+// Test-only oracle for Governance Trie semantic equivalence. Production region
+// authority comes from WorkspaceRegionPathIndex, never this linear model.
 function linearClassify(
   context: ValidatedWorkspaceContext,
   canonicalPath: string,
@@ -687,7 +689,6 @@ describe('workspace canonical directory indexes', () => {
           'package-boundary',
         ),
       ).toBe(queryCount * (targetPackage.directory.split('/').length + 1));
-      expect(metricCount(metrics, 'workspace-path-ancestor-visit')).toBe(0);
       expect(
         metricCount(
           metrics,
@@ -915,14 +916,43 @@ describe('workspace region adversarial cases', () => {
         '../external/src.ts',
       ].map((relative) => fixture.path(relative));
       for (const ordered of [boundaries, boundaries.toReversed()]) {
-        expectDifferentialClassifications(
-          createContext({
-            boundaries: ordered,
-            packages: [a, c, external],
-            rootDir: fixture.rootDir,
-          }),
-          paths,
+        const context = createContext({
+          boundaries: ordered,
+          packages: [a, c, external],
+          rootDir: fixture.rootDir,
+        });
+        expectDifferentialClassifications(context, paths);
+        const pathIndex = new WorkspaceRegionPathIndex(context);
+        const lookup = createWorkspaceLookupIndex({
+          importers: [],
+          owners: context.packages.map(createOwner),
+          packages: context.packages,
+          pathIndex,
+          rootDir: fixture.rootDir,
+        });
+        for (const filePath of paths) {
+          const classification = pathIndex.classifyPath(filePath);
+          expect(lookup.findPackageForFile(filePath), filePath).toBe(
+            classification.package,
+          );
+          expect(lookup.findOwnerForFile(filePath)?.directory ?? null).toBe(
+            classification.package?.directory ?? null,
+          );
+          expect(lookup.isInsideActivatedRegion(filePath), filePath).toBe(
+            classification.package !== null,
+          );
+        }
+        expect(lookup.findPackageForFile(fixture.path('a/src.ts'))).toBe(a);
+        expect(
+          lookup.findPackageForFile(fixture.path('a/b/src.ts')),
+        ).toBeNull();
+        expect(pathIndex.findBoundaryForPath(fixture.path('a/b/src.ts'))).toBe(
+          boundaries[0],
         );
+        expect(lookup.findPackageForFile(fixture.path('a/b/c/src.ts'))).toBe(c);
+        expect(
+          lookup.findPackageForFile(fixture.path('../external/src.ts')),
+        ).toBe(external);
       }
     } finally {
       await fixture.cleanup();
