@@ -17,26 +17,6 @@ function chooseOwningProject(projectPaths: readonly string[]): string {
   return [...projectPaths].sort(compareOwningProjectPaths)[0]!;
 }
 
-function comparePackageDirectories(
-  left: WorkspacePackage,
-  right: WorkspacePackage,
-): number {
-  return right.directory.length - left.directory.length;
-}
-
-export function findPackageForFile(
-  filePath: string,
-  packages: WorkspacePackage[],
-): WorkspacePackage | null {
-  return (
-    [...packages]
-      .sort(comparePackageDirectories)
-      .find((workspacePackage) =>
-        isPathInsideDirectory(filePath, workspacePackage.directory),
-      ) ?? null
-  );
-}
-
 export function findImporterForFile(
   filePath: string,
   importers: ImporterInfo[],

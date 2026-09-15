@@ -1,16 +1,7 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import type {
-  WorkspaceIndexMetricsRecorder,
-  WorkspacePathClassification,
-} from '../validated-context';
+import type { WorkspaceIndexMetricsRecorder } from '../validated-context';
 import type { WorkspaceLookupRegion } from './region';
-import { findNearestDirectoryItem, recordLookupMetric } from './shared';
-
-function getClassifiedPackageDirectory(
-  classification: WorkspacePathClassification,
-): string | undefined {
-  return classification.package?.directory;
-}
+import { recordLookupMetric } from './shared';
 
 export class GovernedDirectoryLookup<T extends { directory: string }> {
   readonly #cache = new Map<string, T | null>();
@@ -61,23 +52,15 @@ export class GovernedDirectoryLookup<T extends { directory: string }> {
 
   #findUncached(filePath: string): T | null {
     const classification = this.#region.classifyPath(filePath);
-    if (this.#region.isOutsideGovernedRegion(filePath, classification)) {
+    const workspacePackage = classification.package;
+    if (
+      workspacePackage === null ||
+      this.#region.isOutsideGovernedRegion(filePath, classification)
+    ) {
       return null;
     }
 
-    return this.#findInsideGovernedRegion(filePath, classification);
-  }
-
-  #findInsideGovernedRegion(
-    filePath: string,
-    classification: WorkspacePathClassification,
-  ): T | null {
-    const packageDirectory = getClassifiedPackageDirectory(classification);
-    if (packageDirectory === undefined) {
-      return findNearestDirectoryItem(filePath, this.#itemsByDirectory);
-    }
-
-    return this.#findExactDirectoryItem(packageDirectory);
+    return this.#findExactDirectoryItem(workspacePackage.directory);
   }
 
   #findExactDirectoryItem(directory: string): T | null {
