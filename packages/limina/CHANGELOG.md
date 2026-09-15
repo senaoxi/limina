@@ -10,6 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+## [0.3.1] - 2026-09-15
+
+### Features
+
+- feat(limina): preserve semantic dependency requirements in graph ([9b781acb](https://github.com/senaoxi/docs-islands/commit/9b781acb))
+
+### Bug Fixes
+
+- fix(limina): enforce validated workspace authority in lookups ([16ca9975](https://github.com/senaoxi/docs-islands/commit/16ca9975))
+- fix(limina): correct resource resolution and graph preflight cleanup ([561683d2](https://github.com/senaoxi/docs-islands/commit/561683d2))
+
+### Documentation
+
+- docs(limina): establish architecture knowledge model ([3321c890](https://github.com/senaoxi/docs-islands/commit/3321c890))
+
+### Performance
+
+- perf(limina): index workspace regions with a sparse trie ([fb365aab](https://github.com/senaoxi/docs-islands/commit/fb365aab))
+
 ## [0.3.0] - 2026-09-03
 
 ### Features
