@@ -95,18 +95,25 @@ function deduplicateFailures(collection: ProjectDependencyCollection): void {
   ];
 }
 
+function createCollectionContext(request: ProjectDependencyRequest) {
+  return createBoundedTypeScriptSemanticContext(
+    {
+      configPath: request.context.configPath,
+      fileNames: request.context.fileNames,
+      options: request.context.compilerOptions,
+      projectReferences: request.context.references,
+      workspaceSourceBoundary: request.context.workspaceSourceBoundary,
+    },
+    { syntaxFacts: request.caches?.syntaxFacts },
+  );
+}
+
 function collectProjectDependenciesWithNewContext(options: {
   factsCacheKey: string;
   request: ProjectDependencyRequest;
 }): ProjectDependencyCollection {
   const collection = createEmptyCollection();
-  const typeScriptSemanticContext = createBoundedTypeScriptSemanticContext({
-    configPath: options.request.context.configPath,
-    fileNames: options.request.context.fileNames,
-    options: options.request.context.compilerOptions,
-    projectReferences: options.request.context.references,
-    workspaceSourceBoundary: options.request.context.workspaceSourceBoundary,
-  });
+  const typeScriptSemanticContext = createCollectionContext(options.request);
   const semanticRequest = {
     ...options.request,
     typeScriptSemanticContext,

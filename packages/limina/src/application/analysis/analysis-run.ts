@@ -7,6 +7,11 @@ import type {
 import { identifier } from '../../domain/shared/identifiers';
 
 export type AnalysisMetricName =
+  | 'source-phase'
+  | 'syntax-cache'
+  | 'syntax-cache-retained'
+  | 'bounded-program-create'
+  | 'bounded-first-typechecker'
   | 'artifact-mutation'
   | 'artifact-safety-immediate-recheck'
   | 'artifact-safety-lstat'

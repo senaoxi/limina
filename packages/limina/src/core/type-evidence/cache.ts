@@ -3,6 +3,7 @@ import { normalizeAbsolutePathIdentity } from '#utils/path';
 import type ts from 'typescript';
 import type { ManagedOutputDeclarationProvider } from '../import-graph/managed-output-provider';
 import type { TypeScriptSemanticContext } from '../typescript-semantic';
+import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 
 export type TypeEvidence =
   | {
@@ -136,10 +137,15 @@ export class TypeEvidenceGenerationCache {
   readonly programCache: ProgramCache = new Map();
   readonly typeEvidenceProviderCache: TypeEvidenceProviderCache = new Map();
   readonly #metrics: TypeEvidenceMetricsRecorder | undefined;
+  readonly syntaxFacts: SourceSyntaxFactsCache | undefined;
   #disposed = false;
 
-  constructor(metrics?: TypeEvidenceMetricsRecorder) {
+  constructor(
+    metrics?: TypeEvidenceMetricsRecorder,
+    syntaxFacts?: SourceSyntaxFactsCache,
+  ) {
     this.#metrics = metrics;
+    this.syntaxFacts = syntaxFacts;
 
     if (metrics) {
       for (const name of TYPE_EVIDENCE_METRIC_NAMES) {

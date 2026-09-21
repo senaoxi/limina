@@ -1,22 +1,28 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
-import { collectTypeScriptSourceFileImports } from '../import-analysis/typescript-imports';
 import type { TypeScriptInclusionLedger } from './admission';
 import { findDirectiveRecord } from './import-record';
+import { collectOwnedSourceRecords } from './owned-source-records';
 import { resolveTripleSlashPathSemanticRecord } from './resolution';
 import type { TypeScriptResolutionLedger } from './resolution-ledger';
+import type { SourceSyntaxFactsCache } from './syntax-cache';
+import type { OwnedSyntaxInput } from './syntax-input';
 
 export function collectSemanticSourceRecords(options: {
   admission: TypeScriptInclusionLedger;
   contextIdentity: string;
   ledger: TypeScriptResolutionLedger;
+  syntaxFacts?: SourceSyntaxFactsCache;
+  syntaxInput?: OwnedSyntaxInput;
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): readonly ImportRecord[] {
   const filePath = normalizeAbsolutePath(options.sourceFile.fileName);
-  const records = collectTypeScriptSourceFileImports({
+  const records = collectOwnedSourceRecords({
     filePath,
+    syntaxFacts: options.syntaxFacts,
+    syntaxInput: options.syntaxInput,
     sourceFile: options.sourceFile,
     tsModule: options.tsModule,
   });

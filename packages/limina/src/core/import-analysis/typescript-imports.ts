@@ -153,7 +153,7 @@ export function collectTypeScriptSourceFileImports(options: {
   ]);
 }
 
-function ensureParentPointers(
+export function ensureParentPointers(
   sourceFile: ts.SourceFile,
   tsModule: typeof ts,
 ): void {

@@ -1,5 +1,6 @@
 import { CheckerProjectConfigCache } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import {
   createLiminaArtifactNamespace,
   type LiminaArtifactNamespace,
@@ -21,6 +22,7 @@ import {
   createWorkspaceSourceBoundary,
   type WorkspaceSourceBoundary,
 } from './typescript-semantic';
+import { SourceSyntaxFactsCache } from './typescript-semantic/syntax-cache';
 import { VueSemanticContextManager } from './vue-semantic/context';
 import {
   WorkspaceCore,
@@ -30,7 +32,8 @@ import {
 
 type AnalysisCoreMetricsRecorder = ImportAnalysisMetricsRecorder &
   TypeEvidenceMetricsRecorder &
-  WorkspaceCoreMetricsRecorder;
+  WorkspaceCoreMetricsRecorder &
+  AnalysisMetricsRecorder;
 
 export { BuildGraphCore } from './build-graph';
 export { ImportCore } from './imports';
@@ -69,6 +72,7 @@ export class AnalysisProviderSet {
   readonly config: ResolvedLiminaConfig;
   readonly imports: ImportCore;
   readonly packages: PackageDomainCore;
+  readonly syntaxFacts: SourceSyntaxFactsCache;
   readonly projectConfigs: CheckerProjectConfigCache;
   readonly projectDependencies: ProjectDependencyCaches;
   readonly svelteSemanticContexts: SvelteSemanticContextManager;
@@ -106,7 +110,8 @@ export class AnalysisProviderSet {
     this.projectConfigs = new CheckerProjectConfigCache(
       options.artifactNamespace.generation,
     );
-    this.projectDependencies = createProjectDependencyCaches();
+    this.syntaxFacts = new SourceSyntaxFactsCache({ metrics: options.metrics });
+    this.projectDependencies = createProjectDependencyCaches(this.syntaxFacts);
     this.workspace = new WorkspaceCore(
       options.config,
       options.metrics,
@@ -133,6 +138,7 @@ export class AnalysisProviderSet {
     this.typeEvidence = new TypeEvidenceCore({
       generation: options.artifactNamespace.generation,
       importAnalysis: this.imports.context,
+      syntaxFacts: this.syntaxFacts,
       metrics: options.metrics,
       vueSemanticContexts: this.vueSemanticContexts,
       workspaceSourceBoundaryProvider: getWorkspaceSourceBoundary,
@@ -154,6 +160,7 @@ export class AnalysisProviderSet {
   }
 
   dispose(): void {
+    this.syntaxFacts.dispose();
     this.typeEvidence.dispose();
     this.astroSemanticContexts.dispose();
     this.svelteSemanticContexts.dispose();

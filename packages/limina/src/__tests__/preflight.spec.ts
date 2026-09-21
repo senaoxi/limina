@@ -301,6 +301,11 @@ describe('LiminaPreflightManager', () => {
       const receipt = await manager.ensureGeneratedArtifactsMaterialized();
       expect(receipt.generation).toBe(0);
       expect(manager.providers).not.toBe(initialProviders);
+      expect(manager.providers.syntaxFacts).not.toBe(
+        initialProviders.syntaxFacts,
+      );
+      expect(initialProviders.syntaxFacts.statistics.entries).toBe(0);
+      expect(initialProviders.syntaxFacts.statistics.estimatedBytes).toBe(0);
       const refreshedIndex = await manager.ensureWorkspacePathIndex();
       expect(refreshedIndex).not.toBe(initialIndex);
       expect(await manager.ensureWorkspacePathIndex()).toBe(refreshedIndex);
