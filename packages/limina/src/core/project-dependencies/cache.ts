@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import type { ImportRecord } from '../import-analysis/records';
 import type { TypeEvidence } from '../type-evidence/cache';
+import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 import type {
   ProjectDependencyCaches,
   ProjectDependencyCollection,
@@ -15,8 +16,11 @@ import type {
 export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
   'service-script-facts-v5-scope-evidence';
 
-export function createProjectDependencyCaches(): ProjectDependencyCaches {
+export function createProjectDependencyCaches(
+  syntaxFacts?: SourceSyntaxFactsCache,
+): ProjectDependencyCaches {
   return {
+    syntaxFacts,
     pendingOwnershipEvidenceCache: new Map(),
     projectDependencyCache: new Map(),
     projectDependencyPreparationCache: new Map(),

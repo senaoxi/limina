@@ -1,5 +1,6 @@
 import type ts from 'typescript';
 import { parseTypeScriptProjectConfig } from './project-references';
+import type { OwnedSyntaxInput, OwnedSyntaxScope } from './syntax-input';
 
 export interface HostModuleResolutionInput {
   compilerOptions: ts.CompilerOptions;
@@ -38,7 +39,7 @@ type CompilerHostWithLibraryResolution = ts.CompilerHost & {
 interface TypeScriptSemanticHostCallbacks {
   allowSourceFile(fileName: string): boolean;
   onDefaultLib(fileName: string): void;
-  onSourceFile(sourceFile: ts.SourceFile): void;
+  onSourceFile(sourceFile: ts.SourceFile, input?: OwnedSyntaxInput): void;
   resolveModuleNameLiterals(
     input: HostModuleResolutionInput,
   ): readonly ts.ResolvedModuleWithFailedLookupLocations[];
@@ -54,17 +55,30 @@ function readSourceFile(options: {
   callbacks: TypeScriptSemanticHostCallbacks;
   create: () => ts.SourceFile | undefined;
   fileName: string;
+  parserInput: ts.ScriptTarget | ts.CreateSourceFileOptions;
+  syntaxScope?: OwnedSyntaxScope;
 }): ts.SourceFile | undefined {
   if (!options.callbacks.allowSourceFile(options.fileName)) return undefined;
   const sourceFile = options.create();
-  if (sourceFile !== undefined) options.callbacks.onSourceFile(sourceFile);
+  if (sourceFile !== undefined) notifySourceFile(sourceFile, options);
   return sourceFile;
+}
+
+function notifySourceFile(
+  sourceFile: ts.SourceFile,
+  options: Parameters<typeof readSourceFile>[0],
+): void {
+  options.callbacks.onSourceFile(
+    sourceFile,
+    options.syntaxScope?.capture(sourceFile, options.parserInput),
+  );
 }
 
 export function createTypeScriptSemanticHost(options: {
   callbacks: TypeScriptSemanticHostCallbacks;
   compilerOptions: ts.CompilerOptions;
   tsModule: typeof ts;
+  syntaxScope?: OwnedSyntaxScope;
 }): ts.CompilerHost {
   const base = options.tsModule.createCompilerHost(options.compilerOptions);
   const host: ts.CompilerHost = {
@@ -84,6 +98,8 @@ export function createTypeScriptSemanticHost(options: {
         callbacks: options.callbacks,
         create: () => base.getSourceFile(...args),
         fileName: args[0],
+        parserInput: args[1],
+        syntaxScope: options.syntaxScope,
       });
     },
     resolveModuleNameLiterals: (...args) =>
@@ -110,6 +126,8 @@ export function createTypeScriptSemanticHost(options: {
         callbacks: options.callbacks,
         create: () => base.getSourceFileByPath!(...args),
         fileName: args[0],
+        parserInput: args[2],
+        syntaxScope: options.syntaxScope,
       });
   }
 

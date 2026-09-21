@@ -16,6 +16,7 @@ import type {
   TypeScriptSemanticDependencyContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
+import type { SourceSyntaxFactsCache } from '../typescript-semantic/syntax-cache';
 
 import type {
   DeclarationReferenceRequirement,
@@ -138,6 +139,7 @@ export interface ProjectDependencyRequest {
 }
 
 export interface ProjectDependencyCaches {
+  readonly syntaxFacts?: SourceSyntaxFactsCache;
   pendingOwnershipEvidenceCache: Map<string, unknown>;
   projectDependencyCache: Map<string, ProjectDependencyCollection>;
   projectDependencyPreparationCache: Map<string, ProjectDependencyPreparation>;

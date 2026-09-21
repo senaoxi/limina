@@ -64,7 +64,10 @@ export class TypeEvidenceCore {
   readonly #ownsVueSemanticContexts: boolean;
   readonly #workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'];
   constructor(options: TypeEvidenceCoreOptions) {
-    this.cache = new TypeEvidenceGenerationCache(options.metrics);
+    this.cache = new TypeEvidenceGenerationCache(
+      options.metrics,
+      options.syntaxFacts,
+    );
     this.#affectedSourceConfigs =
       options.metrics === undefined ? undefined : new Set();
     this.#generation = options.generation;

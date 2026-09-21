@@ -25,6 +25,7 @@ function createProgramHandle(
   cache: TypeEvidenceGenerationCache,
 ): TypeEvidenceProgramHandle {
   const context = createBoundedTypeScriptSemanticContext(project, {
+    syntaxFacts: cache.syntaxFacts,
     getAmbientEvidence: (symbol, tsModule) =>
       cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
         createAmbientTypeEvidence(symbol, tsModule),
