@@ -76,7 +76,6 @@ describe('Astro pre-semantic eligibility', () => {
       }).kind,
     ).toBe('not-applicable');
     expect(classify('astro:content').kind).toBe('skip');
-    expect(classify('./theme.css?inline').kind).toBe('skip');
     expect(classify('./theme.css').kind).toBe('skip');
     expect(classify('./data.json').kind).toBe('eligible');
     expect(
@@ -87,5 +86,34 @@ describe('Astro pre-semantic eligibility', () => {
     expect(classify('./component').kind).toBe('eligible');
     expect(classify('./component.vue').kind).toBe('eligible');
     expect(snapshotReads).toBe(0);
+  });
+
+  it('never treats a query or fragment as authority to skip the Astro checker', () => {
+    const project = createAstroSemanticProject({
+      analysisGeneration: 1,
+      configPath: '/workspace/tsconfig.json',
+      packageRootDir: '/workspace',
+      projectFingerprint: 'tsconfig.json',
+      readSnapshot: () => {
+        throw new Error('eligibility must not read the project snapshot');
+      },
+    });
+    for (const specifier of [
+      './target?x',
+      './theme.css?inline',
+      './foo.ts?raw',
+      './foo.ts#fragment',
+      './Widget.svelte?component',
+    ]) {
+      expect(
+        classifyAstroSemanticEligibility({
+          checkerExtensions: ['.astro', '.vue'],
+          importRecord: createRecord({ specifier }),
+          oxcResolvedFilePath: null,
+          project,
+          specifier,
+        }),
+      ).toEqual({ kind: 'eligible' });
+    }
   });
 });

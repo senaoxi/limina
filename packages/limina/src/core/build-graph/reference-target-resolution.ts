@@ -1,5 +1,8 @@
 import { compareCodeUnits } from '#utils/collections';
-import { isRelativeSpecifier } from '#utils/module-specifier';
+import {
+  hasModuleSpecifierQueryOrFragment,
+  isRelativeSpecifier,
+} from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { formatAmbiguousCanonicalOwner } from './canonical-owner-problems';
@@ -83,7 +86,10 @@ function chooseSourceOwner(options: {
 function resolveExplicitSpecifierPath(
   options: Omit<ReferenceImportOptions, 'projectDependency'>,
 ): string | null {
-  const specifier = options.importRecord.specifier.split(/[?#]/u)[0]!;
+  // Missing observations have no semantic target. Path normalization itself
+  // could erase query/fragment segments, so it is not a valid fallback.
+  const specifier = options.importRecord.specifier;
+  if (hasModuleSpecifierQueryOrFragment(specifier)) return null;
   if (!isRelativeSpecifier(specifier)) return null;
   return normalizeAbsolutePath(
     path.resolve(path.dirname(options.fileName), specifier),

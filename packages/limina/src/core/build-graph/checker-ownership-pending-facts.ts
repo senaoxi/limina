@@ -11,7 +11,10 @@ import type {
   TypeScriptSemanticContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
-import { hasDeclarationResolution } from '../typescript-semantic/dependency-fact';
+import {
+  hasDeclarationResolution,
+  type NativeDependencyFact,
+} from '../typescript-semantic/dependency-fact';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import {
@@ -79,23 +82,6 @@ function createUnsupportedProblem(options: {
   ].join('\n');
 }
 
-function collectUnsupportedEvidence(options: {
-  base: Omit<CheckerDependencyFact, 'typeEvidenceKind'>;
-  context: FactCollectionContext;
-  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>;
-  problems: string[];
-}): boolean {
-  if (options.evidence.type.kind !== 'unsupported-checker') return false;
-  options.problems.push(
-    createUnsupportedProblem({
-      config: options.context.config,
-      evidence: options.evidence.type,
-      fact: options.base,
-    }),
-  );
-  return true;
-}
-
 function getPendingFrameworkTarget(options: {
   context: FactCollectionContext;
   evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>;
@@ -111,21 +97,30 @@ function getPendingFrameworkTarget(options: {
   };
 }
 
+// Checker-derived facts come first; runtime classification cannot cancel them.
 function getPhysicalTarget(options: {
   context: FactCollectionContext;
   evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>;
   importRecord: CheckerDependencyFact['importRecord'];
+  nativeFact: NativeDependencyFact;
   problems: string[];
 }): PhysicalTarget | null {
-  const nativeFact =
-    options.context.typeScriptSemanticContext.getDependencyFact(
-      options.importRecord,
-    );
-  const requirement = nativeFact.referenceRequirement;
+  const requirement = options.nativeFact.referenceRequirement;
   if (requirement !== null)
     return { path: requirement.targetFileName, provenance: 'checker-source' };
-  if (hasDeclarationResolution(nativeFact.resolution)) return null;
+  if (hasDeclarationResolution(options.nativeFact.resolution)) return null;
   return getPendingFrameworkTarget(options);
+}
+
+function isRuntimeOnlyResource(
+  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>,
+  nativeFact: NativeDependencyFact,
+): boolean {
+  return (
+    evidence.classification === 'resource' &&
+    nativeFact.referenceRequirement === null &&
+    !hasDeclarationResolution(nativeFact.resolution)
+  );
 }
 
 function collectTypeEvidenceFact(options: {
@@ -140,33 +135,35 @@ function collectTypeEvidenceFact(options: {
     project: options.context.semantic.project,
     resolutionMode: 'checker-only',
   });
+  const nativeFact =
+    options.context.typeScriptSemanticContext.getDependencyFact(
+      options.importRecord,
+    );
   const base = {
-    referenceRequirement:
-      options.context.typeScriptSemanticContext.getDependencyFact(
-        options.importRecord,
-      ).referenceRequirement,
+    referenceRequirement: nativeFact.referenceRequirement,
     consumerConfigPath: options.context.project.configPath,
     importRecord: options.importRecord,
     physicalTargetPath: null,
     physicalTargetProvenance: null,
   };
-  if (collectUnsupportedEvidence({ ...options, base, evidence })) return;
-  if (evidence.classification === 'resource') return;
-  const target = getPhysicalTarget({ ...options, evidence });
-  options.facts.push(
-    createDependencyFact(base, getSupportedEvidenceKind(evidence), target),
-  );
-}
-
-function getSupportedEvidenceKind(
-  evidence: ReturnType<TypeEvidenceCore['resolveImportEvidence']>,
-): CheckerDependencyFact['typeEvidenceKind'] {
   if (evidence.type.kind === 'unsupported-checker') {
-    throw new Error(
-      'Unsupported checker evidence was not recorded as a problem.',
+    options.problems.push(
+      createUnsupportedProblem({
+        config: options.context.config,
+        evidence: evidence.type,
+        fact: base,
+      }),
     );
+    return;
   }
-  return evidence.type.kind;
+  if (isRuntimeOnlyResource(evidence, nativeFact)) return;
+  options.facts.push(
+    createDependencyFact(
+      base,
+      evidence.type.kind,
+      getPhysicalTarget({ ...options, evidence, nativeFact }),
+    ),
+  );
 }
 
 function createDependencyFact(

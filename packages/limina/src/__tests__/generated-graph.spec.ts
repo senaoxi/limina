@@ -2383,7 +2383,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('keeps pending resource dependencies out of Oxc ownership discovery', async () => {
+  it('keeps a query specifier out of Oxc ownership discovery without calling it a resource', async () => {
     const fixture = await createFixture({
       'packages/app/src/index.ts':
         "import './theme.css?inline';\nexport const value = true;\n",
@@ -2409,6 +2409,168 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await fixture.cleanup();
     }
   });
+
+  it.each([
+    { ambient: true, specifier: '../../b/src/foo.ts?raw' },
+    { ambient: false, specifier: '../../b/src/foo.ts?unknown' },
+    { ambient: false, specifier: '../../b/src/foo.ts#fragment' },
+  ])(
+    'accepts only the checker result for $specifier (ambient=$ambient) and never recovers foo.ts',
+    async ({ ambient, specifier }) => {
+      const fixture = await createFixture({
+        'packages/a/src/index.ts': `import raw from '${specifier}';\nexport const value = raw;\n`,
+        ...(ambient
+          ? {
+              'packages/a/src/env.d.ts':
+                "declare module '*?raw' { const value: string; export default value; }\n",
+            }
+          : {}),
+        'packages/a/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+        }),
+        // The physical base file exists and is governed by another project.
+        'packages/b/src/foo.ts': 'export const value = 1;\n',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*.ts'],
+        }),
+      });
+      const analysis = createSpiedImportAnalysis();
+      try {
+        const result = await prepareGeneratedTsconfigGraph(
+          { ...fixture.config, config: { checkers: { auto: {} } } },
+          { importAnalysisContext: analysis.context },
+        );
+        expect(
+          result.ownershipPlan.dependencyFacts.filter(
+            (fact) =>
+              fact.consumerConfigPath ===
+              fixture.path('packages/a/tsconfig.json'),
+          ),
+        ).toEqual([
+          expect.objectContaining({
+            importRecord: expect.objectContaining({ specifier }),
+            physicalTargetPath: null,
+            physicalTargetProvenance: null,
+            referenceRequirement: null,
+            typeEvidenceKind: ambient ? 'ambient' : 'missing',
+          }),
+        ]);
+        expect(result.dependencyEdges).toEqual([]);
+        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(
+    ['svelte', 'vue', 'astro'].flatMap((extension) =>
+      ['?x', `#part/../Widget.${extension}`].map((suffix) => ({
+        extension,
+        suffix,
+      })),
+    ),
+  )(
+    'does not rescue a $extension component with $suffix through Oxc or the filesystem',
+    async ({ extension, suffix }) => {
+      const fixture = await createFixture({
+        'packages/consumer/src/index.ts': `import Widget from '../../provider/src/Widget.${extension}${suffix}';\nexport const value = Widget;\n`,
+        'packages/consumer/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*.ts'],
+        }),
+        [`packages/provider/src/Widget.${extension}`]: '<div />',
+        'packages/provider/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+        }),
+      });
+      const analysis = createSpiedImportAnalysis();
+      try {
+        const result = await prepareGeneratedTsconfigGraph(
+          { ...fixture.config, config: { checkers: { auto: {} } } },
+          { importAnalysisContext: analysis.context },
+        );
+        expect(
+          result.ownershipPlan.typeConfigs.get(
+            fixture.path('packages/consumer/tsconfig.json'),
+          )?.finalOwner,
+        ).toBe('tsc');
+        expect(
+          result.ownershipPlan.dependencyFacts.find(
+            (fact) =>
+              fact.consumerConfigPath ===
+              fixture.path('packages/consumer/tsconfig.json'),
+          ),
+        ).toMatchObject({
+          physicalTargetPath: null,
+          physicalTargetProvenance: null,
+          referenceRequirement: null,
+          typeEvidenceKind: 'missing',
+        });
+        expect(result.dependencyEdges).toEqual([]);
+        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['../../b/src/theme.css', 'theme.css?raw', 'theme.css#fragment'])(
+    'keeps a checker-proven compiler relation for %s regardless of runtime classification',
+    async (specifier) => {
+      const fixture = await createFixture({
+        // TypeScript resolves every request to theme.css.ts. Runtime inspection
+        // sees either a missing plain resource or unsupported query semantics.
+        'packages/a/src/index.ts': `import { theme } from '${specifier}';\nexport const value = theme;\n`,
+        'packages/a/tsconfig.json': json({
+          compilerOptions: {
+            ...managedOutputCompilerOptions(),
+            paths: { [specifier]: ['../b/src/theme.css.ts'] },
+          },
+          include: ['src/**/*.ts'],
+        }),
+        'packages/b/src/theme.css.ts': 'export const theme = "dark";\n',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*.ts'],
+        }),
+      });
+      const analysis = createSpiedImportAnalysis();
+      try {
+        const result = await prepareGeneratedTsconfigGraph(
+          { ...fixture.config, config: { checkers: { auto: {} } } },
+          { importAnalysisContext: analysis.context },
+        );
+        expect(
+          result.ownershipPlan.dependencyFacts.find(
+            (fact) =>
+              fact.consumerConfigPath ===
+              fixture.path('packages/a/tsconfig.json'),
+          ),
+        ).toMatchObject({
+          physicalTargetPath: fixture.path('packages/b/src/theme.css.ts'),
+          physicalTargetProvenance: 'checker-source',
+          referenceRequirement: {
+            kind: 'source-semantic',
+            targetFileName: fixture.path('packages/b/src/theme.css.ts'),
+          },
+        });
+        expect(result.dependencyEdges).toMatchObject([
+          {
+            fromConfigPath: fixture.path('packages/a/tsconfig.json'),
+            kind: 'declaration-provider',
+            toConfigPath: fixture.path('packages/b/tsconfig.json'),
+          },
+        ]);
+        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
 
   it('rejects an Oxc ordinary TypeScript target as framework ownership evidence', async () => {
     const fixture = await createFixture({

@@ -451,7 +451,7 @@ describe('project dependency authority', () => {
     expect(resolveWorkspaceTypeScriptExport).not.toHaveBeenCalled();
   });
 
-  it('classifies target-null ambient evidence as a typed non-source observation', () => {
+  it('classifies target-null ambient evidence as a semantic-only observation', () => {
     const rootDir = '/virtual/ambient-vue';
     const sourceFile = path.join(rootDir, 'App.vue');
     const fact = createFact({
@@ -477,10 +477,11 @@ describe('project dependency authority', () => {
 
     expect(collection.dependencies).toEqual([]);
     expect(collection.failures).toEqual([]);
+    // Ambient provision proves types, not a physical runtime resource.
     expect(collection.observations).toMatchObject([
       {
         importRecord: { specifier: './theme.css' },
-        kind: 'resource',
+        kind: 'semantic-only',
         typeEvidence: { kind: 'ambient', modulePattern: '*.css' },
       },
     ]);
@@ -626,13 +627,35 @@ describe('project dependency authority', () => {
       directSourceRecords: [],
       facts: [fact],
       failures: [],
-      observations: [],
+      observations: [
+        {
+          importRecord: createRecord('/workspace/App.vue', './foo.ts?raw'),
+          kind: 'semantic-only',
+          typeEvidence: {
+            kind: 'ambient',
+            modulePattern: '*?raw',
+            declarationFilePaths: ['/workspace/env.d.ts'],
+          },
+        },
+      ],
       ready: true,
     };
 
     const cloned = cloneProjectDependencyPreparation(preparation);
 
     expect(cloned).toEqual(preparation);
+    const observation = cloned.observations[0]!;
+    expect(observation.kind).toBe('semantic-only');
+    if (observation.kind === 'semantic-only') {
+      observation.typeEvidence.declarationFilePaths.push(
+        '/workspace/changed.d.ts',
+      );
+      observation.importRecord.specifier = './changed';
+    }
+    expect(preparation.observations[0]).toMatchObject({
+      importRecord: { specifier: './foo.ts?raw' },
+      typeEvidence: { declarationFilePaths: ['/workspace/env.d.ts'] },
+    });
     expect(cloned.facts[0]).not.toBe(fact);
     expect(cloned.facts[0]!.target).not.toBe(fact.target);
     expect(cloned.facts[0]!.typeEvidence).not.toBe(fact.typeEvidence);

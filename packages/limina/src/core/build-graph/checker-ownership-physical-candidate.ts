@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import type { AutoScopeProject } from './auto-checker-types';
@@ -172,12 +173,28 @@ function qualifyPendingPhysicalCandidate(options: {
   });
 }
 
+function canResolvePendingSpecifier(
+  context: PhysicalCandidateContext,
+  specifier: string,
+): boolean {
+  return (
+    context.state.semanticAuthority.kind === 'pending' &&
+    !hasModuleSpecifierQueryOrFragment(specifier)
+  );
+}
+
 export function resolvePendingPhysicalCandidate(options: {
   context: PhysicalCandidateContext;
   importRecord: CheckerDependencyFact['importRecord'];
   problems: string[];
 }): PhysicalFrameworkCandidate | null {
-  if (options.context.state.semanticAuthority.kind !== 'pending') return null;
+  // A query or fragment belongs to a module host. Without a checker target,
+  // Limina has no authority to reinterpret it through Oxc or the filesystem.
+  if (
+    !canResolvePendingSpecifier(options.context, options.importRecord.specifier)
+  ) {
+    return null;
+  }
   const targetPath = options.context.importAnalysis.resolveOxcImport(
     options.importRecord.specifier,
     options.importRecord.filePath,

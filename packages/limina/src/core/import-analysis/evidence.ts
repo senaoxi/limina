@@ -10,7 +10,6 @@ export type ImportModuleClassification =
 export type RuntimeEvidence =
   | {
       authority: 'filesystem' | 'oxc' | 'package-export';
-      baseOnly?: boolean;
       filePath: string;
       kind: 'file';
     }

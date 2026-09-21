@@ -40,7 +40,7 @@ function collectAmbientFact(options: {
   if (fact.referenceRequirement !== null) return false;
   options.collection.observations.push({
     importRecord: options.importRecord,
-    kind: 'resource',
+    kind: 'semantic-only',
     typeEvidence: fact.typeEvidence,
   });
   return true;
