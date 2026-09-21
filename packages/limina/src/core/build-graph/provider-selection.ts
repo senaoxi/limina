@@ -34,7 +34,7 @@ export function formatProviderCandidateLines(
 
 function collectProviderProjects(options: {
   consumerProject: SourceProject;
-  providerSourceFilePath: string;
+  providerSourceFilePaths: readonly string[];
   targetProjects: SourceProject[];
 }): SourceProject[] {
   return options.targetProjects
@@ -42,7 +42,9 @@ function collectProviderProjects(options: {
       (project) => project.checkerName !== options.consumerProject.checkerName,
     )
     .filter((project) =>
-      project.ownedFileNames.includes(options.providerSourceFilePath),
+      options.providerSourceFilePaths.some((fileName) =>
+        project.ownedFileNames.includes(fileName),
+      ),
     )
     .filter(isBuildCapableProject)
     .sort(
@@ -119,7 +121,7 @@ function selectByProviderCount(
 
 export function selectProviderProject(options: {
   consumerProject: SourceProject;
-  providerSourceFilePath: string;
+  providerSourceFilePaths: readonly string[];
   targetProjects: SourceProject[];
 }): ProviderSelectionResult {
   const providerProjects = collectProviderProjects(options);

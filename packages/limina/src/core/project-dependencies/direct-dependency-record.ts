@@ -1,7 +1,10 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
-import { isDeclarationFile } from '../import-graph/declaration-classifier';
+import {
+  getResolvedTargetKind,
+  isDeclarationFile,
+} from '../import-graph/declaration-classifier';
 import type { TypeEvidence } from '../type-evidence/cache';
 import type {
   DirectSourceDependency,
@@ -101,8 +104,7 @@ function createDirectDependency(options: {
     resolutionMode: getDirectResolutionMode(options),
     resolvedFilePath,
     semanticSpecifier: getDirectSemanticSpecifier(options),
-    targetKind:
-      typeEvidence.kind === 'concrete-declaration' ? 'declaration' : 'source',
+    targetKind: getResolvedTargetKind(resolvedFilePath),
     typeEvidence,
   };
 }

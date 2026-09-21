@@ -2,6 +2,7 @@ import { isNativeTypeScriptProjectInput } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
 import ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
+import { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
 import { TypeScriptInclusionLedger } from './admission';
 import type {
   TypeScriptSemanticContext,
@@ -42,10 +43,16 @@ export class BoundedTypeScriptSemanticContext
   readonly #sourceFiles = new Map<string, ts.SourceFile>();
   readonly project: TypeScriptSemanticProject;
   readonly tsModule: typeof ts;
+  readonly #getAmbientEvidence: typeof createAmbientTypeEvidence;
   #disposed = false;
   readonly program: ts.Program;
 
-  constructor(project: TypeScriptSemanticProject, tsModule: typeof ts = ts) {
+  constructor(
+    project: TypeScriptSemanticProject,
+    tsModule: typeof ts = ts,
+    getAmbientEvidence: typeof createAmbientTypeEvidence = createAmbientTypeEvidence,
+  ) {
+    this.#getAmbientEvidence = getAmbientEvidence;
     this.project = normalizeProject(project);
     this.tsModule = tsModule;
     this.identity = createTypeScriptSemanticContextIdentity(this.project);
@@ -92,6 +99,7 @@ export class BoundedTypeScriptSemanticContext
 
   getDependencyFact(record: ImportRecord): NativeDependencyFact {
     return collectNativeDependencyFact({
+      getAmbientEvidence: this.#getAmbientEvidence,
       context: this,
       record,
       tsModule: this.tsModule,
@@ -172,10 +180,19 @@ export class BoundedTypeScriptSemanticContext
 
 export function createBoundedTypeScriptSemanticContext(
   project: TypeScriptSemanticProject,
-  options: { dependencyFactsOnly?: boolean } = {},
+  options: {
+    dependencyFactsOnly?: boolean;
+    getAmbientEvidence?: typeof createAmbientTypeEvidence;
+  } = {},
 ): TypeScriptSemanticContext {
-  return new BoundedTypeScriptSemanticContext({
-    ...project,
-    admissionMode: options.dependencyFactsOnly ? 'root-facts' : 'full-program',
-  });
+  return new BoundedTypeScriptSemanticContext(
+    {
+      ...project,
+      admissionMode: options.dependencyFactsOnly
+        ? 'root-facts'
+        : 'full-program',
+    },
+    ts,
+    options.getAmbientEvidence,
+  );
 }

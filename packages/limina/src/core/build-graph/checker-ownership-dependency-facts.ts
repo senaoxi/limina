@@ -10,6 +10,7 @@ import {
   type WorkspaceSourceBoundary,
 } from '../typescript-semantic';
 import type { AutoScopeProject } from './auto-checker-types';
+import { collectCanonicalOwnerProblems } from './canonical-owner-problems';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import { collectLockedProjectFacts } from './checker-ownership-locked-facts';
 import { createActualMembershipIndex } from './checker-ownership-membership';
@@ -18,13 +19,14 @@ import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface FactCollectionOptions {
   config: ResolvedLiminaConfig;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   projectDependencyCaches: ProjectDependencyCaches;
   projectConfigCache?: CheckerProjectConfigCache;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
@@ -82,6 +84,13 @@ function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
     facts.push(...collected.facts);
     problems.push(...collected.problems);
   }
+  problems.push(
+    ...collectCanonicalOwnerProblems({
+      facts,
+      membership: options.membership,
+      rootDir: options.config.rootDir,
+    }),
+  );
   return { facts, problems };
 }
 

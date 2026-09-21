@@ -718,7 +718,7 @@ describe('type evidence profiling instrumentation', () => {
     }
   });
 
-  it('records concrete resource queries through one shared Program without a provider', async () => {
+  it('records concrete resource queries through one shared Program and native provider', async () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-concrete-metrics-')),
     );
@@ -767,7 +767,7 @@ describe('type evidence profiling instrumentation', () => {
       expect(metricCount(snapshot, 'resource-import-count')).toBe(1);
       expect(metricCount(snapshot, 'type-evidence-query')).toBe(1);
       expect(metricCount(snapshot, 'affected-source-config-count')).toBe(1);
-      expect(metricCount(snapshot, 'type-evidence-provider-create')).toBe(0);
+      expect(metricCount(snapshot, 'type-evidence-provider-create')).toBe(1);
       expect(metricCount(snapshot, 'typescript-program-create')).toBe(1);
       core.dispose();
     } finally {

@@ -11,6 +11,10 @@ export function clonePendingOwnershipEvidence(
   return {
     facts: value.facts.map((fact) => ({
       ...fact,
+      referenceRequirement:
+        fact.referenceRequirement == null
+          ? fact.referenceRequirement
+          : { ...fact.referenceRequirement },
       importRecord: {
         ...fact.importRecord,
         locator: { ...fact.importRecord.locator },

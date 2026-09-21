@@ -22,8 +22,14 @@ export interface TypeScriptTypeEvidenceProject {
 
 function createProgramHandle(
   project: TypeScriptTypeEvidenceProject,
+  cache: TypeEvidenceGenerationCache,
 ): TypeEvidenceProgramHandle {
-  const context = createBoundedTypeScriptSemanticContext(project);
+  const context = createBoundedTypeScriptSemanticContext(project, {
+    getAmbientEvidence: (symbol, tsModule) =>
+      cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
+        createAmbientTypeEvidence(symbol, tsModule),
+      ),
+  });
   let disposed = false;
 
   return {
@@ -49,7 +55,7 @@ export function getOrCreateTypeScriptSemanticContext(options: {
 }): TypeScriptSemanticContext {
   const handle = options.cache.getOrCreateProgram(
     options.programKey,
-    () => createProgramHandle(options.project),
+    () => createProgramHandle(options.project, options.cache),
     'typescript',
   );
   const context = handle.typeScriptSemanticContext;
@@ -61,10 +67,6 @@ function assertProviderActive(disposed: boolean): void {
   if (disposed) {
     throw new Error('TypeScript type-evidence provider was disposed.');
   }
-}
-
-function toNullableSymbol(symbol: ts.Symbol | undefined): ts.Symbol | null {
-  return symbol ?? null;
 }
 
 export function createTypeScriptTypeEvidenceProvider(options: {
@@ -81,17 +83,7 @@ export function createTypeScriptTypeEvidenceProvider(options: {
     query({ importRecord }): TypeEvidence {
       assertProviderActive(disposed);
       const context = getOrCreateTypeScriptSemanticContext(options);
-      const symbol = toNullableSymbol(
-        context.getSymbolAtImportRecord(importRecord),
-      );
-
-      if (!symbol) {
-        return { kind: 'missing' };
-      }
-
-      return options.cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
-        createAmbientTypeEvidence(symbol),
-      );
+      return context.getDependencyFact(importRecord).typeEvidence;
     },
   };
 }

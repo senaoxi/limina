@@ -4,12 +4,97 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import { createImportAnalysisContext } from '../core/import-analysis/runner';
 import { collectTypeScriptSourceTextImports } from '../core/import-analysis/typescript-imports';
+import { TypeEvidenceCore } from '../core/type-evidence';
+import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type { SourceFinding } from '../source-check/findings';
 import { addResourceModuleProblems } from '../source-check/resource-module-findings';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
+import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 type ResourceOptions = Parameters<typeof addResourceModuleProblems>[0];
+
+it.each([false, true])(
+  'reports a declaration companion only when it supplies bounded types: admitted=%s',
+  async (admitted) => {
+    const fixture = await createSemanticRepairFixture({
+      'package.json': '{"name":"fixture","type":"module"}',
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          allowArbitraryExtensions: true,
+          types: [],
+        },
+        files: ['main.ts', ...(admitted ? ['style.d.css.ts'] : [])],
+      }),
+      'main.ts': "import style from './style.css'; void style;",
+      'style.css': '.root {}',
+      'style.d.css.ts': 'declare const style: string; export default style;',
+    });
+    const parsed = fixture.parse();
+    const analysis = createImportAnalysisContext({
+      projectRootDir: fixture.root,
+    });
+    const core = new TypeEvidenceCore({
+      generation: 0,
+      importAnalysis: analysis,
+      workspaceSourceBoundaryProvider: () =>
+        createWorkspaceSourceBoundary([
+          fixture.path('main.ts'),
+          fixture.path('style.d.css.ts'),
+        ]),
+    });
+    try {
+      const project: ResourceOptions['project'] = {
+        analysisGeneration: 0,
+        configClosure: [],
+        checkerPresets: ['tsc'],
+        configPath: fixture.path('tsconfig.json'),
+        extensions: [],
+        fileNames: parsed.fileNames,
+        labels: [],
+        labelProblem: null,
+        ownedFileNames: parsed.fileNames,
+        options: parsed.options,
+        references: new Set(),
+        resolverConfigPath: fixture.path('tsconfig.json'),
+      };
+      const record = core
+        .getTypeScriptSemanticContext({ checkerName: 'tsc', project })
+        .getImportRecords(fixture.path('main.ts'))[0]!;
+      const findings: SourceFinding[] = [];
+      addResourceModuleProblems({
+        checkerName: 'tsc',
+        config: {
+          rootDir: fixture.root,
+          configPath: fixture.path('limina.config.mjs'),
+        },
+        findings,
+        importRecord: record,
+        owner: {
+          name: 'fixture',
+          packageJsonPath: fixture.path('package.json'),
+        } as ResourceOptions['owner'],
+        project,
+        typeEvidence: core,
+      });
+      expect(findings).toHaveLength(admitted ? 0 : 1);
+      if (!admitted)
+        expect(findings[0]).toMatchObject({
+          code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
+          facts: {
+            typeEvidenceKind: 'missing',
+            runtimeFilePath: fixture.path('style.css'),
+          },
+        });
+    } finally {
+      core.dispose();
+      await fixture.cleanup();
+    }
+  },
+);
 
 it('passes complete package-import identities to the physical Node resolver', async () => {
   const rootDir = await realpath(

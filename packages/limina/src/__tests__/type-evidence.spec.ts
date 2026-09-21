@@ -108,7 +108,7 @@ describe('TypeScript resource type evidence', () => {
         filePath: toPortablePath(providerPath),
         kind: 'checker-source',
       });
-      expect(core.cache.typeEvidenceProviderCache.size).toBe(0);
+      expect(core.cache.typeEvidenceProviderCache.size).toBe(1);
       expect(core.cache.programCache.size).toBe(1);
     } finally {
       core.dispose();
@@ -377,7 +377,7 @@ describe('TypeScript resource type evidence', () => {
         ),
         kind: 'concrete-declaration',
       });
-      expect(core.cache.typeEvidenceProviderCache.size).toBe(0);
+      expect(core.cache.typeEvidenceProviderCache.size).toBe(1);
       expect(core.cache.programCache.size).toBe(1);
     } finally {
       core.dispose();

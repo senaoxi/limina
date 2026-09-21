@@ -1,6 +1,5 @@
 import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
-import { compareCodeUnits } from '#utils/collections';
-import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { toRelativePath } from '#utils/path';
 import type { AutoScopeProject } from './auto-checker-types';
 import type {
   CheckerDependencyFact,
@@ -8,6 +7,7 @@ import type {
   CheckerOwnershipPlan,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import { FileOwnerLookup } from './file-owner-lookup';
 
 const frameworkCheckers = new Set<CheckerName>([
   'astro',
@@ -20,35 +20,10 @@ interface RequirementResolution {
   problem?: string;
 }
 
-function addActualMembership(
-  owners: Map<string, Set<string>>,
-  fileName: string,
-  configPath: string,
-): void {
-  const normalized = normalizeAbsolutePath(fileName);
-  const values = owners.get(normalized);
-  if (values === undefined) {
-    owners.set(normalized, new Set([configPath]));
-    return;
-  }
-  values.add(configPath);
-}
-
 export function createActualMembershipIndex(
   projects: ReadonlyMap<string, AutoScopeProject>,
-): Map<string, string[]> {
-  const owners = new Map<string, Set<string>>();
-  for (const project of projects.values()) {
-    for (const fileName of project.fileNames) {
-      addActualMembership(owners, fileName, project.configPath);
-    }
-  }
-  return new Map(
-    [...owners].map(([fileName, configPaths]) => [
-      fileName,
-      [...configPaths].sort(compareCodeUnits),
-    ]),
-  );
+): FileOwnerLookup {
+  return new FileOwnerLookup(projects.values());
 }
 
 function frameworkCheckerOrNull(checker: CheckerName): CheckerName | null {
@@ -115,6 +90,8 @@ function createRequirementEvidence(options: {
 
 function getMissingPhysicalTarget(fact: CheckerDependencyFact): string | null {
   if (fact.typeEvidenceKind !== 'missing') return null;
+  if (fact.physicalTargetProvenance !== 'pending-framework-candidate')
+    return null;
   return fact.physicalTargetPath;
 }
 
@@ -137,7 +114,7 @@ function resolveFrameworkDomain(options: {
 function resolveOwnedPhysicalTarget(options: {
   config: ResolvedLiminaConfig;
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
   targetPath: string;
 }): RequirementResolution {
@@ -157,7 +134,7 @@ function resolveOwnedPhysicalTarget(options: {
 }
 
 function getMembershipOwners(
-  membership: ReadonlyMap<string, string[]>,
+  membership: FileOwnerLookup,
   targetPath: string,
 ): string[] {
   return membership.get(targetPath) ?? [];
@@ -166,7 +143,7 @@ function getMembershipOwners(
 function resolveRequirement(options: {
   config: ResolvedLiminaConfig;
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
 }): RequirementResolution {
   const targetPath = getMissingPhysicalTarget(options.fact);
@@ -203,7 +180,7 @@ function appendRequirementEvidence(
 export function collectRequirementsForConsumer(options: {
   config: ResolvedLiminaConfig;
   facts: readonly CheckerDependencyFact[];
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
 }): { evidence: Map<CheckerName, CheckerEvidence>; problems: string[] } {
   const evidence = new Map<CheckerName, CheckerEvidence>();

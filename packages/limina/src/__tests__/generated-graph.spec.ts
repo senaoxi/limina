@@ -143,6 +143,7 @@ async function createFixture(
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
   rootDir: string;
+  path: ReturnType<typeof createFixturePathResolver>;
 }> {
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-generated-graph-')),
@@ -203,6 +204,7 @@ async function createFixture(
   }
 
   return {
+    path: createFixturePathResolver(rootDir),
     cleanup: async () => {
       await rm(rootDir, { force: true, recursive: true });
     },
@@ -288,6 +290,216 @@ async function readGeneratedReferences(options: {
 }
 
 describe('prepareGeneratedTsconfigGraph', () => {
+  it('rejects ambiguous canonical owners for a native compiler requirement', async () => {
+    const fixture = await createFixture({
+      'packages/a/src/index.ts':
+        "import { value } from '@example/shared'; export const used = value;",
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          ...managedOutputCompilerOptions(),
+          preserveSymlinks: true,
+        },
+        include: ['src/**/*'],
+      }),
+      'packages/one/tsconfig.json': json({
+        files: [],
+        references: [{ path: '../shared/tsconfig.one.json' }],
+      }),
+      'packages/two/tsconfig.json': json({
+        files: [],
+        references: [{ path: '../shared/tsconfig.two.json' }],
+      }),
+      'packages/shared/package.json': json({
+        name: '@example/shared',
+        exports: './src/value.ts',
+      }),
+      'packages/shared/src/value.ts': 'export const value = 1;',
+      'packages/shared/tsconfig.one.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*'],
+      }),
+      'packages/shared/tsconfig.two.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*'],
+      }),
+    });
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/a',
+        'packages/shared',
+        '@example/shared',
+      );
+      await expect(
+        resolveGeneratedGraphCheckers({
+          ...fixture.config,
+          config: { checkers: { auto: {} } },
+        }),
+      ).rejects.toThrow('Ambiguous canonical governed source ownership');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(['svelte', 'astro', 'vue'] as const)(
+    'keeps native missing source requirements separate from %s semantic authority',
+    async (family) => {
+      const component =
+        family === 'vue'
+          ? '<template><div /></template>'
+          : family === 'astro'
+            ? '---\n---\n<div />'
+            : '<div />';
+      const fixture = await createFixture({
+        'packages/a/src/index.ts':
+          "import { value } from '../../b/src/value'; export const used = value;",
+        'packages/a/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+        }),
+        'packages/b/src/value.ts': 'export const value = 1;',
+        [`packages/b/src/App.${family}`]: component,
+        'packages/b/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+        }),
+      });
+      const analysis = createSpiedImportAnalysis();
+      const config = { ...fixture.config, config: { checkers: { auto: {} } } };
+      try {
+        if (family === 'vue') {
+          const result = await prepareGeneratedTsconfigGraph(config, {
+            importAnalysisContext: analysis.context,
+          });
+          expect(
+            result.ownershipPlan.typeConfigs.get(
+              fixture.path('packages/a/tsconfig.json'),
+            ),
+          ).toMatchObject({
+            semanticAuthority: { kind: 'locked', family: 'typescript' },
+            finalOwner: 'vue-tsc',
+          });
+          expect(result.dependencyEdges).toMatchObject([
+            { kind: 'declaration-provider' },
+          ]);
+        } else {
+          const checkers = await resolveGeneratedGraphCheckers(config, {
+            importAnalysisContext: analysis.context,
+          });
+          expect(checkers).toContainEqual(
+            expect.objectContaining({
+              name: 'tsc',
+              include: ['packages/a/tsconfig.json'],
+            }),
+          );
+          await expect(
+            prepareGeneratedTsconfigGraph(config, {
+              importAnalysisContext: analysis.context,
+            }),
+          ).rejects.toThrow(
+            'Unable to map generated graph import to a declaration project',
+          );
+        }
+        expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['svelte', 'astro'] as const)(
+    'preserves %s scheduling for a native missing implementation prerequisite',
+    async (family) => {
+      const fixture = await createFixture({
+        'packages/a/src/index.ts':
+          "import { value } from '../../b/src/value'; export const used = value;",
+        [`packages/a/src/App.${family}`]:
+          family === 'astro' ? '---\n---\n<div />' : '<div />',
+        'packages/a/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+        }),
+        'packages/b/src/value.ts': 'export const value = 1;',
+        'packages/b/tsconfig.json': json({
+          compilerOptions: managedOutputCompilerOptions(),
+          include: ['src/**/*'],
+        }),
+      });
+      try {
+        const result = await prepareGeneratedTsconfigGraph({
+          ...fixture.config,
+          config: { checkers: { auto: {} } },
+        });
+        expect(
+          result.ownershipPlan.dependencyFacts.find(
+            (fact) =>
+              fact.consumerConfigPath ===
+              fixture.path('packages/a/tsconfig.json'),
+          ),
+        ).toMatchObject({
+          typeEvidenceKind: 'missing',
+          referenceRequirement: { kind: 'source-semantic' },
+        });
+        expect(result.dependencyEdges).toMatchObject([
+          {
+            kind: 'framework-schedule',
+            toConfigPath: fixture.path('packages/b/tsconfig.json'),
+          },
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('keeps an excluded framework declaration companion out of Oxc ownership rescue', async () => {
+    const fixture = await createFixture({
+      'packages/a/src/index.ts':
+        "import Component from '../../b/src/App.svelte'; export const used = Component;",
+      'packages/a/tsconfig.json': json({
+        compilerOptions: {
+          ...managedOutputCompilerOptions(),
+          allowArbitraryExtensions: true,
+        },
+        include: ['src/**/*'],
+      }),
+      'packages/b/src/App.svelte': '<div />',
+      'packages/b/src/App.d.svelte.ts':
+        'declare const component: unknown; export default component;',
+      'packages/b/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*'],
+      }),
+    });
+    const analysis = createSpiedImportAnalysis();
+    try {
+      const result = await prepareGeneratedTsconfigGraph(
+        { ...fixture.config, config: { checkers: { auto: {} } } },
+        { importAnalysisContext: analysis.context },
+      );
+      expect(
+        result.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/a/tsconfig.json'),
+        )?.finalOwner,
+      ).toBe('tsc');
+      expect(result.dependencyEdges).toEqual([]);
+      expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
+      expect(
+        result.ownershipPlan.dependencyFacts.find(
+          (fact) =>
+            fact.consumerConfigPath ===
+            fixture.path('packages/a/tsconfig.json'),
+        ),
+      ).toMatchObject({
+        typeEvidenceKind: 'missing',
+        referenceRequirement: null,
+        physicalTargetPath: null,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('keeps a leaf with files empty when an extended config supplies the effective include', async () => {
     const fixture = await createFixture({
       'packages/pkg/base.json': json({
@@ -1225,6 +1437,65 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
+  it('qualifies a Vue profile through the owner registered path of a symlink', async () => {
+    const fixture = await createFixture({
+      'packages/app/src/index.ts':
+        "import Component from '@example/custom'; export const value = Component;",
+      'packages/app/tsconfig.json': json({
+        compilerOptions: {
+          ...managedOutputCompilerOptions(),
+          preserveSymlinks: true,
+        },
+        include: ['src/**/*'],
+      }),
+      'packages/custom/package.json': json({
+        name: '@example/custom',
+        type: 'module',
+        exports: { '.': './src/App.md' },
+      }),
+      'packages/custom/src/App.md':
+        '<script setup lang="ts">const value = 1;</script>',
+      'packages/custom/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src/**/*'],
+        vueCompilerOptions: { extensions: ['.vue', '.md'] },
+      }),
+    });
+    const analysis = createSpiedImportAnalysis();
+    try {
+      await linkWorkspacePackage(
+        fixture.rootDir,
+        'packages/app',
+        'packages/custom',
+        '@example/custom',
+      );
+      const result = await prepareGeneratedTsconfigGraph(
+        { ...fixture.config, config: { checkers: { auto: {} } } },
+        { importAnalysisContext: analysis.context },
+      );
+      expect(
+        result.ownershipPlan.typeConfigs.get(
+          fixture.path('packages/app/tsconfig.json'),
+        )?.semanticAuthority,
+      ).toMatchObject({ family: 'vue', kind: 'locked', source: 'dependency' });
+      expect(
+        analysis.resolveOxcImport.mock.results.some(
+          (result) =>
+            result.value ===
+            fixture.path(
+              'packages/app/node_modules/@example/custom/src/App.md',
+            ),
+        ),
+      ).toBe(true);
+      // Qualification identifies the owner profile; it cannot invent a provider
+      // for a custom extension that the consumer's native channel cannot resolve.
+      expect(result.dependencyEdges).toEqual([]);
+      expect(analysis.resolveOxcImport).toHaveBeenCalledTimes(1);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('confirms custom Vue extensions from actual files instead of config hints alone', async () => {
     const fixture = await createFixture({
       'packages/custom/src/App.md':
@@ -1827,7 +2098,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  it('respects a concrete declaration as a framework domain boundary', async () => {
+  it('respects a physical declaration as a framework domain boundary even without bounded evidence', async () => {
     const fixture = await createFixture({
       'packages/consumer/src/index.ts':
         "import Component from '../../svelte/src/App.svelte';\nexport const value = Component;\n",
@@ -1867,7 +2138,9 @@ describe('prepareGeneratedTsconfigGraph', () => {
             consumerConfigPath: normalizeAbsolutePath(
               path.join(fixture.rootDir, 'packages/consumer/tsconfig.json'),
             ),
-            typeEvidenceKind: 'concrete-declaration',
+            typeEvidenceKind: 'missing',
+            referenceRequirement: null,
+            physicalTargetPath: null,
           }),
         ]),
       );
@@ -6082,8 +6355,22 @@ describe('prepareGeneratedTsconfigGraph', () => {
           ),
         ).toMatchObject({
           physicalTargetProvenance: 'checker-source',
-          typeEvidenceKind: 'checker-source',
+          typeEvidenceKind: 'missing',
+          referenceRequirement: { kind: 'source-semantic' },
         });
+        expect(result.dependencyEdges).toMatchObject([
+          {
+            kind: 'declaration-provider',
+            fromConfigPath: fixture.path('packages/app/tsconfig.json'),
+            toConfigPath: fixture.path('packages/provider/tsconfig.json'),
+            resolvedFilePath: fixture.path(
+              preserveSymlinks
+                ? 'packages/app/node_modules/@example/provider/src/index.ts'
+                : 'packages/provider/src/index.ts',
+            ),
+          },
+        ]);
+        expect(result.dependencyEdges).toHaveLength(1);
         expect(
           facts.filter(
             (fact) => fact.importRecord.specifier === 'virtual-foreign',
@@ -7787,7 +8074,7 @@ describe('ambient references and compiler membership', () => {
           expect(facts).toHaveLength(variant === 'augmentation' ? 2 : 1);
           for (const fact of facts) {
             expect(fact.typeEvidenceKind).toBe(
-              variant === 'augmentation' ? 'checker-source' : 'ambient',
+              variant === 'augmentation' ? 'missing' : 'ambient',
             );
             expect(fact.referenceRequirement?.kind).toBe(
               variant === 'augmentation'

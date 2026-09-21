@@ -208,7 +208,7 @@ describe('native reference repair independent Program evidence', () => {
     },
   );
 
-  it.each(['external', 'paths', 'augmentation'])(
+  it.each(['external', 'paths', 'augmentation', 'augmentation-admitted'])(
     'keeps type evidence distinct from compiler membership: %s',
     async (variant) => {
       const f = await fixture({
@@ -221,10 +221,16 @@ describe('native reference repair independent Program evidence', () => {
                 ? undefined
                 : { dep: ['./provider/index.ts'] },
           },
-          files: ['main.ts', 'env.d.ts'],
+          files: [
+            'main.ts',
+            'env.d.ts',
+            ...(variant === 'augmentation-admitted'
+              ? ['provider/index.ts']
+              : []),
+          ],
         }),
         'main.ts': "import type { Value } from 'dep'; export type Use = Value;",
-        'env.d.ts': `${variant === 'augmentation' ? "import 'dep'; " : ''}declare module 'dep' { export interface Value { ambient: true } }`,
+        'env.d.ts': `${variant.startsWith('augmentation') ? "import 'dep'; " : ''}declare module 'dep' { export interface Value { ambient: true } }`,
         'provider/index.ts': 'export interface Value { source: true }',
         'node_modules/dep/package.json':
           '{"name":"dep","type":"module","exports":"./index.ts"}',
@@ -244,11 +250,31 @@ describe('native reference repair independent Program evidence', () => {
           .moduleSpecifier;
         const symbol = oracle.getTypeChecker().getSymbolAtLocation(literal)!;
         expect(symbol.declarations?.some(ts.isSourceFile)).toBe(
-          variant === 'augmentation',
+          variant.startsWith('augmentation'),
         );
         expect(fact.typeEvidence.kind).toBe(
-          variant === 'augmentation' ? 'checker-source' : 'ambient',
+          variant === 'augmentation'
+            ? 'missing'
+            : variant === 'augmentation-admitted'
+              ? 'checker-source'
+              : 'ambient',
         );
+        const boundedSymbol = bounded.getSymbolAtImportRecord(record);
+        if (variant === 'augmentation') {
+          expect(boundedSymbol).toBeUndefined();
+          expect(fact.admission).toBe('excluded');
+          expect(
+            ts
+              .getPreEmitDiagnostics(bounded.program)
+              .map((diagnostic) => diagnostic.code),
+          ).toContain(2307);
+        }
+        if (variant === 'augmentation-admitted') {
+          expect(boundedSymbol?.declarations).toContain(
+            bounded.getSourceFile(f.path('provider/index.ts')),
+          );
+          expect(fact.admission).toBe('admitted');
+        }
         expect(fact.referenceRequirement?.kind ?? null).toBe(
           variant === 'external'
             ? null

@@ -10,6 +10,7 @@ import type {
 } from '../project-dependencies/contracts';
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import type { FileOwnerLookup } from './file-owner-lookup';
 import type { GeneratedDependencyEdge, SourceProject } from './types';
 
 export type ResolvedProvider =
@@ -29,7 +30,7 @@ export interface ReferenceImportContext {
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
   dtsProjectsBySourcePath: Map<string, SourceProject[]>;
-  fileOwnerLookup: Map<string, string[]>;
+  fileOwnerLookup: FileOwnerLookup;
   importAnalysis: ImportAnalysisContext;
   projectDependencyCaches: ProjectDependencyCaches;
   problems: string[];
@@ -46,7 +47,7 @@ export interface ReferenceImportOptions {
 }
 
 export interface ReferenceTarget {
-  providerSourceFilePath: string;
+  providerSourceFilePaths: readonly string[];
   resolvedFilePath: string;
   targetSourceConfigPath: string;
 }

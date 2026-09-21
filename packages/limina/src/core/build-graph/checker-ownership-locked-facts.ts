@@ -39,11 +39,11 @@ function createLockedDependencyFact(
   project: AutoScopeProject,
   dependency: ProjectDependency,
 ): CheckerDependencyFact {
-  if (dependency.targetKind === 'source') {
+  if (dependency.referenceRequirement !== null) {
     return {
       consumerConfigPath: project.configPath,
       importRecord: dependency.importRecord,
-      physicalTargetPath: dependency.resolvedFilePath,
+      physicalTargetPath: dependency.referenceRequirement.targetFileName,
       physicalTargetProvenance: 'checker-source',
       typeEvidenceKind: getSupportedEvidenceKind(dependency),
       referenceRequirement: dependency.referenceRequirement,
