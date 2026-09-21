@@ -42,3 +42,10 @@ export function isDeclarationFile(
 ): boolean {
   return defaultDeclarationClassifier.classify(filePath, programSourceFile);
 }
+
+// Physical target classification does not claim that the checker uses it.
+export function getResolvedTargetKind(
+  filePath: string,
+): 'declaration' | 'source' {
+  return isDeclarationFile(filePath) ? 'declaration' : 'source';
+}

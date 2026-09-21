@@ -9,6 +9,7 @@ import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import type { FileOwnerLookup } from './file-owner-lookup';
 import { readGraphRules, readImplicitRefs } from './generated/config-readers';
 import { isDeniedGeneratedReferenceForConfig } from './reference-policy';
 
@@ -81,7 +82,7 @@ function addSolutionEdges(options: {
 
 function getUniqueFactTarget(options: {
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
 }): string | null {
   if (options.fact.physicalTargetPath === null) return null;
   return getSingleOwner(
@@ -140,7 +141,7 @@ function createDependencyEdge(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
 }): ColoringEdge | null {
   if (!isDeclarationRelationFact(options.fact)) return null;
   const target = getUniqueFactTarget(options);

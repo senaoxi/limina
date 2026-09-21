@@ -12,7 +12,7 @@ import {
   TypeEvidenceGenerationCache,
   type TypeEvidenceMetricsRecorder,
 } from './cache';
-import { resolveNativeOrConcreteEvidence } from './native-evidence';
+import { resolveCoreTypeEvidence } from './native-evidence';
 import {
   resolveTypeScriptProviderEvidence,
   resolveVueProviderEvidence,
@@ -114,17 +114,13 @@ export class TypeEvidenceCore {
       };
     }
 
-    const concreteTypeEvidence = resolveNativeOrConcreteEvidence({
-      context: typeScriptSemanticContext,
+    return resolveCoreTypeEvidence({
+      native: typeScriptSemanticContext !== undefined,
+      pair,
       request: boundedOptions,
-      resolution: pair.typeScriptResolution,
+      resolveProvider: () =>
+        this.#resolveProviderEvidence(boundedOptions, pair.runtimeEvidence),
     });
-
-    if (concreteTypeEvidence !== null) {
-      return { ...pair.runtimeEvidence, type: concreteTypeEvidence };
-    }
-
-    return this.#resolveProviderEvidence(boundedOptions, pair.runtimeEvidence);
   }
 
   getTypeScriptSemanticContext(options: {

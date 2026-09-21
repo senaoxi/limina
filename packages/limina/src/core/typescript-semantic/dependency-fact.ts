@@ -1,15 +1,19 @@
-import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
-import { isDeclarationFile } from '../import-graph/declaration-classifier';
-import { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
+import { getResolvedTargetKind } from '../import-graph/declaration-classifier';
+import type { createAmbientTypeEvidence } from '../type-evidence/ambient-symbol';
 import type { TypeEvidence } from '../type-evidence/cache';
 import type {
   TypeScriptSemanticContext,
   TypeScriptSemanticResolution,
 } from './contracts';
+import {
+  collectNativeProviderEvidence,
+  isOriginalTargetInProgram,
+} from './provider-evidence';
 
 export interface DeclarationReferenceRequirement {
+  // An implementation prerequisite, not proof of current type provision.
   kind: 'source-semantic' | 'compiler-membership';
   targetFileName: string;
 }
@@ -21,27 +25,13 @@ export interface NativeDependencyFact {
   typeEvidence: TypeEvidence;
 }
 
-function getSymbolEvidence(options: {
-  context: TypeScriptSemanticContext;
-  record: ImportRecord;
-  tsModule: typeof ts;
-}): TypeEvidence {
-  const symbol = options.context.getSymbolAtImportRecord(options.record);
-  return symbol === undefined
-    ? { kind: 'missing' }
-    : createAmbientTypeEvidence(symbol, options.tsModule);
-}
-
-function getTypeEvidence(options: {
-  ambient: TypeEvidence;
-  resolution: TypeScriptSemanticResolution;
-}): TypeEvidence {
-  const target = options.resolution.target;
-  if (target === null) return options.ambient;
-  const filePath = normalizeAbsolutePath(target.resolvedFileName);
-  if (isDeclarationFile(filePath))
-    return { filePath, kind: 'concrete-declaration' };
-  return getSourceEvidence(options.ambient, filePath);
+export function hasDeclarationResolution(
+  resolution: TypeScriptSemanticResolution,
+): boolean {
+  if (resolution.target === null) return false;
+  return (
+    getResolvedTargetKind(resolution.target.resolvedFileName) === 'declaration'
+  );
 }
 
 function needsCompilerMembership(options: {
@@ -68,10 +58,22 @@ function getRequirement(options: {
 }): DeclarationReferenceRequirement | null {
   const target = options.resolution.target;
   if (target === null) return null;
-  if (options.typeEvidence.kind === 'checker-source') {
-    return { kind: 'source-semantic', targetFileName: target.resolvedFileName };
-  }
-  return getAmbientRequirement(options);
+  if (hasDeclarationResolution(options.resolution)) return null;
+  return getSourceRequirement(options);
+}
+
+function getSourceRequirement(options: {
+  context: TypeScriptSemanticContext;
+  resolution: TypeScriptSemanticResolution;
+  typeEvidence: TypeEvidence;
+}): DeclarationReferenceRequirement | null {
+  if (options.typeEvidence.kind === 'ambient')
+    return getAmbientRequirement(options);
+  if (options.typeEvidence.kind === 'concrete-declaration') return null;
+  return {
+    kind: 'source-semantic',
+    targetFileName: options.resolution.target!.resolvedFileName,
+  };
 }
 
 function getAmbientRequirement(options: {
@@ -90,25 +92,31 @@ function getAmbientRequirement(options: {
 function getAdmission(
   context: TypeScriptSemanticContext,
   resolution: TypeScriptSemanticResolution,
+  tsModule: typeof ts,
 ): NativeDependencyFact['admission'] {
   if (resolution.target === null) return 'unresolved';
-  return context.hasSourceFile(resolution.target.resolvedFileName)
+  return isOriginalTargetInProgram({
+    context,
+    target: resolution.target.resolvedFileName,
+    tsModule,
+  })
     ? 'admitted'
     : 'excluded';
 }
 
 export function collectNativeDependencyFact(options: {
+  getAmbientEvidence: typeof createAmbientTypeEvidence;
   context: TypeScriptSemanticContext;
   record: ImportRecord;
   tsModule: typeof ts;
 }): NativeDependencyFact {
   const resolution = options.context.resolveImportRecord(options.record);
-  const typeEvidence = getTypeEvidence({
-    ambient: getSymbolEvidence(options),
+  const typeEvidence = collectNativeProviderEvidence({
+    ...options,
     resolution,
   });
   return {
-    admission: getAdmission(options.context, resolution),
+    admission: getAdmission(options.context, resolution, options.tsModule),
     referenceRequirement: getRequirement({
       ...options,
       resolution,
@@ -117,15 +125,6 @@ export function collectNativeDependencyFact(options: {
     resolution,
     typeEvidence,
   };
-}
-
-function getSourceEvidence(
-  ambient: TypeEvidence,
-  filePath: string,
-): TypeEvidence {
-  return ambient.kind === 'ambient'
-    ? ambient
-    : { filePath, kind: 'checker-source' };
 }
 
 function isExplicitInput(program: ts.Program, target: string): boolean {

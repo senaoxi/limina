@@ -6,6 +6,7 @@ import {
 } from '../project-dependencies/runner';
 import { createWorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
+import { FileOwnerLookup } from './file-owner-lookup';
 import {
   type GovernedBuildOwner,
   processFrameworkSourceReferences,
@@ -28,23 +29,13 @@ import type {
 
 function createOwnerLookup(
   governedSources: readonly GovernedSourceUnit[],
-): Map<string, string[]> {
-  const ownersByFile = new Map<string, string[]>();
-  for (const unit of governedSources) {
-    addGovernedSourceOwners(ownersByFile, unit);
-  }
-  return ownersByFile;
-}
-
-function addGovernedSourceOwners(
-  ownersByFile: Map<string, string[]>,
-  unit: GovernedSourceUnit,
-): void {
-  for (const fileName of unit.ownedFileNames) {
-    const owners = ownersByFile.get(fileName) ?? [];
-    owners.push(unit.configPath);
-    ownersByFile.set(fileName, owners);
-  }
+): FileOwnerLookup {
+  return new FileOwnerLookup(
+    governedSources.map((unit) => ({
+      configPath: unit.configPath,
+      fileNames: unit.ownedFileNames,
+    })),
+  );
 }
 
 function createPrimaryProjectsByConfigPath(

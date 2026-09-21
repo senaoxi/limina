@@ -163,7 +163,7 @@ function addCrossCheckerReference(options: {
   }
   const selection = selectProviderProject({
     consumerProject: options.base.project,
-    providerSourceFilePath: options.target.providerSourceFilePath,
+    providerSourceFilePaths: options.target.providerSourceFilePaths,
     targetProjects,
   });
   if (selection.kind !== 'selected') {

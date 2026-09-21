@@ -179,7 +179,12 @@ describe('project dependency authority', () => {
         resolvedFilePath: targetFile,
         semanticSpecifier: './target',
         targetKind: 'source',
-        typeEvidence: { kind: 'checker-source' },
+        typeEvidence: { kind: 'missing' },
+        nativeFact: { admission: 'excluded' },
+        referenceRequirement: {
+          kind: 'source-semantic',
+          targetFileName: targetFile,
+        },
       },
     ]);
     expect(resolveOxcImport).not.toHaveBeenCalled();

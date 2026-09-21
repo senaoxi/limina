@@ -2,6 +2,7 @@ import { compareCodeUnits } from '#utils/collections';
 import { isRelativeSpecifier } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
+import { formatAmbiguousCanonicalOwner } from './canonical-owner-problems';
 import { getDtsProjectsForSourcePath } from './project-indexes';
 import { formatReferenceBoundaryProblem } from './reference-boundary';
 import type {
@@ -50,8 +51,10 @@ function resolveProjectDependencyProvider(
   }
   return {
     kind: 'source',
-    ownerProjectPaths:
-      options.context.fileOwnerLookup.get(dependency.resolvedFilePath) ?? [],
+    ownerProjectPaths: getOwnedConfigPaths(
+      options.context,
+      dependency.resolvedFilePath,
+    ),
     oxcResolvedFilePath: null,
     typeScriptResolution,
   };
@@ -91,7 +94,16 @@ function getOwnedConfigPaths(
   context: ReferenceImportOptions['context'],
   filePath: string,
 ): string[] {
-  return context.fileOwnerLookup.get(filePath) ?? [];
+  const owners = context.fileOwnerLookup.get(filePath) ?? [];
+  if (!context.fileOwnerLookup.isCanonicalAmbiguous(filePath)) return owners;
+  context.problems.push(
+    formatAmbiguousCanonicalOwner({
+      filePath,
+      owners,
+      rootDir: context.config.rootDir,
+    }),
+  );
+  return [];
 }
 
 function resolveExplicitOwnedSource(
@@ -147,7 +159,11 @@ function resolveSourceTarget(options: {
     return null;
   }
   return {
-    providerSourceFilePath: options.resolvedFilePath,
+    providerSourceFilePaths:
+      options.base.context.fileOwnerLookup.registeredFileNames(
+        options.resolvedFilePath,
+        targetSourceConfigPath,
+      ),
     resolvedFilePath: options.resolvedFilePath,
     targetSourceConfigPath,
   };

@@ -79,11 +79,11 @@ function resolveCheckerSourceEvidence(
     : null;
 }
 
-function resolveManagedSource(options: {
+export function resolveManagedSource(options: {
   checkerName: string;
   filePath: string;
   lookup: ManagedOutputDeclarationLookup | undefined;
-}) {
+}): ReturnType<ManagedOutputDeclarationLookup['resolve']> {
   if (options.lookup === undefined) {
     return null;
   }

@@ -9,12 +9,13 @@ import type {
   PhysicalFrameworkCandidate,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface PhysicalCandidateContext {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   project: AutoScopeProject;
   semantic: EvidenceProject;
   state: TypeConfigOwnershipState;
@@ -57,10 +58,10 @@ function isFamilyTarget(options: {
   family: PhysicalFrameworkCandidate['family'];
   project: AutoScopeProject;
   targetPath: string;
+  registeredPaths: readonly string[];
 }): boolean {
-  return FAMILY_TARGET_MATCHERS[options.family](
-    options.project,
-    options.targetPath,
+  return [options.targetPath, ...options.registeredPaths].some((targetPath) =>
+    FAMILY_TARGET_MATCHERS[options.family](options.project, targetPath),
   );
 }
 
@@ -89,7 +90,7 @@ function resolveUniqueOwner(options: {
 }
 
 function getPhysicalTargetOwners(
-  membership: ReadonlyMap<string, string[]>,
+  membership: FileOwnerLookup,
   targetPath: string,
 ): string[] {
   return membership.get(targetPath) ?? [];
@@ -127,7 +128,15 @@ function createOwnedPhysicalCandidate(options: {
   if (owner === null) return null;
   const family = getLockedFrameworkFamily(owner.state);
   if (family === null) return null;
-  return createFamilyCandidate({ ...options, family, project: owner.project });
+  return createFamilyCandidate({
+    ...options,
+    family,
+    project: owner.project,
+    registeredPaths: options.context.membership.registeredFileNames(
+      options.targetPath,
+      options.owningConfigPath,
+    ),
+  });
 }
 
 function createFamilyCandidate(options: {
@@ -135,6 +144,7 @@ function createFamilyCandidate(options: {
   owningConfigPath: string;
   project: AutoScopeProject;
   targetPath: string;
+  registeredPaths: readonly string[];
 }): PhysicalFrameworkCandidate | null {
   if (!isFamilyTarget(options)) {
     return null;

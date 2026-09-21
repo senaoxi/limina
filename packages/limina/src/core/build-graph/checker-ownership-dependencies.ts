@@ -13,6 +13,7 @@ import type {
   CheckerOwnershipPlan,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import type { FileOwnerLookup } from './file-owner-lookup';
 export { collectCheckerDependencyFacts } from './checker-ownership-dependency-facts';
 
 interface DependencyRequirementPass {
@@ -110,7 +111,7 @@ function createFactsByConsumer(
 function applyStateRequirements(options: {
   config: ResolvedLiminaConfig;
   facts: readonly CheckerDependencyFact[];
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   plan: CheckerOwnershipPlan;
   state: TypeConfigOwnershipState;
 }): DependencyRequirementPass {
@@ -162,7 +163,7 @@ export function applyDependencyRequirementPass(options: {
 
 function getUniqueMembershipTarget(options: {
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
 }): string | null {
   if (options.fact.physicalTargetPath === null) return null;
   const owners = getMembershipOwners(
@@ -174,7 +175,7 @@ function getUniqueMembershipTarget(options: {
 }
 
 function getMembershipOwners(
-  membership: ReadonlyMap<string, string[]>,
+  membership: FileOwnerLookup,
   targetPath: string,
 ): string[] {
   return membership.get(targetPath) ?? [];
@@ -182,7 +183,7 @@ function getMembershipOwners(
 
 function getUniqueDependencyTarget(options: {
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
 }): string | null {
   const target = getUniqueMembershipTarget(options);
   if (target === options.fact.consumerConfigPath) return null;
@@ -192,7 +193,7 @@ function getUniqueDependencyTarget(options: {
 function addOwnershipDependency(options: {
   dependencies: Map<string, Set<string>>;
   fact: CheckerDependencyFact;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
 }): void {
   const target = getUniqueDependencyTarget(options);
   if (target === null) return;

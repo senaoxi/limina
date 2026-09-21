@@ -12,7 +12,7 @@ import type {
 } from './contracts';
 
 export const PROJECT_DEPENDENCY_ADAPTER_VERSION =
-  'service-script-facts-v4-native-requirements';
+  'service-script-facts-v5-scope-evidence';
 
 export function createProjectDependencyCaches(): ProjectDependencyCaches {
   return {

@@ -11,6 +11,7 @@ import type {
   TypeScriptSemanticContext,
   WorkspaceSourceBoundary,
 } from '../typescript-semantic';
+import { hasDeclarationResolution } from '../typescript-semantic/dependency-fact';
 import type { AutoScopeProject } from './auto-checker-types';
 import type { CheckerOwnershipDiscovery } from './checker-ownership-discovery';
 import {
@@ -27,13 +28,14 @@ import type {
   CheckerDependencyFact,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
+import type { FileOwnerLookup } from './file-owner-lookup';
 
 interface FactCollectionContext {
   config: ResolvedLiminaConfig;
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   project: AutoScopeProject;
   semantic: EvidenceProject;
   state: TypeConfigOwnershipState;
@@ -47,7 +49,7 @@ interface CollectPendingOptions {
   core: TypeEvidenceCore;
   discovery: CheckerOwnershipDiscovery;
   importAnalysis: ImportAnalysisContext;
-  membership: ReadonlyMap<string, string[]>;
+  membership: FileOwnerLookup;
   project: AutoScopeProject;
   projectConfigCache?: CheckerProjectConfigCache;
   state: TypeConfigOwnershipState;
@@ -115,12 +117,14 @@ function getPhysicalTarget(options: {
   importRecord: CheckerDependencyFact['importRecord'];
   problems: string[];
 }): PhysicalTarget | null {
-  const requirement =
+  const nativeFact =
     options.context.typeScriptSemanticContext.getDependencyFact(
       options.importRecord,
-    ).referenceRequirement;
+    );
+  const requirement = nativeFact.referenceRequirement;
   if (requirement !== null)
     return { path: requirement.targetFileName, provenance: 'checker-source' };
+  if (hasDeclarationResolution(nativeFact.resolution)) return null;
   return getPendingFrameworkTarget(options);
 }
 
@@ -282,7 +286,7 @@ function assertPendingAuthority(state: TypeConfigOwnershipState): void {
 
 function createPendingCacheKey(options: CollectPendingOptions): string {
   return JSON.stringify({
-    adapterVersion: 'pending-typescript-v3-native-requirements',
+    adapterVersion: 'pending-typescript-v4-scope-evidence',
     authority: options.state.semanticAuthority,
     configPath: options.project.configPath,
     fileNames: options.project.filePartition.typescriptFiles,
