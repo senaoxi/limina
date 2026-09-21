@@ -1,43 +1,21 @@
+import type {
+  PackageManifest,
+  WorkspacePackage,
+} from '#core/workspace/actions';
 import {
   collectWorkspacePackages,
-  type PackageManifest,
   readJsonFile,
-  type WorkspacePackage,
 } from '#core/workspace/actions';
-import { normalizeAbsolutePath } from '#utils/path';
+import type {
+  ResolvedWorkspaceRoot,
+  SupportedPackageManager,
+} from '#utils/workspace-root';
+import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import { confirmAction } from './prompts';
-import { createInitConfig, pnpmWorkspaceFileName } from './shared';
+import { createInitConfig } from './shared';
 import type { InitPromptOptions } from './types';
-
-function findWorkspaceRootFrom(directory: string): string | null {
-  if (existsSync(path.join(directory, pnpmWorkspaceFileName))) {
-    return normalizeAbsolutePath(directory);
-  }
-
-  const parentDirectory = path.dirname(directory);
-  if (parentDirectory === directory) {
-    return null;
-  }
-
-  return findWorkspaceRootFrom(parentDirectory);
-}
-
-export function findPnpmWorkspaceRoot(startDir: string): string | null {
-  return findWorkspaceRootFrom(path.resolve(startDir));
-}
-
-function getWorkspaceRootOrThrow(cwd: string): string {
-  const rootDir = findPnpmWorkspaceRoot(cwd);
-  if (rootDir !== null) {
-    return rootDir;
-  }
-
-  throw new Error(
-    `Unable to run limina init from ${cwd}: no pnpm-workspace.yaml was found in this directory or its parents.`,
-  );
-}
 
 function readRootPackageName(rootDir: string): string | undefined {
   const packageJsonPath = path.join(rootDir, 'package.json');
@@ -51,25 +29,31 @@ function readRootPackageName(rootDir: string): string | undefined {
 function formatWorkspacePrompt(
   rootDir: string,
   packageName: string | undefined,
+  manager: SupportedPackageManager,
 ): string {
   const packageLabel = packageName === undefined ? '' : `"${packageName}" `;
-  return `Use pnpm workspace ${packageLabel}at ${rootDir}?`;
+  return `Use ${manager} workspace ${packageLabel}at ${rootDir}?`;
 }
 
 export async function resolveInitWorkspace(options: {
   cwd: string;
   prompt: InitPromptOptions;
-}): Promise<{ rootDir: string }> {
-  const rootDir = getWorkspaceRootOrThrow(options.cwd);
+}): Promise<ResolvedWorkspaceRoot> {
+  const workspace = resolveNearestWorkspaceRoot(options.cwd);
+  const { rootDir, packageManager } = workspace;
   const shouldUseRoot = await confirmAction({
-    message: formatWorkspacePrompt(rootDir, readRootPackageName(rootDir)),
+    message: formatWorkspacePrompt(
+      rootDir,
+      readRootPackageName(rootDir),
+      packageManager,
+    ),
     prompt: options.prompt,
   });
   if (!shouldUseRoot) {
     throw new Error('limina init canceled.');
   }
 
-  return { rootDir };
+  return workspace;
 }
 
 export async function collectInitWorkspacePackages(
@@ -81,3 +65,11 @@ export async function collectInitWorkspacePackages(
     (workspacePackage) => workspacePackage.directory !== rootDir,
   );
 }
+
+export const initCommands: Record<SupportedPackageManager, { build: string }> =
+  {
+    pnpm: { build: 'pnpm limina:build' },
+    npm: { build: 'npm run limina:build' },
+    yarn: { build: 'yarn limina:build' },
+    bun: { build: 'bun run limina:build' },
+  };

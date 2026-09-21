@@ -1,4 +1,8 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import {
+  hasWorkspaceDeclaration,
+  type WorkspaceRootDescriptor,
+} from '#utils/workspace-root';
 import { readFile } from 'node:fs/promises';
 import path from 'pathe';
 import type { PackageManifest } from '../../actions';
@@ -31,16 +35,16 @@ async function readPackageManifest(
 function addNestedWorkspaceBoundary(options: {
   context: IslandWalkContext;
   directory: string;
-  workspaceYamlPath: string;
+  descriptor: WorkspaceRootDescriptor;
 }): void {
-  options.context.result.pnpmBoundaries.push({
+  options.context.result.workspaceBoundaries.push({
     inspection: {
       reason: 'Nested workspace context is discovered independently.',
       status: 'excluded',
     },
-    kind: 'pnpm-workspace',
+    kind: 'workspace-root',
     rootDir: options.directory,
-    workspaceYamlPath: options.workspaceYamlPath,
+    descriptor: options.descriptor,
   });
 }
 
@@ -65,7 +69,7 @@ export async function addWorkspaceDescriptor(options: {
   addNestedWorkspaceBoundary({
     context: options.context,
     directory: options.directory,
-    workspaceYamlPath,
+    descriptor: { kind: 'pnpm-workspace', path: workspaceYamlPath },
   });
   return true;
 }
@@ -117,6 +121,17 @@ async function processNestedPackageScope(options: {
   packageJsonPath: string;
 }): Promise<boolean> {
   const manifest = await readPackageManifest(options.packageJsonPath);
+  if (addManifestWorkspaceBoundary({ ...options, manifest })) return true;
+  return processOrdinaryPackageScope({ ...options, manifest });
+}
+
+function processOrdinaryPackageScope(options: {
+  context: IslandWalkContext;
+  directory: string;
+  packageJsonPath: string;
+  manifest: PackageManifest | null;
+}): boolean {
+  const { manifest } = options;
   const exclusion = findExactExclusions({
     config: options.context.config,
     kind: 'package-scope',
@@ -158,4 +173,23 @@ export async function addPackageDescriptor(options: {
     directory: options.directory,
     packageJsonPath,
   });
+}
+
+function addManifestWorkspaceBoundary(options: {
+  context: IslandWalkContext;
+  directory: string;
+  packageJsonPath: string;
+  manifest: PackageManifest | null;
+}): boolean {
+  if (options.manifest === null) return false;
+  if (!hasWorkspaceDeclaration(options.manifest)) return false;
+  addNestedWorkspaceBoundary({
+    context: options.context,
+    directory: options.directory,
+    descriptor: {
+      kind: 'package-json-workspaces',
+      path: options.packageJsonPath,
+    },
+  });
+  return true;
 }

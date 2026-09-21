@@ -15,8 +15,8 @@ function getBoundaryAuthorityLine(options: {
   boundary: WorkspaceBoundary;
   config: ResolvedLiminaConfig;
 }): string {
-  if (options.boundary.kind === 'pnpm-workspace') {
-    return `  boundary config: ${toRelativePath(options.config.rootDir, options.boundary.workspaceYamlPath)}`;
+  if (options.boundary.kind === 'workspace-root') {
+    return `  boundary config: ${toRelativePath(options.config.rootDir, options.boundary.descriptor.path)}`;
   }
   return `  boundary manifest: ${toRelativePath(options.config.rootDir, options.boundary.packageJsonPath)}`;
 }

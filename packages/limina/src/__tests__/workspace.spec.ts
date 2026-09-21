@@ -232,7 +232,7 @@ describe('collectWorkspacePackages', () => {
     }
   });
 
-  it('uses pnpm default ignores for invalid test fixture manifests', async () => {
+  it('fails closed on invalid matched test fixture manifests', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({ name: 'root', private: true }),
       'packages/a/package.json': stringifyConfig({
@@ -244,17 +244,15 @@ describe('collectWorkspacePackages', () => {
     });
 
     try {
-      const packages = await collectWorkspacePackages(fixture.config);
-
-      expect(packages.map((workspacePackage) => workspacePackage.name)).toEqual(
-        ['@example/a', 'root'],
+      await expect(collectWorkspacePackages(fixture.config)).rejects.toThrow(
+        SyntaxError,
       );
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('validates the root workspace manifest with the pnpm reader', async () => {
+  it('only validates the consumed pnpm workspace projection', async () => {
     const fixture = await createFixture({
       'package.json': stringifyConfig({ name: 'root', private: true }),
       'pnpm-workspace.yaml': 'packages: []\ncatalogs: []\n',
@@ -263,9 +261,7 @@ describe('collectWorkspacePackages', () => {
     try {
       await expect(
         collectRawWorkspacePackages(fixture.config),
-      ).rejects.toMatchObject({
-        code: 'ERR_PNPM_INVALID_WORKSPACE_CONFIGURATION',
-      });
+      ).resolves.toEqual([expect.objectContaining({ name: 'root' })]);
     } finally {
       await fixture.cleanup();
     }
@@ -383,7 +379,7 @@ describe('collectWorkspaceRegionBoundaries', () => {
         ),
       ).resolves.toEqual([
         expect.objectContaining({
-          kind: 'pnpm-workspace',
+          kind: 'workspace-root',
           rootDir: fixture.path('packages/a/fixture'),
         }),
       ]);
@@ -428,7 +424,7 @@ describe('collectWorkspaceRegionBoundaries', () => {
               reason: 'Nested workspace context is discovered independently.',
               status: 'excluded',
             },
-            kind: 'pnpm-workspace',
+            kind: 'workspace-root',
             rootDir: fixture.path('packages/a/fixture'),
           }),
         ]),
@@ -557,7 +553,7 @@ describe('collectWorkspaceRegionTopology', () => {
             fixture.rootDir,
             boundary.kind === 'package-scope'
               ? boundary.packageJsonPath
-              : boundary.workspaceYamlPath,
+              : boundary.descriptor.path,
           ),
         ),
       ).toEqual(['packages/a/src/nested/package.json']);
@@ -614,7 +610,7 @@ describe('collectWorkspaceRegionTopology', () => {
             fixture.rootDir,
             boundary.kind === 'package-scope'
               ? boundary.packageJsonPath
-              : boundary.workspaceYamlPath,
+              : boundary.descriptor.path,
           ),
         ),
       ).toEqual([
@@ -712,7 +708,7 @@ describe('collectWorkspaceRegionTopology', () => {
       expect(topology.extendedPackageScopes).toEqual([]);
       expect(topology.boundaries).toEqual([
         expect.objectContaining({
-          kind: 'pnpm-workspace',
+          kind: 'workspace-root',
           rootDir: fixture.path('packages/a/fixture'),
         }),
       ]);
@@ -924,7 +920,7 @@ describe('collectWorkspaceRegionTopology', () => {
             code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
             filePath: 'packages/app/pnpm-workspace.yaml',
             reason:
-              'An activated non-root workspace package is also the root of a pnpm workspace.',
+              'An activated non-root workspace package is also the root of another workspace.',
           }),
         ],
       });
@@ -1050,7 +1046,7 @@ describe('collectWorkspaceRegionTopology', () => {
       ).toEqual(['@example/parent', '@example/nested']);
       expect(topology.boundaries).toEqual([
         expect.objectContaining({
-          kind: 'pnpm-workspace',
+          kind: 'workspace-root',
           rootDir: fixture.path('packages/parent/fixture'),
         }),
       ]);
@@ -1064,7 +1060,7 @@ describe('collectWorkspaceRegionTopology', () => {
           fixture.path('packages/parent/fixture/src/index.ts'),
         ),
       ).toMatchObject({
-        kind: 'pnpm-workspace',
+        kind: 'workspace-root',
         rootDir: fixture.path('packages/parent/fixture'),
       });
       expect(
@@ -1513,7 +1509,7 @@ describe('collectWorkspaceRegionTopology', () => {
             reason: 'Nested workspace context is discovered independently.',
             status: 'excluded',
           },
-          kind: 'pnpm-workspace',
+          kind: 'workspace-root',
           rootDir: fixture.path('packages/a/fixture'),
         }),
       ]);

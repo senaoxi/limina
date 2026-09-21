@@ -1,11 +1,11 @@
 import { type PackageManifest, readJsonFile } from '#core/workspace/actions';
+import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'pathe';
 import { parse as parseYaml } from 'yaml';
 import { pnpmWorkspaceFileName } from './shared';
 import type { LiminaPackageMetadata } from './types';
-import { findPnpmWorkspaceRoot } from './workspace';
 
 interface WorkspaceCatalogManifest {
   catalog?: Record<string, string>;
@@ -155,4 +155,21 @@ export function readLiminaPackageMetadata(): LiminaPackageMetadata {
     typescriptRange: getTypeScriptRange({ manifest, manifestPath }),
     versionRange: getLiminaVersionRange(manifest),
   };
+}
+
+function findWorkspaceRootFrom(directory: string): string | null {
+  if (existsSync(path.join(directory, pnpmWorkspaceFileName))) {
+    return normalizeAbsolutePath(directory);
+  }
+
+  const parentDirectory = path.dirname(directory);
+  if (parentDirectory === directory) {
+    return null;
+  }
+
+  return findWorkspaceRootFrom(parentDirectory);
+}
+
+function findPnpmWorkspaceRoot(startDir: string): string | null {
+  return findWorkspaceRootFrom(path.resolve(startDir));
 }

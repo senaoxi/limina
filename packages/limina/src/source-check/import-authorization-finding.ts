@@ -130,7 +130,7 @@ function getAuthorizationReason(options: {
     return `the grant allows workspace root dependency authority, but the workspace root package.json does not declare "${options.packageName}".`;
   }
 
-  return 'source imports must be declared by the nearest pnpm workspace source owner or by an explicitly configured workspace root dependency grant.';
+  return 'source imports must be declared by the nearest workspace source owner or by an explicitly configured workspace root dependency grant.';
 }
 
 function createOptionalLine(

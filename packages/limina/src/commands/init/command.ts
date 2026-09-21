@@ -1,4 +1,8 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import type {
+  ResolvedWorkspaceRoot,
+  SupportedPackageManager,
+} from '#utils/workspace-root';
 import { createElapsedTimer } from 'logaria/helper';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../../logger';
 import {
@@ -10,6 +14,7 @@ import { prepareInitMutationContext } from './mutation';
 import { updateRootPackageJson } from './package-json';
 import { readLiminaPackageMetadata } from './package-metadata';
 import { runInitFlowStep } from './prompts';
+import { reportInitSuccess } from './report';
 import { liminaConfigFileName } from './shared';
 import { installLiminaSkill } from './skill';
 import type {
@@ -20,14 +25,14 @@ import type {
 } from './types';
 import {
   collectInitWorkspacePackages,
+  initCommands,
   resolveInitWorkspace,
 } from './workspace';
-
-type InitElapsedLogOptions = ReturnType<ReturnType<typeof createElapsedTimer>>;
 
 interface InitCommandContext {
   options: RunInitOptions;
   rootDir: string;
+  packageManager: SupportedPackageManager;
   state: InitFileState;
   stepDepth: number;
   workspacePackageCount: number;
@@ -40,7 +45,7 @@ function getStepDepth(options: RunInitOptions): number {
 async function resolveWorkspaceStep(
   options: RunInitOptions,
   stepDepth: number,
-): Promise<string> {
+): Promise<ResolvedWorkspaceRoot> {
   const cwd = normalizeAbsolutePath(options.cwd ?? process.cwd());
   const result = await runInitFlowStep({
     action: async () => {
@@ -55,7 +60,7 @@ async function resolveWorkspaceStep(
     flow: options.flow,
     label: 'resolve workspace root',
   });
-  return result.rootDir;
+  return result;
 }
 
 async function countWorkspacePackages(options: {
@@ -97,7 +102,10 @@ async function createInitCommandContext(
   options: RunInitOptions,
 ): Promise<InitCommandContext> {
   const stepDepth = getStepDepth(options);
-  const rootDir = await resolveWorkspaceStep(options, stepDepth);
+  const { rootDir, packageManager } = await resolveWorkspaceStep(
+    options,
+    stepDepth,
+  );
   const workspacePackageCount = await countWorkspacePackages({
     commandOptions: options,
     rootDir,
@@ -106,6 +114,7 @@ async function createInitCommandContext(
   return {
     options,
     rootDir,
+    packageManager,
     state: await createInitState(rootDir),
     stepDepth,
     workspacePackageCount,
@@ -204,7 +213,9 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
   const installRequired = await updatePackageJsonStep(context);
   const skillInstallStatus = await installSkillStep(context);
   return {
-    buildCommand: 'pnpm limina:build',
+    buildCommand: initCommands[context.packageManager].build,
+    installCommand: `${context.packageManager} install`,
+    packageManager: context.packageManager,
     installRequired,
     removedPaths: context.state.removedPaths,
     rootDir: context.rootDir,
@@ -220,31 +231,6 @@ function initializeInitCommand(options: RunInitOptions): void {
     clearCliScreen();
   }
   InitLogger.info('init started');
-}
-
-function getNextCommand(result: RunInitResult): string {
-  return result.installRequired
-    ? `pnpm i && ${result.buildCommand}`
-    : result.buildCommand;
-}
-
-function reportInitSuccess(
-  result: RunInitResult,
-  elapsed: InitElapsedLogOptions,
-): void {
-  InitLogger.success(
-    `init generated ${result.writtenFiles.length} files for ${result.workspacePackageCount} workspace packages.`,
-    elapsed,
-  );
-  if (result.installRequired) {
-    InitLogger.info(
-      'limina dependencies were added to devDependencies; run pnpm i before building.',
-    );
-  }
-  InitLogger.info(`next: ${getNextCommand(result)}`);
-  InitLogger.info(
-    'migration: run npx limina migration to move tsconfig output settings under Limina governance.',
-  );
 }
 
 interface InitCommandTask {

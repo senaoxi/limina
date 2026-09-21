@@ -35,7 +35,7 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
 
 export function registerSetupCommands(cli: LiminaCli): void {
   cli
-    .command('init', 'Initialize Limina files for a pnpm workspace')
+    .command('init', 'Initialize Limina files for a workspace')
     .option('--yes', 'Accept all init prompts')
     .action(runInitAction);
   cli

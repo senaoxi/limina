@@ -3,7 +3,7 @@ import type { lstat } from 'node:fs/promises';
 import type {
   ExtendedPackageScope,
   PackageScopeRegionBoundary,
-  PnpmWorkspaceRegionBoundary,
+  WorkspaceRootRegionBoundary,
 } from '../../regions';
 import type { CompiledExclusionRule } from '../exclusions';
 import type { WorkspaceDescriptorCandidate } from '../types';
@@ -12,7 +12,7 @@ export interface PackageIslandCollection {
   boundaries: PackageScopeRegionBoundary[];
   descriptors: WorkspaceDescriptorCandidate[];
   extendedScopes: ExtendedPackageScope[];
-  pnpmBoundaries: PnpmWorkspaceRegionBoundary[];
+  workspaceBoundaries: WorkspaceRootRegionBoundary[];
 }
 
 export interface IslandWalkContext {

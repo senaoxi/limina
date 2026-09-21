@@ -38,12 +38,23 @@ export default defineConfig({
 
 ## Default Governed Region
 
-Limina starts from the raw package membership declared by the nearest `pnpm-workspace.yaml`. It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
+Limina starts from the raw package membership declared by the nearest workspace descriptor. It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
+
+Package discovery follows the selected manager's policy. Its traversal always excludes the following directory names:
+
+| Manager | Hard ignores                         |
+| ------- | ------------------------------------ |
+| pnpm    | `node_modules`, `bower_components`   |
+| npm     | `node_modules`                       |
+| Yarn    | `node_modules`, `.git`, `.yarn`      |
+| Bun     | `node_modules`, `.git`, `CMakeFiles` |
+
+`test` and `tests` are ordinary candidate directories when matched. Glob selection is manager-specific: for example, later positive patterns can re-include packages in npm and Bun, while pnpm and Yarn retain exclusions. An exact exclusion of a package need not exclude its descendants; declare subtree exclusions when that is intended. Root manifests are included independently of the globs, and names are optional. These supported discovery rules do not certify the manager's full configuration. Limina keeps the hard ignores above even where a manager version accepts an explicit metadata-directory shortcut.
 
 Inside each base unit, boundaries work as follows:
 
 - A nested `package.json` stops governance at that directory by default.
-- A nested `pnpm-workspace.yaml` always stops traversal for the current package island.
+- A nested workspace root (`pnpm-workspace.yaml` or `package.json` with its own `workspaces`) always stops traversal for the current package island.
 - An activated child package is not traversed by its activated parent. Limina starts a separate discovery job from the child root instead.
 - A directory that is not inside an activated workspace package is not part of the current region merely because it is below the workspace root.
 
@@ -64,7 +75,7 @@ An ancestor boundary never prevents an activated descendant package from startin
 
 Before any source, proof, graph, checker, migration, package, release, or artifact-producing work starts, `workspace:validate` builds this activated package index. It rejects structural ambiguity before owner lookup is constructed:
 
-- a non-root package that remains activated after `workspace-package` exclusions and also contains its own `pnpm-workspace.yaml` reports `LIMINA_WORKSPACE_REGION_OVERLAP`;
+- a non-root package that remains activated after `workspace-package` exclusions and also declares another workspace root reports `LIMINA_WORKSPACE_REGION_OVERLAP`;
 - two lexical package roots that resolve to the same physical directory report `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`;
 - unsafe output ownership and non-stable output visibility report `LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID` or `LIMINA_WORKSPACE_OUTPUT_CYCLE`.
 
@@ -79,7 +90,7 @@ Set `regions.extendNestedPackageScopes` to `true` when a nested `package.json` i
 
 A nested `package.json` can be extended only when all of these conditions hold:
 
-1. None of the discovered `pnpm-workspace.yaml` files identifies its directory as a workspace package.
+1. The current workspace declaration does not identify its directory as a workspace package.
 2. The manifest does not have its own `name` field.
 3. The directory is not inside a nested workspace boundary.
 
@@ -100,7 +111,7 @@ Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason
 
 Each of the two kinds has one candidate set:
 
-- `workspace-package` selects exact package-root candidates from the complete raw membership activated by the root `pnpm-workspace.yaml`. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
+- `workspace-package` selects exact package-root candidates from the complete raw membership activated by the root workspace descriptor. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
 - `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
 
 A rule is matched only against candidates of the same kind. A directory that is both an activated package and a nested package scope therefore keeps those identities separate.
@@ -121,6 +132,6 @@ Package-entry outputs are unconditional output roots. A `tsconfig` output partic
 
 Every declared output must be a dedicated directory. It may be a strict descendant such as `packages/app/dist`, `packages/app/generated`, or `../shared/dist`, but it cannot equal or contain `config.rootDir` or an activated package root, and it cannot overlap `.limina` in either direction. Here, activated package roots are the effective set after `workspace-package` exclusions: an excluded raw package root alone does not reserve an output path, while any unmatched activated descendant still protects its own root. Limina validates both lexical and canonical identities before the output can remove any descriptor from discovery.
 
-Nested `pnpm-workspace.yaml` files are automatic owner-local boundaries, not public exclusion candidates. The parent island records the boundary but does not read or validate the nested workspace context. If packages below that boundary are activated by the raw workspace membership, each starts its own package-island job independently.
+Nested workspace roots are automatic owner-local boundaries, not public exclusion candidates. The parent island records the boundary but does not read or validate the nested workspace context. If packages below that boundary are activated by the raw workspace membership, each starts its own package-island job independently.
 
 Imports from governed source into an excluded or otherwise stopped region are treated as cross-boundary access. Checker entry `references` follow the same structural boundary: checker `exclude` does not make a cross-region reference valid and does not hide an existing ordinary source config reached from an effective entry. Diagnostics identify the boundary root and include the configured reason when one is available; when no registered boundary owns the path, the diagnostic states that no current-run activated workspace package owns it. If the intent is only to omit selected files while keeping the containing package governed, use a file-level source exclusion or checker entry exclusion instead.

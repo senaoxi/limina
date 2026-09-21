@@ -13,7 +13,8 @@ export interface PackageManifest {
   typings?: string;
   type?: string;
   version?: string;
-  workspaces?: string[];
+  packageManager?: string;
+  workspaces?: string[] | { packages?: unknown; [key: string]: unknown };
 }
 
 export interface WorkspacePackage {

@@ -5,7 +5,7 @@ import {
   normalizeSlashes,
   toRelativePath,
 } from '#utils/path';
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import path from 'pathe';
 import type { LiminaWritableCheckIssueCode } from '../../../check-reporting/codes';
@@ -15,20 +15,6 @@ import type {
   WorkspaceDescriptorCandidate,
   WorkspaceDescriptorKind,
 } from './types';
-
-export function findNearestPnpmWorkspaceRoot(startDir: string): string {
-  let currentDir = normalizeAbsolutePath(startDir);
-  while (!existsSync(path.join(currentDir, 'pnpm-workspace.yaml'))) {
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {
-      throw new Error(
-        `No pnpm-workspace.yaml was found from ${normalizeAbsolutePath(startDir)} or its ancestors.`,
-      );
-    }
-    currentDir = parentDir;
-  }
-  return currentDir;
-}
 
 export function isInsideOrEqual(
   parentPath: string,

@@ -8,13 +8,13 @@ Limina does not replace `TypeScript`, `Vue`, `Svelte`, bundlers, test frameworks
 
 ## Quick Start
 
-Limina must run inside a `pnpm` workspace. The current package configuration requires `Node.js ^22.18.0 || >=24.11.0`. For manual installation, use:
+Limina must run inside a supported workspace. The current package configuration requires `Node.js ^22.18.0 || >=24.11.0`. For manual installation, use:
 
 ```sh
 pnpm add -D limina@latest typescript@^5.9.0
 ```
 
-Initialize it in an existing `pnpm` workspace:
+Initialize it in an existing workspace:
 
 ```sh
 pnpm exec limina init --yes
@@ -51,13 +51,13 @@ Basic form:
 limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 ```
 
-Global options apply to commands that need to load a Limina config file. `init` operates directly on the current `pnpm` workspace and does not depend on an existing config.
+Global options apply to commands that need to load a Limina config file. `init` operates directly on the owning workspace and does not depend on an existing config.
 
-| Option                     | Type             | Default behavior                                                                                                                                                   | Related configuration                   | Example                                     | Boundary                                                                                    |
-| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `--config <path>`          | path             | Searches upward from the current directory for `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, or `limina.config.js` until the `pnpm` workspace root | Limina config file                      | `limina --config ./limina.config.mts check` | The config file must be inside the current `pnpm` workspace                                 |
-| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                                                           | Config module loader                    | `limina --config-loader tsx check`          | `tsx` requires `tsx` to be installed in the consuming workspace                             |
-| `--mode <mode>`            | string           | `process.env.NODE_ENV`, otherwise `default`                                                                                                                        | `env.mode` passed to functional configs | `limina --mode ci check`                    | Only passes the mode to the config function; differences are implemented by the config file |
+| Option                     | Type             | Default behavior                                                                                                                                            | Related configuration                   | Example                                     | Boundary                                                                                    |
+| -------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `--config <path>`          | path             | Searches upward from the current directory for `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, or `limina.config.js` until the workspace root | Limina config file                      | `limina --config ./limina.config.mts check` | The config file must be inside the owning workspace                                         |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                                                    | Config module loader                    | `limina --config-loader tsx check`          | `tsx` requires `tsx` to be installed in the consuming workspace                             |
+| `--mode <mode>`            | string           | `process.env.NODE_ENV`, otherwise `default`                                                                                                                 | `env.mode` passed to functional configs | `limina --mode ci check`                    | Only passes the mode to the config function; differences are implemented by the config file |
 
 The config file can export an object, a `Promise`, or a function that receives `{ command, mode }`. `command` indicates the current command family, such as `check`, `graph`, `source`, `package`, or `release`; the type remains open for other current command values such as `build` and `migration`.
 
@@ -113,7 +113,7 @@ These two commands read the already-built `outDir`. They do not build artifacts 
 
 | Goal                                                               | Recommended command                        | Basis for choosing it                                                                                                                     |
 | ------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Initialize Limina files in a `pnpm` workspace                      | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
+| Initialize Limina files in a supported workspace                   | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
 | Migrate governed source `tsconfig` files                           | `limina migration`                         | Moves compiler output settings into `liminaOptions` after workspace validation                                                            |
 | Daily repository-structure and type build entry checks             | `limina check`                             | Default group covers graph, source, coverage, and checker entries                                                                         |
 | Run a custom ordered check group                                   | `limina check <name>`                      | `<name>` comes from configured `pipelines`                                                                                                |
@@ -134,14 +134,14 @@ These two commands read the already-built `outDir`. They do not build artifacts 
 
 ### limina init
 
-`init` generates the base adoption files for Limina in a `pnpm` workspace.
+`init` generates the base adoption files for Limina in a supported workspace.
 
 ```sh
 pnpm exec limina init
 pnpm exec limina init --yes
 ```
 
-It searches upward from the current directory for `pnpm-workspace.yaml`, confirms the workspace root, checks workspace packages, and then performs the following actions: writes or updates `limina.config.mts`; ensures `.gitignore` contains `.limina/`; creates or updates the `limina:build` script in the root `package.json`; adds development dependencies if `limina` or `typescript` is missing; removes the existing generated `.limina` directory at the root; and, in interactive mode, asks whether to install the Limina `agent skill`.
+It searches upward from the current directory for the nearest workspace descriptor, confirms the workspace root, checks workspace packages, and then performs the following actions: writes or updates `limina.config.mts`; ensures `.gitignore` contains `.limina/`; creates or updates the `limina:build` script in the root `package.json`; adds development dependencies if `limina` or `typescript` is missing; removes the existing generated `.limina` directory at the root; and, in interactive mode, asks whether to install the Limina `agent skill`.
 
 `--yes` accepts the default confirmation and skips the interactive `skill` installation prompt. In non-interactive environments, steps that require confirmation fail unless `--yes` is used.
 
@@ -292,7 +292,7 @@ pnpm exec limina source check --scope 'packages/app/**' --verbose
 
 For `limina source check --scope`, a scope may also be relative to the selected source owner. For example, `src/theme` matches `packages/app/src/theme` for the `packages/app` owner. Workspace-relative, absolute, and glob forms continue to work as well.
 
-It checks whether source files belong to `pnpm` workspace packages, whether non-aggregator `tsconfig` files mix multiple workspace package owners, whether ordinary relative imports cross the nearest `package.json` package boundary, whether bare package imports are authorized by the owning workspace package or explicit rules, whether `#...` package imports stay inside the declaring package scope, and source usage backed by `Knip`.
+It checks whether source files belong to workspace packages, whether non-aggregator `tsconfig` files mix multiple workspace package owners, whether ordinary relative imports cross the nearest `package.json` package boundary, whether bare package imports are authorized by the owning workspace package or explicit rules, whether `#...` package imports stay inside the declaring package scope, and source usage backed by `Knip`.
 
 `Knip`-related checks depend on `knip` as a peer dependency and run only when `source.knip` is explicitly set to `true` or an object containing `workspaces`. Omitting or setting `source.knip` to `false` disables that part of source usage checking; it does not disable graph checks, proof checks, or checker execution. An enabled but missing `knip` peer dependency makes `source check` fail before source analysis.
 
@@ -395,9 +395,9 @@ It also selects artifact directories based on `package.entries`, and requires th
 
 | Symptom or error message                                                                              | Likely cause                                                                                                | Action                                                                                                                        |
 | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `no pnpm-workspace.yaml was found`                                                                    | Current directory is not inside a `pnpm` workspace                                                          | Run the command inside a workspace, or create `pnpm-workspace.yaml` first                                                     |
+| `No supported workspace descriptor found`                                                             | No supported workspace descriptor exists in the current directory or its ancestors                          | Run the command inside a workspace, or declare a supported workspace first                                                    |
 | `Unable to find limina config`                                                                        | No supported Limina config file was found                                                                   | Run `limina init`, or pass a config path through `--config`                                                                   |
-| `config file must be inside the governed pnpm workspace`                                              | `--config` points outside the workspace                                                                     | Put the config file inside the current `pnpm` workspace                                                                       |
+| `config file must be inside the governed workspace`                                                   | `--config` points outside the workspace                                                                     | Put the config file inside the owning workspace                                                                               |
 | `checker build --preset requires a config argument`                                                   | `--preset` can only choose the build checker for a specific config                                          | Use `limina checker build <config> --preset tsc`                                                                              |
 | `checker build --watch requires a config argument`                                                    | Watch mode only supports a specified config                                                                 | Use `limina checker build <config> --watch`                                                                                   |
 | `limina build --raw requires --preset`                                                                | Raw mode did not specify a checker preset                                                                   | Use `limina build <config> --raw --preset tsc`                                                                                |

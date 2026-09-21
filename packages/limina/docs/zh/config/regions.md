@@ -38,12 +38,23 @@ export default defineConfig({
 
 ## 默认治理区域
 
-Limina 从最近的 `pnpm-workspace.yaml` 声明的原始包成员关系开始。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
+Limina 从最近的工作区声明 声明的原始包成员关系开始。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
+
+包发现遵循所选 manager 的策略。遍历始终排除以下目录名：
+
+| 包管理器 | Hard ignore                          |
+| -------- | ------------------------------------ |
+| pnpm     | `node_modules`、`bower_components`   |
+| npm      | `node_modules`                       |
+| Yarn     | `node_modules`、`.git`、`.yarn`      |
+| Bun      | `node_modules`、`.git`、`CMakeFiles` |
+
+`test` 和 `tests` 被匹配时是普通候选目录。glob 选择语义因 manager 而异：例如 npm 和 Bun 的后续正向 pattern 可以重新包含包，而 pnpm 和 Yarn 保留排除。精确排除一个包不一定排除其后代；需要排除子树时应显式声明。根 manifest 独立于 glob 加入，包名可以缺省。这些受支持的发现规则不证明 manager 完整配置合法。即使某个 manager 版本允许显式选中 metadata 目录，Limina 仍保留上表的 hard ignore。
 
 每个基础治理单元内部遵循这些边界规则：
 
 - 默认情况下，遇到嵌套 `package.json` 就从该目录停止治理。
-- 嵌套 `pnpm-workspace.yaml` 永远会停止当前 package island 的遍历。
+- 嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`） 永远会停止当前 package island 的遍历。
 - 激活的父包不会遍历激活的子包；Limina 会从子包根目录启动独立发现任务。
 - 一个目录即使位于工作区根目录下，只要不属于被激活的工作区包，也不会自动进入当前区域。
 
@@ -64,7 +75,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 任何源码、证明、图、检查器、迁移、包、发布或产物生成工作开始前，`workspace:validate` 都会先建立这份激活包索引。它会在 owner lookup 建立前拒绝结构歧义：
 
-- 应用 `workspace-package` 排除后仍处于激活状态的非根包，如果自己又包含 `pnpm-workspace.yaml`，会报告 `LIMINA_WORKSPACE_REGION_OVERLAP`；
+- 应用 `workspace-package` 排除后仍处于激活状态的非根包，如果自身又声明另一个工作区根，会报告 `LIMINA_WORKSPACE_REGION_OVERLAP`；
 - 两个词法包根目录如果解析到同一个物理目录，会报告 `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`；
 - 不安全的输出归属和无法稳定的输出可见性分别报告 `LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID`、`LIMINA_WORKSPACE_OUTPUT_CYCLE`。
 
@@ -79,7 +90,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 只有同时满足以下条件，嵌套 `package.json` 才能被扩展：
 
-1. 当前 Limina 根目录下发现的所有 `pnpm-workspace.yaml` 都没有把该目录识别为工作区包。
+1. 当前工作区声明没有把该目录识别为工作区包。
 2. 该清单没有自己的 `name` 字段。
 3. 该目录不位于嵌套工作区边界内。
 
@@ -100,7 +111,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 两种 `kind` 各自只对应一种 candidate：
 
-- `workspace-package` 从根 `pnpm-workspace.yaml` 激活的完整原始成员中选择精确包根 candidate。Limina 会在 overlap 检查前验证这些规则，再让每个被匹配的包退出源码归属、依赖授权、源码与检查器发现以及生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。显式配置的 `package.entries` 仍是独立产物条目，不会被这类规则删除。
+- `workspace-package` 从根工作区声明激活的完整原始成员中选择精确包根 candidate。Limina 会在 overlap 检查前验证这些规则，再让每个被匹配的包退出源码归属、依赖授权、源码与检查器发现以及生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。显式配置的 `package.entries` 仍是独立产物条目，不会被这类规则删除。
 - `package-scope` 选择嵌套 `package.json` 的根目录。它同时覆盖已扩展的包作用域和原本已经停止治理的包作用域。排除后，该根目录及其后代都位于当前运行之外。
 
 规则只与同 `kind` 的 candidate 匹配。因此，同一个目录即使同时是激活包和嵌套包作用域，这两种 identity 也不会合并。
@@ -121,6 +132,6 @@ packages/app/vendor/pkg/              不属于当前区域
 
 每个声明的输出都必须是专用目录。它可以是 `packages/app/dist`、`packages/app/generated` 或 `../shared/dist` 这样的严格后代目录，但不能等于或包含 `config.rootDir` 或任何激活包根目录，也不能与 `.limina` 发生任一方向的包含。这里的激活包根目录，是应用 `workspace-package` 排除后的 effective set：仅仅属于已排除的原始包不会继续占用输出路径，但任何未被匹配、仍然激活的后代包都会继续保护自己的根目录。Limina 会先校验词法和规范物理 identity，合法输出才可以从发现范围移除 descriptor。
 
-嵌套 `pnpm-workspace.yaml` 是自动生效的 owner-local boundary，不是公开的 exclusion candidate。父 package island 只记录边界，不读取或校验嵌套工作区 context；如果原始工作区成员关系激活了边界下方的包，每个包仍会独立启动自己的 package-island 任务。
+嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`） 是自动生效的 owner-local boundary，不是公开的 exclusion candidate。父 package island 只记录边界，不读取或校验嵌套工作区 context；如果原始工作区成员关系激活了边界下方的包，每个包仍会独立启动自己的 package-island 任务。
 
 当前治理源码如果导入被排除或已经停止的区域，Limina 会按跨边界访问处理。检查器入口的 `references` 也遵循同一套结构边界：checker `exclude` 不会让跨区域引用变得有效，也不会隐藏 effective entry 触达的现有普通源码配置。诊断会指出边界根目录，并在可用时附上配置的原因；如果路径不属于任何已登记边界，诊断会明确说明当前运行没有已激活工作区包拥有它。如果本意只是忽略少量文件、同时继续治理其所在的包，应改用源码文件排除或检查器入口排除。

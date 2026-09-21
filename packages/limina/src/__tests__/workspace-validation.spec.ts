@@ -496,7 +496,7 @@ describe('validated workspace context', () => {
       expect(context.sourceConfigPaths).toEqual([]);
       expect(context.boundaries).toEqual([
         expect.objectContaining({
-          kind: 'pnpm-workspace',
+          kind: 'workspace-root',
           rootDir: fixture.path('packages/app/fixture'),
         }),
       ]);

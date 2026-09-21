@@ -1,4 +1,5 @@
 import { isPathInsideDirectory } from '#utils/path';
+import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 
@@ -9,22 +10,9 @@ export const DEFAULT_LIMINA_CONFIG_FILES = [
   'limina.config.js',
 ] as const;
 
-function hasWorkspaceManifest(directory: string): boolean {
-  return existsSync(path.join(directory, 'pnpm-workspace.yaml'));
-}
-
 function getParentDirectory(directory: string): string | undefined {
   const parent = path.dirname(directory);
   return parent === directory ? undefined : parent;
-}
-
-export function findPnpmWorkspaceRoot(startDir: string): string | null {
-  let currentDir: string | undefined = path.resolve(startDir);
-  while (currentDir !== undefined) {
-    if (hasWorkspaceManifest(currentDir)) return currentDir;
-    currentDir = getParentDirectory(currentDir);
-  }
-  return null;
 }
 
 function findDefaultConfigInDirectory(directory: string): string | undefined {
@@ -65,14 +53,7 @@ export function findLiminaConfigPath(
 }
 
 export function inferWorkspaceRoot(startDir: string): string {
-  const rootDir = findPnpmWorkspaceRoot(startDir);
-  if (rootDir !== null) return rootDir;
-  throw new Error(
-    [
-      `Unable to infer Limina workspace root from ${startDir}:`,
-      'no pnpm-workspace.yaml was found in this directory or its parents.',
-    ].join(' '),
-  );
+  return resolveNearestWorkspaceRoot(startDir).rootDir;
 }
 
 export function validateConfigPathInsideWorkspace(
@@ -83,7 +64,7 @@ export function validateConfigPathInsideWorkspace(
   throw new Error(
     [
       `Unable to load Limina config at ${configPath}:`,
-      `config file must be inside the governed pnpm workspace at ${rootDir}.`,
+      `config file must be inside the governed workspace at ${rootDir}.`,
     ].join(' '),
   );
 }

@@ -180,7 +180,7 @@ function addUnknownDependencyFinding(options: {
     kind: 'dependency-ignore',
     packageJsonPath: getPackageJsonPath(options.context, options.importerName),
     packageName: options.importerName,
-    reason: 'dep must name a package from the pnpm workspace.',
+    reason: 'dep must name a package from the workspace.',
     title: 'Invalid source Knip dependency ignore config',
   });
 }

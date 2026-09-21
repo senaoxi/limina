@@ -2,6 +2,7 @@ import type { RegionExcludeConfig, ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath, normalizeSlashes } from '#utils/path';
 import rawPicomatch from 'picomatch';
 import type { WorkspacePackage } from '../actions';
+import type { WorkspaceRootRegionBoundary } from '../regions';
 import { displayWorkspacePath } from './shared';
 import type { WorkspaceDescriptorCandidate } from './types';
 
@@ -151,9 +152,16 @@ export function validatePackageScopeExclusions(options: {
   config: ResolvedLiminaConfig;
   rules: readonly CompiledExclusionRule[];
   stableCandidates: readonly WorkspaceDescriptorCandidate[];
+  workspaceBoundaries: readonly WorkspaceRootRegionBoundary[];
 }): void {
   const candidates = options.stableCandidates
     .filter((candidate) => candidate.kind === 'package-json')
+    .filter(
+      (candidate) =>
+        !options.workspaceBoundaries.some(
+          (boundary) => boundary.descriptor.path === candidate.path,
+        ),
+    )
     .filter(
       (candidate) =>
         normalizeAbsolutePath(candidate.rootDir) !==

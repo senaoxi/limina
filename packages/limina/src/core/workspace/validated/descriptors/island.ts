@@ -52,7 +52,7 @@ function createIslandResult(): PackageIslandCollection {
     boundaries: [],
     descriptors: [],
     extendedScopes: [],
-    pnpmBoundaries: [],
+    workspaceBoundaries: [],
   };
 }
 

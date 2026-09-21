@@ -155,7 +155,7 @@ function validateKnownPackage(
     field: entry.field,
     packageName: entry.packageName,
     reason:
-      'workspace config keys must name packages discovered in the pnpm workspace.',
+      'workspace config keys must name packages discovered in the workspace.',
   });
 }
 

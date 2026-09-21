@@ -26,7 +26,7 @@ export const workspaceIssueRules: readonly LiminaCheckIssueRuleDefinition[] = [
   defineIssueRule({
     code: C.workspaceRegionOverlap,
     description:
-      'A nested pnpm workspace root overlaps a current-region workspace package.',
+      'A nested workspace root overlaps a current-region workspace package.',
     task: 'workspace:validate',
   }),
   defineIssueRule({

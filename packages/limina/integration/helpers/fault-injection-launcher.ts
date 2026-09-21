@@ -40,6 +40,7 @@ import {
   FaultInjectionController,
   validateFaultInjectionDefinition,
 } from './fault-injection';
+import { observeFaultProcessOutput } from './fault-process-output';
 
 interface LauncherArguments {
   readonly command: readonly string[];
@@ -440,34 +441,32 @@ function createFaultProcessDependencies(options: {
         }
       });
 
-      for (const definition of processFaults) {
-        if (
-          definition.point !== 'process.stdout' &&
-          definition.point !== 'process.stderr'
-        ) {
-          continue;
-        }
-        const stream =
-          definition.point === 'process.stdout' ? child.stdout : child.stderr;
-        stream?.on('data', () => {
+      observeFaultProcessOutput(child, () => {
+        for (const definition of processFaults) {
+          if (
+            definition.point !== 'process.stdout' &&
+            definition.point !== 'process.stderr'
+          ) {
+            continue;
+          }
+          const stream =
+            definition.point === 'process.stdout' ? child.stdout : child.stderr;
           const fault = options.controller.observe(
             definition.point,
             definition.task,
           );
-          if (!fault) return;
+          if (!fault) continue;
           if (fault.kind !== 'stream-error') {
             options.boundaryErrors.push(
               new Error(
                 `Unexpected ${fault.kind} fault at ${definition.point}.`,
               ),
             );
-            return;
+            continue;
           }
-          queueMicrotask(() => {
-            stream.emit('error', createInjectedFaultError(fault));
-          });
-        });
-      }
+          stream?.emit('error', createInjectedFaultError(fault));
+        }
+      });
 
       return child;
     },
