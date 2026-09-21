@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInit } from '../commands/init';
+import { resolveInitWorkspace } from '../commands/init/workspace';
 import { LiminaFlowReporter } from '../flow';
 import { InitLogger } from '../logger';
 import { toPortablePath, toPortablePaths } from './helpers/path';
@@ -262,6 +263,116 @@ function createWorkspaceFixture(): Record<string, string> {
 }
 
 describe('runInit', () => {
+  it.each(['npm', 'yarn', 'bun'])(
+    'prompts with the resolved %s identity',
+    async (manager) => {
+      const fixture = await createFixture({
+        'package.json': stringifyConfig({
+          workspaces: [],
+          packageManager: `${manager}@1`,
+        }),
+      });
+      const restoreTty = setTty(true);
+      try {
+        confirmMock.mockResolvedValue(true);
+        await resolveInitWorkspace({ cwd: fixture.rootDir, prompt: {} });
+        expect(confirmMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: expect.stringContaining(`Use ${manager} workspace`),
+          }),
+        );
+      } finally {
+        restoreTty();
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    ['npm', 'npm run limina:build'],
+    ['yarn', 'yarn limina:build'],
+    ['bun', 'bun run limina:build'],
+  ])(
+    'initializes %s at the resolved root with manager-specific commands',
+    async (manager, buildCommand) => {
+      const fixture = await createFixture({
+        'package.json': stringifyConfig({
+          name: 'root',
+          private: true,
+          packageManager: `${manager}@1`,
+          workspaces: ['packages/*'],
+        }),
+        'packages/a/package.json': '{}',
+      });
+      try {
+        confirmMock.mockResolvedValue(true);
+        const result = await runInit({
+          cwd: path.join(fixture.rootDir, 'packages/a'),
+          clearScreen: false,
+          yes: true,
+        });
+        expect(result).toMatchObject({
+          packageManager: manager,
+          buildCommand,
+          installCommand: `${manager} install`,
+          workspacePackageCount: 1,
+        });
+        expect(result.rootDir).toBe(toPortablePath(fixture.rootDir));
+        expect(
+          await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+        ).toBe(true);
+        expect(
+          await fileExists(
+            path.join(fixture.rootDir, 'packages/a/limina.config.mts'),
+          ),
+        ).toBe(false);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    {
+      locks: ['yarn.lock', 'bun.lock'],
+      manager: undefined,
+      pnpm: false,
+      error: /Ambiguous/u,
+    },
+    { locks: [], manager: 'deno@2', pnpm: false, error: /Unsupported/u },
+    { locks: [], manager: 'npm@1', pnpm: true, error: /Conflicting/u },
+  ])(
+    'resolves manager failure before any init mutation: $error',
+    async ({ locks, manager, pnpm, error }) => {
+      const manifest = stringifyConfig({
+        workspaces: [],
+        ...(manager ? { packageManager: manager } : {}),
+      });
+      const fixture = await createFixture({
+        'package.json': manifest,
+        '.gitignore': '# original\n',
+        ...Object.fromEntries(locks.map((file) => [file, ''])),
+        ...(pnpm ? { 'pnpm-workspace.yaml': 'packages: []' } : {}),
+      });
+      try {
+        await expect(
+          runInit({ cwd: fixture.rootDir, clearScreen: false, yes: true }),
+        ).rejects.toThrow(error);
+        expect(
+          await readFile(path.join(fixture.rootDir, 'package.json'), 'utf8'),
+        ).toBe(manifest);
+        expect(
+          await readFile(path.join(fixture.rootDir, '.gitignore'), 'utf8'),
+        ).toBe('# original\n');
+        expect(
+          await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+        ).toBe(false);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('declares the released TypeScript peer range', async () => {
     await expect(readLiminaTypeScriptPeerRange()).resolves.toBe(
       releasedTypeScriptPeerRange,
@@ -290,7 +401,7 @@ describe('runInit', () => {
           cwd: fixture.rootDir,
           yes: true,
         }),
-      ).rejects.toThrow(/no pnpm-workspace\.yaml/u);
+      ).rejects.toThrow(/No supported workspace descriptor/u);
     } finally {
       await fixture.cleanup();
     }

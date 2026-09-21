@@ -1,16 +1,15 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
-import { lstat, realpath } from 'node:fs/promises';
+import {
+  findWorkspaceRootDescriptor,
+  resolveNearestWorkspaceRoot,
+} from '#utils/workspace-root';
+import { realpath } from 'node:fs/promises';
 import path from 'pathe';
 import { LiminaStructuredError } from '../../../check-reporting/errors';
 import type { LiminaCheckIssue } from '../../../source-check/snapshot';
 import type { WorkspacePackage } from '../actions';
-import {
-  createWorkspaceIssue,
-  displayWorkspacePath,
-  findNearestPnpmWorkspaceRoot,
-  isMissingFsError,
-} from './shared';
+import { createWorkspaceIssue, displayWorkspacePath } from './shared';
 import type { WorkspacePackageIdentity } from './types';
 
 function groupPackageIdentities(
@@ -78,33 +77,22 @@ export async function collectPackageIdentities(options: {
   return identities;
 }
 
-async function hasWorkspaceDescriptor(
-  workspaceYamlPath: string,
-): Promise<boolean> {
-  try {
-    return (await lstat(workspaceYamlPath)).isFile();
-  } catch (error) {
-    if (isMissingFsError(error)) return false;
-    throw error;
-  }
-}
-
 function createSameRootOverlapIssue(options: {
   config: ResolvedLiminaConfig;
   packageRoot: string;
-  workspaceYamlPath: string;
+  descriptorPath: string;
 }): LiminaCheckIssue {
   return createWorkspaceIssue({
     code: 'LIMINA_WORKSPACE_REGION_OVERLAP',
     config: options.config,
     evidence: [
       `activated workspace package: ${displayWorkspacePath(options.config.rootDir, options.packageRoot)}`,
-      `workspace descriptor: ${displayWorkspacePath(options.config.rootDir, options.workspaceYamlPath)}`,
+      `workspace descriptor: ${displayWorkspacePath(options.config.rootDir, options.descriptorPath)}`,
     ],
-    filePath: options.workspaceYamlPath,
-    fix: 'Exclude the activated package from this run, remove its workspace membership, or remove the package-root pnpm-workspace.yaml.',
+    filePath: options.descriptorPath,
+    fix: 'Exclude the activated package from this run, remove its workspace membership, or remove the package-root workspace declaration.',
     reason:
-      'An activated non-root workspace package is also the root of a pnpm workspace.',
+      'An activated non-root workspace package is also the root of another workspace.',
     title: 'Workspace package and workspace root overlap',
   });
 }
@@ -116,12 +104,12 @@ async function collectOverlapIssue(options: {
 }): Promise<LiminaCheckIssue | null> {
   const packageRoot = normalizeAbsolutePath(options.workspacePackage.directory);
   if (packageRoot === options.workspaceRootDir) return null;
-  const workspaceYamlPath = path.join(packageRoot, 'pnpm-workspace.yaml');
-  if (!(await hasWorkspaceDescriptor(workspaceYamlPath))) return null;
+  const descriptor = findWorkspaceRootDescriptor(packageRoot);
+  if (descriptor === null) return null;
   return createSameRootOverlapIssue({
     config: options.config,
     packageRoot,
-    workspaceYamlPath,
+    descriptorPath: descriptor.path,
   });
 }
 
@@ -129,7 +117,9 @@ export async function assertNoSameRootOverlap(options: {
   config: ResolvedLiminaConfig;
   packages: readonly WorkspacePackage[];
 }): Promise<void> {
-  const workspaceRootDir = findNearestPnpmWorkspaceRoot(options.config.rootDir);
+  const workspaceRootDir = resolveNearestWorkspaceRoot(
+    options.config.rootDir,
+  ).rootDir;
   const issues = (
     await Promise.all(
       options.packages.map((workspacePackage) =>

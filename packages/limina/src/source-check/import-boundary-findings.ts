@@ -5,7 +5,7 @@ import {
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
-import path from 'pathe';
+import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { NearestPackageInfo } from '../core/packages/owners';
 import {
@@ -99,8 +99,8 @@ export function addRelativeImportOwnerProblem(options: {
 }
 
 function getBoundaryConfigPath(boundary: WorkspaceRegionBoundary): string {
-  return boundary.kind === 'pnpm-workspace'
-    ? boundary.workspaceYamlPath
+  return boundary.kind === 'workspace-root'
+    ? boundary.descriptor.path
     : boundary.packageJsonPath;
 }
 
@@ -109,7 +109,7 @@ function createBoundaryConfigLine(options: {
   config: ResolvedLiminaConfig;
 }): string {
   const label =
-    options.boundary.kind === 'pnpm-workspace'
+    options.boundary.kind === 'workspace-root'
       ? 'boundary config'
       : 'boundary manifest';
 
@@ -144,7 +144,7 @@ export function addSourceCrossGovernanceBoundaryProblem(options: {
     `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
     `  imported specifier: ${options.importRecord.specifier}`,
     `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
-    `  current region: ${toRelativePath(options.config.rootDir, path.join(options.config.rootDir, 'pnpm-workspace.yaml'))}`,
+    `  current region: ${toRelativePath(options.config.rootDir, resolveNearestWorkspaceRoot(options.config.rootDir).descriptor.path)}`,
     `  boundary kind: ${options.boundary.kind}`,
     `  boundary root: ${toRelativePath(options.config.rootDir, options.boundary.rootDir)}`,
     createBoundaryConfigLine(options),

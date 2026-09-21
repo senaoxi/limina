@@ -75,6 +75,16 @@ function createWorkspaceContext(options: {
     rawPackages: options.packages,
     sourceConfigPaths: options.sourceConfigPaths ?? [],
     workspaceRootDir: options.configRootDir,
+    workspaceRoot: {
+      rootDir: options.configRootDir,
+      packageManager: 'pnpm',
+      descriptor: {
+        kind: 'pnpm-workspace',
+        path: normalizeAbsolutePath(
+          path.join(options.configRootDir, 'pnpm-workspace.yaml'),
+        ),
+      },
+    },
   };
 }
 

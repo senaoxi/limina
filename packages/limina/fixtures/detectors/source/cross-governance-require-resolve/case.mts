@@ -15,7 +15,7 @@ export default defineDetectorFixture({
             lines: [
               '  imported specifier: ../fixture/pkg/src/value',
               '  resolved file: packages/app/fixture/pkg/src/value.ts',
-              '  boundary kind: pnpm-workspace',
+              '  boundary kind: workspace-root',
               '  boundary root: packages/app/fixture',
               '  boundary config: packages/app/fixture/pnpm-workspace.yaml',
             ],

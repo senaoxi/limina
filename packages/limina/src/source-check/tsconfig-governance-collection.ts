@@ -57,7 +57,7 @@ function addMissingConfigOwnerFinding(options: {
 }): void {
   const title = 'Tsconfig has no source owner';
   const reason =
-    'every tsconfig*.json that governs modules must be assigned to its pnpm workspace source owner.';
+    'every tsconfig*.json that governs modules must be assigned to its workspace source owner.';
   const lines = [
     `${title}:`,
     `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
@@ -126,7 +126,7 @@ function addConfigOwnerScopeFinding(options: {
 }): void {
   const title = 'Tsconfig source file set crosses source owner scope';
   const reason =
-    'every source-owner tsconfig*.json must govern only modules owned by the same pnpm workspace source owner.';
+    'every source-owner tsconfig*.json must govern only modules owned by the same workspace source owner.';
   const ownerPaths = getConfigOwnerPaths(options);
   const lines = [
     `${title}:`,

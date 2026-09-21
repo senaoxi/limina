@@ -2,12 +2,20 @@
 
 ## 环境要求
 
-Limina 面向 `pnpm` 工作区，并要求配置文件使用 `ESM`。
+Limina 支持 pnpm、npm、Yarn 和 Bun 工作区，并要求配置文件使用 ESM。
 
 - `Node.js ^22.18.0 || >=24.11.0`
-- 工作区根目录存在 `pnpm-workspace.yaml`
+- 根目录存在工作区声明：pnpm 使用 `pnpm-workspace.yaml`，npm、Yarn 或 Bun 使用 `package.json` 自有的 `workspaces` 字段
 - 接入仓库已经安装 `TypeScript`
 - `limina.config.mts` 位于工作区内部
+
+## 工作区发现
+
+距离优先：Limina 先选择最近的声明，再考虑声明类型。同一目录中 `pnpm-workspace.yaml` 优先；根 `packageManager` 与它冲突时会报错。没有 `workspaces` 的普通包清单不会停止向上查找。
+
+对于 `package.json` 工作区，设置 `packageManager` 为 `npm@…`、`yarn@…` 或 `bun@…`。缺少该字段时，Limina 只使用该清单同目录的 lockfile。多个 manager identity 会产生歧义；没有 identity 也会报错。两个 npm 或两个 Bun lockfile 格式仍只代表一个 manager。显式 identity 优先于 lockfile。pnpm 始终要求 `pnpm-workspace.yaml`。
+
+受支持的声明投影是 pnpm 的 `packages: string[]`（缺省表示没有子包）、npm 的 `workspaces: string[]`，以及 Yarn/Bun 的该数组或 `{ packages: string[] }`。Limina 校验语法和自身消费的字段；catalog 合法性、可安装性、版本可用性和 lockfile 一致性仍由包管理器负责。没有工作区声明的单包不会作为 fallback 工作区。
 
 ## 安装
 
@@ -25,6 +33,10 @@ npm install -D limina@latest typescript
 yarn add -D limina@latest typescript
 ```
 
+```bash [bun]
+bun add -d limina@latest typescript
+```
+
 :::
 
 ## 选择接入方式
@@ -35,13 +47,13 @@ yarn add -D limina@latest typescript
 
 ## 初始化已有工作区
 
-如果一个 `pnpm` 单体仓库还没有采用 Limina 的声明图结构，可以运行：
+如果一个工作区还没有采用 Limina 的声明图结构，可以运行：
 
 ```sh
 pnpm exec limina init
 ```
 
-`limina init` 会向上查找最近的 `pnpm-workspace.yaml`，确认工作区根目录，并写出 Limina 配置文件。
+`limina init` 会向上查找最近的工作区声明，确认工作区根目录，并写出 Limina 配置文件。
 
 在非交互环境中使用：
 
@@ -68,7 +80,16 @@ npx --yes skills add senaoxi/docs-islands --skill limina
 
 如果图准备失败，通常说明检查器的 `include` 选中了保留配置或非源码 `tsconfig`。此时应收窄 `include`，或补充 `exclude`，直到只选中普通的源码配置。
 
-初始化后执行：
+初始化会报告所选包管理器对应的命令：
+
+| 包管理器 | 依赖改变后安装 | 构建                   |
+| -------- | -------------- | ---------------------- |
+| pnpm     | `pnpm install` | `pnpm limina:build`    |
+| npm      | `npm install`  | `npm run limina:build` |
+| Yarn     | `yarn install` | `yarn limina:build`    |
+| Bun      | `bun install`  | `bun run limina:build` |
+
+以下命令以 pnpm 为例：
 
 ```sh
 pnpm i

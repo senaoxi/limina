@@ -8,13 +8,13 @@ Limina 不替代 `TypeScript`、`Vue`、`Svelte`、打包器、测试框架、�
 
 ## 快速开始
 
-Limina 需要运行在 `pnpm` 工作区内。当前包配置要求 `Node.js ^22.18.0 || >=24.11.0`。如果手动安装，使用：
+Limina 需要运行在 工作区内。当前包配置要求 `Node.js ^22.18.0 || >=24.11.0`。如果手动安装，使用：
 
 ```sh
 pnpm add -D limina@latest typescript@^5.9.0
 ```
 
-在已有 `pnpm` 工作区中初始化：
+在已有 工作区中初始化：
 
 ```sh
 pnpm exec limina init --yes
@@ -51,13 +51,13 @@ export default defineConfig({
 limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 ```
 
-全局选项适用于需要加载 Limina 配置文件的命令。`init` 直接面向当前 `pnpm` 工作区，不依赖已有配置。
+全局选项适用于需要加载 Limina 配置文件的命令。`init` 直接面向所属工作区，不依赖已有配置。
 
-| 选项                       | 类型             | 默认行为                                                                                                                          | 相关配置                    | 示例                                        | 边界                                         |
-| -------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------- | -------------------------------------------- |
-| `--config <path>`          | 路径             | 从当前目录向上依次查找 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`，直到 `pnpm` 工作区根目录 | Limina 配置文件             | `limina --config ./limina.config.mts check` | 配置文件必须位于当前 `pnpm` 工作区内         |
-| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                          | 配置模块加载器              | `limina --config-loader tsx check`          | `tsx` 需要接入工作区安装 `tsx`               |
-| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default`                                                                                          | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现 |
+| 选项                       | 类型             | 默认行为                                                                                                                   | 相关配置                    | 示例                                        | 边界                                         |
+| -------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------- | -------------------------------------------- |
+| `--config <path>`          | 路径             | 从当前目录向上依次查找 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`，直到 工作区根目录 | Limina 配置文件             | `limina --config ./limina.config.mts check` | 配置文件必须位于所属工作区内                 |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                   | 配置模块加载器              | `limina --config-loader tsx check`          | `tsx` 需要接入工作区安装 `tsx`               |
+| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default`                                                                                   | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现 |
 
 配置文件可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`command` 表示当前命令族，例如 `check`、`graph`、`source`、`package` 或 `release`；它也保留开放字符串类型，以覆盖 `build`、`migration` 等当前命令值。
 
@@ -111,37 +111,37 @@ pnpm exec limina release check --package @scope/pkg
 
 ## 决策表
 
-| 目标                                 | 推荐命令                                   | 判断依据                                                                               |
-| ------------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| 初始化 `pnpm` 工作区中的 Limina 文件 | `limina init` 或 `limina init --yes`       | 首次接入，或需要生成基础配置与 `limina:build` 脚本                                     |
-| 迁移被治理的源码 `tsconfig`          | `limina migration`                         | 工作区验证后，把编译器输出设置迁入 `liminaOptions`                                     |
-| 日常检查仓库结构和类型构建入口       | `limina check`                             | 默认组合覆盖工程图、源码、证明和检查器入口                                             |
-| 自定义一组按顺序运行的检查           | `limina check <name>`                      | `<name>` 来自配置中的 `pipelines`                                                      |
-| 物化或刷新 `.limina` 检查器文件      | `limina graph prepare`                     | 后续流程需要使用磁盘上的生成文件时                                                     |
-| 检查项目引用和源码依赖是否一致       | `limina graph check`                       | 关注 `references`、源码导入、包依赖和图规则                                            |
-| 导出包依赖图 `JSON`                  | `limina graph export`                      | 需要把源码依赖或产物依赖交给外部工具处理                                               |
-| 只检查源码边界和归属                 | `limina source check`                      | 关注源码包边界、依赖声明和 `Knip` 支撑的源码使用情况                                   |
-| 检查源码是否被工程图或检查器覆盖     | `limina proof check`                       | 关注遗漏源码、检查器覆盖和白名单有效性                                                 |
-| 运行内部声明图构建入口               | `limina checker build`                     | 使用生成图中的构建型检查器入口，只产出 `.limina` 内部声明文件                          |
-| 对指定配置运行内部声明图构建         | `limina checker build <config>`            | 只接受 Limina 管理的源码配置或聚合配置，不执行 `raw build`                             |
-| 构建用户可消费产物                   | `limina build <config>`                    | 只接受 Limina 管理且声明了 `liminaOptions.outputs` 的源码叶子或聚合配置                |
-| 直接构建用户维护的 `tsconfig`        | `limina build <config> --raw --preset tsc` | 不读取 Limina 输出配置，不使用生成图                                                   |
-| 运行 framework-owned leaf target     | `limina checker typecheck`                 | 对 Astro/Svelte-owned type config 按 leaf 执行一次；没有 target 时以 disabled 状态通过 |
-| 检查已构建包产物                     | `limina package check`                     | 已有 `package.entries[].outDir`，需要检查清单文件、`publint`、`ATTW` 或产物导入边界    |
-| 检查发布前产物一致性                 | `limina release check`                     | 已构建产物，且需要检查本地依赖声明、私有包、打包结果或配置的发布一致性                 |
+| 目标                             | 推荐命令                                   | 判断依据                                                                               |
+| -------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| 初始化 工作区中的 Limina 文件    | `limina init` 或 `limina init --yes`       | 首次接入，或需要生成基础配置与 `limina:build` 脚本                                     |
+| 迁移被治理的源码 `tsconfig`      | `limina migration`                         | 工作区验证后，把编译器输出设置迁入 `liminaOptions`                                     |
+| 日常检查仓库结构和类型构建入口   | `limina check`                             | 默认组合覆盖工程图、源码、证明和检查器入口                                             |
+| 自定义一组按顺序运行的检查       | `limina check <name>`                      | `<name>` 来自配置中的 `pipelines`                                                      |
+| 物化或刷新 `.limina` 检查器文件  | `limina graph prepare`                     | 后续流程需要使用磁盘上的生成文件时                                                     |
+| 检查项目引用和源码依赖是否一致   | `limina graph check`                       | 关注 `references`、源码导入、包依赖和图规则                                            |
+| 导出包依赖图 `JSON`              | `limina graph export`                      | 需要把源码依赖或产物依赖交给外部工具处理                                               |
+| 只检查源码边界和归属             | `limina source check`                      | 关注源码包边界、依赖声明和 `Knip` 支撑的源码使用情况                                   |
+| 检查源码是否被工程图或检查器覆盖 | `limina proof check`                       | 关注遗漏源码、检查器覆盖和白名单有效性                                                 |
+| 运行内部声明图构建入口           | `limina checker build`                     | 使用生成图中的构建型检查器入口，只产出 `.limina` 内部声明文件                          |
+| 对指定配置运行内部声明图构建     | `limina checker build <config>`            | 只接受 Limina 管理的源码配置或聚合配置，不执行 `raw build`                             |
+| 构建用户可消费产物               | `limina build <config>`                    | 只接受 Limina 管理且声明了 `liminaOptions.outputs` 的源码叶子或聚合配置                |
+| 直接构建用户维护的 `tsconfig`    | `limina build <config> --raw --preset tsc` | 不读取 Limina 输出配置，不使用生成图                                                   |
+| 运行 framework-owned leaf target | `limina checker typecheck`                 | 对 Astro/Svelte-owned type config 按 leaf 执行一次；没有 target 时以 disabled 状态通过 |
+| 检查已构建包产物                 | `limina package check`                     | 已有 `package.entries[].outDir`，需要检查清单文件、`publint`、`ATTW` 或产物导入边界    |
+| 检查发布前产物一致性             | `limina release check`                     | 已构建产物，且需要检查本地依赖声明、私有包、打包结果或配置的发布一致性                 |
 
 ## 命令参考
 
 ### limina init
 
-`init` 用于在 `pnpm` 工作区中生成 Limina 的基础接入文件。
+`init` 用于在 工作区中生成 Limina 的基础接入文件。
 
 ```sh
 pnpm exec limina init
 pnpm exec limina init --yes
 ```
 
-它会从当前目录向上查找 `pnpm-workspace.yaml`，确认工作区根目录，检查工作区包，然后执行以下操作：写入或更新 `limina.config.mts`；确保 `.gitignore` 包含 `.limina/`；创建或更新根 `package.json` 中的 `limina:build` 脚本；在缺少 `limina` 或 `typescript` 时补充开发依赖；清理根目录下已有的 `.limina` 生成目录；在交互模式下询问是否安装 Limina `agent skill`。
+它会从当前目录向上查找最近的工作区声明，确认工作区根目录，检查工作区包，然后执行以下操作：写入或更新 `limina.config.mts`；确保 `.gitignore` 包含 `.limina/`；创建或更新根 `package.json` 中的 `limina:build` 脚本；在缺少 `limina` 或 `typescript` 时补充开发依赖；清理根目录下已有的 `.limina` 生成目录；在交互模式下询问是否安装 Limina `agent skill`。
 
 `--yes` 会接受默认确认，并跳过交互式 `skill` 安装提示。非交互环境中如果不使用 `--yes`，需要用户确认的步骤会失败。
 
@@ -292,7 +292,7 @@ pnpm exec limina source check --scope 'packages/app/**' --verbose
 
 `limina source check --scope` 还接受相对于所选源码 owner 的范围。例如对 `packages/app` owner，`src/theme` 可以匹配 `packages/app/src/theme`；工作区相对路径、绝对路径和 glob 形式也继续有效。
 
-它检查源码文件是否属于 `pnpm` 工作区源码拥有者，非聚合型 `tsconfig` 是否混合多个源码拥有者，普通相对导入是否越过最近的 `package.json` 包边界，裸包导入是否由最近的源码拥有者或显式规则授权，`#...` 包导入是否保持在声明包范围内，以及 `Knip` 支撑的源码使用情况。
+它检查源码文件是否属于 工作区源码拥有者，非聚合型 `tsconfig` 是否混合多个源码拥有者，普通相对导入是否越过最近的 `package.json` 包边界，裸包导入是否由最近的源码拥有者或显式规则授权，`#...` 包导入是否保持在声明包范围内，以及 `Knip` 支撑的源码使用情况。
 
 `Knip` 相关检查依赖 `knip` 这个对等依赖，只有在 `source.knip` 明确写为 `true` 或拥有 `workspaces` 的对象时才运行。省略 `source.knip` 或写为 `false` 会关闭这部分源码使用检查，但不会关闭图检查、覆盖证明检查或检查器执行。启用后缺少 `knip` 对等依赖，会在源码分析开始前让 `source check` 失败。
 
@@ -395,9 +395,9 @@ pnpm exec limina release check --package @scope/pkg --verbose
 
 | 症状或错误信息                                                                          | 可能原因                                                                  | 处理方式                                                                                   |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `no pnpm-workspace.yaml was found`                                                      | 当前目录不在 `pnpm` 工作区内                                              | 在工作区内运行命令，或先创建 `pnpm-workspace.yaml`                                         |
+| `No supported workspace descriptor found`                                               | 当前目录及其祖先中没有受支持的工作区声明                                  | 在工作区内运行命令，或先声明受支持的工作区                                                 |
 | `Unable to find limina config`                                                          | 未找到支持的 Limina 配置文件                                              | 运行 `limina init`，或用 `--config` 指定配置路径                                           |
-| `config file must be inside the governed pnpm workspace`                                | `--config` 指向工作区外文件                                               | 把配置文件放到当前 `pnpm` 工作区内                                                         |
+| `config file must be inside the governed workspace`                                     | `--config` 指向工作区外文件                                               | 把配置文件放到所属工作区内                                                                 |
 | `checker build --preset requires a config argument`                                     | `--preset` 只能选择某个配置的构建型检查器                                 | 改为 `limina checker build <config> --preset tsc`                                          |
 | `checker build --watch requires a config argument`                                      | 监听模式只支持指定配置                                                    | 改为 `limina checker build <config> --watch`                                               |
 | `limina build --raw requires --preset`                                                  | 原始模式没有指定检查器预设                                                | 改为 `limina build <config> --raw --preset tsc`                                            |

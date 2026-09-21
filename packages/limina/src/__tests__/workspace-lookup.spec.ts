@@ -108,6 +108,16 @@ function createPathIndex(
       rawPackages: [...packages],
       sourceConfigPaths: [],
       workspaceRootDir: rootDir,
+      workspaceRoot: {
+        rootDir,
+        packageManager: 'pnpm',
+        descriptor: {
+          kind: 'pnpm-workspace',
+          path: normalizeAbsolutePath(
+            path.join(rootDir, 'pnpm-workspace.yaml'),
+          ),
+        },
+      },
     },
     metrics,
   );

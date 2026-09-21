@@ -1,3 +1,4 @@
+import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -21,6 +22,7 @@ import {
   FaultInjectionController,
   validateFaultInjectionDefinition,
 } from '../helpers/fault-injection';
+import { observeFaultProcessOutput } from '../helpers/fault-process-output';
 import { runLimina } from '../helpers/run-limina';
 
 const helperPath = fileURLToPath(
@@ -322,6 +324,106 @@ describe('fault-injection structured matchers', () => {
     ).toThrow(/in-stream sequence/u);
   });
 });
+
+describe.each(['stdout', 'stderr'] as const)(
+  '%s fault output synchronization',
+  (target) => {
+    function createOutputHarness() {
+      const child = { stderr: new PassThrough(), stdout: new PassThrough() };
+      const output = { stderr: '', stdout: '' };
+      const injectedOutput: (typeof output)[] = [];
+      const controller = new FaultInjectionController({
+        fault: { code: 'EIO', kind: 'stream-error', stream: target },
+        occurrence: 2,
+        point: `process.${target}`,
+        task: 'command',
+      });
+      observeFaultProcessOutput(child, () => {
+        const fault = controller.observe(`process.${target}`, 'command');
+        if (fault?.kind === 'stream-error') {
+          child[target].emit('error', createInjectedFaultError(fault));
+        }
+      });
+      child[target].on('error', () => injectedOutput.push({ ...output }));
+      // Match the launcher: production forwarding attaches after observation.
+      for (const name of ['stdout', 'stderr'] as const) {
+        child[name].on('data', (chunk: Buffer) => {
+          output[name] += chunk.toString();
+        });
+      }
+      return { child, controller, injectedOutput };
+    }
+
+    it('waits for the peer stream before injecting and forwards both lines', async () => {
+      const { child, controller, injectedOutput } = createOutputHarness();
+      const peer = target === 'stdout' ? 'stderr' : 'stdout';
+      child.stdout.write('stdout-one\n');
+      child.stderr.write('stderr-one\n');
+      await Promise.resolve();
+      child[target].write(`${target}-two\n`);
+      await Promise.resolve();
+
+      expect(injectedOutput).toEqual([]);
+      expect(() => controller.assertConsumed('delayed-peer')).toThrow();
+
+      child[peer].write(`${peer}-two\n`);
+      expect(injectedOutput).toEqual([]);
+      await Promise.resolve();
+
+      expect(injectedOutput).toEqual([
+        {
+          stderr: 'stderr-one\nstderr-two\n',
+          stdout: 'stdout-one\nstdout-two\n',
+        },
+      ]);
+      expect(() => controller.assertConsumed('delayed-peer')).not.toThrow();
+    });
+
+    it('counts coalesced lines and consumes the fault only once', async () => {
+      const { child, controller, injectedOutput } = createOutputHarness();
+      child.stderr.write('stderr-one\nstderr-two\n');
+      child.stdout.write('stdout-one\nstdout-two\n');
+      await Promise.resolve();
+      child.stdout.write('stdout-three\n');
+      child.stderr.write('stderr-three\n');
+      await Promise.resolve();
+
+      expect(injectedOutput).toEqual([
+        {
+          stderr: 'stderr-one\nstderr-two\n',
+          stdout: 'stdout-one\nstdout-two\n',
+        },
+      ]);
+      expect(controller.observations()).toMatchObject([
+        { consumed: true, expectedOccurrence: 2, observedOccurrences: 3 },
+      ]);
+    });
+
+    it('does not count fragments or an unterminated peer line as occurrences', async () => {
+      const { child, controller, injectedOutput } = createOutputHarness();
+      for (const byte of Buffer.from('stdout-one\nstdout-two\n')) {
+        child.stdout.write(Buffer.from([byte]));
+      }
+      child.stderr.write('stderr-one\nstderr-two');
+      await Promise.resolve();
+
+      expect(injectedOutput).toEqual([]);
+      expect(controller.observations()).toMatchObject([
+        { consumed: false, expectedOccurrence: 2, observedOccurrences: 1 },
+      ]);
+
+      child.stderr.write('\n');
+      await Promise.resolve();
+      expect(injectedOutput).toEqual([
+        {
+          stderr: 'stderr-one\nstderr-two\n',
+          stdout: 'stdout-one\nstdout-two\n',
+        },
+      ]);
+      expect(() => controller.assertConsumed('fragmented')).not.toThrow();
+    });
+  },
+);
 
 describe('fault helper executable', () => {
   const entry = { args: [helperPath], executable: process.execPath };

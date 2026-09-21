@@ -1309,7 +1309,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       await expect(
         prepareGeneratedTsconfigGraph(fixture.config),
       ).rejects.toThrow(
-        /Referenced checker source config is outside activated workspace package regions:[\s\S]*boundary kind: pnpm-workspace[\s\S]*packages\/a\/fixture/u,
+        /Referenced checker source config is outside activated workspace package regions:[\s\S]*boundary kind: workspace-root[\s\S]*packages\/a\/fixture/u,
       );
     } finally {
       await fixture.cleanup();

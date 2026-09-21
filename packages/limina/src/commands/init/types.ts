@@ -1,3 +1,4 @@
+import type { SupportedPackageManager } from '#utils/workspace-root';
 import type { LiminaFlowReporter } from '../../flow';
 import type { InitMutationContext } from './mutation';
 
@@ -11,6 +12,8 @@ export interface RunInitOptions {
 
 export interface RunInitResult {
   buildCommand: string;
+  installCommand: string;
+  packageManager: SupportedPackageManager;
   installRequired: boolean;
   removedPaths: string[];
   rootDir: string;

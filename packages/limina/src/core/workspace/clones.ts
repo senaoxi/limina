@@ -29,10 +29,11 @@ export function cloneWorkspacePackages(
 function cloneWorkspaceRegionBoundary(
   boundary: WorkspaceRegionBoundary,
 ): WorkspaceRegionBoundary {
-  return boundary.kind === 'pnpm-workspace'
+  return boundary.kind === 'workspace-root'
     ? {
         ...boundary,
         inspection: { ...boundary.inspection },
+        descriptor: { ...boundary.descriptor },
       }
     : { ...boundary };
 }
@@ -77,6 +78,10 @@ export function cloneValidatedWorkspaceContext(
     })),
     sourceConfigPaths: [...context.sourceConfigPaths],
     workspaceRootDir: context.workspaceRootDir,
+    workspaceRoot: {
+      ...context.workspaceRoot,
+      descriptor: { ...context.workspaceRoot.descriptor },
+    },
     ...(context.workspaceMutationGeneration
       ? {
           workspaceMutationGeneration: context.workspaceMutationGeneration,

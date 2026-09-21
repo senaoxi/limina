@@ -1,9 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
-import { readWorkspaceManifest } from '@pnpm/workspace.read-manifest';
+import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
-import { glob } from 'tinyglobby';
+import { expandPackageGlobs } from './expand-package-globs';
 import { getManifestPackageName, readJsonFile } from './package-manifest';
 import type {
   PackageManifest,
@@ -12,88 +12,7 @@ import type {
 } from './package-types';
 import { isNamedWorkspacePackage } from './package-types';
 import { collectWorkspaceRegionTopology } from './regions';
-
-const workspacePackageDiscoveryIgnore = [
-  '**/node_modules/**',
-  '**/bower_components/**',
-  '**/test/**',
-  '**/tests/**',
-] as const;
-
-function findWorkspaceRoot(currentDir: string, startDir: string): string {
-  if (existsSync(path.join(currentDir, 'pnpm-workspace.yaml'))) {
-    return currentDir;
-  }
-
-  const parentDir = path.dirname(currentDir);
-
-  if (parentDir === currentDir) {
-    throw new Error(
-      `No pnpm-workspace.yaml was found from ${startDir} or its ancestors.`,
-    );
-  }
-
-  return findWorkspaceRoot(parentDir, startDir);
-}
-
-export function findNearestPnpmWorkspaceRoot(startDir: string): string {
-  const normalizedStartDir = normalizeAbsolutePath(startDir);
-  return findWorkspaceRoot(normalizedStartDir, normalizedStartDir);
-}
-
-function removePatternNegation(pattern: string): string {
-  return pattern.startsWith('!') ? pattern.slice(1) : pattern;
-}
-
-function createPackageJsonPattern(directoryPattern: string): string {
-  if (directoryPattern === '.' || directoryPattern.length === 0) {
-    return 'package.json';
-  }
-
-  return `${directoryPattern}/package.json`;
-}
-
-function toPackageJsonPattern(pattern: string): string {
-  const negated = pattern.startsWith('!');
-  const directoryPattern = removePatternNegation(pattern).replace(/\/+$/u, '');
-  const packageJsonPattern = createPackageJsonPattern(directoryPattern);
-  return negated ? `!${packageJsonPattern}` : packageJsonPattern;
-}
-
-async function collectRootPackageJsonPaths(
-  workspaceRootDir: string,
-): Promise<string[]> {
-  return glob('package.json', {
-    absolute: true,
-    cwd: workspaceRootDir,
-    expandDirectories: false,
-    ignore: [...workspacePackageDiscoveryIgnore],
-    onlyFiles: true,
-  });
-}
-
-async function collectPatternPackageJsonPaths(options: {
-  patterns: readonly string[];
-  workspaceRootDir: string;
-}): Promise<string[]> {
-  if (options.patterns.length === 0) {
-    return [];
-  }
-
-  return glob([...options.patterns], {
-    absolute: true,
-    cwd: options.workspaceRootDir,
-    expandDirectories: false,
-    ignore: [...workspacePackageDiscoveryIgnore],
-    onlyFiles: true,
-  });
-}
-
-function normalizePackageJsonPaths(paths: readonly string[]): string[] {
-  return [...new Set(paths.map(normalizeAbsolutePath))].sort((left, right) =>
-    left.localeCompare(right),
-  );
-}
+import { workspacePackageManagerAdapters } from './selection-policy';
 
 function createWorkspacePackage(packageJsonPath: string): WorkspacePackage {
   const manifest = readJsonFile<PackageManifest>(packageJsonPath);
@@ -105,21 +24,22 @@ function createWorkspacePackage(packageJsonPath: string): WorkspacePackage {
   };
 }
 
-async function collectPnpmWorkspacePackages(
+async function collectDeclaredWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
-  const workspaceRootDir = findNearestPnpmWorkspaceRoot(config.rootDir);
-  const workspaceManifest = await readWorkspaceManifest(workspaceRootDir);
-  const patterns = (workspaceManifest?.packages ?? []).map(
-    toPackageJsonPattern,
-  );
-  const [rootPaths, workspacePaths] = await Promise.all([
-    collectRootPackageJsonPaths(workspaceRootDir),
-    collectPatternPackageJsonPaths({ patterns, workspaceRootDir }),
-  ]);
-  return normalizePackageJsonPaths([...rootPaths, ...workspacePaths]).map(
-    createWorkspacePackage,
-  );
+  const workspace = resolveNearestWorkspaceRoot(config.rootDir);
+  const policy =
+    await workspacePackageManagerAdapters[
+      workspace.packageManager
+    ].readSelectionPolicy(workspace);
+  const directories = await expandPackageGlobs({
+    ...policy,
+    rootDir: workspace.rootDir,
+  });
+  return [...new Set([workspace.rootDir, ...directories])]
+    .map((directory) => path.join(directory, 'package.json'))
+    .filter((manifestPath) => existsSync(manifestPath))
+    .map(createWorkspacePackage);
 }
 
 function compareNamedPriority(
@@ -178,7 +98,7 @@ function mergeWorkspacePackages(
 export async function collectRawWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
-  return mergeWorkspacePackages(await collectPnpmWorkspacePackages(config));
+  return mergeWorkspacePackages(await collectDeclaredWorkspacePackages(config));
 }
 
 export async function collectWorkspacePackages(

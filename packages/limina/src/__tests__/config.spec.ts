@@ -1901,7 +1901,7 @@ throw new Error('external config should not be imported');
           configPath: externalConfigPath,
           cwd: rootDir,
         }),
-      ).rejects.toThrow(/no pnpm-workspace\.yaml was found/u);
+      ).rejects.toThrow(/No supported workspace descriptor found/u);
     } finally {
       await Promise.all([
         rm(rootDir, {
@@ -3127,7 +3127,7 @@ throw new Error('parent config should not be imported');
         loadConfig({
           cwd: path.join(rootDir, 'packages/core'),
         }),
-      ).rejects.toThrow(/up to the pnpm workspace root/u);
+      ).rejects.toThrow(/up to the workspace root/u);
     } finally {
       await rm(parentDir, {
         force: true,
@@ -3168,7 +3168,7 @@ export default {};
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /no pnpm-workspace\.yaml was found/u,
+        /No supported workspace descriptor found/u,
       );
     } finally {
       await rm(rootDir, {

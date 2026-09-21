@@ -73,4 +73,4 @@ packages/example/src/cli.ts:4:17 - error TS6307: File '<workspace>/packages/exam
 
 让同一 `kind` 的模式互不重叠。规则顺序不会决定哪条 `reason` 生效。
 
-嵌套 `pnpm-workspace.yaml` 不需要 exclusion rule。它会自动停止当前 owner 的遍历；边界下方被激活的包则会独立启动 package-island 任务。
+嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`） 不需要 exclusion rule。它会自动停止当前 owner 的遍历；边界下方被激活的包则会独立启动 package-island 任务。

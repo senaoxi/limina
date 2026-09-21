@@ -169,7 +169,7 @@ function addMultipleOwnerFinding(options: {
   );
   const title = 'Source module belongs to multiple source owners';
   const reason =
-    'source ownership prohibits overlap between module sets governed by different pnpm workspace source owners.';
+    'source ownership prohibits overlap between module sets governed by different workspace source owners.';
   const lines = [
     `${title}:`,
     `  file: ${toRelativePath(options.config.rootDir, options.fileName)}`,

@@ -58,13 +58,13 @@ A more robust approach is to ensure that the same implementation file is owned b
 
 ## Files Must Have a Governed Region and Clear Package Ownership First
 
-Limina starts from the packages activated by the nearest `pnpm-workspace.yaml`. Each final activated package is an independent package island, and its root `package.json` is the owner manifest. A checked source file must first belong to one of these units. If it does not, Limina reports it as outside the activated region; if an ordinary source `tsconfig*.json` covers files owned by multiple workspace packages, Limina reports that the boundary is too broad.
+Limina starts from the packages selected by the nearest workspace descriptor. Each final activated package is an independent package island, and its root `package.json` is the owner manifest. A checked source file must first belong to one of these units. If it does not, Limina reports it as outside the activated region; if an ordinary source `tsconfig*.json` covers files owned by multiple workspace packages, Limina reports that the boundary is too broad.
 
-Governance does not automatically continue through every directory below a workspace package. A nested `package.json` stops the current island by default, and a nested `pnpm-workspace.yaml` always stops that owner's traversal. An activated child root also stops its parent's traversal, but the child still starts an independent island even when an ancestor workspace boundary exists.
+Governance does not automatically continue through every directory below a workspace package. A nested `package.json` stops the current island by default, and a nested workspace root (`pnpm-workspace.yaml` or `package.json` with its own `workspaces`) always stops that owner's traversal. An activated child root also stops its parent's traversal, but the child still starts an independent island even when an ancestor workspace boundary exists.
 
 `regions.extendNestedPackageScopes` can keep an eligible nested package scope inside the current region. The nested manifest must have no `name` field, no discovered workspace may identify its directory as a workspace package, and it must not be inside a nested workspace boundary. The source keeps the surrounding workspace package owner and dependency authority, while the nested manifest remains its package scope for relative imports and `#imports`.
 
-`regions.exclude` requires every rule to name one governance-root kind: `workspace-package` or `package-scope`. Its config-root-relative path globs match only exact candidate root directories of that kind, never package names or descriptor paths. Excluding an activated parent does not cascade to unmatched activated descendants. Nested `pnpm-workspace.yaml` files are automatic owner-local boundaries and are not configurable exclusion candidates. The excluded region does not belong to the current owner run, so imports from governed source into it are treated as cross-boundary access. See [Regions](./config/regions.md) for the complete matching and validation rules.
+`regions.exclude` requires every rule to name one governance-root kind: `workspace-package` or `package-scope`. Its config-root-relative path globs match only exact candidate root directories of that kind, never package names or descriptor paths. Excluding an activated parent does not cascade to unmatched activated descendants. Nested workspace roots are automatic owner-local boundaries and are not configurable exclusion candidates. The excluded region does not belong to the current owner run, so imports from governed source into it are treated as cross-boundary access. See [Regions](./config/regions.md) for the complete matching and validation rules.
 
 For example:
 
@@ -335,7 +335,7 @@ These checks do not replace the npm publishing process, package-manager validati
 When Limina reports an issue, inspect it in this order:
 
 ```text
-1. Does this package scope belong to the current run, and which pnpm workspace package owns it?
+1. Does this package scope belong to the current run, and which workspace package owns it?
 2. Is the current source file owned by exactly one ordinary type-checking module?
 3. Does the current tsconfig stay inside the current governed region and one workspace owner?
 4. Does an ordinary source leaf config hand-write references?

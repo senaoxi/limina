@@ -2410,7 +2410,7 @@ packages:
     }
   });
 
-  it('uses the pnpm workspace source owner for dependency authorization across nested package scopes', async () => {
+  it('uses the workspace source owner for dependency authorization across nested package scopes', async () => {
     const fixture = await createFixture(
       {
         ...createPackageFixture({
@@ -3714,9 +3714,7 @@ packages:
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('reason must be a non-empty string');
-      expect(errors).toContain(
-        'dep must name a package from the pnpm workspace',
-      );
+      expect(errors).toContain('dep must name a package from the workspace');
       expect(errors).toContain('importer: @example/app');
     } finally {
       errorSpy.mockRestore();
@@ -3778,7 +3776,7 @@ packages:
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
-        'workspace config keys must name packages discovered in the pnpm workspace',
+        'workspace config keys must name packages discovered in the workspace',
       );
     } finally {
       errorSpy.mockRestore();
@@ -3815,7 +3813,7 @@ packages:
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
-        'workspace config keys must name packages discovered in the pnpm workspace',
+        'workspace config keys must name packages discovered in the workspace',
       );
     } finally {
       errorSpy.mockRestore();
@@ -5521,7 +5519,7 @@ describe('runSourceCheck workspace regions', () => {
         expect.arrayContaining([
           'Generated graph import crosses governance boundary:',
           '  resolved file: app/fixture/pkg/src/value.ts',
-          '  boundary kind: pnpm-workspace',
+          '  boundary kind: workspace-root',
           '  boundary root: app/fixture',
         ]),
       );

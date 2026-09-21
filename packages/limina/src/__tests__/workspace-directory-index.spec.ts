@@ -106,6 +106,19 @@ function createContext(options: {
     rawPackages: options.packages,
     sourceConfigPaths: [],
     workspaceRootDir: normalizeAbsolutePath(options.rootDir),
+    workspaceRoot: {
+      rootDir: normalizeAbsolutePath(options.rootDir),
+      packageManager: 'pnpm',
+      descriptor: {
+        kind: 'pnpm-workspace',
+        path: normalizeAbsolutePath(
+          path.join(
+            normalizeAbsolutePath(options.rootDir),
+            'pnpm-workspace.yaml',
+          ),
+        ),
+      },
+    },
   };
 }
 

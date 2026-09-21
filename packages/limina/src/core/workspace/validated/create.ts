@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
+import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import type { WorkspacePackage } from '../actions';
 import type { ExtendedPackageScope, WorkspaceRegionBoundary } from '../regions';
 import { collectPackageIsland } from './descriptors/island';
@@ -16,7 +17,6 @@ import {
   assertNoSameRootOverlap,
   collectPackageIdentities,
 } from './package-identities';
-import { findNearestPnpmWorkspaceRoot } from './shared';
 import type {
   ValidatedWorkspaceContext,
   WorkspaceDescriptorCandidate,
@@ -51,7 +51,7 @@ async function collectWorkspaceIslands(options: {
   );
   return {
     boundaries: [
-      ...islands.flatMap((island) => island.pnpmBoundaries),
+      ...islands.flatMap((island) => island.workspaceBoundaries),
       ...islands.flatMap((island) => island.boundaries),
     ],
     extendedPackageScopes: islands.flatMap((island) => island.extendedScopes),
@@ -65,8 +65,8 @@ function filterStableBoundaries(options: {
 }): WorkspaceRegionBoundary[] {
   return options.boundaries.filter((boundary) => {
     const descriptorPath =
-      boundary.kind === 'pnpm-workspace'
-        ? boundary.workspaceYamlPath
+      boundary.kind === 'workspace-root'
+        ? boundary.descriptor.path
         : boundary.packageJsonPath;
     return options.stablePaths.has(descriptorPath);
   });
@@ -94,6 +94,7 @@ export async function collectValidatedWorkspaceContext(options: {
   config: ResolvedLiminaConfig;
   rawPackages: readonly WorkspacePackage[];
 }): Promise<ValidatedWorkspaceContext> {
+  const workspaceRoot = resolveNearestWorkspaceRoot(options.config.rootDir);
   const rules = compileExclusionRules(options.config);
   validateWorkspacePackageExclusions({
     config: options.config,
@@ -138,6 +139,9 @@ export async function collectValidatedWorkspaceContext(options: {
     config: options.config,
     rules,
     stableCandidates: stable.candidates,
+    workspaceBoundaries: islands.boundaries.filter(
+      (boundary) => boundary.kind === 'workspace-root',
+    ),
   });
   const stablePaths = new Set(
     stable.candidates.map((candidate) => candidate.path),
@@ -167,6 +171,7 @@ export async function collectValidatedWorkspaceContext(options: {
     rawPackages: [...options.rawPackages],
     sourceConfigPaths,
     workspaceMutationGeneration: authorities.workspaceMutationGeneration,
-    workspaceRootDir: findNearestPnpmWorkspaceRoot(options.config.rootDir),
+    workspaceRoot,
+    workspaceRootDir: workspaceRoot.rootDir,
   };
 }

@@ -73,4 +73,4 @@ For example, select an activated package rooted at `packages/legacy-app` with `k
 
 Make the patterns for that `kind` non-overlapping. Rule order does not choose a winning reason.
 
-Nested `pnpm-workspace.yaml` files do not need exclusion rules. They automatically stop the current owner's traversal, and activated packages below them start independent package-island jobs.
+Nested workspace roots do not need exclusion rules. They automatically stop the current owner's traversal, and activated packages below them start independent package-island jobs.

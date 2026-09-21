@@ -2,12 +2,20 @@
 
 ## Requirements
 
-Limina expects a pnpm workspace and an ESM config file.
+Limina supports pnpm, npm, Yarn, and Bun workspaces with an ESM config file.
 
 - Node.js `^22.18.0 || >=24.11.0`
-- A `pnpm-workspace.yaml` exists at the workspace root
+- A workspace descriptor exists at the root: `pnpm-workspace.yaml` for pnpm, or an own `workspaces` field in `package.json` for npm, Yarn, or Bun
 - TypeScript is installed in the consuming repository
 - `limina.config.mts` is inside the workspace
+
+## Workspace discovery
+
+Distance takes precedence: Limina selects the nearest descriptor before considering its type. At the same directory, `pnpm-workspace.yaml` wins. A conflicting root `packageManager` is an error. Ordinary package manifests without `workspaces` do not stop the upward search.
+
+For a `package.json` workspace, set `packageManager` to `npm@…`, `yarn@…`, or `bun@…`. When it is absent, Limina uses only lockfiles beside that manifest. Multiple manager identities are ambiguous; no identity is an error. Two npm or two Bun lockfile formats still describe one manager. An explicit identity takes precedence over lockfiles. pnpm always requires `pnpm-workspace.yaml`.
+
+The supported declaration projection is pnpm `packages: string[]` (absent means no child packages), npm `workspaces: string[]`, and Yarn/Bun either that array or `{ packages: string[] }`. Limina validates syntax and consumed fields; catalog validity, installability, version availability, and lockfile consistency remain package-manager responsibilities. A single package without a workspace declaration is not a fallback workspace.
 
 ## Install
 
@@ -25,6 +33,10 @@ npm install -D limina@latest typescript
 yarn add -D limina@latest typescript
 ```
 
+```bash [bun]
+bun add -d limina@latest typescript
+```
+
 :::
 
 ## Pick an Adoption Path
@@ -35,13 +47,13 @@ If your repository already has a clear `tsconfig` convention, writing the minima
 
 ## Initialize an Existing Workspace
 
-For a pnpm monorepo that has not adopted Limina's declaration graph layout yet, run:
+For a workspace that has not adopted Limina's declaration graph layout yet, run:
 
 ```sh
 pnpm exec limina init
 ```
 
-`limina init` searches upward for the nearest `pnpm-workspace.yaml`, confirms the workspace root, and writes the Limina config file.
+`limina init` searches upward for the nearest workspace descriptor, confirms the workspace root, and writes the Limina config file.
 
 For non-interactive environments, use:
 
@@ -68,7 +80,16 @@ Initialization can create or update:
 
 When graph preparation fails, it usually means the checker's `include` matched a reserved config or a non-source `tsconfig`. Narrow `include` or add `exclude` entries until only ordinary source configs are selected.
 
-After initialization, run:
+Initialization reports commands for the selected manager:
+
+| Manager | Install when dependencies changed | Build                  |
+| ------- | --------------------------------- | ---------------------- |
+| pnpm    | `pnpm install`                    | `pnpm limina:build`    |
+| npm     | `npm install`                     | `npm run limina:build` |
+| Yarn    | `yarn install`                    | `yarn limina:build`    |
+| Bun     | `bun install`                     | `bun run limina:build` |
+
+The following commands use pnpm as an example:
 
 ```sh
 pnpm i

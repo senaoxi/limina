@@ -58,13 +58,13 @@ packages/core/tsconfig.browser.json   also includes src/index.ts
 
 ## 文件先要有治理区域和清楚的包归属
 
-Limina 从最近的 `pnpm-workspace.yaml` 开始。每个最终激活包都是独立 package island，包根目录的 `package.json` 是 owner manifest。被检查的源码文件首先要属于这些单元；找不到归属时，Limina 会报告它位于已激活区域之外。如果普通源码 `tsconfig*.json` 覆盖了多个工作区包 owner 的文件，也会被报告为边界过宽。
+Limina 从最近的工作区声明 开始。每个最终激活包都是独立 package island，包根目录的 `package.json` 是 owner manifest。被检查的源码文件首先要属于这些单元；找不到归属时，Limina 会报告它位于已激活区域之外。如果普通源码 `tsconfig*.json` 覆盖了多个工作区包 owner 的文件，也会被报告为边界过宽。
 
-治理不会自动穿过工作区包下面的每一层目录。默认情况下，嵌套 `package.json` 会停止当前 island；嵌套 `pnpm-workspace.yaml` 永远会停止当前 owner 的遍历。激活子包根目录也会停止父包遍历，但即使祖先存在工作区边界，子包仍会启动独立 island。
+治理不会自动穿过工作区包下面的每一层目录。默认情况下，嵌套 `package.json` 会停止当前 island；嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`） 永远会停止当前 owner 的遍历。激活子包根目录也会停止父包遍历，但即使祖先存在工作区边界，子包仍会启动独立 island。
 
 `regions.extendNestedPackageScopes` 可以让满足条件的嵌套包作用域继续留在当前区域。嵌套清单必须没有 `name` 字段，所有已发现工作区都不能把该目录识别为工作区包，而且该目录不能位于嵌套工作区边界内。其中源码继续继承外层工作区包的 owner 和依赖授权；嵌套清单仍然负责相对导入和 `#imports` 的包作用域。
 
-`regions.exclude` 要求每条规则明确一种治理根 `kind`：`workspace-package` 或 `package-scope`。相对于 `config.rootDir` 的路径 glob 只匹配同 `kind` 的精确 candidate 根目录，不匹配包名或 descriptor 路径。排除激活父包不会级联到未匹配的激活后代。嵌套 `pnpm-workspace.yaml` 是自动生效的 owner-local boundary，不是可配置的 exclusion candidate。被排除区域不属于当前 owner 运行，受治理源码导入其中内容时会按跨边界访问处理。完整匹配和验证规则见[治理区域](./config/regions.md)。
+`regions.exclude` 要求每条规则明确一种治理根 `kind`：`workspace-package` 或 `package-scope`。相对于 `config.rootDir` 的路径 glob 只匹配同 `kind` 的精确 candidate 根目录，不匹配包名或 descriptor 路径。排除激活父包不会级联到未匹配的激活后代。嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`） 是自动生效的 owner-local boundary，不是可配置的 exclusion candidate。被排除区域不属于当前 owner 运行，受治理源码导入其中内容时会按跨边界访问处理。完整匹配和验证规则见[治理区域](./config/regions.md)。
 
 例如：
 
@@ -335,7 +335,7 @@ import { runtimeValue } from '@acme/core/runtime';
 遇到 Limina 报告问题时，可以先按这个顺序看：
 
 ```text
-1. 这个包作用域是否属于当前运行，又由哪个 pnpm 工作区包归属？
+1. 这个包作用域是否属于当前运行，又由哪个工作区包归属？
 2. 当前源码文件是否只归属于一个普通类型检测模块？
 3. 当前 tsconfig 是否留在当前治理区域和同一个工作区 owner 内？
 4. 普通源码叶子配置里是否手写了 references？

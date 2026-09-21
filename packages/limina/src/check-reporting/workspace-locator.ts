@@ -1,7 +1,7 @@
 import { normalizeAbsolutePathIdentity } from '#utils/path';
+import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'pathe';
-import { findNearestPnpmWorkspaceRoot } from '../core/workspace/actions';
 
 export interface CheckIssueWorkspaceLocation {
   configPath?: string;
@@ -63,7 +63,7 @@ export function locateCheckIssueWorkspace(
   const configPath = resolveWorkspaceConfigPath(cwd, options.configPath);
   const startPath = getWorkspaceStartPath(cwd, configPath);
   const physicalStartPath = findExistingPhysicalAncestor(startPath);
-  const rootDir = findNearestPnpmWorkspaceRoot(physicalStartPath);
+  const rootDir = resolveNearestWorkspaceRoot(physicalStartPath).rootDir;
 
   return createWorkspaceLocation(rootDir, configPath);
 }

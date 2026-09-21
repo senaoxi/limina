@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { WorkspaceRootDescriptor } from '#utils/workspace-root';
 import type { WorkspacePackage } from './package-types';
 import { collectValidatedWorkspaceContext } from './validated-context';
 
@@ -19,21 +20,21 @@ export interface PackageScopeRegionBoundary
   packageJsonPath: string;
 }
 
-export interface PnpmWorkspaceInspection {
+export interface WorkspaceRootInspection {
   reason: string;
   status: 'excluded';
 }
 
-export interface PnpmWorkspaceRegionBoundary
+export interface WorkspaceRootRegionBoundary
   extends WorkspaceRegionBoundaryBase {
-  inspection: PnpmWorkspaceInspection;
-  kind: 'pnpm-workspace';
-  workspaceYamlPath: string;
+  inspection: WorkspaceRootInspection;
+  kind: 'workspace-root';
+  descriptor: WorkspaceRootDescriptor;
 }
 
 export type WorkspaceRegionBoundary =
   | PackageScopeRegionBoundary
-  | PnpmWorkspaceRegionBoundary;
+  | WorkspaceRootRegionBoundary;
 
 function getPackageScopeExclusionReason(
   boundary: PackageScopeRegionBoundary,
@@ -48,7 +49,7 @@ function getPackageScopeExclusionReason(
 export function getWorkspaceRegionBoundaryExclusionReason(
   boundary: WorkspaceRegionBoundary,
 ): string | null {
-  return boundary.kind === 'pnpm-workspace'
+  return boundary.kind === 'workspace-root'
     ? boundary.inspection.reason
     : getPackageScopeExclusionReason(boundary);
 }
@@ -56,7 +57,7 @@ export function getWorkspaceRegionBoundaryExclusionReason(
 export function isWorkspaceRegionBoundaryExcluded(
   boundary: WorkspaceRegionBoundary,
 ): boolean {
-  return boundary.kind === 'pnpm-workspace' || boundary.excluded;
+  return boundary.kind === 'workspace-root' || boundary.excluded;
 }
 
 export interface ExtendedPackageScope {

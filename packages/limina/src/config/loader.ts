@@ -143,7 +143,7 @@ function createMissingConfigError(options: {
     return new Error(`Unable to find limina config at ${options.configPath}`);
   }
   return new Error(
-    `Unable to find limina config. Searched for ${formatDefaultConfigFileList()} from ${options.cwd} up to the pnpm workspace root at ${options.rootDir}.`,
+    `Unable to find limina config. Searched for ${formatDefaultConfigFileList()} from ${options.cwd} up to the workspace root at ${options.rootDir}.`,
   );
 }
 

@@ -86,7 +86,7 @@ function addMissingOwnerFinding(
 
   const title = 'Source file has no source owner';
   const reason =
-    'every source file checked by Limina must be governed by a pnpm workspace source owner.';
+    'every source file checked by Limina must be governed by a workspace source owner.';
   const lines = [
     `${title}:`,
     `  ${options.role}: ${toRelativePath(options.config.rootDir, options.configPath)}`,
@@ -122,7 +122,7 @@ function addMixedOwnerFinding(
 
   const title = 'Tsconfig source file set mixes source owners';
   const reason =
-    'non-aggregator tsconfig leaves and their companion typecheck configs must stay within one pnpm workspace source owner scope.';
+    'non-aggregator tsconfig leaves and their companion typecheck configs must stay within one workspace source owner scope.';
   const ownerManifestPaths = [...ownerPaths.keys()];
   const lines = [
     `${title}:`,
