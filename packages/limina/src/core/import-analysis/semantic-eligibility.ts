@@ -1,6 +1,6 @@
 import type { AstroSemanticProject } from '#checkers';
 import { isNativeTypeScriptProjectInput } from '#checkers';
-import path from 'node:path';
+import { getPlainSpecifierExtension } from '#utils/module-specifier';
 import type { ImportRecord } from './records';
 import { isKnownFrameworkVirtualSpecifier } from './virtual-modules';
 
@@ -20,10 +20,6 @@ interface EligibilityOptions {
 type EligibilityRule = (
   options: EligibilityOptions,
 ) => SemanticEligibility | null;
-
-function stripQuery(specifier: string): string {
-  return specifier.split(/[?#]/u)[0]!;
-}
 
 function isAstroSourceRecord(importRecord: ImportRecord): boolean {
   return (
@@ -46,13 +42,15 @@ function isKnownSourcePath(
   );
 }
 
+// A query or fragment is not evaluated here. The complete specifier reaches
+// the Astro checker, which alone decides what it means.
 function hasExplicitNonSourceExtension(
   specifier: string,
   checkerExtensions: readonly string[],
 ): boolean {
-  const base = stripQuery(specifier);
   return (
-    path.extname(base).length > 0 && !isKnownSourcePath(base, checkerExtensions)
+    getPlainSpecifierExtension(specifier) !== null &&
+    !isKnownSourcePath(specifier, checkerExtensions)
   );
 }
 
@@ -76,13 +74,6 @@ const eligibilityRules: readonly EligibilityRule[] = [
     return {
       kind: 'skip',
       reason: 'Known framework virtual imports are not semantic candidates.',
-    };
-  },
-  (options) => {
-    if (!/[?#]/u.test(options.specifier)) return null;
-    return {
-      kind: 'skip',
-      reason: 'Query and resource imports do not require Astro semantics.',
     };
   },
   (options) => {

@@ -171,7 +171,7 @@ function addTargetlessFact(options: CollectFactOptions): void {
   if (options.fact.typeEvidence.kind === 'ambient') {
     options.collection.observations.push({
       importRecord: options.fact.importRecord,
-      kind: 'resource',
+      kind: 'semantic-only',
       typeEvidence: cloneTypeEvidence(options.fact.typeEvidence) as Extract<
         TypeEvidence,
         { kind: 'ambient' }

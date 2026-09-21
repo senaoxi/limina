@@ -43,7 +43,7 @@ Limina 只在 `source:check` 中报告这两类问题：
 
 资源导入不会成为声明 provider、provider edge 或 project reference；资源缺失也不会阻止 `graph prepare`。普通 TypeScript、JavaScript、JSON 和框架源码仍由已配置的 checker 按原有方式解析。
 
-对于 `./foo.svg?raw` 或 `./foo.svg#fragment` 这类相对资源导入，Limina 会检查基础物理文件，并要求匹配的类型声明。对于 `#assets/logo.svg` 这类 `package.json#imports` 资源，物理路径查找会保留完整映射键，包括其中的 `?` 或额外的 `#`。匹配的类型证据和 package import authority 仍然必须满足。物理路径查找成功不表示 checker 支持所有键的拼写，也不表示已安装相应 bundler transformer。
+模块 specifier 会按原样检查。对于 `./foo.svg?raw` 或 `./foo.svg#fragment`，Limina 不会去掉 query 或 fragment 去检查 `./foo.svg`；完整 specifier 会原样交给已配置的 checker，只有 checker 自己的结果决定类型是否存在。因此这类导入不会仅凭后缀被报告为资源缺失或类型未声明。对于 `#assets/logo.svg` 这类 `package.json#imports` 资源，物理路径查找会保留完整映射键。匹配的类型证据和 package import authority 仍然必须满足。物理路径查找成功不表示 checker 支持所有键的拼写，也不表示已安装相应 bundler transformer；当前版本也没有提供声明宿主 query 语义的方式。
 
 虚拟模块和框架注入模块的运行时行为仍不受支持；只有 ambient declaration 不能让这类运行时模块自动变为合法，Limina 也不会把它误报为物理资源缺失。
 

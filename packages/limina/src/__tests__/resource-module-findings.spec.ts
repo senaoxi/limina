@@ -96,6 +96,99 @@ it.each([false, true])(
   },
 );
 
+it.each([
+  { ambient: false, suffix: '?raw' },
+  { ambient: true, suffix: '?raw' },
+  { ambient: false, suffix: '?unknown' },
+  { ambient: false, suffix: '#fragment' },
+  { ambient: false, suffix: '?x/../style.css' },
+  { ambient: false, suffix: '#x/../style.css' },
+])(
+  'never reinterprets ./foo.ts$suffix as ./foo.ts for a resource finding (ambient=$ambient)',
+  async ({ ambient, suffix }) => {
+    const fixture = await createSemanticRepairFixture({
+      'package.json': '{"name":"fixture","type":"module"}',
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: {
+          module: 'ESNext',
+          moduleResolution: 'Bundler',
+          types: [],
+        },
+        files: ['main.ts', ...(ambient ? ['env.d.ts'] : [])],
+      }),
+      'main.ts': `import value from './foo.ts${suffix}'; void value;`,
+      'env.d.ts': `declare module '*${suffix}' { const value: string; export default value; }`,
+      // The base file exists; only a stripped specifier could ever reach it.
+      'foo.ts': 'export const value = 1;',
+      'style.css': '.theme {}',
+    });
+    const parsed = fixture.parse();
+    const core = new TypeEvidenceCore({
+      generation: 0,
+      importAnalysis: createImportAnalysisContext({
+        projectRootDir: fixture.root,
+      }),
+      workspaceSourceBoundaryProvider: () =>
+        createWorkspaceSourceBoundary([
+          fixture.path('main.ts'),
+          fixture.path('foo.ts'),
+        ]),
+    });
+    try {
+      const project: ResourceOptions['project'] = {
+        analysisGeneration: 0,
+        configClosure: [],
+        checkerPresets: ['tsc'],
+        configPath: fixture.path('tsconfig.json'),
+        extensions: [],
+        fileNames: parsed.fileNames,
+        labels: [],
+        labelProblem: null,
+        ownedFileNames: parsed.fileNames,
+        options: parsed.options,
+        references: new Set(),
+        resolverConfigPath: fixture.path('tsconfig.json'),
+      };
+      const record = core
+        .getTypeScriptSemanticContext({ checkerName: 'tsc', project })
+        .getImportRecords(fixture.path('main.ts'))[0]!;
+      const findings: SourceFinding[] = [];
+      addResourceModuleProblems({
+        checkerName: 'tsc',
+        config: {
+          rootDir: fixture.root,
+          configPath: fixture.path('limina.config.mjs'),
+        },
+        findings,
+        importRecord: record,
+        owner: {
+          name: 'fixture',
+          packageJsonPath: fixture.path('package.json'),
+        } as ResourceOptions['owner'],
+        project,
+        typeEvidence: core,
+      });
+      expect(findings).toEqual([]);
+      expect(
+        core.classifyImportRuntime({
+          checkerName: 'tsc',
+          importRecord: record,
+          project,
+          resolutionMode: 'checker-only',
+        }),
+      ).toMatchObject({
+        classification: 'ordinary-module',
+        runtime: {
+          kind: 'unsupported',
+        },
+      });
+    } finally {
+      core.dispose();
+      await fixture.cleanup();
+    }
+  },
+);
+
 it('passes complete package-import identities to the physical Node resolver', async () => {
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-resource-identity-')),

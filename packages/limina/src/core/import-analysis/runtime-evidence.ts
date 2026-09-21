@@ -5,6 +5,8 @@ import {
 } from '#checkers';
 import { resolveExistingFilePath } from '#utils/module-resolution';
 import {
+  getPlainSpecifierExtension,
+  hasModuleSpecifierQueryOrFragment,
   isBarePackageSpecifier,
   isPackageImportSpecifier,
 } from '#utils/module-specifier';
@@ -18,27 +20,16 @@ import type {
   RuntimeEvidence,
 } from './evidence';
 import { isKnownFrameworkVirtualSpecifier } from './virtual-modules';
+
+// The complete specifier is the runtime identity. Limina does not split a
+// query or fragment off a specifier: a module host owns that meaning.
 interface RuntimeClassificationContext {
-  baseSpecifier: string;
   checkedPath: string | undefined;
   compilerOptions: ts.CompilerOptions;
   extensions: readonly string[];
-  hasQuery: boolean;
   oxcResolvedFilePath: string | null;
   runtimeFilePath: string | null;
-}
-function splitSpecifierQuery(specifier: string): {
-  baseSpecifier: string;
-  hasQuery: boolean;
-} {
-  const queryIndex = specifier.indexOf('?');
-
-  return queryIndex === -1
-    ? { baseSpecifier: specifier, hasQuery: false }
-    : {
-        baseSpecifier: specifier.slice(0, queryIndex),
-        hasQuery: true,
-      };
+  specifier: string;
 }
 
 function isJsonModulePath(filePath: string): boolean {
@@ -80,15 +71,15 @@ function isRelativeOrAbsoluteSpecifier(specifier: string): boolean {
 }
 
 function resolveRelativeRuntimeFile(options: {
-  baseSpecifier: string;
   containingFile: string;
+  specifier: string;
 }): { checkedPath?: string; filePath?: string } {
-  if (!isRelativeOrAbsoluteSpecifier(options.baseSpecifier)) {
+  if (!isRelativeOrAbsoluteSpecifier(options.specifier)) {
     return {};
   }
 
   const checkedPath = normalizeAbsolutePath(
-    path.resolve(path.dirname(options.containingFile), options.baseSpecifier),
+    path.resolve(path.dirname(options.containingFile), options.specifier),
   );
   const filePath = resolveExistingFilePath(checkedPath);
 
@@ -115,7 +106,7 @@ function getExtensionTarget(specifier: string): string {
 }
 
 function isExplicitPathExtension(specifier: string): boolean {
-  return path.extname(getExtensionTarget(specifier)).length > 0;
+  return getPlainSpecifierExtension(getExtensionTarget(specifier)) !== null;
 }
 function classifyCheckerSourceResolution(
   resolution: ResolvedCheckerModuleName | null,
@@ -151,6 +142,22 @@ function classifyUnsupportedVirtualSpecifier(
   };
 }
 
+function classifyUninterpretedSpecifier(
+  specifier: string,
+): ImportRuntimeResolutionEvidence | undefined {
+  if (!hasModuleSpecifierQueryOrFragment(specifier)) return undefined;
+  // Even resolving the complete string as a path would assign host meaning:
+  // path.resolve('./file?x/../style.css') silently recovers './style.css'.
+  return {
+    classification: 'ordinary-module',
+    runtime: {
+      kind: 'unsupported',
+      reason:
+        'Runtime interpretation of query or fragment specifiers requires an explicit host authority that Limina does not model.',
+    },
+  };
+}
+
 function firstEvidence(
   values: readonly (ImportRuntimeResolutionEvidence | undefined)[],
 ): ImportRuntimeResolutionEvidence | undefined {
@@ -159,10 +166,9 @@ function firstEvidence(
 function createRuntimeContext(
   options: ClassifyImportRuntimeEvidenceOptions,
 ): RuntimeClassificationContext {
-  const { baseSpecifier, hasQuery } = splitSpecifierQuery(options.specifier);
   const relativeRuntime = resolveRelativeRuntimeFile({
-    baseSpecifier,
     containingFile: options.containingFile,
+    specifier: options.specifier,
   });
   const runtimeFilePath =
     options.oxcResolvedFilePath === null
@@ -170,13 +176,12 @@ function createRuntimeContext(
       : options.oxcResolvedFilePath;
 
   return {
-    baseSpecifier,
     checkedPath: relativeRuntime.checkedPath,
     compilerOptions: options.compilerOptions,
     extensions: options.extensions,
-    hasQuery,
     oxcResolvedFilePath: options.oxcResolvedFilePath,
     runtimeFilePath,
+    specifier: options.specifier,
   };
 }
 
@@ -194,16 +199,10 @@ function isExplicitNonSourceExtension(
   context: RuntimeClassificationContext,
 ): boolean {
   return [
-    isExplicitPathExtension(context.baseSpecifier),
-    !isOrdinaryTypeScriptModulePath(
-      context.baseSpecifier,
-      context.compilerOptions,
-    ),
-    !hasSupportedCheckerSourceExtension(
-      context.baseSpecifier,
-      context.extensions,
-    ),
-    !isKnownCheckerSourcePath(context.baseSpecifier),
+    isExplicitPathExtension(context.specifier),
+    !isOrdinaryTypeScriptModulePath(context.specifier, context.compilerOptions),
+    !hasSupportedCheckerSourceExtension(context.specifier, context.extensions),
+    !isKnownCheckerSourcePath(context.specifier),
   ].every(Boolean);
 }
 
@@ -231,7 +230,7 @@ function classifyRuntimeModule(
 ): ImportModuleClassification {
   const runtimeCandidatePath =
     context.runtimeFilePath === null
-      ? context.baseSpecifier
+      ? context.specifier
       : context.runtimeFilePath;
   const runtimeIsOrdinary = isOrdinaryTypeScriptModulePath(
     runtimeCandidatePath,
@@ -242,7 +241,6 @@ function classifyRuntimeModule(
     context.extensions,
   );
   const resource = [
-    context.hasQuery,
     isResolvedResource(context, runtimeIsOrdinary, runtimeIsCheckerSource),
     isMissingResource(context, isExplicitNonSourceExtension(context)),
   ].some(Boolean);
@@ -255,27 +253,16 @@ function resolveRuntimeAuthority(
   return oxcResolvedFilePath === null ? 'filesystem' : 'oxc';
 }
 
-function createFileRuntimeEvidence(
-  context: RuntimeClassificationContext,
-  classification: ImportModuleClassification,
-): RuntimeEvidence {
-  return {
-    authority: resolveRuntimeAuthority(context.oxcResolvedFilePath),
-    ...(classification === 'resource' && context.hasQuery
-      ? { baseOnly: true }
-      : {}),
-    filePath: context.runtimeFilePath!,
-    kind: 'file',
-  };
-}
-
 function createRuntimeEvidence(
   context: RuntimeClassificationContext,
-  classification: ImportModuleClassification,
 ): RuntimeEvidence {
   return context.runtimeFilePath === null
     ? { checkedPath: context.checkedPath, kind: 'missing' }
-    : createFileRuntimeEvidence(context, classification);
+    : {
+        authority: resolveRuntimeAuthority(context.oxcResolvedFilePath),
+        filePath: context.runtimeFilePath,
+        kind: 'file',
+      };
 }
 
 export function classifyImportRuntimeEvidence(
@@ -283,6 +270,7 @@ export function classifyImportRuntimeEvidence(
 ): ImportRuntimeResolutionEvidence {
   const earlyEvidence = firstEvidence([
     classifyCheckerSourceResolution(options.typeScriptResolution),
+    classifyUninterpretedSpecifier(options.specifier),
     classifyUnsupportedVirtualSpecifier(options.specifier),
   ]);
 
@@ -291,10 +279,9 @@ export function classifyImportRuntimeEvidence(
   }
 
   const context = createRuntimeContext(options);
-  const classification = classifyRuntimeModule(context);
 
   return {
-    classification,
-    runtime: createRuntimeEvidence(context, classification),
+    classification: classifyRuntimeModule(context),
+    runtime: createRuntimeEvidence(context),
   };
 }

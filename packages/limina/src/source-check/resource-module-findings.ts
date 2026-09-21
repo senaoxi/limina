@@ -6,7 +6,6 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
-import { isPackageImportSpecifier } from '#utils/module-specifier';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -220,12 +219,6 @@ function addExistingResourceProblem(
   });
 }
 
-function stripResourceQuery(specifier: string): string {
-  // Node package imports may use ? and # as part of an exact mapping key.
-  if (isPackageImportSpecifier(specifier)) return specifier;
-  return specifier.split(/[?#]/u)[0]!;
-}
-
 function isLocalResourceSpecifier(specifier: string): boolean {
   return specifier.startsWith('.') || path.isAbsolute(specifier);
 }
@@ -269,7 +262,9 @@ function resolvePackageFilesystemResource(options: {
 function resolveFilesystemResource(
   importRecord: ImportRecord,
 ): RuntimeEvidence {
-  const specifier = stripResourceQuery(importRecord.specifier);
+  // The specifier is checked exactly as written; source check does not
+  // reinterpret a query or fragment into another physical path.
+  const specifier = importRecord.specifier;
   const options = { importRecord, specifier };
   return isLocalResourceSpecifier(specifier)
     ? resolveLocalFilesystemResource(options)

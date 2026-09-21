@@ -92,6 +92,77 @@ function evidenceCore(
 
 describe('bounded native provider evidence', () => {
   it.each([
+    {
+      specifier: 'mapped?raw',
+      target: 'foo.ts',
+      ambient: false,
+      admitted: true,
+      type: 'checker-source',
+      relation: 'source-semantic',
+    },
+    {
+      specifier: 'mapped#fragment',
+      target: 'foo.ts',
+      ambient: false,
+      admitted: false,
+      type: 'missing',
+      relation: 'source-semantic',
+    },
+    {
+      specifier: 'mapped?raw',
+      target: 'foo.ts',
+      ambient: true,
+      admitted: false,
+      type: 'ambient',
+      relation: 'compiler-membership',
+    },
+    {
+      specifier: 'mapped?raw',
+      target: 'foo.d.ts',
+      ambient: false,
+      admitted: true,
+      type: 'concrete-declaration',
+      relation: null,
+    },
+  ])(
+    'preserves the checker result for an exact paths key: %j',
+    async (testCase) => {
+      const { specifier, target, ambient, admitted } = testCase;
+      const fixture = await createSemanticRepairFixture({
+        'tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            ...compilerOptions,
+            paths: { [specifier]: [`./${target}`] },
+          },
+          files: [
+            'main.ts',
+            ...(admitted ? [target] : []),
+            ...(ambient ? ['env.d.ts'] : []),
+          ],
+        }),
+        'main.ts': `import { value } from '${specifier}'; export const used = value;`,
+        [target]: target.endsWith('.d.ts')
+          ? 'export declare const value: 42;'
+          : 'export const value = 42;',
+        'env.d.ts': `declare module '${specifier}' { export const value: 42; }`,
+      });
+      cleanups.push(fixture.cleanup);
+      const { core, context, record } = evidenceCore(fixture, target);
+      try {
+        const fact = context.getDependencyFact(record);
+        expect(fact.resolution.target?.resolvedFileName).toBe(
+          fixture.path(target),
+        );
+        expect(fact.typeEvidence.kind).toBe(testCase.type);
+        expect(fact.referenceRequirement?.kind ?? null).toBe(testCase.relation);
+        expect(fact.admission).toBe(admitted ? 'admitted' : 'excluded');
+      } finally {
+        core.dispose();
+      }
+    },
+  );
+
+  it.each([
     { admitted: false, declaration: false, expected: 'missing' },
     { admitted: true, declaration: false, expected: 'checker-source' },
     { admitted: true, declaration: false, script: true, expected: 'missing' },
@@ -262,6 +333,53 @@ describe('bounded native provider evidence', () => {
             'tsc',
           );
         else expect(resolve).not.toHaveBeenCalled();
+      } finally {
+        core.dispose();
+      }
+    },
+  );
+
+  it.each([
+    { ambient: true, suffix: '?raw' },
+    { ambient: false, suffix: '?raw' },
+    { ambient: false, suffix: '#fragment' },
+  ])(
+    'keeps Program membership of foo.ts separate from a ./foo.ts$suffix occurrence (ambient=$ambient)',
+    async ({ ambient, suffix }) => {
+      const fixture = await createSemanticRepairFixture({
+        'tsconfig.json': JSON.stringify({
+          compilerOptions,
+          files: ['main.ts', 'foo.ts', ...(ambient ? ['env.d.ts'] : [])],
+        }),
+        'main.ts': `import raw from './foo.ts${suffix}'; export const used = raw;`,
+        'foo.ts': 'export const value = 1;',
+        'env.d.ts':
+          'declare module "*?raw" { const value: string; export default value; }',
+      });
+      cleanups.push(fixture.cleanup);
+      const { core, context, record } = evidenceCore(fixture, 'foo.ts');
+      try {
+        const fact = context.getDependencyFact(record);
+        // The complete specifier reached TypeScript and did not resolve.
+        expect(fact.resolution.target).toBeNull();
+        expect(fact.admission).toBe('unresolved');
+        expect(fact.referenceRequirement).toBeNull();
+        expect(fact.typeEvidence).toEqual(
+          ambient
+            ? {
+                declarationFilePaths: [fixture.path('env.d.ts')],
+                kind: 'ambient',
+                modulePattern: '*?raw',
+              }
+            : { kind: 'missing' },
+        );
+        // foo.ts is a Program member because it is a root, not because the
+        // queried occurrence imported it.
+        const member = context.getSourceFile(fixture.path('foo.ts'));
+        expect(member?.fileName).toBe(fixture.path('foo.ts'));
+        const declarations =
+          context.getSymbolAtImportRecord(record)?.declarations ?? [];
+        expect(declarations).not.toContain(member);
       } finally {
         core.dispose();
       }

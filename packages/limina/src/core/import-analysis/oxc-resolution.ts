@@ -1,3 +1,4 @@
+import { hasModuleSpecifierQueryOrFragment } from '#utils/module-specifier';
 import { normalizeAbsolutePath } from '#utils/path';
 import { ResolverFactory } from 'oxc-resolver';
 import type ts from 'typescript';
@@ -113,6 +114,10 @@ export function resolveModuleNameWithOxcCaches(
     specifier: string;
   },
 ): string | null {
+  // Oxc applies bundler query semantics and reports a path with the query or
+  // fragment re-attached. Limina has no host authority for that syntax, so a
+  // resolver other than the checker is never asked to interpret it.
+  if (hasModuleSpecifierQueryOrFragment(options.specifier)) return null;
   const configPath = getRequiredOxcConfigPath({
     containingFile: options.containingFile,
     context: options.context,

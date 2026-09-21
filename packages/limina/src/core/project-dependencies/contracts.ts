@@ -70,10 +70,15 @@ export type ProjectDependencyObservation =
   | {
       importRecord: ImportRecord;
       kind: 'resource';
-      typeEvidence?: Exclude<
-        TypeEvidence,
-        { kind: 'missing' | 'unsupported-checker' }
-      >;
+      typeEvidence?: Extract<TypeEvidence, { kind: 'checker-source' }>;
+    }
+  | {
+      // The checker provides types through an ambient module declaration and
+      // requires no compiler relation. This proves nothing about a runtime
+      // resource; the complete specifier was never reinterpreted as a path.
+      importRecord: ImportRecord;
+      kind: 'semantic-only';
+      typeEvidence: Extract<TypeEvidence, { kind: 'ambient' }>;
     }
   | {
       generatedFilePath: string;

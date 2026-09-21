@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { cloneTypeEvidence } from '../framework-semantic/prepared-dependency';
 import type { ImportRecord } from '../import-analysis/records';
+import type { TypeEvidence } from '../type-evidence/cache';
 import type {
   ProjectDependencyCaches,
   ProjectDependencyCollection,
@@ -161,9 +162,21 @@ function cloneResourceObservation(
     typeEvidence:
       observation.typeEvidence === undefined
         ? undefined
-        : (cloneTypeEvidence(observation.typeEvidence) as NonNullable<
-            typeof observation.typeEvidence
-          >),
+        : { ...observation.typeEvidence },
+  };
+}
+
+function cloneSemanticOnlyObservation(
+  observation: Extract<ProjectDependencyObservation, { kind: 'semantic-only' }>,
+  importRecord: ImportRecord,
+): ProjectDependencyObservation {
+  return {
+    importRecord,
+    kind: 'semantic-only',
+    typeEvidence: cloneTypeEvidence(observation.typeEvidence) as Extract<
+      TypeEvidence,
+      { kind: 'ambient' }
+    >,
   };
 }
 
@@ -174,10 +187,11 @@ function cloneMappedObservation(
   >,
 ): ProjectDependencyObservation {
   const importRecord = structuredClone(observation.importRecord);
-  if (observation.kind === 'missing') {
+  if (observation.kind === 'missing')
     return cloneMissingObservation(observation, importRecord);
-  }
-  return cloneResourceObservation(observation, importRecord);
+  if (observation.kind === 'resource')
+    return cloneResourceObservation(observation, importRecord);
+  return cloneSemanticOnlyObservation(observation, importRecord);
 }
 
 export function cloneSourceEvidence(evidence: SourceEvidence): SourceEvidence {

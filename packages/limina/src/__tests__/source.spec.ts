@@ -502,15 +502,25 @@ describe('runSourceCheck package authority', () => {
     },
   );
 
-  it.each(['?raw', '#fragment'])(
-    'keeps relative resource filesystem-base checks for %s',
-    async (suffix) => {
+  it.each([
+    { ambient: true, suffix: '?raw' },
+    { ambient: false, suffix: '?raw' },
+    { ambient: true, suffix: '#fragment' },
+    { ambient: false, suffix: '#fragment' },
+  ])(
+    'never derives a resource finding from a query or fragment (suffix=$suffix, ambient=$ambient)',
+    async ({ ambient, suffix }) => {
       const fixture = await createFixture(
         {
           ...createPackageFixture({
             source: `import logo from './logo.svg${suffix}';\nexport { logo };\n`,
           }),
-          'app/src/assets.d.ts': `declare module '*${suffix}' { const value: string; export default value; }\n`,
+          ...(ambient
+            ? {
+                'app/src/assets.d.ts': `declare module '*${suffix}' { const value: string; export default value; }\n`,
+              }
+            : {}),
+          // The base file exists, but Limina never strips the suffix to find it.
           'app/src/logo.svg': '<svg />\n',
         },
         { source: { knip: false } },
@@ -524,7 +534,11 @@ describe('runSourceCheck package authority', () => {
             sourceIssues,
           }),
         ).resolves.toBe(true);
-        expect(sourceIssues).toEqual([]);
+        expect(
+          sourceIssues.filter((issue) =>
+            issue.code.includes('RESOURCE_MODULE'),
+          ),
+        ).toEqual([]);
       } finally {
         await fixture.cleanup();
       }

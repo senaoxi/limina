@@ -80,6 +80,121 @@ function createCore(rootDir: string): TypeEvidenceCore {
 }
 
 describe('TypeScript resource type evidence', () => {
+  it.each([
+    {
+      ambient: true,
+      classification: 'ordinary-module',
+      runtime: 'unsupported',
+      specifier: './foo.ts?raw',
+      type: 'ambient',
+    },
+    {
+      ambient: false,
+      classification: 'ordinary-module',
+      runtime: 'unsupported',
+      specifier: './foo.ts?unknown',
+      type: 'missing',
+    },
+    {
+      ambient: false,
+      classification: 'ordinary-module',
+      runtime: 'unsupported',
+      specifier: './foo.ts#fragment',
+      type: 'missing',
+    },
+    {
+      ambient: false,
+      classification: 'ordinary-module',
+      runtime: 'missing',
+      specifier: './foo.js',
+      type: 'checker-source',
+    },
+    ...['pkg?raw/style.css', '@scope/pkg#part/style.css'].map((specifier) => ({
+      ambient: false,
+      classification: 'ordinary-module',
+      runtime: 'unsupported',
+      specifier,
+      type: 'missing',
+    })),
+    {
+      ambient: true,
+      classification: 'resource',
+      runtime: 'file',
+      specifier: './style.css',
+      type: 'ambient',
+    },
+  ] as const)(
+    'hands the complete specifier $specifier to the checker (ambient=$ambient)',
+    async ({ ambient, classification, runtime, specifier, type }) => {
+      const fixture = await createFixture({
+        ...(ambient
+          ? {
+              'src/assets.d.ts': [
+                "declare module '*?raw' { const value: string; export default value; }",
+                "declare module '*.css' { const value: string; export default value; }",
+                '',
+              ].join('\n'),
+            }
+          : {}),
+        'src/foo.ts': 'export const value = 1;\n',
+        'src/index.ts': `import value from '${specifier}';\nvoid value;\n`,
+        'src/style.css': '.root {}\n',
+      });
+      const indexPath = path.join(fixture.rootDir, 'src/index.ts');
+      const fooPath = path.join(fixture.rootDir, 'src/foo.ts');
+      const core = createCore(fixture.rootDir);
+      const project = createProject({
+        fileNames: [
+          indexPath,
+          fooPath,
+          ...(ambient ? [path.join(fixture.rootDir, 'src/assets.d.ts')] : []),
+        ],
+        rootDir: fixture.rootDir,
+      });
+
+      try {
+        const [record] = createImportAnalysisContext({
+          projectRootDir: fixture.rootDir,
+        }).collectImportsFromFile(indexPath, fixture.rootDir);
+        const fact = core
+          .getTypeScriptSemanticContext({ checkerName: 'tsc', project })
+          .getDependencyFact(record!);
+        const evidence = core.resolveImportEvidence({
+          checkerName: 'tsc',
+          importRecord: record!,
+          project,
+          resolutionMode: 'checker-only',
+        });
+
+        expect(evidence.type.kind).toBe(type);
+        expect(fact.typeEvidence).toEqual(evidence.type);
+        expect(evidence.classification).toBe(classification);
+        expect(evidence.runtime.kind).toBe(runtime);
+        if (type === 'checker-source') {
+          expect(fact.resolution.target?.resolvedFileName).toBe(
+            toPortablePath(fooPath),
+          );
+          expect(fact.referenceRequirement).toEqual({
+            kind: 'source-semantic',
+            targetFileName: toPortablePath(fooPath),
+          });
+        } else {
+          // Neither TypeScript nor Limina turns the specifier into foo.ts.
+          expect(fact.resolution.target).toBeNull();
+          expect(fact.referenceRequirement).toBeNull();
+        }
+        if (evidence.runtime.kind === 'missing') {
+          expect(evidence.runtime.checkedPath).toBe(
+            toPortablePath(path.join(fixture.rootDir, 'src', specifier)),
+          );
+        }
+      } finally {
+        core.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('classifies a resolved TypeScript implementation as checker source', async () => {
     const fixture = await createFixture({
       'src/index.ts': "import { value } from './provider';\nvoid value;\n",

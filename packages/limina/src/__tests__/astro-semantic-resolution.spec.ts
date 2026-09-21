@@ -618,9 +618,9 @@ describe('Astro bounded semantic resolution', () => {
     );
   });
 
-  it('uses pre-semantic eligibility and never materializes resource-only input', async () => {
+  it('uses pre-semantic eligibility and never materializes query-free resource input', async () => {
     const harness = await createHarness();
-    const source = "---\nimport './theme.css?inline';\n---\n";
+    const source = "---\nimport './theme.css';\n---\n";
     const sourceFile = harness.fixture.path('src', 'entry.astro');
     await writeText(sourceFile, source);
     let snapshotReads = 0;
@@ -635,7 +635,7 @@ describe('Astro bounded semantic resolution', () => {
       packageRootDir: harness.fixture.rootDir,
     });
     const evidence = harness.context.resolveImportEvidence(
-      createRecord(sourceFile, source, './theme.css?inline'),
+      createRecord(sourceFile, source, './theme.css'),
       sourceFile,
       {},
       {
@@ -656,6 +656,64 @@ describe('Astro bounded semantic resolution', () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    { resolved: false, specifier: './target?x' },
+    { resolved: true, specifier: './target?x' },
+    { resolved: false, specifier: './theme.css?inline' },
+    { resolved: false, specifier: './target.ts#fragment' },
+  ])(
+    'hands the complete specifier $specifier to the Astro checker (resolved=$resolved)',
+    async ({ resolved, specifier }) => {
+      const harness = await createHarness();
+      const source = `---\nimport '${specifier}';\n---\n`;
+      const sourceFile = harness.fixture.path('src', 'entry.astro');
+      const targetFile = harness.fixture.path('src', 'target.ts');
+      await Promise.all([
+        writeText(sourceFile, source),
+        writeText(targetFile, 'export {};\n'),
+      ]);
+      if (resolved)
+        harness.state.resolvedBySpecifier.set(specifier, targetFile);
+      const compilerOptions = {
+        moduleResolution: ts.ModuleResolutionKind.Bundler,
+      };
+      const project = createTestAstroSemanticProject({
+        analysisGeneration: 2,
+        compilerOptions,
+        configPath: harness.fixture.path('tsconfig.json'),
+        fileNames: [sourceFile, targetFile],
+        packageRootDir: harness.fixture.rootDir,
+      });
+      const evidence = harness.context.resolveImportEvidence(
+        createRecord(sourceFile, source, specifier),
+        sourceFile,
+        compilerOptions,
+        {
+          astroSemanticProject: project,
+          checkerPresets: ['tsc'],
+          configPath: project.seed.configPath,
+          extensions: ['.astro'],
+          resolverConfigPath: project.seed.configPath,
+        },
+      );
+      // The query is not a skip authority: the Astro host was actually asked.
+      expect(evidence.eligibility).toEqual({ kind: 'eligible' });
+      expect(harness.state.hostResolution).toBe(1);
+      expect(evidence.semanticFailure).toBeUndefined();
+      expect(evidence.semanticEvidence?.framework).toBe('astro');
+      expect(evidence.semanticEvidence?.semanticSpecifier).toBe(specifier);
+      // The checker's actual result is accepted either way; Limina neither
+      // strips the query to find target.ts nor invents a resource.
+      expect(evidence.typeScriptResolution?.resolvedFileName ?? null).toBe(
+        resolved ? targetFile : null,
+      );
+      expect(evidence.runtimeEvidence.classification).not.toBe('resource');
+      expect(
+        selectCanonicalImportFilePath({ evidence, includeResource: true }),
+      ).toBe(resolved ? targetFile : null);
+    },
+  );
 
   it('ignores synthetic imports, caches by full locator, and creates no LS or Program', async () => {
     const harness = await createHarness();
