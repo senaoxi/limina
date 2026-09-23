@@ -157,45 +157,39 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 
 Limina 并不是禁止跨包协作，而是要求跨包协作走能被包清单和公开入口解释的路径。
 
-## 公开导出要在被使用时说得通
+## 先预检公开导出，再检查导入关系
 
-在单体仓库里，`workspace:*` 只说明依赖来自工作区，并不说明消费者会读源码还是读产物。真正决定入口的是被依赖包的 `package.json#exports`。
+在单体仓库里，`workspace:*` 标识工作区依赖。消费者读取源码还是构建产物，由依赖包的 `package.json#exports` 决定。
 
-```json [packages/core/package.json]
-{
-  "name": "@acme/core",
-  "exports": {
-    ".": "./src/index.ts",
-    "./runtime": {
-      "types": "./dist/runtime.d.ts",
-      "import": "./dist/runtime.js"
-    }
-  }
-}
+`limina graph check` 会先建立工作区 exports 索引，并按活动检查器配置预检公开入口的解析情况。即使没有受治理源码导入某个入口，无法解析的导出也可能被拒绝。预检本身不建立源码依赖、类型提供者或生成的项目引用。
+
+例如，假设 `packages/demo/tsconfig.json` 已被选中，它唯一的源码是：
+
+```ts [packages/demo/src/index.ts]
+export const value = 1;
 ```
 
-Limina 会在相关检查中区分 `TypeScript` 类型解析结果和 `Oxc` 运行时解析结果。对被源码静态导入命中的工作区入口来说，类型侧不能只落到运行时 `JavaScript`；运行时侧也不应该完全不可解析。纯类型入口可以解析到声明文件，源码入口可以解析到当前检查器支持的源码文件。
-
-::: warning 边界约束
-
-Limina 的检查入口不是对工作区包的 `exports` 做预扫描，而是从源码里收集到的导入记录。判断的起点是被源码导入抽取命中的模块说明符。换句话说，只有源码里出现了某条导入，并且这条导入被 `Oxc parser` 收集到，Limina 才会继续把这个说明符交给 `TypeScript` 解析器，并对解析后的目标模块做类型侧、运行时侧和图关系判断。
-
-例如，一个工作区包可以只给运行时插件使用某个入口：
+包清单声明了一个尚未构建的运行时入口：
 
 ```json [packages/demo/package.json]
 {
   "name": "demo",
+  "type": "module",
   "exports": {
     "./runtime": "./dist/runtime.js"
   }
 }
 ```
 
-如果源码中没有静态导入 `demo/runtime`，而这个入口只会被插件、运行时注册表或外部系统注入使用，它就不会仅因为出现在 `exports` 中而进入类型入口检查流程。这类入口可以被理解为运行时专用入口。只有当治理范围内的源码静态导入了 `demo/runtime`，它才会进入后续的 `TypeScript` 类型解析和图检查流程。
+```sh
+pnpm exec limina graph check --verbose
+```
 
-这条约束的意思不是要求每个导出都同时暴露源码和产物，而是要求“被 Limina 观察到并纳入治理的导入关系”能够在当前仓库的类型解析和运行时解析中解释清楚。
+当 `dist/runtime.js` 和对应的可解析类型入口都不存在时，这条命令失败，并输出 `workspace exports preflight` 诊断。这个结果不需要源码导入 `demo/runtime`。应创建预期的公开入口，或修正、移除过时的清单入口。缺失的纯类型导出也会被检查。
 
-:::
+当没有受治理源码导入时，现存的纯运行时 JavaScript 入口可以在没有声明文件的情况下通过预检。一旦收集到源码导入该入口的 occurrence，图检查会另外要求该入口在导入方检查器下具有稳定类型入口或 checker-source 入口。TypeScript 或检查器的语义适配器提供类型解析，Oxc 提供物理运行时解析。仅命中运行时文件不能提供类型证据或声明构建归属。
+
+两类检查的对象不同：预检检查已声明的公开表面；occurrence 分析检查已观察到的源码关系、包规则与引用需求。纯类型导出可以解析到声明，源码导出可以解析到检查器支持的源码。导出不必同时暴露源码与产物，预检也不会发现仅由运行时插件或注册表注入的连接。
 
 ## references 来自声明提供者，不是来自导入文本
 

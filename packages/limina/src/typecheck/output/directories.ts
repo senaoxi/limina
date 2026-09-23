@@ -104,15 +104,14 @@ async function ensureParentDirectory(options: {
 }
 
 export async function ensureDeclarationParentDirectories(options: {
+  onCreated: (directory: OwnedDeclarationDirectory) => void;
   prepared: PreparedDeclarationEntry;
   transactionToken: string;
-}): Promise<OwnedDeclarationDirectory[]> {
-  const owned: OwnedDeclarationDirectory[] = [];
+}): Promise<void> {
   for (const directory of getParentDirectories(options.prepared)) {
     const created = await ensureParentDirectory({ ...options, directory });
-    if (created !== undefined) owned.push(created);
+    if (created !== undefined) options.onCreated(created);
   }
-  return owned;
 }
 
 async function readOwnedDirectoryStats(

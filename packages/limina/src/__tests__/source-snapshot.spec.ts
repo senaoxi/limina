@@ -455,7 +455,25 @@ describe('check issue snapshots', () => {
     },
   );
 
-  it.each([1, 2, 3, 4, 5, 6])(
+  it('names the supported version when the writer rejects an old wire model', async () => {
+    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    try {
+      const snapshot = {
+        ...createCheckSnapshot([]),
+        version: CHECK_ISSUE_SNAPSHOT_VERSION - 1,
+      } as unknown as CheckIssueSnapshot;
+      await expect(
+        writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), snapshot),
+      ).rejects.toThrow(
+        `Invalid v${CHECK_ISSUE_SNAPSHOT_VERSION} check snapshot wire model.`,
+      );
+      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
+  it.each([1, 2, 3, 4, 5, 6, 7, CHECK_ISSUE_SNAPSHOT_VERSION + 1])(
     'returns null for check snapshot version %i',
     async (version) => {
       const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));

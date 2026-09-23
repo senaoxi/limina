@@ -11,6 +11,7 @@ import {
   createGeneratedSolutionBuildConfig,
 } from './generated-configs';
 import type { prepareGeneratedKnipPackageConfigs } from './generated-knip';
+import { assertDistinctGeneratedProjectPaths } from './generated/project-paths';
 import type { GeneratedGraphPreparationState } from './prepare-state';
 
 type GeneratedKnipPreparation = ReturnType<
@@ -148,6 +149,10 @@ export async function writeGeneratedGraphConfigs(options: {
   generatedKnip: GeneratedKnipPreparation;
   state: GeneratedGraphPreparationState;
 }): Promise<void> {
+  assertDistinctGeneratedProjectPaths({
+    rootDir: options.config.rootDir,
+    projects: [...options.state.projectsByChecker.values()].flat(),
+  });
   await Promise.all(
     options.checkers.map((checker) =>
       writeCheckerArtifacts({

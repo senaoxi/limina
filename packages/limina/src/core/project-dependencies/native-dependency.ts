@@ -41,6 +41,7 @@ function collectAmbientFact(options: {
   options.collection.observations.push({
     importRecord: options.importRecord,
     kind: 'semantic-only',
+    resolutionMode: String(fact.resolution.resolutionMode),
     typeEvidence: fact.typeEvidence,
   });
   return true;

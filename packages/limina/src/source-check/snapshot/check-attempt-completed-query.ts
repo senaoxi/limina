@@ -13,6 +13,7 @@ import {
 } from './check-attempt-metadata';
 import type { CheckAttemptQueryResult } from './check-attempt-query-types';
 import { readCheckIssueSnapshot } from './check-io';
+import { CHECK_ISSUE_SNAPSHOT_VERSION } from './types';
 
 export function inconsistentCheckAttemptResult(
   reason: string,
@@ -79,7 +80,7 @@ async function readValidatedSnapshot(
   const snapshot = await readCheckIssueSnapshot(rootDir);
   if (snapshot === null) {
     return inconsistentCheckAttemptResult(
-      'last-run.json is not a valid v7 snapshot',
+      `last-run.json is not a valid v${CHECK_ISSUE_SNAPSHOT_VERSION} snapshot`,
     );
   }
   if (snapshot.createdAt !== completed.snapshotCreatedAt) {

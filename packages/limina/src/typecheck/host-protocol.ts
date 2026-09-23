@@ -1,5 +1,8 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { terminateChildProcessTree } from './process-tree';
+import {
+  terminateChildProcessTree,
+  waitForChildProcessTreeTermination,
+} from './process-tree';
 
 export interface CheckerHostSpawnSpec {
   args: string[];
@@ -135,12 +138,19 @@ export function spawnAndMeasure(
     });
 
     child.on('close', (code) => {
-      finalize(
-        cancelledMeasurement ?? {
-          durationMs: performance.now() - startedAt,
-          status: code ?? 1,
-        },
-      );
+      const measurement = cancelledMeasurement ?? {
+        durationMs: performance.now() - startedAt,
+        status: code ?? 1,
+      };
+      // Closing the leader does not end an owned POSIX process group.
+      terminateChildProcessTree(child);
+      waitForChildProcessTreeTermination(child).then((error) => {
+        finalize(
+          error === undefined
+            ? measurement
+            : { ...measurement, error, status: 1 },
+        );
+      });
     });
   });
 }

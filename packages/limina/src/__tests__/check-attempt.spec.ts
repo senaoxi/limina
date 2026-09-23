@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -187,6 +188,47 @@ describe('check attempt freshness', () => {
       await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
         snapshot: secondSnapshot,
         state: 'completed',
+      });
+    });
+  });
+
+  it('names the supported schema when a coherent completed snapshot has an old version', async () => {
+    await withTempRoot(async (rootDir) => {
+      const namespace = createLiminaArtifactNamespace({
+        generation: 0,
+        rootDir,
+      });
+      const attempt = await publishCheckAttempt({
+        command: 'limina check',
+        namespace,
+      });
+      const snapshot = createSnapshot('version');
+      await completeCheckAttempt({
+        attempt,
+        namespace,
+        snapshot,
+        sourceSnapshotPersisted: false,
+        writeSnapshot: writeCheckIssueSnapshotOnly,
+      });
+      const paths = getCheckAttemptPaths(rootDir);
+      const pointer = JSON.parse(
+        await readFile(paths.latestCompleted, 'utf8'),
+      ) as Record<string, unknown>;
+      const bytes = JSON.stringify({
+        ...snapshot,
+        version: CHECK_ISSUE_SNAPSHOT_VERSION - 1,
+      });
+      await writeFile(paths.lastRun, bytes);
+      await writeJson(paths.latestCompleted, {
+        ...pointer,
+        snapshotHash: createHash('sha256').update(bytes).digest('hex'),
+      });
+      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+        state: 'completed-inconsistent',
+        snapshot: null,
+        message: expect.stringContaining(
+          `not a valid v${CHECK_ISSUE_SNAPSHOT_VERSION} snapshot`,
+        ),
       });
     });
   });

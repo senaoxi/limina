@@ -17,8 +17,12 @@ import {
   createUnsupportedVueToolchainCompatibilityError,
   resolveVueSemanticAdapter,
 } from '../checker/vue-semantic-toolchain';
+import { createImportAnalysisContext } from '../core/import-analysis/context';
+import { collectTypeScriptSourceTextImports } from '../core/import-analysis/typescript-imports';
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
 import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation';
+import { resolveVueSemanticImport } from '../core/vue-semantic/resolution';
+import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
 import { runGraphExportImpl } from '../graph-check/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
@@ -107,6 +111,227 @@ function parseIdentity(options: {
 }
 
 describe('Vue semantic architecture', () => {
+  it.each([
+    { label: 'active', exports: { '.': './src/Widget.vue' }, stable: true },
+    {
+      label: 'NodeNext import',
+      module: 'NodeNext',
+      exports: { '.': { import: './src/Widget.vue' } },
+      stable: true,
+    },
+    {
+      label: 'Node16 import',
+      module: 'Node16',
+      exports: { '.': { import: './src/Widget.vue' } },
+      stable: true,
+    },
+    {
+      label: 'NodeNext require',
+      module: 'NodeNext',
+      exports: { '.': { require: './src/Widget.vue' } },
+      stable: true,
+    },
+    {
+      label: 'mixed runtime branch',
+      module: 'NodeNext',
+      exports: {
+        '.': { import: './src/Widget.vue', require: './runtime.cjs' },
+      },
+      stable: true,
+    },
+    {
+      label: 'NodeNext blocked',
+      module: 'NodeNext',
+      exports: {
+        '.': {
+          types: null,
+          import: './src/Widget.vue',
+          require: './src/Widget.vue',
+        },
+      },
+      stable: false,
+    },
+    {
+      label: 'inactive',
+      exports: { '.': { never: './src/Widget.vue' } },
+      stable: false,
+    },
+    {
+      label: 'null',
+      exports: { '.': { types: null, default: './src/Widget.vue' } },
+      stable: false,
+    },
+  ])(
+    'uses the Vue host for export preflight ($label)',
+    async ({ exports, stable, module }) => {
+      const manifest = {
+        name: 'vue-export-fixture',
+        private: true,
+        type: 'module',
+        exports,
+      };
+      const fixture = await createFixture({
+        'package.json': JSON.stringify(manifest),
+        'src/Widget.vue': '<script setup lang="ts">const value = 1;</script>',
+        'runtime.cjs': 'module.exports = {};',
+        'tsconfig.json':
+          module === undefined
+            ? config()
+            : JSON.stringify({
+                compilerOptions: {
+                  module,
+                  moduleResolution: module,
+                  types: [],
+                },
+                include: ['src/**/*'],
+              }),
+      });
+      const importAnalysis = createImportAnalysisContext();
+      try {
+        const identity = parseIdentity({ rootDir: fixture.rootDir });
+        const configPath = fixture.path('tsconfig.json');
+        const index = await createWorkspaceExportsResolutionIndex({
+          config: {
+            config: {},
+            configPath: fixture.path('limina.config.mjs'),
+            rootDir: fixture.rootDir,
+          },
+          importAnalysis,
+          packages: [
+            { directory: fixture.rootDir, name: manifest.name, manifest },
+          ],
+          profiles: [
+            {
+              configPath,
+              resolverConfigPath: configPath,
+              options: identity.options,
+              checkerPresets: ['vue-tsc'],
+              extensions: ['.ts', '.vue'],
+              vueSemanticIdentity: identity,
+            },
+          ],
+        });
+        const result = index.get(configPath, manifest.name)!;
+        expect(result.hasTypeScriptStableEntry).toBe(stable);
+        expect(result.typeScriptResolvedFileName).toBe(
+          stable ? fixture.path('src/Widget.vue') : null,
+        );
+      } finally {
+        importAnalysis.dispose?.();
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
+    ['index.mts', 'commonjs', 'NodeNext'],
+    ['index.cts', 'module', 'NodeNext'],
+    ['index.ts', 'module', 'Node16'],
+    ['index.ts', 'commonjs', 'Node16'],
+    ['index.ts', 'module', 'ESNext'],
+  ])(
+    'matches the Vue compiler format lazily for %s (%s, %s)',
+    async (file, packageType, module) => {
+      const source =
+        'import { branch } from "dual"; export const load = () => import("dual");';
+      const fixture = await createFixture({
+        'package.json': JSON.stringify({
+          name: 'fixture',
+          private: true,
+          type: packageType,
+        }),
+        [`src/${file}`]: source,
+        'src/App.vue': '<script setup lang="ts">const value = 1;</script>',
+        'node_modules/dual/package.json': JSON.stringify({
+          name: 'dual',
+          type: 'module',
+          exports: {
+            '.': {
+              import: { types: './import.d.mts' },
+              require: { types: './require.d.cts' },
+            },
+          },
+        }),
+        'node_modules/dual/import.d.mts':
+          'export declare const branch: "import";',
+        'node_modules/dual/require.d.cts':
+          'export declare const branch: "require";',
+        'tsconfig.json': JSON.stringify({
+          compilerOptions: {
+            module,
+            moduleResolution: module === 'ESNext' ? 'Bundler' : module,
+            types: [],
+            target: 'ES2022',
+          },
+          include: ['src/**/*'],
+        }),
+      });
+      const metrics = createProfilingMetricsRecorder();
+      const manager = new VueSemanticContextManager(metrics);
+      try {
+        const identity = parseIdentity({ rootDir: fixture.rootDir });
+        const context = manager.acquire(identity);
+        const filePath = fixture.path('src', file!);
+        const fresh = context.getSemanticSourceFile(filePath)!;
+        const results = collectTypeScriptSourceTextImports({
+          filePath,
+          sourceText: source,
+        }).map((importRecord) =>
+          resolveVueSemanticImport({ identity, importRecord, manager }),
+        );
+        expect(
+          metrics
+            .snapshot()
+            .filter((metric) => metric.name === 'vue-program-create'),
+        ).toEqual([]);
+        const program = context.program;
+        const actual = program.getSourceFile(filePath)!;
+        expect(fresh.impliedNodeFormat).toBe(actual.impliedNodeFormat);
+        const oracle: { mode: string; target: string | undefined }[] = [];
+        const tsModule = context.tsModule;
+        const visit = (node: import('typescript').Node): void => {
+          if (tsModule.isStringLiteralLike(node) && node.text === 'dual') {
+            oracle.push({
+              mode: String(
+                tsModule.getModeForUsageLocation(
+                  actual,
+                  node,
+                  identity.options,
+                ),
+              ),
+              target: program
+                .getTypeChecker()
+                .getSymbolAtLocation(node)
+                ?.declarations?.[0]?.getSourceFile().fileName,
+            });
+          }
+          tsModule.forEachChild(node, visit);
+        };
+        visit(actual);
+        expect(oracle).toHaveLength(2);
+        expect(oracle.every((item) => item.target !== undefined)).toBe(true);
+        expect(
+          results.map((result) =>
+            result.kind === 'resolved'
+              ? {
+                  mode: result.resolutionMode,
+                  target: result.resolution?.resolvedFileName,
+                }
+              : result,
+          ),
+        ).toEqual(
+          oracle.map((item) => ({
+            ...item,
+            target: toPortablePath(item.target!),
+          })),
+        );
+      } finally {
+        manager.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
+
   async function createExportFixture() {
     const fixture = await createFixture({
       'pnpm-workspace.yaml': 'packages: []\n',

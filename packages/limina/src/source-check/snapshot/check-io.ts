@@ -64,7 +64,9 @@ export async function writeCheckIssueSnapshotOnly(
   atomicWriteOptions: AtomicWriteOptions = {},
 ): Promise<void> {
   if (!isCurrentCheckIssueSnapshotStructure(snapshot)) {
-    throw new Error('Invalid v7 check snapshot wire model.');
+    throw new Error(
+      `Invalid v${CHECK_ISSUE_SNAPSHOT_VERSION} check snapshot wire model.`,
+    );
   }
   assertSnapshotIssues(snapshot);
   assertSnapshotRun(snapshot);

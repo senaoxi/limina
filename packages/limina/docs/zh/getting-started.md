@@ -39,6 +39,8 @@ bun add -d limina@latest typescript
 
 :::
 
+原生 `tsc` checker 的版本校验和执行使用 Limina 自身解析到的同一套 TypeScript 安装。PATH 中更靠前的 `tsc` 或包目录中的 `.bin` 不会覆盖该编译器。
+
 ## 选择接入方式
 
 如果工作区还没有 Limina 配置，优先使用 `limina init`。它会写入采用 flat `checkers.auto` 结构的 `limina.config.mts`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina `agent skill`。

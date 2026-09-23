@@ -65,11 +65,13 @@ export type ProjectDependency = DirectSourceDependency | MappedSourceDependency;
 export type ProjectDependencyObservation =
   | {
       importRecord: ImportRecord;
+      resolutionMode: string;
       kind: 'missing';
       typeEvidence?: Extract<TypeEvidence, { kind: 'missing' }>;
     }
   | {
       importRecord: ImportRecord;
+      resolutionMode: string;
       kind: 'resource';
       typeEvidence?: Extract<TypeEvidence, { kind: 'checker-source' }>;
     }
@@ -78,6 +80,7 @@ export type ProjectDependencyObservation =
       // requires no compiler relation. This proves nothing about a runtime
       // resource; the complete specifier was never reinterpreted as a path.
       importRecord: ImportRecord;
+      resolutionMode: string;
       kind: 'semantic-only';
       typeEvidence: Extract<TypeEvidence, { kind: 'ambient' }>;
     }

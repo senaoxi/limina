@@ -35,13 +35,7 @@ function createDtsFileName(sourceFileName: string): string {
 }
 
 export function createSourceConfigScope(sourceConfigPath: string): string {
-  const fileName = path.basename(sourceConfigPath);
-
-  if (fileName === 'tsconfig.json') {
-    return 'tsconfig';
-  }
-
-  return fileName.replace(/^tsconfig\./u, '').replace(/\.json$/u, '');
+  return path.basename(sourceConfigPath);
 }
 
 function createOutputFileName(sourceFileName: string): string {

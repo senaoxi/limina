@@ -125,6 +125,8 @@ Project-level declaration build configs extend the corresponding source config a
 
 Declaration files are written under `.limina/dts/checkers/<checker>/...`, and build cache files are written under `.limina/tsbuildinfo/checkers/<checker>/...`. Generated declaration configs set both `outDir` and `declarationDir` to that same managed root, so an inherited source `declarationDir` cannot redirect the checker output. These paths are Limina internal outputs. Do not edit them by hand, and do not write them into user-maintained source configs.
 
+The generated declaration and cache scopes retain the complete source config filename, so sibling configurations cannot share a scope just because removing their prefixes would produce the same name. Upgrading this layout regenerates managed configurations and may cause one incremental cache miss. Cleanup removes only previously recorded owned paths; unrecorded files are retained.
+
 Generated `references` come from two kinds of facts: a source import resolves through `TypeScript` to a Limina-managed source provider, or a source config explicitly declares `liminaOptions.implicitRefs`. If an import resolves to a `.d.ts`-family declaration file, Limina treats it as declaration consumption, not a source project reference.
 
 ## User Artifact Build Config

@@ -12,6 +12,10 @@ Before unpacking or comparing a registry baseline tarball, Limina verifies it ag
 Release checks reject private outputs (`private: true`), missing `README.md` or `LICENSE.md`, source map files (`.map`), `JavaScript sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
 :::
 
+Dependency ranges use ordinary semver prerelease rules: `^1.0.0` does not accept `1.1.0-beta.1`, while `^1.1.0-beta.0` explicitly accepts that prerelease series. This applies to `dependencies`, `optionalDependencies` and `peerDependencies`; local workspace membership does not widen the packed consumer range.
+
+The source map directive check uses JavaScript parser context to inspect actual line and block comments, including comments around template interpolation and regular expressions. Directive-like text inside a string, template literal or regular expression does not count. JavaScript that cannot be parsed reliably fails the release check with the affected file and parser diagnostic.
+
 ::: warning Local dependency leaks
 Release checks reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from all dependency sections in both output and packed manifests.
 :::
@@ -56,6 +60,8 @@ If the integration is enabled but the package is not installed, `release check` 
 - **Default:** `'latest'`
 
 `contentHash.baselineTag` is the `npm dist-tag` used as the online baseline when comparing dependency package output. Pass a function to choose a different baseline per importer/dependency pair.
+
+Each importer → dependency edge evaluates its own baseline and ignore policy, including shared dependencies reached through several importers. Package visitation only limits recursive traversal; it does not reuse the first importer’s policy result for later edges.
 
 ## contentHash.builtinIgnore
 

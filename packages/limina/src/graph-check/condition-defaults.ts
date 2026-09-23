@@ -4,6 +4,7 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { CheckCounter } from '../check-reporting/stats';
+import { mergeConditionFindingIdentities } from './condition-findings';
 import {
   addUniqueConditionFindings,
   collectCustomConditionSubtreeSummary,
@@ -18,7 +19,7 @@ export function addDefaultCustomConditionProblems(options: {
   findings: GraphFinding[];
   projects: ProjectInfo[];
 }): void {
-  const seenFindingIdentities = new Set<string>();
+  const findingIdentities = new Set<string>();
 
   for (const project of options.projects) {
     if (!isDtsProjectConfig(project.configPath)) {
@@ -31,10 +32,14 @@ export function addDefaultCustomConditionProblems(options: {
       project,
       options.consistencyContext,
     );
-    addUniqueConditionFindings(
-      options.findings,
-      seenFindingIdentities,
-      summary.mismatchFindings,
+    mergeConditionFindingIdentities(
+      findingIdentities,
+      summary.mismatchFindingIdentities,
     );
   }
+  addUniqueConditionFindings(
+    options.findings,
+    options.consistencyContext,
+    findingIdentities,
+  );
 }

@@ -1,5 +1,7 @@
+import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { TerminalFrameTracker } from '../flow/terminal-frame';
+import { createLiminaFlowReporter } from '../flow';
+import { patchWriteStream, TerminalFrameTracker } from '../flow/terminal-frame';
 import { advanceTerminalPosition } from '../flow/terminal-position';
 
 interface TerminalPositionCase {
@@ -110,4 +112,90 @@ describe('terminal display positions', () => {
     tracker.reset();
     expect(tracker.lineCount).toBe(0);
   });
+});
+
+describe('real Writable stream tracking', () => {
+  it.each([
+    { chunk: 'é', encoding: 'latin1' as const, hex: 'e9' },
+    { chunk: Buffer.from([0, 255]), encoding: undefined, hex: '00ff' },
+  ])(
+    'preserves the receiver, bytes, callback and backpressure for $hex',
+    async ({ chunk, encoding, hex }) => {
+      const writes: string[] = [];
+      const stream = new Writable({
+        highWaterMark: 1,
+        write(bytes, _encoding, done) {
+          writes.push(bytes.toString('hex'));
+          setImmediate(done);
+        },
+      });
+      const original = stream.write;
+      const observed: unknown[] = [];
+      const restore = patchWriteStream(stream, (value) => observed.push(value));
+      let returned = true;
+      let callbacks = 0;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const done = (error?: Error | null) => {
+            callbacks++;
+            if (error) reject(error);
+            else resolve();
+          };
+          returned = encoding
+            ? stream.write(chunk, encoding, done)
+            : stream.write(chunk, done);
+        });
+        expect(returned).toBe(false);
+        expect(callbacks).toBe(1);
+        expect(writes).toEqual([hex]);
+        expect(observed).toEqual([chunk]);
+        restore?.();
+        expect(stream.write).toBe(original);
+      } finally {
+        restore?.();
+        stream.destroy();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'renders and restores real streams (shared: %s)',
+    async (shared) => {
+      const chunks: string[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, done) {
+          chunks.push(String(chunk));
+          done();
+        },
+      });
+      const original = stream.write;
+      const stderr = shared
+        ? stream
+        : new Writable({
+            write(_chunk, _encoding, done) {
+              done();
+            },
+          });
+      const originalStderr = stderr.write;
+      const flow = createLiminaFlowReporter({
+        stdout: stream,
+        stderr,
+        forceTty: true,
+        renderer: 'inline',
+      });
+      try {
+        const task = flow.start('rendered task');
+        task.pass();
+        await flow.close();
+        expect(chunks.join('')).toContain('rendered task');
+        expect(stream.write).toBe(original);
+        expect(stderr.write).toBe(originalStderr);
+      } finally {
+        stream.write = original;
+        await flow.close();
+        stream.destroy();
+        stderr.destroy();
+      }
+    },
+  );
 });

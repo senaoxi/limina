@@ -3954,7 +3954,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
       expect(generatedConfigPath).toBeDefined();
       const parsed = parseProject(fixture.config, generatedConfigPath!);
       const generatedRoot = normalizeAbsolutePath(
-        path.join(fixture.rootDir, '.limina/dts/checkers/tsc/packages/pkg/lib'),
+        path.join(
+          fixture.rootDir,
+          '.limina/dts/checkers/tsc/packages/pkg/tsconfig.lib.json',
+        ),
       );
 
       expect(parsed.options.outDir).toBe(generatedRoot);
@@ -4001,7 +4004,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const generatedRoot = normalizeAbsolutePath(
         path.join(
           fixture.rootDir,
-          '.limina/dts/checkers/tsc/packages/pkg/tsconfig',
+          '.limina/dts/checkers/tsc/packages/pkg/tsconfig.json',
         ),
       );
       expect(parsed.options.outDir).toBe(generatedRoot);
@@ -4134,7 +4137,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       const managedDeclaration = path.join(
         fixture.rootDir,
-        '.limina/dts/checkers/tsc/packages/pkg/lib/index.d.ts',
+        '.limina/dts/checkers/tsc/packages/pkg/tsconfig.lib.json/index.d.ts',
       );
       expect(existsSync(managedDeclaration)).toBe(true);
       expect(
@@ -4666,7 +4669,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
             path.dirname(outputConfigPath),
             path.join(
               fixture.rootDir,
-              '.limina/tsbuildinfo/build/packages/pkg/lib.tsbuildinfo',
+              '.limina/tsbuildinfo/build/packages/pkg/tsconfig.lib.json.tsbuildinfo',
             ),
           ),
         ),
@@ -8262,6 +8265,246 @@ describe('ambient references and compiler membership', () => {
           ],
           { cwd: fixture.rootDir },
         );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+  it('keeps colliding config basenames in distinct declaration and cache scopes', async () => {
+    const fixture = await createFixture({
+      'packages/pkg/tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['a'],
+      }),
+      'packages/pkg/tsconfig.tsconfig.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['b'],
+      }),
+      'packages/pkg/a/index.ts': 'export const a = 1;',
+      'packages/pkg/b/index.ts': 'export const b = 2;',
+      'packages/solution/tsconfig.json': json({
+        files: [],
+        references: [
+          { path: '../pkg/tsconfig.json' },
+          { path: '../pkg/tsconfig.tsconfig.json' },
+        ],
+      }),
+    });
+    try {
+      const result = await prepareGeneratedTsconfigGraph(fixture.config);
+      const generated = result.sourceToDts.get('tsc')!;
+      const projects = ['tsconfig.json', 'tsconfig.tsconfig.json'].map((name) =>
+        parseProject(
+          fixture.config,
+          generated.get(fixture.path('packages/pkg', name))!,
+        ),
+      );
+      expect(
+        new Set(projects.map((project) => project.options.outDir)).size,
+      ).toBe(2);
+      expect(
+        new Set(projects.map((project) => project.options.tsBuildInfoFile))
+          .size,
+      ).toBe(2);
+      expect(projects[0]!.options.outDir).toBe(
+        fixture.path('.limina/dts/checkers/tsc/packages/pkg/tsconfig.json'),
+      );
+      expect(projects[1]!.options.outDir).toBe(
+        fixture.path(
+          '.limina/dts/checkers/tsc/packages/pkg/tsconfig.tsconfig.json',
+        ),
+      );
+      const repeated = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(repeated.changed).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('regenerates scopes while cleaning only paths in the old ownership ledger', async () => {
+    const owned = 'tsbuildinfo/checkers/tsc/packages/pkg/lib.tsbuildinfo';
+    const unknown = '.limina/dts/checkers/tsc/packages/pkg/lib/user.txt';
+    const fixture = await createFixture({
+      '.limina/manifest.json': json({
+        generatedBy: 'limina',
+        version: 5,
+        ownedArtifacts: [owned, 'manifest.json'],
+      }),
+      [`.limina/${owned}`]: 'old managed cache',
+      [unknown]: 'preserve me',
+      'packages/pkg/tsconfig.json': json({
+        files: [],
+        references: [{ path: './tsconfig.lib.json' }],
+      }),
+      'packages/pkg/tsconfig.lib.json': json({
+        compilerOptions: managedOutputCompilerOptions(),
+        include: ['src'],
+      }),
+      'packages/pkg/src/index.ts': 'export const value = 1;',
+    });
+    try {
+      const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+      expect(existsSync(fixture.path('.limina', owned))).toBe(false);
+      expect(await readFile(fixture.path(unknown), 'utf8')).toBe('preserve me');
+      const generated = graph.sourceToDts
+        .get('tsc')!
+        .get(fixture.path('packages/pkg/tsconfig.lib.json'))!;
+      expect(parseProject(fixture.config, generated).options.outDir).toBe(
+        fixture.path('.limina/dts/checkers/tsc/packages/pkg/tsconfig.lib.json'),
+      );
+      expect(
+        (await prepareGeneratedTsconfigGraph(fixture.config)).changed,
+      ).toBe(false);
+      expect(await readFile(fixture.path(unknown), 'utf8')).toBe('preserve me');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+  it.each([
+    'relative',
+    'inherited-relative',
+    'named-auto-roots',
+    'explicit-roots',
+  ])(
+    'preserves source type inputs in declaration and output projections: %s',
+    async (variant) => {
+      const named = variant.endsWith('roots');
+      const compilerOptions = {
+        ...managedOutputCompilerOptions(),
+        types: named ? ['fixture'] : ['./env'],
+        ...(variant === 'explicit-roots'
+          ? { typeRoots: ['./node_modules/@types'] }
+          : {}),
+      };
+      const files = {
+        'packages/pkg/tsconfig.json': json({
+          ...(variant === 'inherited-relative'
+            ? { extends: './config/base.json' }
+            : { compilerOptions }),
+          include: ['src'],
+          liminaOptions: { outputs: { rootDir: './src' } },
+        }),
+        'packages/pkg/config/base.json': json({ compilerOptions }),
+        'packages/pkg/env.d.ts': 'declare const AmbientValue: number;',
+        'packages/pkg/node_modules/@types/fixture/package.json': json({
+          name: '@types/fixture',
+          version: '1.0.0',
+          types: 'index.d.ts',
+        }),
+        'packages/pkg/node_modules/@types/fixture/index.d.ts':
+          'declare const AmbientValue: number;',
+        'packages/pkg/src/index.ts': 'export const value = AmbientValue;',
+      };
+      const fixture = await createFixture(files);
+      try {
+        const bin = requireFromTest.resolve('typescript/bin/tsc');
+        const source = fixture.path('packages/pkg/tsconfig.json');
+        await execFileAsync(
+          process.execPath,
+          [bin, '-p', source, '--noEmit', '--pretty', 'false'],
+          { cwd: fixture.rootDir },
+        );
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        const configs = [
+          graph.sourceToDts.get('tsc')!.get(source)!,
+          graph.configToOutputBuild.get('tsc')!.get(source)!.path,
+        ];
+        for (const configPath of configs) {
+          const config = JSON.parse(await readFile(configPath, 'utf8'));
+          expect(config.compilerOptions.types).toEqual(
+            named ? ['fixture'] : [],
+          );
+          const parsed = parseProject(fixture.config, configPath);
+          expect(parsed.options.typeRoots).toContain(
+            fixture.path('packages/pkg/node_modules/@types'),
+          );
+          await execFileAsync(
+            process.execPath,
+            [bin, '-b', configPath, '--pretty', 'false', '--force'],
+            { cwd: fixture.rootDir },
+          );
+        }
+        expect(
+          await readFile(fixture.path('packages/pkg/dist/index.d.ts'), 'utf8'),
+        ).toContain('value: number');
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+  it.each(['local', 'hoisted-extends', 'explicit-roots', 'mixed-names'])(
+    'keeps wildcard type enumeration at the source config: %s',
+    async (variant) => {
+      const dependencyRoot =
+        variant === 'hoisted-extends' ? '' : 'packages/pkg/';
+      const mixed = variant === 'mixed-names';
+      const compilerOptions = {
+        ...managedOutputCompilerOptions(),
+        types: mixed ? ['*', 'tools/client', './env'] : ['*'],
+        ...(variant === 'explicit-roots'
+          ? { typeRoots: ['./node_modules/@types'] }
+          : {}),
+      };
+      const fixture = await createFixture({
+        'packages/pkg/tsconfig.json': json({
+          ...(variant === 'hoisted-extends'
+            ? { extends: '../../base.json' }
+            : { compilerOptions }),
+          include: ['src'],
+          liminaOptions: { outputs: { rootDir: './src' } },
+        }),
+        'base.json': json({ compilerOptions }),
+        [`${dependencyRoot}node_modules/@types/fixture/package.json`]: json({
+          name: '@types/fixture',
+          version: '1.0.0',
+          types: 'index.d.ts',
+        }),
+        [`${dependencyRoot}node_modules/@types/fixture/index.d.ts`]:
+          'declare const AmbientValue: number;',
+        [`${dependencyRoot}node_modules/ordinary/package.json`]: json({
+          name: 'ordinary',
+          version: '1.0.0',
+          main: 'index.js',
+        }),
+        [`${dependencyRoot}node_modules/ordinary/index.js`]:
+          'exports.value = 1;',
+        'packages/pkg/node_modules/tools/package.json': json({
+          name: 'tools',
+          version: '1.0.0',
+        }),
+        'packages/pkg/node_modules/tools/client.d.ts':
+          'declare const NamedValue: number;',
+        'packages/pkg/env.d.ts': 'declare const RelativeValue: number;',
+        'packages/pkg/src/index.ts': mixed
+          ? 'export const value = AmbientValue + NamedValue + RelativeValue;'
+          : 'export const value = AmbientValue;',
+      });
+      try {
+        const bin = requireFromTest.resolve('typescript/bin/tsc');
+        const source = fixture.path('packages/pkg/tsconfig.json');
+        await execFileAsync(
+          process.execPath,
+          [bin, '-p', source, '--noEmit', '--pretty', 'false'],
+          { cwd: fixture.rootDir },
+        );
+        const graph = await prepareGeneratedTsconfigGraph(fixture.config);
+        for (const configPath of [
+          graph.sourceToDts.get('tsc')!.get(source)!,
+          graph.configToOutputBuild.get('tsc')!.get(source)!.path,
+        ]) {
+          const projected = JSON.parse(await readFile(configPath, 'utf8'));
+          expect(projected.compilerOptions.types).toEqual(
+            mixed ? ['fixture', 'tools/client'] : ['fixture'],
+          );
+          await execFileAsync(
+            process.execPath,
+            [bin, '-b', configPath, '--pretty', 'false', '--force'],
+            { cwd: fixture.rootDir },
+          );
+        }
+        expect(
+          await readFile(fixture.path('packages/pkg/dist/index.d.ts'), 'utf8'),
+        ).toContain('value: number');
       } finally {
         await fixture.cleanup();
       }

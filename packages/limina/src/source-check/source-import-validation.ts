@@ -18,6 +18,7 @@ import type { AmbientDeclarationIndex } from './ambient-declarations';
 import type { SourceFinding } from './findings';
 import { addImportRecordProblems } from './import-record-validation';
 import { addResourceModuleProblems } from './resource-module-findings';
+import { ResourceResolver } from './resource-resolver';
 import type {
   CompiledImportAuthorityAllowRule,
   SourceProjectEntry,
@@ -34,6 +35,7 @@ interface SourceImportOptions {
   projectDependencyCaches: ProjectDependencyCaches;
   findings: SourceFinding[];
   rootPackage: WorkspacePackage | null;
+  resourceResolver: ResourceResolver;
   typeEvidence: AnalysisProviderSet['typeEvidence'];
   workspaceLookup: WorkspaceLookupIndex;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
@@ -81,6 +83,7 @@ function addResourceProblemsForCheckers(options: {
   base: SourceImportOptions;
   checkerNames: string[];
   importRecord: ImportRecord;
+  resolutionMode: string;
   owner: PackageOwner;
   project: ProjectInfo;
 }): void {
@@ -90,6 +93,8 @@ function addResourceProblemsForCheckers(options: {
       config: options.base.config,
       findings: options.base.findings,
       importRecord: options.importRecord,
+      resolutionMode: options.resolutionMode,
+      resourceResolver: options.base.resourceResolver,
       owner: options.owner,
       project: options.project,
       typeEvidence: options.base.typeEvidence,
@@ -102,6 +107,7 @@ function processImportRecord(options: {
   checkerNames: string[];
   filePath: string;
   importRecord: ImportRecord;
+  resolutionMode: string;
   owner: PackageOwner;
   project: ProjectInfo;
   resolvedFilePath: string | null;
@@ -164,6 +170,7 @@ function processSourceDependencies(options: {
       base: options.base,
       checkerNames: options.entry.checkerNames,
       importRecord: dependency.importRecord,
+      resolutionMode: dependency.resolutionMode,
       project: options.project,
       resolvedFilePath: dependency.resolvedFilePath,
     });
@@ -194,6 +201,7 @@ function processSourceObservation(options: {
     base: options.base,
     checkerNames: options.entry.checkerNames,
     importRecord: options.observation.importRecord,
+    resolutionMode: options.observation.resolutionMode,
     project: options.project,
     resolvedFilePath: null,
   });
@@ -203,6 +211,7 @@ function processCollectedImport(options: {
   base: SourceImportOptions;
   checkerNames: string[];
   importRecord: ImportRecord;
+  resolutionMode: string;
   project: ProjectInfo;
   resolvedFilePath: string | null;
 }): void {
@@ -213,17 +222,25 @@ function processCollectedImport(options: {
 }
 
 export function addSourceImportProblems(
-  options: Omit<SourceImportOptions, 'workspaceSourceBoundary'> & {
+  options: Omit<
+    SourceImportOptions,
+    'workspaceSourceBoundary' | 'resourceResolver'
+  > & {
     sourceProjectEntries: SourceProjectEntry[];
   },
 ): void {
   const base: SourceImportOptions = {
     ...options,
+    resourceResolver: new ResourceResolver(),
     workspaceSourceBoundary: createWorkspaceSourceBoundary(
       options.sourceProjectEntries.flatMap((entry) => entry.fileNames),
     ),
   };
-  for (const entry of options.sourceProjectEntries) {
-    processSourceProject(base, entry);
+  try {
+    for (const entry of options.sourceProjectEntries) {
+      processSourceProject(base, entry);
+    }
+  } finally {
+    base.resourceResolver.dispose();
   }
 }

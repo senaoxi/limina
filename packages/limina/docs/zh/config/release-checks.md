@@ -12,6 +12,10 @@ Limina 内置的发布检查始终执行。除此之外，还可以通过可选�
 发布检查会拒绝私有输出（`private: true`）、缺失 `README.md` 或 `LICENSE.md`、源码映射文件（`.map`）、`JavaScript sourceMappingURL` 注释，以及不覆盖本地工作区版本的发布依赖范围。
 :::
 
+依赖范围遵循常规 semver 预发布规则：`^1.0.0` 不接受 `1.1.0-beta.1`，而 `^1.1.0-beta.0` 显式接受该预发布系列。这适用于 `dependencies`、`optionalDependencies` 与 `peerDependencies`；本地 workspace 成员身份不会扩大打包后消费者的版本范围。
+
+Source map 指令检查依据 JavaScript 解析上下文识别真实的行注释和块注释，包括模板插值与正则表达式附近的注释。字符串、模板字面量或正则中的类似指令文本不算指令。无法可靠解析的 JavaScript 会导致发布检查失败，并报告对应文件及解析诊断。
+
 ::: warning 本地依赖泄漏
 发布检查会拒绝输出清单和打包清单所有依赖区间里泄露的 `workspace:`、`link:`、`file:`、`catalog:`。
 :::
@@ -56,6 +60,8 @@ pnpm add -D npm-package-json-lint@^9.1.0
 - **默认值：** `'latest'`
 
 `contentHash.baselineTag` 是对比依赖包输出时作为线上基线的 `npm dist-tag`。传入函数可以按 `importer/dependency` 组合返回不同的基线。
+
+每条 importer → dependency 边都会独立求值 baseline 与 ignore 策略，包括经由多个 importer 到达的共享依赖。包级访问记录只限制递归遍历，不会把首个 importer 的策略结果复用于后续边。
 
 ## contentHash.builtinIgnore
 

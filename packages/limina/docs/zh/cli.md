@@ -87,7 +87,7 @@ pnpm exec limina check --issues --format json
 pnpm exec limina check --issues --invocation <uuid>
 ```
 
-不带 invocation 的查询会验证 freshness。check attempt 一旦发布，只有同一 attempt 已完成，且其 metadata 与 version-7 snapshot 一致时，`--issues` 才会返回 inventory。最新 attempt 处于 running、interrupted、aborted、persistence-failed，或 freshness metadata 缺失、损坏、不匹配时，查询都会 fail closed 并以退出码 `1` 结束，绝不会回退到更早的 completed issues。human、JSON 与 NDJSON 输出都会明确报告不可用状态。
+不带 invocation 的查询会验证 freshness。check attempt 一旦发布，只有同一 attempt 已完成，且其 metadata 与 version-8 snapshot 一致时，`--issues` 才会返回 inventory。最新 attempt 处于 running、interrupted、aborted、persistence-failed，或 freshness metadata 缺失、损坏、不匹配时，查询都会 fail closed 并以退出码 `1` 结束，绝不会回退到更早的 completed issues。human、JSON 与 NDJSON 输出都会明确报告不可用状态。
 
 在 attempt 发布前发生的配置发现、配置验证或执行计划失败，不会替换上一份 completed inventory。如果进程恰好在写入 `last-run.json` 与 freshness index 之间退出，后续更高 sequence 的成功 check 会完整覆盖这两个文件，并自动恢复查询。
 
@@ -166,6 +166,8 @@ pnpm exec limina migration
 - 非交互环境无法显示确认提示，因此发现变更时会停止且不会写入。请先整理所有相关 worktree，再重新运行迁移。
 
 确认继续后，迁移仍只会在目标所属的规范 worktree 根目录内写入计划中的配置文件。确认脏工作区不会扩大迁移目标或写入范围。
+
+迁移会在规划阶段拒绝受管字段或其祖先对象中的重复键，包括 `compilerOptions`、`liminaOptions.outputs`、`$schema` 与 `references`。任一目标存在歧义，整批迁移都会在写入配置前停止。请删除重复键后重试。候选 JSONC 还必须解析为与计划完全一致的有效对象；注释、尾随逗号与既有换行符会保留。
 
 #### 文件系统写入策略
 
@@ -250,7 +252,7 @@ invocation 是 selector，不是问题 filter，因此默认 human 视图会进�
 
 `--file` 做精确匹配，`--scope` 接受目录或 `glob`。两者都接受工作区相对路径、`./` 路径、绝对路径以及两种斜杠形式。它们只匹配问题文件、包 manifest 等真正带路径的候选；配置 field scope 等 diagnostic label 不会被当作路径。同一过滤项重复传入时采用 OR 语义。
 
-check snapshot 使用 schema version 7，读取器也只接受 version 7。
+check snapshot 使用 schema version 8，读取器也只接受 version 8。
 
 辅助查询：
 

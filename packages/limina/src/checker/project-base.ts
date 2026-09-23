@@ -147,7 +147,7 @@ function createConfigClosure(options: {
     .sort((left, right) => compareCodeUnits(left.filePath, right.filePath));
 }
 
-function parseTypeScriptCommandLine(options: {
+export function parseTypeScriptCommandLine(options: {
   extraFileExtensions?: readonly ts.FileExtensionInfo[];
   parseOptions: CheckerProjectConfigParseOptions;
 }): {

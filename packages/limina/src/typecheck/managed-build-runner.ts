@@ -1,4 +1,4 @@
-import { withGeneratedArtifactReadLease } from '../core/build-graph/materializer';
+import { withMaterializedPlanReadLease } from '../core/build-graph/materialization-read-lease';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import type { LiminaPreflightManager } from '../preflight';
 import { runOutputDeclarationCopyPostBuild } from './build/output-copy';
@@ -143,8 +143,9 @@ export async function runManagedBuild(options: {
     rootConfigPaths,
     targetCount: targets.length,
   });
-  const execution = await withGeneratedArtifactReadLease(
+  const execution = await withMaterializedPlanReadLease(
     options.preflight.artifactNamespace,
+    options.target.generatedGraph.artifactPlan,
     () =>
       executeCheckerBuildTargets({
         allCheckers: options.target.allCheckers,

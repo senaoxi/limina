@@ -1,10 +1,9 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { readJsonConfig } from '#core/tsconfig/actions';
 import { compareCodeUnits } from '#utils/collections';
-import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { toRelativePath } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
-import { existsSync } from 'node:fs';
-import { normalizeExtendsConfigPath } from './generated/compiler-target';
+import { parseTypeScriptCommandLine } from '../../checker/project-base';
 import type {
   FrameworkIntentHint,
   FrameworkIntentInspection,
@@ -158,96 +157,45 @@ function collectOwnFrameworkIntentHints(options: {
   return hints;
 }
 
-function createMissingExtendsProblem(options: {
-  config: ResolvedLiminaConfig;
-  configPath: string;
-  extendsValue: string;
-  resolvedPath: string | null;
-}): string {
-  const resolvedLine = options.resolvedPath
-    ? `  resolved config: ${toRelativePath(options.config.rootDir, options.resolvedPath)}`
-    : '  resolved config: (unresolved)';
-  return [
-    'Unavailable auto checker extends config:',
-    `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
-    `  extends: ${options.extendsValue}`,
-    resolvedLine,
-    '  reason: auto capability discovery cannot determine the effective source files while an extended config is unavailable.',
-    '  fix: generate or install the extended config before running Limina, then rerun `limina graph prepare`.',
-  ].join('\n');
-}
-
-function inspectFrameworkIntentConfig(options: {
-  config: ResolvedLiminaConfig;
-  configObject: Record<string, unknown>;
-  configPath: string;
-  hints: FrameworkIntentHint[];
-  problems: string[];
-  seen: Set<string>;
-}): void {
-  const configPath = normalizeAbsolutePath(options.configPath);
-  if (options.seen.has(configPath)) return;
-  options.seen.add(configPath);
-  options.hints.push(
-    ...collectOwnFrameworkIntentHints({
-      configObject: options.configObject,
-      configPath,
-    }),
-  );
-  for (const extendsValue of getExtendsValues(options.configObject.extends)) {
-    inspectExtendedFrameworkIntent({
-      ...options,
-      configPath,
-      extendsValue,
-    });
-  }
-}
-
-function inspectExtendedFrameworkIntent(options: {
-  config: ResolvedLiminaConfig;
-  configPath: string;
-  extendsValue: string;
-  hints: FrameworkIntentHint[];
-  problems: string[];
-  seen: Set<string>;
-}): void {
-  const resolvedPath = normalizeExtendsConfigPath(
-    options.configPath,
-    options.extendsValue,
-  );
-  if (resolvedPath === null || !existsSync(resolvedPath)) {
-    options.problems.push(
-      createMissingExtendsProblem({ ...options, resolvedPath }),
-    );
-    return;
-  }
-  inspectFrameworkIntentConfig({
-    ...options,
-    configObject: readJsonConfig(options.config, resolvedPath),
-    configPath: resolvedPath,
-  });
-}
-
 export function inspectFrameworkIntent(options: {
   config: ResolvedLiminaConfig;
   configObject: Record<string, unknown>;
   configPath: string;
 }): FrameworkIntentInspection {
-  const hints: FrameworkIntentHint[] = [];
-  const problems: string[] = [];
-  inspectFrameworkIntentConfig({
-    ...options,
-    hints,
-    problems,
-    seen: new Set(),
-  });
-  return {
-    intentHints: hints.sort((left, right) =>
-      compareCodeUnits(
-        `${left.configPath}\0${left.family}\0${left.kind}\0${left.value}`,
-        `${right.configPath}\0${right.family}\0${right.kind}\0${right.value}`,
+  try {
+    const { configClosure } = parseTypeScriptCommandLine({
+      parseOptions: {
+        allowNoInputDiagnostics: true,
+        configPath: options.configPath,
+        projectRootDir: options.config.rootDir,
+      },
+    });
+    const hints = configClosure.flatMap(({ filePath }) =>
+      collectOwnFrameworkIntentHints({
+        configObject: readJsonConfig(options.config, filePath),
+        configPath: filePath,
+      }),
+    );
+    return {
+      intentHints: hints.sort((left, right) =>
+        compareCodeUnits(
+          `${left.configPath}\0${left.family}\0${left.kind}\0${left.value}`,
+          `${right.configPath}\0${right.family}\0${right.kind}\0${right.value}`,
+        ),
       ),
-    ),
-    problems,
-  };
+      problems: [],
+    };
+  } catch (error) {
+    return {
+      intentHints: [],
+      problems: [
+        [
+          'Unavailable auto checker extends config:',
+          `  config: ${toRelativePath(options.config.rootDir, options.configPath)}`,
+          `  reason: ${error instanceof Error ? error.message : String(error)}`,
+          '  fix: generate or install the extended config and correct its diagnostics, then rerun `limina graph prepare`.',
+        ].join('\n'),
+      ],
+    };
+  }
 }

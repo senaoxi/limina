@@ -2245,3 +2245,75 @@ describe('runMigration', () => {
     }
   });
 });
+
+describe('ambiguous JSONC migration', () => {
+  it.each([
+    '"compilerOptions":{"outDir":"old","outDir":"dist"}',
+    '"compilerOptions":{"outDir":"old"},"compilerOptions":{"outDir":"dist"}',
+    '"compilerOptions":{"outDir":"dist"},"liminaOptions":{"outputs":{},"outputs":{}}',
+    '"compilerOptions":{"outDir":"dist"},"liminaOptions":{"outputs":{"outDir":"old","outDir":"prior"}}',
+    '"$schema":"first","$schema":"second","compilerOptions":{"noEmit":true}',
+  ])('rejects the entire batch before writes for %s', async (properties) => {
+    const good = '{"compilerOptions":{"outDir":"dist"},"files":["index.ts"]}\n';
+    const bad = `{${properties},"files":["index.ts"]}\n`;
+    const fixture = await createFixture({
+      'a/tsconfig.json': good,
+      'a/index.ts': 'export {};',
+      'z/tsconfig.json': bad,
+      'z/index.ts': 'export {};',
+    });
+    try {
+      await commitFixture(fixture.rootDir);
+      await expect(
+        runMigration({
+          rootDir: fixture.rootDir,
+          configPath: fixture.path('limina.config.mjs'),
+        }),
+      ).rejects.toThrow('duplicate key');
+      expect(await readFile(fixture.path('a/tsconfig.json'), 'utf8')).toBe(
+        good,
+      );
+      expect(await readFile(fixture.path('z/tsconfig.json'), 'utf8')).toBe(bad);
+      expect(
+        await collectMigrationTransactionDirectories(fixture.rootDir),
+      ).toEqual([]);
+      expect(
+        (
+          await execFileAsync('git', ['status', '--porcelain'], {
+            cwd: fixture.rootDir,
+          })
+        ).stdout,
+      ).toBe('');
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('keeps CRLF, comments and unrelated repeated fields and remains idempotent', async () => {
+    const original =
+      '{\r\n  // Keep this comment\r\n  "compilerOptions": { "strict": false, "strict": true, "outDir": "dist" },\r\n  "files": ["index.ts"],\r\n}\r\n';
+    const fixture = await createFixture({
+      'tsconfig.json': original,
+      'index.ts': 'export {};',
+    });
+    const config = {
+      rootDir: fixture.rootDir,
+      configPath: fixture.path('limina.config.mjs'),
+    };
+    try {
+      await commitFixture(fixture.rootDir);
+      await runMigration(config);
+      const once = await readFile(fixture.path('tsconfig.json'), 'utf8');
+      expect(once).toContain('// Keep this comment\r\n');
+      expect(once.replaceAll('\r\n', '')).not.toContain('\n');
+      expect(parse(once)).toMatchObject({
+        compilerOptions: { strict: true },
+        liminaOptions: { outputs: { outDir: 'dist' } },
+      });
+      await runMigration(config, { confirmDirtyWorkspace: async () => true });
+      expect(await readFile(fixture.path('tsconfig.json'), 'utf8')).toBe(once);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+});

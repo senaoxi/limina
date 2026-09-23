@@ -21,7 +21,14 @@ export async function executeCli(argv: string[]): Promise<void> {
   assertIssueInventoryLimitArgv(argv);
   if (await printCheckIssueFilterHelpIfRequested(argv)) return;
   const cli = createLiminaCli();
+  let displayedCommandHelp = false;
+  cli.globalCommand.helpCallback = (sections) => {
+    // CAC clears matchedCommand after displaying help; preserve that outcome.
+    displayedCommandHelp = cli.matchedCommand !== undefined;
+    return sections;
+  };
   cli.parse(argv, { run: false });
+  if (displayedCommandHelp) return;
   assertMatchedCommand(cli);
   await cli.runMatchedCommand();
 }

@@ -181,7 +181,7 @@ describe('managed checker mutation proof', () => {
           'packages/app/dist/index.js.map',
           'packages/app/dist/index.d.ts',
           'packages/app/dist/index.d.ts.map',
-          '.limina/tsbuildinfo/build/packages/app/tsconfig.tsbuildinfo',
+          '.limina/tsbuildinfo/build/packages/app/tsconfig.json.tsbuildinfo',
         ]),
       );
       expect(proof.effectiveOptionsFingerprint).toMatch(/^[\da-f]{64}$/u);
@@ -215,8 +215,8 @@ describe('managed checker mutation proof', () => {
         ),
       ).toEqual(
         expect.arrayContaining([
-          '.limina/dts/checkers/tsc/packages/app/tsconfig/index.d.ts',
-          '.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.tsbuildinfo',
+          '.limina/dts/checkers/tsc/packages/app/tsconfig.json/index.d.ts',
+          '.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.json.tsbuildinfo',
         ]),
       );
     } finally {

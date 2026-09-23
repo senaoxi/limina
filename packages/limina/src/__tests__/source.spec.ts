@@ -432,6 +432,70 @@ packages:
 
 describe('runSourceCheck package authority', () => {
   it.each([
+    {
+      syntax: 'static',
+      branches: { import: './exists.css', require: './missing.css' },
+      line: 1,
+    },
+    {
+      syntax: 'mixed',
+      branches: { import: './exists.css', require: './missing.css' },
+      line: 1,
+    },
+    {
+      syntax: 'mixed',
+      branches: { import: './missing.css', require: './exists.css' },
+      line: 2,
+    },
+  ])(
+    'retains occurrence mode in CJS resource observations ($syntax, $branches)',
+    async ({ syntax, branches, line }) => {
+      const fixture = await createFixture(
+        {
+          'app/package.json': stringifyConfig({
+            name: 'app',
+            type: 'module',
+            dependencies: { asset: '1.0.0' },
+          }),
+          'app/tsconfig.json': typecheckConfig(
+            ['src/**/*.cts', 'src/**/*.d.ts'],
+            { module: 'NodeNext', moduleResolution: 'NodeNext' },
+          ),
+          'app/src/index.cts':
+            syntax === 'static'
+              ? "import 'asset/theme.css';\nexport {};"
+              : "const value = require('asset/theme.css');\nvoid import('asset/theme.css');\nexport {};",
+          'app/src/env.d.ts': "declare module 'asset/theme.css';",
+          'app/node_modules/asset/package.json': stringifyConfig({
+            name: 'asset',
+            exports: { './theme.css': branches },
+          }),
+          'app/node_modules/asset/exists.css': '',
+        },
+        { source: { knip: false } },
+      );
+      try {
+        const sourceIssues: SourceCheckIssue[] = [];
+        await runSourceCheck(fixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        });
+        const missing = sourceIssues.filter(
+          ({ code }) =>
+            code === LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleNotFound,
+        );
+        expect(missing).toHaveLength(1);
+        expect(missing[0]).toMatchObject({
+          facts: { line, specifier: 'asset/theme.css' },
+        });
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each([
     { physical: true, declaration: true, codes: [] },
     {
       physical: false,
@@ -489,7 +553,7 @@ describe('runSourceCheck package authority', () => {
             ),
           ).toMatchObject({
             facts: {
-              runtimeAuthority: 'package-export',
+              runtimeAuthority: 'oxc',
               runtimeFilePath: fixture.path('app/src/assets/logo.svg'),
               specifier: '#assets/logo.svg',
               typeEvidenceKind: 'missing',

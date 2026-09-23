@@ -30,10 +30,11 @@ interface DeniedReferenceContext {
 
 function getDeniedDependencyRule(
   context: DeniedReferenceContext,
-  referencePath: string,
+  referencedProject: ProjectInfo,
 ): GraphRuleDepDeny | null {
-  const packageName =
-    context.workspaceLookup.findPackageForFile(referencePath)?.name;
+  const packageName = context.workspaceLookup.findPackageForFile(
+    referencedProject.resolverConfigPath,
+  )?.name;
 
   return packageName
     ? getDeniedDepRuleForPackage(
@@ -164,11 +165,12 @@ function checkDeniedReference(
   referencePath: string,
 ): void {
   context.checks.add();
-  if (!context.projectsByPath.has(referencePath)) {
+  const referencedProject = context.projectsByPath.get(referencePath);
+  if (referencedProject === undefined) {
     return;
   }
 
-  const dependencyRule = getDeniedDependencyRule(context, referencePath);
+  const dependencyRule = getDeniedDependencyRule(context, referencedProject);
   if (dependencyRule) {
     addDeniedDependencyReference(context, referencePath, dependencyRule);
     return;

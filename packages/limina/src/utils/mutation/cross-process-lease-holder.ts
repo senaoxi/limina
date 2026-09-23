@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { hostname } from 'node:os';
 import path from 'pathe';
 import {
@@ -18,13 +27,16 @@ function hasCode(error: unknown, code: string): boolean {
 }
 
 export async function holderExists(holderPath: string): Promise<boolean> {
-  try {
-    await readFile(path.join(holderPath, 'owner.json'), 'utf8');
-    return true;
-  } catch (error) {
-    if (hasCode(error, 'ENOENT')) return false;
-    throw error;
-  }
+  return (await readPresentOwner(holderPath)) !== null;
+}
+
+interface HolderRecord {
+  fileName: string;
+  owner: CrossProcessLeaseOwner;
+}
+
+function ownerFileName(owner: CrossProcessLeaseOwner): string {
+  return `owner-${encodeURIComponent(owner.token)}.json`;
 }
 
 export function createLeaseOwner(): CrossProcessLeaseOwner {
@@ -52,16 +64,38 @@ function throwOwnerReadError(error: unknown, holderPath: string): never {
   );
 }
 
-async function readOwner(holderPath: string): Promise<CrossProcessLeaseOwner> {
+async function readOwner(holderPath: string): Promise<HolderRecord | null> {
   try {
-    const value: unknown = JSON.parse(
-      await readFile(path.join(holderPath, 'owner.json'), 'utf8'),
-    );
-    if (!isOwner(value)) throw new Error('invalid owner shape');
-    return value;
+    const names = await readdir(holderPath);
+    if (names.length === 0) return null;
+    return await readOwnerRecord(holderPath, names);
   } catch (error) {
     return throwOwnerReadError(error, holderPath);
   }
+}
+
+async function readOwnerRecord(
+  holderPath: string,
+  names: string[],
+): Promise<HolderRecord> {
+  if (names.length !== 1) throw new Error('ambiguous owner record');
+  const fileName = names[0]!;
+  const value: unknown = JSON.parse(
+    await readFile(path.join(holderPath, fileName), 'utf8'),
+  );
+  if (!isOwner(value)) throw new Error('invalid owner shape');
+  assertOwnerFileName(fileName, value);
+  return { fileName, owner: value };
+}
+
+function assertOwnerFileName(
+  fileName: string,
+  owner: CrossProcessLeaseOwner,
+): void {
+  // Legacy records can be retired, but are never published by this protocol.
+  if (fileName === 'owner.json') return;
+  if (fileName === ownerFileName(owner)) return;
+  throw new Error('owner token does not match its record path');
 }
 
 function localProcessSignalResult(error: unknown): boolean {
@@ -82,7 +116,7 @@ function isLocalProcessAlive(owner: CrossProcessLeaseOwner): boolean | null {
 
 async function readPresentOwner(
   holderPath: string,
-): Promise<CrossProcessLeaseOwner | null> {
+): Promise<HolderRecord | null> {
   try {
     return await readOwner(holderPath);
   } catch (error) {
@@ -92,11 +126,10 @@ async function readPresentOwner(
 }
 
 export async function removeDeadHolder(holderPath: string): Promise<boolean> {
-  const owner = await readPresentOwner(holderPath);
-  if (owner === null) return true;
-  if (isLocalProcessAlive(owner) !== false) return false;
-  await rm(holderPath, { force: true, recursive: true });
-  return true;
+  const record = await readPresentOwner(holderPath);
+  if (record === null) return removeEmptyHolder(holderPath);
+  if (isLocalProcessAlive(record.owner) !== false) return false;
+  return removeHolderRecord(holderPath, record.fileName);
 }
 
 const retryableHolderPublicationCodes = new Set([
@@ -135,7 +168,7 @@ export async function publishHolder(options: {
   await mkdir(candidatePath, { recursive: false });
   try {
     await writeFile(
-      path.join(candidatePath, 'owner.json'),
+      path.join(candidatePath, ownerFileName(options.owner)),
       `${JSON.stringify(options.owner, null, 2)}\n`,
       { flag: 'wx' },
     );
@@ -153,10 +186,43 @@ export async function releaseOwnedHolder(
   owner: CrossProcessLeaseOwner,
 ): Promise<void> {
   const current = await readOwner(holderPath);
-  if (current.token !== owner.token) {
+  if (current?.owner.token !== owner.token) {
     throw new CrossProcessLeaseCorruptError(
       `Cross-process lease ownership changed before release: ${holderPath}.`,
     );
   }
-  await rm(holderPath, { force: false, recursive: true });
+  await removeHolderRecord(holderPath, current.fileName);
+}
+
+async function removeHolderRecord(
+  holderPath: string,
+  fileName: string,
+): Promise<boolean> {
+  try {
+    await unlink(path.join(holderPath, fileName));
+  } catch (error) {
+    if (!hasCode(error, 'ENOENT')) throw error;
+  }
+  return removeEmptyHolder(holderPath);
+}
+
+async function removeEmptyHolder(holderPath: string): Promise<boolean> {
+  // Another publisher may have replaced the empty slot. Never recursively
+  // remove it: the new holder's token record makes rmdir fail harmlessly.
+  try {
+    await rmdir(holderPath);
+    return true;
+  } catch (error) {
+    return handleHolderRemovalError(error);
+  }
+}
+
+function handleHolderRemovalError(error: unknown): boolean {
+  if (hasCode(error, 'ENOENT')) return true;
+  if (isNonEmptyHolderError(error)) return false;
+  throw error;
+}
+
+function isNonEmptyHolderError(error: unknown): boolean {
+  return hasCode(error, 'ENOTEMPTY') || hasCode(error, 'EEXIST');
 }

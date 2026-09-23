@@ -99,11 +99,14 @@ function getTargetPackage(
   context: WorkspaceReferenceContext,
   referencePath: string,
 ): WorkspacePackage | null {
-  if (!context.projectsByPath.has(referencePath)) {
+  const referencedProject = context.projectsByPath.get(referencePath);
+  if (referencedProject === undefined) {
     return null;
   }
 
-  return context.workspaceLookup.findPackageForFile(referencePath);
+  return context.workspaceLookup.findPackageForFile(
+    referencedProject.resolverConfigPath,
+  );
 }
 
 function isCrossPackageTarget(
@@ -258,7 +261,7 @@ function createWorkspaceReferenceContext(options: {
   }
 
   const sourcePackage = options.workspaceLookup.findPackageForFile(
-    options.project.configPath,
+    options.project.resolverConfigPath,
   );
   if (!sourcePackage) {
     return null;
@@ -267,7 +270,7 @@ function createWorkspaceReferenceContext(options: {
   return {
     ...options,
     importer: options.workspaceLookup.findImporterForFile(
-      options.project.configPath,
+      options.project.resolverConfigPath,
     ),
     sourcePackage,
   };

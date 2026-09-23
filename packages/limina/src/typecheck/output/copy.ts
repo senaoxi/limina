@@ -87,11 +87,11 @@ async function createParentDirectories(
   state: PublicationState,
 ): Promise<void> {
   for (const prepared of entries) {
-    const directories = await ensureDeclarationParentDirectories({
+    await ensureDeclarationParentDirectories({
+      onCreated: (directory) => state.ownedDirectories.push(directory),
       prepared,
       transactionToken: state.transactionToken,
     });
-    state.ownedDirectories.push(...directories);
   }
 }
 

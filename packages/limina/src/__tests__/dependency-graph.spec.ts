@@ -151,13 +151,16 @@ function createPackageJson(
   });
 }
 
-function typecheckBuildConfig(include: string[]): string {
+function typecheckBuildConfig(include: string[], outputRoot?: string): string {
   return stringifyConfig({
     compilerOptions: {
       ...buildCompilerOptions,
       noEmit: true,
     },
     include,
+    ...(outputRoot
+      ? { liminaOptions: { outputs: { outDir: outputRoot } } }
+      : {}),
   });
 }
 
@@ -173,6 +176,103 @@ function findEdge(
 }
 
 describe('collectDependencyGraph', () => {
+  it.each([
+    {
+      label: 'default output',
+      directory: 'dist',
+      output: './dist',
+      source: false,
+      relative: false,
+      kind: 'artifact',
+    },
+    {
+      label: 'custom output',
+      directory: 'lib',
+      output: './lib',
+      source: false,
+      relative: false,
+      kind: 'artifact',
+    },
+    {
+      label: 'nested relative output',
+      directory: 'build/generated',
+      output: './build/generated',
+      source: false,
+      relative: true,
+      kind: 'artifact',
+    },
+    {
+      label: 'owned dist source',
+      directory: 'dist',
+      output: undefined,
+      source: true,
+      relative: false,
+      kind: 'source',
+    },
+    {
+      label: 'undeclared dist file',
+      directory: 'dist',
+      output: undefined,
+      source: false,
+      relative: false,
+      kind: null,
+    },
+  ] as const)(
+    'classifies $label from source ownership and validated outputs',
+    async (entry) => {
+      const target = `packages/b/${entry.directory}/index.${entry.source ? 'ts' : 'd.ts'}`;
+      const specifier = entry.relative
+        ? `../../b/${entry.directory}/index.js`
+        : '@example/b';
+      const fixture = await createFixture({
+        'packages/a/package.json': createPackageJson('@example/a', {
+          dependencies: { '@example/b': 'workspace:*' },
+        }),
+        'packages/a/src/index.ts': `import type { Value } from '${specifier}'; export type Result = Value;`,
+        'packages/a/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+        'packages/b/package.json': createPackageJson('@example/b', {
+          exports: {
+            '.': `./${entry.directory}/index.${entry.source ? 'ts' : 'd.ts'}`,
+          },
+        }),
+        [target]: 'export interface Value { ready: true }',
+        'packages/b/src/index.ts': 'export {};',
+        'packages/b/tsconfig.lib.json': typecheckBuildConfig(
+          [`${entry.source ? 'dist' : 'src'}/**/*.ts`],
+          entry.output,
+        ),
+      });
+      try {
+        await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
+        for (const view of ['all', 'source', 'artifact'] as const) {
+          const graph = await collectDependencyGraph(fixture.config, { view });
+          const visible =
+            entry.kind !== null && (view === 'all' || view === entry.kind);
+          expect(graph.edges).toEqual(
+            visible
+              ? [
+                  {
+                    from: 'pkg:@example/a',
+                    to: 'pkg:@example/b',
+                    kind: entry.kind,
+                    evidence: [
+                      {
+                        importer: 'packages/a/src/index.ts',
+                        resolvedPath: target,
+                        specifier,
+                      },
+                    ],
+                  },
+                ]
+              : [],
+          );
+        }
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('allows unrelated nameless workspace packages', async () => {
     const fixture = await createFixture({
       'packages/a/package.json': createPackageJson('@example/a'),
@@ -339,7 +439,10 @@ describe('collectDependencyGraph', () => {
         },
       }),
       'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
-      'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/b/tsconfig.lib.json': typecheckBuildConfig(
+        ['src/**/*.ts'],
+        './dist',
+      ),
     });
 
     try {
@@ -389,7 +492,10 @@ describe('collectDependencyGraph', () => {
         },
       }),
       'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
-      'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/b/tsconfig.lib.json': typecheckBuildConfig(
+        ['src/**/*.ts'],
+        './dist',
+      ),
     });
 
     try {
@@ -432,7 +538,10 @@ describe('collectDependencyGraph', () => {
         },
       }),
       'packages/b/src/index.ts': 'export const sourceValue = 1;\n',
-      'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/b/tsconfig.lib.json': typecheckBuildConfig(
+        ['src/**/*.ts'],
+        './dist',
+      ),
     });
 
     try {
@@ -474,7 +583,10 @@ describe('collectDependencyGraph', () => {
         },
       }),
       'packages/c/src/index.ts': 'export const sourceValue = 1;\n',
-      'packages/c/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/c/tsconfig.lib.json': typecheckBuildConfig(
+        ['src/**/*.ts'],
+        './dist',
+      ),
     });
 
     try {
@@ -513,7 +625,10 @@ describe('collectDependencyGraph', () => {
       }),
       'packages/a/src/index.ts':
         "import { bRuntimeValue } from '@example/b/runtime';\nexport const value = bRuntimeValue;\n",
-      'packages/a/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/a/tsconfig.lib.json': typecheckBuildConfig(
+        ['src/**/*.ts'],
+        './dist',
+      ),
       'packages/b/dist/runtime.d.ts':
         'export declare const bRuntimeValue = 1;\n',
       'packages/b/dist/runtime.js': 'export const bRuntimeValue = 1;\n',
@@ -530,7 +645,10 @@ describe('collectDependencyGraph', () => {
       }),
       'packages/b/src/index.ts':
         "import { aRuntimeValue } from '@example/a/runtime';\nexport const value = aRuntimeValue;\n",
-      'packages/b/tsconfig.lib.json': typecheckBuildConfig(['src/**/*.ts']),
+      'packages/b/tsconfig.lib.json': typecheckBuildConfig(
+        ['src/**/*.ts'],
+        './dist',
+      ),
     });
 
     try {

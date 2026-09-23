@@ -15,7 +15,7 @@ export interface RequireBinding {
 export interface LexicalScope {
   bindings: Map<string, RequireBinding>;
   parent?: LexicalScope;
-  type: 'block' | 'function' | 'root';
+  type: 'block' | 'function' | 'root' | 'static-block';
 }
 
 export interface RequireScopeGraph {
@@ -81,6 +81,15 @@ function createFunctionScope(
   return scope;
 }
 
+function createStaticBlockScope(
+  node: ts.Node,
+  parent: LexicalScope,
+  tsModule: typeof ts,
+): LexicalScope | null {
+  if (!tsModule.isClassStaticBlockDeclaration(node)) return null;
+  return createScope('static-block', parent);
+}
+
 function createCatchScope(
   node: ts.Node,
   parent: LexicalScope,
@@ -136,6 +145,7 @@ function selectNodeScope(
 ): LexicalScope {
   const candidates = [
     createFunctionScope(node, incoming, context.tsModule),
+    createStaticBlockScope(node, incoming, context.tsModule),
     createCatchScope(node, incoming, context.tsModule),
     createBlockScope(node, incoming, context),
   ];

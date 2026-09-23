@@ -9,6 +9,7 @@ import type { ProjectDependencyCaches } from '../core/project-dependencies/contr
 import type { WorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type { WorkspaceExportsResolutionIndex } from '../core/workspace/exports';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
+import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import type { DependencyGraphEdge, DependencyGraphView } from './types';
 
 export interface DependencyGraphCollectionContext {
@@ -18,6 +19,8 @@ export interface DependencyGraphCollectionContext {
   fileOwnerLookup: Map<string, string[]>;
   importAnalysis: ImportAnalysisContext;
   ownsCore: boolean;
+  outputRoots: readonly string[];
+  pathIndex: WorkspaceRegionPathIndex;
   problems: string[];
   projectDependencyCaches: ProjectDependencyCaches;
   projects: ProjectInfo[];

@@ -33,6 +33,7 @@ import type {
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
+const tscEntry = requireFromTest.resolve('typescript/bin/tsc');
 
 function resolveInstalledPackageRoot(options: {
   installedName: string;
@@ -137,6 +138,7 @@ async function linkVueToolchain(rootDir: string): Promise<void> {
 
 async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
+  path: ReturnType<typeof createFixturePathResolver>;
   rootDir: string;
 }> {
   const rootDir = await realpath(
@@ -208,6 +210,7 @@ async function createFixture(files: Record<string, string>): Promise<{
         recursive: true,
       });
     },
+    path: createFixturePathResolver(rootDir),
     rootDir,
   };
 }
@@ -341,14 +344,17 @@ describe('runCheckerBuild', () => {
 
       expect(result.passed).toBe(true);
       const orderedCalls = calls.toSorted((left, right) =>
-        left.command.localeCompare(right.command),
+        (left.label ?? left.command).localeCompare(
+          right.label ?? right.command,
+        ),
       );
       expect(orderedCalls.map((target) => target.command)).toEqual([
-        'tsc',
+        process.execPath,
         'vue-tsc',
       ]);
       expect(orderedCalls.map((target) => target.args)).toEqual([
         [
+          tscEntry,
           '-b',
           '.limina/tsconfig/checkers/tsc/tsconfig.build.json',
           '--pretty',
@@ -411,7 +417,7 @@ describe('runCheckerBuild', () => {
         existsSync(
           path.join(
             fixture.rootDir,
-            '.limina/dts/checkers/tsc/packages/app/tsconfig/index.d.ts',
+            '.limina/dts/checkers/tsc/packages/app/tsconfig.json/index.d.ts',
           ),
         ),
       ).toBe(true);
@@ -500,8 +506,8 @@ describe('runCheckerBuild', () => {
       });
 
       expect(buildCalls.map((target) => target.command)).toEqual([
-        'tsc',
-        'tsc',
+        process.execPath,
+        process.execPath,
       ]);
       expect(typecheckCalls).toEqual([]);
       expect(typecheckIssues).toHaveLength(1);
@@ -514,7 +520,7 @@ describe('runCheckerBuild', () => {
     const calls: TypecheckTarget[] = [];
     const delayed = delayedRunner({
       calls,
-      delayMs: (target) => (target.command === 'tsc' ? 30 : 10),
+      delayMs: (target) => (target.command === process.execPath ? 30 : 10),
     });
     const fixture = await createFixture({
       'src/index.ts': 'export const value = 1;\n',
@@ -547,7 +553,7 @@ describe('runCheckerBuild', () => {
 
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command).sort()).toEqual([
-        'tsc',
+        process.execPath,
         'vue-tsc',
       ]);
       expect(delayed.getMaxActive()).toBe(
@@ -823,7 +829,7 @@ describe('runCheckerBuild', () => {
 
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command).sort()).toEqual([
-        'tsc',
+        process.execPath,
         'vue-tsc',
       ]);
       expect(errorSpy).not.toHaveBeenCalled();
@@ -914,7 +920,7 @@ describe('runCheckerBuild', () => {
       .mockImplementation(() => {});
     const delayed = delayedRunner({
       calls,
-      delayMs: (target) => (target.command === 'tsc' ? 30 : 10),
+      delayMs: (target) => (target.command === process.execPath ? 30 : 10),
       status: 1,
     });
     const fixture = await createFixture({
@@ -954,7 +960,7 @@ describe('runCheckerBuild', () => {
 
       expect(result.passed).toBe(false);
       expect(calls.map((target) => target.command).sort()).toEqual([
-        'tsc',
+        process.execPath,
         'vue-tsc',
       ]);
       expect(delayed.getMaxActive()).toBe(
@@ -1028,6 +1034,7 @@ describe('runCheckerBuild', () => {
       ).toBe(false);
       expect(calls.map((target) => target.args)).toEqual([
         [
+          tscEntry,
           '-b',
           '.limina/tsconfig/checkers/tsc/projects/packages/pkg/tsconfig.lib.dts.json',
           '--pretty',
@@ -1377,6 +1384,7 @@ describe('runBuild', () => {
       );
       expect(calls.map((target) => target.args)).toEqual([
         [
+          tscEntry,
           '-b',
           '.limina/tsconfig/checkers/tsc/outputs/solutions/packages/pkg/tsconfig.output.json',
           '--pretty',
@@ -1436,6 +1444,7 @@ describe('runBuild', () => {
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.args)).toEqual([
         [
+          tscEntry,
           '-b',
           '.limina/tsconfig/checkers/tsc/outputs/projects/packages/pkg/tsconfig.lib.output.json',
           '--pretty',
@@ -2335,9 +2344,9 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['tsc']);
+      expect(calls.map((target) => target.command)).toEqual([process.execPath]);
       expect(calls.map((target) => target.args)).toEqual([
-        ['-b', 'packages/lib/tsconfig.json', '--pretty', 'false'],
+        [tscEntry, '-b', 'packages/lib/tsconfig.json', '--pretty', 'false'],
       ]);
     } finally {
       await fixture.cleanup();
@@ -2395,6 +2404,7 @@ describe('runBuild', () => {
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.args)).toEqual([
         [
+          tscEntry,
           '-b',
           'packages/app/tsconfig.raw.json',
           '--pretty',
@@ -2566,7 +2576,7 @@ describe('runBuild', () => {
 
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.args)).toEqual([
-        ['-b', 'packages/app/tsconfig.raw.json', '--pretty', 'false'],
+        [tscEntry, '-b', 'packages/app/tsconfig.raw.json', '--pretty', 'false'],
       ]);
     } finally {
       await fixture.cleanup();
@@ -2751,9 +2761,10 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command)).toEqual(['tsc']);
+      expect(calls.map((target) => target.command)).toEqual([process.execPath]);
       expect(calls.map((target) => target.args)).toEqual([
         [
+          tscEntry,
           '-b',
           '.limina/tsconfig/checkers/tsc/outputs/projects/packages/shared/tsconfig.lib.output.json',
           '--pretty',
@@ -3258,13 +3269,14 @@ describe('runBuild', () => {
 
       expect(result.passed).toBe(true);
       expect(calls.map((target) => target.command).sort()).toEqual([
-        'tsc',
-        'tsc',
+        process.execPath,
+        process.execPath,
       ]);
       expect(delayed.getMaxActive()).toBe(2);
       expect(calls.map((target) => target.args)).toEqual(
         expect.arrayContaining([
           [
+            tscEntry,
             '-b',
             '.limina/tsconfig/checkers/tsc/outputs/projects/packages/app/tsconfig.output.json',
             '--pretty',
@@ -3273,6 +3285,7 @@ describe('runBuild', () => {
             '--preserveWatchOutput',
           ],
           [
+            tscEntry,
             '-b',
             '.limina/tsconfig/checkers/tsc/outputs/projects/packages/theme/tsconfig.output.json',
             '--pretty',
@@ -3352,8 +3365,231 @@ describe('runCheckerTypecheck', () => {
       expect(result.passed).toBe(true);
       expect(result.disabled).toBe(true);
       expect(calls).toHaveLength(0);
-      expect(existsSync(path.join(fixture.rootDir, '.limina'))).toBe(false);
+      expect(existsSync(fixture.path('.limina/manifest.json'))).toBe(true);
     } finally {
+      await fixture.cleanup();
+    }
+  });
+});
+
+describe('checker targets after materialization', () => {
+  it.each(['checker', 'selected-checker', 'output'] as const)(
+    'rejects changed artifact revisions before a %s build starts',
+    async (entry) => {
+      const fixture = await createFixture({
+        'packages/app/package.json': tsconfig({
+          name: '@fixture/app',
+          private: true,
+        }),
+        'packages/app/src/index.ts': 'export const value = 1;',
+        'packages/app/tsconfig.json': tsconfig({
+          compilerOptions: { types: [] },
+          include: ['src'],
+          liminaOptions: { outputs: { outDir: 'dist', rootDir: 'src' } },
+        }),
+      });
+      const config: ResolvedLiminaConfig = {
+        rootDir: fixture.rootDir,
+        configPath: fixture.path('limina.config.mjs'),
+        config: {
+          checkers: { tsc: { include: ['packages/*/tsconfig.json'] } },
+        },
+      };
+      const first = new LiminaPreflightManager({ config });
+      const second = new LiminaPreflightManager({ config });
+      try {
+        const receipt = await first.ensureGeneratedArtifactsMaterialized();
+        await writeText(
+          fixture.path('packages/lib/package.json'),
+          tsconfig({ name: '@fixture/lib', private: true }),
+        );
+        await writeText(
+          fixture.path('packages/lib/src/index.ts'),
+          'export const value = 2;',
+        );
+        await writeText(
+          fixture.path('packages/lib/tsconfig.json'),
+          tsconfig({
+            compilerOptions: { types: [] },
+            include: ['src'],
+            liminaOptions: { outputs: { outDir: 'dist', rootDir: 'src' } },
+          }),
+        );
+        if (entry !== 'checker') {
+          await writeText(
+            fixture.path('packages/app/src/index.ts'),
+            'export { value } from "../../lib/src/index";',
+          );
+          await writeText(
+            fixture.path('packages/app/package.json'),
+            tsconfig({
+              name: '@fixture/app',
+              private: true,
+              dependencies: { '@fixture/lib': 'workspace:*' },
+            }),
+          );
+        }
+        await second.ensureGeneratedArtifactsMaterialized();
+        vi.spyOn(
+          first,
+          'ensureGeneratedArtifactsMaterialized',
+        ).mockResolvedValue(receipt);
+        const calls: TypecheckTarget[] = [];
+        const options = {
+          config,
+          preflight: first,
+          runner: passingRunner(calls),
+          report: { defer: true },
+        };
+        const pending =
+          entry === 'output'
+            ? runBuild({ ...options, cwd: fixture.path('packages/app') })
+            : runCheckerBuild({
+                ...options,
+                ...(entry === 'selected-checker'
+                  ? { configPath: fixture.path('packages/app/tsconfig.json') }
+                  : {}),
+              });
+        await expect(pending).rejects.toThrow(
+          'revision changed after materialization',
+        );
+        expect(calls).toHaveLength(0);
+        expect(existsSync(fixture.path('packages/app/dist'))).toBe(false);
+      } finally {
+        first.dispose();
+        second.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['add', 'remove', 'package-root', 'empty'] as const)(
+    'uses the materialized receipt after a %s replan',
+    async (change) => {
+      const fixture = await createFixture({
+        'packages/a/src/App.svelte': '<p>hello</p>',
+        'packages/a/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+        ...(change === 'remove'
+          ? {
+              'packages/b/src/App.svelte': '<p>second</p>',
+              'packages/b/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+            }
+          : {}),
+      });
+      const config: ResolvedLiminaConfig = {
+        rootDir: fixture.rootDir,
+        configPath: fixture.path('limina.config.mjs'),
+        config: {
+          checkers: {
+            'svelte-check': { include: ['packages/*/tsconfig.json'] },
+          },
+        },
+      };
+      const first = new LiminaPreflightManager({ config });
+      const second = new LiminaPreflightManager({ config });
+      try {
+        await first.ensureGeneratedGraph();
+        if (change === 'add') {
+          await writeText(
+            fixture.path('packages/b/src/App.svelte'),
+            '<p>added</p>',
+          );
+          await writeText(
+            fixture.path('packages/b/tsconfig.json'),
+            tsconfig({ include: ['src/**/*'] }),
+          );
+        } else if (change === 'package-root') {
+          await writeText(
+            fixture.path('packages/a/package.json'),
+            tsconfig({
+              name: '@fixture/a',
+              private: true,
+              devDependencies: { svelte: '4.0.0' },
+            }),
+          );
+          for (const [packageName, installedName] of [
+            ['svelte', 'svelte-v4-min'],
+            ['svelte2tsx', 'svelte2tsx'],
+            ['typescript', 'typescript'],
+          ] as const) {
+            await linkInstalledPackage({
+              packageName,
+              installedName,
+              rootDir: fixture.path('packages/a'),
+            });
+          }
+        } else {
+          await rm(fixture.path(`packages/${change === 'empty' ? 'a' : 'b'}`), {
+            recursive: true,
+          });
+        }
+        await second.ensureGeneratedArtifactsMaterialized();
+        const calls: TypecheckTarget[] = [];
+        const result = await runCheckerTypecheck({
+          config,
+          preflight: first,
+          runner: passingRunner(calls),
+        });
+        expect(result.passed).toBe(true);
+        expect(result.disabled).toBe(change === 'empty');
+        const expected =
+          change === 'empty' ? [] : change === 'add' ? ['a', 'b'] : ['a'];
+        expect(calls.map((target) => target.sourceConfigPath)).toEqual(
+          expected.map((name) =>
+            fixture.path(`packages/${name}/tsconfig.json`),
+          ),
+        );
+        expect(result.rootConfigPaths).toEqual(
+          expected.map((name) =>
+            fixture.path(`packages/${name}/tsconfig.json`),
+          ),
+        );
+        for (const target of calls) {
+          expect(target.cwd).toBe(
+            change === 'package-root'
+              ? fixture.path('packages/a')
+              : fixture.path(),
+          );
+        }
+      } finally {
+        first.dispose();
+        second.dispose();
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('rejects a receipt replaced before its read lease without starting a checker', async () => {
+    const fixture = await createFixture({
+      'svelte/src/App.svelte': '<p>hello</p>',
+      'svelte/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+    });
+    const config = createLiminaConfig(fixture.rootDir);
+    const first = new LiminaPreflightManager({ config });
+    const second = new LiminaPreflightManager({ config });
+    try {
+      const receipt = await first.ensureGeneratedArtifactsMaterialized();
+      await writeText(fixture.path('src/index.ts'), 'export const value = 1;');
+      await writeText(
+        fixture.path('tsconfig.json'),
+        tsconfig({ include: ['src/**/*'] }),
+      );
+      await second.ensureGeneratedArtifactsMaterialized();
+      vi.spyOn(first, 'ensureGeneratedArtifactsMaterialized').mockResolvedValue(
+        receipt,
+      );
+      const calls: TypecheckTarget[] = [];
+      await expect(
+        runCheckerTypecheck({
+          config,
+          preflight: first,
+          runner: passingRunner(calls),
+        }),
+      ).rejects.toThrow('revision changed after materialization');
+      expect(calls).toHaveLength(0);
+    } finally {
+      first.dispose();
+      second.dispose();
       await fixture.cleanup();
     }
   });

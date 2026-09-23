@@ -161,6 +161,7 @@ function addTypedTargetObservation(options: CollectFactOptions): boolean {
   if (evidence.kind !== 'checker-source') return false;
   options.collection.observations.push({
     importRecord: options.fact.importRecord,
+    resolutionMode: options.fact.resolutionMode,
     kind: 'resource',
     typeEvidence: { ...evidence },
   });
@@ -171,6 +172,7 @@ function addTargetlessFact(options: CollectFactOptions): void {
   if (options.fact.typeEvidence.kind === 'ambient') {
     options.collection.observations.push({
       importRecord: options.fact.importRecord,
+      resolutionMode: options.fact.resolutionMode,
       kind: 'semantic-only',
       typeEvidence: cloneTypeEvidence(options.fact.typeEvidence) as Extract<
         TypeEvidence,
@@ -182,6 +184,7 @@ function addTargetlessFact(options: CollectFactOptions): void {
   if (options.fact.typeEvidence.kind === 'missing') {
     options.collection.observations.push({
       importRecord: options.fact.importRecord,
+      resolutionMode: options.fact.resolutionMode,
       kind: 'missing',
       typeEvidence: { kind: 'missing' },
     });

@@ -2852,6 +2852,132 @@ describe('runGraphCheck graph rules', () => {
     }
   });
 
+  it.each([
+    {
+      name: 'declared dependency',
+      declared: true,
+      targetNamed: true,
+      sourceNamed: true,
+      deny: false,
+      rootActive: false,
+      code: undefined,
+    },
+    {
+      name: 'undeclared dependency',
+      declared: false,
+      targetNamed: true,
+      sourceNamed: true,
+      deny: false,
+      rootActive: false,
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
+    },
+    {
+      name: 'nameless target',
+      declared: true,
+      targetNamed: false,
+      sourceNamed: true,
+      deny: false,
+      rootActive: false,
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspacePackageNameMissing,
+    },
+    {
+      name: 'nameless source',
+      declared: true,
+      targetNamed: true,
+      sourceNamed: false,
+      deny: false,
+      rootActive: false,
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspacePackageNameMissing,
+    },
+    {
+      name: 'denied dependency',
+      declared: true,
+      targetNamed: true,
+      sourceNamed: true,
+      deny: true,
+      rootActive: false,
+      code: LIMINA_CHECK_ISSUE_CODES.graphAccessDenied,
+    },
+    {
+      name: 'activated root package',
+      declared: false,
+      targetNamed: true,
+      sourceNamed: true,
+      deny: false,
+      rootActive: true,
+      code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceDependencyUndeclared,
+    },
+  ])(
+    'keeps original package identity for an implicit reference: $name',
+    async (variant) => {
+      const fixture = await createFixture(
+        {
+          'pnpm-workspace.yaml': variant.rootActive
+            ? 'packages: [".", "packages/*"]'
+            : 'packages: ["packages/*"]',
+          'packages/a/package.json': stringifyConfig({
+            ...(variant.sourceNamed ? { name: '@fixture/a' } : {}),
+            private: true,
+            ...(variant.declared
+              ? { dependencies: { '@fixture/b': 'workspace:*' } }
+              : {}),
+          }),
+          'packages/b/package.json': stringifyConfig({
+            ...(variant.targetNamed ? { name: '@fixture/b' } : {}),
+            private: true,
+          }),
+          'packages/a/src/index.ts': 'export const a = 1;',
+          'packages/b/src/index.ts': 'export const b = 2;',
+          'packages/a/tsconfig.lib.json': stringifyConfig({
+            compilerOptions: { ...buildCompilerOptions, noEmit: true },
+            include: ['src'],
+            liminaOptions: {
+              graphRules: ['runtime'],
+              implicitRefs: [
+                {
+                  path: '../b/tsconfig.lib.json',
+                  reason: 'Loaded by a generated runtime manifest.',
+                },
+              ],
+            },
+          }),
+          'packages/b/tsconfig.lib.json': typecheckConfig(['src']),
+        },
+        {
+          rules: {
+            runtime: variant.deny
+              ? {
+                  deny: {
+                    deps: [
+                      {
+                        name: '@fixture/b',
+                        reason: 'runtime must not depend on node internals',
+                      },
+                    ],
+                  },
+                }
+              : {},
+          },
+        },
+      );
+      try {
+        const { issues, passed } = await runGraphCheckWithIssues(
+          fixture.config,
+        );
+        expect(passed).toBe(variant.code === undefined);
+        if (variant.code !== undefined)
+          expect(issues).toContainEqual(
+            expect.objectContaining({
+              code: variant.code,
+              task: 'graph:check',
+            }),
+          );
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('accepts implicit references not proven by static imports', async () => {
     const fixture = await createFixture({
       'app/node.ts': 'export const nodeValue = 1;\n',

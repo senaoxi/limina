@@ -473,6 +473,100 @@ describe('validated workspace context', () => {
     }
   });
 
+  it.each([
+    ['package.json', { name: 'nested' }, 'package-scope'],
+    ['package.json', { workspaces: [] }, 'workspace-root'],
+    ['pnpm-workspace.yaml', 'packages: []\n', 'workspace-root'],
+  ])('retains the boundary of linked %s (%j)', async (name, data, kind) => {
+    const fixture = await createFixture({
+      'descriptor-data': typeof data === 'string' ? data : json(data),
+      'packages/app/package.json': json({ name: '@fixture/app' }),
+      'packages/app/nested/value.ts': 'export const value = 1;',
+      'packages/app/nested/tsconfig.json': json({ files: ['value.ts'] }),
+    });
+    try {
+      await symlink(
+        fixture.path('descriptor-data'),
+        fixture.path('packages/app/nested', name),
+      );
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+        ],
+      });
+      expect(context.boundaries).toEqual([
+        expect.objectContaining({
+          kind,
+          rootDir: fixture.path('packages/app/nested'),
+        }),
+      ]);
+      expect(context.sourceConfigPaths).toEqual([]);
+      expect(
+        new WorkspaceRegionPathIndex(context).classifyPath(
+          fixture.path('packages/app/nested/value.ts'),
+        ),
+      ).toMatchObject({ package: null, boundary: { kind } });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('does not admit linked configs or traverse directory aliases', async () => {
+    const fixture = await createFixture({
+      'config-data': json({ files: ['value.ts'] }),
+      'outside/tsconfig.json': json({ files: [] }),
+      'packages/app/package.json': json({ name: '@fixture/app' }),
+      'packages/app/value.ts': 'export const value = 1;',
+    });
+    try {
+      await symlink(
+        fixture.path('config-data'),
+        fixture.path('packages/app/tsconfig.json'),
+      );
+      await symlink(
+        fixture.path('outside'),
+        fixture.path('packages/app/alias'),
+        'dir',
+      );
+      const context = await collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+        ],
+      });
+      expect(context.sourceConfigPaths).toEqual([]);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it.each(['missing', 'directory'])(
+    'rejects a descriptor linked to a %s target',
+    async (target) => {
+      const fixture = await createFixture({
+        'packages/app/package.json': json({ name: '@fixture/app' }),
+        'packages/app/nested/value.ts': 'export const value = 1;',
+      });
+      try {
+        await symlink(
+          fixture.path(target === 'missing' ? 'missing' : 'packages/app'),
+          fixture.path('packages/app/nested/package.json'),
+        );
+        await expect(
+          collectValidatedWorkspaceContext({
+            config: fixture.config,
+            rawPackages: [
+              workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+            ],
+          }),
+        ).rejects.toThrow();
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it('never reads tsconfig output declarations behind a nested workspace boundary', async () => {
     const fixture = await createFixture({
       'packages/app/fixture/pnpm-workspace.yaml': 'packages: []\n',

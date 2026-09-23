@@ -6,37 +6,26 @@ import {
   type ProjectInfo,
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
-import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import path from 'node:path';
+import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { RuntimeEvidence } from '../core/import-analysis/evidence';
 import type { SourceResourceTypeEvidenceKind } from './finding-facts';
 import { createSourceDiagnosticFinding } from './finding-utils';
 import type { SourceFinding } from './findings';
+import type { ResourceResolver } from './resource-resolver';
 
 interface ResourceModuleOptions {
   checkerName: string;
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
   importRecord: ImportRecord;
+  resolutionMode: string;
+  resourceResolver: ResourceResolver;
   owner: PackageOwner;
   project: ProjectInfo;
   typeEvidence: AnalysisProviderSet['typeEvidence'];
 }
 
 const NON_PHYSICAL_RUNTIME_KINDS = new Set(['asserted-virtual', 'unsupported']);
-
-function hasRequireResolveRuntime(options: {
-  importRecord: ImportRecord;
-  runtimeKind: string;
-}): boolean {
-  return (
-    options.importRecord.kind === 'require-resolve' &&
-    options.runtimeKind !== 'missing'
-  );
-}
 
 function isResourceImport(options: ResourceModuleOptions): boolean {
   const runtimeEvidence = options.typeEvidence.classifyImportRuntime({
@@ -51,10 +40,7 @@ function isResourceImport(options: ResourceModuleOptions): boolean {
   if (NON_PHYSICAL_RUNTIME_KINDS.has(runtimeEvidence.runtime.kind)) {
     return false;
   }
-  return !hasRequireResolveRuntime({
-    importRecord: options.importRecord,
-    runtimeKind: runtimeEvidence.runtime.kind,
-  });
+  return true;
 }
 
 function addMissingResourceFinding(options: {
@@ -219,58 +205,6 @@ function addExistingResourceProblem(
   });
 }
 
-function isLocalResourceSpecifier(specifier: string): boolean {
-  return specifier.startsWith('.') || path.isAbsolute(specifier);
-}
-
-function resolveLocalFilesystemResource(options: {
-  importRecord: ImportRecord;
-  specifier: string;
-}): RuntimeEvidence {
-  const checkedPath = path.resolve(
-    path.dirname(options.importRecord.filePath),
-    options.specifier,
-  );
-  const portableCheckedPath = normalizeAbsolutePath(checkedPath);
-  return existsSync(checkedPath)
-    ? {
-        authority: 'filesystem',
-        filePath: portableCheckedPath,
-        kind: 'file',
-      }
-    : { checkedPath: portableCheckedPath, kind: 'missing' };
-}
-
-function resolvePackageFilesystemResource(options: {
-  importRecord: ImportRecord;
-  specifier: string;
-}): RuntimeEvidence {
-  try {
-    const filePath = createRequire(options.importRecord.filePath).resolve(
-      options.specifier,
-    );
-    return {
-      authority: 'package-export',
-      filePath: normalizeAbsolutePath(filePath),
-      kind: 'file',
-    };
-  } catch {
-    return { kind: 'missing' };
-  }
-}
-
-function resolveFilesystemResource(
-  importRecord: ImportRecord,
-): RuntimeEvidence {
-  // The specifier is checked exactly as written; source check does not
-  // reinterpret a query or fragment into another physical path.
-  const specifier = importRecord.specifier;
-  const options = { importRecord, specifier };
-  return isLocalResourceSpecifier(specifier)
-    ? resolveLocalFilesystemResource(options)
-    : resolvePackageFilesystemResource(options);
-}
-
 export function addResourceModuleProblems(
   options: ResourceModuleOptions,
 ): void {
@@ -287,6 +221,10 @@ export function addResourceModuleProblems(
   if (evidence.type.kind === 'checker-source') return;
   addResolvedResourceProblem(options, {
     ...evidence,
-    runtime: resolveFilesystemResource(options.importRecord),
+    runtime: options.resourceResolver.resolve({
+      importRecord: options.importRecord,
+      options: options.project.options,
+      resolutionMode: options.resolutionMode,
+    }),
   });
 }

@@ -1,7 +1,7 @@
 import type { ResolvedCheckerConfig } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
-import { withGeneratedArtifactReadLease } from '../../core/build-graph/materializer';
+import { withMaterializedPlanReadLease } from '../../core/build-graph/materialization-read-lease';
 import { TypecheckLogger } from '../../logger';
 import { resolvePreflight } from '../../preflight';
 import { shouldLogCheckReport } from '../runner-shared';
@@ -240,8 +240,9 @@ export async function runCheckerBuildImpl(
   options: RunCheckerBuildOptions,
 ): Promise<RunCheckerBuildResult> {
   const context = await createCheckerBuildContext(options);
-  return withGeneratedArtifactReadLease(
+  return withMaterializedPlanReadLease(
     context.preflight.artifactNamespace,
+    context.generatedGraph.artifactPlan,
     () =>
       options.configPath === undefined
         ? runGeneratedCheckerBuild(context)

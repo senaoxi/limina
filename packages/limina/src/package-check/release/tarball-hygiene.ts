@@ -1,59 +1,15 @@
 import path from 'pathe';
-import ts from 'typescript';
 import { addTarballHygieneFinding } from './consistency/findings';
 import type {
   PackedPackageContentFile,
   ReleaseConsistencyState,
 } from './consistency/types';
+import { hasSourceMappingUrlDirective } from './source-map-comments';
 
 const REQUIRED_RELEASE_FILES = ['README.md', 'LICENSE.md'] as const;
-const SOURCE_MAPPING_URL_COMMENT_PATTERN = /^\s*#\s*sourceMappingURL\s*=/u;
 
 function isJavaScriptPackageFile(relativePath: string): boolean {
   return /\.(?:cjs|mjs|js)$/u.test(relativePath);
-}
-
-function getCommentValue(token: ts.SyntaxKind, tokenText: string): string {
-  if (token === ts.SyntaxKind.SingleLineCommentTrivia) {
-    return tokenText.slice(2);
-  }
-  return tokenText.slice(2, -2);
-}
-
-function commentContainsSourceMappingUrl(
-  token: ts.SyntaxKind,
-  tokenText: string,
-): boolean {
-  if (
-    token !== ts.SyntaxKind.SingleLineCommentTrivia &&
-    token !== ts.SyntaxKind.MultiLineCommentTrivia
-  ) {
-    return false;
-  }
-  return SOURCE_MAPPING_URL_COMMENT_PATTERN.test(
-    getCommentValue(token, tokenText),
-  );
-}
-
-function hasSourceMappingUrlDirective(source: string): boolean {
-  const scanner = ts.createScanner(
-    ts.ScriptTarget.Latest,
-    false,
-    ts.LanguageVariant.Standard,
-    source,
-  );
-
-  for (
-    let token = scanner.scan();
-    token !== ts.SyntaxKind.EndOfFileToken;
-    token = scanner.scan()
-  ) {
-    if (commentContainsSourceMappingUrl(token, scanner.getTokenText())) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 function addMissingFilesFinding(options: {
@@ -128,7 +84,10 @@ function validateJavaScriptContent(options: {
 }): void {
   if (!isJavaScriptPackageFile(options.file.relativePath)) return;
   const source = Buffer.from(options.file.data).toString('utf8');
-  const hasDirective = hasSourceMappingUrlDirective(source);
+  const hasDirective = hasSourceMappingUrlDirective(
+    source,
+    options.file.relativePath,
+  );
   if (hasDirective) addSourceMappingUrlFinding(options);
 }
 

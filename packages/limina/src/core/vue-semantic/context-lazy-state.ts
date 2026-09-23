@@ -61,7 +61,15 @@ function createSemanticSourceFile(options: {
   return options.tsModule.createSourceFile(
     options.fileName,
     snapshot.getText(0, snapshot.getLength()),
-    getLanguageVersion(options),
+    {
+      languageVersion: getLanguageVersion(options),
+      impliedNodeFormat: options.tsModule.getImpliedNodeFormatForFile(
+        options.fileName,
+        undefined,
+        options.host,
+        options.identity.options,
+      ),
+    },
     true,
     getScriptKind(options.host, options.fileName),
   );

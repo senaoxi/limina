@@ -109,7 +109,7 @@ describe('managed outputs public CLI integration', () => {
       'repo/packages/library/dist/environment.d.ts',
     );
     const tsBuildInfoPath = preparedFixture.path(
-      'repo/.limina/tsbuildinfo/build/packages/library/tsconfig.tsbuildinfo',
+      'repo/.limina/tsbuildinfo/build/packages/library/tsconfig.json.tsbuildinfo',
     );
     const checkedInSource = await readFile(checkedInSourcePath, 'utf8');
     const environmentSource = await readFile(environmentSourcePath, 'utf8');

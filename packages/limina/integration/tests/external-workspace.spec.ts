@@ -86,7 +86,7 @@ async function discoverExternalProject(
     declarationDir: preparedFixture.path(
       'repo/.limina/dts/checkers/tsc/external',
       hash,
-      'tsconfig',
+      'tsconfig.json',
     ),
     generatedConfigPath: preparedFixture.path(
       'repo/.limina/tsconfig/checkers/tsc/projects/external',
@@ -97,7 +97,7 @@ async function discoverExternalProject(
     tsBuildInfoPath: preparedFixture.path(
       'repo/.limina/tsbuildinfo/checkers/tsc/external',
       hash,
-      'tsconfig.tsbuildinfo',
+      'tsconfig.json.tsbuildinfo',
     ),
   };
 }
@@ -263,7 +263,7 @@ describe('external workspace public CLI integration', () => {
       'index.d.ts',
     );
     const internalDeclarationPath = preparedFixture.path(
-      'repo/.limina/dts/checkers/tsc/packages/app/tsconfig/index.d.ts',
+      'repo/.limina/dts/checkers/tsc/packages/app/tsconfig.json/index.d.ts',
     );
 
     expect((await lstat(externalProject.declarationDir)).isDirectory()).toBe(
