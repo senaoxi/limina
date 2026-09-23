@@ -1002,6 +1002,34 @@ describe('runSourceCheck package authority', () => {
     }
   });
 
+  it('accepts node:test as a builtin but still checks the bare test package', async () => {
+    const builtinFixture = await createFixture(
+      createPackageFixture({ source: "import 'node:test';\n" }),
+    );
+    const bareFixture = await createFixture(
+      createPackageFixture({ source: "import 'test';\n" }),
+    );
+
+    try {
+      await expect(runSourceCheck(builtinFixture.config)).resolves.toBe(true);
+
+      const sourceIssues: SourceCheckIssue[] = [];
+      await expect(
+        runSourceCheck(bareFixture.config, {
+          deferSnapshot: true,
+          report: { defer: true },
+          sourceIssues,
+        }),
+      ).resolves.toBe(false);
+      expect(sourceIssues.map((issue) => issue.code)).toContain(
+        'LIMINA_SOURCE_PACKAGE_IMPORT_UNAUTHORIZED',
+      );
+    } finally {
+      await builtinFixture.cleanup();
+      await bareFixture.cleanup();
+    }
+  });
+
   it('does not grant ordinary import or dependency authority through ambient declarations', async () => {
     const fixture = await createFixture(
       {

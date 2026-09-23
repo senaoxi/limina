@@ -4,22 +4,13 @@ import {
   isRelativeSpecifier,
   isUrlOrDataOrFileSpecifier,
 } from '#utils/module-specifier';
-import { builtinModules } from 'node:module';
+import { isBuiltin } from 'node:module';
 import path from 'pathe';
 import type {
   GraphRuleDepDeny,
   LabelSelection,
   NormalizedGraphRules,
 } from './rule-types';
-
-const nodeBuiltinNames = new Set(
-  builtinModules.flatMap((specifier) => {
-    const normalized = specifier.startsWith('node:')
-      ? specifier.slice('node:'.length)
-      : specifier;
-    return [normalized, `node:${normalized}`];
-  }),
-);
 
 function matchesWildcardParts(options: {
   prefix: string;
@@ -58,7 +49,7 @@ function getNodeBuiltinRuleName(
     return { matchAllNodeBuiltins: true, normalizedName: '*' };
   }
   const normalizedName = normalizeNodeBuiltinName(name);
-  if (!nodeBuiltinNames.has(normalizedName)) {
+  if (!isBuiltin(name)) {
     return null;
   }
   return { matchAllNodeBuiltins: false, normalizedName };
@@ -134,7 +125,7 @@ export function createNormalizedDep(
 }
 
 export function isNodeBuiltinSpecifier(specifier: string): boolean {
-  return nodeBuiltinNames.has(specifier);
+  return isBuiltin(specifier);
 }
 
 function getSelectedLabels(labels: LabelSelection): readonly string[] {
