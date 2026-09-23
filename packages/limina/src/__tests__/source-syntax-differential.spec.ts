@@ -58,11 +58,12 @@ function compare(
 }
 
 describe('raw syntax differential oracle', () => {
-  it('preserves 70 adversarial sources through distinct Programs and native parser policies', async () => {
-    const root = await mkdtemp(path.join(tmpdir(), 'limina-syntax-corpus-'));
-    const cache = new SourceSyntaxFactsCache();
-    try {
-      for (const ext of ['ts', 'mts', 'cts', 'js', 'tsx']) {
+  it.each(['ts', 'mts', 'cts', 'js', 'tsx'])(
+    'preserves adversarial %s sources through distinct Programs and native parser policies',
+    async (ext) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'limina-syntax-corpus-'));
+      const cache = new SourceSyntaxFactsCache();
+      try {
         for (const [i, text] of cases.entries()) {
           const fileName = normalizeAbsolutePath(
             path.join(root, `${i}.${ext}`),
@@ -89,14 +90,14 @@ describe('raw syntax differential oracle', () => {
             );
           }
         }
+        expect(cache.statistics.hit).toBeGreaterThan(30);
+        expect(cache.statistics.miss).toBeGreaterThan(30);
+      } finally {
+        cache.dispose();
+        await rm(root, { recursive: true, force: true });
       }
-      expect(cache.statistics.hit).toBeGreaterThan(150);
-      expect(cache.statistics.miss).toBeGreaterThan(150);
-    } finally {
-      cache.dispose();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   it('bypasses 432 foreign parser recipes including custom module callbacks', () => {
     let checks = 0;

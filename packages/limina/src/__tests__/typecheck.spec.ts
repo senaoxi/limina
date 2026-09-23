@@ -274,12 +274,17 @@ function delayedRunner(options: {
   calls: TypecheckTarget[];
   delayMs?: (target: TypecheckTarget) => number;
   status?: number;
+  waitForActiveCount?: number;
 }): {
   getMaxActive: () => number;
   runner: TypecheckRunner;
 } {
   let activeCount = 0;
   let maxActiveCount = 0;
+  let releaseWait: () => void = () => {};
+  const activeCountReached = new Promise<void>((resolve) => {
+    releaseWait = resolve;
+  });
 
   return {
     getMaxActive: () => maxActiveCount,
@@ -288,9 +293,24 @@ function delayedRunner(options: {
       activeCount += 1;
       maxActiveCount = Math.max(maxActiveCount, activeCount);
 
-      await new Promise((resolve) => {
-        setTimeout(resolve, options.delayMs?.(target) ?? 10);
-      });
+      if (options.waitForActiveCount === undefined) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, options.delayMs?.(target) ?? 10);
+        });
+      } else {
+        if (activeCount >= options.waitForActiveCount) releaseWait();
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            activeCountReached,
+            new Promise<void>((resolve) => {
+              timeout = setTimeout(resolve, 10_000);
+            }),
+          ]);
+        } finally {
+          if (timeout !== undefined) clearTimeout(timeout);
+        }
+      }
 
       activeCount -= 1;
 
@@ -520,7 +540,7 @@ describe('runCheckerBuild', () => {
     const calls: TypecheckTarget[] = [];
     const delayed = delayedRunner({
       calls,
-      delayMs: (target) => (target.command === process.execPath ? 30 : 10),
+      waitForActiveCount: getExpectedDefaultBuildConcurrency(2),
     });
     const fixture = await createFixture({
       'src/index.ts': 'export const value = 1;\n',
@@ -920,8 +940,8 @@ describe('runCheckerBuild', () => {
       .mockImplementation(() => {});
     const delayed = delayedRunner({
       calls,
-      delayMs: (target) => (target.command === process.execPath ? 30 : 10),
       status: 1,
+      waitForActiveCount: getExpectedDefaultBuildConcurrency(2),
     });
     const fixture = await createFixture({
       'src/index.ts': 'export const value = 1;\n',

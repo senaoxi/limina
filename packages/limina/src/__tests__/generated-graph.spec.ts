@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -21,6 +22,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
@@ -226,6 +228,14 @@ async function createFixture(
 
 function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+async function readGeneratedIndexDeclaration(rootDir: string): Promise<string> {
+  const matches = (await readdir(rootDir, { recursive: true })).filter(
+    (filePath) => path.basename(filePath) === 'index.d.ts',
+  );
+  expect(matches).toHaveLength(1);
+  return readFile(path.join(rootDir, matches[0]!), 'utf8');
 }
 
 async function linkWorkspacePackage(
@@ -8397,13 +8407,13 @@ describe('ambient references and compiler membership', () => {
       };
       const fixture = await createFixture(files);
       try {
-        const bin = requireFromTest.resolve('typescript/bin/tsc');
         const source = fixture.path('packages/pkg/tsconfig.json');
-        await execFileAsync(
-          process.execPath,
-          [bin, '-p', source, '--noEmit', '--pretty', 'false'],
-          { cwd: fixture.rootDir },
-        );
+        const sourceProject = parseProject(fixture.config, source);
+        const sourceProgram = ts.createProgram({
+          rootNames: sourceProject.fileNames,
+          options: { ...sourceProject.options, noEmit: true },
+        });
+        expect(ts.getPreEmitDiagnostics(sourceProgram)).toEqual([]);
         const graph = await prepareGeneratedTsconfigGraph(fixture.config);
         const configs = [
           graph.sourceToDts.get('tsc')!.get(source)!,
@@ -8418,12 +8428,18 @@ describe('ambient references and compiler membership', () => {
           expect(parsed.options.typeRoots).toContain(
             fixture.path('packages/pkg/node_modules/@types'),
           );
-          await execFileAsync(
-            process.execPath,
-            [bin, '-b', configPath, '--pretty', 'false', '--force'],
-            { cwd: fixture.rootDir },
-          );
         }
+        const build = ts.createSolutionBuilder(
+          ts.createSolutionBuilderHost(ts.sys),
+          configs,
+          { force: true },
+        );
+        expect(build.build()).toBe(0);
+        expect(
+          await readGeneratedIndexDeclaration(
+            fixture.path('.limina/dts/checkers/tsc/packages/pkg/tsconfig.json'),
+          ),
+        ).toContain('value: number');
         expect(
           await readFile(fixture.path('packages/pkg/dist/index.d.ts'), 'utf8'),
         ).toContain('value: number');
@@ -8480,28 +8496,35 @@ describe('ambient references and compiler membership', () => {
           : 'export const value = AmbientValue;',
       });
       try {
-        const bin = requireFromTest.resolve('typescript/bin/tsc');
         const source = fixture.path('packages/pkg/tsconfig.json');
-        await execFileAsync(
-          process.execPath,
-          [bin, '-p', source, '--noEmit', '--pretty', 'false'],
-          { cwd: fixture.rootDir },
-        );
+        const sourceProject = parseProject(fixture.config, source);
+        const sourceProgram = ts.createProgram({
+          rootNames: sourceProject.fileNames,
+          options: { ...sourceProject.options, noEmit: true },
+        });
+        expect(ts.getPreEmitDiagnostics(sourceProgram)).toEqual([]);
         const graph = await prepareGeneratedTsconfigGraph(fixture.config);
-        for (const configPath of [
+        const configs = [
           graph.sourceToDts.get('tsc')!.get(source)!,
           graph.configToOutputBuild.get('tsc')!.get(source)!.path,
-        ]) {
+        ];
+        for (const configPath of configs) {
           const projected = JSON.parse(await readFile(configPath, 'utf8'));
           expect(projected.compilerOptions.types).toEqual(
             mixed ? ['fixture', 'tools/client'] : ['fixture'],
           );
-          await execFileAsync(
-            process.execPath,
-            [bin, '-b', configPath, '--pretty', 'false', '--force'],
-            { cwd: fixture.rootDir },
-          );
         }
+        const build = ts.createSolutionBuilder(
+          ts.createSolutionBuilderHost(ts.sys),
+          configs,
+          { force: true },
+        );
+        expect(build.build()).toBe(0);
+        expect(
+          await readGeneratedIndexDeclaration(
+            fixture.path('.limina/dts/checkers/tsc/packages/pkg/tsconfig.json'),
+          ),
+        ).toContain('value: number');
         expect(
           await readFile(fixture.path('packages/pkg/dist/index.d.ts'), 'utf8'),
         ).toContain('value: number');

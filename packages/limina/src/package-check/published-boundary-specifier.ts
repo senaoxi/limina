@@ -2,18 +2,10 @@ import type { RuntimeEnvironment } from '#config/runner';
 import { getPackageRootSpecifier } from '#core/workspace/actions';
 import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
-import { builtinModules } from 'node:module';
+import { isBuiltin } from 'node:module';
 import path from 'pathe';
 import type { DistPackageJson, SelfSpecifierMatchers } from './manifest';
 import { findPackageImportTargets, isAllowedSelfSpecifier } from './manifest';
-
-const nodeBuiltinSpecifiers = new Set(
-  builtinModules.flatMap((specifier) =>
-    specifier.startsWith('node:')
-      ? [specifier, specifier.slice('node:'.length)]
-      : [specifier, `node:${specifier}`],
-  ),
-);
 
 export interface PublishedSpecifierValidationOptions {
   allowedExternalPackages: Set<string>;
@@ -56,7 +48,7 @@ const specifierKindMatchers: readonly {
   { kind: 'local', matches: isRelativeOrAbsoluteSpecifier },
   {
     kind: 'builtin',
-    matches: (specifier) => nodeBuiltinSpecifiers.has(specifier),
+    matches: isBuiltin,
   },
 ];
 

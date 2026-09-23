@@ -70,6 +70,32 @@ function stringifyConfig(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+async function createIssueCliFixture(): Promise<{
+  cliPath: string;
+  rootDir: string;
+}> {
+  const rootDir = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-empty-')),
+  );
+  try {
+    await writeText(
+      path.join(rootDir, 'pnpm-workspace.yaml'),
+      'packages:\n  - packages/*\n',
+    );
+    await writeText(
+      path.join(rootDir, 'limina.config.mjs'),
+      'export default {\n',
+    );
+    return {
+      cliPath: fileURLToPath(new URL('../../bin/limina.js', import.meta.url)),
+      rootDir,
+    };
+  } catch (error) {
+    await rm(rootDir, { force: true, recursive: true });
+    throw error;
+  }
+}
+
 async function writeBinShim(
   rootDir: string,
   command: string,
@@ -2745,23 +2771,9 @@ export default {
   }, 40_000);
 
   it('reports missing and invalid check issue inventory requests', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-empty-')),
-    );
-    const cliPath = fileURLToPath(
-      new URL('../../bin/limina.js', import.meta.url),
-    );
+    const { cliPath, rootDir } = await createIssueCliFixture();
 
     try {
-      await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages:\n  - packages/*\n',
-      );
-      await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
-        'export default {\n',
-      );
-
       const result = await execFileAsync(
         process.execPath,
         [
@@ -2833,7 +2845,15 @@ export default {
           `No standalone issue invocation found for ${missingInvocationId}.`,
         ),
       });
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  }, 60_000);
 
+  it('lists check issue filters for an empty snapshot', async () => {
+    const { cliPath, rootDir } = await createIssueCliFixture();
+
+    try {
       await writeText(
         path.join(rootDir, '.limina/check/last-run.json'),
         stringifyConfig({
@@ -2983,7 +3003,15 @@ export default {
       expect(emptyCheckerHelpPlainStdout).toContain(
         'No checker filters are available',
       );
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  }, 60_000);
 
+  it('lists check issue filters for a populated snapshot', async () => {
+    const { cliPath, rootDir } = await createIssueCliFixture();
+
+    try {
       await writeText(
         path.join(rootDir, '.limina/check/last-run.json'),
         stringifyConfig({
@@ -3109,7 +3137,15 @@ export default {
       expect(checkerHelpResult.stdout).toContain(`${ANSI_ESCAPE}[`);
       expect(checkerHelpPlainStdout).toContain('Check issue checkers:');
       expect(checkerHelpPlainStdout).toContain('- tsc  1 issue');
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  }, 60_000);
 
+  it('rejects invalid check issue command options', async () => {
+    const { cliPath, rootDir } = await createIssueCliFixture();
+
+    try {
       await expect(
         execFileAsync(process.execPath, [cliPath, 'check', 'demo', '--issues']),
       ).rejects.toMatchObject({
@@ -3201,12 +3237,9 @@ export default {
         expect(stderr).not.toContain('LIMINA_SOURCE_UNUSED_MODULE');
       }
     } finally {
-      await rm(rootDir, {
-        force: true,
-        recursive: true,
-      });
+      await rm(rootDir, { force: true, recursive: true });
     }
-  }, 90_000);
+  }, 60_000);
 
   it('does not import config while reading checker filter help', async () => {
     const rootDir = await realpath(
