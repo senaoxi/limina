@@ -145,9 +145,7 @@ function packedRangeAcceptsTarget(options: {
   targetVersion: string | undefined;
 }): boolean {
   if (options.targetVersion === undefined) return false;
-  return semver.satisfies(options.targetVersion, options.packedSpecifier, {
-    includePrerelease: true,
-  });
+  return semver.satisfies(options.targetVersion, options.packedSpecifier);
 }
 
 function addRangeMismatchFinding(options: {

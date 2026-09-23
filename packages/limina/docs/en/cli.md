@@ -87,7 +87,7 @@ pnpm exec limina check --issues --format json
 pnpm exec limina check --issues --invocation <uuid>
 ```
 
-The unqualified query is freshness-aware. Once a check attempt has been published, `--issues` returns inventory only when that same attempt completed and its metadata matches the version-7 snapshot. A running, interrupted, aborted, or persistence-failed latest attempt—and any missing, corrupt, or mismatched freshness metadata—makes the query fail closed with exit code `1`; it never falls back to issues from an older completed attempt. Human, JSON, and NDJSON output all report the unavailable state explicitly.
+The unqualified query is freshness-aware. Once a check attempt has been published, `--issues` returns inventory only when that same attempt completed and its metadata matches the version-8 snapshot. A running, interrupted, aborted, or persistence-failed latest attempt—and any missing, corrupt, or mismatched freshness metadata—makes the query fail closed with exit code `1`; it never falls back to issues from an older completed attempt. Human, JSON, and NDJSON output all report the unavailable state explicitly.
 
 Configuration discovery, validation, and execution-plan failures that happen before an attempt is published do not replace the previous completed inventory. If a process stops between the `last-run.json` and freshness-index writes, a later successful check with a higher sequence rewrites both files and restores query availability automatically.
 
@@ -166,6 +166,8 @@ Every migration target must belong to a Git worktree. External activated package
 - A non-interactive environment cannot display the prompt, so migration stops without writing when changes are present. Clean every involved worktree before rerunning the command.
 
 After confirmation, migration can still write only the planned config files inside the canonical roots of the target worktrees. Approving a dirty worktree does not expand the selected targets or write scope.
+
+Migration rejects duplicate keys in governed fields or their ancestor objects (including `compilerOptions`, `liminaOptions.outputs`, `$schema`, and `references`) during planning. One ambiguous target cancels the entire batch before any config write. Remove the duplicate keys and rerun. The candidate JSONC must also parse to the exact planned effective object; comments, trailing commas and existing line endings are preserved.
 
 #### Filesystem write strategies
 
@@ -250,7 +252,7 @@ An invocation is a selector, not an issue filter, so it promotes the default hum
 
 `--file` performs exact matching, while `--scope` accepts a directory or `glob`. Both accept workspace-relative paths, `./` paths, absolute paths, and either slash style. They match only path-bearing candidates such as issue files and package manifests; diagnostic labels such as config field scopes are not treated as paths. Repeated values within one filter use OR semantics.
 
-Check snapshots use schema version 7, and the reader accepts only version 7.
+Check snapshots use schema version 8, and the reader accepts only version 8.
 
 Helper queries:
 

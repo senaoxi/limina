@@ -482,6 +482,7 @@ describe('project dependency authority', () => {
       {
         importRecord: { specifier: './theme.css' },
         kind: 'semantic-only',
+        resolutionMode: 'import',
         typeEvidence: { kind: 'ambient', modulePattern: '*.css' },
       },
     ]);
@@ -630,6 +631,7 @@ describe('project dependency authority', () => {
       observations: [
         {
           importRecord: createRecord('/workspace/App.vue', './foo.ts?raw'),
+          resolutionMode: 'import',
           kind: 'semantic-only',
           typeEvidence: {
             kind: 'ambient',

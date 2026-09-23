@@ -286,6 +286,53 @@ describe('import analysis', () => {
     ).toEqual(expected);
   });
 
+  it.each([
+    'var require = () => null;',
+    'let require = () => null;',
+    'function require() {}',
+  ])('keeps static-block bindings local (%s)', (declaration) => {
+    const sourceText = [
+      'class Scope { static {',
+      declaration,
+      'require("ignored"); } static { require("./sibling"); } }',
+      'require("./outer"); require.resolve("./resolved");',
+    ].join('\n');
+    expect(
+      collectTypeScriptImports({
+        filePath: '/fixture/static.cjs',
+        scriptKind: ts.ScriptKind.JS,
+        sourceText,
+      }).map((record) => [record.kind, record.specifier]),
+    ).toEqual([
+      ['commonjs', './sibling'],
+      ['commonjs', './outer'],
+      ['require-resolve', './resolved'],
+    ]);
+  });
+
+  it('preserves lexical createRequire aliases through static-block var scopes', () => {
+    const sourceText = [
+      'import { createRequire } from "node:module";',
+      'const local = createRequire(import.meta.url);',
+      'class Scope { static { var local = () => null; local("ignored"); }',
+      'static { local("./sibling"); } }',
+      'local("./outer"); local.resolve("./resolved");',
+    ].join('\n');
+    expect(
+      collectTypeScriptImports({
+        filePath: '/fixture/static.mjs',
+        scriptKind: ts.ScriptKind.JS,
+        sourceText,
+      })
+        .filter((record) => record.specifier !== 'node:module')
+        .map((record) => [record.kind, record.specifier]),
+    ).toEqual([
+      ['commonjs', './sibling'],
+      ['commonjs', './outer'],
+      ['require-resolve', './resolved'],
+    ]);
+  });
+
   it('excludes imported, declared, and reassigned require bindings during tolerant TypeScript parsing', () => {
     const validSource = [
       "import { require } from './shim';",

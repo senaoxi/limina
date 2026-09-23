@@ -1,5 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import { lstat, opendir, realpath } from 'node:fs/promises';
+import { lstat, opendir, realpath, stat } from 'node:fs/promises';
 import path from 'pathe';
 import { createDescriptorCandidate, isMissingFsError } from '../shared';
 import { addPackageDescriptor, addWorkspaceDescriptor } from './boundaries';
@@ -40,13 +40,34 @@ async function openDirectoryOrNull(directory: string) {
   }
 }
 
+const tsconfigNamePattern = /^tsconfig(?:\.[^.]+)*\.json$/u;
+
+function isBoundaryDescriptorName(name: string): boolean {
+  return name === 'package.json' || name === 'pnpm-workspace.yaml';
+}
+
 async function addDirectoryEntry(
   names: DirectoryEntries,
   directory: string,
   entry: { isSymbolicLink(): boolean; name: string },
 ): Promise<void> {
-  if (entry.isSymbolicLink()) return;
-  names.set(entry.name, await lstat(path.join(directory, entry.name)));
+  const entryPath = path.join(directory, entry.name);
+  if (entry.isSymbolicLink()) {
+    if (!isBoundaryDescriptorName(entry.name)) return;
+    names.set(entry.name, await readDescriptorTarget(entryPath));
+    return;
+  }
+  names.set(entry.name, await lstat(entryPath));
+}
+
+async function readDescriptorTarget(
+  entryPath: string,
+): Promise<DirectoryEntryStats> {
+  const target = await stat(entryPath);
+  if (!target.isFile()) {
+    throw new Error(`Workspace descriptor is not a regular file: ${entryPath}`);
+  }
+  return target;
 }
 
 async function readDirectoryEntries(
@@ -63,7 +84,7 @@ async function readDirectoryEntries(
 
 function isTsconfigEntry(name: string, stats: DirectoryEntryStats): boolean {
   if (!stats.isFile()) return false;
-  return /^tsconfig(?:\.[^.]+)*\.json$/u.test(name);
+  return tsconfigNamePattern.test(name);
 }
 
 async function addTsconfigDescriptors(options: {

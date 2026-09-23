@@ -14,7 +14,7 @@ pnpm exec limina graph check
 
 修改 `TypeScript` 配置或包边界时，可以先运行这些命令，确认生成图、检查器构建和非构建型检查器入口仍然可用。
 
-产物消费关系变化时，可以导出依赖图。Limina 会在被检查的 `tsconfig` 域内，从实际导入和解析结果里推导产物边：
+产物消费关系变化时，可以导出依赖图。Limina 会在被检查的 `tsconfig` 域内，从实际导入和解析结果里推导产物边。 分类先依据源码归属，再依据 `liminaOptions.outputs` 或包产物条目声明并通过验证的输出根。`lib/` 等自定义输出可以产生 artifact 边；仅有 `dist/` 目录名不能证明文件是产物，其中受管源码仍归为 source。
 
 ```sh
 pnpm exec limina graph export --view artifact --output .limina/dependency-graph.json

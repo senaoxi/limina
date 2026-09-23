@@ -49,7 +49,11 @@ Package discovery follows the selected manager's policy. Its traversal always ex
 | Yarn    | `node_modules`, `.git`, `.yarn`      |
 | Bun     | `node_modules`, `.git`, `CMakeFiles` |
 
-`test` and `tests` are ordinary candidate directories when matched. Glob selection is manager-specific: for example, later positive patterns can re-include packages in npm and Bun, while pnpm and Yarn retain exclusions. An exact exclusion of a package need not exclude its descendants; declare subtree exclusions when that is intended. Root manifests are included independently of the globs, and names are optional. These supported discovery rules do not certify the manager's full configuration. Limina keeps the hard ignores above even where a manager version accepts an explicit metadata-directory shortcut.
+`test` and `tests` are ordinary candidate directories when matched. Glob selection is manager-specific: for example, later positive patterns can re-include packages in npm and Bun, while pnpm and Yarn retain exclusions. An exact exclusion of a package need not exclude its descendants; declare subtree exclusions when that is intended. Root manifests are included independently of the globs, and names are optional.
+
+The version suffix in `packageManager` does not select a historical discovery profile. Limina uses the declaration to identify the package manager, then applies the documented manager-specific selection policy above. These rules are therefore a bounded workspace-discovery compatibility contract, not a promise to reproduce every historical release. If an older manager release exposed discovery behavior that upstream later corrected as a fix, Limina does not restore that behavior merely because the project declares the older version. Projects that require exact workspace-membership parity with a historical manager release should not assume Limina will produce the same raw package set.
+
+These supported discovery rules do not certify the manager's full configuration. Limina keeps the hard ignores above even where a manager version accepts an explicit metadata-directory shortcut.
 
 Inside each base unit, boundaries work as follows:
 

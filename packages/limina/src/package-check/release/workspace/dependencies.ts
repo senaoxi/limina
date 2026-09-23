@@ -162,16 +162,16 @@ async function visitTargetPackage(options: {
   context: DependencyTraversalContext;
   targetPackage: NamedWorkspacePackage;
 }): Promise<void> {
-  if (options.context.state.visitedPackages.has(options.targetPackage.name)) {
-    return;
-  }
-  options.context.state.visitedPackages.add(options.targetPackage.name);
   await verifyWorkspacePackagePublished({
     config: options.context.config,
     importerName: options.context.importerName,
     state: options.context.state,
     workspacePackage: options.targetPackage,
   });
+  if (options.context.state.visitedPackages.has(options.targetPackage.name)) {
+    return;
+  }
+  options.context.state.visitedPackages.add(options.targetPackage.name);
   await visitWorkspacePackageDependencies({
     config: options.context.config,
     importerName: options.targetPackage.name,

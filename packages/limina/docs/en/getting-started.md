@@ -39,6 +39,8 @@ bun add -d limina@latest typescript
 
 :::
 
+The native `tsc` checker uses the TypeScript installation resolved by Limina itself, including version validation and execution. A different `tsc` earlier in PATH or a package-local `.bin` does not override that compiler.
+
 ## Pick an Adoption Path
 
 If your workspace does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mts` with the flat `checkers.auto` configuration, adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.

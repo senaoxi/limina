@@ -13,6 +13,7 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,7 +93,10 @@ async function writeBinShim(
   );
 }
 
-async function createIsolatedLiminaCli(rootDir: string): Promise<string> {
+async function createIsolatedLiminaCli(
+  rootDir: string,
+  useTscShim = false,
+): Promise<string> {
   const packageRoot = path.join(rootDir, 'limina');
   const sourcePackageRoot = fileURLToPath(new URL('../..', import.meta.url));
   const sourceNodeModules = path.join(sourcePackageRoot, 'node_modules');
@@ -116,6 +120,7 @@ async function createIsolatedLiminaCli(rootDir: string): Promise<string> {
     withFileTypes: true,
   })) {
     if (entry.name === 'knip') continue;
+    if (useTscShim && entry.name === 'typescript') continue;
 
     const sourceEntry = path.join(sourceNodeModules, entry.name);
     const packageEntry = path.join(packageModules, entry.name);
@@ -132,6 +137,29 @@ async function createIsolatedLiminaCli(rootDir: string): Promise<string> {
     }
 
     await symlink(sourceEntry, packageEntry, 'junction');
+  }
+
+  if (useTscShim) {
+    const sourceTypeScript = path.dirname(
+      createRequire(import.meta.url).resolve('typescript/package.json'),
+    );
+    const ownedTypeScript = path.join(packageModules, 'typescript');
+    await mkdir(ownedTypeScript, { recursive: true });
+    await cp(
+      path.join(sourceTypeScript, 'package.json'),
+      path.join(ownedTypeScript, 'package.json'),
+    );
+    await symlink(
+      path.join(sourceTypeScript, 'lib'),
+      path.join(ownedTypeScript, 'lib'),
+      'junction',
+    );
+    // Keep the real compiler API and version; observe the binary at the same
+    // Limina-owned package origin that preflight validates.
+    await writeText(
+      path.join(ownedTypeScript, 'bin/tsc'),
+      `require(${JSON.stringify(path.join(rootDir, 'node_modules/.bin/tsc.cjs'))});\n`,
+    );
   }
 
   return path.join(packageRoot, 'bin/limina.js');
@@ -176,9 +204,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-cli-build-')),
   );
-  const cliPath = fileURLToPath(
-    new URL('../../bin/limina.js', import.meta.url),
-  );
+  const cliPath = await createIsolatedLiminaCli(rootDir, true);
 
   await writeText(
     path.join(rootDir, 'pnpm-workspace.yaml'),
@@ -1621,7 +1647,7 @@ export default {
       const markerPath = path.join(rootDir, 'external/marker.txt');
       const buildInfoPath = path.join(
         rootDir,
-        '.limina/tsbuildinfo/build/packages/pkg/lib.tsbuildinfo',
+        '.limina/tsbuildinfo/build/packages/pkg/tsconfig.lib.json.tsbuildinfo',
       );
       await writeText(markerPath, 'external marker bytes\n');
       await mkdir(path.dirname(buildInfoPath), { recursive: true });
@@ -3853,6 +3879,7 @@ export default {
             noEmit: true,
           },
           include: ['src/**/*.ts'],
+          liminaOptions: { outputs: { rootDir: './src' } },
         }),
       );
       await writeText(
@@ -4060,4 +4087,46 @@ export default {
       });
     }
   }, 30_000);
+});
+
+describe('CLI command help exit status', () => {
+  it.each([
+    ['--help'],
+    ['release', '--help'],
+    ['release', 'check', '--help'],
+    ['graph', 'export', '-h'],
+    ['checker', 'typecheck', '--help'],
+    ['--help', 'source', 'check'],
+  ])('prints help without loading configuration: %j', async (...args) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'limina-help-'));
+    try {
+      await writeFile(
+        path.join(root, 'limina.config.mts'),
+        "throw new Error('help imported config');",
+      );
+      const cli = fileURLToPath(
+        new URL('../../bin/limina.js', import.meta.url),
+      );
+      const result = await execFileAsync(process.execPath, [cli, ...args], {
+        cwd: root,
+      });
+      expect(result.stdout).toContain('Usage:');
+      expect(result.stdout.match(/-h, --help/g)).toHaveLength(1);
+      expect(result.stderr).not.toContain('limina failed');
+      expect(existsSync(path.join(root, '.limina'))).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['not-a-command'],
+    ['not-a-command', '--help'],
+    ['graph', 'bad-action'],
+  ])('still rejects unknown commands/actions: %j', async (...args) => {
+    const cli = fileURLToPath(new URL('../../bin/limina.js', import.meta.url));
+    await expect(
+      execFileAsync(process.execPath, [cli, ...args]),
+    ).rejects.toMatchObject({ code: 1 });
+  });
 });

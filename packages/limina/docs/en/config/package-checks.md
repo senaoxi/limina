@@ -76,6 +76,8 @@ Each `outDir/package.json` must exist and look like a complete `npm` package man
 `publint` and `@arethetypeswrong/core` are optional `peer dependency` packages of Limina. If an enabled analyzer is not installed, Limina marks that analyzer as `skipped` and continues the other package checks. A skipped optional analyzer alone does not make `package check` exit non-zero, including when it was selected with `--tool`. Install and verify both packages explicitly in CI when their coverage is required.
 :::
 
+Only an absent analyzer package is skipped. If the package is installed but its entry, initialization, syntax or transitive dependencies fail to load, package checking fails and preserves the loading error. Limina determines package presence using the same ESM origin and conditions as the analyzer import.
+
 ## publint
 
 - **Type:** `boolean | { strict?: boolean; level?: 'suggestion' | 'warning' | 'error' }`

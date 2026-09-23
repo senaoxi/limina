@@ -10,6 +10,7 @@ import { TypeEvidenceCore } from '../core/type-evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type { SourceFinding } from '../source-check/findings';
 import { addResourceModuleProblems } from '../source-check/resource-module-findings';
+import { ResourceResolver } from '../source-check/resource-resolver';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -66,6 +67,8 @@ it.each([false, true])(
         .getImportRecords(fixture.path('main.ts'))[0]!;
       const findings: SourceFinding[] = [];
       addResourceModuleProblems({
+        resolutionMode: 'import',
+        resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
         config: {
           rootDir: fixture.root,
@@ -154,6 +157,8 @@ it.each([
         .getImportRecords(fixture.path('main.ts'))[0]!;
       const findings: SourceFinding[] = [];
       addResourceModuleProblems({
+        resolutionMode: 'import',
+        resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
         config: {
           rootDir: fixture.root,
@@ -237,6 +242,8 @@ it('passes complete package-import identities to the physical Node resolver', as
       );
       const findings: SourceFinding[] = [];
       addResourceModuleProblems({
+        resolutionMode: 'import',
+        resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
         config: { rootDir, configPath: fixturePath('limina.config.mjs') },
         findings,
@@ -247,6 +254,7 @@ it('passes complete package-import identities to the physical Node resolver', as
         } as ResourceOptions['owner'],
         project: {
           configPath: fixturePath('tsconfig.json'),
+          options: {},
         } as ResourceOptions['project'],
         typeEvidence,
       });
@@ -254,7 +262,10 @@ it('passes complete package-import identities to the physical Node resolver', as
       expect(findings[0]).toMatchObject({
         code: LIMINA_CHECK_ISSUE_CODES.sourceResourceModuleTypeUndeclared,
         facts: {
-          runtimeAuthority: 'package-export',
+          runtimeAuthority:
+            specifier === '#foo' || specifier === '#foo/bar'
+              ? 'oxc'
+              : 'package-export',
           runtimeFilePath: expectedPath,
           specifier,
           typeEvidenceKind: 'missing',

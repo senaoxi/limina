@@ -7,6 +7,7 @@ import {
 } from '#core/workspace/actions';
 import { collectPackageExportEntries } from './entries';
 import { resolveWorkspaceExportEntry } from './execution';
+import { FrameworkExportResolver } from './framework-resolution';
 import {
   oxcResolverCacheEntryBatchSize,
   recordWorkspaceExportProfileMetrics,
@@ -34,6 +35,7 @@ interface WorkspaceExportIndexState {
 }
 
 interface WorkspaceExportIndexContext {
+  frameworkResolver: FrameworkExportResolver;
   config: ResolvedLiminaConfig;
   groups: ReturnType<typeof compileWorkspaceExportResolutionGroups>;
   includeOxc: boolean;
@@ -86,6 +88,7 @@ function resolveEntry(
   const outcome = resolveWorkspaceExportEntry({
     entry,
     groups: context.groups,
+    frameworkResolver: context.frameworkResolver,
     includeOxc: context.includeOxc,
     importAnalysis: context.importAnalysis,
     metrics: context.metrics,
@@ -150,7 +153,9 @@ export async function createWorkspaceExportsResolutionIndex(options: {
 }): Promise<WorkspaceExportsResolutionIndex> {
   const groups = compileWorkspaceExportResolutionGroups(options.profiles);
   const state = createIndexState();
+  const frameworkResolver = new FrameworkExportResolver();
   const context: WorkspaceExportIndexContext = {
+    frameworkResolver,
     config: options.config,
     groups,
     includeOxc: options.includeOxc ?? true,
@@ -160,11 +165,15 @@ export async function createWorkspaceExportsResolutionIndex(options: {
     state,
   };
   recordProfileMetrics({ groups, metrics: options.metrics });
-  for (const workspacePackage of options.packages.filter(
-    isNamedWorkspacePackage,
-  )) {
-    await processPackage(context, workspacePackage);
+  try {
+    for (const workspacePackage of options.packages.filter(
+      isNamedWorkspacePackage,
+    )) {
+      await processPackage(context, workspacePackage);
+    }
+    return createIndexResult(state);
+  } finally {
+    frameworkResolver.dispose();
+    clearOxcResolverCaches(options.importAnalysis);
   }
-  clearOxcResolverCaches(options.importAnalysis);
-  return createIndexResult(state);
 }

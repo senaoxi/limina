@@ -1,8 +1,7 @@
-import { getActiveCheckers } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
-import { withGeneratedArtifactReadLease } from '../../core/build-graph/materializer';
+import { withMaterializedPlanReadLease } from '../../core/build-graph/materialization-read-lease';
 import { resolveCheckerTypecheckConcurrency } from '../../execution/config';
 import { runPool } from '../../execution/pool';
 import type { TaskProgressItem } from '../../execution/progress';
@@ -210,10 +209,11 @@ async function executeTypecheckTargets(options: {
 
 function createContext(
   options: RunCheckerTypecheckOptions,
+  graph: GeneratedTsconfigGraphResult,
 ): CheckerTypecheckContext {
   return {
     checkers: getExecutionCheckers({
-      checkers: getActiveCheckers(options.config),
+      checkers: graph.checkers,
       executionKind: 'typecheck',
     }),
     cwd: path.resolve(options.cwd ?? process.cwd()),
@@ -225,21 +225,28 @@ function createContext(
 }
 
 async function runConfiguredTypecheck(
-  context: CheckerTypecheckContext,
+  options: RunCheckerTypecheckOptions,
   preflight: ReturnType<typeof resolvePreflight>,
 ): Promise<RunCheckerTypecheckResult> {
-  const graph = await preflight.ensureGeneratedGraph();
-  const targets = createTypecheckTargets({ context, generatedGraph: graph });
-  if (targets.length === 0) {
-    return createNoTypecheckCheckerResult({
-      flowDepth: context.flowDepth,
-      projectRootDir: context.projectRootDir,
-      request: context.options,
-    });
-  }
-  await preflight.ensureGeneratedArtifactsMaterialized();
-  return withGeneratedArtifactReadLease(preflight.artifactNamespace, () =>
-    runMaterializedTypecheck(context, targets),
+  const receipt = await preflight.ensureGeneratedArtifactsMaterialized();
+  const context = createContext(options, receipt.graph);
+  const targets = createTypecheckTargets({
+    context,
+    generatedGraph: receipt.graph,
+  });
+  return withMaterializedPlanReadLease(
+    preflight.artifactNamespace,
+    receipt.graph.artifactPlan,
+    async () => {
+      if (targets.length === 0) {
+        return createNoTypecheckCheckerResult({
+          flowDepth: context.flowDepth,
+          projectRootDir: context.projectRootDir,
+          request: context.options,
+        });
+      }
+      return runMaterializedTypecheck(context, targets);
+    },
   );
 }
 
@@ -280,6 +287,5 @@ export async function runCheckerTypecheckImpl(
 ): Promise<RunCheckerTypecheckResult> {
   const preflight = resolvePreflight(options.config, options);
   await preflight.ensureWorkspaceValidated();
-  const context = createContext(options);
-  return runConfiguredTypecheck(context, preflight);
+  return runConfiguredTypecheck(options, preflight);
 }

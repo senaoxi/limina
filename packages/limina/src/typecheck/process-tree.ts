@@ -1,10 +1,31 @@
 import { type ChildProcess, spawn } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const FORCE_KILL_DELAY_MS = 500;
-const terminatingChildren = new WeakSet<ChildProcess>();
+const TERMINATION_TIMEOUT_MS = 2000;
+const terminatingChildren = new WeakMap<
+  ChildProcess,
+  Promise<Error | undefined>
+>();
 
 function isRunning(child: ChildProcess): boolean {
   return child.exitCode === null && child.signalCode === null;
+}
+
+function isPosixProcessGroupRunning(child: ChildProcess): boolean {
+  if (child.pid === undefined) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+function isProcessTreeRunning(child: ChildProcess): boolean {
+  return process.platform === 'win32'
+    ? isRunning(child)
+    : isPosixProcessGroupRunning(child);
 }
 
 function ignoreTaskkillError(): undefined {
@@ -62,7 +83,7 @@ function terminateForPlatform(options: {
 }
 
 function forceTerminateChildProcessTree(child: ChildProcess): void {
-  if (!isRunning(child)) return;
+  if (!isProcessTreeRunning(child)) return;
   const pid = getChildPid(child);
   if (pid === null) return;
   terminateForPlatform({ child, force: true, pid });
@@ -74,16 +95,38 @@ function gracefullyTerminateChildProcessTree(child: ChildProcess): void {
   terminateForPlatform({ child, force: false, pid });
 }
 
-export function terminateChildProcessTree(child: ChildProcess): void {
-  if (!isRunning(child)) return;
-  if (terminatingChildren.has(child)) return;
-  terminatingChildren.add(child);
-
+async function terminateAndWait(
+  child: ChildProcess,
+): Promise<Error | undefined> {
+  const deadline = Date.now() + TERMINATION_TIMEOUT_MS;
   const forceTimer = setTimeout(
     () => forceTerminateChildProcessTree(child),
     FORCE_KILL_DELAY_MS,
   );
-  forceTimer.unref();
-  child.once('close', () => clearTimeout(forceTimer));
   gracefullyTerminateChildProcessTree(child);
+  try {
+    while (isProcessTreeRunning(child)) {
+      if (Date.now() >= deadline) {
+        return new Error(
+          `Checker process tree ${child.pid} did not terminate after escalation.`,
+        );
+      }
+      await delay(20);
+    }
+    return undefined;
+  } finally {
+    clearTimeout(forceTimer);
+  }
+}
+
+export function waitForChildProcessTreeTermination(
+  child: ChildProcess,
+): Promise<Error | undefined> {
+  return Promise.resolve(terminatingChildren.get(child));
+}
+
+export function terminateChildProcessTree(child: ChildProcess): void {
+  if (terminatingChildren.has(child)) return;
+  if (!isProcessTreeRunning(child)) return;
+  terminatingChildren.set(child, terminateAndWait(child));
 }

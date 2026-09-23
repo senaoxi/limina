@@ -38,7 +38,7 @@ export default defineConfig({
 
 ## 默认治理区域
 
-Limina 从最近的工作区声明 声明的原始包成员关系开始。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
+Limina 从最近的工作区声明所定义的原始包成员关系开始。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
 
 包发现遵循所选 manager 的策略。遍历始终排除以下目录名：
 
@@ -49,7 +49,11 @@ Limina 从最近的工作区声明 声明的原始包成员关系开始。它先
 | Yarn     | `node_modules`、`.git`、`.yarn`      |
 | Bun      | `node_modules`、`.git`、`CMakeFiles` |
 
-`test` 和 `tests` 被匹配时是普通候选目录。glob 选择语义因 manager 而异：例如 npm 和 Bun 的后续正向 pattern 可以重新包含包，而 pnpm 和 Yarn 保留排除。精确排除一个包不一定排除其后代；需要排除子树时应显式声明。根 manifest 独立于 glob 加入，包名可以缺省。这些受支持的发现规则不证明 manager 完整配置合法。即使某个 manager 版本允许显式选中 metadata 目录，Limina 仍保留上表的 hard ignore。
+`test` 和 `tests` 被匹配时是普通候选目录。glob 选择语义因 manager 而异：例如 npm 和 Bun 的后续正向 pattern 可以重新包含包，而 pnpm 和 Yarn 保留排除。精确排除一个包不一定排除其后代；需要排除子树时应显式声明。根 manifest 独立于 glob 加入，包名可以缺省。
+
+`packageManager` 中的版本后缀不会选择另一套历史发现规则。Limina 只用这项声明识别包管理器，再应用这里记录的 manager-specific selection policy。因此，这些规则表达的是有范围的 workspace discovery 兼容契约，而不是对每个历史版本实现细节的复现承诺。如果旧版本曾存在一种后来被上游以 fix 修正的发现行为，Limina 不会仅因为项目声明该旧版本就恢复这种行为。需要与特定历史版本保持精确 workspace membership 一致的项目，不应假设 Limina 会得到完全相同的原始包集合。
+
+这些受支持的发现规则不证明 manager 完整配置合法。即使某个 manager 版本允许显式选中 metadata 目录，Limina 仍保留上表的 hard ignore。
 
 每个基础治理单元内部遵循这些边界规则：
 

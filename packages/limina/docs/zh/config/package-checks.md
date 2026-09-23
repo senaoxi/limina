@@ -76,6 +76,8 @@ export default defineConfig({
 `publint` 和 `@arethetypeswrong/core` 是 Limina 的可选 `peer dependency`。已启用的 analyzer 未安装时，Limina 会把对应检查记为 `skipped`，并继续其他包检查；即使用 `--tool` 单独选择它，仅发生 skip 也不会让 `package check` 以非零状态退出。如果 CI 必须覆盖这两项检查，应显式安装并校验对应包。
 :::
 
+只有分析器包确实未安装时才会跳过。已安装包的入口、初始化、语法或传递依赖发生加载错误时，包检查会失败并保留加载错误。Limina 使用与分析器 import 相同的 ESM 来源和条件判断包是否存在。
+
 ## publint
 
 - **类型：** `boolean | { strict?: boolean; level?: 'suggestion' | 'warning' | 'error' }`

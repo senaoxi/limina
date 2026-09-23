@@ -14,9 +14,12 @@ function createRestoreOperation(state: FlowReporterState): () => void {
   const restoreStdout = patchWriteStream(state.stdout, (chunk) =>
     recordProcessWrite(state, chunk),
   );
-  const restoreStderr = patchWriteStream(state.stderr, (chunk) =>
-    recordProcessWrite(state, chunk),
-  );
+  const restoreStderr =
+    state.stderr === state.stdout
+      ? undefined
+      : patchWriteStream(state.stderr, (chunk) =>
+          recordProcessWrite(state, chunk),
+        );
   return () => {
     restoreStdout?.();
     restoreStderr?.();

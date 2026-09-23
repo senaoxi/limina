@@ -1,11 +1,8 @@
 import type { WorkspacePackage } from '#core/workspace/actions';
-import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
-import path from 'pathe';
+import { isPathInsideDirectory } from '#utils/path';
 import type { ProjectDependency } from '../core/project-dependencies/contracts';
 import type { DependencyGraphCollectionContext } from './collection-types';
 import type { DependencyGraphEdgeKind } from './types';
-
-const artifactDirectories = ['dist'] as const;
 
 export interface ResolvedImportPaths {
   graphResolvedFilePath: string;
@@ -13,17 +10,14 @@ export interface ResolvedImportPaths {
   useWorkspaceExportResolution: boolean;
 }
 
-function matchesArtifactDirectory(
-  targetPackage: WorkspacePackage,
+function matchesOutputRoot(
+  context: DependencyGraphCollectionContext,
   resolvedPath: string,
 ): boolean {
-  return artifactDirectories.some((artifactDirectory) =>
-    isPathInsideDirectory(
-      resolvedPath,
-      normalizeAbsolutePath(
-        path.join(targetPackage.directory, artifactDirectory),
-      ),
-    ),
+  const canonicalPath =
+    context.pathIndex.classifyPath(resolvedPath).canonicalPath;
+  return context.outputRoots.some((root) =>
+    isPathInsideDirectory(canonicalPath, root),
   );
 }
 
@@ -42,17 +36,9 @@ export function classifyEdge(options: {
   paths: ResolvedImportPaths;
   targetPackage: WorkspacePackage;
 }): DependencyGraphEdgeKind | null {
-  if (
-    matchesArtifactDirectory(
-      options.targetPackage,
-      options.paths.resolvedFilePath,
-    )
-  ) {
-    return 'artifact';
-  }
-
-  return hasSourceOwner({ context: options.context, paths: options.paths })
-    ? 'source'
+  if (hasSourceOwner(options)) return 'source';
+  return matchesOutputRoot(options.context, options.paths.resolvedFilePath)
+    ? 'artifact'
     : null;
 }
 

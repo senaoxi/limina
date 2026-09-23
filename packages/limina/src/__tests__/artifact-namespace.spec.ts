@@ -22,6 +22,7 @@ import {
   getGeneratedSolutionBuildConfigPath,
   getGeneratedTsBuildInfoPath,
 } from '../core/build-graph/generated/paths';
+import { assertDistinctGeneratedProjectPaths } from '../core/build-graph/generated/project-paths';
 import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
 import {
   ArtifactNamespaceContainmentError,
@@ -90,6 +91,38 @@ async function fileExists(filePath: string): Promise<boolean> {
 }
 
 describe('trusted artifact namespace', () => {
+  it('rejects distinct projects assigned the same generated configuration path', async () => {
+    const fixture = await createFixture();
+    try {
+      const first = {
+        checkerName: 'tsc' as const,
+        configPath: fixture.path('packages/app/tsconfig.json'),
+        dtsConfigPath: fixture.path('.limina/shared.json'),
+        outputConfigPath: fixture.path('.limina/output.json'),
+        outputOptions: null,
+        packageRootDir: fixture.path('packages/app'),
+      };
+      const second = {
+        ...first,
+        configPath: fixture.path('packages/app/tsconfig.tsconfig.json'),
+      };
+      expect(() =>
+        assertDistinctGeneratedProjectPaths({
+          rootDir: fixture.rootDir,
+          projects: [first, second],
+        }),
+      ).toThrow('Generated project path collision');
+      expect(() =>
+        assertDistinctGeneratedProjectPaths({
+          rootDir: fixture.rootDir,
+          projects: [first, first],
+        }),
+      ).not.toThrow();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
   it('maps every external generated path through external/<stable-id> without dot-dot segments', async () => {
     const fixture = await createFixture();
     const externalRoot = await realpath(

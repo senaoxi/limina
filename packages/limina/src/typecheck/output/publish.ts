@@ -124,13 +124,21 @@ async function attemptPublication(options: {
   ownedFile: OwnedDeclarationFile | undefined;
   primaryError: unknown;
 }> {
+  let ownedFile: OwnedDeclarationFile | undefined;
   try {
+    ownedFile = {
+      ...createOwnedFile({
+        ...options,
+        state: await readHandleState(options.handle),
+      }),
+      pendingContent: options.prepared.sourceState.content,
+    };
     return {
       ownedFile: await writePublishedFile(options),
       primaryError: undefined,
     };
   } catch (error) {
-    return { ownedFile: undefined, primaryError: error };
+    return { ownedFile, primaryError: error };
   }
 }
 
@@ -197,10 +205,29 @@ export async function rollbackOwnedFile(
       `Refusing to delete a declaration target whose transaction identity drifted: ${owned.path}.`,
     );
   }
-  if (fileIdentityKey(current) !== fileIdentityKey(owned.state)) {
+  if (!hasOwnedFileState(owned, current)) {
     throw new Error(
       `Refusing to delete a declaration target whose transaction identity drifted: ${owned.path}.`,
     );
   }
   await unlink(owned.path);
+}
+
+function hasOwnedFileState(
+  owned: OwnedDeclarationFile,
+  current: OwnedDeclarationFile['state'],
+): boolean {
+  if (owned.pendingContent === undefined) {
+    return fileIdentityKey(current) === fileIdentityKey(owned.state);
+  }
+  const expected = {
+    ...owned.state,
+    content: current.content,
+    hash: current.hash,
+    length: current.length,
+  };
+  if (fileIdentityKey(current) !== fileIdentityKey(expected)) return false;
+  return current.content.equals(
+    owned.pendingContent.subarray(0, current.length),
+  );
 }

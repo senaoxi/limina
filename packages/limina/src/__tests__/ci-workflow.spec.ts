@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 interface WorkflowStep {
+  env?: Record<string, string>;
   id?: string;
   name?: string;
   run?: string;
@@ -122,6 +123,26 @@ describe('Limina CI change detection', () => {
         target: 'build',
       },
     ]);
+  });
+
+  it('waits for every validation job and rejects failures and cancellations', async () => {
+    const workflowPath = path.join(workspaceRoot, '.github/workflows/ci.yml');
+    const workflow = parse(
+      await readFile(workflowPath, 'utf8'),
+    ) as WorkflowDocument;
+    const jobs = workflow.jobs ?? {};
+    const status = jobs.status;
+    const validationJobs = Object.keys(jobs).filter(
+      (name) => name !== 'changes' && name !== 'status',
+    );
+    expect(status?.needs).toEqual(expect.arrayContaining(validationJobs));
+    expect(status?.if).toBe('always()');
+    const check = status?.steps?.find((step) => step.name === 'Check Status');
+    expect(check?.env?.FAILED).toBe(
+      "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}",
+    );
+    expect(check?.run).toContain('if [[ "$FAILED" == "true" ]]; then');
+    expect(check?.run).toContain('exit 1');
   });
 
   it('runs the exact Vue semantic adapter matrix from built artifacts', async () => {

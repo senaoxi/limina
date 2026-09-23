@@ -414,7 +414,26 @@ Limina 会把它视为已有声明文件。即使这个文件位于 `src` 下，
 
 这个诊断表示：静态导入到达了另一个需要声明输出的源码提供者，但当前生成声明配置中没有对应项目引用。
 
-通常需要确认两个源码 `tsconfig` 都被检查器 `include` 选中，然后重新生成图。
+先检查两端是否属于预期的检查器域，并确认各自的默认 `tsconfig.json` 入口被 `checker.include` 选中。`tsconfig.lib.json`、`tsconfig.test.json` 等命名终端配置必须能从已选入口的有效 `references` 闭包到达；将这些 leaf 路径直接放入 `include` 会被拒绝。
+
+例如，以 `include: ['tsconfig.json']` 选择根入口，由它纳入命名 leaf：
+
+```json [tsconfig.json]
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/app/tsconfig.lib.json" },
+    { "path": "./packages/app/tsconfig.test.json" }
+  ]
+}
+```
+
+```sh
+pnpm exec limina graph prepare
+pnpm exec limina graph check
+```
+
+也支持经过另一个默认 solution 的链路（`tsconfig.json → packages/app/tsconfig.json → tsconfig.lib.json`）。中间 solution 必须使用默认名称 `tsconfig.json`。终端源码配置不要手工维护构建引用；Limina 根据提供者证据推导它们的声明引用。选择与闭包规则见[检查器配置](./config/checkers.md)。如果诊断仍然存在，重新生成不能代替检查实际提供者证据。
 
 ### Extra project reference not proven by static imports
 

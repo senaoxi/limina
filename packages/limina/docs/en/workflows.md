@@ -14,7 +14,7 @@ pnpm exec limina graph check
 
 Use these while changing `TypeScript` configs or package boundaries to confirm the generated graph, build checker entries, and non-build checker entries are still usable.
 
-When artifact consumption changes, export the dependency graph. Limina derives artifact dependency edges from actual imports that resolve into built output inside the managed tsconfig domains:
+When artifact consumption changes, export the dependency graph. Limina derives artifact dependency edges from actual imports that resolve into built output inside the managed tsconfig domains. The category follows source ownership first, then validated output roots declared by `liminaOptions.outputs` or package output entries. A custom output such as `lib/` is eligible; a directory named `dist/` alone is not proof of an artifact, and owned source inside it remains source.
 
 ```sh
 pnpm exec limina graph export --view artifact --output .limina/dependency-graph.json

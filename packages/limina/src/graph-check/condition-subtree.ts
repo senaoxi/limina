@@ -7,14 +7,16 @@ import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/colle
 import { toRelativePath } from '#utils/path';
 import { isDeepStrictEqual } from 'node:util';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
+import {
+  mergeConditionFindingIdentities,
+  registerConditionFinding,
+} from './condition-findings';
 import type {
   CustomConditionConsistencyContext,
   CustomConditionSubtreeSummary,
 } from './condition-types';
-import type {
-  GraphConditionDomainMismatchFinding,
-  GraphFinding,
-} from './findings';
+import type { GraphConditionDomainMismatchFinding } from './findings';
+export { addUniqueConditionFindings } from './condition-findings';
 
 export function normalizeCustomConditions(
   value: readonly string[] | undefined,
@@ -43,7 +45,7 @@ function createCycleSummary(
 ): CustomConditionSubtreeSummary {
   return {
     consistentConditions: conditions,
-    mismatchFindings: [],
+    mismatchFindingIdentities: new Set(),
     projectPaths: new Set([project.configPath]),
   };
 }
@@ -147,7 +149,7 @@ function createReferenceMismatchFinding(options: {
 function mergeReferencedProject(options: {
   config: ResolvedLiminaConfig;
   context: CustomConditionConsistencyContext;
-  mismatchFindings: GraphConditionDomainMismatchFinding[];
+  mismatchFindingIdentities: Set<string>;
   project: ProjectInfo;
   projectConditions: string[];
   projectPaths: Set<string>;
@@ -163,7 +165,10 @@ function mergeReferencedProject(options: {
     options.projectPaths.add(projectPath);
   }
 
-  options.mismatchFindings.push(...summary.mismatchFindings);
+  mergeConditionFindingIdentities(
+    options.mismatchFindingIdentities,
+    summary.mismatchFindingIdentities,
+  );
   const referencedConditions = getProjectCustomConditions(
     options.referencedProject,
   );
@@ -181,15 +186,17 @@ function mergeReferencedProject(options: {
   });
 
   if (finding !== null) {
-    options.mismatchFindings.push(finding);
+    options.mismatchFindingIdentities.add(
+      registerConditionFinding(options.context, finding),
+    );
   }
 }
 
 function resolveConsistentConditions(
   conditions: string[],
-  findings: readonly GraphConditionDomainMismatchFinding[],
+  identities: ReadonlySet<string>,
 ): string[] | null {
-  return findings.length === 0 ? conditions : null;
+  return identities.size === 0 ? conditions : null;
 }
 
 function getStoredProjectConditions(
@@ -214,7 +221,7 @@ export function collectCustomConditionSubtreeSummary(
 
   context.conditionsByProjectPath.set(project.configPath, projectConditions);
   context.visitingProjectPaths.add(project.configPath);
-  const mismatchFindings: GraphConditionDomainMismatchFinding[] = [];
+  const mismatchFindingIdentities = new Set<string>();
   const projectPaths = new Set([project.configPath]);
 
   for (const referencedProject of getReferencedDeclarationProjects(
@@ -224,7 +231,7 @@ export function collectCustomConditionSubtreeSummary(
     mergeReferencedProject({
       config,
       context,
-      mismatchFindings,
+      mismatchFindingIdentities,
       project,
       projectConditions,
       projectPaths,
@@ -236,9 +243,9 @@ export function collectCustomConditionSubtreeSummary(
   const summary: CustomConditionSubtreeSummary = {
     consistentConditions: resolveConsistentConditions(
       projectConditions,
-      mismatchFindings,
+      mismatchFindingIdentities,
     ),
-    mismatchFindings,
+    mismatchFindingIdentities,
     projectPaths,
   };
   context.subtreeByProjectPath.set(project.configPath, summary);
@@ -251,32 +258,11 @@ export function createCustomConditionConsistencyContext(
 ): CustomConditionConsistencyContext {
   return {
     conditionsByProjectPath: new Map(),
+    mismatchFindingsByIdentity: new Map(),
+    emittedFindingIdentities: new Set(),
     projectCheckerNamesByPath,
     projectsByPath,
     subtreeByProjectPath: new Map(),
     visitingProjectPaths: new Set(),
   };
-}
-
-function getConditionMismatchIdentity(
-  finding: GraphConditionDomainMismatchFinding,
-): string {
-  return finding.facts.kind === 'reference-tree'
-    ? `${finding.code}\0reference-tree\0${finding.facts.rootProjectPath}\0${finding.facts.referencedProjectPath}`
-    : `${finding.code}\0domain-entry\0${finding.facts.domainName}\0${finding.facts.entryProjectPath}`;
-}
-
-export function addUniqueConditionFindings(
-  findings: GraphFinding[],
-  seenFindingIdentities: Set<string>,
-  nextFindings: readonly GraphConditionDomainMismatchFinding[],
-): void {
-  for (const finding of nextFindings) {
-    const identity = getConditionMismatchIdentity(finding);
-
-    if (!seenFindingIdentities.has(identity)) {
-      seenFindingIdentities.add(identity);
-      findings.push(finding);
-    }
-  }
 }

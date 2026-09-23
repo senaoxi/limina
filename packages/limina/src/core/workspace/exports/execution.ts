@@ -1,4 +1,5 @@
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
+import type { FrameworkExportResolver } from './framework-resolution';
 import {
   recordGroupedOxcExecution,
   recordGroupedTypeScriptExecution,
@@ -159,6 +160,33 @@ function isTypeScriptStableEntry(filePath: string | null): boolean {
   return !typeScriptRuntimeModulePattern.test(filePath);
 }
 
+type ExportTypeResolution =
+  | { kind: 'typescript' | 'framework'; fileName: string }
+  | { kind: 'unresolved' };
+
+function resolveProfileTypes(options: {
+  entry: PackageExportEntry;
+  frameworkResolver: FrameworkExportResolver;
+  nativeFileName: string | null;
+  profile: WorkspaceExportsResolutionProfile;
+}): ExportTypeResolution {
+  if (isTypeScriptStableEntry(options.nativeFileName))
+    return { kind: 'typescript', fileName: options.nativeFileName! };
+  const fileName = options.frameworkResolver.resolve(options);
+  if (fileName !== null) return { kind: 'framework', fileName };
+  return createNativeResolution(options.nativeFileName);
+}
+
+function createNativeResolution(fileName: string | null): ExportTypeResolution {
+  return fileName === null
+    ? { kind: 'unresolved' }
+    : { kind: 'typescript', fileName };
+}
+
+function getTypeFileName(resolution: ExportTypeResolution): string | null {
+  return resolution.kind === 'unresolved' ? null : resolution.fileName;
+}
+
 function createProfileResolution(options: {
   entry: PackageExportEntry;
   oxcResolvedFileName: string | null;
@@ -197,6 +225,7 @@ function getBufferedResult(
 
 function expandOriginalResults(options: {
   buffers: ResolutionBuffers;
+  frameworkResolver: FrameworkExportResolver;
   entry: PackageExportEntry;
   groups: WorkspaceExportResolutionGroups;
   metrics: WorkspaceExportsMetricsRecorder | undefined;
@@ -211,9 +240,16 @@ function expandOriginalResults(options: {
   };
   for (const compiled of options.groups.compiledOriginals) {
     recordOriginalResultExpansion(options.metrics);
-    const typeScriptResolvedFileName = getBufferedResult(
-      options.buffers.typeScript,
-      compiled.originalIndex,
+    const typeScriptResolvedFileName = getTypeFileName(
+      resolveProfileTypes({
+        entry: options.entry,
+        frameworkResolver: options.frameworkResolver,
+        nativeFileName: getBufferedResult(
+          options.buffers.typeScript,
+          compiled.originalIndex,
+        ),
+        profile: compiled.original,
+      }),
     );
     const rawOxcResolvedFileName = getBufferedResult(
       options.buffers.oxc,
@@ -238,6 +274,7 @@ function expandOriginalResults(options: {
 }
 
 export function resolveWorkspaceExportEntry(options: {
+  frameworkResolver: FrameworkExportResolver;
   entry: PackageExportEntry;
   groups: WorkspaceExportResolutionGroups;
   includeOxc: boolean;

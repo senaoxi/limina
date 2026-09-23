@@ -87,11 +87,12 @@ export function patchWriteStream(
   }
 
   const originalWrite = stream.write;
+  const forwardWrite = originalWrite.bind(stream);
 
   const patchedWrite = (...args: FlowWriteArgs): boolean => {
     onWrite(args[0]);
 
-    return writeWithFlowArgs(originalWrite, args);
+    return writeWithFlowArgs(forwardWrite, args);
   };
 
   stream.write = patchedWrite as FlowWrite;

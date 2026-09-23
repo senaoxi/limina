@@ -63,6 +63,8 @@ export interface RegularFileState {
 
 export interface OwnedDeclarationFile {
   readonly authority: MutationAuthority;
+  /** Expected bytes while an exclusive write is incomplete or unverified. */
+  readonly pendingContent?: Buffer;
   readonly path: string;
   readonly state: RegularFileState;
   readonly transactionToken: string;

@@ -49,6 +49,7 @@ function createFakeCli(options: {
   return {
     args: [options.command],
     matchedCommand: {},
+    globalCommand: {},
     parse: vi.fn(),
     runMatchedCommand: vi.fn(options.run),
   } as unknown as ReturnType<typeof cac>;

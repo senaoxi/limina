@@ -48,53 +48,32 @@ function stripDotSlash(value: string): string {
   return value.startsWith('./') ? value.slice('./'.length) : value;
 }
 
-function replaceFirstWildcard(pattern: string, value: string): string {
-  const wildcardIndex = pattern.indexOf('*');
-  if (wildcardIndex === -1) return pattern;
-  return `${pattern.slice(0, wildcardIndex)}${value}${pattern.slice(
-    wildcardIndex + 1,
-  )}`;
-}
-
-function getWildcardParts(
-  targetPattern: string,
-): { prefix: string; suffix: string } | null {
-  const pattern = stripDotSlash(targetPattern);
-  const wildcardIndex = pattern.indexOf('*');
-  if (wildcardIndex === -1) return null;
-  return {
-    prefix: pattern.slice(0, wildcardIndex),
-    suffix: pattern.slice(wildcardIndex + 1),
-  };
-}
-
-function matchesWildcardParts(options: {
-  matchedPath: string;
-  prefix: string;
-  suffix: string;
-}): boolean {
-  if (!options.matchedPath.startsWith(options.prefix)) return false;
-  return options.matchedPath.endsWith(options.suffix);
+function replaceWildcards(pattern: string, value: string): string {
+  return pattern.split('*').join(value);
 }
 
 function getWildcardTextFromMatchedTarget(options: {
   matchedPath: string;
   targetPattern: string;
 }): string | null {
-  const parts = getWildcardParts(options.targetPattern);
-  if (parts === null) return null;
-  if (!matchesWildcardParts({ ...options, ...parts })) return null;
-  return options.matchedPath.slice(
-    parts.prefix.length,
-    options.matchedPath.length - parts.suffix.length,
-  );
+  const pattern = stripDotSlash(options.targetPattern);
+  const parts = pattern.split('*');
+  const literalLength = parts.reduce((total, part) => total + part.length, 0);
+  const captureLength =
+    (options.matchedPath.length - literalLength) / (parts.length - 1);
+  if (captureLength <= 0) return null;
+  const start = parts[0]!.length;
+  const capture = options.matchedPath.slice(start, start + captureLength);
+  return replaceWildcards(pattern, capture) === options.matchedPath
+    ? capture
+    : null;
 }
 
 function getExportEntryTargetsForWildcard(
   targets: readonly string[],
   wildcardText: string,
 ): string[] {
-  return targets.map((target) => replaceFirstWildcard(target, wildcardText));
+  return targets.map((target) => replaceWildcards(target, wildcardText));
 }
 
 function createWildcardProblem(options: {
@@ -149,7 +128,7 @@ function createWildcardEntry(options: {
     targetPattern: options.targetPattern,
   });
   if (wildcardText === null) return null;
-  const subpath = replaceFirstWildcard(options.subpathPattern, wildcardText);
+  const subpath = replaceWildcards(options.subpathPattern, wildcardText);
   return {
     hasExplicitExports: true,
     isNamedWorkspacePackage: true,
@@ -162,21 +141,16 @@ function createWildcardEntry(options: {
   };
 }
 
-async function expandTargetPattern(options: {
+function expandTargetPattern(options: {
+  files: readonly string[];
   packageDirectory: string;
   packageName: string;
   subpath: string;
   targetPattern: string;
   targets: readonly string[];
-}): Promise<PackageExportEntry[]> {
+}): PackageExportEntry[] {
   if (!options.targetPattern.startsWith('./')) return [];
-  const matches = await glob(stripDotSlash(options.targetPattern), {
-    absolute: false,
-    cwd: options.packageDirectory,
-    dot: true,
-    onlyFiles: true,
-  });
-  return matches
+  return options.files
     .map((rawMatchedPath) =>
       createWildcardEntry({
         matchedPath: toPosixPath(rawMatchedPath),
@@ -222,10 +196,15 @@ export async function expandWildcardExportEntry(options: {
         'wildcard exports must have at least one string target containing "*".',
     });
   }
-  const expanded = await Promise.all(
-    wildcardTargets.map((targetPattern) =>
-      expandTargetPattern({ ...options, targetPattern }),
-    ),
+  const files = await glob('**/*', {
+    absolute: false,
+    cwd: options.packageDirectory,
+    dot: true,
+    ignore: ['**/node_modules/**'],
+    onlyFiles: true,
+  });
+  const expanded = wildcardTargets.map((targetPattern) =>
+    expandTargetPattern({ ...options, files, targetPattern }),
   );
   const entries = deduplicateEntries(expanded.flat());
   if (entries.length > 0) return { diagnostics: [], entries, problems: [] };

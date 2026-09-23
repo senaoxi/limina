@@ -2452,8 +2452,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
-  it('allows sourceMappingURL text in malformed JavaScript literals', async () => {
+  it('fails explicitly when malformed JavaScript prevents reliable comment analysis', async () => {
     const rootDir = await createWorkspaceRoot();
+    const issues: LiminaCheckIssue[] = [];
 
     try {
       const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
@@ -2473,6 +2474,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
+          issues,
           config: createConfig(rootDir, [
             {
               name: '@example/a',
@@ -2481,7 +2483,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
           ]),
           packageNames: ['@example/a'],
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
+      expect(
+        issues.some((issue) =>
+          issue.reason.includes('JavaScript parsing failed'),
+        ),
+      ).toBe(true);
     } finally {
       await rm(rootDir, {
         force: true,
@@ -5701,8 +5708,24 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
     try {
       vi.resetModules();
-      vi.doMock('publint', () => {
-        throw new Error('Cannot find package "publint"');
+      vi.doMock('../package-check/peer-tools', async () => {
+        const actual = await vi.importActual<
+          typeof import('../package-check/peer-tools')
+        >('../package-check/peer-tools');
+        const { LiminaOptionalToolMissingError } = await import(
+          '../execution/tools'
+        );
+        return {
+          ...actual,
+          loadPublintPeer: async () => {
+            throw new LiminaOptionalToolMissingError({
+              command: 'package check',
+              packageName: 'publint',
+              toolName: 'publint',
+              error: new Error('fixture package is absent'),
+            });
+          },
+        };
       });
 
       const { runPackageCheck: runPackageCheckWithMissingPublint } =
@@ -5742,7 +5765,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         status: 'skipped',
       });
     } finally {
-      vi.doUnmock('publint');
+      vi.doUnmock('../package-check/peer-tools');
       vi.resetModules();
       await pkg.cleanup();
     }
@@ -5756,8 +5779,24 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
     try {
       vi.resetModules();
-      vi.doMock('@arethetypeswrong/core', () => {
-        throw new Error('Cannot find package "@arethetypeswrong/core"');
+      vi.doMock('../package-check/peer-tools', async () => {
+        const actual = await vi.importActual<
+          typeof import('../package-check/peer-tools')
+        >('../package-check/peer-tools');
+        const { LiminaOptionalToolMissingError } = await import(
+          '../execution/tools'
+        );
+        return {
+          ...actual,
+          loadAttwPeer: async () => {
+            throw new LiminaOptionalToolMissingError({
+              command: 'package check',
+              packageName: '@arethetypeswrong/core',
+              toolName: 'attw',
+              error: new Error('fixture package is absent'),
+            });
+          },
+        };
       });
 
       const { runPackageCheck: runPackageCheckWithMissingAttw } = await import(
@@ -5798,7 +5837,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         status: 'skipped',
       });
     } finally {
-      vi.doUnmock('@arethetypeswrong/core');
+      vi.doUnmock('../package-check/peer-tools');
       vi.resetModules();
       await pkg.cleanup();
     }

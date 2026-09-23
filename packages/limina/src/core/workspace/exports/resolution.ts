@@ -1,13 +1,6 @@
-import {
-  type CheckerProjectParseContext,
-  normalizeExtensions,
-} from '#checkers';
+import type { CheckerProjectParseContext } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { ImportAnalysisContext } from '#core/import-analysis/runner';
-import {
-  candidatePathsForBasePath,
-  resolveExistingFilePath,
-} from '#utils/module-resolution';
 import { toPosixPath } from '#utils/path';
 import path from 'pathe';
 import type {
@@ -32,56 +25,8 @@ function getProfileContext(
   };
 }
 
-function pathMatchesExtension(
-  filePath: string,
-  extensions: readonly string[],
-): boolean {
-  return normalizeExtensions([...extensions]).some((extension) =>
-    filePath.endsWith(extension),
-  );
-}
-
 function stripDotSlash(value: string): string {
   return value.startsWith('./') ? value.slice('./'.length) : value;
-}
-
-function getTargetCandidatePaths(options: {
-  entry: PackageExportEntry;
-  extensions: readonly string[];
-  target: string;
-}): string[] {
-  if (!options.target.startsWith('./')) return [];
-  const targetPath = path.resolve(
-    options.entry.packageDirectory,
-    stripDotSlash(options.target),
-  );
-  return candidatePathsForBasePath(
-    targetPath,
-    normalizeExtensions([...options.extensions]),
-  );
-}
-
-function isMatchingResolvedPath(options: {
-  extensions: readonly string[];
-  resolvedPath: string | null;
-}): options is { extensions: readonly string[]; resolvedPath: string } {
-  if (options.resolvedPath === null) return false;
-  return pathMatchesExtension(options.resolvedPath, options.extensions);
-}
-
-function resolveTargetWithCheckerExtensions(options: {
-  entry: PackageExportEntry;
-  extensions: readonly string[];
-}): string | null {
-  const candidates = options.entry.targets.flatMap((target) =>
-    getTargetCandidatePaths({ ...options, target }),
-  );
-  for (const candidate of candidates) {
-    const resolvedPath = resolveExistingFilePath(candidate);
-    const result = { extensions: options.extensions, resolvedPath };
-    if (isMatchingResolvedPath(result)) return result.resolvedPath;
-  }
-  return null;
 }
 
 export function resolveTypeScriptExport(options: {
@@ -98,12 +43,11 @@ export function resolveTypeScriptExport(options: {
     containingFile,
     options.profile.options,
     getProfileContext(options.profile),
-  )?.resolvedFileName;
-  if (resolved !== undefined) return resolved;
-  return resolveTargetWithCheckerExtensions({
-    entry: options.entry,
-    extensions: options.profile.extensions,
-  });
+  );
+  // Legacy checker-source candidates are physical paths, not adapter proof.
+  return resolved?.resolvedBy === 'typescript'
+    ? resolved.resolvedFileName
+    : null;
 }
 
 export function resolveOxcExport(options: {

@@ -125,6 +125,8 @@ packages/core/tsconfig.tools.json
 
 声明文件会写到 `.limina/dts/checkers/<checker>/...`，构建缓存会写到 `.limina/tsbuildinfo/checkers/<checker>/...`。生成的声明配置会把 `outDir` 和 `declarationDir` 同时设为这个受管根目录，因此源码配置继承的 `declarationDir` 不会把检查器输出重定向到用户目录。这些路径属于 Limina 的内部输出，不应该手工编辑，也不应该写进用户维护的源码配置。
 
+生成的声明目录和缓存分区保留完整源配置文件名，避免同目录下的配置在去掉前缀后共用位置。此布局升级会重新生成受管配置，并可能产生一次增量缓存失效。清理只删除此前登记为受管的路径，未登记的文件会保留。
+
 生成的 `references` 来自两类事实：源码导入经过 TypeScript 解析后落到 Limina 管理的源码提供者，或源码配置显式声明了 `liminaOptions.implicitRefs`。如果导入解析到 `.d.ts` 系列声明文件，Limina 会把它视为声明消费，而不是源码项目引用。
 
 ## 用户产物构建配置

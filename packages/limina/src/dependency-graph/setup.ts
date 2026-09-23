@@ -46,6 +46,9 @@ function createWorkspaceExportsResolutionProfiles(
     extensions: project.extensions,
     options: project.options,
     resolverConfigPath: project.resolverConfigPath,
+    astroSemanticProject: project.astroSemanticProject,
+    svelteSemanticProject: project.svelteSemanticProject,
+    vueSemanticIdentity: project.vueSemanticIdentity,
   }));
 }
 
@@ -65,15 +68,27 @@ async function createWorkspaceLookup(options: {
   config: ResolvedLiminaConfig;
   core: AnalysisProviderSet;
   workspacePackages: WorkspacePackage[];
-}): Promise<WorkspaceLookupIndex> {
+}): Promise<{
+  workspaceLookup: WorkspaceLookupIndex;
+  pathIndex: WorkspaceRegionPathIndex;
+  outputRoots: readonly string[];
+}> {
   const workspaceContext = await options.core.workspace.getValidatedContext();
-  return createWorkspaceLookupIndex({
+  const pathIndex = new WorkspaceRegionPathIndex(workspaceContext);
+  const workspaceLookup = createWorkspaceLookupIndex({
     importers: [],
     owners: [],
     packages: options.workspacePackages,
-    pathIndex: new WorkspaceRegionPathIndex(workspaceContext),
+    pathIndex,
     rootDir: options.config.rootDir,
   });
+  return {
+    workspaceLookup,
+    pathIndex,
+    outputRoots: workspaceContext.outputRoots.map(
+      (root) => pathIndex.classifyPath(root).canonicalPath,
+    ),
+  };
 }
 
 function resolveCollectionCore(options: {
@@ -101,11 +116,12 @@ export async function createDependencyGraphCollectionContext(options: {
     const checkerProjects = await core.tsconfig.getSourceGraphProjects();
     const problems = [...checkerProjects.problems];
     const workspacePackages = await core.workspace.getPackages();
-    const workspaceLookup = await createWorkspaceLookup({
-      config: options.config,
-      core,
-      workspacePackages,
-    });
+    const { workspaceLookup, outputRoots, pathIndex } =
+      await createWorkspaceLookup({
+        config: options.config,
+        core,
+        workspacePackages,
+      });
     const projects = checkerProjects.projects.map((project) =>
       filterProjectInfoToActivatedRegion(project, workspaceLookup),
     );
@@ -127,6 +143,8 @@ export async function createDependencyGraphCollectionContext(options: {
       fileOwnerLookup: createFileOwnerLookup(projects),
       importAnalysis,
       ownsCore,
+      outputRoots,
+      pathIndex,
       problems,
       projectDependencyCaches: createProjectDependencyCaches(),
       projects,

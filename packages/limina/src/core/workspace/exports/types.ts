@@ -1,8 +1,16 @@
-import type { CheckerProjectParseContext } from '#checkers';
+import type {
+  AstroSemanticProject,
+  CheckerProjectParseContext,
+  VueProjectSemanticIdentity,
+} from '#checkers';
 import type { ImportAnalysisMetricsRecorder } from '#core/import-analysis/runner';
 import type ts from 'typescript';
+import type { SvelteSemanticProject } from '../../svelte-semantic/types';
 
 export interface WorkspaceExportsResolutionProfile {
+  astroSemanticProject?: AstroSemanticProject;
+  svelteSemanticProject?: SvelteSemanticProject;
+  vueSemanticIdentity?: VueProjectSemanticIdentity;
   checkerPresets: CheckerProjectParseContext['checkerPresets'];
   configPath: string;
   extensions: string[];

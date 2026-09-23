@@ -2,7 +2,6 @@ import { mkdir, readdir } from 'node:fs/promises';
 import path from 'pathe';
 import {
   createLeaseOwner,
-  holderExists,
   publishHolder,
   releaseOwnedHolder,
   removeDeadHolder,
@@ -70,13 +69,14 @@ async function ensureLeaseDirectories(paths: ReturnType<typeof getLeasePaths>) {
 }
 
 async function writerIsAbsent(writerPath: string): Promise<boolean> {
-  if (!(await holderExists(writerPath))) return true;
   return removeDeadHolder(writerPath);
 }
 
 async function listReaderPaths(readersPath: string): Promise<string[]> {
   return (await readdir(readersPath, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
+    .filter(
+      (entry) => entry.isDirectory() && !entry.name.startsWith('.candidate-'),
+    )
     .map((entry) => path.join(readersPath, entry.name));
 }
 

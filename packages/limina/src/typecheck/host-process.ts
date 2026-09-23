@@ -4,7 +4,10 @@ import {
   type CheckerHostResponse,
   spawnAndMeasure,
 } from './host-protocol';
-import { terminateChildProcessTree } from './process-tree';
+import {
+  terminateChildProcessTree,
+  waitForChildProcessTreeTermination,
+} from './process-tree';
 
 // The idle timeout must comfortably exceed the longest synchronous stretch on
 // the parent's main thread, because a blocked parent cannot ping. The host
@@ -18,27 +21,14 @@ const checkerChildrenByRequestId = new Map<number, ChildProcess>();
 let pendingSpawnCount = 0;
 let lastParentSignalAt = Date.now();
 
-function isRunningChild(child: ChildProcess): boolean {
-  return child.exitCode === null && child.signalCode === null;
-}
-
 let exitPending = false;
-
-function waitForChildClose(child: ChildProcess): Promise<void> {
-  if (!isRunningChild(child)) return Promise.resolve();
-  return new Promise((resolve) => child.once('close', () => resolve()));
-}
 
 async function exitWithCheckerCleanup(): Promise<void> {
   if (exitPending) return;
   exitPending = true;
-  const runningChildren = [...liveCheckerChildren].filter(isRunningChild);
-  const closePromises = runningChildren.map(waitForChildClose);
+  const runningChildren = [...liveCheckerChildren];
   for (const child of runningChildren) terminateChildProcessTree(child);
-  await Promise.race([
-    Promise.all(closePromises),
-    new Promise((resolve) => setTimeout(resolve, 1500)),
-  ]);
+  await Promise.all(runningChildren.map(waitForChildProcessTreeTermination));
 
   // eslint-disable-next-line unicorn/no-process-exit -- Dedicated host process entry: exiting after checker cleanup is its lifecycle contract.
   process.exit(0);
@@ -72,6 +62,12 @@ function cancelChecker(request: CancelRequest): void {
   if (child !== undefined) terminateChildProcessTree(child);
 }
 
+function forgetCheckerChild(id: number): void {
+  const child = checkerChildrenByRequestId.get(id);
+  if (child !== undefined) liveCheckerChildren.delete(child);
+  checkerChildrenByRequestId.delete(id);
+}
+
 function spawnChecker(request: SpawnRequest): void {
   if (process.env.LIMINA_CHECKER_HOST_TEST_CRASH === '1') {
     // eslint-disable-next-line unicorn/no-process-exit -- Dedicated host test hook intentionally simulates an abrupt host crash.
@@ -83,12 +79,9 @@ function spawnChecker(request: SpawnRequest): void {
     onChild: (child) => {
       liveCheckerChildren.add(child);
       checkerChildrenByRequestId.set(request.id, child);
-      child.on('close', () => {
-        liveCheckerChildren.delete(child);
-        checkerChildrenByRequestId.delete(request.id);
-      });
     },
   }).then((measurement) => {
+    forgetCheckerChild(request.id);
     pendingSpawnCount -= 1;
     send({
       durationMs: measurement.durationMs,
@@ -116,6 +109,8 @@ process.on('message', (request: CheckerHostRequest) => {
 process.on('disconnect', () => {
   scheduleCheckerCleanup();
 });
+process.on('SIGTERM', scheduleCheckerCleanup);
+process.on('SIGINT', scheduleCheckerCleanup);
 
 // IPC disconnect does not reach this process when the parent dies abruptly
 // behind the tsx wrapper used in source mode, so an idle liveness watchdog

@@ -166,10 +166,10 @@ describe('project references public CLI integration', () => {
     expectLiminaSuccess(buildResult);
 
     const libDeclarationPath = preparedFixture.path(
-      'repo/.limina/dts/checkers/tsc/packages/app/lib/index.d.ts',
+      'repo/.limina/dts/checkers/tsc/packages/app/tsconfig.lib.json/index.d.ts',
     );
     const testDeclarationPath = preparedFixture.path(
-      'repo/.limina/dts/checkers/tsc/packages/app/test/index.test.d.ts',
+      'repo/.limina/dts/checkers/tsc/packages/app/tsconfig.test.json/index.test.d.ts',
     );
     expect(await readFile(libDeclarationPath, 'utf8')).toContain(
       'export declare const libraryValue: "library";',
@@ -180,14 +180,14 @@ describe('project references public CLI integration', () => {
     expect(
       await exists(
         preparedFixture.path(
-          'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/lib.tsbuildinfo',
+          'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.lib.json.tsbuildinfo',
         ),
       ),
     ).toBe(true);
     expect(
       await exists(
         preparedFixture.path(
-          'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/test.tsbuildinfo',
+          'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.test.json.tsbuildinfo',
         ),
       ),
     ).toBe(true);

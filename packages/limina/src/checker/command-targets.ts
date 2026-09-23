@@ -1,8 +1,11 @@
 import { toRelativePath } from '#utils/path';
+import { createRequire } from 'node:module';
 import type {
   CheckerCommandTarget,
   CheckerCommandTargetOptions,
 } from './types';
+
+const requireFromLimina = createRequire(import.meta.url);
 
 function getRelativeConfigPath(options: CheckerCommandTargetOptions): string {
   return toRelativePath(options.projectRootDir, options.configPath);
@@ -33,9 +36,13 @@ export function createTscCommandTarget(
   options: CheckerCommandTargetOptions,
 ): CheckerCommandTarget {
   const relativeConfigPath = getRelativeConfigPath(options);
+  const args = createBuildArgs(relativeConfigPath, options.watch);
   return {
-    args: createBuildArgs(relativeConfigPath, options.watch),
-    command: options.commandOverride ?? 'tsc',
+    args:
+      options.commandOverride === undefined
+        ? [requireFromLimina.resolve('typescript/bin/tsc'), ...args]
+        : args,
+    command: options.commandOverride ?? process.execPath,
     label: `tsc -b ${relativeConfigPath}${getWatchLabel(options.watch)}`,
   };
 }

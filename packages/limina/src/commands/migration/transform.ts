@@ -9,6 +9,10 @@ import {
   planDeclarationDir,
   readExistingOutputOptions,
 } from './declaration-dir';
+import {
+  assertMigrationTextMatchesPlan,
+  assertUnambiguousMigrationText,
+} from './jsonc-validation';
 import { applyMigratedTsconfigText } from './text-transform';
 import type { MigrationWritePlanItem } from './transaction';
 import type { MigrationEffectiveConfig, MigrationTarget } from './types';
@@ -241,13 +245,16 @@ function migrateTsconfigText(options: {
   originalContent: string;
   rootDir: string;
 }): string {
+  assertUnambiguousMigrationText(options.originalContent);
   const migratedConfig = migrateTsconfigObject(options);
-  return applyMigratedTsconfigText({
+  const content = applyMigratedTsconfigText({
     configObject: options.configObject,
     isLiminaSolution: options.isLiminaSolution,
     migratedConfig,
     originalContent: options.originalContent,
   });
+  assertMigrationTextMatchesPlan(content, migratedConfig);
+  return content;
 }
 
 export function createMigrationWritePlanItem(options: {

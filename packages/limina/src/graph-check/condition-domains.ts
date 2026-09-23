@@ -16,6 +16,10 @@ import {
 } from './condition-domain-config';
 import { createDomainMismatchFinding } from './condition-domain-finding';
 import {
+  mergeConditionFindingIdentities,
+  registerConditionFinding,
+} from './condition-findings';
+import {
   addUniqueConditionFindings,
   collectCustomConditionSubtreeSummary,
   customConditionsEqual,
@@ -34,7 +38,7 @@ interface ConditionDomainContext {
   findings: GraphFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
   projectsByPath: ReadonlyMap<string, ProjectInfo>;
-  seenFindingIdentities: Set<string>;
+  findingIdentities: Set<string>;
 }
 
 interface ResolvedDomainEntry {
@@ -183,10 +187,9 @@ function addDomainMismatch(
     resolved.entryProject,
     context.consistencyContext,
   );
-  addUniqueConditionFindings(
-    context.findings,
-    context.seenFindingIdentities,
-    summary.mismatchFindings,
+  mergeConditionFindingIdentities(
+    context.findingIdentities,
+    summary.mismatchFindingIdentities,
   );
   const entryConditions = getProjectCustomConditions(resolved.entryProject);
   context.consistencyContext.conditionsByProjectPath.set(
@@ -197,14 +200,17 @@ function addDomainMismatch(
   if (
     !customConditionsEqual(resolved.domain.customConditions, entryConditions)
   ) {
-    context.findings.push(
-      createDomainMismatchFinding({
-        config: context.config,
-        consistencyContext: context.consistencyContext,
-        domain: resolved.domain,
-        entryConditions,
-        entryPath: resolved.entryPath,
-      }),
+    context.findingIdentities.add(
+      registerConditionFinding(
+        context.consistencyContext,
+        createDomainMismatchFinding({
+          config: context.config,
+          consistencyContext: context.consistencyContext,
+          domain: resolved.domain,
+          entryConditions,
+          entryPath: resolved.entryPath,
+        }),
+      ),
     );
   }
 }
@@ -253,11 +259,16 @@ export function addConditionDomainProblems(options: {
     findings: options.findings,
     generatedGraph: options.generatedGraph,
     projectsByPath: options.projectsByPath,
-    seenFindingIdentities: new Set(),
+    findingIdentities: new Set(),
   };
 
   for (const [index, domain] of domains.entries()) {
     options.checks.add();
     processConditionDomain(domain, index, context);
   }
+  addUniqueConditionFindings(
+    options.findings,
+    options.consistencyContext,
+    context.findingIdentities,
+  );
 }

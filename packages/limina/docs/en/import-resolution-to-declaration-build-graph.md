@@ -414,7 +414,26 @@ If this entry is intended for source governance, add a type declaration branch o
 
 This diagnostic means that a static import reaches another source provider that needs declaration output, but the current generated declaration configuration does not contain the corresponding project reference.
 
-Usually, verify that both source `tsconfig` files are selected by the checker’s `include`, and then regenerate the graph.
+Check that each side is governed by its intended checker and that its default `tsconfig.json` entry is selected by `checker.include`. Named terminal configs such as `tsconfig.lib.json` and `tsconfig.test.json` must be reachable through the selected entry’s effective `references` closure; selecting those leaf paths directly with `include` is rejected.
+
+For example, select the root entry with `include: ['tsconfig.json']` and let it include the named leaves:
+
+```json [tsconfig.json]
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/app/tsconfig.lib.json" },
+    { "path": "./packages/app/tsconfig.test.json" }
+  ]
+}
+```
+
+```sh
+pnpm exec limina graph prepare
+pnpm exec limina graph check
+```
+
+A chain through another default solution (`tsconfig.json → packages/app/tsconfig.json → tsconfig.lib.json`) is also supported. An intermediate solution must use the default `tsconfig.json` name. Keep terminal source configs free of hand-maintained build references; Limina derives their declaration references from provider evidence. See [checker configuration](./config/checkers.md) for selection and closure rules. Regeneration does not replace checking the actual provider evidence if the diagnostic remains.
 
 ### Extra project reference not proven by static imports
 

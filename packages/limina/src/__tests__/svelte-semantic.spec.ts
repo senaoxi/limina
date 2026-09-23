@@ -2,13 +2,14 @@ import {
   presortedDecodedMap,
   type SourceMapSegment,
 } from '@jridgewell/trace-mapping';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { svelte2tsx } from 'svelte2tsx';
 import ts from 'typescript';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createImportAnalysisContext } from '../core/import-analysis/context';
 import type { ImportRecord } from '../core/import-analysis/runner';
 import { createGeneratedSemanticScript } from '../core/svelte-semantic/generated-script';
 import { prepareSvelteSemanticDependencies } from '../core/svelte-semantic/preparation';
@@ -19,6 +20,7 @@ import {
   SVELTE_SEMANTIC_ADAPTER_VERSION,
   type SvelteSemanticProject,
 } from '../core/svelte-semantic/types';
+import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
 import { createFixturePathResolver } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -145,6 +147,75 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
 }
 
 describe('Svelte strict generated dependency provenance', () => {
+  it.each([
+    { label: 'active', exports: { '.': './Child.svelte' }, stable: true },
+    {
+      label: 'inactive',
+      exports: { '.': { never: './Child.svelte' } },
+      stable: false,
+    },
+    {
+      label: 'blocked types',
+      exports: { '.': { types: null, default: './Child.svelte' } },
+      stable: false,
+    },
+  ])(
+    'uses the Svelte resolver host for export preflight ($label)',
+    async ({ exports, stable }) => {
+      const { project } = await createProject();
+      const root = project.packageRootDir;
+      const fixturePath = createFixturePathResolver(root);
+      const manifest = {
+        name: 'svelte-export-fixture',
+        type: 'module',
+        exports,
+      };
+      await writeFile(fixturePath('package.json'), JSON.stringify(manifest));
+      await writeFile(fixturePath('tsconfig.json'), '{}');
+      await mkdir(fixturePath('node_modules'));
+      for (const [name, manifestPath] of [
+        ['svelte', requireFromSvelte2Tsx.resolve('svelte/package.json')],
+        ['svelte2tsx', requireFromTest.resolve('svelte2tsx/package.json')],
+        ['typescript', requireFromTest.resolve('typescript/package.json')],
+      ]) {
+        await symlink(
+          path.dirname(manifestPath!),
+          fixturePath('node_modules', name!),
+          'junction',
+        );
+      }
+      const importAnalysis = createImportAnalysisContext();
+      try {
+        const index = await createWorkspaceExportsResolutionIndex({
+          config: {
+            config: {},
+            configPath: fixturePath('limina.config.mjs'),
+            rootDir: root,
+          },
+          importAnalysis,
+          packages: [{ directory: root, name: manifest.name, manifest }],
+          profiles: [
+            {
+              configPath: project.configPath,
+              resolverConfigPath: project.configPath,
+              options: project.options,
+              extensions: [...project.extensions],
+              checkerPresets: [],
+              svelteSemanticProject: project,
+            },
+          ],
+        });
+        const result = index.get(project.configPath, manifest.name)!;
+        expect(result.hasTypeScriptStableEntry).toBe(stable);
+        expect(result.typeScriptResolvedFileName).toBe(
+          stable ? fixturePath('Child.svelte') : null,
+        );
+      } finally {
+        importAnalysis.dispose?.();
+      }
+    },
+  );
+
   it('accepts explicitly dense, monotonic, continuous mappings', () => {
     expect(
       mapRange([

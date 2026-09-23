@@ -121,7 +121,11 @@ export function createGeneratedDtsConfig(options: {
     ),
     include: [],
     compilerOptions: {
-      ...createGeneratedCompilerOptionOverrides({ config, project }),
+      ...createGeneratedCompilerOptionOverrides({
+        config,
+        project,
+        generatedConfigPath: project.dtsConfigPath,
+      }),
       composite: true,
       incremental: true,
       noEmit: false,
@@ -181,6 +185,11 @@ export function createGeneratedOutputProjectConfig(options: {
     ),
     include: [],
     compilerOptions: {
+      ...createGeneratedCompilerOptionOverrides({
+        config,
+        project,
+        generatedConfigPath: project.outputConfigPath,
+      }),
       composite: true,
       incremental: true,
       noEmit: false,

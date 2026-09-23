@@ -85,6 +85,9 @@ export function createWorkspaceExportsResolutionProfiles(
     extensions: project.extensions,
     options: project.options,
     resolverConfigPath: project.resolverConfigPath,
+    astroSemanticProject: project.astroSemanticProject,
+    svelteSemanticProject: project.svelteSemanticProject,
+    vueSemanticIdentity: project.vueSemanticIdentity,
   }));
 }
 

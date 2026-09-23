@@ -157,45 +157,39 @@ This distinction matters for an extended nested package scope: it inherits depen
 
 Limina does not prohibit cross-package collaboration. It requires cross-package collaboration to go through paths that can be explained by package manifests and public entry points.
 
-## Public Exports Must Make Sense When Used
+## Public Exports Are Preflighted Before Import Relationships
 
-In a monorepo, `workspace:*` only says that the dependency comes from the workspace. It does not say whether the consumer will read source code or build artifacts. The actual entry point is determined by the dependency package’s `package.json#exports`.
+In a monorepo, `workspace:*` identifies a workspace dependency. Its `package.json#exports` determines whether a consumer reads source or build artifacts.
 
-```json [packages/core/package.json]
-{
-  "name": "@acme/core",
-  "exports": {
-    ".": "./src/index.ts",
-    "./runtime": {
-      "types": "./dist/runtime.d.ts",
-      "import": "./dist/runtime.js"
-    }
-  }
-}
+`limina graph check` first builds the workspace exports index and checks public entry resolution against active checker profiles. This preflight can reject an unresolved export even when no governed source imports it. It does not establish a source dependency, a type provider, or a generated project reference.
+
+For example, assume `packages/demo/tsconfig.json` is selected and its only source is:
+
+```ts [packages/demo/src/index.ts]
+export const value = 1;
 ```
 
-In relevant checks, Limina distinguishes `TypeScript` type resolution results from `Oxc` runtime resolution results. For workspace entry points hit by static source imports, the type side should not resolve only to runtime `JavaScript`; the runtime side should also not be completely unresolvable. Type-only entry points may resolve to declaration files, and source entry points may resolve to source files supported by the current checker.
-
-::: warning Boundary constraint
-
-Limina does not start by pre-scanning every `exports` entry of workspace packages. Instead, it starts from import records collected from source code. The starting point is a module specifier extracted from source imports. In other words, only when an import appears in source code and is collected by the `Oxc parser` will Limina continue passing that specifier to the `TypeScript` resolver and then evaluate its type-side, runtime-side, and graph relationships based on the resolved target module.
-
-For example, a workspace package may expose an entry that is used only by a runtime plugin:
+The package declares a runtime entry that has not been built:
 
 ```json [packages/demo/package.json]
 {
   "name": "demo",
+  "type": "module",
   "exports": {
     "./runtime": "./dist/runtime.js"
   }
 }
 ```
 
-If the source code does not statically import `demo/runtime`, and the entry is only injected by a plugin, runtime registry, or external system, it will not enter the type-entry check flow merely because it appears in `exports`. This kind of entry can be understood as a runtime-only entry. Only when source code within the governance scope statically imports `demo/runtime` will it enter the subsequent `TypeScript` type resolution and graph-check flow.
+```sh
+pnpm exec limina graph check --verbose
+```
 
-This constraint does not mean that every export must expose both source and artifacts. It means that “import relationships observed by Limina and included in governance” must be explainable by the repository’s current type resolution and runtime resolution.
+With no `dist/runtime.js` or corresponding resolvable type entry, this command fails with `workspace exports preflight` diagnostics. No import of `demo/runtime` is needed. Create the intended public entry, or correct/remove the stale manifest entry. A missing types-only export is also checked.
 
-:::
+An existing runtime-only JavaScript entry can pass preflight without a declaration file when no governed source imports it. Once a collected source occurrence imports that entry, graph checking separately requires a stable type or checker-source entry under the importing checker. TypeScript or the checker’s semantic adapter supplies type resolution; Oxc supplies physical runtime resolution. A runtime file hit alone cannot supply type evidence or declaration-build ownership.
+
+These checks have different subjects: preflight checks the declared public surface; occurrence analysis checks observed source relationships, package rules, and reference requirements. A type-only export can resolve to a declaration, and a source export can resolve to checker-supported source. An export need not expose both source and artifacts, and preflight does not discover connections injected only by a runtime plugin or registry.
 
 ## References Come from Declaration Providers, Not Import Text
 

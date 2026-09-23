@@ -150,6 +150,7 @@ function cloneMissingObservation(
 ): ProjectDependencyObservation {
   return {
     importRecord,
+    resolutionMode: observation.resolutionMode,
     kind: 'missing',
     typeEvidence:
       observation.typeEvidence === undefined ? undefined : { kind: 'missing' },
@@ -162,6 +163,7 @@ function cloneResourceObservation(
 ): ProjectDependencyObservation {
   return {
     importRecord,
+    resolutionMode: observation.resolutionMode,
     kind: 'resource',
     typeEvidence:
       observation.typeEvidence === undefined
@@ -176,6 +178,7 @@ function cloneSemanticOnlyObservation(
 ): ProjectDependencyObservation {
   return {
     importRecord,
+    resolutionMode: observation.resolutionMode,
     kind: 'semantic-only',
     typeEvidence: cloneTypeEvidence(observation.typeEvidence) as Extract<
       TypeEvidence,
