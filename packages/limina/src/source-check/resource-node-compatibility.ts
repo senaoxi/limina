@@ -1,3 +1,4 @@
+import type { PackageManifest } from '#core/workspace/actions';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -32,20 +33,32 @@ function findPackageScope(filePath: string): string | undefined {
 export class ResourceNodeCompatibility {
   readonly #nodeConditions = new Map<string, boolean>();
   readonly #scopes = new Map<string, string | undefined>();
+  readonly #readOwnerManifest:
+    | ((manifestPath: string) => PackageManifest | undefined)
+    | undefined;
+  constructor(
+    readOwnerManifest?: (manifestPath: string) => PackageManifest | undefined,
+  ) {
+    this.#readOwnerManifest = readOwnerManifest;
+  }
 
   #hasNodeConditions(packageJsonPath: string | undefined): boolean {
     if (packageJsonPath === undefined) return false;
     const cached = this.#nodeConditions.get(packageJsonPath);
     if (cached !== undefined) return cached;
-    const manifest = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
-      exports?: unknown;
-      imports?: unknown;
-    };
+    const manifest = this.#readManifest(packageJsonPath);
     const found = [manifest.exports, manifest.imports].some(
       requiresNodeConditions,
     );
     this.#nodeConditions.set(packageJsonPath, found);
     return found;
+  }
+
+  #readManifest(packageJsonPath: string): PackageManifest {
+    return (
+      this.#readOwnerManifest?.(packageJsonPath) ??
+      (JSON.parse(readFileSync(packageJsonPath, 'utf8')) as PackageManifest)
+    );
   }
 
   #getScope(filePath: string): string | undefined {

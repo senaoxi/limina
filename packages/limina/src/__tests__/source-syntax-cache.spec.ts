@@ -13,11 +13,13 @@ import {
 } from '../core/typescript-semantic/context';
 import { SourceSyntaxFactsCache } from '../core/typescript-semantic/syntax-cache';
 import { OwnedSyntaxScope } from '../core/typescript-semantic/syntax-input';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 const roots: string[] = [];
 async function fixture(text = "import 'alpha';", ext = 'ts') {
   const root = await mkdtemp(path.join(tmpdir(), 'limina-syntax-'));
   roots.push(root);
+  await writeFile(path.join(root, 'package.json'), '{}');
   const file = normalizeAbsolutePath(path.join(root, `input.${ext}`));
   await writeFile(file, text);
   const project = {
@@ -180,6 +182,9 @@ describe('provider-owned raw syntax facts', () => {
     );
     expect(cache.statistics.entries).toBe(2);
     const config = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: normalizeAbsolutePath(path.join(f.root, 'limina.config.mjs')),
       rootDir: f.root,
     };

@@ -94,7 +94,6 @@ export function createStandaloneInvocationCommand(
 
 export function getGeneratedLiminaCommandTokens(
   generatedCommand: GeneratedLiminaCommand,
-  dialect: GeneratedCommandDialect,
 ): readonly string[] {
   const queryArgs = [
     '--config',
@@ -106,20 +105,9 @@ export function getGeneratedLiminaCommandTokens(
     ...generatedCommand.subcommandTokens,
   ] as const;
 
-  if (dialect !== 'posix') {
-    return Object.freeze([
-      generatedCommand.context.nodeExecutablePath,
-      generatedCommand.context.cliEntryPath,
-      ...queryArgs,
-    ]);
-  }
-
   return Object.freeze([
-    'pnpm',
-    '--dir',
-    generatedCommand.context.workspaceRoot,
-    'exec',
-    'limina',
+    generatedCommand.context.nodeExecutablePath,
+    generatedCommand.context.cliEntryPath,
     ...queryArgs,
   ]);
 }
@@ -128,10 +116,8 @@ export function renderGeneratedLiminaCommand(
   generatedCommand: GeneratedLiminaCommand,
   dialect: GeneratedCommandDialect,
 ): string {
-  const [executable, ...args] = getGeneratedLiminaCommandTokens(
-    generatedCommand,
-    dialect,
-  );
+  const [executable, ...args] =
+    getGeneratedLiminaCommandTokens(generatedCommand);
   if (dialect === 'cmd') {
     const shescape = new Shescape({
       flagProtection: false,
@@ -173,7 +159,7 @@ export function renderGeneratedLiminaCommand(
     shell: SHESCAPE_SHELL_BY_DIALECT.posix,
   });
 
-  return [executable, ...shescape.quoteAll(args)].join(' ');
+  return shescape.quoteAll([executable, ...args]).join(' ');
 }
 
 export function getGeneratedCommandPresentation(

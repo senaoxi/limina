@@ -158,6 +158,8 @@ export async function createSourceCheckState(
     graphRoute,
     options,
     ownerModuleSets: collectOwnerSourceModuleSets({
+      pathIndex: workspacePathIndex,
+      workspaceContext,
       sourceProjectEntries,
       workspaceLookup,
     }),

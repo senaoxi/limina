@@ -32,6 +32,7 @@ import {
   readCheckIssueSnapshot,
 } from '../source-check/snapshot';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -216,6 +217,9 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {

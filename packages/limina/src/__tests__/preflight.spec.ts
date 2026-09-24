@@ -27,6 +27,7 @@ import {
 } from '../domain/artifacts/plan';
 import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
@@ -46,6 +47,9 @@ vi.mock('../core/build-graph/materializer', async (importOriginal) => {
 function createConfig(rootDir: string): ResolvedLiminaConfig {
   const fixturePath = createFixturePathResolver(rootDir);
   return {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     configPath: fixturePath('limina.config.mjs'),
     package: {
       entries: [

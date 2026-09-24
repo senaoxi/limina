@@ -1,5 +1,4 @@
-import { isPathInsideDirectory } from '#utils/path';
-import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
+import { ancestorDirectories } from '#utils/ancestor-directories';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 
@@ -10,67 +9,59 @@ export const DEFAULT_LIMINA_CONFIG_FILES = [
   'limina.config.js',
 ] as const;
 
-function getParentDirectory(directory: string): string | undefined {
-  const parent = path.dirname(directory);
-  return parent === directory ? undefined : parent;
-}
-
-function findDefaultConfigInDirectory(directory: string): string | undefined {
-  return DEFAULT_LIMINA_CONFIG_FILES.map((fileName) =>
-    path.join(directory, fileName),
-  ).find(existsSync);
-}
-
-function inspectInsideWorkspaceDirectory(
-  directory: string,
-  workspaceRootDir: string,
-): string | null | undefined {
-  const configPath = findDefaultConfigInDirectory(directory);
-  if (configPath !== undefined) return configPath;
-  return directory === workspaceRootDir ? null : undefined;
-}
-
-function inspectConfigDirectory(
-  directory: string,
-  workspaceRootDir: string,
-): string | null | undefined {
-  if (!isPathInsideDirectory(directory, workspaceRootDir)) return null;
-  return inspectInsideWorkspaceDirectory(directory, workspaceRootDir);
-}
-
-export function findLiminaConfigPath(
-  startDir: string,
-  rootDir: string,
-): string | null {
-  let currentDir: string | undefined = path.resolve(startDir);
-  const workspaceRootDir = path.resolve(rootDir);
-  while (currentDir !== undefined) {
-    const result = inspectConfigDirectory(currentDir, workspaceRootDir);
-    if (result !== undefined) return result;
-    currentDir = getParentDirectory(currentDir);
+/** Config discovery is independent of package and workspace classification. */
+export function findLiminaConfigPath(startDir: string): string | null {
+  for (const directory of ancestorDirectories(startDir)) {
+    const configPath = findLocalConfig(directory);
+    if (configPath !== undefined) return configPath;
   }
   return null;
 }
 
-export function inferWorkspaceRoot(startDir: string): string {
-  return resolveNearestWorkspaceRoot(startDir).rootDir;
+function findLocalConfig(directory: string): string | undefined {
+  return DEFAULT_LIMINA_CONFIG_FILES.map((name) =>
+    path.join(directory, name),
+  ).find(existsSync);
 }
 
-export function validateConfigPathInsideWorkspace(
-  configPath: string,
-  rootDir: string,
-): void {
-  if (isPathInsideDirectory(configPath, rootDir)) return;
-  throw new Error(
-    [
-      `Unable to load Limina config at ${configPath}:`,
-      `config file must be inside the governed workspace at ${rootDir}.`,
-    ].join(' '),
-  );
+function requireDefaultConfig(cwd: string): string {
+  const configPath = findLiminaConfigPath(cwd);
+  if (configPath === null)
+    throw new Error(
+      `Unable to find limina config. Searched for ${formatDefaultConfigFileList()} from ${cwd} through its ancestors.`,
+    );
+  return configPath;
 }
 
 export function formatDefaultConfigFileList(): string {
-  return DEFAULT_LIMINA_CONFIG_FILES.map((fileName) => `"${fileName}"`).join(
-    ', ',
-  );
+  return DEFAULT_LIMINA_CONFIG_FILES.map((name) => `"${name}"`).join(', ');
+}
+
+export interface QueryConfigAnchor {
+  readonly configPath: string;
+}
+
+export interface ExecutionConfigLocation extends QueryConfigAnchor {
+  readonly exists: true;
+}
+
+/** An explicit query anchor need not still exist on disk. */
+export function resolveQueryConfigAnchor(options: {
+  cwd?: string;
+  configPath?: string;
+}): QueryConfigAnchor {
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  if (options.configPath !== undefined)
+    return { configPath: path.resolve(cwd, options.configPath) };
+  return { configPath: requireDefaultConfig(cwd) };
+}
+
+export function resolveExecutionConfigLocation(options: {
+  cwd?: string;
+  configPath?: string;
+}): ExecutionConfigLocation {
+  const anchor = resolveQueryConfigAnchor(options);
+  if (!existsSync(anchor.configPath))
+    throw new Error(`Unable to find limina config at ${anchor.configPath}`);
+  return { ...anchor, exists: true };
 }

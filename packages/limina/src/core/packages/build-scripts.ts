@@ -1,6 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
-import { isNamedWorkspacePackage } from '#core/workspace/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { parsePackageBuildScript } from './build-script-parser';
@@ -29,7 +28,7 @@ function createScriptSource(options: {
   command: string;
   packageJsonPath: string;
   scriptName: string;
-  workspacePackage: WorkspacePackage & { name: string };
+  workspacePackage: WorkspacePackage;
 }): PackageBuildScriptSource {
   return {
     command: options.command,
@@ -60,10 +59,6 @@ function collectWorkspacePackageScripts(
   collection: PackageBuildScriptCollection,
   workspacePackage: WorkspacePackage,
 ): void {
-  if (!isNamedWorkspacePackage(workspacePackage)) {
-    return;
-  }
-
   const packageJsonPath = normalizeAbsolutePath(
     path.join(workspacePackage.directory, 'package.json'),
   );

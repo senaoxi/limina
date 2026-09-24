@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { PackageOwnerIdentity } from '../../../core/workspace/owner-identity';
 import type { SourceFinding } from '../../findings';
 import type { SourceKnipWorkspaceConfigRecord } from '../routing';
 import type { OwnerSourceModuleSet } from './types';
@@ -10,16 +11,16 @@ export interface ParsedEntryRecord {
 
 export interface UnusedModuleConfigContext {
   config: ResolvedLiminaConfig;
-  entryPatternsByOwnerName: Map<string, string[]>;
+  entryPatternsByOwnerIdentity: Map<PackageOwnerIdentity, string[]>;
   findings: SourceFinding[];
   ignoredKeys: Set<string>;
-  moduleFilesByOwnerName: Map<string, Set<string>>;
-  moduleSetByOwnerName: Map<string, OwnerSourceModuleSet>;
+  moduleFilesByOwnerIdentity: Map<PackageOwnerIdentity, Set<string>>;
+  moduleSetByOwnerIdentity: Map<PackageOwnerIdentity, OwnerSourceModuleSet>;
 }
 
 export interface WorkspaceUnusedConfigOptions {
   context: UnusedModuleConfigContext;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   workspaceConfig: SourceKnipWorkspaceConfigRecord;
 }
 
@@ -30,18 +31,18 @@ export function createUnusedModuleConfigContext(options: {
 }): UnusedModuleConfigContext {
   return {
     config: options.config,
-    entryPatternsByOwnerName: new Map(),
+    entryPatternsByOwnerIdentity: new Map(),
     findings: options.findings,
     ignoredKeys: new Set(),
-    moduleFilesByOwnerName: new Map(
+    moduleFilesByOwnerIdentity: new Map(
       options.ownerModuleSets.map((moduleSet) => [
-        moduleSet.owner.name as string,
+        moduleSet.ownerIdentity,
         new Set(moduleSet.files),
       ]),
     ),
-    moduleSetByOwnerName: new Map(
+    moduleSetByOwnerIdentity: new Map(
       options.ownerModuleSets.map((moduleSet) => [
-        moduleSet.owner.name as string,
+        moduleSet.ownerIdentity,
         moduleSet,
       ]),
     ),

@@ -77,6 +77,7 @@ async function createIssueCliFixture(): Promise<{
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-empty-')),
   );
+  await writeText(path.join(rootDir, 'package.json'), '{}\n');
   try {
     await writeText(
       path.join(rootDir, 'pnpm-workspace.yaml'),
@@ -903,8 +904,8 @@ export default {
             expect(queryLines[1]).toContain('node');
             expect(queryLines[1]).not.toContain('pnpm');
           } else {
-            expect(queryLines[0]).toContain('pnpm');
-            expect(queryLines[0]).toContain('--dir');
+            expect(queryLines[0]).toContain(process.execPath);
+            expect(queryLines[0]).not.toContain('pnpm');
           }
           expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
 
@@ -1080,7 +1081,8 @@ export default {
           () => {
             expect(existsSync(markerPath)).toBe(true);
           },
-          { timeout: 10_000 },
+          // This fixture boots the source CLI through tsx before the command starts.
+          { timeout: 20_000 },
         );
         const processInfo = JSON.parse(await readFile(markerPath, 'utf8')) as {
           commandPid: number;
@@ -1133,7 +1135,7 @@ export default {
         }
       }
     });
-  }, 30_000);
+  }, 60_000);
 
   it('keeps concurrent checker failure invocations isolated', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
@@ -2599,6 +2601,10 @@ export default {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-limit-')),
     );
+    await writeText(
+      path.join(rootDir, 'limina.config.mjs'),
+      'export default {};\n',
+    );
 
     try {
       await writeText(
@@ -2696,7 +2702,7 @@ export default {
       expect(invocation).toContain('Result: failed');
       expect(invocation).toContain('Showing 1 of 1 issues');
       expect(normalizedInvocation).toContain(
-        `limina check --issues --invocation ${invocationId}`,
+        `check --issues --invocation ${invocationId}`,
       );
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -3245,6 +3251,7 @@ export default {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-auto-issues-')),
     );
+    await writeText(path.join(rootDir, 'package.json'), '{}\n');
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
@@ -3319,6 +3326,7 @@ export default {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-cli-release-')),
     );
+    await writeText(path.join(rootDir, 'package.json'), '{}\n');
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );

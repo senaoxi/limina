@@ -1,6 +1,7 @@
 import { loadConfig } from '#config/runner';
 import { createAnalysisProviders } from '#core';
 import { normalizeAbsolutePath } from '#utils/path';
+import { resolveGovernanceRoot } from '#utils/workspace-root';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -47,6 +48,8 @@ it('points the repository lib pipeline at its generated tsgo checker entry', asy
     );
     providers = createAnalysisProviders({
       ...config,
+      configPath: fixturePath('limina.config.mts'),
+      governanceRoot: resolveGovernanceRoot(fixturePath('limina.config.mts')),
       rootDir: fixturePath(),
     });
     const graph = await providers.buildGraph.getGraph();

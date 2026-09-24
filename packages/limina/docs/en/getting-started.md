@@ -2,20 +2,28 @@
 
 ## Requirements
 
-Limina supports pnpm, npm, Yarn, and Bun workspaces with an ESM config file.
+Limina supports single-package projects and pnpm, npm, Yarn, and Bun workspaces with an ESM config file.
 
 - Node.js `^22.18.0 || >=24.11.0`
-- A workspace descriptor exists at the root: `pnpm-workspace.yaml` for pnpm, or an own `workspaces` field in `package.json` for npm, Yarn, or Bun
-- TypeScript is installed in the consuming repository
-- `limina.config.mts` is inside the workspace
+- A readable `package.json` whose top level is an object
+- TypeScript installed in the consuming project
+- A Limina config module, usually `limina.config.mts`
 
-## Workspace discovery
+## Governance root
 
-Distance takes precedence: Limina selects the nearest descriptor before considering its type. At the same directory, `pnpm-workspace.yaml` wins. A conflicting root `packageManager` is an error. Ordinary package manifests without `workspaces` do not stop the upward search.
+Limina first selects the config module. Without `--config`, it searches upward from cwd, checking `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, and `limina.config.js` in that order at each directory. It then searches from the selected config's directory for the nearest `package.json`. That manifest fixes the governance root. An unreadable file, non-file entry, malformed JSON, or non-object manifest fails at that location; Limina does not skip it.
 
-For a `package.json` workspace, set `packageManager` to `npm@…`, `yarn@…`, or `bun@…`. When it is absent, Limina uses only lockfiles beside that manifest. Multiple manager identities are ambiguous; no identity is an error. Two npm or two Bun lockfile formats still describe one manager. An explicit identity takes precedence over lockfiles. pnpm always requires `pnpm-workspace.yaml`.
+Only workspace declarations at this root determine membership. With no declaration, the root package is the sole package before region exclusions. `{}` is sufficient: name, version, package manager, and lockfile are optional. Missing, ambiguous, or invalid manager metadata does not block governance that needs no manager semantics.
 
-The supported declaration projection is pnpm `packages: string[]` (absent means no child packages), npm `workspaces: string[]`, and Yarn/Bun either that array or `{ packages: string[] }`. Limina validates syntax and consumed fields; catalog validity, installability, version availability, and lockfile consistency remain package-manager responsibilities. A single package without a workspace declaration is not a fallback workspace.
+At the selected root, `pnpm-workspace.yaml` takes priority. It identifies pnpm unless an explicit `packageManager` conflicts. A `package.json#workspaces` declaration requires a determinable npm, Yarn, or Bun manager: its own `packageManager` wins, otherwise same-directory lockfiles provide evidence. Missing or ambiguous authority and invalid declarations fail; even a workspace containing only its root stays a workspace.
+
+The supported declaration projection is pnpm `packages: string[]` (absent means no child packages), npm `workspaces: string[]`, and Yarn/Bun either that array or `{ packages: string[] }`. Existing manager adapters retain their selection and ignore semantics. Catalog validity, installability, version availability, and lockfile consistency remain package-manager responsibilities.
+
+### Selecting a config inside a monorepo
+
+Selecting the repository's root config governs its workspace even when invoked from a child directory. Selecting a child's own config governs the child's nearest manifest; if it has no same-root workspace declaration, it is a single-package project. Ancestor workspace declarations cannot enlarge that scope.
+
+This changes the former ancestor-workspace-first root selection contract. Membership semantics at the same candidate root remain unchanged. Review scripts that select a child config but previously relied on an ancestor workspace. See [Config File](./config/config-file.md).
 
 ## Install
 
@@ -43,19 +51,19 @@ The native `tsc` checker uses the TypeScript installation resolved by Limina its
 
 ## Pick an Adoption Path
 
-If your workspace does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mts` with the flat `checkers.auto` configuration, adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
+If your project does not yet have a Limina config, start with `limina init`. It writes a `limina.config.mts` with the flat `checkers.auto` configuration, adds the root script, ensures `.limina/` is ignored, and can install the optional Limina agent skill for this project.
 
 If your repository already has a clear `tsconfig` convention, writing the minimal `limina.config.mts` directly is faster. Automatic checker discovery is enough for many workspaces; use [Checker Entries](./config/checkers.md) only when you need explicit checker routing.
 
-## Initialize an Existing Workspace
+## Initialize an Existing Project
 
-For a workspace that has not adopted Limina's declaration graph layout yet, run:
+For a project that has not adopted Limina's declaration graph layout yet, run:
 
 ```sh
 pnpm exec limina init
 ```
 
-`limina init` searches upward for the nearest workspace descriptor, confirms the workspace root, and writes the Limina config file.
+`limina init` searches from cwd for the nearest `package.json`, validates it, and writes `limina.config.mts` beside it. An invalid nearest manifest stops initialization. Only when no manifest exists in the ancestor chain does init offer to create one at cwd. Init adds no workspace declaration. `--yes` also works without manager metadata and prints neutral next-step guidance.
 
 For non-interactive environments, use:
 

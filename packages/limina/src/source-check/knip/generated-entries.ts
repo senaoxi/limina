@@ -7,6 +7,9 @@ import {
 } from '#utils/path';
 import { isPlainRecord } from '#utils/values';
 import path from 'pathe';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
+import { getPackageOwnerIdentity } from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import {
   collectPackageManifestEntryTargets,
   collectSourceCandidatesForManifestTarget,
@@ -202,22 +205,28 @@ function collectConfigPatterns(options: {
 
 function findGeneratedKnipConfig(options: {
   generatedGraph: GeneratedTsconfigGraphResult;
-  ownerName: string;
+  workspaceContext: ValidatedWorkspaceContext;
+  ownerIdentity: PackageOwnerIdentity;
 }) {
   return options.generatedGraph.generatedKnipConfigs.find(
-    (candidate) => candidate.packageName === options.ownerName,
+    (candidate) =>
+      getPackageOwnerIdentity(
+        options.workspaceContext,
+        candidate.packageDirectory,
+      ) === options.ownerIdentity,
   );
 }
 
 export function collectGeneratedArtifactSourceEntryPatterns(options: {
   generatedGraph: GeneratedTsconfigGraphResult;
+  workspaceContext: ValidatedWorkspaceContext;
   moduleSet: OwnerSourceModuleSet;
 }): string[] {
-  const ownerName = options.moduleSet.owner.name;
-  if (ownerName === undefined) return [];
+  const ownerIdentity = options.moduleSet.ownerIdentity;
   const generatedConfig = findGeneratedKnipConfig({
     generatedGraph: options.generatedGraph,
-    ownerName,
+    workspaceContext: options.workspaceContext,
+    ownerIdentity,
   });
   if (generatedConfig === undefined) return [];
   const sourceFiles = new Set(

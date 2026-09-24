@@ -53,7 +53,7 @@ Vue 资源类型证据与 graph analysis 使用同一套有界 semantic adapter 
 
 `source.importAuthority` 控制那些没有写在源码归属方清单文件里的裸包导入。
 
-源码导入授权默认严格：最近的 `pnpm` 工作区源码归属方 `package.json` 必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明这个包。按源码归属方分组的授权可以让同一个源码归属方在指定范围内使用工作区根目录 `package.json` 的依赖声明。根清单文件必须存在，并且仍然要在同样的依赖区里声明这个包。
+源码导入授权默认严格：导入文件所属的 package scope 必须在 `dependencies`、`devDependencies`、`peerDependencies` 或 `optionalDependencies` 中声明这个包。按源码归属方分组的授权可以让同一个源码归属方在指定范围内使用治理根目录 `package.json` 的依赖声明。根清单文件仍然要在同样的依赖区里声明这个包。
 
 这里的“源码导入”包括 Limina 能收集到的静态导入、类型导入和再导出。`Node` 内置模块、虚拟模块、`URL` / `data` / `file` 说明符和注释中的说明符不按普通裸包依赖处理。
 
@@ -143,7 +143,7 @@ export default defineConfig({
 
 `source.knip` 控制 `source:check` 中由 `Knip` 驱动的部分：未使用工作区依赖和未使用源码模块。
 
-写 `knip: true` 时，Limina 使用自动生成的默认 `Knip` 配置。省略该选项或写 `knip: false` 时，会关闭这些 `Knip` 驱动的检查。对象形式会启用检查，并按工作区包名配置 Limina 语义 `Knip` 规则；对象必须拥有 `workspaces` 字段。没有工作区级规则时使用 `{ workspaces: {} }`：
+写 `knip: true` 时，Limina 使用自动生成的默认 `Knip` 配置。省略该选项或写 `knip: false` 时，会关闭这些 `Knip` 驱动的检查。对象形式会启用检查，并且至少声明 `root` 或 `workspaces` 之一，也可同时声明。治理根包使用 `{ root: {} }`，不需要额外规则时也可使用 `{ workspaces: {} }`：
 
 ```ts
 interface SourceKnipEntryConfig {
@@ -168,15 +168,18 @@ interface SourceKnipWorkspaceConfig {
 }
 
 interface SourceKnipCheckConfig {
-  workspaces: Record<string, SourceKnipWorkspaceConfig>;
+  root?: SourceKnipWorkspaceConfig;
+  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
 }
 ```
 
-`source.knip` 只接受 `true`、`false` 或上面的对象形式。空对象、`null`、数组、标量、未知字段，以及不是对象的 `workspaces` 值，都会被判定为无效配置。
+`source.knip` 只接受 `true`、`false` 或上面的对象形式。空对象、`null`、数组、标量、未知字段，以及不是对象的 `root` 或 `workspaces` 值，都会被判定为无效配置。
 
-`source.knip.workspaces` 的 `key` 是当前治理区域内的具名源码归属方，例如 `@acme/app`。未知或已排除的包名会让 `source check` 失败。没有 `name` 的工作区包仍然可以成为源码归属方，但不能放进 `source.knip.workspaces`，因为它没有稳定的包名 `key`。
+`source.knip.root` 是单包和 workspace 中配置治理根包的唯一方式，有无包名均可。根包入口、忽略、构建脚本推导、多 tsconfig 分组和 finding 都保留该包已经验证的归属关系。根包必须已经激活：`root` 不能重新激活已排除的根包。
 
-`source.knip.workspaces[pkg]` 只配置额外可达入口和忽略规则。包级 `Knip tsconfig` 来源来自静态、直接的 `limina build <config>` 脚本；没有这类脚本时，Limina 不传 `--tsConfig`，交给 `Knip` 使用自己的默认 `tsconfig` 行为。
+`source.knip.workspaces` 的 key 是已激活的非 root 命名 workspace package，例如 `@acme/app`。未知或已排除的名称会让 `source check` 失败。`"."` 和根包名称两个入口均被拒绝，即使没有声明 `root` 也是如此。已有 `workspaces[rootPackageName]` 配置应整体移到 `root`，保留内部字段。相对目录不是公开寻址方式：Limina 内部把已验证 owner 映射为 Knip 的 `"."`、相对 workspace 目录及分析目标，不为适配修改 `package.json#workspaces`。无名称非根包仍有 owner 身份，但没有公开的名称 key。
+
+`source.knip.root` 和 `source.knip.workspaces[pkg]` 只配置额外可达入口和忽略规则。包级 `Knip tsconfig` 来源来自静态、直接的 `limina build <config>` 脚本；没有这类脚本时，Limina 不传 `--tsConfig`，交给 `Knip` 使用自己的默认 `tsconfig` 行为。
 
 静态包脚本可以覆盖这个默认行为，让 Limina 为这个包推导专用的 `Knip tsconfig` 来源：
 
@@ -188,7 +191,7 @@ interface SourceKnipCheckConfig {
 }
 ```
 
-`<config>` 会从这个包目录解析。它必须是工作区内的 `JSON` 文件。托管脚本必须指向 Limina 管理且存在输出构建模块的配置。原始包脚本必须使用 `--raw --preset <tsc|tsgo|vue-tsc>`，配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 只支持 `limina build tsconfig.json`、`limina build tsconfig.dts.json --raw --preset tsgo`、`pnpm limina build tsconfig.json`、`pnpm exec limina build tsconfig.json` 这类直接静态写法。像 `limina build $CONFIG` 这样的动态 Shell 脚本会被报告为不支持。
+`<config>` 会从这个包目录解析。它必须是工作区内的 `JSON` 文件。托管脚本必须指向 Limina 管理且存在输出构建模块的配置。原始包脚本必须使用 `--raw --preset <tsc|tsgo|vue-tsc>`，配置还必须留在所属包目录里，并且不能指向生成的 `.limina` 配置。Limina 只支持 `limina build tsconfig.json`、`limina build tsconfig.dts.json --raw --preset tsgo`、`pnpm limina build tsconfig.json`、`pnpm exec limina build tsconfig.json` 这类直接静态写法。像 `limina build $CONFIG` 这样的动态 Shell 脚本会被报告为不支持。单包支持没有把 parser 的 invocation syntax 扩大到 npm、Yarn 或 Bun wrapper；这些项目仍可使用直接的 `limina build`。
 
 ::: warning
 `knip` 是 Limina 的可选对等依赖。如果启用了 `source.knip`，但运行 Limina 的工作区没有安装 `knip`，`source check` 会在源码分析开始前以缺少对等依赖错误失败。关闭 `source.knip` 时，Limina 不会解析或运行 Knip。如果 CI 必须覆盖未使用依赖和未使用模块检查，应显式安装并校验 `knip`。
@@ -274,7 +277,7 @@ export default defineConfig({
 });
 ```
 
-### workspaces[pkg].entry
+### root.entry / workspaces[pkg].entry
 
 - **类型：** `Array<{ files: string[]; reason: string }>`
 
@@ -282,7 +285,7 @@ export default defineConfig({
 
 `entry` 配置必须使用相对于 `config.rootDir` 的正向 `glob`，且必须位于 `key` 指向的包目录内，并提供非空 `reason`。外部激活包使用 `../`；模式仍然只能过滤对应 owner 已发现的源码模块集合。
 
-### workspaces[pkg].ignoreDependencies
+### root.ignoreDependencies / workspaces[pkg].ignoreDependencies
 
 - **类型：** `Array<{ dep: string; reason: string }>`
 
@@ -292,7 +295,7 @@ export default defineConfig({
 
 `ignore entry` 的 `dep` 必须是已存在的工作区包，并且这个依赖关系仍然声明在 `key` 指向的导入方包清单中。确实需要保留时，把 `reason` 写在配置旁；不再需要时，应该删除依赖。
 
-### workspaces[pkg].ignoreFiles
+### root.ignoreFiles / workspaces[pkg].ignoreFiles
 
 - **类型：** `Array<{ file: string; reason: string }>`
 

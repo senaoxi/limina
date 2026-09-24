@@ -1,11 +1,13 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
-import {
-  isNamedWorkspacePackage,
-  type WorkspacePackage,
-} from '#core/workspace/actions';
+import type { WorkspacePackage } from '#core/workspace/actions';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import path from 'pathe';
+import {
+  getPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+} from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import type { KnipSourceAnalysisGroup } from '../knip';
 
 export {
@@ -14,138 +16,64 @@ export {
   type SourceKnipWorkspaceConfigRecord,
 } from './workspace-config';
 
-interface GeneratedKnipConfig {
-  packageName?: string | null;
-  references: readonly string[];
-}
-
-interface PackageGroupSelection {
-  defaultWorkspaceName?: string;
-  groups: KnipSourceAnalysisGroup[];
-}
-
 interface VirtualKnipConfig {
   extends?: unknown;
   references?: readonly { readonly path?: unknown }[];
 }
 
-function createGeneratedConfigMap(
-  entries: readonly GeneratedKnipConfig[],
-): Map<string, GeneratedKnipConfig> {
-  const generatedConfigByPackageName = new Map<string, GeneratedKnipConfig>();
-
-  for (const entry of entries) {
-    if (typeof entry.packageName === 'string') {
-      generatedConfigByPackageName.set(entry.packageName, entry);
-    }
-  }
-
-  return generatedConfigByPackageName;
-}
-
-function isRequiredWorkspacePackage(options: {
-  requiredWorkspaceNames: ReadonlySet<string>;
-  workspacePackage: WorkspacePackage & { name: string };
-}): boolean {
-  return options.requiredWorkspaceNames.has(options.workspacePackage.name);
-}
-
-function createReferenceGroups(options: {
-  generatedConfig: GeneratedKnipConfig;
-  generatedFiles: ReadonlyMap<string, string>;
-  workspacePackage: WorkspacePackage & { name: string };
-}): KnipSourceAnalysisGroup[] {
-  return collectRealKnipConfigReferences(
-    options.generatedConfig.references,
-    options.generatedFiles,
-  ).map((reference) => ({
-    tsConfigFile: toRelativePath(options.workspacePackage.directory, reference),
-    workspaceNames: [options.workspacePackage.name],
-  }));
-}
-
-function selectPackageGroup(options: {
-  generatedConfigByPackageName: ReadonlyMap<string, GeneratedKnipConfig>;
-  generatedFiles: ReadonlyMap<string, string>;
-  requiredWorkspaceNames: ReadonlySet<string>;
-  workspacePackage: WorkspacePackage & { name: string };
-}): PackageGroupSelection | null {
-  if (!isRequiredWorkspacePackage(options)) {
-    return null;
-  }
-
-  const generatedConfig = options.generatedConfigByPackageName.get(
-    options.workspacePackage.name,
-  );
-
-  if (generatedConfig === undefined) {
-    return {
-      defaultWorkspaceName: options.workspacePackage.name,
-      groups: [],
-    };
-  }
-
-  return {
-    groups: createReferenceGroups({
-      generatedConfig,
-      generatedFiles: options.generatedFiles,
-      workspacePackage: options.workspacePackage,
-    }),
-  };
-}
-
-function isPackageGroupSelection(
-  selection: PackageGroupSelection | null,
-): selection is PackageGroupSelection {
-  return selection !== null;
-}
-
-function getDefaultWorkspaceNames(
-  selections: readonly PackageGroupSelection[],
-): string[] {
-  return selections
-    .map((selection) => selection.defaultWorkspaceName)
-    .filter((name): name is string => name !== undefined);
-}
-
-function createDefaultGroup(
-  workspaceNames: readonly string[],
-): KnipSourceAnalysisGroup[] {
-  return workspaceNames.length === 0
-    ? []
-    : [{ workspaceNames: [...workspaceNames] }];
-}
-
 export function createKnipSourceAnalysisGroups(options: {
   config: ResolvedLiminaConfig;
   generatedGraph: GeneratedTsconfigGraphResult;
-  requiredWorkspaceNames: Set<string>;
+  requiredOwnerIdentities: Set<PackageOwnerIdentity>;
   workspacePackages: WorkspacePackage[];
+  workspaceContext: ValidatedWorkspaceContext;
 }): KnipSourceAnalysisGroup[] {
-  if (options.workspacePackages.length === 0) {
-    return [{}];
-  }
-
-  const generatedConfigByPackageName = createGeneratedConfigMap(
-    options.generatedGraph.generatedKnipConfigs,
+  const groups = options.workspacePackages.flatMap((workspacePackage) =>
+    createPackageGroups({ ...options, workspacePackage }),
   );
-  const selections = options.workspacePackages
-    .filter(isNamedWorkspacePackage)
-    .map((workspacePackage) =>
-      selectPackageGroup({
-        generatedConfigByPackageName,
-        generatedFiles: options.generatedGraph.generatedFiles,
-        requiredWorkspaceNames: options.requiredWorkspaceNames,
-        workspacePackage,
-      }),
-    )
-    .filter(isPackageGroupSelection);
-  const defaultWorkspaceNames = getDefaultWorkspaceNames(selections);
-
+  const defaultNames = groups
+    .filter((group) => group.tsConfigFile === undefined)
+    .flatMap((group) => group.workspaceNames ?? []);
+  const defaults =
+    defaultNames.length === 0 ? [] : [{ workspaceNames: defaultNames }];
   return [
-    ...createDefaultGroup(defaultWorkspaceNames),
-    ...selections.flatMap((selection) => selection.groups),
+    ...defaults,
+    ...groups.filter((group) => group.tsConfigFile !== undefined),
   ];
+}
+
+function createPackageGroups(
+  options: Parameters<typeof createKnipSourceAnalysisGroups>[0] & {
+    workspacePackage: WorkspacePackage;
+  },
+): KnipSourceAnalysisGroup[] {
+  const { workspacePackage } = options;
+  const identity = getPackageOwnerIdentity(
+    options.workspaceContext,
+    workspacePackage.directory,
+  );
+  if (!options.requiredOwnerIdentities.has(identity)) return [];
+  const workspaceNames = [
+    toRelativePath(
+      options.config.governanceRoot.rootDir,
+      workspacePackage.directory,
+    ),
+  ];
+  const generated = options.generatedGraph.generatedKnipConfigs.find(
+    (entry) =>
+      getPackageOwnerIdentity(
+        options.workspaceContext,
+        entry.packageDirectory,
+      ) === identity,
+  );
+  if (generated === undefined) return [{ workspaceNames }];
+  return collectRealKnipConfigReferences(
+    generated.references,
+    options.generatedGraph.generatedFiles,
+  ).map((reference) => ({
+    tsConfigFile: toRelativePath(workspacePackage.directory, reference),
+    workspaceNames,
+  }));
 }
 
 function parseVirtualConfig(content: string): VirtualKnipConfig {

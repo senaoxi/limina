@@ -1,11 +1,15 @@
 import type {
-  NamedWorkspacePackage,
   PackageManifest,
   WorkspacePackage,
 } from '#core/workspace/actions';
 import { isNamedWorkspacePackage } from '#core/workspace/actions';
 import { isPlainRecord } from '#utils/values';
 import path from 'pathe';
+import {
+  getPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+} from '../workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 
 type DependencySectionName =
   | 'dependencies'
@@ -20,7 +24,8 @@ interface DependencyDeclaration {
 
 export interface WorkspaceDependencyDeclaration {
   dependencyName: string;
-  importer: NamedWorkspacePackage;
+  importer: WorkspacePackage;
+  importerIdentity: PackageOwnerIdentity;
   packageJsonPath: string;
   sectionName: DependencySectionName;
   specifier: string;
@@ -69,33 +74,23 @@ function collectDependencyDeclarations(
 }
 
 export function createWorkspaceDependencyKey(
-  importerName: string,
+  importerIdentity: PackageOwnerIdentity,
   dependencyName: string,
 ): string {
-  return `${importerName}\0${dependencyName}`;
+  return `${importerIdentity}\0${dependencyName}`;
 }
 
 function getWorkspacePackageJsonPath(
-  workspacePackage: NamedWorkspacePackage,
+  workspacePackage: WorkspacePackage,
 ): string {
   return path.join(workspacePackage.directory, 'package.json');
 }
 
-function isWorkspaceDependencyCandidate(options: {
-  dependencyName: string;
-  importerName: string;
-  workspacePackageNames: ReadonlySet<string>;
-}): boolean {
-  return (
-    options.dependencyName !== options.importerName &&
-    options.workspacePackageNames.has(options.dependencyName)
-  );
-}
-
 function collectImporterSectionDeclarations(options: {
-  importer: NamedWorkspacePackage;
+  importer: WorkspacePackage;
+  importerIdentity: PackageOwnerIdentity;
   sectionName: DependencySectionName;
-  workspacePackageNames: ReadonlySet<string>;
+  workspacePackageIdentities: ReadonlyMap<string, PackageOwnerIdentity>;
 }): WorkspaceDependencyDeclaration[] {
   const section = getDependencySection(
     options.importer.manifest,
@@ -107,16 +102,16 @@ function collectImporterSectionDeclarations(options: {
   }
 
   return Object.entries(section)
-    .filter(([dependencyName]) =>
-      isWorkspaceDependencyCandidate({
-        dependencyName,
-        importerName: options.importer.name,
-        workspacePackageNames: options.workspacePackageNames,
-      }),
+    .filter(
+      ([dependencyName]) =>
+        options.workspacePackageIdentities.has(dependencyName) &&
+        options.workspacePackageIdentities.get(dependencyName) !==
+          options.importerIdentity,
     )
     .map(([dependencyName, specifier]) => ({
       dependencyName,
       importer: options.importer,
+      importerIdentity: options.importerIdentity,
       packageJsonPath: getWorkspacePackageJsonPath(options.importer),
       sectionName: options.sectionName,
       specifier,
@@ -124,14 +119,16 @@ function collectImporterSectionDeclarations(options: {
 }
 
 function collectImporterDeclarations(
-  importer: NamedWorkspacePackage,
-  workspacePackageNames: ReadonlySet<string>,
+  importer: WorkspacePackage,
+  importerIdentity: PackageOwnerIdentity,
+  workspacePackageIdentities: ReadonlyMap<string, PackageOwnerIdentity>,
 ): WorkspaceDependencyDeclaration[] {
   return dependencySectionNames.flatMap((sectionName) =>
     collectImporterSectionDeclarations({
       importer,
       sectionName,
-      workspacePackageNames,
+      importerIdentity,
+      workspacePackageIdentities,
     }),
   );
 }
@@ -156,18 +153,24 @@ function compareWorkspaceDeclarations(
 }
 
 export function collectWorkspaceDependencyDeclarations(
-  workspacePackages: WorkspacePackage[],
+  context: ValidatedWorkspaceContext,
 ): WorkspaceDependencyDeclaration[] {
-  const namedWorkspacePackages = workspacePackages.filter(
+  const namedWorkspacePackages = context.packages.filter(
     isNamedWorkspacePackage,
   );
-  const workspacePackageNames = new Set(
-    namedWorkspacePackages.map((workspacePackage) => workspacePackage.name),
+  const workspacePackageIdentities = new Map(
+    namedWorkspacePackages.map((entry) => [
+      entry.name,
+      getPackageOwnerIdentity(context, entry.directory),
+    ]),
   );
-
-  return namedWorkspacePackages
+  return context.packages
     .flatMap((importer) =>
-      collectImporterDeclarations(importer, workspacePackageNames),
+      collectImporterDeclarations(
+        importer,
+        getPackageOwnerIdentity(context, importer.directory),
+        workspacePackageIdentities,
+      ),
     )
     .sort(compareWorkspaceDeclarations);
 }

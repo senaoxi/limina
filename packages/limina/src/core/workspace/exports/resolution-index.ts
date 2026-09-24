@@ -153,7 +153,9 @@ export async function createWorkspaceExportsResolutionIndex(options: {
 }): Promise<WorkspaceExportsResolutionIndex> {
   const groups = compileWorkspaceExportResolutionGroups(options.profiles);
   const state = createIndexState();
-  const frameworkResolver = new FrameworkExportResolver();
+  const frameworkResolver = new FrameworkExportResolver(
+    options.config.governanceRoot,
+  );
   const context: WorkspaceExportIndexContext = {
     frameworkResolver,
     config: options.config,

@@ -215,7 +215,7 @@ export interface CheckIssueInventoryInvocationMetadata {
 export interface SourceIssueSnapshotIssue {
   code: SourceIssueCode;
   filePath?: string;
-  ownerName: string;
+  ownerName?: string;
 }
 
 export interface SourceIssueSnapshot {

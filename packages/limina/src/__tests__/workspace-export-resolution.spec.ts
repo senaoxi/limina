@@ -14,6 +14,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { createImportAnalysisContext } from '../core/import-analysis/context';
 import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 describe('workspace export resolver proof', () => {
@@ -85,6 +86,9 @@ describe('workspace export resolver proof', () => {
           });
           const index = await createWorkspaceExportsResolutionIndex({
             config: {
+              get governanceRoot() {
+                return resolveFixtureGovernanceRoot(this);
+              },
               config: {},
               rootDir: directory,
               configPath: path.join(directory, 'limina.config.mjs'),
@@ -200,6 +204,9 @@ describe('workspace export resolver proof', () => {
         ).resolvedModule;
         const index = await createWorkspaceExportsResolutionIndex({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             rootDir: directory,
             configPath: path.join(directory, 'limina.config.mjs'),
             config: {},

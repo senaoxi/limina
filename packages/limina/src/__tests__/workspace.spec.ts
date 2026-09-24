@@ -30,6 +30,7 @@ import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortableRelativePath,
@@ -81,6 +82,9 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: fixturePath('limina.config.mjs'),
       rootDir,
     },

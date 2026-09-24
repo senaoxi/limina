@@ -108,7 +108,10 @@ function createPathIndex(
       rawPackages: [...packages],
       sourceConfigPaths: [],
       workspaceRootDir: rootDir,
-      workspaceRoot: {
+      governanceRoot: {
+        kind: 'workspace',
+        manifestPath: normalizeAbsolutePath(path.join(rootDir, 'package.json')),
+        manifest: {},
         rootDir,
         packageManager: 'pnpm',
         descriptor: {

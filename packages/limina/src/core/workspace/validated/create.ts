@@ -1,6 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
-import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import type { WorkspacePackage } from '../actions';
 import type { ExtendedPackageScope, WorkspaceRegionBoundary } from '../regions';
 import { collectPackageIsland } from './descriptors/island';
@@ -94,7 +93,7 @@ export async function collectValidatedWorkspaceContext(options: {
   config: ResolvedLiminaConfig;
   rawPackages: readonly WorkspacePackage[];
 }): Promise<ValidatedWorkspaceContext> {
-  const workspaceRoot = resolveNearestWorkspaceRoot(options.config.rootDir);
+  const governanceRoot = options.config.governanceRoot;
   const rules = compileExclusionRules(options.config);
   validateWorkspacePackageExclusions({
     config: options.config,
@@ -171,7 +170,7 @@ export async function collectValidatedWorkspaceContext(options: {
     rawPackages: [...options.rawPackages],
     sourceConfigPaths,
     workspaceMutationGeneration: authorities.workspaceMutationGeneration,
-    workspaceRoot,
-    workspaceRootDir: workspaceRoot.rootDir,
+    governanceRoot,
+    workspaceRootDir: governanceRoot.rootDir,
   };
 }

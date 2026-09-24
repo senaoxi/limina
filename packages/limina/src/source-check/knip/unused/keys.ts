@@ -1,8 +1,9 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import type { PackageOwnerIdentity } from '../../../core/workspace/owner-identity';
 
 export function createOwnerSourceFileKey(
-  ownerName: string,
+  ownerIdentity: PackageOwnerIdentity,
   filePath: string,
 ): string {
-  return `${ownerName}\0${normalizeAbsolutePath(filePath)}`;
+  return `${ownerIdentity}\0${normalizeAbsolutePath(filePath)}`;
 }

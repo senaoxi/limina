@@ -1,6 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
-import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import { expandPackageGlobs } from './expand-package-globs';
@@ -14,8 +13,10 @@ import { isNamedWorkspacePackage } from './package-types';
 import { collectWorkspaceRegionTopology } from './regions';
 import { workspacePackageManagerAdapters } from './selection-policy';
 
-function createWorkspacePackage(packageJsonPath: string): WorkspacePackage {
-  const manifest = readJsonFile<PackageManifest>(packageJsonPath);
+function createWorkspacePackage(
+  packageJsonPath: string,
+  manifest = readJsonFile<PackageManifest>(packageJsonPath),
+): WorkspacePackage {
   const name = getManifestPackageName(manifest);
   return {
     directory: normalizeAbsolutePath(path.dirname(packageJsonPath)),
@@ -27,7 +28,12 @@ function createWorkspacePackage(packageJsonPath: string): WorkspacePackage {
 async function collectDeclaredWorkspacePackages(
   config: ResolvedLiminaConfig,
 ): Promise<WorkspacePackage[]> {
-  const workspace = resolveNearestWorkspaceRoot(config.rootDir);
+  const workspace = config.governanceRoot;
+  const rootPackage = createWorkspacePackage(
+    workspace.manifestPath,
+    workspace.manifest,
+  );
+  if (workspace.kind === 'single-package') return [rootPackage];
   const policy =
     await workspacePackageManagerAdapters[
       workspace.packageManager
@@ -36,10 +42,14 @@ async function collectDeclaredWorkspacePackages(
     ...policy,
     rootDir: workspace.rootDir,
   });
-  return [...new Set([workspace.rootDir, ...directories])]
-    .map((directory) => path.join(directory, 'package.json'))
-    .filter((manifestPath) => existsSync(manifestPath))
-    .map(createWorkspacePackage);
+  return [
+    rootPackage,
+    ...[...new Set(directories)]
+      .filter((directory) => directory !== workspace.rootDir)
+      .map((directory) => path.join(directory, 'package.json'))
+      .filter((manifestPath) => existsSync(manifestPath))
+      .map((manifestPath) => createWorkspacePackage(manifestPath)),
+  ];
 }
 
 function compareNamedPriority(

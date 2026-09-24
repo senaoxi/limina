@@ -58,7 +58,7 @@ A more robust approach is to ensure that the same implementation file is owned b
 
 ## Files Must Have a Governed Region and Clear Package Ownership First
 
-Limina starts from the packages selected by the nearest workspace descriptor. Each final activated package is an independent package island, and its root `package.json` is the owner manifest. A checked source file must first belong to one of these units. If it does not, Limina reports it as outside the activated region; if an ordinary source `tsconfig*.json` covers files owned by multiple workspace packages, Limina reports that the boundary is too broad.
+Limina selects the config module first. Its nearest `package.json` fixes the governance root, whose own workspace declaration selects packages; without that declaration, the root package is the sole candidate. Each final activated package is an independent package island, and its root `package.json` is the owner manifest. A checked source file must first belong to one of these units. If it does not, Limina reports it as outside the activated region; if an ordinary source `tsconfig*.json` covers files owned by multiple workspace packages, Limina reports that the boundary is too broad.
 
 Governance does not automatically continue through every directory below a workspace package. A nested `package.json` stops the current island by default, and a nested workspace root (`pnpm-workspace.yaml` or `package.json` with its own `workspaces`) always stops that owner's traversal. An activated child root also stops its parent's traversal, but the child still starts an independent island even when an ancestor workspace boundary exists.
 

@@ -72,9 +72,12 @@ function isResolvedConfig(config: LiminaConfig): boolean {
 
 function toUserConfig(config: LiminaConfig): LiminaConfig {
   if (!isResolvedConfig(config)) return config;
-  const userConfig: Record<string, unknown> = { ...config };
-  delete userConfig.configPath;
-  delete userConfig.rootDir;
+  const internalFields = new Set(['configPath', 'rootDir', 'governanceRoot']);
+  const userConfig = Object.fromEntries(
+    Object.keys(config)
+      .filter((key) => !internalFields.has(key))
+      .map((key) => [key, (config as Record<string, unknown>)[key]]),
+  );
   return userConfig as LiminaConfig;
 }
 

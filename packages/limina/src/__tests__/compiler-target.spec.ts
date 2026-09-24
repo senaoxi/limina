@@ -4,6 +4,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { readExplicitSourceCompilerTarget } from '../core/build-graph/generated/compiler-target';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 describe('effective output compiler target', () => {
@@ -89,6 +90,9 @@ describe('effective output compiler target', () => {
         expect(
           readExplicitSourceCompilerTarget({
             config: {
+              get governanceRoot() {
+                return resolveFixtureGovernanceRoot(this);
+              },
               rootDir,
               configPath: fixturePath('limina.config.mts'),
               config: {},

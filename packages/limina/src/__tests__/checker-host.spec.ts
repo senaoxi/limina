@@ -18,6 +18,7 @@ import {
   type TypecheckRunnerResult,
   type TypecheckTarget,
 } from '../typecheck/targets';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 function createSleepTarget(sleepMs: number, name: string): TypecheckTarget {
   return {
@@ -31,6 +32,9 @@ function createSleepTarget(sleepMs: number, name: string): TypecheckTarget {
 
 function createPoolConfig(): ResolvedLiminaConfig {
   return {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     configPath: '/virtual/limina.config.mjs',
     execution: { checkerBuild: 2 },
     rootDir: '/virtual',

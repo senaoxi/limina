@@ -1,3 +1,4 @@
+import type { PackageManifest } from '#core/workspace/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import { LiminaDependencyError } from '../dependency-contract';
 import {
@@ -51,30 +52,39 @@ function createUnsupportedToolchainError(options: {
 function assertSupportedTuple(options: {
   packageRootDir: string;
   versions: AstroSemanticVersionTuple;
+  manifest?: PackageManifest;
 }): void {
   const adapter = resolveAstroSemanticAdapter(options.versions);
   if (adapter.kind === 'supported') return;
   throw createUnsupportedToolchainError({
     ...options,
-    ownerIdentity: createAstroLeafScopeIdentity(options.packageRootDir),
+    ownerIdentity: createAstroLeafScopeIdentity(
+      options.packageRootDir,
+      options.manifest,
+    ),
     reason: adapter.reason,
   });
 }
 
 export function resolveAstroSemanticToolchain(
   packageRootDir: string,
+  manifest?: PackageManifest,
 ): AstroSemanticToolchain {
   let versions: AstroSemanticVersionTuple | undefined;
   try {
     const normalizedRoot = normalizeAbsolutePath(packageRootDir);
-    const paths = resolveAstroSemanticToolchainPaths(normalizedRoot);
+    const paths = resolveAstroSemanticToolchainPaths(normalizedRoot, manifest);
     versions = readAstroSemanticVersionTuple(paths);
-    assertSupportedTuple({ packageRootDir: normalizedRoot, versions });
+    assertSupportedTuple({
+      packageRootDir: normalizedRoot,
+      versions,
+      manifest,
+    });
     return loadAstroSemanticRuntime({ paths, versions });
   } catch (error) {
     if (error instanceof LiminaDependencyError) throw error;
     throw createUnsupportedToolchainError({
-      ownerIdentity: createAstroLeafScopeIdentity(packageRootDir),
+      ownerIdentity: createAstroLeafScopeIdentity(packageRootDir, manifest),
       packageRootDir: normalizeAbsolutePath(packageRootDir),
       reason: formatAstroToolchainError(error),
       versions,

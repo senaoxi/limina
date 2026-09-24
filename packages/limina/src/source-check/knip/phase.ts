@@ -13,7 +13,9 @@ type KnipSourcePhaseInput = Readonly<
     | 'options'
     | 'ownerModuleSets'
     | 'packages'
+    | 'workspacePathIndex'
     | 'sourceIssues'
+    | 'workspaceContext'
     | 'workspaceDependencyDeclarations'
   >
 >;
@@ -36,6 +38,8 @@ export async function runKnipSourcePhase(
     sourceIssues: state.sourceIssues,
     workspaceDependencyDeclarations: state.workspaceDependencyDeclarations,
     workspacePackages: state.packages,
+    workspaceContext: state.workspaceContext,
+    pathIndex: state.workspacePathIndex,
   });
   state.checkItems.record('knip source usage');
 }

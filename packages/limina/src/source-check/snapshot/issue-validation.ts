@@ -87,7 +87,7 @@ function isSourceIssueSnapshotIssue(
   if (!isRecord(value)) return false;
   return allValid([
     typeof value.code === 'string',
-    typeof value.ownerName === 'string',
+    isOptionalString(value.ownerName),
     isOptionalString(value.filePath),
   ]);
 }

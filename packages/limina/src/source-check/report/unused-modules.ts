@@ -10,22 +10,14 @@ import type {
 import { SOURCE_ISSUE_CODES } from './types';
 
 const DEFAULT_DETAIL_LIMIT = 5;
+function formatFixSteps(steps: readonly string[] = []): string[] {
+  return steps.map((step, index) => `  ${index + 1}. ${step}`);
+}
 
 function getFirstIssue(
   group: readonly SourceUnusedModuleIssue[],
 ): SourceUnusedModuleIssue | undefined {
   return group[0];
-}
-
-function formatUnusedModuleFixes(ownerName: string): string[] {
-  return [
-    'suggested fixes:',
-    '  1. Delete files that are truly unused.',
-    '  2. Make files reachable from package manifest entries, binaries, scripts, or Knip plugin entries.',
-    '  3. Add intentional files to:',
-    `     source.knip.workspaces["${ownerName}"].ignoreFiles`,
-    '     with a reason.',
-  ];
 }
 
 function formatUnusedModuleGroupHeader(options: {
@@ -35,7 +27,8 @@ function formatUnusedModuleGroupHeader(options: {
   const firstIssue = getFirstIssue(options.group);
   if (firstIssue === undefined) return [];
   return [
-    firstIssue.ownerName,
+    firstIssue.ownerName ??
+      toRelativePath(options.config.rootDir, firstIssue.packageJsonPath),
     `package manifest: ${toRelativePath(
       options.config.rootDir,
       firstIssue.packageJsonPath,
@@ -45,7 +38,8 @@ function formatUnusedModuleGroupHeader(options: {
     'reason:',
     '  Owner-governed source modules must be reachable from package entries, binaries, scripts, or Knip plugin entries.',
     '',
-    ...formatUnusedModuleFixes(firstIssue.ownerName),
+    'suggested fixes:',
+    ...formatFixSteps(firstIssue.fixSteps),
   ];
 }
 

@@ -75,7 +75,12 @@ function createWorkspaceContext(options: {
     rawPackages: options.packages,
     sourceConfigPaths: options.sourceConfigPaths ?? [],
     workspaceRootDir: options.configRootDir,
-    workspaceRoot: {
+    governanceRoot: {
+      kind: 'workspace',
+      manifestPath: normalizeAbsolutePath(
+        path.join(options.configRootDir, 'package.json'),
+      ),
+      manifest: {},
       rootDir: options.configRootDir,
       packageManager: 'pnpm',
       descriptor: {

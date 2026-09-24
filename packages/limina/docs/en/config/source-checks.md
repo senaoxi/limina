@@ -53,7 +53,7 @@ Vue resource type evidence uses the same bounded semantic adapter matrix as grap
 
 `source.importAuthority` controls bare package imports that are not declared by the owning workspace package manifest.
 
-Source import authorization is strict by default: the nearest `pnpm` workspace package that owns the importing file must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. An owner-keyed grant can let that same source owner use dependency declarations from the workspace root `package.json` for selected packages. The root manifest must exist and must still declare the package in one of the same dependency sections.
+Source import authorization is strict by default: the package scope that owns the importing file must declare the package in `dependencies`, `devDependencies`, `peerDependencies`, or `optionalDependencies`. An owner-keyed grant can let that same source owner use dependency declarations from the governance root `package.json` for selected packages. The root manifest must declare the package in one of the same dependency sections.
 
 Here, “source import” includes static imports, type imports, and re-exports collected by Limina. `Node` builtins, virtual modules, `URL` / `data` / `file` specifiers, and specifiers found only in comments are not treated as ordinary bare package dependencies.
 
@@ -143,7 +143,7 @@ export default defineConfig({
 
 `source.knip` controls the `Knip`-backed parts of `source:check`: unused workspace dependencies and unused source modules.
 
-Use `knip: true` to use Limina's generated default `Knip` config. Use `knip: false` or omit the option to disable these `Knip`-backed checks. Object form enables the checks and configures Limina's semantic `Knip` rules by workspace package name; the object must own a `workspaces` field. Use `{ workspaces: {} }` when no workspace-specific rules are needed:
+Use `knip: true` to use Limina's generated default `Knip` config. Use `knip: false` or omit the option to disable these `Knip`-backed checks. Object form enables the checks and must declare `root` or `workspaces` (or both). Use `{ root: {} }` for the governance root package, or `{ workspaces: {} }` when no extra rules are needed:
 
 ```ts
 interface SourceKnipEntryConfig {
@@ -168,15 +168,18 @@ interface SourceKnipWorkspaceConfig {
 }
 
 interface SourceKnipCheckConfig {
-  workspaces: Record<string, SourceKnipWorkspaceConfig>;
+  root?: SourceKnipWorkspaceConfig;
+  workspaces?: Record<string, SourceKnipWorkspaceConfig>;
 }
 ```
 
-`source.knip` accepts only `true`, `false`, or the object form above. An empty object, `null`, arrays, scalars, unknown fields, and a non-object `workspaces` value are invalid configuration.
+`source.knip` accepts only `true`, `false`, or the object form above. An empty object, `null`, arrays, scalars, unknown fields, and a non-object `root` or `workspaces` value are invalid configuration.
 
-`source.knip.workspaces` keys are named source owners that remain in the current governed region, such as `@acme/app`. Unknown or excluded package names fail `source check`. Nameless workspace packages can still be source owners, but they cannot be configured under `source.knip.workspaces` because there is no stable package name `key`.
+`source.knip.root` is the only way to configure the governance root package, in both single-package projects and workspaces. It works with or without a package name. Root entries, ignores, build-script inference, multiple tsconfig groups, and findings retain that package's validated ownership. The package must already be active: `root` cannot reactivate an excluded root.
 
-`source.knip.workspaces[pkg]` only configures extra reachability and ignore rules. Package-specific `Knip tsconfig` selection comes from static direct `limina build <config>` scripts. If a package does not declare one, Limina runs Knip for that package without `--tsConfig`, so `Knip` uses its own default `tsconfig` behavior.
+`source.knip.workspaces` keys name active, non-root workspace packages, such as `@acme/app`. Unknown or excluded names fail `source check`. The keys `"."` and the root package's name are rejected even when `root` is absent. Migrate an existing `workspaces[rootPackageName]` block to `root`, preserving its fields. Relative directory keys are not public addressing: Limina maps validated owners to Knip's internal `"."`, relative workspace directories, and analysis targets. It never edits `package.json#workspaces` for this adaptation. Unnamed non-root packages remain owners but have no public name key.
+
+`source.knip.root` and `source.knip.workspaces[pkg]` only configure extra reachability and ignore rules. Package-specific `Knip tsconfig` selection comes from static direct `limina build <config>` scripts. If a package does not declare one, Limina runs Knip for that package without `--tsConfig`, so `Knip` uses its own default `tsconfig` behavior.
 
 A static package script can override that default and give Limina a package-specific `Knip tsconfig` source:
 
@@ -188,7 +191,7 @@ A static package script can override that default and give Limina a package-spec
 }
 ```
 
-The `<config>` path is resolved from the package directory. It must be a `JSON` file inside the workspace. Managed scripts must point at a Limina-managed config whose output build module exists. Raw package-script configs must use `--raw --preset <tsc|tsgo|vue-tsc>`, stay inside the owning package directory, and never point at generated `.limina` configs. Limina supports only direct static forms such as `limina build tsconfig.json`, `limina build tsconfig.dts.json --raw --preset tsgo`, `pnpm limina build tsconfig.json`, and `pnpm exec limina build tsconfig.json`. Dynamic Shell scripts such as `limina build $CONFIG` are reported as unsupported.
+The `<config>` path is resolved from the package directory. It must be a `JSON` file inside the workspace. Managed scripts must point at a Limina-managed config whose output build module exists. Raw package-script configs must use `--raw --preset <tsc|tsgo|vue-tsc>`, stay inside the owning package directory, and never point at generated `.limina` configs. Limina supports only direct static forms such as `limina build tsconfig.json`, `limina build tsconfig.dts.json --raw --preset tsgo`, `pnpm limina build tsconfig.json`, and `pnpm exec limina build tsconfig.json`. Dynamic Shell scripts such as `limina build $CONFIG` are reported as unsupported. Single-package support does not expand this parser's invocation syntax to npm, Yarn, or Bun wrappers; direct `limina build` remains available in those projects.
 
 ::: warning
 `knip` is an optional peer dependency of Limina. If `source.knip` is enabled but `knip` is not installed in the workspace running Limina, `source check` fails with a missing peer dependency error before source analysis starts. When `source.knip` is disabled, Limina does not resolve or run Knip. Install and verify `knip` explicitly in CI when unused-dependency and unused-module coverage is required.
@@ -274,7 +277,7 @@ export default defineConfig({
 });
 ```
 
-### workspaces[pkg].entry
+### root.entry / workspaces[pkg].entry
 
 - **Type:** `Array<{ files: string[]; reason: string }>`
 
@@ -282,7 +285,7 @@ Use `entry` for package-owned source modules that are legitimate direct roots wi
 
 Entry configs must use positive config-root-relative `glob` patterns inside the keyed package directory and a non-empty reason. External activated packages use `../`; patterns still only filter files in the keyed owner's discovered source module set.
 
-### workspaces[pkg].ignoreDependencies
+### root.ignoreDependencies / workspaces[pkg].ignoreDependencies
 
 - **Type:** `Array<{ dep: string; reason: string }>`
 
@@ -292,7 +295,7 @@ For dependencies used by generated code, runtime strings, or another path `Knip`
 
 Ignore entries must name an existing workspace package in `dep` and a dependency pair still declared in the keyed importer package manifest. If the dependency is intentionally retained, keep the reason close to the config; if it is no longer needed, remove the dependency instead.
 
-### workspaces[pkg].ignoreFiles
+### root.ignoreFiles / workspaces[pkg].ignoreFiles
 
 - **Type:** `Array<{ file: string; reason: string }>`
 

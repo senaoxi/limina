@@ -20,6 +20,7 @@ import {
   type TypecheckTarget,
 } from '../typecheck/targets';
 import { normalizeAbsolutePath } from '../utils/path';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function writeText(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -88,6 +89,9 @@ async function createFixture(): Promise<{
   return {
     cleanup: () => rm(rootDir, { force: true, recursive: true }),
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {

@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
+import type { ResolvedGovernanceRoot } from '#utils/workspace-root';
 import path from 'pathe';
 import type { InitMutationContext } from './mutation';
 import { writeInitFile } from './mutation';
@@ -18,9 +19,13 @@ export const liminaSkillInstallCommand = [
   'limina',
 ] as const;
 
-export function createInitConfig(rootDir: string): ResolvedLiminaConfig {
+export function createInitConfig(
+  governanceRoot: ResolvedGovernanceRoot,
+): ResolvedLiminaConfig {
+  const { rootDir } = governanceRoot;
   return {
     configPath: path.join(rootDir, liminaConfigFileName),
+    governanceRoot,
     rootDir,
   };
 }

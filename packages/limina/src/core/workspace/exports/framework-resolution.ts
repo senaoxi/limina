@@ -1,4 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
+import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
 import { AstroSemanticContextManager } from '../../astro-semantic/context';
 import { SvelteSemanticContextManager } from '../../svelte-semantic/context';
@@ -92,7 +93,11 @@ function resolveHostExport(options: {
 
 export class FrameworkExportResolver {
   readonly #vue = new VueSemanticContextManager();
-  readonly #astro = new AstroSemanticContextManager();
+  readonly #astro: AstroSemanticContextManager;
+
+  constructor(governanceRoot?: GovernanceRootBase) {
+    this.#astro = new AstroSemanticContextManager({ governanceRoot });
+  }
   readonly #svelte = new SvelteSemanticContextManager();
 
   #resolveVue(request: ExportRequest): string | null {

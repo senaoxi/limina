@@ -35,6 +35,14 @@ function getIssueScope(filePath: string | undefined): string | null {
   return directory === '.' ? '.' : directory;
 }
 
+function countScope(
+  scopes: Map<string, number>,
+  filePath: string | undefined,
+): void {
+  const scope = getIssueScope(filePath);
+  if (scope !== null) incrementCount(scopes, scope);
+}
+
 function createSourceInventoryCounts(snapshot: SourceIssueSnapshot): {
   packages: Map<string, number>;
   rules: Map<string, number>;
@@ -44,10 +52,10 @@ function createSourceInventoryCounts(snapshot: SourceIssueSnapshot): {
   const rules = new Map<string, number>();
   const scopes = new Map<string, number>();
   for (const issue of snapshot.issues) {
-    incrementCount(packages, issue.ownerName);
+    if (issue.ownerName !== undefined)
+      incrementCount(packages, issue.ownerName);
     incrementCount(rules, issue.code);
-    const scope = getIssueScope(issue.filePath);
-    if (scope !== null) incrementCount(scopes, scope);
+    countScope(scopes, issue.filePath);
   }
   return { packages, rules, scopes };
 }

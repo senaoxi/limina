@@ -1,6 +1,5 @@
 import { addImportAuthorityOwnerConfigProblems } from './import-authority-config-findings';
 import {
-  addImportAuthorityRootManifestConfigProblems,
   collectImportAuthorityAllowRules,
   getSourceOwnerIdentity,
 } from './import-authority-grants';
@@ -51,12 +50,6 @@ export async function runSourceImportAuthorityPhase(
     config: state.config,
     findings: state.findings,
     ownerIdentities: collectOwnerIdentities(state),
-  });
-  addImportAuthorityRootManifestConfigProblems({
-    checks: state.checks,
-    config: state.config,
-    findings: state.findings,
-    importAuthorityAllowRules,
   });
   addSourceImportProblems({
     ambientDeclarations: state.ambientDeclarations.index,

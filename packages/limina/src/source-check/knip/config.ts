@@ -1,6 +1,10 @@
 import type { WorkspacePackage } from '#core/workspace/actions';
-import { isNamedWorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
+import {
+  getPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+} from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import type {
   KnipConfig,
   KnipOwnerProject,
@@ -9,10 +13,10 @@ import type {
 
 function getIgnoredDependencyName(options: {
   dependencyKey: string;
-  packageName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): string | null {
   const [importerName, dependencyName] = options.dependencyKey.split('\0');
-  if (importerName !== options.packageName) {
+  if (importerName !== options.ownerIdentity) {
     return null;
   }
 
@@ -21,14 +25,14 @@ function getIgnoredDependencyName(options: {
 
 function getIgnoredDependenciesForPackage(options: {
   ignoredKeys: ReadonlySet<string>;
-  packageName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): string[] {
   const dependencies: string[] = [];
 
   for (const dependencyKey of options.ignoredKeys) {
     const dependencyName = getIgnoredDependencyName({
       dependencyKey,
-      packageName: options.packageName,
+      ownerIdentity: options.ownerIdentity,
     });
     if (dependencyName !== null) {
       dependencies.push(dependencyName);
@@ -41,21 +45,17 @@ function getIgnoredDependenciesForPackage(options: {
 function addIgnoredWorkspaceConfig(options: {
   ignoredKeys: ReadonlySet<string>;
   rootDir: string;
+  workspaceContext: ValidatedWorkspaceContext;
   workspacePackage: WorkspacePackage;
   workspaces: Record<string, KnipWorkspaceConfig>;
 }): void {
-  if (!isNamedWorkspacePackage(options.workspacePackage)) {
-    return;
-  }
-
   const dependencies = getIgnoredDependenciesForPackage({
     ignoredKeys: options.ignoredKeys,
-    packageName: options.workspacePackage.name,
+    ownerIdentity: getPackageOwnerIdentity(
+      options.workspaceContext,
+      options.workspacePackage.directory,
+    ),
   });
-  if (dependencies.length === 0) {
-    return;
-  }
-
   options.workspaces[
     toRelativePath(options.rootDir, options.workspacePackage.directory)
   ] = {
@@ -66,6 +66,7 @@ function addIgnoredWorkspaceConfig(options: {
 function createIgnoredDependenciesByWorkspace(options: {
   ignoredKeys: ReadonlySet<string>;
   rootDir: string;
+  workspaceContext: ValidatedWorkspaceContext;
   workspacePackages: readonly WorkspacePackage[];
 }): Record<string, KnipWorkspaceConfig> {
   const workspaces: Record<string, KnipWorkspaceConfig> = {};
@@ -106,10 +107,6 @@ function getKnipWorkspaceConfig(options: {
   knipConfig: KnipConfig;
   rootDir: string;
 }): KnipWorkspaceConfig {
-  if (options.directory === options.rootDir) {
-    return options.knipConfig;
-  }
-
   return ensureWorkspaceConfig(
     ensureWorkspaceMap(options.knipConfig),
     toRelativePath(options.rootDir, options.directory),
@@ -169,6 +166,7 @@ export function createKnipConfigForSourceAnalysis(options: {
   ignoredKeys: ReadonlySet<string>;
   ownerProjects: readonly KnipOwnerProject[];
   rootDir: string;
+  workspaceContext: ValidatedWorkspaceContext;
   workspacePackages: readonly WorkspacePackage[];
 }): KnipConfig {
   const knipConfig: KnipConfig = {
@@ -178,6 +176,7 @@ export function createKnipConfigForSourceAnalysis(options: {
     ignoredKeys: options.ignoredKeys,
     rootDir: options.rootDir,
     workspacePackages: options.workspacePackages,
+    workspaceContext: options.workspaceContext,
   });
   if (Object.keys(workspaces).length > 0) {
     knipConfig.workspaces = workspaces;

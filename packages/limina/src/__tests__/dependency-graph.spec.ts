@@ -8,6 +8,7 @@ import {
   type DependencyGraphDocument,
   type DependencyGraphEdgeKind,
 } from '../dependency-graph/runner';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
 const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
@@ -126,6 +127,9 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: defaultCheckers,
       },

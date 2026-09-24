@@ -35,6 +35,7 @@ import {
   readCheckIssueSnapshot,
   readSourceIssueSnapshot,
 } from '../source-check/snapshot';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -110,6 +111,9 @@ async function createFixture(
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {
@@ -3913,7 +3917,7 @@ packages:
     }
   });
 
-  it('ignores nameless workspace package manifests as workspace dependency identities in Knip analysis', async () => {
+  it('retains nameless workspace package importers in Knip analysis', async () => {
     const fixture = await createFixture(
       createWorkspacePackageFiles({
         appManifest: {
@@ -3941,7 +3945,7 @@ packages:
               ],
             }),
         }),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -4159,7 +4163,7 @@ packages:
 
       expect(invocations).toHaveLength(1);
       expect(invocations[0]).toMatchObject({
-        workspaceNames: ['@example/app'],
+        workspaceNames: ['app'],
       });
       expect(invocations[0]?.tsConfigFile).toBeUndefined();
     } finally {
@@ -4311,12 +4315,12 @@ packages:
       );
 
       expect(invocations).toHaveLength(2);
-      expect(generatedInvocation?.workspaceNames).toEqual(['@example/app']);
+      expect(generatedInvocation?.workspaceNames).toEqual(['packages/app']);
       expect(generatedInvocation?.tsConfigFile).toBe('tsconfig.dts.json');
       expect(defaultInvocation?.tsConfigFile).toBeUndefined();
       expect([...(defaultInvocation?.workspaceNames ?? [])].sort()).toEqual([
-        '@example/cli',
-        '@example/tool',
+        'packages/cli',
+        'packages/tool',
       ]);
     } finally {
       await fixture.cleanup();

@@ -30,6 +30,7 @@ import type {
   TypecheckRunnerResult,
   TypecheckTarget,
 } from '../typecheck/targets';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -324,6 +325,9 @@ function delayedRunner(options: {
 
 function createLiminaConfig(rootDir: string): ResolvedLiminaConfig {
   return {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     config: {
       checkers: {
         'svelte-check': {
@@ -413,6 +417,9 @@ describe('runCheckerBuild', () => {
       }),
     });
     const config: ResolvedLiminaConfig = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {
@@ -476,6 +483,9 @@ describe('runCheckerBuild', () => {
       'tsconfig.svelte.build.json': tsconfig({ files: [] }),
     });
     const config: ResolvedLiminaConfig = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           'svelte-check': {
@@ -554,6 +564,9 @@ describe('runCheckerBuild', () => {
     try {
       const result = await runCheckerBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -621,6 +634,9 @@ describe('runCheckerBuild', () => {
       await expect(
         runCheckerBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -680,6 +696,9 @@ describe('runCheckerBuild', () => {
       await expect(
         runCheckerBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsgo: {
@@ -741,6 +760,9 @@ describe('runCheckerBuild', () => {
       await expect(
         runCheckerBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsgo: {
@@ -777,6 +799,9 @@ describe('runCheckerBuild', () => {
     try {
       const result = await runCheckerBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsgo: {
@@ -830,6 +855,9 @@ describe('runCheckerBuild', () => {
             ? packageName
             : undefined,
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -877,6 +905,9 @@ describe('runCheckerBuild', () => {
       const result = await runCheckerBuild({
         checkerPackageResolver: (): string | undefined => undefined,
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsgo: {
@@ -955,6 +986,9 @@ describe('runCheckerBuild', () => {
     try {
       const result = await runCheckerBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1031,6 +1065,9 @@ describe('runCheckerBuild', () => {
     try {
       const result = await runCheckerBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1092,6 +1129,9 @@ describe('runCheckerBuild', () => {
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
     const config: ResolvedLiminaConfig = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {
@@ -1231,6 +1271,9 @@ describe('runBuild', () => {
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
     const config: ResolvedLiminaConfig = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {
@@ -1374,6 +1417,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1446,6 +1492,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1510,6 +1559,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               astro: {
@@ -1574,6 +1626,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1622,6 +1677,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               'vue-tsc': {
@@ -1669,6 +1727,9 @@ describe('runBuild', () => {
       await expect(
         runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 'vue-tsc': {
@@ -1725,6 +1786,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1787,6 +1851,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1853,6 +1920,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1915,6 +1985,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -1986,6 +2059,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2055,6 +2131,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2139,6 +2218,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2224,6 +2306,9 @@ describe('runBuild', () => {
       await expect(
         runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -2286,6 +2371,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2347,6 +2435,9 @@ describe('runBuild', () => {
       const result = await runBuild({
         checker: 'tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2404,6 +2495,9 @@ describe('runBuild', () => {
       const result = await runBuild({
         checker: 'tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2472,6 +2566,9 @@ describe('runBuild', () => {
       const result = await runBuild({
         checker: 'vue-tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2521,6 +2618,9 @@ describe('runBuild', () => {
         runBuild({
           checker: 'tsc',
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -2578,6 +2678,9 @@ describe('runBuild', () => {
       const result = await runBuild({
         checker: 'tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2625,6 +2728,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               'svelte-check': {
@@ -2692,6 +2798,9 @@ describe('runBuild', () => {
       await expect(
         runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsgo: {
@@ -2762,6 +2871,9 @@ describe('runBuild', () => {
       const result = await runBuild({
         checker: 'tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsgo: {
@@ -2822,6 +2934,9 @@ describe('runBuild', () => {
       const result = await runBuild({
         checker: 'vue-tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -2890,6 +3005,9 @@ describe('runBuild', () => {
       await expect(
         runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -2956,6 +3074,9 @@ describe('runBuild', () => {
       await expect(
         runCheckerBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsgo: {
@@ -3024,6 +3145,9 @@ describe('runBuild', () => {
       try {
         await runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -3124,6 +3248,9 @@ describe('runBuild', () => {
       try {
         await runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -3200,6 +3327,9 @@ describe('runBuild', () => {
       await expect(
         runBuild({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {
               checkers: {
                 tsc: {
@@ -3268,6 +3398,9 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -3364,6 +3497,9 @@ describe('runCheckerTypecheck', () => {
     try {
       const result = await runCheckerTypecheck({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           config: {
             checkers: {
               tsc: {
@@ -3409,6 +3545,9 @@ describe('checker targets after materialization', () => {
         }),
       });
       const config: ResolvedLiminaConfig = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         rootDir: fixture.rootDir,
         configPath: fixture.path('limina.config.mjs'),
         config: {
@@ -3497,6 +3636,9 @@ describe('checker targets after materialization', () => {
           : {}),
       });
       const config: ResolvedLiminaConfig = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         rootDir: fixture.rootDir,
         configPath: fixture.path('limina.config.mjs'),
         config: {

@@ -231,7 +231,11 @@ export function addSourceImportProblems(
 ): void {
   const base: SourceImportOptions = {
     ...options,
-    resourceResolver: new ResourceResolver(),
+    resourceResolver: new ResourceResolver(
+      (manifestPath) =>
+        options.workspaceLookup.findNearestPackageScopeInfo(manifestPath)
+          ?.manifest,
+    ),
     workspaceSourceBoundary: createWorkspaceSourceBoundary(
       options.sourceProjectEntries.flatMap((entry) => entry.fileNames),
     ),

@@ -38,9 +38,9 @@ export default defineConfig({
 
 ## 默认治理区域
 
-Limina 从最近的工作区声明所定义的原始包成员关系开始。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
+所选配置最近的 `package.json` 固定治理根。该根有工作区声明时，由对应 manager adapter 提供原始成员；没有声明时，原始集合为 `[rootPackage]`。详见[治理根](../getting-started.md#治理根)。它先用完整原始集合验证 `workspace-package` 排除规则并应用这些规则，再建立激活包索引。剩余的每个包都是一个独立 package island，包根目录的 `package.json` 是它的 owner manifest，用于确定源码归属和依赖授权。激活包可以位于 `config.rootDir` 外；报告会保留 `../shared` 这类词法显示路径，归属和冲突判断则使用规范化后的物理目录。
 
-包发现遵循所选 manager 的策略。遍历始终排除以下目录名：
+Workspace 包发现遵循所选 manager 的策略。遍历始终排除以下目录名：
 
 | 包管理器 | Hard ignore                          |
 | -------- | ------------------------------------ |
@@ -115,7 +115,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 两种 `kind` 各自只对应一种 candidate：
 
-- `workspace-package` 从根工作区声明激活的完整原始成员中选择精确包根 candidate。Limina 会在 overlap 检查前验证这些规则，再让每个被匹配的包退出源码归属、依赖授权、源码与检查器发现以及生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。显式配置的 `package.entries` 仍是独立产物条目，不会被这类规则删除。
+- `workspace-package` 从所选治理根的完整原始成员（包括单包根）中选择精确包根 candidate。Limina 会在 overlap 检查前验证这些规则，再让每个被匹配的包退出源码归属、依赖授权、源码与检查器发现以及生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。显式配置的 `package.entries` 仍是独立产物条目，不会被这类规则删除。
 - `package-scope` 选择嵌套 `package.json` 的根目录。它同时覆盖已扩展的包作用域和原本已经停止治理的包作用域。排除后，该根目录及其后代都位于当前运行之外。
 
 规则只与同 `kind` 的 candidate 匹配。因此，同一个目录即使同时是激活包和嵌套包作用域，这两种 identity 也不会合并。

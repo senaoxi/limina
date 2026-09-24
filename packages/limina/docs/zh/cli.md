@@ -53,11 +53,11 @@ limina [--config <path>] [--config-loader <loader>] [--mode <mode>] <command>
 
 全局选项适用于需要加载 Limina 配置文件的命令。`init` 直接面向所属工作区，不依赖已有配置。
 
-| 选项                       | 类型             | 默认行为                                                                                                                   | 相关配置                    | 示例                                        | 边界                                         |
-| -------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------- | -------------------------------------------- |
-| `--config <path>`          | 路径             | 从当前目录向上依次查找 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`，直到 工作区根目录 | Limina 配置文件             | `limina --config ./limina.config.mts check` | 配置文件必须位于所属工作区内                 |
-| `--config-loader <loader>` | `native` / `tsx` | `native`                                                                                                                   | 配置模块加载器              | `limina --config-loader tsx check`          | `tsx` 需要接入工作区安装 `tsx`               |
-| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default`                                                                                   | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现 |
+| 选项                       | 类型             | 默认行为                                 | 相关配置                    | 示例                                        | 边界                                                                   |
+| -------------------------- | ---------------- | ---------------------------------------- | --------------------------- | ------------------------------------------- | ---------------------------------------------------------------------- |
+| `--config <path>`          | 路径             | 从 cwd 及祖先发现默认配置文件            | Limina 配置模块             | `limina --config ./limina.config.mts check` | 最近的 `package.json` 固定治理根；显式查询 anchor 可以指向不存在的配置 |
+| `--config-loader <loader>` | `native` / `tsx` | `native`                                 | 配置模块加载器              | `limina --config-loader tsx check`          | `tsx` 需要接入工作区安装 `tsx`                                         |
+| `--mode <mode>`            | 字符串           | `process.env.NODE_ENV`，否则为 `default` | 函数式配置接收的 `env.mode` | `limina --mode ci check`                    | 只把模式传给配置函数；具体差异由配置文件实现                           |
 
 配置文件可以导出对象、`Promise`，或接收 `{ command, mode }` 的函数。`command` 表示当前命令族，例如 `check`、`graph`、`source`、`package` 或 `release`；它也保留开放字符串类型，以覆盖 `build`、`migration` 等当前命令值。
 
@@ -141,7 +141,7 @@ pnpm exec limina init
 pnpm exec limina init --yes
 ```
 
-它会从当前目录向上查找最近的工作区声明，确认工作区根目录，检查工作区包，然后执行以下操作：写入或更新 `limina.config.mts`；确保 `.gitignore` 包含 `.limina/`；创建或更新根 `package.json` 中的 `limina:build` 脚本；在缺少 `limina` 或 `typescript` 时补充开发依赖；清理根目录下已有的 `.limina` 生成目录；在交互模式下询问是否安装 Limina `agent skill`。
+它从 cwd 找到最近的 `package.json`，验证后在其旁边写入 `limina.config.mts`。完全没有 manifest 时才提供在 cwd 创建的流程，最近清单无效时停止。它不添加 workspace 声明，无 manager 元信息时 `--yes` 仍能完成。init 检查该根的包，写入或更新配置与 `.gitignore`，添加 `limina:build` 脚本及缺失的 Limina/TypeScript 开发依赖，清理根的已有 `.limina` 生成目录，并可在交互模式下安装 agent skill。
 
 `--yes` 会接受默认确认，并跳过交互式 `skill` 安装提示。非交互环境中如果不使用 `--yes`，需要用户确认的步骤会失败。
 
@@ -244,7 +244,9 @@ human 摘要中的计数和主要阻塞项始终基于完整过滤结果。精�
 
 `--limit` 只能用于 human 格式的 `check --issues`。JSON 与 NDJSON 会拒绝该选项，并始终返回全部过滤结果；`--verbose` 不改变机器输出。`limina check --verbose` 与 `limina check --issues --verbose` 的作用不同：前者扩展运行级聚合行、耗时、规则、阻塞项和 package 计数，但不会输出原始问题诊断；后者选择详细问题卡片视图。
 
-会产生问题的 standalone 命令失败时，会打印 standalone invocation ID 和可直接执行的 shell 专用查询。每个 variant 都携带 canonical absolute config path、实际生效的 config loader 与 mode，并通过 `check --issues --invocation <uuid>` 选择对应记录。POSIX 查询使用 `pnpm --dir <workspaceRoot> exec limina`。两个 Windows 查询都会先切换到工作区，再通过 Node 调用当前安装的 Limina 入口，避开会再次解析 CMD 特殊字符的 package manager command shim；PowerShell 使用 `Set-Location -LiteralPath` 与 call operator，CMD 使用 `cd /d`。因此，即使当前 shell 位于工作区之外，也可以直接复制并执行这些查询。每次 invocation 都独立保存在 `.limina/check/invocations/` 下；问题查询只定位工作区，不会导入或验证 Limina 配置。
+会产生问题的 standalone 命令失败时，会打印 invocation ID 和 shell 专用查询。每个 variant 使用当前绝对 Node 路径与已安装 Limina 的 `bin/limina.js`，携带绝对配置路径、实际 loader 和 mode，并选择 `check --issues --invocation <uuid>`。Windows variant 还通过 PowerShell `Set-Location -LiteralPath` 或 CMD `cd /d` 切换到治理根。查询可从其他目录回放，无需检测项目 manager。记录保存在同一治理根的 `.limina/check/invocations/`。
+
+查询的显式 `--config` 是 lexical 定位 anchor：模块可以已经删除或重命名，它最近的 manifest 仍须存在且为合法对象。查询不 import 配置、不解析 manager adapter、不重新构建包集合、不执行 preflight。未给出 `--config` 时，需要发现当前默认配置。缺少记录不会回退到祖先 workspace。
 
 在 POSIX 系统上，命令标签为 `Query:`。在 Windows 上，Limina 不猜测当前 shell，而是同时输出 `PowerShell:` 与 `cmd.exe (/V:OFF):` 两个 variant。同一个 PowerShell variant 同时适用于 Windows PowerShell 5.1 与 PowerShell 7。CMD variant 要求关闭 delayed expansion；不支持 `cmd.exe /V:ON`。
 
@@ -393,13 +395,15 @@ pnpm exec limina release check --package @scope/pkg --verbose
 
 `release check` 不执行 `npm publish`，也不替代包管理器或注册表侧校验。它适合在发布命令前作为本地一致性检查运行。
 
+package/release 的 tarball 检查保留现有 `pnpm pack --ignore-scripts` 后端，检查配置的输出目录。该后端与 single-package/workspace 分类、项目声明的 manager 均独立，只要求实际可用的 pnpm。通过检查描述的是这份 pnpm 打包产物；其他 manager 可能产生不同发布内容。名称、版本、输出文件及可选工具要求属于所检查的产物和能力。
+
 ## 排障
 
 | 症状或错误信息                                                                          | 可能原因                                                                  | 处理方式                                                                                   |
 | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `No supported workspace descriptor found`                                               | 当前目录及其祖先中没有受支持的工作区声明                                  | 在工作区内运行命令，或先声明受支持的工作区                                                 |
+| `No package.json found`                                                                 | 所选配置上方没有 manifest                                                 | 添加包清单，或选择预期配置                                                                 |
 | `Unable to find limina config`                                                          | 未找到支持的 Limina 配置文件                                              | 运行 `limina init`，或用 `--config` 指定配置路径                                           |
-| `config file must be inside the governed workspace`                                     | `--config` 指向工作区外文件                                               | 把配置文件放到所属工作区内                                                                 |
+| `Invalid package.json object` / `Unable to read root package.json`                      | 最近的 manifest 无效                                                      | 修复该文件；祖先清单不能替代它                                                             |
 | `checker build --preset requires a config argument`                                     | `--preset` 只能选择某个配置的构建型检查器                                 | 改为 `limina checker build <config> --preset tsc`                                          |
 | `checker build --watch requires a config argument`                                      | 监听模式只支持指定配置                                                    | 改为 `limina checker build <config> --watch`                                               |
 | `limina build --raw requires --preset`                                                  | 原始模式没有指定检查器预设                                                | 改为 `limina build <config> --raw --preset tsc`                                            |

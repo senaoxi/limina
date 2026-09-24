@@ -1,16 +1,25 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
-import type { WorkspacePackage } from '#core/workspace/actions';
-import { normalizeAbsolutePath } from '#utils/path';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { collectRawWorkspacePackages } from '#core/workspace/actions';
+import { resolveGovernanceRoot } from '#utils/workspace-root';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import {
   collectKnipSourceIssues,
   collectUnusedSourceFileIssues,
   parseKnipJsonReport,
   resolveKnipCliPath,
 } from '../source-check/knip';
+import { createFixturePathResolver } from './helpers/path';
 
 describe('parseKnipJsonReport', () => {
   it('accepts Knip JSON reports with leading stdout noise', () => {
@@ -95,154 +104,131 @@ describe('resolveKnipCliPath', () => {
   });
 });
 
-describe('collectKnipSourceIssues', () => {
-  it('does not delete a root manifest created while Knip analysis is running', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-knip-root-'));
-    const packageJsonPath = path.join(rootDir, 'package.json');
-    const userManifest = '{"name":"user-root"}\n';
+async function createKnipFixture(files: Record<string, string> = {}) {
+  const rootDir = await realpath(
+    await mkdtemp(path.join(tmpdir(), 'limina-knip-')),
+  );
+  const fixturePath = createFixturePathResolver(rootDir);
+  for (const [file, text] of Object.entries({
+    'package.json': '{}',
+    ...files,
+  })) {
+    await mkdir(path.dirname(fixturePath(file)), { recursive: true });
+    await writeFile(fixturePath(file), text);
+  }
+  const configPath = fixturePath('limina.config.mjs');
+  const config: ResolvedLiminaConfig = {
+    configPath,
+    rootDir: fixturePath(),
+    governanceRoot: resolveGovernanceRoot(configPath),
+  };
+  const workspacePackages = await collectRawWorkspacePackages(config);
+  const workspaceContext = await collectValidatedWorkspaceContext({
+    config,
+    rawPackages: workspacePackages,
+  });
+  return {
+    config,
+    workspacePackages,
+    workspaceContext,
+    path: fixturePath,
+    cleanup: () => rm(rootDir, { recursive: true, force: true }),
+  };
+}
 
+describe('collectKnipSourceIssues', () => {
+  it('keeps a root manifest changed during Knip analysis intact', async () => {
+    const fixture = await createKnipFixture();
+    const userManifest = '{"name":"user-root"}\n';
     try {
       await collectKnipSourceIssues({
-        config: { rootDir } as ResolvedLiminaConfig,
+        ...fixture,
         ignoredKeys: new Set(),
         includeFiles: false,
+        ownerProjects: [],
         knipRunner: async (invocation) => {
-          expect(invocation.rootDir).not.toBe(rootDir);
-          expect(
-            JSON.parse(
-              await readFile(
-                path.join(invocation.rootDir, 'package.json'),
-                'utf8',
-              ),
-            ),
-          ).toEqual({ private: true });
-          await writeFile(packageJsonPath, userManifest);
+          expect(invocation.rootDir).toBe(fixture.path());
+          await writeFile(fixture.path('package.json'), userManifest);
           return '{"issues":[]}';
         },
-        ownerProjects: [],
-        workspacePackages: [],
       });
-
-      expect(await readFile(packageJsonPath, 'utf8')).toBe(userManifest);
+      expect(await readFile(fixture.path('package.json'), 'utf8')).toBe(
+        userManifest,
+      );
+      expect(fixture.config.governanceRoot.manifest).toEqual({});
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await fixture.cleanup();
     }
   });
 
-  it('runs real Knip for a rootless workspace without creating a root manifest', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-knip-rootless-'));
-    const packageDir = path.join(rootDir, 'packages/app');
-    const packageJsonPath = path.join(rootDir, 'package.json');
-
+  it('runs real Knip for a nameless single-package root', async () => {
+    const fixture = await createKnipFixture({
+      'src/index.ts': 'export const value = 1;',
+      'src/unused.ts': 'export const unused = true;',
+    });
     try {
-      await mkdir(path.join(packageDir, 'src'), { recursive: true });
-      await writeFile(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
-        'packages:\n  - packages/*\n',
-      );
-      await writeFile(
-        path.join(packageDir, 'package.json'),
-        '{"name":"@fixture/app","private":true,"type":"module"}\n',
-      );
-      await writeFile(
-        path.join(packageDir, 'src/index.ts'),
-        'export const value = 1;\n',
-      );
-      await writeFile(
-        path.join(packageDir, 'src/unused.ts'),
-        'export const unused = true;\n',
-      );
-
       const issues = await collectKnipSourceIssues({
-        config: { rootDir } as ResolvedLiminaConfig,
+        ...fixture,
+        analysisGroups: [{ workspaceNames: ['.'] }],
         ignoredKeys: new Set(),
         includeFiles: true,
         ownerProjects: [
           {
-            directory: packageDir,
+            directory: fixture.path(),
             entryFiles: ['src/index.ts'],
             ignoreFiles: [],
             projectFiles: ['src/**/*.ts'],
             virtualEntrySourceFiles: [],
           },
         ],
-        workspacePackages: [
-          {
-            directory: packageDir,
-            name: '@fixture/app',
-          } as WorkspacePackage,
-        ],
       });
-
       expect(issues).toEqual({
         unusedSourceFiles: [
-          {
-            externalCode: 'files',
-            filePath: normalizeAbsolutePath(
-              path.join(packageDir, 'src/unused.ts'),
-            ),
-          },
+          { externalCode: 'files', filePath: fixture.path('src/unused.ts') },
         ],
         unusedWorkspaceDependencies: [],
       });
-      await expect(readFile(packageJsonPath, 'utf8')).rejects.toMatchObject({
-        code: 'ENOENT',
-      });
+      expect(await readFile(fixture.path('package.json'), 'utf8')).toBe('{}');
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await fixture.cleanup();
     }
   });
 
-  it('isolates concurrent rootless analyses and cleans failed shadow roots', async () => {
-    const rootDir = await mkdtemp(
-      path.join(tmpdir(), 'limina-knip-concurrent-'),
-    );
-    const analysisRoots: string[] = [];
-    let releaseBothAnalyses: (() => void) | undefined;
-    const bothAnalysesStarted = new Promise<void>((resolve) => {
-      releaseBothAnalyses = resolve;
+  it('isolates concurrent analysis configs and cleans them after a failed run', async () => {
+    const fixture = await createKnipFixture();
+    const configs: string[] = [];
+    let release: () => void = () => {};
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    const runAnalysis = (fail: boolean) =>
+    const run = (fail: boolean) =>
       collectKnipSourceIssues({
-        config: { rootDir } as ResolvedLiminaConfig,
+        ...fixture,
         ignoredKeys: new Set(),
         includeFiles: false,
+        ownerProjects: [],
         knipRunner: async (invocation) => {
-          analysisRoots.push(invocation.rootDir);
-          if (analysisRoots.length === 2) {
-            releaseBothAnalyses?.();
-          }
-          await bothAnalysesStarted;
-          if (fail) {
-            throw new Error('controlled Knip failure');
-          }
+          configs.push(invocation.configPath);
+          if (configs.length === 2) release();
+          await ready;
+          if (fail) throw new Error('controlled Knip failure');
           return '{"issues":[]}';
         },
-        ownerProjects: [],
-        workspacePackages: [],
       });
-
     try {
-      const results = await Promise.allSettled([
-        runAnalysis(false),
-        runAnalysis(true),
-      ]);
-
+      const results = await Promise.allSettled([run(false), run(true)]);
       expect(results.map((result) => result.status).sort()).toEqual([
         'fulfilled',
         'rejected',
       ]);
-      expect(new Set(analysisRoots).size).toBe(2);
-      for (const analysisRoot of analysisRoots) {
-        await expect(
-          readFile(path.join(analysisRoot, 'package.json'), 'utf8'),
-        ).rejects.toMatchObject({ code: 'ENOENT' });
-      }
-      await expect(
-        readFile(path.join(rootDir, 'package.json'), 'utf8'),
-      ).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(new Set(configs).size).toBe(2);
+      for (const configPath of configs)
+        await expect(readFile(configPath)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+      expect(await readFile(fixture.path('package.json'), 'utf8')).toBe('{}');
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await fixture.cleanup();
     }
   });
 });

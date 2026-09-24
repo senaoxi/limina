@@ -27,6 +27,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
@@ -211,6 +212,9 @@ async function createFixture(
       await rm(rootDir, { force: true, recursive: true });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers: {
           tsc: {

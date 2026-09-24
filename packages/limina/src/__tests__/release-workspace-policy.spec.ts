@@ -7,6 +7,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createReleaseConsistencyState } from '../package-check/release/consistency/dependencies';
 import { visitWorkspacePackageDependencies } from '../package-check/release/workspace/dependencies';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixturePath = createFixturePathResolver(
@@ -61,6 +62,9 @@ describe('release policy for every importer', () => {
       const tags: ReleaseContentHashConfigArgs[] = [];
       const ignores: ReleaseContentHashConfigArgs[] = [];
       const config: ResolvedLiminaConfig = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         rootDir: fixturePath(),
         configPath: fixturePath('limina.config.mjs'),
         release: {

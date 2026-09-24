@@ -1,6 +1,12 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type { JSONReport } from 'knip';
 import path from 'pathe';
+import {
+  findPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+} from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
+import { createPackageDependencyIssueKey } from './dependency-key';
 import type {
   KnipUnusedSourceFileIssue,
   KnipUnusedWorkspaceDependencyIssue,
@@ -45,6 +51,7 @@ function createDependencyIssue(options: {
   dependency: KnipJsonDependencyItem;
   field: DependencyIssueField;
   packageJsonPath: string;
+  ownerIdentity: PackageOwnerIdentity;
   workspacePackageNames: ReadonlySet<string>;
 }): KnipUnusedWorkspaceDependencyIssue | null {
   if (typeof options.dependency.name !== 'string') {
@@ -59,6 +66,7 @@ function createDependencyIssue(options: {
     dependencyName: options.dependency.name,
     externalCode: options.field,
     packageJsonPath: options.packageJsonPath,
+    ownerIdentity: options.ownerIdentity,
   };
 }
 
@@ -67,6 +75,7 @@ function appendDependencyIssue(options: {
   field: DependencyIssueField;
   issues: KnipUnusedWorkspaceDependencyIssue[];
   packageJsonPath: string;
+  ownerIdentity: PackageOwnerIdentity;
   workspacePackageNames: ReadonlySet<string>;
 }): void {
   const issue = createDependencyIssue(options);
@@ -78,6 +87,7 @@ function appendDependencyIssue(options: {
 function collectEntryDependencyIssues(options: {
   entry: KnipIssueEntry;
   packageJsonPath: string;
+  ownerIdentity: PackageOwnerIdentity;
   workspacePackageNames: ReadonlySet<string>;
 }): KnipUnusedWorkspaceDependencyIssue[] {
   const issues: KnipUnusedWorkspaceDependencyIssue[] = [];
@@ -112,32 +122,52 @@ function addEntryDependencyIssues(options: {
   entry: KnipIssueEntry;
   issuesByKey: Map<string, KnipUnusedWorkspaceDependencyIssue>;
   rootDir: string;
+  workspaceContext: ValidatedWorkspaceContext;
   workspacePackageNames: ReadonlySet<string>;
 }): void {
-  const packageJsonPath = resolvePackageJsonPath(
-    options.rootDir,
-    options.entry.file,
-  );
-  if (packageJsonPath === null) {
-    return;
-  }
-
+  const owner = resolveEntryOwner(options);
+  if (owner === null) return;
+  const { packageJsonPath, ownerIdentity } = owner;
   const issues = collectEntryDependencyIssues({
+    ownerIdentity,
     entry: options.entry,
     packageJsonPath,
     workspacePackageNames: options.workspacePackageNames,
   });
   for (const issue of issues) {
     options.issuesByKey.set(
-      `${issue.packageJsonPath}\0${issue.dependencyName}`,
+      createPackageDependencyIssueKey(
+        issue.ownerIdentity,
+        issue.dependencyName,
+      ),
       issue,
     );
   }
 }
 
+function resolveEntryOwner(options: {
+  rootDir: string;
+  entry: KnipIssueEntry;
+  workspaceContext: ValidatedWorkspaceContext;
+}): { packageJsonPath: string; ownerIdentity: PackageOwnerIdentity } | null {
+  const packageJsonPath = resolvePackageJsonPath(
+    options.rootDir,
+    options.entry.file,
+  );
+  if (packageJsonPath === null) return null;
+  const ownerIdentity = findPackageOwnerIdentity(
+    options.workspaceContext,
+    packageJsonPath,
+  );
+  return ownerIdentity === undefined
+    ? null
+    : { packageJsonPath, ownerIdentity };
+}
+
 export function collectUnusedWorkspaceDependencyIssues(options: {
   report: JSONReport;
   rootDir: string;
+  workspaceContext: ValidatedWorkspaceContext;
   workspacePackageNames: ReadonlySet<string>;
 }): KnipUnusedWorkspaceDependencyIssue[] {
   const issuesByKey = new Map<string, KnipUnusedWorkspaceDependencyIssue>();

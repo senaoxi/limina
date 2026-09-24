@@ -1,71 +1,27 @@
 import type { WorkspacePackage } from '#core/workspace/actions';
-import { isNamedWorkspacePackage } from '#core/workspace/actions';
-import { normalizeAbsolutePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
-import path from 'pathe';
 import {
   createWorkspaceDependencyKey,
   type WorkspaceDependencyDeclaration,
 } from '../../core/packages/authority';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
 import type { SourceFinding } from '../findings';
+import {
+  createContext,
+  type DependencyIgnoreContext,
+  getPackageJsonPath,
+  type ParsedDependencyIgnore,
+} from './dependency-ignore-context';
 import type { SourceKnipWorkspaceConfigRecord } from './routing';
-import { formatSourceKnipWorkspaceField } from './routing';
 import { addKnipConfigFinding } from './unused/finding';
 
 export { createPackageDependencyIssueKey } from './dependency-key';
-
-interface DependencyIgnoreContext {
-  declarationKeys: Set<string>;
-  findings: SourceFinding[];
-  packageJsonPathByImporterName: Map<string, string>;
-  workspacePackageNames: Set<string>;
-}
-
-interface ParsedDependencyIgnore {
-  dependencyName: string;
-  reason: string;
-}
-
-function createContext(options: {
-  declarations: WorkspaceDependencyDeclaration[];
-  findings: SourceFinding[];
-  workspacePackages: WorkspacePackage[];
-}): DependencyIgnoreContext {
-  const namedPackages = options.workspacePackages.filter(
-    isNamedWorkspacePackage,
-  );
-  return {
-    declarationKeys: new Set(
-      options.declarations.map((declaration) =>
-        createWorkspaceDependencyKey(
-          declaration.importer.name,
-          declaration.dependencyName,
-        ),
-      ),
-    ),
-    findings: options.findings,
-    packageJsonPathByImporterName: new Map(
-      namedPackages.map((entry) => [
-        entry.name,
-        normalizeAbsolutePath(path.join(entry.directory, 'package.json')),
-      ]),
-    ),
-    workspacePackageNames: new Set(namedPackages.map((entry) => entry.name)),
-  };
-}
-
-function getPackageJsonPath(
-  context: DependencyIgnoreContext,
-  importerName: string,
-): string | undefined {
-  return context.packageJsonPathByImporterName.get(importerName);
-}
 
 function addInvalidIgnore(options: {
   context: DependencyIgnoreContext;
   details: readonly string[];
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
   reason: string;
   value?: unknown;
 }): void {
@@ -74,8 +30,12 @@ function addInvalidIgnore(options: {
     field: options.field,
     findings: options.context.findings,
     kind: 'dependency-ignore',
-    packageJsonPath: getPackageJsonPath(options.context, options.importerName),
-    packageName: options.importerName,
+    packageJsonPath: getPackageJsonPath(
+      options.context,
+      options.importerIdentity,
+    ),
+    packageName: options.context.configs.get(options.importerIdentity)?.owner
+      .name,
     reason: options.reason,
     title: 'Invalid source Knip dependency ignore config',
     value: options.value,
@@ -85,7 +45,7 @@ function addInvalidIgnore(options: {
 function parseDependencyName(options: {
   context: DependencyIgnoreContext;
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string | null {
   if (typeof options.value === 'string' && options.value.trim().length > 0) {
@@ -95,7 +55,7 @@ function parseDependencyName(options: {
     context: options.context,
     details: [`  value: ${formatUnknownValue(options.value)}`],
     field: `${options.field}.dep`,
-    importerName: options.importerName,
+    importerIdentity: options.importerIdentity,
     reason: 'dep must be a non-empty workspace package name.',
     value: options.value,
   });
@@ -105,7 +65,7 @@ function parseDependencyName(options: {
 function parseReason(options: {
   context: DependencyIgnoreContext;
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string | null {
   if (typeof options.value === 'string' && options.value.trim().length > 0) {
@@ -115,7 +75,7 @@ function parseReason(options: {
     context: options.context,
     details: [`  value: ${formatUnknownValue(options.value)}`],
     field: `${options.field}.reason`,
-    importerName: options.importerName,
+    importerIdentity: options.importerIdentity,
     reason: 'reason must be a non-empty string.',
     value: options.value,
   });
@@ -138,7 +98,7 @@ function parseDependencyIgnoreEntry(options: {
   context: DependencyIgnoreContext;
   entry: unknown;
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
 }): ParsedDependencyIgnore | null {
   if (!isPlainRecord(options.entry)) {
     addInvalidIgnore({
@@ -154,13 +114,13 @@ function parseDependencyIgnoreEntry(options: {
     dependencyName: parseDependencyName({
       context: options.context,
       field: options.field,
-      importerName: options.importerName,
+      importerIdentity: options.importerIdentity,
       value: options.entry.dep,
     }),
     reason: parseReason({
       context: options.context,
       field: options.field,
-      importerName: options.importerName,
+      importerIdentity: options.importerIdentity,
       value: options.entry.reason,
     }),
   });
@@ -170,7 +130,7 @@ function addUnknownDependencyFinding(options: {
   context: DependencyIgnoreContext;
   dependencyName: string;
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
 }): void {
   addKnipConfigFinding({
     dependencyName: options.dependencyName,
@@ -178,8 +138,12 @@ function addUnknownDependencyFinding(options: {
     field: `${options.field}.dep`,
     findings: options.context.findings,
     kind: 'dependency-ignore',
-    packageJsonPath: getPackageJsonPath(options.context, options.importerName),
-    packageName: options.importerName,
+    packageJsonPath: getPackageJsonPath(
+      options.context,
+      options.importerIdentity,
+    ),
+    packageName: options.context.configs.get(options.importerIdentity)?.owner
+      .name,
     reason: 'dep must name a package from the workspace.',
     title: 'Invalid source Knip dependency ignore config',
   });
@@ -189,20 +153,24 @@ function addUndeclaredDependencyFinding(options: {
   context: DependencyIgnoreContext;
   dependencyName: string;
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
 }): void {
+  const owner = options.context.configs.get(options.importerIdentity)!.owner;
   addKnipConfigFinding({
     dependencyName: options.dependencyName,
     details: [
-      `  importer: ${options.importerName}`,
+      `  importer: ${owner.name ?? getPackageJsonPath(options.context, options.importerIdentity)}`,
       `  dep: ${options.dependencyName}`,
     ],
     field: options.field,
     findings: options.context.findings,
-    importerName: options.importerName,
+    importerName: owner.name,
     kind: 'dependency-ignore',
-    packageJsonPath: getPackageJsonPath(options.context, options.importerName),
-    packageName: options.importerName,
+    packageJsonPath: getPackageJsonPath(
+      options.context,
+      options.importerIdentity,
+    ),
+    packageName: owner.name,
     reason:
       'ignoreDependencies entries must match a workspace dependency declared by the keyed importer package manifest.',
     title: 'Invalid source Knip dependency ignore config',
@@ -213,14 +181,14 @@ function validateDependencyIgnore(options: {
   context: DependencyIgnoreContext;
   dependencyName: string;
   field: string;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
 }): string | null {
   if (!options.context.workspacePackageNames.has(options.dependencyName)) {
     addUnknownDependencyFinding(options);
     return null;
   }
   const key = createWorkspaceDependencyKey(
-    options.importerName,
+    options.importerIdentity,
     options.dependencyName,
   );
   if (!options.context.declarationKeys.has(key)) {
@@ -232,16 +200,18 @@ function validateDependencyIgnore(options: {
 
 function collectWorkspaceIgnores(options: {
   context: DependencyIgnoreContext;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
   rawIgnore: unknown;
 }): string[] {
-  const workspaceField = formatSourceKnipWorkspaceField(options.importerName);
+  const workspaceField = options.context.configs.get(
+    options.importerIdentity,
+  )!.field;
   if (!Array.isArray(options.rawIgnore)) {
     addInvalidIgnore({
       context: options.context,
       details: [`  value: ${formatUnknownValue(options.rawIgnore)}`],
       field: `${workspaceField}.ignoreDependencies`,
-      importerName: options.importerName,
+      importerIdentity: options.importerIdentity,
       reason: 'ignoreDependencies must be an array.',
       value: options.rawIgnore,
     });
@@ -253,14 +223,14 @@ function collectWorkspaceIgnores(options: {
       context: options.context,
       entry,
       field,
-      importerName: options.importerName,
+      importerIdentity: options.importerIdentity,
     });
     if (parsed === null) return [];
     const key = validateDependencyIgnore({
       context: options.context,
       dependencyName: parsed.dependencyName,
       field,
-      importerName: options.importerName,
+      importerIdentity: options.importerIdentity,
     });
     return key === null ? [] : [key];
   });
@@ -268,7 +238,7 @@ function collectWorkspaceIgnores(options: {
 
 function collectConfiguredWorkspaceIgnores(options: {
   context: DependencyIgnoreContext;
-  importerName: string;
+  importerIdentity: PackageOwnerIdentity;
   workspaceConfig: SourceKnipWorkspaceConfigRecord;
 }): string[] {
   const rawIgnore = options.workspaceConfig.ignoreDependencies;
@@ -279,15 +249,21 @@ function collectConfiguredWorkspaceIgnores(options: {
 export function collectUnusedDependencyIgnore(options: {
   declarations: WorkspaceDependencyDeclaration[];
   findings: SourceFinding[];
-  knipWorkspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
+  knipWorkspaceConfigs: Map<
+    PackageOwnerIdentity,
+    SourceKnipWorkspaceConfigRecord
+  >;
   workspacePackages: WorkspacePackage[];
 }): Set<string> {
   const context = createContext(options);
   const ignoredKeys = new Set<string>();
-  for (const [importerName, workspaceConfig] of options.knipWorkspaceConfigs) {
+  for (const [
+    importerIdentity,
+    workspaceConfig,
+  ] of options.knipWorkspaceConfigs) {
     const keys = collectConfiguredWorkspaceIgnores({
       context,
-      importerName,
+      importerIdentity,
       workspaceConfig,
     });
     for (const key of keys) ignoredKeys.add(key);

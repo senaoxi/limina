@@ -20,15 +20,15 @@ function getOrCreateGroup<T>(groups: Map<string, T[]>, key: string): T[] {
 
 function getUnusedGroupKey(issue: {
   code: string;
-  ownerName: string;
+  ownerName?: string;
   packageJsonPath: string;
 }): string {
   return [issue.code, issue.ownerName, issue.packageJsonPath].join('\0');
 }
 
-function getFirstOwnerName(group: readonly { ownerName: string }[]): string {
+function getFirstOwnerName(group: readonly { ownerName?: string }[]): string {
   const first = group[0];
-  return first === undefined ? '' : first.ownerName;
+  return first?.ownerName ?? '';
 }
 
 function getFirstManifestPath(
@@ -39,7 +39,7 @@ function getFirstManifestPath(
 }
 
 function compareOwnerGroups<
-  T extends { ownerName: string; packageJsonPath: string },
+  T extends { ownerName?: string; packageJsonPath: string },
 >(left: readonly T[], right: readonly T[]): number {
   const ownerOrder = getFirstOwnerName(left).localeCompare(
     getFirstOwnerName(right),
@@ -136,7 +136,7 @@ function getGenericGroupCode(group: GenericSourceIssueGroup): string {
 
 function getGenericGroupOwner(group: GenericSourceIssueGroup): string {
   const issue = getFirstGenericIssue(group);
-  return issue === undefined ? '' : issue.ownerName;
+  return issue?.ownerName ?? '';
 }
 
 function compareGenericGroups(
@@ -170,12 +170,12 @@ export function groupGenericSourceIssues(
 }
 
 export function getOwnerNames(
-  groups: readonly (readonly { ownerName: string }[])[],
+  groups: readonly (readonly { ownerName?: string }[])[],
 ): string[] {
   return uniqueSortedStrings(
     groups.flatMap((group) => {
       const first = group[0];
-      return first === undefined ? [] : [first.ownerName];
+      return first?.ownerName === undefined ? [] : [first.ownerName];
     }),
   );
 }

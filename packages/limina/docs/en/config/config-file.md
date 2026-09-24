@@ -1,6 +1,6 @@
 # Config File
 
-Limina reads configuration from `limina.config.mts` inside the workspace. It usually lives at the workspace root:
+Limina reads a selected configuration module, usually `limina.config.mts` beside the project's `package.json`:
 
 ```ts
 import { defineConfig } from 'limina';
@@ -10,7 +10,13 @@ export default defineConfig({
 });
 ```
 
-When `--config` is omitted, Limina searches from the current directory upward to the `pnpm` workspace root. In each directory it checks `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, then `limina.config.js`. Existing `limina.config.ts` and `limina.config.mjs` files remain supported, but new projects should prefer `limina.config.mts`.
+When `--config` is omitted, Limina searches the current directory and its ancestors, checking `limina.config.mts`, `limina.config.mjs`, `limina.config.ts`, then `limina.config.js` at each directory. Explicit `--config` is resolved relative to cwd. Execution commands require that module to exist.
+
+The nearest `package.json` above the selected module fixes the governance root. It must be a readable regular file containing a non-null, non-array object. Limina never skips an invalid nearest manifest. Only that root's workspace declarations determine whether the run governs a workspace or one package. See [Governance root](../getting-started.md#governance-root) for manager authority and migration details.
+
+Config-relative selection is stable across invoking directories: choosing the repository root config still governs its workspace; choosing a child config uses the child's nearest manifest. The config directory itself need not be the package root.
+
+Read-only `check --issues` uses an explicit `--config` path as a location anchor, so the module may have been deleted or renamed. It finds and validates the nearest manifest from that path's directory and reads persisted state there, without importing config, resolving manager membership, or running governance. Without `--config`, it must discover a currently existing default config. Missing records never trigger fallback to an ancestor workspace.
 
 Config can also be a function:
 

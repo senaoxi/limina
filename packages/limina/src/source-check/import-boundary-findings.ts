@@ -5,7 +5,6 @@ import {
 } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
-import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { NearestPackageInfo } from '../core/packages/owners';
 import {
@@ -144,7 +143,7 @@ export function addSourceCrossGovernanceBoundaryProblem(options: {
     `  file: ${formatImportRecordLocation(options.config.rootDir, options.importRecord)}`,
     `  imported specifier: ${options.importRecord.specifier}`,
     `  resolved file: ${toRelativePath(options.config.rootDir, options.resolvedFilePath)}`,
-    `  current region: ${toRelativePath(options.config.rootDir, resolveNearestWorkspaceRoot(options.config.rootDir).descriptor.path)}`,
+    `  current region: ${toRelativePath(options.config.rootDir, options.config.governanceRoot.kind === 'workspace' ? options.config.governanceRoot.descriptor.path : options.config.governanceRoot.manifestPath)}`,
     `  boundary kind: ${options.boundary.kind}`,
     `  boundary root: ${toRelativePath(options.config.rootDir, options.boundary.rootDir)}`,
     createBoundaryConfigLine(options),

@@ -96,7 +96,7 @@ interface SourceFindingBase<Code extends SourceSemanticIssueCode> {
   readonly fix?: string;
   readonly fixSteps?: readonly string[];
   readonly locations?: readonly LiminaCheckIssueLocation[];
-  readonly ownerName: string;
+  readonly ownerName?: string;
   readonly packageJsonPath?: string;
   readonly reason: string;
   readonly scope?: string;
@@ -112,13 +112,13 @@ type SourceFindingFields<Code extends SourceSemanticIssueCode> =
     ? {
         readonly filePath: string;
         readonly ownerDirectory: string;
-        readonly ownerName: string;
+        readonly ownerName?: string;
         readonly packageJsonPath: string;
       }
     : Code extends typeof LIMINA_CHECK_ISSUE_CODES.sourceUnusedWorkspaceDependency
       ? {
           readonly dependencyName: string;
-          readonly ownerName: string;
+          readonly ownerName?: string;
           readonly packageJsonPath: string;
           readonly sectionName: string;
           readonly specifier: string;

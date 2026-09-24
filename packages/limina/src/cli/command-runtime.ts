@@ -3,7 +3,8 @@ import {
   loadConfig,
   type ResolvedLiminaConfig,
 } from '#config/runner';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import path from 'pathe';
 import {
   createGlobalQueryCommandContext,
   type GlobalQueryCommandContext,
@@ -50,7 +51,12 @@ export async function loadStandaloneContext(
   });
   return {
     commandContext: createGlobalQueryCommandContext({
-      cliEntryPath: process.argv[1] ?? fileURLToPath(import.meta.url),
+      cliEntryPath: path.join(
+        path.dirname(
+          createRequire(import.meta.url).resolve('limina/package.json'),
+        ),
+        'bin/limina.js',
+      ),
       configLoader,
       configPath: config.configPath,
       mode,

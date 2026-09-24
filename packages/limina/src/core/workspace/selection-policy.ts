@@ -1,7 +1,6 @@
-import {
-  readWorkspaceRootManifest,
-  type ResolvedWorkspaceRoot,
-  type SupportedPackageManager,
+import type {
+  ResolvedWorkspaceRoot,
+  SupportedPackageManager,
 } from '#utils/workspace-root';
 import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
@@ -62,9 +61,7 @@ async function readPnpmGlobs(
 }
 
 function readManifestGlobs(workspace: ResolvedWorkspaceRoot): string[] {
-  const declaration = readWorkspaceRootManifest(
-    workspace.descriptor.path,
-  ).workspaces;
+  const declaration = workspace.manifest.workspaces;
   const value =
     workspace.packageManager === 'npm' || Array.isArray(declaration)
       ? declaration

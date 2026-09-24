@@ -21,6 +21,7 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 async function createFixture() {
@@ -82,6 +83,9 @@ async function createLookups(options: {
   };
   const context = await collectValidatedWorkspaceContext({
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: `${options.rootDir}/limina.config.mjs`,
       regions: {
         extendNestedPackageScopes: options.extendNestedPackageScopes ?? false,

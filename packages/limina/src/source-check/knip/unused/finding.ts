@@ -1,8 +1,10 @@
+import type { PackageOwnerIdentity } from '../../../core/workspace/owner-identity';
 import type {
   SourceFinding,
   SourceKnipConfigInvalidFacts,
 } from '../../findings';
 import { createSourceKnipConfigFinding } from '../../findings';
+import type { UnusedModuleConfigContext } from './config-types';
 
 export function addKnipConfigFinding(options: {
   dependencyName?: string;
@@ -39,4 +41,27 @@ export function addKnipConfigFinding(options: {
       value: options.value,
     }),
   );
+}
+export function addKnipEntryFinding(options: {
+  context: UnusedModuleConfigContext;
+  details: readonly string[];
+  field: string;
+  ownerIdentity: PackageOwnerIdentity;
+  reason: string;
+  value?: unknown;
+}): void {
+  const moduleSet = options.context.moduleSetByOwnerIdentity.get(
+    options.ownerIdentity,
+  );
+  addKnipConfigFinding({
+    details: options.details,
+    field: options.field,
+    findings: options.context.findings,
+    kind: 'entry',
+    packageJsonPath: moduleSet?.owner.packageJsonPath,
+    packageName: moduleSet?.owner.name,
+    reason: options.reason,
+    title: 'Invalid source Knip entry config',
+    value: options.value,
+  });
 }

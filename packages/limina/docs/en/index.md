@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: Limina
-  text: Architecture governance for TypeScript monorepos
+  text: TypeScript project graph and architecture governance
   tagline: Start with incremental type builds, then progressively enable architecture governance
   image:
     src: /logo.svg

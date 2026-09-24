@@ -17,6 +17,7 @@ import {
   getWorkspaceExportSelfNameContext,
   type WorkspaceExportSelfNameEntry,
 } from '../core/workspace/exports/profiles';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const fixtureRoot = path.resolve('workspace-export-profile-fixture');
@@ -503,6 +504,7 @@ describe('workspace-export grouped execution', () => {
     const rootDir = await mkdtemp(
       path.join(tmpdir(), 'limina-export-profile-grouping-'),
     );
+    await writeFile(path.join(rootDir, 'package.json'), '{}');
     const packageDirectory = path.join(rootDir, 'packages/pkg');
     const manifest = {
       exports: './dist/index.js',
@@ -552,6 +554,9 @@ describe('workspace-export grouped execution', () => {
         },
       } as WorkspaceExportsMetricsRecorder;
       const config = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         configPath: path.join(rootDir, 'limina.config.mjs'),
         rootDir,
       } as ResolvedLiminaConfig;

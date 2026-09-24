@@ -21,6 +21,7 @@ import {
   type SvelteSemanticProject,
 } from '../core/svelte-semantic/types';
 import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -188,6 +189,9 @@ describe('Svelte strict generated dependency provenance', () => {
       try {
         const index = await createWorkspaceExportsResolutionIndex({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {},
             configPath: fixturePath('limina.config.mjs'),
             rootDir: root,

@@ -65,11 +65,18 @@ function createIssue(overrides: Partial<LiminaCheckIssue>): LiminaCheckIssue {
 
 function createConfig(
   execution: ResolvedLiminaConfig['execution'] = {},
+  rootDir = '/workspace',
 ): ResolvedLiminaConfig {
   return {
-    configPath: '/workspace/limina.config.mjs',
+    governanceRoot: {
+      kind: 'single-package',
+      rootDir,
+      manifestPath: path.join(rootDir, 'package.json'),
+      manifest: {},
+    },
+    configPath: path.join(rootDir, 'limina.config.mjs'),
     execution,
-    rootDir: '/workspace',
+    rootDir,
   };
 }
 
@@ -77,6 +84,7 @@ async function withTempRoot<T>(
   run: (rootDir: string) => Promise<T>,
 ): Promise<T> {
   const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-execution-'));
+  await writeFile(path.join(rootDir, 'package.json'), '{}\n');
 
   try {
     return await run(rootDir);
@@ -91,10 +99,7 @@ async function withTempRoot<T>(
 function createPreflight(rootDir: string): LiminaPreflightManager {
   return new LiminaPreflightManager({
     config: {
-      ...createConfig({
-        tasks: 4,
-      }),
-      rootDir,
+      ...createConfig({ tasks: 4 }, rootDir),
     },
     generatedGraphProvider: async () =>
       ({ artifactPlan: { changes: [] } }) as never,

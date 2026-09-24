@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath, toPortableRelativePaths } from './helpers/path';
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -294,6 +295,9 @@ describe('defineConfig', () => {
       );
 
       const config = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         config: {
           checkers: {
             tsgo: {
@@ -365,6 +369,9 @@ describe('defineConfig', () => {
       );
 
       const config = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         config: {
           checkers: {
             'vue-tsc': {
@@ -458,31 +465,31 @@ describe('source.knip configuration contract', () => {
       name: 'missing workspaces',
       value: {},
       error:
-        'source.knip.workspaces is required when source.knip uses object form',
+        'source.knip must declare root or workspaces when using object form',
     },
     {
       name: 'null',
       value: null,
       error:
-        'source.knip must be true, false, or an object containing workspaces',
+        'source.knip must be true, false, or an object containing root or workspaces',
     },
     {
       name: 'array',
       value: [],
       error:
-        'source.knip must be true, false, or an object containing workspaces',
+        'source.knip must be true, false, or an object containing root or workspaces',
     },
     {
       name: 'string',
       value: 'true',
       error:
-        'source.knip must be true, false, or an object containing workspaces',
+        'source.knip must be true, false, or an object containing root or workspaces',
     },
     {
       name: 'number',
       value: 1,
       error:
-        'source.knip must be true, false, or an object containing workspaces',
+        'source.knip must be true, false, or an object containing root or workspaces',
     },
     {
       name: 'undefined workspaces',
@@ -542,6 +549,7 @@ describe('loadConfig', () => {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -623,6 +631,7 @@ export default {
           path.join(rootDir, 'pnpm-workspace.yaml'),
           'packages: []\n',
         );
+        await writeText(path.join(rootDir, 'package.json'), '{}');
         await writeText(
           path.join(rootDir, 'limina.config.mjs'),
           `export default ${stringifyConfig({
@@ -654,6 +663,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `export default ${stringifyConfig({
@@ -691,6 +701,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -725,6 +736,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       const invalidCases: [unknown, string][] = [
         [[], 'declarations must be an object'],
         [{ ambient: {} }, 'ambient must be an array'],
@@ -836,6 +848,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'package.json'),
         stringifyConfig({
@@ -1281,6 +1294,7 @@ export default {
           path.join(rootDir, 'pnpm-workspace.yaml'),
           'packages: []\n',
         );
+        await writeText(path.join(rootDir, 'package.json'), '{}');
         await writeText(
           path.join(rootDir, 'package.json'),
           stringifyConfig({
@@ -1348,9 +1362,7 @@ export default {
         loadConfig({
           cwd: rootDir,
         }),
-      ).rejects.toThrow(
-        'workspaceRootDependencies grants require a workspace root package.json',
-      );
+      ).rejects.toThrow('No package.json found');
     } finally {
       await rm(rootDir, {
         force: true,
@@ -1367,6 +1379,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -1395,6 +1408,7 @@ export default Promise.resolve({});
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -1444,6 +1458,7 @@ export default defineConfig(async ({ mode }) => ({
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mts'),
         `
@@ -1476,6 +1491,7 @@ export default {};
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1525,6 +1541,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1575,6 +1592,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1606,6 +1624,7 @@ export default {};
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1648,7 +1667,7 @@ export default {
     }
   });
 
-  it('infers the pnpm workspace root from a parent directory', async () => {
+  it('uses the root selected by the default config module', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -1656,6 +1675,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'tools/limina.config.mjs'),
         `
@@ -1680,7 +1700,7 @@ export default {};
     }
   });
 
-  it('infers the pnpm workspace root from an explicit config path', async () => {
+  it('uses the root selected by an explicit config path', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -1688,10 +1708,12 @@ export default {};
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'packages/child/pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'packages/child/package.json'), '{}');
       await writeText(
         path.join(rootDir, 'packages/child/limina.config.mjs'),
         `
@@ -1726,6 +1748,7 @@ export default {};
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'tools/limina.config.mjs'),
         `
@@ -1759,6 +1782,7 @@ export default {};
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1811,6 +1835,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1853,6 +1878,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.ts'),
         `
@@ -1876,7 +1902,7 @@ export default {};
     }
   });
 
-  it('rejects explicit config paths without an owning pnpm workspace', async () => {
+  it('rejects explicit config paths without a nearest manifest', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
     const externalDir = await mkdtemp(
       path.join(tmpdir(), 'limina-external-config-'),
@@ -1887,6 +1913,7 @@ export default {};
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       const externalConfigPath = path.join(externalDir, 'limina.config.mjs');
 
       await writeText(
@@ -1901,7 +1928,7 @@ throw new Error('external config should not be imported');
           configPath: externalConfigPath,
           cwd: rootDir,
         }),
-      ).rejects.toThrow(/No supported workspace descriptor found/u);
+      ).rejects.toThrow(/No package.json found/u);
     } finally {
       await Promise.all([
         rm(rootDir, {
@@ -1924,6 +1951,7 @@ throw new Error('external config should not be imported');
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -1950,6 +1978,7 @@ export default null;
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2017,6 +2046,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2049,6 +2079,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2081,6 +2112,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2113,6 +2145,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2203,6 +2236,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2343,6 +2377,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         'export default { execution: { failFast: false } };\n',
@@ -2364,6 +2399,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2394,6 +2430,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2448,6 +2485,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2480,6 +2518,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2510,6 +2549,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2544,6 +2584,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2575,6 +2616,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2607,6 +2649,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2642,6 +2685,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2672,6 +2716,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2704,6 +2749,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2739,6 +2785,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2773,6 +2820,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2808,6 +2856,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2843,6 +2892,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2881,6 +2931,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2911,6 +2962,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2939,6 +2991,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -2973,6 +3026,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -3008,6 +3062,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -3041,6 +3096,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -3075,6 +3131,7 @@ export default {
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
       await writeText(
         path.join(rootDir, 'limina.config.mjs'),
         `
@@ -3107,27 +3164,28 @@ export default {
     }
   });
 
-  it('does not search for default config beyond the workspace root', async () => {
+  it('discovers default config independently of workspace descriptors', async () => {
     const parentDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
     const rootDir = path.join(parentDir, 'workspace');
 
     try {
+      await writeText(path.join(parentDir, 'package.json'), '{}');
       await writeText(
         path.join(parentDir, 'limina.config.mjs'),
         `
-throw new Error('parent config should not be imported');
+export default {};
 `,
       );
       await writeText(
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
 
-      await expect(
-        loadConfig({
-          cwd: path.join(rootDir, 'packages/core'),
-        }),
-      ).rejects.toThrow(/up to the workspace root/u);
+      const config = await loadConfig({
+        cwd: path.join(rootDir, 'packages/core'),
+      });
+      expect(config.rootDir).toBe(toPortablePath(parentDir));
     } finally {
       await rm(parentDir, {
         force: true,
@@ -3144,6 +3202,7 @@ throw new Error('parent config should not be imported');
         path.join(rootDir, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
+      await writeText(path.join(rootDir, 'package.json'), '{}');
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
         /Searched for "limina\.config\.mts", "limina\.config\.mjs", "limina\.config\.ts", "limina\.config\.js" from/u,
@@ -3156,7 +3215,7 @@ throw new Error('parent config should not be imported');
     }
   });
 
-  it('fails clearly when no pnpm workspace root can be inferred', async () => {
+  it('fails clearly when the selected config has no nearest manifest', async () => {
     const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-config-'));
 
     try {
@@ -3168,7 +3227,7 @@ export default {};
       );
 
       await expect(loadConfig({ cwd: rootDir })).rejects.toThrow(
-        /No supported workspace descriptor found/u,
+        /No package.json found/u,
       );
     } finally {
       await rm(rootDir, {

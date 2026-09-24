@@ -1,5 +1,5 @@
-import { type PackageManifest, readJsonFile } from '#core/workspace/actions';
-import { existsSync } from 'node:fs';
+import type { PackageManifest } from '#core/workspace/actions';
+import type { GovernanceRootBase } from '#utils/governance-manifest';
 import path from 'pathe';
 import type { InitMutationContext } from './mutation';
 import { confirmAction } from './prompts';
@@ -17,6 +17,7 @@ import type {
 } from './types';
 
 interface RootPackageUpdateContext {
+  governanceRoot: GovernanceRootBase | null;
   metadata: LiminaPackageMetadata;
   mutationContext: InitMutationContext;
   prompt: InitPromptOptions;
@@ -154,7 +155,7 @@ async function updateExistingPackageJson(
   context: RootPackageUpdateContext,
   packageJsonPath: string,
 ): Promise<RootPackageJsonUpdateResult> {
-  const manifest = readJsonFile<PackageManifest>(packageJsonPath);
+  const manifest = { ...context.governanceRoot!.manifest };
   const scripts = { ...manifest.scripts };
   const scriptChanged = await updateBuildScript({
     prompt: context.prompt,
@@ -200,7 +201,7 @@ export async function updateRootPackageJson(
   context: RootPackageUpdateContext,
 ): Promise<RootPackageJsonUpdateResult> {
   const packageJsonPath = path.join(context.rootDir, 'package.json');
-  return existsSync(packageJsonPath)
-    ? updateExistingPackageJson(context, packageJsonPath)
-    : createMissingPackageJson(context, packageJsonPath);
+  return context.governanceRoot === null
+    ? createMissingPackageJson(context, packageJsonPath)
+    : updateExistingPackageJson(context, packageJsonPath);
 }

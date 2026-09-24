@@ -6,14 +6,14 @@ export interface PackageBuildScript {
   configPath: string;
   name: string;
   packageJsonPath: string;
-  packageName: string;
+  packageName?: string;
   raw: boolean;
 }
 
 export interface PackageBuildScriptDiagnostic {
   command: string;
   packageJsonPath: string;
-  packageName: string;
+  packageName?: string;
   reason: string;
   scriptName: string;
 }
@@ -27,6 +27,6 @@ export interface PackageBuildScriptSource {
   command: string;
   packageDirectory: string;
   packageJsonPath: string;
-  packageName: string;
+  packageName?: string;
   scriptName: string;
 }

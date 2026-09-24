@@ -45,18 +45,24 @@ function readVersion(manifestPath: string): string {
   );
 }
 
-function createManifestScopeIdentity(manifestPath: string): string {
-  const manifest = readManifest(manifestPath);
+function createManifestScopeIdentity(
+  manifestPath: string,
+  manifest = readManifest(manifestPath),
+): string {
   return JSON.stringify({
     name: manifest.name ?? '<anonymous>',
     version: manifest.version,
   });
 }
 
-export function createAstroLeafScopeIdentity(packageRootDir: string): string {
+export function createAstroLeafScopeIdentity(
+  packageRootDir: string,
+  manifest?: PackageManifest,
+): string {
   try {
     return createManifestScopeIdentity(
       path.join(packageRootDir, 'package.json'),
+      manifest,
     );
   } catch {
     return JSON.stringify({
@@ -126,6 +132,7 @@ function resolvePackageManifestWithOwnerRequire(options: {
 
 function createMissingPackageError(options: {
   ownerManifestPath: string;
+  ownerManifest?: PackageManifest;
   ownerScope: string;
   packageName: string;
   reason: string;
@@ -146,16 +153,27 @@ function createMissingPackageError(options: {
         ? 'external-checker'
         : 'checker-toolchain',
     packageName: options.packageName,
-    scope: createManifestScopeIdentity(options.ownerManifestPath),
+    scope: createManifestScopeIdentity(
+      options.ownerManifestPath,
+      options.ownerManifest,
+    ),
   });
+}
+
+function getOwnerManifest(options: {
+  ownerManifest?: PackageManifest;
+  ownerManifestPath: string;
+}): PackageManifest {
+  return options.ownerManifest ?? readManifest(options.ownerManifestPath);
 }
 
 function resolveOwnedPackageManifest(options: {
   ownerManifestPath: string;
+  ownerManifest?: PackageManifest;
   ownerScope: string;
   packageName: string;
 }): string {
-  const ownerManifest = readManifest(options.ownerManifestPath);
+  const ownerManifest = getOwnerManifest(options);
   if (!declaresDependency(ownerManifest, options.packageName)) {
     throw createMissingPackageError({
       ...options,
@@ -175,30 +193,37 @@ function resolveOwnedPackageManifest(options: {
   }
 }
 
-function resolveLeafManifest(packageRootDir: string): string {
+function resolveLeafManifest(
+  packageRootDir: string,
+  manifest?: PackageManifest,
+): string {
   const manifestPath = normalizeAbsolutePath(
     path.join(packageRootDir, 'package.json'),
   );
-  readManifest(manifestPath);
+  if (manifest === undefined) readManifest(manifestPath);
   return manifestPath;
 }
 
 export function resolveAstroSemanticToolchainPaths(
   packageRootDir: string,
+  manifest?: PackageManifest,
 ): AstroSemanticToolchainPaths {
-  const leafManifest = resolveLeafManifest(packageRootDir);
+  const leafManifest = resolveLeafManifest(packageRootDir, manifest);
   const astro = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
+    ownerManifest: manifest,
     ownerScope: packageRootDir,
     packageName: 'astro',
   });
   const check = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
+    ownerManifest: manifest,
     ownerScope: packageRootDir,
     packageName: '@astrojs/check',
   });
   const leafTypeScript = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
+    ownerManifest: manifest,
     ownerScope: packageRootDir,
     packageName: 'typescript',
   });

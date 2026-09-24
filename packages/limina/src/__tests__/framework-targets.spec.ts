@@ -35,6 +35,7 @@ import {
   createFrameworkCheckerTargets,
   type TypecheckTarget,
 } from '../typecheck/targets';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -80,6 +81,9 @@ async function createFixture(): Promise<{
   return {
     cleanup: async () => rm(rootDir, { force: true, recursive: true }),
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: fixturePath('limina.config.mjs'),
       rootDir,
     },

@@ -14,11 +14,11 @@
 
 [English](./README.md) | 简体中文
 
-> TypeScript 单体仓库架构治理工具。
+> TypeScript 项目图与架构治理工具。
 
 先接入增量构建，再逐步打开架构治理。
 
-Limina 面向大型 TypeScript monorepo，帮助团队把容易漂移的工程约束变成显式、可审查、可运行的检查。它基于现有 TypeScript 配置和源码依赖关系生成可复用的类型构建配置，并逐步覆盖依赖图、源码边界、检查覆盖和发布前校验。
+Limina 支持单包项目，以及 pnpm、npm、Yarn 和 Bun 工作区，帮助团队把容易漂移的工程约束变成显式、可审查、可运行的检查。它基于现有 TypeScript 配置和源码依赖关系生成可复用的类型构建配置，并逐步覆盖依赖图、源码边界、检查覆盖和发布前校验。
 
 ## 能力概览
 
@@ -31,6 +31,6 @@ Limina 面向大型 TypeScript monorepo，帮助团队把容易漂移的工程�
 
 ## Limina 不是什么
 
-Limina 不是 bundler、测试框架或发布工具，也不会替代 TypeScript 或框架专属 checker。它调用已有工具，并验证这些工具依赖的 monorepo 结构是否仍然可靠。
+Limina 不是 bundler、测试框架或发布工具，也不会替代 TypeScript 或框架专属 checker。它调用已有工具，并验证这些工具依赖的 项目结构是否仍然可靠。
 
 [阅读文档了解更多](https://docs.senao.me/docs-islands/limina/zh/)
