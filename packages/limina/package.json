@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "author": "Senao Xi",
-  "description": "Configurable monorepo architecture and TypeScript graph governance CLI",
+  "description": "TypeScript project graph and architecture governance for single-package projects and workspaces",
   "files": [
     "bin",
     "LICENSE.md",

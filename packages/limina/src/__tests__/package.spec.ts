@@ -20,6 +20,7 @@ import {
 import { LiminaFlowReporter } from '../flow';
 import { ReleaseLogger } from '../logger';
 import type { ReleaseFinding } from '../package-check/release-findings';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(
@@ -328,6 +329,7 @@ async function createWorkspacePackage(
 
 async function createWorkspaceRoot(): Promise<string> {
   const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-package-root-'));
+  await writeText(path.join(rootDir, 'package.json'), '{}');
 
   await writeText(
     path.join(rootDir, 'pnpm-workspace.yaml'),
@@ -526,6 +528,9 @@ function createConfig(
   } = {},
 ): ResolvedLiminaConfig {
   return {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     configPath: path.join(rootDir, 'limina.config.mjs'),
     package: {
       entries: entries.map((entry) => ({
@@ -4837,6 +4842,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       path.join(tmpdir(), 'limina-package-external-'),
     );
     const rootDir = path.join(parentDir, 'repo');
+    await writeText(path.join(rootDir, 'package.json'), '{}');
     const packageDir = path.join(parentDir, 'external', 'pkg');
     const outDir = path.join(packageDir, 'dist');
 

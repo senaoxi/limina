@@ -51,15 +51,13 @@ function collectDeclaredWorkspaceDependencies(options: {
 
 function createImporter(options: {
   directory: string;
+  manifest?: PackageManifest;
   workspacePackageNames: ReadonlySet<string>;
 }): ImporterInfo | null {
   const packageJsonPath = path.join(options.directory, 'package.json');
 
-  if (!existsSync(packageJsonPath)) {
-    return null;
-  }
-
-  const manifest = readJsonFile<PackageManifest>(packageJsonPath);
+  const manifest = options.manifest ?? readImporterManifest(packageJsonPath);
+  if (manifest === null) return null;
   return {
     declaredWorkspaceDependencies: collectDeclaredWorkspaceDependencies({
       manifest,
@@ -68,6 +66,20 @@ function createImporter(options: {
     directory: options.directory,
     name: manifest.name,
   };
+}
+
+function readImporterManifest(packageJsonPath: string): PackageManifest | null {
+  return existsSync(packageJsonPath)
+    ? readJsonFile<PackageManifest>(packageJsonPath)
+    : null;
+}
+function getRootManifest(
+  config: ResolvedLiminaConfig,
+  directory: string,
+): PackageManifest | undefined {
+  return directory === config.governanceRoot.rootDir
+    ? config.governanceRoot.manifest
+    : undefined;
 }
 
 function collectImporterDirectories(options: {
@@ -88,7 +100,11 @@ export function collectImporters(
   const importers: ImporterInfo[] = [];
 
   for (const directory of collectImporterDirectories({ config, packages })) {
-    const importer = createImporter({ directory, workspacePackageNames });
+    const importer = createImporter({
+      directory,
+      workspacePackageNames,
+      manifest: getRootManifest(config, directory),
+    });
 
     if (importer !== null) {
       importers.push(importer);

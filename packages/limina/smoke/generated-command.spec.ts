@@ -207,6 +207,17 @@ async function assertGeneratedCommandRoundTrip(options: {
     await realpath(options.fixture.fixtureDir),
   );
   const realProbeEntry = normalizePath(await realpath(probe.argv[1] ?? ''));
+  const expectedEntry = normalizePath(
+    await realpath(
+      path.join(
+        options.fixture.fixtureDir,
+        'node_modules',
+        'limina',
+        'bin',
+        'limina.js',
+      ),
+    ),
+  );
   expect(probe.argv.slice(2)).toEqual([
     '--config',
     normalizePath(options.fixture.configPath),
@@ -219,10 +230,17 @@ async function assertGeneratedCommandRoundTrip(options: {
     '--invocation',
     options.invocationId,
   ]);
-  expect(normalizePath(await realpath(probe.cwd))).toBe(realFixtureDir);
-  expect(realProbeEntry).toContain(`${realFixtureDir}/node_modules/`);
-  expect(realProbeEntry).toMatch(/\/limina\/bin\/limina\.js$/u);
-  expect(probe.execPath).toBeTruthy();
+  const expectedCwd =
+    options.variantName === 'posix'
+      ? normalizePath(await realpath(options.outsideCwd))
+      : realFixtureDir;
+  expect(normalizePath(await realpath(probe.cwd))).toBe(expectedCwd);
+  // A direct Node invocation can legitimately contain pnpm in its installed
+  // CLI path. Check executable and entry identities, not a command substring.
+  expect(realProbeEntry).toBe(expectedEntry);
+  expect(normalizePath(await realpath(probe.execPath))).toBe(
+    normalizePath(await realpath(process.execPath)),
+  );
 }
 
 async function getPowerShellEvidence(
@@ -347,7 +365,7 @@ describe('standalone invocation generated command', () => {
     try {
       fixture = await createConsumerFixture({
         configFileName: 'limina 空格 & ^ %PATH% !L! (x).mjs',
-        directoryName: 'ws 空格漢字 & ^ %PATH% !L! (x)',
+        directoryName: 'ws pnpm 空格漢字 & ^ %PATH% !L! (x)',
         manifest,
         sourceText: 'export const value: string = 1;\n',
         tarballPath: packedDist.tarballPath,
@@ -413,6 +431,8 @@ describe('standalone invocation generated command', () => {
         invocationId,
         `${failedCheck.stdout}\n${failedCheck.stderr}`,
       ).toMatch(INVOCATION_ID_PATTERN);
+      // An explicit config is a persisted-state anchor even after the module is removed.
+      await rm(fixture.configPath);
       const probeModulePath = await writeArgvProbe(outsideCwd);
 
       if (process.platform === 'win32') {
@@ -431,10 +451,8 @@ describe('standalone invocation generated command', () => {
         expect(powershellCommand).not.toContain(
           '$PSNativeCommandArgumentPassing',
         );
-        expect(powershellCommand).not.toContain('pnpm');
         expect(cmdCommand).toMatch(/^cd \/d /u);
         expect(cmdCommand).toContain(' && ');
-        expect(cmdCommand).not.toContain('pnpm');
 
         const cmdPnpm = await getCmdPnpmEvidence(environment, outsideCwd);
 
@@ -499,7 +517,8 @@ describe('standalone invocation generated command', () => {
         });
       } else {
         const command = extractGeneratedCommand(failedCheck.stdout, 'Query');
-        expect(command).toMatch(/^pnpm /u);
+        expect(command).toContain(normalizePath(process.execPath));
+        expect(command).toContain('/limina/bin/limina.js');
         await assertGeneratedCommandRoundTrip({
           command,
           environment,

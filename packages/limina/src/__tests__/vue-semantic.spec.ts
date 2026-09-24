@@ -26,6 +26,7 @@ import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports
 import { runGraphExportImpl } from '../graph-check/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -192,6 +193,9 @@ describe('Vue semantic architecture', () => {
         const configPath = fixture.path('tsconfig.json');
         const index = await createWorkspaceExportsResolutionIndex({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             config: {},
             configPath: fixture.path('limina.config.mjs'),
             rootDir: fixture.rootDir,
@@ -342,6 +346,9 @@ describe('Vue semantic architecture', () => {
       'tsconfig.json': config(),
     });
     const liminaConfig: ResolvedLiminaConfig = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: { checkers: { 'vue-tsc': { include: ['tsconfig.json'] } } },
       configPath: fixture.path('limina.config.mjs'),
       rootDir: fixture.rootDir,

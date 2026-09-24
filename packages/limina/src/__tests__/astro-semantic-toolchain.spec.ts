@@ -20,6 +20,7 @@ import { runSourceCheck } from '../commands/source';
 import { LiminaDependencyError } from '../dependency-contract';
 import { LiminaPreflightManager } from '../preflight/manager';
 import type { SourceCheckIssue } from '../source-check/report';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -242,12 +243,15 @@ describe('Astro semantic toolchain', () => {
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
     const config: ResolvedLiminaConfig = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: { checkers: { astro: { include: ['tsconfig.json'] } } },
       configPath: fixturePath('limina.config.mjs'),
       rootDir: fixture.rootDir,
       source: { knip: false },
     };
-    const preflight = new LiminaPreflightManager({ config });
+    let preflight: LiminaPreflightManager | undefined;
     try {
       await writeText(fixturePath('pnpm-workspace.yaml'), 'packages: []\n');
       await writeText(
@@ -298,6 +302,7 @@ describe('Astro semantic toolchain', () => {
         );
       }
 
+      preflight = new LiminaPreflightManager({ config });
       const sourceIssues: SourceCheckIssue[] = [];
       await expect(
         runSourceCheck(config, {
@@ -351,7 +356,7 @@ describe('Astro semantic toolchain', () => {
         ]),
       );
     } finally {
-      preflight.dispose();
+      preflight?.dispose();
       await fixture.cleanup();
     }
   });

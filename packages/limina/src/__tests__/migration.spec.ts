@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import { createLiminaCli } from '../cli';
 import { runMigration } from '../commands/migration';
 import { LiminaFlowReporter } from '../flow';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePaths } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
@@ -185,6 +186,9 @@ function createResolvedConfig(
   config: NonNullable<ResolvedLiminaConfig['config']>,
 ): ResolvedLiminaConfig {
   return {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     config,
     configPath: path.join(rootDir, 'limina.config.mjs'),
     rootDir,
@@ -2266,6 +2270,9 @@ describe('ambiguous JSONC migration', () => {
       await commitFixture(fixture.rootDir);
       await expect(
         runMigration({
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           rootDir: fixture.rootDir,
           configPath: fixture.path('limina.config.mjs'),
         }),
@@ -2297,6 +2304,9 @@ describe('ambiguous JSONC migration', () => {
       'index.ts': 'export {};',
     });
     const config = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       rootDir: fixture.rootDir,
       configPath: fixture.path('limina.config.mjs'),
     };

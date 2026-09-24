@@ -1,6 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createAnalysisProviders } from '#core';
-import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import {
   chmod,
   mkdir,
@@ -33,6 +32,7 @@ import {
   runPipelineWithResult,
 } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
 
@@ -292,6 +292,9 @@ async function createConfig(): Promise<{
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath,
       rootDir,
     },
@@ -620,34 +623,44 @@ describe('runPipeline', () => {
   it('renders default check task tree before auto checker discovery resolves', async () => {
     const fixture = await createConfig();
     const { chunks, flow } = createTtyFlow();
-    let rejectGeneratedGraph: ((error: Error) => void) | undefined;
-    const generatedGraph = new Promise<GeneratedTsconfigGraphResult>(
-      (_resolve, reject) => {
-        rejectGeneratedGraph = reject;
-      },
-    );
-    const generatedGraphProvider = vi.fn(() => generatedGraph);
+    const generatedGraphStarted = deferred<void>();
+    const releaseGeneratedGraph = deferred<void>();
+    const generatedGraphProvider = vi.fn(async () => {
+      generatedGraphStarted.resolve();
+      await releaseGeneratedGraph.promise;
+      throw new Error('delayed generated graph');
+    });
+    const check = runDefaultCheck(fixture.config, {
+      flow,
+      generatedGraphProvider,
+    });
 
     try {
-      const check = runDefaultCheck(fixture.config, {
-        flow,
-        generatedGraphProvider,
-      });
+      // Workspace validation and snapshot I/O can outlast waitFor's default
+      // deadline. Observe discovery starting while its result is still held.
+      await Promise.race([
+        generatedGraphStarted.promise,
+        check.then(() => {
+          throw new Error(
+            'Default check completed before generated graph discovery started.',
+          );
+        }),
+      ]);
 
-      await vi.waitFor(() => {
-        const output = chunks.join('');
-        expect(output).toContain('◇      graph check\n');
-        expect(output).toContain('◇      source check\n');
-        expect(output).toContain('◇      proof check\n');
-        expect(output).toContain('◇      checker build\n');
-        expect(output).toContain('◇      checker typecheck\n');
-        expect(generatedGraphProvider).toHaveBeenCalledTimes(1);
-      });
-      rejectGeneratedGraph?.(new Error('delayed generated graph'));
-
-      await expect(check).resolves.toBe(false);
+      const output = chunks.join('');
+      expect(output).toContain('◇      graph check\n');
+      expect(output).toContain('◇      source check\n');
+      expect(output).toContain('◇      proof check\n');
+      expect(output).toContain('◇      checker build\n');
+      expect(output).toContain('◇      checker typecheck\n');
+      expect(generatedGraphProvider).toHaveBeenCalledTimes(1);
     } finally {
-      await fixture.cleanup();
+      releaseGeneratedGraph.resolve();
+      try {
+        await expect(check).resolves.toBe(false);
+      } finally {
+        await fixture.cleanup();
+      }
     }
   });
 

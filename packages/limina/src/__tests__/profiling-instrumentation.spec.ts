@@ -24,6 +24,7 @@ import {
   type AnalysisMetricAggregate,
   createProfilingMetricsRecorder,
 } from '../profiling/metrics';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'] =
@@ -376,6 +377,7 @@ describe('module resolution profiling instrumentation', () => {
     const rootDir = await realpath(
       await mkdtemp(path.join(tmpdir(), 'limina-export-metrics-')),
     );
+    await writeFile(path.join(rootDir, 'package.json'), '{}');
 
     try {
       const configPath = await writeText(
@@ -420,6 +422,9 @@ describe('module resolution profiling instrumentation', () => {
       );
 
       const config: ResolvedLiminaConfig = {
+        get governanceRoot() {
+          return resolveFixtureGovernanceRoot(this);
+        },
         configPath: liminaConfigPath,
         rootDir,
       };

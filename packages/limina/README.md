@@ -14,11 +14,11 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-> Architecture governance for TypeScript monorepos.
+> TypeScript project graph and architecture governance.
 
 Start with incremental type builds, then progressively enable architecture governance.
 
-Limina is designed for large TypeScript monorepos where project references, source boundaries, check coverage, and release artifacts can drift over time. It builds on existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration, then adds checks for dependency graphs, source boundaries, coverage, and release readiness.
+Limina supports single-package projects and pnpm, npm, Yarn, and Bun workspaces where project references, source boundaries, check coverage, and release artifacts can drift over time. It builds on existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration, then adds checks for dependency graphs, source boundaries, coverage, and release readiness.
 
 ## What Limina does
 
@@ -31,6 +31,6 @@ Limina is designed for large TypeScript monorepos where project references, sour
 
 ## Non-goals
 
-Limina is not a bundler, a test framework, or a publishing tool. It does not replace TypeScript or framework-specific checkers. Instead, it runs alongside existing tools and verifies that the monorepo structure they depend on remains consistent and reviewable.
+Limina is not a bundler, a test framework, or a publishing tool. It does not replace TypeScript or framework-specific checkers. Instead, it runs alongside existing tools and verifies that the project structure they depend on remains consistent and reviewable.
 
 [Read the Docs to Learn More](https://docs.senao.me/docs-islands/limina/)

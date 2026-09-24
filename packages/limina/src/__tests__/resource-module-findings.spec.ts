@@ -11,6 +11,7 @@ import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type { SourceFinding } from '../source-check/findings';
 import { addResourceModuleProblems } from '../source-check/resource-module-findings';
 import { ResourceResolver } from '../source-check/resource-resolver';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -71,6 +72,9 @@ it.each([false, true])(
         resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           rootDir: fixture.root,
           configPath: fixture.path('limina.config.mjs'),
         },
@@ -161,6 +165,9 @@ it.each([
         resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           rootDir: fixture.root,
           configPath: fixture.path('limina.config.mjs'),
         },
@@ -245,7 +252,13 @@ it('passes complete package-import identities to the physical Node resolver', as
         resolutionMode: 'import',
         resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
-        config: { rootDir, configPath: fixturePath('limina.config.mjs') },
+        config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
+          rootDir,
+          configPath: fixturePath('limina.config.mjs'),
+        },
         findings,
         importRecord: records.find((record) => record.specifier === specifier)!,
         owner: {

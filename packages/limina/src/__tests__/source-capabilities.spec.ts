@@ -8,6 +8,7 @@ import {
   collectConfirmedFrameworkCapabilities,
   partitionSourceFiles,
 } from '../core/build-graph/source-capabilities';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function createFixture(files: Record<string, unknown>): Promise<{
   cleanup: () => Promise<void>;
@@ -23,6 +24,9 @@ async function createFixture(files: Record<string, unknown>): Promise<{
   return {
     cleanup: () => rm(rootDir, { force: true, recursive: true }),
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {},
       configPath: path.join(rootDir, 'limina.config.mjs'),
       rootDir,

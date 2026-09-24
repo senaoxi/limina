@@ -1,44 +1,22 @@
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
 import {
   isInvalidConfigRootPattern,
   normalizeWorkspacePattern,
   toOwnerRelativeEntryPattern,
 } from '../workspace-patterns';
-import { formatSourceKnipWorkspaceField } from './routing';
 import type {
   ParsedEntryRecord,
   UnusedModuleConfigContext,
   WorkspaceUnusedConfigOptions,
 } from './unused/config-types';
-import { addKnipConfigFinding } from './unused/finding';
-
-function addEntryFinding(options: {
-  context: UnusedModuleConfigContext;
-  details: readonly string[];
-  field: string;
-  ownerName: string;
-  reason: string;
-  value?: unknown;
-}): void {
-  const moduleSet = options.context.moduleSetByOwnerName.get(options.ownerName);
-  addKnipConfigFinding({
-    details: options.details,
-    field: options.field,
-    findings: options.context.findings,
-    kind: 'entry',
-    packageJsonPath: moduleSet?.owner.packageJsonPath,
-    packageName: options.ownerName,
-    reason: options.reason,
-    title: 'Invalid source Knip entry config',
-    value: options.value,
-  });
-}
+import { addKnipEntryFinding as addEntryFinding } from './unused/finding';
 
 function parseEntryFiles(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): unknown[] | null {
   if (Array.isArray(options.value) && options.value.length > 0) {
@@ -48,7 +26,7 @@ function parseEntryFiles(options: {
     context: options.context,
     details: [`  value: ${formatUnknownValue(options.value)}`],
     field: `${options.field}.files`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason:
       'files must be a non-empty array of config-root-relative glob patterns.',
     value: options.value,
@@ -59,7 +37,7 @@ function parseEntryFiles(options: {
 function parseEntryReason(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string | null {
   if (typeof options.value === 'string' && options.value.trim().length > 0) {
@@ -69,7 +47,7 @@ function parseEntryReason(options: {
     context: options.context,
     details: [`  value: ${formatUnknownValue(options.value)}`],
     field: `${options.field}.reason`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'reason must be a non-empty string.',
     value: options.value,
   });
@@ -89,7 +67,7 @@ function parseEntryRecord(options: {
   context: UnusedModuleConfigContext;
   entry: unknown;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): ParsedEntryRecord | null {
   if (!isPlainRecord(options.entry)) {
     addEntryFinding({
@@ -105,13 +83,13 @@ function parseEntryRecord(options: {
     files: parseEntryFiles({
       context: options.context,
       field: options.field,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       value: options.entry.files,
     }),
     reason: parseEntryReason({
       context: options.context,
       field: options.field,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       value: options.entry.reason,
     }),
   });
@@ -125,7 +103,7 @@ function isNonEmptyPatternValue(value: unknown): value is string {
 function rejectInvalidPattern(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   pattern: string;
 }): string | null {
   if (!isInvalidConfigRootPattern(options.pattern)) return options.pattern;
@@ -133,7 +111,7 @@ function rejectInvalidPattern(options: {
     context: options.context,
     details: [`  file: ${options.pattern}`],
     field: options.field,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'file patterns must be positive config-root-relative globs.',
   });
   return null;
@@ -142,7 +120,7 @@ function rejectInvalidPattern(options: {
 function normalizeEntryPattern(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string | null {
   if (!isNonEmptyPatternValue(options.value)) {
@@ -150,7 +128,7 @@ function normalizeEntryPattern(options: {
       context: options.context,
       details: [`  value: ${formatUnknownValue(options.value)}`],
       field: options.field,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       reason: 'file patterns must be non-empty strings.',
       value: options.value,
     });
@@ -159,7 +137,7 @@ function normalizeEntryPattern(options: {
   return rejectInvalidPattern({
     context: options.context,
     field: options.field,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     pattern: normalizeWorkspacePattern(options.value),
   });
 }
@@ -167,11 +145,11 @@ function normalizeEntryPattern(options: {
 function toOwnerPattern(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   pattern: string;
 }): string | null {
-  const moduleSet = options.context.moduleSetByOwnerName.get(
-    options.ownerName,
+  const moduleSet = options.context.moduleSetByOwnerIdentity.get(
+    options.ownerIdentity,
   )!;
   const ownerRelativePattern = toOwnerRelativeEntryPattern({
     config: options.context.config,
@@ -181,9 +159,12 @@ function toOwnerPattern(options: {
   if (ownerRelativePattern !== null) return ownerRelativePattern;
   addEntryFinding({
     context: options.context,
-    details: [`  package: ${options.ownerName}`, `  file: ${options.pattern}`],
+    details: [
+      `  package: ${moduleSet.owner.packageJsonPath}`,
+      `  file: ${options.pattern}`,
+    ],
     field: options.field,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'file patterns must stay inside the keyed package directory.',
   });
   return null;
@@ -192,7 +173,7 @@ function toOwnerPattern(options: {
 function collectFilePattern(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string[] {
   const pattern = normalizeEntryPattern(options);
@@ -205,7 +186,7 @@ function collectEntryPatterns(options: {
   context: UnusedModuleConfigContext;
   entry: unknown;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): string[] {
   const parsed = parseEntryRecord(options);
   if (parsed === null) return [];
@@ -213,38 +194,38 @@ function collectEntryPatterns(options: {
     collectFilePattern({
       context: options.context,
       field: `${options.field}.files[${index}]`,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       value,
     }),
   );
 }
 
 function addMissingOwnerFinding(options: WorkspaceUnusedConfigOptions): void {
-  const workspaceField = formatSourceKnipWorkspaceField(options.ownerName);
+  const workspaceField = options.workspaceConfig.field;
   addEntryFinding({
     context: options.context,
-    details: [`  package: ${options.ownerName}`],
+    details: [`  package: ${options.workspaceConfig.owner.directory}`],
     field: `${workspaceField}.entry`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'package must own Limina-governed source modules.',
   });
 }
 
 function storeEntryPatterns(options: {
   context: UnusedModuleConfigContext;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   patterns: string[];
 }): void {
   if (options.patterns.length === 0) return;
-  options.context.entryPatternsByOwnerName.set(
-    options.ownerName,
+  options.context.entryPatternsByOwnerIdentity.set(
+    options.ownerIdentity,
     uniqueSortedStrings(options.patterns),
   );
 }
 
 function collectConfiguredEntries(options: {
   context: UnusedModuleConfigContext;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   rawEntries: unknown[];
   workspaceField: string;
 }): string[] {
@@ -253,7 +234,7 @@ function collectConfiguredEntries(options: {
       context: options.context,
       entry,
       field: `${options.workspaceField}.entry[${index}]`,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
     }),
   );
 }
@@ -264,12 +245,12 @@ function getConfiguredEntries(
   const rawEntries = options.workspaceConfig.entry;
   if (rawEntries === undefined) return null;
   if (Array.isArray(rawEntries)) return rawEntries;
-  const workspaceField = formatSourceKnipWorkspaceField(options.ownerName);
+  const workspaceField = options.workspaceConfig.field;
   addEntryFinding({
     context: options.context,
     details: [`  value: ${formatUnknownValue(rawEntries)}`],
     field: `${workspaceField}.entry`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'entry must be an array.',
     value: rawEntries,
   });
@@ -281,17 +262,17 @@ export function collectWorkspaceEntryConfig(
 ): void {
   const rawEntries = getConfiguredEntries(options);
   if (rawEntries === null) return;
-  if (!options.context.moduleSetByOwnerName.has(options.ownerName)) {
+  if (!options.context.moduleSetByOwnerIdentity.has(options.ownerIdentity)) {
     addMissingOwnerFinding(options);
     return;
   }
-  const workspaceField = formatSourceKnipWorkspaceField(options.ownerName);
+  const workspaceField = options.workspaceConfig.field;
   storeEntryPatterns({
     context: options.context,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     patterns: collectConfiguredEntries({
       context: options.context,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       rawEntries,
       workspaceField,
     }),

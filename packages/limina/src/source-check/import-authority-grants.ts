@@ -2,8 +2,6 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import type { ImportRecord } from '#core/import-graph/context';
 import type { PackageOwner } from '#core/workspace/actions';
 import { normalizeSlashes, toRelativePath } from '#utils/path';
-import { existsSync } from 'node:fs';
-import path from 'pathe';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { SourceFinding } from './findings';
 import { addImportAuthorityConfigFinding } from './import-authority-config-findings';
@@ -83,39 +81,6 @@ export function hasImportAuthorityWorkspaceRootDependencyGrants(
   rules: CompiledImportAuthorityAllowRule[],
 ): boolean {
   return rules.some((rule) => rule.packageMatchers.length > 0);
-}
-
-function needsWorkspaceRootManifest(
-  rules: CompiledImportAuthorityAllowRule[],
-): boolean {
-  return hasImportAuthorityWorkspaceRootDependencyGrants(rules);
-}
-
-export function addImportAuthorityRootManifestConfigProblems(options: {
-  checks: CheckCounter;
-  config: ResolvedLiminaConfig;
-  findings: SourceFinding[];
-  importAuthorityAllowRules: CompiledImportAuthorityAllowRule[];
-}): void {
-  options.checks.add();
-  if (!needsWorkspaceRootManifest(options.importAuthorityAllowRules)) {
-    return;
-  }
-
-  const rootPackageJsonPath = path.join(options.config.rootDir, 'package.json');
-  if (existsSync(rootPackageJsonPath)) {
-    return;
-  }
-
-  addImportAuthorityConfigFinding({
-    field: 'source.importAuthority.allow',
-    findings: options.findings,
-    fix: 'create a workspace root package.json, or remove workspaceRootDependencies grants.',
-    kind: 'root-dependency-grants',
-    packageJsonPath: rootPackageJsonPath,
-    reason:
-      'workspaceRootDependencies grants require a workspace root package.json.',
-  });
 }
 
 export function getSourceOwnerIdentity(options: {

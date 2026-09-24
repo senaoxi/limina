@@ -1,5 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { describe, expect, it } from 'vitest';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 import {
   getLiminaCheckIssueRuleMetadata,
@@ -18,6 +19,9 @@ import {
 import { formatSourceCheckHumanReport } from '../source-check/report';
 
 const config = {
+  get governanceRoot() {
+    return resolveFixtureGovernanceRoot(this);
+  },
   configPath: '/repo/limina.config.mts',
   rootDir: '/repo',
 } as ResolvedLiminaConfig;

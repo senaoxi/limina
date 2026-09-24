@@ -58,7 +58,7 @@ packages/core/tsconfig.browser.json   also includes src/index.ts
 
 ## 文件先要有治理区域和清楚的包归属
 
-Limina 从最近的工作区声明 开始。每个最终激活包都是独立 package island，包根目录的 `package.json` 是 owner manifest。被检查的源码文件首先要属于这些单元；找不到归属时，Limina 会报告它位于已激活区域之外。如果普通源码 `tsconfig*.json` 覆盖了多个工作区包 owner 的文件，也会被报告为边界过宽。
+Limina 先选择配置模块，再由其最近的 `package.json` 固定治理根。该根自身的工作区声明决定包集合；没有声明时，唯一候选是根包。每个最终激活包都是独立 package island，包根目录的 `package.json` 是 owner manifest。被检查的源码文件首先要属于这些单元；找不到归属时，Limina 会报告它位于已激活区域之外。如果普通源码 `tsconfig*.json` 覆盖了多个工作区包 owner 的文件，也会被报告为边界过宽。
 
 治理不会自动穿过工作区包下面的每一层目录。默认情况下，嵌套 `package.json` 会停止当前 island；嵌套工作区根（`pnpm-workspace.yaml` 或具有自有 `workspaces` 字段的 `package.json`） 永远会停止当前 owner 的遍历。激活子包根目录也会停止父包遍历，但即使祖先存在工作区边界，子包仍会启动独立 island。
 

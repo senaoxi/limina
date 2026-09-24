@@ -3,10 +3,7 @@ import type {
   ResolvedLiminaConfig,
 } from '#config/runner';
 import type { GeneratedBuildModule } from '#core/build-graph/runner';
-import {
-  isNamedWorkspacePackage,
-  type WorkspacePackage,
-} from '#core/workspace/actions';
+import type { WorkspacePackage } from '#core/workspace/actions';
 import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
@@ -32,14 +29,22 @@ import type {
   PreparedGeneratedKnipPackageConfigs,
 } from './generated-knip-types';
 
-type NamedWorkspacePackage = WorkspacePackage & { name: string };
+import {
+  getPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+} from '../workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../workspace/validated-context';
 
 interface PrepareContext {
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   diagnostics: GeneratedKnipPackageDiagnostic[];
-  scriptsByPackageName: ReadonlyMap<string, readonly PackageBuildScript[]>;
+  workspaceContext: ValidatedWorkspaceContext;
+  scriptsByOwnerIdentity: ReadonlyMap<
+    PackageOwnerIdentity,
+    readonly PackageBuildScript[]
+  >;
 }
 
 interface PackageScriptState {
@@ -48,36 +53,50 @@ interface PackageScriptState {
 }
 
 function appendPackageScript(
-  scriptsByPackageName: Map<string, PackageBuildScript[]>,
+  workspaceContext: ValidatedWorkspaceContext,
+  scriptsByOwnerIdentity: Map<PackageOwnerIdentity, PackageBuildScript[]>,
   script: PackageBuildScript,
 ): void {
-  const existing = scriptsByPackageName.get(script.packageName);
+  const ownerIdentity = getPackageOwnerIdentity(
+    workspaceContext,
+    path.dirname(script.packageJsonPath),
+  );
+  const existing = scriptsByOwnerIdentity.get(ownerIdentity);
 
   if (existing === undefined) {
-    scriptsByPackageName.set(script.packageName, [script]);
+    scriptsByOwnerIdentity.set(ownerIdentity, [script]);
     return;
   }
 
   existing.push(script);
 }
 
-function groupScriptsByPackageName(
+function groupScriptsByOwnerIdentity(
   scripts: readonly PackageBuildScript[],
-): Map<string, PackageBuildScript[]> {
-  const scriptsByPackageName = new Map<string, PackageBuildScript[]>();
+  workspaceContext: ValidatedWorkspaceContext,
+): Map<PackageOwnerIdentity, PackageBuildScript[]> {
+  const scriptsByOwnerIdentity = new Map<
+    PackageOwnerIdentity,
+    PackageBuildScript[]
+  >();
 
   for (const script of scripts) {
-    appendPackageScript(scriptsByPackageName, script);
+    appendPackageScript(workspaceContext, scriptsByOwnerIdentity, script);
   }
 
-  return scriptsByPackageName;
+  return scriptsByOwnerIdentity;
 }
 
 function getPackageScripts(
   context: PrepareContext,
-  workspacePackage: NamedWorkspacePackage,
+  workspacePackage: WorkspacePackage,
 ): readonly PackageBuildScript[] {
-  const scripts = context.scriptsByPackageName.get(workspacePackage.name);
+  const scripts = context.scriptsByOwnerIdentity.get(
+    getPackageOwnerIdentity(
+      context.workspaceContext,
+      workspacePackage.directory,
+    ),
+  );
   return scripts === undefined ? [] : scripts;
 }
 
@@ -98,7 +117,7 @@ function addPreparedScript(
 }
 
 function collectPackageScriptState(
-  workspacePackage: NamedWorkspacePackage,
+  workspacePackage: WorkspacePackage,
   context: PrepareContext,
 ): PackageScriptState {
   const state: PackageScriptState = {
@@ -124,7 +143,7 @@ function collectPackageScriptState(
 }
 
 function createPackageConfig(
-  workspacePackage: NamedWorkspacePackage,
+  workspacePackage: WorkspacePackage,
   state: PackageScriptState,
   context: PrepareContext,
 ): GeneratedKnipPackageConfig {
@@ -138,7 +157,7 @@ function createPackageConfig(
     packageJsonPath: normalizeAbsolutePath(
       path.join(workspacePackage.directory, 'package.json'),
     ),
-    packageName: workspacePackage.name,
+    packageName: workspacePackage.name ?? null,
     references: [...state.references].sort(compareCodeUnits),
     scripts: state.scripts.sort((left, right) =>
       compareCodeUnits(left.name, right.name),
@@ -147,7 +166,7 @@ function createPackageConfig(
 }
 
 function preparePackageConfig(
-  workspacePackage: NamedWorkspacePackage,
+  workspacePackage: WorkspacePackage,
   context: PrepareContext,
 ): PreparedGeneratedKnipPackageConfig | null {
   const state = collectPackageScriptState(workspacePackage, context);
@@ -200,18 +219,21 @@ function createPrepareContext(options: {
   config: ResolvedLiminaConfig;
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   workspacePackages: WorkspacePackage[];
+  workspaceContext: ValidatedWorkspaceContext;
 }): PrepareContext {
   const packageBuildScripts = collectPackageBuildScripts({
     config: options.config,
     workspacePackages: options.workspacePackages,
   });
   return {
+    workspaceContext: options.workspaceContext,
     checkers: options.checkers,
     config: options.config,
     configToOutputBuildByChecker: options.configToOutputBuildByChecker,
     diagnostics: packageBuildScripts.diagnostics.map(toPackageScriptDiagnostic),
-    scriptsByPackageName: groupScriptsByPackageName(
+    scriptsByOwnerIdentity: groupScriptsByOwnerIdentity(
       packageBuildScripts.scripts,
+      options.workspaceContext,
     ),
   };
 }
@@ -221,13 +243,12 @@ export function prepareGeneratedKnipPackageConfigs(options: {
   configToOutputBuildByChecker: Map<string, Map<string, GeneratedBuildModule>>;
   config: ResolvedLiminaConfig;
   workspacePackages: WorkspacePackage[];
+  workspaceContext: ValidatedWorkspaceContext;
 }): PreparedGeneratedKnipPackageConfigs {
   const context = createPrepareContext(options);
   const configs: PreparedGeneratedKnipPackageConfig[] = [];
 
-  for (const workspacePackage of options.workspacePackages.filter(
-    isNamedWorkspacePackage,
-  )) {
+  for (const workspacePackage of options.workspacePackages) {
     const prepared = preparePackageConfig(workspacePackage, context);
 
     if (prepared !== null) {

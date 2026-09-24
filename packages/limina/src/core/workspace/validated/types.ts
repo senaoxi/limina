@@ -1,5 +1,5 @@
 import type { MutationAuthority } from '#utils/mutation-boundary';
-import type { ResolvedWorkspaceRoot } from '#utils/workspace-root';
+import type { ResolvedGovernanceRoot } from '#utils/workspace-root';
 import type { WorkspacePackage } from '../actions';
 import type {
   WorkspaceRegionBoundary,
@@ -81,7 +81,7 @@ export interface ValidatedWorkspaceContext extends WorkspaceRegionTopology {
   >;
   readonly packageIdentities: readonly WorkspacePackageIdentity[];
   readonly sourceConfigPaths: readonly string[];
-  readonly workspaceRoot: ResolvedWorkspaceRoot;
+  readonly governanceRoot: ResolvedGovernanceRoot;
   readonly workspaceRootDir: string;
   readonly workspaceMutationGeneration?: string;
 }

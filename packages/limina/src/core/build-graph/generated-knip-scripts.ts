@@ -40,7 +40,7 @@ export function toPackageScriptDiagnostic(
   return {
     command: diagnostic.command,
     packageJsonPath: diagnostic.packageJsonPath,
-    packageName: diagnostic.packageName,
+    packageName: diagnostic.packageName ?? null,
     reason: diagnostic.reason,
     scriptName: diagnostic.scriptName,
   };
@@ -91,7 +91,7 @@ function createScriptDiagnostic(
   return {
     command: script.command,
     packageJsonPath: script.packageJsonPath,
-    packageName: script.packageName,
+    packageName: script.packageName ?? null,
     reason,
     scriptName: script.name,
   };

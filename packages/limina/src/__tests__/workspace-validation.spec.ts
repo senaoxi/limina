@@ -17,6 +17,7 @@ import {
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -55,6 +56,9 @@ async function createFixture(files: Record<string, string> = {}): Promise<{
   return {
     cleanup: () => rm(rootDir, { force: true, recursive: true }),
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: fixturePath('limina.config.mjs'),
       rootDir,
     },
@@ -709,6 +713,9 @@ describe('validated workspace context', () => {
       const sourceConfigPath = path.join(logicalRoot, 'tsconfig.json');
       const context = await collectValidatedWorkspaceContext({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           configPath: path.join(logicalRoot, 'limina.config.mjs'),
           rootDir: logicalRoot,
         },
@@ -805,6 +812,9 @@ describe('validated workspace context', () => {
       const outputRoot = path.join(container, 'artifacts/a');
       const context = await collectValidatedWorkspaceContext({
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           configPath: path.join(repoRoot, 'limina.config.mjs'),
           rootDir: repoRoot,
         },
@@ -865,6 +875,9 @@ describe('validated workspace context', () => {
       await expect(
         collectValidatedWorkspaceContext({
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             configPath: path.join(repoRoot, 'limina.config.mjs'),
             rootDir: repoRoot,
           },

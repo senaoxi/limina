@@ -1,9 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath } from '#utils/path';
-import {
-  findWorkspaceRootDescriptor,
-  resolveNearestWorkspaceRoot,
-} from '#utils/workspace-root';
+import { findWorkspaceRootDescriptor } from '#utils/workspace-root';
 import { realpath } from 'node:fs/promises';
 import path from 'pathe';
 import { LiminaStructuredError } from '../../../check-reporting/errors';
@@ -117,9 +114,7 @@ export async function assertNoSameRootOverlap(options: {
   config: ResolvedLiminaConfig;
   packages: readonly WorkspacePackage[];
 }): Promise<void> {
-  const workspaceRootDir = resolveNearestWorkspaceRoot(
-    options.config.rootDir,
-  ).rootDir;
+  const workspaceRootDir = options.config.governanceRoot.rootDir;
   const issues = (
     await Promise.all(
       options.packages.map((workspacePackage) =>

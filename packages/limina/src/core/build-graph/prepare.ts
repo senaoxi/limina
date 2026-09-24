@@ -57,9 +57,12 @@ function createOwnedVueSemanticContexts(
 
 function createOwnedAstroSemanticContexts(
   options: PrepareGeneratedTsconfigGraphOptions,
+  config: ResolvedLiminaConfig,
 ): AstroSemanticContextManager | undefined {
   if (options.importAnalysisContext !== undefined) return undefined;
-  return new AstroSemanticContextManager();
+  return new AstroSemanticContextManager({
+    governanceRoot: config.governanceRoot,
+  });
 }
 
 function createOwnedSvelteSemanticContexts(
@@ -106,6 +109,7 @@ function prepareGeneratedKnip(options: {
     config: options.config,
     configToOutputBuildByChecker: options.state.configToOutputBuildByChecker,
     workspacePackages: options.workspaceContext.packages,
+    workspaceContext: options.workspaceContext,
   });
 }
 
@@ -122,7 +126,10 @@ export async function prepareGeneratedTsconfigGraph(
     workspacePathIndex: options.workspacePathIndex,
   });
   const ownedVueSemanticContexts = createOwnedVueSemanticContexts(options);
-  const ownedAstroSemanticContexts = createOwnedAstroSemanticContexts(options);
+  const ownedAstroSemanticContexts = createOwnedAstroSemanticContexts(
+    options,
+    config,
+  );
   const ownedSvelteSemanticContexts =
     createOwnedSvelteSemanticContexts(options);
   const importAnalysisContext = resolveBuildGraphImportAnalysis({

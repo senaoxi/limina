@@ -1,17 +1,5 @@
 import { toRelativePath } from '#utils/path';
-import type { Stats } from 'node:fs';
-import {
-  access,
-  copyFile,
-  mkdir,
-  mkdtemp,
-  readdir,
-  rm,
-  rmdir,
-  stat,
-  symlink,
-  writeFile,
-} from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, rmdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'pathe';
 import { createVirtualEntryContent } from './config';
@@ -126,91 +114,5 @@ export async function withTemporaryKnipConfig<T>(
     return await run(configPath);
   } finally {
     await rm(tempDir, { force: true, recursive: true });
-  }
-}
-
-async function statIfPresent(filePath: string): Promise<Stats | null> {
-  try {
-    return await stat(filePath);
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function getDirectoryLinkType(): 'dir' | 'junction' {
-  return process.platform === 'win32' ? 'junction' : 'dir';
-}
-
-async function mirrorExistingEntry(options: {
-  shadowPath: string;
-  sourcePath: string;
-  sourceStat: Stats;
-}): Promise<void> {
-  if (options.sourceStat.isDirectory()) {
-    await symlink(
-      options.sourcePath,
-      options.shadowPath,
-      getDirectoryLinkType(),
-    );
-    return;
-  }
-
-  if (options.sourceStat.isFile()) {
-    await copyFile(options.sourcePath, options.shadowPath);
-  }
-}
-
-async function mirrorKnipAnalysisRootEntry(options: {
-  entryName: string;
-  rootDir: string;
-  shadowRootDir: string;
-}): Promise<void> {
-  const sourcePath = path.join(options.rootDir, options.entryName);
-  const shadowPath = path.join(options.shadowRootDir, options.entryName);
-  const sourceStat = await statIfPresent(sourcePath);
-  if (sourceStat === null) {
-    return;
-  }
-
-  await mirrorExistingEntry({ shadowPath, sourcePath, sourceStat });
-}
-
-async function createShadowAnalysisRoot(rootDir: string): Promise<string> {
-  const shadowRootDir = await mkdtemp(path.join(tmpdir(), 'limina-knip-root-'));
-  await writeFile(
-    path.join(shadowRootDir, 'package.json'),
-    `${JSON.stringify({ private: true }, null, 2)}\n`,
-  );
-  const entries = await readdir(rootDir, { withFileTypes: true });
-  await Promise.all(
-    entries
-      .filter((entry) => entry.name !== 'package.json')
-      .map((entry) =>
-        mirrorKnipAnalysisRootEntry({
-          entryName: entry.name,
-          rootDir,
-          shadowRootDir,
-        }),
-      ),
-  );
-  return shadowRootDir;
-}
-
-export async function withKnipAnalysisRoot<T>(
-  rootDir: string,
-  run: (analysisRootDir: string) => Promise<T>,
-): Promise<T> {
-  if (await pathExists(path.join(rootDir, 'package.json'))) {
-    return run(rootDir);
-  }
-
-  const shadowRootDir = await createShadowAnalysisRoot(rootDir);
-  try {
-    return await run(shadowRootDir);
-  } finally {
-    await rm(shadowRootDir, { force: true, recursive: true });
   }
 }

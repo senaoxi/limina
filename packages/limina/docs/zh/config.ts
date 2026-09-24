@@ -155,7 +155,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
   lang: 'zh-CN',
   link: '/zh/',
   title: 'Limina',
-  description: '面向 TypeScript monorepo 的项目引用图编译器与架构治理 CLI。',
+  description: '支持单包项目与工作区的 TypeScript 项目图和架构治理 CLI。',
   themeConfig: {
     nav: [
       {

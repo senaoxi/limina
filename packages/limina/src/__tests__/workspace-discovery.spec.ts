@@ -3,7 +3,7 @@ import {
   collectWorkspacePackages,
 } from '#core/workspace/actions';
 import {
-  resolveNearestWorkspaceRoot,
+  resolveGovernanceRoot,
   type SupportedPackageManager,
 } from '#utils/workspace-root';
 import {
@@ -23,6 +23,7 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortableRelativePaths,
@@ -47,7 +48,13 @@ async function fixture(files: Record<string, string>) {
   }
   return {
     path: resolve,
-    config: { rootDir: resolve(), configPath: resolve('limina.config.mjs') },
+    config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
+      rootDir: resolve(),
+      configPath: resolve('limina.config.mjs'),
+    },
   };
 }
 function declaration(
@@ -69,7 +76,7 @@ const managers = ['pnpm', 'npm', 'yarn', 'bun'] as const;
 
 describe('workspace root authority', () => {
   it.each(managers)(
-    'resolves explicit %s and skips ordinary package manifests',
+    'keeps child single-package governance inside an outer %s workspace',
     async (manager) => {
       const f = await fixture({
         ...declaration(manager),
@@ -77,8 +84,11 @@ describe('workspace root authority', () => {
         'packages/a/src/a.ts': '',
       });
       expect(
-        resolveNearestWorkspaceRoot(f.path('packages/a/src')),
-      ).toMatchObject({ rootDir: f.path(), packageManager: manager });
+        resolveGovernanceRoot(f.path('packages/a/src/limina.config.mjs')),
+      ).toMatchObject({
+        rootDir: f.path('packages/a'),
+        kind: 'single-package',
+      });
     },
   );
   it('selects a nearer npm descriptor before an outer pnpm descriptor', async () => {
@@ -87,7 +97,9 @@ describe('workspace root authority', () => {
       'inner/package.json': json({ workspaces: [] }),
       'inner/package-lock.json': '',
     });
-    expect(resolveNearestWorkspaceRoot(f.path('inner'))).toMatchObject({
+    expect(
+      resolveGovernanceRoot(f.path('inner/limina.config.mjs')),
+    ).toMatchObject({
       rootDir: f.path('inner'),
       packageManager: 'npm',
     });
@@ -99,7 +111,10 @@ describe('workspace root authority', () => {
       'yarn.lock': '',
       'bun.lock': '',
     });
-    expect(resolveNearestWorkspaceRoot(f.path()).packageManager).toBe('pnpm');
+    expect(resolveGovernanceRoot(f.path('limina.config.mjs'))).toHaveProperty(
+      'packageManager',
+      'pnpm',
+    );
   });
   it.each(['npm', 'yarn', 'bun'])(
     'rejects pnpm descriptor with explicit %s identity',
@@ -108,7 +123,7 @@ describe('workspace root authority', () => {
         ...declaration('pnpm'),
         'package.json': json({ packageManager: `${manager}@1` }),
       });
-      expect(() => resolveNearestWorkspaceRoot(f.path())).toThrow(
+      expect(() => resolveGovernanceRoot(f.path('limina.config.mjs'))).toThrow(
         /Conflicting package manager/u,
       );
     },
@@ -124,7 +139,7 @@ describe('workspace root authority', () => {
     const f = await fixture({
       'package.json': json({ packageManager: value, workspaces: [] }),
     });
-    expect(() => resolveNearestWorkspaceRoot(f.path())).toThrow(
+    expect(() => resolveGovernanceRoot(f.path('limina.config.mjs'))).toThrow(
       error as RegExp,
     );
   });
@@ -143,7 +158,8 @@ describe('workspace root authority', () => {
         'package.json': json({ workspaces: [] }),
         ...Object.fromEntries(files.map((file) => [file, ''])),
       });
-      expect(resolveNearestWorkspaceRoot(f.path()).packageManager).toBe(
+      expect(resolveGovernanceRoot(f.path('limina.config.mjs'))).toHaveProperty(
+        'packageManager',
         manager,
       );
     },
@@ -160,7 +176,9 @@ describe('workspace root authority', () => {
         'package.json': json({ workspaces: [] }),
         ...Object.fromEntries(files.map((file) => [file, ''])),
       });
-      expect(() => resolveNearestWorkspaceRoot(f.path())).toThrow(error);
+      expect(() => resolveGovernanceRoot(f.path('limina.config.mjs'))).toThrow(
+        error,
+      );
     },
   );
   it('never inherits lockfiles from ancestors or lets locks override explicit identity', async () => {
@@ -168,39 +186,39 @@ describe('workspace root authority', () => {
       'yarn.lock': '',
       'inner/package.json': json({ workspaces: [] }),
     });
-    expect(() => resolveNearestWorkspaceRoot(f.path('inner'))).toThrow(
-      /undetermined/u,
-    );
+    expect(() =>
+      resolveGovernanceRoot(f.path('inner/limina.config.mjs')),
+    ).toThrow(/undetermined/u);
     await writeFile(
       f.path('inner/package.json'),
       json({ workspaces: [], packageManager: 'yarn@any' }),
     );
     for (const name of ['package-lock.json', 'pnpm-lock.yaml', 'bun.lock'])
       await writeFile(f.path('inner', name), '');
-    expect(resolveNearestWorkspaceRoot(f.path('inner')).packageManager).toBe(
-      'yarn',
-    );
+    expect(
+      resolveGovernanceRoot(f.path('inner/limina.config.mjs')),
+    ).toHaveProperty('packageManager', 'yarn');
   });
-  it('requires pnpm descriptor for explicit pnpm and has no single-package fallback', async () => {
+  it('requires a pnpm descriptor only when workspace semantics are declared', async () => {
     const f = await fixture({
       'package.json': json({ workspaces: [], packageManager: 'pnpm@1' }),
     });
-    expect(() => resolveNearestWorkspaceRoot(f.path())).toThrow(
+    expect(() => resolveGovernanceRoot(f.path('limina.config.mjs'))).toThrow(
       /pnpm-workspace.yaml missing/u,
     );
     await writeFile(f.path('package.json'), '{}');
-    expect(() => resolveNearestWorkspaceRoot(f.path())).toThrow(
-      /No supported workspace descriptor/u,
-    );
+    expect(resolveGovernanceRoot(f.path('limina.config.mjs'))).toMatchObject({
+      kind: 'single-package',
+    });
   });
   it('does not skip a malformed nearer manifest', async () => {
     const f = await fixture({
       'pnpm-workspace.yaml': 'packages: []',
       'inner/package.json': '{',
     });
-    expect(() => resolveNearestWorkspaceRoot(f.path('inner'))).toThrow(
-      SyntaxError,
-    );
+    expect(() =>
+      resolveGovernanceRoot(f.path('inner/limina.config.mjs')),
+    ).toThrow(f.path('inner/package.json'));
   });
 });
 
@@ -248,8 +266,13 @@ describe('manager declaration and package selection', () => {
     );
   });
   it('pnpm accepts absent packages and unrelated invalid catalog shape, but rejects YAML syntax', async () => {
-    const f = await fixture({ 'pnpm-workspace.yaml': 'catalogs: []\n' });
-    await expect(collectRawWorkspacePackages(f.config)).resolves.toEqual([]);
+    const f = await fixture({
+      'package.json': '{}',
+      'pnpm-workspace.yaml': 'catalogs: []\n',
+    });
+    await expect(collectRawWorkspacePackages(f.config)).resolves.toHaveLength(
+      1,
+    );
     await writeFile(f.path('pnpm-workspace.yaml'), 'packages: [');
     await expect(collectRawWorkspacePackages(f.config)).rejects.toThrow();
   });
@@ -440,15 +463,14 @@ describe('workspace roots across consumers', () => {
       ).toBe(f.path());
     },
   );
-  it('never finds outer config across a nearer workspace declaration', async () => {
+  it('discovers outer config across a nearer workspace declaration', async () => {
     const f = await fixture({
+      'package.json': '{}',
       'pnpm-workspace.yaml': 'packages: []',
       'limina.config.mjs': 'export default {};',
       'inner/package.json': json({ workspaces: [], packageManager: 'npm@1' }),
     });
-    await expect(loadConfig({ cwd: f.path('inner') })).rejects.toThrow(
-      /Unable to find limina config/u,
-    );
+    expect((await loadConfig({ cwd: f.path('inner') })).rootDir).toBe(f.path());
   });
   it.each(['npm', 'yarn', 'bun', undefined])(
     'nested %s workspace stops nameless extension without manager resolution',

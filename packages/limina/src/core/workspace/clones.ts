@@ -1,7 +1,7 @@
 import type { WorkspaceDependencyDeclaration } from '../packages/authority';
 import type {
   ImporterInfo,
-  NamedWorkspacePackage,
+  PackageManifest,
   PackageOwner,
   WorkspacePackage,
 } from '../workspace/actions';
@@ -11,12 +11,17 @@ import type {
 } from './regions';
 import type { ValidatedWorkspaceContext } from './validated-context';
 
+/** Immutable root manifests remain the shared fact for this resolution generation. */
+function cloneManifest(manifest: PackageManifest): PackageManifest {
+  return Object.isFrozen(manifest) ? manifest : { ...manifest };
+}
+
 export function cloneWorkspacePackage(
   workspacePackage: WorkspacePackage,
 ): WorkspacePackage {
   return {
     ...workspacePackage,
-    manifest: { ...workspacePackage.manifest },
+    manifest: cloneManifest(workspacePackage.manifest),
   };
 }
 
@@ -78,10 +83,7 @@ export function cloneValidatedWorkspaceContext(
     })),
     sourceConfigPaths: [...context.sourceConfigPaths],
     workspaceRootDir: context.workspaceRootDir,
-    workspaceRoot: {
-      ...context.workspaceRoot,
-      descriptor: { ...context.workspaceRoot.descriptor },
-    },
+    governanceRoot: context.governanceRoot,
     ...(context.workspaceMutationGeneration
       ? {
           workspaceMutationGeneration: context.workspaceMutationGeneration,
@@ -90,16 +92,10 @@ export function cloneValidatedWorkspaceContext(
   };
 }
 
-function cloneNamedWorkspacePackage(
-  workspacePackage: NamedWorkspacePackage,
-): NamedWorkspacePackage {
-  return cloneWorkspacePackage(workspacePackage) as NamedWorkspacePackage;
-}
-
 export function clonePackageOwner(owner: PackageOwner): PackageOwner {
   return {
     ...owner,
-    manifest: { ...owner.manifest },
+    manifest: cloneManifest(owner.manifest),
   };
 }
 
@@ -121,6 +117,6 @@ export function cloneWorkspaceDependencyDeclaration(
 ): WorkspaceDependencyDeclaration {
   return {
     ...declaration,
-    importer: cloneNamedWorkspacePackage(declaration.importer),
+    importer: cloneWorkspacePackage(declaration.importer),
   };
 }

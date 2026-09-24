@@ -3,6 +3,10 @@ import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import type { CheckCounter } from '../../check-reporting/stats';
 import type { WorkspaceDependencyDeclaration } from '../../core/packages/authority';
+import type {
+  ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from '../../core/workspace/validated-context';
 import type { SourceFinding } from '../findings';
 import { collectKnipSourceIssues, type KnipCliRunner } from '../knip';
 import type { SourceCheckIssue } from '../report';
@@ -25,6 +29,8 @@ interface KnipValidationOptions {
   sourceIssues: SourceCheckIssue[];
   workspaceDependencyDeclarations: WorkspaceDependencyDeclaration[];
   workspacePackages: WorkspacePackage[];
+  workspaceContext: ValidatedWorkspaceContext;
+  pathIndex: WorkspaceRegionPathIndex;
 }
 
 interface PreparedKnipAnalysis {
@@ -41,7 +47,7 @@ function prepareKnipAnalysis(
   const knipWorkspaceConfigs = collectSourceKnipWorkspaceConfigs({
     config: options.config,
     findings: options.findings,
-    workspacePackages: options.workspacePackages,
+    workspaceContext: options.workspaceContext,
   });
   addGeneratedKnipDiagnostics({
     checks: options.checks,
@@ -56,6 +62,7 @@ function prepareKnipAnalysis(
     generatedGraph: options.generatedGraph,
     knipWorkspaceConfigs,
     ownerModuleSets: options.ownerModuleSets,
+    workspaceContext: options.workspaceContext,
     workspacePackages: options.workspacePackages,
   });
 
@@ -78,9 +85,11 @@ async function runPreparedKnipAnalysis(options: {
     knipRunner: options.base.knipRunner,
     ownerProjects: options.prepared.plan.ownerProjects,
     workspacePackages: options.base.workspacePackages,
+    workspaceContext: options.base.workspaceContext,
   });
 
   addUnusedDependencyProblems({
+    config: options.base.config,
     checks: options.base.checks,
     declarations: options.base.workspaceDependencyDeclarations,
     ignoredDependencies: options.prepared.plan.ignoredDependencies,
@@ -89,11 +98,13 @@ async function runPreparedKnipAnalysis(options: {
   });
   if (options.prepared.plan.includeFiles) {
     addUnusedModuleProblems({
+      config: options.base.config,
       checks: options.base.checks,
       ignoredModuleKeys: options.prepared.plan.ignoredModuleKeys,
       issues: options.base.sourceIssues,
       knipIssues,
       ownerModuleSets: options.base.ownerModuleSets,
+      pathIndex: options.base.pathIndex,
     });
   }
 }

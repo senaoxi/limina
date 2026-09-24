@@ -1,7 +1,10 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 
 export interface KnipUnusedWorkspaceDependencyIssue {
+  ownerIdentity: PackageOwnerIdentity;
   dependencyName: string;
   externalCode: 'dependencies' | 'devDependencies' | 'optionalPeerDependencies';
   packageJsonPath: string;
@@ -63,4 +66,5 @@ export interface CollectKnipSourceIssuesOptions {
   knipRunner?: KnipCliRunner;
   ownerProjects: KnipOwnerProject[];
   workspacePackages: WorkspacePackage[];
+  workspaceContext: ValidatedWorkspaceContext;
 }

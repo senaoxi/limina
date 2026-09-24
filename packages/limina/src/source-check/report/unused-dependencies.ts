@@ -8,22 +8,14 @@ import type {
 import { SOURCE_ISSUE_CODES } from './types';
 
 const DEFAULT_DETAIL_LIMIT = 5;
+function formatFixSteps(steps: readonly string[] = []): string[] {
+  return steps.map((step, index) => `  ${index + 1}. ${step}`);
+}
 
 function getFirstIssue(
   group: readonly SourceUnusedWorkspaceDependencyIssue[],
 ): SourceUnusedWorkspaceDependencyIssue | undefined {
   return group[0];
-}
-
-function formatUnusedDependencyFixes(ownerName: string): string[] {
-  return [
-    'suggested fixes:',
-    '  1. Remove dependencies that are truly unused from the package manifest.',
-    '  2. Make dependencies reachable from package entries, binaries, scripts, or Knip plugin entries.',
-    '  3. Add intentional dependencies to:',
-    `     source.knip.workspaces["${ownerName}"].ignoreDependencies`,
-    '     with dep and reason.',
-  ];
 }
 
 function formatUnusedDependencyGroupHeader(options: {
@@ -33,7 +25,8 @@ function formatUnusedDependencyGroupHeader(options: {
   const firstIssue = getFirstIssue(options.group);
   if (firstIssue === undefined) return [];
   return [
-    firstIssue.ownerName,
+    firstIssue.ownerName ??
+      toRelativePath(options.config.rootDir, firstIssue.packageJsonPath),
     `package manifest: ${toRelativePath(
       options.config.rootDir,
       firstIssue.packageJsonPath,
@@ -43,7 +36,8 @@ function formatUnusedDependencyGroupHeader(options: {
     'reason:',
     '  Workspace package dependencies must be reachable from package entries, binaries, scripts, or explicitly ignored when usage is not visible to Knip analysis.',
     '',
-    ...formatUnusedDependencyFixes(firstIssue.ownerName),
+    'suggested fixes:',
+    ...formatFixSteps(firstIssue.fixSteps),
   ];
 }
 

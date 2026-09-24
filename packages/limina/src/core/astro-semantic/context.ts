@@ -12,6 +12,7 @@ import {
   resolveAstroSemanticToolchain,
 } from '#checkers';
 import { normalizeAbsolutePath } from '#utils/path';
+import type { GovernanceRootBase } from '#utils/workspace-root';
 import type ts from 'typescript';
 import type { ImportAnalysisMetricsRecorder } from '../import-analysis/types';
 import type { AstroMaterializedServiceScript } from './context-host';
@@ -219,11 +220,19 @@ export class AstroSemanticContextManager {
     options: {
       metrics?: ImportAnalysisMetricsRecorder;
       resolveToolchain?: AstroSemanticToolchainResolver;
+      governanceRoot?: GovernanceRootBase;
     } = {},
   ) {
     this.#metrics = options.metrics;
     this.#resolveToolchain =
-      options.resolveToolchain ?? resolveAstroSemanticToolchain;
+      options.resolveToolchain ??
+      ((directory) =>
+        resolveAstroSemanticToolchain(
+          directory,
+          directory === options.governanceRoot?.rootDir
+            ? options.governanceRoot.manifest
+            : undefined,
+        ));
   }
 
   acquire(project: AstroSemanticProject): AstroSemanticContext {

@@ -1,4 +1,5 @@
 import type { ImportRecord } from '#core/import-graph/context';
+import type { PackageManifest } from '#core/workspace/actions';
 import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -61,7 +62,13 @@ function getResourceCacheKey(request: ResourceRequest): string {
 }
 
 export class ResourceResolver {
-  readonly #nodeCompatibility = new ResourceNodeCompatibility();
+  readonly #nodeCompatibility: ResourceNodeCompatibility;
+
+  constructor(
+    readOwnerManifest?: (manifestPath: string) => PackageManifest | undefined,
+  ) {
+    this.#nodeCompatibility = new ResourceNodeCompatibility(readOwnerManifest);
+  }
   readonly #resolvers = new Map<string, ResolverFactory>();
   readonly #results = new Map<string, RuntimeEvidence>();
 

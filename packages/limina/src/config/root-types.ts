@@ -1,3 +1,4 @@
+import type { ResolvedGovernanceRoot } from '#utils/workspace-root';
 import type { ExecutionConfig } from '../execution/config';
 import type { GraphConfig, ProofConfig } from './graph-proof-types';
 import type { PackageConfig } from './package-types';
@@ -61,6 +62,8 @@ export type LiminaConfigExport =
 
 export interface ResolvedLiminaConfig extends LiminaConfig {
   configPath: string;
+  governanceRoot: ResolvedGovernanceRoot;
+  /** Compatibility projection of governanceRoot.rootDir. */
   rootDir: string;
 }
 

@@ -7,11 +7,7 @@ import {
   collectUnusedWorkspaceDependencyIssues,
 } from './report-issues';
 import { parseKnipJsonReport } from './report-parser';
-import {
-  withKnipAnalysisRoot,
-  withTemporaryKnipConfig,
-  withTemporaryVirtualEntries,
-} from './temp';
+import { withTemporaryKnipConfig, withTemporaryVirtualEntries } from './temp';
 import type {
   CollectKnipSourceIssuesOptions,
   KnipCliInvocation,
@@ -113,6 +109,7 @@ async function runWithTemporaryConfig(options: {
     ownerProjects: options.ownerProjects,
     rootDir: options.collectOptions.config.rootDir,
     workspacePackages: options.collectOptions.workspacePackages,
+    workspaceContext: options.collectOptions.workspaceContext,
   });
   return withTemporaryKnipConfig(config, (configPath) =>
     runAnalysisGroups({
@@ -134,16 +131,14 @@ async function collectKnipReport(
     options.knipRunner === undefined ? runKnipCli : options.knipRunner;
 
   return withTemporaryVirtualEntries(options.ownerProjects, (ownerProjects) =>
-    withKnipAnalysisRoot(options.config.rootDir, (analysisRootDir) =>
-      runWithTemporaryConfig({
-        analysisGroups,
-        analysisRootDir,
-        collectOptions: options,
-        include,
-        ownerProjects,
-        runner,
-      }),
-    ),
+    runWithTemporaryConfig({
+      analysisGroups,
+      analysisRootDir: options.config.governanceRoot.rootDir,
+      collectOptions: options,
+      include,
+      ownerProjects,
+      runner,
+    }),
   );
 }
 
@@ -184,6 +179,7 @@ export async function collectKnipSourceIssues(
       report,
       rootDir: options.config.rootDir,
       workspacePackageNames: collectWorkspacePackageNames(options),
+      workspaceContext: options.workspaceContext,
     }),
   };
 }

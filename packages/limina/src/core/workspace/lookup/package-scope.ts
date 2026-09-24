@@ -193,7 +193,7 @@ export class WorkspacePackageScopeLookup {
     const packageJsonPath = normalizeAbsolutePath(
       path.join(options.directory, 'package.json'),
     );
-    if (!existsSync(packageJsonPath)) {
+    if (!this.#hasPackageManifest(packageJsonPath)) {
       return { kind: 'continue' };
     }
 
@@ -261,6 +261,20 @@ export class WorkspacePackageScopeLookup {
     );
   }
 
+  #hasPackageManifest(packageJsonPath: string): boolean {
+    return (
+      this.#packagesByPackageJsonPath.has(packageJsonPath) ||
+      existsSync(packageJsonPath)
+    );
+  }
+
+  #readManifest(packageJsonPath: string): PackageManifest {
+    return (
+      this.#packagesByPackageJsonPath.get(packageJsonPath)?.manifest ??
+      readJsonFile<PackageManifest>(packageJsonPath)
+    );
+  }
+
   #readPackageInfo(packageJsonPath: string): NearestPackageInfo {
     const normalizedPath = normalizeAbsolutePath(packageJsonPath);
     const cached = this.#packageInfoByPackageJsonPath.get(normalizedPath);
@@ -268,7 +282,7 @@ export class WorkspacePackageScopeLookup {
       return cached;
     }
 
-    const manifest = readJsonFile<PackageManifest>(normalizedPath);
+    const manifest = this.#readManifest(normalizedPath);
     const name = getManifestPackageName(manifest);
     const packageInfo = {
       directory: normalizeAbsolutePath(path.dirname(normalizedPath)),

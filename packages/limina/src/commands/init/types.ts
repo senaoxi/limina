@@ -12,8 +12,8 @@ export interface RunInitOptions {
 
 export interface RunInitResult {
   buildCommand: string;
-  installCommand: string;
-  packageManager: SupportedPackageManager;
+  installCommand?: string;
+  packageManager?: SupportedPackageManager;
   installRequired: boolean;
   removedPaths: string[];
   rootDir: string;

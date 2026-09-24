@@ -35,8 +35,8 @@ function createSnapshot(options: {
 }
 
 function getIssueFilePath(issue: SourceCheckIssue): string | undefined {
-  if (!('filePath' in issue)) return undefined;
-  return issue.filePath;
+  if ('filePath' in issue) return issue.filePath;
+  return 'packageJsonPath' in issue ? issue.packageJsonPath : undefined;
 }
 
 function toSnapshotIssue(

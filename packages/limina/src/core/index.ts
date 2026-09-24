@@ -119,6 +119,7 @@ export class AnalysisProviderSet {
     );
     this.vueSemanticContexts = new VueSemanticContextManager(options.metrics);
     this.astroSemanticContexts = new AstroSemanticContextManager({
+      governanceRoot: options.config.governanceRoot,
       metrics: options.metrics,
     });
     this.svelteSemanticContexts = new SvelteSemanticContextManager();

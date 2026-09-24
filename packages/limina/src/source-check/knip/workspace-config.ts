@@ -1,286 +1,226 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
-  isNamedWorkspacePackage,
+  getManifestPackageName,
   type WorkspacePackage,
 } from '#core/workspace/actions';
-import { normalizeAbsolutePath } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import path from 'pathe';
+import {
+  getPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+} from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import { createSourceKnipConfigFinding, type SourceFinding } from '../findings';
 
-export type SourceKnipWorkspaceConfigRecord = Record<string, unknown>;
-
+export interface SourceKnipWorkspaceConfigRecord
+  extends Record<string, unknown> {
+  readonly field: string;
+  readonly owner: WorkspacePackage;
+  readonly ownerIdentity: PackageOwnerIdentity;
+}
 const sourceKnipWorkspaceConfigKeys = new Set([
   'entry',
   'ignoreDependencies',
   'ignoreFiles',
 ]);
 
-interface WorkspaceConfigContext {
-  findings: SourceFinding[];
-  packageManifestPathByName: ReadonlyMap<string, string>;
-  workspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
-  workspacePackageNames: ReadonlySet<string>;
-}
-
-interface WorkspaceConfigEntry {
-  field: string;
-  packageName: string;
-  rawPackageName: string;
-  rawWorkspaceConfig: unknown;
-}
-
-type WorkspaceEntryValidator = (
-  entry: WorkspaceConfigEntry,
-  context: WorkspaceConfigContext,
-) => SourceFinding | null;
-
 export function formatSourceKnipWorkspaceField(packageName: string): string {
   return `source.knip.workspaces[${JSON.stringify(packageName)}]`;
 }
 
-function createWorkspaceConfigFinding(options: {
+function configValueLines(value: unknown): string[] {
+  return value === undefined ? [] : [`  value: ${formatUnknownValue(value)}`];
+}
+
+function configFinding(options: {
   field: string;
-  packageJsonPath?: string;
-  packageName?: string;
   reason: string;
   value?: unknown;
+  owner?: WorkspacePackage;
 }): SourceFinding {
   const title = 'Invalid source Knip workspace config';
-  const lines = [
-    `${title}:`,
-    `  field: ${options.field}`,
-    ...(options.packageName === undefined
-      ? []
-      : [`  package: ${options.packageName}`]),
-    ...(options.value === undefined
-      ? []
-      : [`  value: ${formatUnknownValue(options.value)}`]),
-    `  reason: ${options.reason}`,
-  ];
-
   return createSourceKnipConfigFinding({
     field: options.field,
     kind: 'workspace',
-    lines,
-    packageJsonPath: options.packageJsonPath,
-    packageName: options.packageName,
-    reason: options.reason,
     title,
+    packageJsonPath:
+      options.owner === undefined
+        ? undefined
+        : path.join(options.owner.directory, 'package.json'),
+    packageName: options.owner?.name,
+    reason: options.reason,
     value: options.value,
+    lines: [
+      `${title}:`,
+      `  field: ${options.field}`,
+      `  reason: ${options.reason}`,
+      ...configValueLines(options.value),
+    ],
   });
 }
 
-function getRawWorkspaces(config: ResolvedLiminaConfig): unknown {
-  const source = config.source;
-
-  if (source === undefined) {
-    return undefined;
-  }
-
-  const knip = source.knip;
-  return isPlainRecord(knip) ? knip.workspaces : undefined;
-}
-
-function resolveWorkspaceRecord(options: {
-  config: ResolvedLiminaConfig;
+function addOwnerConfig(options: {
+  configs: Map<PackageOwnerIdentity, SourceKnipWorkspaceConfigRecord>;
+  field: string;
   findings: SourceFinding[];
-}): Record<string, unknown> | null {
-  const rawWorkspaces = getRawWorkspaces(options.config);
-
-  if (rawWorkspaces === undefined) {
-    return null;
-  }
-
-  if (isPlainRecord(rawWorkspaces)) {
-    return rawWorkspaces;
-  }
-
-  options.findings.push(
-    createWorkspaceConfigFinding({
-      field: 'source.knip.workspaces',
-      reason: 'workspaces must be an object keyed by workspace package name.',
-      value: rawWorkspaces,
-    }),
-  );
-  return null;
-}
-
-function createWorkspacePackageNames(
-  workspacePackages: readonly WorkspacePackage[],
-): Set<string> {
-  return new Set(
-    workspacePackages
-      .filter(isNamedWorkspacePackage)
-      .map((workspacePackage) => workspacePackage.name),
-  );
-}
-
-function createPackageManifestPaths(
-  workspacePackages: readonly WorkspacePackage[],
-): Map<string, string> {
-  return new Map(
-    workspacePackages
-      .filter(isNamedWorkspacePackage)
-      .map((entry) => [
-        entry.name,
-        normalizeAbsolutePath(path.join(entry.directory, 'package.json')),
-      ]),
-  );
-}
-
-function validatePackageName(
-  entry: WorkspaceConfigEntry,
-): SourceFinding | null {
-  if (entry.packageName.length > 0) {
-    return null;
-  }
-
-  return createWorkspaceConfigFinding({
-    field: entry.field,
-    reason: 'workspace config keys must be non-empty package names.',
-    value: entry.rawPackageName,
-  });
-}
-
-function validateKnownPackage(
-  entry: WorkspaceConfigEntry,
-  context: WorkspaceConfigContext,
-): SourceFinding | null {
-  if (context.workspacePackageNames.has(entry.packageName)) {
-    return null;
-  }
-
-  return createWorkspaceConfigFinding({
-    field: entry.field,
-    packageName: entry.packageName,
-    reason:
-      'workspace config keys must name packages discovered in the workspace.',
-  });
-}
-
-function validateWorkspaceConfigObject(
-  entry: WorkspaceConfigEntry,
-  context: WorkspaceConfigContext,
-): SourceFinding | null {
-  if (isPlainRecord(entry.rawWorkspaceConfig)) {
-    return null;
-  }
-
-  return createWorkspaceConfigFinding({
-    field: entry.field,
-    packageJsonPath: context.packageManifestPathByName.get(entry.packageName),
-    packageName: entry.packageName,
-    reason: 'workspace config values must be objects.',
-    value: entry.rawWorkspaceConfig,
-  });
-}
-
-const workspaceEntryValidators: readonly WorkspaceEntryValidator[] = [
-  validatePackageName,
-  validateKnownPackage,
-  validateWorkspaceConfigObject,
-];
-
-function findWorkspaceEntryFinding(
-  entry: WorkspaceConfigEntry,
-  context: WorkspaceConfigContext,
-): SourceFinding | null {
-  for (const validate of workspaceEntryValidators) {
-    const finding = validate(entry, context);
-
-    if (finding !== null) {
-      return finding;
-    }
-  }
-
-  return null;
-}
-
-function addUnknownFieldFindings(
-  entry: WorkspaceConfigEntry,
-  context: WorkspaceConfigContext,
-  workspaceConfig: SourceKnipWorkspaceConfigRecord,
-): void {
-  for (const key of Object.keys(workspaceConfig)) {
-    if (sourceKnipWorkspaceConfigKeys.has(key)) {
-      continue;
-    }
-
-    context.findings.push(
-      createWorkspaceConfigFinding({
-        field: `${entry.field}.${key}`,
-        packageJsonPath: context.packageManifestPathByName.get(
-          entry.packageName,
-        ),
-        packageName: entry.packageName,
-        reason: 'unknown source Knip workspace config field.',
-        value: workspaceConfig[key],
+  owner: WorkspacePackage | undefined;
+  raw: unknown;
+  workspaceContext: ValidatedWorkspaceContext;
+}): void {
+  if (options.owner === undefined) {
+    options.findings.push(
+      configFinding({
+        field: options.field,
+        reason:
+          'config must select an activated package; source.knip.root cannot activate an excluded root.',
       }),
     );
-  }
-}
-
-function processWorkspaceEntry(
-  entry: WorkspaceConfigEntry,
-  context: WorkspaceConfigContext,
-): void {
-  const finding = findWorkspaceEntryFinding(entry, context);
-
-  if (finding !== null) {
-    context.findings.push(finding);
     return;
   }
-
-  const workspaceConfig =
-    entry.rawWorkspaceConfig as SourceKnipWorkspaceConfigRecord;
-  addUnknownFieldFindings(entry, context, workspaceConfig);
-  context.workspaceConfigs.set(entry.packageName, workspaceConfig);
+  if (!isPlainRecord(options.raw)) {
+    options.findings.push(
+      configFinding({
+        ...options,
+        reason: 'workspace config values must be objects.',
+        value: options.raw,
+      }),
+    );
+    return;
+  }
+  addUnknownOwnerFields({ ...options, raw: options.raw });
+  const ownerIdentity = getPackageOwnerIdentity(
+    options.workspaceContext,
+    options.owner.directory,
+  );
+  options.configs.set(ownerIdentity, {
+    ...options.raw,
+    field: options.field,
+    owner: options.owner,
+    ownerIdentity,
+  });
 }
 
-function createWorkspaceConfigEntry(
-  rawPackageName: string,
-  rawWorkspaceConfig: unknown,
-): WorkspaceConfigEntry {
-  return {
-    field: formatSourceKnipWorkspaceField(rawPackageName),
-    packageName: rawPackageName.trim(),
-    rawPackageName,
-    rawWorkspaceConfig,
-  };
+function addUnknownOwnerFields(
+  options: Parameters<typeof addOwnerConfig>[0] & {
+    raw: Record<string, unknown>;
+  },
+): void {
+  for (const key of Object.keys(options.raw)) {
+    if (!sourceKnipWorkspaceConfigKeys.has(key))
+      options.findings.push(
+        configFinding({
+          ...options,
+          field: `${options.field}.${key}`,
+          reason: 'unknown source Knip workspace config field.',
+          value: options.raw[key],
+        }),
+      );
+  }
 }
 
+function addNamedConfigs(options: {
+  config: ResolvedLiminaConfig;
+  configs: Map<PackageOwnerIdentity, SourceKnipWorkspaceConfigRecord>;
+  findings: SourceFinding[];
+  raw: unknown;
+  workspaceContext: ValidatedWorkspaceContext;
+}): void {
+  if (options.raw === undefined) return;
+  if (!isPlainRecord(options.raw)) {
+    options.findings.push(
+      configFinding({
+        field: 'source.knip.workspaces',
+        reason: 'workspaces must be an object keyed by workspace package name.',
+        value: options.raw,
+      }),
+    );
+    return;
+  }
+  addNamedConfigEntries({ ...options, raw: options.raw });
+}
+
+function addNamedConfigEntries(
+  options: Parameters<typeof addNamedConfigs>[0] & {
+    raw: Record<string, unknown>;
+  },
+): void {
+  for (const [name, raw] of Object.entries(options.raw))
+    addNamedConfig({ ...options, name, raw });
+}
+
+function addNamedConfig(
+  options: Parameters<typeof addNamedConfigs>[0] & { name: string },
+): void {
+  const field = formatSourceKnipWorkspaceField(options.name);
+  if (isRootName(options.config, options.name.trim())) {
+    options.findings.push(
+      configFinding({
+        field,
+        reason:
+          'The governance root package must be configured through source.knip.root.',
+      }),
+    );
+    return;
+  }
+  const owner = findNamedOwner(options);
+  if (owner === undefined) {
+    options.findings.push(
+      configFinding({
+        field,
+        reason:
+          'workspace config keys must name packages discovered in the workspace and activated for this run.',
+      }),
+    );
+    return;
+  }
+  addOwnerConfig({ ...options, owner, field });
+}
+
+function isRootName(config: ResolvedLiminaConfig, name: string): boolean {
+  return (
+    name === '.' ||
+    name === getManifestPackageName(config.governanceRoot.manifest)
+  );
+}
+
+function findNamedOwner(
+  options: Parameters<typeof addNamedConfig>[0],
+): WorkspacePackage | undefined {
+  const name = options.name.trim();
+  if (name.length === 0) return undefined;
+  return options.workspaceContext.packages.find(
+    (entry) =>
+      entry.directory !== options.config.governanceRoot.rootDir &&
+      entry.name === name,
+  );
+}
+
+function getKnipConfig(config: ResolvedLiminaConfig): unknown {
+  return config.source?.knip;
+}
+
+/** Public name/root addressing ends here; downstream keys are validated owners. */
 export function collectSourceKnipWorkspaceConfigs(options: {
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
-  workspacePackages: WorkspacePackage[];
-}): Map<string, SourceKnipWorkspaceConfigRecord> {
-  const workspaceConfigs = new Map<string, SourceKnipWorkspaceConfigRecord>();
-  const rawWorkspaces = resolveWorkspaceRecord(options);
-
-  if (rawWorkspaces === null) {
-    return workspaceConfigs;
-  }
-
-  const context: WorkspaceConfigContext = {
-    findings: options.findings,
-    packageManifestPathByName: createPackageManifestPaths(
-      options.workspacePackages,
-    ),
-    workspaceConfigs,
-    workspacePackageNames: createWorkspacePackageNames(
-      options.workspacePackages,
-    ),
-  };
-
-  for (const [rawPackageName, rawWorkspaceConfig] of Object.entries(
-    rawWorkspaces,
-  )) {
-    processWorkspaceEntry(
-      createWorkspaceConfigEntry(rawPackageName, rawWorkspaceConfig),
-      context,
-    );
-  }
-
-  return workspaceConfigs;
+  workspaceContext: ValidatedWorkspaceContext;
+}): Map<PackageOwnerIdentity, SourceKnipWorkspaceConfigRecord> {
+  const configs = new Map<
+    PackageOwnerIdentity,
+    SourceKnipWorkspaceConfigRecord
+  >();
+  const knip = getKnipConfig(options.config);
+  if (!isPlainRecord(knip)) return configs;
+  if (Object.hasOwn(knip, 'root'))
+    addOwnerConfig({
+      ...options,
+      configs,
+      field: 'source.knip.root',
+      raw: knip.root,
+      owner: options.workspaceContext.packages.find(
+        (entry) => entry.directory === options.config.governanceRoot.rootDir,
+      ),
+    });
+  addNamedConfigs({ ...options, configs, raw: knip.workspaces });
+  return configs;
 }

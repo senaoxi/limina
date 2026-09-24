@@ -1,58 +1,106 @@
 import type { PackageOwner } from '#core/workspace/actions';
-import { normalizeAbsolutePath } from '#utils/path';
 import type { WorkspaceLookupIndex } from '../../core/workspace/lookup';
+import {
+  getPackageOwnerIdentity,
+  type PackageOwnerIdentity,
+  projectToPackageOwnerPath,
+} from '../../core/workspace/owner-identity';
+import type {
+  ValidatedWorkspaceContext,
+  WorkspaceRegionPathIndex,
+} from '../../core/workspace/validated-context';
 import type { OwnerSourceModuleSet } from './unused/types';
 
 function hasProvidedPackageExports(owner: PackageOwner): boolean {
   return Object.hasOwn(owner.manifest, 'exports');
 }
 
-function findNamedOwner(options: {
+function findOwner(options: {
   filePath: string;
   workspaceLookup: WorkspaceLookupIndex;
+  workspaceContext: ValidatedWorkspaceContext;
+  pathIndex: WorkspaceRegionPathIndex;
 }): PackageOwner | null {
   const owner = options.workspaceLookup.findOwnerForFile(options.filePath);
   if (owner === null) return null;
-  return owner.name === undefined ? null : owner;
+  return owner;
 }
 
 function addOwnerFile(options: {
   filePath: string;
-  filesByOwner: Map<string, { files: Set<string>; owner: PackageOwner }>;
+  filesByOwner: Map<
+    string,
+    {
+      files: Set<string>;
+      owner: PackageOwner;
+      ownerIdentity: PackageOwnerIdentity;
+    }
+  >;
   workspaceLookup: WorkspaceLookupIndex;
+  workspaceContext: ValidatedWorkspaceContext;
+  pathIndex: WorkspaceRegionPathIndex;
 }): void {
-  const filePath = normalizeAbsolutePath(options.filePath);
-  const owner = findNamedOwner({
+  const filePath = projectToPackageOwnerPath(
+    options.pathIndex,
+    options.filePath,
+  );
+  if (filePath === null) return;
+  const owner = findOwner({
     filePath,
     workspaceLookup: options.workspaceLookup,
+    workspaceContext: options.workspaceContext,
+    pathIndex: options.pathIndex,
   });
   if (owner === null) return;
-  const ownerFiles = options.filesByOwner.get(owner.packageJsonPath) ?? {
-    files: new Set<string>(),
-    owner,
-  };
+  const ownerIdentity = getPackageOwnerIdentity(
+    options.workspaceContext,
+    owner.directory,
+  );
+  const ownerFiles = getOwnerFiles(options.filesByOwner, owner, ownerIdentity);
   ownerFiles.files.add(filePath);
-  options.filesByOwner.set(owner.packageJsonPath, ownerFiles);
+  options.filesByOwner.set(ownerIdentity, ownerFiles);
+}
+
+function getOwnerFiles(
+  filesByOwner: Parameters<typeof addOwnerFile>[0]['filesByOwner'],
+  owner: PackageOwner,
+  ownerIdentity: PackageOwnerIdentity,
+) {
+  return (
+    filesByOwner.get(ownerIdentity) ?? {
+      files: new Set<string>(),
+      owner,
+      ownerIdentity,
+    }
+  );
 }
 
 function toModuleSet(options: {
   files: Set<string>;
   owner: PackageOwner;
+  ownerIdentity: PackageOwnerIdentity;
 }): OwnerSourceModuleSet {
   return {
     checkUnusedFiles: hasProvidedPackageExports(options.owner),
     files: [...options.files].sort((left, right) => left.localeCompare(right)),
     owner: options.owner,
+    ownerIdentity: options.ownerIdentity,
   };
 }
 
 export function collectOwnerSourceModuleSets(options: {
   sourceProjectEntries: { fileNames: string[] }[];
   workspaceLookup: WorkspaceLookupIndex;
+  workspaceContext: ValidatedWorkspaceContext;
+  pathIndex: WorkspaceRegionPathIndex;
 }): OwnerSourceModuleSet[] {
   const filesByOwner = new Map<
     string,
-    { files: Set<string>; owner: PackageOwner }
+    {
+      files: Set<string>;
+      owner: PackageOwner;
+      ownerIdentity: PackageOwnerIdentity;
+    }
   >();
   for (const sourceProjectEntry of options.sourceProjectEntries) {
     for (const fileName of sourceProjectEntry.fileNames) {
@@ -60,6 +108,8 @@ export function collectOwnerSourceModuleSets(options: {
         filePath: fileName,
         filesByOwner,
         workspaceLookup: options.workspaceLookup,
+        workspaceContext: options.workspaceContext,
+        pathIndex: options.pathIndex,
       });
     }
   }

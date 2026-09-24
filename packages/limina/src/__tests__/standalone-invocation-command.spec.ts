@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -37,12 +38,9 @@ describe('standalone invocation generated commands', () => {
     expect(Object.isFrozen(command)).toBe(true);
     expect(Object.isFrozen(command.subcommandTokens)).toBe(true);
     expect(context.workspaceRoot).toBe('/tmp/work space/專案 & ^ % ! (x)');
-    expect(getGeneratedLiminaCommandTokens(command, 'posix')).toEqual([
-      'pnpm',
-      '--dir',
-      '/tmp/work space/專案 & ^ % ! (x)',
-      'exec',
-      'limina',
+    expect(getGeneratedLiminaCommandTokens(command)).toEqual([
+      '/opt/node path/bin/node',
+      '/opt/limina path/bin/limina.js',
       '--config',
       '/tmp/work space/專案 & | < > ^ % ! (x)/limina\'"config.mjs',
       '--config-loader',
@@ -68,12 +66,8 @@ describe('standalone invocation generated commands', () => {
       '--invocation',
       invocationId,
     ];
-    expect(getGeneratedLiminaCommandTokens(command, 'powershell')).toEqual(
-      windowsTokens,
-    );
-    expect(getGeneratedLiminaCommandTokens(command, 'cmd')).toEqual(
-      windowsTokens,
-    );
+    expect(getGeneratedLiminaCommandTokens(command)).toEqual(windowsTokens);
+    expect(getGeneratedLiminaCommandTokens(command)).toEqual(windowsTokens);
   });
 });
 
@@ -102,17 +96,19 @@ describe('standalone invocation PowerShell transport', () => {
   });
 
   it.runIf(process.platform !== 'win32')(
-    'renders a POSIX command with Shescape while keeping pnpm executable',
+    'renders the absolute Node executable and CLI with POSIX quoting',
     () => {
       const { command } = createSensitiveCommand();
       const rendered = renderGeneratedLiminaCommand(command, 'posix');
 
-      expect(rendered).toMatch(/^pnpm '--dir' /u);
+      expect(rendered).toContain(
+        "'/opt/node path/bin/node' '/opt/limina path/bin/limina.js'",
+      );
       expect(rendered).toContain("'--config-loader' 'tsx'");
       expect(rendered).toContain(
         "'--invocation' '123e4567-e89b-42d3-a456-426614174000'",
       );
-      expect(rendered).toContain(`'limina'`);
+      expect(rendered).toContain("'/opt/limina path/bin/limina.js'");
       expect(rendered).not.toMatch(/^'pnpm'/u);
     },
   );
@@ -139,6 +135,53 @@ describe('standalone invocation PowerShell transport', () => {
 });
 
 describe('standalone invocation platform variants', () => {
+  it('keeps direct Node invocation when paths contain pnpm', () => {
+    const context = createGlobalQueryCommandContext({
+      cliEntryPath:
+        '/tmp/pnpm project/node_modules/.pnpm/limina@0.3.1/node_modules/limina/bin/limina.js',
+      configLoader: 'native',
+      configPath: '/tmp/pnpm project/limina.config.mjs',
+      mode: 'pnpm',
+      nodeExecutablePath: '/opt/pnpm/node.exe',
+      workspaceRoot: '/tmp/pnpm project',
+    });
+    const command = createStandaloneInvocationCommand(context, invocationId);
+    const expectedTokens = [
+      context.nodeExecutablePath,
+      context.cliEntryPath,
+      '--config',
+      context.configPath,
+      '--config-loader',
+      'native',
+      '--mode',
+      'pnpm',
+      'check',
+      '--issues',
+      '--invocation',
+      invocationId,
+    ];
+    expect(getGeneratedLiminaCommandTokens(command)).toEqual(expectedTokens);
+
+    const powershell = renderGeneratedLiminaCommand(command, 'powershell');
+    expect(powershell).toMatch(
+      /^Set-Location -LiteralPath '\/tmp\/pnpm project' -ErrorAction Stop; & '\/opt\/pnpm\/node\.exe' '-e' /u,
+    );
+    const payload = /'([A-Za-z0-9+/=]+)'$/u.exec(powershell)?.[1] ?? '';
+    expect(JSON.parse(Buffer.from(payload, 'base64').toString('utf8'))).toEqual(
+      expectedTokens.slice(1),
+    );
+
+    if (process.platform === 'win32') {
+      expect(renderGeneratedLiminaCommand(command, 'cmd')).toContain(
+        `cd /d "/tmp/pnpm project" && "/opt/pnpm/node.exe" "${context.cliEntryPath}" `,
+      );
+    } else {
+      expect(renderGeneratedLiminaCommand(command, 'posix')).toMatch(
+        /^'\/opt\/pnpm\/node\.exe' '\/tmp\/pnpm project\/node_modules\/\.pnpm\/limina@0\.3\.1\/node_modules\/limina\/bin\/limina\.js' /u,
+      );
+    }
+  });
+
   it('selects one POSIX variant and two explicit Windows variants', () => {
     expect(getGeneratedCommandPresentation('darwin')).toEqual([
       { dialect: 'posix', label: 'Query' },

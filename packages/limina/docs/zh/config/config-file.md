@@ -1,6 +1,6 @@
 # 配置文件
 
-Limina 从工作区内部的 `limina.config.mts` 读取配置。这个文件通常放在工作区根目录：
+Limina 读取所选的配置模块，通常是项目 `package.json` 旁边的 `limina.config.mts`：
 
 ```ts
 import { defineConfig } from 'limina';
@@ -10,7 +10,13 @@ export default defineConfig({
 });
 ```
 
-省略 `--config` 时，Limina 会从当前目录向上查找到 `pnpm` 工作区根目录。每一层目录都会依次检查 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`。已有的 `limina.config.ts` 和 `limina.config.mjs` 仍然支持，新项目优先使用 `limina.config.mts`。
+省略 `--config` 时，Limina 搜索当前目录及其祖先，每层依次检查 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`。显式 `--config` 相对于 cwd 解析，执行命令要求该模块存在。
+
+所选模块向上最近的 `package.json` 固定治理根。它必须是可读的普通文件，内容为非 null、非数组的对象。Limina 不跳过无效的最近 manifest。只有该根自身的工作区声明决定本次治理 workspace 还是一个包。manager authority 和迁移说明见[治理根](../getting-started.md#治理根)。
+
+选定配置后，从不同目录调用保持同一个治理根：选择仓库根配置仍治理其 workspace，选择子包配置则使用子包最近的 manifest。配置目录本身不必就是包根目录。
+
+只读 `check --issues` 将显式 `--config` 作为定位 anchor，因此模块可以已经删除或重命名。它从该路径的目录找到并验证最近 manifest，读取对应持久化状态，不 import 配置、不解析 manager membership、不执行治理。没有 `--config` 时，必须发现当前存在的默认配置。缺少记录不会触发祖先 workspace fallback。
 
 配置也可以是函数：
 

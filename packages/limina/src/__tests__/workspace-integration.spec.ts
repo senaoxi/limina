@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -19,6 +20,7 @@ async function createFixture(files: Record<string, string>): Promise<{
     await mkdtemp(path.join(tmpdir(), 'limina-workspace-integration-')),
   );
 
+  await writeText(path.join(rootDir, 'package.json'), '{}');
   for (const [relativePath, text] of Object.entries(files)) {
     await writeText(path.join(rootDir, relativePath), text);
   }
@@ -31,6 +33,9 @@ async function createFixture(files: Record<string, string>): Promise<{
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: path.join(rootDir, 'limina.config.mjs'),
       rootDir,
     },
@@ -51,9 +56,9 @@ describe('collectWorkspacePackages pnpm integration', () => {
     });
 
     try {
-      await expect(collectWorkspacePackages(fixture.config)).resolves.toEqual(
-        [],
-      );
+      await expect(
+        collectWorkspacePackages(fixture.config),
+      ).resolves.toHaveLength(1);
     } finally {
       await fixture.cleanup();
     }

@@ -1,7 +1,7 @@
 import { normalizeAbsolutePath, normalizeSlashes } from '#utils/path';
 import { formatUnknownValue, isPlainRecord } from '#utils/values';
 import path from 'pathe';
-import { formatSourceKnipWorkspaceField } from './routing';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
 import type {
   UnusedModuleConfigContext,
   WorkspaceUnusedConfigOptions,
@@ -19,11 +19,13 @@ function addFileIgnoreFinding(options: {
   details: readonly string[];
   field: string;
   file?: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   reason: string;
   value?: unknown;
 }): void {
-  const moduleSet = options.context.moduleSetByOwnerName.get(options.ownerName);
+  const moduleSet = options.context.moduleSetByOwnerIdentity.get(
+    options.ownerIdentity,
+  );
   addKnipConfigFinding({
     details: options.details,
     field: options.field,
@@ -31,7 +33,7 @@ function addFileIgnoreFinding(options: {
     findings: options.context.findings,
     kind: 'file-ignore',
     packageJsonPath: moduleSet?.owner.packageJsonPath,
-    packageName: options.ownerName,
+    packageName: moduleSet?.owner.name,
     reason: options.reason,
     title: 'Invalid source Knip file ignore config',
     value: options.value,
@@ -41,7 +43,7 @@ function addFileIgnoreFinding(options: {
 function parseFileValue(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string | null {
   if (typeof options.value === 'string' && options.value.trim().length > 0) {
@@ -51,7 +53,7 @@ function parseFileValue(options: {
     context: options.context,
     details: [`  value: ${formatUnknownValue(options.value)}`],
     field: `${options.field}.file`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'file must be a non-empty config-root-relative path.',
     value: options.value,
   });
@@ -61,7 +63,7 @@ function parseFileValue(options: {
 function parseReasonValue(options: {
   context: UnusedModuleConfigContext;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   value: unknown;
 }): string | null {
   if (typeof options.value === 'string' && options.value.trim().length > 0) {
@@ -71,7 +73,7 @@ function parseReasonValue(options: {
     context: options.context,
     details: [`  value: ${formatUnknownValue(options.value)}`],
     field: `${options.field}.reason`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'reason must be a non-empty string.',
     value: options.value,
   });
@@ -91,7 +93,7 @@ function parseIgnoreRecord(options: {
   context: UnusedModuleConfigContext;
   entry: unknown;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): ParsedFileIgnore | null {
   if (!isPlainRecord(options.entry)) {
     addFileIgnoreFinding({
@@ -107,13 +109,13 @@ function parseIgnoreRecord(options: {
     file: parseFileValue({
       context: options.context,
       field: options.field,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       value: options.entry.file,
     }),
     reason: parseReasonValue({
       context: options.context,
       field: options.field,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       value: options.entry.reason,
     }),
   });
@@ -127,14 +129,14 @@ function addAbsoluteFileFinding(options: {
   context: UnusedModuleConfigContext;
   field: string;
   file: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): void {
   addFileIgnoreFinding({
     context: options.context,
     details: [`  file: ${options.file}`],
     field: `${options.field}.file`,
     file: options.file,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'file must be relative to config.rootDir.',
   });
 }
@@ -143,14 +145,17 @@ function addUnknownFileFinding(options: {
   context: UnusedModuleConfigContext;
   field: string;
   file: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): void {
   addFileIgnoreFinding({
     context: options.context,
-    details: [`  package: ${options.ownerName}`, `  file: ${options.file}`],
+    details: [
+      `  package: ${options.context.moduleSetByOwnerIdentity.get(options.ownerIdentity)?.owner.packageJsonPath ?? 'source.knip.root'}`,
+      `  file: ${options.file}`,
+    ],
     field: `${options.field}.file`,
     file: options.file,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason:
       'file must belong to the keyed package source module set known to Limina.',
   });
@@ -159,10 +164,10 @@ function addUnknownFileFinding(options: {
 function ownerContainsFile(options: {
   context: UnusedModuleConfigContext;
   filePath: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): boolean {
-  const ownerFiles = options.context.moduleFilesByOwnerName.get(
-    options.ownerName,
+  const ownerFiles = options.context.moduleFilesByOwnerIdentity.get(
+    options.ownerIdentity,
   );
   if (ownerFiles === undefined) return false;
   return ownerFiles.has(options.filePath);
@@ -173,7 +178,7 @@ function validateOwnedFilePath(options: {
   field: string;
   file: string;
   filePath: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): string | null {
   if (ownerContainsFile(options)) return options.filePath;
   addUnknownFileFinding(options);
@@ -184,7 +189,7 @@ function validateFilePath(options: {
   context: UnusedModuleConfigContext;
   field: string;
   file: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): string | null {
   if (isAbsoluteFile(options.file)) {
     addAbsoluteFileFinding(options);
@@ -200,7 +205,7 @@ function collectIgnoreKey(options: {
   context: UnusedModuleConfigContext;
   entry: unknown;
   field: string;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
 }): string | null {
   const parsed = parseIgnoreRecord(options);
   if (parsed === null) return null;
@@ -208,26 +213,28 @@ function collectIgnoreKey(options: {
     context: options.context,
     field: options.field,
     file: parsed.file,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
   });
   if (filePath === null) return null;
-  return createOwnerSourceFileKey(options.ownerName, filePath);
+  return createOwnerSourceFileKey(options.ownerIdentity, filePath);
 }
 
 function addMissingOwnerFinding(options: WorkspaceUnusedConfigOptions): void {
-  const workspaceField = formatSourceKnipWorkspaceField(options.ownerName);
+  const workspaceField = options.workspaceConfig.field;
   addFileIgnoreFinding({
     context: options.context,
-    details: [`  package: ${options.ownerName}`],
+    details: [
+      `  package: ${options.context.moduleSetByOwnerIdentity.get(options.ownerIdentity)?.owner.packageJsonPath ?? workspaceField}`,
+    ],
     field: `${workspaceField}.ignoreFiles`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'package must own Limina-governed source modules.',
   });
 }
 
 function collectIgnoreKeys(options: {
   context: UnusedModuleConfigContext;
-  ownerName: string;
+  ownerIdentity: PackageOwnerIdentity;
   rawIgnore: unknown[];
   workspaceField: string;
 }): string[] {
@@ -236,7 +243,7 @@ function collectIgnoreKeys(options: {
       context: options.context,
       entry,
       field: `${options.workspaceField}.ignoreFiles[${index}]`,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
     });
     return key === null ? [] : [key];
   });
@@ -255,12 +262,12 @@ function getConfiguredFileIgnores(
   const rawIgnore = options.workspaceConfig.ignoreFiles;
   if (rawIgnore === undefined) return null;
   if (Array.isArray(rawIgnore)) return rawIgnore;
-  const workspaceField = formatSourceKnipWorkspaceField(options.ownerName);
+  const workspaceField = options.workspaceConfig.field;
   addFileIgnoreFinding({
     context: options.context,
     details: [`  value: ${formatUnknownValue(rawIgnore)}`],
     field: `${workspaceField}.ignoreFiles`,
-    ownerName: options.ownerName,
+    ownerIdentity: options.ownerIdentity,
     reason: 'ignoreFiles must be an array.',
     value: rawIgnore,
   });
@@ -272,16 +279,16 @@ export function collectWorkspaceFileIgnoreConfig(
 ): void {
   const rawIgnore = getConfiguredFileIgnores(options);
   if (rawIgnore === null) return;
-  if (!options.context.moduleSetByOwnerName.has(options.ownerName)) {
+  if (!options.context.moduleSetByOwnerIdentity.has(options.ownerIdentity)) {
     addMissingOwnerFinding(options);
     return;
   }
-  const workspaceField = formatSourceKnipWorkspaceField(options.ownerName);
+  const workspaceField = options.workspaceConfig.field;
   storeIgnoreKeys(
     options.context,
     collectIgnoreKeys({
       context: options.context,
-      ownerName: options.ownerName,
+      ownerIdentity: options.ownerIdentity,
       rawIgnore,
       workspaceField,
     }),

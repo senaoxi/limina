@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: Limina
-  text: TypeScript 单体仓库架构治理工具
+  text: TypeScript 项目图与架构治理工具
   tagline: 先接入增量构建，再逐步打开架构治理
   image:
     src: /logo.svg

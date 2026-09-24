@@ -175,10 +175,11 @@ export class WorkspaceCore {
   async getWorkspaceDependencyDeclarations(): Promise<
     WorkspaceDependencyDeclaration[]
   > {
-    this.#workspaceDependenciesPromise ??= this.getPackages().then((packages) =>
-      collectWorkspaceDependencyDeclarations(packages).map(
-        cloneWorkspaceDependencyDeclaration,
-      ),
+    this.#workspaceDependenciesPromise ??= this.getValidatedContext().then(
+      (context) =>
+        collectWorkspaceDependencyDeclarations(context).map(
+          cloneWorkspaceDependencyDeclaration,
+        ),
     );
 
     return this.#workspaceDependenciesPromise.then((declarations) =>

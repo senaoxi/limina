@@ -7,12 +7,16 @@ import { addDefaultCustomConditionProblems } from '../graph-check/condition-defa
 import { addConditionDomainProblems } from '../graph-check/condition-domains';
 import { createCustomConditionConsistencyContext } from '../graph-check/condition-subtree';
 import type { GraphFinding } from '../graph-check/findings';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixturePath = createFixturePathResolver(
   path.resolve('virtual-condition-dag'),
 );
 const config: ResolvedLiminaConfig = {
+  get governanceRoot() {
+    return resolveFixtureGovernanceRoot(this);
+  },
   rootDir: fixturePath(),
   configPath: fixturePath('limina.config.mjs'),
 };

@@ -3,6 +3,8 @@ import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import type { WorkspaceDependencyDeclaration } from '../../core/packages/authority';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
+import type { ValidatedWorkspaceContext } from '../../core/workspace/validated-context';
 import type { SourceFinding } from '../findings';
 import type { KnipOwnerProject, KnipSourceAnalysisGroup } from '../knip';
 import { collectUnusedDependencyIgnore } from './dependency-ignore';
@@ -24,39 +26,39 @@ export interface KnipAnalysisPlan {
   ownerProjects: KnipOwnerProject[];
 }
 
-function collectRequiredWorkspaceNames(options: {
+function collectRequiredOwnerIdentities(options: {
   declarations: WorkspaceDependencyDeclaration[];
-  knipWorkspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
+  knipWorkspaceConfigs: Map<
+    PackageOwnerIdentity,
+    SourceKnipWorkspaceConfigRecord
+  >;
   ownerModuleSets: OwnerSourceModuleSet[];
-}): Set<string> {
+}): Set<PackageOwnerIdentity> {
   return new Set([
-    ...options.declarations.map((declaration) => declaration.importer.name),
-    ...options.ownerModuleSets.flatMap((moduleSet) =>
-      moduleSet.owner.name ? [moduleSet.owner.name] : [],
-    ),
+    ...options.declarations.map((declaration) => declaration.importerIdentity),
+    ...options.ownerModuleSets.map((moduleSet) => moduleSet.ownerIdentity),
     ...options.knipWorkspaceConfigs.keys(),
   ]);
 }
 
-function createEntryPatternsByOwnerName(options: {
+function createEntryPatternsByOwnerIdentity(options: {
   generatedGraph: GeneratedTsconfigGraphResult;
   ownerModuleSets: OwnerSourceModuleSet[];
-  configuredPatterns: Map<string, string[]>;
-}): Map<string, string[]> {
+  configuredPatterns: Map<PackageOwnerIdentity, string[]>;
+  workspaceContext: ValidatedWorkspaceContext;
+}): Map<PackageOwnerIdentity, string[]> {
   return new Map(
     options.ownerModuleSets.flatMap((moduleSet) => {
-      const ownerName = moduleSet.owner.name;
-      if (!ownerName) {
-        return [];
-      }
+      const ownerIdentity = moduleSet.ownerIdentity;
 
       return [
         [
-          ownerName,
+          ownerIdentity,
           uniqueSortedStrings([
-            ...(options.configuredPatterns.get(ownerName) ?? []),
+            ...(options.configuredPatterns.get(ownerIdentity) ?? []),
             ...collectGeneratedArtifactSourceEntryPatterns({
               generatedGraph: options.generatedGraph,
+              workspaceContext: options.workspaceContext,
               moduleSet,
             }),
           ]),
@@ -71,9 +73,13 @@ export function createKnipAnalysisPlan(options: {
   declarations: WorkspaceDependencyDeclaration[];
   findings: SourceFinding[];
   generatedGraph: GeneratedTsconfigGraphResult;
-  knipWorkspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
+  knipWorkspaceConfigs: Map<
+    PackageOwnerIdentity,
+    SourceKnipWorkspaceConfigRecord
+  >;
   ownerModuleSets: OwnerSourceModuleSet[];
   workspacePackages: WorkspacePackage[];
+  workspaceContext: ValidatedWorkspaceContext;
 }): KnipAnalysisPlan {
   const ignoredDependencies = collectUnusedDependencyIgnore({
     declarations: options.declarations,
@@ -91,8 +97,9 @@ export function createKnipAnalysisPlan(options: {
   const needsDependencyAnalysis =
     options.workspacePackages.length > 0 && options.declarations.length > 0;
   const ownerProjects = createKnipOwnerProjects({
-    entryPatternsByOwnerName: createEntryPatternsByOwnerName({
-      configuredPatterns: unusedModuleConfig.entryPatternsByOwnerName,
+    entryPatternsByOwnerIdentity: createEntryPatternsByOwnerIdentity({
+      configuredPatterns: unusedModuleConfig.entryPatternsByOwnerIdentity,
+      workspaceContext: options.workspaceContext,
       generatedGraph: options.generatedGraph,
       ownerModuleSets: options.ownerModuleSets,
     }),
@@ -105,12 +112,13 @@ export function createKnipAnalysisPlan(options: {
     analysisGroups: createKnipSourceAnalysisGroups({
       config: options.config,
       generatedGraph: options.generatedGraph,
-      requiredWorkspaceNames: collectRequiredWorkspaceNames({
+      requiredOwnerIdentities: collectRequiredOwnerIdentities({
         declarations: options.declarations,
         knipWorkspaceConfigs: options.knipWorkspaceConfigs,
         ownerModuleSets: options.ownerModuleSets,
       }),
       workspacePackages: options.workspacePackages,
+      workspaceContext: options.workspaceContext,
     }),
     ignoredDependencies,
     ignoredModuleKeys: unusedModuleConfig.ignoredKeys,

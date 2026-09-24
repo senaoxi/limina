@@ -13,12 +13,6 @@ function createOptionalLine(
   return value ? [`  ${label}: ${value}`] : [];
 }
 
-function getDiagnosticOwnerName(
-  diagnostic: GeneratedKnipPackageDiagnostic,
-): string {
-  return diagnostic.packageName ?? '<unnamed>';
-}
-
 function getDiagnosticPackageName(
   diagnostic: GeneratedKnipPackageDiagnostic,
 ): string | undefined {
@@ -33,11 +27,11 @@ function addKnipDiagnostic(options: {
 }): void {
   options.checks.add();
   const title = 'Unsupported package build script for generated Knip tsconfig';
-  const ownerName = getDiagnosticOwnerName(options.diagnostic);
+  const ownerName = getDiagnosticPackageName(options.diagnostic);
   const packageName = getDiagnosticPackageName(options.diagnostic);
   const lines = [
     `${title}:`,
-    `  package: ${ownerName}`,
+    `  package: ${ownerName ?? toRelativePath(options.config.rootDir, options.diagnostic.packageJsonPath)}`,
     `  package manifest: ${toRelativePath(options.config.rootDir, options.diagnostic.packageJsonPath)}`,
     ...createOptionalLine('script', options.diagnostic.scriptName),
     ...createOptionalLine('command', options.diagnostic.command),

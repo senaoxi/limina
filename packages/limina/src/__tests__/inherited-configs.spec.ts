@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
 import { readExplicitSourceCompilerTarget } from '../core/build-graph/generated/compiler-target';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 async function createFixture(files: Record<string, unknown>) {
@@ -90,6 +91,9 @@ describe('TypeScript inherited config identity', () => {
         const options = {
           configPath,
           config: {
+            get governanceRoot() {
+              return resolveFixtureGovernanceRoot(this);
+            },
             rootDir: fixture.rootDir,
             configPath: fixture.path('limina.config.mts'),
             config: {},
@@ -151,6 +155,9 @@ describe('TypeScript inherited config identity', () => {
       const options = {
         configPath: fixture.path('tsconfig.json'),
         config: {
+          get governanceRoot() {
+            return resolveFixtureGovernanceRoot(this);
+          },
           rootDir: fixture.rootDir,
           configPath: fixture.path('limina.config.mts'),
           config: {},

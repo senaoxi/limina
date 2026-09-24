@@ -1,7 +1,9 @@
-import { normalizeAbsolutePath } from '#utils/path';
+import type { ResolvedLiminaConfig } from '#config/runner';
 import type { CheckCounter } from '../../../check-reporting/stats';
 import type { WorkspaceDependencyDeclaration } from '../../../core/packages/authority';
 import { createWorkspaceDependencyKey } from '../../../core/packages/dependency-authority';
+import { projectToPackageOwnerPath } from '../../../core/workspace/owner-identity';
+import type { WorkspaceRegionPathIndex } from '../../../core/workspace/validated-context';
 import {
   createSourceUnusedModuleFinding,
   createSourceUnusedWorkspaceDependencyFinding,
@@ -10,17 +12,19 @@ import type { KnipSourceIssues } from '../../knip';
 import type { SourceCheckIssue } from '../../report';
 import { createPackageDependencyIssueKey } from '../dependency-key';
 import { createOwnerSourceFileKey, type OwnerSourceModuleSet } from '../unused';
+import { formatSourceKnipWorkspaceField } from '../workspace-config';
 
 function addUnusedDependencyIfReported(options: {
   checks: CheckCounter;
   declaration: WorkspaceDependencyDeclaration;
+  config: ResolvedLiminaConfig;
   ignoredDependencies: Set<string>;
   issues: SourceCheckIssue[];
   issueCodesByKey: Map<string, string>;
 }): void {
   options.checks.add();
   const dependencyKey = createWorkspaceDependencyKey(
-    options.declaration.importer.name,
+    options.declaration.importerIdentity,
     options.declaration.dependencyName,
   );
   if (options.ignoredDependencies.has(dependencyKey)) {
@@ -29,7 +33,7 @@ function addUnusedDependencyIfReported(options: {
 
   const externalCode = options.issueCodesByKey.get(
     createPackageDependencyIssueKey(
-      options.declaration.packageJsonPath,
+      options.declaration.importerIdentity,
       options.declaration.dependencyName,
     ),
   );
@@ -42,6 +46,7 @@ function addUnusedDependencyIfReported(options: {
       dependencyName: options.declaration.dependencyName,
       externalCode,
       ownerName: options.declaration.importer.name,
+      configField: knipOwnerField(options.config, options.declaration.importer),
       packageJsonPath: options.declaration.packageJsonPath,
       sectionName: options.declaration.sectionName,
       specifier: options.declaration.specifier,
@@ -52,6 +57,7 @@ function addUnusedDependencyIfReported(options: {
 export function addUnusedDependencyProblems(options: {
   checks: CheckCounter;
   declarations: WorkspaceDependencyDeclaration[];
+  config: ResolvedLiminaConfig;
   ignoredDependencies: Set<string>;
   issues: SourceCheckIssue[];
   knipIssues: KnipSourceIssues;
@@ -59,7 +65,7 @@ export function addUnusedDependencyProblems(options: {
   const issueCodesByKey = new Map(
     options.knipIssues.unusedWorkspaceDependencies.map((issue) => [
       createPackageDependencyIssueKey(
-        issue.packageJsonPath,
+        issue.ownerIdentity,
         issue.dependencyName,
       ),
       issue.externalCode,
@@ -70,6 +76,7 @@ export function addUnusedDependencyProblems(options: {
     addUnusedDependencyIfReported({
       checks: options.checks,
       declaration,
+      config: options.config,
       ignoredDependencies: options.ignoredDependencies,
       issues: options.issues,
       issueCodesByKey,
@@ -109,22 +116,22 @@ function createModuleSetIndex(options: {
   return index;
 }
 
-interface NamedModuleSet {
+interface ResolvedModuleSet {
   moduleSet: OwnerSourceModuleSet;
-  ownerName: string;
+  ownerName: string | undefined;
 }
 
-function getNamedModuleSet(options: {
+function getResolvedModuleSet(options: {
   filePath: string;
   moduleSetByFilePath: Map<string, OwnerSourceModuleSet>;
-}): NamedModuleSet | null {
+}): ResolvedModuleSet | null {
   const moduleSet = options.moduleSetByFilePath.get(options.filePath);
   if (!moduleSet) {
     return null;
   }
 
   const ownerName = moduleSet.owner.name;
-  return ownerName ? { moduleSet, ownerName } : null;
+  return { moduleSet, ownerName };
 }
 
 function isModuleIssueReported(options: {
@@ -139,6 +146,7 @@ function isModuleIssueReported(options: {
 }
 
 function addUnusedModuleIfReported(options: {
+  config: ResolvedLiminaConfig;
   externalCode: string;
   filePath: string;
   ignoredModuleKeys: Set<string>;
@@ -146,13 +154,13 @@ function addUnusedModuleIfReported(options: {
   moduleSetByFilePath: Map<string, OwnerSourceModuleSet>;
   reportedKeys: Set<string>;
 }): void {
-  const namedModuleSet = getNamedModuleSet(options);
-  if (!namedModuleSet) {
+  const resolvedModuleSet = getResolvedModuleSet(options);
+  if (!resolvedModuleSet) {
     return;
   }
 
   const issueKey = createOwnerSourceFileKey(
-    namedModuleSet.ownerName,
+    resolvedModuleSet.moduleSet.ownerIdentity,
     options.filePath,
   );
   if (isModuleIssueReported({ ...options, issueKey })) {
@@ -164,9 +172,13 @@ function addUnusedModuleIfReported(options: {
     createSourceUnusedModuleFinding({
       externalCode: options.externalCode,
       filePath: options.filePath,
-      ownerDirectory: namedModuleSet.moduleSet.owner.directory,
-      ownerName: namedModuleSet.ownerName,
-      packageJsonPath: namedModuleSet.moduleSet.owner.packageJsonPath,
+      ownerDirectory: resolvedModuleSet.moduleSet.owner.directory,
+      ownerName: resolvedModuleSet.ownerName,
+      configField: knipOwnerField(
+        options.config,
+        resolvedModuleSet.moduleSet.owner,
+      ),
+      packageJsonPath: resolvedModuleSet.moduleSet.owner.packageJsonPath,
     }),
   );
 }
@@ -177,18 +189,36 @@ export function addUnusedModuleProblems(options: {
   issues: SourceCheckIssue[];
   knipIssues: KnipSourceIssues;
   ownerModuleSets: OwnerSourceModuleSet[];
+  config: ResolvedLiminaConfig;
+  pathIndex: WorkspaceRegionPathIndex;
 }): void {
   const moduleSetByFilePath = createModuleSetIndex(options);
   const reportedKeys = new Set<string>();
 
   for (const issue of options.knipIssues.unusedSourceFiles) {
+    const filePath = projectToPackageOwnerPath(
+      options.pathIndex,
+      issue.filePath,
+    );
+    if (filePath === null) continue;
     addUnusedModuleIfReported({
+      config: options.config,
       externalCode: issue.externalCode,
-      filePath: normalizeAbsolutePath(issue.filePath),
+      filePath,
       ignoredModuleKeys: options.ignoredModuleKeys,
       issues: options.issues,
       moduleSetByFilePath,
       reportedKeys,
     });
   }
+}
+function knipOwnerField(
+  config: ResolvedLiminaConfig,
+  owner: { directory: string; name?: string },
+): string | undefined {
+  if (owner.directory === config.governanceRoot.rootDir)
+    return 'source.knip.root';
+  return owner.name === undefined
+    ? undefined
+    : formatSourceKnipWorkspaceField(owner.name);
 }

@@ -95,7 +95,9 @@ function matchesPackageFilter(
   packageNames: readonly string[] | undefined,
 ): boolean {
   if (!hasValues(packageNames)) return true;
-  return packageNames.includes(issue.ownerName);
+  return (
+    issue.ownerName !== undefined && packageNames.includes(issue.ownerName)
+  );
 }
 
 function matchesRuleFilter(

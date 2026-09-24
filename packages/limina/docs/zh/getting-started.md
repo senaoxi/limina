@@ -2,20 +2,28 @@
 
 ## 环境要求
 
-Limina 支持 pnpm、npm、Yarn 和 Bun 工作区，并要求配置文件使用 ESM。
+Limina 支持单包项目，以及 pnpm、npm、Yarn 和 Bun 工作区，配置文件使用 ESM。
 
 - `Node.js ^22.18.0 || >=24.11.0`
-- 根目录存在工作区声明：pnpm 使用 `pnpm-workspace.yaml`，npm、Yarn 或 Bun 使用 `package.json` 自有的 `workspaces` 字段
-- 接入仓库已经安装 `TypeScript`
-- `limina.config.mts` 位于工作区内部
+- 可读取且顶层为对象的 `package.json`
+- 接入项目已经安装 `TypeScript`
+- Limina 配置模块，通常为 `limina.config.mts`
 
-## 工作区发现
+## 治理根
 
-距离优先：Limina 先选择最近的声明，再考虑声明类型。同一目录中 `pnpm-workspace.yaml` 优先；根 `packageManager` 与它冲突时会报错。没有 `workspaces` 的普通包清单不会停止向上查找。
+Limina 先选择配置模块。未指定 `--config` 时，从 cwd 向上逐目录查找，每个目录依次检查 `limina.config.mts`、`limina.config.mjs`、`limina.config.ts`、`limina.config.js`。随后从所选配置的目录寻找最近的 `package.json`，由它固定治理根。最近清单不可读、不是普通文件、JSON 格式错误或顶层不是对象时，在该位置失败，不跳过它。
 
-对于 `package.json` 工作区，设置 `packageManager` 为 `npm@…`、`yarn@…` 或 `bun@…`。缺少该字段时，Limina 只使用该清单同目录的 lockfile。多个 manager identity 会产生歧义；没有 identity 也会报错。两个 npm 或两个 Bun lockfile 格式仍只代表一个 manager。显式 identity 优先于 lockfile。pnpm 始终要求 `pnpm-workspace.yaml`。
+只有该根自身的工作区声明决定成员集合。没有声明时，区域排除之前的唯一包就是根包。`{}` 已经足够：名称、版本、包管理器和 lockfile 都可缺省。manager 元信息缺失、歧义或声明无效，不阻断无需其语义的治理。
 
-受支持的声明投影是 pnpm 的 `packages: string[]`（缺省表示没有子包）、npm 的 `workspaces: string[]`，以及 Yarn/Bun 的该数组或 `{ packages: string[] }`。Limina 校验语法和自身消费的字段；catalog 合法性、可安装性、版本可用性和 lockfile 一致性仍由包管理器负责。没有工作区声明的单包不会作为 fallback 工作区。
+在选定根目录内，`pnpm-workspace.yaml` 优先；它可以确定 pnpm，除非显式 `packageManager` 与它冲突。`package.json#workspaces` 则需要明确的 npm、Yarn 或 Bun manager：自有 `packageManager` 优先，否则使用同目录 lockfile。authority 缺失、歧义或声明无效均失败；即使最终只有根包，有效工作区仍是 workspace。
+
+受支持的声明投影是 pnpm 的 `packages: string[]`（缺省表示没有子包）、npm 的 `workspaces: string[]`，以及 Yarn/Bun 的该数组或 `{ packages: string[] }`。现有 manager adapter 保留其成员选择和忽略语义。catalog 合法性、可安装性、版本可用性和 lockfile 一致性仍由包管理器负责。
+
+### 在 monorepo 内选择配置
+
+即使从子目录调用，选择仓库根配置仍会治理该配置对应的工作区。选择子包自身配置，则由它最近的 manifest 决定治理根；没有同根工作区声明时就是单包。祖先工作区声明不能扩大本次范围。
+
+这改变了原来的祖先 workspace 优先根选择契约。同一 candidate root 下的成员选择语义保持不变。请检查那些选择子包配置、但以前依赖祖先 workspace 范围的脚本。详见[配置文件](./config/config-file.md)。
 
 ## 安装
 
@@ -43,19 +51,19 @@ bun add -d limina@latest typescript
 
 ## 选择接入方式
 
-如果工作区还没有 Limina 配置，优先使用 `limina init`。它会写入采用 flat `checkers.auto` 结构的 `limina.config.mts`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina `agent skill`。
+如果项目还没有 Limina 配置，优先使用 `limina init`。它会写入采用 flat `checkers.auto` 结构的 `limina.config.mts`，添加根脚本，确保 `.limina/` 被忽略，并可以为当前项目安装可选的 Limina `agent skill`。
 
 如果仓库已经有清晰的 `tsconfig` 约定，直接写最小 `limina.config.mts` 会更快。多数工作区只需要自动发现检查器；只有需要显式控制检查器路由时，才需要继续查看[检查器入口](./config/checkers.md)。
 
-## 初始化已有工作区
+## 初始化已有项目
 
-如果一个工作区还没有采用 Limina 的声明图结构，可以运行：
+如果一个项目还没有采用 Limina 的声明图结构，可以运行：
 
 ```sh
 pnpm exec limina init
 ```
 
-`limina init` 会向上查找最近的工作区声明，确认工作区根目录，并写出 Limina 配置文件。
+`limina init` 从 cwd 寻找最近的 `package.json`，验证后在其旁边写入 `limina.config.mts`。最近清单无效时停止初始化。只有整条祖先链完全没有 manifest 时，才在 cwd 提供创建流程。init 不添加工作区声明。无 manager 元信息时 `--yes` 仍可完成，并给出中立的后续操作提示。
 
 在非交互环境中使用：
 

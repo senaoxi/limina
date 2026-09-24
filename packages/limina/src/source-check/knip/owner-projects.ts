@@ -1,5 +1,6 @@
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
+import type { PackageOwnerIdentity } from '../../core/workspace/owner-identity';
 import type { KnipOwnerProject } from '../knip';
 import {
   collectManifestSourceEntryPatterns,
@@ -8,13 +9,13 @@ import {
 } from './unused';
 
 function getOwnerEntryPatterns(options: {
-  entryPatternsByOwnerName: Map<string, string[]>;
+  entryPatternsByOwnerIdentity: Map<PackageOwnerIdentity, string[]>;
   moduleSet: OwnerSourceModuleSet;
 }): string[] {
-  const ownerName = options.moduleSet.owner.name as string;
+  const ownerIdentity = options.moduleSet.ownerIdentity;
 
   return uniqueSortedStrings([
-    ...(options.entryPatternsByOwnerName.get(ownerName) ?? []),
+    ...(options.entryPatternsByOwnerIdentity.get(ownerIdentity) ?? []),
     ...collectManifestSourceEntryPatterns(options.moduleSet),
   ]);
 }
@@ -23,12 +24,12 @@ function getIgnoredProjectFiles(options: {
   ignoredModuleKeys: Set<string>;
   moduleSet: OwnerSourceModuleSet;
 }): string[] {
-  const ownerName = options.moduleSet.owner.name as string;
+  const ownerIdentity = options.moduleSet.ownerIdentity;
 
   return options.moduleSet.files
     .filter((filePath) =>
       options.ignoredModuleKeys.has(
-        createOwnerSourceFileKey(ownerName, filePath),
+        createOwnerSourceFileKey(ownerIdentity, filePath),
       ),
     )
     .map((filePath) =>
@@ -57,7 +58,7 @@ function getVirtualEntryFiles(moduleSet: OwnerSourceModuleSet): string[] {
 }
 
 export function createKnipOwnerProjects(options: {
-  entryPatternsByOwnerName: Map<string, string[]>;
+  entryPatternsByOwnerIdentity: Map<PackageOwnerIdentity, string[]>;
   ignoredModuleKeys: Set<string>;
   includeFiles: boolean;
   ownerModuleSets: OwnerSourceModuleSet[];

@@ -259,14 +259,14 @@ export interface SourceUnusedModuleFacts {
   readonly kind: 'unused-module';
   readonly ownerDirectory: string;
   readonly packageManifestPath: string;
-  readonly packageName: string;
+  readonly packageName?: string;
 }
 
 export interface SourceUnusedWorkspaceDependencyFacts {
   readonly dependencyName: string;
   readonly kind: 'unused-workspace-dependency';
   readonly packageManifestPath: string;
-  readonly packageName: string;
+  readonly packageName?: string;
   readonly sectionName: string;
   readonly specifier: string;
 }

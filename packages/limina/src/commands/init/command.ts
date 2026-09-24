@@ -1,8 +1,5 @@
 import { normalizeAbsolutePath } from '#utils/path';
-import type {
-  ResolvedWorkspaceRoot,
-  SupportedPackageManager,
-} from '#utils/workspace-root';
+import type { SupportedPackageManager } from '#utils/workspace-root';
 import { createElapsedTimer } from 'logaria/helper';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../../logger';
 import {
@@ -26,13 +23,15 @@ import type {
 import {
   collectInitWorkspacePackages,
   initCommands,
+  type InitRootLocation,
   resolveInitWorkspace,
 } from './workspace';
 
 interface InitCommandContext {
+  governanceRoot: InitRootLocation['governanceRoot'];
   options: RunInitOptions;
   rootDir: string;
-  packageManager: SupportedPackageManager;
+  packageManager?: SupportedPackageManager;
   state: InitFileState;
   stepDepth: number;
   workspacePackageCount: number;
@@ -45,33 +44,33 @@ function getStepDepth(options: RunInitOptions): number {
 async function resolveWorkspaceStep(
   options: RunInitOptions,
   stepDepth: number,
-): Promise<ResolvedWorkspaceRoot> {
+): Promise<InitRootLocation> {
   const cwd = normalizeAbsolutePath(options.cwd ?? process.cwd());
   const result = await runInitFlowStep({
     action: async () => {
       const workspace = await resolveInitWorkspace({ cwd, prompt: options });
       return {
-        message: `workspace root confirmed: ${workspace.rootDir}`,
+        message: `governance root confirmed: ${workspace.rootDir}`,
         status: 'pass' as const,
         value: workspace,
       };
     },
     depth: stepDepth,
     flow: options.flow,
-    label: 'resolve workspace root',
+    label: 'resolve governance root',
   });
   return result;
 }
 
 async function countWorkspacePackages(options: {
   commandOptions: RunInitOptions;
-  rootDir: string;
+  root: InitRootLocation;
   stepDepth: number;
 }): Promise<number> {
   const packages = await runInitFlowStep({
     action: async () => {
       const workspacePackages = await collectInitWorkspacePackages(
-        options.rootDir,
+        options.root,
       );
       return {
         message: `workspace packages checked: ${workspacePackages.length}`,
@@ -102,16 +101,15 @@ async function createInitCommandContext(
   options: RunInitOptions,
 ): Promise<InitCommandContext> {
   const stepDepth = getStepDepth(options);
-  const { rootDir, packageManager } = await resolveWorkspaceStep(
-    options,
-    stepDepth,
-  );
+  const root = await resolveWorkspaceStep(options, stepDepth);
+  const { rootDir, packageManager } = root;
   const workspacePackageCount = await countWorkspacePackages({
     commandOptions: options,
-    rootDir,
+    root,
     stepDepth,
   });
   return {
+    governanceRoot: root.governanceRoot,
     options,
     rootDir,
     packageManager,
@@ -169,6 +167,7 @@ async function updatePackageJsonStep(
   return runInitFlowStep({
     action: async () => {
       const result = await updateRootPackageJson({
+        governanceRoot: context.governanceRoot,
         metadata: readLiminaPackageMetadata(),
         mutationContext: context.state.mutationContext,
         prompt: context.options,
@@ -213,8 +212,14 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
   const installRequired = await updatePackageJsonStep(context);
   const skillInstallStatus = await installSkillStep(context);
   return {
-    buildCommand: initCommands[context.packageManager].build,
-    installCommand: `${context.packageManager} install`,
+    buildCommand:
+      context.packageManager === undefined
+        ? 'limina checker build'
+        : initCommands[context.packageManager].build,
+    installCommand:
+      context.packageManager === undefined
+        ? undefined
+        : `${context.packageManager} install`,
     packageManager: context.packageManager,
     installRequired,
     removedPaths: context.state.removedPaths,

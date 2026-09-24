@@ -1,68 +1,86 @@
-import type {
-  PackageManifest,
-  WorkspacePackage,
-} from '#core/workspace/actions';
 import {
   collectWorkspacePackages,
-  readJsonFile,
+  getManifestPackageName,
+  type WorkspacePackage,
 } from '#core/workspace/actions';
-import type {
-  ResolvedWorkspaceRoot,
-  SupportedPackageManager,
+import {
+  classifyGovernanceRoot,
+  findNearestPackageManifest,
+  readGovernanceManifest,
+  type ResolvedGovernanceRoot,
+  resolveGovernancePackageManager,
+  type SupportedPackageManager,
 } from '#utils/workspace-root';
-import { resolveNearestWorkspaceRoot } from '#utils/workspace-root';
-import { existsSync } from 'node:fs';
-import path from 'pathe';
 import { confirmAction } from './prompts';
 import { createInitConfig } from './shared';
 import type { InitPromptOptions } from './types';
 
-function readRootPackageName(rootDir: string): string | undefined {
-  const packageJsonPath = path.join(rootDir, 'package.json');
-  if (!existsSync(packageJsonPath)) {
-    return undefined;
-  }
-
-  return readJsonFile<PackageManifest>(packageJsonPath).name;
+export interface InitRootLocation {
+  rootDir: string;
+  governanceRoot: ResolvedGovernanceRoot | null;
+  packageManager?: SupportedPackageManager;
 }
 
-function formatWorkspacePrompt(
-  rootDir: string,
-  packageName: string | undefined,
-  manager: SupportedPackageManager,
-): string {
-  const packageLabel = packageName === undefined ? '' : `"${packageName}" `;
-  return `Use ${manager} workspace ${packageLabel}at ${rootDir}?`;
+function optionalInitManager(
+  root: ResolvedGovernanceRoot,
+): SupportedPackageManager | undefined {
+  // Manager metadata only selects a suggestion. Init has no manager capability requirement.
+  try {
+    return resolveGovernancePackageManager(root);
+  } catch {
+    return undefined;
+  }
 }
 
 export async function resolveInitWorkspace(options: {
   cwd: string;
   prompt: InitPromptOptions;
-}): Promise<ResolvedWorkspaceRoot> {
-  const workspace = resolveNearestWorkspaceRoot(options.cwd);
-  const { rootDir, packageManager } = workspace;
-  const shouldUseRoot = await confirmAction({
-    message: formatWorkspacePrompt(
-      rootDir,
-      readRootPackageName(rootDir),
-      packageManager,
-    ),
-    prompt: options.prompt,
-  });
-  if (!shouldUseRoot) {
+}): Promise<InitRootLocation> {
+  const root = resolveInitLocation(options.cwd);
+  if (
+    !(await confirmAction({
+      message: initRootMessage(root),
+      prompt: options.prompt,
+    }))
+  ) {
     throw new Error('limina init canceled.');
   }
+  return root;
+}
 
-  return workspace;
+function resolveInitLocation(cwd: string): InitRootLocation {
+  const manifestPath = findNearestPackageManifest(cwd);
+  if (manifestPath === null) return { rootDir: cwd, governanceRoot: null };
+  const governanceRoot = classifyGovernanceRoot(
+    readGovernanceManifest(manifestPath),
+  );
+  return {
+    rootDir: governanceRoot.rootDir,
+    governanceRoot,
+    packageManager: optionalInitManager(governanceRoot),
+  };
+}
+
+function initRootMessage(root: InitRootLocation): string {
+  if (root.governanceRoot === null)
+    return `Create package.json and Limina config at ${root.rootDir}?`;
+  return `Use ${root.governanceRoot.kind} ${initRootName(root.governanceRoot)}at ${root.rootDir}?`;
+}
+
+function initRootName(root: ResolvedGovernanceRoot): string {
+  const name = getManifestPackageName(root.manifest);
+  return name === null ? '' : `"${name}" `;
 }
 
 export async function collectInitWorkspacePackages(
-  rootDir: string,
+  root: InitRootLocation,
 ): Promise<WorkspacePackage[]> {
-  const config = createInitConfig(rootDir);
-  const packages = await collectWorkspacePackages(config);
+  if (root.governanceRoot === null) return [];
+  const packages = await collectWorkspacePackages(
+    createInitConfig(root.governanceRoot),
+  );
   return packages.filter(
-    (workspacePackage) => workspacePackage.directory !== rootDir,
+    (workspacePackage) => workspacePackage.directory !== root.rootDir,
   );
 }
 

@@ -43,7 +43,7 @@ export function createSourceKnipConfigFinding(options: {
       value: options.value,
     },
     locations: [{ label: 'field', scope: options.field }],
-    ownerName: options.packageName ?? '<workspace>',
+    ownerName: options.packageName,
     packageJsonPath: options.packageJsonPath,
     reason: options.reason,
     scope: options.field,
@@ -55,12 +55,31 @@ export function createSourceKnipConfigFinding(options: {
   };
 }
 
+function namedKnipField(name: string | undefined): string | undefined {
+  return name === undefined
+    ? undefined
+    : `source.knip.workspaces[${JSON.stringify(name)}]`;
+}
+
+function knipIgnoreFix(options: {
+  configField?: string;
+  ownerName?: string;
+  subject: string;
+  suffix: string;
+}): string[] {
+  const field = options.configField ?? namedKnipField(options.ownerName);
+  return field === undefined
+    ? []
+    : [`Add intentional ${options.subject} to ${field}.${options.suffix}`];
+}
+
 export function createSourceUnusedModuleFinding(options: {
   externalCode: string;
   externalMessage?: string;
   filePath: string;
   ownerDirectory: string;
-  ownerName: string;
+  ownerName?: string;
+  configField?: string;
   packageJsonPath: string;
 }): SourceUnusedModuleFinding {
   return {
@@ -83,7 +102,11 @@ export function createSourceUnusedModuleFinding(options: {
     fixSteps: [
       'Delete files that are truly unused.',
       'Make files reachable from package manifest entries, binaries, scripts, or Knip plugin entries.',
-      `Add intentional files to source.knip.workspaces["${options.ownerName}"].ignoreFiles with a reason.`,
+      ...knipIgnoreFix({
+        ...options,
+        subject: 'files',
+        suffix: 'ignoreFiles with a reason.',
+      }),
     ],
     ownerDirectory: options.ownerDirectory,
     ownerName: options.ownerName,
@@ -102,7 +125,8 @@ export function createSourceUnusedWorkspaceDependencyFinding(options: {
   dependencyName: string;
   externalCode: string;
   externalMessage?: string;
-  ownerName: string;
+  ownerName?: string;
+  configField?: string;
   packageJsonPath: string;
   sectionName: string;
   specifier: string;
@@ -133,7 +157,11 @@ export function createSourceUnusedWorkspaceDependencyFinding(options: {
     fixSteps: [
       'Remove dependencies that are truly unused from the package manifest.',
       'Make dependencies reachable from package entries, binaries, scripts, or Knip plugin entries.',
-      `Add intentional dependencies to source.knip.workspaces["${options.ownerName}"].ignoreDependencies with dep and reason.`,
+      ...knipIgnoreFix({
+        ...options,
+        subject: 'dependencies',
+        suffix: 'ignoreDependencies with dep and reason.',
+      }),
     ],
     ownerName: options.ownerName,
     packageJsonPath: options.packageJsonPath,

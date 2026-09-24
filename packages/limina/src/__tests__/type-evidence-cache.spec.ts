@@ -10,6 +10,7 @@ import {
 } from '../core/type-evidence';
 import { createPreflightGenerationController } from '../preflight/generation';
 import { LiminaPreflightManager } from '../preflight/manager';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 function createProvider(dispose = vi.fn()): TypeEvidenceProvider {
   return {
@@ -155,6 +156,9 @@ describe('type evidence cache locator identities', () => {
 describe('type evidence cache generation disposal', () => {
   it('disposes the old generation before replacement and at manager shutdown', () => {
     const config = {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       configPath: path.join(process.cwd(), 'limina.config.mts'),
       rootDir: process.cwd(),
     } satisfies ResolvedLiminaConfig;

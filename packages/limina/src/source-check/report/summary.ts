@@ -16,13 +16,20 @@ interface SourceReportGroups {
   unusedModules: readonly (readonly SourceUnusedModuleIssue[])[];
 }
 
-function getGroupOwnerNames<T extends { ownerName: string }>(
-  groups: readonly (readonly T[])[],
-): string[] {
+function ownerDisplayKey(issue: {
+  packageJsonPath?: string;
+  ownerName?: string;
+}): string {
+  return issue.packageJsonPath ?? issue.ownerName ?? '';
+}
+
+function getGroupOwnerNames<
+  T extends { ownerName?: string; packageJsonPath?: string },
+>(groups: readonly (readonly T[])[]): string[] {
   return uniqueSortedStrings(
     groups.flatMap((group) => {
       const first = group[0];
-      return first === undefined ? [] : [first.ownerName];
+      return first === undefined ? [] : [ownerDisplayKey(first)];
     }),
   );
 }
@@ -67,7 +74,7 @@ function getGenericOwnerNames(
   return uniqueSortedStrings(
     groups.flatMap((group) => {
       const first = group.issues[0];
-      return first === undefined ? [] : [first.ownerName];
+      return first === undefined ? [] : [ownerDisplayKey(first)];
     }),
   );
 }
@@ -126,7 +133,9 @@ export function formatNoMatchedSourceIssues(options: {
   report: SourceIssueReportOptions;
 }): string[] {
   const packages = uniqueSortedStrings(
-    options.issues.map((issue) => issue.ownerName),
+    options.issues.flatMap((issue) =>
+      issue.ownerName === undefined ? [] : [issue.ownerName],
+    ),
   );
   const rules = uniqueSortedStrings(options.issues.map((issue) => issue.code));
   return [

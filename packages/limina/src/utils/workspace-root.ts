@@ -1,7 +1,22 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
 import { parseDocument } from 'yaml';
-import { normalizeAbsolutePath } from './path';
+import type { PackageManifest } from '../core/workspace/package-types';
+import {
+  type GovernanceRootBase,
+  hasManifestEntry,
+  isManifestObject,
+  readWorkspaceRootManifest,
+  resolveGovernanceManifest,
+} from './governance-manifest';
+export {
+  findNearestPackageManifest,
+  hasManifestEntry,
+  readGovernanceManifest,
+  readWorkspaceRootManifest,
+  resolveGovernanceManifest,
+  type GovernanceRootBase,
+} from './governance-manifest';
 
 export type SupportedPackageManager = 'pnpm' | 'npm' | 'yarn' | 'bun';
 
@@ -10,27 +25,34 @@ export interface WorkspaceRootDescriptor {
   path: string;
 }
 
-export interface ResolvedWorkspaceRoot {
-  rootDir: string;
-  descriptor: WorkspaceRootDescriptor;
-  packageManager: SupportedPackageManager;
-}
+export type ResolvedGovernanceRoot =
+  | (GovernanceRootBase & {
+      readonly kind: 'workspace';
+      readonly descriptor: WorkspaceRootDescriptor;
+      readonly packageManager: SupportedPackageManager;
+    })
+  | (GovernanceRootBase & { readonly kind: 'single-package' });
 
-function isManifestObject(value: unknown): value is Record<string, unknown> {
-  if (value === null) return false;
-  return typeof value === 'object' && !Array.isArray(value);
-}
+export type ResolvedWorkspaceRoot = Extract<
+  ResolvedGovernanceRoot,
+  { kind: 'workspace' }
+>;
 
-export function readWorkspaceRootManifest(
-  filePath: string,
-): Record<string, unknown> {
-  const value: unknown = JSON.parse(
-    readFileSync(filePath, 'utf8').replace(/^\uFEFF/u, ''),
+export function resolveGovernanceRoot(
+  configPath: string,
+): ResolvedGovernanceRoot {
+  return classifyGovernanceRoot(
+    resolveGovernanceManifest(path.dirname(configPath)),
   );
-  if (!isManifestObject(value)) {
-    throw new Error(`Invalid package.json object at ${filePath}.`);
-  }
-  return value as Record<string, unknown>;
+}
+
+export function classifyGovernanceRoot(
+  root: GovernanceRootBase,
+): ResolvedGovernanceRoot {
+  const descriptor = findWorkspaceRootDescriptor(root.rootDir, root.manifest);
+  if (descriptor === null)
+    return Object.freeze({ ...root, kind: 'single-package' });
+  return Object.freeze(resolveWorkspaceDescriptor(root, descriptor));
 }
 
 export function hasWorkspaceDeclaration(manifest: object): boolean {
@@ -40,19 +62,31 @@ export function hasWorkspaceDeclaration(manifest: object): boolean {
 /** Descriptor detection deliberately does not resolve the nested manager. */
 export function findWorkspaceRootDescriptor(
   rootDir: string,
+  manifest?: Readonly<PackageManifest>,
 ): WorkspaceRootDescriptor | null {
   const yamlPath = path.join(rootDir, 'pnpm-workspace.yaml');
-  if (existsSync(yamlPath)) return { kind: 'pnpm-workspace', path: yamlPath };
-  return findManifestDescriptor(rootDir);
+  if (hasManifestEntry(yamlPath))
+    return { kind: 'pnpm-workspace', path: yamlPath };
+  return findManifestDescriptor(rootDir, manifest);
 }
 
 function findManifestDescriptor(
   rootDir: string,
+  manifest?: Readonly<PackageManifest>,
 ): WorkspaceRootDescriptor | null {
   const manifestPath = path.join(rootDir, 'package.json');
-  if (!existsSync(manifestPath)) return null;
-  return hasWorkspaceDeclaration(readWorkspaceRootManifest(manifestPath))
+  const contents = manifest ?? readLocalManifest(manifestPath);
+  return isWorkspaceManifest(contents)
     ? { kind: 'package-json-workspaces', path: manifestPath }
+    : null;
+}
+
+function isWorkspaceManifest(manifest: PackageManifest | null): boolean {
+  return manifest !== null && hasWorkspaceDeclaration(manifest);
+}
+function readLocalManifest(manifestPath: string): PackageManifest | null {
+  return hasManifestEntry(manifestPath)
+    ? readWorkspaceRootManifest(manifestPath)
     : null;
 }
 
@@ -101,18 +135,18 @@ export function inferPackageManagerFromRootLockfiles(
 }
 
 function readExplicitManager(
-  rootDir: string,
+  manifest: Readonly<PackageManifest>,
 ): SupportedPackageManager | undefined {
-  const filePath = path.join(rootDir, 'package.json');
-  if (!existsSync(filePath)) return undefined;
-  const manifest = readWorkspaceRootManifest(filePath);
   return Object.hasOwn(manifest, 'packageManager')
     ? parsePackageManager(manifest.packageManager)
     : undefined;
 }
 
-function resolvePnpmManager(rootDir: string): SupportedPackageManager {
-  const explicit = readExplicitManager(rootDir);
+function resolvePnpmManager({
+  rootDir,
+  manifest,
+}: GovernanceRootBase): SupportedPackageManager {
+  const explicit = readExplicitManager(manifest);
   if (explicit !== undefined && explicit !== 'pnpm') {
     throw new Error(
       `Conflicting package manager at ${rootDir}: pnpm-workspace.yaml with ${explicit}.`,
@@ -121,9 +155,12 @@ function resolvePnpmManager(rootDir: string): SupportedPackageManager {
   return 'pnpm';
 }
 
-function resolveManifestManager(rootDir: string): SupportedPackageManager {
+function resolveManifestManager({
+  rootDir,
+  manifest,
+}: GovernanceRootBase): SupportedPackageManager {
   const manager =
-    readExplicitManager(rootDir) ??
+    readExplicitManager(manifest) ??
     inferPackageManagerFromRootLockfiles(rootDir);
   if (manager === 'pnpm')
     throw new Error(
@@ -132,39 +169,76 @@ function resolveManifestManager(rootDir: string): SupportedPackageManager {
   return manager;
 }
 
-export function resolveNearestWorkspaceRoot(
-  startDir: string,
-): ResolvedWorkspaceRoot {
-  let rootDir = normalizeAbsolutePath(startDir);
-  while (true) {
-    const descriptor = findWorkspaceRootDescriptor(rootDir);
-    if (descriptor !== null)
-      return resolveWorkspaceDescriptor(rootDir, descriptor);
-    rootDir = workspaceParentOrThrow(rootDir, startDir);
-  }
+/** Capability-only resolution. Single-package governance does not call this. */
+export function resolveGovernancePackageManager(
+  root: ResolvedGovernanceRoot,
+): SupportedPackageManager {
+  if (root.kind === 'workspace') return root.packageManager;
+  return (
+    readExplicitManager(root.manifest) ??
+    inferPackageManagerFromRootLockfiles(root.rootDir)
+  );
 }
 
 function resolveWorkspaceDescriptor(
-  rootDir: string,
+  root: GovernanceRootBase,
   descriptor: WorkspaceRootDescriptor,
 ): ResolvedWorkspaceRoot {
-  if (descriptor.kind === 'pnpm-workspace') {
-    const errors = parseDocument(readFileSync(descriptor.path, 'utf8')).errors;
-    if (errors.length > 0) throw errors[0];
-    return { rootDir, descriptor, packageManager: resolvePnpmManager(rootDir) };
-  }
-  return {
-    rootDir,
-    descriptor,
-    packageManager: resolveManifestManager(rootDir),
-  };
+  const packageManager =
+    descriptor.kind === 'pnpm-workspace'
+      ? inspectPnpmWorkspace(root, descriptor)
+      : inspectManifestWorkspace(root);
+  return { ...root, kind: 'workspace', descriptor, packageManager };
 }
 
-function workspaceParentOrThrow(rootDir: string, startDir: string): string {
-  const parent = path.dirname(rootDir);
-  if (parent === rootDir)
+function inspectPnpmWorkspace(
+  root: GovernanceRootBase,
+  descriptor: WorkspaceRootDescriptor,
+): SupportedPackageManager {
+  const document = parseDocument(readFileSync(descriptor.path, 'utf8'));
+  if (document.errors.length > 0) throw document.errors[0];
+  validatePnpmPackages(document.toJSON());
+  return resolvePnpmManager(root);
+}
+
+function validatePnpmPackages(value: unknown): void {
+  if (!isManifestObject(value)) return;
+  if (Object.hasOwn(value, 'packages'))
+    validateWorkspaceGlobs(value.packages, 'pnpm');
+}
+
+function getManifestWorkspaceGlobs(
+  declaration: unknown,
+  manager: SupportedPackageManager,
+): unknown {
+  if (manager === 'npm' || Array.isArray(declaration)) return declaration;
+  return getWorkspaceObjectPackages(declaration);
+}
+
+function getWorkspaceObjectPackages(declaration: unknown): unknown {
+  return isManifestObject(declaration) ? declaration.packages : undefined;
+}
+
+function inspectManifestWorkspace(
+  root: GovernanceRootBase,
+): SupportedPackageManager {
+  const manager = resolveManifestManager(root);
+  validateWorkspaceGlobs(
+    getManifestWorkspaceGlobs(root.manifest.workspaces, manager),
+    manager,
+  );
+  return manager;
+}
+
+function validateWorkspaceGlobs(
+  value: unknown,
+  manager: SupportedPackageManager,
+): void {
+  if (
+    !Array.isArray(value) ||
+    !value.every((entry) => typeof entry === 'string')
+  )
     throw new Error(
-      `No supported workspace descriptor found from ${startDir} or its ancestors.`,
+      `Invalid ${manager} workspace declaration: expected a string array.`,
     );
-  return parent;
 }

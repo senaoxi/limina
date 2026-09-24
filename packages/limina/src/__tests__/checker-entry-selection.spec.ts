@@ -5,6 +5,7 @@ import path from 'node:path';
 import { glob } from 'tinyglobby';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveCheckerEntrySelection } from '../core/checkers/entry-selection';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const roots = new Set<string>();
@@ -41,6 +42,9 @@ async function createFixture(): Promise<{
 
   return {
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {},
       configPath: path.join(rootDir, 'limina.config.mjs'),
       rootDir,
@@ -56,6 +60,9 @@ async function resolveSelection(options: {
   sourceConfigPaths?: string[];
 }) {
   const config: ResolvedLiminaConfig = {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     config: {},
     configPath: path.join(options.rootDir, 'limina.config.mjs'),
     rootDir: options.rootDir,

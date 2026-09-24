@@ -278,7 +278,7 @@ describe('runInit', () => {
         await resolveInitWorkspace({ cwd: fixture.rootDir, prompt: {} });
         expect(confirmMock).toHaveBeenCalledWith(
           expect.objectContaining({
-            message: expect.stringContaining(`Use ${manager} workspace`),
+            message: expect.stringContaining('Use workspace'),
           }),
         );
       } finally {
@@ -307,7 +307,7 @@ describe('runInit', () => {
       try {
         confirmMock.mockResolvedValue(true);
         const result = await runInit({
-          cwd: path.join(fixture.rootDir, 'packages/a'),
+          cwd: fixture.rootDir,
           clearScreen: false,
           yes: true,
         });
@@ -389,7 +389,7 @@ describe('runInit', () => {
     vi.restoreAllMocks();
   });
 
-  it('fails when no pnpm workspace root can be found', async () => {
+  it('initializes a single package without manager metadata', async () => {
     const fixture = await createFixture({
       'package.json': '{}\n',
     });
@@ -401,7 +401,55 @@ describe('runInit', () => {
           cwd: fixture.rootDir,
           yes: true,
         }),
-      ).rejects.toThrow(/No supported workspace descriptor/u);
+      ).resolves.toMatchObject({
+        packageManager: undefined,
+        installCommand: undefined,
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('bootstraps at cwd only when no manifest exists and never creates workspace syntax', async () => {
+    const fixture = await createFixture({});
+    try {
+      await runInit({ clearScreen: false, cwd: fixture.rootDir, yes: true });
+      const manifest = JSON.parse(
+        await readFile(path.join(fixture.rootDir, 'package.json'), 'utf8'),
+      );
+      expect(manifest).not.toHaveProperty('workspaces');
+      expect(manifest).not.toHaveProperty('packageManager');
+      expect(
+        await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+      ).toBe(true);
+      expect(
+        await fileExists(path.join(fixture.rootDir, 'pnpm-workspace.yaml')),
+      ).toBe(false);
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+
+  it('fails the nearest invalid manifest without initializing an ancestor', async () => {
+    const fixture = await createFixture({
+      'package.json': '{}',
+      'pnpm-workspace.yaml': 'packages: [child]',
+      'child/package.json': '[]',
+    });
+    try {
+      await expect(
+        runInit({
+          clearScreen: false,
+          cwd: path.join(fixture.rootDir, 'child'),
+          yes: true,
+        }),
+      ).rejects.toThrow('Invalid package.json object');
+      expect(
+        await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+      ).toBe(false);
+      expect(
+        await fileExists(path.join(fixture.rootDir, 'child/limina.config.mts')),
+      ).toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -728,7 +776,7 @@ describe('runInit', () => {
     try {
       const result = await runInit({
         clearScreen: false,
-        cwd: path.join(fixture.rootDir, 'packages/foo'),
+        cwd: fixture.rootDir,
         yes: true,
       });
 
@@ -875,9 +923,9 @@ export default defineConfig({
 
       const output = chunks.join('');
 
-      expect(output).toContain('  [start] resolve workspace root\n');
+      expect(output).toContain('  [start] resolve governance root\n');
       expect(output).toMatch(
-        / {2}\[pass\] workspace root confirmed: .+ \(\d+ms\)\n/u,
+        / {2}\[pass\] governance root confirmed: .+ \(\d+ms\)\n/u,
       );
       expect(output).toMatch(
         / {2}\[skip\] root \.limina \(skipped: not present\) \(\d+ms\)\n/u,

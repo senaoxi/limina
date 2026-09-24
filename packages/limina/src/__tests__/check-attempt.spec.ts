@@ -42,6 +42,7 @@ async function withTempRoot(
   run: (rootDir: string) => Promise<void>,
 ): Promise<void> {
   const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-attempt-'));
+  await writeFile(path.join(rootDir, 'package.json'), '{}\n');
   try {
     await run(rootDir);
   } finally {

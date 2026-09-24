@@ -38,9 +38,9 @@ export default defineConfig({
 
 ## Default Governed Region
 
-Limina starts from the raw package membership declared by the nearest workspace descriptor. It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
+The selected config's nearest `package.json` fixes the governance root. At that root, a workspace declaration supplies raw membership through its manager adapter; without one, the raw set is `[rootPackage]`. See [Governance root](../getting-started.md#governance-root). It validates `workspace-package` exclusion rules against that complete raw set and applies them before constructing the activated package index. Each remaining package is a separate package island, and its root `package.json` is the owner manifest for source ownership and dependency authorization. An activated package may be outside `config.rootDir`; reports keep its lexical display path, such as `../shared`, while ownership and collision checks use its canonical physical directory.
 
-Package discovery follows the selected manager's policy. Its traversal always excludes the following directory names:
+Workspace package discovery follows the selected manager's policy. Its traversal always excludes the following directory names:
 
 | Manager | Hard ignores                         |
 | ------- | ------------------------------------ |
@@ -115,7 +115,7 @@ Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason
 
 Each of the two kinds has one candidate set:
 
-- `workspace-package` selects exact package-root candidates from the complete raw membership activated by the root workspace descriptor. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
+- `workspace-package` selects exact package-root candidates from the complete raw membership of the selected governance root, including a single-package root. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
 - `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
 
 A rule is matched only against candidates of the same kind. A directory that is both an activated package and a nested package scope therefore keeps those identities separate.

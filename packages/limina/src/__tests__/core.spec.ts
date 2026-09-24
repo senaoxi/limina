@@ -18,6 +18,7 @@ import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { collectCoverage } from '../proof/coverage-collection';
 import { createSourceCheckState } from '../source-check/run-state';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -147,6 +148,9 @@ async function createCoreFixture(): Promise<{
     await mkdtemp(path.join(tmpdir(), 'limina-core-')),
   );
   const config: ResolvedLiminaConfig = {
+    get governanceRoot() {
+      return resolveFixtureGovernanceRoot(this);
+    },
     config: {
       checkers: {
         tsc: {

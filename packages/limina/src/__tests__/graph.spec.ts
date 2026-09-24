@@ -29,6 +29,7 @@ import { addTypecheckParityProblems } from '../graph-check/dts-options';
 import type { GraphFinding } from '../graph-check/findings';
 import { GraphLogger } from '../logger';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
+import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 const requireFromTest = createRequire(import.meta.url);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -145,6 +146,9 @@ async function createFixture(
       });
     },
     config: {
+      get governanceRoot() {
+        return resolveFixtureGovernanceRoot(this);
+      },
       config: {
         checkers,
       },

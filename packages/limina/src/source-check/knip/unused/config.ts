@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import type { PackageOwnerIdentity } from '../../../core/workspace/owner-identity';
 import type { SourceFinding } from '../../findings';
 import { collectWorkspaceEntryConfig } from '../entry-config';
 import { collectWorkspaceFileIgnoreConfig } from '../file-ignore';
@@ -17,15 +18,18 @@ function collectWorkspaceConfig(options: WorkspaceUnusedConfigOptions): void {
 export function collectUnusedModuleConfig(options: {
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
-  knipWorkspaceConfigs: Map<string, SourceKnipWorkspaceConfigRecord>;
+  knipWorkspaceConfigs: Map<
+    PackageOwnerIdentity,
+    SourceKnipWorkspaceConfigRecord
+  >;
   ownerModuleSets: OwnerSourceModuleSet[];
 }): UnusedModuleConfig {
   const context = createUnusedModuleConfigContext(options);
-  for (const [ownerName, workspaceConfig] of options.knipWorkspaceConfigs) {
-    collectWorkspaceConfig({ context, ownerName, workspaceConfig });
+  for (const [ownerIdentity, workspaceConfig] of options.knipWorkspaceConfigs) {
+    collectWorkspaceConfig({ context, ownerIdentity, workspaceConfig });
   }
   return {
-    entryPatternsByOwnerName: context.entryPatternsByOwnerName,
+    entryPatternsByOwnerIdentity: context.entryPatternsByOwnerIdentity,
     ignoredKeys: context.ignoredKeys,
   };
 }
