@@ -1469,6 +1469,30 @@ describe('typed Release finding producers', () => {
 });
 
 describe('auditPublishedPackageBoundaries', () => {
+  it('audits literal dynamic imports and reexports without treating template globs as packages', async () => {
+    const pkg = await createOutputPackage({
+      'index.js': [
+        "import('@example/missing-dynamic');",
+        "export * from '@example/missing-star';",
+        'import(`@example/${name}`);',
+        'console.log(import.meta.url);',
+      ].join('\n'),
+    });
+
+    try {
+      const violations = await auditPublishedPackageBoundaries({
+        outDir: pkg.outDir,
+      });
+
+      expect(violations.map((violation) => violation.specifier)).toEqual([
+        '@example/missing-dynamic',
+        '@example/missing-star',
+      ]);
+    } finally {
+      await pkg.cleanup();
+    }
+  });
+
   it('allows self exports, declared dependencies, relative imports, and node builtins in node output', async () => {
     const pkg = await createOutputPackage(
       {

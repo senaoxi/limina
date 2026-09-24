@@ -132,13 +132,7 @@ export async function removeDeadHolder(holderPath: string): Promise<boolean> {
   return removeHolderRecord(holderPath, record.fileName);
 }
 
-const retryableHolderPublicationCodes = new Set([
-  'EACCES',
-  'EBUSY',
-  'EEXIST',
-  'ENOTEMPTY',
-  'EPERM',
-]);
+const retryableHolderPublicationCodes = new Set(['EACCES', 'EBUSY', 'EPERM']);
 
 function isRetryableHolderPublicationError(error: unknown): boolean {
   return (
@@ -148,10 +142,18 @@ function isRetryableHolderPublicationError(error: unknown): boolean {
   );
 }
 
+function isDefiniteHolderCollision(error: unknown): boolean {
+  // These errors already prove that rename collided with another holder.
+  // That holder may finish before the follow-up read, so its continued
+  // existence cannot be required to retry the acquisition.
+  return hasCode(error, 'EEXIST') || hasCode(error, 'ENOTEMPTY');
+}
+
 async function isHolderCollision(
   error: unknown,
   holderPath: string,
 ): Promise<boolean> {
+  if (isDefiniteHolderCollision(error)) return true;
   if (!isRetryableHolderPublicationError(error)) return false;
   return holderExists(holderPath);
 }

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { execFile } from 'node:child_process';
 import { readdir, readFile, rename } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -87,18 +88,26 @@ it('replays the emitted invocation query after config removal without loading co
     const output = stripVTControlCharacters(
       standalone.stdout + standalone.stderr,
     );
-    const label =
-      process.platform === 'win32' ? 'cmd.exe (/V:OFF): ' : 'Query: ';
+    const label = process.platform === 'win32' ? 'PowerShell: ' : 'Query: ';
     const query = output
       .split('\n')
       .map((line) => line.trim())
       .find((line) => line.startsWith(label))
       ?.slice(label.length);
     expect(query).toBeDefined();
-    expect(query).toContain('bin/limina.js');
-    expect(query).toContain(configPath);
+    const encodedArgs = /'([A-Za-z0-9+/=]+)'$/u.exec(query!)?.[1];
+    const queryText =
+      process.platform === 'win32'
+        ? (
+            JSON.parse(
+              Buffer.from(encodedArgs!, 'base64').toString('utf8'),
+            ) as string[]
+          ).join(' ')
+        : query!;
+    expect(queryText).toContain('bin/limina.js');
+    expect(queryText).toContain(configPath);
     const invocationId = /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/u.exec(
-      query!,
+      queryText,
     )?.[0];
     expect(invocationId).toBeDefined();
     const imports = await readFile(f.path('local/config-imports.txt'), 'utf8');
@@ -111,16 +120,18 @@ it('replays the emitted invocation query after config removal without loading co
       JSON.stringify({ workspaces: [], packageManager: 'invalid' }),
     );
     const replay = await execFileAsync(
-      process.platform === 'win32' ? 'cmd.exe' : '/bin/sh',
+      process.platform === 'win32' ? 'powershell.exe' : '/bin/sh',
       process.platform === 'win32'
-        ? ['/d', '/v:off', '/s', '/c', `"${query} --format json"`]
+        ? [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `${query} --format json`,
+          ]
         : ['-c', `${query} --format json`],
       {
         cwd: f.path(),
         env: { ...process.env, CI: 'true' },
-        // /S /C strips the outer quotes; preserve the rendered command's
-        // inner quotes instead of applying Node's Windows argv escaping.
-        windowsVerbatimArguments: process.platform === 'win32',
       },
     );
     const payload = JSON.parse(replay.stdout);

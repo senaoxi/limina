@@ -91,7 +91,7 @@
     "rolldown": "catalog:dev",
     "rolldown-plugin-dts": "catalog:dev",
     "tsx": "catalog:dev",
-    "shescape": "catalog:dev",
+    "shell-quote": "catalog:dev",
     "ssri": "catalog:dev",
     "string-width": "catalog:dev",
     "@arethetypeswrong/core": "catalog:lint",

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const renameFailure = vi.hoisted(() => ({
   code: undefined as string | undefined,
+  afterCollision: undefined as (() => Promise<void>) | undefined,
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -18,7 +19,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (code !== undefined) {
         throw Object.assign(new Error(`simulated rename ${code}`), { code });
       }
-      return actual.rename(...args);
+      try {
+        return await actual.rename(...args);
+      } catch (error) {
+        const afterCollision = renameFailure.afterCollision;
+        renameFailure.afterCollision = undefined;
+        await afterCollision?.();
+        throw error;
+      }
     },
   };
 });
@@ -43,6 +51,7 @@ async function createFixture() {
 
 afterEach(async () => {
   renameFailure.code = undefined;
+  renameFailure.afterCollision = undefined;
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -51,6 +60,45 @@ afterEach(async () => {
 });
 
 describe('cross-process lease holder publication', () => {
+  it.each(['EEXIST', 'ENOTEMPTY'])(
+    'retries a definite %s collision even after the holder has exited',
+    async (code) => {
+      const fixture = await createFixture();
+      const { publishHolder, releaseOwnedHolder } = await import(
+        '../utils/mutation/cross-process-lease-holder'
+      );
+      renameFailure.code = code;
+
+      await expect(publishHolder(fixture)).resolves.toBe(false);
+      await expect(
+        access(
+          path.join(fixture.rootPath, `.candidate-${fixture.owner.token}`),
+        ),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(publishHolder(fixture)).resolves.toBe(true);
+      await releaseOwnedHolder(fixture.holderPath, fixture.owner);
+    },
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'retries a real POSIX rename collision when the holder releases before inspection',
+    async () => {
+      const fixture = await createFixture();
+      const { publishHolder, releaseOwnedHolder } = await import(
+        '../utils/mutation/cross-process-lease-holder'
+      );
+      const competingOwner = { ...fixture.owner, token: 'competing-owner' };
+      await publishHolder({ ...fixture, owner: competingOwner });
+      renameFailure.afterCollision = () =>
+        releaseOwnedHolder(fixture.holderPath, competingOwner);
+
+      await expect(publishHolder(fixture)).resolves.toBe(false);
+      expect(renameFailure.afterCollision).toBeUndefined();
+      await expect(publishHolder(fixture)).resolves.toBe(true);
+      await releaseOwnedHolder(fixture.holderPath, fixture.owner);
+    },
+  );
+
   it.each(['EACCES', 'EBUSY', 'EPERM'])(
     'treats a Windows-style %s rename failure as contention when the holder exists',
     async (code) => {

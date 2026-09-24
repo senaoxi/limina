@@ -30,6 +30,22 @@ function createSensitiveCommand() {
   };
 }
 
+async function readPosixCommandTokens(command: string): Promise<string[]> {
+  const script = [
+    'exec "$1" -e',
+    "'process.stdout.write(JSON.stringify(process.argv.slice(1)))'",
+    '--',
+    command,
+  ].join(' ');
+  const { stdout } = await execFileAsync(
+    '/bin/sh',
+    ['-c', script, 'limina-query-probe', process.execPath],
+    { encoding: 'utf8' },
+  );
+
+  return JSON.parse(stdout) as string[];
+}
+
 describe('standalone invocation generated commands', () => {
   it('keeps the bounded command context and token order immutable', () => {
     const { command, context } = createSensitiveCommand();
@@ -72,50 +88,55 @@ describe('standalone invocation generated commands', () => {
 });
 
 describe('standalone invocation PowerShell transport', () => {
-  it('round-trips sensitive argv through the encoded PowerShell transport', async () => {
-    const { context } = createSensitiveCommand();
-    const expectedArgs = [
-      '--config',
-      context.configPath,
-      '--mode',
-      context.mode,
-    ];
-    const childScript =
-      'process.stdout.write(JSON.stringify(process.argv.slice(1)))';
-    const transportTokens = createPowerShellNodeTransportTokens(
-      process.execPath,
-      ['-e', childScript, '--', ...expectedArgs],
-    );
-    const [executable, ...args] = transportTokens;
-
-    expect(transportTokens[2]).not.toMatch(/["\\]/u);
-    const { stdout } = await execFileAsync(executable, args, {
-      encoding: 'utf8',
-    });
-    expect(JSON.parse(stdout)).toEqual(expectedArgs);
-  });
-
-  it.runIf(process.platform !== 'win32')(
-    'renders the absolute Node executable and CLI with POSIX quoting',
-    () => {
-      const { command } = createSensitiveCommand();
-      const rendered = renderGeneratedLiminaCommand(command, 'posix');
-
-      expect(rendered).toContain(
-        "'/opt/node path/bin/node' '/opt/limina path/bin/limina.js'",
+  it.each([
+    { appendedArgs: [] },
+    { appendedArgs: ['--format', 'json'] },
+    { appendedArgs: ['--file', "a 'quoted' file.ts"] },
+  ])(
+    'round-trips sensitive argv and appended arguments $appendedArgs through the PowerShell transport',
+    async ({ appendedArgs }) => {
+      const { context } = createSensitiveCommand();
+      const expectedArgs = [
+        '--config',
+        context.configPath,
+        '--mode',
+        context.mode,
+      ];
+      const childScript =
+        'process.stdout.write(JSON.stringify(process.argv.slice(1)))';
+      const transportTokens = createPowerShellNodeTransportTokens(
+        process.execPath,
+        ['-e', childScript, '--', ...expectedArgs],
       );
-      expect(rendered).toContain("'--config-loader' 'tsx'");
-      expect(rendered).toContain(
-        "'--invocation' '123e4567-e89b-42d3-a456-426614174000'",
+      const [executable, ...args] = transportTokens;
+
+      expect(transportTokens[2]).not.toMatch(/["\\]/u);
+      const { stdout } = await execFileAsync(
+        executable,
+        [...args, ...appendedArgs],
+        {
+          encoding: 'utf8',
+        },
       );
-      expect(rendered).toContain("'/opt/limina path/bin/limina.js'");
-      expect(rendered).not.toMatch(/^'pnpm'/u);
+      expect(JSON.parse(stdout)).toEqual([...expectedArgs, ...appendedArgs]);
     },
   );
 
   it.runIf(process.platform !== 'win32')(
-    'preserves an empty bounded argument',
-    () => {
+    'round-trips the absolute Node executable, CLI and sensitive POSIX arguments',
+    async () => {
+      const { command } = createSensitiveCommand();
+      const rendered = renderGeneratedLiminaCommand(command, 'posix');
+
+      expect(await readPosixCommandTokens(rendered)).toEqual(
+        getGeneratedLiminaCommandTokens(command),
+      );
+    },
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'preserves empty arguments and shell metacharacters without evaluating them',
+    async () => {
       const context = createGlobalQueryCommandContext({
         cliEntryPath: '/tmp/workspace/node_modules/limina/bin/limina.js',
         configLoader: 'native',
@@ -124,18 +145,33 @@ describe('standalone invocation PowerShell transport', () => {
         nodeExecutablePath: '/usr/bin/node',
         workspaceRoot: '/tmp/workspace',
       });
-      const rendered = renderGeneratedLiminaCommand(
-        createStandaloneInvocationCommand(context, invocationId),
-        'posix',
-      );
-
-      expect(rendered).toContain("'--mode' ''");
+      for (const mode of [
+        '',
+        '$(printf unintended-substitution)',
+        '`printf unintended-substitution`',
+        '$LIMINA_QUERY_PROBE; & | < > # * ? [x]',
+        'single\' double" backslash\\ tail\\',
+        "single'quote!",
+        "!single'quote",
+        '\'!!\' \\! "!"',
+        '專案 😀\tline1\nline2\rline3',
+      ]) {
+        const command = createStandaloneInvocationCommand(
+          createGlobalQueryCommandContext({ ...context, mode }),
+          invocationId,
+        );
+        expect(
+          await readPosixCommandTokens(
+            renderGeneratedLiminaCommand(command, 'posix'),
+          ),
+        ).toEqual(getGeneratedLiminaCommandTokens(command));
+      }
     },
   );
 });
 
 describe('standalone invocation platform variants', () => {
-  it('keeps direct Node invocation when paths contain pnpm', () => {
+  it('keeps direct Node invocation when paths contain pnpm', async () => {
     const context = createGlobalQueryCommandContext({
       cliEntryPath:
         '/tmp/pnpm project/node_modules/.pnpm/limina@0.3.1/node_modules/limina/bin/limina.js',
@@ -171,30 +207,22 @@ describe('standalone invocation platform variants', () => {
       expectedTokens.slice(1),
     );
 
-    if (process.platform === 'win32') {
-      expect(renderGeneratedLiminaCommand(command, 'cmd')).toContain(
-        `cd /d "/tmp/pnpm project" && "/opt/pnpm/node.exe" "${context.cliEntryPath}" `,
-      );
-    } else {
-      expect(renderGeneratedLiminaCommand(command, 'posix')).toMatch(
-        /^'\/opt\/pnpm\/node\.exe' '\/tmp\/pnpm project\/node_modules\/\.pnpm\/limina@0\.3\.1\/node_modules\/limina\/bin\/limina\.js' /u,
-      );
+    if (process.platform !== 'win32') {
+      expect(
+        await readPosixCommandTokens(
+          renderGeneratedLiminaCommand(command, 'posix'),
+        ),
+      ).toEqual(expectedTokens);
     }
   });
 
-  it('selects one POSIX variant and two explicit Windows variants', () => {
+  it('selects a POSIX query or a single explicit PowerShell query', () => {
     expect(getGeneratedCommandPresentation('darwin')).toEqual([
       { dialect: 'posix', label: 'Query' },
     ]);
     expect(getGeneratedCommandPresentation('win32')).toEqual([
       { dialect: 'powershell', label: 'PowerShell' },
-      { dialect: 'cmd', label: 'cmd.exe (/V:OFF)' },
     ]);
-    expect(
-      getGeneratedCommandPresentation('win32').some(({ label }) =>
-        label.includes('/V:ON'),
-      ),
-    ).toBe(false);
   });
 
   it('renders PowerShell through the encoded Node argv transport', () => {
@@ -209,18 +237,4 @@ describe('standalone invocation platform variants', () => {
     expect(powershell).not.toContain('$PSNativeCommandArgumentPassing');
     expect(powershell).not.toContain('pnpm');
   });
-
-  it.runIf(process.platform === 'win32')(
-    'renders a separate cmd.exe command on Windows',
-    () => {
-      const { command } = createSensitiveCommand();
-      const powershell = renderGeneratedLiminaCommand(command, 'powershell');
-      const cmd = renderGeneratedLiminaCommand(command, 'cmd');
-
-      expect(cmd).toMatch(/^cd \/d /u);
-      expect(cmd).toContain(' && ');
-      expect(cmd).not.toContain('pnpm');
-      expect(powershell).not.toBe(cmd);
-    },
-  );
 });
