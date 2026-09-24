@@ -244,11 +244,11 @@ human 摘要中的计数和主要阻塞项始终基于完整过滤结果。精�
 
 `--limit` 只能用于 human 格式的 `check --issues`。JSON 与 NDJSON 会拒绝该选项，并始终返回全部过滤结果；`--verbose` 不改变机器输出。`limina check --verbose` 与 `limina check --issues --verbose` 的作用不同：前者扩展运行级聚合行、耗时、规则、阻塞项和 package 计数，但不会输出原始问题诊断；后者选择详细问题卡片视图。
 
-会产生问题的 standalone 命令失败时，会打印 invocation ID 和 shell 专用查询。每个 variant 使用当前绝对 Node 路径与已安装 Limina 的 `bin/limina.js`，携带绝对配置路径、实际 loader 和 mode，并选择 `check --issues --invocation <uuid>`。Windows variant 还通过 PowerShell `Set-Location -LiteralPath` 或 CMD `cd /d` 切换到治理根。查询可从其他目录回放，无需检测项目 manager。记录保存在同一治理根的 `.limina/check/invocations/`。
+会产生问题的 standalone 命令失败时，会打印 invocation ID 和 shell 专用查询。每个 variant 使用当前绝对 Node 路径与已安装 Limina 的 `bin/limina.js`，携带绝对配置路径、实际 loader 和 mode，并选择 `check --issues --invocation <uuid>`。Windows 命令还通过 PowerShell `Set-Location -LiteralPath` 切换到治理根。查询可从其他目录回放，无需检测项目 manager。记录保存在同一治理根的 `.limina/check/invocations/`。
 
 查询的显式 `--config` 是 lexical 定位 anchor：模块可以已经删除或重命名，它最近的 manifest 仍须存在且为合法对象。查询不 import 配置、不解析 manager adapter、不重新构建包集合、不执行 preflight。未给出 `--config` 时，需要发现当前默认配置。缺少记录不会回退到祖先 workspace。
 
-在 POSIX 系统上，命令标签为 `Query:`。在 Windows 上，Limina 不猜测当前 shell，而是同时输出 `PowerShell:` 与 `cmd.exe (/V:OFF):` 两个 variant。同一个 PowerShell variant 同时适用于 Windows PowerShell 5.1 与 PowerShell 7。CMD variant 要求关闭 delayed expansion；不支持 `cmd.exe /V:ON`。
+在 POSIX 系统上，命令标签为 `Query:`。在 Windows 上，Limina 输出适用于 Windows PowerShell 5.1 或 PowerShell 7 的 `PowerShell:` 命令；即使从 CMD 启动 Limina，也应在 PowerShell 中执行这条命令。Limina 不再输出 CMD variant。可以在打印的命令后追加 `--format json` 或 `--file src/index.ts` 等查询选项。
 
 invocation 是 selector，不是问题 filter，因此默认 human 视图会进入精简档。human header 会显示 invocation ID、kind、result 和完成时间。生成的 refine、detailed、complete、JSON 与 filter-help 命令会保留同一个 invocation ID、当前全部 filters 和显式全局配置上下文。记录中的原始命令只作为元数据显示，不会用于拼接新查询。
 

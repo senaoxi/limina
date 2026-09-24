@@ -159,7 +159,6 @@ async function assertGeneratedCommandRoundTrip(options: {
   prefixArgs: readonly string[];
   probeModulePath: string;
   variantName: string;
-  windowsCmdCommandString?: boolean;
 }): Promise<void> {
   const probeOutputPath = path.join(
     options.outsideCwd,
@@ -175,12 +174,7 @@ async function assertGeneratedCommandRoundTrip(options: {
     .join(' ');
   const result = await runCommand(
     options.executable,
-    [
-      ...options.prefixArgs,
-      options.windowsCmdCommandString
-        ? `"${options.command}"`
-        : options.command,
-    ],
+    [...options.prefixArgs, options.command],
     {
       cwd: options.outsideCwd,
       env: createShellEnvironment({
@@ -190,7 +184,6 @@ async function assertGeneratedCommandRoundTrip(options: {
       }),
       reject: false,
       timeout: 180_000,
-      windowsVerbatimArguments: options.windowsCmdCommandString,
     },
   );
 
@@ -243,86 +236,85 @@ async function assertGeneratedCommandRoundTrip(options: {
   );
 }
 
+interface PowerShellEvidence {
+  pnpmSources: string[];
+  version: string;
+}
+
+function parsePowerShellEvidence(stdout: string): PowerShellEvidence {
+  const evidence = JSON.parse(stdout) as PowerShellEvidence;
+  expect(evidence).toMatchObject({
+    pnpmSources: expect.any(Array),
+    version: expect.any(String),
+  });
+  expect(evidence.pnpmSources.length).toBeGreaterThan(0);
+  for (const source of evidence.pnpmSources) {
+    expect(source).toEqual(expect.any(String));
+    expect(source.length).toBeGreaterThan(0);
+  }
+  return evidence;
+}
+
 async function getPowerShellEvidence(
   executable: 'powershell.exe' | 'pwsh.exe',
   environment: NodeJS.ProcessEnv,
   outsideCwd: string,
-): Promise<{ pnpmSource: string; version: string }> {
+): Promise<PowerShellEvidence> {
   const result = await runCommand(
     executable,
     [
       '-NoProfile',
+      '-NonInteractive',
       '-Command',
-      '(Get-Command pnpm).Source; $PSVersionTable.PSVersion.ToString()',
+      [
+        "$ErrorActionPreference = 'Stop'",
+        // Discovery may return both pnpm.ps1 and pnpm.CMD. Keep its results
+        // separate from the version instead of assigning meaning by line number.
+        // Limit module discovery only inside this scope, so ConvertTo-Json can
+        // load its built-in utility module afterward.
+        "$pnpmSources = @(& { $PSModuleAutoLoadingPreference = 'None'; (Get-Command pnpm -CommandType Application,ExternalScript -ErrorAction Stop).Source })",
+        '[pscustomobject]@{ pnpmSources = $pnpmSources; version = $PSVersionTable.PSVersion.ToString() } | ConvertTo-Json -Compress',
+      ].join('; '),
     ],
     {
       cwd: outsideCwd,
       env: environment,
-      timeout: 30_000,
+      // Include hosted-runner shell startup in the same bounded budget used
+      // by the real shell replay. A failed probe must still reject the test.
+      timeout: 180_000,
     },
   );
-  const [pnpmSource = '', version = ''] = result.stdout.split(/\r?\n/u);
-
-  return { pnpmSource, version };
+  return parsePowerShellEvidence(result.stdout);
 }
 
-function assertCmdPnpmEvidence(
-  candidates: readonly string[],
-  pathLookup: string,
-): void {
-  const normalizedCandidates = candidates.map((candidate) =>
-    normalizePath(candidate).toLowerCase(),
-  );
-
-  expect(
-    normalizedCandidates.some((candidate) => candidate.endsWith('/pnpm.cmd')),
-  ).toBe(true);
-  expect(normalizedCandidates).toContain(
-    normalizePath(pathLookup).toLowerCase(),
-  );
-}
-
-async function getCmdPnpmEvidence(
-  environment: NodeJS.ProcessEnv,
-  outsideCwd: string,
-): Promise<{ candidates: readonly string[]; pathLookup: string }> {
-  const whereResult = await runCommand(
-    'cmd.exe',
-    ['/d', '/v:off', '/s', '/c', 'where.exe pnpm'],
+describe('PowerShell evidence', () => {
+  it.each([
+    { pnpmSources: ['C:\\node\\pnpm.ps1'], version: '5.1.26100.1' },
     {
-      cwd: outsideCwd,
-      env: environment,
-      timeout: 30_000,
+      pnpmSources: ['C:\\node\\pnpm.ps1', 'C:\\node\\pnpm.CMD'],
+      version: '5.1.26100.1',
     },
-  );
-  const candidates = whereResult.stdout.split(/\r?\n/u).filter(Boolean);
-
-  const pathLookupResult = await runCommand(
-    'cmd.exe',
-    ['/d', '/v:off', '/s', '/c', 'for %I in (pnpm) do @echo %~$PATH:I'],
     {
-      cwd: outsideCwd,
-      env: environment,
-      timeout: 30_000,
+      pnpmSources: ['C:\\pnpm project\\pnpm.ps1', 'D:\\node\\pnpm.CMD'],
+      version: '7.5.0',
     },
-  );
-  const pathLookup = pathLookupResult.stdout;
-
-  assertCmdPnpmEvidence(candidates, pathLookup);
-
-  return { candidates, pathLookup };
-}
-
-describe('smoke pnpm runner', () => {
-  it('accepts Corepack extensionless PATH lookup with a CMD shim', () => {
-    const nodeRoot = 'C:\\hostedtoolcache\\windows\\node\\24.11.0\\x64';
-
-    assertCmdPnpmEvidence(
-      [`${nodeRoot}\\pnpm`, `${nodeRoot}\\pnpm.cmd`],
-      `${nodeRoot}\\pnpm`,
+  ])('reads version $version independently of PATH match count', (evidence) => {
+    expect(parsePowerShellEvidence(`${JSON.stringify(evidence)}\r\n`)).toEqual(
+      evidence,
     );
   });
 
+  it.each([
+    { pnpmSources: [], version: '5.1.26100.1' },
+    { pnpmSources: [''], version: '5.1.26100.1' },
+    { pnpmSources: 'C:\\node\\pnpm.CMD', version: '5.1.26100.1' },
+    { pnpmSources: ['C:\\node\\pnpm.CMD'], version: 7 },
+  ])('rejects malformed evidence $pnpmSources / $version', (evidence) => {
+    expect(() => parsePowerShellEvidence(JSON.stringify(evidence))).toThrow();
+  });
+});
+
+describe('smoke pnpm runner', () => {
   it('uses the Corepack JS entry when npm_execpath is unavailable', async () => {
     const corepackRoot = await mkdtemp(
       path.join(tmpdir(), 'limina-fake-corepack-'),
@@ -440,10 +432,6 @@ describe('standalone invocation generated command', () => {
           failedCheck.stdout,
           'PowerShell',
         );
-        const cmdCommand = extractGeneratedCommand(
-          failedCheck.stdout,
-          'cmd.exe (/V:OFF)',
-        );
         expect(powershellCommand).toMatch(/^Set-Location -LiteralPath /u);
         expect(powershellCommand).toContain(' -ErrorAction Stop; & ');
         expect(powershellCommand).toContain(" '-e' ");
@@ -451,10 +439,7 @@ describe('standalone invocation generated command', () => {
         expect(powershellCommand).not.toContain(
           '$PSNativeCommandArgumentPassing',
         );
-        expect(cmdCommand).toMatch(/^cd \/d /u);
-        expect(cmdCommand).toContain(' && ');
-
-        const cmdPnpm = await getCmdPnpmEvidence(environment, outsideCwd);
+        expect(failedCheck.stdout).not.toContain('cmd.exe (/V:OFF):');
 
         const windowsPowerShell = await getPowerShellEvidence(
           'powershell.exe',
@@ -466,33 +451,15 @@ describe('standalone invocation generated command', () => {
           environment,
           outsideCwd,
         );
-        expect(windowsPowerShell.pnpmSource).toBeTruthy();
         expect(windowsPowerShell.version).toMatch(/^5\.1(?:\.|$)/u);
-        expect(powerShellSeven.pnpmSource).toBeTruthy();
         expect(powerShellSeven.version).toMatch(/^7\./u);
         process.stdout.write(
           `[limina generated-command Windows evidence] ${JSON.stringify({
-            cmdPathPnpm: cmdPnpm.pathLookup,
             powershell5: windowsPowerShell,
             powershell7: powerShellSeven,
-            wherePnpm: cmdPnpm.candidates,
           })}\n`,
         );
 
-        await assertGeneratedCommandRoundTrip({
-          command: cmdCommand,
-          environment,
-          executable: 'cmd.exe',
-          fixture,
-          invocationId,
-          outsideCwd,
-          prefixArgs: ['/d', '/v:off', '/s', '/c'],
-          probeModulePath,
-          variantName: 'cmd-v-off',
-          // Match Node's cmd.exe shell transport: /S /C removes this outer
-          // quote pair, then parses the Shescape-rendered command unchanged.
-          windowsCmdCommandString: true,
-        });
         await assertGeneratedCommandRoundTrip({
           command: powershellCommand,
           environment,
@@ -500,7 +467,7 @@ describe('standalone invocation generated command', () => {
           fixture,
           invocationId,
           outsideCwd,
-          prefixArgs: ['-NoProfile', '-Command'],
+          prefixArgs: ['-NoProfile', '-NonInteractive', '-Command'],
           probeModulePath,
           variantName: 'windows-powershell-5',
         });
@@ -511,7 +478,7 @@ describe('standalone invocation generated command', () => {
           fixture,
           invocationId,
           outsideCwd,
-          prefixArgs: ['-NoProfile', '-Command'],
+          prefixArgs: ['-NoProfile', '-NonInteractive', '-Command'],
           probeModulePath,
           variantName: 'powershell-7',
         });

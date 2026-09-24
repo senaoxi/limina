@@ -18,11 +18,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import parsePosix from 'shell-quote/parse.js';
 import { describe, expect, it, vi } from 'vitest';
 import { createLiminaCli, runCheckWithCliFlowCleanup } from '../cli';
 import { assertIssueInventoryLimitArgv } from '../cli/argv';
 import { showIssueInventory } from '../cli/issue-query';
 import type { CheckFlags } from '../cli/types';
+import { toPortablePath } from './helpers/path';
 import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
 const execFileAsync = promisify(execFile);
@@ -379,14 +381,17 @@ async function runCliExpectFailure(options: {
 
 function getHelpOutput(argv: string[]): string {
   const output: string[] = [];
-  const consoleLog = vi.spyOn(console, 'log').mockImplementation((...args) => {
-    output.push(args.map(String).join(' '));
-  });
+  // CAC 7 emits help through console.info.
+  const consoleInfo = vi
+    .spyOn(console, 'info')
+    .mockImplementation((...args) => {
+      output.push(args.map(String).join(' '));
+    });
 
   try {
     createLiminaCli().parse(argv, { run: false });
   } finally {
-    consoleLog.mockRestore();
+    consoleInfo.mockRestore();
   }
 
   return output.join('\n');
@@ -822,7 +827,7 @@ export default {
           expectedTask: string;
           invocationId: string;
         }> => {
-          const mode = 'standalone invocation mode';
+          const mode = 'standalone pnpm invocation mode';
           let stdout = '';
 
           try {
@@ -853,59 +858,54 @@ export default {
           const invocationId =
             /Standalone issue invocation: ([0-9a-f-]+)/u.exec(stdout)?.[1];
           const outputLines = stdout.split('\n');
-          const queryLines =
-            process.platform === 'win32'
-              ? [
-                  outputLines.find((line) => line.startsWith('PowerShell: ')),
-                  outputLines.find((line) =>
-                    line.startsWith('cmd.exe (/V:OFF): '),
-                  ),
-                ]
-              : [outputLines.find((line) => line.startsWith('Query: '))];
+          const queryLines = outputLines.filter(
+            (line) =>
+              line.startsWith('PowerShell: ') || line.startsWith('Query: '),
+          );
+
+          expect(stdout).not.toContain('cmd.exe (/V:OFF):');
 
           expect(invocationId).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
           );
-          expect(queryLines).not.toContain(undefined);
-          // The PowerShell variant marshals the canonical Node argv through a
-          // Base64 JSON transport token, so flags like `--config` are not
-          // present as plaintext on that line. Decode any trailing Base64
-          // payload back into its arguments before asserting on the tokens.
-          const expandQueryLine = (line: string): string => {
-            const base64Match = /'([A-Za-z0-9+/=]{16,})'\s*$/u.exec(line);
-            if (!base64Match) {
-              return line;
-            }
-            const decodedArgs = JSON.parse(
-              Buffer.from(base64Match[1], 'base64').toString('utf8'),
-            ) as string[];
-            return `${line} ${decodedArgs.join(' ')}`;
-          };
-          for (const queryLine of queryLines) {
-            const queryTokens = expandQueryLine(queryLine!);
-            expect(queryTokens).toContain(rootDir.replaceAll(path.sep, '/'));
-            expect(queryTokens).toContain('--config');
-            expect(queryTokens).toContain(
-              options.expectedConfigPath.replaceAll(path.sep, '/'),
-            );
-            expect(queryTokens).toContain('--config-loader');
-            expect(queryTokens).toContain('native');
-            expect(queryTokens).toContain('--mode');
-            expect(queryTokens).toContain(mode);
-            expect(queryTokens).toContain('--invocation');
-            expect(queryTokens).toContain(invocationId);
-          }
+          expect(queryLines).toHaveLength(1);
+          const queryLine = queryLines[0];
+          const expectedArgs = [
+            toPortablePath(cliPath),
+            '--config',
+            toPortablePath(options.expectedConfigPath),
+            '--config-loader',
+            'native',
+            '--mode',
+            mode,
+            'check',
+            '--issues',
+            '--invocation',
+            invocationId,
+          ];
           if (process.platform === 'win32') {
-            expect(queryLines[0]).toContain('Set-Location -LiteralPath');
-            expect(queryLines[0]).toContain('-ErrorAction Stop; &');
-            expect(queryLines[0]).toContain('node');
-            expect(queryLines[0]).not.toContain('pnpm');
-            expect(queryLines[1]).toContain('cd /d');
-            expect(queryLines[1]).toContain('node');
-            expect(queryLines[1]).not.toContain('pnpm');
+            // PowerShell literals escape a quote by doubling it. The final
+            // literal carries the CLI entry and argv as Base64 JSON.
+            const transport =
+              /^PowerShell: Set-Location -LiteralPath '((?:[^']|'')*)' -ErrorAction Stop; & '((?:[^']|'')*)' '-e' '(?:[^']|'')*' '([A-Za-z0-9+/=]+)'\s*$/u.exec(
+                queryLine,
+              );
+            expect(transport).not.toBeNull();
+            expect(transport![1].replaceAll("''", "'")).toBe(
+              toPortablePath(rootDir),
+            );
+            expect(transport![2].replaceAll("''", "'")).toBe(
+              toPortablePath(process.execPath),
+            );
+            expect(
+              JSON.parse(Buffer.from(transport![3], 'base64').toString('utf8')),
+            ).toEqual(expectedArgs);
           } else {
-            expect(queryLines[0]).toContain(process.execPath);
-            expect(queryLines[0]).not.toContain('pnpm');
+            expect(queryLine).toMatch(/^Query: /u);
+            expect(parsePosix(queryLine.slice('Query: '.length))).toEqual([
+              toPortablePath(process.execPath),
+              ...expectedArgs,
+            ]);
           }
           expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
 
@@ -1369,7 +1369,7 @@ export default {
           () => {
             throw new Error(`Expected check ${pipeline} to fail.`);
           },
-          (error: { code?: number; stdout?: string }) => error,
+          (error: { code?: number; stderr?: string; stdout?: string }) => error,
         );
 
       for (let iteration = 0; iteration < 3; iteration += 1) {
@@ -1387,8 +1387,14 @@ export default {
           betaOutput.lastIndexOf('Limina check summary'),
         );
 
-        expect(alpha.code).toBe(1);
-        expect(beta.code).toBe(1);
+        expect(alpha.code, `${alphaOutput}\n${alpha.stderr ?? ''}`).toBe(1);
+        expect(beta.code, `${betaOutput}\n${beta.stderr ?? ''}`).toBe(1);
+        expect(`${alphaOutput}\n${alpha.stderr ?? ''}`).not.toContain(
+          'Unable to write the failed-run snapshot',
+        );
+        expect(`${betaOutput}\n${beta.stderr ?? ''}`).not.toContain(
+          'Unable to write the failed-run snapshot',
+        );
         expect(alphaSummary).toContain('ALPHA_RESULT');
         expect(alphaSummary).not.toContain('BETA_RESULT');
         expect(alphaSummary).toContain(
@@ -1408,8 +1414,15 @@ export default {
           cwd: rootDir,
           env: { ...process.env, CI: 'true' },
         },
+      ).then(
+        (result) => ({ ...result, code: 0 }),
+        (error: { code?: number; stderr?: string; stdout?: string }) => error,
       );
-      expect(JSON.parse(stableTaskQuery.stdout)).toMatchObject({
+      expect(
+        stableTaskQuery.code,
+        `${stableTaskQuery.stdout ?? ''}\n${stableTaskQuery.stderr ?? ''}`,
+      ).toBe(0);
+      expect(JSON.parse(stableTaskQuery.stdout ?? '')).toMatchObject({
         issueCount: 1,
         issues: [{ task: 'command' }],
       });

@@ -1,9 +1,9 @@
 import type { LiminaConfigLoader } from '#config/runner';
 import { normalizeAbsolutePathIdentity } from '#utils/path';
 import { Buffer } from 'node:buffer';
-import { Shescape } from 'shescape';
+import quotePosix from 'shell-quote/quote.js';
 
-export type GeneratedCommandDialect = 'cmd' | 'posix' | 'powershell';
+export type GeneratedCommandDialect = 'posix' | 'powershell';
 
 export interface GlobalQueryCommandContext {
   readonly cliEntryPath: string;
@@ -27,22 +27,28 @@ export interface GeneratedLiminaCommand {
 export interface GeneratedCommandVariant {
   readonly command: string;
   readonly dialect: GeneratedCommandDialect;
-  readonly label: 'PowerShell' | 'Query' | 'cmd.exe (/V:OFF)';
+  readonly label: 'PowerShell' | 'Query';
 }
 
-const SHESCAPE_SHELL_BY_DIALECT = {
-  cmd: 'cmd.exe',
-  posix: 'bash',
-} as const;
 const POWERSHELL_NODE_ARGV_RUNNER = [
   "const p=JSON.parse(Buffer.from(process.argv[1],'base64').toString())",
-  "const r=require('node:child_process').spawnSync(process.execPath,p,{stdio:'inherit'})",
+  "const r=require('node:child_process').spawnSync(process.execPath,[...p,...process.argv.slice(2)],{stdio:'inherit'})",
   'if(r.error)throw r.error',
   'process.exitCode=r.status??1',
 ].join(';');
 
 function quotePowerShellLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
+}
+
+function quotePosixArgument(value: string): string {
+  // shell-quote 1.10 escapes ! inside double quotes, where POSIX shells keep
+  // the backslash. Quote the pieces separately and concatenate them into one
+  // shell word so literal ! is always escaped outside quotes by the library.
+  return value
+    .split('!')
+    .map((part) => quotePosix([part]))
+    .join(quotePosix(['!']));
 }
 
 export function createPowerShellNodeTransportTokens(
@@ -118,21 +124,6 @@ export function renderGeneratedLiminaCommand(
 ): string {
   const [executable, ...args] =
     getGeneratedLiminaCommandTokens(generatedCommand);
-  if (dialect === 'cmd') {
-    const shescape = new Shescape({
-      flagProtection: false,
-      shell: SHESCAPE_SHELL_BY_DIALECT.cmd,
-    });
-
-    return [
-      'cd',
-      '/d',
-      shescape.quote(generatedCommand.context.workspaceRoot),
-      '&&',
-      ...shescape.quoteAll([executable, ...args]),
-    ].join(' ');
-  }
-
   if (dialect === 'powershell') {
     // Windows PowerShell 5.1 and PowerShell 7 marshal native arguments
     // differently. Carry the canonical Node argv as Base64 JSON through a
@@ -154,12 +145,7 @@ export function renderGeneratedLiminaCommand(
     ].join(' ');
   }
 
-  const shescape = new Shescape({
-    flagProtection: false,
-    shell: SHESCAPE_SHELL_BY_DIALECT.posix,
-  });
-
-  return shescape.quoteAll([executable, ...args]).join(' ');
+  return [executable, ...args].map(quotePosixArgument).join(' ');
 }
 
 export function getGeneratedCommandPresentation(
@@ -170,10 +156,6 @@ export function getGeneratedCommandPresentation(
         Object.freeze({
           dialect: 'powershell' as const,
           label: 'PowerShell' as const,
-        }),
-        Object.freeze({
-          dialect: 'cmd' as const,
-          label: 'cmd.exe (/V:OFF)' as const,
         }),
       ])
     : Object.freeze([

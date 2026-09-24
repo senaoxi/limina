@@ -1,6 +1,6 @@
 import type { RuntimeEnvironment } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
-import { init, parse } from 'es-module-lexer';
+import { type DynamicImport, type Import, init, parse } from 'es-module-lexer';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'pathe';
 import { collectSelfSpecifierMatchers } from './manifest';
@@ -122,6 +122,21 @@ function createImportViolation(options: {
   };
 }
 
+function getDynamicSpecifier(
+  importSpecifier: DynamicImport,
+): string | undefined {
+  if (importSpecifier.glob) return undefined;
+  return importSpecifier.specifier;
+}
+
+function getAuditableSpecifier(importSpecifier: Import): string | undefined {
+  if (importSpecifier.type === 'dynamic') {
+    return getDynamicSpecifier(importSpecifier);
+  }
+  if (importSpecifier.type === 'import-meta') return undefined;
+  return importSpecifier.specifier;
+}
+
 async function collectFileViolations(options: {
   context: BoundaryAuditContext;
   filePath: string;
@@ -141,7 +156,7 @@ async function collectFileViolations(options: {
       context: options.context,
       environment,
       relativeFilePath,
-      specifier: importSpecifier.n,
+      specifier: getAuditableSpecifier(importSpecifier),
     });
     return violation === null ? [] : [violation];
   });
@@ -178,7 +193,7 @@ export async function auditPublishedPackageBoundaries(
     target,
   };
   const publishedFiles = await collectPublishedModuleFiles(target.outDir);
-  await init;
+  await init();
   const violationGroups = await Promise.all(
     publishedFiles.map((filePath) =>
       collectFileViolations({ context, filePath }),
