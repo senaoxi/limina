@@ -10,6 +10,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+## [0.4.0] - 2026-09-25
+
+### Features
+
+- feat(limina)!: make governance roots config-anchored ([0bfa8deb](https://github.com/senaoxi/docs-islands/commit/0bfa8deb))
+- feat(limina): support multi-manager workspace discovery ([530d8c38](https://github.com/senaoxi/docs-islands/commit/530d8c38))
+
+### Bug Fixes
+
+- fix(limina): preserve Node builtin specifier identity ([9badd196](https://github.com/senaoxi/docs-islands/commit/9badd196))
+- fix(limina): harden validation and build semantics ([60d0b3ec](https://github.com/senaoxi/docs-islands/commit/60d0b3ec))
+- fix(limina): preserve module specifier identity and checker authority ([68899f86](https://github.com/senaoxi/docs-islands/commit/68899f86))
+- fix(limina): align native evidence with canonical source ownership ([64319a6d](https://github.com/senaoxi/docs-islands/commit/64319a6d))
+
+### Maintenance
+
+- chore(limina): harden standalone invocation shell transport ([ad7d0ed1](https://github.com/senaoxi/docs-islands/commit/ad7d0ed1))
+
+### Other Changes
+
+- perf(limina): reuse TypeScript syntax facts across analyses ([40912066](https://github.com/senaoxi/docs-islands/commit/40912066))
+
 ## [0.3.1] - 2026-09-15
 
 ### Features
