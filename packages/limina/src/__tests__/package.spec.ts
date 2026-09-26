@@ -1977,6 +1977,55 @@ describe('runPackageCheck and runReleaseCheck', () => {
     }
   });
 
+  it.each([
+    {
+      label: 'mixed root',
+      exports: { '.': './missing.js', import: './missing.mjs' },
+      passes: false,
+    },
+    {
+      label: 'subpath with a missing target',
+      exports: { './foo': './missing.js' },
+      passes: true,
+    },
+    {
+      label: 'conditional root',
+      exports: { import: './missing.mjs', require: './missing.cjs' },
+      passes: true,
+    },
+  ])(
+    'checks declaration structure without duplicating publint: $label',
+    async ({ exports, passes }) => {
+      const pkg = await createOutputPackage({}, { exports });
+      try {
+        const issues: LiminaCheckIssue[] = [];
+        await expect(
+          runPackageCheck({
+            config: createConfig(pkg.rootDir, [
+              {
+                checks: ['boundary'],
+                outDir: pkg.outDir,
+                name: '@example/pkg',
+              },
+            ]),
+            deferSnapshot: true,
+            issues,
+            report: { defer: true },
+          }),
+        ).resolves.toBe(passes);
+        expect(packageCheckMocks.publintCalls).toEqual([]);
+        expect(packageCheckMocks.attwRuns).toBe(0);
+        if (!passes) {
+          expect(JSON.stringify(issues)).toContain(
+            'mixes export subpaths and conditions',
+          );
+        }
+      } finally {
+        await pkg.cleanup();
+      }
+    },
+  );
+
   it('rejects output package manifests without names', async () => {
     const pkg = await createOutputPackage(
       {

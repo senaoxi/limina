@@ -13,8 +13,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { createImportAnalysisContext } from '../core/import-analysis/context';
-import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { collectTypeScriptSourceTextImports } from '../core/import-analysis/typescript-imports';
 import { toPortablePath } from './helpers/path';
 
 describe('workspace export resolver proof', () => {
@@ -71,6 +70,11 @@ describe('workspace export resolver proof', () => {
             path.join(directory, 'package.json'),
             JSON.stringify(manifest),
           );
+          const consumerPath = path.join(directory, 'Consumer.astro');
+          await writeFile(
+            consumerPath,
+            `---\nimport Widget from '${manifest.name}';\n---\n<Widget />`,
+          );
           const astroSemanticProject = createAstroSemanticProject({
             analysisGeneration: 1,
             configPath,
@@ -79,36 +83,30 @@ describe('workspace export resolver proof', () => {
             readSnapshot: () => ({
               compilerOptions: options,
               configClosure: [],
-              fileNames: [file],
+              fileNames: [file, consumerPath],
               projectReferences: [],
               checkerExtensions: ['.astro'],
             }),
           });
-          const index = await createWorkspaceExportsResolutionIndex({
-            config: {
-              get governanceRoot() {
-                return resolveFixtureGovernanceRoot(this);
-              },
-              config: {},
-              rootDir: directory,
-              configPath: path.join(directory, 'limina.config.mjs'),
+          const prepared = importAnalysis.prepareCheckerSemanticDependencies({
+            filePath: consumerPath,
+            context: {
+              configPath,
+              resolverConfigPath: configPath,
+              extensions: ['.astro'],
+              checkerPresets: [],
+              semanticFamily: 'astro',
+              astroSemanticProject,
             },
-            importAnalysis,
-            packages: [{ directory, name: manifest.name, manifest }],
-            profiles: [
-              {
-                options,
-                configPath,
-                resolverConfigPath: configPath,
-                extensions: ['.astro'],
-                checkerPresets: [],
-                astroSemanticProject,
-              },
-            ],
           });
-          const result = index.get(configPath, manifest.name)!;
-          expect(result.hasTypeScriptStableEntry).toBe(mode === 'active');
-          expect(result.typeScriptResolvedFileName).toBe(
+          expect(prepared.kind).toBe('supported');
+          if (prepared.kind !== 'supported')
+            throw new Error(JSON.stringify(prepared));
+          const fact = prepared.facts.find(
+            (fact) => fact.importRecord.specifier === manifest.name,
+          );
+          expect(fact).toBeDefined();
+          expect(fact!.target?.resolvedFileName ?? null).toBe(
             mode === 'active' ? toPortablePath(file) : null,
           );
         }
@@ -195,39 +193,35 @@ describe('workspace export resolver proof', () => {
           moduleResolution: ts.ModuleResolutionKind.NodeNext,
           customConditions: conditions,
         };
-        const containingFile = path.join(directory, 'package.json');
+        const containingFile = path.join(directory, 'consumer.mts');
+        const sourceText = `import value from '${manifest.name}'; void value;`;
+        await writeFile(containingFile, sourceText);
+        const record = collectTypeScriptSourceTextImports({
+          filePath: containingFile,
+          sourceText,
+        })[0]!;
         const native = ts.resolveModuleName(
           manifest.name,
           containingFile,
           options,
           ts.sys,
         ).resolvedModule;
-        const index = await createWorkspaceExportsResolutionIndex({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            rootDir: directory,
-            configPath: path.join(directory, 'limina.config.mjs'),
-            config: {},
+        const evidence = importAnalysis.resolveCheckerImportEvidence(
+          record,
+          containingFile,
+          options,
+          {
+            configPath,
+            resolverConfigPath: configPath,
+            extensions: ['.ts', '.d.ts', '.vue'],
+            checkerPresets: ['tsc'],
+            semanticFamily: 'typescript',
           },
-          importAnalysis,
-          packages: [{ directory, name: manifest.name, manifest }],
-          profiles: [
-            {
-              configPath,
-              resolverConfigPath: configPath,
-              options,
-              checkerPresets: ['tsc'],
-              extensions: ['.ts', '.d.ts', '.vue'],
-            },
-          ],
-        });
-        const result = index.get(configPath, manifest.name)!;
-        expect(result.hasTypeScriptStableEntry).toBe(stable);
-        expect(result.typeScriptResolvedFileName).toBe(
+        );
+        expect(evidence.typeScriptResolution?.resolvedFileName ?? null).toBe(
           native ? toPortablePath(native.resolvedFileName) : null,
         );
+        expect(evidence.typeScriptResolution !== null).toBe(stable);
       } finally {
         importAnalysis.dispose?.();
         await rm(rootDir, { recursive: true, force: true });

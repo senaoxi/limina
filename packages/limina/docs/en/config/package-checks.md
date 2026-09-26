@@ -59,6 +59,10 @@ The output is unconditional during workspace discovery. It must be a dedicated s
 Each `outDir/package.json` must exist and look like a complete `npm` package manifest. Limina rejects `workspace:`, `link:`, `file:`, and `catalog:` specifiers in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`, because built output should already contain the publish-ready manifest that consumers and `npm` receive.
 :::
 
+Limina also rejects an `exports` root that mixes subpath keys (such as `"."` or `"./foo"`) with condition keys (such as `"import"`). These declaration checks run independently of the selected optional tools. They do not resolve or enumerate all export targets.
+
+Missing export targets in the packed artifact are delegated to publint. If publint is disabled or skipped, target existence has not been checked; passing the remaining checks does not establish a complete publish contract. ATTW checks runtime/type compatibility, without deciding which entries should be public or changing consumer graph results. Package checks do not automatically select every workspace package or expand ATTW entrypoints.
+
 ## checks
 
 - **Type:** `Array<'publint' | 'attw' | 'boundary'>`

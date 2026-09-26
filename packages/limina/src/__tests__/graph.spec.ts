@@ -23,6 +23,7 @@ import {
   type RunGraphCheckOptions,
   runGraphExport,
 } from '../commands/graph';
+import { collectDependencyGraph } from '../dependency-graph/runner';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
 import { addTypecheckParityProblems } from '../graph-check/dts-options';
@@ -30,6 +31,7 @@ import type { GraphFinding } from '../graph-check/findings';
 import { GraphLogger } from '../logger';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { createFixturePathResolver } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -113,6 +115,7 @@ async function createFixture(
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
   rootDir: string;
+  path: (...segments: string[]) => string;
 }> {
   const rootDir = await realpath(
     await mkdtemp(path.join(tmpdir(), 'limina-graph-')),
@@ -157,6 +160,7 @@ async function createFixture(
       rootDir,
     },
     rootDir,
+    path: createFixturePathResolver(rootDir),
   };
 }
 
@@ -1690,7 +1694,97 @@ packages:
     }
   });
 
-  it('reports workspace package exports unresolved by TypeScript without consulting Oxc', async () => {
+  it.each([
+    { entry: 'a', passes: true },
+    { entry: 'broken', passes: false },
+    { entry: 'pattern/index', passes: true },
+    { entry: 'pattern/missing', passes: false },
+    { entry: 'blocked', passes: false },
+  ])(
+    'shares consumed $entry facts across graph check/export and ATTW settings',
+    async ({ entry, passes }) => {
+      const files = createWorkspacePackageFiles({
+        appReferences: ['../internal/tsconfig.lib.dts.json'],
+        appSource: `import { internalValue } from '@example/internal/${entry}';\nexport const value = internalValue;\n`,
+      });
+      files['packages/internal/package.json'] = stringifyConfig({
+        name: '@example/internal',
+        type: 'module',
+        exports: {
+          './a': './src/index.ts',
+          './broken': './src/missing.ts',
+          './pattern/*': './src/*.ts',
+          './blocked': { types: null, default: './src/index.ts' },
+          './future': './src/index.ts',
+        },
+      });
+      const fixture = await createFixture(files);
+      try {
+        await linkWorkspacePackage(
+          fixture.rootDir,
+          'packages/app',
+          'packages/internal',
+          '@example/internal',
+        );
+        const results = [];
+        for (const checks of [['boundary'], ['boundary', 'attw']] as const) {
+          fixture.config.package = {
+            entries: [
+              {
+                name: '@example/internal',
+                outDir: 'packages/internal/dist',
+                checks: [...checks],
+              },
+            ],
+          };
+          const result = await runGraphCheckWithIssues(fixture.config);
+          expect(result.passed).toBe(passes);
+          if (passes) {
+            expect(result.issues).toEqual([]);
+            const graph = await collectDependencyGraph(fixture.config);
+            expect(graph.edges).toContainEqual(
+              expect.objectContaining({
+                from: 'pkg:@example/app',
+                to: 'pkg:@example/internal',
+                kind: 'source',
+                evidence: [
+                  expect.objectContaining({
+                    specifier: `@example/internal/${entry}`,
+                    resolvedPath: 'packages/internal/src/index.ts',
+                  }),
+                ],
+              }),
+            );
+            results.push({ result, graph });
+          } else {
+            expect(result.issues).toContainEqual(
+              expect.objectContaining({
+                code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+                filePath: 'packages/app/src/index.ts',
+              }),
+            );
+            const views =
+              entry === 'broken' && checks.length === 1
+                ? (['all', 'source', 'artifact'] as const)
+                : (['all'] as const);
+            for (const view of views) {
+              await expect(
+                collectDependencyGraph(fixture.config, { view }),
+              ).rejects.toThrow(
+                `imported specifier: @example/internal/${entry}`,
+              );
+            }
+            results.push({ result });
+          }
+        }
+        expect(results[1]).toEqual(results[0]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it('ignores unconsumed broken workspace exports', async () => {
     const fixture = await createFixture({
       'packages/internal/package.json': stringifyConfig({
         main: 'lib/index.js',
@@ -1723,47 +1817,8 @@ packages:
 
     try {
       const { issues, passed } = await runGraphCheckWithIssues(fixture.config);
-      const declarationIssue = issues.find(
-        (issue) =>
-          issue.title ===
-          'Workspace package export has no TypeScript declaration-context resolution',
-      );
-      const runtimeIssue = issues.find(
-        (issue) =>
-          issue.title ===
-          'Workspace package export points to an unresolved public entry',
-      );
-
-      expect(passed).toBe(false);
-      expect(declarationIssue).toEqual(
-        expect.objectContaining({
-          packageManifestPath: 'packages/internal/package.json',
-          packageName: '@example/internal',
-          task: 'graph:check',
-        }),
-      );
-      expect(declarationIssue?.detailLines).toEqual(
-        expect.arrayContaining([
-          '  check: graph:check workspace exports preflight',
-          '  package: @example/internal',
-          '  package.json: packages/internal/package.json',
-          '  export: .',
-          '  specifier: @example/internal',
-          '  declared targets:',
-          '    - ./lib/index.js',
-          '  resolver: TypeScript declaration resolver',
-          '  expected declaration candidates:',
-          '    - packages/internal/lib/index.d.ts',
-          '  reason: package.json#exports/types/main do not resolve to a declaration entry for any active checker profile.',
-          '  fix: either create the missing exported entry, or update/remove package.json main/types/exports so the package public surface matches the files that are actually built.',
-        ]),
-      );
-      expect(
-        declarationIssue?.detailLines?.some((line) =>
-          line.startsWith('    - .limina/tsconfig/checkers/tsc/'),
-        ),
-      ).toBe(true);
-      expect(runtimeIssue).toBeUndefined();
+      expect(passed).toBe(true);
+      expect(issues).toEqual([]);
     } finally {
       await fixture.cleanup();
     }

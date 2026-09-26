@@ -1,5 +1,5 @@
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
+import type { GraphConfigInvalidFinding } from './findings';
 import type { GraphCheckState } from './run-state';
 
 function addGraphRouteDiagnostic(
@@ -27,51 +27,10 @@ function addGraphRouteDiagnostic(
   } satisfies GraphConfigInvalidFinding);
 }
 
-function addWorkspaceExportDiagnostic(
-  findings: GraphFinding[],
-  diagnostic: GraphCheckState['workspaceExports']['diagnostics'][number],
-  configPath: string,
-): void {
-  findings.push({
-    code: LIMINA_CHECK_ISSUE_CODES.graphConfigInvalid,
-    evidence: [{ label: 'package export', value: diagnostic.subpath }],
-    facts: {
-      configPath,
-      kind: 'workspace-export',
-      packageManifestPath: diagnostic.packageJsonPath,
-      packageName: diagnostic.packageName,
-    },
-    filePath: diagnostic.packageJsonPath,
-    locations: [
-      {
-        label: 'package manifest',
-        packageManifestPath: diagnostic.packageJsonPath,
-      },
-    ],
-    packageManifestPath: diagnostic.packageJsonPath,
-    packageName: diagnostic.packageName,
-    presentation: {
-      detailLines: diagnostic.detailLines,
-      fix: diagnostic.fix,
-      reason: diagnostic.reason,
-      title: diagnostic.title,
-    },
-    task: 'graph:check',
-  } satisfies GraphConfigInvalidFinding);
-}
-
 export function runGraphRoutePhase(state: GraphCheckState): void {
   state.checkItems.start('source graph routes');
   for (const diagnostic of state.graphRoute.diagnostics) {
     addGraphRouteDiagnostic(state, diagnostic);
-  }
-
-  for (const diagnostic of state.workspaceExports.diagnostics) {
-    addWorkspaceExportDiagnostic(
-      state.findings,
-      diagnostic,
-      state.config.configPath,
-    );
   }
 
   state.checks.add(state.projectPaths.length);

@@ -157,39 +157,30 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 
 Limina 并不是禁止跨包协作，而是要求跨包协作走能被包清单和公开入口解释的路径。
 
-## 先预检公开导出，再检查导入关系
+## 图检查依据实际消费的导出
 
-在单体仓库里，`workspace:*` 标识工作区依赖。消费者读取源码还是构建产物，由依赖包的 `package.json#exports` 决定。
+在工作区里，`package.json#exports` 参与导入方检查器的解析。Limina 保留该 occurrence 的结果，再根据实际目标判断工作区归属、源码或产物消费，以及 graph rules。
 
-`limina graph check` 会先建立工作区 exports 索引，并按活动检查器配置预检公开入口的解析情况。即使没有受治理源码导入某个入口，无法解析的导出也可能被拒绝。预检本身不建立源码依赖、类型提供者或生成的项目引用。
-
-例如，假设 `packages/demo/tsconfig.json` 已被选中，它唯一的源码是：
-
-```ts [packages/demo/src/index.ts]
-export const value = 1;
-```
-
-包清单声明了一个尚未构建的运行时入口：
+例如，一个包可以同时声明以下入口：
 
 ```json [packages/demo/package.json]
 {
   "name": "demo",
   "type": "module",
   "exports": {
-    "./runtime": "./dist/runtime.js"
+    "./a": "./src/a.ts",
+    "./broken": "./src/missing.ts"
   }
 }
 ```
 
-```sh
-pnpm exec limina graph check --verbose
-```
+当 `src/a.ts` 存在，且消费者只导入 `demo/a` 时，未被消费的损坏入口不会使 `limina graph check` 失败。已消费的依赖仍需满足归属、引用和 graph rules。如果消费者改为导入 `demo/broken`，且其检查器无法解析，图检查会定位该 import 并失败。`graph export` 也会报告该失败，而非静默省略依赖。
 
-当 `dist/runtime.js` 和对应的可解析类型入口都不存在时，这条命令失败，并输出 `workspace exports preflight` 诊断。这个结果不需要源码导入 `demo/runtime`。应创建预期的公开入口，或修正、移除过时的清单入口。缺失的纯类型导出也会被检查。
+导入方检查器仍然决定 self-name import、conditions、`paths`、ambient module、框架源码和声明的语义。另一个检查器配置或运行时文件命中不能修复其解析失败，也不能生成源码边。图检查不枚举包的 exports，也不展开 wildcard 入口以验证公开表面。既有声明引用规则继续适用，包括排除 `require.resolve()`。
 
-当没有受治理源码导入时，现存的纯运行时 JavaScript 入口可以在没有声明文件的情况下通过预检。一旦收集到源码导入该入口的 occurrence，图检查会另外要求该入口在导入方检查器下具有稳定类型入口或 checker-source 入口。TypeScript 或检查器的语义适配器提供类型解析，Oxc 提供物理运行时解析。仅命中运行时文件不能提供类型证据或声明构建归属。
+发布检查面向另一对象。[Package checks](./config/package-checks.md) 只处理显式配置的输出 entries。Limina 检查声明一致性，包括本地依赖协议和混合 exports 根键。可选 publint 检查 packed artifact，包括导出目标缺失；关闭或无法使用 publint 时，该项未检查。可选 ATTW 检查 runtime/type 兼容性，不改变 graph facts、边或诊断。Boundary 保留自身的产物代码约束，[release checks](./config/release-checks.md) 也保持独立。
 
-两类检查的对象不同：预检检查已声明的公开表面；occurrence 分析检查已观察到的源码关系、包规则与引用需求。纯类型导出可以解析到声明，源码导出可以解析到检查器支持的源码。导出不必同时暴露源码与产物，预检也不会发现仅由运行时插件或注册表注入的连接。
+图检查通过不代表完整发布契约已经通过。哪些公开入口应保留、弃用或删除，由包作者决定；未被工作区使用的入口可能服务外部消费者或兼容性需求。
 
 ## references 来自声明提供者，不是来自导入文本
 

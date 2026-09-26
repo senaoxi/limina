@@ -12,6 +12,7 @@ import {
   collectPreparedProjectDependencyFact,
   collectProjectDependencyRecord,
 } from './dependency-record';
+import { createUnobservedDependencyEvidence } from './evidence';
 import {
   createPreparationFailureIdentity,
   createProjectDependencyFailure,
@@ -171,6 +172,7 @@ function addGeneratedObservations(
   base.collection.observations.push(
     ...unmapped.map((observation) => ({
       ...observation,
+      evidence: createUnobservedDependencyEvidence(base.request),
       kind: 'unmapped-generated' as const,
     })),
   );

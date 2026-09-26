@@ -10,6 +10,7 @@ import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from './contracts';
+import { createDirectDependencyEvidence } from './evidence';
 import { createProjectDependencyFailure } from './failure';
 import {
   collectAmbientNativeObservation,
@@ -56,10 +57,16 @@ function createDirectDependency(options: {
 }): DirectSourceDependency {
   const resolvedFilePath = normalizeAbsolutePath(options.resolvedFilePath);
   const nativeFact = getDirectNativeFact(options);
+  const resolutionMode = getDirectResolutionMode(options);
   const typeEvidence =
     getNativeTypeEvidence(nativeFact) ??
     createDirectTypeEvidence(resolvedFilePath);
   return {
+    evidence: createDirectDependencyEvidence({
+      ...options,
+      nativeFact,
+      resolutionMode,
+    }),
     nativeFact,
     referenceRequirement: getNativeReferenceRequirement(
       nativeFact,
@@ -67,7 +74,7 @@ function createDirectDependency(options: {
     ),
     importRecord: options.importRecord,
     provenance: 'direct-source',
-    resolutionMode: getDirectResolutionMode(options),
+    resolutionMode,
     resolvedFilePath,
     semanticSpecifier: getDirectSemanticSpecifier(options),
     targetKind: getResolvedTargetKind(resolvedFilePath),
@@ -82,48 +89,23 @@ function isNativeProjectDependencyTarget(resolvedFilePath: string): boolean {
   ].some(Boolean);
 }
 
-function normalizeWorkspaceResolution(
-  resolvedFilePath: string | null,
-): string | undefined {
-  return resolvedFilePath === null ? undefined : resolvedFilePath;
-}
-
-function getWorkspaceTypeScriptResolution(
-  options: CollectRecordOptions,
-): string | undefined {
-  if (options.request.context.semanticAuthority.family !== 'typescript') {
-    return undefined;
-  }
-  const resolve = options.request.resolveWorkspaceTypeScriptExport;
-  return resolve === undefined
-    ? undefined
-    : normalizeWorkspaceResolution(resolve(options.importRecord.specifier));
-}
-
 function getDirectResolvedFilePath(
   options: CollectRecordOptions,
   evidence: CanonicalImportResolutionEvidence,
 ): string | undefined {
   const nativeFact = getDirectNativeFact(options);
   if (nativeFact !== undefined) return getNativeTargetPath(nativeFact);
-  const checkerResolution = [
-    getSemanticResolvedFilePath(evidence),
-    getTypeScriptResolvedFilePath(evidence),
-  ].find((value): value is string => value !== undefined);
-  if (checkerResolution !== undefined) return checkerResolution;
-  return getWorkspaceTypeScriptResolution(options);
+  return getDirectCheckerTargetPath(evidence);
 }
 
-function getSemanticResolvedFilePath(
+function getDirectCheckerTargetPath(
   evidence: CanonicalImportResolutionEvidence,
 ): string | undefined {
-  return evidence.semanticEvidence?.target?.resolvedFileName;
-}
-
-function getTypeScriptResolvedFilePath(
-  evidence: CanonicalImportResolutionEvidence,
-): string | undefined {
-  return evidence.typeScriptResolution?.resolvedFileName;
+  const target =
+    evidence.semanticEvidence === undefined
+      ? evidence.typeScriptResolution
+      : evidence.semanticEvidence.target;
+  return target?.resolvedFileName;
 }
 
 function resolveDirectCheckerEvidence(options: CollectRecordOptions) {
@@ -153,6 +135,16 @@ function collectDirectFailure(options: {
   if (failure === undefined) return false;
   options.base.collection.failures.push(
     createProjectDependencyFailure({
+      evidence: createDirectDependencyEvidence({
+        request: options.base.request,
+        importRecord: options.base.importRecord,
+        evidence: options.evidence,
+        nativeFact: getDirectNativeFact(options.base),
+        resolutionMode: getDirectResolutionMode({
+          ...options.base,
+          evidence: options.evidence,
+        }),
+      }),
       identity: JSON.stringify(failure),
       importRecord: options.base.importRecord,
       reason: failure.reason,
@@ -174,13 +166,21 @@ function addDirectObservation(options: {
     // A raw framework lookup can explain runtime presence, never a source edge.
     options.evidence.typeScriptResolution?.resolvedBy === 'checker-source',
   ].some(Boolean);
+  const resolutionMode = getDirectResolutionMode({
+    ...options.base,
+    evidence: options.evidence,
+  });
   options.base.collection.observations.push({
+    evidence: createDirectDependencyEvidence({
+      request: options.base.request,
+      importRecord: options.base.importRecord,
+      evidence: options.evidence,
+      nativeFact: getDirectNativeFact(options.base),
+      resolutionMode,
+    }),
     importRecord: options.base.importRecord,
     kind: hasResourceEvidence ? 'resource' : 'missing',
-    resolutionMode: getDirectResolutionMode({
-      ...options.base,
-      evidence: options.evidence,
-    }),
+    resolutionMode,
   });
 }
 
@@ -264,5 +264,5 @@ function collectNonDependency(
   evidence: CanonicalImportResolutionEvidence,
 ): boolean {
   if (collectDirectFailure({ base: options, evidence })) return true;
-  return collectAmbientNativeObservation(options);
+  return collectAmbientNativeObservation({ ...options, evidence });
 }

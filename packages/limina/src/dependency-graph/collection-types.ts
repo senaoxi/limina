@@ -7,7 +7,6 @@ import type {
 import type { WorkspacePackage } from '#core/workspace/actions';
 import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
 import type { WorkspaceSourceBoundary } from '../core/typescript-semantic';
-import type { WorkspaceExportsResolutionIndex } from '../core/workspace/exports';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { WorkspaceRegionPathIndex } from '../core/workspace/validated-context';
 import type { DependencyGraphEdge, DependencyGraphView } from './types';
@@ -25,7 +24,6 @@ export interface DependencyGraphCollectionContext {
   projectDependencyCaches: ProjectDependencyCaches;
   projects: ProjectInfo[];
   view: DependencyGraphView;
-  workspaceExports: WorkspaceExportsResolutionIndex;
   workspaceLookup: WorkspaceLookupIndex;
   workspacePackages: WorkspacePackage[];
   workspaceSourceBoundary: WorkspaceSourceBoundary;

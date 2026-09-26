@@ -6,10 +6,7 @@ import {
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { isDeclarationFile as isDeclarationFileFamily } from '../core/import-graph/declaration-classifier';
-import {
-  addBuildArtifactImportProblem,
-  shouldSkipWorkspaceExportResolvedOutsideGraph,
-} from './artifact-import-findings';
+import { addBuildArtifactImportProblem } from './artifact-import-findings';
 import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
 import type { GraphTargetUnreachableFinding } from './findings';
 import { getPreferredGeneratedTargetProjectPath } from './generated-project-paths';
@@ -69,10 +66,6 @@ function findSourceReferenceTargetProjectPath(
 ): string | null {
   if (options.resolution.managedOutputTargetProjectPath) {
     return options.resolution.managedOutputTargetProjectPath;
-  }
-
-  if (shouldSkipWorkspaceExportResolvedOutsideGraph(options)) {
-    return null;
   }
 
   return resolveNonArtifactTargetProjectPath(options);

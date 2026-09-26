@@ -1,14 +1,16 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
-import {
-  findPackageForSpecifier,
-  type WorkspacePackage,
-} from '#core/workspace/actions';
+import type { WorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import {
   collectProjectDependencies,
   createParsedProjectSemanticContext,
   type ProjectDependency,
 } from '../core/project-dependencies/runner';
+import {
+  describeWorkspaceConsumptionFailure,
+  getWorkspaceConsumptionFailure,
+  type WorkspaceConsumption,
+} from '../core/project-dependencies/workspace-consumption';
 import type { DependencyGraphCollectionContext } from './collection-types';
 import {
   classifyEdge,
@@ -41,10 +43,6 @@ interface ImportProcessingOptions {
 function resolveExternalCandidate(
   options: ImportProcessingOptions,
 ): Omit<EdgeCandidate, 'edgeKind'> | null {
-  const declaredTargetPackage = findPackageForSpecifier(
-    options.importRecord.specifier,
-    options.context.workspacePackages,
-  );
   const paths = resolveImportPaths({
     projectDependency: options.projectDependency,
   });
@@ -55,7 +53,6 @@ function resolveExternalCandidate(
 
   const targetPackage = resolveTargetPackage({
     context: options.context,
-    declaredTargetPackage,
     paths,
   });
 
@@ -142,6 +139,7 @@ function addResolvedImportEdge(options: {
 }
 
 function processImportRecord(options: ImportProcessingOptions): void {
+  if (addConsumptionFailure(options.context, options.projectDependency)) return;
   const candidate = resolveClassifiedCandidate(options);
 
   if (candidate !== null) {
@@ -167,6 +165,7 @@ function collectProjectEdges(
     project,
   });
   collectDependencyGraphFailures(context, collection.failures);
+  collectDependencyGraphObservations(context, collection.observations);
   collectDependencyGraphDependencies({ collection, context, project });
 }
 
@@ -203,11 +202,6 @@ function collectDependencyGraphProject(options: {
       workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
     importAnalysis: options.context.importAnalysis,
-    resolveWorkspaceTypeScriptExport: (specifier) =>
-      options.context.workspaceExports.get(
-        options.project.configPath,
-        specifier,
-      )?.typeScriptResolvedFileName ?? null,
   });
 }
 
@@ -254,5 +248,33 @@ export function collectDependencyGraphEdges(
 ): void {
   for (const project of context.projects) {
     collectProjectEdges(context, project);
+  }
+}
+
+function addConsumptionFailure(
+  context: DependencyGraphCollectionContext,
+  consumption: WorkspaceConsumption,
+): boolean {
+  const failure = getWorkspaceConsumptionFailure({
+    consumption,
+    workspaceLookup: context.workspaceLookup,
+  });
+  if (failure === null) return false;
+  context.problems.push(
+    [
+      'Unresolved workspace import:',
+      ...describeWorkspaceConsumptionFailure(failure),
+    ].join('\n'),
+  );
+  return true;
+}
+
+function collectDependencyGraphObservations(
+  context: DependencyGraphCollectionContext,
+  observations: ReturnType<typeof collectProjectDependencies>['observations'],
+): void {
+  for (const observation of observations) {
+    if (observation.kind !== 'unmapped-generated')
+      addConsumptionFailure(context, observation);
   }
 }

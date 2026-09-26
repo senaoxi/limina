@@ -23,6 +23,8 @@ import type {
   NativeDependencyFact,
 } from '../typescript-semantic/dependency-fact';
 
+import type { ProjectDependencyEvidence } from './evidence';
+
 export interface ProjectSemanticContext {
   astroSemanticProject?: AstroSemanticProject;
   compilerOptions: ts.CompilerOptions;
@@ -41,6 +43,7 @@ export interface ProjectSemanticContext {
 }
 
 interface ProjectDependencyBase {
+  readonly evidence: ProjectDependencyEvidence;
   nativeFact?: NativeDependencyFact;
   referenceRequirement: DeclarationReferenceRequirement | null;
   importRecord: ImportRecord;
@@ -62,7 +65,9 @@ export interface MappedSourceDependency extends ProjectDependencyBase {
 
 export type ProjectDependency = DirectSourceDependency | MappedSourceDependency;
 
-export type ProjectDependencyObservation =
+export type ProjectDependencyObservation = {
+  readonly evidence: ProjectDependencyEvidence;
+} & (
   | {
       importRecord: ImportRecord;
       resolutionMode: string;
@@ -88,7 +93,8 @@ export type ProjectDependencyObservation =
       generatedFilePath: string;
       kind: 'unmapped-generated';
       semanticSpecifier: string;
-    };
+    }
+);
 
 export type ProjectDependencyFailureStage =
   | 'dependency-enumeration'
@@ -102,6 +108,7 @@ export type ProjectDependencyFailureStage =
   | 'toolchain-resolution';
 
 export interface ProjectDependencyFailure {
+  readonly evidence: ProjectDependencyEvidence;
   configPath: string;
   framework: 'astro' | 'svelte' | 'typescript' | 'vue';
   identity: string;
@@ -136,9 +143,7 @@ export interface ProjectDependencyRequest {
   importAnalysis: ImportAnalysisContext;
   managedOutputLookup?: ManagedOutputDeclarationLookup;
   projectSemanticCacheIdentity?: string;
-  resolveWorkspaceTypeScriptExport?: (specifier: string) => string | null;
   typeScriptSemanticContext?: TypeScriptSemanticDependencyContext;
-  workspaceTypeScriptExportCacheIdentity?: string;
 }
 
 export interface ProjectDependencyCaches {

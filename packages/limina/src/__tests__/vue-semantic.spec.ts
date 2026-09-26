@@ -22,7 +22,6 @@ import { collectTypeScriptSourceTextImports } from '../core/import-analysis/type
 import { VueSemanticContextManager } from '../core/vue-semantic/context';
 import { prepareVueSemanticDependencies } from '../core/vue-semantic/preparation';
 import { resolveVueSemanticImport } from '../core/vue-semantic/resolution';
-import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
 import { runGraphExportImpl } from '../graph-check/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
@@ -163,8 +162,8 @@ describe('Vue semantic architecture', () => {
       stable: false,
     },
   ])(
-    'uses the Vue host for export preflight ($label)',
-    async ({ exports, stable, module }) => {
+    'uses the Vue host for a consumed self-name export ($label)',
+    async ({ exports, stable, module, label }) => {
       const manifest = {
         name: 'vue-export-fixture',
         private: true,
@@ -187,39 +186,40 @@ describe('Vue semantic architecture', () => {
                 include: ['src/**/*'],
               }),
       });
+      const consumerPath = fixture.path(
+        'src',
+        label === 'NodeNext require' ? 'consumer.cts' : 'consumer.mts',
+      );
+      const sourceText =
+        label === 'NodeNext require'
+          ? `import value = require('${manifest.name}'); void value;`
+          : `import value from '${manifest.name}'; void value;`;
+      await writeFile(consumerPath, sourceText);
       const importAnalysis = createImportAnalysisContext();
       try {
         const identity = parseIdentity({ rootDir: fixture.rootDir });
         const configPath = fixture.path('tsconfig.json');
-        const index = await createWorkspaceExportsResolutionIndex({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {},
-            configPath: fixture.path('limina.config.mjs'),
-            rootDir: fixture.rootDir,
+        const record = collectTypeScriptSourceTextImports({
+          filePath: consumerPath,
+          sourceText,
+        })[0]!;
+        const evidence = importAnalysis.resolveCheckerImportEvidence(
+          record,
+          consumerPath,
+          identity.options,
+          {
+            configPath,
+            resolverConfigPath: configPath,
+            extensions: ['.ts', '.vue'],
+            checkerPresets: ['vue-tsc'],
+            semanticFamily: 'vue',
+            vueSemanticIdentity: identity,
           },
-          importAnalysis,
-          packages: [
-            { directory: fixture.rootDir, name: manifest.name, manifest },
-          ],
-          profiles: [
-            {
-              configPath,
-              resolverConfigPath: configPath,
-              options: identity.options,
-              checkerPresets: ['vue-tsc'],
-              extensions: ['.ts', '.vue'],
-              vueSemanticIdentity: identity,
-            },
-          ],
-        });
-        const result = index.get(configPath, manifest.name)!;
-        expect(result.hasTypeScriptStableEntry).toBe(stable);
-        expect(result.typeScriptResolvedFileName).toBe(
-          stable ? fixture.path('src/Widget.vue') : null,
         );
+        expect(evidence.semanticFailure).toBeUndefined();
+        expect(
+          evidence.semanticEvidence?.target?.resolvedFileName ?? null,
+        ).toBe(stable ? fixture.path('src/Widget.vue') : null);
       } finally {
         importAnalysis.dispose?.();
         await fixture.cleanup();

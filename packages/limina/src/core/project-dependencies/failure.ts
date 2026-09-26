@@ -4,6 +4,10 @@ import type {
   ProjectDependencyFailureStage,
   ProjectDependencyRequest,
 } from './contracts';
+import {
+  createUnobservedDependencyEvidence,
+  type ProjectDependencyEvidence,
+} from './evidence';
 
 const FAILURE_STAGE_BY_SOURCE = {
   'module-resolution': 'module-resolution',
@@ -48,6 +52,7 @@ function createDefaultFailureIdentity(options: {
 }
 
 export function createProjectDependencyFailure(options: {
+  evidence?: ProjectDependencyEvidence;
   identity?: string;
   reason: string;
   request: ProjectDependencyRequest;
@@ -56,6 +61,8 @@ export function createProjectDependencyFailure(options: {
 }): ProjectDependencyFailure {
   const framework = options.request.context.semanticAuthority.family;
   return {
+    evidence:
+      options.evidence ?? createUnobservedDependencyEvidence(options.request),
     configPath: options.request.context.configPath,
     framework,
     identity:

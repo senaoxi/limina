@@ -67,7 +67,6 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
       'packages/limina/fixtures/detectors/graph/config-invalid-condition-domain/case.mts',
       'packages/limina/fixtures/detectors/graph/config-invalid-condition-domain-entry/case.mts',
       'packages/limina/fixtures/detectors/graph/config-invalid-rule/case.mts',
-      'packages/limina/fixtures/detectors/graph/config-invalid-workspace-export/case.mts',
       'packages/limina/integration/tests/detector-fixtures.spec.ts',
       'packages/limina/src/__tests__/graph-findings.spec.ts',
       'packages/limina/src/__tests__/graph.spec.ts',
@@ -195,8 +194,7 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
   [LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved]: {
     kind: 'fixture',
     producers: [
-      'packages/limina/src/graph-check/workspace-import-findings.ts#addWorkspacePackageExportWithoutTypeEntryProblem',
-      'packages/limina/src/graph-check/workspace-import-findings.ts#addUnresolvedWorkspaceImportProblem',
+      'packages/limina/src/graph-check/workspace-import-findings.ts#addWorkspaceConsumptionProblem',
     ],
     task: 'graph:check',
     tests: [

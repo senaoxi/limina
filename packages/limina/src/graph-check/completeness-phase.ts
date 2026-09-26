@@ -19,7 +19,6 @@ export function runReferenceCompletenessPhase(state: GraphCheckState): void {
     projectPaths: state.projectPaths,
     projects: state.projects,
     projectsByPath: state.projectsByPath,
-    workspaceExports: state.workspaceExports,
     workspaceLookup: state.workspaceLookup,
     workspaceSourceBoundary: createWorkspaceSourceBoundaryFromProjects(
       state.projects,

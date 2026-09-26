@@ -8,6 +8,7 @@ import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from './contracts';
+import { createPreparedDependencyEvidence } from './evidence';
 import { createProjectDependencyFailure } from './failure';
 import { isTypeScriptSemanticSource } from './source-evidence';
 
@@ -102,6 +103,7 @@ function evidenceMatchesTarget(fact: PreparedDependencyFact): boolean {
 function addFactFailure(options: CollectFactOptions, reason: string): void {
   options.collection.failures.push(
     createProjectDependencyFailure({
+      evidence: createPreparedDependencyEvidence(options),
       identity: JSON.stringify({
         filePath: options.fact.importRecord.filePath,
         framework: options.fact.framework,
@@ -121,6 +123,7 @@ function addMappedDependency(options: CollectFactOptions): void {
   const target = options.fact.target!;
   const resolvedFilePath = normalizeAbsolutePath(target.resolvedFileName);
   const dependency: MappedSourceDependency = {
+    evidence: createPreparedDependencyEvidence(options),
     framework: options.fact.framework,
     importRecord: options.fact.importRecord,
     provenance: 'strict-source-map',
@@ -160,6 +163,7 @@ function addTypedTargetObservation(options: CollectFactOptions): boolean {
   const evidence = options.fact.typeEvidence;
   if (evidence.kind !== 'checker-source') return false;
   options.collection.observations.push({
+    evidence: createPreparedDependencyEvidence(options),
     importRecord: options.fact.importRecord,
     resolutionMode: options.fact.resolutionMode,
     kind: 'resource',
@@ -171,6 +175,7 @@ function addTypedTargetObservation(options: CollectFactOptions): boolean {
 function addTargetlessFact(options: CollectFactOptions): void {
   if (options.fact.typeEvidence.kind === 'ambient') {
     options.collection.observations.push({
+      evidence: createPreparedDependencyEvidence(options),
       importRecord: options.fact.importRecord,
       resolutionMode: options.fact.resolutionMode,
       kind: 'semantic-only',
@@ -183,6 +188,7 @@ function addTargetlessFact(options: CollectFactOptions): void {
   }
   if (options.fact.typeEvidence.kind === 'missing') {
     options.collection.observations.push({
+      evidence: createPreparedDependencyEvidence(options),
       importRecord: options.fact.importRecord,
       resolutionMode: options.fact.resolutionMode,
       kind: 'missing',

@@ -59,6 +59,10 @@ export default defineConfig({
 每个 `outDir/package.json` 都必须存在，并且看起来像一个完整的 `npm` 包清单。Limina 会拒绝 `dependencies`、`devDependencies`、`peerDependencies` 和 `optionalDependencies` 中残留的 `workspace:`、`link:`、`file:`、`catalog:` 说明符，因为构建产物应该已经是消费者和 `npm` 实际看到的发布就绪清单。
 :::
 
+Limina 也会拒绝在 `exports` 根同时使用子路径键（如 `"."`、`"./foo"`）与条件键（如 `"import"`）。这些声明检查独立于可选工具的选择，不解析或枚举全部导出目标。
+
+Packed artifact 中的导出目标缺失检查委托 publint。关闭或跳过 publint 时，目标存在性尚未检查；其余检查通过不代表完整发布契约通过。ATTW 检查 runtime/type 兼容性，不决定哪些入口应该公开，也不改变消费者图的结果。Package checks 不会自动选择全部工作区包或扩展 ATTW entrypoints。
+
 ## checks
 
 - **类型：** `Array<'publint' | 'attw' | 'boundary'>`

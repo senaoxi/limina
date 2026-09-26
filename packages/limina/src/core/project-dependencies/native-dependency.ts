@@ -1,4 +1,5 @@
 import type { ImportRecord } from '../import-analysis/records';
+import type { CanonicalImportResolutionEvidence } from '../import-analysis/runner';
 import type { TypeEvidence } from '../type-evidence/cache';
 import type {
   DeclarationReferenceRequirement,
@@ -8,6 +9,7 @@ import type {
   ProjectDependencyCollection,
   ProjectDependencyRequest,
 } from './contracts';
+import { createDirectDependencyEvidence } from './evidence';
 import { isTypeScriptSemanticSource } from './source-evidence';
 
 export function getDirectNativeFact(options: {
@@ -21,6 +23,7 @@ export function getDirectNativeFact(options: {
 }
 
 export function collectAmbientNativeObservation(options: {
+  evidence: CanonicalImportResolutionEvidence;
   collection: ProjectDependencyCollection;
   importRecord: ImportRecord;
   request: ProjectDependencyRequest;
@@ -31,6 +34,8 @@ export function collectAmbientNativeObservation(options: {
 }
 
 function collectAmbientFact(options: {
+  request: ProjectDependencyRequest;
+  evidence: CanonicalImportResolutionEvidence;
   collection: ProjectDependencyCollection;
   importRecord: ImportRecord;
   fact: NativeDependencyFact;
@@ -38,10 +43,16 @@ function collectAmbientFact(options: {
   const { fact } = options;
   if (fact.typeEvidence.kind !== 'ambient') return false;
   if (fact.referenceRequirement !== null) return false;
+  const resolutionMode = String(fact.resolution.resolutionMode);
   options.collection.observations.push({
+    evidence: createDirectDependencyEvidence({
+      ...options,
+      nativeFact: fact,
+      resolutionMode,
+    }),
     importRecord: options.importRecord,
     kind: 'semantic-only',
-    resolutionMode: String(fact.resolution.resolutionMode),
+    resolutionMode,
     typeEvidence: fact.typeEvidence,
   });
   return true;
