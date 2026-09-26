@@ -42,51 +42,6 @@ function cacheCollection(options: {
   );
 }
 
-function hasUnidentifiedWorkspaceExportPolicy(
-  request: ProjectDependencyRequest,
-): boolean {
-  return (
-    request.resolveWorkspaceTypeScriptExport !== undefined &&
-    request.workspaceTypeScriptExportCacheIdentity === undefined
-  );
-}
-
-function createCollectionCacheKey(options: {
-  projectSemanticIdentity: string;
-  request: ProjectDependencyRequest;
-}): string | undefined {
-  if (hasUnidentifiedWorkspaceExportPolicy(options.request)) return undefined;
-  return JSON.stringify({
-    project: options.projectSemanticIdentity,
-    workspaceTypeScriptExport:
-      options.request.workspaceTypeScriptExportCacheIdentity ?? null,
-  });
-}
-
-function getCachedCollectionIfEnabled(options: {
-  cacheKey: string | undefined;
-  request: ProjectDependencyRequest;
-}): ProjectDependencyCollection | undefined {
-  if (options.cacheKey === undefined) return undefined;
-  return getCachedCollection({
-    cacheKey: options.cacheKey,
-    request: options.request,
-  });
-}
-
-function cacheCollectionIfEnabled(options: {
-  cacheKey: string | undefined;
-  collection: ProjectDependencyCollection;
-  request: ProjectDependencyRequest;
-}): void {
-  if (options.cacheKey === undefined) return;
-  cacheCollection({
-    cacheKey: options.cacheKey,
-    collection: options.collection,
-    request: options.request,
-  });
-}
-
 function deduplicateFailures(collection: ProjectDependencyCollection): void {
   collection.failures = [
     ...new Map(
@@ -180,28 +135,28 @@ export function collectProjectDependencies(
   request: ProjectDependencyRequest,
 ): ProjectDependencyCollection {
   const projectSemanticIdentity = getProjectSemanticCacheIdentity(request);
-  const cacheKey = createCollectionCacheKey({
-    projectSemanticIdentity,
-    request,
-  });
-  const cached = getCachedCollectionIfEnabled({ cacheKey, request });
+  const cacheKey = projectSemanticIdentity;
+  const cached = getCachedCollection({ cacheKey, request });
   if (cached !== undefined) return cached;
   const semanticRequest = {
     ...request,
     projectSemanticCacheIdentity: projectSemanticIdentity,
   };
-  const factsCacheKey = createTypeScriptProjectDependencyFactsIdentity({
-    configPath: request.context.configPath,
-    fileNames: request.context.fileNames,
-    options: request.context.compilerOptions,
-    projectReferences: request.context.references,
-    workspaceSourceBoundary: request.context.workspaceSourceBoundary,
-  });
+  const factsCacheKey = JSON.stringify([
+    projectSemanticIdentity,
+    createTypeScriptProjectDependencyFactsIdentity({
+      configPath: request.context.configPath,
+      fileNames: request.context.fileNames,
+      options: request.context.compilerOptions,
+      projectReferences: request.context.references,
+      workspaceSourceBoundary: request.context.workspaceSourceBoundary,
+    }),
+  ]);
   const collection = collectUncachedProjectDependencies({
     factsCacheKey,
     request: semanticRequest,
   });
-  cacheCollectionIfEnabled({
+  cacheCollection({
     cacheKey,
     collection,
     request: semanticRequest,

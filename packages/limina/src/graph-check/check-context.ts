@@ -7,7 +7,6 @@ import type { ProjectInfo } from '#core/import-graph/context';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readOutputOptions } from '../core/build-graph/generated/config-readers';
 import type { ManagedOutputProjectContext } from '../core/import-graph/managed-output-provider';
-import type { WorkspaceExportsResolutionProfile } from '../core/workspace/exports';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
 
@@ -74,21 +73,6 @@ export function alignProjectOwnedFilesWithGeneratedGraph(options: {
       ),
     };
   });
-}
-
-export function createWorkspaceExportsResolutionProfiles(
-  projects: ProjectInfo[],
-): WorkspaceExportsResolutionProfile[] {
-  return projects.map((project) => ({
-    checkerPresets: project.checkerPresets,
-    configPath: project.configPath,
-    extensions: project.extensions,
-    options: project.options,
-    resolverConfigPath: project.resolverConfigPath,
-    astroSemanticProject: project.astroSemanticProject,
-    svelteSemanticProject: project.svelteSemanticProject,
-    vueSemanticIdentity: project.vueSemanticIdentity,
-  }));
 }
 
 function createDiagnosticEvidence(

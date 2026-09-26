@@ -9,10 +9,6 @@ import type {
 } from '../core/import-graph/managed-output-provider';
 import type { ProjectDependencyCaches } from '../core/project-dependencies/contracts';
 import type { WorkspaceSourceBoundary } from '../core/typescript-semantic';
-import type {
-  WorkspaceExportsResolutionIndex,
-  WorkspacePackageExportResolution,
-} from '../core/workspace/exports';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { GraphFinding } from './findings';
 import type { NormalizedGraphRules } from './rules';
@@ -42,7 +38,6 @@ export interface ExpectedReferenceCollectionOptions {
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
   selectedProjectPaths?: Set<string>;
-  workspaceExports: WorkspaceExportsResolutionIndex;
   workspaceLookup: WorkspaceLookupIndex;
   workspaceSourceBoundary: WorkspaceSourceBoundary;
 }
@@ -61,5 +56,4 @@ export interface GraphImportResolution {
   targetPackage: WorkspacePackage | null;
   targetPackageForGraph: WorkspacePackage | null;
   targetWorkspacePackageForResolved: WorkspacePackage | null;
-  workspaceExportResolution: WorkspacePackageExportResolution | null;
 }

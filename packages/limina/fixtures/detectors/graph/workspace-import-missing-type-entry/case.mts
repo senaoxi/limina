@@ -20,10 +20,6 @@ export default defineDetectorFixture({
             label: 'import',
             value: '@fixture/graph-runtime-only-internal/runtime',
           },
-          {
-            label: 'package export',
-            value: '@fixture/graph-runtime-only-internal/runtime',
-          },
         ],
         filePath: 'packages/app/src/index.ts',
         packageName: '@fixture/graph-runtime-only-internal',

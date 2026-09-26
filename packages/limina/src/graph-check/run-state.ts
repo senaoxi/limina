@@ -14,17 +14,12 @@ import {
   createManagedOutputDeclarationLookup,
   type ManagedOutputDeclarationLookup,
 } from '../core/import-graph/managed-output-provider';
-import {
-  createWorkspaceExportsResolutionIndex,
-  type WorkspaceExportsResolutionIndex,
-} from '../core/workspace/exports';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import {
   alignProjectOwnedFilesWithGeneratedGraph,
   createGeneratedGraphPathAliases,
   createGraphCheckManagedOutputProjectContexts,
-  createWorkspaceExportsResolutionProfiles,
   filterProjectInfoToActivatedRegion,
 } from './check-context';
 import type { GraphFinding } from './findings';
@@ -54,7 +49,6 @@ export interface GraphCheckState {
   projectPaths: string[];
   projects: ProjectInfo[];
   projectsByPath: Map<string, ProjectInfo>;
-  workspaceExports: WorkspaceExportsResolutionIndex;
   workspaceLookup: WorkspaceLookupIndex;
 }
 
@@ -109,14 +103,6 @@ export async function createGraphCheckState(
   const projectCheckerNamesByPath =
     createGeneratedProjectCheckerNamesByPath(generatedGraph);
   const packages = await preflight.ensureWorkspacePackages();
-  const workspaceExports = await createWorkspaceExportsResolutionIndex({
-    config,
-    includeOxc: false,
-    importAnalysis: preflight.importAnalysis,
-    metrics: preflight.profilingMetrics,
-    packages,
-    profiles: createWorkspaceExportsResolutionProfiles(projects),
-  });
   const graphRules = normalizeGraphRules({
     config,
     include: { deps: true, refs: true },
@@ -150,7 +136,6 @@ export async function createGraphCheckState(
     projectPaths,
     projects,
     projectsByPath,
-    workspaceExports,
     workspaceLookup,
   };
 }

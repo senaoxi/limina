@@ -20,8 +20,6 @@ import {
   SVELTE_SEMANTIC_ADAPTER_VERSION,
   type SvelteSemanticProject,
 } from '../core/svelte-semantic/types';
-import { createWorkspaceExportsResolutionIndex } from '../core/workspace/exports';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -161,7 +159,7 @@ describe('Svelte strict generated dependency provenance', () => {
       stable: false,
     },
   ])(
-    'uses the Svelte resolver host for export preflight ($label)',
+    'uses the Svelte resolver host for a consumed self-name export ($label)',
     async ({ exports, stable }) => {
       const { project } = await createProject();
       const root = project.packageRootDir;
@@ -187,31 +185,33 @@ describe('Svelte strict generated dependency provenance', () => {
       }
       const importAnalysis = createImportAnalysisContext();
       try {
-        const index = await createWorkspaceExportsResolutionIndex({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
+        const consumerPath = fixturePath('Consumer.svelte');
+        await writeFile(
+          consumerPath,
+          `<script lang="ts">import Child from '${manifest.name}';</script><Child />`,
+        );
+        const prepared = importAnalysis.prepareCheckerSemanticDependencies({
+          filePath: consumerPath,
+          context: {
+            configPath: project.configPath,
+            resolverConfigPath: project.configPath,
+            extensions: [...project.extensions],
+            checkerPresets: [],
+            semanticFamily: 'svelte',
+            svelteSemanticProject: {
+              ...project,
+              fileNames: [...project.fileNames, consumerPath],
             },
-            config: {},
-            configPath: fixturePath('limina.config.mjs'),
-            rootDir: root,
           },
-          importAnalysis,
-          packages: [{ directory: root, name: manifest.name, manifest }],
-          profiles: [
-            {
-              configPath: project.configPath,
-              resolverConfigPath: project.configPath,
-              options: project.options,
-              extensions: [...project.extensions],
-              checkerPresets: [],
-              svelteSemanticProject: project,
-            },
-          ],
         });
-        const result = index.get(project.configPath, manifest.name)!;
-        expect(result.hasTypeScriptStableEntry).toBe(stable);
-        expect(result.typeScriptResolvedFileName).toBe(
+        expect(prepared.kind).toBe('supported');
+        if (prepared.kind !== 'supported')
+          throw new Error(JSON.stringify(prepared));
+        const fact = prepared.facts.find(
+          (fact) => fact.importRecord.specifier === manifest.name,
+        );
+        expect(fact).toBeDefined();
+        expect(fact!.target?.resolvedFileName ?? null).toBe(
           stable ? fixturePath('Child.svelte') : null,
         );
       } finally {

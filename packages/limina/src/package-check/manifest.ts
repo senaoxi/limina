@@ -99,12 +99,35 @@ function collectLocalDependencyProblems(options: {
     .map((entry) => createLocalDependencyProblem(options, entry));
 }
 
+function hasMixedExportKeys(exports: unknown): boolean {
+  if (!isPlainRecord(exports)) return false;
+  const kinds = new Set(Object.keys(exports).map((key) => key.startsWith('.')));
+  return kinds.size > 1;
+}
+
+function collectExportShapeProblems(options: {
+  label: string;
+  manifest: DistPackageJson;
+  packageJsonPath: string;
+}): string[] {
+  if (!hasMixedExportKeys(options.manifest.exports)) return [];
+  return [
+    [
+      `[${options.label}] output package.json mixes export subpaths and conditions`,
+      `  package.json: ${options.packageJsonPath}`,
+      '  field: exports',
+      '  reason: the exports root must contain either subpath keys or condition keys, not both.',
+    ].join('\n'),
+  ];
+}
+
 export function collectBuiltPackageManifestProblems(options: {
   label: string;
   manifest: DistPackageJson;
   packageJsonPath: string;
 }): string[] {
   const problems = collectLocalDependencyProblems(options);
+  problems.push(...collectExportShapeProblems(options));
 
   if (!hasValidPackageName(options.manifest)) {
     problems.unshift(createMissingNameProblem(options));

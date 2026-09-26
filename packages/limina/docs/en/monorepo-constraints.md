@@ -157,39 +157,30 @@ This distinction matters for an extended nested package scope: it inherits depen
 
 Limina does not prohibit cross-package collaboration. It requires cross-package collaboration to go through paths that can be explained by package manifests and public entry points.
 
-## Public Exports Are Preflighted Before Import Relationships
+## Graph Checks Follow Consumed Exports
 
-In a monorepo, `workspace:*` identifies a workspace dependency. Its `package.json#exports` determines whether a consumer reads source or build artifacts.
+In a workspace, `package.json#exports` participates in the importing checker's resolution. Limina retains that occurrence's result, then uses the actual target to determine workspace ownership, source or artifact consumption, and graph rules.
 
-`limina graph check` first builds the workspace exports index and checks public entry resolution against active checker profiles. This preflight can reject an unresolved export even when no governed source imports it. It does not establish a source dependency, a type provider, or a generated project reference.
-
-For example, assume `packages/demo/tsconfig.json` is selected and its only source is:
-
-```ts [packages/demo/src/index.ts]
-export const value = 1;
-```
-
-The package declares a runtime entry that has not been built:
+For example, a package may declare both entries:
 
 ```json [packages/demo/package.json]
 {
   "name": "demo",
   "type": "module",
   "exports": {
-    "./runtime": "./dist/runtime.js"
+    "./a": "./src/a.ts",
+    "./broken": "./src/missing.ts"
   }
 }
 ```
 
-```sh
-pnpm exec limina graph check --verbose
-```
+If `src/a.ts` exists and a consumer imports only `demo/a`, the unused broken entry does not fail `limina graph check`. The consumed dependency still has to satisfy ownership, reference, and graph rules. If the consumer instead imports `demo/broken` and its checker cannot resolve it, graph checking fails at that import. `graph export` also reports the failure instead of silently omitting the dependency.
 
-With no `dist/runtime.js` or corresponding resolvable type entry, this command fails with `workspace exports preflight` diagnostics. No import of `demo/runtime` is needed. Create the intended public entry, or correct/remove the stale manifest entry. A missing types-only export is also checked.
+The consumer's checker remains authoritative for self-name imports, conditions, `paths`, ambient modules, framework sources, and declarations. Another checker profile or a runtime file hit cannot repair its failed resolution or create a source edge. Graph checking does not enumerate the package's exports or expand wildcard entries to validate a public surface. Existing declaration-reference rules, including the exclusion of `require.resolve()`, continue to apply.
 
-An existing runtime-only JavaScript entry can pass preflight without a declaration file when no governed source imports it. Once a collected source occurrence imports that entry, graph checking separately requires a stable type or checker-source entry under the importing checker. TypeScript or the checker’s semantic adapter supplies type resolution; Oxc supplies physical runtime resolution. A runtime file hit alone cannot supply type evidence or declaration-build ownership.
+Publishing has a separate subject. [Package checks](./config/package-checks.md) operate on explicitly configured output entries. Limina checks declaration consistency, including local dependency protocols and mixed exports root keys. Optional publint checks the packed artifact, including missing export targets; when publint is disabled or unavailable, that item is not checked. Optional ATTW checks runtime/type compatibility and does not change graph facts, edges, or diagnostics. Boundary checks retain their own emitted-code constraints, and [release checks](./config/release-checks.md) remain separate.
 
-These checks have different subjects: preflight checks the declared public surface; occurrence analysis checks observed source relationships, package rules, and reference requirements. A type-only export can resolve to a declaration, and a source export can resolve to checker-supported source. An export need not expose both source and artifacts, and preflight does not discover connections injected only by a runtime plugin or registry.
+A passing graph check is not a complete publish-contract guarantee. Which public entries to retain, deprecate, or remove remains the package author's decision; unused entries may serve external consumers or compatibility needs.
 
 ## References Come from Declaration Providers, Not Import Text
 

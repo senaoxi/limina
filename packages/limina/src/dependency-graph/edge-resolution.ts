@@ -7,7 +7,6 @@ import type { DependencyGraphEdgeKind } from './types';
 export interface ResolvedImportPaths {
   graphResolvedFilePath: string;
   resolvedFilePath: string;
-  useWorkspaceExportResolution: boolean;
 }
 
 function matchesOutputRoot(
@@ -55,7 +54,6 @@ export function resolveImportPaths(options: {
   return {
     graphResolvedFilePath: options.projectDependency.resolvedFilePath,
     resolvedFilePath: options.projectDependency.resolvedFilePath,
-    useWorkspaceExportResolution: false,
   };
 }
 
@@ -68,13 +66,8 @@ function findGraphResolvedPackage(
 
 export function resolveTargetPackage(options: {
   context: DependencyGraphCollectionContext;
-  declaredTargetPackage: WorkspacePackage | null;
   paths: ResolvedImportPaths;
 }): WorkspacePackage | null {
-  if (options.paths.useWorkspaceExportResolution) {
-    return options.declaredTargetPackage;
-  }
-
   const graphPackage = findGraphResolvedPackage(
     options.context,
     options.paths.graphResolvedFilePath,

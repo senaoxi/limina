@@ -25,24 +25,9 @@ function isGraphSourceDependency(options: ImportTargetOptions): boolean {
   return shouldResolveThroughGraph(options.resolution.importer, targetPackage);
 }
 
-export function shouldSkipWorkspaceExportResolvedOutsideGraph(
-  options: ImportTargetOptions,
-): boolean {
-  const conditions = [
-    isGraphSourceDependency(options),
-    Boolean(options.resolution.workspaceExportResolution),
-    !options.context.fileOwnerLookup.has(
-      options.resolution.graphResolvedFilePath,
-    ),
-  ];
-
-  return conditions.every(Boolean);
-}
-
 function isBuildArtifactCandidate(options: ImportTargetOptions): boolean {
   const conditions = [
     isGraphSourceDependency(options),
-    !options.resolution.workspaceExportResolution,
     !options.context.fileOwnerLookup.has(options.resolution.resolvedFilePath),
   ];
 

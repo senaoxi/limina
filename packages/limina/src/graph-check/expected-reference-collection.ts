@@ -19,7 +19,7 @@ import type {
   GraphImportResolution,
 } from './reference-types';
 import { getDeniedDepRuleForSpecifier } from './rules';
-import { addUnresolvedWorkspaceImportProblem } from './workspace-import-findings';
+import { addWorkspaceConsumptionProblem } from './workspace-import-findings';
 
 function createExpectedReferenceCollectionContext(
   options: ExpectedReferenceCollectionOptions,
@@ -122,6 +122,24 @@ function collectExpectedReferenceForImport(options: {
     return;
   }
 
+  if (
+    addWorkspaceConsumptionProblem({
+      ...options,
+      consumption: options.projectDependency,
+    })
+  )
+    return;
+
+  collectResolvedExpectedReference(options);
+}
+
+function collectResolvedExpectedReference(options: {
+  context: ExpectedReferenceCollectionContext;
+  filePath: string;
+  importRecord: ImportRecord;
+  project: ProjectInfo;
+  projectDependency: ProjectDependency;
+}): void {
   const target = resolveExpectedTarget(options);
   if (!target) {
     return;
@@ -174,27 +192,9 @@ function collectExpectedReferencesForMappedObservation(options: {
 }): void {
   const importRecord = options.observation.importRecord;
   if (addRawDeniedImportIfNeeded({ ...options, importRecord })) return;
-  addMissingObservationProblem({ ...options, importRecord });
-}
-
-function addMissingObservationProblem(options: {
-  context: ExpectedReferenceCollectionContext;
-  importRecord: ImportRecord;
-  observation: Exclude<
-    ProjectDependencyObservation,
-    { kind: 'unmapped-generated' }
-  >;
-  project: ProjectInfo;
-}): void {
-  const importRecord = options.importRecord;
-  if (!shouldInferDeclarationReferenceFromImportRecord(importRecord)) return;
-  if (options.observation.kind !== 'missing') return;
-  addUnresolvedWorkspaceImportProblem({
+  addWorkspaceConsumptionProblem({
     ...options,
-    importRecord,
-    targetPackage: options.context.workspaceLookup.findPackageForSpecifier(
-      importRecord.specifier,
-    ),
+    consumption: options.observation,
   });
 }
 
@@ -239,12 +239,6 @@ function collectProjectDependenciesForGraph(options: {
       workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
     importAnalysis: options.context.importAnalysis,
-    resolveWorkspaceTypeScriptExport: (specifier) =>
-      options.context.workspaceExports.get(
-        options.project.configPath,
-        specifier,
-      )?.typeScriptResolvedFileName ?? null,
-    workspaceTypeScriptExportCacheIdentity: 'graph-check-workspace-exports',
   });
 }
 

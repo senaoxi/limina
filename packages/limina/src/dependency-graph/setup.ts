@@ -8,10 +8,6 @@ import type { WorkspacePackage } from '#core/workspace/actions';
 import { createProjectDependencyCaches } from '../core/project-dependencies/runner';
 import { createWorkspaceSourceBoundaryFromProjects } from '../core/typescript-semantic';
 import {
-  createWorkspaceExportsResolutionIndex,
-  type WorkspaceExportsResolutionProfile,
-} from '../core/workspace/exports';
-import {
   createWorkspaceLookupIndex,
   type WorkspaceLookupIndex,
 } from '../core/workspace/lookup';
@@ -35,21 +31,6 @@ function filterProjectInfoToActivatedRegion(
       workspaceLookup.isInsideActivatedRegion(fileName),
     ),
   };
-}
-
-function createWorkspaceExportsResolutionProfiles(
-  projects: ProjectInfo[],
-): WorkspaceExportsResolutionProfile[] {
-  return projects.map((project) => ({
-    checkerPresets: project.checkerPresets,
-    configPath: project.configPath,
-    extensions: project.extensions,
-    options: project.options,
-    resolverConfigPath: project.resolverConfigPath,
-    astroSemanticProject: project.astroSemanticProject,
-    svelteSemanticProject: project.svelteSemanticProject,
-    vueSemanticIdentity: project.vueSemanticIdentity,
-  }));
 }
 
 function normalizeDependencyGraphView(
@@ -126,14 +107,6 @@ export async function createDependencyGraphCollectionContext(options: {
       filterProjectInfoToActivatedRegion(project, workspaceLookup),
     );
     const importAnalysis = core.imports.context;
-    const workspaceExports = await createWorkspaceExportsResolutionIndex({
-      config: options.config,
-      includeOxc: false,
-      importAnalysis,
-      packages: workspacePackages,
-      profiles: createWorkspaceExportsResolutionProfiles(projects),
-    });
-    problems.push(...workspaceExports.problems);
     throwGraphProblems(problems);
 
     return {
@@ -149,7 +122,6 @@ export async function createDependencyGraphCollectionContext(options: {
       projectDependencyCaches: createProjectDependencyCaches(),
       projects,
       view: normalizeDependencyGraphView(options.graphOptions.view),
-      workspaceExports,
       workspaceLookup,
       workspacePackages,
       workspaceSourceBoundary:

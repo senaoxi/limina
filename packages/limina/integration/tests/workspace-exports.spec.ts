@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { expectLiminaSuccess, runFixtureLimina } from '../helpers/assertions';
 import { prepareFixture } from '../helpers/fixture';
 
-describe('workspace exports preflight without source imports', () => {
+describe('workspace exports consumption', () => {
   it.each([
     { name: 'no exports', exports: undefined, passes: true, runtime: false },
     {
@@ -17,14 +17,14 @@ describe('workspace exports preflight without source imports', () => {
       imported: false,
       name: 'missing types',
       exports: { '.': { types: './dist/missing.d.ts' } },
-      passes: false,
+      passes: true,
       runtime: false,
     },
     {
       imported: false,
       name: 'missing runtime',
       exports: { './runtime': './dist/runtime.js' },
-      passes: false,
+      passes: true,
       runtime: false,
     },
     {
@@ -85,11 +85,7 @@ describe('workspace exports preflight without source imports', () => {
           'json',
         ]);
         expectLiminaSuccess(query);
-        expect(query.stdout).toContain(
-          entry.imported
-            ? 'stable type or checker source entry'
-            : 'workspace exports preflight',
-        );
+        expect(query.stdout).toContain('stable type or checker source entry');
         expect(query.stdout).toContain('demo');
       }
     } finally {

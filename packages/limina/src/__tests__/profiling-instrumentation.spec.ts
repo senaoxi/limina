@@ -1,10 +1,8 @@
-import type { ResolvedLiminaConfig } from '#config/runner';
 import {
   createImportAnalysisContext,
   type ImportResolveContextFields,
 } from '#core/import-analysis/runner';
 import type { ProjectInfo } from '#core/import-graph/context';
-import type { WorkspacePackage } from '#core/workspace/actions';
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,14 +15,9 @@ import {
 } from '../core/type-evidence';
 import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import {
-  createWorkspaceExportsResolutionIndex,
-  type WorkspaceExportsResolutionProfile,
-} from '../core/workspace/exports';
-import {
   type AnalysisMetricAggregate,
   createProfilingMetricsRecorder,
 } from '../profiling/metrics';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'] =
@@ -368,182 +361,6 @@ describe('module resolution profiling instrumentation', () => {
       expect(
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
       ).toBe(0);
-    } finally {
-      await rm(rootDir, { force: true, recursive: true });
-    }
-  });
-
-  it('counts every workspace export and original project profile pair', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-export-metrics-')),
-    );
-    await writeFile(path.join(rootDir, 'package.json'), '{}');
-
-    try {
-      const configPath = await writeText(
-        rootDir,
-        'tsconfig.json',
-        JSON.stringify({ compilerOptions: {} }),
-      );
-      const alternateConfigPath = await writeText(
-        rootDir,
-        'tsconfig.alternate.json',
-        JSON.stringify({ compilerOptions: {} }),
-      );
-      const liminaConfigPath = await writeText(
-        rootDir,
-        'limina.config.mjs',
-        'export default {};\n',
-      );
-      const packageDirectory = path.join(rootDir, 'packages/pkg');
-      const manifest = {
-        exports: {
-          '.': {
-            import: './dist/index.js',
-            types: './dist/index.d.ts',
-          },
-        },
-        name: '@fixture/pkg',
-      };
-      await writeText(
-        rootDir,
-        'packages/pkg/package.json',
-        JSON.stringify(manifest),
-      );
-      await writeText(
-        rootDir,
-        'packages/pkg/dist/index.d.ts',
-        'export declare const value: true;\n',
-      );
-      await writeText(
-        rootDir,
-        'packages/pkg/dist/index.js',
-        'export const value = true;\n',
-      );
-
-      const config: ResolvedLiminaConfig = {
-        get governanceRoot() {
-          return resolveFixtureGovernanceRoot(this);
-        },
-        configPath: liminaConfigPath,
-        rootDir,
-      };
-      const workspacePackage: WorkspacePackage = {
-        directory: packageDirectory,
-        manifest,
-        name: manifest.name,
-      };
-      const compilerOptions: ts.CompilerOptions = {};
-      const profiles: WorkspaceExportsResolutionProfile[] = [
-        'project-a',
-        'project-b',
-      ].map((projectName) => ({
-        checkerPresets: [],
-        configPath: path.join(rootDir, projectName, 'tsconfig.json'),
-        extensions: ['.ts'],
-        options: compilerOptions,
-        resolverConfigPath: configPath,
-      }));
-      const baselineIndex = await createWorkspaceExportsResolutionIndex({
-        config,
-        importAnalysis: createImportAnalysisContext(),
-        packages: [workspacePackage],
-        profiles,
-      });
-      const metrics = createProfilingMetricsRecorder();
-      const index = await createWorkspaceExportsResolutionIndex({
-        config,
-        importAnalysis: createImportAnalysisContext({ metrics }),
-        metrics,
-        packages: [workspacePackage],
-        profiles,
-      });
-
-      expect(index.problems).toEqual(baselineIndex.problems);
-      for (const profile of profiles) {
-        expect(index.get(profile.configPath, manifest.name)).toEqual(
-          baselineIndex.get(profile.configPath, manifest.name),
-        );
-      }
-
-      const snapshot = metrics.snapshot();
-      expect(metricCount(snapshot, 'workspace-export-profile-count')).toBe(2);
-      expect(
-        metricCount(
-          snapshot,
-          'workspace-export-typescript-semantic-profile-count',
-        ),
-      ).toBe(1);
-      expect(
-        metricCount(snapshot, 'workspace-export-oxc-semantic-profile-count'),
-      ).toBe(1);
-      expect(metricCount(snapshot, 'workspace-export-resolution-request')).toBe(
-        2,
-      );
-      expect(
-        metricCount(snapshot, 'workspace-export-typescript-resolution'),
-      ).toBe(2);
-      expect(metricCount(snapshot, 'workspace-export-oxc-resolution')).toBe(2);
-      expect(
-        metricCount(snapshot, 'workspace-export-grouped-typescript-execution'),
-      ).toBe(1);
-      expect(
-        metricCount(snapshot, 'workspace-export-grouped-oxc-execution'),
-      ).toBe(1);
-      expect(metricCount(snapshot, 'workspace-export-result-expansion')).toBe(
-        2,
-      );
-      expect(metricCount(snapshot, 'module-resolution-request')).toBe(2);
-      expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(2);
-      expect(metricCount(snapshot, 'typescript-resolution')).toBe(1);
-      expect(
-        metricCount(snapshot, 'typescript-module-resolution-cache-miss'),
-      ).toBe(1);
-      expect(metricCount(snapshot, 'oxc-resolution')).toBe(1);
-      expect(metricCount(snapshot, 'oxc-resolver-factory-create')).toBe(1);
-      expect(metricCount(snapshot, 'oxc-resolver-factory-hit')).toBe(0);
-
-      const distinctMetrics = createProfilingMetricsRecorder();
-      const distinctProfiles = [
-        profiles[0],
-        {
-          ...profiles[1],
-          resolverConfigPath: alternateConfigPath,
-        },
-      ];
-      const distinctIndex = await createWorkspaceExportsResolutionIndex({
-        config,
-        importAnalysis: createImportAnalysisContext({
-          metrics: distinctMetrics,
-        }),
-        metrics: distinctMetrics,
-        packages: [workspacePackage],
-        profiles: distinctProfiles,
-      });
-
-      expect(distinctIndex.problems).toEqual(baselineIndex.problems);
-      for (const profile of distinctProfiles) {
-        expect(distinctIndex.get(profile.configPath, manifest.name)).toEqual(
-          baselineIndex.get(profile.configPath, manifest.name),
-        );
-      }
-      const distinctSnapshot = distinctMetrics.snapshot();
-      expect(
-        metricCount(distinctSnapshot, 'workspace-export-oxc-resolution'),
-      ).toBe(2);
-      expect(
-        metricCount(
-          distinctSnapshot,
-          'workspace-export-grouped-typescript-execution',
-        ),
-      ).toBe(1);
-      expect(
-        metricCount(distinctSnapshot, 'workspace-export-grouped-oxc-execution'),
-      ).toBe(2);
-      expect(metricCount(distinctSnapshot, 'oxc-resolver-factory-create')).toBe(
-        2,
-      );
-      expect(metricCount(distinctSnapshot, 'oxc-resolver-factory-hit')).toBe(0);
     } finally {
       await rm(rootDir, { force: true, recursive: true });
     }

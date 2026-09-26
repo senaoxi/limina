@@ -80,6 +80,12 @@ export const LIMINA_DETECTOR_SCENARIO_COVERAGE: DetectorScenarioCoverageRegistry
       reason:
         'Constrains snapshot write failure after successful task execution.',
     },
+    'graph/workspace-unused-broken-export': {
+      fixturePath:
+        'packages/limina/fixtures/detectors/graph/workspace-unused-broken-export/case.mts',
+      kind: 'passing-control',
+      reason: 'Unconsumed exports are outside the consumer dependency graph.',
+    },
     'package/attw-dual-package-valid': {
       fixturePath:
         'packages/limina/fixtures/detectors/package/attw-dual-package-valid/case.mts',
