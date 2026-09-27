@@ -10,6 +10,9 @@ import {
 } from '../../check-reporting/snapshot';
 import { createCheckItemStats } from '../../check-reporting/stats';
 import { formatErrorMessage, ReleaseLogger } from '../../logger';
+import { createReleaseCheckIssuesFromFindings } from '../../package-check/release-findings';
+import { RegistryAuthorityError } from '../../package-check/release/registry/authority';
+import { createRegistryAuthorityFinding } from '../../package-check/release/registry/authority-finding';
 import type {
   ReleaseCommandContext,
   ReleaseCommandTask,
@@ -83,10 +86,28 @@ function createUnexpectedErrorIssue(
   });
 }
 
+function getRegistryFailurePackageName(
+  options: RunReleaseCheckOptions,
+): string {
+  return getSingleReleasePackageName(options) ?? 'release';
+}
+
 function getErrorIssues(
   error: unknown,
   options: RunReleaseCheckOptions,
 ): readonly LiminaCheckIssue[] {
+  if (error instanceof RegistryAuthorityError) {
+    return createReleaseCheckIssuesFromFindings({
+      rootDir: options.config.rootDir,
+      findings: [
+        createRegistryAuthorityFinding(error, {
+          dependencyName: getRegistryFailurePackageName(options),
+          importerName: 'release',
+          filePath: options.config.configPath,
+        }),
+      ],
+    });
+  }
   return error instanceof LiminaStructuredError
     ? error.issues
     : [createUnexpectedErrorIssue(error, options)];

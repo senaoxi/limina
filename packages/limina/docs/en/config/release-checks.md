@@ -24,6 +24,25 @@ Release checks reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from 
 Without `--package`, `limina release check` requires the nearest cwd `package.json#name` to match a configured entry. Pass `--package <name>` one or more times to skip cwd matching.
 :::
 
+## Registry authority and response limits
+
+Release registry requests must belong to the current effective registry authority; the default authority is the official npm registry (`https://registry.npmjs.org/`). Enterprise and mirror registries are supported when their metadata and tarballs use the same HTTPS origin.
+
+Limina snapshots registry configuration once per release invocation, using the command's effective working directory to locate the npm project or workspace `.npmrc`. It does not read configuration from the output directory being compared. For each key, environment variables take precedence over project, user, then global npmrc files. Both uppercase and lowercase npm configuration environment variables are recognized; lowercase wins when both spellings exist. `NPM_CONFIG_USERCONFIG` and `NPM_CONFIG_GLOBALCONFIG` select the corresponding files. npm's `ini` parser handles npmrc quoting and comments, and registry settings support `${ENV_VAR}` substitution. Missing substitution variables, unreadable configuration, missing explicitly selected config files, and invalid selected registry URLs fail the check.
+
+After merging keys, a dependency's `@scope:registry` takes precedence over the general `registry` key. A general `NPM_CONFIG_REGISTRY` therefore does not replace a distinct scoped registry setting. If neither key exists, Limina uses the official npm default. Registry path prefixes are preserved, for example `https://packages.example.com/npm/team/`.
+
+```ini
+registry=https://packages.example.com/npm/default/
+@team:registry=https://packages.example.com/npm/team/
+```
+
+Production registry and tarball URLs must be absolute HTTPS URLs without credentials, query strings, or fragments. Tarballs must have the same origin (scheme, host, and effective port) as the selected registry. Explicitly configured internal HTTPS registries are trusted authorities. Both metadata and tarball requests reject every redirect, including same-origin redirects. Cross-origin CDN tarballs, signed query URLs, and HTTP registries are outside the supported boundary. This registry selection support does not add npmrc authentication, custom CA, or proxy configuration support.
+
+Metadata responses are limited to **16 MiB** and tarball responses to **128 MiB**. Limina checks `Content-Length` when valid, counts the actual response stream bytes after HTTP content decoding, and cancels oversized responses before parsing or integrity checking. Limits also apply to chunked and HTTP-compressed responses; responses exactly at the limit remain accepted. Timeouts and tarball integrity verification remain in effect. `LIMINA_RELEASE_REGISTRY` reports invalid authority, disallowed tarball URL, and oversized metadata/tarball reasons, with the byte limit and observed byte count when available.
+
+These caps bound downloaded response bodies, not the expanded contents of a tar archive or total process memory. A tarball inside the download limit can still have a large decompressed archive.
+
 ## npmPackageJsonLint
 
 - **Type:** `boolean | { rules?: Record<string, RuleConfig> }`

@@ -9,6 +9,7 @@ import type {
 } from '#core/workspace/actions';
 import type { ReleaseContentHashFileDiff } from '../findings/facts';
 import type { ReleaseFinding } from '../findings/types';
+import type { ReleaseRegistryConfiguration } from '../registry/authority';
 
 export interface PublishDependencyEntry {
   dependencyName: string;
@@ -110,6 +111,7 @@ export type RegistryMetadataResult =
       cause?: unknown;
       kind: 'failure';
       reason:
+        | 'body-too-large'
         | 'body-read'
         | 'http-status'
         | 'invalid-json'
@@ -117,6 +119,8 @@ export type RegistryMetadataResult =
         | 'request'
         | 'timeout';
       statusCode?: number;
+      maxBytes?: number;
+      receivedBytes?: number;
       statusText?: string;
       timeoutMs?: number;
       url: string;
@@ -140,12 +144,16 @@ export type RegistryTarballIntegrityResult =
   | { kind: 'missing' };
 
 export interface RegistryTarballFailure {
+  maxBytes?: number;
+  receivedBytes?: number;
   actualIntegrity?: string;
   actualShasum?: string;
   errorMessage?: string;
   expectedIntegrity?: string;
   expectedShasum?: string;
   kind:
+    | 'tarball-url-not-allowed'
+    | 'tarball-body-too-large'
     | 'integrity-mismatch'
     | 'tarball-body-read'
     | 'tarball-http-status'
@@ -174,6 +182,7 @@ export interface DirectWorkspaceDependency {
 }
 
 export interface ReleaseConsistencyState {
+  registryConfiguration: ReleaseRegistryConfiguration;
   changedPackageNames: Set<string>;
   directWorkspaceDependencies: DirectWorkspaceDependency[];
   edges: Map<string, Set<string>>;
@@ -184,6 +193,7 @@ export interface ReleaseConsistencyState {
 }
 
 export interface AssertPackageReleaseConsistencyOptions {
+  registryConfiguration: ReleaseRegistryConfiguration;
   config: ResolvedLiminaConfig;
   label: string;
   outputManifest: PublishManifest;

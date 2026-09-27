@@ -185,6 +185,7 @@ async function assertPackedRelease(options: {
   packed: PackedPackageTarball;
 }): Promise<void> {
   await assertPackageReleaseConsistency({
+    registryConfiguration: options.entry.registryConfiguration,
     config: options.entry.config,
     label: options.entry.label,
     outDir: options.entry.outDir,

@@ -37,6 +37,7 @@ async function compareWorkspaceOutput(
 ): Promise<WorkspacePackageOutputComparison | null> {
   try {
     return await compareLocalWorkspacePackageOutputToBaseline({
+      authority: context.baseline.authority,
       baselineVersion: context.baseline.baselineVersion,
       config: context.config,
       dependencyName: context.dependencyName,

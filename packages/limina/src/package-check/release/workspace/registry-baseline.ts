@@ -1,5 +1,4 @@
 import { formatErrorMessage } from '../../../logger';
-import { resolveReleaseRegistryMetadataUrl } from '../../release-registry-test-seam';
 import {
   addRegistryFinding,
   formatDependencyLocation,
@@ -17,13 +16,23 @@ import {
   formatRegistryMetadataFailure,
   getRegistryTarballUrl,
 } from '../registry';
+import {
+  type EffectiveRegistryAuthority,
+  resolveReleaseRegistryMetadataUrl,
+} from '../registry/authority';
+import { resolveAuthority, validateTarballUrl } from './registry-authority';
 import { resolveWorkspaceRegistryIntegrity } from './registry-integrity';
 import type {
   WorkspaceRegistryBaseline,
   WorkspaceRegistryContext,
 } from './registry-types';
 
+type ResolvedRegistryContext = WorkspaceRegistryContext & {
+  authority: EffectiveRegistryAuthority;
+};
+
 const METADATA_FAILURE_KINDS = {
+  'body-too-large': 'metadata-body-too-large',
   'body-read': 'metadata-body-read',
   'http-status': 'metadata-http-status',
   'invalid-json': 'metadata-invalid-json',
@@ -36,12 +45,14 @@ const METADATA_FAILURE_KINDS = {
 >;
 
 function addMetadataFailure(options: {
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   result: Extract<RegistryMetadataResult, { kind: 'failure' }>;
 }): void {
   addRegistryFinding(options.context.state, {
     facts: {
       dependencyName: options.context.dependencyName,
+      maxBytes: options.result.maxBytes,
+      receivedBytes: options.result.receivedBytes,
       errorMessage:
         options.result.cause === undefined
           ? undefined
@@ -61,7 +72,7 @@ function addMetadataFailure(options: {
 }
 
 function addMissingPackage(options: {
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   result: Extract<RegistryMetadataResult, { kind: 'missing' }>;
 }): void {
   options.context.state.unpublishedPackageNames.add(
@@ -83,7 +94,7 @@ function addMissingPackage(options: {
 }
 
 function resolveMetadataResult(options: {
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   result: RegistryMetadataResult;
 }): RegistryPackageMetadata | null {
   if (options.result.kind === 'failure') {
@@ -98,7 +109,7 @@ function resolveMetadataResult(options: {
 }
 
 function addMissingDistTag(options: {
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   registryUrl: string;
 }): void {
   addRegistryFinding(options.context.state, {
@@ -117,7 +128,7 @@ function addMissingDistTag(options: {
 }
 
 function resolveBaselineVersion(options: {
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   metadata: RegistryPackageMetadata;
   registryUrl: string;
 }): string | null {
@@ -132,7 +143,7 @@ function resolveBaselineVersion(options: {
 
 function addMissingVersion(options: {
   baselineVersion: string;
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   registryUrl: string;
 }): void {
   addRegistryFinding(options.context.state, {
@@ -153,7 +164,7 @@ function addMissingVersion(options: {
 
 function resolveVersionMetadata(options: {
   baselineVersion: string;
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   metadata: RegistryPackageMetadata;
   registryUrl: string;
 }): RegistryVersionMetadata | null {
@@ -168,7 +179,7 @@ function resolveVersionMetadata(options: {
 
 function addMissingTarballUrl(options: {
   baselineVersion: string;
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   registryUrl: string;
 }): void {
   addRegistryFinding(options.context.state, {
@@ -189,19 +200,20 @@ function addMissingTarballUrl(options: {
 
 function resolveTarballUrl(options: {
   baselineVersion: string;
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   registryUrl: string;
   versionMetadata: RegistryVersionMetadata;
 }): string | null {
   const tarballUrl = getRegistryTarballUrl(options.versionMetadata);
-  if (tarballUrl !== null) return tarballUrl;
+  if (tarballUrl !== null)
+    return validateTarballUrl(tarballUrl, options.context, options.registryUrl);
   addMissingTarballUrl(options);
   return null;
 }
 
 function createResolvedBaseline(options: {
   baselineVersion: string;
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   registryUrl: string;
   tarballUrl: string;
   versionMetadata: RegistryVersionMetadata;
@@ -209,6 +221,7 @@ function createResolvedBaseline(options: {
   const integrityResult = resolveWorkspaceRegistryIntegrity(options);
   if (integrityResult === null) return null;
   return {
+    authority: options.context.authority,
     baselineTag: options.context.baselineTag,
     baselineVersion: options.baselineVersion,
     integrityResult,
@@ -219,7 +232,7 @@ function createResolvedBaseline(options: {
 
 function resolveBaselineArtifact(options: {
   baselineVersion: string;
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   metadata: RegistryPackageMetadata;
   registryUrl: string;
 }): WorkspaceRegistryBaseline | null {
@@ -237,7 +250,7 @@ function resolveBaselineArtifact(options: {
 }
 
 function resolveBaselineFromMetadata(options: {
-  context: WorkspaceRegistryContext;
+  context: ResolvedRegistryContext;
   metadata: RegistryPackageMetadata;
   registryUrl: string;
 }): WorkspaceRegistryBaseline | null {
@@ -249,14 +262,27 @@ function resolveBaselineFromMetadata(options: {
 export async function resolveWorkspaceRegistryBaseline(
   context: WorkspaceRegistryContext,
 ): Promise<WorkspaceRegistryBaseline | null> {
-  const registryUrl = resolveReleaseRegistryMetadataUrl(context.dependencyName);
+  const authority = resolveAuthority(context);
+  if (authority === null) return null;
+  const registryUrl = resolveReleaseRegistryMetadataUrl(
+    context.dependencyName,
+    authority,
+  );
   const result = await fetchRegistryPackageMetadata(
     context.dependencyName,
     context.state,
+    authority,
   );
-  const metadata = resolveMetadataResult({ context, result });
+  const metadata = resolveMetadataResult({
+    context: { ...context, authority },
+    result,
+  });
   if (metadata === null) return null;
-  return resolveBaselineFromMetadata({ context, metadata, registryUrl });
+  return resolveBaselineFromMetadata({
+    context: { ...context, authority },
+    metadata,
+    registryUrl,
+  });
 }
 
 export type {

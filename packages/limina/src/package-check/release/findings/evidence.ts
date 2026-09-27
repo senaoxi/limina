@@ -143,6 +143,9 @@ function appendTarballEvidence(
 }
 
 const registryProperties: readonly EvidenceProperty[] = [
+  ['authority source', 'authoritySource'],
+  ['size limit bytes', 'maxBytes'],
+  ['received bytes', 'receivedBytes'],
   ['registry', 'registryUrl'],
   ['dependency', 'dependencyName'],
   ['dist-tag', 'requestedDistTag'],
