@@ -2,15 +2,19 @@ import { isPlainRecord } from '#utils/values';
 import { createHash } from 'node:crypto';
 import ssri from 'ssri';
 import { formatErrorMessage } from '../../../logger';
-import {
-  assertReleaseRegistryTarballUrlAllowed,
-  resolveReleaseRegistryTimeoutMs,
-} from '../../release-registry-test-seam';
 import type {
   RegistryTarballIntegrityResult,
   RegistryVersionMetadata,
 } from '../consistency/types';
 import { RegistryTarballError } from '../consistency/types';
+import type { EffectiveRegistryAuthority } from './authority';
+import {
+  cancelRegistryBody,
+  readRegistryBody,
+  REGISTRY_TARBALL_MAX_BYTES,
+  RegistryBodyLimitError,
+} from './body';
+import { resolveRegistryTarballUrl } from './tarball-url';
 
 const REGISTRY_TARBALL_TIMEOUT_MS = 120_000;
 
@@ -168,6 +172,7 @@ async function requestRegistryTarball(options: {
 }): Promise<Response> {
   try {
     return await fetch(options.tarballUrl, {
+      redirect: 'error',
       headers: { accept: 'application/octet-stream' },
       signal: options.signal,
     });
@@ -179,11 +184,12 @@ async function requestRegistryTarball(options: {
   }
 }
 
-function assertSuccessfulTarballResponse(
+async function assertSuccessfulTarballResponse(
   response: Response,
   tarballUrl: string,
-): void {
+): Promise<void> {
   if (response.ok) return;
+  await cancelRegistryBody(response);
   const statusText = response.statusText ? ` ${response.statusText}` : '';
   const status = `${response.status}${statusText}`;
   throw new RegistryTarballError(
@@ -211,6 +217,21 @@ function createTarballBodyError(options: {
   );
 }
 
+function throwTarballReadFailure(options: {
+  error: unknown;
+  signal: AbortSignal;
+  tarballUrl: string;
+  timeoutMs: number;
+}): never {
+  if (options.signal.aborted) {
+    throw createTarballTimeoutError(options);
+  }
+  throw createTarballBodyError({
+    error: options.error,
+    tarballUrl: options.tarballUrl,
+  });
+}
+
 async function readRegistryTarballBody(options: {
   response: Response;
   signal: AbortSignal;
@@ -218,29 +239,36 @@ async function readRegistryTarballBody(options: {
   timeoutMs: number;
 }): Promise<Buffer> {
   try {
-    return Buffer.from(await options.response.arrayBuffer());
+    return await readRegistryBody(options.response, REGISTRY_TARBALL_MAX_BYTES);
   } catch (error) {
-    if (options.signal.aborted) {
-      throw createTarballTimeoutError({ ...options, error });
+    if (error instanceof RegistryBodyLimitError) {
+      throw new RegistryTarballError(
+        {
+          kind: 'tarball-body-too-large',
+          tarballUrl: options.tarballUrl,
+          maxBytes: error.maxBytes,
+          receivedBytes: error.receivedBytes,
+        },
+        error.message,
+      );
     }
-    throw createTarballBodyError({ error, tarballUrl: options.tarballUrl });
+    return throwTarballReadFailure({ ...options, error });
   }
 }
 
 export async function fetchRegistryTarball(
-  tarballUrl: string,
+  value: string,
+  authority: EffectiveRegistryAuthority,
 ): Promise<Buffer> {
-  assertReleaseRegistryTarballUrlAllowed(tarballUrl);
-  const timeoutMs = resolveReleaseRegistryTimeoutMs(
-    REGISTRY_TARBALL_TIMEOUT_MS,
-  );
+  const tarballUrl = resolveRegistryTarballUrl(value, authority);
+  const timeoutMs = authority.timeoutMs ?? REGISTRY_TARBALL_TIMEOUT_MS;
   const signal = AbortSignal.timeout(timeoutMs);
   const response = await requestRegistryTarball({
     signal,
     tarballUrl,
     timeoutMs,
   });
-  assertSuccessfulTarballResponse(response, tarballUrl);
+  await assertSuccessfulTarballResponse(response, tarballUrl);
   return readRegistryTarballBody({
     response,
     signal,

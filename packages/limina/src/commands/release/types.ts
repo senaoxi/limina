@@ -9,6 +9,7 @@ import type {
   TaskProgressReporter,
 } from '../../execution/progress';
 import type { LiminaFlowReporter } from '../../flow';
+import type { ReleaseRegistryConfiguration } from '../../package-check/release/registry/authority';
 import type { PackageEntrySelectionPlan } from '../../package-check/runner';
 import type { LiminaPreflightManager } from '../../preflight';
 
@@ -29,6 +30,7 @@ export interface RunReleaseCheckOptions {
 }
 
 export interface ReleaseEntryOptions {
+  registryConfiguration: ReleaseRegistryConfiguration;
   config: ResolvedLiminaConfig;
   flow?: LiminaFlowReporter;
   flowDepth?: number;

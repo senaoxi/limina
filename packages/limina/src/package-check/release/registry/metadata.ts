@@ -1,15 +1,21 @@
 import { isPlainRecord } from '#utils/values';
 import { formatErrorMessage } from '../../../logger';
-import {
-  resolveReleaseRegistryMetadataUrl,
-  resolveReleaseRegistryTimeoutMs,
-} from '../../release-registry-test-seam';
 import type {
   RegistryMetadataResult,
   RegistryPackageMetadata,
   RegistryVersionMetadata,
   ReleaseConsistencyState,
 } from '../consistency/types';
+import {
+  type EffectiveRegistryAuthority,
+  resolveReleaseRegistryMetadataUrl,
+} from './authority';
+import {
+  cancelRegistryBody,
+  readRegistryBody,
+  REGISTRY_METADATA_MAX_BYTES,
+  RegistryBodyLimitError,
+} from './body';
 
 const REGISTRY_METADATA_TIMEOUT_MS = 30_000;
 
@@ -54,14 +60,14 @@ function createMetadataRequestFailure(options: {
 
 async function requestRegistryMetadata(
   packageName: string,
+  authority: EffectiveRegistryAuthority,
 ): Promise<RegistryMetadataResponse | RegistryMetadataResult> {
-  const url = resolveReleaseRegistryMetadataUrl(packageName);
-  const timeoutMs = resolveReleaseRegistryTimeoutMs(
-    REGISTRY_METADATA_TIMEOUT_MS,
-  );
+  const url = resolveReleaseRegistryMetadataUrl(packageName, authority);
+  const timeoutMs = authority.timeoutMs ?? REGISTRY_METADATA_TIMEOUT_MS;
   const signal = AbortSignal.timeout(timeoutMs);
   try {
     const response = await fetch(url, {
+      redirect: 'error',
       headers: { accept: 'application/json' },
       signal,
     });
@@ -106,6 +112,15 @@ function getMetadataBodyFailure(options: {
   error: unknown;
   request: RegistryMetadataResponse;
 }): RegistryMetadataResult {
+  if (options.error instanceof RegistryBodyLimitError) {
+    return {
+      kind: 'failure',
+      reason: 'body-too-large',
+      url: options.request.url,
+      maxBytes: options.error.maxBytes,
+      receivedBytes: options.error.receivedBytes,
+    };
+  }
   const reason = getMetadataBodyFailureReason({
     error: options.error,
     signal: options.request.signal,
@@ -139,7 +154,11 @@ async function parseMetadataResponse(
 ): Promise<RegistryMetadataResult> {
   let metadata: unknown;
   try {
-    metadata = await request.response.json();
+    const body = await readRegistryBody(
+      request.response,
+      REGISTRY_METADATA_MAX_BYTES,
+    );
+    metadata = JSON.parse(new TextDecoder().decode(body));
   } catch (error) {
     return getMetadataBodyFailure({ error, request });
   }
@@ -149,22 +168,28 @@ async function parseMetadataResponse(
 
 async function loadRegistryPackageMetadata(
   packageName: string,
+  authority: EffectiveRegistryAuthority,
 ): Promise<RegistryMetadataResult> {
-  const request = await requestRegistryMetadata(packageName);
+  const request = await requestRegistryMetadata(packageName, authority);
   if (!isMetadataResponse(request)) return request;
   const responseProblem = getMetadataResponseProblem(request);
-  if (responseProblem !== null) return responseProblem;
+  if (responseProblem !== null) {
+    await cancelRegistryBody(request.response);
+    return responseProblem;
+  }
   return parseMetadataResponse(request);
 }
 
 export async function fetchRegistryPackageMetadata(
   packageName: string,
   state: ReleaseConsistencyState,
+  authority: EffectiveRegistryAuthority,
 ): Promise<RegistryMetadataResult> {
-  const cached = state.registryMetadataCache.get(packageName);
+  const cacheKey = JSON.stringify([authority.baseUrl, packageName]);
+  const cached = state.registryMetadataCache.get(cacheKey);
   if (cached !== undefined) return cached;
-  const result = await loadRegistryPackageMetadata(packageName);
-  return cacheMetadataResult({ packageName, result, state });
+  const result = await loadRegistryPackageMetadata(packageName, authority);
+  return cacheMetadataResult({ packageName: cacheKey, result, state });
 }
 
 function formatMetadataTimeout(
@@ -220,9 +245,18 @@ export function formatRegistryMetadataFailure(
   packageName: string,
   failure: Extract<RegistryMetadataResult, { kind: 'failure' }>,
 ): string {
+  if (failure.reason === 'body-too-large')
+    return `npm registry metadata for ${packageName} exceeds the ${failure.maxBytes} byte limit`;
   if (failure.reason === 'timeout') {
     return formatMetadataTimeout(packageName, failure);
   }
+  return formatOtherMetadataFailure(packageName, failure);
+}
+
+function formatOtherMetadataFailure(
+  packageName: string,
+  failure: Extract<RegistryMetadataResult, { kind: 'failure' }>,
+): string {
   const cause = formatMetadataCause(failure);
   const known = formatKnownMetadataFailure({ cause, failure, packageName });
   if (known !== null) return known;

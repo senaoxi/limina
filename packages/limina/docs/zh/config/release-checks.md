@@ -24,6 +24,25 @@ Source map 指令检查依据 JavaScript 解析上下文识别真实的行注释
 没有 `--package` 时，`limina release check` 要求当前目录最近的 `package.json#name` 必须命中配置条目；传入一个或多个 `--package <name>` 时会跳过当前目录匹配。
 :::
 
+## Registry authority 与响应体限制
+
+release registry 请求必须属于当前 effective registry authority；默认 authority 为 npm 官方 registry（`https://registry.npmjs.org/`）。企业 registry 与镜像 registry 的 metadata 和 tarball 使用同一 HTTPS origin 时受支持。
+
+Limina 在每次 release 调用中创建一份 registry 配置快照，以命令的有效工作目录定位 npm 项目或 workspace 的 `.npmrc`，不会从待比较的输出目录读取配置。同名键按环境变量、项目 npmrc、用户 npmrc、全局 npmrc 的顺序确定优先级。支持大小写 npm 配置环境变量；两种写法同时存在时，小写优先。`NPM_CONFIG_USERCONFIG` 与 `NPM_CONFIG_GLOBALCONFIG` 可指定对应配置文件。npm 的 `ini` 解析器处理 npmrc 引号与注释，registry 设置支持 `${ENV_VAR}` 插值。插值变量缺失、配置不可读、显式指定的配置文件不存在或所选 registry URL 无效时，检查明确失败。
+
+完成同名键合并后，优先使用依赖包匹配的 `@scope:registry`，再使用通用 `registry`。因此，通用 `NPM_CONFIG_REGISTRY` 不会覆盖不同键名的 scoped registry。两个键均不存在时，使用 npm 官方默认地址。registry 的路径前缀会被保留，例如 `https://packages.example.com/npm/team/`。
+
+```ini
+registry=https://packages.example.com/npm/default/
+@team:registry=https://packages.example.com/npm/team/
+```
+
+生产 registry 与 tarball URL 必须是绝对 HTTPS URL，且不得包含 credentials、query 或 hash。tarball 必须与所选 registry 具有相同 origin（协议、主机与有效端口）。显式配置的企业内部 HTTPS registry 可以成为受信任 authority。metadata 与 tarball 请求都拒绝所有重定向，包括同源重定向。跨源 CDN tarball、带签名查询参数的 URL 和 HTTP registry 不在允许范围内。本次 registry 选择支持不包含 npmrc 认证、专用 CA 或代理配置支持。
+
+metadata 响应体上限为 **16 MiB**，tarball 响应体上限为 **128 MiB**。Limina 在 `Content-Length` 有效时检查声明长度，同时累计 HTTP 内容解码后响应流的实际字节数；超限后立即取消读取，不进入解析或 integrity 校验。限制同样适用于分块传输与 HTTP 压缩响应，恰好达到上限的响应仍可接受。原有超时与 tarball integrity 校验继续生效。`LIMINA_RELEASE_REGISTRY` 会报告 authority 无效、tarball URL 不允许、metadata/tarball 超限等结构化原因，并包含字节上限及可用的实际读取字节数。
+
+这些上限约束下载响应体，不代表 tar 归档解压后的内容大小或进程总内存上限。下载体积未超限的 tarball，解压后仍可能很大。
+
 ## npmPackageJsonLint
 
 - **类型：** `boolean | { rules?: Record<string, RuleConfig> }`

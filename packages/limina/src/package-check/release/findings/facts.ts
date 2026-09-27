@@ -151,6 +151,10 @@ export type ReleaseTarballHygieneFacts =
     };
 
 export type ReleaseRegistryReason =
+  | 'authority-invalid'
+  | 'metadata-body-too-large'
+  | 'tarball-body-too-large'
+  | 'tarball-url-not-allowed'
   | 'comparison-failed'
   | 'dist-tag-missing'
   | 'integrity-invalid'
@@ -171,6 +175,9 @@ export type ReleaseRegistryReason =
   | 'version-missing';
 
 export interface ReleaseRegistryFacts {
+  readonly authoritySource?: string;
+  readonly maxBytes?: number;
+  readonly receivedBytes?: number;
   readonly actualIntegrity?: string;
   readonly actualShasum?: string;
   readonly dependencyName: string;

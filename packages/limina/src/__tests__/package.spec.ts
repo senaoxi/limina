@@ -20,6 +20,7 @@ import {
 import { LiminaFlowReporter } from '../flow';
 import { ReleaseLogger } from '../logger';
 import type { ReleaseFinding } from '../package-check/release-findings';
+import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
 import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -557,6 +558,9 @@ async function collectReleaseConsistencyFindings(options: {
 
   try {
     await assertPackageReleaseConsistency({
+      registryConfiguration: loadReleaseRegistryConfiguration(
+        options.config.rootDir,
+      ),
       config: options.config,
       label: options.label,
       outDir: options.outDir,
@@ -637,23 +641,13 @@ beforeEach(() => {
       const urlString = String(url);
       const tarball = packageCheckMocks.registryTarballs.get(urlString);
 
-      if (tarball) {
-        return {
-          arrayBuffer: async () => toArrayBuffer(tarball),
-          ok: true,
+      if (tarball)
+        return new Response(toArrayBuffer(tarball), {
           status: 200,
           statusText: 'OK',
-        };
-      }
-
-      if (urlString.endsWith('.tgz')) {
-        return {
-          arrayBuffer: async () => toArrayBuffer(Buffer.from('')),
-          ok: false,
-          status: 404,
-          statusText: 'Not Found',
-        };
-      }
+        });
+      if (urlString.endsWith('.tgz'))
+        return new Response(null, { status: 404, statusText: 'Not Found' });
 
       const packageName = decodeURIComponent(
         new URL(urlString).pathname.slice(1),
@@ -666,42 +660,26 @@ beforeEach(() => {
           throw configuredResponse.fetchError;
         }
 
-        return {
-          json: async () => {
-            if (configuredResponse.bodyError) {
-              throw configuredResponse.bodyError;
-            }
-
-            if (configuredResponse.jsonError) {
-              throw configuredResponse.jsonError;
-            }
-
-            return configuredResponse.body;
-          },
-          ok:
-            configuredResponse.status >= 200 && configuredResponse.status < 300,
+        const body = configuredResponse.bodyError
+          ? new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.error(configuredResponse.bodyError);
+              },
+            })
+          : configuredResponse.jsonError
+            ? '{invalid json'
+            : JSON.stringify(configuredResponse.body);
+        return new Response(body, {
           status: configuredResponse.status,
           statusText: configuredResponse.statusText,
-        };
+        });
       }
 
       const metadata = packageCheckMocks.registryPackages.get(packageName);
 
-      if (!metadata) {
-        return {
-          json: async () => ({}),
-          ok: false,
-          status: 404,
-          statusText: 'Not Found',
-        };
-      }
-
-      return {
-        json: async () => metadata,
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      };
+      if (!metadata)
+        return new Response(null, { status: 404, statusText: 'Not Found' });
+      return Response.json(metadata, { statusText: 'OK' });
     }),
   );
 });
@@ -1144,22 +1122,18 @@ describe('typed Release finding producers', () => {
         }
 
         if (expectedReason === 'tarball-http-status') {
-          return {
-            ok: false,
-            status: 502,
-            statusText: 'Bad Gateway',
-          } as Response;
+          return new Response(null, { status: 502, statusText: 'Bad Gateway' });
         }
 
         if (expectedReason === 'tarball-body-read') {
-          return {
-            arrayBuffer: async () => {
-              throw new Error('tarball body interrupted');
-            },
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-          } as unknown as Response;
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.error(new Error('tarball body interrupted'));
+              },
+            }),
+            { statusText: 'OK' },
+          );
         }
 
         throw new Error(
@@ -3861,7 +3835,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         status: 200,
         statusText: 'OK',
       },
-      'invalid registry JSON',
+      'is not valid JSON',
     ],
     [
       'body read failure',
@@ -4145,15 +4119,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
       });
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       if (String(input).endsWith('.tgz')) {
-        return {
-          arrayBuffer: async () => {
-            markBodyStarted();
-            return waitForAbort(init?.signal);
-          },
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-        } as unknown as Response;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async pull() {
+              markBodyStarted();
+              await waitForAbort(init?.signal);
+            },
+          }),
+          { statusText: 'OK' },
+        );
       }
 
       return defaultFetch(input, init);
@@ -4207,14 +4181,14 @@ describe('runPackageCheck and runReleaseCheck', () => {
     registerPublishedPackage('@example/b', '1.0.0');
     vi.mocked(fetch).mockImplementation(async (input, init) => {
       if (String(input).endsWith('.tgz')) {
-        return {
-          arrayBuffer: async () => {
-            throw new Error('tarball body interrupted');
-          },
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-        } as unknown as Response;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.error(new Error('tarball body interrupted'));
+            },
+          }),
+          { statusText: 'OK' },
+        );
       }
 
       return defaultFetch(input, init);

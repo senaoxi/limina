@@ -1,4 +1,5 @@
 import type { LiminaCheckIssue } from '../../check-reporting/snapshot';
+import { loadReleaseRegistryConfiguration } from '../../package-check/release/registry/configuration';
 import {
   createReleaseCommandContext,
   logReleaseCheckPlan,
@@ -40,6 +41,7 @@ function entriesPassed(
 export async function executeReleaseCommand(
   context: ReleaseCommandContext,
 ): Promise<boolean> {
+  const registryConfiguration = loadReleaseRegistryConfiguration(context.cwd);
   const plan = await context.preflight.ensurePackageEntrySelectionPlan({
     cwd: context.cwd,
     packageNames: context.options.packageNames,
@@ -52,6 +54,7 @@ export async function executeReleaseCommand(
   });
   const workspacePackages = await context.preflight.ensureWorkspacePackages();
   const entryResults = await runReleaseCheckEntries({
+    registryConfiguration,
     entries: plan.entries,
     runOptions: context.options,
     workspacePackages,

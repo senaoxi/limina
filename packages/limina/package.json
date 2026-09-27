@@ -63,6 +63,8 @@
     "oxc-resolver": "catalog:prod"
   },
   "devDependencies": {
+    "ini": "catalog:dev",
+    "@types/ini": "catalog:dev",
     "@types/picomatch": "catalog:dev",
     "@types/semver": "catalog:dev",
     "@types/ssri": "catalog:dev",

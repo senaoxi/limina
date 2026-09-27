@@ -2,6 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createReleaseConsistencyState } from '../package-check/release/consistency/dependencies';
 import { validatePackedManifest } from '../package-check/release/packed/manifest';
+import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixturePath = createFixturePathResolver(
@@ -25,7 +26,12 @@ describe.each([
   ])(
     'checks $version against $range using ordinary consumer semantics',
     ({ version, range, accepted }) => {
-      const state = createReleaseConsistencyState();
+      const state = createReleaseConsistencyState(
+        loadReleaseRegistryConfiguration(fixturePath(), {
+          HOME: fixturePath(),
+          NPM_CONFIG_PREFIX: fixturePath(),
+        }),
+      );
       state.directWorkspaceDependencies.push({
         dependencyName: '@fixture/dep',
         sectionName: section,

@@ -6,6 +6,7 @@ import type { NamedWorkspacePackage } from '#core/workspace/actions';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createReleaseConsistencyState } from '../package-check/release/consistency/dependencies';
+import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
 import { visitWorkspacePackageDependencies } from '../package-check/release/workspace/dependencies';
 import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
@@ -51,13 +52,24 @@ describe('release policy for every importer', () => {
           },
         ]),
       );
-      const state = createReleaseConsistencyState();
+      const state = createReleaseConsistencyState(
+        loadReleaseRegistryConfiguration(fixturePath(), {
+          HOME: fixturePath(),
+          NPM_CONFIG_PREFIX: fixturePath(),
+        }),
+      );
       state.visitedPackages.add(name('root'));
       for (const key of packages.keys()) {
-        state.registryMetadataCache.set(key, {
-          kind: 'found',
-          metadata: { 'dist-tags': {}, versions: {} },
-        });
+        state.registryMetadataCache.set(
+          JSON.stringify([
+            state.registryConfiguration.authorityFor(key).baseUrl,
+            key,
+          ]),
+          {
+            kind: 'found',
+            metadata: { 'dist-tags': {}, versions: {} },
+          },
+        );
       }
       const tags: ReleaseContentHashConfigArgs[] = [];
       const ignores: ReleaseContentHashConfigArgs[] = [];

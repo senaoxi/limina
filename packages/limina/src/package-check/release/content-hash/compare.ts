@@ -14,6 +14,7 @@ import {
   fetchRegistryTarball,
   verifyRegistryTarballIntegrity,
 } from '../registry';
+import type { EffectiveRegistryAuthority } from '../registry/authority';
 import { resolveWorkspacePackageOutputDir } from './config';
 import {
   createContentHashDiffs,
@@ -23,6 +24,7 @@ import {
 } from './diff';
 
 export async function compareLocalWorkspacePackageOutputToBaseline(options: {
+  authority: EffectiveRegistryAuthority;
   baselineVersion: string;
   config: ResolvedLiminaConfig;
   dependencyName: string;
@@ -36,7 +38,10 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
     options.config,
     options.workspacePackage,
   );
-  const publishedTarball = await fetchRegistryTarball(options.tarballUrl);
+  const publishedTarball = await fetchRegistryTarball(
+    options.tarballUrl,
+    options.authority,
+  );
   verifyRegistryTarballIntegrity({
     expectedShasum: options.expectedShasum,
     integrity: options.integrity,
@@ -106,6 +111,11 @@ export function createRegistryComparisonFailure(options: {
   return {
     errorMessage,
     facts: {
+      maxBytes: getOptionalFailureValue(failure, (value) => value.maxBytes),
+      receivedBytes: getOptionalFailureValue(
+        failure,
+        (value) => value.receivedBytes,
+      ),
       actualIntegrity: getOptionalFailureValue(
         failure,
         (value) => value.actualIntegrity,

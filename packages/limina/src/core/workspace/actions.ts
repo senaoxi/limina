@@ -3,3 +3,4 @@ export * from './package-dependencies';
 export * from './package-discovery';
 export * from './package-manifest';
 export * from './package-types';
+export { nonPruningGlobGroup, npmPackageGlobs } from './selection-patterns';
