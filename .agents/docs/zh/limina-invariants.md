@@ -19,7 +19,7 @@
 
 - **Discovery guard**：`governance-root.spec.ts` 挑战配置选择、最近 manifest fail-fast、祖先独立性、共享根 manifest 内容、workspace manager 必需与 single manager 可选。`workspace-discovery.spec.ts` 保留同根 descriptor 优先级、显式 manager 优先、所消费声明投影、manager-specific selection 和 lexical alias。`single-package-knip.spec.ts` 将 validated canonical identity 贯通无名称 dependency/owner 匹配，并拒绝重复物理根。即使 manager identity 缺失或开启 nameless-scope extension，嵌套 workspace 声明仍是 hard cut。兼容边界见[发现 authority](./limina-system-model.md#工作区发现-authority)。
 
-**Migration 输入守卫**：精确 `tsconfig` 排除在 outputs 声明读取前生效，不改变 package 激活。可选 outputs 试加入复用完整 reader，保护入口、managed source 与每个 solution 的可达集合；仅 descriptor 数量不能授予接受资格。[Migration 拓扑测试](../../../packages/limina/src/__tests__/migration-topology.spec.ts)与[新进程 CLI 覆盖](../../../packages/limina/integration/tests/migration.spec.ts)覆盖自隐藏和稳定隐藏正常成员。完整行为归[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)所有。
+**Migration 输入守卫**：精确 `tsconfig` 排除在 outputs 声明读取前生效，不改变 package 激活。可选 outputs 试加入复用完整 reader，保护入口、managed source 与每个 solution 的可达集合；仅 descriptor 数量不能授予接受资格。[Migration 拓扑测试](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)与[新进程 CLI 覆盖](../../../packages/migrate/integration/tests/migration.spec.ts)覆盖自隐藏和稳定隐藏正常成员。完整行为归[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)所有。
 
 ## I02 — semantic authority 不随 final checker owner 改写
 

@@ -278,6 +278,9 @@ importers:
       limina:
         specifier: workspace:*
         version: link:packages/limina
+      limina-migrate:
+        specifier: workspace:*
+        version: link:packages/migrate
       logaria:
         specifier: link:../docs-islands/packages/logaria/dist
         version: link:../docs-islands/packages/logaria/dist
@@ -506,9 +509,6 @@ importers:
       jsdom:
         specifier: catalog:test
         version: 28.0.0
-      jsonc-parser:
-        specifier: catalog:dev
-        version: 3.3.1
       knip:
         specifier: catalog:lint
         version: 6.38.0
@@ -575,6 +575,46 @@ importers:
       zod:
         specifier: catalog:dev
         version: 4.6.5
+
+  packages/migrate:
+    dependencies:
+      limina:
+        specifier: workspace:*
+        version: link:../limina
+    devDependencies:
+      '@clack/prompts':
+        specifier: catalog:dev
+        version: 1.4.0
+      '@limina/build-tools':
+        specifier: workspace:*
+        version: link:../build-tools
+      '@types/node':
+        specifier: 22.18.0
+        version: 22.18.0
+      cac:
+        specifier: catalog:dev
+        version: 7.0.0
+      del-cli:
+        specifier: catalog:dev
+        version: 7.0.0
+      jsonc-parser:
+        specifier: catalog:dev
+        version: 3.3.1
+      pathe:
+        specifier: catalog:dev
+        version: 2.0.3
+      rolldown:
+        specifier: catalog:dev
+        version: 1.2.10
+      tsx:
+        specifier: catalog:dev
+        version: 4.23.15
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: catalog:test
+        version: 4.1.11(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@28.0.0)(tsx@4.23.15)(yaml@2.9.1)
 
   smoke:
     devDependencies:

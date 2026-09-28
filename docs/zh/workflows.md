@@ -4,6 +4,8 @@
 
 ## 推荐工作流
 
+配置迁移请使用与 Limina 同版本的独立 `limina-migrate` 包；行为与边界见[迁移契约](./cli.md#limina-migration)。
+
 ### 本地开发
 
 ```sh

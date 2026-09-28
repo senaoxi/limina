@@ -13,17 +13,17 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "build:tools": "pnpm --filter @limina/build-tools run build && pnpm --filter @limina/eslint-config run build",
-    "build": "pnpm run build:tools && pnpm --filter limina run build",
-    "build:watch": "pnpm run build:tools && pnpm --filter limina run dev",
-    "test:unit": "pnpm --filter limina run test:unit",
-    "test:integration": "pnpm --filter limina run test:integration",
-    "test:tooling": "pnpm --filter @limina/eslint-config test && node --import tsx --test scripts/release/shared.spec.ts",
+    "build": "pnpm run build:tools && pnpm --filter limina run build && pnpm --filter limina-migrate run build",
+    "build:watch": "pnpm run build:tools && pnpm --parallel --filter limina --filter limina-migrate run dev",
+    "test:unit": "pnpm --filter limina run test:unit && pnpm --filter limina-migrate run test:unit",
+    "test:integration": "pnpm --filter limina run test:integration && pnpm --filter limina-migrate run test:integration",
+    "test:tooling": "pnpm --filter @limina/eslint-config test && node --import tsx --test scripts/release/shared.spec.ts scripts/release/publication.spec.ts",
     "test:smoke": "pnpm --dir smoke test",
     "smoke": "pnpm run build && pnpm run test:smoke",
     "test": "pnpm run build && pnpm run test:unit && pnpm run test:tooling && pnpm run test:integration",
     "typecheck": "node packages/limina/bin/limina.js --config limina.config.mts check typecheck",
     "check": "node packages/limina/bin/limina.js --config limina.config.mts check",
-    "lint:packages": "node packages/limina/bin/limina.js --config limina.config.mts package check --package limina",
+    "lint:packages": "node packages/limina/bin/limina.js --config limina.config.mts package check",
     "docs:build": "pnpm --dir docs run docs:build",
     "docs:dev": "pnpm --dir docs run docs:dev",
     "docs:preview": "pnpm --dir docs run docs:preview",
@@ -34,7 +34,8 @@
     "clean": "pnpm -r run clean && del-cli .tsbuild .limina .smoke .eslintcache coverage",
     "release": "tsx scripts/release.ts",
     "changelog": "tsx scripts/changelog.ts",
-    "changelog:preview": "tsx scripts/changelog.ts --dry-run"
+    "changelog:preview": "tsx scripts/changelog.ts --dry-run",
+    "migration": "limina-migrate"
   },
   "devDependencies": {
     "@limina/build-tools": "workspace:*",
@@ -54,6 +55,7 @@
     "prettier-plugin-organize-imports": "catalog:format",
     "del-cli": "catalog:dev",
     "limina": "workspace:*",
-    "cac": "catalog:dev"
+    "cac": "catalog:dev",
+    "limina-migrate": "workspace:*"
   }
 }

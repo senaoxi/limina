@@ -10,7 +10,7 @@ import {
   type GlobalQueryCommandContext,
 } from '../check-reporting/standalone-invocation-command';
 import { parseConfigLoader } from './parse';
-import type { GlobalFlags, MigrationFlags } from './types';
+import type { GlobalFlags } from './types';
 
 export interface StandaloneCommandContext {
   commandContext: GlobalQueryCommandContext;
@@ -65,23 +65,4 @@ export async function loadStandaloneContext(
     }),
     config,
   };
-}
-
-function isMissingLiminaConfigError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.message.toLowerCase().includes('unable to find limina config');
-}
-
-export async function loadMigrationConfig(
-  flags: MigrationFlags,
-): Promise<ResolvedLiminaConfig> {
-  try {
-    return await loadCliConfig(flags, 'migration');
-  } catch (error) {
-    if (!isMissingLiminaConfigError(error)) throw error;
-    throw new Error(
-      'Run npx limina init first, then rerun npx limina migration.',
-      { cause: error },
-    );
-  }
 }

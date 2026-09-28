@@ -114,7 +114,7 @@ These two commands read the already-built `outDir`. They do not build artifacts 
 | Goal                                                               | Recommended command                        | Basis for choosing it                                                                                                                     |
 | ------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Initialize Limina files in a supported workspace                   | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
-| Migrate governed source `tsconfig` files                           | `limina migration`                         | Normalizes config topology and checks the persisted inputs in a fresh process                                                             |
+| Migrate governed source `tsconfig` files                           | `limina-migrate`                           | Normalizes config topology and checks the persisted inputs in a fresh process                                                             |
 | Daily repository-structure and type build entry checks             | `limina check`                             | Default group covers graph, source, coverage, and checker entries                                                                         |
 | Run a custom ordered check group                                   | `limina check <name>`                      | `<name>` comes from configured `pipelines`                                                                                                |
 | Materialize or refresh the `.limina` checker files                 | `limina graph prepare`                     | Before a later workflow needs the generated files on disk                                                                                 |
@@ -147,12 +147,16 @@ It finds the nearest `package.json` from cwd, validates it, and places `limina.c
 
 `init` does not infer graph rules from business structure, and it does not decide which package boundaries should be allowed or denied. Maintain the initialized config according to the real repository structure.
 
-### limina migration
+### limina-migrate {#limina-migration}
 
-`migration` normalizes existing TypeScript configuration into input that Limina can discover and read again from disk.
+`limina-migrate` is a separate CLI package paired with the exact same `limina` version. Install it locally to use the command below, or run `pnpm dlx limina-migrate@<version>`. It accepts `--config`, `--config-loader` and `--mode`; configuration functions still receive `command: 'migration'`.
+
+`limina migration` remains as a deprecated forwarding entry. It prefers a matching local package, otherwise npm downloads that exact version. Its help stays local; offline execution requires the matching migration package to be installed. It does not upgrade project dependencies.
+
+`limina-migrate` normalizes existing TypeScript configuration into input that Limina can discover and read again from disk.
 
 ```sh
-pnpm exec limina migration
+pnpm exec limina-migrate
 ```
 
 The command reports processing completion separately from input consumption. Architecture rules, package dependencies, checker ownership and type errors still belong to `limina check`. Migration does not promise equivalent native `tsc -b` behavior.
