@@ -13,6 +13,7 @@ import type {
 } from './cache';
 
 export interface TypeScriptTypeEvidenceProject {
+  virtualFiles?: ReadonlyMap<string, string>;
   configPath: string;
   fileNames: readonly string[];
   options: ts.CompilerOptions;

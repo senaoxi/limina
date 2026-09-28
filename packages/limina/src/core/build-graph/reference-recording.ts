@@ -180,6 +180,7 @@ export function addMappedReference(options: {
   base: ReferenceImportOptions;
   target: ReferenceTarget;
 }): void {
+  recordSemanticFact(options);
   const targetDtsConfigPath = getDtsConfigPathForSourcePath({
     checkerName: options.base.project.checkerName,
     dtsProjectsBySourcePath: options.base.context.dtsProjectsBySourcePath,
@@ -202,4 +203,15 @@ export function addMappedReference(options: {
     return;
   }
   addSelectedProviderReference({ ...options, providerProject });
+}
+
+function recordSemanticFact(
+  options: Parameters<typeof addMappedReference>[0],
+): void {
+  options.base.context.analysis?.facts.push({
+    fromConfigPath: options.base.project.configPath,
+    toConfigPath: options.target.targetSourceConfigPath,
+    file: options.base.fileName,
+    specifier: options.base.importRecord.specifier,
+  });
 }

@@ -39,7 +39,6 @@ interface VueProjectEvidence {
   context: CheckerProjectParseContext;
   parsed: ParsedCheckerProject | undefined;
 }
-
 function parseNeutralProject(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
@@ -55,6 +54,7 @@ function parseNeutralProject(options: {
     configPath: options.configPath,
     context,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
   const fileNames = parsed.fileNames.map(normalizeAbsolutePath).sort();
   return {
@@ -64,11 +64,9 @@ function parseNeutralProject(options: {
     partition: partitionSourceFiles(fileNames),
   };
 }
-
 function isVueIntentHint(hint: FrameworkIntentHint): boolean {
   return hint.family === 'vue';
 }
-
 function hasVueCandidate(
   neutral: NeutralProjectEvidence,
   intentHints: readonly FrameworkIntentHint[],
@@ -99,6 +97,7 @@ function parseVueProject(options: {
     configPath: options.configPath,
     context: parseContext,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
   return {
     context: {
@@ -224,6 +223,7 @@ export function createAutoScopeProject(options: {
       ]),
     ),
     packageRootDir: options.packageRootDir,
+    virtualFiles: options.config.virtualFiles,
     references: getRawReferencePaths(options.config, options.configPath).map(
       (referencePath) => ({ path: referencePath }),
     ),
@@ -257,6 +257,7 @@ export function createExplicitScopeProject(options: {
     configPath: options.configPath,
     context: parseContext,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
   const fileNames = parsed.fileNames.map(normalizeAbsolutePath).sort();
   const filePartition = partitionSourceFiles(fileNames);
@@ -290,6 +291,7 @@ export function createExplicitScopeProject(options: {
       ]),
     ),
     packageRootDir: options.packageRootDir,
+    virtualFiles: options.config.virtualFiles,
     references: getRawReferencePaths(options.config, options.configPath).map(
       (referencePath) => ({ path: referencePath }),
     ),

@@ -3,6 +3,8 @@ import { type Node, type ParseError, parseTree } from 'jsonc-parser';
 import { isDeepStrictEqual } from 'node:util';
 import ts from 'typescript';
 
+export class MigrationJsoncInputError extends Error {}
+
 const compilerFields = [
   'outDir',
   'rootDir',
@@ -37,12 +39,12 @@ function parseMigrationText(content: string): Node {
     allowTrailingComma: true,
   });
   if (errors.length > 0) {
-    throw new Error(
+    throw new MigrationJsoncInputError(
       'Migration JSONC must parse as a complete object before writing.',
     );
   }
   if (!isObjectRoot(root)) {
-    throw new Error(
+    throw new MigrationJsoncInputError(
       'Migration JSONC must parse as a complete object before writing.',
     );
   }
@@ -66,7 +68,7 @@ function assertUniquePath(root: Node, segments: readonly string[]): void {
       (property) => propertyName(property) === segment,
     );
     if (matches.length > 1) {
-      throw new Error(
+      throw new MigrationJsoncInputError(
         `Ambiguous migration JSONC: duplicate key at ${traversed.join('.')}; remove the duplicate before rerunning migration.`,
       );
     }
@@ -74,9 +76,12 @@ function assertUniquePath(root: Node, segments: readonly string[]): void {
   }
 }
 
-export function assertUnambiguousMigrationText(content: string): void {
+export function assertUnambiguousMigrationText(
+  content: string,
+  paths: readonly (readonly string[])[] = migrationPaths,
+): void {
   const root = parseMigrationText(content);
-  for (const segments of migrationPaths) assertUniquePath(root, segments);
+  for (const segments of paths) assertUniquePath(root, segments);
 }
 
 export function assertMigrationTextMatchesPlan(

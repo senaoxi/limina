@@ -3,7 +3,7 @@
 `regions` 用来定义哪些包作用域属于当前这次 Limina 运行。它是一层结构边界：包归属、检查器发现、源码分析、生成图和依赖授权都只在这层边界内生效。
 
 ::: warning
-`regions.exclude` 不能替代 `config.source.exclude`。如果要排除已激活区域内的个别检查器入口，仍然需要使用检查器级 `exclude`。被排除或不可访问区域中的路径按定义已经不参与检查器 `include` 发现，不应该再重复写进 checker `exclude`。只有整个激活包或已识别包作用域都不属于当前运行时，才使用 `regions`。
+`regions.exclude` 不能替代 `config.source.exclude`。Package 类型排除会移除包治理权限，checker `exclude` 只改变入口选择。精确 `tsconfig` 类型用于在读取 outputs 声明前隔离配置，同时保留 package 激活状态。它不会隐藏源码文件，也不会让残留入边变得合法；migration 还必须修剪这些关系。
 :::
 
 ```ts
@@ -13,7 +13,7 @@ interface RegionsConfig {
 }
 
 interface RegionExcludeConfig {
-  kind: 'workspace-package' | 'package-scope';
+  kind: 'workspace-package' | 'package-scope' | 'tsconfig';
   include: string[];
   reason: string;
 }
@@ -77,7 +77,7 @@ packages/app/vendor/pkg/              不属于当前区域
 
 祖先边界不会阻止已激活的后代包启动自己的 island。因此，可见性只属于当前 owner：父包不会读取其嵌套工作区或激活子包边界之后的 descriptor，单独激活的后代包仍然可以治理自己的文件。默认源码发现和自动检查器发现会针对每个 package island 独立运行，包括位于 `config.rootDir` 外的激活包。
 
-任何源码、证明、图、检查器、迁移、包、发布或产物生成工作开始前，`workspace:validate` 都会先建立这份激活包索引。它会在 owner lookup 建立前拒绝结构歧义：
+正常源码、证明、图、检查器、包、发布或产物生成工作开始前，`workspace:validate` 都会先建立这份激活包索引。Migration 复用相同的 authority 检查；仅在可恢复的 outputs 输入错误后使用受信任的初始候选进行规范化，并在写入前后重新读取完整输入拓扑。它会在 owner lookup 建立前拒绝结构歧义：
 
 - 应用 `workspace-package` 排除后仍处于激活状态的非根包，如果自身又声明另一个工作区根，会报告 `LIMINA_WORKSPACE_REGION_OVERLAP`；
 - 两个词法包根目录如果解析到同一个物理目录，会报告 `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`；
@@ -111,16 +111,32 @@ packages/app/vendor/pkg/              不属于当前区域
 
 每条规则都必须提供 `kind`、非空 `include` 数组和非空 `reason`。Limina 不会推断 `kind`，也不接受省略 `kind` 的旧写法。
 
-`include` 只匹配相对于 `config.rootDir` 的词法 candidate 根目录；`config.rootDir` 外的激活包可以使用 `../`。它不匹配包名、`package.json` 路径、`pnpm-workspace.yaml` 路径、规范化后的物理路径或任意普通文件。例如，包或包作用域根目录位于 `packages/app/fixtures/local` 时，应使用 `packages/app/fixtures/local`，也可以使用 `packages/**/fixtures/**` 这类根目录 glob；`**/package.json` 不会命中。
+对于 `workspace-package` 与 `package-scope`，`include` 只匹配相对于 `config.rootDir` 的词法 candidate 根目录；`config.rootDir` 外的激活包可以使用 `../`。它不匹配包名、`package.json` 路径、`pnpm-workspace.yaml` 路径、规范化后的物理路径或任意普通文件。例如，包或包作用域根目录位于 `packages/app/fixtures/local` 时，应使用 `packages/app/fixtures/local`，也可以使用 `packages/**/fixtures/**` 这类根目录 glob；`**/package.json` 不会命中。
 
-两种 `kind` 各自只对应一种 candidate：
+两种 package `kind` 各自只对应一种 candidate：
 
 - `workspace-package` 从所选治理根的完整原始成员（包括单包根）中选择精确包根 candidate。Limina 会在 overlap 检查前验证这些规则，再让每个被匹配的包退出源码归属、依赖授权、源码与检查器发现以及生成图。匹配父包不会级联删除未匹配的激活后代；需要级联时必须显式匹配每个后代。如果工作区根目录本身也是激活包，可以用 `include: ['.']` 只排除根包；工作区和其他激活包不会因此被排除。显式配置的 `package.entries` 仍是独立产物条目，不会被这类规则删除。
 - `package-scope` 选择嵌套 `package.json` 的根目录。它同时覆盖已扩展的包作用域和原本已经停止治理的包作用域。排除后，该根目录及其后代都位于当前运行之外。
 
 规则只与同 `kind` 的 candidate 匹配。因此，同一个目录即使同时是激活包和嵌套包作用域，这两种 identity 也不会合并。
 
-每条规则都必须至少命中一个同 `kind` candidate。`workspace-package` 规则会在激活与 overlap 检查前，使用完整原始包 candidate 集合验证；`package-scope` 规则则在嵌套 descriptor 与输出可见性稳定后验证。descriptor 路径、`node_modules`、`.git`、`.limina`、明确配置的输出目录等固定 discovery ignore，以及只属于其他 `kind` 的路径，都不能让规则通过匹配验证。同一个 candidate 也不能被多条规则命中；应让模式互不重叠，而不是依赖数组顺序。
+每条 package 类型规则都必须至少命中一个同 `kind` candidate。`workspace-package` 规则会在激活与 overlap 检查前，使用完整原始包 candidate 集合验证；`package-scope` 规则则在嵌套 descriptor 与输出可见性稳定后验证。descriptor 路径、`node_modules`、`.git`、`.limina`、明确配置的输出目录等固定 discovery ignore，以及只属于其他 `kind` 的路径，都不能让规则通过匹配验证。同一个 candidate 也不能被多条规则命中；应让模式互不重叠，而不是依赖数组顺序。
+
+### 精确 tsconfig 排除
+
+`kind: 'tsconfig'` 接受相对于配置根的精确 `tsconfig.json` 或 `tsconfig.*.json` 文件路径，允许 `../`，不接受目录或 glob selector。它在读取 outputs 声明和计算 descriptor 稳定性之前，按投影后的规范文件身份匹配。只移除匹配的配置 descriptor，package 激活和源码文件治理权限保持不变。被排除的文件不存在时不会报错，因此删除隔离的坏文件不会让排除规则失效。Package 类型的 candidate 命中和重叠规则不应用于该类型。
+
+```js
+regions: {
+  exclude: [{
+    kind: 'tsconfig',
+    include: ['packages/app/tools/tsconfig.json'],
+    reason: '该配置无法解析；指向它的 membership 已被修剪。',
+  }],
+}
+```
+
+示例不会排除 `packages/app`、兄弟配置或 `tools` 内的源码文件。保留下来的 solution reference 若仍指向被排除文件，依然是输入问题。持久化及动态配置限制见 [migration](../cli.md#limina-migration)。
 
 ## 路径坐标与输出安全
 

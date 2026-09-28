@@ -1,8 +1,11 @@
 import { isSourceKnipEnabled, type ResolvedLiminaConfig } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
+import { LiminaStructuredError } from '../../check-reporting/errors';
+import { TypeScriptConfigInputError } from '../../checker/project-base';
 import { AstroSemanticContextManager } from '../astro-semantic/context';
 import { createProjectDependencyCaches } from '../project-dependencies/runner';
 import { SvelteSemanticContextManager } from '../svelte-semantic/context';
+import { TsconfigInputError } from '../tsconfig/config-paths';
 import { VueSemanticContextManager } from '../vue-semantic/context';
 import {
   collectValidatedWorkspaceContext,
@@ -12,7 +15,10 @@ import {
 import { resolveGeneratedGraphCheckerSelections } from './checker-resolution';
 import { finalizeGeneratedGraph } from './finalize-generated-graph';
 import { prepareGeneratedKnipPackageConfigs } from './generated-knip';
-import { validateAndCompleteGeneratedGraph } from './graph-validation';
+import {
+  analyzeAndCompleteGeneratedGraph,
+  validateAndCompleteGeneratedGraph,
+} from './graph-validation';
 import { resolveBuildGraphImportAnalysis } from './import-analysis-context';
 import { prepareCheckerGraphs } from './prepare-checker-graphs';
 import {
@@ -20,6 +26,7 @@ import {
   registerPreparedChecker,
 } from './prepare-state';
 import type {
+  DependencyAnalysisResult,
   GeneratedTsconfigGraphResult,
   PrepareGeneratedTsconfigGraphOptions,
 } from './types';
@@ -113,10 +120,11 @@ function prepareGeneratedKnip(options: {
   });
 }
 
-export async function prepareGeneratedTsconfigGraph(
+async function prepareGraph(
   config: ResolvedLiminaConfig,
   options: PrepareGeneratedTsconfigGraphOptions,
-): Promise<GeneratedTsconfigGraphResult> {
+  analysisOnly = false,
+): Promise<GeneratedTsconfigGraphResult | DependencyAnalysisResult> {
   const workspaceContext = await getWorkspaceContext({
     config,
     workspaceContext: options.workspaceContext,
@@ -139,8 +147,7 @@ export async function prepareGeneratedTsconfigGraph(
     svelteSemanticContexts: ownedSvelteSemanticContexts,
     vueSemanticContexts: ownedVueSemanticContexts,
   });
-  const projectDependencyCaches =
-    options.projectDependencyCaches ?? createProjectDependencyCaches();
+  const projectDependencyCaches = dependencyCaches(options);
   try {
     const checkerResolution = await resolveGeneratedGraphCheckerSelections({
       config,
@@ -163,10 +170,9 @@ export async function prepareGeneratedTsconfigGraph(
       projectConfigCache: options.projectConfigCache,
       selections: checkerSelections,
     });
-    for (const preparedChecker of preparedCheckers) {
-      registerPreparedChecker({ preparedChecker, state });
-    }
-    validateAndCompleteGeneratedGraph({
+    registerCheckers(preparedCheckers, state);
+    const completeGraph = graphCompletion(analysisOnly);
+    completeGraph({
       activatedRegions,
       checkers,
       config,
@@ -175,6 +181,7 @@ export async function prepareGeneratedTsconfigGraph(
       projectConfigCache: options.projectConfigCache,
       state,
     });
+    if (analysisOnly) return state.dependencyAnalysis;
     const generatedKnip = prepareGeneratedKnip({
       checkers,
       config,
@@ -199,4 +206,50 @@ export async function prepareGeneratedTsconfigGraph(
     disposeOwnedSvelteSemanticContexts(ownedSvelteSemanticContexts);
     disposeOwnedVueSemanticContexts(ownedVueSemanticContexts);
   }
+}
+
+export async function prepareGeneratedTsconfigGraph(
+  config: ResolvedLiminaConfig,
+  options: PrepareGeneratedTsconfigGraphOptions,
+): Promise<GeneratedTsconfigGraphResult> {
+  return (await prepareGraph(config, options)) as GeneratedTsconfigGraphResult;
+}
+
+export async function analyzeProjectDependencies(
+  config: ResolvedLiminaConfig,
+  options: PrepareGeneratedTsconfigGraphOptions,
+): Promise<DependencyAnalysisResult> {
+  try {
+    return (await prepareGraph(
+      config,
+      options,
+      true,
+    )) as DependencyAnalysisResult;
+  } catch (error) {
+    if (!isAnalysisInputError(error)) throw error;
+    return { complete: false, facts: [], diagnostics: [error.message] };
+  }
+}
+
+function dependencyCaches(options: PrepareGeneratedTsconfigGraphOptions) {
+  return options.projectDependencyCaches ?? createProjectDependencyCaches();
+}
+function registerCheckers(
+  checkers: ReturnType<typeof prepareCheckerGraphs>,
+  state: ReturnType<typeof createGeneratedGraphPreparationState>,
+): void {
+  for (const preparedChecker of checkers)
+    registerPreparedChecker({ preparedChecker, state });
+}
+function graphCompletion(analysisOnly: boolean) {
+  return analysisOnly
+    ? analyzeAndCompleteGeneratedGraph
+    : validateAndCompleteGeneratedGraph;
+}
+function isAnalysisInputError(error: unknown): error is Error {
+  return [
+    LiminaStructuredError,
+    TypeScriptConfigInputError,
+    TsconfigInputError,
+  ].some((Type) => error instanceof Type);
 }

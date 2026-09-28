@@ -3,6 +3,7 @@ import type { ResolvedCheckerConfig } from '#config/runner';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import type {
   CheckerSourceConfigCollection,
+  DependencyAnalysisResult,
   GeneratedBuildModule,
   GeneratedDependencyEdge,
   GeneratedGraphWriteContext,
@@ -15,6 +16,7 @@ import type {
 } from './types';
 
 export interface GeneratedGraphPreparationState {
+  dependencyAnalysis: DependencyAnalysisResult;
   checkerOwnershipPlan: CheckerOwnershipPlan;
   checkerCollectionsByName: Map<string, CheckerSourceConfigCollection>;
   checkerEntries: Map<string, string>;
@@ -41,6 +43,7 @@ export function createGeneratedGraphPreparationState(
   checkerOwnershipPlan: CheckerOwnershipPlan,
 ): GeneratedGraphPreparationState {
   return {
+    dependencyAnalysis: { complete: true, facts: [], diagnostics: [] },
     checkerOwnershipPlan,
     checkerCollectionsByName: new Map(),
     checkerEntries: new Map(),

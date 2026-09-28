@@ -13,6 +13,8 @@ import type {
   ParsedCheckerProjectConfig,
 } from './types';
 
+export class TypeScriptConfigInputError extends Error {}
+
 interface ConfigReadRecorder {
   contentByPath: Map<string, string>;
 }
@@ -67,7 +69,7 @@ function requireParsedCommandLine(options: {
   projectRootDir: string;
 }): ts.ParsedCommandLine {
   if (options.parsed !== undefined) return options.parsed;
-  throw new Error(
+  throw new TypeScriptConfigInputError(
     ts.formatDiagnosticsWithColorAndContext(
       options.diagnostics,
       createFormatHost(options.projectRootDir),
@@ -87,7 +89,7 @@ function assertNoParseErrors(options: {
       (diagnostic.code !== 18_002 && diagnostic.code !== 18_003),
   );
   if (errors.length === 0) return;
-  throw new Error(
+  throw new TypeScriptConfigInputError(
     ts.formatDiagnosticsWithColorAndContext(
       errors,
       createFormatHost(options.projectRootDir),

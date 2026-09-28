@@ -48,6 +48,7 @@ export function createSourceProject(options: {
     configPath: options.sourceConfigPath,
     context: parseContext,
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
   const context: CheckerProjectParseContext = {
     ...parseContext,
@@ -91,6 +92,7 @@ export function createSourceProject(options: {
     outputReferences: new Set(),
     packageRootDir: options.packageRootDir,
     options: parsed.options,
+    virtualFiles: options.config.virtualFiles,
     references: new Set(),
     semanticAuthority: { ...options.semanticAuthority },
   };

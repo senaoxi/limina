@@ -82,7 +82,7 @@ jobs:
 
 ### Limina 如何识别 solution 配置？
 
-Limina 会使用当前检查器解析每个可达配置。解析后的有效文件列表为空、且配置直接声明 `references` 时，它就是 TypeScript solution；`extends` 或检查器支持的框架文件也会参与这个判断。只有路径 basename 恰好为 `tsconfig.json` 时，Limina 才会展开这个角色。迁移命令会先汇总所有可达的带名称 solution，再进行任何 worktree 或文件修改。可以把它重命名为 `tsconfig.json`，把引用合并到目录已有的默认入口，或移除 `references` 并把它改成具有明确源码边界的叶子配置。
+Limina 使用实际检查器解析每个可达配置。有效文件集合为空且直接声明 `references` 时，它属于 TypeScript solution，也包括使用 `extends` 或检查器支持的框架文件的配置；正常 core 只把路径名恰好为 `tsconfig.json` 的这种配置作为 solution 展开。Migration 可以把纯 named membership 包装节点展开到所有父节点，重定位路径并保护 source 纳管关系；带实质 Limina 声明、附加关系属性或 named-wrapper 环的包装节点需要手动转换，详见 [migration](./cli.md#limina-migration)。
 
 ### limina checker build 和 checker typecheck 如何选择目标？
 

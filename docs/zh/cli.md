@@ -149,47 +149,53 @@ pnpm exec limina init --yes
 
 ### limina migration
 
-`migration` 会改写已验证激活 package island 中选中的源码 `tsconfig` 入口。
+`migration` 将现有 TypeScript 配置规范化为 Limina 能够从磁盘重新发现和读取的输入。
 
 ```sh
 pnpm exec limina migration
 ```
 
-#### Git 工作区确认
+命令分别报告处理完成与输入可消费性。架构规则、包依赖、checker ownership 和类型错误仍由 `limina check` 检查。迁移不承诺原生 `tsc -b` 行为等价。
 
-每个迁移目标都必须位于 Git worktree 中。外部激活包也受支持，因此一次迁移的目标可以分布在多个 worktree。写入前，Limina 会解析所有目标所属的 worktree，并检查其中的 Git 状态；已跟踪文件的变更和未跟踪文件都会进入检查结果。
+#### 配置与关系
 
-- 所有相关 worktree 都是 clean 状态时，迁移直接继续，不显示确认提示。
-- 任一 worktree 存在变更时，Limina 会汇总所有存在变更的 worktree，并只询问一次。确认提示默认选择“否”。
-- 选择继续后，Limina 会继续执行只读文件系统预检，并执行已经完成规划的 `tsconfig*.json` 写入计划。这个确认不会 commit、stash、删除或还原已有变更。
-- 拒绝或取消确认时，迁移停止且不会写入任何目标，并提示先保持 Git 工作区干净。
-- 非交互环境无法显示确认提示，因此发现变更时会停止且不会写入。请先整理所有相关 worktree，再重新运行迁移。
+只有默认 `tsconfig.json` 能作为 checker entry。Named source config 经 solution references 纳入。迁移会移除普通 source 的 `references`，修剪无效或域外 solution 成员，并保留其余 source 的纳管关系。域外 reference 会被记录，不读取或迁移其目标。
 
-确认继续后，迁移仍只会在目标所属的规范 worktree 根目录内写入计划中的配置文件。确认脏工作区不会扩大迁移目标或写入范围。
+纯 named solution 包装节点在被改写的 references 仅含 `path`、且没有实质 Limina 声明时，可以展开到所有父节点。路径按每个父文件重定位，包装文件保留。带附加属性的关系及 named-wrapper 环需要手动转换。默认 solution 环会在删除环边后补回 source membership，保持每个保留 solution 的 source 可达集合。空 solution 保留 solution 角色及显式 `references: []`。
 
-迁移会在规划阶段拒绝受管字段或其祖先对象中的重复键，包括 `compilerOptions`、`liminaOptions.outputs`、`$schema` 与 `references`。任一目标存在歧义，整批迁移都会在写入配置前停止。请删除重复键后重试。候选 JSONC 还必须解析为与计划完全一致的有效对象；注释、尾随逗号与既有换行符会保留。
+Limina 对比原生域内 source 关系与独立推导的 source 关系。可推导关系不重复写入 `implicitRefs`；其余原生声明转为显式 implicit reference，已有用户 reason 保留。分析不完整时报告无法完成比较，不将其视为空推导图。
 
-#### 文件系统写入策略
+无法解析的配置文件保留在磁盘上。能安全隔离时，迁移写入 `kind: 'tsconfig'` 的精确 `regions.exclude`，并移除指向它的 membership 或 implicit reference，package 仍保持激活。不会删除 `extends` 路径。单个 implicit-reference 对象可以包装成数组；缺失或空白 reason 会补入事实性的迁移说明。无法规范化的非法结构会被隔离，或报告未完成。
 
-完成 transform 规划与 Git 确认后，Limina 会对每个确实需要变更的配置执行只读文件系统预检。transform 后已经是 no-op 的配置不会接受 link 检查，也不会触发 hard-link 提示。预检仍会拒绝包含 symbolic link 或 junction 的逻辑路径、位于规范 worktree 根之外的目标、非普通文件或不可写文件，以及解析到同一 physical file 的多个计划路径。
+排除项自动编辑支持直接导出的对象、调用已导入 `defineConfig` 的对象，以及可唯一追踪的不可变 `const` 对象，并要求 regions/exclusion 数组可以静态编辑。函数、Promise、spread 和动态组合保持原样。必要排除无法落盘时，接入仍未完成。没有安全输入基线的既有 outputs 可见性环也需要修正；迁移不会排除正常 source 来制造成功结果。
 
-普通配置只有一个 hard link 时，迁移继续使用 atomic replacement transaction。配置有多个 hard link 时，link count 会选择另一种写入能力，而不再让目标直接失效。只要至少一个这样的配置需要变更，Limina 就会在创建 transaction directory 或修改任何目标前统一提示一次，并最多展示五个路径：
+#### 可选 outputs 接入
 
-- **Rewrite hard-linked files in place** 是默认选择。它会在第一次目标修改前准备完整的新内容和 immutable backup，然后通过现有 inode 写入。指向该 inode 的所有 alias 都会看到新内容。此模式会保持 device、inode、link count、权限和受支持的 ownership metadata，但不提供 atomic replacement guarantee；并发 reader 可能观察到中间内容。transaction directory 中的私有 transaction artifact 使用 `0600` mode 并独立校验，不复制 live target 的 ownership、mode 或 timestamp。
-- **Skip hard-linked files and migrate the rest** 会让这些文件保持不变，并与 transform no-op 分开报告。
-- **Cancel migration** 会在任何目标修改或 transaction artifact 创建前停止迁移。
+Source compiler options（包括 build 字段和继承路径）保持原样。已有合法 `liminaOptions.outputs`（包括 `{}`）继续作为用户的显式契约。
 
-非交互环境无法选择 hard-link 策略，因此迁移会以零写入停止，并提示用户在交互环境重新运行。目前没有用于指定 hard-link policy 的命令行参数。
+| 没有显式 outputs 时的既有配置                                                     | 自动 outputs 接入                    |
+| --------------------------------------------------------------------------------- | ------------------------------------ |
+| 有效 `noEmit: true`，包括继承结果                                                 | 不创建                               |
+| 有效 emit 未关闭且存在 `outDir`                                                   | 先提出候选，再检查完整候选拓扑       |
+| 只有 `rootDir`、`target`、declaration 标志或 `noEmit: false`                      | 不创建                               |
+| Declaration-only emit、分离的声明/JS 目录、只有 `declarationDir` 或存在 `outFile` | 不创建；保留原生选项并记录未承接行为 |
+| Solution 配置                                                                     | 不创建                               |
 
-提示结束后，预检 snapshot 仍是执行依据。如果 canonical path、device、inode、link count、mode、ownership、timestamp 或内容在 commit 前发生变化，迁移会 fail closed，而不会自动改选策略。Limina 不会取得跨进程 write lease，也不会协调并发 writer。hard-link 原地修改在可能已经开始写入后失败时，Limina 不会覆盖无法确认来源的当前内容。如果 target 仍通过同一 physical file 的校验，且内容仍是 original，就不需要执行 recovery write；否则迁移会保留当前 target、immutable backup，并报告 recovery path。post-write verification drift 采用相同的保守处理。如果后续 item 失败，已经提交的普通目标使用 atomic replacement rollback；已经提交的 hard-linked 目标只有通过严格 drift validation 后，才会通过同一 inode 回滚。
+每个可选候选必须通过输出路径和 mutation authority 检查、稳定 descriptor 发现，以及入口和 source closure 保留检查。候选按配置路径稳定排序后各尝试一次。隐藏声明者自身的输出，或能够稳定下来但隐藏其他正常 source 的输出，都会被拒绝，不会因此隔离这些 source。拒绝不会取消其他 source 转换或独立安全 outputs。迁移不会把继承的 source `target` 重复写入 outputs，也不会删除已有输出文件。
 
-#### 迁移范围与输出字段
+#### 写入与结果
 
-迁移选择与图准备使用相同的 package-island 可见性和 checker selector。即使祖先模式可以匹配，迁移也不会读取或修改 owner-local 边界后的配置。
+每个写入目标必须属于 Git worktree。所有补丁和输入 snapshot 都在写入前准备；dirty worktree 需要一次交互确认，默认选择否。需要确认的非交互运行会在写入前停止。批准不会 commit、stash 或丢弃用户变更。
 
-迁移会在规划写入前读取每个目标的 TypeScript 有效配置（包括继承的选项）。如果直接声明的 `compilerOptions.declarationDir` 与计划的受管输出根等价，迁移会删除这个字段；如果它是唯一的输出设置，迁移会把它的相对路径写入 `liminaOptions.outputs.outDir`，因此迁移后 JavaScript 与声明文件共置于一个产物目录。JavaScript 与声明分离输出、有效的 `outFile`、混合型 solution 聚合器、非法 `declarationDir`，或没有既有等价受管根的绝对 `declarationDir`，都会在写入任何目标前失败。继承的 `declarationDir` 会保留在 base 配置中，不会复制到叶子。迁移不会删除已有的用户输出文件。
+JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复键等歧义时，保留该目标并报告，独立目标继续。文件系统预检检查规范路径范围、普通文件、可写性、物理别名及身份漂移。单链接文件使用原子替换。Hardlink 文件需要统一选择：通过现有 inode 原地改写、跳过相关一致性组，或取消。原地写入保持别名关系，但不具备原子性，所有别名都会观察到变化。
 
-迁移不会安装 Astro 或 Svelte 依赖，不会运行 `astro sync`，也不会改写框架源码。下一次物化生成图时，Limina 会根据迁移后的源码配置和实际文件推导 checker ownership。如果存在 version 1 到 4 的 `.limina/manifest.json`，Limina 只把它当作产物归属 ledger，用它删除旧生成路径，再替换为当前的 version 5 manifest。Version 5 会持久化 final ownership、solution closure、typed dependency edge 与 execution target。
+同一 solution 环的修改，以及共享必要持久排除的修改，组成一致性组。可恢复失败会恢复该组，然后继续独立组。文件系统状态不确定时停止并保留恢复证据。迁移没有跨进程 writer lease，写入开始后也不会重新执行语义规划。
+
+新进程会通过正常 `check` 和 `graph` 输入读取路径加载实际配置。只有重新读取成功、必要写入完成、source 纳管关系保留且仍有可治理 source 时，才允许报告接入成功。必要写入失败、残留结构性错误或无法验证会返回非零。单独拒绝可选 outputs 不要求失败。
+
+审计报告位于 `.limina/migration/latest.json`，包含目标、隔离、修剪关系、比较完整性、outputs 决策、写入和最终验证。报告发布失败会警告，不撤销已经提交的配置。Core 和后续 migration 都不将报告作为输入事实来源。
+
+迁移不会安装框架依赖、运行 `astro sync` 或改写框架源码。Generated graph 继续使用 manifest version 5，不持久化 migration readiness 或 partial-graph 状态。
 
 ### limina check [pipeline]
 

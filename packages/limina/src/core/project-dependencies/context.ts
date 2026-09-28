@@ -16,6 +16,7 @@ import { parseTypeScriptProjectConfig } from '../typescript-semantic/project-ref
 import type { ProjectSemanticContext } from './contracts';
 
 interface SemanticContextProject {
+  virtualFiles?: ReadonlyMap<string, string>;
   analysisGeneration: number;
   astroSemanticProject?: AstroSemanticProject;
   configPath: string;
@@ -36,6 +37,7 @@ function createContext(options: {
   project: SemanticContextProject;
 }): ProjectSemanticContext {
   return {
+    virtualFiles: options.project.virtualFiles,
     astroSemanticProject: options.project.astroSemanticProject,
     compilerOptions: options.project.options,
     configPath: normalizeAbsolutePath(options.project.configPath),
@@ -87,9 +89,10 @@ function getSourceSvelteProject(
 
 function getRawProjectReferences(
   configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
 ): readonly ts.ProjectReference[] {
   return (
-    parseTypeScriptProjectConfig({ configPath, tsModule: ts })
+    parseTypeScriptProjectConfig({ configPath, tsModule: ts, virtualFiles })
       ?.projectReferences ?? []
   );
 }
@@ -102,6 +105,7 @@ export function createAutoProjectSemanticContext(options: {
   return createContext({
     authority: options.authority,
     project: {
+      virtualFiles: options.project.virtualFiles,
       analysisGeneration: options.project.analysisGeneration,
       astroSemanticProject:
         options.authority.family === 'astro'
@@ -154,6 +158,7 @@ export function createSourceProjectSemanticContext(options: {
   return createContext({
     authority: options.authority,
     project: {
+      virtualFiles: options.project.virtualFiles,
       analysisGeneration: getSourceAnalysisGeneration(options.project),
       astroSemanticProject: getSourceAstroProject(options.source),
       configPath: options.project.configPath,
@@ -165,7 +170,10 @@ export function createSourceProjectSemanticContext(options: {
         options.project.packageRootDir,
       ),
       packageRootDir: options.project.packageRootDir,
-      references: getRawProjectReferences(options.project.configPath),
+      references: getRawProjectReferences(
+        options.project.configPath,
+        options.project.virtualFiles,
+      ),
       resolverConfigPath: options.project.configPath,
       svelteSemanticProject: getSourceSvelteProject(options.source),
       vueSemanticIdentity: options.project.context.vueSemanticIdentity,
@@ -184,6 +192,7 @@ export function createParsedProjectSemanticContext(options: {
     authority: options.authority,
     project: {
       analysisGeneration: options.project.analysisGeneration,
+      virtualFiles: options.project.virtualFiles,
       astroSemanticProject: options.project.astroSemanticProject,
       configPath: options.project.configPath,
       extensions: options.project.extensions,
@@ -194,7 +203,10 @@ export function createParsedProjectSemanticContext(options: {
         options.packageRootDir,
       ),
       packageRootDir: options.packageRootDir,
-      references: getRawProjectReferences(options.project.resolverConfigPath),
+      references: getRawProjectReferences(
+        options.project.resolverConfigPath,
+        options.project.virtualFiles,
+      ),
       resolverConfigPath: options.project.resolverConfigPath,
       svelteSemanticProject: options.project.svelteSemanticProject,
       vueSemanticIdentity: options.project.vueSemanticIdentity,

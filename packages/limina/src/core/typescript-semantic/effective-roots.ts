@@ -44,8 +44,15 @@ export function getEffectiveImporterRoots(project: {
   ]);
 }
 
-export function readRelativeTypeRoots(configPath: string): string[] {
-  const parsed = parseTypeScriptProjectConfig({ configPath, tsModule: ts });
+export function readRelativeTypeRoots(
+  configPath: string,
+  virtualFiles?: ReadonlyMap<string, string>,
+): string[] {
+  const parsed = parseTypeScriptProjectConfig({
+    configPath,
+    tsModule: ts,
+    virtualFiles,
+  });
   if (parsed === undefined) return [];
   return resolveRelativeTypeRoots({ configPath, options: parsed.options });
 }

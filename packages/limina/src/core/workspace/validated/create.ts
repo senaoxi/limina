@@ -7,6 +7,7 @@ import { resolveStableDescriptors } from './descriptors/stability';
 import {
   applyWorkspacePackageExclusions,
   compileExclusionRules,
+  excludeTsconfigDescriptors,
   validatePackageScopeExclusions,
   validateWorkspacePackageExclusions,
 } from './exclusions';
@@ -89,11 +90,16 @@ function collectStableSourceConfigPaths(
     .sort();
 }
 
-export async function collectValidatedWorkspaceContext(options: {
+export async function collectWorkspaceInputSnapshot(options: {
   config: ResolvedLiminaConfig;
   rawPackages: readonly WorkspacePackage[];
-}): Promise<ValidatedWorkspaceContext> {
-  const governanceRoot = options.config.governanceRoot;
+}): Promise<{
+  islands: Awaited<ReturnType<typeof collectWorkspaceIslands>>;
+  packageIdentities: Awaited<ReturnType<typeof collectPackageIdentities>>;
+  packages: WorkspacePackage[];
+  activatedPackageRoots: string[];
+  rules: ReturnType<typeof compileExclusionRules>;
+}> {
   const rules = compileExclusionRules(options.config);
   validateWorkspacePackageExclusions({
     config: options.config,
@@ -119,10 +125,24 @@ export async function collectValidatedWorkspaceContext(options: {
   const activatedPackageRoots = packages.map((workspacePackage) =>
     normalizeAbsolutePath(workspacePackage.directory),
   );
+  return { islands, packageIdentities, packages, activatedPackageRoots, rules };
+}
+
+export async function collectValidatedWorkspaceContext(options: {
+  config: ResolvedLiminaConfig;
+  rawPackages: readonly WorkspacePackage[];
+}): Promise<ValidatedWorkspaceContext> {
+  const { islands, packageIdentities, packages, activatedPackageRoots, rules } =
+    await collectWorkspaceInputSnapshot(options);
+  const governanceRoot = options.config.governanceRoot;
+  const universe = excludeTsconfigDescriptors({
+    config: options.config,
+    candidates: islands.universe,
+  });
   const declarations = await collectOutputDeclarations({
     activatedPackageRoots,
     config: options.config,
-    universe: islands.universe,
+    universe,
   });
   const packageBoundaries = islands.boundaries.filter(
     (boundary) => boundary.kind === 'package-scope',
@@ -132,7 +152,7 @@ export async function collectValidatedWorkspaceContext(options: {
     explicitOutputs: declarations.explicitOutputs,
     packageBoundaries,
     packageOutputs: declarations.packageOutputs,
-    universe: islands.universe,
+    universe,
   });
   validatePackageScopeExclusions({
     config: options.config,

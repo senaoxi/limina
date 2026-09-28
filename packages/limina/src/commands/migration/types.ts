@@ -5,6 +5,8 @@ import type { PreflightCapableOptions } from '../../preflight';
 import type { MigrationCleanupWarning } from './transaction';
 
 export interface RunMigrationOptions extends PreflightCapableOptions {
+  configLoader?: 'native' | 'tsx';
+  mode?: string;
   confirmDirtyWorkspace?: (message: string) => Promise<boolean>;
   flow?: LiminaFlowReporter;
   flowDepth?: number;
@@ -16,6 +18,11 @@ export interface RunMigrationOptions extends PreflightCapableOptions {
 export type HardlinkMigrationDecision = 'cancel' | 'rewrite' | 'skip';
 
 export interface RunMigrationResult {
+  processingComplete: boolean;
+  inputConsumable: boolean;
+  incompleteFiles: string[];
+  reportPath?: string;
+  reportWarning?: string;
   checkerEntryCount: number;
   hardlinkRewrittenFiles: string[];
   hardlinkSkippedFiles: string[];
@@ -23,19 +30,6 @@ export interface RunMigrationResult {
   recursiveReferenceCount: number;
   rootDir: string;
   skippedFiles: string[];
-}
-
-export interface MigrationEntry {
-  configPath: string;
-}
-
-export interface MigrationEntryCollection {
-  activeCheckerCount: number;
-  candidateEntryCount: number;
-  entries: MigrationEntry[];
-  excludePatterns: string[];
-  includePatterns: string[];
-  mode: 'auto' | 'unified';
 }
 
 export interface MigrationEffectiveConfig {
@@ -51,12 +45,6 @@ export interface MigrationTarget {
   isTypeScriptSolution: boolean;
   originalBytes: Buffer;
   originalContent: string;
-}
-
-export interface MigrationTargetCollection {
-  checkerEntryCount: number;
-  recursiveReferenceCount: number;
-  targets: MigrationTarget[];
 }
 
 export interface RunMigrationImplResult {

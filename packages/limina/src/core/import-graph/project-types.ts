@@ -9,6 +9,7 @@ import type { LockedSemanticAuthority } from '../build-graph/checker-ownership-t
 import type { SvelteSemanticProject } from '../svelte-semantic/types';
 
 export interface ProjectInfo {
+  virtualFiles?: ReadonlyMap<string, string>;
   analysisGeneration: number;
   astroSemanticProject?: AstroSemanticProject;
   checkerPresets: CheckerProjectParseContext['checkerPresets'];
