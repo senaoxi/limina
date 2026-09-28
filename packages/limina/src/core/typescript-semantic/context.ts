@@ -108,6 +108,7 @@ export class BoundedTypeScriptSemanticContext
           this.#resolver.resolveTypeReferenceDirectiveReferences(input),
       },
       compilerOptions: this.project.options,
+      virtualFiles: this.project.virtualFiles,
       syntaxScope: activeSyntaxScope(options.syntaxFacts, syntaxScope),
       tsModule,
     });

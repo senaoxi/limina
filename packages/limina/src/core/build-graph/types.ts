@@ -107,6 +107,7 @@ export interface PrepareGeneratedTsconfigGraphOptions {
 }
 
 export interface SourceProject {
+  virtualFiles?: ReadonlyMap<string, string>;
   checkerName: ResolvedCheckerConfig['name'];
   configPath: string;
   configClosure: AstroConfigClosureEntry[];
@@ -233,7 +234,21 @@ export interface CheckerOutputGraph {
   outputSolutions: OutputSolutionProject[];
 }
 
+export interface SemanticSourceRelation {
+  fromConfigPath: string;
+  toConfigPath: string;
+  file: string;
+  specifier: string;
+}
+
+export interface DependencyAnalysisResult {
+  complete: boolean;
+  facts: SemanticSourceRelation[];
+  diagnostics: string[];
+}
+
 export interface InferredProjectReferenceCollection {
+  analysis: DependencyAnalysisResult;
   problems: string[];
   dependencyEdges: GeneratedDependencyEdge[];
 }

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { configInputIdentity } from '../tsconfig/input-identity';
 import type {
   ProjectDependencyRequest,
   ProjectSemanticContext,
@@ -59,6 +60,7 @@ export function createProjectSemanticCacheIdentity(
     extensions: context.extensions,
     packageRootDir: context.packageRootDir,
     references: context.references,
+    virtualFiles: configInputIdentity(context.virtualFiles),
     fileNames: context.fileNames,
     generation: context.generation,
     packageRoots: [...context.packageRootByFileName.entries()].sort(

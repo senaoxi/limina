@@ -3,207 +3,85 @@ import {
   createLiminaTsconfigSchemaPath,
   type JsonObject,
 } from '#core/tsconfig/actions';
-import { toRelativePath } from '#utils/path';
-import { formatUnknownValue, isPlainRecord } from '#utils/values';
-import {
-  planDeclarationDir,
-  readExistingOutputOptions,
-} from './declaration-dir';
+import { isPlainRecord } from '#utils/values';
+import path from 'pathe';
 import {
   assertMigrationTextMatchesPlan,
   assertUnambiguousMigrationText,
 } from './jsonc-validation';
-import { applyMigratedTsconfigText } from './text-transform';
+import {
+  applyMigratedTsconfigText,
+  collectMigrationEdits,
+} from './text-transform';
 import type { MigrationWritePlanItem } from './transaction';
 import type { MigrationEffectiveConfig, MigrationTarget } from './types';
 
-type CompilerOutputField = 'declarationMap' | 'outDir' | 'rootDir' | 'target';
-
-const compilerOutputFields: readonly CompilerOutputField[] = [
-  'outDir',
-  'rootDir',
-  'declarationMap',
-  'target',
-];
-const governedCompilerOptionFields = [
-  'composite',
-  'declaration',
-  'emitDeclarationOnly',
-  'incremental',
-  'noEmit',
-  'tsBuildInfoFile',
-] as const;
-
-function getEffectiveConfig(
-  effectiveConfig: MigrationEffectiveConfig | undefined,
-): MigrationEffectiveConfig {
-  return effectiveConfig ?? { fileNames: [], options: {} };
+export function relativeConfigPath(configPath: string, target: string): string {
+  const relative = path.relative(path.dirname(configPath), target) || '.';
+  return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
-function assertPlainObjectField(options: {
-  configPath: string;
-  field: string;
-  rootDir: string;
-  value: unknown;
-}): Record<string, unknown> {
-  if (isPlainRecord(options.value)) {
-    return options.value;
-  }
-  throw new Error(
+function hasExistingOutputs(target: MigrationTarget): boolean {
+  const metadata = target.configObject.liminaOptions;
+  return isPlainRecord(metadata) && Object.hasOwn(metadata, 'outputs');
+}
+
+function hasSplitOutputs(
+  options: MigrationEffectiveConfig['options'],
+): boolean {
+  if (!options.declarationDir || !options.outDir) return false;
+  return path.resolve(options.declarationDir) !== path.resolve(options.outDir);
+}
+
+export function outputAdoptionRejectionReason(
+  target: MigrationTarget,
+): string | undefined {
+  const options = target.effectiveConfig.options;
+  const reasons: [boolean, string][] = [
     [
-      'Unable to migrate tsconfig field:',
-      `  config: ${toRelativePath(options.rootDir, options.configPath)}`,
-      `  field: ${options.field}`,
-      `  value: ${formatUnknownValue(options.value)}`,
-      '  reason: this field must be an object before Limina can merge migration output into it.',
-    ].join('\n'),
-  );
+      target.isTypeScriptSolution,
+      'Solution compiler options do not enable managed output.',
+    ],
+    [
+      hasExistingOutputs(target),
+      'Preserved the existing explicit output contract.',
+    ],
+    [
+      options.noEmit === true,
+      'Effective noEmit is true; managed emit was not enabled.',
+    ],
+    [
+      Boolean(options.emitDeclarationOnly),
+      'Declaration-only emission was not adopted.',
+    ],
+    [Boolean(options.outFile), 'outFile emission was not adopted.'],
+    [
+      hasSplitOutputs(options),
+      'Split declaration and JavaScript directories were not adopted.',
+    ],
+    [!options.outDir, 'No effective outDir supplies automatic output intent.'],
+  ];
+  return reasons.find(([reject]) => reject)?.[1];
 }
 
-function readMergeRecord(options: {
-  configPath: string;
-  field: string;
-  rootDir: string;
-  value: unknown;
-}): Record<string, unknown> {
-  return options.value === undefined
-    ? {}
-    : {
-        ...assertPlainObjectField(options),
-      };
+/** Optional proposal only. The planner must check visibility and membership. */
+export function proposeOutputAdoption(
+  target: MigrationTarget,
+): JsonObject | undefined {
+  if (outputAdoptionRejectionReason(target)) return undefined;
+  return createOutputProposal(target);
 }
 
-function mergeOutputOptions(options: {
-  configPath: string;
-  movedOutputs: Record<string, unknown>;
-  rootDir: string;
-  tsconfig: JsonObject;
-}): void {
-  if (Object.keys(options.movedOutputs).length === 0) {
-    return;
-  }
-  const liminaOptions = readMergeRecord({
-    configPath: options.configPath,
-    field: 'liminaOptions',
-    rootDir: options.rootDir,
-    value: options.tsconfig.liminaOptions,
-  });
-  const outputs = readMergeRecord({
-    configPath: options.configPath,
-    field: 'liminaOptions.outputs',
-    rootDir: options.rootDir,
-    value: liminaOptions.outputs,
-  });
-  options.tsconfig.liminaOptions = {
-    ...liminaOptions,
-    outputs: { ...outputs, ...options.movedOutputs },
+function createOutputProposal(target: MigrationTarget): JsonObject {
+  const options = target.effectiveConfig.options;
+  const output: JsonObject = {
+    outDir: relativeConfigPath(target.configPath, options.outDir!),
   };
-}
-
-function moveCompilerOutputs(
-  compilerOptions: Record<string, unknown>,
-): Record<string, unknown> {
-  const movedOutputs: Record<string, unknown> = {};
-  for (const field of compilerOutputFields) {
-    if (Object.hasOwn(compilerOptions, field)) {
-      movedOutputs[field] = compilerOptions[field];
-      delete compilerOptions[field];
-    }
-  }
-  return movedOutputs;
-}
-
-function removeGovernedCompilerOptions(
-  compilerOptions: Record<string, unknown>,
-): void {
-  for (const field of governedCompilerOptionFields) {
-    delete compilerOptions[field];
-  }
-}
-
-function readDirectCompilerOptions(options: {
-  configPath: string;
-  rootDir: string;
-  tsconfig: JsonObject;
-}): Record<string, unknown> {
-  if (options.tsconfig.compilerOptions === undefined) return {};
-  return {
-    ...assertPlainObjectField({
-      configPath: options.configPath,
-      field: 'compilerOptions',
-      rootDir: options.rootDir,
-      value: options.tsconfig.compilerOptions,
-    }),
-  };
-}
-
-function applyDeclarationDirPlan(
-  compilerOptions: Record<string, unknown>,
-  removeDeclarationDir: boolean,
-): void {
-  if (removeDeclarationDir) delete compilerOptions.declarationDir;
-}
-
-function writeCompilerOptions(
-  tsconfig: JsonObject,
-  compilerOptions: Record<string, unknown>,
-): void {
-  if (Object.keys(compilerOptions).length === 0) {
-    delete tsconfig.compilerOptions;
-    return;
-  }
-  tsconfig.compilerOptions = compilerOptions;
-}
-
-function migrateCompilerOptions(options: {
-  configPath: string;
-  effectiveConfig: MigrationEffectiveConfig;
-  isLiminaSolution: boolean;
-  rootDir: string;
-  tsconfig: JsonObject;
-}): { movedOutputs: Record<string, unknown> } {
-  const compilerOptions = readDirectCompilerOptions(options);
-  const directOutDir = compilerOptions.outDir;
-  const movedOutputs = moveCompilerOutputs(compilerOptions);
-  const plan = planDeclarationDir({
-    compilerOptions,
-    configPath: options.configPath,
-    directOutDir,
-    effectiveConfig: options.effectiveConfig,
-    existingOutputs: readExistingOutputOptions(options.tsconfig),
-    isLiminaSolution: options.isLiminaSolution,
-    movedOutputs,
-    rootDir: options.rootDir,
-  });
-  removeGovernedCompilerOptions(compilerOptions);
-  applyDeclarationDirPlan(compilerOptions, plan.removeDeclarationDir);
-  writeCompilerOptions(options.tsconfig, compilerOptions);
-  return { movedOutputs: plan.movedOutputs };
-}
-
-function removeSourceReferences(
-  tsconfig: JsonObject,
-  isLiminaSolution: boolean,
-): void {
-  if (!isLiminaSolution && Object.hasOwn(tsconfig, 'references')) {
-    delete tsconfig.references;
-  }
-}
-
-function applySchema(options: {
-  configPath: string;
-  rootDir: string;
-  tsconfig: JsonObject;
-}): JsonObject {
-  const rest = { ...options.tsconfig };
-  delete rest.$schema;
-  return {
-    $schema: createLiminaTsconfigSchemaPath(
-      options.rootDir,
-      options.configPath,
-    ),
-    ...rest,
-  };
+  if (options.rootDir)
+    output.rootDir = relativeConfigPath(target.configPath, options.rootDir);
+  if (options.declarationMap !== undefined)
+    output.declarationMap = options.declarationMap;
+  return output;
 }
 
 export function migrateTsconfigObject(options: {
@@ -213,62 +91,36 @@ export function migrateTsconfigObject(options: {
   isLiminaSolution: boolean;
   rootDir: string;
 }): JsonObject {
-  const nextConfig: JsonObject = { ...options.configObject };
-  const migration = migrateCompilerOptions({
-    configPath: options.configPath,
-    effectiveConfig: getEffectiveConfig(options.effectiveConfig),
-    isLiminaSolution: options.isLiminaSolution,
-    rootDir: options.rootDir,
-    tsconfig: nextConfig,
-  });
-  if (!options.isLiminaSolution) {
-    mergeOutputOptions({
-      configPath: options.configPath,
-      movedOutputs: migration.movedOutputs,
-      rootDir: options.rootDir,
-      tsconfig: nextConfig,
-    });
-  }
-  removeSourceReferences(nextConfig, options.isLiminaSolution);
-  return applySchema({
-    configPath: options.configPath,
-    rootDir: options.rootDir,
-    tsconfig: nextConfig,
-  });
-}
-
-function migrateTsconfigText(options: {
-  configObject: JsonObject;
-  configPath: string;
-  effectiveConfig?: MigrationEffectiveConfig;
-  isLiminaSolution: boolean;
-  originalContent: string;
-  rootDir: string;
-}): string {
-  assertUnambiguousMigrationText(options.originalContent);
-  const migratedConfig = migrateTsconfigObject(options);
-  const content = applyMigratedTsconfigText({
-    configObject: options.configObject,
-    isLiminaSolution: options.isLiminaSolution,
-    migratedConfig,
-    originalContent: options.originalContent,
-  });
-  assertMigrationTextMatchesPlan(content, migratedConfig);
-  return content;
+  const next = structuredClone(options.configObject);
+  next.$schema = createLiminaTsconfigSchemaPath(
+    options.rootDir,
+    options.configPath,
+  );
+  if (!options.isLiminaSolution) delete next.references;
+  return next;
 }
 
 export function createMigrationWritePlanItem(options: {
   config: ResolvedLiminaConfig;
   target: MigrationTarget;
+  migratedConfig?: JsonObject;
 }): MigrationWritePlanItem {
-  const nextContent = migrateTsconfigText({
-    configObject: options.target.configObject,
-    configPath: options.target.configPath,
-    effectiveConfig: options.target.effectiveConfig,
-    isLiminaSolution: options.target.isLiminaSolution,
-    originalContent: options.target.originalContent,
-    rootDir: options.config.rootDir,
+  const next =
+    options.migratedConfig ??
+    migrateTsconfigObject({
+      ...options.target,
+      rootDir: options.config.rootDir,
+    });
+  const edits = collectMigrationEdits(options.target.configObject, next);
+  assertUnambiguousMigrationText(
+    options.target.originalContent,
+    edits.map((edit) => edit.path),
+  );
+  const nextContent = applyMigratedTsconfigText({
+    ...options.target,
+    migratedConfig: next,
   });
+  assertMigrationTextMatchesPlan(nextContent, next);
   return {
     configPath: options.target.configPath,
     nextContent,

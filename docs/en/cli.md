@@ -114,7 +114,7 @@ These two commands read the already-built `outDir`. They do not build artifacts 
 | Goal                                                               | Recommended command                        | Basis for choosing it                                                                                                                     |
 | ------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Initialize Limina files in a supported workspace                   | `limina init` or `limina init --yes`       | First adoption, or generating the base config and `limina:build` script                                                                   |
-| Migrate governed source `tsconfig` files                           | `limina migration`                         | Moves compiler output settings into `liminaOptions` after workspace validation                                                            |
+| Migrate governed source `tsconfig` files                           | `limina migration`                         | Normalizes config topology and checks the persisted inputs in a fresh process                                                             |
 | Daily repository-structure and type build entry checks             | `limina check`                             | Default group covers graph, source, coverage, and checker entries                                                                         |
 | Run a custom ordered check group                                   | `limina check <name>`                      | `<name>` comes from configured `pipelines`                                                                                                |
 | Materialize or refresh the `.limina` checker files                 | `limina graph prepare`                     | Before a later workflow needs the generated files on disk                                                                                 |
@@ -149,47 +149,53 @@ It finds the nearest `package.json` from cwd, validates it, and places `limina.c
 
 ### limina migration
 
-`migration` rewrites the source `tsconfig` entries selected from the validated activated package islands.
+`migration` normalizes existing TypeScript configuration into input that Limina can discover and read again from disk.
 
 ```sh
 pnpm exec limina migration
 ```
 
-#### Git working tree confirmation
+The command reports processing completion separately from input consumption. Architecture rules, package dependencies, checker ownership and type errors still belong to `limina check`. Migration does not promise equivalent native `tsc -b` behavior.
 
-Every migration target must belong to a Git worktree. External activated packages are supported, so one migration can include targets from several worktrees. Before writing, Limina resolves every target's worktree and checks its Git status. Both changes to tracked files and untracked files are included.
+#### Configuration and relationships
 
-- If every involved worktree is clean, migration continues without a confirmation prompt.
-- If any worktree contains changes, Limina summarizes every worktree that has changes and asks once whether to continue. The prompt defaults to “no.”
-- If the user confirms, Limina continues with filesystem preflight and execution of the already completed `tsconfig*.json` write plan. Confirmation does not commit, stash, remove, or restore existing changes.
-- Declining or canceling stops migration without writing any target and tells the user to keep the Git worktrees clean.
-- A non-interactive environment cannot display the prompt, so migration stops without writing when changes are present. Clean every involved worktree before rerunning the command.
+Only default `tsconfig.json` files can be checker entries. Named source configs enter through solution references. Migration removes ordinary source `references`, prunes invalid or outside-region solution members, and preserves the remaining source membership. An outside-region reference is recorded without reading or migrating its target.
 
-After confirmation, migration can still write only the planned config files inside the canonical roots of the target worktrees. Approving a dirty worktree does not expand the selected targets or write scope.
+A pure named solution wrapper can be expanded into every parent when its rewritten references contain only `path` and it has no substantive Limina declarations. Paths are rebased for each parent; the wrapper file remains. Attributed references and named-wrapper cycles require manual conversion. Default solution cycles are pruned with compensating source memberships, preserving each retained solution's reachable sources. Empty solutions retain their solution role and an explicit `references: []`.
 
-Migration rejects duplicate keys in governed fields or their ancestor objects (including `compilerOptions`, `liminaOptions.outputs`, `$schema`, and `references`) during planning. One ambiguous target cancels the entire batch before any config write. Remove the duplicate keys and rerun. The candidate JSONC must also parse to the exact planned effective object; comments, trailing commas and existing line endings are preserved.
+Limina compares native in-region source relations with independently inferred source relations. Inferred relations do not need duplicate `implicitRefs`. Remaining native declarations become explicit implicit references; existing user reasons are preserved. An incomplete analysis is reported as unavailable comparison, never as an empty inferred graph.
 
-#### Filesystem write strategies
+Unreadable configs are preserved on disk. Where safe, migration writes exact `regions.exclude` entries of kind `tsconfig` and removes incoming memberships or implicit references. This keeps the package activated. `extends` paths are not removed. A single implicit-reference object can be wrapped in an array; a missing or blank reason receives a factual migration explanation. Illegal shapes that cannot be normalized are isolated or reported as incomplete.
 
-After transformation planning and Git confirmation, Limina performs a read-only filesystem preflight for every config that actually needs a change. Configs whose transformation is already a no-op are not inspected for links and do not trigger a hard-link prompt. Preflight continues to reject logical paths containing symbolic links or junctions, targets outside the canonical worktree roots, non-regular or non-writable files, and multiple planned paths that resolve to the same physical file.
+Automatic exclusion editing supports direct exported objects, imported `defineConfig` object calls, and uniquely used immutable `const` objects with statically editable regions/exclusion arrays. Functions, promises, spreads and dynamic composition are preserved. If required exclusions cannot be written, adoption remains incomplete. Existing output visibility cycles without a safe input baseline also require correction; migration does not exclude healthy sources to manufacture success.
 
-For a regular config with one hard link, migration retains its atomic replacement transaction. For a config with multiple hard links, the link count selects a different write capability instead of making the target invalid. When at least one such config needs a change, Limina lists up to five paths and asks once, before creating transaction directories or mutating any target:
+#### Optional output adoption
 
-- **Rewrite hard-linked files in place** is the default. It stages complete next content and an immutable backup before the first target mutation, then writes through the existing inode. Every alias to that inode observes the new content. This preserves the device, inode, link count, permissions, and supported ownership metadata, but it does not provide atomic replacement guarantees; a concurrent reader can observe intermediate content. Its private transaction artifacts use mode `0600` inside the transaction directory and are verified independently; they do not copy the live target's ownership, mode, or timestamps.
-- **Skip hard-linked files and migrate the rest** leaves these files unchanged and reports them separately from transformation no-ops.
-- **Cancel migration** stops before any target mutation or transaction artifact is created.
+Source compiler options, including build fields and inherited paths, remain intact. Existing valid `liminaOptions.outputs`, including `{}`, remain explicit user contracts.
 
-A non-interactive environment cannot choose a hard-link strategy, so migration stops without writes and asks the user to rerun interactively. There is currently no command-line hard-link policy flag.
+| Existing configuration without explicit outputs                                              | Automatic output adoption                                      |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Effective `noEmit: true`, including inheritance                                              | None                                                           |
+| Effective emit enabled and `outDir` present                                                  | Proposed, then checked against the complete candidate topology |
+| Only `rootDir`, `target`, declaration flags or `noEmit: false`                               | None                                                           |
+| Declaration-only emit, split declaration/JS directories, only `declarationDir`, or `outFile` | None; native options and the unadopted behavior are recorded   |
+| Solution config                                                                              | None                                                           |
 
-The preflight snapshot remains authoritative after the prompt. If the canonical path, device, inode, link count, mode, ownership, timestamps, or content changes before commit, migration fails closed instead of changing strategies automatically. Limina does not acquire a cross-process write lease or coordinate concurrent writers. If an in-place hard-link mutation fails after writing may have started, Limina does not overwrite uncertain current content. When the target still validates as the same physical file and its content is still original, no recovery write is needed. Otherwise, migration preserves the current target and immutable backup and reports the recovery path. Post-write verification drift is handled the same way. If a later item fails, previously committed ordinary targets use atomic replacement rollback, while previously committed hard-linked targets are rolled back through the same inode only after strict drift validation.
+Each optional proposal must pass output-path and mutation-authority checks, stable descriptor discovery, and preservation of entries and their source closures. Proposals are tried once in stable config-path order. A self-hiding output, or a stable output that hides another healthy source, is rejected without isolating those sources. Rejection leaves other source conversions and independent safe outputs eligible. Migration does not duplicate the inherited source `target` into outputs or delete existing output files.
 
-#### Migration scope and output fields
+#### Writing and results
 
-Migration selection follows the same package-island visibility and checker selectors as graph preparation. It never reads or edits a config behind an owner-local boundary merely because an ancestor pattern could match it.
+Every write target must belong to a Git worktree. All patches and input snapshots are prepared before writing; a dirty worktree requires one interactive confirmation, defaulting to no. Non-interactive runs stop before writes when confirmation is needed. Approval does not commit, stash or discard user changes.
 
-Migration reads each target's effective TypeScript config, including inherited options, before it plans any write. A direct `compilerOptions.declarationDir` is removed when it is equivalent to the planned managed output root; when it is the only output setting, its relative value becomes `liminaOptions.outputs.outDir`, so JavaScript and declarations share one artifact directory after migration. Split JavaScript/declaration output, an effective `outFile`, a mixed solution aggregator, an invalid declaration directory, or an absolute declaration directory without an existing equivalent managed root fails before any target is written. Inherited `declarationDir` stays in its base config and is not copied into leaves. Migration does not delete existing user output files.
+JSONC edits preserve unrelated text, comments and line endings. Ambiguous governed keys leave that target unchanged and are reported while independent targets continue. Filesystem preflight checks canonical scope, regular files, write access, physical aliases and identity drift. Single-link files use atomic replacement. Hard-linked files require one explicit choice: rewrite through the existing inode, skip the affected consistency group, or cancel. In-place writes preserve aliases but are not atomic; all aliases observe the change.
 
-Migration does not install Astro or Svelte dependencies, run `astro sync`, or rewrite framework source. The next generated-graph materialization derives checker ownership from the migrated source configs and actual files. If a version 1 through 4 `.limina/manifest.json` exists, Limina uses it only as an owned-artifact ledger to delete stale generated paths, then replaces it with the current version 5 manifest. Version 5 persists final ownership, solution closures, typed dependency edges, and execution targets.
+Edits of a solution cycle and edits sharing a required persisted isolation form consistency groups. A recoverable failure restores its group and independent groups continue. Uncertain filesystem state stops execution and preserves recovery evidence. There is no cross-process writer lease and no semantic replanning after writing begins.
+
+A fresh process loads the actual configuration through normal `check` and `graph` input readers. Only successful rereading, completed necessary writes, preserved source membership and a nonempty governed source set permit a successful adoption result. Necessary write failures, residual structural errors or unavailable verification return nonzero. Rejecting optional outputs alone does not require failure.
+
+The audit report is `.limina/migration/latest.json`. It records targets, isolation, pruned relations, comparison completeness, output decisions, writes and final verification. Report publication failure warns without undoing committed configs. Neither core nor later migration runs use this report as input authority.
+
+Migration does not install framework dependencies, run `astro sync`, or rewrite framework sources. Generated graphs retain manifest version 5; no migration readiness or partial-graph state is persisted there.
 
 ### limina check [pipeline]
 

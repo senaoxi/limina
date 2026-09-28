@@ -57,6 +57,7 @@ function createCollectionContext(request: ProjectDependencyRequest) {
       fileNames: request.context.fileNames,
       options: request.context.compilerOptions,
       projectReferences: request.context.references,
+      virtualFiles: request.context.virtualFiles,
       workspaceSourceBoundary: request.context.workspaceSourceBoundary,
     },
     { syntaxFacts: request.caches?.syntaxFacts },
@@ -149,6 +150,7 @@ export function collectProjectDependencies(
       fileNames: request.context.fileNames,
       options: request.context.compilerOptions,
       projectReferences: request.context.references,
+      virtualFiles: request.context.virtualFiles,
       workspaceSourceBoundary: request.context.workspaceSourceBoundary,
     }),
   ]);

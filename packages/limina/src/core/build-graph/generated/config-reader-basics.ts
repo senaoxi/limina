@@ -74,10 +74,10 @@ export function addSourceReferenceConfigProblems(options: {
 }
 
 export function readRelativeTypeFiles(
-  _config: ResolvedLiminaConfig,
+  config: ResolvedLiminaConfig,
   sourceConfigPath: string,
 ): string[] {
-  return readRelativeTypeRoots(sourceConfigPath);
+  return readRelativeTypeRoots(sourceConfigPath, config.virtualFiles);
 }
 
 function isTraversalBoundary(currentDir: string, rootDir: string): boolean {

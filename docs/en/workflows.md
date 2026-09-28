@@ -82,7 +82,7 @@ jobs:
 
 ### How does Limina recognize a solution config?
 
-Limina uses the active checker to parse each reachable config. A config is a TypeScript solution when its effective file list is empty and it directly declares `references`; this can include configs that use `extends` or checker-supported framework files. Limina expands that role only when the path basename is exactly `tsconfig.json`. During migration, every reachable named solution is reported together before any worktree or file changes are made. Rename it to `tsconfig.json`, merge its references into the directory's existing default entry, or turn it into a source leaf with an explicit source boundary.
+Limina uses the active checker to parse each reachable config. A config is a TypeScript solution when its effective file list is empty and it directly declares `references`; this can include configs that use `extends` or checker-supported framework files. Limina expands that role only when the path basename is exactly `tsconfig.json`. Migration can expand pure named membership wrappers into their parents, with path rebasing and source-membership protection. Wrappers with substantive Limina declarations, attributed edges or named-wrapper cycles require manual conversion; see [migration](./cli.md#limina-migration).
 
 ### How do `limina checker build` and `checker typecheck` choose targets?
 

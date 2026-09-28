@@ -26,6 +26,7 @@ import type {
 import type { ProjectDependencyEvidence } from './evidence';
 
 export interface ProjectSemanticContext {
+  virtualFiles?: ReadonlyMap<string, string>;
   astroSemanticProject?: AstroSemanticProject;
   compilerOptions: ts.CompilerOptions;
   configPath: string;

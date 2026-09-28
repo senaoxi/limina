@@ -19,6 +19,8 @@ This page registers 12 properties that affect system correctness. They come from
 
 - **Discovery guard**: `governance-root.spec.ts` challenges config selection, nearest-manifest fail-fast behavior, ancestor independence, shared root manifest contents, required workspace manager and optional single manager. `workspace-discovery.spec.ts` retains same-root descriptor priority, explicit manager precedence, consumed declaration projection, manager-specific selection and lexical aliases. `single-package-knip.spec.ts` carries validated canonical identities through nameless dependency/owner matching and rejects duplicate physical roots. Nested workspace declarations remain hard cuts with missing manager identity and with nameless-scope extension enabled. See [discovery authority](./limina-system-model.md#workspace-discovery-authority) for compatibility boundaries.
 
+**Migration input guard**: Exact `tsconfig` exclusions run before output declarations without changing package activation. Optional output trials reuse the full reader and preserve entries, managed sources and per-solution reachability; descriptor count alone grants no acceptance. [Migration topology tests](../../packages/limina/src/__tests__/migration-topology.spec.ts) and [fresh CLI coverage](../../packages/limina/integration/tests/migration.spec.ts) cover self-hiding and stable hiding of healthy members. Full behavior belongs to [migration lifecycle](./limina-lifecycle.md#migration-is-a-separate-transaction).
+
 ## I02 — Final checker ownership does not rewrite semantic authority
 
 - **Statement / Applies when**: Semantic authority for a managed type config freezes after fact convergence; subsequent promotion/coloring/fallback/finalization cannot change it. Successful finalization assigns each leaf one execution owner.
@@ -110,6 +112,8 @@ This page registers 12 properties that affect system correctness. They come from
 - **Evidence / Strength / Confidence**: [Preflight tests](../../packages/limina/src/__tests__/preflight.spec.ts), [context tests](../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts); **Partially executable / Confirmed**.
 - **Boundaries**: External cache reuse must respect lifecycle. Keys do not universally include file-content digests; manager ensure-after-dispose has no uniform guard. See the lifecycle page for Vue active slot sharing.
 
+**Planning input identity**: Migration config overlays are included in semantic/provider cache identities and forwarded through parser, ownership and TypeScript hosts. Native reference inventory is separate from inference on normalized source input. This is a generation-local input boundary, not a persisted read-view runtime; see [migration lifecycle](./limina-lifecycle.md#migration-is-a-separate-transaction).
+
 ## I10 — Mutation authority cannot be inferred from path strings
 
 - **Statement / Applies when**: Mutating managed artifacts/managed checker output requires the corresponding namespace/plan or output authority and validation of logical and physical bindings. Literal root/generation values cannot replace an authenticated token.
@@ -120,6 +124,8 @@ This page registers 12 properties that affect system correctness. They come from
 - **Protected property**: Controlled write scope, with no expansion of authority from similar names or stale objects.
 - **Evidence / Strength / Confidence**: [Mutation tests](../../packages/limina/src/__tests__/mutation-boundary.spec.ts), [materialization recovery](../../packages/limina/src/__tests__/materialization-recovery.spec.ts); **Strongly executable / Confirmed**.
 - **Boundaries**: Raw external builds, user export files, and migration have different writer contracts. Do not generalize this to every write using one namespace or to the absence of all OS races.
+
+**Migration write boundary**: Frozen patches use isolated consistency groups and the existing physical identity/rollback guards. A report publication failure never rolls back committed configs. Adoption success additionally requires fresh-process consumption of the actual disk topology; a failed required write remains incomplete even when other groups succeed. See [migration lifecycle](./limina-lifecycle.md#migration-is-a-separate-transaction).
 
 ## I11 — Failed artifact publication leaves recognizable incomplete state
 

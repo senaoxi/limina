@@ -19,6 +19,7 @@ import {
   type ReferenceImportContext,
 } from './reference-imports';
 import type {
+  DependencyAnalysisResult,
   GeneratedBuildModule,
   GeneratedDependencyEdge,
   GovernedSourceUnit,
@@ -147,6 +148,11 @@ export function inferProjectReferences(options: {
   const ownerGovernedSources =
     options.ownerGovernedSources ?? options.governedSources;
   const problems: string[] = [];
+  const analysis: DependencyAnalysisResult = {
+    complete: true,
+    facts: [],
+    diagnostics: problems,
+  };
   const dependencyEdgesByKey = new Map<string, GeneratedDependencyEdge>();
   const localDtsProjectsBySourcePath = createDtsProjectsBySourcePath(
     options.projects,
@@ -158,6 +164,7 @@ export function inferProjectReferences(options: {
     projects: options.projects,
   });
   const context: ReferenceImportContext = {
+    analysis,
     activatedRegions: options.activatedRegions,
     config: options.config,
     dtsProjectsBySourcePath: createDtsProjectsBySourcePath(ownerProjects),
@@ -178,6 +185,7 @@ export function inferProjectReferences(options: {
     governedSources: options.governedSources,
     projects: options.projects,
   });
+  context.analysis = undefined;
   processFrameworkSourceReferences({
     buildOwnersByConfigPath: createGovernedBuildOwners({
       governedSources: ownerGovernedSources,
@@ -190,6 +198,7 @@ export function inferProjectReferences(options: {
     ),
   });
   return {
+    analysis,
     problems,
     dependencyEdges: [...dependencyEdgesByKey.values()].sort(
       compareDependencyEdges,

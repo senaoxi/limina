@@ -11,7 +11,11 @@ import type {
 import type { WorkspaceSourceBoundary } from '../typescript-semantic';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { FileOwnerLookup } from './file-owner-lookup';
-import type { GeneratedDependencyEdge, SourceProject } from './types';
+import type {
+  DependencyAnalysisResult,
+  GeneratedDependencyEdge,
+  SourceProject,
+} from './types';
 
 export type ResolvedProvider =
   | {
@@ -27,6 +31,7 @@ export type ResolvedProvider =
     };
 
 export interface ReferenceImportContext {
+  analysis?: DependencyAnalysisResult;
   activatedRegions: WorkspaceRegionPathIndex;
   config: ResolvedLiminaConfig;
   dtsProjectsBySourcePath: Map<string, SourceProject[]>;

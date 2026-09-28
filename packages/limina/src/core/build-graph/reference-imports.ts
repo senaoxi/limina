@@ -54,6 +54,7 @@ function addDependencyCollectionFailures(
   context: ReferenceImportContext,
   failures: ReturnType<typeof collectProjectDependencies>['failures'],
 ): void {
+  if (failures.length > 0) markAnalysisIncomplete(context);
   for (const failure of failures) {
     context.problems.push(
       [
@@ -102,6 +103,7 @@ function processMissingReferenceObservations(
 ): void {
   for (const observation of observations) {
     if (observation.kind !== 'missing') continue;
+    markAnalysisIncomplete(options.context);
     addMissingOwnedDeclarationProviderProblem({
       context: options.context,
       fileName: observation.importRecord.filePath,
@@ -117,4 +119,8 @@ export function processProjectReferenceImports(options: {
   source?: GovernedSourceUnit;
 }): void {
   addProjectDependencyFailures(options);
+}
+
+function markAnalysisIncomplete(context: ReferenceImportContext): void {
+  if (context.analysis) context.analysis.complete = false;
 }
