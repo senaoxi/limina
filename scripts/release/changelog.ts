@@ -339,12 +339,10 @@ async function resolveChangelogPlans(
     return plans;
   }
 
+  const selection = process.stdin.isTTY
+    ? await promptForVersionSelection(sortedConfigs[0]!)
+    : ({ mode: 'patch' } satisfies PromptVersionSelection);
   for (const config of sortedConfigs) {
-    const selection = process.stdin.isTTY
-      ? await promptForVersionSelection(config)
-      : ({
-          mode: 'patch',
-        } satisfies PromptVersionSelection);
     plans.push(createReleasePlanFromVersionSelection(config, selection));
   }
 
@@ -360,7 +358,9 @@ export async function runChangelogCommand(
   ChangelogLogger.info('changelog update started');
   const changelogElapsed = createElapsedTimer();
 
-  for (const plan of plans) {
+  for (const plan of new Map(
+    plans.map((plan) => [plan.config.changelogPath, plan]),
+  ).values()) {
     const result = writeChangelogForPlan(plan, {
       dryRun: options.dryRun,
       fromTag: options.fromTag,

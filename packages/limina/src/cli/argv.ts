@@ -142,6 +142,7 @@ export function readArgvOptionValue(
 }
 
 function toCommandCandidate(argument: string): string | undefined {
+  if (argument === '--') return argument;
   if (argument.startsWith('-')) return undefined;
   return argument;
 }
@@ -162,15 +163,22 @@ function scanCommandArgument(argument: string | undefined): {
   };
 }
 
-export function getPrimaryCliCommandName(
+export function getPrimaryCliCommandIndex(
   argv: readonly string[],
-): string | undefined {
+): number | undefined {
   for (let index = 2; index < argv.length; index += 1) {
     const scan = scanCommandArgument(argv[index]);
     index += scan.skipCount;
-    if (scan.candidate !== undefined) return scan.candidate;
+    if (scan.candidate !== undefined) return index;
   }
   return undefined;
+}
+
+export function getPrimaryCliCommandName(
+  argv: readonly string[],
+): string | undefined {
+  const index = getPrimaryCliCommandIndex(argv);
+  return index === undefined ? undefined : argv[index];
 }
 
 function isLimitArgument(argument: string): boolean {

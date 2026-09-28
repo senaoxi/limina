@@ -14,7 +14,7 @@
 
 复现和命令日志位于 `/Users/chenjiaxiang/Project/dev-server-repo/repros/limina-monorepo-migration/`。三轮对抗测试覆盖冷自举与缺失 Logaria 反例、外部打包消费者、路径／cwd／平台行为。未实际运行的平台和 Node 版本必须保持未验证状态。实际结果见[验收记录](../../../migration/VALIDATION.md)。
 
-发布与部署门保持关闭。发布前需批准独立 Logaria 来源，通过干净的独立安装及完整远程 CI 矩阵，选择未发布版本，核对 npm trusted publisher、workflow 与 `Release` environment，并在启用新发布前冻结旧发布权威。导入历史标签不得自动发布。发布脚本仅以 `packages/limina/dist` 为目标，并要求包名、版本、tag 一致。既有 changelog 保留原链接；新条目依据 commit map 区分两仓库历史。
+发布与部署门保持关闭。发布前需批准独立 Logaria 来源，通过干净的独立安装及完整远程 CI 矩阵，选择未发布版本，核对 npm trusted publisher、workflow 与 `Release` environment，并在启用新发布前冻结旧发布权威。导入历史标签不得自动发布。发布脚本只面向获准的 `packages/limina/dist` 与 `packages/migrate/dist` 配对产物，要求包名、版本及共享的 `limina/v<version>` tag 一致。迁移包清单必须精确依赖核心版本。发布先使用候选 npm tag 上传，核对两个产物的完整性后才更新渠道。重试只接受完整性相符的既有版本，不覆盖已发布版本。既有 changelog 保留原链接；新条目依据 commit map 区分两仓库历史。
 
 Vercel 配置准备了 `/` base 与 `docs/.vitepress/dist` 输出；`DOCS_ORIGIN`、项目关联和部署权限尚未确定。批准并验收部署前保留当前公开文档 URL。之后将旧消费者迁到获准的 registry 版本，遵守 release-age／trust，移除旧源码及 Nx／发布归属，验收旧仓库，再对旧双语文档路由配置跳转，覆盖资源、查询参数和锚点。
 

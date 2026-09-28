@@ -1,11 +1,12 @@
 import { createElapsedTimer } from 'logaria/helper';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   applyPackageVersion,
   createReleasePlanFromVersionSelection,
   writeChangelogForPlan,
 } from './changelog';
+import { publishReleaseGroup, validatePublicationTarget } from './publication';
 import {
   REPO_ROOT,
   ReleaseLogger,
@@ -39,11 +40,6 @@ interface ReleaseRunContext {
 interface PublishRunContext {
   options: PublishCliOptions;
   plans: ReleasePlan[];
-}
-
-interface PublishPackageOptions {
-  registry?: string;
-  provenance: boolean;
 }
 
 function getPackageScriptRunner(
@@ -112,33 +108,7 @@ function runPackageReleaseConsistencyChecks(
 }
 
 function verifyDistVersion(plan: ReleasePlan): void {
-  if (
-    realpathSync(plan.config.publishDir) !==
-      path.join(realpathSync(REPO_ROOT), 'packages/limina/dist') ||
-    plan.gitTag !== `limina/v${plan.newVersion}`
-  ) {
-    throw new Error(
-      'Release must use packages/limina/dist and the matching limina version tag',
-    );
-  }
-  const distPackageJsonPath = path.join(plan.config.publishDir, 'package.json');
-  if (!existsSync(distPackageJsonPath)) {
-    throw new Error(
-      `Missing published manifest at ${path.relative(REPO_ROOT, distPackageJsonPath)}`,
-    );
-  }
-
-  const distManifest = JSON.parse(
-    readFileSync(distPackageJsonPath, 'utf8'),
-  ) as { name?: string; version?: string };
-  if (
-    distManifest.name !== 'limina' ||
-    distManifest.version !== plan.newVersion
-  ) {
-    throw new Error(
-      `dist/package.json version mismatch for ${plan.config.packageName}: expected ${plan.newVersion}, got ${distManifest.version}`,
-    );
-  }
+  validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
 }
 
 function runStandardPackageReleaseChecks(
@@ -417,7 +387,7 @@ function ensureVersionNotPublished(
 }
 
 function stageReleaseFiles(context: ReleaseRunContext): void {
-  const pathsToStage: string[] = [];
+  const pathsToStage: string[] = ['pnpm-lock.yaml'];
 
   for (const plan of context.plans) {
     pathsToStage.push(path.relative(REPO_ROOT, plan.config.manifestPath));
@@ -426,7 +396,7 @@ function stageReleaseFiles(context: ReleaseRunContext): void {
     }
   }
 
-  runCommand(getGitCommand(), ['add', '--', ...pathsToStage], {
+  runCommand(getGitCommand(), ['add', '--', ...new Set(pathsToStage)], {
     cwd: REPO_ROOT,
     logger: ReleaseLogger,
   });
@@ -440,7 +410,10 @@ function createCombinedCommitMessage(plans: ReleasePlan[]): string {
 }
 
 function createGitTags(context: ReleaseRunContext): void {
-  for (const plan of context.plans) {
+  const tagPlans = [
+    ...new Map(context.plans.map((plan) => [plan.gitTag, plan])).values(),
+  ];
+  for (const plan of tagPlans) {
     const tagExists = runCommand(
       getGitCommand(),
       ['tag', '--list', plan.gitTag],
@@ -463,7 +436,7 @@ function createGitTags(context: ReleaseRunContext): void {
     },
   );
 
-  for (const plan of context.plans) {
+  for (const plan of tagPlans) {
     runCommand(
       getGitCommand(),
       [
@@ -491,51 +464,6 @@ function ensureChangelogReviewPromptIsAvailable(
   throw new Error(
     'Changelog generation requires manual review in an interactive terminal. Run release in a TTY, or update the changelog first and pass --skip-changelog.',
   );
-}
-
-function readCurrentGitHead(): string {
-  const gitHead = runCommand(getGitCommand(), ['rev-parse', 'HEAD'], {
-    cwd: REPO_ROOT,
-    logger: ReleaseLogger,
-  }).trim();
-
-  if (!/^[\da-f]{40}$/i.test(gitHead)) {
-    throw new Error(`Unable to resolve a valid git HEAD: ${gitHead}`);
-  }
-
-  return gitHead;
-}
-
-function publishPackage(
-  plan: ReleasePlan,
-  options: PublishPackageOptions,
-): void {
-  const args = ['publish'];
-  if (plan.npmTag) {
-    args.push('--tag', plan.npmTag);
-  }
-  if (options.registry) {
-    args.push('--registry', options.registry);
-  }
-  if (options.provenance) {
-    args.push('--provenance');
-  }
-
-  const gitHead = readCurrentGitHead();
-  ReleaseLogger.info(
-    [
-      `Publishing ${plan.config.packageName}@${plan.newVersion}`,
-      `from ${path.relative(REPO_ROOT, plan.config.publishDir)}`,
-      `with gitHead ${gitHead}`,
-    ].join(' '),
-  );
-  // npm's publish path prepares the registry manifest with gitHead. pnpm
-  // publishes its generated manifest directly, which leaves gitHead absent.
-  runCommand(getNpmCommand(), args, {
-    cwd: plan.config.publishDir,
-    stdio: 'inherit',
-    logger: ReleaseLogger,
-  });
 }
 
 function createPublishPlanFromCurrentVersion(
@@ -681,8 +609,8 @@ async function resolveReleasePlans(options: ReleaseCliOptions): Promise<{
     }
   } else if (process.stdin.isTTY) {
     usedInteractivePrompts = true;
+    const selection = await promptForVersionSelection(sortedConfigs[0]!);
     for (const config of sortedConfigs) {
-      const selection = await promptForVersionSelection(config);
       plans.push(
         createReleasePlanFromVersionSelection(config, selection, {
           explicitNpmTag: options.npmTag,
@@ -753,9 +681,20 @@ function prepareReleaseFiles(context: ReleaseRunContext): {
     }
   }
 
-  return {
-    changelogReviewPlans,
-  };
+  runCommand(getPnpmCommand(), ['install', '--lockfile-only'], {
+    cwd: REPO_ROOT,
+    logger: ReleaseLogger,
+  });
+  runCommand(
+    getPnpmCommand(),
+    ['exec', 'prettier', '--write', 'pnpm-lock.yaml'],
+    { cwd: REPO_ROOT, logger: ReleaseLogger },
+  );
+  runCommand(getPnpmCommand(), ['install', '--frozen-lockfile'], {
+    cwd: REPO_ROOT,
+    logger: ReleaseLogger,
+  });
+  return { changelogReviewPlans };
 }
 
 function performPreflightChecks(context: ReleaseRunContext): void {
@@ -786,10 +725,6 @@ function performPublishPreflightChecks(context: PublishRunContext): void {
   ensureWorkingTreeIsClean(context.options);
   ensureProvenancePublishEnvironment(context.options);
   checkNpmAuth(context.options);
-
-  for (const plan of context.plans) {
-    ensureVersionNotPublished(plan, context.options);
-  }
 }
 
 export async function runPublishCommand(
@@ -811,8 +746,8 @@ export async function runPublishCommand(
 
   for (const plan of context.plans) {
     runPackageReleaseChecks(plan, context.options);
-    publishPackage(plan, context.options);
   }
+  publishReleaseGroup(context.plans, context.options);
 
   ReleaseLogger.success(
     `Publish completed: ${context.plans
@@ -853,9 +788,7 @@ export async function runReleaseCommand(
   createGitTags(context);
 
   if (shouldPublishNpmInCurrentRelease(context.options)) {
-    for (const plan of context.plans) {
-      publishPackage(plan, context.options);
-    }
+    publishReleaseGroup(context.plans, context.options);
   } else {
     ReleaseLogger.info(
       'Skipping local npm publish. After pushing the approved tag, manually dispatch the gated Publish Limina workflow.',

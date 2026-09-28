@@ -55,7 +55,7 @@ describe('Limina CI validation contract', () => {
       await readFile(path.join(root, 'package.json'), 'utf8'),
     ) as { scripts: Record<string, string> };
     expect(manifest.scripts.build).toBe(
-      'pnpm run build:tools && pnpm --filter limina run build',
+      'pnpm run build:tools && pnpm --filter limina run build && pnpm --filter limina-migrate run build',
     );
     expect(manifest.scripts['build:tools']).toBe(
       'pnpm --filter @limina/build-tools run build && pnpm --filter @limina/eslint-config run build',

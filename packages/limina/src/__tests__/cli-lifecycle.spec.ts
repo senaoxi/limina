@@ -91,7 +91,7 @@ describe('CLI lifecycle screen clearing', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['migration', 'graph export'])(
+  it.each(['graph export'])(
     'clears once before the %s command action',
     async (command) => {
       const action = vi.fn().mockImplementation(async () => {});

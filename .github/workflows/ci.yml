@@ -93,9 +93,9 @@ jobs:
       - name: Build and Quality Check
         uses: ./.github/actions/build-and-check
       - name: Unit Tests
-        run: pnpm run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/unit.xml && pnpm run test:tooling
+        run: pnpm --filter limina run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
       - name: Limina Integration Tests
-        run: pnpm run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/integration.xml
+        run: pnpm --filter limina run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-integration.xml && pnpm --filter limina-migrate run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-integration.xml
       - name: Upload Test Results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa024
         with:
@@ -120,11 +120,11 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Atomic writer, path, shell, and migration transaction unit tests
-        run: pnpm run test:unit src/__tests__/atomic-writer.spec.ts src/__tests__/path-filters.spec.ts src/__tests__/shell-command.spec.ts src/__tests__/standalone-invocation-command.spec.ts src/__tests__/migration-transaction.spec.ts
+        run: pnpm --filter limina run test:unit src/__tests__/atomic-writer.spec.ts src/__tests__/path-filters.spec.ts src/__tests__/shell-command.spec.ts src/__tests__/standalone-invocation-command.spec.ts src/__tests__/migration-forward.spec.ts && pnpm --filter limina-migrate run test:unit src/__tests__/migration-transaction.spec.ts
       - name: Build packed Limina
         run: pnpm run build
       - name: Standalone generated-command tarball round-trip
-        run: pnpm --dir smoke exec vitest run generated-command.spec.ts
+        run: pnpm --dir smoke exec vitest run generated-command.spec.ts migration.spec.ts
   limina-platform-build-smoke:
     name: Limina build and smoke (${{ matrix.name }})
     runs-on: ${{ matrix.os }}

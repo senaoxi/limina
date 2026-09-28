@@ -4,6 +4,8 @@ The day-to-day command sequences, a `CI` example, best practices, FAQ, and the m
 
 ## Recommended Workflows
 
+Run configuration migration with the separate `limina-migrate` package matching your Limina version; see the [migration contract](./cli.md#limina-migration).
+
 ### Local Development
 
 ```sh

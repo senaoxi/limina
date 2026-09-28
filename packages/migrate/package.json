@@ -1,0 +1,62 @@
+{
+  "name": "limina-migrate",
+  "version": "0.4.0",
+  "type": "module",
+  "license": "MIT",
+  "author": "Senao Xi",
+  "engines": {
+    "node": "^22.18.0 || >=24.11.0"
+  },
+  "bugs": {
+    "url": "https://github.com/senaoxi/limina/issues"
+  },
+  "homepage": "https://github.com/senaoxi/limina#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Migrate TypeScript configuration into Limina governance",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/senaoxi/limina.git",
+    "directory": "packages/migrate"
+  },
+  "files": [
+    "bin",
+    "LICENSE.md",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "bin": {
+    "limina-migrate": "./bin/limina-migrate.js"
+  },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "rolldown --config rolldown.config.ts",
+    "dev": "rolldown --config rolldown.config.ts --watch",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "clean": "del-cli dist .tsbuild .smoke coverage"
+  },
+  "dependencies": {
+    "limina": "workspace:*"
+  },
+  "devDependencies": {
+    "@limina/build-tools": "workspace:*",
+    "@clack/prompts": "catalog:dev",
+    "@types/node": "catalog:dev",
+    "cac": "catalog:dev",
+    "del-cli": "catalog:dev",
+    "jsonc-parser": "catalog:dev",
+    "pathe": "catalog:dev",
+    "rolldown": "catalog:dev",
+    "tsx": "catalog:dev",
+    "typescript": "catalog:dev",
+    "vitest": "catalog:test"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.4.0 <5.10.0 || >=6.0.0 <6.1.0"
+  },
+  "sideEffects": false
+}

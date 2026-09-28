@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { assertIssueInventoryLimitArgv } from './cli/argv';
 import { createLiminaCli } from './cli/factory';
 import { printCheckIssueFilterHelpIfRequested } from './cli/filter-help';
+import { forwardMigrationIfRequested } from './cli/migration-forward';
 import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 
 export { createLiminaCli } from './cli/factory';
@@ -16,6 +17,11 @@ function assertMatchedCommand(cli: ReturnType<typeof createLiminaCli>): void {
 }
 
 export async function executeCli(argv: string[]): Promise<void> {
+  if (await forwardMigrationIfRequested(argv)) return;
+  await executeProductCli(argv);
+}
+
+async function executeProductCli(argv: string[]): Promise<void> {
   clearCliScreen();
 
   assertIssueInventoryLimitArgv(argv);
