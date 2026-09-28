@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json.schemastore.org/prettierrc",
+  "semi": true,
+  "tabWidth": 2,
+  "singleQuote": true,
+  "printWidth": 80,
+  "trailingComma": "all",
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "plugins": ["prettier-plugin-organize-imports"],
+  "overrides": [
+    {
+      "files": ["*.md", "*.mdx"],
+      "options": {
+        "printWidth": 100,
+        "proseWrap": "preserve"
+      }
+    },
+    {
+      "files": "package.json",
+      "options": {
+        "parser": "json-stringify"
+      }
+    },
+    {
+      "files": ["*.jsonc", "*.json5"],
+      "options": {
+        "parser": "json5",
+        "singleQuote": false,
+        "bracketSpacing": false,
+        "trailingComma": "none"
+      }
+    },
+    {
+      "files": "tsconfig.json",
+      "options": {
+        "parser": "jsonc"
+      }
+    },
+    {
+      "files": ["*.yml"],
+      "options": {
+        "singleQuote": false,
+        "proseWrap": "preserve"
+      }
+    }
+  ]
+}

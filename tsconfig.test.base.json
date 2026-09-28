@@ -1,0 +1,14 @@
+{
+  // Shared legacy test-check base. Declaration test leaves use explicit *.dts.json configs.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "declaration": false,
+    "isolatedDeclarations": false,
+    "jsx": "preserve",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "noUnusedLocals": false,
+    "stripInternal": false
+  },
+  "exclude": ["node_modules", "**/dist/**", "**/coverage/**"]
+}

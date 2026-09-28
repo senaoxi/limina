@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "isolatedDeclarations": false,
+    "rewriteRelativeImportExtensions": true,
+  },
+  "include": ["src/**/*.ts", "package.json"],
+}

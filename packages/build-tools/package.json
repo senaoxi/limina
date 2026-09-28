@@ -1,0 +1,41 @@
+{
+  "name": "@limina/build-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.bootstrap.json",
+    "clean": "del-cli dist .tsbuild"
+  },
+  "dependencies": {
+    "tinyglobby": "catalog:prod"
+  },
+  "devDependencies": {
+    "@pnpm/catalogs.types": "catalog:dev",
+    "@pnpm/exportable-manifest": "catalog:dev",
+    "@pnpm/workspace.read-manifest": "catalog:dev",
+    "@types/node": "catalog:dev",
+    "pathe": "catalog:dev",
+    "typescript": "catalog:dev",
+    "rolldown": "catalog:dev",
+    "rollup-plugin-license": "catalog:dev",
+    "del-cli": "catalog:dev",
+    "logaria": "link:../../../docs-islands/packages/logaria/dist"
+  },
+  "exports": {
+    "./package-plugin": {
+      "source": "./src/package-plugin.ts",
+      "types": "./dist/package-plugin.d.ts",
+      "default": "./dist/package-plugin.js"
+    },
+    "./license": {
+      "source": "./src/license.ts",
+      "types": "./dist/license.d.ts",
+      "default": "./dist/license.js"
+    },
+    "./logger": {
+      "source": "./src/logger.ts",
+      "types": "./dist/logger.d.ts",
+      "default": "./dist/logger.js"
+    }
+  }
+}

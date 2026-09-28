@@ -1,5 +1,5 @@
 {
-  "name": "@docs-islands/limina-smoke",
+  "name": "@limina/smoke",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,10 +7,9 @@
     "smoke": "vitest run",
     "typecheck": "limina checker build",
     "lint": "eslint . --config ./eslint.config.mjs --fix --cache",
-    "clean": "del-cli .tsbuild .eslintcache coverage node_modules"
+    "clean": "del-cli .tsbuild .eslintcache coverage"
   },
   "devDependencies": {
-    "@docs-islands/eslint-config": "workspace:*",
     "@types/node": "catalog:dev",
     "@typescript-eslint/parser": "catalog:lint",
     "del-cli": "catalog:dev",
@@ -19,6 +18,7 @@
     "globals": "catalog:test",
     "limina": "workspace:*",
     "typescript": "catalog:dev",
-    "vitest": "catalog:test"
+    "vitest": "catalog:test",
+    "@limina/eslint-config": "workspace:*"
   }
 }

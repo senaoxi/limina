@@ -1,0 +1,156 @@
+packages:
+  - docs
+  - smoke
+  - packages/*
+  - '!**/dist'
+allowBuilds:
+  esbuild: true
+auditConfig:
+  ignoreGhsas:
+    - GHSA-67mh-4wv8-2f99
+    - GHSA-4w7w-66w2-5vf9
+    - GHSA-fx2h-pf6j-xcff
+    - GHSA-v6wh-96g9-6wx3
+    - GHSA-h67p-54hq-rp68
+    - GHSA-8266-84wp-wv5c
+    - GHSA-crpf-4hrx-3jrp
+    - GHSA-m56q-vw4c-c2cp
+    - GHSA-f7gr-6p89-r883
+    - GHSA-phwv-c562-gvmh
+    - GHSA-rcqx-6q8c-2c42
+    - GHSA-pr6f-5x2q-rwfp
+    - GHSA-4g3v-8h47-v7g6
+    - GHSA-8mv7-9c27-98vc
+    - GHSA-f48w-9m4c-m7f5
+    - GHSA-7pw4-f3q4-r2p2
+    - GHSA-26w7-cxv4-gfx2
+    - GHSA-376h-93r7-7g6f
+autoInstallPeers: false
+catalogMode: strict
+catalogs:
+  dev:
+    ini: 6.0.0
+    '@types/ini': 4.1.1
+    '@astrojs/check': 0.9.10
+    '@clack/prompts': ^1.4.0
+    '@types/node': 22.18.0
+    '@types/picomatch': ^4.0.3
+    '@types/prompts': ^2.4.9
+    '@types/semver': ^7.8.0
+    '@types/ssri': ^7.1.5
+    '@typescript/native-preview': 7.0.0-dev.20260707.2
+    boxen: ^9.0.0
+    cac: ^7.0.0
+    del-cli: ^7.0.0
+    es-module-lexer: ^3.0.2
+    pathe: ^2.0.3
+    svelte2tsx: ^0.7.61
+    '@jridgewell/trace-mapping': ^0.3.31
+    prompts: ^2.4.2
+    rolldown: ^1.2.9
+    rolldown-plugin-dts: ^0.28.6
+    rollup-plugin-license: ^3.7.1
+    semver: ^7.8.5
+    ssri: ^13.0.1
+    string-width: ^8.2.2
+    tsx: ^4.23.15
+    typescript: ~6.0.3
+    vue-tsc: ~3.2.4
+    '@pnpm/catalogs.types': 1100.0.0
+    '@pnpm/workspace.read-manifest': 1000.3.1
+    '@pnpm/exportable-manifest': 1000.4.2
+    yaml: ^2.9.1
+    zod: ^4.6.5
+    shell-quote: ^1.10.0
+    jsonc-parser: ^3.3.1
+    ignore: ^7.0.10
+    vite: ^8.3.0
+  format:
+    prettier: ~3.5.3
+    prettier-plugin-organize-imports: ^4.2.0
+  frameworks:
+    vitepress: ^1.6.4
+  lint:
+    '@arethetypeswrong/core': ^0.18.3
+    '@eslint/js': ^9.39.2
+    '@html-eslint/eslint-plugin': ^0.47.0
+    '@html-eslint/parser': ^0.47.0
+    '@publint/pack': ^0.1.4
+    '@typescript-eslint/parser': ^8.62.1
+    eslint: ^9.39.2
+    eslint-config-flat-gitignore: ^2.2.1
+    eslint-config-prettier: ^10.1.8
+    eslint-plugin-n: ^17.23.1
+    eslint-plugin-pnpm: ^1.6.1
+    eslint-plugin-prettier: ^5.5.4
+    eslint-plugin-regexp: ^2.1.0
+    eslint-plugin-unicorn: ^62.0.0
+    jsonc-eslint-parser: ^2.4.1
+    knip: ^6.38.0
+    npm-package-json-lint: ^9.1.0
+    publint: ^0.3.24
+    typescript-eslint: ^8.62.1
+    yaml-eslint-parser: ^2.0.0
+  prod:
+    oxc-resolver: ^11.24.2
+    picomatch: ^4.0.5
+    tinyglobby: ^0.2.17
+    vue: ^3.5.39
+  test:
+    execa: 9.6.1
+    globals: ^17.12.0
+    vitest: 4.1.11
+    astro-v7-current: npm:astro@7.3.2
+    astro-v7-min: npm:astro@7.0.0
+    svelte-check-v4-min: npm:svelte-check@4.0.0
+    svelte-v4-min: npm:svelte@4.0.0
+    jsdom: ^28.0.0
+cleanupUnusedCatalogs: true
+dedupeInjectedDeps: false
+enablePrePostScripts: false
+engineStrict: true
+failIfNoMatch: true
+hoist: false
+loglevel: info
+managePackageManagerVersions: true
+minimumReleaseAge: 1440
+nodeVersion: 22.18.0
+overrides:
+  astro@7.0.0>sharp: 0.35.4
+  js-yaml@^4.0.0: 4.3.2
+  '@types/node': 22.18.0
+  browserslist: 4.28.7
+  lodash: 4.18.0
+  minimatch@^10.0.0: ^10.2.5
+  minimatch@^10.0.0>brace-expansion: 5.0.9
+  minimatch@^3.0.0: ^3.1.4
+  minimatch@^3.0.0>brace-expansion: 5.0.9
+  picomatch@^2.0.0: 2.3.2
+  picomatch@^4.0.0: 4.0.5
+  undici: 7.29.0
+  undici-types: ^6.24.0
+  typescript: ~6.0.3
+  shell-quote: 1.10.0
+  postcss: ^8.5.23
+  smol-toml: 1.7.1
+packageExtensions:
+  '@pnpm/manifest-utils@*':
+    dependencies:
+      '@pnpm/logger': 1001.0.1
+patchedDependencies:
+  '@vueuse/core': patches/@vueuse__core@12.8.2.patch
+  minimatch@3.1.5: patches/minimatch@3.1.5.patch
+  vite@5.4.21: patches/vite@5.4.21.patch
+  vitepress: patches/vitepress@1.6.4.patch
+patchesDir: patches
+publishBranch: main
+sharedWorkspaceLockfile: true
+shellEmulator: true
+strictDepBuilds: true
+strictPeerDependencies: true
+trustPolicy: no-downgrade
+trustPolicyExclude:
+  - vite@5.4.21
+  - semver
+  - chokidar@4.0.3
+verifyDepsBeforeRun: error

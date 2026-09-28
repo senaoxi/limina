@@ -1,0 +1,17 @@
+name: Build and quality checks
+description: Build tools and product before read-only checks
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: pnpm run build
+    - shell: bash
+      run: pnpm run format:check
+    - shell: bash
+      run: pnpm run lint:check
+    - shell: bash
+      run: pnpm run typecheck
+    - shell: bash
+      run: pnpm run check
+    - shell: bash
+      run: pnpm run lint:packages

@@ -1,6 +1,6 @@
 {
   // Smoke-local test check. Declaration leaf: tsconfig.test.dts.json.
-  "extends": "../../../tsconfig.test.base.json",
+  "extends": "../tsconfig.test.base.json",
   "compilerOptions": {
     "types": ["node", "vitest/globals"]
   },

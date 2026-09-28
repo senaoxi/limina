@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress';
 import enConfig from '../en/config';
 import zhConfig from '../zh/config';
 
-const base = '/docs-islands/limina/';
+const base = '/';
 
 export default defineConfig({
   base,
@@ -60,7 +60,7 @@ export default defineConfig({
     socialLinks: [
       {
         icon: 'github',
-        link: 'https://github.com/senaoxi/docs-islands/tree/main/packages/limina',
+        link: 'https://github.com/senaoxi/limina',
       },
       { icon: 'npm', link: 'https://npmjs.com/package/limina' },
     ],
