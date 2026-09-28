@@ -1,0 +1,59 @@
+{
+  "name": "@limina/eslint-config",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.dts.json",
+    "build:watch": "tsc -p tsconfig.dts.json --watch",
+    "lint": "eslint . --config ./dist/general.js --fix --cache",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "del-cli dist .tsbuild coverage .eslintcache"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:lint",
+    "eslint": "catalog:lint",
+    "eslint-config-prettier": "catalog:lint",
+    "eslint-config-flat-gitignore": "catalog:lint",
+    "eslint-plugin-regexp": "catalog:lint",
+    "eslint-plugin-prettier": "catalog:lint",
+    "eslint-plugin-n": "catalog:lint",
+    "eslint-plugin-unicorn": "catalog:lint",
+    "eslint-plugin-pnpm": "catalog:lint",
+    "@html-eslint/eslint-plugin": "catalog:lint",
+    "@html-eslint/parser": "catalog:lint",
+    "jsonc-eslint-parser": "catalog:lint",
+    "yaml-eslint-parser": "catalog:lint",
+    "prettier": "catalog:format",
+    "@typescript-eslint/parser": "catalog:lint",
+    "typescript-eslint": "catalog:lint",
+    "typescript": "catalog:dev",
+    "globals": "catalog:test",
+    "del-cli": "catalog:dev",
+    "vitest": "catalog:test",
+    "@types/node": "catalog:dev"
+  },
+  "exports": {
+    ".": {
+      "source": "./src/general.ts",
+      "types": "./dist/general.d.ts",
+      "default": "./dist/general.js"
+    },
+    "./presets": {
+      "source": "./src/presets/index.ts",
+      "types": "./dist/presets/index.d.ts",
+      "default": "./dist/presets/index.js"
+    },
+    "./plugins": {
+      "source": "./src/plugins/index.ts",
+      "types": "./dist/plugins/index.d.ts",
+      "default": "./dist/plugins/index.js"
+    },
+    "./config": {
+      "source": "./src/config/index.ts",
+      "types": "./dist/config/index.d.ts",
+      "default": "./dist/config/index.js"
+    },
+    "./package.json": "./package.json"
+  }
+}

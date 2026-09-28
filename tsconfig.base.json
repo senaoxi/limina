@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "rootDir": ".",
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "isolatedModules": true,
+    "isolatedDeclarations": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+    "erasableSyntaxOnly": true,
+    // lib check is only for build output artifacts.
+    "skipLibCheck": true,
+    "stripInternal": true
+  },
+  "exclude": ["**/.tsbuild/**", "**/*cache", "**/*dist", "**/__tests__/**"]
+}

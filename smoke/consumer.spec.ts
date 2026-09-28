@@ -80,6 +80,8 @@ describe('limina published package smoke', () => {
           packageManifest.peerDependenciesMeta?.['@astrojs/check']?.optional,
         ).toBe(true);
         for (const workspacePackageName of [
+          '@limina/eslint-config',
+          '@limina/build-tools',
           '@docs-islands/eslint-config',
           '@docs-islands/plugin-license',
           '@docs-islands/utils',

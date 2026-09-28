@@ -1,0 +1,48 @@
+name: Setup Environment
+description: Setup Node.js, pnpm and dependencies with caching
+inputs:
+  node-version:
+    description: Supported Node.js version
+    default: 22.18.0
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+      with:
+        node-version: ${{ inputs.node-version }}
+        package-manager-cache: false
+    - name: Check temporary external dependency
+      shell: bash
+      run: node --input-type=module -e "import fs from 'node:fs'; const files=['package.json','packages/limina/package.json','packages/build-tools/package.json']; if(files.some(f => JSON.parse(fs.readFileSync(f)).devDependencies?.logaria?.startsWith('link:'))) throw new Error('Independent CI is blocked until the temporary Logaria link is replaced.');"
+    - name: Setup pnpm via Corepack
+      shell: bash
+      run: 'set -euo pipefail
+
+        corepack enable
+
+        corepack prepare "$(node -p "JSON.parse(require(''node:fs'').readFileSync(''package.json'', ''utf8'')).packageManager")" --activate
+
+        pnpm --version
+
+        '
+    - name: Resolve pnpm store path
+      shell: bash
+      run: 'set -euo pipefail
+
+        echo "PNPM_STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
+
+        '
+    - name: Cache pnpm store
+      uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0
+      with:
+        key: ${{ runner.os }}-pnpm-store-${{ inputs.node-version }}-${{ hashFiles('pnpm-lock.yaml') }}
+        path: ${{ env.PNPM_STORE_PATH }}
+        restore-keys: "${{ runner.os }}-pnpm-store-${{ inputs.node-version }}-
+
+          ${{ runner.os }}-pnpm-store-
+
+          "
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

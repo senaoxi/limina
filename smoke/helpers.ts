@@ -37,13 +37,18 @@ interface PackedDistTarball {
   tarballPath: string;
 }
 
-export const PACKAGE_ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
+export const PACKAGE_ROOT_DIR = fileURLToPath(
+  new URL('../packages/limina/', import.meta.url),
+);
 export const DIST_DIR = path.join(PACKAGE_ROOT_DIR, 'dist');
 export const RELEASE_FIXTURE_PACKAGE_NAME = '@limina-smoke/release-fixture';
 const REQUIRED_DIST_FILES = [
   'package.json',
   'bin/limina.js',
   'cli.js',
+  'checker-host-process.js',
+  'flow-renderer-process.js',
+  'LICENSE.md',
   'index.js',
   'index.d.ts',
   'schemas/tsconfig-schema.json',
@@ -207,7 +212,7 @@ export function readDistManifest(): DistPackageJson {
 
   if (!existsSync(manifestPath)) {
     throw new Error(
-      `Expected dist package manifest at ${manifestPath}. Run pnpm nx run limina:build first.`,
+      `Expected dist package manifest at ${manifestPath}. Run pnpm run build first.`,
     );
   }
 
@@ -222,7 +227,7 @@ export function assertDistArtifacts(): DistPackageJson {
 
     if (!existsSync(filePath)) {
       throw new Error(
-        `Expected limina dist artifact at ${filePath}. Run pnpm nx run limina:build first.`,
+        `Expected limina dist artifact at ${filePath}. Run pnpm run build first.`,
       );
     }
   }

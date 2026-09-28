@@ -1,0 +1,160 @@
+{
+  "name": "limina",
+  "version": "0.4.0",
+  "type": "module",
+  "license": "MIT",
+  "author": "Senao Xi",
+  "description": "TypeScript project graph and architecture governance for single-package projects and workspaces",
+  "files": [
+    "bin",
+    "LICENSE.md",
+    "README.md",
+    "README.zh-CN.md",
+    "schemas"
+  ],
+  "keywords": [
+    "monorepo",
+    "typescript",
+    "project-references",
+    "workspace",
+    "architecture"
+  ],
+  "engines": {
+    "node": "^22.18.0 || >=24.11.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/senaoxi/limina.git",
+    "directory": "packages/limina"
+  },
+  "bugs": {
+    "url": "https://github.com/senaoxi/limina/issues"
+  },
+  "homepage": "https://github.com/senaoxi/limina#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "limina": "./bin/limina.js"
+  },
+  "imports": {
+    "#utils/*": "./src/utils/*.ts",
+    "#core": "./src/core/index.ts",
+    "#core/*/runner": "./src/core/*/runner.ts",
+    "#core/*/context": "./src/core/*/context.ts",
+    "#core/*/actions": "./src/core/*/actions.ts",
+    "#checkers": "./src/checkers.ts",
+    "#config/*": "./src/config/*.ts"
+  },
+  "scripts": {
+    "build": "rolldown --config rolldown.config.ts",
+    "dev": "rolldown --config rolldown.config.ts --watch",
+    "test:unit": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "clean": "del-cli dist .tsbuild .smoke coverage"
+  },
+  "dependencies": {
+    "picomatch": "catalog:prod",
+    "tinyglobby": "catalog:prod",
+    "oxc-resolver": "catalog:prod"
+  },
+  "devDependencies": {
+    "ini": "catalog:dev",
+    "@types/ini": "catalog:dev",
+    "@types/picomatch": "catalog:dev",
+    "@types/semver": "catalog:dev",
+    "@types/ssri": "catalog:dev",
+    "@types/node": "catalog:dev",
+    "@clack/prompts": "catalog:dev",
+    "@jridgewell/trace-mapping": "catalog:dev",
+    "boxen": "catalog:dev",
+    "logaria": "link:../../../docs-islands/packages/logaria/dist",
+    "@publint/pack": "catalog:lint",
+    "cac": "catalog:dev",
+    "es-module-lexer": "catalog:dev",
+    "pathe": "catalog:dev",
+    "ignore": "catalog:dev",
+    "knip": "catalog:lint",
+    "npm-package-json-lint": "catalog:lint",
+    "publint": "catalog:lint",
+    "semver": "catalog:dev",
+    "yaml": "catalog:dev",
+    "jsonc-parser": "catalog:dev",
+    "zod": "catalog:dev",
+    "del-cli": "catalog:dev",
+    "eslint": "catalog:lint",
+    "rolldown": "catalog:dev",
+    "rolldown-plugin-dts": "catalog:dev",
+    "tsx": "catalog:dev",
+    "shell-quote": "catalog:dev",
+    "ssri": "catalog:dev",
+    "string-width": "catalog:dev",
+    "@arethetypeswrong/core": "catalog:lint",
+    "@astrojs/check": "catalog:dev",
+    "svelte2tsx": "catalog:dev",
+    "astro-v7-current": "catalog:test",
+    "astro-v7-min": "catalog:test",
+    "svelte-check-v4-min": "catalog:test",
+    "svelte-v4-min": "catalog:test",
+    "typescript": "catalog:dev",
+    "vite": "catalog:dev",
+    "vitest": "catalog:test",
+    "@limina/build-tools": "workspace:*",
+    "vue": "catalog:prod",
+    "vue-tsc": "catalog:dev",
+    "@typescript/native-preview": "catalog:dev",
+    "jsdom": "catalog:test"
+  },
+  "peerDependencies": {
+    "@arethetypeswrong/core": "^0.18.3",
+    "knip": ">=6.0.0 <7.0.0",
+    "npm-package-json-lint": ">=9.1.0 <10.0.0",
+    "publint": ">=0.3.0 <0.4.0",
+    "tsx": "^4.9.0",
+    "typescript": ">=5.4.0 <5.10.0 || >=6.0.0 <6.1.0",
+    "@typescript/native-preview": ">=7.0.0-dev.20260421.2 <7.0.0",
+    "vue-tsc": ">=2.2.0 <=2.2.12 || >=3.2.0 <=3.2.4",
+    "@astrojs/check": "0.9.10",
+    "svelte-check": ">=4.0.0 <5.0.0",
+    "svelte2tsx": "^0.7.61"
+  },
+  "peerDependenciesMeta": {
+    "@arethetypeswrong/core": {
+      "optional": true
+    },
+    "@astrojs/check": {
+      "optional": true
+    },
+    "@typescript/native-preview": {
+      "optional": true
+    },
+    "knip": {
+      "optional": true
+    },
+    "npm-package-json-lint": {
+      "optional": true
+    },
+    "publint": {
+      "optional": true
+    },
+    "svelte2tsx": {
+      "optional": true
+    },
+    "svelte-check": {
+      "optional": true
+    },
+    "tsx": {
+      "optional": true
+    },
+    "vue-tsc": {
+      "optional": true
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas/tsconfig-schema.json": "./schemas/tsconfig-schema.json",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false
+}

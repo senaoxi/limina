@@ -1,6 +1,6 @@
 {
   // Smoke-local source/editor check. The runtime path is covered by tests.
-  "extends": "../../../tsconfig.base.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "declaration": false,
     "allowJs": true,

@@ -1,5 +1,5 @@
-import eslintGeneralConfig from '@docs-islands/eslint-config';
-import { supportedEcmaVersion } from '@docs-islands/eslint-config/config';
+import eslintGeneralConfig from '@limina/eslint-config';
+import { supportedEcmaVersion } from '@limina/eslint-config/config';
 import typescriptESlintParser from '@typescript-eslint/parser';
 import { defineConfig } from 'eslint/config';
 import globals from 'globals';

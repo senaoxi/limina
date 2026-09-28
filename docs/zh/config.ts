@@ -1,25 +1,6 @@
-import { loadEnv } from '@docs-islands/utils/env';
 import pkg from 'limina/package.json';
-import { execSync } from 'node:child_process';
 import type { DefaultTheme, LocaleSpecificConfig } from 'vitepress';
-
-const { env } = loadEnv();
-const isBuild = env === 'production';
-
-function resolveCommitId(): string | null {
-  if (!isBuild) {
-    return 'dev';
-  }
-
-  try {
-    return execSync('git rev-parse --short=7 HEAD', {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return null;
-  }
-}
+import { resolveCommitId } from '../.vitepress/build-metadata';
 
 const commitId = resolveCommitId();
 const footerMessage = commitId
@@ -175,11 +156,11 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         items: [
           {
             text: '更新日志',
-            link: 'https://github.com/senaoxi/docs-islands/blob/main/packages/limina/CHANGELOG.md',
+            link: 'https://github.com/senaoxi/limina/blob/main/CHANGELOG.md',
           },
           {
             text: '参与贡献',
-            link: 'https://github.com/senaoxi/docs-islands/blob/main/.github/CONTRIBUTING.md',
+            link: 'https://github.com/senaoxi/limina/blob/main/CONTRIBUTING.md',
           },
         ],
       },
