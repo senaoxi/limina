@@ -94,7 +94,7 @@ export interface ReleasePackageManifest {
 }
 
 export interface ReleasePackageConfig {
-  key: 'limina';
+  key: 'limina' | 'migrate';
   packageName: string;
   relativeDir: string;
   publishRelativeDir: string;
@@ -211,6 +211,16 @@ const RELEASE_PACKAGE_CONFIGS: readonly ReleasePackageConfig[] = [
       'npm pack --dry-run',
     ],
   },
+  {
+    key: 'migrate',
+    packageName: 'limina-migrate',
+    relativeDir: 'packages/migrate',
+    publishRelativeDir: 'packages/migrate/dist',
+    changelogRelativePath: 'packages/limina/CHANGELOG.md',
+    changelogPaths: ['.'],
+    tagPrefix: 'limina',
+    previewChecks: ['test', 'smoke', 'build package', 'npm pack --dry-run'],
+  },
 ] as const;
 
 export const ALL_RELEASE_PACKAGES_SELECTION = '__all_release_packages__';
@@ -315,7 +325,16 @@ export function resolvePackageSelections(
     }
   }
 
-  return resolved;
+  if (resolved.length === 0) return [];
+  if (
+    configs.length !== 2 ||
+    new Set(configs.map((config) => config.manifest.version)).size !== 1
+  ) {
+    throw new Error(
+      'limina and limina-migrate must form a complete, same-version release group.',
+    );
+  }
+  return sortReleasePackageConfigs(configs);
 }
 
 export function getInternalDependencyNames(

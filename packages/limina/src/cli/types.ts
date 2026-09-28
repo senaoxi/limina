@@ -71,8 +71,6 @@ export interface InitFlags {
   yes?: boolean;
 }
 
-export type MigrationFlags = GlobalFlags;
-
 export interface StandaloneIssueSession {
   command: string;
   commandContext: GlobalQueryCommandContext;

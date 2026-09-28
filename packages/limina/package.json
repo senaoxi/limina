@@ -79,7 +79,6 @@
     "publint": "catalog:lint",
     "semver": "catalog:dev",
     "yaml": "catalog:dev",
-    "jsonc-parser": "catalog:dev",
     "zod": "catalog:dev",
     "del-cli": "catalog:dev",
     "eslint": "catalog:lint",
@@ -154,7 +153,12 @@
   "exports": {
     ".": "./src/index.ts",
     "./schemas/tsconfig-schema.json": "./schemas/tsconfig-schema.json",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./internal/migration": {
+      "types": "./src/internal/migration.ts",
+      "development": "./src/internal/migration.ts",
+      "default": "./dist/internal/migration.js"
+    }
   },
   "sideEffects": false
 }

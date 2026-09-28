@@ -13,6 +13,7 @@ export default defineConfig({
         include: [
           'tsconfig.json',
           'packages/limina/tsconfig.json',
+          'packages/migrate/tsconfig.json',
           'docs/tsconfig.json',
           'packages/build-tools/tsconfig.json',
         ],
@@ -45,6 +46,13 @@ export default defineConfig({
       {
         name: 'limina',
         outDir: 'packages/limina/dist',
+        boundary: { environment: 'node' },
+      },
+      {
+        name: 'limina-migrate',
+        outDir: 'packages/migrate/dist',
+        // CLI-only package: there is no importable TypeScript API for ATTW.
+        checks: ['publint', 'boundary'],
         boundary: { environment: 'node' },
       },
     ],

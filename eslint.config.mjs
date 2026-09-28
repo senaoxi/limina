@@ -13,6 +13,7 @@ import { defineConfig } from 'eslint/config';
 const liminaTestFilePatterns = [
   ...testFilePatterns,
   'packages/limina/integration/**/*.ts',
+  'packages/migrate/integration/**/*.ts',
   'smoke/**/*.ts',
 ];
 
@@ -26,6 +27,10 @@ export default defineConfig([
   {
     files: [
       'packages/limina/src/**',
+      'packages/migrate/src/**',
+      'packages/migrate/integration/**',
+      'packages/migrate/bin/**',
+      'packages/migrate/*.{ts,mts,mjs}',
       'packages/limina/integration/**',
       'smoke/**',
       'packages/limina/bin/**',
@@ -59,7 +64,7 @@ export default defineConfig([
   },
   {
     name: 'Limina production readability budgets',
-    files: ['packages/limina/src/**/*.ts'],
+    files: ['packages/limina/src/**/*.ts', 'packages/migrate/src/**/*.ts'],
     ignores: testFilePatterns,
     rules: {
       complexity: ['error', 3],

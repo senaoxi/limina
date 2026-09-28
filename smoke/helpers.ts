@@ -308,13 +308,21 @@ export function assertDistArtifacts(): DistPackageJson {
   return manifest;
 }
 
-export async function packLiminaDist(): Promise<PackedDistTarball> {
+export function packLiminaDist(): Promise<PackedDistTarball> {
+  return packDist(DIST_DIR);
+}
+
+export function packMigrationDist(): Promise<PackedDistTarball> {
+  return packDist(path.resolve(PACKAGE_ROOT_DIR, '../migrate/dist'));
+}
+
+async function packDist(distDir: string): Promise<PackedDistTarball> {
   const destination = await mkdtemp(path.join(tmpdir(), 'limina-package-'));
 
   try {
     const result = await execa(
       getNpmCommand(),
-      ['pack', DIST_DIR, '--pack-destination', destination, '--ignore-scripts'],
+      ['pack', distDir, '--pack-destination', destination, '--ignore-scripts'],
       {
         maxBuffer: 64 * 1024 * 1024,
         stderr: 'inherit',
@@ -326,7 +334,7 @@ export async function packLiminaDist(): Promise<PackedDistTarball> {
     const fileName = result.stdout.trim().split(/\r?\n/u).at(-1);
 
     if (!fileName) {
-      throw new Error(`npm pack did not report a tarball for ${DIST_DIR}`);
+      throw new Error(`npm pack did not report a tarball for ${distDir}`);
     }
 
     return {

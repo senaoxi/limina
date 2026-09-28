@@ -130,6 +130,9 @@ it('publishes the governed product artifact from a private workspace root', () =
       name,
       outDir,
     })),
-    [{ name: release?.packageName, outDir: release?.publishRelativeDir }],
+    getReleasePackageConfigs().map((config) => ({
+      name: config.packageName,
+      outDir: config.publishRelativeDir,
+    })),
   );
 });

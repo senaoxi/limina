@@ -3,7 +3,7 @@ name: Publish Limina
   workflow_dispatch:
     inputs:
       tag:
-        description: Approved new limina/v<version> tag
+        description: Approved new limina/v<version> tag for both packages
         required: true
         type: string
 permissions:
@@ -28,29 +28,5 @@ jobs:
         with:
           node-version: 24.11.0
       - run: pnpm run test && pnpm run test:smoke && pnpm run typecheck && pnpm run check && pnpm run lint:packages
-      - name: Validate publication target
-        run: "node --input-type=module <<'JS'
-
-          import { readFileSync, realpathSync } from 'node:fs';
-
-          import path from 'node:path';
-
-          import { execFileSync } from 'node:child_process';
-
-          import semver from 'semver';
-
-          if (semver.lt(execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(), '11.5.2')) throw new Error('npm 11.5.2 or newer is required for trusted publishing');
-
-          const root = JSON.parse(readFileSync('packages/limina/package.json', 'utf8'));
-
-          const dist = JSON.parse(readFileSync('packages/limina/dist/package.json', 'utf8'));
-
-          if (dist.name !== 'limina' || dist.version !== root.version || process.env.RELEASE_TAG !== `limina/v${dist.version}`) throw new Error('Package, version and tag must agree');
-
-          if (realpathSync('packages/limina/dist') !== path.join(realpathSync('.'), 'packages/limina/dist')) throw new Error('Publish directory must be the real packages/limina/dist');
-
-          if (root.devDependencies.logaria.startsWith('link:')) throw new Error('Logaria independence gate is closed');
-
-          JS"
-      - name: Publish approved dist with provenance
-        run: npm publish ./packages/limina/dist --provenance --access public
+      - name: Publish the approved same-version group with provenance
+        run: pnpm exec tsx scripts/release/publish-approved.ts
