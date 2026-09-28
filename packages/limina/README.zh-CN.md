@@ -20,6 +20,8 @@
 
 Limina 支持单包项目，以及 pnpm、npm、Yarn 和 Bun 工作区，帮助团队把容易漂移的工程约束变成显式、可审查、可运行的检查。它基于现有 TypeScript 配置和源码依赖关系生成可复用的类型构建配置，并逐步覆盖依赖图、源码边界、检查覆盖和发布前校验。
 
+配置迁移由同版本独立包 `limina-migrate` 提供：`pnpm exec limina-migrate`，或 `pnpm dlx limina-migrate@<version>`。旧 `limina migration` 入口保留为弃用转调命令。
+
 ## 能力概览
 
 - 接入增量类型构建，生成可复用的构建配置并安排合理的构建顺序。

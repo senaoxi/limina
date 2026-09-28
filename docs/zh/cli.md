@@ -114,7 +114,7 @@ pnpm exec limina release check --package @scope/pkg
 | 目标                             | 推荐命令                                   | 判断依据                                                                               |
 | -------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
 | 初始化 工作区中的 Limina 文件    | `limina init` 或 `limina init --yes`       | 首次接入，或需要生成基础配置与 `limina:build` 脚本                                     |
-| 迁移被治理的源码 `tsconfig`      | `limina migration`                         | 工作区验证后，把编译器输出设置迁入 `liminaOptions`                                     |
+| 迁移被治理的源码 `tsconfig`      | `limina-migrate`                           | 工作区验证后，把编译器输出设置迁入 `liminaOptions`                                     |
 | 日常检查仓库结构和类型构建入口   | `limina check`                             | 默认组合覆盖工程图、源码、证明和检查器入口                                             |
 | 自定义一组按顺序运行的检查       | `limina check <name>`                      | `<name>` 来自配置中的 `pipelines`                                                      |
 | 物化或刷新 `.limina` 检查器文件  | `limina graph prepare`                     | 后续流程需要使用磁盘上的生成文件时                                                     |
@@ -147,12 +147,16 @@ pnpm exec limina init --yes
 
 `init` 不会根据仓库业务结构推断图规则，也不会替你决定哪些包边界应被允许或拒绝。初始化后的配置应按仓库真实结构继续维护。
 
-### limina migration
+### limina-migrate {#limina-migration}
 
-`migration` 将现有 TypeScript 配置规范化为 Limina 能够从磁盘重新发现和读取的输入。
+`limina-migrate` 是独立 CLI 包，精确依赖同版本 `limina`。本地安装后可执行下面的命令，或使用 `pnpm dlx limina-migrate@<version>`。它支持 `--config`、`--config-loader` 和 `--mode`；配置函数仍收到 `command: 'migration'`。
+
+`limina migration` 保留为弃用转调入口，优先使用本地同版本包，否则通过 npm 下载该精确版本。帮助仍在本地显示；离线执行需要事先安装匹配的迁移包。命令不会升级项目依赖。
+
+`limina-migrate` 将现有 TypeScript 配置规范化为 Limina 能够从磁盘重新发现和读取的输入。
 
 ```sh
-pnpm exec limina migration
+pnpm exec limina-migrate
 ```
 
 命令分别报告处理完成与输入可消费性。架构规则、包依赖、checker ownership 和类型错误仍由 `limina check` 检查。迁移不承诺原生 `tsc -b` 行为等价。

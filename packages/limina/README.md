@@ -20,6 +20,8 @@ Start with incremental type builds, then progressively enable architecture gover
 
 Limina supports single-package projects and pnpm, npm, Yarn, and Bun workspaces where project references, source boundaries, check coverage, and release artifacts can drift over time. It builds on existing TypeScript configuration and source dependency relationships to generate reusable type-build configuration, then adds checks for dependency graphs, source boundaries, coverage, and release readiness.
 
+Configuration migration is provided by the separate, same-version `limina-migrate` package: `pnpm exec limina-migrate`, or `pnpm dlx limina-migrate@<version>`. The old `limina migration` entry remains as a deprecated forwarder.
+
 ## What Limina does
 
 - Adopts incremental type builds by generating reusable build configuration and deriving a build order from source dependencies.
