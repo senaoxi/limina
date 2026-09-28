@@ -1,9 +1,10 @@
 import type { RegionExcludeConfig, ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath, normalizeSlashes } from '#utils/path';
+import path from 'pathe';
 import rawPicomatch from 'picomatch';
 import type { WorkspacePackage } from '../actions';
 import type { WorkspaceRootRegionBoundary } from '../regions';
-import { displayWorkspacePath } from './shared';
+import { canonicalProjectedPathSync, displayWorkspacePath } from './shared';
 import type { WorkspaceDescriptorCandidate } from './types';
 
 export interface CompiledExclusionRule {
@@ -176,4 +177,26 @@ export function validatePackageScopeExclusions(options: {
     config: options.config,
     rules: options.rules.filter((rule) => rule.entry.kind === 'package-scope'),
   });
+}
+
+/** Exact config exclusions affect descriptors, never package activation. */
+export function excludeTsconfigDescriptors(options: {
+  config: ResolvedLiminaConfig;
+  candidates: readonly WorkspaceDescriptorCandidate[];
+}): WorkspaceDescriptorCandidate[] {
+  const excluded = new Set(
+    (options.config.regions?.exclude ?? [])
+      .filter((rule) => rule.kind === 'tsconfig')
+      .flatMap((rule) =>
+        rule.include.map((value) =>
+          canonicalProjectedPathSync(
+            path.resolve(options.config.rootDir, value),
+          ),
+        ),
+      ),
+  );
+  return options.candidates.filter(
+    (candidate) =>
+      candidate.kind !== 'tsconfig' || !excluded.has(candidate.canonicalPath),
+  );
 }

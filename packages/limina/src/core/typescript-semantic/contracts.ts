@@ -15,6 +15,7 @@ export type TypeScriptSemanticChannel =
 export type TypeScriptSemanticAdmissionMode = 'full-program' | 'root-facts';
 
 export interface TypeScriptSemanticProject {
+  virtualFiles?: ReadonlyMap<string, string>;
   admissionMode?: TypeScriptSemanticAdmissionMode;
   configPath: string;
   fileNames: readonly string[];

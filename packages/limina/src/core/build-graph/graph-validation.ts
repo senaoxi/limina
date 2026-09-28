@@ -156,6 +156,8 @@ function addInferredReferences(options: {
       projects: getCheckerProjects({ checker, state: options.state }),
       sourceToBuildByChecker: options.state.sourceToBuildByChecker,
     });
+    options.state.dependencyAnalysis.facts.push(...collection.analysis.facts);
+    options.state.dependencyAnalysis.complete &&= collection.analysis.complete;
     options.state.problems.push(...collection.problems);
     options.state.dependencyEdges.push(...collection.dependencyEdges);
   }
@@ -244,7 +246,7 @@ function compareDependencyEdges(
   return comparisons.find((comparison) => comparison !== 0) ?? 0;
 }
 
-export function validateAndCompleteGeneratedGraph(options: {
+export function analyzeAndCompleteGeneratedGraph(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkers: ResolvedCheckerConfig[];
   config: ResolvedLiminaConfig;
@@ -276,6 +278,13 @@ export function validateAndCompleteGeneratedGraph(options: {
   addDeclarationCheckerInvariantProblems(options);
   addCheckerOutputGraphs({ ...options, allProjects });
   options.state.dependencyEdges.sort(compareDependencyEdges);
+  options.state.dependencyAnalysis.diagnostics = [...options.state.problems];
+}
+
+export function validateAndCompleteGeneratedGraph(
+  options: Parameters<typeof analyzeAndCompleteGeneratedGraph>[0],
+): void {
+  analyzeAndCompleteGeneratedGraph(options);
   if (options.state.problems.length > 0) {
     throw createGeneratedGraphStructuredError({
       config: options.config,

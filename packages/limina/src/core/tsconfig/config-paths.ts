@@ -6,6 +6,8 @@ import path from 'pathe';
 import ts from 'typescript';
 import type { JsonObject } from './action-types';
 
+export class TsconfigInputError extends Error {}
+
 const removedRootLiminaMetadataError = [
   'Invalid Limina tsconfig metadata:',
   '  field: limina',
@@ -56,7 +58,7 @@ export function readJsonConfigFile(
     readVirtualOrDiskFile(fileName, virtualFiles),
   );
   if (result.error !== undefined) {
-    throw new Error(
+    throw new TsconfigInputError(
       ts.formatDiagnostic(result.error, createFormatHost(rootDir)),
     );
   }
@@ -110,7 +112,7 @@ export function validateUserMaintainedLiminaTsconfigMetadata(options: {
     return;
   }
   if (Object.hasOwn(options.configObject, 'limina')) {
-    throw new Error(removedRootLiminaMetadataError);
+    throw new TsconfigInputError(removedRootLiminaMetadataError);
   }
 }
 
@@ -119,7 +121,11 @@ export function readJsonConfig(
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {
-  return readJsonConfigFile(config.rootDir, configPath, virtualFiles);
+  return readJsonConfigFile(
+    config.rootDir,
+    configPath,
+    virtualFiles ?? config.virtualFiles,
+  );
 }
 
 function createProjectConfigCandidate(

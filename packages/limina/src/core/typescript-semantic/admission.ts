@@ -75,6 +75,7 @@ export class TypeScriptInclusionLedger {
   ): void {
     for (const fileName of getProjectReferenceSemanticFiles({
       references: project.projectReferences ?? [],
+      virtualFiles: project.virtualFiles,
       tsModule,
     })) {
       this.add(fileName, 'project-reference');

@@ -49,6 +49,7 @@ export function parseSourceConfig(
       extensions: resolveDiscoveryExtensions(options),
     },
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
   return {
     configObject,

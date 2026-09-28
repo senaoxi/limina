@@ -1,7 +1,10 @@
 import { normalizeAbsolutePath } from '#utils/path';
 import type ts from 'typescript';
 
-function createParseConfigHost(tsModule: typeof ts): ts.ParseConfigFileHost {
+function createParseConfigHost(
+  tsModule: typeof ts,
+  virtualFiles?: ReadonlyMap<string, string>,
+): ts.ParseConfigFileHost {
   return {
     fileExists: tsModule.sys.fileExists,
     getCurrentDirectory: tsModule.sys.getCurrentDirectory,
@@ -9,7 +12,9 @@ function createParseConfigHost(tsModule: typeof ts): ts.ParseConfigFileHost {
       String(diagnostic.messageText);
     },
     readDirectory: tsModule.sys.readDirectory,
-    readFile: tsModule.sys.readFile,
+    readFile: (fileName) =>
+      virtualFiles?.get(normalizeAbsolutePath(fileName)) ??
+      tsModule.sys.readFile(fileName),
     useCaseSensitiveFileNames: tsModule.sys.useCaseSensitiveFileNames,
   };
 }
@@ -17,11 +22,12 @@ function createParseConfigHost(tsModule: typeof ts): ts.ParseConfigFileHost {
 export function parseTypeScriptProjectConfig(options: {
   configPath: string;
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): ts.ParsedCommandLine | undefined {
   return options.tsModule.getParsedCommandLineOfConfigFile(
     options.configPath,
     undefined,
-    createParseConfigHost(options.tsModule),
+    createParseConfigHost(options.tsModule, options.virtualFiles),
   );
 }
 
@@ -42,6 +48,7 @@ function collectReferencedCommandLineFiles(options: {
   commandLine: ts.ParsedCommandLine;
   collected: Set<string>;
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
   visitedConfigs: Set<string>;
 }): void {
   addCommandLineInputs(options);
@@ -50,6 +57,7 @@ function collectReferencedCommandLineFiles(options: {
     collected: options.collected,
     references: options.commandLine.projectReferences ?? [],
     tsModule: options.tsModule,
+    virtualFiles: options.virtualFiles,
     visitedConfigs: options.visitedConfigs,
   });
 }
@@ -67,6 +75,7 @@ function addCommandLineOutputs(options: {
   commandLine: ts.ParsedCommandLine;
   collected: Set<string>;
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): void {
   for (const fileName of getOutputFileNames(
     options.commandLine,
@@ -80,6 +89,7 @@ function collectProjectReference(options: {
   collected: Set<string>;
   reference: ts.ProjectReference;
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
   visitedConfigs: Set<string>;
 }): void {
   const configPath = normalizeAbsolutePath(
@@ -90,6 +100,7 @@ function collectProjectReference(options: {
   const commandLine = parseTypeScriptProjectConfig({
     configPath,
     tsModule: options.tsModule,
+    virtualFiles: options.virtualFiles,
   });
   if (commandLine === undefined) return;
   collectReferencedCommandLineFiles({ ...options, commandLine });
@@ -99,6 +110,7 @@ function collectProjectReferenceFiles(options: {
   collected: Set<string>;
   references: readonly ts.ProjectReference[];
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
   visitedConfigs: Set<string>;
 }): void {
   for (const reference of options.references) {
@@ -109,12 +121,14 @@ function collectProjectReferenceFiles(options: {
 export function getProjectReferenceSemanticFiles(options: {
   references: readonly ts.ProjectReference[];
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
 }): string[] {
   const collected = new Set<string>();
   collectProjectReferenceFiles({
     collected,
     references: options.references,
     tsModule: options.tsModule,
+    virtualFiles: options.virtualFiles,
     visitedConfigs: new Set(),
   });
   return [...collected];

@@ -18,6 +18,7 @@ export interface ResolveImportEvidenceOptions {
   managedOutputLookup?: ManagedOutputDeclarationLookup;
   project: Pick<
     ProjectInfo,
+    | 'virtualFiles'
     | 'checkerPresets'
     | 'astroSemanticProject'
     | 'configPath'

@@ -10,7 +10,11 @@ import {
 
 const regionKeys = new Set(['exclude', 'extendNestedPackageScopes']);
 const regionEntryKeys = new Set(['include', 'kind', 'reason']);
-const regionExcludeKinds = ['workspace-package', 'package-scope'] as const;
+const regionExcludeKinds = [
+  'workspace-package',
+  'package-scope',
+  'tsconfig',
+] as const;
 type RegionExcludeKind = (typeof regionExcludeKinds)[number];
 
 function isRegionExcludeKind(value: unknown): value is RegionExcludeKind {
@@ -107,6 +111,7 @@ function validateRegionEntry(options: {
   };
   validateRegionKind(entryOptions);
   validateRegionIncludes(entryOptions);
+  validateExactTsconfigSelectors(entryOptions);
   validateRegionReason(entryOptions);
 }
 
@@ -165,4 +170,34 @@ export function validateRegionsConfig(
   });
   validateNestedPackageScopeFlag(value.extendNestedPackageScopes, ctx);
   validateRegionExclusions(value.exclude, ctx);
+}
+
+function invalidExactTsconfigPath(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return (
+    /[*?{}]/u.test(value) ||
+    !/(?:^|[\\/])tsconfig(?:\.[^\\/]+)?\.json$/u.test(value)
+  );
+}
+function validateExactTsconfigSelectors(options: {
+  ctx: ConfigValidationContext;
+  path: PropertyKey[];
+  value: Record<string, unknown>;
+}): void {
+  if (options.value.kind !== 'tsconfig') return;
+  if (!Array.isArray(options.value.include)) return;
+  addExactSelectorIssues(options, options.value.include);
+}
+function addExactSelectorIssues(
+  options: { ctx: ConfigValidationContext; path: PropertyKey[] },
+  values: unknown[],
+): void {
+  for (const [index, value] of values.entries()) {
+    if (invalidExactTsconfigPath(value))
+      addConfigIssue(
+        options.ctx,
+        [...options.path, 'include', index],
+        'tsconfig exclusions require exact tsconfig.json or tsconfig.*.json file paths, not directory or glob selectors.',
+      );
+  }
 }

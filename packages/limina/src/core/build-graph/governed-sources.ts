@@ -202,6 +202,7 @@ export function createGovernedSourceUnit(options: {
       vueSemanticIdentity: options.project.context.vueSemanticIdentity,
     },
     projectRootDir: options.config.rootDir,
+    virtualFiles: options.config.virtualFiles,
   });
   const ownedFileNames = uniqueSortedStrings(options.project.ownedFileNames);
   const frameworkCapabilities = createFrameworkCapabilities({

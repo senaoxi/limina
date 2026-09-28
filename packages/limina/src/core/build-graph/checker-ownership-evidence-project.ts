@@ -19,6 +19,7 @@ import type {
 export interface EvidenceProject {
   checkerName: CheckerName;
   project: {
+    virtualFiles?: ReadonlyMap<string, string>;
     checkerPresets: CheckerProjectParseContext['checkerPresets'];
     configPath: string;
     extensions: string[];
@@ -160,12 +161,14 @@ export function createEvidenceProject(options: {
     configPath: options.project.configPath,
     context,
     projectRootDir: options.rootDir,
+    virtualFiles: options.project.virtualFiles,
   });
   const semanticFamily = getEvidenceSemanticFamily(options.state);
   const semanticContext = createEvidenceSemanticContext(options);
   return {
     checkerName,
     project: {
+      virtualFiles: options.project.virtualFiles,
       checkerPresets: [checkerName],
       astroSemanticProject: getAstroSemanticProject(semanticContext),
       configPath: options.project.configPath,

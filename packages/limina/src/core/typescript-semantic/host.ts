@@ -78,6 +78,7 @@ export function createTypeScriptSemanticHost(options: {
   callbacks: TypeScriptSemanticHostCallbacks;
   compilerOptions: ts.CompilerOptions;
   tsModule: typeof ts;
+  virtualFiles?: ReadonlyMap<string, string>;
   syntaxScope?: OwnedSyntaxScope;
 }): ts.CompilerHost {
   const base = options.tsModule.createCompilerHost(options.compilerOptions);
@@ -92,6 +93,7 @@ export function createTypeScriptSemanticHost(options: {
       parseTypeScriptProjectConfig({
         configPath: fileName,
         tsModule: options.tsModule,
+        virtualFiles: options.virtualFiles,
       }),
     getSourceFile(...args): ts.SourceFile | undefined {
       return readSourceFile({

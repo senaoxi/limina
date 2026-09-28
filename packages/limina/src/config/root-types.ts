@@ -6,7 +6,10 @@ import type { PipelineStep } from './pipeline-checker-types';
 import type { ReleaseConfig } from './release-types';
 import type { SharedLiminaConfig, SourceCheckConfig } from './source-types';
 
-export type RegionExcludeKind = 'package-scope' | 'workspace-package';
+export type RegionExcludeKind =
+  | 'package-scope'
+  | 'workspace-package'
+  | 'tsconfig';
 
 export interface RegionExcludeConfig {
   include: string[];
@@ -61,6 +64,8 @@ export type LiminaConfigExport =
   | LiminaConfigFn;
 
 export interface ResolvedLiminaConfig extends LiminaConfig {
+  /** Internal, generation-local config input. Never serialized as user configuration. */
+  virtualFiles?: ReadonlyMap<string, string>;
   configPath: string;
   governanceRoot: ResolvedGovernanceRoot;
   /** Compatibility projection of governanceRoot.rootDir. */

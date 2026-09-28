@@ -11,6 +11,7 @@ export function readExplicitSourceCompilerTarget(options: {
       allowNoInputDiagnostics: true,
       configPath: options.configPath,
       projectRootDir: options.config.rootDir,
+      virtualFiles: options.config.virtualFiles,
     },
   });
   const target = parsed.options.target;

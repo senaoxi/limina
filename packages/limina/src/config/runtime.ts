@@ -72,7 +72,12 @@ function isResolvedConfig(config: LiminaConfig): boolean {
 
 function toUserConfig(config: LiminaConfig): LiminaConfig {
   if (!isResolvedConfig(config)) return config;
-  const internalFields = new Set(['configPath', 'rootDir', 'governanceRoot']);
+  const internalFields = new Set([
+    'configPath',
+    'rootDir',
+    'governanceRoot',
+    'virtualFiles',
+  ]);
   const userConfig = Object.fromEntries(
     Object.keys(config)
       .filter((key) => !internalFields.has(key))

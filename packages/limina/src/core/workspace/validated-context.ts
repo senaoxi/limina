@@ -1,4 +1,7 @@
-export { collectValidatedWorkspaceContext } from './validated/create';
+export {
+  collectValidatedWorkspaceContext,
+  collectWorkspaceInputSnapshot,
+} from './validated/create';
 export { readWorkspaceTsconfigOutputRoot } from './validated/outputs/read';
 export {
   WorkspaceRegionPathIndex,

@@ -71,6 +71,7 @@ const cleanDistPlugin = (): NonNullable<RolldownOptions['plugins']> => ({
 const moduleConfig: RolldownOptions = defineConfig({
   input: {
     cli: 'src/cli.ts',
+    'migration-verify-process': 'src/commands/migration/verify-process.ts',
     'checker-host-process': 'src/typecheck/host-process.ts',
     'flow-renderer-process': 'src/flow/renderer-process.ts',
     index: 'src/index.ts',

@@ -7,6 +7,8 @@ import {
 } from '#core/tsconfig/actions';
 import { uniqueCodeUnitSortedStrings as uniqueSortedStrings } from '#utils/collections';
 import { existsSync } from 'node:fs';
+import { TypeScriptConfigInputError } from '../../checker/project-base';
+import { TsconfigInputError } from '../tsconfig/config-paths';
 import {
   createProjectBuildModule,
   createSolutionBuildModule,
@@ -105,6 +107,12 @@ function collectSolutionReference(options: {
       options.context.config.rootDir,
     )
   ) {
+    options.context.onInputError?.(
+      options.fromConfigPath,
+      new TsconfigInputError(
+        `Solution membership target is missing or is not an ordinary config: ${options.referencePath}`,
+      ),
+    );
     return;
   }
   const targetChecker = resolveReferenceOwner(options);
@@ -115,6 +123,7 @@ function collectSolutionReferences(options: ConfigVisit): string[] {
   const references = collectReferencePathInfosForConfig(
     options.config.rootDir,
     options.sourceConfigPath,
+    options.config.virtualFiles,
   );
   options.problems.push(...references.problems);
   const sourceConfigPaths: string[] = [];
@@ -229,7 +238,11 @@ export function collectCheckerSourceConfigModules(options: ConfigVisit): void {
     return;
   }
   const packageRootDir = registerSourceConfig(options);
-  collectParsedSourceConfig({ options, packageRootDir });
+  try {
+    collectParsedSourceConfig({ options, packageRootDir });
+  } catch (error) {
+    reportInputError(options, error);
+  }
 }
 
 function collectParsedSourceConfig(options: {
@@ -257,4 +270,17 @@ function collectParsedSourceConfig(options: {
     packageRootDir: options.packageRootDir,
     visit: options.options,
   });
+}
+
+function isConfigInputError(error: unknown): error is Error {
+  return (
+    error instanceof TypeScriptConfigInputError ||
+    error instanceof TsconfigInputError
+  );
+}
+
+function reportInputError(options: ConfigVisit, error: unknown): void {
+  if (!options.onInputError) throw error;
+  if (!isConfigInputError(error)) throw error;
+  options.onInputError(options.sourceConfigPath, error);
 }

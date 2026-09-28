@@ -146,6 +146,8 @@ function formatInvalidEntryError(options: {
   ].join('\n');
 }
 
+export class CheckerEntryInputError extends Error {}
+
 function assertValidEntryPaths(options: {
   checkerName: string;
   entryPaths: readonly string[];
@@ -156,7 +158,7 @@ function assertValidEntryPaths(options: {
   );
 
   if (invalidEntryPaths.length > 0) {
-    throw new Error(
+    throw new CheckerEntryInputError(
       formatInvalidEntryError({
         checkerName: options.checkerName,
         invalidEntryPaths,
