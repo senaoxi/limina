@@ -1,0 +1,19 @@
+# Standalone repository migration
+
+[English](./migration.md) | [简体中文](./zh/migration.md)
+
+Status: local migration is complete under the declared Logaria dependency in the monorepo layout. Cold bootstrap, full local checks, external packed consumers and special-path/cwd tests passed on macOS arm64 / Node 24.21.0 / pnpm 11.9.0; the independent five-tuple Vue matrix also passed locally. Full independent migration and remote platform acceptance remain open. Historical results in inherited records are not results of this migration run.
+
+The source is docs-islands commit `c09e12c1ef12f89e927cce4c41e714ee0539ada6`. The target is `/Users/chenjiaxiang/Project/limina`, branch `codex/limina-migration`. The target's existing `.git` and `git@github.com:senaoxi/limina.git` origin are preserved. The primary source checkout has unrelated pending changes; migration inputs come only from the fixed clean baseline.
+
+History was filtered in a dedicated fresh clone with git-filter-repo 2.47.0 (`a40bce548d2c`), retaining the product's original path before a mechanical root move. The maintainer then selected a monorepo with a private root and nested product; a subsequent move returns the product to `packages/limina` without rewriting imported history. Only baseline-reachable `limina/v*` tags were imported. Rewriting changes commit/tag identities and removes signatures; old signatures do not authenticate new objects. [Commit mapping](../../migration/commit-map), [tag mapping](../../migration/tag-map.json) and [shared asset provenance](../../migration/imports.json) preserve the origin. Shared assets are snapshot imports, not independently reconstructed history.
+
+The declared temporary Logaria links are the only permitted old-repository build dependency. Existing Logaria output is consumed without modification, rebuilding or publication. This gate distinguishes local bootstrap from full independence.
+
+Reproduction and command logs are in `/Users/chenjiaxiang/Project/dev-server-repo/repros/limina-monorepo-migration/`. The three adversarial rounds cover cold bootstrap and a missing-Logaria negative control, external packed consumers, and path/cwd/platform behavior. Native platforms and Node versions not actually run must remain unverified. See [validation record](../../migration/VALIDATION.md) for actual outcomes.
+
+Publication and deployment remain closed. Before release: approve independent Logaria consumption; pass clean independent installation and the full remote CI matrix; select an unpublished version; verify npm trusted publisher, workflow and `Release` environment; freeze old publication authority before enabling new publication. Historical tags must not publish automatically. Release scripts target only `packages/limina/dist` with matching package/version/tag. Historical changelog entries retain their original links; commit-map-aware new entries distinguish old and new repository history.
+
+Vercel configuration prepares base `/` and output `docs/.vitepress/dist`; `DOCS_ORIGIN`, project association and deployment authority remain undecided. Keep the current public documentation URL until deployment is approved and validated. Afterwards migrate old consumers to an approved registry version, honor release age/trust, remove old source and Nx/release ownership, validate the old repository, then redirect the old bilingual documentation routes including assets, query parameters and anchors.
+
+Before publication, rollback means stopping the cutover and retaining the old repository. After publication, roll back consumer versions, documentation routes and workflows separately; do not overwrite published versions, unpublish or force-push history.
