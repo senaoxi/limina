@@ -1,0 +1,553 @@
+{
+  "source_repository": "https://github.com/XiSenao/docs-islands",
+  "source_commit": "a6f79bcb4528098f7bbf8c9f309216f176ffa826",
+  "source_parent": "c09e12c1ef12f89e927cce4c41e714ee0539ada6",
+  "files": [
+    {
+      "status": "M",
+      "source": ".agents/docs/limina-invariants.md",
+      "target": ".agents/docs/limina-invariants.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": ".agents/docs/limina-lifecycle.md",
+      "target": ".agents/docs/limina-lifecycle.md",
+      "source_bytes_match": false
+    },
+    {
+      "status": "M",
+      "source": ".agents/docs/zh/limina-invariants.md",
+      "target": ".agents/docs/zh/limina-invariants.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": ".agents/docs/zh/limina-lifecycle.md",
+      "target": ".agents/docs/zh/limina-lifecycle.md",
+      "source_bytes_match": false
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/docs/en/cli.md",
+      "target": "docs/en/cli.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/docs/en/config/regions.md",
+      "target": "docs/en/config/regions.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/docs/en/workflows.md",
+      "target": "docs/en/workflows.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/docs/zh/cli.md",
+      "target": "docs/zh/cli.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/docs/zh/config/regions.md",
+      "target": "docs/zh/config/regions.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/docs/zh/workflows.md",
+      "target": "docs/zh/workflows.md",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/integration/tests/migration.spec.ts",
+      "target": "packages/limina/integration/tests/migration.spec.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/rolldown.config.ts",
+      "target": "packages/limina/rolldown.config.ts",
+      "source_bytes_match": false
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/__tests__/config.spec.ts",
+      "target": "packages/limina/src/__tests__/config.spec.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/__tests__/migration-config-edit.spec.ts",
+      "target": "packages/limina/src/__tests__/migration-config-edit.spec.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/__tests__/migration-topology.spec.ts",
+      "target": "packages/limina/src/__tests__/migration-topology.spec.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/__tests__/migration.spec.ts",
+      "target": "packages/limina/src/__tests__/migration.spec.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/checker/project-base.ts",
+      "target": "packages/limina/src/checker/project-base.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/cli/register/setup.ts",
+      "target": "packages/limina/src/cli/register/setup.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/command.ts",
+      "target": "packages/limina/src/commands/migration/command.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/commit-groups.ts",
+      "target": "packages/limina/src/commands/migration/commit-groups.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/config-edit.ts",
+      "target": "packages/limina/src/commands/migration/config-edit.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/config-syntax.ts",
+      "target": "packages/limina/src/commands/migration/config-syntax.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "D",
+      "source": "packages/limina/src/commands/migration/declaration-dir.ts",
+      "target": "packages/limina/src/commands/migration/declaration-dir.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/declarations.ts",
+      "target": "packages/limina/src/commands/migration/declarations.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/discovery.ts",
+      "target": "packages/limina/src/commands/migration/discovery.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "D",
+      "source": "packages/limina/src/commands/migration/entries.ts",
+      "target": "packages/limina/src/commands/migration/entries.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "D",
+      "source": "packages/limina/src/commands/migration/errors.ts",
+      "target": "packages/limina/src/commands/migration/errors.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/execution-groups.ts",
+      "target": "packages/limina/src/commands/migration/execution-groups.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/execution.ts",
+      "target": "packages/limina/src/commands/migration/execution.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/git.ts",
+      "target": "packages/limina/src/commands/migration/git.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/interactions.ts",
+      "target": "packages/limina/src/commands/migration/interactions.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/inventory.ts",
+      "target": "packages/limina/src/commands/migration/inventory.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/jsonc-validation.ts",
+      "target": "packages/limina/src/commands/migration/jsonc-validation.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/membership-expansion.ts",
+      "target": "packages/limina/src/commands/migration/membership-expansion.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/membership-state.ts",
+      "target": "packages/limina/src/commands/migration/membership-state.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/membership.ts",
+      "target": "packages/limina/src/commands/migration/membership.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/output-adoption.ts",
+      "target": "packages/limina/src/commands/migration/output-adoption.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/patch-plan.ts",
+      "target": "packages/limina/src/commands/migration/patch-plan.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/planner.ts",
+      "target": "packages/limina/src/commands/migration/planner.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/planning-state.ts",
+      "target": "packages/limina/src/commands/migration/planning-state.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/relation-plan.ts",
+      "target": "packages/limina/src/commands/migration/relation-plan.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/targets.ts",
+      "target": "packages/limina/src/commands/migration/targets.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/text-transform.ts",
+      "target": "packages/limina/src/commands/migration/text-transform.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/transform.ts",
+      "target": "packages/limina/src/commands/migration/transform.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/commands/migration/types.ts",
+      "target": "packages/limina/src/commands/migration/types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/verification.ts",
+      "target": "packages/limina/src/commands/migration/verification.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/commands/migration/verify-process.ts",
+      "target": "packages/limina/src/commands/migration/verify-process.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/config/root-types.ts",
+      "target": "packages/limina/src/config/root-types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/config/runtime.ts",
+      "target": "packages/limina/src/config/runtime.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/config/schema/regions.ts",
+      "target": "packages/limina/src/config/schema/regions.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/auto-checker-project.ts",
+      "target": "packages/limina/src/core/build-graph/auto-checker-project.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/auto-checker-types.ts",
+      "target": "packages/limina/src/core/build-graph/auto-checker-types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/checker-ownership-evidence-project.ts",
+      "target": "packages/limina/src/core/build-graph/checker-ownership-evidence-project.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts",
+      "target": "packages/limina/src/core/build-graph/checker-ownership-pending-facts.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/generated/compiler-target.ts",
+      "target": "packages/limina/src/core/build-graph/generated/compiler-target.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/generated/config-reader-basics.ts",
+      "target": "packages/limina/src/core/build-graph/generated/config-reader-basics.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/governed-sources.ts",
+      "target": "packages/limina/src/core/build-graph/governed-sources.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/graph-validation.ts",
+      "target": "packages/limina/src/core/build-graph/graph-validation.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/core/build-graph/input-topology.ts",
+      "target": "packages/limina/src/core/build-graph/input-topology.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/prepare-state.ts",
+      "target": "packages/limina/src/core/build-graph/prepare-state.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/prepare.ts",
+      "target": "packages/limina/src/core/build-graph/prepare.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/reference-import-types.ts",
+      "target": "packages/limina/src/core/build-graph/reference-import-types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/reference-imports.ts",
+      "target": "packages/limina/src/core/build-graph/reference-imports.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/reference-inference.ts",
+      "target": "packages/limina/src/core/build-graph/reference-inference.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/reference-recording.ts",
+      "target": "packages/limina/src/core/build-graph/reference-recording.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/source-config-analysis.ts",
+      "target": "packages/limina/src/core/build-graph/source-config-analysis.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/source-config-collection-types.ts",
+      "target": "packages/limina/src/core/build-graph/source-config-collection-types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/source-config-collection.ts",
+      "target": "packages/limina/src/core/build-graph/source-config-collection.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/source-projects.ts",
+      "target": "packages/limina/src/core/build-graph/source-projects.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/build-graph/types.ts",
+      "target": "packages/limina/src/core/build-graph/types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/checkers/entry-selection.ts",
+      "target": "packages/limina/src/core/checkers/entry-selection.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/import-graph/project-types.ts",
+      "target": "packages/limina/src/core/import-graph/project-types.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/project-dependencies/context.ts",
+      "target": "packages/limina/src/core/project-dependencies/context.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/project-dependencies/contracts.ts",
+      "target": "packages/limina/src/core/project-dependencies/contracts.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/project-dependencies/identity.ts",
+      "target": "packages/limina/src/core/project-dependencies/identity.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/project-dependencies/provider.ts",
+      "target": "packages/limina/src/core/project-dependencies/provider.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/tsconfig/config-paths.ts",
+      "target": "packages/limina/src/core/tsconfig/config-paths.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "A",
+      "source": "packages/limina/src/core/tsconfig/input-identity.ts",
+      "target": "packages/limina/src/core/tsconfig/input-identity.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/tsconfig/reference-paths.ts",
+      "target": "packages/limina/src/core/tsconfig/reference-paths.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/type-evidence/resolution.ts",
+      "target": "packages/limina/src/core/type-evidence/resolution.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/type-evidence/typescript-provider.ts",
+      "target": "packages/limina/src/core/type-evidence/typescript-provider.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/admission.ts",
+      "target": "packages/limina/src/core/typescript-semantic/admission.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/context.ts",
+      "target": "packages/limina/src/core/typescript-semantic/context.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/contracts.ts",
+      "target": "packages/limina/src/core/typescript-semantic/contracts.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/effective-roots.ts",
+      "target": "packages/limina/src/core/typescript-semantic/effective-roots.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/host.ts",
+      "target": "packages/limina/src/core/typescript-semantic/host.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/identity.ts",
+      "target": "packages/limina/src/core/typescript-semantic/identity.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/typescript-semantic/project-references.ts",
+      "target": "packages/limina/src/core/typescript-semantic/project-references.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/workspace/validated-context.ts",
+      "target": "packages/limina/src/core/workspace/validated-context.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/workspace/validated/create.ts",
+      "target": "packages/limina/src/core/workspace/validated/create.ts",
+      "source_bytes_match": true
+    },
+    {
+      "status": "M",
+      "source": "packages/limina/src/core/workspace/validated/exclusions.ts",
+      "target": "packages/limina/src/core/workspace/validated/exclusions.ts",
+      "source_bytes_match": true
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import { runInit } from '../../commands/init';
 import { runMigration } from '../../commands/migration';
 import { loadMigrationConfig } from '../command-runtime';
 import { createCliFlow, runCliFlowWithCleanup } from '../flow';
+import { parseConfigLoader } from '../parse';
 import type { InitFlags, MigrationFlags } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -26,8 +27,13 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
     async () => {
       flow.intro('limina migration');
       const config = await loadMigrationConfig(flags);
-      await runMigration(config, { flow, flowDepth: 1 });
-      return true;
+      const result = await runMigration(config, {
+        flow,
+        flowDepth: 1,
+        configLoader: parseConfigLoader(flags.configLoader),
+        mode: flags.mode,
+      });
+      return result.inputConsumable && result.incompleteFiles.length === 0;
     },
   );
   if (!passed) process.exitCode = 1;

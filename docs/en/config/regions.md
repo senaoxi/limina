@@ -3,7 +3,7 @@
 `regions` defines which package scopes belong to the current Limina run. It is a structural boundary: it decides where package ownership, checker discovery, source analysis, generated graphs, and dependency authority apply.
 
 ::: warning
-`regions.exclude` does not replace `config.source.exclude`. Checker-level `exclude` is still required for individual checker entries inside an activated region. Paths belonging to an excluded or inaccessible region are outside checker `include` discovery by construction, so do not duplicate those paths in checker `exclude`. Use `regions` when an entire activated package or recognized package scope must stay outside the current run.
+`regions.exclude` does not replace `config.source.exclude`. Package kinds remove package authority; checker `exclude` only changes entry selection. Use the exact `tsconfig` kind to isolate a config before output declarations are read, while leaving its package activated. It does not hide source files or make incoming references valid; migration must also prune those relations.
 :::
 
 ```ts
@@ -13,7 +13,7 @@ interface RegionsConfig {
 }
 
 interface RegionExcludeConfig {
-  kind: 'workspace-package' | 'package-scope';
+  kind: 'workspace-package' | 'package-scope' | 'tsconfig';
   include: string[];
   reason: string;
 }
@@ -77,13 +77,13 @@ Automatic checker discovery does not descend into stopped boundaries. If an expl
 
 An ancestor boundary never prevents an activated descendant package from starting its own island. Visibility is therefore owner-local: a parent cannot read descriptors behind its nested workspace or activated-child boundary, while a separately activated descendant can still govern its own files. Default source and automatic checker discovery run once per package island, including external activated packages.
 
-Before any source, proof, graph, checker, migration, package, release, or artifact-producing work starts, `workspace:validate` builds this activated package index. It rejects structural ambiguity before owner lookup is constructed:
+Before source, proof, graph, checker, package, release, or artifact-producing work starts, `workspace:validate` builds this activated package index. It rejects structural ambiguity before owner lookup is constructed:
 
 - a non-root package that remains activated after `workspace-package` exclusions and also declares another workspace root reports `LIMINA_WORKSPACE_REGION_OVERLAP`;
 - two lexical package roots that resolve to the same physical directory report `LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT`;
 - unsafe output ownership and non-stable output visibility report `LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID` or `LIMINA_WORKSPACE_OUTPUT_CYCLE`.
 
-These are workspace validation errors. Invalid package regions do not participate in ownership, source discovery, generated graphs, migration, package selection, release selection, or artifact generation.
+Migration uses the same package authority checks, but can inventory unreadable configs before final output validation to plan normalization and isolation. These are workspace validation errors. Invalid package regions do not participate in ownership, source discovery, generated graphs, migration, package selection, release selection, or artifact generation.
 
 ## extendNestedPackageScopes
 
@@ -111,16 +111,32 @@ An extended package scope does not become a new source owner. Its source continu
 
 Every rule requires `kind`, a non-empty `include` array, and a non-empty `reason`. There is no kind inference or legacy kind-less form.
 
-`include` patterns match only config-root-relative lexical candidate root directories. They may use `../` for activated packages outside `config.rootDir`. They do not match package names, `package.json` paths, `pnpm-workspace.yaml` paths, canonical filesystem paths, or arbitrary files. For a package or package-scope root at `packages/app/fixtures/local`, select the root with `packages/app/fixtures/local` or a root glob such as `packages/**/fixtures/**`; `**/package.json` does not select it.
+For `workspace-package` and `package-scope`, `include` patterns match only config-root-relative lexical candidate root directories. They may use `../` for activated packages outside `config.rootDir`. They do not match package names, `package.json` paths, `pnpm-workspace.yaml` paths, canonical filesystem paths, or arbitrary files. For a package or package-scope root at `packages/app/fixtures/local`, select the root with `packages/app/fixtures/local` or a root glob such as `packages/**/fixtures/**`; `**/package.json` does not select it.
 
-Each of the two kinds has one candidate set:
+Each package kind has one candidate set:
 
 - `workspace-package` selects exact package-root candidates from the complete raw membership of the selected governance root, including a single-package root. Limina validates these rules before overlap checks, then removes each matched package from ownership, dependency authority, source and checker discovery, and generated graphs. A matched parent does not cascade to unmatched activated descendants; match every descendant explicitly when that is intended. Use `include: ['.']` to exclude only the root package when it is activated; this does not exclude the workspace or other activated packages. Explicit `package.entries` remain independent artifact entries and are not deleted by this rule.
 - `package-scope` selects nested `package.json` roots. It covers both eligible extended scopes and scopes where governance already stops. An excluded scope and all descendants stay outside the current run.
 
 A rule is matched only against candidates of the same kind. A directory that is both an activated package and a nested package scope therefore keeps those identities separate.
 
-Every rule must match at least one candidate of its declared kind. `workspace-package` rules are validated against the complete raw package candidate set before activation and overlap validation. `package-scope` rules are validated after nested descriptor and output visibility stabilizes. Descriptor paths, fixed discovery ignores such as `node_modules`, `.git`, `.limina`, and configured output directories, and paths belonging only to another kind cannot satisfy a rule. Multiple rules may not match the same candidate; make their patterns non-overlapping instead of relying on array order.
+Every package-kind rule must match at least one candidate of its declared kind. `workspace-package` rules are validated against the complete raw package candidate set before activation and overlap validation. `package-scope` rules are validated after nested descriptor and output visibility stabilizes. Descriptor paths, fixed discovery ignores such as `node_modules`, `.git`, `.limina`, and configured output directories, and paths belonging only to another kind cannot satisfy a rule. Multiple rules may not match the same candidate; make their patterns non-overlapping instead of relying on array order.
+
+### Exact tsconfig exclusion
+
+`kind: 'tsconfig'` takes exact config-root-relative `tsconfig.json` or `tsconfig.*.json` file paths. It accepts `../` but not directory/glob selectors. Matching uses the projected canonical file identity, before output declarations and descriptor stability. It removes only matching config descriptors; package activation and source-file authority remain unchanged. Missing excluded files remain harmless, so deleting an isolated broken file does not invalidate its exclusion. Package-kind candidate-match and overlap rules do not apply to this kind.
+
+```js
+regions: {
+  exclude: [{
+    kind: 'tsconfig',
+    include: ['packages/app/tools/tsconfig.json'],
+    reason: 'This config cannot be parsed; its incoming memberships were pruned.',
+  }],
+}
+```
+
+The example does not exclude `packages/app`, sibling configs, or files under `tools`. A surviving solution reference to the excluded file is still an input problem. See [migration](../cli.md#limina-migration) for persistence and dynamic-config limitations.
 
 ## Path Coordinates and Output Safety
 

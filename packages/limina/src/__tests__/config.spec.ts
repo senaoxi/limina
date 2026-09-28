@@ -3237,3 +3237,42 @@ export default {};
     }
   });
 });
+
+describe('exact tsconfig region exclusions', () => {
+  it('accepts exact default and named config files without interpreting package selectors', () => {
+    expect(() =>
+      validateLiminaConfig({
+        regions: {
+          exclude: [
+            {
+              kind: 'tsconfig',
+              include: [
+                'packages/app/tsconfig.json',
+                '../external/tsconfig.lib.json',
+              ],
+              reason: 'Unreadable config input',
+            },
+          ],
+        },
+      }),
+    ).not.toThrow();
+  });
+  it.each(['packages/app', 'packages/*/tsconfig.json', 'packages/app/*.json'])(
+    'rejects non-exact tsconfig selector %s',
+    (include) => {
+      expect(() =>
+        validateLiminaConfig({
+          regions: {
+            exclude: [
+              {
+                kind: 'tsconfig',
+                include: [include],
+                reason: 'invalid selector',
+              },
+            ],
+          },
+        }),
+      ).toThrow('exact tsconfig');
+    },
+  );
+});

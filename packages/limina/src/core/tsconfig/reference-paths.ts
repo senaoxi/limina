@@ -193,7 +193,11 @@ export function getRawReferencePaths(
   config: ResolvedLiminaConfig,
   configPath: string,
 ): string[] {
-  return getRawReferencePathsForConfig(config.rootDir, configPath);
+  return collectReferencePathInfosForConfig(
+    config.rootDir,
+    configPath,
+    config.virtualFiles,
+  ).references.map((reference) => reference.resolvedPath);
 }
 
 export function getRawReferencePathsForConfig(

@@ -70,7 +70,7 @@ async function findGitWorktreeRoot(targetPath: string): Promise<string> {
 }
 
 export async function collectMigrationWorktreeRoots(
-  targets: readonly MigrationTarget[],
+  targets: readonly Pick<MigrationTarget, 'configPath'>[],
 ): Promise<string[]> {
   const rootsByCanonicalIdentity = new Map<string, string>();
 

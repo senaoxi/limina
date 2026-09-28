@@ -2,6 +2,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import type ts from 'typescript';
 import type { ImportRecord } from '../import-analysis/records';
+import { configInputIdentity } from '../tsconfig/input-identity';
 import type { TypeScriptSemanticProject } from './contracts';
 import { createImportRecordIdentity } from './import-record';
 
@@ -27,6 +28,7 @@ export function createTypeScriptSemanticContextIdentity(
     adapterVersion: 'bounded-typescript-semantic-v4-scope-evidence',
     admissionMode: project.admissionMode ?? 'full-program',
     configPath: normalizeAbsolutePath(project.configPath),
+    virtualFiles: configInputIdentity(project.virtualFiles),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
     options: project.options,
     projectReferences: (project.projectReferences ?? []).map(
@@ -44,6 +46,7 @@ export function createTypeScriptProjectDependencyFactsIdentity(
     adapterVersion: 'typescript-project-dependency-facts-v3-scope-evidence',
     workspaceSourceBoundary: project.workspaceSourceBoundary.identity,
     configPath: normalizeAbsolutePath(project.configPath),
+    virtualFiles: configInputIdentity(project.virtualFiles),
     fileNames: project.fileNames.map(normalizeAbsolutePath),
     options: project.options,
     projectReferences: (project.projectReferences ?? []).map(

@@ -6,6 +6,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
+import { configInputIdentity } from '../tsconfig/input-identity';
 import type { TypeEvidenceCore } from '../type-evidence';
 import type {
   TypeScriptSemanticContext,
@@ -289,5 +290,6 @@ function createPendingCacheKey(options: CollectPendingOptions): string {
     fileNames: options.project.filePartition.typescriptFiles,
     generation: options.projectConfigCache?.generation ?? 0,
     references: options.project.references,
+    virtualFiles: configInputIdentity(options.project.virtualFiles),
   });
 }
