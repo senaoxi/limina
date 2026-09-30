@@ -19,7 +19,7 @@
 
 - **Discovery guard**：`governance-root.spec.ts` 挑战配置选择、最近 manifest fail-fast、祖先独立性、共享根 manifest 内容、workspace manager 必需与 single manager 可选。`workspace-discovery.spec.ts` 保留同根 descriptor 优先级、显式 manager 优先、所消费声明投影、manager-specific selection 和 lexical alias。`single-package-knip.spec.ts` 将 validated canonical identity 贯通无名称 dependency/owner 匹配，并拒绝重复物理根。即使 manager identity 缺失或开启 nameless-scope extension，嵌套 workspace 声明仍是 hard cut。兼容边界见[发现 authority](./limina-system-model.md#工作区发现-authority)。
 
-**Migration 输入守卫**：精确 `tsconfig` 排除在 outputs 声明读取前生效，不改变 package 激活。可选 outputs 试加入复用完整 reader，保护入口、managed source 与每个 solution 的可达集合；仅 descriptor 数量不能授予接受资格。[Migration 拓扑测试](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)与[新进程 CLI 覆盖](../../../packages/migrate/integration/tests/migration.spec.ts)覆盖自隐藏和稳定隐藏正常成员。完整行为归[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)所有。
+**Migration 输入守卫**：精确 `tsconfig` 排除在 outputs 声明读取前生效，不改变 package 激活。可选 outputs 试加入复用完整 reader，保护入口、managed source 与每个 solution 的可达集合；仅 descriptor 数量不能授予接受资格。[Migration 拓扑测试](../../../packages/migrate/src/__tests__/migration-topology.spec.ts)与[新进程 CLI 覆盖](../../../packages/migrate/integration/tests/migration.spec.ts)覆盖自隐藏、稳定隐藏正常成员、缺源码保留、空输入隔离、域外目标内容／路径探测规避及 solution 声明展开。输入消费只验证声明可读与激活范围，checker mapping 留给正常语义分析。完整行为归[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)所有。
 
 ## I02 — semantic authority 不随 final checker owner 改写
 
@@ -112,7 +112,7 @@
 - **Evidence / Strength / Confidence**：[preflight tests](../../../packages/limina/src/__tests__/preflight.spec.ts)、[context tests](../../../packages/limina/src/__tests__/typescript-semantic-context.spec.ts)；**Partially executable / Confirmed**。
 - **Boundaries**：外部复用 caches 必须尊重 lifecycle；key 没有普遍 file-content digest；manager ensure-after-dispose 没有统一 guard；Vue active slot 的共享模式另见生命周期页。
 
-**规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。
+**规划输入 identity**：Migration 配置 overlay 纳入 semantic/provider cache identity，并贯穿 parser、ownership 与 TypeScript host。原生 reference 清单与规范化 source 输入上的推导相分离。Outputs 试加入只在封闭 reader 内复用单次发现快照，重新验证候选输出与物理 authority；末次规划和磁盘消费重新发现。已读取的 manifest 与 workspace descriptor 也纳入写入前漂移检查。这是 generation 内的输入边界，不是持久 read-view runtime；见[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。
 
 ## I10 — mutation 权限不能从路径字符串推导
 
@@ -125,7 +125,7 @@
 - **Evidence / Strength / Confidence**：[mutation tests](../../../packages/limina/src/__tests__/mutation-boundary.spec.ts)、[materialization recovery](../../../packages/limina/src/__tests__/materialization-recovery.spec.ts)；**Strongly executable / Confirmed**。
 - **Boundaries**：raw external build、export 用户文件和 migration 是不同 writer contract；不能推广成所有写入经过同一个 namespace，或绝无 OS race。
 
-**Migration 写入边界**：冻结补丁使用隔离的一致性组及既有物理 identity/rollback 守卫。Report 发布失败绝不回滚已提交配置。接入成功还要求新进程消费实际磁盘拓扑；必要写入失败即使伴随其他组成功，也仍为未完成。见[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。
+**Migration 写入边界**：冻结补丁使用隔离的一致性组及既有物理 identity/rollback 守卫。Report 发布失败绝不回滚已提交配置。接入成功还要求新进程消费实际磁盘拓扑；必要写入失败即使伴随其他组成功，也仍为未完成。分析不完整与可消费性分别报告；异常尝试尽可能发布失败审计，不能回退成旧成功。见[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。
 
 ## I11 — artifact 发布失败留下可识别的不完整状态
 

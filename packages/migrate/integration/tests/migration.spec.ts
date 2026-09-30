@@ -47,6 +47,11 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
     }),
     'packages/app/generated/tsconfig.lib.json': json({ files: ['index.ts'] }),
     'packages/app/generated/index.ts': 'export const member = 1;',
+    'packages/app/client/tsconfig.json': json({
+      files: ['index.ts'],
+      references: [{ path: '../generated' }],
+    }),
+    'packages/app/client/index.ts': 'export {};',
   };
   const git = (arguments_: string[]) =>
     promisify(execFile)('git', arguments_, { cwd: rootDirectory });
@@ -95,6 +100,15 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
     await commit();
     const migration = await cli(['migration']);
     expect(migration.code, migration.stdout + migration.stderr).toBe(0);
+    expect(migration.stdout).toContain('isolated configs: 1');
+    expect(migration.stdout).toContain('audit:');
+    const client = JSON.parse(
+      await readFile(locate('packages/app/client/tsconfig.json'), 'utf8'),
+    );
+    expect(client.references).toBeUndefined();
+    expect(client.liminaOptions.implicitRefs).toEqual([
+      expect.objectContaining({ path: '../generated/tsconfig.lib.json' }),
+    ]);
     for (const producer of ['tool', 'producer']) {
       const configText = await readFile(
         locate(`packages/app/${producer}/tsconfig.json`),
@@ -117,6 +131,7 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
         .map((config) => config.config)
         .sort((left, right) => Number(left > right) - Number(left < right)),
     ).toEqual([
+      'packages/app/client/tsconfig.json',
       'packages/app/generated/tsconfig.lib.json',
       'packages/app/producer/tsconfig.json',
       'packages/app/tool/tsconfig.json',

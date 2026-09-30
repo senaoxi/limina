@@ -58,10 +58,16 @@ function expand(
   const target = resolveReferencePath(context.from, edge.path);
   if (!isExpandable(state, target)) return [{ ...edge }];
   assertPlainWrapper(state, edge, target);
-  if (context.visiting.has(target))
-    throw new MigrationInputError(
-      `Named-wrapper membership cycle requires manual conversion: ${target}`,
-    );
+  if (context.visiting.has(target)) {
+    state.records.push({
+      configPath: context.from,
+      kind: 'removed-named-cycle-edge',
+      original: edge,
+      message: 'Cut a wrapper back edge while expanding its source members.',
+      details: { target },
+    });
+    return [];
+  }
   const visiting = new Set(context.visiting).add(target);
   return state.edges
     .get(target)!

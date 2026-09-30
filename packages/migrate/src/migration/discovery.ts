@@ -5,6 +5,7 @@ import {
   collectValidatedWorkspaceContext,
   collectWorkspaceInputSnapshot,
   excludeTsconfigDescriptors,
+  isOrdinarySourceTypecheckConfigPath,
   LiminaStructuredError,
   resolveStableDescriptors,
   TsconfigInputError,
@@ -50,7 +51,9 @@ export async function discover(
     return [
       ...(await collectValidatedWorkspaceContext({ config, rawPackages }))
         .sourceConfigPaths,
-    ];
+    ].filter((file) =>
+      isOrdinarySourceTypecheckConfigPath(file, config.rootDir),
+    );
   } catch (error) {
     assertRecoverableOutputFailure(error);
     const snapshot = await collectWorkspaceInputSnapshot({
@@ -74,7 +77,11 @@ export async function discover(
         candidates: snapshot.islands.universe,
       }),
     })
-      .candidates.filter((candidate) => candidate.kind === 'tsconfig')
+      .candidates.filter(
+        (candidate) =>
+          candidate.kind === 'tsconfig' &&
+          isOrdinarySourceTypecheckConfigPath(candidate.path, config.rootDir),
+      )
       .map((candidate) => candidate.path)
       .sort((left, right) => Number(left > right) - Number(left < right));
   }

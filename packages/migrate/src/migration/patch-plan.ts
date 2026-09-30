@@ -97,11 +97,31 @@ export async function freezePatches(
   topology: InputTopologyResult,
   membershipChanges: ReadonlySet<string>,
 ): Promise<MigrationWritePlanItem[][]> {
-  const files = [...new Set([...topology.sources, ...topology.solutions])];
+  const files = [
+    ...new Set([
+      ...topology.sources,
+      ...topology.solutions,
+      ...retainedCandidatePaths(state, topology, membershipChanges),
+    ]),
+  ];
   const patches = files
     .map((file) => sourcePatch(state, file))
     .filter((item) => item !== undefined);
   const configPatch = await exclusionPatch(state);
   if (configPatch) patches.push(configPatch);
   return createCommitGroups(state, patches, membershipChanges);
+}
+
+function retainedCandidatePaths(
+  state: MigrationPlanningState,
+  topology: InputTopologyResult,
+  membershipChanges: ReadonlySet<string>,
+): string[] {
+  if (!topology.workspace) return [];
+  return [
+    ...membershipChanges,
+    ...state.objects
+      .keys()
+      .filter((file) => !state.targets.get(file)!.isTypeScriptSolution),
+  ];
 }

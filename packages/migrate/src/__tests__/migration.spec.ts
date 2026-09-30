@@ -676,11 +676,11 @@ describe('runMigration', () => {
     }
   });
 
-  it('uses canonical island visibility and skips only the reachable hardlink config', async () => {
+  it('uses canonical island visibility and keeps shared hardlink identity when skipped', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'storage/tsconfig.json': json({
-        $schema: nestedPackageSchemaPath,
+        $schema: '../node_modules/limina/schemas/tsconfig-schema.json',
         include: ['src/**/*.ts'],
         liminaOptions: {
           outputs: {
@@ -720,10 +720,18 @@ describe('runMigration', () => {
       await commitFixture(fixture.rootDir);
       const beforeMtime = (await stat(sourcePath, { bigint: true })).mtimeNs;
 
-      const result = await runMigration(config);
+      const result = await runMigration(config, {
+        selectHardlinkStrategy: async () => 'skip',
+      });
 
       expect(result.modifiedFiles).toEqual([]);
-      expect(result.skippedFiles).toEqual(toPortablePaths([hardlinkPath]));
+      expect(result.skippedFiles).toEqual(
+        expect.arrayContaining(toPortablePaths([sourcePath, hardlinkPath])),
+      );
+      expect(result.skippedFiles).toHaveLength(2);
+      expect(result.hardlinkSkippedFiles).toEqual(
+        toPortablePaths([hardlinkPath]),
+      );
       expect((await stat(sourcePath, { bigint: true })).mtimeNs).toBe(
         beforeMtime,
       );
@@ -959,12 +967,14 @@ describe('runMigration', () => {
     try {
       await commitFixture(fixture.rootDir);
       const baseBefore = await readFile(basePath);
-      const midBefore = await readFile(midPath);
       await expect(runMigration(config)).resolves.toMatchObject({
-        modifiedFiles: toPortablePaths([leafPath]),
+        modifiedFiles: toPortablePaths([leafPath, midPath]),
       });
       await expect(readFile(basePath)).resolves.toEqual(baseBefore);
-      await expect(readFile(midPath)).resolves.toEqual(midBefore);
+      await expect(readJson(midPath)).resolves.toEqual({
+        $schema: rootSchemaPath,
+        extends: './tsconfig.base.json',
+      });
       await expect(
         readJson<Record<string, unknown>>(leafPath),
       ).resolves.toEqual({
@@ -1096,7 +1106,10 @@ describe('runMigration', () => {
       await commitFixture(fixture.rootDir);
       await expect(runMigration(config)).resolves.toMatchObject({
         checkerEntryCount: 1,
-        modifiedFiles: toPortablePaths([solutionPath]),
+        modifiedFiles: [
+          fixture.path('packages/app/tsconfig.json'),
+          fixture.path('packages/app/tsconfig.lib.json'),
+        ],
       });
       await expect(
         readJson<Record<string, unknown>>(solutionPath),
@@ -1146,13 +1159,15 @@ describe('runMigration', () => {
       'packages/app/tsconfig.lib.json',
     );
     const solutionBefore = await readFile(solutionPath);
-    const leafBefore = await readFile(leafPath);
 
     try {
       await commitFixture(fixture.rootDir);
       await expect(runMigration(config)).resolves.toMatchObject({
         checkerEntryCount: 1,
-        modifiedFiles: toPortablePaths([solutionPath]),
+        modifiedFiles: [
+          fixture.path('packages/app/tsconfig.json'),
+          fixture.path('packages/app/tsconfig.lib.json'),
+        ],
       });
       await expect(readFile(solutionPath)).resolves.not.toEqual(solutionBefore);
       await expect(
@@ -1161,7 +1176,10 @@ describe('runMigration', () => {
         include: ['src/**/*.vue'],
         compilerOptions: { declarationDir: './types' },
       });
-      await expect(readFile(leafPath)).resolves.toEqual(leafBefore);
+      await expect(readJson(leafPath)).resolves.toEqual({
+        $schema: nestedPackageSchemaPath,
+        include: ['src/**/*.ts'],
+      });
     } finally {
       await fixture.cleanup();
     }
@@ -1197,7 +1215,10 @@ describe('runMigration', () => {
       await commitFixture(fixture.rootDir);
       await expect(runMigration(config)).resolves.toMatchObject({
         checkerEntryCount: 1,
-        modifiedFiles: toPortablePaths([solutionPath]),
+        modifiedFiles: [
+          fixture.path('packages/app/tsconfig.json'),
+          fixture.path('packages/app/tsconfig.lib.json'),
+        ],
       });
       await expect(
         readJson<Record<string, unknown>>(solutionPath),
@@ -1367,7 +1388,7 @@ describe('runMigration', () => {
 
       expect(result.checkerEntryCount).toBe(1);
       expect(result.recursiveReferenceCount).toBe(2);
-      expect(result.modifiedFiles).toHaveLength(3);
+      expect(result.modifiedFiles).toHaveLength(4);
       expect(result.skippedFiles).toHaveLength(0);
       expect(solution).toMatchObject({
         $schema: nestedPackageSchemaPath,
@@ -1395,7 +1416,7 @@ describe('runMigration', () => {
         outDir: './test-dist',
         rootDir: './src',
       });
-      expect(ignored).not.toHaveProperty('$schema');
+      expect(ignored).toHaveProperty('$schema', nestedPackageSchemaPath);
     } finally {
       await fixture.cleanup();
     }
@@ -1512,17 +1533,17 @@ describe('runMigration', () => {
 
       expect(result.checkerEntryCount).toBe(1);
       expect(result.recursiveReferenceCount).toBe(0);
-      expect(result.modifiedFiles).toHaveLength(1);
+      expect(result.modifiedFiles).toHaveLength(2);
       expect(app.references).toBeUndefined();
       expect(app.compilerOptions).toEqual(originalApp.compilerOptions);
       expect(app.liminaOptions?.outputs).toBeUndefined();
-      expect(dependency).not.toHaveProperty('$schema');
+      expect(dependency).toHaveProperty('$schema', nestedPackageSchemaPath);
     } finally {
       await fixture.cleanup();
     }
   });
 
-  it('uses auto checker discovery without migrating excluded entries', async () => {
+  it('normalizes activated sources independently of checker entry exclusions', async () => {
     const fixture = await createFixture({
       'limina.config.mjs': 'export default {};\n',
       'packages/pkg/src/index.ts': 'export const value = 1;\n',
@@ -1564,9 +1585,9 @@ describe('runMigration', () => {
       );
 
       expect(result.checkerEntryCount).toBe(1);
-      expect(result.modifiedFiles).toHaveLength(1);
+      expect(result.modifiedFiles).toHaveLength(2);
       expect(migrated).toHaveProperty('$schema', nestedPackageSchemaPath);
-      expect(skipped).not.toHaveProperty('$schema');
+      expect(skipped).toHaveProperty('$schema', nestedPackageSchemaPath);
     } finally {
       await fixture.cleanup();
     }
