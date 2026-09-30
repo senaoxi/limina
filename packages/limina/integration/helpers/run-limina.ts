@@ -71,14 +71,17 @@ interface RunLiminaDependencies {
   finalWatchdogDelay: number;
   forceTerminationDelay: number;
   spawnChild: (options: RunLiminaOptions) => ChildProcess;
-  terminateProcessTree: (child: ChildProcess, force: boolean) => Promise<void>;
+  terminateProcessTree: (
+    child: ChildProcess,
+    isForce: boolean,
+  ) => Promise<void>;
 }
 
-function waitForTaskkill(pid: number, force: boolean): Promise<void> {
+function waitForTaskkill(pid: number, isForce: boolean): Promise<void> {
   return new Promise((resolve) => {
     const killer = spawn(
       'taskkill',
-      ['/pid', String(pid), '/t', ...(force ? ['/f'] : [])],
+      ['/pid', String(pid), '/t', ...(isForce ? ['/f'] : [])],
       {
         stdio: 'ignore',
         windowsHide: true,
@@ -92,18 +95,18 @@ function waitForTaskkill(pid: number, force: boolean): Promise<void> {
 
 async function terminateProcessTree(
   child: ChildProcess,
-  force: boolean,
+  isForce: boolean,
 ): Promise<void> {
   if (child.pid === undefined) {
     return;
   }
 
   if (process.platform === 'win32') {
-    await waitForTaskkill(child.pid, force);
+    await waitForTaskkill(child.pid, isForce);
     return;
   }
 
-  const signal: NodeJS.Signals = force ? 'SIGKILL' : 'SIGTERM';
+  const signal: NodeJS.Signals = isForce ? 'SIGKILL' : 'SIGTERM';
 
   try {
     process.kill(-child.pid, signal);
@@ -135,7 +138,7 @@ export function createLiminaSpawnSpec(
       cwd: options.cwd,
       detached: process.platform !== 'win32',
       env: {
-        ...(options.inheritParentEnv === false ? {} : process.env),
+        ...(options.inheritParentEnv !== false && process.env),
         CI: 'true',
         FORCE_COLOR: '0',
         ...options.env,
@@ -223,14 +226,6 @@ function runLiminaWithDependencies(
       completed: false,
       requested: false,
     };
-    let finalWatchdogTimer: NodeJS.Timeout | undefined;
-    let forceTimer: NodeJS.Timeout | undefined;
-    let timeoutTimer: NodeJS.Timeout | undefined;
-    let settled = false;
-    let stderr = '';
-    let stdout = '';
-    let timedOut = false;
-
     let child: ChildProcess;
     try {
       child = dependencies.spawnChild(options);
@@ -251,6 +246,14 @@ function runLiminaWithDependencies(
       );
       return;
     }
+
+    let finalWatchdogTimer: NodeJS.Timeout | undefined;
+    let forceTimer: NodeJS.Timeout | undefined;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    let isSettled = false;
+    let stderr = '';
+    let stdout = '';
+    let isTimedOut = false;
 
     const stdoutStream = child.stdout;
     const stderrStream = child.stderr;
@@ -275,11 +278,11 @@ function runLiminaWithDependencies(
     };
 
     const settle = (complete: () => void): void => {
-      if (settled) {
+      if (isSettled) {
         return;
       }
 
-      settled = true;
+      isSettled = true;
       clearTimers();
       stdoutStream.off('data', onStdout);
       stderrStream.off('data', onStderr);
@@ -288,26 +291,23 @@ function runLiminaWithDependencies(
       complete();
     };
 
-    const requestTermination = (
+    const requestTermination = async (
       status: TerminationStatus,
-      force: boolean,
-    ): void => {
+      isForce: boolean,
+    ): Promise<void> => {
       status.requested = true;
-
-      Promise.resolve()
-        .then(() => dependencies.terminateProcessTree(child, force))
-        .then(
-          () => {
-            if (!settled) {
-              status.completed = true;
-            }
-          },
-          (error: unknown) => {
-            if (!settled) {
-              status.failure = formatUnknownError(error);
-            }
-          },
-        );
+      // Defer termination to the next microtask, including synchronous failures.
+      await Promise.resolve();
+      try {
+        await dependencies.terminateProcessTree(child, isForce);
+        if (!isSettled) {
+          status.completed = true;
+        }
+      } catch (error) {
+        if (!isSettled) {
+          status.failure = formatUnknownError(error);
+        }
+      }
     };
 
     stdoutStream.setEncoding('utf8');
@@ -325,7 +325,7 @@ function runLiminaWithDependencies(
     });
 
     timeoutTimer = setTimeout(() => {
-      timedOut = true;
+      isTimedOut = true;
       requestTermination(gracefulStatus, false);
       forceTimer = setTimeout(() => {
         requestTermination(forceStatus, true);
@@ -360,7 +360,7 @@ function runLiminaWithDependencies(
           signal,
           stderr,
           stdout,
-          timedOut,
+          timedOut: isTimedOut,
         });
       });
     });

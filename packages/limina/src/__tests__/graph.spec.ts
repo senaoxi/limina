@@ -19,7 +19,7 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { readCheckIssueSnapshot } from '../check-reporting/snapshot';
 import { createCheckCounter } from '../check-reporting/stats';
 import {
-  runGraphCheck,
+  isRunGraphCheck,
   type RunGraphCheckOptions,
   runGraphExport,
 } from '../commands/graph';
@@ -30,7 +30,7 @@ import { addTypecheckParityProblems } from '../graph-check/dts-options';
 import type { GraphFinding } from '../graph-check/findings';
 import { GraphLogger } from '../logger';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -98,7 +98,9 @@ function addFixtureEntryConfigs(
 
     output[entryPath] = stringifyConfig({
       files: [],
-      references: references.sort().map((reference) => ({ path: reference })),
+      references: references
+        .sort((left, right) => Number(left > right) - Number(left < right))
+        .map((reference) => ({ path: reference })),
     });
   }
 
@@ -117,9 +119,10 @@ async function createFixture(
   rootDir: string;
   path: (...segments: string[]) => string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-graph-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-graph-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   const fixtureFiles = addFixtureEntryConfigs({
     'package.json': stringifyConfig({
       name: 'root',
@@ -130,58 +133,55 @@ async function createFixture(
   });
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
   const vueTscPackagePath = requireFromTest.resolve('vue-tsc/package.json');
-  const nodeModulesDir = path.join(rootDir, 'node_modules');
-  await mkdir(nodeModulesDir, { recursive: true });
+  const nodeModulesDirectory = path.join(rootDirectory, 'node_modules');
+  await mkdir(nodeModulesDirectory, { recursive: true });
   await symlink(
     path.dirname(vueTscPackagePath),
-    path.join(nodeModulesDir, 'vue-tsc'),
+    path.join(nodeModulesDirectory, 'vue-tsc'),
     'junction',
   );
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       config: {
         checkers,
       },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
       graph,
-      rootDir,
-    },
-    rootDir,
-    path: createFixturePathResolver(rootDir),
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
+    path: createFixturePathResolver(rootDirectory),
   };
 }
 
 async function linkWorkspacePackage(
-  rootDir: string,
+  rootDirectory: string,
   importer: string,
   target: string,
   packageName: string,
 ): Promise<void> {
-  const [scope, name] = packageName.split('/');
-  const nodeModulesDir =
+  const [scope, name] = packageName.split('/', 2);
+  const nodeModulesDirectory =
     scope && name
-      ? path.join(rootDir, importer, 'node_modules', scope)
-      : path.join(rootDir, importer, 'node_modules');
+      ? path.join(rootDirectory, importer, 'node_modules', scope)
+      : path.join(rootDirectory, importer, 'node_modules');
 
-  await mkdir(nodeModulesDir, {
+  await mkdir(nodeModulesDirectory, {
     recursive: true,
   });
   await symlink(
-    path.relative(nodeModulesDir, path.join(rootDir, target)),
-    path.join(nodeModulesDir, name ?? packageName),
+    path.relative(nodeModulesDirectory, path.join(rootDirectory, target)),
+    path.join(nodeModulesDirectory, name ?? packageName),
   );
 }
 
@@ -210,13 +210,11 @@ function typecheckConfig(
   limina?: unknown,
 ): string {
   return stringifyConfig({
-    ...(limina === undefined
-      ? {}
-      : {
-          liminaOptions: {
-            graphRules: Array.isArray(limina) ? limina : [limina],
-          },
-        }),
+    ...(limina !== undefined && {
+      liminaOptions: {
+        graphRules: Array.isArray(limina) ? limina : [limina],
+      },
+    }),
     compilerOptions: {
       ...buildCompilerOptions,
       noEmit: true,
@@ -234,15 +232,13 @@ function buildConfig(options: {
   tsBuildInfoFile: string;
 }): string {
   return stringifyConfig({
-    ...(options.limina === undefined
-      ? {}
-      : {
-          liminaOptions: {
-            graphRules: Array.isArray(options.limina)
-              ? options.limina
-              : [options.limina],
-          },
-        }),
+    ...(options.limina !== undefined && {
+      liminaOptions: {
+        graphRules: Array.isArray(options.limina)
+          ? options.limina
+          : [options.limina],
+      },
+    }),
     compilerOptions: {
       ...buildCompilerOptions,
       rootDir: '.',
@@ -250,13 +246,11 @@ function buildConfig(options: {
       ...options.compilerOptions,
     },
     include: options.include,
-    ...(options.references
-      ? {
-          references: options.references.map((reference) => ({
-            path: reference,
-          })),
-        }
-      : {}),
+    ...(options.references && {
+      references: options.references.map((reference) => ({
+        path: reference,
+      })),
+    }),
   });
 }
 
@@ -278,29 +272,30 @@ function generatedDtsConfig(options: {
     liminaOptions: {
       sourceConfig: options.sourceConfig,
     },
-    ...(options.references
-      ? {
-          references: options.references.map((reference) => ({
-            path: reference,
-          })),
-        }
-      : {}),
+    ...(options.references && {
+      references: options.references.map((reference) => ({
+        path: reference,
+      })),
+    }),
   });
 }
 
 function createManualGeneratedGraph(
-  rootDir: string,
+  rootDirectory: string,
   entryRelativePath = 'tsconfig.build.json',
 ): GeneratedTsconfigGraphResult {
   const artifactNamespace = createLiminaArtifactNamespace({
     generation: 0,
-    rootDir,
+    rootDir: rootDirectory,
   });
   return {
     artifactPlan: createArtifactPlan(artifactNamespace, [], []),
     changed: false,
     checkerEntries: new Map([
-      ['tsc', normalizeAbsolutePath(path.join(rootDir, entryRelativePath))],
+      [
+        'tsc',
+        normalizeAbsolutePath(path.join(rootDirectory, entryRelativePath)),
+      ],
     ]),
     checkers: [
       {
@@ -329,7 +324,7 @@ function createManualGeneratedGraph(
       dependencyEdges: [],
       version: 5,
     },
-    manifestPath: path.join(rootDir, '.limina/manifest.json'),
+    manifestPath: path.join(rootDirectory, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),
     ownershipPlan: {
       dependencyFacts: [],
@@ -351,7 +346,7 @@ async function runGraphCheckWithIssues(
   passed: boolean;
 }> {
   const issues: NonNullable<RunGraphCheckOptions['issues']> = [];
-  const passed = await runGraphCheck(config, {
+  const isPassed = await isRunGraphCheck(config, {
     clearScreen: false,
     deferSnapshot: true,
     report: {
@@ -363,7 +358,7 @@ async function runGraphCheckWithIssues(
 
   return {
     issues,
-    passed,
+    passed: isPassed,
   };
 }
 
@@ -489,8 +484,8 @@ function createManagedOutputWorkspacePackageFiles(
     providerOutputs?: boolean;
   } = {},
 ): Record<string, string> {
-  const providerOwnedSource = options.providerOwnedSource ?? true;
-  const providerOutputs = options.providerOutputs ?? true;
+  const isProviderOwnedSource = options.providerOwnedSource ?? true;
+  const isProviderOutputs = options.providerOutputs ?? true;
 
   return {
     'packages/app/package.json': stringifyConfig({
@@ -521,7 +516,7 @@ function createManagedOutputWorkspacePackageFiles(
       name: '@example/internal',
       type: 'module',
     }),
-    ...(providerOwnedSource
+    ...(isProviderOwnedSource
       ? {
           'packages/internal/src/index.ts': 'export const internalValue = 1;\n',
         }
@@ -538,16 +533,14 @@ function createManagedOutputWorkspacePackageFiles(
         noEmit: true,
       },
       include: ['src/**/*.ts'],
-      ...(providerOutputs
-        ? {
-            liminaOptions: {
-              outputs: {
-                rootDir: 'src',
-                outDir: 'dist',
-              },
-            },
-          }
-        : {}),
+      ...(isProviderOutputs && {
+        liminaOptions: {
+          outputs: {
+            rootDir: 'src',
+            outDir: 'dist',
+          },
+        },
+      }),
     }),
     'pnpm-workspace.yaml': `
 packages:
@@ -567,7 +560,7 @@ packages:
   };
 }
 
-const denyNodeRef: GraphConfig = {
+const denyNodeReference: GraphConfig = {
   rules: {
     runtime: {
       deny: {
@@ -582,7 +575,7 @@ const denyNodeRef: GraphConfig = {
   },
 };
 
-const denyInternalDep: GraphConfig = {
+const denyInternalDependency: GraphConfig = {
   rules: {
     runtime: {
       deny: {
@@ -1155,7 +1148,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1188,7 +1181,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1221,7 +1214,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1245,7 +1238,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1277,7 +1270,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1320,14 +1313,12 @@ describe('runGraphCheck checker entry', () => {
 
     try {
       await expect(
-        runGraphCheck(fixture.config, {
+        isRunGraphCheck(fixture.config, {
           clearScreen: false,
         }),
       ).resolves.toBe(false);
 
-      const errorText = errorSpy.mock.calls
-        .map((call) => String(call[0]))
-        .join('\n');
+      const errorText = errorSpy.mock.calls.map((call) => call[0]).join('\n');
       const mismatchCount = (
         errorText.match(
           /Custom conditions mismatch in declaration reference tree:/gu,
@@ -1368,7 +1359,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1395,7 +1386,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1431,7 +1422,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1475,7 +1466,7 @@ describe('runGraphCheck checker entry', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1514,7 +1505,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1546,7 +1537,7 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1584,7 +1575,7 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1619,7 +1610,7 @@ packages:
       expect(generatedGraph.manifest.dependencyEdges).toEqual([]);
       expect(appGeneratedConfig.references).toEqual([]);
       await expect(
-        runGraphCheck(fixture.config, {
+        isRunGraphCheck(fixture.config, {
           generatedGraphProvider: async () => generatedGraph,
         }),
       ).resolves.toBe(true);
@@ -1688,7 +1679,7 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1897,7 +1888,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1952,7 +1943,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1985,7 +1976,7 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -2245,7 +2236,7 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2280,7 +2271,7 @@ packages:
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).rejects.toThrow(
+      await expect(isRunGraphCheck(fixture.config)).rejects.toThrow(
         'Build checker ownership conflict',
       );
     } finally {
@@ -2315,7 +2306,7 @@ packages:
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2346,7 +2337,7 @@ packages:
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2383,7 +2374,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2444,7 +2435,7 @@ packages:
         '@example/b',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2481,7 +2472,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2522,7 +2513,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2560,7 +2551,7 @@ packages:
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2573,11 +2564,11 @@ describe('runGraphCheck graph rules', () => {
       createLocalBoundaryFiles({
         limina: 'runtime',
       }),
-      denyNodeRef,
+      denyNodeReference,
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2588,11 +2579,11 @@ describe('runGraphCheck graph rules', () => {
       createLocalBoundaryFiles({
         runtimeReferences: ['./tsconfig.node.dts.json'],
       }),
-      denyNodeRef,
+      denyNodeReference,
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2624,7 +2615,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('Graph check summary');
@@ -2713,7 +2704,7 @@ describe('runGraphCheck graph rules', () => {
       );
 
       try {
-        await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+        await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
         const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
         expect(errors).toContain(field);
@@ -2744,7 +2735,7 @@ describe('runGraphCheck graph rules', () => {
 
     try {
       await expect(
-        runGraphCheck(fixture.config, {
+        isRunGraphCheck(fixture.config, {
           clearScreen: false,
           flow,
           generatedGraphProvider: async () => {
@@ -2836,7 +2827,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2876,7 +2867,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2905,7 +2896,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2975,14 +2966,14 @@ describe('runGraphCheck graph rules', () => {
             ? 'packages: [".", "packages/*"]'
             : 'packages: ["packages/*"]',
           'packages/a/package.json': stringifyConfig({
-            ...(variant.sourceNamed ? { name: '@fixture/a' } : {}),
+            ...(variant.sourceNamed && { name: '@fixture/a' }),
             private: true,
-            ...(variant.declared
-              ? { dependencies: { '@fixture/b': 'workspace:*' } }
-              : {}),
+            ...(variant.declared && {
+              dependencies: { '@fixture/b': 'workspace:*' },
+            }),
           }),
           'packages/b/package.json': stringifyConfig({
-            ...(variant.targetNamed ? { name: '@fixture/b' } : {}),
+            ...(variant.targetNamed && { name: '@fixture/b' }),
             private: true,
           }),
           'packages/a/src/index.ts': 'export const a = 1;',
@@ -3060,7 +3051,7 @@ describe('runGraphCheck graph rules', () => {
     });
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3106,7 +3097,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3137,7 +3128,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('graph.rules.runtime.deny.workspaceDeps');
@@ -3174,7 +3165,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('graph.rules.runtime.deny.nodeBuiltins');
@@ -3209,7 +3200,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3248,7 +3239,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3278,7 +3269,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3300,11 +3291,11 @@ describe('runGraphCheck graph rules', () => {
           type: 'module',
         }),
       },
-      denyNodeRef,
+      denyNodeReference,
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3332,7 +3323,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3344,7 +3335,7 @@ describe('runGraphCheck graph rules', () => {
         appSource:
           "import { internalValue } from '@example/internal';\nexport const value = internalValue;\n",
       }),
-      denyInternalDep,
+      denyInternalDependency,
     );
 
     try {
@@ -3355,7 +3346,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3367,7 +3358,7 @@ describe('runGraphCheck graph rules', () => {
         appSource:
           "export const internalPath = require.resolve('@example/internal');\n",
       }),
-      denyInternalDep,
+      denyInternalDependency,
     );
 
     try {
@@ -3404,11 +3395,11 @@ describe('runGraphCheck graph rules', () => {
         appSource:
           "import { internalValue } from '../../internal/src/index';\nexport const value = internalValue;\n",
       }),
-      denyInternalDep,
+      denyInternalDependency,
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3424,7 +3415,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3452,7 +3443,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3482,7 +3473,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3528,7 +3519,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).rejects.toThrow(
+      await expect(isRunGraphCheck(fixture.config)).rejects.toThrow(
         /Checker ownership conflict[\s\S]*checker: tsc[\s\S]*checker: vue-tsc/u,
       );
     } finally {
@@ -3561,7 +3552,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3593,7 +3584,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3639,7 +3630,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3664,7 +3655,7 @@ describe('runGraphCheck graph rules', () => {
     );
 
     try {
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3695,7 +3686,7 @@ describe('runGraphCheck graph rules', () => {
         '@example/internal',
       );
 
-      await expect(runGraphCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunGraphCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }

@@ -99,7 +99,8 @@ export function collectImporters(
   const workspacePackageNames = collectWorkspacePackageNames(packages);
   const importers: ImporterInfo[] = [];
 
-  for (const directory of collectImporterDirectories({ config, packages })) {
+  const directories = collectImporterDirectories({ config, packages });
+  for (const directory of directories) {
     const importer = createImporter({
       directory,
       workspacePackageNames,

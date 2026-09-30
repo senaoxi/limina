@@ -14,7 +14,7 @@ import { isPlainRecord } from './config-values';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
 interface ConfigReferenceEntry {

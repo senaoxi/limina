@@ -55,22 +55,23 @@ async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-init-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-init-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
   for (const [relativePath, text] of Object.entries(files)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -78,7 +79,7 @@ function stringifyConfig(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+async function isFileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
     return true;
@@ -91,7 +92,7 @@ function mockExecFileWithNpxResult(error: Error | null = null): void {
   execFileMock.mockImplementation(
     (
       command: string,
-      args: string[],
+      arguments_: string[],
       _options: unknown,
       callback: (error: Error | null, stdout: string) => void,
     ) => {
@@ -101,7 +102,8 @@ function mockExecFileWithNpxResult(error: Error | null = null): void {
       }
 
       const isPnpmListCommand =
-        args.slice(-5).join('\0') === 'recursive\0list\0--depth\0-1\0--json';
+        arguments_.slice(-5).join('\0') ===
+        'recursive\0list\0--depth\0-1\0--json';
 
       if (isPnpmListCommand) {
         callback(null, '[]');
@@ -132,7 +134,7 @@ function findNpxCall():
     | undefined;
 }
 
-function setTty(value: boolean): () => void {
+function setTty(isValue: boolean): () => void {
   const stdinDescriptor = Object.getOwnPropertyDescriptor(
     process.stdin,
     'isTTY',
@@ -144,11 +146,11 @@ function setTty(value: boolean): () => void {
 
   Object.defineProperty(process.stdin, 'isTTY', {
     configurable: true,
-    value,
+    value: isValue,
   });
   Object.defineProperty(process.stdout, 'isTTY', {
     configurable: true,
-    value,
+    value: isValue,
   });
 
   return () => {
@@ -319,10 +321,10 @@ describe('runInit', () => {
         });
         expect(result.rootDir).toBe(toPortablePath(fixture.rootDir));
         expect(
-          await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+          await isFileExists(path.join(fixture.rootDir, 'limina.config.mts')),
         ).toBe(true);
         expect(
-          await fileExists(
+          await isFileExists(
             path.join(fixture.rootDir, 'packages/a/limina.config.mts'),
           ),
         ).toBe(false);
@@ -346,13 +348,13 @@ describe('runInit', () => {
     async ({ locks, manager, pnpm, error }) => {
       const manifest = stringifyConfig({
         workspaces: [],
-        ...(manager ? { packageManager: manager } : {}),
+        ...(manager && { packageManager: manager }),
       });
       const fixture = await createFixture({
         'package.json': manifest,
         '.gitignore': '# original\n',
         ...Object.fromEntries(locks.map((file) => [file, ''])),
-        ...(pnpm ? { 'pnpm-workspace.yaml': 'packages: []' } : {}),
+        ...(pnpm && { 'pnpm-workspace.yaml': 'packages: []' }),
       });
       try {
         await expect(
@@ -365,7 +367,7 @@ describe('runInit', () => {
           await readFile(path.join(fixture.rootDir, '.gitignore'), 'utf8'),
         ).toBe('# original\n');
         expect(
-          await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+          await isFileExists(path.join(fixture.rootDir, 'limina.config.mts')),
         ).toBe(false);
       } finally {
         await fixture.cleanup();
@@ -420,10 +422,10 @@ describe('runInit', () => {
       expect(manifest).not.toHaveProperty('workspaces');
       expect(manifest).not.toHaveProperty('packageManager');
       expect(
-        await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+        await isFileExists(path.join(fixture.rootDir, 'limina.config.mts')),
       ).toBe(true);
       expect(
-        await fileExists(path.join(fixture.rootDir, 'pnpm-workspace.yaml')),
+        await isFileExists(path.join(fixture.rootDir, 'pnpm-workspace.yaml')),
       ).toBe(false);
     } finally {
       await fixture.cleanup();
@@ -445,10 +447,12 @@ describe('runInit', () => {
         }),
       ).rejects.toThrow('Invalid package.json object');
       expect(
-        await fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+        await isFileExists(path.join(fixture.rootDir, 'limina.config.mts')),
       ).toBe(false);
       expect(
-        await fileExists(path.join(fixture.rootDir, 'child/limina.config.mts')),
+        await isFileExists(
+          path.join(fixture.rootDir, 'child/limina.config.mts'),
+        ),
       ).toBe(false);
     } finally {
       await fixture.cleanup();
@@ -478,7 +482,7 @@ describe('runInit', () => {
         rootDir: toPortablePath(fixture.rootDir),
       });
       expect(
-        await fileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),
+        await isFileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),
       ).toBe(true);
       expect(
         await readFile(path.join(fixture.rootDir, 'limina.config.mts'), 'utf8'),
@@ -524,12 +528,13 @@ describe('runInit', () => {
         yes: true,
       });
 
+      const expectedWrittenFiles = expect.arrayContaining([
+        toPortablePath(path.join(fixture.rootDir, 'limina.config.mts')),
+        toPortablePath(path.join(fixture.rootDir, '.gitignore')),
+        toPortablePath(path.join(fixture.rootDir, 'package.json')),
+      ]);
       expect(toPortablePaths(result.writtenFiles)).toEqual(
-        expect.arrayContaining([
-          toPortablePath(path.join(fixture.rootDir, 'limina.config.mts')),
-          toPortablePath(path.join(fixture.rootDir, '.gitignore')),
-          toPortablePath(path.join(fixture.rootDir, 'package.json')),
-        ]),
+        expectedWrittenFiles,
       );
     } finally {
       await fixture.cleanup();
@@ -746,10 +751,10 @@ describe('runInit', () => {
       });
 
       expect(
-        await fileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),
+        await isFileExists(path.join(fixture.rootDir, 'tsconfig.build.json')),
       ).toBe(false);
       expect(
-        await fileExists(
+        await isFileExists(
           path.join(fixture.rootDir, 'packages/app/tsconfig.build.json'),
         ),
       ).toBe(false);
@@ -782,22 +787,22 @@ describe('runInit', () => {
 
       expect(result.installRequired).toBe(true);
       expect(
-        await fileExists(
+        await isFileExists(
           path.join(fixture.rootDir, 'packages/foo/tsconfig.lib.dts.json'),
         ),
       ).toBe(false);
       expect(
-        await fileExists(
+        await isFileExists(
           path.join(fixture.rootDir, 'packages/foo2/tsconfig.lib.dts.json'),
         ),
       ).toBe(false);
       expect(
-        await fileExists(
+        await isFileExists(
           path.join(fixture.rootDir, 'packages/bar/tsconfig.build.json'),
         ),
       ).toBe(false);
       await expect(
-        fileExists(
+        isFileExists(
           path.join(fixture.rootDir, 'packages/empty/tsconfig.build.json'),
         ),
       ).resolves.toBe(false);
@@ -973,13 +978,13 @@ export default defineConfig({
         toPortablePath(path.join(fixture.rootDir, '.limina')),
       ]);
       await expect(
-        fileExists(path.join(fixture.rootDir, '.limina/manifest.json')),
+        isFileExists(path.join(fixture.rootDir, '.limina/manifest.json')),
       ).resolves.toBe(false);
       await expect(
-        fileExists(path.join(fixture.rootDir, '.limina/tsconfig')),
+        isFileExists(path.join(fixture.rootDir, '.limina/tsconfig')),
       ).resolves.toBe(false);
       await expect(
-        fileExists(
+        isFileExists(
           path.join(fixture.rootDir, 'packages/pkg/.limina/manifest.json'),
         ),
       ).resolves.toBe(true);
@@ -1009,9 +1014,10 @@ export default defineConfig({
       }),
       'pnpm-workspace.yaml': 'packages: []\n',
     });
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-init-external-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-init-external-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     const externalMarker = path.join(externalRoot, 'keep.txt');
     await writeFile(externalMarker, 'keep\n');
     await symlink(externalRoot, path.join(fixture.rootDir, '.limina'), 'dir');
@@ -1063,10 +1069,10 @@ export default defineConfig({
         readFile(path.join(fixture.rootDir, 'package.json'), 'utf8'),
       ).resolves.toBe(initialPackageJson);
       await expect(
-        fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+        isFileExists(path.join(fixture.rootDir, 'limina.config.mts')),
       ).resolves.toBe(false);
       await expect(
-        fileExists(path.join(fixture.rootDir, '.gitignore')),
+        isFileExists(path.join(fixture.rootDir, '.gitignore')),
       ).resolves.toBe(false);
       await expect(readFile(externalMarker, 'utf8')).resolves.toBe(
         'external marker bytes\n',
@@ -1081,15 +1087,13 @@ export default defineConfig({
     async (unsafeFileName) => {
       const fixture = await createFixture({
         '.limina/keep.txt': 'root artifact bytes\n',
-        ...(unsafeFileName === 'package.json'
-          ? {}
-          : {
-              'package.json': stringifyConfig({
-                name: 'root',
-                private: true,
-                type: 'module',
-              }),
-            }),
+        ...(unsafeFileName !== 'package.json' && {
+          'package.json': stringifyConfig({
+            name: 'root',
+            private: true,
+            type: 'module',
+          }),
+        }),
         'pnpm-workspace.yaml': 'packages: []\n',
       });
       const externalTarget = path.join(
@@ -1115,7 +1119,7 @@ export default defineConfig({
         ).resolves.toBe('root artifact bytes\n');
         if (unsafeFileName !== 'limina.config.mts') {
           await expect(
-            fileExists(path.join(fixture.rootDir, 'limina.config.mts')),
+            isFileExists(path.join(fixture.rootDir, 'limina.config.mts')),
           ).resolves.toBe(false);
         }
       } finally {
@@ -1125,9 +1129,10 @@ export default defineConfig({
   );
 
   it('continues init through a symlinked workspace root', async () => {
-    const container = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-init-symlinked-root-')),
+    const containerTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-init-symlinked-root-'),
     );
+    const container = await realpath(containerTemporaryPath);
     const physicalRoot = path.join(container, 'workspace');
     const logicalRoot = path.join(container, 'workspace-link');
     await writeText(

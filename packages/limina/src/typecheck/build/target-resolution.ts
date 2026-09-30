@@ -63,10 +63,9 @@ function selectCheckerTargets(options: {
   checker: BuildCheckerPreset | undefined;
   targets: readonly BuildTargetDescriptor[];
 }): BuildTargetDescriptor[] {
-  if (options.checker === undefined) return [...options.targets];
-  return options.targets.filter(
-    ({ checker }) => checker.name === options.checker,
-  );
+  return options.checker === undefined
+    ? [...options.targets]
+    : options.targets.filter(({ checker }) => checker.name === options.checker);
 }
 
 function getOutputlessResolutionKind(
@@ -85,10 +84,9 @@ function getMissingOutputResolutionKind(options: {
   declarationTargets: readonly BuildTargetDescriptor[];
 }): OutputBuildResolutionKind {
   if (options.declarationTargets.length === 0) return 'unmanaged';
-  if (options.buildCapableDeclarationTargets.length === 0) {
-    return 'typecheck-only';
-  }
-  return getOutputlessResolutionKind(options.buildCapableDeclarationTargets);
+  return options.buildCapableDeclarationTargets.length === 0
+    ? 'typecheck-only'
+    : getOutputlessResolutionKind(options.buildCapableDeclarationTargets);
 }
 
 function getResolutionKind(options: {
@@ -120,8 +118,7 @@ function isFrameworkDependencyTarget(options: {
 function getSelectedCheckerField(checker: BuildCheckerPreset | undefined): {
   selectedChecker?: BuildCheckerPreset;
 } {
-  if (checker === undefined) return {};
-  return { selectedChecker: checker };
+  return checker === undefined ? {} : { selectedChecker: checker };
 }
 
 function assertRawPreset(options: {
@@ -203,8 +200,8 @@ async function resolveManagedBuildTarget(options: {
   const frameworkDependencyTargets = buildCapableDeclarationTargets.filter(
     (target) => isFrameworkDependencyTarget({ generatedGraph, target }),
   );
-  const dependencyTargetSelection = buildCapableOutputTargets.length === 0;
-  const selectableTargets = dependencyTargetSelection
+  const isDependencyTargetSelection = buildCapableOutputTargets.length === 0;
+  const selectableTargets = isDependencyTargetSelection
     ? frameworkDependencyTargets
     : buildCapableOutputTargets;
   const checkerTargets = selectCheckerTargets({
@@ -224,7 +221,7 @@ async function resolveManagedBuildTarget(options: {
       buildCapableDeclarationTargets,
       checkerTargets,
       declarationTargets: managed.declarationTargets,
-      dependencyTargetSelection,
+      dependencyTargetSelection: isDependencyTargetSelection,
     }),
     ...getSelectedCheckerField(options.request.checker),
     sourceConfigPath: options.sourceConfigPath,
@@ -234,17 +231,17 @@ async function resolveManagedBuildTarget(options: {
 export async function resolveBuildTarget(
   options: ResolveBuildTargetOptions,
 ): Promise<ResolvedBuildTarget> {
-  const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
+  const projectRootDirectory = normalizeAbsolutePath(options.config.rootDir);
   const targetConfigPath = resolveBuildConfigPath({
     configPath: options.configPath,
     cwd: options.cwd,
     project: options.project,
-    rootDir: projectRootDir,
+    rootDir: projectRootDirectory,
   });
   if (options.raw === true) {
     return resolveRawBuildTarget({
       checker: options.checker,
-      projectRootDir,
+      projectRootDir: projectRootDirectory,
       targetConfigPath,
     });
   }

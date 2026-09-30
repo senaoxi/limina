@@ -1,10 +1,9 @@
-#!/usr/bin/env node
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertIssueInventoryLimitArgv } from './cli/argv';
 import { createLiminaCli } from './cli/factory';
-import { printCheckIssueFilterHelpIfRequested } from './cli/filter-help';
-import { forwardMigrationIfRequested } from './cli/migration-forward';
+import { isPrintCheckIssueFilterHelpIfRequested } from './cli/filter-help';
+import { isForwardMigrationIfRequested } from './cli/migration-forward';
 import { clearCliScreen, CliLogger, formatErrorMessage } from './logger';
 
 export { createLiminaCli } from './cli/factory';
@@ -12,12 +11,12 @@ export { runCheckWithCliFlowCleanup } from './cli/flow';
 
 function assertMatchedCommand(cli: ReturnType<typeof createLiminaCli>): void {
   const commandName = cli.args[0];
-  if (cli.matchedCommand || commandName === undefined) return;
+  if (commandName === undefined || cli.matchedCommand) return;
   throw new Error(`Unknown command "${commandName}".`);
 }
 
 export async function executeCli(argv: string[]): Promise<void> {
-  if (await forwardMigrationIfRequested(argv)) return;
+  if (await isForwardMigrationIfRequested(argv)) return;
   await executeProductCli(argv);
 }
 
@@ -25,16 +24,16 @@ async function executeProductCli(argv: string[]): Promise<void> {
   clearCliScreen();
 
   assertIssueInventoryLimitArgv(argv);
-  if (await printCheckIssueFilterHelpIfRequested(argv)) return;
+  if (await isPrintCheckIssueFilterHelpIfRequested(argv)) return;
   const cli = createLiminaCli();
-  let displayedCommandHelp = false;
+  let isDisplayedCommandHelp = false;
   cli.globalCommand.helpCallback = (sections) => {
     // CAC clears matchedCommand after displaying help; preserve that outcome.
-    displayedCommandHelp = cli.matchedCommand !== undefined;
+    isDisplayedCommandHelp = cli.matchedCommand !== undefined;
     return sections;
   };
   cli.parse(argv, { run: false });
-  if (displayedCommandHelp) return;
+  if (isDisplayedCommandHelp) return;
   assertMatchedCommand(cli);
   await cli.runMatchedCommand();
 }

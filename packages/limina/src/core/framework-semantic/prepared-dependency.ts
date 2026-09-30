@@ -27,12 +27,12 @@ export interface PreparedDependencyMergeFailure {
 }
 
 export type PreparedDependencyMergeResult =
-  | { facts: PreparedDependencyFact[]; kind: 'supported' }
-  | PreparedDependencyMergeFailure;
+  | PreparedDependencyMergeFailure
+  | { facts: PreparedDependencyFact[]; kind: 'supported' };
 
 export type PreparedDirectSourceMergeResult =
-  | { kind: 'supported'; records: ImportRecord[] }
-  | PreparedDependencyMergeFailure;
+  | PreparedDependencyMergeFailure
+  | { kind: 'supported'; records: ImportRecord[] };
 
 function occurrenceIdentity(fact: PreparedDependencyFact): string {
   return JSON.stringify([

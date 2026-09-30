@@ -20,7 +20,7 @@ export interface ConsumerFixture {
   fixtureDir: string;
 }
 
-export interface DistPackageJson {
+export interface DistributionPackageJson {
   bin?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
@@ -32,7 +32,7 @@ export interface DistPackageJson {
   types?: string;
 }
 
-interface PackedDistTarball {
+interface PackedDistributionTarball {
   cleanup: () => Promise<void>;
   tarballPath: string;
 }
@@ -94,9 +94,7 @@ function resolvePnpmCommand(environment: NodeJS.ProcessEnv): {
   if (
     npmExecPath &&
     existsSync(npmExecPath) &&
-    (npmExecFileName === 'pnpm.cjs' ||
-      npmExecFileName === 'pnpm.mjs' ||
-      npmExecFileName === 'pnpm.js')
+    ['pnpm.cjs', 'pnpm.mjs', 'pnpm.js'].includes(npmExecFileName ?? '')
   ) {
     return {
       command: process.execPath,
@@ -129,12 +127,14 @@ function getNpmCommand(): string {
 }
 
 function readJsonFile<T>(filePath: string): T {
-  return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '')) as T;
+  return JSON.parse(
+    readFileSync(filePath, 'utf8').replace(/^\u{FEFF}/u, ''),
+  ) as T;
 }
 
 export async function runCommand(
   command: string,
-  args: string[],
+  arguments_: string[],
   options: {
     cwd: string;
     env?: NodeJS.ProcessEnv;
@@ -144,7 +144,7 @@ export async function runCommand(
     windowsVerbatimArguments?: boolean;
   },
 ): Promise<CommandResult> {
-  const result = await execa(command, args, {
+  const result = await execa(command, arguments_, {
     cwd: options.cwd,
     env: options.env,
     maxBuffer: 64 * 1024 * 1024,
@@ -166,7 +166,7 @@ export async function runCommand(
 }
 
 export async function runPnpm(
-  args: string[],
+  arguments_: string[],
   options: {
     cwd: string;
     env?: NodeJS.ProcessEnv;
@@ -180,7 +180,7 @@ export async function runPnpm(
     ...options.env,
   });
 
-  return runCommand(command, [...argsPrefix, ...args], options);
+  return runCommand(command, [...argsPrefix, ...arguments_], options);
 }
 
 export async function runNodeScript(options: {
@@ -193,7 +193,7 @@ export async function runNodeScript(options: {
 }
 
 export function getPeerDependencyRange(
-  manifest: DistPackageJson,
+  manifest: DistributionPackageJson,
   packageName: string,
 ): string {
   const range = manifest.peerDependencies?.[packageName];
@@ -207,7 +207,7 @@ export function getPeerDependencyRange(
   return range;
 }
 
-export function readDistManifest(): DistPackageJson {
+export function readDistributionManifest(): DistributionPackageJson {
   const manifestPath = path.join(DIST_DIR, 'package.json');
 
   if (!existsSync(manifestPath)) {
@@ -216,11 +216,11 @@ export function readDistManifest(): DistPackageJson {
     );
   }
 
-  return readJsonFile<DistPackageJson>(manifestPath);
+  return readJsonFile<DistributionPackageJson>(manifestPath);
 }
 
-export function assertDistArtifacts(): DistPackageJson {
-  const manifest = readDistManifest();
+export function assertDistributionArtifacts(): DistributionPackageJson {
+  const manifest = readDistributionManifest();
 
   for (const relativeFilePath of REQUIRED_DIST_FILES) {
     const filePath = path.join(DIST_DIR, relativeFilePath);
@@ -246,10 +246,12 @@ export function assertDistArtifacts(): DistPackageJson {
     throw new Error('Expected dist package.json to expose ./index.d.ts.');
   }
 
-  const expectedPeerNames = Object.keys(EXPECTED_PEER_RANGES).toSorted();
-  const actualPeerNames = Object.keys(
-    manifest.peerDependencies ?? {},
-  ).toSorted();
+  const expectedPeerNames = Object.keys(EXPECTED_PEER_RANGES).toSorted(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  const actualPeerNames = Object.keys(manifest.peerDependencies ?? {}).toSorted(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
   if (JSON.stringify(actualPeerNames) !== JSON.stringify(expectedPeerNames)) {
     throw new Error(
       `Expected dist package.json to expose exactly ${expectedPeerNames.join(', ')} as peers, got ${actualPeerNames.join(', ')}.`,
@@ -260,7 +262,7 @@ export function assertDistArtifacts(): DistPackageJson {
   );
   const actualPeerMetaNames = Object.keys(
     manifest.peerDependenciesMeta ?? {},
-  ).toSorted();
+  ).toSorted((left, right) => Number(left > right) - Number(left < right));
   if (
     JSON.stringify(actualPeerMetaNames) !==
     JSON.stringify(expectedOptionalPeerNames)
@@ -279,24 +281,25 @@ export function assertDistArtifacts(): DistPackageJson {
         `Expected dist package.json peerDependencies.${packageName} to equal "${expectedRange}", got "${actualRange}".`,
       );
     }
-    const expectedOptional = packageName !== 'typescript';
-    const actualOptional =
+    const isExpectedOptional = packageName !== 'typescript';
+    const isActualOptional =
       manifest.peerDependenciesMeta?.[packageName]?.optional === true;
-    if (actualOptional !== expectedOptional) {
+    if (isActualOptional !== isExpectedOptional) {
       throw new Error(
-        `Expected dist package.json peer ${packageName} optional=${expectedOptional}, got optional=${actualOptional}.`,
+        `Expected dist package.json peer ${packageName} optional=${isExpectedOptional}, got optional=${isActualOptional}.`,
       );
     }
   }
 
+  const dependencySections = Object.entries({
+    dependencies: manifest.dependencies,
+    devDependencies: manifest.devDependencies,
+    optionalDependencies: manifest.optionalDependencies,
+    peerDependencies: manifest.peerDependencies,
+    peerDependenciesMeta: manifest.peerDependenciesMeta,
+  });
   for (const packageName of CHECKER_INTERNAL_PACKAGES) {
-    for (const [sectionName, section] of Object.entries({
-      dependencies: manifest.dependencies,
-      devDependencies: manifest.devDependencies,
-      optionalDependencies: manifest.optionalDependencies,
-      peerDependencies: manifest.peerDependencies,
-      peerDependenciesMeta: manifest.peerDependenciesMeta,
-    })) {
+    for (const [sectionName, section] of dependencySections) {
       if (section?.[packageName] !== undefined) {
         throw new Error(
           `Expected dist package.json not to declare checker-internal package ${packageName} in ${sectionName}.`,
@@ -308,21 +311,29 @@ export function assertDistArtifacts(): DistPackageJson {
   return manifest;
 }
 
-export function packLiminaDist(): Promise<PackedDistTarball> {
-  return packDist(DIST_DIR);
+export function packLiminaDistribution(): Promise<PackedDistributionTarball> {
+  return packDistribution(DIST_DIR);
 }
 
-export function packMigrationDist(): Promise<PackedDistTarball> {
-  return packDist(path.resolve(PACKAGE_ROOT_DIR, '../migrate/dist'));
+export function packMigrationDistribution(): Promise<PackedDistributionTarball> {
+  return packDistribution(path.resolve(PACKAGE_ROOT_DIR, '../migrate/dist'));
 }
 
-async function packDist(distDir: string): Promise<PackedDistTarball> {
+async function packDistribution(
+  distributionDirectory: string,
+): Promise<PackedDistributionTarball> {
   const destination = await mkdtemp(path.join(tmpdir(), 'limina-package-'));
 
   try {
     const result = await execa(
       getNpmCommand(),
-      ['pack', distDir, '--pack-destination', destination, '--ignore-scripts'],
+      [
+        'pack',
+        distributionDirectory,
+        '--pack-destination',
+        destination,
+        '--ignore-scripts',
+      ],
       {
         maxBuffer: 64 * 1024 * 1024,
         stderr: 'inherit',
@@ -334,7 +345,9 @@ async function packDist(distDir: string): Promise<PackedDistTarball> {
     const fileName = result.stdout.trim().split(/\r?\n/u).at(-1);
 
     if (!fileName) {
-      throw new Error(`npm pack did not report a tarball for ${distDir}`);
+      throw new Error(
+        `npm pack did not report a tarball for ${distributionDirectory}`,
+      );
     }
 
     return {
@@ -371,22 +384,18 @@ export async function readCurrentPnpmConfig<T>(
     );
     const rawValue = result.stdout.trim();
 
-    if (
-      rawValue.length === 0 ||
-      rawValue === 'undefined' ||
-      rawValue === 'null'
-    ) {
-      return undefined;
-    }
-
-    return JSON.parse(rawValue) as T;
+    return rawValue === 'undefined' ||
+      rawValue === 'null' ||
+      rawValue.length === 0
+      ? undefined
+      : (JSON.parse(rawValue) as T);
   } catch {
     return undefined;
   }
 }
 
 async function writeConsumerPackageManagerConfig(
-  fixtureDir: string,
+  fixtureDirectory: string,
 ): Promise<void> {
   const trustPolicy = await readCurrentPnpmConfig<string>('trust-policy');
   const trustPolicyExcludes =
@@ -409,28 +418,28 @@ async function writeConsumerPackageManagerConfig(
   }
 
   await writeFile(
-    path.join(fixtureDir, '.npmrc'),
+    path.join(fixtureDirectory, '.npmrc'),
     `${lines.join('\n')}\n`,
     'utf8',
   );
 }
 
 async function writeConsumerFiles(
-  fixtureDir: string,
+  fixtureDirectory: string,
   configFileName: string,
   options: { astroSemanticFixture: boolean },
 ): Promise<void> {
   const pnpmVersionResult = await runPnpm(['--version'], {
-    cwd: fixtureDir,
+    cwd: fixtureDirectory,
     timeout: 30_000,
   });
   const pnpmVersion = pnpmVersionResult.stdout.trim();
 
-  await mkdir(path.join(fixtureDir, 'app', 'src'), { recursive: true });
-  await mkdir(path.join(fixtureDir, 'release-dist'), { recursive: true });
+  await mkdir(path.join(fixtureDirectory, 'app', 'src'), { recursive: true });
+  await mkdir(path.join(fixtureDirectory, 'release-dist'), { recursive: true });
 
   await writeFile(
-    path.join(fixtureDir, 'package.json'),
+    path.join(fixtureDirectory, 'package.json'),
     stringifyJson({
       name: 'limina-consumer-smoke',
       packageManager: `pnpm@${pnpmVersion}`,
@@ -440,15 +449,15 @@ async function writeConsumerFiles(
     'utf8',
   );
 
-  await writeConsumerPackageManagerConfig(fixtureDir);
+  await writeConsumerPackageManagerConfig(fixtureDirectory);
 
   await writeFile(
-    path.join(fixtureDir, 'pnpm-workspace.yaml'),
+    path.join(fixtureDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - app\n',
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, configFileName),
+    path.join(fixtureDirectory, configFileName),
     `import { defineConfig } from 'limina';
 
 export default defineConfig({
@@ -476,7 +485,7 @@ export default defineConfig({
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'app', 'package.json'),
+    path.join(fixtureDirectory, 'app', 'package.json'),
     stringifyJson({
       name: '@limina-smoke/app',
       type: 'module',
@@ -484,12 +493,12 @@ export default defineConfig({
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'app', 'src', 'index.ts'),
+    path.join(fixtureDirectory, 'app', 'src', 'index.ts'),
     'export const value = 1;\n',
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'app', 'tsconfig.json'),
+    path.join(fixtureDirectory, 'app', 'tsconfig.json'),
     stringifyJson({
       files: [],
       references: [
@@ -501,7 +510,7 @@ export default defineConfig({
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'app', 'tsconfig.lib.json'),
+    path.join(fixtureDirectory, 'app', 'tsconfig.lib.json'),
     stringifyJson({
       compilerOptions: {
         module: 'ESNext',
@@ -516,7 +525,7 @@ export default defineConfig({
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'release-dist', 'package.json'),
+    path.join(fixtureDirectory, 'release-dist', 'package.json'),
     stringifyJson({
       exports: {
         '.': './index.js',
@@ -530,27 +539,27 @@ export default defineConfig({
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'release-dist', 'index.js'),
+    path.join(fixtureDirectory, 'release-dist', 'index.js'),
     'export const value = 1;\n',
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'release-dist', 'index.d.ts'),
+    path.join(fixtureDirectory, 'release-dist', 'index.d.ts'),
     'export declare const value = 1;\n',
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'release-dist', 'README.md'),
+    path.join(fixtureDirectory, 'release-dist', 'README.md'),
     '# Release fixture\n',
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'release-dist', 'LICENSE.md'),
+    path.join(fixtureDirectory, 'release-dist', 'LICENSE.md'),
     'MIT\n',
     'utf8',
   );
   await writeFile(
-    path.join(fixtureDir, 'verify-exports.mjs'),
+    path.join(fixtureDirectory, 'verify-exports.mjs'),
     `import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -612,7 +621,7 @@ console.log('limina exports ok');
 export async function installConsumerDependencies(options: {
   astroSemanticFixture: boolean;
   fixtureDir: string;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   tarballPath: string;
 }): Promise<void> {
   const typescriptRange = getPeerDependencyRange(
@@ -664,31 +673,34 @@ export async function createConsumerFixture(options: {
   astroSemanticFixture?: boolean;
   configFileName?: string;
   directoryName?: string;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   sourceText?: string;
   tarballPath: string;
 }): Promise<ConsumerFixture> {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'limina-smoke-'));
   const configFileName = options.configFileName ?? 'limina.config.mjs';
-  const fixtureDir = path.join(fixtureRoot, options.directoryName ?? 'fixture');
+  const fixtureDirectory = path.join(
+    fixtureRoot,
+    options.directoryName ?? 'fixture',
+  );
 
   try {
-    await mkdir(fixtureDir, {
+    await mkdir(fixtureDirectory, {
       recursive: true,
     });
-    await writeConsumerFiles(fixtureDir, configFileName, {
+    await writeConsumerFiles(fixtureDirectory, configFileName, {
       astroSemanticFixture: options.astroSemanticFixture === true,
     });
     if (options.sourceText !== undefined) {
       await writeFile(
-        path.join(fixtureDir, 'app', 'src', 'index.ts'),
+        path.join(fixtureDirectory, 'app', 'src', 'index.ts'),
         options.sourceText,
         'utf8',
       );
     }
     await installConsumerDependencies({
       astroSemanticFixture: options.astroSemanticFixture === true,
-      fixtureDir,
+      fixtureDir: fixtureDirectory,
       manifest: options.manifest,
       tarballPath: options.tarballPath,
     });
@@ -702,8 +714,8 @@ export async function createConsumerFixture(options: {
           retryDelay: 100,
         });
       },
-      configPath: path.join(fixtureDir, configFileName),
-      fixtureDir,
+      configPath: path.join(fixtureDirectory, configFileName),
+      fixtureDir: fixtureDirectory,
     };
   } catch (error) {
     await rm(fixtureRoot, {

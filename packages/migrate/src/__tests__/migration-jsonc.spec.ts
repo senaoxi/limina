@@ -26,7 +26,7 @@ describe('migration JSONC plan validation', () => {
     ).toThrow('planned effective object');
   });
   it('accepts BOM, comments and trailing commas', () => {
-    const content = '\uFEFF{ // comment\n "files": [], }';
+    const content = '\u{FEFF}{ // comment\n "files": [], }';
     expect(() => assertUnambiguousMigrationText(content)).not.toThrow();
     expect(() =>
       assertMigrationTextMatchesPlan(content, { files: [] }),

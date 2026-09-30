@@ -24,13 +24,14 @@ async function createFixture(): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-mutation-boundary-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-mutation-boundary-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    path: (...segments) => path.join(rootDir, ...segments),
-    rootDir,
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    path: (...segments) => path.join(rootDirectory, ...segments),
+    rootDir: rootDirectory,
   };
 }
 

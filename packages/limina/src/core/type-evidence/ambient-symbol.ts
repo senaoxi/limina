@@ -10,11 +10,10 @@ function isStringNamedModuleDeclaration(
   declaration: ts.Declaration,
   tsModule: typeof ts,
 ): declaration is StringNamedModuleDeclaration {
-  if (!tsModule.isModuleDeclaration(declaration)) {
-    return false;
-  }
-
-  return tsModule.isStringLiteral(declaration.name);
+  return (
+    tsModule.isModuleDeclaration(declaration) &&
+    tsModule.isStringLiteral(declaration.name)
+  );
 }
 
 function collectAmbientDeclarations(
@@ -63,9 +62,10 @@ function collectPureAmbientDeclarations(
   tsModule: typeof ts,
 ) {
   const declarations = symbol.declarations ?? [];
-  if (declarations.some((declaration) => tsModule.isSourceFile(declaration)))
-    return [];
-  return collectAmbientDeclarations(symbol, tsModule).filter(
-    (declaration) => !tsModule.isExternalModule(declaration.getSourceFile()),
-  );
+  return declarations.some((declaration) => tsModule.isSourceFile(declaration))
+    ? []
+    : collectAmbientDeclarations(symbol, tsModule).filter(
+        (declaration) =>
+          !tsModule.isExternalModule(declaration.getSourceFile()),
+      );
 }

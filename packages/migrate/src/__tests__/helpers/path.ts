@@ -2,10 +2,10 @@ import { normalizeAbsolutePath } from 'limina/internal/migration';
 import path from 'node:path';
 
 export function createFixturePathResolver(
-  rootDir: string,
+  rootDirectory: string,
 ): (...segments: string[]) => string {
   return (...segments) =>
-    normalizeAbsolutePath(path.join(rootDir, ...segments));
+    normalizeAbsolutePath(path.join(rootDirectory, ...segments));
 }
 
 export function toPortablePath(value: string): string {
@@ -17,17 +17,17 @@ export function toPortablePaths(values: readonly string[]): string[] {
 }
 
 export function toPortableRelativePath(
-  rootDir: string,
+  rootDirectory: string,
   absolutePath: string,
 ): string {
-  return toPortablePath(path.relative(rootDir, absolutePath));
+  return toPortablePath(path.relative(rootDirectory, absolutePath));
 }
 
 export function toPortableRelativePaths(
-  rootDir: string,
+  rootDirectory: string,
   absolutePaths: readonly string[],
 ): string[] {
   return absolutePaths.map((absolutePath) =>
-    toPortableRelativePath(rootDir, absolutePath),
+    toPortableRelativePath(rootDirectory, absolutePath),
   );
 }

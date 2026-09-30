@@ -30,6 +30,5 @@ export function resolveNativeTypeScriptTarget(options: {
   const target = semanticContext.resolveImportRecord(
     options.importRecord,
   ).target;
-  if (target !== null) return target;
-  return resolveCheckerSourceTarget(options.request);
+  return target === null ? resolveCheckerSourceTarget(options.request) : target;
 }

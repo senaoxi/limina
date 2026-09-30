@@ -46,7 +46,7 @@ export function toPackageScriptDiagnostic(
   };
 }
 
-function checkerMatchesScript(
+function isCheckerMatchesScript(
   checker: ResolvedCheckerConfig,
   script: PackageBuildScript,
 ): boolean {
@@ -71,7 +71,7 @@ export function resolveManagedBuildConfigPaths(options: {
   return [
     ...new Set(
       options.checkers
-        .filter((checker) => checkerMatchesScript(checker, options.script))
+        .filter((checker) => isCheckerMatchesScript(checker, options.script))
         .map((checker) =>
           getOutputModulePath({
             checker,
@@ -193,7 +193,7 @@ function toGeneratedBuildScript(
   mode: GeneratedKnipPackageBuildMode,
 ): GeneratedKnipPackageBuildScript {
   return {
-    ...(script.checker === undefined ? {} : { checker: script.checker }),
+    ...(script.checker !== undefined && { checker: script.checker }),
     command: script.command,
     configPath: script.configPath,
     mode,

@@ -30,7 +30,7 @@ function createEmptyOutputGraph(): CheckerOutputGraph {
 
 function isBuildChecker(checker: ResolvedCheckerConfig): boolean {
   const adapter = getCheckerAdapter(checker.name);
-  return adapter ? adapter.execution === 'build' : false;
+  return adapter !== null && adapter.execution === 'build';
 }
 
 function formatMissingOutputDependencyProblem(options: {

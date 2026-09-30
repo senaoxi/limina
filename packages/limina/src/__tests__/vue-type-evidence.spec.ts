@@ -40,13 +40,13 @@ async function writeText(filePath: string, text: string): Promise<void> {
 }
 
 async function linkPackage(
-  rootDir: string,
+  rootDirectory: string,
   packageName: string,
 ): Promise<void> {
   const manifestPath = requireFromTest.resolve(`${packageName}/package.json`);
   const packageDirectory = path.dirname(manifestPath);
   const targetPath = path.join(
-    rootDir,
+    rootDirectory,
     'node_modules',
     ...packageName.split('/'),
   );
@@ -59,34 +59,36 @@ async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-vue-type-evidence-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-vue-type-evidence-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
-  for (const [relativePath, text] of Object.entries({
+  const fixtureEntries1 = Object.entries({
     'node_modules/vue/package.json':
       '{"name":"vue","version":"3.5.0","types":"index.d.ts"}\n',
     'node_modules/vue/index.d.ts': 'export {};\n',
     'package.json': '{"name":"fixture","private":true}\n',
     ...files,
-  })) {
-    await writeText(path.join(rootDir, relativePath), text);
+  });
+  for (const [relativePath, text] of fixtureEntries1) {
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     },
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
-async function linkVueToolchain(rootDir: string): Promise<void> {
-  await linkPackage(rootDir, 'vue-tsc');
+async function linkVueToolchain(rootDirectory: string): Promise<void> {
+  await linkPackage(rootDirectory, 'vue-tsc');
 }
 
 function createVueProject(
-  rootDir: string,
+  rootDirectory: string,
 ): Pick<
   ProjectInfo,
   | 'checkerPresets'
@@ -97,14 +99,14 @@ function createVueProject(
   | 'resolverConfigPath'
   | 'vueSemanticIdentity'
 > {
-  const configPath = path.join(rootDir, 'tsconfig.json');
+  const configPath = path.join(rootDirectory, 'tsconfig.json');
   const parsed = parseCheckerProjectConfigForContext({
     configPath,
     context: {
       checkerPresets: ['vue-tsc'],
       extensions: ['.vue'],
     },
-    projectRootDir: rootDir,
+    projectRootDir: rootDirectory,
   });
 
   return {

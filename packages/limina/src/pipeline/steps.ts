@@ -35,8 +35,9 @@ export function assertNeverTaskName(taskName: never): never {
 }
 
 export function getPipelineStepLabel(step: NormalizedPipelineStep): string {
-  if (step.type === 'task') return step.name;
-  return [step.command, ...(step.args ?? [])].join(' ');
+  return step.type === 'task'
+    ? step.name
+    : [step.command, ...(step.args ?? [])].join(' ');
 }
 
 function createMissingPipelineMessage(
@@ -56,8 +57,9 @@ function findPipelineSteps(
   config: ResolvedLiminaConfig,
   pipelineName: string,
 ): readonly PipelineStep[] | undefined {
-  if (config.pipelines === undefined) return undefined;
-  return config.pipelines[pipelineName];
+  return config.pipelines === undefined
+    ? undefined
+    : config.pipelines[pipelineName];
 }
 
 function requirePipelineSteps(options: {
@@ -91,11 +93,11 @@ export function getPipelineSteps(
 
 function normalizeStringStep(step: string): NormalizedPipelineStep {
   if (isBuiltinTaskName(step)) return { name: step, type: 'task' };
-  const [command, ...args] = step.split(/\s+/u).filter(Boolean);
+  const [command, ...arguments_] = step.split(/\s+/u).filter(Boolean);
   if (command === undefined) {
     throw new Error('Pipeline command step must not be empty.');
   }
-  return { args, command, type: 'command' };
+  return { args: arguments_, command, type: 'command' };
 }
 
 export function normalizePipelineStep(

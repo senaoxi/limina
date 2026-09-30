@@ -29,7 +29,8 @@ function createNamedPackagesByName(
 ): Map<string, NamedWorkspacePackage> {
   const byName = new Map<string, NamedWorkspacePackage>();
 
-  for (const workspacePackage of packages.filter(isNamedWorkspacePackage)) {
+  const namedPackages = packages.filter(isNamedWorkspacePackage);
+  for (const workspacePackage of namedPackages) {
     if (!byName.has(workspacePackage.name)) {
       byName.set(workspacePackage.name, workspacePackage);
     }

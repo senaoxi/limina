@@ -118,26 +118,34 @@ function getAnchorFailureMessage(
     : `Unable to find an ordinary directory anchor for ${mutationRoot}.`;
 }
 
+function assertDirectoryAnchor(
+  stats: NonNullable<Awaited<ReturnType<typeof lstatIfPresent>>>,
+  candidate: string,
+): void {
+  if (!stats.isDirectory()) {
+    throw new MutationBoundaryError(
+      `Mechanical mutation anchor is not a directory: ${candidate}.`,
+    );
+  }
+}
+
 async function resolveMechanicalAnchorFrom(
   cursor: string,
   mutationRoot: string,
 ): Promise<string> {
-  const stats = await lstatIfPresent(cursor);
-
-  if (requiresParentAnchor(stats)) {
-    return resolveMechanicalAnchorFrom(
-      getParentPath(cursor, getAnchorFailureMessage(stats, mutationRoot)),
-      mutationRoot,
-    );
+  let candidate = cursor;
+  while (true) {
+    const stats = await lstatIfPresent(candidate);
+    if (requiresParentAnchor(stats)) {
+      candidate = getParentPath(
+        candidate,
+        getAnchorFailureMessage(stats, mutationRoot),
+      );
+      continue;
+    }
+    assertDirectoryAnchor(stats!, candidate);
+    return candidate;
   }
-
-  if (!stats!.isDirectory()) {
-    throw new MutationBoundaryError(
-      `Mechanical mutation anchor is not a directory: ${cursor}.`,
-    );
-  }
-
-  return cursor;
 }
 
 export async function createMechanicalExactMutationAuthority(options: {

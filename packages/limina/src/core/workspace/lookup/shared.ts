@@ -52,13 +52,10 @@ export function isNodeModulesPackageRoot(directory: string): boolean {
   const parentDirectory = path.dirname(directory);
   const parentName = path.basename(parentDirectory);
 
-  if (parentName === 'node_modules') {
-    return true;
-  }
-
   return (
-    parentName.startsWith('@') &&
-    path.basename(path.dirname(parentDirectory)) === 'node_modules'
+    parentName === 'node_modules' ||
+    (parentName.startsWith('@') &&
+      path.basename(path.dirname(parentDirectory)) === 'node_modules')
   );
 }
 

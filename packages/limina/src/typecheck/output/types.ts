@@ -32,7 +32,9 @@ export interface OutputDeclarationCopyPlan {
 }
 
 export interface OutputDeclarationCopyOptions {
-  /** Transaction-race injection used only by focused source-level tests. */
+  /**
+  Transaction-race injection used only by focused source-level tests.
+  */
   beforePublishForTesting?: (
     entry: Readonly<OutputDeclarationCopyPlanEntry>,
     index: number,
@@ -63,7 +65,9 @@ export interface RegularFileState {
 
 export interface OwnedDeclarationFile {
   readonly authority: MutationAuthority;
-  /** Expected bytes while an exclusive write is incomplete or unverified. */
+  /**
+  Expected bytes while an exclusive write is incomplete or unverified.
+  */
   readonly pendingContent?: Buffer;
   readonly path: string;
   readonly state: RegularFileState;

@@ -8,16 +8,24 @@ import {
 import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { ImportCore } from './imports';
 import type { ProjectDependencyCaches } from './project-dependencies/contracts';
+import { mapPromise } from './promise';
 import type { WorkspaceCore } from './workspace';
 
 export class BuildGraphCore {
   readonly #config: ResolvedLiminaConfig;
+
   readonly #imports: ImportCore;
+
   readonly #projectConfigs: CheckerProjectConfigCache;
+
   readonly #projectDependencies: ProjectDependencyCaches;
+
   readonly #workspace: WorkspaceCore;
+
   readonly #artifactNamespace: LiminaArtifactNamespace;
+
   readonly #onGraphPrepared: (graph: GeneratedTsconfigGraphResult) => void;
+
   #graphPromise: Promise<GeneratedTsconfigGraphResult> | undefined;
 
   constructor(options: {
@@ -38,18 +46,14 @@ export class BuildGraphCore {
     this.#onGraphPrepared = options.onGraphPrepared;
   }
 
-  getGraph(): Promise<GeneratedTsconfigGraphResult> {
-    this.#graphPromise ??= this.#prepareGraph();
-
-    return this.#graphPromise;
-  }
-
   #prepareGraph(): Promise<GeneratedTsconfigGraphResult> {
-    return Promise.all([
+    const workspacePromise = Promise.all([
       this.#workspace.getValidatedContext(),
       this.#workspace.getPathIndex(),
-    ])
-      .then(([topology, workspacePathIndex]) =>
+    ]);
+    const graphPromise = mapPromise(
+      workspacePromise,
+      ([topology, workspacePathIndex]) =>
         prepareGeneratedTsconfigGraph(this.#config, {
           artifactNamespace: this.#artifactNamespace,
           importAnalysisContext: this.#imports.context,
@@ -58,11 +62,17 @@ export class BuildGraphCore {
           workspaceContext: topology,
           workspacePathIndex,
         }),
-      )
-      .then((graph) => {
-        this.#onGraphPrepared(graph);
-        return graph;
-      });
+    );
+    return mapPromise(graphPromise, (graph) => {
+      this.#onGraphPrepared(graph);
+      return graph;
+    });
+  }
+
+  getGraph(): Promise<GeneratedTsconfigGraphResult> {
+    this.#graphPromise ??= this.#prepareGraph();
+
+    return this.#graphPromise;
   }
 
   async getSourceToDts(checkerName: string): Promise<Map<string, string>> {

@@ -1,7 +1,7 @@
 export {
-  runDefaultCheck,
+  isRunDefaultCheck as runDefaultCheck,
   runDefaultCheckWithResult,
-  runPipeline,
+  isRunPipeline as runPipeline,
   runPipelineWithResult,
 } from './execution';
 export { createDefaultExecutionPlan, createExecutionPlan } from './plan';

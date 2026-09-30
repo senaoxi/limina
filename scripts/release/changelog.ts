@@ -37,7 +37,7 @@ interface ChangelogSectionBuckets {
 }
 
 function todayString(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toISOString().split('T', 1)[0];
 }
 
 export function createEmptyChangelogTemplate(): string {
@@ -172,7 +172,7 @@ export function collectCommitLinesSinceTag(
   const gitTags = fromTag ? [] : readGitTags();
   const previousTag = fromTag || selectPreviousGitTag(config, gitTags);
   const range = previousTag ? `${previousTag}..HEAD` : 'HEAD';
-  const args = [
+  const arguments_ = [
     'log',
     range,
     '--oneline',
@@ -180,7 +180,7 @@ export function collectCommitLinesSinceTag(
     '--',
     ...config.changelogPaths,
   ];
-  const output = runCommand(getGitCommand(), args, {
+  const output = runCommand(getGitCommand(), arguments_, {
     cwd: REPO_ROOT,
     logger: ChangelogLogger,
   }).trim();
@@ -358,9 +358,10 @@ export async function runChangelogCommand(
   ChangelogLogger.info('changelog update started');
   const changelogElapsed = createElapsedTimer();
 
-  for (const plan of new Map(
+  const plansByChangelogPath = new Map(
     plans.map((plan) => [plan.config.changelogPath, plan]),
-  ).values()) {
+  );
+  for (const plan of plansByChangelogPath.values()) {
     const result = writeChangelogForPlan(plan, {
       dryRun: options.dryRun,
       fromTag: options.fromTag,

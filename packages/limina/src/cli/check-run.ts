@@ -43,26 +43,28 @@ interface CheckExecutionContext {
 }
 
 function createProfileMetrics(): ProfileMetrics | undefined {
-  if (process.env.LIMINA_PROFILE !== '1') return undefined;
-  return createProfilingMetricsRecorder();
+  return process.env.LIMINA_PROFILE === '1'
+    ? createProfilingMetricsRecorder()
+    : undefined;
 }
 
 function getConfigLoaderField(flags: CheckFlags): { configLoader?: string } {
-  if (flags.configLoader === undefined) return {};
-  return { configLoader: flags.configLoader };
+  return flags.configLoader === undefined
+    ? {}
+    : { configLoader: flags.configLoader };
 }
 
 function getConfigPathField(options: {
   configPath: string;
   flags: CheckFlags;
 }): { configPath?: string } {
-  if (options.flags.config === undefined) return {};
-  return { configPath: normalizeAbsolutePathIdentity(options.configPath) };
+  return options.flags.config === undefined
+    ? {}
+    : { configPath: normalizeAbsolutePathIdentity(options.configPath) };
 }
 
 function getModeField(flags: CheckFlags): { mode?: string } {
-  if (flags.mode === undefined) return {};
-  return { mode: flags.mode };
+  return flags.mode === undefined ? {} : { mode: flags.mode };
 }
 
 function createSummaryGlobalContext(options: {
@@ -85,8 +87,9 @@ function getRecordedRun(
 ):
   | ReturnType<ReturnType<typeof createCheckRunRecorder>['getRunSummary']>
   | undefined {
-  if (state.recorder === undefined) return undefined;
-  return state.recorder.getRunSummary();
+  return state.recorder === undefined
+    ? undefined
+    : state.recorder.getRunSummary();
 }
 
 function getSummaryState(state: CheckRunState): {
@@ -94,9 +97,9 @@ function getSummaryState(state: CheckRunState): {
   run: NonNullable<ReturnType<typeof getRecordedRun>>;
 } | null {
   const run = getRecordedRun(state);
-  if (run === undefined) return null;
-  if (state.executionResult === undefined) return null;
-  return { execution: state.executionResult, run };
+  return run === undefined || state.executionResult === undefined
+    ? null
+    : { execution: state.executionResult, run };
 }
 
 function writeCheckSummary(options: {
@@ -107,7 +110,7 @@ function writeCheckSummary(options: {
 }): void {
   const summary = getSummaryState(options.state);
   if (summary === null) return;
-  const verbose = options.flags.verbose === true;
+  const isVerbose = options.flags.verbose === true;
   process.stdout.write(
     `\n${formatCheckRunSummaryHuman({
       color: shouldUseColor(),
@@ -121,7 +124,7 @@ function writeCheckSummary(options: {
         }),
         limit: DEFAULT_VISIBLE_ISSUE_LIMIT,
         limitExplicit: false,
-        verbose,
+        verbose: isVerbose,
       },
       rootDir: options.rootDir,
       run: summary.run,
@@ -131,8 +134,7 @@ function writeCheckSummary(options: {
 }
 
 function createCommandLabel(pipeline: string | undefined): string {
-  if (pipeline === undefined) return 'limina check';
-  return `limina check ${pipeline}`;
+  return pipeline === undefined ? 'limina check' : `limina check ${pipeline}`;
 }
 
 async function createProfileSessionIfEnabled(options: {
@@ -153,19 +155,17 @@ function createPlan(options: {
   pipeline: string | undefined;
   planOptions: CheckPlanOptions;
 }): CheckPlan {
-  if (options.pipeline === undefined) {
-    return createDefaultExecutionPlan(options.config, options.planOptions);
-  }
-  return createExecutionPlan(
-    options.config,
-    options.pipeline,
-    options.planOptions,
-  );
+  return options.pipeline === undefined
+    ? createDefaultExecutionPlan(options.config, options.planOptions)
+    : createExecutionPlan(
+        options.config,
+        options.pipeline,
+        options.planOptions,
+      );
 }
 
 function getPipelineName(pipeline: string | undefined): string {
-  if (pipeline === undefined) return 'default';
-  return pipeline;
+  return pipeline === undefined ? 'default' : pipeline;
 }
 
 function createRecorder(
@@ -190,17 +190,16 @@ async function executePlannedCheck(options: {
     executionPlan: options.context.plan,
     flow: options.context.flow,
   };
-  if (options.context.pipeline === undefined) {
-    return runDefaultCheckWithResult(options.context.config, executionOptions);
-  }
-  return runPipelineWithResult(
-    options.context.config,
-    options.context.pipeline,
-    executionOptions,
-  );
+  return options.context.pipeline === undefined
+    ? runDefaultCheckWithResult(options.context.config, executionOptions)
+    : runPipelineWithResult(
+        options.context.config,
+        options.context.pipeline,
+        executionOptions,
+      );
 }
 
-async function executeCheckFlow(
+async function isExecuteCheckFlow(
   context: CheckExecutionContext,
   state: CheckRunState,
 ): Promise<boolean> {
@@ -283,7 +282,7 @@ export async function runConfiguredCheck(options: {
   const state: CheckRunState = { passed: false };
   try {
     state.passed = await runCheckWithCliFlowCleanup(context.flow, () =>
-      executeCheckFlow(context, state),
+      isExecuteCheckFlow(context, state),
     );
   } finally {
     await finalizeCheckRun(context, state);

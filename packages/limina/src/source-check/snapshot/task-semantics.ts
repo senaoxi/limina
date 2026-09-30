@@ -1,3 +1,4 @@
+import { isIntegerNumber } from '#utils/validation/is-integer';
 import { getCheckerTargetRelationProblem } from './checker-target-semantics';
 import type { LiminaCheckRunTaskSummary } from './types';
 import {
@@ -25,11 +26,11 @@ function getStartedTaskTimingProblem(
 
 const successfulStartedStates = new Set(['disabled', 'passed']);
 
-function successfulTaskHasReason(task: LiminaCheckRunTaskSummary): boolean {
+function isSuccessfulTaskHasReason(task: LiminaCheckRunTaskSummary): boolean {
   return successfulStartedStates.has(task.state) && task.reason !== undefined;
 }
 
-function disabledTaskHasStatistics(task: LiminaCheckRunTaskSummary): boolean {
+function isDisabledTaskHasStatistics(task: LiminaCheckRunTaskSummary): boolean {
   return task.state === 'disabled' && hasRunnerStatistics(task);
 }
 
@@ -42,11 +43,11 @@ function getStartedTaskMetadataProblem(
       `Started task "${task.label}" must not carry blockedBy.`,
     ),
     problemWhen(
-      successfulTaskHasReason(task),
+      isSuccessfulTaskHasReason(task),
       `Passed or disabled task "${task.label}" must not carry reason.`,
     ),
     problemWhen(
-      disabledTaskHasStatistics(task),
+      isDisabledTaskHasStatistics(task),
       `Disabled task "${task.label}" must not carry runner statistics.`,
     ),
   ]);
@@ -59,14 +60,13 @@ function getStartedTaskProblem(task: LiminaCheckRunTaskSummary): string | null {
   ]);
 }
 
-function syntheticTaskCarriesRunnerData(
+function isSyntheticTaskCarriesRunnerData(
   task: LiminaCheckRunTaskSummary,
 ): boolean {
   const hasTiming = [task.startedAt, task.completedAt, task.durationMs].some(
     (value) => value !== undefined,
   );
-  if (hasTiming) return true;
-  return hasRunnerStatistics(task);
+  return hasTiming || hasRunnerStatistics(task);
 }
 
 function getBlockedTaskProblem(task: LiminaCheckRunTaskSummary): string | null {
@@ -89,12 +89,13 @@ function getSyntheticTaskProblem(
   task: LiminaCheckRunTaskSummary,
 ): string | null {
   const dataProblem = problemWhen(
-    syntheticTaskCarriesRunnerData(task),
+    isSyntheticTaskCarriesRunnerData(task),
     `Synthetic task "${task.label}" carries runner data.`,
   );
   if (dataProblem !== null) return dataProblem;
-  if (task.state === 'blocked') return getBlockedTaskProblem(task);
-  return getSkippedTaskProblem(task);
+  return task.state === 'blocked'
+    ? getBlockedTaskProblem(task)
+    : getSkippedTaskProblem(task);
 }
 
 function isStartedTask(task: LiminaCheckRunTaskSummary): boolean {
@@ -104,8 +105,9 @@ function isStartedTask(task: LiminaCheckRunTaskSummary): boolean {
 function getTaskLifecycleProblem(
   task: LiminaCheckRunTaskSummary,
 ): string | null {
-  if (isStartedTask(task)) return getStartedTaskProblem(task);
-  return getSyntheticTaskProblem(task);
+  return isStartedTask(task)
+    ? getStartedTaskProblem(task)
+    : getSyntheticTaskProblem(task);
 }
 
 export function getCompletedTaskSemanticProblem(
@@ -117,7 +119,7 @@ export function getCompletedTaskSemanticProblem(
       `Execution task id "${task.id}" uses the checker-target namespace.`,
     ),
     problemWhen(
-      !Number.isInteger(task.generation) || task.generation < 0,
+      !isIntegerNumber(task.generation) || task.generation < 0,
       `Task "${task.label}" has invalid generation.`,
     ),
     problemWhen(
@@ -133,8 +135,9 @@ function getMissingTaskBlockerProblem(options: {
   root: LiminaCheckRunTaskSummary | undefined;
   task: LiminaCheckRunTaskSummary;
 }): string | null {
-  if (options.root?.state === 'failed') return null;
-  return `Task "${options.task.label}" blocker is not an actual failed task.`;
+  return options.root?.state === 'failed'
+    ? null
+    : `Task "${options.task.label}" blocker is not an actual failed task.`;
 }
 
 function getTaskBlockerLabelProblem(options: {
@@ -142,9 +145,10 @@ function getTaskBlockerLabelProblem(options: {
   blockerId: string;
   root: LiminaCheckRunTaskSummary | undefined;
 }): string | null {
-  if (options.root === undefined) return null;
-  if (options.root.label === options.blockerLabel) return null;
-  return `Task blocker label mismatch for "${options.blockerId}".`;
+  return options.root === undefined ||
+    options.root.label === options.blockerLabel
+    ? null
+    : `Task blocker label mismatch for "${options.blockerId}".`;
 }
 
 export function getTaskBlockerProblem(options: {

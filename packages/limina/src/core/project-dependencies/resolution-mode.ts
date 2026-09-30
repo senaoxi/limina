@@ -35,6 +35,5 @@ function formatTypeScriptResolutionMode(
   mode: ts.ResolutionMode | undefined,
 ): string {
   if (mode === undefined) return 'default';
-  if (mode === ts.ModuleKind.CommonJS) return 'require';
-  return 'import';
+  return mode === ts.ModuleKind.CommonJS ? 'require' : 'import';
 }

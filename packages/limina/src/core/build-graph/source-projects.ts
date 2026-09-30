@@ -4,6 +4,7 @@ import {
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import {
   isPathInsideDirectory,
   normalizeAbsolutePath,
@@ -58,7 +59,7 @@ export function createSourceProject(options: {
   const ownedFileNames = parsed.fileNames
     .map(normalizeAbsolutePath)
     .filter((fileName) => !isInsideNodeModules(fileName))
-    .sort();
+    .sort(compareCodeUnits);
   const outputOptions = readOutputOptions(
     options.config,
     options.sourceConfigPath,
@@ -104,13 +105,11 @@ export function isLocalPathOutsideActivatedRegions(options: {
   filePath: string;
 }): boolean {
   const filePath = normalizeAbsolutePath(options.filePath);
-  if (!isPathInsideDirectory(filePath, options.config.rootDir)) {
-    return false;
-  }
-  if (isInsideNodeModules(filePath)) {
-    return false;
-  }
-  return !options.activatedRegions.isInsideActivatedRegion(filePath);
+  return (
+    isPathInsideDirectory(filePath, options.config.rootDir) &&
+    !isInsideNodeModules(filePath) &&
+    !options.activatedRegions.isInsideActivatedRegion(filePath)
+  );
 }
 
 function getOutOfRegionOwnedFiles(options: {
@@ -118,10 +117,10 @@ function getOutOfRegionOwnedFiles(options: {
   project: SourceProject;
 }): string[] {
   return options.project.ownedFileNames.filter((fileName) => {
-    if (isInsideNodeModules(fileName)) {
-      return true;
-    }
-    return !options.activatedRegions.isInsideActivatedRegion(fileName);
+    return (
+      isInsideNodeModules(fileName) ||
+      !options.activatedRegions.isInsideActivatedRegion(fileName)
+    );
   });
 }
 

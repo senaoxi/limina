@@ -33,15 +33,14 @@ export function createCandidateGlobMatcher(
 
   return (relativePath) =>
     positives.some((matches) => matches(relativePath)) &&
-    !negatives.some((matches) => matches(relativePath));
+    negatives.every((matches) => !matches(relativePath));
 }
 
 function isNestedRelativeRoot(relativeRoot: string): boolean {
-  if (relativeRoot === '.' || relativeRoot === '..') {
-    return false;
-  }
-
-  return !relativeRoot.startsWith('../');
+  return (
+    !(relativeRoot === '.' || relativeRoot === '..') &&
+    !relativeRoot.startsWith('../')
+  );
 }
 
 function toStructuralIgnorePattern(

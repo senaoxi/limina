@@ -39,7 +39,7 @@ export interface GeneratedGraphPreparationState {
 }
 
 export function createGeneratedGraphPreparationState(
-  rootDir: string,
+  rootDirectory: string,
   checkerOwnershipPlan: CheckerOwnershipPlan,
 ): GeneratedGraphPreparationState {
   return {
@@ -64,7 +64,7 @@ export function createGeneratedGraphPreparationState(
       changed: false,
       expectedFiles: new Set(),
       files: new Map(),
-      rootDir,
+      rootDir: rootDirectory,
     },
   };
 }
@@ -101,16 +101,18 @@ export function registerPreparedChecker(options: {
     checkerName,
     options.preparedChecker.collection.buildModulesBySourcePath,
   );
-  if (isBuildCapablePreset(checkerName)) {
-    options.state.rootBuildPathsByChecker.set(
-      checkerName,
-      options.preparedChecker.rootBuildPaths,
-    );
-    options.state.checkerEntries.set(
-      checkerName,
-      options.preparedChecker.entryPath,
-    );
+  if (!isBuildCapablePreset(checkerName)) {
+    return;
   }
+
+  options.state.rootBuildPathsByChecker.set(
+    checkerName,
+    options.preparedChecker.rootBuildPaths,
+  );
+  options.state.checkerEntries.set(
+    checkerName,
+    options.preparedChecker.entryPath,
+  );
 }
 
 export function getCheckerProjects(options: {

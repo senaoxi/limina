@@ -4,13 +4,16 @@ import { isPathInsideDirectory, normalizeAbsolutePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
 import path from 'pathe';
-import type { DistPackageJson, SelfSpecifierMatchers } from './manifest';
+import type {
+  DistPackageJson as DistributionPackageJson,
+  SelfSpecifierMatchers,
+} from './manifest';
 import { findPackageImportTargets, isAllowedSelfSpecifier } from './manifest';
 
 export interface PublishedSpecifierValidationOptions {
   allowedExternalPackages: Set<string>;
   environment: RuntimeEnvironment;
-  importsField: DistPackageJson['imports'];
+  importsField: DistributionPackageJson['imports'];
   outDir: string;
   packageName: string;
   selfSpecifiers: SelfSpecifierMatchers;
@@ -59,8 +62,7 @@ function getSpecifierKind(specifier: string): SpecifierKind {
 
 function getNonStringTargetKind(target: unknown): ImportTargetKind | null {
   if (target === null) return 'null';
-  if (typeof target !== 'string') return 'invalid';
-  return null;
+  return typeof target === 'string' ? null : 'invalid';
 }
 
 const stringTargetKindMatchers: readonly {
@@ -80,8 +82,9 @@ function getStringTargetKind(target: string): ImportTargetKind {
 
 function getImportTargetKind(target: unknown): ImportTargetKind {
   const nonStringKind = getNonStringTargetKind(target);
-  if (nonStringKind !== null) return nonStringKind;
-  return getStringTargetKind(target as string);
+  return nonStringKind === null
+    ? getStringTargetKind(target as string)
+    : nonStringKind;
 }
 
 function validateRelativeImportTarget(options: {
@@ -95,10 +98,9 @@ function validateRelativeImportTarget(options: {
   if (!isPathInsideDirectory(absoluteTarget, options.outDir)) {
     return `package import "${options.specifier}" target "${options.target}" escapes the published package root`;
   }
-  if (!existsSync(absoluteTarget)) {
-    return `package import "${options.specifier}" target "${options.target}" is not present in the published package`;
-  }
-  return null;
+  return existsSync(absoluteTarget)
+    ? null
+    : `package import "${options.specifier}" target "${options.target}" is not present in the published package`;
 }
 
 interface ImportTargetValidationOptions {
@@ -144,8 +146,9 @@ function validatePackageTarget(
     importsField: undefined,
     specifier: target,
   });
-  if (problem === null) return null;
-  return `package import "${options.source.specifier}" target "${target}" is invalid: ${problem}`;
+  return problem === null
+    ? null
+    : `package import "${options.source.specifier}" target "${target}" is invalid: ${problem}`;
 }
 
 const importTargetValidators: Record<ImportTargetKind, ImportTargetValidator> =
@@ -195,18 +198,18 @@ function validatePackageImportSpecifier(
 function validateBuiltinSpecifier(
   options: PublishedSpecifierValidationOptions,
 ): string | null {
-  if (options.environment === 'node') return null;
-  return `browser/runtime output must not import Node builtin "${options.specifier}"`;
+  return options.environment === 'node'
+    ? null
+    : `browser/runtime output must not import Node builtin "${options.specifier}"`;
 }
 
 function validateSelfSpecifier(options: {
   selfSpecifiers: SelfSpecifierMatchers;
   specifier: string;
 }): string | null {
-  if (isAllowedSelfSpecifier(options.specifier, options.selfSpecifiers)) {
-    return null;
-  }
-  return `self import "${options.specifier}" is not exposed by output package.json exports`;
+  return isAllowedSelfSpecifier(options.specifier, options.selfSpecifiers)
+    ? null
+    : `self import "${options.specifier}" is not exposed by output package.json exports`;
 }
 
 function validatePackageSpecifier(
@@ -216,8 +219,9 @@ function validatePackageSpecifier(
   if (packageRoot === options.packageName) {
     return validateSelfSpecifier(options);
   }
-  if (options.allowedExternalPackages.has(packageRoot)) return null;
-  return `"${options.specifier}" resolves to package "${packageRoot}" which is not listed in dependencies, peerDependencies, optionalDependencies, or self exports`;
+  return options.allowedExternalPackages.has(packageRoot)
+    ? null
+    : `"${options.specifier}" resolves to package "${packageRoot}" which is not listed in dependencies, peerDependencies, optionalDependencies, or self exports`;
 }
 
 const validators: Record<

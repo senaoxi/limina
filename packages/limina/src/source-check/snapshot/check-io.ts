@@ -5,7 +5,7 @@ import {
   type AtomicWriteOptions,
   writeJsonAtomically,
 } from '../../check-reporting/atomic-writer';
-import { generatedRootDirName } from '../../core/build-graph/generated/paths';
+import { generatedRootDirName as generatedRootDirectoryName } from '../../core/build-graph/generated/paths';
 import {
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
@@ -26,19 +26,26 @@ import type {
 } from './types';
 import { CHECK_ISSUE_SNAPSHOT_VERSION } from './types';
 
-export function getCheckIssueSnapshotPath(rootDir: string): string {
-  return path.join(rootDir, generatedRootDirName, 'check', 'last-run.json');
+export function getCheckIssueSnapshotPath(rootDirectory: string): string {
+  return path.join(
+    rootDirectory,
+    generatedRootDirectoryName,
+    'check',
+    'last-run.json',
+  );
 }
 
 function getCompletedRunError(run: LiminaCheckRunSummary): Error | null {
   const problem = getCompletedRunSemanticProblem(run);
-  if (problem === null) return null;
-  return new Error(`Invalid completed check run summary: ${problem}`);
+  return problem === null
+    ? null
+    : new Error(`Invalid completed check run summary: ${problem}`);
 }
 
 function getNotRunError(run: LiminaCheckRunSummary): Error | null {
-  if (getNotRunSummaryProblem(run) === null) return null;
-  return new Error('Invalid not-run check snapshot model.');
+  return getNotRunSummaryProblem(run) === null
+    ? null
+    : new Error('Invalid not-run check snapshot model.');
 }
 
 function getSnapshotRunError(snapshot: CheckIssueSnapshot): Error | null {
@@ -138,8 +145,7 @@ function resolveCurrentCommand(
   current: CheckIssueSnapshot,
   command: string | undefined,
 ): string {
-  if (command !== undefined) return command;
-  return current.command;
+  return command === undefined ? current.command : command;
 }
 
 export async function completeCheckIssueSnapshot(options: {
@@ -164,8 +170,7 @@ function getAppendedCommand(options: {
   current: CheckIssueSnapshot | null;
 }): string {
   if (options.command !== undefined) return options.command;
-  if (options.current !== null) return options.current.command;
-  return 'limina check';
+  return options.current === null ? 'limina check' : options.current.command;
 }
 
 function getCurrentIssues(
@@ -241,10 +246,11 @@ export async function appendTaskFailureIssueIfMissing(options: {
 function hasValidSnapshotSemantics(snapshot: CheckIssueSnapshot): boolean {
   const run = snapshot.run;
   if (run === undefined) return true;
-  if (snapshot.status === 'completed') {
-    return getCompletedRunSemanticProblem(run) === null;
-  }
-  return getNotRunSummaryProblem(run) === null;
+  return (
+    (snapshot.status === 'completed'
+      ? getCompletedRunSemanticProblem(run)
+      : getNotRunSummaryProblem(run)) === null
+  );
 }
 
 function getOwnedSnapshot(
@@ -256,9 +262,10 @@ function getOwnedSnapshot(
 function validateParsedCheckSnapshot(
   parsed: unknown,
 ): CheckIssueSnapshot | null {
-  if (!isCurrentCheckIssueSnapshotStructure(parsed)) return null;
-  if (!hasValidSnapshotSemantics(parsed)) return null;
-  return getOwnedSnapshot(parsed);
+  return !isCurrentCheckIssueSnapshotStructure(parsed) ||
+    !hasValidSnapshotSemantics(parsed)
+    ? null
+    : getOwnedSnapshot(parsed);
 }
 
 async function parseCheckIssueSnapshot(
@@ -273,9 +280,10 @@ async function parseCheckIssueSnapshot(
 }
 
 export async function readCheckIssueSnapshot(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<CheckIssueSnapshot | null> {
-  const snapshotPath = getCheckIssueSnapshotPath(rootDir);
-  if (!existsSync(snapshotPath)) return null;
-  return parseCheckIssueSnapshot(snapshotPath);
+  const snapshotPath = getCheckIssueSnapshotPath(rootDirectory);
+  return existsSync(snapshotPath)
+    ? parseCheckIssueSnapshot(snapshotPath)
+    : null;
 }

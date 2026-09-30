@@ -1,13 +1,14 @@
 import { isBuildCapablePreset } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { createLiminaTsconfigSchemaPath } from '#core/tsconfig/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import path from 'pathe';
 import { createGeneratedCompilerOptionOverrides } from './compiler-overrides';
 import { readGraphRules } from './generated/config-readers';
 import {
   createRelativePath,
-  getGeneratedOutDir,
+  getGeneratedOutDir as getGeneratedOutDirectory,
   getGeneratedOutputTsBuildInfoPath,
   getGeneratedTsBuildInfoPath,
 } from './generated/paths';
@@ -22,13 +23,13 @@ function isSameOrParentDirectory(
   childDirectory: string,
 ): boolean {
   const relativePath = path.relative(parentDirectory, childDirectory);
-  if (relativePath === '') {
-    return true;
-  }
-  return !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+  return (
+    relativePath === '' ||
+    (!relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+  );
 }
 
-function containsAllDirectories(
+function isContainsAllDirectories(
   parentDirectory: string,
   childDirectories: string[],
 ): boolean {
@@ -42,7 +43,7 @@ function findCommonDirectory(
   fileDirectories: string[],
 ): string {
   let commonDirectory = initialDirectory;
-  while (!containsAllDirectories(commonDirectory, fileDirectories)) {
+  while (!isContainsAllDirectories(commonDirectory, fileDirectories)) {
     const parentDirectory = path.dirname(commonDirectory);
     if (parentDirectory === commonDirectory) {
       return commonDirectory;
@@ -52,14 +53,13 @@ function findCommonDirectory(
   return commonDirectory;
 }
 
-function getCommonSourceRootDir(project: SourceProject): string {
+function getCommonSourceRootDirectory(project: SourceProject): string {
   const fileDirectories = project.fileNames.map((fileName) =>
     path.dirname(fileName),
   );
-  if (fileDirectories.length === 0) {
-    return path.dirname(project.configPath);
-  }
-  return findCommonDirectory(fileDirectories[0]!, fileDirectories);
+  return fileDirectories.length === 0
+    ? path.dirname(project.configPath)
+    : findCommonDirectory(fileDirectories[0]!, fileDirectories);
 }
 
 function assertDeclarationInputFiles(project: SourceProject): void {
@@ -90,8 +90,9 @@ function createDtsLiminaOptions(
 function createRelativeImportRewriteOverride(
   project: SourceProject,
 ): Record<string, unknown> {
-  if (project.options.rewriteRelativeImportExtensions !== true) return {};
-  return { rewriteRelativeImportExtensions: false };
+  return project.options.rewriteRelativeImportExtensions === true
+    ? { rewriteRelativeImportExtensions: false }
+    : {};
 }
 
 export function createGeneratedDtsConfig(options: {
@@ -100,15 +101,15 @@ export function createGeneratedDtsConfig(options: {
 }): Record<string, unknown> {
   const { config, project } = options;
   assertDeclarationInputFiles(project);
-  const managedOutDir = getGeneratedOutDir({
+  const managedOutDirectory = getGeneratedOutDirectory({
     checkerName: project.checkerName,
     packageRootDir: project.packageRootDir,
     rootDir: config.rootDir,
     sourceConfigPath: project.configPath,
   });
-  const relativeManagedOutDir = createRelativePath(
+  const relativeManagedOutDirectory = createRelativePath(
     project.dtsConfigPath,
-    managedOutDir,
+    managedOutDirectory,
   );
   return {
     $schema: createLiminaTsconfigSchemaPath(
@@ -135,10 +136,10 @@ export function createGeneratedDtsConfig(options: {
       ...createRelativeImportRewriteOverride(project),
       rootDir: createRelativePath(
         project.dtsConfigPath,
-        getCommonSourceRootDir(project),
+        getCommonSourceRootDirectory(project),
       ),
-      outDir: relativeManagedOutDir,
-      declarationDir: relativeManagedOutDir,
+      outDir: relativeManagedOutDirectory,
+      declarationDir: relativeManagedOutDirectory,
       tsBuildInfoFile: createRelativePath(
         project.dtsConfigPath,
         getGeneratedTsBuildInfoPath({
@@ -149,9 +150,11 @@ export function createGeneratedDtsConfig(options: {
         }),
       ),
     },
-    references: [...project.references].sort().map((referencePath) => ({
-      path: createRelativePath(project.dtsConfigPath, referencePath),
-    })),
+    references: [...project.references]
+      .sort(compareCodeUnits)
+      .map((referencePath) => ({
+        path: createRelativePath(project.dtsConfigPath, referencePath),
+      })),
     liminaOptions: createDtsLiminaOptions(project),
   };
 }
@@ -218,9 +221,11 @@ export function createGeneratedOutputProjectConfig(options: {
         }),
       ),
     },
-    references: [...project.outputReferences].sort().map((referencePath) => ({
-      path: createRelativePath(project.outputConfigPath, referencePath),
-    })),
+    references: [...project.outputReferences]
+      .sort(compareCodeUnits)
+      .map((referencePath) => ({
+        path: createRelativePath(project.outputConfigPath, referencePath),
+      })),
     liminaOptions: {
       generated: true,
       checker: project.checkerName,
@@ -256,7 +261,7 @@ function createGeneratedSolutionConfig(options: {
     ),
     files: [],
     references: [...options.solution.references]
-      .sort()
+      .sort(compareCodeUnits)
       .map((referencePath) => ({
         path: createRelativePath(
           options.solution.buildConfigPath,
@@ -281,18 +286,4 @@ export function createGeneratedOutputSolutionConfig(options: {
   return createGeneratedSolutionConfig(options);
 }
 
-export function createCheckerBuildConfig(options: {
-  checkerName: string;
-  entryPath: string;
-  references: string[];
-  rootDir: string;
-}): Record<string, unknown> {
-  return {
-    $schema: createLiminaTsconfigSchemaPath(options.rootDir, options.entryPath),
-    files: [],
-    references: options.references.sort().map((referencePath) => ({
-      path: createRelativePath(options.entryPath, referencePath),
-    })),
-    liminaOptions: { generated: true, checker: options.checkerName },
-  };
-}
+export { createCheckerBuildConfig } from './checker-build-config';

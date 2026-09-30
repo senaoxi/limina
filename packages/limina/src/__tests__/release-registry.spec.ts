@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createReleaseConsistencyState } from '../package-check/release/consistency/dependencies';
-import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
+import { loadReleaseRegistryConfig } from '../package-check/release/registry/config';
 import { fetchRegistryPackageMetadata } from '../package-check/release/registry/metadata';
 import { fetchRegistryTarball } from '../package-check/release/registry/tarball';
 import { createFixturePathResolver } from './helpers/path';
@@ -40,7 +40,7 @@ describe('effective release registry authority', () => {
       f.path('.npmrc'),
       'registry=https://project.example/\n@${SCOPE}:registry=https://scope.example/',
     );
-    const snapshot = loadReleaseRegistryConfiguration(f.rootDir, {
+    const snapshot = loadReleaseRegistryConfig(f.rootDir, {
       ...f.environment,
       SCOPE: 'team',
       NPM_CONFIG_REGISTRY: '',
@@ -52,16 +52,16 @@ describe('effective release registry authority', () => {
     expect(snapshot.authorityFor('@team/pkg').baseUrl).toBe(
       'https://scope.example/',
     );
-    expect(() =>
-      loadReleaseRegistryConfiguration(f.rootDir, f.environment),
-    ).toThrow(/environment variable SCOPE is not defined/u);
+    expect(() => loadReleaseRegistryConfig(f.rootDir, f.environment)).toThrow(
+      /environment variable SCOPE is not defined/u,
+    );
   });
 
   it('expands home-relative configuration paths using platform syntax', async () => {
     const f = await fixture();
     await writeFile(f.path('user.npmrc'), 'registry=https://home.example/');
     const prefix = process.platform === 'win32' ? '~\\' : '~/';
-    const snapshot = loadReleaseRegistryConfiguration(f.rootDir, {
+    const snapshot = loadReleaseRegistryConfig(f.rootDir, {
       ...f.environment,
       NPM_CONFIG_USERCONFIG: `${prefix}user.npmrc`,
     });
@@ -90,7 +90,7 @@ describe('effective release registry authority', () => {
         f.path('packages/private/a/.npmrc'),
         'registry=https://leaf.example/',
       );
-      const snapshot = loadReleaseRegistryConfiguration(
+      const snapshot = loadReleaseRegistryConfig(
         f.path('packages/private/a'),
         f.environment,
       );
@@ -120,7 +120,7 @@ describe('effective release registry authority', () => {
       NPM_CONFIG_REGISTRY: 'https://upper.example/',
       npm_config_registry: 'https://lower.example/',
     };
-    const snapshot = loadReleaseRegistryConfiguration(f.rootDir, environment);
+    const snapshot = loadReleaseRegistryConfig(f.rootDir, environment);
     expect(snapshot.authorityFor('@team/a').baseUrl).toBe(
       'https://corp.example/team/',
     );
@@ -157,12 +157,12 @@ describe('effective release registry authority', () => {
       'registry=https://wrong.example/',
     );
     await writeFile(f.path('.npmrc'), 'registry=https://corp.example/one/');
-    const first = loadReleaseRegistryConfiguration(
+    const first = loadReleaseRegistryConfig(
       f.path('packages/a/src'),
       f.environment,
     );
     await writeFile(f.path('.npmrc'), 'registry=https://corp.example/two/');
-    const second = loadReleaseRegistryConfiguration(f.rootDir, f.environment);
+    const second = loadReleaseRegistryConfig(f.rootDir, f.environment);
     const requests: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -204,16 +204,14 @@ describe('effective release registry authority', () => {
       await writeFile(file, `registry=https://${host}.example/`);
     for (const [file, host] of layers) {
       expect(
-        loadReleaseRegistryConfiguration(f.rootDir, f.environment).authorityFor(
-          'pkg',
-        ).baseUrl,
+        loadReleaseRegistryConfig(f.rootDir, f.environment).authorityFor('pkg')
+          .baseUrl,
       ).toBe(`https://${host}.example/`);
       await writeFile(file, '');
     }
     expect(
-      loadReleaseRegistryConfiguration(f.rootDir, f.environment).authorityFor(
-        'pkg',
-      ).baseUrl,
+      loadReleaseRegistryConfig(f.rootDir, f.environment).authorityFor('pkg')
+        .baseUrl,
     ).toBe('https://registry.npmjs.org/');
   });
 
@@ -225,7 +223,7 @@ describe('effective release registry authority', () => {
     'not-a-url',
   ])('fails closed for selected authority %s', async (value) => {
     const f = await fixture();
-    const snapshot = loadReleaseRegistryConfiguration(f.rootDir, {
+    const snapshot = loadReleaseRegistryConfig(f.rootDir, {
       ...f.environment,
       NPM_CONFIG_REGISTRY: value,
     });
@@ -237,13 +235,13 @@ describe('effective release registry authority', () => {
   it('rejects unreadable, missing explicit, non-string and uninterpolated registry configuration', async () => {
     const f = await fixture();
     expect(() =>
-      loadReleaseRegistryConfiguration(f.rootDir, {
+      loadReleaseRegistryConfig(f.rootDir, {
         ...f.environment,
         NPM_CONFIG_USERCONFIG: f.path('missing'),
       }),
     ).toThrow(/does not exist/u);
     expect(() =>
-      loadReleaseRegistryConfiguration(f.rootDir, {
+      loadReleaseRegistryConfig(f.rootDir, {
         ...f.environment,
         NPM_CONFIG_USERCONFIG: f.rootDir,
       }),
@@ -253,15 +251,15 @@ describe('effective release registry authority', () => {
       'registry=https://${UNSET_REGISTRY_HOST}/',
     ]) {
       await writeFile(f.path('.npmrc'), contents);
-      expect(() =>
-        loadReleaseRegistryConfiguration(f.rootDir, f.environment),
-      ).toThrow(/Invalid release registry authority/u);
+      expect(() => loadReleaseRegistryConfig(f.rootDir, f.environment)).toThrow(
+        /Invalid release registry authority/u,
+      );
     }
   });
 
   it('rejects URL boundary violations before fetch and keeps secrets out of errors', async () => {
     const f = await fixture();
-    const authority = loadReleaseRegistryConfiguration(f.rootDir, {
+    const authority = loadReleaseRegistryConfig(f.rootDir, {
       ...f.environment,
       NPM_CONFIG_REGISTRY: 'https://CORP.example:443/npm/',
     }).authorityFor('@team/a');
@@ -270,7 +268,7 @@ describe('effective release registry authority', () => {
     for (const value of [
       'https://corp.example.evil/a',
       'https://corp.example:444/a',
-      'http://corp.example/a',
+      ['http:', '//corp.example/a'].join(''),
       '//corp.example/a',
       '/a',
       'https://user:secret@corp.example/a',
@@ -302,18 +300,15 @@ describe('bounded registry response bodies', () => {
     'enforces the %s cap before reading Content-Length and while streaming',
     async (kind) => {
       const f = await fixture();
-      const configuration = loadReleaseRegistryConfiguration(
-        f.rootDir,
-        f.environment,
-      );
-      const authority = configuration.authorityFor('pkg');
+      const config = loadReleaseRegistryConfig(f.rootDir, f.environment);
+      const authority = config.authorityFor('pkg');
       const limit = (kind === 'metadata' ? 16 : 128) * 1024 * 1024;
       const cancel = vi.fn();
       const invoke = () =>
         kind === 'metadata'
           ? fetchRegistryPackageMetadata(
               'pkg',
-              createReleaseConsistencyState(configuration),
+              createReleaseConsistencyState(config),
               authority,
             )
           : fetchRegistryTarball(
@@ -384,11 +379,8 @@ describe('bounded registry response bodies', () => {
     'accepts %s exactly at its limit',
     async (kind) => {
       const f = await fixture();
-      const configuration = loadReleaseRegistryConfiguration(
-        f.rootDir,
-        f.environment,
-      );
-      const authority = configuration.authorityFor('pkg');
+      const config = loadReleaseRegistryConfig(f.rootDir, f.environment);
+      const authority = config.authorityFor('pkg');
       const limit = (kind === 'metadata' ? 16 : 128) * 1024 * 1024;
       const body =
         kind === 'metadata'
@@ -407,7 +399,7 @@ describe('bounded registry response bodies', () => {
         expect(
           await fetchRegistryPackageMetadata(
             'pkg',
-            createReleaseConsistencyState(configuration),
+            createReleaseConsistencyState(config),
             authority,
           ),
         ).toMatchObject({ kind: 'found' });

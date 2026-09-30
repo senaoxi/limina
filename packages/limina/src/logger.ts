@@ -1,8 +1,9 @@
 import { createLogger } from 'logaria';
+import { isIntegerNumber } from './utils/validation/is-integer';
 
 import type { ScopedLogger } from 'logaria/types';
 import readline from 'node:readline';
-import { supportsInteractiveTerminal } from './terminal-environment';
+import { isSupportsInteractiveTerminal } from './terminal-environment';
 
 const logger = createLogger({
   main: 'limina',
@@ -24,11 +25,11 @@ export const TypecheckLogger: ScopedLogger =
   logger.getLoggerByGroup('task.typecheck');
 
 function canClearCliScreen(): boolean {
-  return supportsInteractiveTerminal(process.env, process.stdout);
+  return isSupportsInteractiveTerminal(process.env, process.stdout);
 }
 
 function isIntegerCliScreenRows(rows: number | undefined): rows is number {
-  return Number.isInteger(rows);
+  return isIntegerNumber(rows);
 }
 
 function resolveCliScreenRows(rows: number | undefined): number | undefined {

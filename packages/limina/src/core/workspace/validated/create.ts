@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import type { WorkspacePackage } from '../actions';
 import type { ExtendedPackageScope, WorkspaceRegionBoundary } from '../regions';
@@ -87,7 +88,7 @@ function collectStableSourceConfigPaths(
   return candidates
     .filter((candidate) => candidate.kind === 'tsconfig')
     .map((candidate) => candidate.path)
-    .sort();
+    .sort(compareCodeUnits);
 }
 
 export async function collectWorkspaceInputSnapshot(options: {
@@ -184,7 +185,7 @@ export async function collectValidatedWorkspaceContext(options: {
       stablePaths,
     }),
     outputMutationAuthorities: authorities.outputMutationAuthorities,
-    outputRoots: [...stable.outputs].sort(),
+    outputRoots: [...stable.outputs].sort(compareCodeUnits),
     packageIdentities,
     packages,
     rawPackages: [...options.rawPackages],

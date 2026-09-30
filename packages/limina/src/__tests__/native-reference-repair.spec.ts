@@ -268,8 +268,7 @@ describe('native reference repair independent Program evidence', () => {
               .getPreEmitDiagnostics(bounded.program)
               .map((diagnostic) => diagnostic.code),
           ).toContain(2307);
-        }
-        if (variant === 'augmentation-admitted') {
+        } else if (variant === 'augmentation-admitted') {
           expect(boundedSymbol?.declarations).toContain(
             bounded.getSourceFile(f.path('provider/index.ts')),
           );

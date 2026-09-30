@@ -69,7 +69,10 @@ export function validateWorkspaceRegionMembership(
 ): void {
   const memberships = collectRegionMemberships(view.regions);
 
-  for (const packageId of Object.keys(view.packages).sort()) {
+  const orderedEntries = Object.keys(view.packages).sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  for (const packageId of orderedEntries) {
     reportRegionMembership(
       context,
       packageId,
@@ -212,13 +215,11 @@ function findSelectedExport(
   view: PackageArtifactValidationView,
   edge: PackageArtifactValidationEdge,
 ): ValidationPackageExport | undefined {
-  if (!edge.selectedSubpath) {
-    return undefined;
-  }
-
-  return view.packages[edge.toPackageId]?.exports.find(
-    (entry) => entry.subpath === edge.selectedSubpath,
-  );
+  return edge.selectedSubpath
+    ? view.packages[edge.toPackageId]?.exports.find(
+        (entry) => entry.subpath === edge.selectedSubpath,
+      )
+    : undefined;
 }
 
 function reportDeniedPackageExport(

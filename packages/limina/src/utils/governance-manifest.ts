@@ -9,7 +9,9 @@ export interface GovernanceRootBase {
   readonly manifest: Readonly<PackageManifest>;
 }
 
-/** Detect the lexical entry, including dangling links. An invalid entry is not absence. */
+/**
+Detect the lexical entry, including dangling links. An invalid entry is not absence.
+*/
 export function hasManifestEntry(filePath: string): boolean {
   try {
     lstatSync(filePath);
@@ -20,8 +22,10 @@ export function hasManifestEntry(filePath: string): boolean {
   }
 }
 
-export function findNearestPackageManifest(startDir: string): string | null {
-  for (const directory of ancestorDirectories(startDir)) {
+export function findNearestPackageManifest(
+  startDirectory: string,
+): string | null {
+  for (const directory of ancestorDirectories(startDirectory)) {
     const candidate = path.join(directory, 'package.json');
     if (hasManifestEntry(candidate)) return candidate;
   }
@@ -35,13 +39,17 @@ function freezeManifest<T>(value: T): T {
   return value;
 }
 
-/** Root location and contents are one fact for this config-resolution generation. */
+/**
+Root location and contents are one fact for this config-resolution generation.
+*/
 export function resolveGovernanceManifest(
-  startDir: string,
+  startDirectory: string,
 ): GovernanceRootBase {
-  const manifestPath = findNearestPackageManifest(startDir);
+  const manifestPath = findNearestPackageManifest(startDirectory);
   if (manifestPath === null)
-    throw new Error(`No package.json found from ${startDir} or its ancestors.`);
+    throw new Error(
+      `No package.json found from ${startDirectory} or its ancestors.`,
+    );
   return readGovernanceManifest(manifestPath);
 }
 
@@ -63,8 +71,7 @@ function isObjectValue(value: unknown): value is object {
 export function isManifestObject(
   value: unknown,
 ): value is Record<string, unknown> {
-  if (value === null) return false;
-  return typeof value === 'object' && !Array.isArray(value);
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function readWorkspaceRootManifest(filePath: string): PackageManifest {
@@ -79,7 +86,7 @@ function readRootManifestValue(filePath: string): unknown {
   try {
     if (!statSync(filePath).isFile())
       throw new Error('Expected a regular file.');
-    return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\uFEFF/u, ''));
+    return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\u{FEFF}/u, ''));
   } catch (error) {
     throw new Error(
       `Unable to read root package.json at ${filePath}: ${String(error)}`,

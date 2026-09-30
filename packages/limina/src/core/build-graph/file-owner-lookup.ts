@@ -36,34 +36,18 @@ function addOwner(options: {
   options.index.set(options.identity, owners);
 }
 
-/** An analysis-local index. Exact membership and canonical fallback stay distinct. */
+/**
+An analysis-local index. Exact membership and canonical fallback stay distinct.
+*/
 export class FileOwnerLookup {
   readonly #lexical = new Map<string, Owners>();
+
   readonly #canonical = new Map<string, Owners>();
+
   readonly #realPaths = new Map<string, string>();
 
   constructor(inputs: Iterable<FileOwnerInput>) {
     for (const input of inputs) this.#addInput(input);
-  }
-
-  get(fileName: string): string[] | undefined {
-    const owners = this.#lookup(fileName);
-    return owners === undefined
-      ? undefined
-      : [...owners.keys()].sort(compareCodeUnits);
-  }
-
-  registeredFileNames(fileName: string, configPath: string): string[] {
-    return [...(this.#lookup(fileName)?.get(configPath) ?? [])].sort(
-      compareCodeUnits,
-    );
-  }
-
-  isCanonicalAmbiguous(fileName: string): boolean {
-    const normalized = normalizeAbsolutePath(fileName);
-    if (this.#lexical.has(normalized)) return false;
-    const owners = this.#lookup(normalized);
-    return owners !== undefined && owners.size > 1;
   }
 
   #lookup(fileName: string): Owners | undefined {
@@ -93,5 +77,25 @@ export class FileOwnerLookup {
         index: this.#canonical,
       });
     }
+  }
+
+  get(fileName: string): string[] | undefined {
+    const owners = this.#lookup(fileName);
+    return owners === undefined
+      ? undefined
+      : owners.keys().toArray().sort(compareCodeUnits);
+  }
+
+  registeredFileNames(fileName: string, configPath: string): string[] {
+    return [...(this.#lookup(fileName)?.get(configPath) ?? [])].sort(
+      compareCodeUnits,
+    );
+  }
+
+  isCanonicalAmbiguous(fileName: string): boolean {
+    const normalized = normalizeAbsolutePath(fileName);
+    if (this.#lexical.has(normalized)) return false;
+    const owners = this.#lookup(normalized);
+    return owners !== undefined && owners.size > 1;
   }
 }

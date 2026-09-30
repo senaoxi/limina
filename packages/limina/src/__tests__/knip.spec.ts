@@ -35,9 +35,11 @@ describe('parseKnipJsonReport', () => {
   });
 
   it('rejects output that does not contain a Knip JSON report', () => {
-    expect(() => parseKnipJsonReport('not json')).toThrow(
-      'Failed to parse Knip JSON report.',
-    );
+    const expectedParseError = expect.objectContaining({
+      message: expect.stringContaining('Failed to parse Knip JSON report.'),
+      cause: expect.any(SyntaxError),
+    });
+    expect(() => parseKnipJsonReport('not json')).toThrow(expectedParseError);
   });
 });
 
@@ -105,14 +107,16 @@ describe('resolveKnipCliPath', () => {
 });
 
 async function createKnipFixture(files: Record<string, string> = {}) {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-knip-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-knip-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
-  for (const [file, text] of Object.entries({
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const fixturePath = createFixturePathResolver(rootDirectory);
+  const fixtureEntries1 = Object.entries({
     'package.json': '{}',
     ...files,
-  })) {
+  });
+  for (const [file, text] of fixtureEntries1) {
     await mkdir(path.dirname(fixturePath(file)), { recursive: true });
     await writeFile(fixturePath(file), text);
   }
@@ -132,7 +136,7 @@ async function createKnipFixture(files: Record<string, string> = {}) {
     workspacePackages,
     workspaceContext,
     path: fixturePath,
-    cleanup: () => rm(rootDir, { recursive: true, force: true }),
+    cleanup: () => rm(rootDirectory, { recursive: true, force: true }),
   };
 }
 
@@ -197,11 +201,8 @@ describe('collectKnipSourceIssues', () => {
   it('isolates concurrent analysis configs and cleans them after a failed run', async () => {
     const fixture = await createKnipFixture();
     const configs: string[] = [];
-    let release: () => void = () => {};
-    const ready = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const run = (fail: boolean) =>
+    const { promise: ready, resolve: release } = Promise.withResolvers<void>();
+    const run = (isFail: boolean) =>
       collectKnipSourceIssues({
         ...fixture,
         ignoredKeys: new Set(),
@@ -211,16 +212,17 @@ describe('collectKnipSourceIssues', () => {
           configs.push(invocation.configPath);
           if (configs.length === 2) release();
           await ready;
-          if (fail) throw new Error('controlled Knip failure');
+          if (isFail) throw new Error('controlled Knip failure');
           return '{"issues":[]}';
         },
       });
     try {
       const results = await Promise.allSettled([run(false), run(true)]);
-      expect(results.map((result) => result.status).sort()).toEqual([
-        'fulfilled',
-        'rejected',
-      ]);
+      expect(
+        results
+          .map((result) => result.status)
+          .sort((left, right) => Number(left > right) - Number(left < right)),
+      ).toEqual(['fulfilled', 'rejected']);
       expect(new Set(configs).size).toBe(2);
       for (const configPath of configs)
         await expect(readFile(configPath)).rejects.toMatchObject({

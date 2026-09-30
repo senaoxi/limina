@@ -7,10 +7,10 @@ import {
 import type { CheckAttemptId } from '../../domain/shared/identifiers';
 import type { CrossProcessLeaseOwner } from '../../utils/mutation/cross-process-lease';
 import {
+  isMatchesRecordSchema,
   isNonEmptyString,
   isPositiveInteger,
   isString,
-  matchesRecordSchema,
 } from '../../utils/validation/record-schema';
 
 export interface CheckAttemptStarted {
@@ -88,7 +88,7 @@ function isOptionalBoolean(value: unknown): boolean {
 }
 
 export function isLatestAttempt(value: unknown): value is LatestCheckAttempt {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     attemptId: isAttemptId,
     sequence: isPositiveInteger,
     startedAt: isString,
@@ -99,7 +99,7 @@ export function isLatestAttempt(value: unknown): value is LatestCheckAttempt {
 export function isLatestCompleted(
   value: unknown,
 ): value is LatestCompletedCheckAttempt {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     attemptId: isAttemptId,
     sequence: isPositiveInteger,
     snapshotCreatedAt: isString,
@@ -109,7 +109,7 @@ export function isLatestCompleted(
 }
 
 function isOwner(value: unknown): value is CrossProcessLeaseOwner {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     hostname: isString,
     pid: isPositiveInteger,
     startedAt: isString,
@@ -118,7 +118,7 @@ function isOwner(value: unknown): value is CrossProcessLeaseOwner {
 }
 
 export function isStarted(value: unknown): value is CheckAttemptStarted {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     attemptId: isAttemptId,
     command: isString,
     owner: isOwner,
@@ -130,14 +130,13 @@ export function isStarted(value: unknown): value is CheckAttemptStarted {
 
 function isTerminalState(value: unknown): value is CheckAttemptTerminalState {
   return (
-    value === 'completed' ||
-    value === 'persistence-failed' ||
-    value === 'aborted'
+    typeof value === 'string' &&
+    ['completed', 'persistence-failed', 'aborted'].includes(value)
   );
 }
 
 export function isStatus(value: unknown): value is CheckAttemptStatus {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     attemptId: isAttemptId,
     error: isOptionalString,
     finishedAt: isString,
@@ -151,32 +150,31 @@ export function isStatus(value: unknown): value is CheckAttemptStatus {
 
 export async function readCheckAttemptJson<T>(
   filePath: string,
-  validate: (value: unknown) => value is T,
+  isValidate: (value: unknown) => value is T,
 ): Promise<ReadJsonResult<T>> {
   try {
     const value: unknown = JSON.parse(await readFile(filePath, 'utf8'));
-    return validateJsonValue(value, validate);
+    return validateJsonValue(value, isValidate);
   } catch (error) {
-    if (hasCode(error, 'ENOENT')) return { status: 'missing' };
-    return { status: 'corrupt' };
+    return { status: hasCode(error, 'ENOENT') ? 'missing' : 'corrupt' };
   }
 }
 
 function validateJsonValue<T>(
   value: unknown,
-  validate: (value: unknown) => value is T,
+  isValidate: (value: unknown) => value is T,
 ): ReadJsonResult<T> {
-  return validate(value) ? { status: 'valid', value } : { status: 'corrupt' };
+  return isValidate(value) ? { status: 'valid', value } : { status: 'corrupt' };
 }
 
-export function getCheckAttemptPaths(rootDir: string): CheckAttemptPaths {
-  const checkDir = path.join(rootDir, '.limina', 'check');
+export function getCheckAttemptPaths(rootDirectory: string): CheckAttemptPaths {
+  const checkDirectory = path.join(rootDirectory, '.limina', 'check');
   return {
-    attemptsDir: path.join(checkDir, 'attempts'),
-    checkDir,
-    lastRun: path.join(checkDir, 'last-run.json'),
-    latestAttempt: path.join(checkDir, 'latest-attempt.json'),
-    latestCompleted: path.join(checkDir, 'latest-completed.json'),
+    attemptsDir: path.join(checkDirectory, 'attempts'),
+    checkDir: checkDirectory,
+    lastRun: path.join(checkDirectory, 'last-run.json'),
+    latestAttempt: path.join(checkDirectory, 'latest-attempt.json'),
+    latestCompleted: path.join(checkDirectory, 'latest-completed.json'),
   };
 }
 

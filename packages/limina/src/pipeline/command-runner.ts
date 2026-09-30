@@ -5,7 +5,7 @@ import { runInteractiveCommand } from './command-interactive';
 import { runSynchronousCommand } from './command-sync';
 import type { BuiltinTaskResult, RunPipelineOptions } from './types';
 
-function usesInteractiveFlow(options: RunPipelineOptions): boolean {
+function isUsesInteractiveFlow(options: RunPipelineOptions): boolean {
   return options.flow?.interactive === true;
 }
 
@@ -19,6 +19,7 @@ export async function runCommandStep(
     pipelineOptions: options,
     step,
   });
-  if (usesInteractiveFlow(options)) return runInteractiveCommand(context);
-  return runSynchronousCommand(context);
+  return isUsesInteractiveFlow(options)
+    ? runInteractiveCommand(context)
+    : runSynchronousCommand(context);
 }

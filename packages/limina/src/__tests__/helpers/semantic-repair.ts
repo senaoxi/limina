@@ -26,9 +26,10 @@ export async function linkSemanticWorkspacePackages(
 export async function createSemanticRepairFixture(
   files: Record<string, string>,
 ) {
-  const root = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-semantic-repair-')),
+  const rootTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-semantic-repair-'),
   );
+  const root = await realpath(rootTemporaryPath);
   const fixturePath = createFixturePathResolver(root);
   for (const [name, content] of Object.entries(files)) {
     const file = fixturePath(name);

@@ -108,11 +108,9 @@ export function readProofConfig(
 }
 
 function getSourceConfigMetadata(configObject: JsonObject): unknown {
-  if (!isPlainRecord(configObject.liminaOptions)) {
-    return undefined;
-  }
-
-  return configObject.liminaOptions.sourceConfig;
+  return isPlainRecord(configObject.liminaOptions)
+    ? configObject.liminaOptions.sourceConfig
+    : undefined;
 }
 
 export function getProofCompanionConfigPath(
@@ -123,11 +121,9 @@ export function getProofCompanionConfigPath(
   const configObject = readProofConfig(config, configPath, virtualFiles);
   const sourceConfig = getSourceConfigMetadata(configObject);
 
-  if (typeof sourceConfig === 'string') {
-    return resolveReferencePath(configPath, sourceConfig);
-  }
-
-  return getDtsCompanionConfigPath(configPath);
+  return typeof sourceConfig === 'string'
+    ? resolveReferencePath(configPath, sourceConfig)
+    : getDtsCompanionConfigPath(configPath);
 }
 
 export function readRelativeTypeFiles(
@@ -138,11 +134,9 @@ export function readRelativeTypeFiles(
 }
 
 export function normalizeGeneratedDtsTypes(value: unknown): unknown {
-  if (!Array.isArray(value)) {
-    return value;
-  }
-
-  return value.filter((typeName) => !isRelativeTypeName(typeName));
+  return Array.isArray(value)
+    ? value.filter((typeName) => !isRelativeTypeName(typeName))
+    : value;
 }
 
 export function formatJsonValue(value: unknown): string {
@@ -172,11 +166,9 @@ export function normalizeRawExtends(value: unknown): string[] {
     return [value];
   }
 
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((entry): entry is string => typeof entry === 'string');
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
 }
 
 export function resolveRawExtendsPath(
@@ -206,11 +198,10 @@ function appendParentExtends(options: {
   pending: string[];
   visited: Set<string>;
 }): void {
-  if (options.visited.has(options.configPath)) {
-    return;
-  }
-
-  if (!existsSync(options.configPath)) {
+  if (
+    options.visited.has(options.configPath) ||
+    !existsSync(options.configPath)
+  ) {
     return;
   }
 
@@ -223,7 +214,7 @@ function appendParentExtends(options: {
   );
 }
 
-export function configExtendsPathTransitively(options: {
+export function isConfigExtendsPathTransitively(options: {
   config: ResolvedLiminaConfig;
   configObject: JsonObject;
   configPath: string;

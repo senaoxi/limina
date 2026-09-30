@@ -5,7 +5,7 @@ import {
   TerminalReplacementValidationError,
 } from 'limina/internal/migration';
 import type { MigrationRecord } from './declarations';
-import { expectedInputFailure } from './discovery';
+import { isExpectedInputFailure } from './discovery';
 import type { FrozenMigrationPlan } from './planner';
 import {
   executePreparedMigrationPlan,
@@ -45,7 +45,7 @@ async function prepareGroup(options: {
   try {
     return await prepareMigrationWritePlan(options.roots, options.group);
   } catch (error) {
-    if (!recoverablePreflight(error)) throw error;
+    if (!isRecoverablePreflight(error)) throw error;
     const paths = options.group.map((item) => item.configPath);
     options.state.incompleteFiles.push(...paths);
     options.state.records.push({
@@ -168,12 +168,12 @@ export async function executeGroups(options: {
   }
 }
 
-function recoverablePreflight(error: unknown): boolean {
+function isRecoverablePreflight(error: unknown): boolean {
   return (
     [
       ReplacementDriftError,
       RetryableReplacementValidationIoError,
       TerminalReplacementValidationError,
-    ].some((Type) => error instanceof Type) || expectedInputFailure(error)
+    ].some((Type) => error instanceof Type) || isExpectedInputFailure(error)
   );
 }

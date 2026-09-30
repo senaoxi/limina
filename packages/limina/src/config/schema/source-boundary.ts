@@ -33,7 +33,7 @@ function addAbsoluteBoundaryEntry(options: {
   );
 }
 
-function validatePresentBoundaryEntry(options: {
+function isValidatePresentBoundaryEntry(options: {
   ctx: ConfigValidationContext;
   field: 'exclude' | 'include';
   index: number;
@@ -45,7 +45,7 @@ function validatePresentBoundaryEntry(options: {
   return false;
 }
 
-function validateSourceBoundaryEntry(options: {
+function isValidateSourceBoundaryEntry(options: {
   ctx: ConfigValidationContext;
   field: 'exclude' | 'include';
   index: number;
@@ -55,7 +55,7 @@ function validateSourceBoundaryEntry(options: {
     addInvalidBoundaryEntry(options);
     return false;
   }
-  return validatePresentBoundaryEntry({ ...options, value: options.value });
+  return isValidatePresentBoundaryEntry({ ...options, value: options.value });
 }
 
 function addBoundaryArrayIssue(options: {
@@ -76,14 +76,13 @@ function countDefaultTokens(options: {
 }): number {
   let count = 0;
   for (const [index, value] of options.values.entries()) {
-    if (validateSourceBoundaryEntry({ ...options, index, value })) count += 1;
+    if (isValidateSourceBoundaryEntry({ ...options, index, value })) count += 1;
   }
   return count;
 }
 
 function isNonEmptyUnknownArray(value: unknown): value is unknown[] {
-  if (!Array.isArray(value)) return false;
-  return value.length > 0;
+  return Array.isArray(value) && value.length > 0;
 }
 
 function getBoundaryValues(options: {
@@ -123,12 +122,12 @@ function validateSourceBoundaryField(options: {
 
 export function validateSourceBoundary(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined) return;
   if (!isPlainConfigRecord(value)) {
     addConfigIssue(
-      ctx,
+      context,
       ['source'],
       'source boundary config must be an object.',
     );
@@ -136,11 +135,19 @@ export function validateSourceBoundary(
   }
   addUnknownFieldIssues({
     allowed: sourceBoundaryKeys,
-    ctx,
+    ctx: context,
     message: 'unknown source boundary config field.',
     path: ['source'],
     value,
   });
-  validateSourceBoundaryField({ ctx, field: 'include', source: value });
-  validateSourceBoundaryField({ ctx, field: 'exclude', source: value });
+  validateSourceBoundaryField({
+    ctx: context,
+    field: 'include',
+    source: value,
+  });
+  validateSourceBoundaryField({
+    ctx: context,
+    field: 'exclude',
+    source: value,
+  });
 }

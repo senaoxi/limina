@@ -21,8 +21,7 @@ const REGISTRY_TARBALL_TIMEOUT_MS = 120_000;
 function isValidIntegrityToken(token: string): boolean {
   try {
     const parsed = ssri.parse(token, { strict: true });
-    if (parsed === null) return false;
-    return parsed.toString({ strict: true }) === token;
+    return parsed !== null && parsed.toString({ strict: true }) === token;
   } catch {
     return false;
   }
@@ -60,8 +59,7 @@ function resolveIntegrityField(options: {
 }
 
 function isValidShasum(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  return /^[\da-f]{40}$/iu.test(value);
+  return typeof value === 'string' && /^[\da-f]{40}$/iu.test(value);
 }
 
 function createInvalidShasum(
@@ -92,8 +90,9 @@ function resolveShasumField(
   shasumValue: unknown,
 ): RegistryTarballIntegrityResult {
   if (shasumValue === undefined) return { kind: 'missing' };
-  if (!isValidShasum(shasumValue)) return createInvalidShasum(shasumValue);
-  return createShasumIntegrity(shasumValue);
+  return isValidShasum(shasumValue)
+    ? createShasumIntegrity(shasumValue)
+    : createInvalidShasum(shasumValue);
 }
 
 export function resolveRegistryTarballIntegrity(
@@ -102,10 +101,9 @@ export function resolveRegistryTarballIntegrity(
   if (!isPlainRecord(versionMetadata.dist)) return { kind: 'missing' };
   const integrityValue = versionMetadata.dist.integrity;
   const shasumValue = versionMetadata.dist.shasum;
-  if (integrityValue !== undefined) {
-    return resolveIntegrityField({ integrityValue, shasumValue });
-  }
-  return resolveShasumField(shasumValue);
+  return integrityValue === undefined
+    ? resolveShasumField(shasumValue)
+    : resolveIntegrityField({ integrityValue, shasumValue });
 }
 
 export function verifyRegistryTarballIntegrity(options: {
@@ -131,8 +129,9 @@ export function verifyRegistryTarballIntegrity(options: {
 }
 
 function formatTarballTimeout(timeoutMs: number): string {
-  if (timeoutMs === REGISTRY_TARBALL_TIMEOUT_MS) return '120 seconds';
-  return `${String(timeoutMs)} milliseconds`;
+  return timeoutMs === REGISTRY_TARBALL_TIMEOUT_MS
+    ? '120 seconds'
+    : `${String(timeoutMs)} milliseconds`;
 }
 
 function createTarballTimeoutError(options: {

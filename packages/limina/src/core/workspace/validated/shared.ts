@@ -22,15 +22,17 @@ export function isInsideOrEqual(
 ): boolean {
   const normalizedParent = normalizeAbsolutePath(parentPath);
   const normalizedChild = normalizeAbsolutePath(childPath);
-  if (normalizedParent === normalizedChild) return true;
-  return isPathInsideDirectory(normalizedChild, normalizedParent);
+  return (
+    normalizedParent === normalizedChild ||
+    isPathInsideDirectory(normalizedChild, normalizedParent)
+  );
 }
 
 export function displayWorkspacePath(
-  rootDir: string,
+  rootDirectory: string,
   targetPath: string,
 ): string {
-  return normalizeSlashes(toRelativePath(rootDir, targetPath));
+  return normalizeSlashes(toRelativePath(rootDirectory, targetPath));
 }
 
 function createWorkspaceEvidence(evidence: readonly string[] | undefined): {
@@ -83,22 +85,30 @@ async function tryCanonicalPath(
   }
 }
 
+function assertCanonicalAncestor(
+  parent: string,
+  cursor: string,
+  targetPath: string,
+): void {
+  if (parent === cursor)
+    throw new Error(`No existing ancestor for ${targetPath}.`);
+}
+
 async function resolveCanonicalPath(options: {
   cursor: string;
   suffix: readonly string[];
   targetPath: string;
 }): Promise<string> {
-  const canonicalPath = await tryCanonicalPath(options.cursor, options.suffix);
-  if (canonicalPath !== null) return canonicalPath;
-  const parent = path.dirname(options.cursor);
-  if (parent === options.cursor) {
-    throw new Error(`No existing ancestor for ${options.targetPath}.`);
+  let cursor = options.cursor;
+  const suffix = [...options.suffix];
+  while (true) {
+    const canonicalPath = await tryCanonicalPath(cursor, suffix);
+    if (canonicalPath !== null) return canonicalPath;
+    const parent = path.dirname(cursor);
+    assertCanonicalAncestor(parent, cursor, options.targetPath);
+    suffix.push(path.basename(cursor));
+    cursor = parent;
   }
-  return resolveCanonicalPath({
-    cursor: parent,
-    suffix: [...options.suffix, path.basename(options.cursor)],
-    targetPath: options.targetPath,
-  });
 }
 
 export function canonicalProjectedPath(targetPath: string): Promise<string> {
@@ -128,15 +138,17 @@ function resolveCanonicalPathSync(options: {
   normalizedTarget: string;
   suffix: readonly string[];
 }): string {
-  const canonicalPath = tryCanonicalPathSync(options.cursor, options.suffix);
-  if (canonicalPath !== null) return canonicalPath;
-  const parent = path.dirname(options.cursor);
-  if (parent === options.cursor) return options.normalizedTarget;
-  return resolveCanonicalPathSync({
-    cursor: parent,
-    normalizedTarget: options.normalizedTarget,
-    suffix: [...options.suffix, path.basename(options.cursor)],
-  });
+  let cursor = options.cursor;
+  const suffix = [...options.suffix];
+  let canonicalPath = tryCanonicalPathSync(cursor, suffix);
+  while (canonicalPath === null) {
+    const parent = path.dirname(cursor);
+    suffix.push(path.basename(cursor));
+    if (parent === cursor) return options.normalizedTarget;
+    cursor = parent;
+    canonicalPath = tryCanonicalPathSync(cursor, suffix);
+  }
+  return canonicalPath;
 }
 
 export function canonicalProjectedPathSync(targetPath: string): string {

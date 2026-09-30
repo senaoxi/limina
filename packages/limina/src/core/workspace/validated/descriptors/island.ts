@@ -88,18 +88,18 @@ export async function collectPackageIsland(options: {
   owner: WorkspacePackage;
   rules: readonly CompiledExclusionRule[];
 }): Promise<PackageIslandCollection> {
-  const ownerRootDir = normalizeAbsolutePath(options.owner.directory);
+  const ownerRootDirectory = normalizeAbsolutePath(options.owner.directory);
   const ownerIdentity = findOwnerIdentity({
     identities: options.activatedIdentities,
     owner: options.owner,
-    ownerRootDir,
+    ownerRootDir: ownerRootDirectory,
   });
   const context = createWalkContext({
     ...options,
     ownerIdentity,
-    ownerRootDir,
+    ownerRootDir: ownerRootDirectory,
   });
-  await walkPackageIsland(context, ownerRootDir, true);
+  await walkPackageIsland(context, ownerRootDirectory, true);
   return context.result;
 }
 

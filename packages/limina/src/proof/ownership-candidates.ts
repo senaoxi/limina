@@ -7,12 +7,11 @@ export function isDeclarationInputFile(fileName: string): boolean {
 }
 
 export function isOrdinarySourceOwnershipCandidate(fileName: string): boolean {
-  if (isDeclarationInputFile(fileName)) {
-    return false;
-  }
-
-  return ['.ts', '.tsx', '.mts', '.cts'].some((extension) =>
-    fileName.endsWith(extension),
+  return (
+    !isDeclarationInputFile(fileName) &&
+    ['.ts', '.tsx', '.mts', '.cts'].some((extension) =>
+      fileName.endsWith(extension),
+    )
   );
 }
 
@@ -24,11 +23,10 @@ export function isCheckerGraphDeclarationOwnerCandidate(
   fileName: string,
   extensions: readonly string[],
 ): boolean {
-  if (isDeclarationInputFile(fileName)) {
-    return false;
-  }
-
-  return extensions.some((extension) =>
-    fileName.endsWith(normalizeExtension(extension)),
+  return (
+    !isDeclarationInputFile(fileName) &&
+    extensions.some((extension) =>
+      fileName.endsWith(normalizeExtension(extension)),
+    )
   );
 }

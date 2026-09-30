@@ -69,11 +69,12 @@ function isPatchWithin(
   minimum: number,
   maximum: number,
 ): boolean {
-  if (version === null) return false;
-  return version.patch >= minimum && version.patch <= maximum;
+  return (
+    version !== null && version.patch >= minimum && version.patch <= maximum
+  );
 }
 
-function supportsTypeScript(version: NumericVersion | null): boolean {
+function isSupportsTypeScript(version: NumericVersion | null): boolean {
   if (version === null) return false;
   return supportedTypeScriptMinorRanges.some((range) =>
     [
@@ -84,7 +85,7 @@ function supportsTypeScript(version: NumericVersion | null): boolean {
   );
 }
 
-function matchesAdapterContract(
+function isMatchesAdapterContract(
   tuple: VueSemanticVersionTuple,
   contract: AdapterContract,
 ): boolean {
@@ -111,7 +112,7 @@ function matchesAdapterContract(
       contract.volarMinimumPatch,
       contract.volarMaximumPatch,
     ),
-    supportsTypeScript(typeScript),
+    isSupportsTypeScript(typeScript),
   ].every(Boolean);
 }
 
@@ -119,7 +120,7 @@ function resolveAdapterFamily(
   tuple: VueSemanticVersionTuple,
 ): VueSemanticAdapterFamily | null {
   const contract = adapterContracts.find((candidate) =>
-    matchesAdapterContract(tuple, candidate),
+    isMatchesAdapterContract(tuple, candidate),
   );
   return contract?.family ?? null;
 }

@@ -64,14 +64,14 @@ function expandDefaultToken(options: {
     };
   }
 
-  const usesDefaultBundle = options.configured.includes(DEFAULT_SOURCE_TOKEN);
+  const isUsesDefaultBundle = options.configured.includes(DEFAULT_SOURCE_TOKEN);
   const expanded = options.configured.flatMap((pattern) =>
     pattern === DEFAULT_SOURCE_TOKEN ? options.defaults : [pattern],
   );
 
   return {
     patterns: uniquePatterns(expanded),
-    usesDefaultBundle,
+    usesDefaultBundle: isUsesDefaultBundle,
   };
 }
 
@@ -86,9 +86,10 @@ function isDirectoryShorthand(pattern: string): boolean {
 }
 
 function expandPlainSourceExcludePattern(normalized: string): string[] {
-  return normalized.includes('/')
-    ? [normalized, `${normalized}/**`]
-    : [normalized, `**/${normalized}`];
+  return [
+    normalized,
+    normalized.includes('/') ? `${normalized}/**` : `**/${normalized}`,
+  ];
 }
 
 function normalizeNonEmptySourceExcludePattern(normalized: string): string[] {
@@ -96,11 +97,9 @@ function normalizeNonEmptySourceExcludePattern(normalized: string): string[] {
     return [`${normalized}/**`, `**/${normalized}/**`];
   }
 
-  if (hasGlobSyntax(normalized)) {
-    return [normalized];
-  }
-
-  return expandPlainSourceExcludePattern(normalized);
+  return hasGlobSyntax(normalized)
+    ? [normalized]
+    : expandPlainSourceExcludePattern(normalized);
 }
 
 function normalizeSourceExcludePattern(pattern: string): string[] {
@@ -121,9 +120,9 @@ function collectDefaultSourceExcludePatterns(options: {
   const staticExcludes = defaultSourceExclude.flatMap(
     normalizeSourceExcludePattern,
   );
-  const outputExcludes = (options.outputRoots ?? []).flatMap((outDir) => {
+  const outputExcludes = (options.outputRoots ?? []).flatMap((outDirectory) => {
     return normalizeExactDirectoryExcludePattern(
-      toPosixPath(toRelativePath(options.config.rootDir, outDir)),
+      toPosixPath(toRelativePath(options.config.rootDir, outDirectory)),
     );
   });
 
@@ -141,7 +140,7 @@ function expandSourceExcludePatterns(options: {
     };
   }
 
-  const usesDefaultBundle = options.configured.includes(DEFAULT_SOURCE_TOKEN);
+  const isUsesDefaultBundle = options.configured.includes(DEFAULT_SOURCE_TOKEN);
   const expanded = options.configured.flatMap((pattern) =>
     pattern === DEFAULT_SOURCE_TOKEN
       ? options.defaults
@@ -150,7 +149,7 @@ function expandSourceExcludePatterns(options: {
 
   return {
     patterns: uniquePatterns(expanded),
-    usesDefaultBundle,
+    usesDefaultBundle: isUsesDefaultBundle,
   };
 }
 
@@ -209,20 +208,18 @@ function isVisibleThroughGitignore(options: {
   filePath: string;
   gitignoreFilter: ((filePath: string) => boolean) | null;
 }): boolean {
-  if (!isPathInsideDirectory(options.filePath, options.configRootDir)) {
-    return true;
-  }
-
-  return options.gitignoreFilter === null
-    ? true
-    : !options.gitignoreFilter(options.filePath);
+  return (
+    !isPathInsideDirectory(options.filePath, options.configRootDir) ||
+    options.gitignoreFilter === null ||
+    !options.gitignoreFilter(options.filePath)
+  );
 }
 
 function createOptionalGitignoreFilter(
   config: ResolvedLiminaConfig,
-  usesDefaultBundle: boolean,
+  isUsesDefaultBundleValue: boolean,
 ): ((filePath: string) => boolean) | null {
-  return usesDefaultBundle ? createGitignoreFilter(config) : null;
+  return isUsesDefaultBundleValue ? createGitignoreFilter(config) : null;
 }
 
 export async function collectExpectedSourceFiles(
@@ -250,13 +247,13 @@ export async function collectExpectedSourceFiles(
     await collectActivatedPackageFileCandidates(workspaceContext);
   const includeMatcher = createCandidateGlobMatcher(include.patterns);
   const excludeMatchers = createExcludeMatchers(exclude.patterns);
-  const configRootDir = normalizeAbsolutePath(config.rootDir);
+  const configRootDirectory = normalizeAbsolutePath(config.rootDir);
 
   return new Set(
     candidates
       .filter((filePath) =>
         isSelectedSourceCandidate({
-          configRootDir,
+          configRootDir: configRootDirectory,
           excludeMatchers,
           filePath,
           includeMatcher,
@@ -264,11 +261,11 @@ export async function collectExpectedSourceFiles(
       )
       .filter((filePath) =>
         isVisibleThroughGitignore({
-          configRootDir,
+          configRootDir: configRootDirectory,
           filePath,
           gitignoreFilter,
         }),
       )
-      .sort(),
+      .sort((left, right) => Number(left > right) - Number(left < right)),
   );
 }

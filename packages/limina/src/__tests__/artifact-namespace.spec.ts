@@ -15,7 +15,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   getGeneratedDtsConfigPath,
-  getGeneratedOutDir,
+  getGeneratedOutDir as getGeneratedOutDirectory,
   getGeneratedOutputProjectConfigPath,
   getGeneratedOutputSolutionConfigPath,
   getGeneratedOutputTsBuildInfoPath,
@@ -41,13 +41,14 @@ async function createFixture(): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-artifact-namespace-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-artifact-namespace-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
@@ -81,7 +82,7 @@ function createUnchangedChange(
   };
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+async function isFileExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
     return true;
@@ -125,9 +126,10 @@ describe('trusted artifact namespace', () => {
 
   it('maps every external generated path through external/<stable-id> without dot-dot segments', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-external-package-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-external-package-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     const sourceConfigPath = path.join(
       externalRoot,
       'configs/tsconfig.lib.json',
@@ -142,7 +144,7 @@ describe('trusted artifact namespace', () => {
     };
     const generatedPaths = [
       getGeneratedDtsConfigPath(sharedOptions),
-      getGeneratedOutDir(sharedOptions),
+      getGeneratedOutDirectory(sharedOptions),
       getGeneratedOutputProjectConfigPath(sharedOptions),
       getGeneratedOutputSolutionConfigPath(sharedOptions),
       getGeneratedOutputTsBuildInfoPath(sharedOptions),
@@ -172,12 +174,14 @@ describe('trusted artifact namespace', () => {
 
   it('rejects an external source config outside its activated package root', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-external-package-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-external-package-'),
     );
-    const outsideRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-external-outside-')),
+    const externalRoot = await realpath(externalRootTemporaryPath);
+    const outsideRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-external-outside-'),
     );
+    const outsideRoot = await realpath(outsideRootTemporaryPath);
 
     try {
       expect(() =>
@@ -241,7 +245,7 @@ describe('trusted artifact namespace', () => {
       await expect(
         materializeGeneratedArtifactPlan(generationOne, plan),
       ).rejects.toThrow(/different preflight generation/u);
-      await expect(fileExists(targetPath)).resolves.toBe(false);
+      await expect(isFileExists(targetPath)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -309,7 +313,7 @@ describe('trusted artifact namespace', () => {
       await expect(
         materializeGeneratedArtifactPlan(namespace, forged),
       ).rejects.toThrow(/Unauthenticated generated artifact plan/u);
-      await expect(fileExists(targetPath)).resolves.toBe(false);
+      await expect(isFileExists(targetPath)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -317,9 +321,10 @@ describe('trusted artifact namespace', () => {
 
   it('rejects a symlinked .limina root without touching its destination', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-artifact-destination-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-artifact-destination-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
       rootDir: fixture.rootDir,
@@ -337,7 +342,7 @@ describe('trusted artifact namespace', () => {
         materializeGeneratedArtifactPlan(namespace, plan),
       ).rejects.toThrow(/crosses a symbolic link/u);
       await expect(
-        fileExists(path.join(externalRoot, 'generated.json')),
+        isFileExists(path.join(externalRoot, 'generated.json')),
       ).resolves.toBe(false);
     } finally {
       await Promise.all([
@@ -349,9 +354,10 @@ describe('trusted artifact namespace', () => {
 
   it('rejects an intermediate directory symlink before any plan mutation', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-artifact-destination-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-artifact-destination-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
       rootDir: fixture.rootDir,
@@ -370,9 +376,9 @@ describe('trusted artifact namespace', () => {
       await expect(
         materializeGeneratedArtifactPlan(namespace, plan),
       ).rejects.toThrow(/crosses a symbolic link/u);
-      await expect(fileExists(safePath)).resolves.toBe(false);
+      await expect(isFileExists(safePath)).resolves.toBe(false);
       await expect(
-        fileExists(path.join(externalRoot, 'generated.json')),
+        isFileExists(path.join(externalRoot, 'generated.json')),
       ).resolves.toBe(false);
     } finally {
       await Promise.all([
@@ -434,9 +440,10 @@ describe('trusted artifact namespace', () => {
 
   it('rejects a symlinked .limina root for an all-unchanged plan', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-artifact-destination-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-artifact-destination-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
       rootDir: fixture.rootDir,
@@ -467,9 +474,10 @@ describe('trusted artifact namespace', () => {
 
   it('rejects a symlinked intermediate directory for an all-unchanged plan', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-artifact-destination-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-artifact-destination-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
       rootDir: fixture.rootDir,
@@ -545,7 +553,7 @@ describe('trusted artifact namespace', () => {
       await expect(
         materializeGeneratedArtifactPlan(namespace, plan),
       ).rejects.toThrow(/crosses a symbolic link/u);
-      await expect(fileExists(safePath)).resolves.toBe(false);
+      await expect(isFileExists(safePath)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -668,7 +676,7 @@ describe('trusted artifact namespace', () => {
 
     try {
       await materializeGeneratedArtifactPlan(namespace, plan, { metrics });
-      await expect(fileExists(stalePath)).resolves.toBe(false);
+      await expect(isFileExists(stalePath)).resolves.toBe(false);
       const snapshot = metrics.snapshot();
       expect(
         snapshot.find((metric) => metric.name === 'artifact-safety-lstat')

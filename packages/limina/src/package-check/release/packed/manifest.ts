@@ -61,20 +61,24 @@ function validatePublishSpecifier(options: {
   context: PackedManifestContext;
   entry: PublishDependencyEntry;
 }): void {
-  const local =
+  const isLocal =
     isWorkspaceDependencySpecifier(options.entry.specifier) ||
     isLinkDependencySpecifier(options.entry.specifier);
-  if (local) addPackedPublishSpecifierFinding(options);
+  if (isLocal) addPackedPublishSpecifierFinding(options);
 }
 
 function isUnresolvedPackedSpecifier(specifier: string): boolean {
-  if (isWorkspaceDependencySpecifier(specifier)) return true;
-  return isLinkDependencySpecifier(specifier);
+  return (
+    isWorkspaceDependencySpecifier(specifier) ||
+    isLinkDependencySpecifier(specifier)
+  );
 }
 
 function isCoveredPublishSpecifier(entry: PackageDependencyEntry): boolean {
-  if (entry.sectionName === 'devDependencies') return false;
-  return isUnresolvedPackedSpecifier(entry.specifier);
+  return (
+    entry.sectionName !== 'devDependencies' &&
+    isUnresolvedPackedSpecifier(entry.specifier)
+  );
 }
 
 function addPackedLocalSpecifierFinding(options: {
@@ -109,8 +113,11 @@ function validateLocalSpecifier(options: {
   context: PackedManifestContext;
   entry: PackageDependencyEntry;
 }): void {
-  if (!isLocalPackageDependencySpecifier(options.entry.specifier)) return;
-  if (isCoveredPublishSpecifier(options.entry)) return;
+  if (
+    !isLocalPackageDependencySpecifier(options.entry.specifier) ||
+    isCoveredPublishSpecifier(options.entry)
+  )
+    return;
   addPackedLocalSpecifierFinding(options);
 }
 
@@ -140,12 +147,14 @@ function addMissingDirectDependencyFinding(options: {
   });
 }
 
-function packedRangeAcceptsTarget(options: {
+function isPackedRangeAcceptsTarget(options: {
   packedSpecifier: string;
   targetVersion: string | undefined;
 }): boolean {
-  if (options.targetVersion === undefined) return false;
-  return semver.satisfies(options.targetVersion, options.packedSpecifier);
+  return (
+    options.targetVersion !== undefined &&
+    semver.satisfies(options.targetVersion, options.packedSpecifier)
+  );
 }
 
 function addRangeMismatchFinding(options: {
@@ -187,7 +196,7 @@ function validateResolvedDirectDependency(options: {
   if (isUnresolvedPackedSpecifier(options.packedSpecifier)) return;
   const targetVersion = options.dependency.targetPackage.manifest.version;
   if (
-    !packedRangeAcceptsTarget({
+    !isPackedRangeAcceptsTarget({
       packedSpecifier: options.packedSpecifier,
       targetVersion,
     })

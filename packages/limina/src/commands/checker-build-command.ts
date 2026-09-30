@@ -133,14 +133,14 @@ async function handleFailedBuild(
 }
 
 function getUnexpectedBuildIssuePresentation(
-  deferred: boolean,
+  isDeferred: boolean,
   errorMessage: string,
 ): {
   detailLines?: string[];
   reason: string;
   summary?: string;
 } {
-  if (deferred) {
+  if (isDeferred) {
     return {
       reason: 'Checker build failed.',
       summary: 'Checker build failed',

@@ -1,7 +1,7 @@
 import { isBuiltin } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import {
-  createNormalizedDep,
+  createNormalizedDependency,
   isNodeBuiltinSpecifier,
 } from '../graph-check/dependency-rules';
 import { validatePublishedSpecifier } from '../package-check/published-boundary-specifier';
@@ -15,11 +15,11 @@ describe('Node builtin specifiers', () => {
     expect(isNodeBuiltinSpecifier('node:fs')).toBe(true);
     expect(isNodeBuiltinSpecifier('fs')).toBe(true);
 
-    expect(createNormalizedDep('node:test', 'test rule')).toMatchObject({
+    expect(createNormalizedDependency('node:test', 'test rule')).toMatchObject({
       kind: 'node-builtin',
       normalizedName: 'test',
     });
-    expect(createNormalizedDep('test', 'test rule')).toMatchObject({
+    expect(createNormalizedDependency('test', 'test rule')).toMatchObject({
       kind: 'package',
       normalizedName: 'test',
     });

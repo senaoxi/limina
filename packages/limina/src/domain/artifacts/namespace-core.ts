@@ -67,9 +67,9 @@ const unsafeSegmentChecks: readonly SegmentSafetyCheck[] = [
 ];
 
 function rejectUnsafeSegment(segment: string): void {
-  const unsafe = unsafeSegmentChecks.some((check) => check(segment));
+  const isUnsafe = unsafeSegmentChecks.some((check) => check(segment));
 
-  if (unsafe) {
+  if (isUnsafe) {
     throw new ArtifactNamespaceContainmentError(
       `Unsafe generated-artifact path segment: ${JSON.stringify(segment)}.`,
     );
@@ -80,9 +80,9 @@ export function createLiminaArtifactNamespace(options: {
   generation: number;
   rootDir: string;
 }): LiminaArtifactNamespace {
-  const configRootDir = normalizeArtifactAbsolutePath(options.rootDir);
-  const canonicalConfigRootDir = normalizeArtifactAbsolutePath(
-    realpathSync.native(configRootDir),
+  const configRootDirectory = normalizeArtifactAbsolutePath(options.rootDir);
+  const canonicalConfigRootDirectory = normalizeArtifactAbsolutePath(
+    realpathSync.native(configRootDirectory),
   );
   const generationToken = Object.freeze({
     [generationTokenBrand]: true as const,
@@ -91,11 +91,11 @@ export function createLiminaArtifactNamespace(options: {
   });
   const namespace = Object.freeze({
     [namespaceBrand]: true as const,
-    canonicalRootDir: path.join(canonicalConfigRootDir, '.limina'),
-    configRootDir,
+    canonicalRootDir: path.join(canonicalConfigRootDirectory, '.limina'),
+    configRootDir: configRootDirectory,
     generation: options.generation,
     generationToken,
-    rootDir: path.join(configRootDir, '.limina'),
+    rootDir: path.join(configRootDirectory, '.limina'),
   });
 
   authenticatedTokens.add(generationToken);
@@ -172,11 +172,11 @@ function assertSafeRelativePath(
   relativePath: string,
   normalized: string,
 ): void {
-  const unsafe = unsafeRelativePathChecks.some((check) =>
+  const isUnsafe = unsafeRelativePathChecks.some((check) =>
     check({ normalized, relativePath }),
   );
 
-  if (unsafe) {
+  if (isUnsafe) {
     throw new ArtifactNamespaceContainmentError(
       `Unsafe generated-artifact relative path: ${JSON.stringify(relativePath)}.`,
     );

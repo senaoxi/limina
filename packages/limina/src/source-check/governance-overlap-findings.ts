@@ -8,7 +8,7 @@ import { compareCodeUnits, uniqueValues } from '#utils/collections';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import type {
   GovernanceUnit,
@@ -66,12 +66,13 @@ function addOwnershipResolutionFinding(options: {
   getProjectFileSet: (configPath: string) => Set<string>;
   units: Map<string, GovernanceUnit>;
 }): void {
-  const ownerRootDir = [...options.units.values()][0]!.owner.directory;
+  const ownerRootDirectory = options.units.values().toArray()[0]!.owner
+    .directory;
   const resolution = resolveTsconfigOwnership({
     config: options.config,
     fileName: options.fileName,
     getProjectFileSet: options.getProjectFileSet,
-    ownerRootDir,
+    ownerRootDir: ownerRootDirectory,
   });
   if (resolution.status === 'matched') {
     return;
@@ -93,8 +94,10 @@ function collectConfigPaths(
   config: ResolvedLiminaConfig,
   units: Map<string, GovernanceUnit>,
 ): string[] {
-  return [...units.values()]
+  return units
+    .values()
     .flatMap((unit) => unit.configPaths)
+    .toArray()
     .sort((left, right) =>
       compareCodeUnits(
         toRelativePath(config.rootDir, left),
@@ -146,7 +149,10 @@ function addGovernanceUnitFinding(options: {
 
 function collectUniqueOwners(units: Map<string, GovernanceUnit>): string[] {
   return uniqueValues(
-    [...units.values()].map((unit) => unit.owner.packageJsonPath),
+    units
+      .values()
+      .map((unit) => unit.owner.packageJsonPath)
+      .toArray(),
   );
 }
 
@@ -226,12 +232,11 @@ export function addGovernanceOverlapFindings(options: {
     context: options.context,
     projectConfigCache: options.projectConfigCache,
   });
-  const entries = [...options.governanceUnitsByFile.entries()].sort(
-    ([left], [right]) =>
-      compareCodeUnits(
-        toRelativePath(options.config.rootDir, left),
-        toRelativePath(options.config.rootDir, right),
-      ),
+  const entries = [...options.governanceUnitsByFile].sort(([left], [right]) =>
+    compareCodeUnits(
+      toRelativePath(options.config.rootDir, left),
+      toRelativePath(options.config.rootDir, right),
+    ),
   );
 
   for (const [fileName, units] of entries) {

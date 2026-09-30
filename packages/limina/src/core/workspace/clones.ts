@@ -11,7 +11,9 @@ import type {
 } from './regions';
 import type { ValidatedWorkspaceContext } from './validated-context';
 
-/** Immutable root manifests remain the shared fact for this resolution generation. */
+/**
+Immutable root manifests remain the shared fact for this resolution generation.
+*/
 function cloneManifest(manifest: PackageManifest): PackageManifest {
   return Object.isFrozen(manifest) ? manifest : { ...manifest };
 }
@@ -72,11 +74,9 @@ export function cloneValidatedWorkspaceContext(
       ...candidate,
     })),
     outputRoots: [...context.outputRoots],
-    ...(context.outputMutationAuthorities
-      ? {
-          outputMutationAuthorities: new Map(context.outputMutationAuthorities),
-        }
-      : {}),
+    ...(context.outputMutationAuthorities && {
+      outputMutationAuthorities: new Map(context.outputMutationAuthorities),
+    }),
     packageIdentities: context.packageIdentities.map((identity) => ({
       ...identity,
       package: cloneWorkspacePackage(identity.package),
@@ -84,11 +84,9 @@ export function cloneValidatedWorkspaceContext(
     sourceConfigPaths: [...context.sourceConfigPaths],
     workspaceRootDir: context.workspaceRootDir,
     governanceRoot: context.governanceRoot,
-    ...(context.workspaceMutationGeneration
-      ? {
-          workspaceMutationGeneration: context.workspaceMutationGeneration,
-        }
-      : {}),
+    ...(context.workspaceMutationGeneration && {
+      workspaceMutationGeneration: context.workspaceMutationGeneration,
+    }),
   };
 }
 

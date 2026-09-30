@@ -29,30 +29,30 @@ function getBuildTargetDependencyKey(target: TypecheckTarget): string {
   ].join('\0');
 }
 
-function sourceConfigMatches(
+function isSourceConfigMatches(
   sourceConfigPath: string | undefined,
   edgeConfigPath: string,
 ): boolean {
   return sourceConfigPath === undefined || sourceConfigPath === edgeConfigPath;
 }
 
-function dependencyEdgeMatchesConsumer(
+function isDependencyEdgeMatchesConsumer(
   edge: GeneratedDependencyEdge,
   target: TypecheckTarget,
 ): boolean {
   return (
     target.checkerName === edge.fromChecker &&
-    sourceConfigMatches(target.sourceConfigPath, edge.fromConfigPath)
+    isSourceConfigMatches(target.sourceConfigPath, edge.fromConfigPath)
   );
 }
 
-function dependencyEdgeMatchesProvider(
+function isDependencyEdgeMatchesProvider(
   edge: GeneratedDependencyEdge,
   target: TypecheckTarget,
 ): boolean {
   return (
     target.checkerName === edge.toChecker &&
-    sourceConfigMatches(target.sourceConfigPath, edge.toConfigPath)
+    isSourceConfigMatches(target.sourceConfigPath, edge.toConfigPath)
   );
 }
 
@@ -138,10 +138,10 @@ function addEdgeDependencies(
   context: TargetDependencyContext,
 ): void {
   const consumerTargets = context.targets.filter((target) =>
-    dependencyEdgeMatchesConsumer(edge, target),
+    isDependencyEdgeMatchesConsumer(edge, target),
   );
   const providerTargets = context.targets.filter((target) =>
-    dependencyEdgeMatchesProvider(edge, target),
+    isDependencyEdgeMatchesProvider(edge, target),
   );
 
   for (const consumerTarget of consumerTargets) {

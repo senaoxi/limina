@@ -31,15 +31,15 @@ function freezeLocation(location: ValidationLocation): ValidationLocation {
   return Object.freeze({ ...location });
 }
 
-function freezePackage(pkg: ValidationPackage): ValidationPackage {
+function freezePackage(package_: ValidationPackage): ValidationPackage {
   return Object.freeze({
-    ...pkg,
+    ...package_,
     exports: freezeArray(
-      pkg.exports.map((entry) =>
+      package_.exports.map((entry) =>
         Object.freeze({ ...entry, targets: freezeArray(entry.targets) }),
       ),
     ),
-    labels: freezeArray(pkg.labels),
+    labels: freezeArray(package_.labels),
   });
 }
 
@@ -56,8 +56,8 @@ function estimateReferenceBytes(source: ValidationReferenceSource): number {
     source.files.reduce((total, file) => total + file.path.length + 48, 0) +
     source.locations.length * 48 +
     source.packages.reduce(
-      (total, pkg) =>
-        total + pkg.rootPath.length + (pkg.name?.length ?? 0) + 96,
+      (total, package_) =>
+        total + package_.rootPath.length + (package_.name?.length ?? 0) + 96,
       0,
     ) +
     source.projects.reduce(
@@ -68,7 +68,9 @@ function estimateReferenceBytes(source: ValidationReferenceSource): number {
   );
 }
 
-/** Owns shared immutable validation DTOs for exactly one analysis generation. */
+/**
+Owns shared immutable validation DTOs for exactly one analysis generation.
+*/
 export class ValidationReferencePoolProvider {
   readonly #generations = new Map<
     AnalysisGeneration,
@@ -99,7 +101,10 @@ export class ValidationReferencePoolProvider {
     });
 
     const startedAt = performance.now();
-    const projected = this.#sourceProvider.get(run).then((source) => {
+    const prerequisite = this.#sourceProvider.get(run);
+    const projected = (async () => {
+      const source = await prerequisite;
+
       const pool = Object.freeze({
         files: freezeRecord(
           source.files.map((file) => [file.id, freezeFile(file)]),
@@ -111,7 +116,10 @@ export class ValidationReferencePoolProvider {
           ]),
         ),
         packages: freezeRecord(
-          source.packages.map((pkg) => [pkg.id, freezePackage(pkg)]),
+          source.packages.map((package_) => [
+            package_.id,
+            freezePackage(package_),
+          ]),
         ),
         projects: freezeRecord(
           source.projects.map((project) => [
@@ -134,7 +142,7 @@ export class ValidationReferencePoolProvider {
       });
 
       return pool;
-    });
+    })();
 
     this.#generations.set(run.generation, projected);
     return projected;

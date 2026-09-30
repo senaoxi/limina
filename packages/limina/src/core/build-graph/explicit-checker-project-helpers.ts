@@ -1,9 +1,23 @@
-import type {
-  CheckerProjectConfigCache,
-  CheckerProjectParseContext,
+import {
+  type CheckerProjectConfigCache,
+  type CheckerProjectParseContext,
+  isBuildCapablePreset,
 } from '#checkers';
 import type { CheckerName } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import type { AutoScopeProject } from './types';
+
+export function getScopedParseContext(
+  checkerName: CheckerName,
+): CheckerProjectParseContext {
+  if (isBuildCapablePreset(checkerName)) {
+    return { checkerPresets: [checkerName], extensions: [] };
+  }
+  return {
+    checkerPresets: ['tsc'],
+    extensions: [checkerName === 'astro' ? '.astro' : '.svelte'],
+  };
+}
 
 export function getExplicitAnalysisGeneration(
   cache?: CheckerProjectConfigCache,
@@ -14,8 +28,9 @@ export function getExplicitAnalysisGeneration(
 export function getVueProfileFileNames(
   identity: CheckerProjectParseContext['vueSemanticIdentity'],
 ): string[] {
-  if (identity === undefined) return [];
-  return [...identity.profilesByFileName.keys()];
+  return identity === undefined
+    ? []
+    : identity.profilesByFileName.keys().toArray();
 }
 
 export function addExplicitVueFiles(options: {
@@ -29,5 +44,5 @@ export function addExplicitVueFiles(options: {
       ...options.filePartition.vueFiles,
       ...options.profileFileNames,
     ]),
-  ].sort();
+  ].sort(compareCodeUnits);
 }

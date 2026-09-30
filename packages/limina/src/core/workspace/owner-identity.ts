@@ -11,7 +11,9 @@ export type PackageOwnerIdentity = string & {
   readonly [packageOwnerIdentityBrand]: true;
 };
 
-/** Only an already validated canonical package identity can become an owner key. */
+/**
+Only an already validated canonical package identity can become an owner key.
+*/
 export function getPackageOwnerIdentity(
   context: ValidatedWorkspaceContext,
   directory: string,
@@ -27,7 +29,9 @@ export function getPackageOwnerIdentity(
   return identity.canonicalDirectory as PackageOwnerIdentity;
 }
 
-/** Knip paths are provenance inputs; resolve them against validated owners first. */
+/**
+Knip paths are provenance inputs; resolve them against validated owners first.
+*/
 export function findPackageOwnerIdentity(
   context: ValidatedWorkspaceContext,
   manifestPath: string,
@@ -40,7 +44,9 @@ export function findPackageOwnerIdentity(
   );
   return identity?.canonicalDirectory as PackageOwnerIdentity | undefined;
 }
-/** Keep source provenance on the validated owner's retained lexical path. */
+/**
+Keep source provenance on the validated owner's retained lexical path.
+*/
 export function projectToPackageOwnerPath(
   pathIndex: WorkspaceRegionPathIndex,
   filePath: string,

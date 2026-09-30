@@ -78,7 +78,7 @@ export interface ImportAnalysisContext {
   clearOxcResolverCaches?: () => void;
   collectImportsFromFile: (
     filePath: string,
-    packageRootDir: string,
+    packageRootDirectory: string,
     sourceProfile?: VueSourceProfile,
   ) => ImportRecord[];
   dispose?: () => void;
@@ -88,18 +88,20 @@ export interface ImportAnalysisContext {
     managedOutputLookup?: ManagedOutputDeclarationLookup;
   }) => FrameworkSemanticDependencyPreparation;
   resolveCheckerImportEvidence: (
-    ...args: ImportRecordResolutionArguments
+    ...arguments_: ImportRecordResolutionArguments
   ) => CanonicalImportResolutionEvidence;
-  resolveInternalImport: (...args: ImportResolutionArguments) => string | null;
+  resolveInternalImport: (
+    ...arguments_: ImportResolutionArguments
+  ) => string | null;
   resolveImportEvidence: (
-    ...args: ImportRecordResolutionArguments
+    ...arguments_: ImportRecordResolutionArguments
   ) => CanonicalImportResolutionEvidence;
-  resolveOxcImport: (...args: ImportResolutionArguments) => string | null;
+  resolveOxcImport: (...arguments_: ImportResolutionArguments) => string | null;
   resolveModulePair: (
-    ...args: ImportResolutionArguments
+    ...arguments_: ImportResolutionArguments
   ) => ModuleResolutionPair;
   resolveTypeScriptImport: (
-    ...args: ImportResolutionArguments
+    ...arguments_: ImportResolutionArguments
   ) => ResolvedCheckerModuleName | null;
 }
 

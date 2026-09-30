@@ -152,9 +152,9 @@ function cloneMappedObservation(
   const importRecord = structuredClone(observation.importRecord);
   if (observation.kind === 'missing')
     return cloneMissingObservation(observation, importRecord);
-  if (observation.kind === 'resource')
-    return cloneResourceObservation(observation, importRecord);
-  return cloneSemanticOnlyObservation(observation, importRecord);
+  return observation.kind === 'resource'
+    ? cloneResourceObservation(observation, importRecord)
+    : cloneSemanticOnlyObservation(observation, importRecord);
 }
 
 export function cloneSourceEvidence(evidence: SourceEvidence): SourceEvidence {

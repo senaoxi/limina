@@ -29,9 +29,9 @@ function isUsableRequireBinding(
     identifier,
     identifier.text,
   );
-  if (binding === undefined) return identifier.text === 'require';
-  if (binding.kind !== 'require-alias') return false;
-  return !bindings.reassigned.has(binding);
+  return binding === undefined
+    ? identifier.text === 'require'
+    : binding.kind === 'require-alias' && !bindings.reassigned.has(binding);
 }
 
 function isRequireResolveAccess(
@@ -40,9 +40,11 @@ function isRequireResolveAccess(
 ): expression is ts.PropertyAccessExpression & {
   expression: ts.Identifier;
 } {
-  if (!isPlainPropertyAccess(expression, tsModule)) return false;
-  if (expression.name.text !== 'resolve') return false;
-  return tsModule.isIdentifier(expression.expression);
+  return (
+    isPlainPropertyAccess(expression, tsModule) &&
+    expression.name.text === 'resolve' &&
+    tsModule.isIdentifier(expression.expression)
+  );
 }
 
 function isPlainPropertyAccess(
@@ -110,8 +112,9 @@ function collectCallRecord(options: {
   });
   if (kind === null) return null;
   const argument = getLiteralArgument(options.node, options.tsModule);
-  if (argument === null) return null;
-  return createRequireImportRecord(options, argument, kind);
+  return argument === null
+    ? null
+    : createRequireImportRecord(options, argument, kind);
 }
 
 function createRequireImportRecord(

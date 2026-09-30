@@ -12,12 +12,13 @@ function getSpawnSync(
   context: CommandExecutionContext,
 ): NonNullable<CommandProcessDependencies['spawnSync']> {
   const configured = context.options.commandProcess?.spawnSync;
-  if (configured !== undefined) return configured;
-  return (
-    command: string,
-    args: readonly string[],
-    options: SpawnSyncOptions,
-  ) => spawnSync(command, [...args], options);
+  return configured === undefined
+    ? (
+        command: string,
+        arguments_: readonly string[],
+        options: SpawnSyncOptions,
+      ) => spawnSync(command, [...arguments_], options)
+    : configured;
 }
 
 function getTimeoutOptions(timeoutMs: number | undefined): {
@@ -64,7 +65,7 @@ export function runSynchronousCommand(
     return throwProcessError(context, result.error);
   }
   const exitCode = getExitCode(result);
-  const passed = exitCode === 0;
-  markCommandOutcome(context, passed, exitCode);
-  return createCommandResult(context, passed, exitCode);
+  const isPassed = exitCode === 0;
+  markCommandOutcome(context, isPassed, exitCode);
+  return createCommandResult(context, isPassed, exitCode);
 }

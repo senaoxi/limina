@@ -147,8 +147,7 @@ function getSvelteSemanticContext(options: SveltePairOptions) {
   const project = options.request.context.svelteSemanticProject;
   if (project === undefined) return null;
   const manager = options.dependencies.svelteSemanticContexts;
-  if (manager === undefined) return null;
-  return { manager, project };
+  return manager === undefined ? null : { manager, project };
 }
 
 function createSveltePair(options: {
@@ -190,10 +189,9 @@ function resolveSveltePair(options: SveltePairOptions): ModuleResolutionPair {
   if (NATIVE_TYPESCRIPT_CHANNEL_KINDS.has(options.importRecord.kind)) {
     return resolveTypeScriptPair(options);
   }
-  if (!options.importRecord.filePath.toLowerCase().endsWith('.svelte')) {
-    return resolveTypeScriptPair(options);
-  }
-  return resolveMaterializedSveltePair(options);
+  return options.importRecord.filePath.toLowerCase().endsWith('.svelte')
+    ? resolveMaterializedSveltePair(options)
+    : resolveTypeScriptPair(options);
 }
 
 function resolveMaterializedSveltePair(
@@ -261,8 +259,8 @@ function createEvidence(options: {
 export function createCheckerSemanticResolver(
   dependencies: ProviderDependencies,
 ): ImportAnalysisContext['resolveCheckerImportEvidence'] {
-  return (...args) => {
-    const [importRecord, containingFile, compilerOptions, context] = args;
+  return (...arguments_) => {
+    const [importRecord, containingFile, compilerOptions, context] = arguments_;
     const request = dependencies.requests.getRequest(
       importRecord.specifier,
       containingFile,

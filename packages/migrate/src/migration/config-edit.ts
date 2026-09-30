@@ -8,8 +8,9 @@ function editRegions(
   entries: string,
 ): string {
   const property = syntax.property(regions, 'exclude');
-  if (!property) return syntax.insert(regions, `exclude: [${entries}]`);
-  return editExclusions(syntax, syntax.resolve(property.initializer), entries);
+  return property
+    ? editExclusions(syntax, syntax.resolve(property.initializer), entries)
+    : syntax.insert(regions, `exclude: [${entries}]`);
 }
 
 function editExclusions(
@@ -18,12 +19,14 @@ function editExclusions(
   entries: string,
 ): string {
   if (!ts.isArrayLiteralExpression(expression)) return unsupportedConfigEdit();
-  if (expression.elements.some(ts.isSpreadElement))
-    return unsupportedConfigEdit();
-  return syntax.insert(expression, entries);
+  return expression.elements.some(ts.isSpreadElement)
+    ? unsupportedConfigEdit()
+    : syntax.insert(expression, entries);
 }
 
-/** Edits source syntax; the evaluated module is never serialized. */
+/**
+Edits source syntax; the evaluated module is never serialized.
+*/
 export function addStaticConfigExclusions(
   fileName: string,
   text: string,
@@ -36,11 +39,11 @@ export function addStaticConfigExclusions(
     .map((entry) => JSON.stringify(entry, null, 2))
     .join(',\n');
   const property = syntax.property(root, 'regions');
-  if (!property)
-    return syntax.insert(root, `regions: { exclude: [${entries}] }`);
-  return editRegions(
-    syntax,
-    syntax.object(syntax.resolve(property.initializer)),
-    entries,
-  );
+  return property
+    ? editRegions(
+        syntax,
+        syntax.object(syntax.resolve(property.initializer)),
+        entries,
+      )
+    : syntax.insert(root, `regions: { exclude: [${entries}] }`);
 }

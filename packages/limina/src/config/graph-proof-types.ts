@@ -1,25 +1,25 @@
-export interface GraphRuleRefDenyEntry {
+export interface GraphRuleReferenceDenyEntry {
   path: string;
   reason: string;
 }
 
-export interface GraphRuleRefAllowEntry {
+export interface GraphRuleReferenceAllowEntry {
   path: string;
   reason: string;
 }
 
-export interface GraphRuleDepDenyEntry {
+export interface GraphRuleDependencyDenyEntry {
   name: string;
   reason: string;
 }
 
 export interface GraphRuleDenyConfig {
-  deps?: GraphRuleDepDenyEntry[];
-  refs?: GraphRuleRefDenyEntry[];
+  deps?: GraphRuleDependencyDenyEntry[];
+  refs?: GraphRuleReferenceDenyEntry[];
 }
 
 export interface GraphRuleAllowConfig {
-  refs?: GraphRuleRefAllowEntry[];
+  refs?: GraphRuleReferenceAllowEntry[];
 }
 
 export interface GraphRule {

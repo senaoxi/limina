@@ -43,11 +43,11 @@ function cacheCollection(options: {
 }
 
 function deduplicateFailures(collection: ProjectDependencyCollection): void {
-  collection.failures = [
-    ...new Map(
-      collection.failures.map((failure) => [failure.identity, failure]),
-    ).values(),
-  ];
+  collection.failures = new Map(
+    collection.failures.map((failure) => [failure.identity, failure]),
+  )
+    .values()
+    .toArray();
 }
 
 function createCollectionContext(request: ProjectDependencyRequest) {
@@ -166,7 +166,7 @@ export function collectProjectDependencies(
   return collection;
 }
 
-export function projectDependencyCreatesSourceEdge(
+export function isProjectDependencyCreatesSourceEdge(
   dependency:
     | ProjectDependency
     | Extract<ProjectDependencyObservation, { kind: 'unmapped-generated' }>,

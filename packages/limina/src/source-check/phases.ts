@@ -3,7 +3,7 @@ import { runTsconfigGovernancePhase } from './governance-phase';
 import { runSourceImportAuthorityPhase } from './import-phase';
 import { resolveKnipCliPath } from './knip';
 import { runSourceProjectOwnershipPhase } from './project-phase';
-import { finishSourceCheck } from './result-reporting';
+import { isFinishSourceCheck } from './result-reporting';
 import { runSourceRoutePhase } from './route-phase';
 import { createSourceCheckState, type SourceCheckState } from './run-state';
 import type { RunSourceCheckImplOptions } from './runner-types';
@@ -21,8 +21,7 @@ function precheckKnipDependency(
   config: ResolvedLiminaConfig,
   options: RunSourceCheckImplOptions,
 ): void {
-  if (options.knipRunner !== undefined) return;
-  if (!isSourceKnipEnabled(config)) return;
+  if (options.knipRunner !== undefined || !isSourceKnipEnabled(config)) return;
   resolveKnipDependency(options.resolveKnipCliPath);
 }
 
@@ -53,7 +52,7 @@ export async function prepareSourceCheck(
   return state;
 }
 
-export async function finishSourceCheckAnalysis(
+export async function isFinishSourceCheckAnalysis(
   state: SourceCheckState,
 ): Promise<boolean> {
   await runSourceProjectOwnershipPhase({
@@ -81,7 +80,7 @@ export async function finishSourceCheckAnalysis(
     workspaceLookup: state.workspaceLookup,
     workspacePathIndex: state.workspacePathIndex,
   });
-  return finishSourceCheck({
+  return isFinishSourceCheck({
     checkItems: state.checkItems,
     checks: state.checks,
     config: state.config,

@@ -37,14 +37,17 @@ export type CheckerHostResponse =
       type: 'result';
     };
 
+class CheckerAbortError extends Error {
+  override name = 'AbortError';
+}
+
 function createAbortError(signal: AbortSignal): Error {
   if (signal.reason instanceof Error) return signal.reason;
-  const error = new Error(
+  const error = new CheckerAbortError(
     signal.reason === undefined
       ? 'Checker target cancelled.'
       : String(signal.reason),
   );
-  error.name = 'AbortError';
   return error;
 }
 
@@ -59,7 +62,7 @@ export function createCancelledCheckerMeasurement(
 }
 
 function isSignalAborted(signal: AbortSignal | undefined): boolean {
-  return signal === undefined ? false : signal.aborted;
+  return signal !== undefined && signal.aborted;
 }
 
 function removeAbortListener(
@@ -96,14 +99,14 @@ export function spawnAndMeasure(
   }
   return new Promise((resolve) => {
     let cancelledMeasurement: CheckerHostSpawnMeasurement | undefined;
-    let settled = false;
+    let isSettled = false;
     const startedAt = performance.now();
     const finalize = (measurement: CheckerHostSpawnMeasurement): void => {
-      if (settled) {
+      if (isSettled) {
         return;
       }
 
-      settled = true;
+      isSettled = true;
       removeAbortListener(signal, handleAbort);
       resolve(measurement);
     };
@@ -144,13 +147,15 @@ export function spawnAndMeasure(
       };
       // Closing the leader does not end an owned POSIX process group.
       terminateChildProcessTree(child);
-      waitForChildProcessTreeTermination(child).then((error) => {
+      const termination = waitForChildProcessTreeTermination(child);
+      (async () => {
+        const error = await termination;
         finalize(
           error === undefined
             ? measurement
             : { ...measurement, error, status: 1 },
         );
-      });
+      })();
     });
   });
 }

@@ -32,7 +32,7 @@ import {
   resolveReferenceOwner,
 } from './source-reference-ownership';
 
-function rejectOutsideActivatedRegion(options: ConfigVisit): boolean {
+function isRejectOutsideActivatedRegion(options: ConfigVisit): boolean {
   if (options.activatedRegions.isSourceConfigPath(options.sourceConfigPath)) {
     return false;
   }
@@ -41,31 +41,31 @@ function rejectOutsideActivatedRegion(options: ConfigVisit): boolean {
 }
 
 function shouldSkipConfigVisit(options: ConfigVisit): boolean {
-  if (rejectOutsideActivatedRegion(options)) {
-    return true;
-  }
-  return options.seenConfigs.has(options.sourceConfigPath);
+  return (
+    isRejectOutsideActivatedRegion(options) ||
+    options.seenConfigs.has(options.sourceConfigPath)
+  );
 }
 
 function registerSourceConfig(options: ConfigVisit): string {
   options.seenConfigs.add(options.sourceConfigPath);
-  const packageRootDir = options.activatedRegions.findPackageForPath(
+  const packageRootDirectory = options.activatedRegions.findPackageForPath(
     options.sourceConfigPath,
   )!.directory;
   options.collection.packageRootBySourcePath.set(
     options.sourceConfigPath,
-    packageRootDir,
+    packageRootDirectory,
   );
-  return packageRootDir;
+  return packageRootDirectory;
 }
 
 function isCollectibleReference(
   referencePath: string,
-  rootDir: string,
+  rootDirectory: string,
 ): boolean {
   return (
     existsSync(referencePath) &&
-    isOrdinarySourceTypecheckConfigPath(referencePath, rootDir)
+    isOrdinarySourceTypecheckConfigPath(referencePath, rootDirectory)
   );
 }
 
@@ -140,7 +140,7 @@ function collectSolutionReferences(options: ConfigVisit): string[] {
 
 function collectSolutionConfig(
   options: ConfigVisit,
-  packageRootDir: string,
+  packageRootDirectory: string,
   configObject: JsonObject,
 ): void {
   const outputOptions = readOutputOptions(
@@ -157,7 +157,7 @@ function collectSolutionConfig(
     options.sourceConfigPath,
     createSolutionBuildModule({
       checkerName: options.checkerName,
-      packageRootDir,
+      packageRootDir: packageRootDirectory,
       rootDir: options.config.rootDir,
       sourceConfigPath: options.sourceConfigPath,
     }),
@@ -170,7 +170,7 @@ function collectSolutionConfig(
 
 function collectLeafConfig(
   options: ConfigVisit,
-  packageRootDir: string,
+  packageRootDirectory: string,
   analysis: SourceConfigAnalysis,
 ): void {
   if (
@@ -184,7 +184,7 @@ function collectLeafConfig(
     options.sourceConfigPath,
     createProjectBuildModule({
       checkerName: options.checkerName,
-      packageRootDir,
+      packageRootDir: packageRootDirectory,
       rootDir: options.config.rootDir,
       sourceConfigPath: options.sourceConfigPath,
     }),
@@ -237,9 +237,12 @@ export function collectCheckerSourceConfigModules(options: ConfigVisit): void {
   if (shouldSkipConfigVisit(options)) {
     return;
   }
-  const packageRootDir = registerSourceConfig(options);
+  const packageRootDirectory = registerSourceConfig(options);
   try {
-    collectParsedSourceConfig({ options, packageRootDir });
+    collectParsedSourceConfig({
+      options,
+      packageRootDir: packageRootDirectory,
+    });
   } catch (error) {
     reportInputError(options, error);
   }

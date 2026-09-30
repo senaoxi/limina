@@ -4,8 +4,8 @@ import {
   type ConfigValidationContext,
   isNonEmptyString,
   isPlainConfigRecord,
+  isValidateStringArrayField,
   validateRelativeSelectors,
-  validateStringArrayField,
 } from './shared';
 
 const grantKeys = new Set(['include', 'reason', 'workspaceRootDependencies']);
@@ -30,7 +30,7 @@ function validateGrantDependencies(options: {
   grant: Record<string, unknown>;
   path: PropertyKey[];
 }): void {
-  validateStringArrayField({
+  isValidateStringArrayField({
     ctx: options.ctx,
     path: [...options.path, 'workspaceRootDependencies'],
     required: true,
@@ -44,7 +44,7 @@ function validateGrantIncludes(options: {
   grant: Record<string, unknown>;
   path: PropertyKey[];
 }): void {
-  validateStringArrayField({
+  isValidateStringArrayField({
     ctx: options.ctx,
     path: [...options.path, 'include'],
     value: options.grant.include,
@@ -147,38 +147,41 @@ function validateOwnerGrants(options: {
 
 function getAllowMap(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): Record<string, unknown> | null {
   if (value === undefined) return null;
   if (isPlainConfigRecord(value)) return value;
   addConfigIssue(
-    ctx,
+    context,
     [...authorityPath, 'allow'],
     'allow must be an object keyed by source owner identity.\n  fix: use allow: { "@scope/package": [{ include: ["test/**/*.ts"], workspaceRootDependencies: ["@example/fixture"], reason: "..." }] }.',
   );
   return null;
 }
 
-function validateAllowMap(value: unknown, ctx: ConfigValidationContext): void {
-  const allow = getAllowMap(value, ctx);
+function validateAllowMap(
+  value: unknown,
+  context: ConfigValidationContext,
+): void {
+  const allow = getAllowMap(value, context);
   if (allow === null) return;
   for (const [ownerIdentity, grants] of Object.entries(allow)) {
-    validateOwnerGrants({ ctx, ownerIdentity, value: grants });
+    validateOwnerGrants({ ctx: context, ownerIdentity, value: grants });
   }
 }
 
 export function validateSourceImportAuthorityConfig(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined) return;
   if (!isPlainConfigRecord(value)) {
     addConfigIssue(
-      ctx,
+      context,
       [...authorityPath],
       'importAuthority must be an object.',
     );
     return;
   }
-  validateAllowMap(value.allow, ctx);
+  validateAllowMap(value.allow, context);
 }

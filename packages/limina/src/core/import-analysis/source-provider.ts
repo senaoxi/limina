@@ -13,7 +13,7 @@ import { collectTypeScriptSourceTextImports } from './typescript-imports';
 interface SourceProvider {
   collectImportsFromFile(
     filePath: string,
-    rootDir: string,
+    rootDirectory: string,
     sourceProfile?: VueSourceProfile,
   ): ImportRecord[];
 }
@@ -94,14 +94,14 @@ export function createSourceProvider(options: {
 
   function collect(
     filePath: string,
-    rootDir: string,
+    rootDirectory: string,
     sourceProfile?: VueSourceProfile,
   ): ImportRecord[] {
     const normalizedFilePath = normalizeAbsolutePath(filePath);
     assertStandaloneSource({ filePath: normalizedFilePath, sourceProfile });
     const cacheKey = JSON.stringify({
       filePath: normalizedFilePath,
-      packageRootDir: normalizeAbsolutePath(rootDir),
+      packageRootDir: normalizeAbsolutePath(rootDirectory),
       parser: 'typescript-ast-v1',
     });
     const cached = options.caches.importsCache.get(cacheKey);

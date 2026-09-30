@@ -52,11 +52,9 @@ function assertTypeScriptRuntime(value: unknown): typeof ts {
 }
 
 function hasUriFile(value: unknown): boolean {
-  if (typeof value === 'function') {
-    return typeof (value as { file?: unknown }).file === 'function';
-  }
-  if (!isPlainRecord(value)) return false;
-  return typeof value.file === 'function';
+  return typeof value === 'function'
+    ? typeof (value as { file?: unknown }).file === 'function'
+    : isPlainRecord(value) && typeof value.file === 'function';
 }
 
 function assertVscodeUriRuntime(value: unknown): AstroVscodeUriRuntime {
@@ -76,15 +74,19 @@ function assertVscodeUriRuntime(value: unknown): AstroVscodeUriRuntime {
 function hasLanguagePluginShape(
   value: unknown,
 ): value is Record<string, unknown> {
-  if (!isPlainRecord(value)) return false;
-  if (typeof value.getLanguageId !== 'function') return false;
-  return typeof value.createVirtualCode === 'function';
+  return (
+    isPlainRecord(value) &&
+    typeof value.getLanguageId === 'function' &&
+    typeof value.createVirtualCode === 'function'
+  );
 }
 
 function hasTypeScriptPluginShape(value: unknown): boolean {
-  if (!isPlainRecord(value)) return false;
-  if (!Array.isArray(value.extraFileExtensions)) return false;
-  return typeof value.getServiceScript === 'function';
+  return (
+    isPlainRecord(value) &&
+    Array.isArray(value.extraFileExtensions) &&
+    typeof value.getServiceScript === 'function'
+  );
 }
 
 function assertLanguagePluginShape(options: {

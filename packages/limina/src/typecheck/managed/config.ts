@@ -33,9 +33,11 @@ function isIgnorableEmptyGeneratedConfig(
   parsed: ts.ParsedCommandLine,
   configPath: string,
 ): boolean {
-  if (diagnostic.code !== 18_002) return false;
-  if (parsed.fileNames.length > 0) return false;
-  return normalizeAbsolutePath(configPath).split(path.sep).includes('.limina');
+  return (
+    diagnostic.code === 18_002 &&
+    parsed.fileNames.length === 0 &&
+    normalizeAbsolutePath(configPath).split(path.sep).includes('.limina')
+  );
 }
 
 function getParseErrors(options: {
@@ -237,9 +239,10 @@ export function collectTargetLeafConfigs(options: {
     }
   }
   return {
-    dependencies: [...state.dependencies.values()].sort((left, right) =>
-      compareCodeUnits(left.path, right.path),
-    ),
+    dependencies: state.dependencies
+      .values()
+      .toArray()
+      .sort((left, right) => compareCodeUnits(left.path, right.path)),
     leafPaths: [...state.leafPaths].sort(compareCodeUnits),
   };
 }

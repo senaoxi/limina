@@ -26,8 +26,10 @@ function isUntypedExport(options: {
   targetPackage: WorkspacePackage;
   workspaceLookup: WorkspaceLookupIndex;
 }): boolean {
-  if (options.targetPackage.manifest.exports === undefined) return false;
-  return hasUntypedTarget(options);
+  return (
+    options.targetPackage.manifest.exports !== undefined &&
+    hasUntypedTarget(options)
+  );
 }
 
 function hasUntypedTarget(options: {
@@ -43,7 +45,7 @@ function hasUntypedTarget(options: {
   );
 }
 
-function ignoresConsumption(consumption: WorkspaceConsumption): boolean {
+function isIgnoresConsumption(consumption: WorkspaceConsumption): boolean {
   return [
     isSemanticOnly(consumption),
     // TypeScript has no module-resolution occurrence for require.resolve.
@@ -56,12 +58,13 @@ export function getWorkspaceConsumptionFailure(options: {
   consumption: WorkspaceConsumption;
   workspaceLookup: WorkspaceLookupIndex;
 }): WorkspaceConsumptionFailure | null {
-  if (ignoresConsumption(options.consumption)) return null;
+  if (isIgnoresConsumption(options.consumption)) return null;
   const targetPackage = options.workspaceLookup.findPackageForSpecifier(
     options.consumption.importRecord.specifier,
   );
-  if (targetPackage === null) return null;
-  return getNamedConsumptionFailure({ ...options, targetPackage });
+  return targetPackage === null
+    ? null
+    : getNamedConsumptionFailure({ ...options, targetPackage });
 }
 
 function getNamedConsumptionFailure(options: {

@@ -6,7 +6,7 @@ import type { ParsedProofConfig } from './config-reader';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
 interface CompilerOptionExpectation {
@@ -44,11 +44,9 @@ function getCompilerOptionExpectations(
 function isExpectationSatisfied(
   expectation: CompilerOptionExpectation,
 ): boolean {
-  if (expectation.expected) {
-    return expectation.actual === true;
-  }
-
-  return expectation.actual !== true;
+  return expectation.expected
+    ? expectation.actual === true
+    : expectation.actual !== true;
 }
 
 function createExpectationReason(

@@ -32,11 +32,9 @@ function createDefaultParseContext(): CheckerProjectParseContext {
 function resolveParseContext(
   contextOrExtensions: CheckerProjectParseContext | string[] | undefined,
 ): CheckerProjectParseContext {
-  if (Array.isArray(contextOrExtensions)) {
-    return { checkerPresets: [], extensions: contextOrExtensions };
-  }
-
-  return contextOrExtensions ?? createDefaultParseContext();
+  return Array.isArray(contextOrExtensions)
+    ? { checkerPresets: [], extensions: contextOrExtensions }
+    : (contextOrExtensions ?? createDefaultParseContext());
 }
 
 function getVirtualContent(
@@ -154,7 +152,7 @@ function resolveOwnedParsedProject(options: {
   });
 }
 
-type ParseProjectArgs = [
+type ParseProjectArguments = [
   config: ResolvedLiminaConfig,
   configPath: string,
   contextOrExtensions?: CheckerProjectParseContext | string[],
@@ -180,17 +178,18 @@ function shouldAllowNoInputDiagnostics(
   virtualFiles: ReadonlyMap<string, string> | undefined,
   configPath: string,
 ): boolean {
-  if (virtualFiles === undefined) return false;
-  return virtualFiles.has(configPath);
+  return virtualFiles !== undefined && virtualFiles.has(configPath);
 }
 
 function getAnalysisGeneration(cache: CheckerProjectConfigCache | undefined) {
-  if (cache === undefined) return 0;
-  return cache.generation;
+  return cache === undefined ? 0 : cache.generation;
 }
 
-export function parseProject(...args: ParseProjectArgs): ProjectInfo {
-  const [config, configPath, contextOrExtensions, virtualFiles, cache] = args;
+export function parseProject(
+  ...arguments_: ParseProjectArguments
+): ProjectInfo {
+  const [config, configPath, contextOrExtensions, virtualFiles, cache] =
+    arguments_;
   const context = resolveParseContext(contextOrExtensions);
   const normalizedConfigPath = normalizeAbsolutePath(configPath);
   const parsed = parseCheckerProjectConfigForContext({

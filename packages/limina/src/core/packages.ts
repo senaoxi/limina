@@ -16,7 +16,9 @@ export interface PackageDomain {
 
 export class PackageDomainCore {
   readonly #buildGraph: BuildGraphCore;
+
   readonly #workspace: WorkspaceCore;
+
   #domainCache = new Map<string, Promise<PackageDomain>>();
 
   constructor(options: {
@@ -25,6 +27,46 @@ export class PackageDomainCore {
   }) {
     this.#buildGraph = options.buildGraph;
     this.#workspace = options.workspace;
+  }
+
+  async #createPackageDomain(packageName: string): Promise<PackageDomain> {
+    const [packages, owners, graph] = await Promise.all([
+      this.#workspace.getPackages(),
+      this.#workspace.getPackageOwners(),
+      this.#buildGraph.getGraph(),
+    ]);
+    const workspacePackage = packages.find(
+      (candidate) => candidate.name === packageName,
+    );
+
+    if (!workspacePackage) {
+      throw new Error(`Workspace package "${packageName}" was not found.`);
+    }
+
+    const owner =
+      owners.find((candidate) =>
+        isPathInsideDirectory(workspacePackage.directory, candidate.directory),
+      ) ?? null;
+    const sourceConfigPaths = collectGovernedSourceConfigPaths(graph).filter(
+      (configPath) =>
+        isPathInsideDirectory(configPath, workspacePackage.directory),
+    );
+    const allSourceModulePaths = graph.governedSources
+      .values()
+      .flatMap((governedSources) =>
+        governedSources.values().flatMap((unit) => unit.ownedFileNames),
+      )
+      .toArray();
+    const sourceModulePaths = uniqueSortedStrings(allSourceModulePaths).filter(
+      (filePath) => isPathInsideDirectory(filePath, workspacePackage.directory),
+    );
+
+    return {
+      owner,
+      package: workspacePackage,
+      sourceConfigPaths,
+      sourceModulePaths,
+    };
   }
 
   async getPackageDomain(packageName: string): Promise<PackageDomain> {
@@ -63,44 +105,6 @@ export class PackageDomainCore {
 
   getDependencyDeclarations(): Promise<WorkspaceDependencyDeclaration[]> {
     return this.#workspace.getWorkspaceDependencyDeclarations();
-  }
-
-  async #createPackageDomain(packageName: string): Promise<PackageDomain> {
-    const [packages, owners, graph] = await Promise.all([
-      this.#workspace.getPackages(),
-      this.#workspace.getPackageOwners(),
-      this.#buildGraph.getGraph(),
-    ]);
-    const workspacePackage = packages.find(
-      (candidate) => candidate.name === packageName,
-    );
-
-    if (!workspacePackage) {
-      throw new Error(`Workspace package "${packageName}" was not found.`);
-    }
-
-    const owner =
-      owners.find((candidate) =>
-        isPathInsideDirectory(workspacePackage.directory, candidate.directory),
-      ) ?? null;
-    const sourceConfigPaths = collectGovernedSourceConfigPaths(graph).filter(
-      (configPath) =>
-        isPathInsideDirectory(configPath, workspacePackage.directory),
-    );
-    const sourceModulePaths = uniqueSortedStrings(
-      [...graph.governedSources.values()].flatMap((governedSources) =>
-        [...governedSources.values()].flatMap((unit) => unit.ownedFileNames),
-      ),
-    ).filter((filePath) =>
-      isPathInsideDirectory(filePath, workspacePackage.directory),
-    );
-
-    return {
-      owner,
-      package: workspacePackage,
-      sourceConfigPaths,
-      sourceModulePaths,
-    };
   }
 }
 

@@ -32,7 +32,7 @@ function assertOrdinaryFileStats(
   }
 }
 
-function identitiesMatch(options: {
+function isIdentitiesMatch(options: {
   after: FileSystemStats;
   before: FileSystemStats;
   expected: FileSystemStats;
@@ -45,7 +45,7 @@ function identitiesMatch(options: {
   );
 }
 
-function fileMetadataMatches(
+function isFileMetadataMatches(
   before: FileSystemStats,
   after: FileSystemStats,
 ): boolean {
@@ -59,8 +59,8 @@ function assertStableFileIdentity(options: {
   targetPath: string;
 }): void {
   if (
-    !identitiesMatch(options) ||
-    !fileMetadataMatches(options.before, options.after)
+    !isIdentitiesMatch(options) ||
+    !isFileMetadataMatches(options.before, options.after)
   ) {
     throw new MutationBoundaryError(
       `Regular file identity drifted while it was inspected: ${options.targetPath}.`,

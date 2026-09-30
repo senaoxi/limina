@@ -6,7 +6,7 @@ import {
   type AtomicWriteOptions,
   writeJsonAtomically,
 } from '../../check-reporting/atomic-writer';
-import { generatedRootDirName } from '../../core/build-graph/generated/paths';
+import { generatedRootDirName as generatedRootDirectoryName } from '../../core/build-graph/generated/paths';
 import {
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
@@ -40,15 +40,15 @@ function getIssueFilePath(issue: SourceCheckIssue): string | undefined {
 }
 
 function toSnapshotIssue(
-  rootDir: string,
+  rootDirectory: string,
   issue: SourceCheckIssue,
 ): SourceIssueSnapshotIssue {
   const filePath = getIssueFilePath(issue);
   return {
     code: issue.code,
-    ...(filePath === undefined
-      ? {}
-      : { filePath: normalizeSlashes(toRelativePath(rootDir, filePath)) }),
+    ...(filePath !== undefined && {
+      filePath: normalizeSlashes(toRelativePath(rootDirectory, filePath)),
+    }),
     ownerName: issue.ownerName,
   };
 }
@@ -73,10 +73,10 @@ export function createNotRunSourceIssueSnapshot(
   return createSnapshot({ command, issues: [], status: 'not-run' });
 }
 
-export function getSourceIssueSnapshotPath(rootDir: string): string {
+export function getSourceIssueSnapshotPath(rootDirectory: string): string {
   return path.join(
-    rootDir,
-    generatedRootDirName,
+    rootDirectory,
+    generatedRootDirectoryName,
     'source-check',
     'last-run.json',
   );
@@ -135,9 +135,10 @@ async function parseSourceIssueSnapshot(
 }
 
 export async function readSourceIssueSnapshot(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<SourceIssueSnapshot | null> {
-  const snapshotPath = getSourceIssueSnapshotPath(rootDir);
-  if (!existsSync(snapshotPath)) return null;
-  return parseSourceIssueSnapshot(snapshotPath);
+  const snapshotPath = getSourceIssueSnapshotPath(rootDirectory);
+  return existsSync(snapshotPath)
+    ? parseSourceIssueSnapshot(snapshotPath)
+    : null;
 }

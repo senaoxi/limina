@@ -58,9 +58,9 @@ function createParsedEntryRecord(options: {
   files: unknown[] | null;
   reason: string | null;
 }): ParsedEntryRecord | null {
-  if (options.files === null) return null;
-  if (options.reason === null) return null;
-  return { files: options.files, reason: options.reason };
+  return options.files === null || options.reason === null
+    ? null
+    : { files: options.files, reason: options.reason };
 }
 
 function parseEntryRecord(options: {
@@ -96,8 +96,7 @@ function parseEntryRecord(options: {
 }
 
 function isNonEmptyPatternValue(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  return value.trim().length > 0;
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function rejectInvalidPattern(options: {

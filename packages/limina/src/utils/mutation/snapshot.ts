@@ -107,7 +107,7 @@ async function captureTarget(
 function createOrderedEntries(
   entries: ReadonlyMap<string, MutationNodeIdentity>,
 ): MutationBoundarySnapshot['entries'] {
-  return [...entries.entries()]
+  return [...entries]
     .sort(([left], [right]) => compareCodeUnits(left, right))
     .map(([entryPath, identity]) => ({ identity, path: entryPath }));
 }

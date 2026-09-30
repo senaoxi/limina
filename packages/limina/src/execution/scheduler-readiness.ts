@@ -10,7 +10,7 @@ function getAllDependencies(task: ExecutionTask): Set<TaskId> {
   return new Set([...(task.after ?? []), ...getRequiredDependencies(task)]);
 }
 
-export function dependenciesSettled(
+export function isDependenciesSettled(
   task: ExecutionTask,
   context: SchedulerContext,
 ): boolean {
@@ -25,8 +25,9 @@ function getDependencyBlocker(options: {
   dependencyTask: ExecutionTask;
 }): RootBlocker {
   const outcome = options.context.outcomes.get(options.dependencyTask.id);
-  if (outcome === undefined) return missingBlocker;
-  return resolveRootBlocker(options.dependencyTask, outcome);
+  return outcome === undefined
+    ? missingBlocker
+    : resolveRootBlocker(options.dependencyTask, outcome);
 }
 
 function isRequiredDependency(options: {
@@ -53,6 +54,8 @@ export function canStartTask(options: {
   context: SchedulerContext;
   task: ExecutionTask;
 }): boolean {
-  if (options.context.running.size >= options.context.concurrency) return false;
-  return options.context.locks.canAcquire(options.task.resources);
+  return (
+    !(options.context.running.size >= options.context.concurrency) &&
+    options.context.locks.canAcquire(options.task.resources)
+  );
 }

@@ -77,7 +77,7 @@ function assertStringArray(value: unknown, key: string): string[] {
   if (!Array.isArray(value)) {
     throw new TypeError(`Vue compiler options do not expose ${key}.`);
   }
-  if (!value.every((entry) => typeof entry === 'string')) {
+  if (value.some((entry) => typeof entry !== 'string')) {
     throw new TypeError(`Vue compiler option ${key} must contain strings.`);
   }
   return value as string[];
@@ -100,8 +100,7 @@ function findMatchingProfile(
   const match = profiles.find((candidate) =>
     candidate.extensions.some((extension) => fileName.endsWith(extension)),
   );
-  if (match === undefined) return null;
-  return match.profile;
+  return match === undefined ? null : match.profile;
 }
 
 function createProfileEntry(options: {
@@ -159,9 +158,8 @@ export function createVueSourceProfiles(options: {
   ];
   const nativeExtensions = getNativeTypeScriptExtensions(options.tsModule);
   const entries = options.fileNames
-    .filter(
-      (fileName) =>
-        !nativeExtensions.some((extension) => fileName.endsWith(extension)),
+    .filter((fileName) =>
+      nativeExtensions.every((extension) => !fileName.endsWith(extension)),
     )
     .map((fileName) =>
       createProfileEntry({

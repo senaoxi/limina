@@ -25,8 +25,7 @@ function getAdditionalValues(
   additional: CheckIssueInventoryFilters | undefined,
   key: keyof CheckIssueInventoryFilters,
 ): readonly string[] | undefined {
-  if (additional === undefined) return undefined;
-  return additional[key];
+  return additional === undefined ? undefined : additional[key];
 }
 
 function mergeInventoryFilters(
@@ -66,7 +65,8 @@ function appendRepeatedFilterTokens(
   option: string,
   values: readonly string[] | undefined,
 ): void {
-  for (const value of values ?? []) {
+  const filterValues = values ?? [];
+  for (const value of filterValues) {
     tokens.push(option, value);
   }
 }

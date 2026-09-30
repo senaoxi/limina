@@ -14,7 +14,9 @@ function splitNpmPattern(pattern: string): {
   };
 }
 
-/** npm removes earlier exclusions matched by a later positive declaration. */
+/**
+npm removes earlier exclusions matched by a later positive declaration.
+*/
 export function npmPackageGlobs(globs: readonly string[]): string[] {
   const positive: string[] = [];
   let negative: string[] = [];
@@ -37,7 +39,9 @@ function bunExclusion(pattern: string): string {
   return pattern.endsWith('/**') ? `${pattern}/*` : pattern;
 }
 
-/** Bun applies exclusions in declaration order; later positives can re-enter. */
+/**
+Bun applies exclusions in declaration order; later positives can re-enter.
+*/
 export function bunPackageGlobGroups(globs: readonly string[]): string[][] {
   const groups: string[][] = [];
   for (const pattern of globs) {
@@ -47,13 +51,13 @@ export function bunPackageGlobGroups(globs: readonly string[]): string[][] {
 }
 
 function isHiddenSegment(segment: string): boolean {
-  if (segment === '.' || segment === '..') return false;
-  return segment.startsWith('.');
+  return !(segment === '.' || segment === '..') && segment.startsWith('.');
 }
 
 function isBunVisiblePattern(pattern: string): boolean {
-  if (!isDynamicPattern(pattern)) return true;
-  return !pattern.split('/').some(isHiddenSegment);
+  return (
+    !isDynamicPattern(pattern) || !pattern.split('/').some(isHiddenSegment)
+  );
 }
 
 function addBunPattern(groups: string[][], pattern: string): void {
@@ -64,14 +68,18 @@ function addBunPattern(groups: string[][], pattern: string): void {
   if (isBunVisiblePattern(pattern)) groups.push([pattern]);
 }
 
-/** Exact package exclusions need not cut traversal of child packages. */
+/**
+Exact package exclusions need not cut traversal of child packages.
+*/
 export function nonPruningGlobGroup(
   patterns: readonly string[],
-  rootDir: string,
+  rootDirectory: string,
 ): WorkspacePackageGlobGroup {
   const excludes = patterns
     .filter((pattern) => pattern.startsWith('!'))
-    .map((pattern) => normalizeDirectoryPattern(pattern.slice(1), rootDir));
+    .map((pattern) =>
+      normalizeDirectoryPattern(pattern.slice(1), rootDirectory),
+    );
   const excluded = picomatch(excludes);
   return {
     packageGlobs: patterns.filter((pattern) => !pattern.startsWith('!')),
@@ -79,15 +87,19 @@ export function nonPruningGlobGroup(
   };
 }
 
-function normalizeDirectoryPattern(pattern: string, rootDir: string): string {
+function normalizeDirectoryPattern(
+  pattern: string,
+  rootDirectory: string,
+): string {
   const relative = path.isAbsolute(pattern)
-    ? path.relative(rootDir, pattern)
+    ? path.relative(rootDirectory, pattern)
     : pattern;
   return relative.replace(/^(?:\.\/)+/u, '').replace(/\/+$/u, '');
 }
 
 function appendBunExclusion(groups: string[][], pattern: string): void {
-  for (const group of groups.filter((entry) => isDynamicPattern(entry[0]!))) {
+  for (const group of groups) {
+    if (!isDynamicPattern(group[0]!)) continue;
     group.push(bunExclusion(pattern));
   }
 }

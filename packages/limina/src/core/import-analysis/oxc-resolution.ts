@@ -24,8 +24,9 @@ function normalizeResolvedPathForImporter(
   const normalizedPath = normalizeAbsolutePath(resolvedPath);
   const normalizedContainingFile = normalizeAbsolutePath(containingFile);
   if (!normalizedContainingFile.startsWith('/var/')) return normalizedPath;
-  if (!normalizedPath.startsWith('/private/var/')) return normalizedPath;
-  return normalizedPath.slice('/private'.length);
+  return normalizedPath.startsWith('/private/var/')
+    ? normalizedPath.slice('/private'.length)
+    : normalizedPath;
 }
 
 function recordResolverAccess(options: {
@@ -100,8 +101,9 @@ function getResolvedPath(options: {
   resolved: ReturnType<ResolverFactory['resolveFileSync']> | null;
 }): string | null {
   const path = options.resolved?.path;
-  if (path === undefined) return null;
-  return normalizeResolvedPathForImporter(path, options.containingFile);
+  return path === undefined
+    ? null
+    : normalizeResolvedPathForImporter(path, options.containingFile);
 }
 
 export function resolveModuleNameWithOxcCaches(

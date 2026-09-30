@@ -9,8 +9,7 @@ function getProblemCount(problems: readonly string[] | undefined): number {
 }
 
 function getPreflightIssueCount(result: CheckerTaskStatsInput): number {
-  if (result.passed) return 0;
-  return Math.max(1, getProblemCount(result.problems));
+  return result.passed ? 0 : Math.max(1, getProblemCount(result.problems));
 }
 
 function createPreflightStats(
@@ -33,10 +32,10 @@ function createPreflightStats(
 }
 
 export function formatCheckerEntryName(
-  projectRootDir: string,
+  projectRootDirectory: string,
   configPath: string,
 ): string {
-  const relativePath = toRelativePath(projectRootDir, configPath);
+  const relativePath = toRelativePath(projectRootDirectory, configPath);
   const checkerEntryMatch = /^\.limina\/tsconfig\/checkers\/([^/]+)\//u.exec(
     relativePath,
   );

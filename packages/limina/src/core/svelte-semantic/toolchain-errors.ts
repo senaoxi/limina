@@ -9,33 +9,37 @@ export const svelte2tsxContract: typeof checkerToolchainDependencyContracts.svel
 export const typeScriptContract: typeof liminaRuntimeDependencyContracts.typescript =
   liminaRuntimeDependencyContracts.typescript;
 
-export function createMissingCompilerError(packageRootDir: string): Error {
+export function createMissingCompilerError(
+  packageRootDirectory: string,
+): Error {
   return new Error(
     [
       'Unable to load the Svelte semantic toolchain:',
       '  package: svelte/compiler',
-      `  leaf package root: ${packageRootDir}`,
+      `  leaf package root: ${packageRootDirectory}`,
       '  dependency category: analysis runtime',
       '  reason: the Svelte compiler is not installed in the source config leaf dependency scope.',
-      `  fix: install svelte in ${packageRootDir}`,
+      `  fix: install svelte in ${packageRootDirectory}`,
     ].join('\n'),
   );
 }
 
-export function createMissingTypeScriptError(packageRootDir: string): Error {
+export function createMissingTypeScriptError(
+  packageRootDirectory: string,
+): Error {
   return new LiminaDependencyError({
     failureKind: 'missing',
     message: [
       'Unable to load the Svelte semantic toolchain:',
       '  package: typescript',
-      `  leaf package root: ${packageRootDir}`,
+      `  leaf package root: ${packageRootDirectory}`,
       '  dependency category: checker toolchain',
       '  reason: TypeScript is not installed in the source config leaf dependency scope.',
-      `  fix: install typescript@${typeScriptContract.supportedRange} alongside svelte-check in ${packageRootDir}`,
+      `  fix: install typescript@${typeScriptContract.supportedRange} alongside svelte-check in ${packageRootDirectory}`,
     ].join('\n'),
     ownership: 'checker-toolchain',
     packageName: 'typescript',
-    scope: packageRootDir,
+    scope: packageRootDirectory,
   });
 }
 
@@ -61,20 +65,22 @@ export function createUnsupportedTypeScriptError(options: {
   });
 }
 
-export function createMissingTransformError(packageRootDir: string): Error {
+export function createMissingTransformError(
+  packageRootDirectory: string,
+): Error {
   return new LiminaDependencyError({
     failureKind: 'missing',
     message: [
       'Unable to load the Svelte semantic toolchain:',
       '  package: svelte2tsx',
-      `  leaf package root: ${packageRootDir}`,
+      `  leaf package root: ${packageRootDirectory}`,
       '  dependency category: checker toolchain',
       '  reason: svelte2tsx is not installed in the source config leaf dependency scope.',
-      `  fix: install svelte2tsx@${svelte2tsxContract.supportedRange} alongside svelte-check in ${packageRootDir}`,
+      `  fix: install svelte2tsx@${svelte2tsxContract.supportedRange} alongside svelte-check in ${packageRootDirectory}`,
     ].join('\n'),
     ownership: svelte2tsxContract.ownership,
     packageName: svelte2tsxContract.packageName,
-    scope: packageRootDir,
+    scope: packageRootDirectory,
   });
 }
 

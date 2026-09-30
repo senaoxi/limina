@@ -17,12 +17,14 @@ export function formatEvidenceLine(
   return heading.length > 0 ? [`  - ${heading}`, ...lines] : lines;
 }
 
-function linesEqual(
+function isLinesEqual(
   left: readonly string[],
   right: readonly string[],
 ): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((line, index) => line === right[index]);
+  return (
+    left.length === right.length &&
+    left.every((line, index) => line === right[index])
+  );
 }
 
 function hasMatchingEvidenceLines(
@@ -31,26 +33,21 @@ function hasMatchingEvidenceLines(
 ): boolean {
   if (evidence === undefined) return false;
   return evidence.some((item) => {
-    if (item.lines === undefined) return false;
-    return linesEqual(item.lines, detailLines);
+    return item.lines !== undefined && isLinesEqual(item.lines, detailLines);
   });
 }
 
 export function isStructuredGraphPrepareIssue(
   issue: LiminaCheckIssue,
 ): boolean {
-  if (issue.task !== 'graph:prepare') return false;
-  return issue.detector === 'graph-prepare';
+  return issue.task === 'graph:prepare' && issue.detector === 'graph-prepare';
 }
 
 function shouldHideEvidence(issue: LiminaCheckIssue): boolean {
-  if (issue.task === 'graph:check') {
-    return issue.code !== LIMINA_CHECK_ISSUE_CODES.graphCheckFailed;
-  }
-  if (issue.task === 'proof:check') {
-    return issue.code !== LIMINA_CHECK_ISSUE_CODES.proofCheckFailed;
-  }
-  return false;
+  return issue.task === 'graph:check'
+    ? issue.code !== LIMINA_CHECK_ISSUE_CODES.graphCheckFailed
+    : issue.task === 'proof:check' &&
+        issue.code !== LIMINA_CHECK_ISSUE_CODES.proofCheckFailed;
 }
 
 function getVisibleEvidence(
@@ -62,8 +59,7 @@ function getVisibleEvidence(
 function hasDetailLines(
   lines: readonly string[] | undefined,
 ): lines is readonly string[] {
-  if (lines === undefined) return false;
-  return lines.length > 0;
+  return lines !== undefined && lines.length > 0;
 }
 
 function hasVisibleRawDetails(options: {
@@ -75,11 +71,10 @@ function hasVisibleRawDetails(options: {
   includeDetailLines: true;
   visibleEvidence: readonly LiminaCheckIssueEvidence[] | undefined;
 } {
-  if (!options.includeDetailLines) return false;
-  if (!hasDetailLines(options.detailLines)) return false;
-  return !hasMatchingEvidenceLines(
-    options.visibleEvidence,
-    options.detailLines,
+  return (
+    options.includeDetailLines &&
+    hasDetailLines(options.detailLines) &&
+    !hasMatchingEvidenceLines(options.visibleEvidence, options.detailLines)
   );
 }
 
@@ -100,36 +95,38 @@ function getVisibleRawDetails(options: {
 
 function getSummaryLines(
   issue: LiminaCheckIssue,
-  includeSummary: boolean,
+  isIncludeSummaryValue: boolean,
 ): string[] {
-  if (!includeSummary) return [];
-  if (issue.summary === undefined) return [];
-  return ['summary:', `    ${issue.summary}`];
+  if (!isIncludeSummaryValue) return [];
+  return issue.summary === undefined
+    ? []
+    : ['summary:', `    ${issue.summary}`];
 }
 
 function getEvidenceLines(
   evidence: readonly LiminaCheckIssueEvidence[] | undefined,
 ): string[] {
-  if (evidence === undefined || evidence.length === 0) return [];
-  return ['evidence:', ...evidence.flatMap(formatEvidenceLine)];
+  return evidence === undefined || evidence.length === 0
+    ? []
+    : ['evidence:', ...evidence.flatMap(formatEvidenceLine)];
 }
 
-function defaultTrue(value: boolean | undefined): boolean {
-  return value === undefined ? true : value;
+function isDefaultTrue(value: boolean | undefined): boolean {
+  return value === undefined || value;
 }
 
 export function formatIssueDetailLines(
   issue: LiminaCheckIssue,
   options: { includeDetailLines?: boolean; includeSummary?: boolean } = {},
 ): string[] {
-  const includeDetailLines = defaultTrue(options.includeDetailLines);
-  const includeSummary = defaultTrue(options.includeSummary);
+  const isIncludeDetailLines = isDefaultTrue(options.includeDetailLines);
+  const isIncludeSummary = isDefaultTrue(options.includeSummary);
   const visibleEvidence = getVisibleEvidence(issue);
   return [
-    ...getSummaryLines(issue, includeSummary),
+    ...getSummaryLines(issue, isIncludeSummary),
     ...getEvidenceLines(visibleEvidence),
     ...getVisibleRawDetails({
-      includeDetailLines,
+      includeDetailLines: isIncludeDetailLines,
       issue,
       visibleEvidence,
     }),

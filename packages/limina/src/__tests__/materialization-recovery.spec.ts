@@ -77,7 +77,7 @@ function createMaterializerChildScript(body: string): string {
       }, null, 2) + '\\n';
     const createPlan = async (artifacts) => {
       const base = await readMaterializationStateSnapshot(namespace);
-      const ownedArtifacts = [...Object.keys(artifacts), 'manifest.json'].sort();
+      const ownedArtifacts = [...Object.keys(artifacts), 'manifest.json'].sort((left, right) => Number(String(left) > String(right)) - Number(String(left) < String(right)));
       const changes = [
         ...Object.entries(artifacts).map(([relativePath, content]) => ({
           artifact: {
@@ -149,17 +149,21 @@ async function createFixture(): Promise<{
   namespace: LiminaArtifactNamespace;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-materialization-recovery-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-materialization-recovery-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   await writeFile(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     '{"name":"fixture","private":true}\n',
   );
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    namespace: createLiminaArtifactNamespace({ generation: 0, rootDir }),
-    rootDir,
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    namespace: createLiminaArtifactNamespace({
+      generation: 0,
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
   };
 }
 
@@ -228,7 +232,7 @@ async function createArtifactSetPlan(options: {
   const ownedArtifacts = [
     ...Object.keys(options.artifacts),
     'manifest.json',
-  ].sort();
+  ].sort((left, right) => Number(left > right) - Number(left < right));
   const changes: ArtifactChange[] = [
     ...Object.entries(options.artifacts).map(
       ([relativePath, content]): ArtifactChange => ({

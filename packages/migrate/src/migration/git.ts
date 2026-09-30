@@ -77,16 +77,17 @@ export async function collectMigrationWorktreeRoots(
   const rootsByCanonicalIdentity = new Map<string, string>();
 
   for (const target of targets) {
-    const rootDir = await findGitWorktreeRoot(target.configPath);
+    const rootDirectory = await findGitWorktreeRoot(target.configPath);
     rootsByCanonicalIdentity.set(
-      normalizeAbsolutePath(await realpath(rootDir)),
-      rootDir,
+      normalizeAbsolutePath(await realpath(rootDirectory)),
+      rootDirectory,
     );
   }
 
-  return [...rootsByCanonicalIdentity.values()].sort((left, right) =>
-    left.localeCompare(right),
-  );
+  return rootsByCanonicalIdentity
+    .values()
+    .toArray()
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function getStatusLines(output: string): string[] {
@@ -133,21 +134,21 @@ export function createDirtyWorkspaceDeclinedError(
 }
 
 export async function inspectGitWorkspace(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<DirtyGitWorkspace | undefined> {
   let result: GitCommandResult;
 
   try {
     result = await runGitCommand({
       args: ['status', '--porcelain=v1', '--untracked-files=all'],
-      cwd: rootDir,
+      cwd: rootDirectory,
       failureTitle: 'git status --porcelain=v1 --untracked-files=all failed.',
     });
   } catch (error) {
     throw new Error(
       [
         'Unable to verify the git working tree before running limina migration.',
-        `  root: ${rootDir}`,
+        `  root: ${rootDirectory}`,
         `  reason: ${formatErrorMessage(error)}`,
         '  fix: run limina migration inside a git repository with a clean working tree.',
       ].join('\n'),
@@ -156,5 +157,7 @@ export async function inspectGitWorkspace(
   }
 
   const statusLines = getStatusLines(result.stdout);
-  return statusLines.length === 0 ? undefined : { rootDir, statusLines };
+  return statusLines.length === 0
+    ? undefined
+    : { rootDir: rootDirectory, statusLines };
 }
