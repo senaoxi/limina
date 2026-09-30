@@ -7,24 +7,21 @@ import { addDefaultCustomConditionProblems } from '../graph-check/condition-defa
 import { addConditionDomainProblems } from '../graph-check/condition-domains';
 import { createCustomConditionConsistencyContext } from '../graph-check/condition-subtree';
 import type { GraphFinding } from '../graph-check/findings';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixturePath = createFixturePathResolver(
   path.resolve('virtual-condition-dag'),
 );
-const config: ResolvedLiminaConfig = {
-  get governanceRoot() {
-    return resolveFixtureGovernanceRoot(this);
-  },
+const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
   rootDir: fixturePath(),
   configPath: fixturePath('limina.config.mjs'),
-};
+});
 
 function createProjects(
   depth: number,
   width: number,
-  mismatched: boolean,
+  isMismatched: boolean,
 ): ProjectInfo[] {
   const projects: ProjectInfo[] = [];
   const name = (level: number, branch: number) =>
@@ -46,7 +43,7 @@ function createProjects(
   projects.push({
     configPath: leaf,
     references: new Set(),
-    options: { customConditions: mismatched ? ['browser'] : ['source'] },
+    options: { customConditions: [isMismatched ? 'browser' : 'source'] },
   } as ProjectInfo);
   return projects;
 }
@@ -56,7 +53,9 @@ function edgeOracle(projects: ProjectInfo[]) {
     projects.map((project) => [project.configPath, project]),
   );
   const conditions = (project: ProjectInfo) =>
-    [...new Set(project.options.customConditions)].sort();
+    [...new Set(project.options.customConditions)].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    );
   return projects
     .flatMap((project) =>
       [...project.references].flatMap((reference) => {
@@ -115,7 +114,7 @@ it.each([
       expect(new Set(context.mismatchFindingsByIdentity.values()).size).toBe(
         oracle.length,
       );
-      const summaries = [...context.subtreeByProjectPath.values()];
+      const summaries = context.subtreeByProjectPath.values().toArray();
       expect(
         summaries.reduce(
           (sum, summary) => sum + summary.mismatchFindingIdentities.size,

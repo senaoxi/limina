@@ -151,7 +151,7 @@ export async function writeGeneratedGraphConfigs(options: {
 }): Promise<void> {
   assertDistinctGeneratedProjectPaths({
     rootDir: options.config.rootDir,
-    projects: [...options.state.projectsByChecker.values()].flat(),
+    projects: options.state.projectsByChecker.values().toArray().flat(),
   });
   await Promise.all(
     options.checkers.map((checker) =>

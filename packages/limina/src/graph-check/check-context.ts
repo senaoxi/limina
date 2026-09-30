@@ -188,15 +188,15 @@ export function createGraphCheckManagedOutputProjectContexts(options: {
     addManagedOutputProjectContext({ ...options, contextsByKey, project });
   }
 
-  return [...contextsByKey.values()];
+  return contextsByKey.values().toArray();
 }
 
 export function createGeneratedGraphPathAliases(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): Map<string, string> {
   return new Map(
-    [...generatedGraph.sourceToDts.values()].flatMap((sourceToDts) => [
-      ...sourceToDts.entries(),
-    ]),
+    generatedGraph.sourceToDts
+      .values()
+      .flatMap((sourceToDts) => [...sourceToDts]),
   );
 }

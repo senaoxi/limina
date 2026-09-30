@@ -8,21 +8,11 @@ import { readProofConfig } from './config-reader';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
 function groupConfigsByDirectory(configPaths: string[]): Map<string, string[]> {
-  const configsByDirectory = new Map<string, string[]>();
-
-  for (const configPath of configPaths) {
-    const directory = path.dirname(configPath);
-    const configs = configsByDirectory.get(directory) ?? [];
-
-    configs.push(configPath);
-    configsByDirectory.set(directory, configs);
-  }
-
-  return configsByDirectory;
+  return Map.groupBy(configPaths, (configPath) => path.dirname(configPath));
 }
 
 function addMissingDefaultFinding(options: {

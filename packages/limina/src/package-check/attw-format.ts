@@ -26,13 +26,13 @@ const ATTW_PROBLEM_RULE_NAMES = {
 } as const satisfies Record<string, PackageAttwIgnoreRule>;
 
 function getResolutionSuffix(problem: Problem): string {
-  if (!('resolutionKind' in problem)) return '';
-  return ` [resolution: ${problem.resolutionKind}]`;
+  return 'resolutionKind' in problem
+    ? ` [resolution: ${problem.resolutionKind}]`
+    : '';
 }
 
 function getEntrypointSuffix(problem: Problem): string {
-  if (!('entrypoint' in problem)) return '';
-  return ` [entrypoint: ${problem.entrypoint}]`;
+  return 'entrypoint' in problem ? ` [entrypoint: ${problem.entrypoint}]` : '';
 }
 
 function getResolutionContext(problem: Problem): string {
@@ -125,19 +125,17 @@ const problemFormatters: Partial<Record<Problem['kind'], ProblemFormatter>> = {
 
 export function formatAttwProblem(problem: Problem): string {
   const formatter = problemFormatters[problem.kind];
-  if (formatter === undefined) {
-    return `Unknown ATTW problem: ${JSON.stringify(problem)}`;
-  }
-  return formatter(problem as never);
+  return formatter === undefined
+    ? `Unknown ATTW problem: ${JSON.stringify(problem)}`
+    : formatter(problem as never);
 }
 
 export function getAttwProblemRuleName(
   problem: Problem,
 ): PackageAttwIgnoreRule {
-  if (Object.hasOwn(ATTW_PROBLEM_RULE_NAMES, problem.kind)) {
-    return ATTW_PROBLEM_RULE_NAMES[
-      problem.kind as keyof typeof ATTW_PROBLEM_RULE_NAMES
-    ];
-  }
-  return problem.kind;
+  return Object.hasOwn(ATTW_PROBLEM_RULE_NAMES, problem.kind)
+    ? ATTW_PROBLEM_RULE_NAMES[
+        problem.kind as keyof typeof ATTW_PROBLEM_RULE_NAMES
+      ]
+    : problem.kind;
 }

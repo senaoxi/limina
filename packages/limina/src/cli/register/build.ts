@@ -9,7 +9,7 @@ import {
   parseBuildPreset,
   rejectUnknownBuildOptions,
 } from '../parse';
-import { runStandaloneIssueFlow } from '../standalone';
+import { isRunStandaloneIssueFlow } from '../standalone';
 import type { BuildFlags } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -19,12 +19,12 @@ function assertRawPreset(flags: BuildFlags): void {
   throw new Error('limina build --raw requires --preset.');
 }
 
-async function executeBuild(options: {
+async function isExecuteBuild(options: {
   configPath: string;
   flags: BuildFlags;
   flow: ReturnType<typeof createCliFlow>;
   registerSession: Parameters<
-    typeof runStandaloneIssueFlow
+    typeof isRunStandaloneIssueFlow
   >[0]['execute'] extends (register: infer Register) => Promise<boolean>
     ? Register
     : never;
@@ -72,16 +72,16 @@ async function runBuildAction(
   rejectUnknownBuildOptions(flags);
   assertRawPreset(flags);
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: (registerSession) =>
-      executeBuild({ configPath, flags, flow, registerSession }),
+      isExecuteBuild({ configPath, flags, flow, registerSession }),
     flow,
     messages: {
       failed: 'limina build failed',
       passed: 'limina build passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 export function registerBuildCommand(cli: LiminaCli): void {

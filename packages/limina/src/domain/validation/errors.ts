@@ -1,6 +1,11 @@
 import type { RuleOptionProblem } from './contracts';
 
-export class ConfigurationError extends Error {
+export class ConfigError extends Error {
+  static {
+    // Retain the public constructor name while the internal identifier follows lint policy.
+    Object.defineProperty(this, 'name', { value: 'ConfigurationError' });
+  }
+
   override readonly name = 'ConfigurationError';
   readonly problems: readonly RuleOptionProblem[];
 

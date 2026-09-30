@@ -15,21 +15,24 @@ function prepareIssuePath(filePath: string | undefined): string | undefined {
   return trimmedPath.length > 0 ? trimmedPath : undefined;
 }
 
-function makeIssuePathRelative(rootDir: string, filePath: string): string {
+function makeIssuePathRelative(
+  rootDirectory: string,
+  filePath: string,
+): string {
   return path.isAbsolute(filePath)
-    ? toRelativePath(rootDir, filePath)
+    ? toRelativePath(rootDirectory, filePath)
     : filePath.replaceAll(/^\.\//gu, '');
 }
 
 export function normalizeCheckIssuePath(
-  rootDir: string,
+  rootDirectory: string,
   filePath: string | undefined,
 ): string | undefined {
   const preparedPath = prepareIssuePath(filePath);
 
   return preparedPath === undefined
     ? undefined
-    : normalizeSlashes(makeIssuePathRelative(rootDir, preparedPath));
+    : normalizeSlashes(makeIssuePathRelative(rootDirectory, preparedPath));
 }
 
 function findLocationFilePath(
@@ -74,11 +77,9 @@ export function deriveCheckIssueScope(
     return undefined;
   }
 
-  if (issue.scope !== undefined) {
-    return issue.scope;
-  }
-
-  return normalizeScopeDirectory(locationPath);
+  return issue.scope === undefined
+    ? normalizeScopeDirectory(locationPath)
+    : issue.scope;
 }
 
 function normalizeOptionalScope(scope: string | undefined): string | undefined {
@@ -86,14 +87,14 @@ function normalizeOptionalScope(scope: string | undefined): string | undefined {
 }
 
 export function normalizeCheckIssueLocation(
-  rootDir: string,
+  rootDirectory: string,
   location: LiminaCheckIssueLocation,
 ): LiminaCheckIssueLocation {
   return {
     ...location,
-    filePath: normalizeCheckIssuePath(rootDir, location.filePath),
+    filePath: normalizeCheckIssuePath(rootDirectory, location.filePath),
     packageManifestPath: normalizeCheckIssuePath(
-      rootDir,
+      rootDirectory,
       location.packageManifestPath,
     ),
     scope: normalizeOptionalScope(location.scope),

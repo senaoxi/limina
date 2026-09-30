@@ -83,8 +83,9 @@ function getGeneratedServiceScript(
   generated: NonNullable<VolarSourceScript['generated']>,
 ): VueServiceScript | null {
   const provider = generated.languagePlugin.typescript;
-  if (provider === undefined) return null;
-  return provider.getServiceScript(generated.root) ?? null;
+  return provider === undefined
+    ? null
+    : (provider.getServiceScript(generated.root) ?? null);
 }
 
 function createServiceScriptPair(
@@ -93,8 +94,7 @@ function createServiceScriptPair(
   const generated = getGeneratedScript(sourceScript);
   if (generated === null) return null;
   const serviceScript = getGeneratedServiceScript(generated);
-  if (serviceScript === null) return null;
-  return { serviceScript, sourceScript };
+  return serviceScript === null ? null : { serviceScript, sourceScript };
 }
 
 export function getVueServiceScript(options: {
@@ -129,8 +129,9 @@ export function getVueMappedRangeIdentities(options: {
       false,
     ),
   ];
-  if (ranges.length === 0) return null;
-  return new Set(ranges.map(([start, end]) => rangeIdentity(start, end)));
+  return ranges.length === 0
+    ? null
+    : new Set(ranges.map(([start, end]) => rangeIdentity(start, end)));
 }
 
 export function createVueEvidence(options: {

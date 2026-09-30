@@ -210,7 +210,7 @@ function shouldLogSuccess(options: RunReleaseCheckOptions): boolean {
   ].every(Boolean);
 }
 
-export async function handlePassedReleaseCheck(
+export async function isHandlePassedReleaseCheck(
   context: ReleaseCommandContext,
 ): Promise<true> {
   if (!isReleaseSnapshotDeferred(context.options)) {
@@ -228,7 +228,7 @@ export async function handlePassedReleaseCheck(
   return true;
 }
 
-export async function handleFailedReleaseCheck(
+export async function isHandleFailedReleaseCheck(
   context: ReleaseCommandContext,
   issues: readonly LiminaCheckIssue[],
 ): Promise<false> {

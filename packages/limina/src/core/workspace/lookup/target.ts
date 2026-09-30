@@ -14,7 +14,7 @@ function toCurrentOwnerPackageInfo(owner: PackageOwner): NearestPackageInfo {
   return {
     directory: owner.directory,
     manifest: owner.manifest,
-    ...(owner.name === undefined ? {} : { name: owner.name }),
+    ...(owner.name !== undefined && { name: owner.name }),
     packageJsonPath: owner.packageJsonPath,
   };
 }
@@ -43,17 +43,19 @@ function isCurrentOwnerSourceTarget(options: {
   packageInfo: NearestPackageInfo;
   targetOwner: PackageOwner | null;
 }): boolean {
-  if (!isSameOwner(options.owner, options.targetOwner)) {
-    return false;
-  }
-
-  return !isPackageInfoInsideNodeModules(options.packageInfo);
+  return (
+    isSameOwner(options.owner, options.targetOwner) &&
+    !isPackageInfoInsideNodeModules(options.packageInfo)
+  );
 }
 
 export class ResolvedPackageTargetLookup {
   readonly #cache = new Map<string, ResolvedPackageTarget>();
+
   readonly #metrics: WorkspaceIndexMetricsRecorder | undefined;
+
   readonly #ownerLookup: GovernedDirectoryLookup<PackageOwner>;
+
   readonly #packageScopeLookup: WorkspacePackageScopeLookup;
 
   constructor(options: {
@@ -64,24 +66,6 @@ export class ResolvedPackageTargetLookup {
     this.#metrics = options.metrics;
     this.#ownerLookup = options.ownerLookup;
     this.#packageScopeLookup = options.packageScopeLookup;
-  }
-
-  classify(options: {
-    owner: PackageOwner;
-    resolvedFilePath: string;
-  }): ResolvedPackageTarget {
-    const normalizedPath = normalizeAbsolutePath(options.resolvedFilePath);
-    const cacheKey = `${options.owner.packageJsonPath}\0${normalizedPath}`;
-    const cached = this.#cache.get(cacheKey);
-    if (cached !== undefined) {
-      this.#record('hit', cached);
-      return cached;
-    }
-
-    const target = this.#classifyUncached(options.owner, normalizedPath);
-    this.#cache.set(cacheKey, target);
-    this.#record('miss', target);
-    return target;
   }
 
   #classifyUncached(
@@ -133,5 +117,23 @@ export class ResolvedPackageTargetLookup {
       state,
       value,
     });
+  }
+
+  classify(options: {
+    owner: PackageOwner;
+    resolvedFilePath: string;
+  }): ResolvedPackageTarget {
+    const normalizedPath = normalizeAbsolutePath(options.resolvedFilePath);
+    const cacheKey = `${options.owner.packageJsonPath}\0${normalizedPath}`;
+    const cached = this.#cache.get(cacheKey);
+    if (cached !== undefined) {
+      this.#record('hit', cached);
+      return cached;
+    }
+
+    const target = this.#classifyUncached(options.owner, normalizedPath);
+    this.#cache.set(cacheKey, target);
+    this.#record('miss', target);
+    return target;
   }
 }

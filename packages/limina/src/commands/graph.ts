@@ -8,13 +8,13 @@ import {
 } from '../graph-check/runner';
 import {
   createGraphCheckCommandContext,
-  executeGraphCheckCommand,
-  handleGraphCheckCommandError,
+  isExecuteGraphCheckCommand,
+  isHandleGraphCheckCommandError,
 } from './graph-check-command';
 import {
   createGraphPrepareCommandContext,
-  executeGraphPrepareCommand,
   handleGraphPrepareCommandError,
+  isExecuteGraphPrepareCommand,
 } from './graph-prepare-command';
 
 export type {
@@ -23,29 +23,29 @@ export type {
   RunGraphPrepareOptions,
 } from '../graph-check/runner';
 
-export async function runGraphPrepare(
+export async function isRunGraphPrepare(
   config: ResolvedLiminaConfig,
   options: RunGraphPrepareOptions = {},
 ): Promise<boolean> {
   const context = createGraphPrepareCommandContext(config, options);
 
   try {
-    return await executeGraphPrepareCommand(context);
+    return await isExecuteGraphPrepareCommand(context);
   } catch (error) {
     return handleGraphPrepareCommandError(context, error);
   }
 }
 
-export async function runGraphCheck(
+export async function isRunGraphCheck(
   config: ResolvedLiminaConfig,
   options: RunGraphCheckOptions = {},
 ): Promise<boolean> {
   const context = createGraphCheckCommandContext(config, options);
 
   try {
-    return await executeGraphCheckCommand(context);
+    return await isExecuteGraphCheckCommand(context);
   } catch (error) {
-    return handleGraphCheckCommandError(context, error);
+    return isHandleGraphCheckCommandError(context, error);
   }
 }
 

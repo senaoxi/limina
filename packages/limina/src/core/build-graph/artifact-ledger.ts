@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { lstat, readFile } from 'node:fs/promises';
 import {
   type LiminaArtifactNamespace,
@@ -8,10 +9,7 @@ import { isOwnedArtifactLedgerVersion } from './manifest-version';
 import type { GeneratedGraphWriteContext } from './types';
 
 function isMissingFileError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  return 'code' in error && error.code === 'ENOENT';
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 async function readManifestValue(manifestPath: string): Promise<unknown> {
@@ -72,7 +70,7 @@ export async function readPreviousOwnedArtifactPaths(options: {
   );
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+async function isFileExists(filePath: string): Promise<boolean> {
   try {
     await lstat(filePath);
     return true;
@@ -88,10 +86,10 @@ async function addStaleArtifact(options: {
   context: GeneratedGraphWriteContext;
   filePath: string;
 }): Promise<void> {
-  if (options.context.expectedFiles.has(options.filePath)) {
-    return;
-  }
-  if (!(await fileExists(options.filePath))) {
+  if (
+    options.context.expectedFiles.has(options.filePath) ||
+    !(await isFileExists(options.filePath))
+  ) {
     return;
   }
   options.context.changes.push({
@@ -119,5 +117,5 @@ export function createOwnedArtifactLedger(options: {
     .map((filePath) =>
       toArtifactNamespaceRelativePath(options.artifactNamespace, filePath),
     )
-    .sort();
+    .sort(compareCodeUnits);
 }

@@ -10,15 +10,16 @@ import { expect, it } from 'vitest';
 import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
 
 it('points the repository lib pipeline at its generated tsgo checker entry', async () => {
-  const rootDir = fileURLToPath(new URL('../../../../', import.meta.url));
+  const rootDirectory = fileURLToPath(new URL('../../../../', import.meta.url));
   const config = await loadConfig({
     configLoader: 'tsx',
-    configPath: path.join(rootDir, 'limina.config.mts'),
-    cwd: rootDir,
+    configPath: path.join(rootDirectory, 'limina.config.mts'),
+    cwd: rootDirectory,
   });
-  const fixtureRoot = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-root-config-')),
+  const temporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-root-config-'),
   );
+  const fixtureRoot = await realpath(temporaryPath);
   const fixturePath = createFixturePathResolver(fixtureRoot);
   let providers: ReturnType<typeof createAnalysisProviders> | undefined;
 

@@ -17,7 +17,7 @@ export interface TypeScriptModuleCandidateResolveOptions {
   specifier: string;
 }
 
-export function pathHasExtension(value: string): boolean {
+export function isPathHasExtension(value: string): boolean {
   return path.extname(value).length > 0;
 }
 
@@ -25,7 +25,7 @@ export function candidatePathsForBasePath(
   basePath: string,
   extensions: readonly string[],
 ): string[] {
-  if (pathHasExtension(basePath)) {
+  if (isPathHasExtension(basePath)) {
     return [basePath];
   }
 
@@ -36,15 +36,9 @@ export function candidatePathsForBasePath(
 }
 
 export function resolveExistingFilePath(candidatePath: string): string | null {
-  if (!existsSync(candidatePath)) {
-    return null;
-  }
-
-  if (!statSync(candidatePath).isFile()) {
-    return null;
-  }
-
-  return normalizeAbsolutePath(candidatePath);
+  return !existsSync(candidatePath) || !statSync(candidatePath).isFile()
+    ? null
+    : normalizeAbsolutePath(candidatePath);
 }
 
 function matchExactPathPattern(
@@ -54,7 +48,7 @@ function matchExactPathPattern(
   return pattern === specifier ? '' : null;
 }
 
-function matchesWildcardBounds(
+function isMatchesWildcardBounds(
   specifier: string,
   prefix: string,
   suffix: string,
@@ -72,11 +66,9 @@ function matchWildcardPathPattern(
   const prefix = pattern.slice(0, wildcardIndex);
   const suffix = pattern.slice(wildcardIndex + 1);
 
-  if (!matchesWildcardBounds(specifier, prefix, suffix)) {
-    return null;
-  }
-
-  return specifier.slice(prefix.length, specifier.length - suffix.length);
+  return isMatchesWildcardBounds(specifier, prefix, suffix)
+    ? specifier.slice(prefix.length, specifier.length - suffix.length)
+    : null;
 }
 
 export function matchPathPattern(
@@ -124,7 +116,7 @@ export function resolveRelativeModuleCandidate(
 }
 
 function getPathPrefixLength(pattern: string): number {
-  const prefix = pattern.split('*')[0];
+  const prefix = pattern.split('*', 1)[0];
 
   return prefix === undefined ? pattern.length : prefix.length;
 }
@@ -212,30 +204,26 @@ export function resolvePathMappedModuleCandidate(
 export function resolveBaseUrlModuleCandidate(
   options: TypeScriptModuleCandidateResolveOptions,
 ): string | null {
-  if (
-    isRelativeSpecifier(options.specifier) ||
+  return isRelativeSpecifier(options.specifier) ||
     !options.compilerOptions.baseUrl
-  ) {
-    return null;
-  }
-
-  return resolveFirstExistingCandidate(
-    path.resolve(options.compilerOptions.baseUrl, options.specifier),
-    options.extensions,
-  );
+    ? null
+    : resolveFirstExistingCandidate(
+        path.resolve(options.compilerOptions.baseUrl, options.specifier),
+        options.extensions,
+      );
 }
 
 function applyPathPattern(pattern: string, matchedText: string): string {
-  return pattern.includes('*') ? pattern.replace('*', matchedText) : pattern;
+  return pattern.includes('*')
+    ? pattern.replace('*', () => matchedText)
+    : pattern;
 }
 
 function getPathsBasePath(compilerOptions: ts.CompilerOptions): string | null {
   const pathsBasePath = (compilerOptions as { pathsBasePath?: unknown })
     .pathsBasePath;
 
-  if (typeof pathsBasePath === 'string') {
-    return pathsBasePath;
-  }
-
-  return compilerOptions.baseUrl ?? null;
+  return typeof pathsBasePath === 'string'
+    ? pathsBasePath
+    : (compilerOptions.baseUrl ?? null);
 }

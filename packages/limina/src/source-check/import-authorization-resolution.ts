@@ -88,13 +88,10 @@ function shouldUseRootAuthority(options: {
   owner: PackageOwner;
   rootPackage: WorkspacePackage | null;
 }): boolean {
-  if (!options.matchedGrant || !options.rootPackage) {
-    return false;
-  }
-
   return (
+    !(!options.matchedGrant || !options.rootPackage) &&
     normalizeAbsolutePath(options.rootPackage.directory) !==
-    normalizeAbsolutePath(options.owner.directory)
+      normalizeAbsolutePath(options.owner.directory)
   );
 }
 
@@ -105,7 +102,7 @@ function createOwnerOnlyDenial(options: {
   return {
     authorityManifestPaths: [options.owner.packageJsonPath],
     authorized: false,
-    ...(options.matchedGrant ? { matchedGrant: options.matchedGrant } : {}),
+    ...(options.matchedGrant && { matchedGrant: options.matchedGrant }),
   };
 }
 

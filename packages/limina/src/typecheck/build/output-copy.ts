@@ -45,9 +45,12 @@ export function collectOutputDeclarationCopyContexts(
       contextsByKey.set(getCopyContextKey(context), context);
     }
   }
-  return [...contextsByKey.values()].sort((left, right) =>
-    compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath),
-  );
+  return contextsByKey
+    .values()
+    .toArray()
+    .sort((left, right) =>
+      compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath),
+    );
 }
 
 function createMissingAuthorityError(
@@ -139,8 +142,9 @@ function shouldLogCopyWarning(options: {
   flow?: LiminaFlowReporter;
   report?: CheckIssueReportOptions;
 }): boolean {
-  if (options.flow?.interactive === true) return false;
-  return shouldLogCheckReport(options.report);
+  return (
+    options.flow?.interactive !== true && shouldLogCheckReport(options.report)
+  );
 }
 
 function reportCopyWarning(options: {

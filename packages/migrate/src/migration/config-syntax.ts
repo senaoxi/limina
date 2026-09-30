@@ -24,8 +24,9 @@ function isDefineConfigImport(item: ts.ImportSpecifier): boolean {
 
 function importedDefineNames(statement: ts.ImportDeclaration): string[] {
   if (!ts.isStringLiteral(statement.moduleSpecifier)) return [];
-  if (statement.moduleSpecifier.text !== 'limina') return [];
-  return namesFromClause(statement.importClause);
+  return statement.moduleSpecifier.text === 'limina'
+    ? namesFromClause(statement.importClause)
+    : [];
 }
 
 function namesFromClause(clause: ts.ImportClause | undefined): string[] {
@@ -34,17 +35,19 @@ function namesFromClause(clause: ts.ImportClause | undefined): string[] {
 
 function namedImports(bindings: ts.NamedImportBindings | undefined): string[] {
   if (!bindings) return [];
-  if (!ts.isNamedImports(bindings)) return [];
-  return bindings.elements
-    .filter(isDefineConfigImport)
-    .map((item) => item.name.text);
+  return ts.isNamedImports(bindings)
+    ? bindings.elements
+        .filter(isDefineConfigImport)
+        .map((item) => item.name.text)
+    : [];
 }
 
 function immutableDefinitions(
   statement: ts.VariableStatement,
 ): readonly ts.VariableDeclaration[] {
-  if (!(statement.declarationList.flags & ts.NodeFlags.Const)) return [];
-  return statement.declarationList.declarations;
+  return statement.declarationList.flags & ts.NodeFlags.Const
+    ? statement.declarationList.declarations
+    : [];
 }
 
 function uniqueInitializer(
@@ -52,8 +55,9 @@ function uniqueInitializer(
   uses: ReadonlyMap<string, number>,
 ): [string, ts.Expression] | undefined {
   if (!ts.isIdentifier(declaration.name)) return undefined;
-  if (uses.get(declaration.name.text) !== 2) return undefined;
-  return initializedDeclaration(declaration.name.text, declaration.initializer);
+  return uses.get(declaration.name.text) === 2
+    ? initializedDeclaration(declaration.name.text, declaration.initializer)
+    : undefined;
 }
 
 function initializedDeclaration(
@@ -63,7 +67,7 @@ function initializedDeclaration(
   return value ? [name, value] : undefined;
 }
 
-function transparentExpression(
+function isTransparentExpression(
   expression: ts.Expression,
 ): expression is
   | ts.ParenthesizedExpression
@@ -79,15 +83,19 @@ function transparentExpression(
 function defaultExport(source: ts.SourceFile): ts.Expression {
   const assignments = source.statements.filter(ts.isExportAssignment);
   if (assignments.length !== 1) return unsupportedConfigEdit();
-  if (assignments[0]!.isExportEquals) return unsupportedConfigEdit();
-  return assignments[0]!.expression;
+  return assignments[0]!.isExportEquals
+    ? unsupportedConfigEdit()
+    : assignments[0]!.expression;
 }
 
 export class StaticConfigSyntax {
-  readonly source: ts.SourceFile;
-  readonly text: string;
   private readonly definitions = new Map<string, ts.Expression>();
+
   private readonly defineNames = new Set<string>();
+
+  readonly source: ts.SourceFile;
+
+  readonly text: string;
 
   constructor(fileName: string, text: string) {
     this.text = text;
@@ -143,25 +151,18 @@ export class StaticConfigSyntax {
     seen: Set<string>,
   ): ts.Expression {
     if (!ts.isIdentifier(expression.expression)) return expression;
-    if (!this.defineNames.has(expression.expression.text)) return expression;
-    return this.resolveDefineCall(expression, seen);
+    return this.defineNames.has(expression.expression.text)
+      ? this.resolveDefineCall(expression, seen)
+      : expression;
   }
 
   private resolveDefineCall(
     expression: ts.CallExpression,
     seen: Set<string>,
   ): ts.Expression {
-    if (expression.arguments.length !== 1) return unsupportedConfigEdit();
-    return this.resolve(expression.arguments[0]!, seen);
-  }
-
-  resolve(
-    expression: ts.Expression,
-    seen: Set<string> = new Set<string>(),
-  ): ts.Expression {
-    if (transparentExpression(expression))
-      return this.resolve(expression.expression, seen);
-    return this.resolveNamedExpression(expression, seen);
+    return expression.arguments.length === 1
+      ? this.resolve(expression.arguments[0]!, seen)
+      : unsupportedConfigEdit();
   }
 
   private resolveNamedExpression(
@@ -170,9 +171,34 @@ export class StaticConfigSyntax {
   ): ts.Expression {
     if (ts.isIdentifier(expression))
       return this.resolveIdentifier(expression, seen);
-    if (ts.isCallExpression(expression))
-      return this.resolveCall(expression, seen);
-    return expression;
+    return ts.isCallExpression(expression)
+      ? this.resolveCall(expression, seen)
+      : expression;
+  }
+
+  private staticProperty(
+    item: ts.ObjectLiteralElementLike,
+  ): ts.PropertyAssignment {
+    if (!ts.isPropertyAssignment(item)) return unsupportedConfigEdit();
+    return ts.isComputedPropertyName(item.name)
+      ? unsupportedConfigEdit()
+      : item;
+  }
+
+  private insertionPosition(
+    container: ts.Node,
+    elements: readonly ts.Node[],
+  ): number {
+    return elements.at(-1)?.end ?? container.getStart(this.source) + 1;
+  }
+
+  resolve(
+    expression: ts.Expression,
+    seen: Set<string> = new Set<string>(),
+  ): ts.Expression {
+    return isTransparentExpression(expression)
+      ? this.resolve(expression.expression, seen)
+      : this.resolveNamedExpression(expression, seen);
   }
 
   root(): ts.ObjectLiteralExpression {
@@ -180,17 +206,9 @@ export class StaticConfigSyntax {
   }
 
   object(expression: ts.Expression): ts.ObjectLiteralExpression {
-    if (!ts.isObjectLiteralExpression(expression))
-      return unsupportedConfigEdit();
-    return expression;
-  }
-
-  private staticProperty(
-    item: ts.ObjectLiteralElementLike,
-  ): ts.PropertyAssignment {
-    if (!ts.isPropertyAssignment(item)) return unsupportedConfigEdit();
-    if (ts.isComputedPropertyName(item.name)) return unsupportedConfigEdit();
-    return item;
+    return ts.isObjectLiteralExpression(expression)
+      ? expression
+      : unsupportedConfigEdit();
   }
 
   property(
@@ -204,15 +222,7 @@ export class StaticConfigSyntax {
       (item) =>
         item.name.getText(this.source).replaceAll(/^['"]|['"]$/gu, '') === name,
     );
-    if (matches.length > 1) return unsupportedConfigEdit();
-    return matches[0];
-  }
-
-  private insertionPosition(
-    container: ts.Node,
-    elements: readonly ts.Node[],
-  ): number {
-    return elements.at(-1)?.end ?? container.getStart(this.source) + 1;
+    return matches.length > 1 ? unsupportedConfigEdit() : matches[0];
   }
 
   insert(

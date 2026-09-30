@@ -51,16 +51,17 @@ async function createFixture(): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-astro-semantic-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-astro-semantic-'),
   );
-  cleanupTasks.push(() => rm(rootDir, { force: true, recursive: true }));
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  cleanupTasks.push(() => rm(rootDirectory, { force: true, recursive: true }));
+  const fixturePath = createFixturePathResolver(rootDirectory);
   await writeText(
     fixturePath('tsconfig.json'),
     JSON.stringify({ compilerOptions: { moduleResolution: 'Bundler' } }),
   );
-  return { path: fixturePath, rootDir };
+  return { path: fixturePath, rootDir: rootDirectory };
 }
 
 async function writeText(filePath: string, text: string): Promise<void> {
@@ -69,7 +70,7 @@ async function writeText(filePath: string, text: string): Promise<void> {
 }
 
 function maskAstroSource(source: string): string {
-  const masked = source.replaceAll('---', '   ');
+  const masked = source.replaceAll('---', ' '.repeat(3));
   return `${masked}\nimport './synthetic-helper';\n`;
 }
 
@@ -79,7 +80,7 @@ function createFakeLanguage(options: {
   registry: Map<AstroUri, AstroSourceScript>;
   sync: (
     id: AstroUri,
-    includeFsFiles: boolean,
+    isIncludeFsFiles: boolean,
     shouldRegister: boolean,
   ) => void;
 }): AstroLanguage {
@@ -112,9 +113,9 @@ function createFakeLanguage(options: {
       delete(id) {
         options.registry.delete(id);
       },
-      get(id, includeFsFiles = true, shouldRegister = true) {
+      get(id, isIncludeFsFiles = true, shouldRegister = true) {
         if (!options.registry.has(id)) {
-          options.sync(id, includeFsFiles, shouldRegister);
+          options.sync(id, isIncludeFsFiles, shouldRegister);
         }
         return options.registry.get(id);
       },
@@ -417,7 +418,11 @@ async function createHarness(
   const toolchain = createFakeToolchain(state);
   const metrics: { count?: number; kind?: string; name: string }[] = [];
   const manager = new AstroSemanticContextManager({
-    metrics: { record: (measurement) => metrics.push(measurement) },
+    metrics: {
+      record: (measurement) => {
+        metrics.push(measurement);
+      },
+    },
     resolveToolchain: () => {
       state.toolchainResolution += 1;
       if (options.toolchainError !== undefined) {
@@ -429,7 +434,11 @@ async function createHarness(
   cleanupTasks.push(async () => manager.dispose());
   const context = createImportAnalysisContext({
     astroSemanticContexts: manager,
-    metrics: { record: (measurement) => metrics.push(measurement) },
+    metrics: {
+      record: (measurement) => {
+        metrics.push(measurement);
+      },
+    },
     projectRootDir: fixture.rootDir,
   });
   return { context, fixture, metrics, state };

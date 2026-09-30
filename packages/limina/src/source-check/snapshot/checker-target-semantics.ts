@@ -13,8 +13,7 @@ interface CheckerTargetIndex {
 function getCheckItems(
   task: LiminaCheckRunTaskSummary,
 ): readonly LiminaCheckRunCheckItemSummary[] {
-  if (task.checkItems === undefined) return [];
-  return task.checkItems;
+  return task.checkItems === undefined ? [] : task.checkItems;
 }
 
 function getCheckerTargetItems(
@@ -62,8 +61,9 @@ function getUnknownBlockerProblem(options: {
   item: CheckerTargetCheckItemSnapshot;
   root: CheckerTargetCheckItemSnapshot | undefined;
 }): string | null {
-  if (options.root !== undefined) return null;
-  return `Checker target "${options.item.name}" references unknown blocker "${options.blocker.id}".`;
+  return options.root === undefined
+    ? `Checker target "${options.item.name}" references unknown blocker "${options.blocker.id}".`
+    : null;
 }
 
 function getBlockerStatusProblem(options: {
@@ -71,18 +71,19 @@ function getBlockerStatusProblem(options: {
   item: CheckerTargetCheckItemSnapshot;
   root: CheckerTargetCheckItemSnapshot | undefined;
 }): string | null {
-  if (options.root === undefined) return null;
-  if (options.root.status === 'failed') return null;
-  return `Checker target "${options.item.name}" blocker "${options.root.name}" is not failed.`;
+  return options.root === undefined || options.root.status === 'failed'
+    ? null
+    : `Checker target "${options.item.name}" blocker "${options.root.name}" is not failed.`;
 }
 
 function getBlockerLabelProblem(options: {
   blocker: { id: string; name: string };
   root: CheckerTargetCheckItemSnapshot | undefined;
 }): string | null {
-  if (options.root === undefined) return null;
-  if (options.root.name === options.blocker.name) return null;
-  return `Checker target blocker label mismatch for "${options.blocker.id}".`;
+  return options.root === undefined ||
+    options.root.name === options.blocker.name
+    ? null
+    : `Checker target blocker label mismatch for "${options.blocker.id}".`;
 }
 
 function validateBlockerTarget(options: {
@@ -108,17 +109,15 @@ function validateBlockerOrder(options: {
   if (rootIndex === undefined) {
     return `Checker target "${options.item.name}" references unknown blocker "${options.blockerId}".`;
   }
-  if (rootIndex <= options.previousRootIndex) {
-    return `Checker target "${options.item.name}" blockers are not in canonical item order.`;
-  }
-  return rootIndex;
+  return rootIndex <= options.previousRootIndex
+    ? `Checker target "${options.item.name}" blockers are not in canonical item order.`
+    : rootIndex;
 }
 
 function getBlockers(
   item: CheckerTargetCheckItemSnapshot,
 ): readonly { id: string; name: string }[] {
-  if (item.blockedBy === undefined) return [];
-  return item.blockedBy;
+  return item.blockedBy === undefined ? [] : item.blockedBy;
 }
 
 function validateOneBlocker(options: {
@@ -169,8 +168,7 @@ function validateBlockedTarget(options: {
   index: CheckerTargetIndex;
   item: CheckerTargetCheckItemSnapshot;
 }): string | null {
-  if (options.item.status !== 'blocked') return null;
-  return validateBlockers(options);
+  return options.item.status === 'blocked' ? validateBlockers(options) : null;
 }
 
 export function getCheckerTargetRelationProblem(
@@ -178,8 +176,9 @@ export function getCheckerTargetRelationProblem(
 ): string | null {
   const targets = getCheckerTargetItems(task);
   const index = createTargetIndex({ task, targets });
-  if (typeof index === 'string') return index;
-  return firstProblem(
-    targets.map((item) => validateBlockedTarget({ index, item })),
-  );
+  return typeof index === 'string'
+    ? index
+    : firstProblem(
+        targets.map((item) => validateBlockedTarget({ index, item })),
+      );
 }

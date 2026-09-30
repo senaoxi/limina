@@ -15,14 +15,15 @@ import { expect, it } from 'vitest';
 import { createFixturePathResolver } from '../../src/__tests__/helpers/path';
 
 it('published CLI rejects hiding outputs, persists isolation, prepares the real graph, and reruns without config changes', async () => {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-migration-cli-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-migration-cli-'),
   );
-  const locate = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  const locate = createFixturePathResolver(rootDirectory);
   const json = (value: unknown) => JSON.stringify(value, null, 2);
-  const source = (outDir: string) =>
+  const source = (outDirectory: string) =>
     json({
-      compilerOptions: { outDir, rootDir: './src' },
+      compilerOptions: { outDir: outDirectory, rootDir: './src' },
       files: ['./src/index.ts'],
     });
   const files = {
@@ -47,8 +48,8 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
     'packages/app/generated/tsconfig.lib.json': json({ files: ['index.ts'] }),
     'packages/app/generated/index.ts': 'export const member = 1;',
   };
-  const git = (args: string[]) =>
-    promisify(execFile)('git', args, { cwd: rootDir });
+  const git = (arguments_: string[]) =>
+    promisify(execFile)('git', arguments_, { cwd: rootDirectory });
   const commit = async () => {
     await git(['add', '.']);
     await git([
@@ -62,10 +63,10 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
       'fixture',
     ]);
   };
-  const cli = async (args: string[]) => {
+  const cli = async (arguments_: string[]) => {
     const entry = fileURLToPath(
       new URL(
-        args[0] === 'migration'
+        arguments_[0] === 'migration'
           ? '../../dist/bin/limina-migrate.js'
           : '../../../limina/dist/bin/limina.js',
         import.meta.url,
@@ -73,9 +74,12 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
     );
     const result = await promisify(execFile)(
       process.execPath,
-      [entry, ...(args[0] === 'migration' ? args.slice(1) : args)],
+      [
+        entry,
+        ...(arguments_[0] === 'migration' ? arguments_.slice(1) : arguments_),
+      ],
       {
-        cwd: rootDir,
+        cwd: rootDirectory,
         timeout: 60_000,
         env: { ...process.env, CI: 'true', FORCE_COLOR: '0' },
       },
@@ -91,15 +95,13 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
     await commit();
     const migration = await cli(['migration']);
     expect(migration.code, migration.stdout + migration.stderr).toBe(0);
-    for (const producer of ['tool', 'producer'])
-      expect(
-        JSON.parse(
-          await readFile(
-            locate(`packages/app/${producer}/tsconfig.json`),
-            'utf8',
-          ),
-        ).liminaOptions,
-      ).toBeUndefined();
+    for (const producer of ['tool', 'producer']) {
+      const configText = await readFile(
+        locate(`packages/app/${producer}/tsconfig.json`),
+        'utf8',
+      );
+      expect(JSON.parse(configText).liminaOptions).toBeUndefined();
+    }
     const graph = await cli(['graph', 'prepare']);
     expect(graph.code, graph.stdout + graph.stderr).toBe(0);
     const manifest = JSON.parse(
@@ -113,7 +115,7 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
       manifest.ownership.configs
         .filter((config) => config.role === 'type')
         .map((config) => config.config)
-        .sort(),
+        .sort((left, right) => Number(left > right) - Number(left < right)),
     ).toEqual([
       'packages/app/generated/tsconfig.lib.json',
       'packages/app/producer/tsconfig.json',
@@ -135,6 +137,6 @@ it('published CLI rejects hiding outputs, persists isolation, prepares the real 
     ).toEqual(before);
     expect((await git(['diff', '--name-only'])).stdout).toBe('');
   } finally {
-    await rm(rootDir, { recursive: true, force: true });
+    await rm(rootDirectory, { recursive: true, force: true });
   }
 }, 120_000);

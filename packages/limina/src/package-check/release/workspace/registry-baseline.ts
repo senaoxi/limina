@@ -11,7 +11,7 @@ import type {
 import type { ReleaseRegistryFacts } from '../findings/facts';
 import {
   fetchRegistryPackageMetadata,
-  findRegistryDistTagVersion,
+  findRegistryDistTagVersion as findRegistryDistributionTagVersion,
   findRegistryVersionMetadata,
   formatRegistryMetadataFailure,
   getRegistryTarballUrl,
@@ -108,7 +108,7 @@ function resolveMetadataResult(options: {
   return options.result.metadata;
 }
 
-function addMissingDistTag(options: {
+function addMissingDistributionTag(options: {
   context: ResolvedRegistryContext;
   registryUrl: string;
 }): void {
@@ -132,12 +132,12 @@ function resolveBaselineVersion(options: {
   metadata: RegistryPackageMetadata;
   registryUrl: string;
 }): string | null {
-  const version = findRegistryDistTagVersion(
+  const version = findRegistryDistributionTagVersion(
     options.metadata,
     options.context.baselineTag,
   );
   if (version !== null) return version;
-  addMissingDistTag(options);
+  addMissingDistributionTag(options);
   return null;
 }
 
@@ -255,8 +255,9 @@ function resolveBaselineFromMetadata(options: {
   registryUrl: string;
 }): WorkspaceRegistryBaseline | null {
   const baselineVersion = resolveBaselineVersion(options);
-  if (baselineVersion === null) return null;
-  return resolveBaselineArtifact({ ...options, baselineVersion });
+  return baselineVersion === null
+    ? null
+    : resolveBaselineArtifact({ ...options, baselineVersion });
 }
 
 export async function resolveWorkspaceRegistryBaseline(

@@ -40,8 +40,11 @@ function createFileTarget(
   return { authority, kind: 'file', path: targetPath };
 }
 
-function createTempPath(rootDir: string, fileName: string): string {
-  return path.join(rootDir, `.${fileName}.${process.pid}.${randomUUID()}.tmp`);
+function createTemporaryPath(rootDirectory: string, fileName: string): string {
+  return path.join(
+    rootDirectory,
+    `.${fileName}.${process.pid}.${randomUUID()}.tmp`,
+  );
 }
 
 async function createFilePlan(
@@ -49,8 +52,8 @@ async function createFilePlan(
   fileName: string,
 ): Promise<InitFileMutationPlan> {
   const targetPath = path.join(builder.rootDir, fileName);
-  const tempPath = createTempPath(builder.rootDir, fileName);
-  const [authority, tempAuthority] = await Promise.all([
+  const temporaryPath = createTemporaryPath(builder.rootDir, fileName);
+  const [authority, temporaryAuthority] = await Promise.all([
     createFileAuthority({
       generation: builder.generation,
       rootDir: builder.rootDir,
@@ -59,24 +62,24 @@ async function createFilePlan(
     createFileAuthority({
       generation: builder.generation,
       rootDir: builder.rootDir,
-      targetPath: tempPath,
+      targetPath: temporaryPath,
     }),
   ]);
   const target = createFileTarget(authority, targetPath);
-  const tempTarget = createFileTarget(tempAuthority, tempPath);
-  const [snapshot, tempSnapshot] = await Promise.all([
+  const temporaryTarget = createFileTarget(temporaryAuthority, temporaryPath);
+  const [snapshot, temporarySnapshot] = await Promise.all([
     preflightMutationBoundary([target]),
-    preflightMutationBoundary([tempTarget]),
+    preflightMutationBoundary([temporaryTarget]),
   ]);
 
-  builder.allTargets.push(target, tempTarget);
+  builder.allTargets.push(target, temporaryTarget);
   return {
     authority,
     snapshot,
     targetPath,
-    tempAuthority,
-    tempPath,
-    tempSnapshot,
+    tempAuthority: temporaryAuthority,
+    tempPath: temporaryPath,
+    tempSnapshot: temporarySnapshot,
   };
 }
 
@@ -148,7 +151,7 @@ function createGeneratedRootTarget(
   };
 }
 
-async function generatedRootExists(rootPath: string): Promise<boolean> {
+async function isGeneratedRootExists(rootPath: string): Promise<boolean> {
   try {
     await lstat(rootPath);
     return true;
@@ -161,10 +164,10 @@ async function generatedRootExists(rootPath: string): Promise<boolean> {
   }
 }
 
-export async function removeInitGeneratedRoot(
+export async function isRemoveInitGeneratedRoot(
   context: InitMutationContext,
 ): Promise<boolean> {
-  if (!(await generatedRootExists(context.generatedRootPath))) {
+  if (!(await isGeneratedRootExists(context.generatedRootPath))) {
     return false;
   }
 

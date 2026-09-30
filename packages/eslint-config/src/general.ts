@@ -52,7 +52,11 @@ export default [
   ...typescriptESlint.configs.recommended,
   ...typescriptESlint.configs.stylistic,
   eslintPluginRegexp.configs['flat/recommended'],
-  eslintPluginUnicorn.configs.recommended,
+  { plugins: eslintPluginUnicorn.configs.recommended.plugins },
+  {
+    ...eslintPluginUnicorn.configs.recommended,
+    files: ['**/*.{js,cjs,mjs,jsx,ts,cts,mts,tsx}'],
+  },
 
   gitignore(),
   globalIgnores([

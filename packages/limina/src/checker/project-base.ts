@@ -33,13 +33,16 @@ export function createProjectParseHost(
       : {
           ...ts.sys,
           fileExists(fileName: string): boolean {
-            if (virtualFiles.has(normalizeAbsolutePath(fileName))) return true;
-            return ts.sys.fileExists(fileName);
+            return (
+              virtualFiles.has(normalizeAbsolutePath(fileName)) ||
+              ts.sys.fileExists(fileName)
+            );
           },
           readFile(fileName: string, encoding?: string): string | undefined {
             const content = virtualFiles.get(normalizeAbsolutePath(fileName));
-            if (content !== undefined) return content;
-            return ts.sys.readFile(fileName, encoding);
+            return content === undefined
+              ? ts.sys.readFile(fileName, encoding)
+              : content;
           },
         };
   if (recorder === undefined) return base;
@@ -55,10 +58,12 @@ export function createProjectParseHost(
   };
 }
 
-export function createFormatHost(rootDir: string): ts.FormatDiagnosticsHost {
+export function createFormatHost(
+  rootDirectory: string,
+): ts.FormatDiagnosticsHost {
   return {
     getCanonicalFileName: (fileName) => fileName,
-    getCurrentDirectory: () => rootDir,
+    getCurrentDirectory: () => rootDirectory,
     getNewLine: () => '\n',
   };
 }
@@ -106,7 +111,9 @@ export function createParsedCheckerProjectConfig(options: {
   return {
     configClosure: options.configClosure.map((entry) => ({ ...entry })),
     extensions: normalizeExtensions(options.extensions),
-    fileNames: options.fileNames.map(normalizeAbsolutePath).sort(),
+    fileNames: options.fileNames
+      .map(normalizeAbsolutePath)
+      .sort((left, right) => Number(left > right) - Number(left < right)),
     options: options.parsed.options,
   };
 }
@@ -131,9 +138,9 @@ function createConfigClosure(options: {
 }): CheckerConfigClosureEntry[] {
   const filePaths = new Set([
     normalizeAbsolutePath(options.configFileName),
-    ...[...options.extendedConfigCache.values()].map((entry) =>
-      normalizeAbsolutePath(entry.extendedResult.fileName),
-    ),
+    ...options.extendedConfigCache
+      .values()
+      .map((entry) => normalizeAbsolutePath(entry.extendedResult.fileName)),
   ]);
   return [...filePaths]
     .map((filePath) => {

@@ -14,7 +14,7 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import type {
   GovernanceUnit,
@@ -178,11 +178,10 @@ function hasDifferentSourceOwner(options: {
   fileOwner: PackageOwner | null;
   owner: PackageOwner;
 }): boolean {
-  if (!options.fileOwner) {
-    return true;
-  }
-
-  return options.fileOwner.packageJsonPath !== options.owner.packageJsonPath;
+  return (
+    !options.fileOwner ||
+    options.fileOwner.packageJsonPath !== options.owner.packageJsonPath
+  );
 }
 
 function collectProjectFile(options: {

@@ -7,7 +7,9 @@ export interface CheckIssueWorkspaceLocation {
   rootDir: string;
 }
 
-/** Locate persisted state without importing config or resolving membership. */
+/**
+Locate persisted state without importing config or resolving membership.
+*/
 export function locateCheckIssueWorkspace(
   options: { configPath?: string; cwd?: string } = {},
 ): CheckIssueWorkspaceLocation {

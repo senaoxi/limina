@@ -26,8 +26,10 @@ function shouldRetryVerification(
   attempt: number,
   retryDelaysMs: readonly number[],
 ): boolean {
-  if (!(error instanceof RetryableReplacementValidationIoError)) return false;
-  return attempt < retryDelaysMs.length;
+  return (
+    error instanceof RetryableReplacementValidationIoError &&
+    attempt < retryDelaysMs.length
+  );
 }
 
 async function delay(milliseconds: number): Promise<void> {
@@ -79,10 +81,11 @@ async function verifyWithRetry(
 }
 
 function hasWrittenIdentity(item: TransactionItem): boolean {
-  if (item.snapshot.writeStrategy === 'atomic-replace') {
-    return item.nextIdentity !== undefined;
-  }
-  return item.writtenIdentity !== undefined;
+  return (
+    (item.snapshot.writeStrategy === 'atomic-replace'
+      ? item.nextIdentity
+      : item.writtenIdentity) !== undefined
+  );
 }
 
 function requireRollbackIdentities(item: TransactionItem): void {

@@ -99,7 +99,7 @@ function createIssueId(
 }
 
 function inferDomain(task: LiminaCheckTaskName): string {
-  return task.split(':')[0] ?? task;
+  return task.split(':', 1)[0] ?? task;
 }
 
 function valueOrDefault<Value>(
@@ -149,13 +149,11 @@ function createIssueLocations(options: {
 }): LiminaCheckIssueLocation[] | undefined {
   const explicitLocations = normalizeExplicitLocations(options);
 
-  if (explicitLocations !== undefined && explicitLocations.length > 0) {
-    return explicitLocations;
-  }
-
-  return nonEmptyLocations(
-    createFallbackLocations(options.filePath, options.packageManifestPath),
-  );
+  return explicitLocations !== undefined && explicitLocations.length > 0
+    ? explicitLocations
+    : nonEmptyLocations(
+        createFallbackLocations(options.filePath, options.packageManifestPath),
+      );
 }
 
 function normalizeExplicitScope(scope: string | undefined): string | undefined {

@@ -168,6 +168,7 @@ export function collectAstroSemanticCandidates(options: {
 }): AstroSemanticCandidateResult {
   options.context.assertActive();
   const services = materializeServiceScripts(options);
-  if (!('services' in services)) return services;
-  return discoverCandidates({ ...options, services: services.services });
+  return 'services' in services
+    ? discoverCandidates({ ...options, services: services.services })
+    : services;
 }

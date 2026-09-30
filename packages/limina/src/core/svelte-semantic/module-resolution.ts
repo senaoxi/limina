@@ -34,20 +34,22 @@ function getMode(options: {
   tsModule: typeof ts;
 }): ts.ResolutionMode {
   // Svelte's explicit component extension has no ESM/CJS declaration variant.
-  if (options.literal.text.endsWith('.svelte')) return undefined;
-  return options.tsModule.getModeForUsageLocation(
-    options.sourceFile,
-    options.literal,
-    options.project.options,
-  );
+  return options.literal.text.endsWith('.svelte')
+    ? undefined
+    : options.tsModule.getModeForUsageLocation(
+        options.sourceFile,
+        options.literal,
+        options.project.options,
+      );
 }
 
 function createTarget(
   resolved: ts.ResolvedModuleFull | undefined,
   tsModule: typeof ts,
 ): ResolvedCheckerModuleName | null {
-  if (resolved === undefined) return null;
-  return createResolvedTarget(resolved, tsModule);
+  return resolved === undefined
+    ? null
+    : createResolvedTarget(resolved, tsModule);
 }
 
 function createResolvedTarget(

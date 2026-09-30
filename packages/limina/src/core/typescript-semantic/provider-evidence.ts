@@ -49,10 +49,10 @@ function getModuleProvider(options: {
   if (file === undefined) return undefined;
   // A redirected declaration is the provider, not the original resolved .ts.
   // Other declarations on a merged symbol may be augmentations of this file.
-  return symbolProvidesFile(options.symbol, file) ? file : undefined;
+  return isSymbolProvidesFile(options.symbol, file) ? file : undefined;
 }
 
-function symbolProvidesFile(symbol: ts.Symbol, file: ts.SourceFile): boolean {
+function isSymbolProvidesFile(symbol: ts.Symbol, file: ts.SourceFile): boolean {
   return symbol.declarations?.includes(file) === true;
 }
 

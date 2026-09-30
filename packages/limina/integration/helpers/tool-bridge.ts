@@ -31,7 +31,7 @@ function quotePosixArgument(value: string): string {
   return `'${value.replaceAll("'", String.raw`'\''`)}'`;
 }
 
-function quoteCmdArgument(value: string): string {
+function quoteCommandArgument(value: string): string {
   return `"${value.replaceAll('%', '%%').replaceAll('"', '""')}"`;
 }
 
@@ -77,7 +77,7 @@ async function createTypeScriptBridge(options: {
     path.join(options.binDirectory, 'tsc.cmd'),
     [
       '@ECHO OFF',
-      `${quoteCmdArgument(process.execPath)} ${quoteCmdArgument(compilerPath)} %*`,
+      `${quoteCommandArgument(process.execPath)} ${quoteCommandArgument(compilerPath)} %*`,
       '',
     ].join('\r\n'),
     'utf8',
@@ -137,8 +137,7 @@ function createPackageJsonResolver(
 }
 
 function assertSupportedTool(tool: FixtureToolName, fixtureId: string): void {
-  if (tool === 'typescript') return;
-  if (tool === 'npm-package-json-lint') return;
+  if (tool === 'typescript' || tool === 'npm-package-json-lint') return;
   throw new Error(
     `Detector fixture ${fixtureId} requested unsupported tool bridge ${tool}. Only typescript and npm-package-json-lint are implemented in harness v2.`,
   );

@@ -55,12 +55,12 @@ import {
   applyFixtureSetup,
   assertTreeSnapshotUnchanged,
   captureTreeSnapshot,
-  cleanupDetectorSandbox,
-  copyFixtureRepository,
+  copyFixtureRepo,
   createDetectorSandbox,
   DEFAULT_SANDBOX_IGNORED_PATH_PREFIXES,
   finishFixtureCleanup,
-  pathExists,
+  isCleanupDetectorSandbox,
+  isPathExists,
   SANDBOX_CLEANUP_MAX_RETRIES,
   SANDBOX_CLEANUP_RETRY_DELAY_MS,
 } from '../helpers/fixture-sandbox';
@@ -75,11 +75,12 @@ import { createFixtureToolBridges } from '../helpers/tool-bridge';
 const temporaryRoots: string[] = [];
 
 async function createTemporaryRoot(prefix: string): Promise<string> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), `limina-detector-${prefix}-`)),
+  const temporaryPath = await mkdtemp(
+    path.join(tmpdir(), `limina-detector-${prefix}-`),
   );
-  temporaryRoots.push(rootDir);
-  return rootDir;
+  const rootDirectory = await realpath(temporaryPath);
+  temporaryRoots.push(rootDirectory);
+  return rootDirectory;
 }
 
 async function writeText(filePath: string, content = ''): Promise<void> {
@@ -172,20 +173,23 @@ function validSnapshot(command = 'limina check detector') {
 }
 
 async function writeSnapshot(
-  rootDir: string,
+  rootDirectory: string,
   snapshot: unknown,
 ): Promise<string> {
-  const snapshotPath = getCheckIssueSnapshotPath(rootDir);
+  const snapshotPath = getCheckIssueSnapshotPath(rootDirectory);
   await writeText(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
   return snapshotPath;
 }
 
 async function writeStandaloneInvocationSnapshot(
-  rootDir: string,
+  rootDirectory: string,
   overrides: Record<string, unknown> = {},
 ): Promise<string> {
   const invocationId = '123e4567-e89b-42d3-a456-426614174000';
-  const snapshotPath = getStandaloneIssueInvocationPath(rootDir, invocationId);
+  const snapshotPath = getStandaloneIssueInvocationPath(
+    rootDirectory,
+    invocationId,
+  );
   const completedAt = new Date().toISOString();
   await writeText(
     snapshotPath,
@@ -227,8 +231,8 @@ async function createDiscoveryFixture(
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(
-    temporaryRoots.splice(0).map((rootDir) =>
-      rm(rootDir, {
+    temporaryRoots.splice(0).map((rootDirectory) =>
+      rm(rootDirectory, {
         force: true,
         maxRetries: 5,
         recursive: true,
@@ -496,8 +500,8 @@ describe('detector fixture declaration and discovery', () => {
   });
 
   it('discovers fixtures in portable sorted order', async () => {
-    const rootDir = await createTemporaryRoot('discovery-order');
-    const detectorRoot = path.join(rootDir, 'detectors');
+    const rootDirectory = await createTemporaryRoot('discovery-order');
+    const detectorRoot = path.join(rootDirectory, 'detectors');
     const zCase = await createDiscoveryFixture(detectorRoot, 'proof/z-case');
     const aCase = await createDiscoveryFixture(detectorRoot, 'graph/a-case');
     const fixtures = await discoverDetectorFixtures({
@@ -515,16 +519,17 @@ describe('detector fixture declaration and discovery', () => {
   });
 
   it('rejects duplicate declared IDs before directory mismatch', async () => {
-    const rootDir = await createTemporaryRoot('discovery-duplicate');
-    const detectorRoot = path.join(rootDir, 'detectors');
+    const rootDirectory = await createTemporaryRoot('discovery-duplicate');
+    const detectorRoot = path.join(rootDirectory, 'detectors');
     const firstCase = await createDiscoveryFixture(detectorRoot, 'proof/one');
     const secondCase = await createDiscoveryFixture(detectorRoot, 'proof/two');
 
+    const duplicateDefinition = validFailingDefinition('proof/shared');
     await expect(
       discoverDetectorFixtures({
         caseModules: new Map([
-          [firstCase, { default: validFailingDefinition('proof/shared') }],
-          [secondCase, { default: validFailingDefinition('proof/shared') }],
+          [firstCase, { default: duplicateDefinition }],
+          [secondCase, { default: duplicateDefinition }],
         ]),
         detectorRoot,
       }),
@@ -551,10 +556,11 @@ describe('detector fixture declaration and discovery', () => {
       'proof/example/case.mts',
     );
     await writeText(missingRepoCase, 'export default {};\n');
+    const missingRepoDefinition = validFailingDefinition();
     await expect(
       discoverDetectorFixtures({
         caseModules: new Map([
-          [missingRepoCase, { default: validFailingDefinition() }],
+          [missingRepoCase, { default: missingRepoDefinition }],
         ]),
         detectorRoot: missingRepoDetectors,
       }),
@@ -577,8 +583,8 @@ describe('detector fixture declaration and discovery', () => {
 
 describe('detector fixture copy policy', () => {
   it('keeps permanent exclusions and makes dist/build-info opt-in', async () => {
-    const rootDir = await createTemporaryRoot('copy-policy');
-    const sourceRoot = path.join(rootDir, 'source');
+    const rootDirectory = await createTemporaryRoot('copy-policy');
+    const sourceRoot = path.join(rootDirectory, 'source');
     await Promise.all([
       writeText(path.join(sourceRoot, '.limina/secret.json'), 'secret'),
       writeText(path.join(sourceRoot, 'node_modules/pkg/index.js'), 'module'),
@@ -587,16 +593,16 @@ describe('detector fixture copy policy', () => {
       writeText(path.join(sourceRoot, 'cache.tsbuildinfo'), 'build-info'),
       writeText(path.join(sourceRoot, 'src/index.ts'), 'source'),
     ]);
-    const defaultDestination = path.join(rootDir, 'default-copy');
-    await copyFixtureRepository({
+    const defaultDestination = path.join(rootDirectory, 'default-copy');
+    await copyFixtureRepo({
       destinationRoot: defaultDestination,
       sourceRoot,
     });
 
     expect(await readdir(defaultDestination)).toEqual(['src']);
 
-    const outputDestination = path.join(rootDir, 'output-copy');
-    await copyFixtureRepository({
+    const outputDestination = path.join(rootDirectory, 'output-copy');
+    await copyFixtureRepo({
       destinationRoot: outputDestination,
       policy: {
         includeBuildInfoFiles: true,
@@ -605,40 +611,40 @@ describe('detector fixture copy policy', () => {
       sourceRoot,
     });
     expect(
-      await pathExists(path.join(outputDestination, 'dist/index.js')),
+      await isPathExists(path.join(outputDestination, 'dist/index.js')),
     ).toBe(true);
     expect(
-      await pathExists(path.join(outputDestination, 'cache.tsbuildinfo')),
+      await isPathExists(path.join(outputDestination, 'cache.tsbuildinfo')),
     ).toBe(true);
     for (const permanentName of ['.limina', 'node_modules', 'coverage']) {
       expect(
-        await pathExists(path.join(outputDestination, permanentName)),
+        await isPathExists(path.join(outputDestination, permanentName)),
       ).toBe(false);
     }
   });
 
   it('applies exact custom entry-name exclusions', async () => {
-    const rootDir = await createTemporaryRoot('copy-custom');
-    const sourceRoot = path.join(rootDir, 'source');
+    const rootDirectory = await createTemporaryRoot('copy-custom');
+    const sourceRoot = path.join(rootDirectory, 'source');
     await writeText(path.join(sourceRoot, 'keep/file.ts'), 'keep');
     await writeText(path.join(sourceRoot, 'omit/file.ts'), 'omit');
-    const destinationRoot = path.join(rootDir, 'destination');
-    await copyFixtureRepository({
+    const destinationRoot = path.join(rootDirectory, 'destination');
+    await copyFixtureRepo({
       destinationRoot,
       policy: { excludedNames: ['omit'] },
       sourceRoot,
     });
 
-    expect(await pathExists(path.join(destinationRoot, 'keep/file.ts'))).toBe(
+    expect(await isPathExists(path.join(destinationRoot, 'keep/file.ts'))).toBe(
       true,
     );
-    expect(await pathExists(path.join(destinationRoot, 'omit'))).toBe(false);
+    expect(await isPathExists(path.join(destinationRoot, 'omit'))).toBe(false);
   });
 
   it('rejects fixture source links with source and destination diagnostics', async () => {
-    const rootDir = await createTemporaryRoot('copy-link');
-    const sourceRoot = path.join(rootDir, 'source');
-    const externalRoot = path.join(rootDir, 'external');
+    const rootDirectory = await createTemporaryRoot('copy-link');
+    const sourceRoot = path.join(rootDirectory, 'source');
+    const externalRoot = path.join(rootDirectory, 'external');
     await mkdir(sourceRoot, { recursive: true });
     await mkdir(externalRoot, { recursive: true });
     const linkedPath = path.join(sourceRoot, 'linked');
@@ -647,11 +653,13 @@ describe('detector fixture copy policy', () => {
       linkedPath,
       process.platform === 'win32' ? 'junction' : 'dir',
     );
-    const destinationRoot = path.join(rootDir, 'destination');
-    const error = await copyFixtureRepository({
-      destinationRoot,
-      sourceRoot,
-    }).catch((error_: unknown) => error_);
+    const destinationRoot = path.join(rootDirectory, 'destination');
+    let error: unknown;
+    try {
+      await copyFixtureRepo({ destinationRoot, sourceRoot });
+    } catch (caughtError) {
+      error = caughtError;
+    }
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(linkedPath);
@@ -741,7 +749,7 @@ describe('controlled setup and mutation operations', () => {
         sandboxRoot,
       }),
     ).rejects.toThrow('traverses a link');
-    expect(await pathExists(path.join(externalRoot, 'outside.txt'))).toBe(
+    expect(await isPathExists(path.join(externalRoot, 'outside.txt'))).toBe(
       false,
     );
   });
@@ -762,8 +770,9 @@ describe('controlled setup and mutation operations', () => {
     });
     const linkPath = path.join(sandboxRoot, 'repo/linked');
     expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
+    const targetPath = await realpath(path.join(sandboxRoot, 'repo/target'));
     expect(toPortablePath(await realpath(linkPath))).toBe(
-      toPortablePath(await realpath(path.join(sandboxRoot, 'repo/target'))),
+      toPortablePath(targetPath),
     );
   });
 
@@ -783,8 +792,12 @@ describe('controlled setup and mutation operations', () => {
       sandboxRoot,
     });
 
-    expect(await pathExists(path.join(sandboxRoot, 'repo/linked'))).toBe(false);
-    expect(await pathExists(path.join(sandboxRoot, 'repo/target'))).toBe(true);
+    expect(await isPathExists(path.join(sandboxRoot, 'repo/linked'))).toBe(
+      false,
+    );
+    expect(await isPathExists(path.join(sandboxRoot, 'repo/target'))).toBe(
+      true,
+    );
   });
 
   it('protects repo and tool roots and includes operation context in failures', async () => {
@@ -864,6 +877,42 @@ describe('controlled setup and mutation operations', () => {
     ).toBe('two two');
   });
 
+  it.each([
+    {
+      all: false,
+      input: 'before one after',
+      expected: 'before $|one|before | after|$1|$<name> after',
+    },
+    {
+      all: true,
+      input: 'one-one',
+      expected: '$|one||-one|$1|$<name>-$|one|one-||$1|$<name>',
+    },
+  ])(
+    'preserves native replacement tokens with all=$all',
+    async ({ all, input, expected }) => {
+      const sandboxRoot = await createTemporaryRoot(
+        'mutation-replacement-tokens',
+      );
+      const valuePath = path.join(sandboxRoot, 'repo/value.txt');
+      await writeText(valuePath, input);
+      await applyFixtureMutations({
+        fixtureId: 'proof/mutation-tokens',
+        mutations: [
+          {
+            all,
+            kind: 'replace-text',
+            path: 'repo/value.txt',
+            replacement: "$$|$&|$`|$'|$1|$<name>",
+            search: 'one',
+          },
+        ],
+        sandboxRoot,
+      });
+      expect(await readFile(valuePath, 'utf8')).toBe(expected);
+    },
+  );
+
   it('treats a completed mutation state as the next explicit baseline', async () => {
     const sandboxRoot = await createTemporaryRoot('mutation-baseline');
     await writeText(path.join(sandboxRoot, 'repo/value.txt'), 'before');
@@ -892,8 +941,8 @@ describe('controlled setup and mutation operations', () => {
 
 describe('minimal tool bridge and invocation boundary', () => {
   it('bridges only declared TypeScript package metadata and executables', async () => {
-    const rootDir = await createTemporaryRoot('tool-bridge');
-    const repoRoot = path.join(rootDir, 'repo');
+    const rootDirectory = await createTemporaryRoot('tool-bridge');
+    const repoRoot = path.join(rootDirectory, 'repo');
     await writeText(path.join(repoRoot, 'package.json'), '{"private":true}\n');
     const bridge = await createFixtureToolBridges({
       fixtureId: 'proof/tool',
@@ -901,19 +950,19 @@ describe('minimal tool bridge and invocation boundary', () => {
       tools: ['typescript'],
     });
     const fixtureRequire = createRequire(path.join(repoRoot, 'package.json'));
-    expect(
-      toPortablePath(
-        await realpath(fixtureRequire.resolve('typescript/package.json')),
-      ),
-    ).toBe(
-      toPortablePath(
-        await realpath(
-          path.join(repoRoot, 'node_modules/typescript/package.json'),
-        ),
-      ),
+    const resolvedTypeScriptManifest = await realpath(
+      fixtureRequire.resolve('typescript/package.json'),
     );
-    expect(await pathExists(path.join(bridge.binDirectory, 'tsc'))).toBe(true);
-    expect(await pathExists(path.join(bridge.binDirectory, 'tsc.cmd'))).toBe(
+    const linkedTypeScriptManifest = await realpath(
+      path.join(repoRoot, 'node_modules/typescript/package.json'),
+    );
+    expect(toPortablePath(resolvedTypeScriptManifest)).toBe(
+      toPortablePath(linkedTypeScriptManifest),
+    );
+    expect(await isPathExists(path.join(bridge.binDirectory, 'tsc'))).toBe(
+      true,
+    );
+    expect(await isPathExists(path.join(bridge.binDirectory, 'tsc.cmd'))).toBe(
       true,
     );
     const hostTypeScriptManifest = createRequire(import.meta.url).resolve(
@@ -932,14 +981,14 @@ describe('minimal tool bridge and invocation boundary', () => {
       '.bin',
       'typescript',
     ]);
-    expect(await pathExists(path.join(repoRoot, 'node_modules/vue-tsc'))).toBe(
-      false,
-    );
+    expect(
+      await isPathExists(path.join(repoRoot, 'node_modules/vue-tsc')),
+    ).toBe(false);
   });
 
   it('bridges the declared npm package manifest linter without a shell', async () => {
-    const rootDir = await createTemporaryRoot('lint-tool-bridge');
-    const repoRoot = path.join(rootDir, 'repo');
+    const rootDirectory = await createTemporaryRoot('lint-tool-bridge');
+    const repoRoot = path.join(rootDirectory, 'repo');
     await writeText(path.join(repoRoot, 'package.json'), '{"private":true}\n');
     const bridge = await createFixtureToolBridges({
       fixtureId: 'release/manifest-lint',
@@ -959,8 +1008,8 @@ describe('minimal tool bridge and invocation boundary', () => {
   });
 
   it('reports missing and unsupported tools with fixture context', async () => {
-    const rootDir = await createTemporaryRoot('tool-errors');
-    const repoRoot = path.join(rootDir, 'repo');
+    const rootDirectory = await createTemporaryRoot('tool-errors');
+    const repoRoot = path.join(rootDirectory, 'repo');
     await writeText(path.join(repoRoot, 'package.json'), '{"private":true}\n');
     await expect(
       createFixtureToolBridges({
@@ -986,8 +1035,8 @@ describe('minimal tool bridge and invocation boundary', () => {
   });
 
   it('does not expose an undeclared tool or create a bridge implicitly', async () => {
-    const rootDir = await createTemporaryRoot('tool-empty');
-    const repoRoot = path.join(rootDir, 'repo');
+    const rootDirectory = await createTemporaryRoot('tool-empty');
+    const repoRoot = path.join(rootDirectory, 'repo');
     await writeText(path.join(repoRoot, 'package.json'), '{"private":true}\n');
     const bridge = await createFixtureToolBridges({
       fixtureId: 'proof/no-tools',
@@ -996,7 +1045,7 @@ describe('minimal tool bridge and invocation boundary', () => {
     });
 
     expect(bridge.bridgedTools).toEqual([]);
-    expect(await pathExists(path.join(repoRoot, 'node_modules'))).toBe(false);
+    expect(await isPathExists(path.join(repoRoot, 'node_modules'))).toBe(false);
   });
 
   it('builds a no-shell executable/argv spawn spec with isolated env', () => {
@@ -1032,27 +1081,24 @@ describe('minimal tool bridge and invocation boundary', () => {
 
   it.each(['explicit', 'xdg', 'local-app-data', 'home'])(
     'preserves the prepared Corepack tool cache with %s host configuration',
-    async (configuration) => {
+    async (config) => {
       const sandboxRoot = await createTemporaryRoot('corepack-env');
       const hostCache = path.join(sandboxRoot, 'host-cache');
       try {
         vi.stubEnv(
           'COREPACK_HOME',
-          configuration === 'explicit' ? hostCache : undefined,
+          config === 'explicit' ? hostCache : undefined,
         );
-        vi.stubEnv(
-          'XDG_CACHE_HOME',
-          configuration === 'xdg' ? hostCache : undefined,
-        );
+        vi.stubEnv('XDG_CACHE_HOME', config === 'xdg' ? hostCache : undefined);
         vi.stubEnv(
           'LOCALAPPDATA',
-          configuration === 'local-app-data' ? hostCache : undefined,
+          config === 'local-app-data' ? hostCache : undefined,
         );
         const expectedCache =
-          configuration === 'explicit'
+          config === 'explicit'
             ? hostCache
             : path.join(
-                configuration === 'home'
+                config === 'home'
                   ? path.join(
                       homedir(),
                       process.platform === 'win32' ? 'AppData/Local' : '.cache',
@@ -1525,14 +1571,14 @@ describe('deterministic Release tarballs and local registry', () => {
   ] as const;
 
   it('packs fixed file bytes reproducibly through the production pack helper', async () => {
-    const tempRoot = await createTemporaryRoot('deterministic-tarball');
+    const temporaryRoot = await createTemporaryRoot('deterministic-tarball');
     const first = await createDeterministicPackageTarball({
       files: packageFiles,
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     const second = await createDeterministicPackageTarball({
       files: packageFiles.toReversed(),
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
 
     expect(first.bytes.equals(second.bytes)).toBe(true);
@@ -1553,7 +1599,7 @@ describe('deterministic Release tarballs and local registry', () => {
   });
 
   it('serves generated metadata and tarballs on isolated random loopback ports', async () => {
-    const tempRoot = await createTemporaryRoot('registry-serve');
+    const temporaryRoot = await createTemporaryRoot('registry-serve');
     const tarballPath = '/tarballs/dependency-1.0.0.tgz';
     const scenario = {
       expectedRequests: [
@@ -1581,8 +1627,14 @@ describe('deterministic Release tarballs and local registry', () => {
         },
       },
     } as const;
-    const first = await startLocalRegistryFixture({ scenario, tempRoot });
-    const second = await startLocalRegistryFixture({ scenario, tempRoot });
+    const first = await startLocalRegistryFixture({
+      scenario,
+      tempRoot: temporaryRoot,
+    });
+    const second = await startLocalRegistryFixture({
+      scenario,
+      tempRoot: temporaryRoot,
+    });
 
     try {
       expect(first.baseUrl.hostname).toBe('127.0.0.1');
@@ -1597,14 +1649,16 @@ describe('deterministic Release tarballs and local registry', () => {
           { dist: { integrity: string; tarball: string } }
         >;
       };
-      const dist = metadata.versions['1.0.0']!.dist;
-      const tarballResponse = await fetch(dist.tarball, {
+      const distribution = metadata.versions['1.0.0']!.dist;
+      const tarballResponse = await fetch(distribution.tarball, {
         headers: { accept: 'application/octet-stream' },
       });
       const tarball = Buffer.from(await tarballResponse.arrayBuffer());
 
-      expect(dist.tarball).toBe(new URL(tarballPath, first.baseUrl).toString());
-      expect(dist.integrity).toBe(
+      expect(distribution.tarball).toBe(
+        new URL(tarballPath, first.baseUrl).href,
+      );
+      expect(distribution.integrity).toBe(
         `sha512-${createHash('sha512').update(tarball).digest('base64')}`,
       );
       expect(() =>
@@ -1622,14 +1676,14 @@ describe('deterministic Release tarballs and local registry', () => {
   });
 
   it('provides deterministic connection-close and incomplete-body failures', async () => {
-    const tempRoot = await createTemporaryRoot('registry-failures');
+    const temporaryRoot = await createTemporaryRoot('registry-failures');
     const closeFixture = await startLocalRegistryFixture({
       scenario: {
         expectedRequests: [],
         metadata: { body: { kind: 'close-connection' } },
         packageName: '@fixture/close',
       },
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     const incompleteFixture = await startLocalRegistryFixture({
       scenario: {
@@ -1639,7 +1693,7 @@ describe('deterministic Release tarballs and local registry', () => {
         },
         packageName: '@fixture/incomplete',
       },
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
 
     try {
@@ -1661,13 +1715,13 @@ describe('deterministic Release tarballs and local registry', () => {
 
 describe('source invariant and cleanup', () => {
   it('detects modified, added, and deleted inputs without using mtime', async () => {
-    const rootDir = await createTemporaryRoot('invariant');
-    const filePath = path.join(rootDir, 'source.ts');
+    const rootDirectory = await createTemporaryRoot('invariant');
+    const filePath = path.join(rootDirectory, 'source.ts');
     await writeText(filePath, 'original');
-    const before = await captureTreeSnapshot({ rootDir });
+    const before = await captureTreeSnapshot({ rootDir: rootDirectory });
 
     await utimes(filePath, new Date(), new Date(Date.now() + 1000));
-    const afterMtime = await captureTreeSnapshot({ rootDir });
+    const afterMtime = await captureTreeSnapshot({ rootDir: rootDirectory });
     expect(() =>
       assertTreeSnapshotUnchanged({
         after: afterMtime,
@@ -1677,8 +1731,8 @@ describe('source invariant and cleanup', () => {
     ).not.toThrow();
 
     await writeText(filePath, 'modified');
-    await writeText(path.join(rootDir, 'added.ts'), 'added');
-    const afterModified = await captureTreeSnapshot({ rootDir });
+    await writeText(path.join(rootDirectory, 'added.ts'), 'added');
+    const afterModified = await captureTreeSnapshot({ rootDir: rootDirectory });
     expect(() =>
       assertTreeSnapshotUnchanged({
         after: afterModified,
@@ -1688,7 +1742,7 @@ describe('source invariant and cleanup', () => {
     ).toThrow(/modified source\.ts[\s\S]*added added\.ts/u);
 
     await rm(filePath);
-    const afterDeleted = await captureTreeSnapshot({ rootDir });
+    const afterDeleted = await captureTreeSnapshot({ rootDir: rootDirectory });
     expect(() =>
       assertTreeSnapshotUnchanged({
         after: afterDeleted,
@@ -1699,11 +1753,16 @@ describe('source invariant and cleanup', () => {
   });
 
   it('allows generated additions without masking input modifications', async () => {
-    const rootDir = await createTemporaryRoot('invariant-allowed');
-    await writeText(path.join(rootDir, 'repo/source.ts'), 'original');
-    const before = await captureTreeSnapshot({ rootDir });
-    await writeText(path.join(rootDir, 'repo/dist/output.js'), 'generated');
-    const generatedAfter = await captureTreeSnapshot({ rootDir });
+    const rootDirectory = await createTemporaryRoot('invariant-allowed');
+    await writeText(path.join(rootDirectory, 'repo/source.ts'), 'original');
+    const before = await captureTreeSnapshot({ rootDir: rootDirectory });
+    await writeText(
+      path.join(rootDirectory, 'repo/dist/output.js'),
+      'generated',
+    );
+    const generatedAfter = await captureTreeSnapshot({
+      rootDir: rootDirectory,
+    });
     expect(() =>
       assertTreeSnapshotUnchanged({
         after: generatedAfter,
@@ -1713,8 +1772,8 @@ describe('source invariant and cleanup', () => {
       }),
     ).not.toThrow();
 
-    await writeText(path.join(rootDir, 'repo/source.ts'), 'modified');
-    const modifiedAfter = await captureTreeSnapshot({ rootDir });
+    await writeText(path.join(rootDirectory, 'repo/source.ts'), 'modified');
+    const modifiedAfter = await captureTreeSnapshot({ rootDir: rootDirectory });
     expect(() =>
       assertTreeSnapshotUnchanged({
         after: modifiedAfter,
@@ -1726,17 +1785,23 @@ describe('source invariant and cleanup', () => {
   });
 
   it('ignores only harness-owned .limina and tool bridge paths', async () => {
-    const rootDir = await createTemporaryRoot('invariant-managed');
-    await writeText(path.join(rootDir, 'repo/source.ts'), 'source');
+    const rootDirectory = await createTemporaryRoot('invariant-managed');
+    await writeText(path.join(rootDirectory, 'repo/source.ts'), 'source');
     const before = await captureTreeSnapshot({
       ignoredPathPrefixes: DEFAULT_SANDBOX_IGNORED_PATH_PREFIXES,
-      rootDir,
+      rootDir: rootDirectory,
     });
-    await writeText(path.join(rootDir, 'repo/.limina/check/result.json'), '{}');
-    await writeText(path.join(rootDir, 'repo/node_modules/.bin/tsc'), 'shim');
+    await writeText(
+      path.join(rootDirectory, 'repo/.limina/check/result.json'),
+      '{}',
+    );
+    await writeText(
+      path.join(rootDirectory, 'repo/node_modules/.bin/tsc'),
+      'shim',
+    );
     const after = await captureTreeSnapshot({
       ignoredPathPrefixes: DEFAULT_SANDBOX_IGNORED_PATH_PREFIXES,
-      rootDir,
+      rootDir: rootDirectory,
     });
     expect(() =>
       assertTreeSnapshotUnchanged({
@@ -1748,12 +1813,12 @@ describe('source invariant and cleanup', () => {
   });
 
   it('copies without writing back to the source fixture', async () => {
-    const rootDir = await createTemporaryRoot('source-unchanged');
-    const sourceRoot = path.join(rootDir, 'source');
+    const rootDirectory = await createTemporaryRoot('source-unchanged');
+    const sourceRoot = path.join(rootDirectory, 'source');
     await writeText(path.join(sourceRoot, 'source.ts'), 'source');
     const before = await captureTreeSnapshot({ rootDir: sourceRoot });
-    await copyFixtureRepository({
-      destinationRoot: path.join(rootDir, 'destination'),
+    await copyFixtureRepo({
+      destinationRoot: path.join(rootDirectory, 'destination'),
       sourceRoot,
     });
     const after = await captureTreeSnapshot({ rootDir: sourceRoot });
@@ -1767,59 +1832,59 @@ describe('source invariant and cleanup', () => {
   });
 
   it('creates unique parallel sandboxes and cleans only contained paths', async () => {
-    const tempRoot = await createTemporaryRoot('cleanup-unique');
+    const temporaryRoot = await createTemporaryRoot('cleanup-unique');
     const first = await createDetectorSandbox({
       fixtureId: 'proof/parallel',
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     const second = await createDetectorSandbox({
       fixtureId: 'proof/parallel',
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     expect(first.sandboxRoot).not.toBe(second.sandboxRoot);
     expect(path.basename(first.sandboxRoot)).toContain('proof-parallel');
-    await cleanupDetectorSandbox(first);
-    expect(await pathExists(first.sandboxRoot)).toBe(false);
-    expect(await pathExists(second.sandboxRoot)).toBe(true);
+    await isCleanupDetectorSandbox(first);
+    expect(await isPathExists(first.sandboxRoot)).toBe(false);
+    expect(await isPathExists(second.sandboxRoot)).toBe(true);
 
     const outsideRoot = await createTemporaryRoot('cleanup-outside');
     await expect(
-      cleanupDetectorSandbox({
+      isCleanupDetectorSandbox({
         sandboxRoot: outsideRoot,
-        tempRoot,
+        tempRoot: temporaryRoot,
       }),
     ).rejects.toThrow('outside the integration temp root');
   });
 
   it('bounds long sandbox names for cross-platform child IPC paths', async () => {
-    const tempRoot = await createTemporaryRoot('cleanup-long-name');
+    const temporaryRoot = await createTemporaryRoot('cleanup-long-name');
     const sandbox = await createDetectorSandbox({
       fixtureId:
         'release/packed-source-workspace-dependency-missing-with-extra-context',
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
 
     expect(path.basename(sandbox.sandboxRoot).length).toBeLessThanOrEqual(40);
-    await cleanupDetectorSandbox(sandbox);
+    await isCleanupDetectorSandbox(sandbox);
   });
 
   it('preserves on request and passes bounded Windows retry options', async () => {
-    const tempRoot = await createTemporaryRoot('cleanup-preserve');
+    const temporaryRoot = await createTemporaryRoot('cleanup-preserve');
     const preserved = await createDetectorSandbox({
       fixtureId: 'proof/preserve',
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     await expect(
-      cleanupDetectorSandbox({ ...preserved, preserve: true }),
+      isCleanupDetectorSandbox({ ...preserved, preserve: true }),
     ).resolves.toBe(false);
-    expect(await pathExists(preserved.sandboxRoot)).toBe(true);
+    expect(await isPathExists(preserved.sandboxRoot)).toBe(true);
 
     const retrySandbox = await createDetectorSandbox({
       fixtureId: 'proof/retry',
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     const remove = vi.fn(async () => {});
-    await cleanupDetectorSandbox(retrySandbox, { remove });
+    await isCleanupDetectorSandbox(retrySandbox, { remove });
     // Cleanup canonicalizes the sandbox path (forward slashes) before handing
     // it to `rm`, so assert against the portable form rather than the raw
     // backslash path a Windows fixture would carry.
@@ -1835,21 +1900,21 @@ describe('source invariant and cleanup', () => {
   });
 
   it('does not follow a sandbox link while recursively cleaning', async () => {
-    const tempRoot = await createTemporaryRoot('cleanup-link');
+    const temporaryRoot = await createTemporaryRoot('cleanup-link');
     const externalRoot = await createTemporaryRoot('cleanup-link-target');
     await writeText(path.join(externalRoot, 'sentinel.txt'), 'keep');
     const sandbox = await createDetectorSandbox({
       fixtureId: 'proof/cleanup-link',
-      tempRoot,
+      tempRoot: temporaryRoot,
     });
     await symlink(
       externalRoot,
       path.join(sandbox.sandboxRoot, 'external-link'),
       process.platform === 'win32' ? 'junction' : 'dir',
     );
-    await cleanupDetectorSandbox(sandbox);
+    await isCleanupDetectorSandbox(sandbox);
 
-    expect(await pathExists(path.join(externalRoot, 'sentinel.txt'))).toBe(
+    expect(await isPathExists(path.join(externalRoot, 'sentinel.txt'))).toBe(
       true,
     );
   });

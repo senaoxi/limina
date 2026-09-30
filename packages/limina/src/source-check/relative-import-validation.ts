@@ -5,7 +5,7 @@ import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import { addRelativeImportOwnerProblem } from './import-boundary-findings';
 
@@ -66,14 +66,12 @@ function getAmbientTripleSlashPolicy(options: {
   importRecord: ImportRecord;
   resolvedFilePath: string;
 }): NonNullable<ReturnType<AmbientDeclarationIndex['get']>> | null {
-  if (options.importRecord.kind !== 'triple-slash-path') {
-    return null;
-  }
-
-  return options.ambientDeclarations.get(options.resolvedFilePath) ?? null;
+  return options.importRecord.kind === 'triple-slash-path'
+    ? (options.ambientDeclarations.get(options.resolvedFilePath) ?? null)
+    : null;
 }
 
-function handleAmbientTripleSlash(options: {
+function isHandleAmbientTripleSlash(options: {
   ambientDeclarations: AmbientDeclarationIndex;
   config: ResolvedLiminaConfig;
   filePath: string;
@@ -118,11 +116,7 @@ function shouldSkipRelativeImport(options: {
   resolvedFilePath: string;
   workspaceLookup: WorkspaceLookupIndex;
 }): boolean {
-  if (handleAmbientTripleSlash(options)) {
-    return true;
-  }
-
-  return hasSamePackageScope(options);
+  return isHandleAmbientTripleSlash(options) || hasSamePackageScope(options);
 }
 
 export function addRelativeImportProblems(options: {

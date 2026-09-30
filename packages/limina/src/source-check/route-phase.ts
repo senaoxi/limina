@@ -1,5 +1,5 @@
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceCheckState } from './run-state';
 
 type SourceRoutePhaseInput = Readonly<

@@ -5,19 +5,23 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'pathe';
-import type { DistPackageJson } from './manifest';
+import type { DistPackageJson as DistributionPackageJson } from './manifest';
 import type { PackedPackageTarball } from './runner-types';
 
 export async function packOutputTarball(
-  outDir: string,
+  outDirectory: string,
 ): Promise<PackedPackageTarball> {
   const destination = await mkdtemp(path.join(tmpdir(), '__LIMINA_PACKAGE__'));
   const cleanupDestination = async (): Promise<void> => {
-    await rm(destination, { force: true, recursive: true }).catch(() => null);
+    try {
+      await rm(destination, { force: true, recursive: true });
+    } catch {
+      // Cleanup remains best effort and must preserve the packing failure.
+    }
   };
 
   try {
-    const tarballPath = await pack(outDir, {
+    const tarballPath = await pack(outDirectory, {
       destination,
       ignoreScripts: true,
       packageManager: 'pnpm',
@@ -42,8 +46,9 @@ function formatPackageJsonPath(options: {
   config: ResolvedLiminaConfig | undefined;
   packageJsonPath: string;
 }): string {
-  if (options.config === undefined) return options.packageJsonPath;
-  return toRelativePath(options.config.rootDir, options.packageJsonPath);
+  return options.config === undefined
+    ? options.packageJsonPath
+    : toRelativePath(options.config.rootDir, options.packageJsonPath);
 }
 
 function createMissingPackageJsonError(options: {
@@ -58,11 +63,11 @@ function createMissingPackageJsonError(options: {
   );
 }
 
-export async function readDistPackageJson(options: {
+export async function readDistributionPackageJson(options: {
   config?: ResolvedLiminaConfig;
   label?: string;
   packageJsonPath: string;
-}): Promise<DistPackageJson> {
+}): Promise<DistributionPackageJson> {
   if (!existsSync(options.packageJsonPath)) {
     throw createMissingPackageJsonError({
       config: options.config,
@@ -72,5 +77,5 @@ export async function readDistPackageJson(options: {
   }
   return JSON.parse(
     await readFile(options.packageJsonPath, 'utf8'),
-  ) as DistPackageJson;
+  ) as DistributionPackageJson;
 }

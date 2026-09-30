@@ -81,7 +81,7 @@ function formatHumanInventory(options: {
   const filters = options.filters ?? {};
   const limit =
     options.limit === undefined ? DEFAULT_VISIBLE_ISSUE_LIMIT : options.limit;
-  const verbose = options.verbose ?? false;
+  const isVerbose = options.verbose ?? false;
   const hasFilters = Object.values(filters).some((values) => values?.length);
 
   return formatCheckIssueSnapshotInventory({
@@ -92,7 +92,7 @@ function formatHumanInventory(options: {
       maxPrimaryBlockers: DEFAULT_PRIMARY_BLOCKER_LIMIT,
       view:
         options.view ??
-        (verbose ? 'detailed' : hasFilters ? 'compact' : 'summary'),
+        (isVerbose ? 'detailed' : hasFilters ? 'compact' : 'summary'),
     },
     queryContext: {
       effectiveFormat: 'human',
@@ -100,18 +100,18 @@ function formatHumanInventory(options: {
       global: {},
       limit,
       limitExplicit: options.limitExplicit ?? false,
-      verbose,
+      verbose: isVerbose,
     },
-    ...(options.rootDir ? { rootDir: options.rootDir } : {}),
+    ...(options.rootDir && { rootDir: options.rootDir }),
     snapshot: options.snapshot,
   });
 }
 
 async function writeRawCheckSnapshot(
-  rootDir: string,
+  rootDirectory: string,
   snapshot: unknown,
 ): Promise<void> {
-  const snapshotPath = getCheckIssueSnapshotPath(rootDir);
+  const snapshotPath = getCheckIssueSnapshotPath(rootDirectory);
   await mkdir(path.dirname(snapshotPath), { recursive: true });
   await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
 }
@@ -235,11 +235,13 @@ function createBlockedRun(
 
 describe('source issue snapshots', () => {
   it('keeps version 1 readable without promoting it to a check snapshot', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
 
     try {
       await writeSourceIssueSnapshotOnly(
-        artifactNamespace(rootDir),
+        artifactNamespace(rootDirectory),
         createSnapshot([
           {
             code: SOURCE_ISSUE_CODES.unusedModule,
@@ -249,7 +251,9 @@ describe('source issue snapshots', () => {
         ]),
       );
 
-      await expect(readSourceIssueSnapshot(rootDir)).resolves.toMatchObject({
+      await expect(
+        readSourceIssueSnapshot(rootDirectory),
+      ).resolves.toMatchObject({
         issues: [
           {
             code: SOURCE_ISSUE_CODES.unusedModule,
@@ -258,9 +262,9 @@ describe('source issue snapshots', () => {
         ],
         version: SOURCE_ISSUE_SNAPSHOT_VERSION,
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -320,7 +324,9 @@ describe('source issue snapshots', () => {
 
 describe('check issue snapshots', () => {
   it('writes and reads canonical codes while preserving external rule codes', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const issue = createLiminaCheckIssue({
       code: LIMINA_CHECK_ISSUE_CODES.packagePublint,
       external: {
@@ -329,18 +335,20 @@ describe('check issue snapshots', () => {
         tool: 'publint',
       },
       reason: 'Publint reported a package export problem.',
-      rootDir,
+      rootDir: rootDirectory,
       task: 'package:check',
       title: 'Publint package issue',
     });
 
     try {
       await writeCheckIssueSnapshotOnly(
-        artifactNamespace(rootDir),
+        artifactNamespace(rootDirectory),
         createCheckSnapshot([issue]),
       );
 
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toMatchObject({
+      await expect(
+        readCheckIssueSnapshot(rootDirectory),
+      ).resolves.toMatchObject({
         issues: [
           {
             code: 'LIMINA_PACKAGE_PUBLINT',
@@ -350,21 +358,23 @@ describe('check issue snapshots', () => {
         ],
       });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps the explicitly retired command wire code readable', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const issue = createLiminaCheckIssue({
       code: LIMINA_CHECK_ISSUE_CODES.commandFailed,
-      rootDir,
+      rootDir: rootDirectory,
       task: 'command',
     });
 
     try {
       await writeRawCheckSnapshot(
-        rootDir,
+        rootDirectory,
         createCheckSnapshot([
           {
             ...issue,
@@ -373,7 +383,9 @@ describe('check issue snapshots', () => {
         ]),
       );
 
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toMatchObject({
+      await expect(
+        readCheckIssueSnapshot(rootDirectory),
+      ).resolves.toMatchObject({
         issues: [
           {
             code: LIMINA_CHECK_ISSUE_CODES.pipelineCommandFailed,
@@ -382,7 +394,7 @@ describe('check issue snapshots', () => {
         ],
       });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -397,22 +409,24 @@ describe('check issue snapshots', () => {
   ] as const)(
     'rejects %s codes from the current reader',
     async (_name, code, task) => {
-      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-snapshot-'),
+      );
       const issue = createLiminaCheckIssue({
         code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
-        rootDir,
+        rootDir: rootDirectory,
         task: 'source:check',
       });
 
       try {
-        await writeRawCheckSnapshot(rootDir, {
+        await writeRawCheckSnapshot(rootDirectory, {
           ...createCheckSnapshot([issue]),
           issues: [{ ...issue, code, task }],
         });
 
-        await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+        await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
       } finally {
-        await rm(rootDir, { force: true, recursive: true });
+        await rm(rootDirectory, { force: true, recursive: true });
       }
     },
   );
@@ -429,10 +443,12 @@ describe('check issue snapshots', () => {
   ] as const)(
     'rejects %s codes from the current writer',
     async (_name, code, task) => {
-      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-snapshot-'),
+      );
       const canonicalIssue = createLiminaCheckIssue({
         code: LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
-        rootDir,
+        rootDir: rootDirectory,
         task: 'source:check',
       });
 
@@ -444,49 +460,53 @@ describe('check issue snapshots', () => {
 
         await expect(
           writeCheckIssueSnapshotOnly(
-            artifactNamespace(rootDir),
+            artifactNamespace(rootDirectory),
             invalidSnapshot,
           ),
         ).rejects.toThrow();
-        await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+        await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
       } finally {
-        await rm(rootDir, { force: true, recursive: true });
+        await rm(rootDirectory, { force: true, recursive: true });
       }
     },
   );
 
   it('names the supported version when the writer rejects an old wire model', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     try {
       const snapshot = {
         ...createCheckSnapshot([]),
         version: CHECK_ISSUE_SNAPSHOT_VERSION - 1,
       } as unknown as CheckIssueSnapshot;
       await expect(
-        writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), snapshot),
+        writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), snapshot),
       ).rejects.toThrow(
         `Invalid v${CHECK_ISSUE_SNAPSHOT_VERSION} check snapshot wire model.`,
       );
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it.each([1, 2, 3, 4, 5, 6, 7, CHECK_ISSUE_SNAPSHOT_VERSION + 1])(
     'returns null for check snapshot version %i',
     async (version) => {
-      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-snapshot-'),
+      );
 
       try {
-        await writeRawCheckSnapshot(rootDir, {
+        await writeRawCheckSnapshot(rootDirectory, {
           ...createCheckSnapshot([]),
           version,
         });
 
-        await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+        await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
       } finally {
-        await rm(rootDir, { force: true, recursive: true });
+        await rm(rootDirectory, { force: true, recursive: true });
       }
     },
   );
@@ -515,26 +535,30 @@ describe('check issue snapshots', () => {
       },
     ],
   ] as const)('rejects current v7 completed when %s', async (_name, mutate) => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const run = createCompletedRun();
     mutate(run);
 
     try {
-      await writeRawCheckSnapshot(rootDir, {
+      await writeRawCheckSnapshot(rootDirectory, {
         ...createCheckSnapshot([]),
         run,
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('accepts check-owned snapshots and rejects standalone completed snapshots', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
 
     try {
-      await writeRawCheckSnapshot(rootDir, {
+      await writeRawCheckSnapshot(rootDirectory, {
         ...createCheckSnapshot([]),
         run: {
           command: 'limina check',
@@ -553,17 +577,19 @@ describe('check issue snapshots', () => {
         },
         status: 'not-run',
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toMatchObject({
+      await expect(
+        readCheckIssueSnapshot(rootDirectory),
+      ).resolves.toMatchObject({
         run: { result: 'not-run', tasks: [{ state: 'planned' }] },
       });
 
-      await writeRawCheckSnapshot(rootDir, {
+      await writeRawCheckSnapshot(rootDirectory, {
         ...createCheckSnapshot([]),
         command: 'limina source check',
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
 
-      await writeRawCheckSnapshot(rootDir, {
+      await writeRawCheckSnapshot(rootDirectory, {
         ...createCheckSnapshot([]),
         run: {
           command: 'limina check',
@@ -581,27 +607,29 @@ describe('check issue snapshots', () => {
           ],
         },
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('rejects invalid current writer models before replacing the snapshot', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const invalidRun = createCompletedRun();
     delete invalidRun.tasks[0]!.completedAt;
 
     try {
       await expect(
-        writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
+        writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), {
           ...createCheckSnapshot([]),
           run: invalidRun,
         }),
       ).rejects.toThrow('Invalid completed check run summary');
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -694,16 +722,18 @@ describe('check issue snapshots', () => {
   ] as const)(
     'rejects completed run semantics when %s',
     async (_name, createRun) => {
-      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-snapshot-'),
+      );
 
       try {
-        await writeRawCheckSnapshot(rootDir, {
+        await writeRawCheckSnapshot(rootDirectory, {
           ...createCheckSnapshot([]),
           run: createRun(),
         });
-        await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+        await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
       } finally {
-        await rm(rootDir, { force: true, recursive: true });
+        await rm(rootDirectory, { force: true, recursive: true });
       }
     },
   );
@@ -722,29 +752,37 @@ describe('check issue snapshots', () => {
     ['blocked', createBlockedRun()],
     ['skipped', createBlockedRun('skipped')],
   ] as const)('accepts a valid %s completed model', async (_name, run) => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
 
     try {
-      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
+      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), {
         ...createCheckSnapshot([]),
         run,
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.not.toBeNull();
+      await expect(
+        readCheckIssueSnapshot(rootDirectory),
+      ).resolves.not.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('accepts canonical checker target roots within one task occurrence', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const { run } = createCheckerCompletedRun();
 
     try {
-      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
+      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), {
         ...createCheckSnapshot([]),
         run,
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toMatchObject({
+      await expect(
+        readCheckIssueSnapshot(rootDirectory),
+      ).resolves.toMatchObject({
         run: {
           result: 'failed',
           tasks: [
@@ -763,7 +801,7 @@ describe('check issue snapshots', () => {
         },
       });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -822,12 +860,16 @@ describe('check issue snapshots', () => {
         const root = items[0]!;
         const blocker = items[1]!;
         if (
-          root.itemKind === 'checker-target' &&
-          blocker.itemKind === 'checker-target'
+          !(
+            root.itemKind === 'checker-target' &&
+            blocker.itemKind === 'checker-target'
+          )
         ) {
-          root.status = 'blocked';
-          root.blockedBy = [{ id: blocker.id, name: blocker.name }];
+          return;
         }
+
+        root.status = 'blocked';
+        root.blockedBy = [{ id: blocker.id, name: blocker.name }];
       },
     ],
     [
@@ -872,24 +914,28 @@ describe('check issue snapshots', () => {
   ] as const)(
     'rejects checker target relation with %s',
     async (_name, mutate) => {
-      const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-snapshot-'),
+      );
       const { run } = createCheckerCompletedRun();
       mutate(run);
 
       try {
-        await writeRawCheckSnapshot(rootDir, {
+        await writeRawCheckSnapshot(rootDirectory, {
           ...createCheckSnapshot([]),
           run,
         });
-        await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+        await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
       } finally {
-        await rm(rootDir, { force: true, recursive: true });
+        await rm(rootDirectory, { force: true, recursive: true });
       }
     },
   );
 
   it('allows the same checker target id in different execution task occurrences', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const repeatedId = createCheckerTargetId(['repeated']);
     const tasks = ['task:first', 'task:second'].map((id, index) => ({
       checkItems: [
@@ -912,29 +958,33 @@ describe('check issue snapshots', () => {
     }));
 
     try {
-      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDir), {
+      await writeCheckIssueSnapshotOnly(artifactNamespace(rootDirectory), {
         ...createCheckSnapshot([]),
         run: createCompletedRun(tasks),
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.not.toBeNull();
+      await expect(
+        readCheckIssueSnapshot(rootDirectory),
+      ).resolves.not.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps task ids and checker target ids in separate identity spaces', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const { ids, run } = createCheckerCompletedRun();
     run.tasks[0]!.id = ids.rootA;
 
     try {
-      await writeRawCheckSnapshot(rootDir, {
+      await writeRawCheckSnapshot(rootDirectory, {
         ...createCheckSnapshot([]),
         run,
       });
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -963,27 +1013,31 @@ describe('check issue snapshots', () => {
   });
 
   it('returns null for missing and corrupt check snapshots', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
 
     try {
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
 
-      const snapshotPath = getCheckIssueSnapshotPath(rootDir);
+      const snapshotPath = getCheckIssueSnapshotPath(rootDirectory);
       await mkdir(path.dirname(snapshotPath), { recursive: true });
       await writeFile(snapshotPath, '{not valid json\n');
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('preserves run metadata and existing issues across append and complete writes', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-snapshot-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-snapshot-'),
+    );
     const firstIssue = createLiminaCheckIssue({
       code: 'LIMINA_GRAPH_REFERENCE_MISSING',
       filePath: 'packages/app/src/index.ts',
       reason: 'missing ref',
-      rootDir,
+      rootDir: rootDirectory,
       task: 'graph:check',
       title: 'Missing project reference',
     });
@@ -991,16 +1045,16 @@ describe('check issue snapshots', () => {
       code: 'LIMINA_PROOF_UNCOVERED_SOURCE_FILE',
       filePath: 'packages/app/src/internal.ts',
       reason: 'not covered',
-      rootDir,
+      rootDir: rootDirectory,
       task: 'proof:check',
       title: 'Uncovered source file',
     });
 
     try {
       await writeNotRunCheckIssueSnapshot({
-        artifactNamespace: artifactNamespace(rootDir),
+        artifactNamespace: artifactNamespace(rootDirectory),
         command: 'limina check',
-        rootDir,
+        rootDir: rootDirectory,
         run: {
           command: 'limina check',
           createdAt: '2026-06-20T00:00:00.000Z',
@@ -1027,12 +1081,12 @@ describe('check issue snapshots', () => {
       });
 
       await appendCheckIssues({
-        artifactNamespace: artifactNamespace(rootDir),
+        artifactNamespace: artifactNamespace(rootDirectory),
         issues: [firstIssue],
-        rootDir,
+        rootDir: rootDirectory,
       });
 
-      expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readCheckIssueSnapshot(rootDirectory)).toMatchObject({
         issues: [
           {
             code: 'LIMINA_GRAPH_REFERENCE_MISSING',
@@ -1056,8 +1110,8 @@ describe('check issue snapshots', () => {
       });
 
       await completeCheckIssueSnapshot({
-        artifactNamespace: artifactNamespace(rootDir),
-        rootDir,
+        artifactNamespace: artifactNamespace(rootDirectory),
+        rootDir: rootDirectory,
         run: {
           blockedBy: { id: 'graph', label: 'graph:check' },
           command: 'limina check',
@@ -1091,12 +1145,12 @@ describe('check issue snapshots', () => {
         },
       });
       await appendCheckIssues({
-        artifactNamespace: artifactNamespace(rootDir),
+        artifactNamespace: artifactNamespace(rootDirectory),
         issues: [secondIssue],
-        rootDir,
+        rootDir: rootDirectory,
       });
 
-      expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readCheckIssueSnapshot(rootDirectory)).toMatchObject({
         issues: [
           {
             code: 'LIMINA_GRAPH_REFERENCE_MISSING',
@@ -1120,7 +1174,7 @@ describe('check issue snapshots', () => {
         },
       });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -1442,7 +1496,7 @@ describe('check issue snapshots', () => {
         this: string,
         other: string,
       ) {
-        return String(this) < other ? 1 : String(this) > other ? -1 : 0;
+        return this < other ? 1 : this > other ? -1 : 0;
       });
 
     try {
@@ -1824,6 +1878,9 @@ describe('check issue snapshots', () => {
     expect(normalizedOutput).toContain('--checker --help');
   });
 });
-function artifactNamespace(rootDir: string) {
-  return createLiminaArtifactNamespace({ generation: 0, rootDir });
+function artifactNamespace(rootDirectory: string) {
+  return createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir: rootDirectory,
+  });
 }

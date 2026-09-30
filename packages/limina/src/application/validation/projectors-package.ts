@@ -36,35 +36,39 @@ export class PackageOutputValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([this.#output.get(run), this.#pool.get(run)]).then(
-      ([output, pool]) => {
-        const result: PackageOutputValidationView = Object.freeze({
-          ...pool,
-          findings: freezeArray(
-            output.findings.map((finding) =>
-              Object.freeze({
-                code: finding.code,
-                evidence: freezeArray(
-                  finding.evidenceIds.map((id) =>
-                    Object.freeze({ id, kind: 'output', value: id }),
-                  ),
+    const prerequisite = Promise.all([
+      this.#output.get(run),
+      this.#pool.get(run),
+    ]);
+    const view = (async () => {
+      const [output, pool] = await prerequisite;
+
+      const result: PackageOutputValidationView = Object.freeze({
+        ...pool,
+        findings: freezeArray(
+          output.findings.map((finding) =>
+            Object.freeze({
+              code: finding.code,
+              evidence: freezeArray(
+                finding.evidenceIds.map((id) =>
+                  Object.freeze({ id, kind: 'output', value: id }),
                 ),
-                packageId: finding.packageId,
-                tool: finding.tool,
-              }),
-            ),
+              ),
+              packageId: finding.packageId,
+              tool: finding.tool,
+            }),
           ),
-          kind: 'package-output',
-        });
-        recordProjection({
-          count: result.findings.length,
-          kind: result.kind,
-          run,
-          startedAt,
-        });
-        return result;
-      },
-    );
+        ),
+        kind: 'package-output',
+      });
+      recordProjection({
+        count: result.findings.length,
+        kind: result.kind,
+        run,
+        startedAt,
+      });
+      return result;
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }
@@ -98,10 +102,13 @@ export class ReleaseAssessmentValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([
+    const prerequisite = Promise.all([
       this.#assessment.get(run),
       this.#pool.get(run),
-    ]).then(([assessment, pool]) => {
+    ]);
+    const view = (async () => {
+      const [assessment, pool] = await prerequisite;
+
       const result: ReleaseAssessmentValidationView = Object.freeze({
         ...pool,
         findings: freezeArray(
@@ -116,7 +123,7 @@ export class ReleaseAssessmentValidationViewProvider {
         startedAt,
       });
       return result;
-    });
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }

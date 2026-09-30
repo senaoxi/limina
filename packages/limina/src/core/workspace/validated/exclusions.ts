@@ -53,8 +53,10 @@ export function findExactExclusions(options: {
     options.rootDir,
   );
   return options.rules.filter((rule) => {
-    if (rule.entry.kind !== options.kind) return false;
-    return rule.matchers.some((matchesPattern) => matchesPattern(relativeRoot));
+    return (
+      rule.entry.kind === options.kind &&
+      rule.matchers.some((matchesPattern) => matchesPattern(relativeRoot))
+    );
   });
 }
 
@@ -74,7 +76,7 @@ export function applyWorkspacePackageExclusions(options: {
   });
 }
 
-function candidateMatchesRule(options: {
+function isCandidateMatchesRule(options: {
   candidate: ExclusionCandidate;
   config: ResolvedLiminaConfig;
   rule: CompiledExclusionRule;
@@ -109,11 +111,11 @@ function findUnmatchedRule(options: {
   config: ResolvedLiminaConfig;
   rules: readonly CompiledExclusionRule[];
 }): CompiledExclusionRule | undefined {
-  return options.rules.find(
-    (rule) =>
-      !options.candidates.some((candidate) =>
-        candidateMatchesRule({ candidate, config: options.config, rule }),
-      ),
+  return options.rules.find((rule) =>
+    options.candidates.every(
+      (candidate) =>
+        !isCandidateMatchesRule({ candidate, config: options.config, rule }),
+    ),
   );
 }
 
@@ -157,11 +159,10 @@ export function validatePackageScopeExclusions(options: {
 }): void {
   const candidates = options.stableCandidates
     .filter((candidate) => candidate.kind === 'package-json')
-    .filter(
-      (candidate) =>
-        !options.workspaceBoundaries.some(
-          (boundary) => boundary.descriptor.path === candidate.path,
-        ),
+    .filter((candidate) =>
+      options.workspaceBoundaries.every(
+        (boundary) => boundary.descriptor.path !== candidate.path,
+      ),
     )
     .filter(
       (candidate) =>
@@ -179,7 +180,9 @@ export function validatePackageScopeExclusions(options: {
   });
 }
 
-/** Exact config exclusions affect descriptors, never package activation. */
+/**
+Exact config exclusions affect descriptors, never package activation.
+*/
 export function excludeTsconfigDescriptors(options: {
   config: ResolvedLiminaConfig;
   candidates: readonly WorkspaceDescriptorCandidate[];

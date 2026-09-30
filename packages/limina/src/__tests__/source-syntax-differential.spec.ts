@@ -60,13 +60,13 @@ function compare(
 describe('raw syntax differential oracle', () => {
   it.each(['ts', 'mts', 'cts', 'js', 'tsx'])(
     'preserves adversarial %s sources through distinct Programs and native parser policies',
-    async (ext) => {
+    async (extension) => {
       const root = await mkdtemp(path.join(tmpdir(), 'limina-syntax-corpus-'));
       const cache = new SourceSyntaxFactsCache();
       try {
-        for (const [i, text] of cases.entries()) {
+        for (const [index, text] of cases.entries()) {
           const fileName = normalizeAbsolutePath(
-            path.join(root, `${i}.${ext}`),
+            path.join(root, `${index}.${extension}`),
           );
           await writeFile(fileName, text);
           for (const moduleDetection of [
@@ -109,17 +109,17 @@ describe('raw syntax differential oracle', () => {
       ] as const) {
         for (const target of [ts.ScriptTarget.ES2020, ts.ScriptTarget.Latest])
           for (const implied of [ts.ModuleKind.CommonJS, ts.ModuleKind.ESNext])
-            for (const doc of [
+            for (const document_ of [
               ts.JSDocParsingMode.ParseAll,
               ts.JSDocParsingMode.ParseNone,
             ])
-              for (const force of [false, true]) {
+              for (const isForce of [false, true]) {
                 const filePath = `/virtual/input.${extension}`;
                 const input: ts.CreateSourceFileOptions = {
                   languageVersion: target,
                   impliedNodeFormat: implied as ts.ResolutionMode,
-                  jsDocParsingMode: doc,
-                  setExternalModuleIndicator: force
+                  jsDocParsingMode: document_,
+                  setExternalModuleIndicator: isForce
                     ? (file) => {
                         (
                           file as ts.SourceFile & {

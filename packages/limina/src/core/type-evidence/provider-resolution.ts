@@ -114,8 +114,7 @@ function cacheEvidence(options: {
 function getProjectIdentity(
   identity: VueProjectSemanticIdentity | undefined,
 ): string | undefined {
-  if (identity === undefined) return undefined;
-  return identity.id;
+  return identity === undefined ? undefined : identity.id;
 }
 
 export function resolveTypeScriptProviderEvidence(options: {

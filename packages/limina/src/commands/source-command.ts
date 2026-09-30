@@ -4,7 +4,7 @@ import { LiminaStructuredError } from '../check-reporting/errors';
 import { clearCliScreen, formatErrorMessage, SourceLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import {
-  runSourceCheckImpl,
+  isRunSourceCheckImpl,
   type RunSourceCheckOptions,
 } from '../source-check/runner';
 import {
@@ -108,7 +108,7 @@ export async function createSourceCommandContext(
 }
 
 function shouldClearScreen(options: RunSourceCheckOptions): boolean {
-  return options.clearScreen === undefined ? true : options.clearScreen;
+  return options.clearScreen === undefined || options.clearScreen;
 }
 
 function isReportDeferred(options: RunSourceCheckOptions): boolean {
@@ -118,7 +118,7 @@ function isReportDeferred(options: RunSourceCheckOptions): boolean {
 
 function isInteractiveFlow(options: RunSourceCheckOptions): boolean {
   const flow = options.flow;
-  return flow !== undefined && flow.interactive === true;
+  return flow !== undefined && flow.interactive;
 }
 
 function shouldLogSuccess(options: RunSourceCheckOptions): boolean {
@@ -127,13 +127,13 @@ function shouldLogSuccess(options: RunSourceCheckOptions): boolean {
   );
 }
 
-async function executeSourceCheckImpl(
+async function isExecuteSourceCheckImpl(
   context: SourceCommandContext,
   sourceIssues: NonNullable<RunSourceCheckOptions['sourceIssues']>,
 ): Promise<boolean> {
   const { options } = context;
 
-  return runSourceCheckImpl(context.config, {
+  return isRunSourceCheckImpl(context.config, {
     deferSnapshot: options.deferSnapshot,
     generatedGraphProvider: options.generatedGraphProvider,
     knipRunner: options.knipRunner,
@@ -204,7 +204,7 @@ function logFailedResult(context: SourceCommandContext): void {
   }
 }
 
-function handlePassedResult(context: SourceCommandContext): true {
+function isHandlePassedResult(context: SourceCommandContext): true {
   if (shouldLogSuccess(context.options)) {
     SourceLogger.success('source check finished', context.elapsed());
   }
@@ -213,7 +213,7 @@ function handlePassedResult(context: SourceCommandContext): true {
   return true;
 }
 
-function handleFailedResult(
+function isHandleFailedResult(
   context: SourceCommandContext,
   sourceIssues: NonNullable<RunSourceCheckOptions['sourceIssues']>,
 ): false {
@@ -224,15 +224,15 @@ function handleFailedResult(
   return false;
 }
 
-export async function executeSourceCommand(
+export async function isExecuteSourceCommand(
   context: SourceCommandContext,
 ): Promise<boolean> {
   const sourceIssues = context.options.sourceIssues ?? [];
-  const passed = await executeSourceCheckImpl(context, sourceIssues);
+  const isPassed = await isExecuteSourceCheckImpl(context, sourceIssues);
 
-  return passed
-    ? handlePassedResult(context)
-    : handleFailedResult(context, sourceIssues);
+  return isPassed
+    ? isHandlePassedResult(context)
+    : isHandleFailedResult(context, sourceIssues);
 }
 
 function createUnexpectedErrorIssue(
@@ -281,7 +281,7 @@ function logUnexpectedError(
   }
 }
 
-export function handleSourceCommandError(
+export function isHandleSourceCommandError(
   context: SourceCommandContext,
   error: unknown,
 ): false {

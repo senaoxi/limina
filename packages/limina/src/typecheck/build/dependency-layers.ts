@@ -4,7 +4,7 @@ function getDependencies(
   return dependencies === undefined ? new Set<number>() : dependencies;
 }
 
-function dependenciesAreCompleted(options: {
+function isDependenciesAreCompleted(options: {
   completed: ReadonlySet<number>;
   dependencies: ReadonlySet<number> | undefined;
 }): boolean {
@@ -23,7 +23,7 @@ function isReadyComponent(options: {
     return false;
   }
 
-  return dependenciesAreCompleted({
+  return isDependenciesAreCompleted({
     completed: options.completed,
     dependencies: options.dependenciesByComponentIndex.get(
       options.componentIndex,

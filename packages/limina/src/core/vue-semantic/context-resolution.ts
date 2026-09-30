@@ -42,8 +42,7 @@ function createResolvedLiteralEntry(options: {
   results: readonly VueResolvedModule[];
 }): readonly (readonly [ts.StringLiteralLike, VueResolvedModule])[] {
   const result = options.results[options.index];
-  if (result === undefined) return [];
-  return [[options.literal, result]];
+  return result === undefined ? [] : [[options.literal, result]];
 }
 
 function getUnavailableReusedNames():

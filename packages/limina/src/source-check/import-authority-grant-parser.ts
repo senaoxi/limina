@@ -26,31 +26,23 @@ interface ParsedInclude {
 }
 
 function isPlainConfigRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  return !Array.isArray(value);
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function createValueMatcher(pattern: string): (value: string) => boolean {
-  if (/[*?[\]{}()!+]/u.test(pattern)) {
-    return picomatch(pattern, { dot: true, posixSlashes: true });
-  }
-
-  return (value) => value === pattern;
+  return /[*?[\]{}()!+]/u.test(pattern)
+    ? picomatch(pattern, { dot: true, posixSlashes: true })
+    : (value) => value === pattern;
 }
 
 function normalizeInclude(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((file) =>
-      typeof file === 'string' ? normalizeWorkspacePattern(file) : '',
-    )
-    .filter((file) => file.length > 0);
+  return Array.isArray(value)
+    ? value
+        .map((file) =>
+          typeof file === 'string' ? normalizeWorkspacePattern(file) : '',
+        )
+        .filter((file) => file.length > 0)
+    : [];
 }
 
 function parseGrantRecord(
@@ -116,8 +108,8 @@ function parseGrantInclude(options: {
   grant: Record<string, unknown>;
 }): ParsedInclude | null {
   const patterns = normalizeInclude(options.grant.include);
-  const configured = options.grant.include !== undefined;
-  if (hasEmptyConfiguredInclude({ configured, patterns })) {
+  const isConfigured = options.grant.include !== undefined;
+  if (hasEmptyConfiguredInclude({ configured: isConfigured, patterns })) {
     addEmptyIncludeFinding({
       base: options.base,
       value: options.grant.include,
@@ -131,16 +123,14 @@ function parseGrantInclude(options: {
     return null;
   }
 
-  return { configured, patterns };
+  return { configured: isConfigured, patterns };
 }
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    return false;
-  }
-
-  return value.every(
-    (entry) => typeof entry === 'string' && entry.trim().length > 0,
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry) => typeof entry === 'string' && entry.trim().length > 0)
   );
 }
 
@@ -221,11 +211,9 @@ function compileGrant(
   }
 
   const include = parseGrantInclude({ base: options, grant });
-  if (!include) {
-    return null;
-  }
-
-  return compileGrantDetails({ base: options, grant, include });
+  return include
+    ? compileGrantDetails({ base: options, grant, include })
+    : null;
 }
 
 function addCompiledGrant(options: {

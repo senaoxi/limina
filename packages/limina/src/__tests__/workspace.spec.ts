@@ -30,7 +30,7 @@ import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortableRelativePath,
@@ -46,16 +46,15 @@ function stringifyConfig(value: unknown): string {
 }
 
 function createWorkspacePackageFixture(
-  rootDir: string,
+  rootDirectory: string,
   relativeDirectory: string,
   manifest: PackageManifest,
 ): WorkspacePackage {
   return {
-    directory: path.join(rootDir, relativeDirectory),
+    directory: path.join(rootDirectory, relativeDirectory),
     manifest,
-    ...(typeof manifest.name === 'string' && manifest.name.trim().length > 0
-      ? { name: manifest.name.trim() }
-      : {}),
+    ...(typeof manifest.name === 'string' &&
+      manifest.name.trim().length > 0 && { name: manifest.name.trim() }),
   };
 }
 
@@ -65,31 +64,29 @@ async function createFixture(files: Record<string, string>): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-workspace-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-workspace-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  const fixturePath = createFixturePathResolver(rootDirectory);
 
   for (const [relativePath, text] of Object.entries(files)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       configPath: fixturePath('limina.config.mjs'),
-      rootDir,
-    },
+      rootDir: rootDirectory,
+    }),
     path: fixturePath,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -147,7 +144,7 @@ describe('collectWorkspacePackages', () => {
         private: true,
       }),
       'packages/b/package.json': stringifyConfig({
-        name: '   ',
+        name: ' '.repeat(3),
         private: true,
       }),
       'packages/z/package.json': stringifyConfig({
@@ -421,17 +418,18 @@ describe('collectWorkspaceRegionBoundaries', () => {
       });
 
       expect(provider).not.toHaveBeenCalled();
+      const expectedBoundaries = [
+        expect.objectContaining({
+          inspection: {
+            reason: 'Nested workspace context is discovered independently.',
+            status: 'excluded',
+          },
+          kind: 'workspace-root',
+          rootDir: fixture.path('packages/a/fixture'),
+        }),
+      ];
       expect(topology.boundaries).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            inspection: {
-              reason: 'Nested workspace context is discovered independently.',
-              status: 'excluded',
-            },
-            kind: 'workspace-root',
-            rootDir: fixture.path('packages/a/fixture'),
-          }),
-        ]),
+        expect.arrayContaining(expectedBoundaries),
       );
       expect(topology.boundaries).toHaveLength(1);
     } finally {

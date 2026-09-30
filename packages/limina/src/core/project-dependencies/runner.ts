@@ -10,6 +10,6 @@ export {
 export type * from './contracts';
 export {
   collectProjectDependencies,
-  projectDependencyCreatesSourceEdge,
+  isProjectDependencyCreatesSourceEdge as projectDependencyCreatesSourceEdge,
 } from './provider';
 export { collectSourceEvidence } from './source-evidence';

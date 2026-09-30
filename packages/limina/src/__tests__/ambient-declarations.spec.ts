@@ -11,11 +11,11 @@ import type { ValidatedWorkspaceContext } from '../core/workspace/validated-cont
 import { createAmbientDeclarationIndex } from '../source-check/ambient-declarations';
 
 async function writeText(
-  rootDir: string,
+  rootDirectory: string,
   relativePath: string,
   text: string,
 ): Promise<string> {
-  const filePath = path.join(rootDir, relativePath);
+  const filePath = path.join(rootDirectory, relativePath);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, text);
   return filePath;
@@ -99,39 +99,40 @@ async function createContext(
     manifest?: WorkspacePackage['manifest'];
   } = {},
 ) {
-  const temporaryDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-ambient-')),
+  const temporaryDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-ambient-'),
   );
-  const rootDir = path.join(temporaryDir, 'workspace');
-  await mkdir(rootDir, { recursive: true });
+  const temporaryDirectory = await realpath(temporaryDirectoryTemporaryPath);
+  const rootDirectory = path.join(temporaryDirectory, 'workspace');
+  await mkdir(rootDirectory, { recursive: true });
   const workspacePackage: WorkspacePackage = {
-    directory: rootDir,
+    directory: rootDirectory,
     manifest: { name: 'root', private: true, ...options.manifest },
     name: 'root',
   };
   const boundaries = options.boundaries ?? [];
   const workspaceContext = createWorkspaceContext({
     boundaries,
-    configRootDir: rootDir,
+    configRootDir: rootDirectory,
     packages: [workspacePackage],
   });
   return {
     boundaries,
-    cleanup: () => rm(temporaryDir, { force: true, recursive: true }),
-    rootDir,
+    cleanup: () => rm(temporaryDirectory, { force: true, recursive: true }),
+    rootDir: rootDirectory,
     workspacePackage,
     workspaceContext,
   };
 }
 
 function createConfig(
-  rootDir: string,
+  rootDirectory: string,
   ambient: NonNullable<
     NonNullable<ResolvedLiminaConfig['source']>['declarations']
   >['ambient'],
 ): ResolvedLiminaConfig {
   return {
-    rootDir,
+    rootDir: rootDirectory,
     source: { declarations: { ambient } },
   } as ResolvedLiminaConfig;
 }

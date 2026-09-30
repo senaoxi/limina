@@ -78,8 +78,10 @@ function isIgnoredResolution(
   problem: Problem,
   ignoredResolutions: readonly string[],
 ): boolean {
-  if (!('resolutionKind' in problem)) return false;
-  return ignoredResolutions.includes(problem.resolutionKind);
+  return (
+    'resolutionKind' in problem &&
+    ignoredResolutions.includes(problem.resolutionKind)
+  );
 }
 
 function shouldKeepProblem(options: {
@@ -87,10 +89,10 @@ function shouldKeepProblem(options: {
   ignoredRuleNames: ReadonlySet<string>;
   problem: Problem;
 }): boolean {
-  if (isIgnoredResolution(options.problem, options.ignoredResolutions)) {
-    return false;
-  }
-  return !options.ignoredRuleNames.has(getAttwProblemRuleName(options.problem));
+  return (
+    !isIgnoredResolution(options.problem, options.ignoredResolutions) &&
+    !options.ignoredRuleNames.has(getAttwProblemRuleName(options.problem))
+  );
 }
 
 function collectRelevantProblems(options: {
@@ -133,11 +135,11 @@ async function executeTypedAttw(options: {
   peer: AttwPeer;
   task: AttwTask | undefined;
 }): Promise<PackageToolCheckResult> {
-  const pkg = options.peer.createPackageFromTarballData(
+  const package_ = options.peer.createPackageFromTarballData(
     options.checkOptions.tarball,
   );
   const result = await options.peer.checkPackage(
-    pkg,
+    package_,
     createCheckOptions(options.checkOptions.config),
   );
   if (!result.types) return finishNoTypes(options);
@@ -146,8 +148,9 @@ async function executeTypedAttw(options: {
     problems: result.problems,
     profile: options.checkOptions.profile,
   });
-  if (problems.length === 0) return finishPassedAttw(options);
-  return finishProblemResult({ ...options, problems });
+  return problems.length === 0
+    ? finishPassedAttw(options)
+    : finishProblemResult({ ...options, problems });
 }
 
 export async function runAttwCheck(

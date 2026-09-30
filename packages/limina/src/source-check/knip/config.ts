@@ -15,7 +15,7 @@ function getIgnoredDependencyName(options: {
   dependencyKey: string;
   ownerIdentity: PackageOwnerIdentity;
 }): string | null {
-  const [importerName, dependencyName] = options.dependencyKey.split('\0');
+  const [importerName, dependencyName] = options.dependencyKey.split('\0', 2);
   if (importerName !== options.ownerIdentity) {
     return null;
   }
@@ -39,7 +39,9 @@ function getIgnoredDependenciesForPackage(options: {
     }
   }
 
-  return dependencies.sort();
+  return dependencies.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 function addIgnoredWorkspaceConfig(options: {
@@ -143,17 +145,17 @@ function addOwnerProjectsToKnipConfig(options: {
 
 export function createVirtualEntryContent(
   sourceFiles: readonly string[],
-  entryDir: string,
+  entryDirectory: string,
 ): string {
   const imports = sourceFiles
     .map((sourceFile) => {
-      const relativePath = toRelativePath(entryDir, sourceFile);
+      const relativePath = toRelativePath(entryDirectory, sourceFile);
       const specifier = relativePath.startsWith('.')
         ? relativePath
         : `./${relativePath}`;
       return `import ${JSON.stringify(specifier)};`;
     })
-    .sort();
+    .sort((left, right) => Number(left > right) - Number(left < right));
 
   return [
     '// Generated temporarily by Limina for Knip source analysis.',

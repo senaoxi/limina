@@ -85,11 +85,9 @@ export function resolveManagedSource(options: {
   filePath: string;
   lookup: ManagedOutputDeclarationLookup | undefined;
 }): ReturnType<ManagedOutputDeclarationLookup['resolve']> {
-  if (options.lookup === undefined) {
-    return null;
-  }
-
-  return options.lookup.resolve(options.filePath, options.checkerName);
+  return options.lookup === undefined
+    ? null
+    : options.lookup.resolve(options.filePath, options.checkerName);
 }
 
 type TypeScriptResolution = ResolvedImportPair['typeScriptResolution'];
@@ -165,11 +163,7 @@ export function resolveTypeScriptPreset(
   const presets = getEffectivePresets(checkerPresets);
   const hasVuePreset = presets.some(isVuePreset);
 
-  if (hasVuePreset) {
-    return null;
-  }
-
-  return presets.find(isTypeScriptPreset) ?? null;
+  return hasVuePreset ? null : (presets.find(isTypeScriptPreset) ?? null);
 }
 
 export function resolveVuePreset(

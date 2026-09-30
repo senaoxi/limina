@@ -5,7 +5,16 @@
     "declaration": false,
     "isolatedDeclarations": false,
     "jsx": "preserve",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "ES2024.Collection",
+      "ES2024.Object",
+      "ES2024.Promise",
+      "ES2025.Collection",
+      "ES2025.Iterator",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "moduleResolution": "bundler",
     "noUnusedLocals": false,
     "stripInternal": false

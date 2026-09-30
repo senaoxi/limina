@@ -8,7 +8,7 @@ import {
 } from 'limina/internal/migration';
 import { readFile } from 'node:fs/promises';
 import { MigrationInputError, normalizeDeclarations } from './declarations';
-import { expectedInputFailure } from './discovery';
+import { isExpectedInputFailure } from './discovery';
 import { assertUnambiguousMigrationText } from './jsonc-validation';
 import { type MigrationPlanningState, planningView } from './planning-state';
 import { readMigrationTarget } from './targets';
@@ -22,7 +22,7 @@ async function capture(
   try {
     state.snapshot.set(file, await readFile(file, 'utf8'));
   } catch (error) {
-    if (!expectedInputFailure(error)) throw error;
+    if (!isExpectedInputFailure(error)) throw error;
     state.isolated.set(file, error.message);
   }
 }
@@ -86,7 +86,7 @@ async function parseTarget(
       }),
     );
   } catch (error) {
-    if (!expectedInputFailure(error)) throw error;
+    if (!isExpectedInputFailure(error)) throw error;
     state.isolated.set(file, error.message);
   }
 }
@@ -170,7 +170,7 @@ async function normalizeTarget(
     normalize(options, file);
     await validateExistingOutput(options, file);
   } catch (error) {
-    if (!expectedInputFailure(error)) throw error;
+    if (!isExpectedInputFailure(error)) throw error;
     isolateDeclaration(options, file, error);
   }
 }
@@ -183,7 +183,8 @@ async function inventoryDeclarations(
     rawPackages: await collectRawWorkspacePackages(state.config),
   });
   const validTargets = new Set(
-    [...state.targets.values()]
+    state.targets
+      .values()
       .filter((target) => !target.isTypeScriptSolution)
       .map((target) => target.configPath),
   );
@@ -193,9 +194,10 @@ async function inventoryDeclarations(
     activatedPackageRoots: workspace.activatedPackageRoots,
   };
   for (const file of state.objects.keys()) await normalizeTarget(options, file);
-  const sourceFiles = [...state.objects.keys()].filter(
-    (file) => !state.targets.get(file)!.isTypeScriptSolution,
-  );
+  const sourceFiles = state.objects
+    .keys()
+    .filter((file) => !state.targets.get(file)!.isTypeScriptSolution)
+    .toArray();
   // All failures are known before pruning remaining incoming declarations.
   for (const file of sourceFiles) normalize(options, file);
 }

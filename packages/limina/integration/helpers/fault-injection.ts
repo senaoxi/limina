@@ -2,6 +2,7 @@ import {
   LIMINA_CHECK_TASK_NAMES,
   type LiminaCheckTaskName,
 } from '../../src/check-reporting/snapshot';
+import { isIntegerNumber } from '../../src/utils/validation/is-integer';
 import {
   FAULT_INJECTION_POINTS,
   type FaultInjection,
@@ -57,7 +58,7 @@ function assertOnlyKeys(
 
   if (unsupported.length > 0) {
     throw new Error(
-      `${label} contains unsupported fields: ${unsupported.sort().join(', ')}.`,
+      `${label} contains unsupported fields: ${unsupported.sort((left, right) => Number(left > right) - Number(left < right)).join(', ')}.`,
     );
   }
 }
@@ -92,7 +93,7 @@ function validateFault(value: unknown, label: string): FaultInjection {
   if (kind === 'process-exit') {
     assertOnlyKeys(value, ['exitCode', 'kind'], label);
     if (
-      !Number.isInteger(value.exitCode) ||
+      !Number.isSafeInteger(value.exitCode) ||
       (value.exitCode as number) < 1 ||
       (value.exitCode as number) > 255
     ) {
@@ -167,11 +168,13 @@ export function validateFaultInjectionDefinition(
     throw new Error(`${label}.fault.stream does not match ${point}.`);
   }
   if (
-    (point === 'process.spawn' ||
-      point === 'process.stderr' ||
-      point === 'process.stdout' ||
-      point === 'process.wait') &&
-    taskValue !== 'command'
+    taskValue !== 'command' &&
+    [
+      'process.spawn',
+      'process.stderr',
+      'process.stdout',
+      'process.wait',
+    ].includes(point)
   ) {
     throw new Error(`${label}.task must be command for ${point}.`);
   }
@@ -190,7 +193,7 @@ export function validateFaultInjectionDefinition(
     );
   }
   const occurrence = value.occurrence ?? 1;
-  if (!Number.isInteger(occurrence) || (occurrence as number) < 1) {
+  if (!isIntegerNumber(occurrence) || (occurrence as number) < 1) {
     throw new Error(`${label}.occurrence must be a positive integer.`);
   }
 
@@ -234,24 +237,31 @@ interface TrackedFault {
   observedOccurrences: number;
 }
 
-export function createInjectedFaultError(
-  fault:
-    | Extract<FaultInjection, { kind: 'throw' }>
-    | Extract<FaultInjection, { kind: 'stream-error' }>,
-): Error {
-  const error =
-    fault.kind === 'throw'
-      ? new Error(fault.message)
-      : new Error(`Injected ${fault.stream} stream failure.`);
-  error.name = fault.kind === 'throw' ? fault.name : 'FaultInjectedStreamError';
-  if (fault.code !== undefined) {
-    Object.defineProperty(error, 'code', {
-      configurable: true,
-      enumerable: true,
-      value: fault.code,
-    });
+type InjectedFault =
+  | Extract<FaultInjection, { kind: 'throw' }>
+  | Extract<FaultInjection, { kind: 'stream-error' }>;
+
+class InjectedFaultError extends Error {
+  constructor(fault: InjectedFault) {
+    super(
+      fault.kind === 'throw'
+        ? fault.message
+        : `Injected ${fault.stream} stream failure.`,
+    );
+    this.name =
+      fault.kind === 'throw' ? fault.name : 'FaultInjectedStreamError';
+    if (fault.code !== undefined) {
+      Object.defineProperty(this, 'code', {
+        configurable: true,
+        enumerable: true,
+        value: fault.code,
+      });
+    }
   }
-  return error;
+}
+
+export function createInjectedFaultError(fault: InjectedFault): Error {
+  return new InjectedFaultError(fault);
 }
 
 export class FaultInjectionController {
@@ -301,12 +311,14 @@ export class FaultInjectionController {
       }
       tracked.observedOccurrences += 1;
       if (
-        !tracked.consumed &&
-        tracked.observedOccurrences === (tracked.definition.occurrence ?? 1)
+        tracked.consumed ||
+        tracked.observedOccurrences !== (tracked.definition.occurrence ?? 1)
       ) {
-        tracked.consumed = true;
-        selected ??= tracked.definition.fault;
+        continue;
       }
+
+      tracked.consumed = true;
+      selected ??= tracked.definition.fault;
     }
 
     return selected;

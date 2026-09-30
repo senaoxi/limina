@@ -17,10 +17,17 @@ import { validateExecutionPlan } from './plan-validation';
 import { createSchedulerContext } from './scheduler-context';
 import { runScheduler } from './scheduler-loop';
 import type { SchedulerContext } from './scheduler-types';
-import type { ExecutionPlan } from './tasks';
+import type { CompletedRunOutcome, ExecutionPlan } from './tasks';
 
 function ignoreError(error: unknown): void {
   String(error);
+}
+
+function finishCheckRecording(
+  recorder: RunExecutionPlanOptions['checkRunRecorder'],
+  outcome: CompletedRunOutcome,
+): void {
+  recorder?.finish(outcome);
 }
 
 export async function runExecutionPlanWithController(
@@ -34,32 +41,38 @@ export async function runExecutionPlanWithController(
     namespace: options.preflight.artifactNamespace,
   });
   const execution = await (async () => {
-    const context = createSchedulerContext(plan, options, controller);
-    await runScheduler(context);
-    const completedOutcome = createCompletedRunOutcome(
-      context.orderedTasks,
-      context.outcomes,
-    );
-    context.state.finish(completedOutcome);
-    options.checkRunRecorder?.finish(completedOutcome);
-    const issues = collectExecutionIssues({
-      orderedTasks: context.orderedTasks,
-      outcomes: context.outcomes,
-      rootDir: options.rootDir,
-    });
-    const source = selectSourceOutcome({
-      orderedTasks: context.orderedTasks,
-      outcomes: context.outcomes,
-    });
-    return { completedOutcome, context, issues, source };
-  })().catch(async (error: unknown) => {
-    await abortCheckAttempt({
-      attempt,
-      error,
-      namespace: options.preflight.artifactNamespace,
-    }).catch(ignoreError);
-    throw error;
-  });
+    try {
+      const context = createSchedulerContext(plan, options, controller);
+      await runScheduler(context);
+      const completedOutcome = createCompletedRunOutcome(
+        context.orderedTasks,
+        context.outcomes,
+      );
+      context.state.finish(completedOutcome);
+      finishCheckRecording(options.checkRunRecorder, completedOutcome);
+      const issues = collectExecutionIssues({
+        orderedTasks: context.orderedTasks,
+        outcomes: context.outcomes,
+        rootDir: options.rootDir,
+      });
+      const source = selectSourceOutcome({
+        orderedTasks: context.orderedTasks,
+        outcomes: context.outcomes,
+      });
+      return { completedOutcome, context, issues, source };
+    } catch (error) {
+      try {
+        await abortCheckAttempt({
+          attempt,
+          error,
+          namespace: options.preflight.artifactNamespace,
+        });
+      } catch (cleanupError) {
+        ignoreError(cleanupError);
+      }
+      throw error;
+    }
+  })();
   await writeSnapshotsPreservingFailure({
     attempt,
     completedState: execution.completedOutcome.state,

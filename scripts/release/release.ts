@@ -45,12 +45,12 @@ interface PublishRunContext {
 function getPackageScriptRunner(
   config: ResolvedReleasePackageConfig,
   scriptName: string,
-  env?: NodeJS.ProcessEnv,
+  environment?: NodeJS.ProcessEnv,
 ): void {
   ReleaseLogger.info(`Running ${config.packageName}:${scriptName}`);
   runCommand(getPnpmCommand(), ['run', scriptName], {
     cwd: REPO_ROOT,
-    env,
+    env: environment,
     stdio: 'inherit',
     logger: ReleaseLogger,
   });
@@ -58,9 +58,9 @@ function getPackageScriptRunner(
 
 function runPackageBuildTarget(
   config: ResolvedReleasePackageConfig,
-  env?: NodeJS.ProcessEnv,
+  environment?: NodeJS.ProcessEnv,
 ): void {
-  getPackageScriptRunner(config, 'build', env);
+  getPackageScriptRunner(config, 'build', environment);
 }
 
 function runPackageArtifactChecks(config: ResolvedReleasePackageConfig): void {
@@ -107,7 +107,7 @@ function runPackageReleaseConsistencyChecks(
   );
 }
 
-function verifyDistVersion(plan: ReleasePlan): void {
+function verifyDistributionVersion(plan: ReleasePlan): void {
   validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
 }
 
@@ -126,17 +126,19 @@ function runStandardPackageReleaseChecks(
       getPackageScriptRunner(config, 'smoke');
     }
   }
-  if (!options.skipBuild) {
-    runPackageBuildTarget(config);
-    verifyDistVersion(plan);
-    runPackageArtifactChecks(config);
-    runPackageReleaseConsistencyChecks(config);
-    runCommand(getNpmCommand(), ['pack', '--dry-run'], {
-      cwd: config.publishDir,
-      stdio: 'inherit',
-      logger: ReleaseLogger,
-    });
+  if (options.skipBuild) {
+    return;
   }
+
+  runPackageBuildTarget(config);
+  verifyDistributionVersion(plan);
+  runPackageArtifactChecks(config);
+  runPackageReleaseConsistencyChecks(config);
+  runCommand(getNpmCommand(), ['pack', '--dry-run'], {
+    cwd: config.publishDir,
+    stdio: 'inherit',
+    logger: ReleaseLogger,
+  });
 }
 
 function runPackageReleaseChecks(
@@ -176,7 +178,7 @@ function warnOnBranchMismatch(options: ReleaseCliOptions): void {
     },
   ).trim();
   const publishBranch = readPublishBranch();
-  if (!options.dryRun && currentBranch !== publishBranch) {
+  if (currentBranch !== publishBranch && !options.dryRun) {
     ReleaseLogger.warn(
       `Publishing from ${currentBranch} while pnpm-workspace.yaml expects ${publishBranch}`,
     );
@@ -268,7 +270,7 @@ function getReleaseTagPrefixes(plans: ReleasePlan[]): string[] {
   return [...new Set(plans.map((plan) => plan.config.tagPrefix))];
 }
 
-function remoteHasTagPrefix(tagPrefix: string): boolean {
+function isRemoteHasTagPrefix(tagPrefix: string): boolean {
   return Boolean(
     runCommand(
       getGitCommand(),
@@ -286,7 +288,7 @@ function refreshGitTags(plans: ReleasePlan[]): void {
   const tagPrefixes = getReleaseTagPrefixes(plans);
 
   for (const tagPrefix of tagPrefixes) {
-    if (!remoteHasTagPrefix(tagPrefix)) {
+    if (!isRemoteHasTagPrefix(tagPrefix)) {
       ReleaseLogger.info(
         `No remote tags found for ${tagPrefix}/*, skipping tag refresh`,
       );
@@ -335,7 +337,7 @@ function warnOnAheadBehind(): void {
     )
       .trim()
       .split('\t')
-      .map((value) => Number.parseInt(value, 10));
+      .map((value) => Number(value));
 
     if (behindCount > 0) {
       ReleaseLogger.warn(
@@ -410,9 +412,9 @@ function createCombinedCommitMessage(plans: ReleasePlan[]): string {
 }
 
 function createGitTags(context: ReleaseRunContext): void {
-  const tagPlans = [
-    ...new Map(context.plans.map((plan) => [plan.gitTag, plan])).values(),
-  ];
+  const tagPlans = new Map(context.plans.map((plan) => [plan.gitTag, plan]))
+    .values()
+    .toArray();
   for (const plan of tagPlans) {
     const tagExists = runCommand(
       getGitCommand(),
@@ -546,14 +548,14 @@ async function resolveReleasePlans(options: ReleaseCliOptions): Promise<{
   options: ReleaseCliOptions;
 }> {
   const availableConfigs = discoverReleasePackages();
-  let usedInteractivePrompts = false;
+  let isUsedInteractivePrompts = false;
 
   const packageConfigs =
     options.packageSelectors.length > 0
       ? resolvePackageSelections(options.packageSelectors, availableConfigs)
       : process.stdin.isTTY
         ? (() => {
-            usedInteractivePrompts = true;
+            isUsedInteractivePrompts = true;
             return promptForPackageSelections(
               availableConfigs,
               'Select package(s) to release',
@@ -608,7 +610,7 @@ async function resolveReleasePlans(options: ReleaseCliOptions): Promise<{
       );
     }
   } else if (process.stdin.isTTY) {
-    usedInteractivePrompts = true;
+    isUsedInteractivePrompts = true;
     const selection = await promptForVersionSelection(sortedConfigs[0]!);
     for (const config of sortedConfigs) {
       plans.push(
@@ -623,7 +625,7 @@ async function resolveReleasePlans(options: ReleaseCliOptions): Promise<{
     );
   }
 
-  if (usedInteractivePrompts && !options.yes) {
+  if (isUsedInteractivePrompts && !options.yes) {
     const executionMode = await promptForExecutionMode();
     if (!executionMode.confirmed) {
       throw new Error('Release cancelled');
@@ -671,13 +673,12 @@ function prepareReleaseFiles(context: ReleaseRunContext): {
 
   for (const plan of context.plans) {
     applyPackageVersion(plan.config, plan.newVersion);
-    if (!context.options.skipChangelog) {
-      const changelogResult = writeChangelogForPlan(plan, {
-        fromTag: context.options.fromTag,
-      });
-      if (changelogResult.changed) {
-        changelogReviewPlans.push(plan);
-      }
+    if (context.options.skipChangelog) continue;
+    const changelogResult = writeChangelogForPlan(plan, {
+      fromTag: context.options.fromTag,
+    });
+    if (changelogResult.changed) {
+      changelogReviewPlans.push(plan);
     }
   }
 
@@ -698,14 +699,14 @@ function prepareReleaseFiles(context: ReleaseRunContext): {
 }
 
 function performPreflightChecks(context: ReleaseRunContext): void {
-  const publishInCurrentProcess = shouldPublishNpmInCurrentRelease(
+  const isPublishInCurrentProcess = shouldPublishNpmInCurrentRelease(
     context.options,
   );
 
   ensureWorkingTreeIsClean(context.options);
   warnOnBranchMismatch(context.options);
   validateReleasePublishPath(context.options);
-  if (publishInCurrentProcess) {
+  if (isPublishInCurrentProcess) {
     ensureProvenancePublishEnvironment(context.options);
     checkNpmAuth(context.options);
   } else {
@@ -816,7 +817,7 @@ function assertReleaseEnabled(): void {
     ) as { devDependencies?: Record<string, string> };
     return manifest.devDependencies?.logaria?.startsWith('link:');
   });
-  if (process.env.LIMINA_RELEASE_ENABLED !== '1' || hasTemporaryLink) {
+  if (hasTemporaryLink || process.env.LIMINA_RELEASE_ENABLED !== '1') {
     throw new Error(
       'Release is closed until independent Logaria consumption, remote CI and the publisher cutover are approved.',
     );

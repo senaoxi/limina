@@ -19,17 +19,19 @@ function isPlainSingleArgumentCall(
 }
 
 function isImportMeta(node: ts.Expression, tsModule: typeof ts): boolean {
-  if (!tsModule.isMetaProperty(node)) return false;
   return (
+    tsModule.isMetaProperty(node) &&
     node.keywordToken === tsModule.SyntaxKind.ImportKeyword &&
     node.name.text === 'meta'
   );
 }
 
 function isImportMetaUrl(node: ts.Expression, tsModule: typeof ts): boolean {
-  if (!tsModule.isPropertyAccessExpression(node)) return false;
-  if (!isPlainUrlAccess(node)) return false;
-  return isImportMeta(node.expression, tsModule);
+  return (
+    tsModule.isPropertyAccessExpression(node) &&
+    isPlainUrlAccess(node) &&
+    isImportMeta(node.expression, tsModule)
+  );
 }
 
 function isPlainUrlAccess(node: ts.PropertyAccessExpression): boolean {
@@ -41,10 +43,10 @@ function isCreateRequireCallee(
   node: ts.Expression,
   tsModule: typeof ts,
 ): boolean {
-  if (!tsModule.isIdentifier(node)) return false;
   return (
+    tsModule.isIdentifier(node) &&
     resolveRequireBinding(graph, node, node.text)?.kind ===
-    'create-require-import'
+      'create-require-import'
   );
 }
 
@@ -53,9 +55,11 @@ function isDirectCreateRequireCall(
   node: ts.Expression,
   tsModule: typeof ts,
 ): boolean {
-  if (!isPlainSingleArgumentCall(node, tsModule)) return false;
-  if (!isImportMetaUrl(node.arguments[0]!, tsModule)) return false;
-  return isCreateRequireCallee(graph, node.expression, tsModule);
+  return (
+    isPlainSingleArgumentCall(node, tsModule) &&
+    isImportMetaUrl(node.arguments[0]!, tsModule) &&
+    isCreateRequireCallee(graph, node.expression, tsModule)
+  );
 }
 
 function isConstDeclaration(
@@ -73,9 +77,11 @@ function hasDirectCreateRequireInitializer(
   node: ts.VariableDeclaration,
   tsModule: typeof ts,
 ): boolean {
-  if (node.initializer === undefined) return false;
-  if (!isConstDeclaration(node, tsModule)) return false;
-  return isDirectCreateRequireCall(graph, node.initializer, tsModule);
+  return (
+    node.initializer !== undefined &&
+    isConstDeclaration(node, tsModule) &&
+    isDirectCreateRequireCall(graph, node.initializer, tsModule)
+  );
 }
 
 function getRequireAliasDeclaration(
@@ -140,9 +146,10 @@ function getBinaryAssignmentTarget(
   node: ts.Node,
   tsModule: typeof ts,
 ): ts.Expression | null {
-  if (!tsModule.isBinaryExpression(node)) return null;
-  if (!isAssignmentOperator(node.operatorToken.kind, tsModule)) return null;
-  return node.left;
+  return !tsModule.isBinaryExpression(node) ||
+    !isAssignmentOperator(node.operatorToken.kind, tsModule)
+    ? null
+    : node.left;
 }
 
 function isUpdateOperator(kind: ts.SyntaxKind, tsModule: typeof ts): boolean {
@@ -156,9 +163,10 @@ function getUnaryAssignmentTarget(
   node: ts.Node,
   tsModule: typeof ts,
 ): ts.Expression | null {
-  if (!isUnaryUpdateExpression(node, tsModule)) return null;
-  if (!isUpdateOperator(node.operator, tsModule)) return null;
-  return node.operand;
+  return !isUnaryUpdateExpression(node, tsModule) ||
+    !isUpdateOperator(node.operator, tsModule)
+    ? null
+    : node.operand;
 }
 
 function isUnaryUpdateExpression(

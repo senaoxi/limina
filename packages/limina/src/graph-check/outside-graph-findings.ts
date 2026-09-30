@@ -7,7 +7,10 @@ import { formatReferences } from '#core/tsconfig/actions';
 import type { WorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
+import {
+  createGraphImportFact,
+  getProjectCheckerName,
+} from './finding-utilities';
 import type {
   GraphImportTargetUnmappedFinding,
   GraphWorkspaceImportOutsideGraphFinding,

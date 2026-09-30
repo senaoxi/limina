@@ -9,7 +9,10 @@ import { formatReferences } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
-import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
+import {
+  createGraphImportFact,
+  getProjectCheckerName,
+} from './finding-utilities';
 import type {
   GraphFinding,
   GraphImportFact,
@@ -64,14 +67,12 @@ function createDependencyEdgeIdentity(options: {
     ),
   };
 
-  if (Object.values(identity).some((value) => !value)) {
-    return null;
-  }
-
-  return identity as DependencyEdgeIdentity;
+  return Object.values(identity).some((value) => !value)
+    ? null
+    : (identity as DependencyEdgeIdentity);
 }
 
-function matchesDependencyEdge(
+function isMatchesDependencyEdge(
   edge: GeneratedTsconfigGraphResult['dependencyEdges'][number],
   identity: DependencyEdgeIdentity,
 ): boolean {
@@ -90,12 +91,11 @@ function hasDependencyEdgeForReferenceExpectation(options: {
   generatedGraph: GeneratedTsconfigGraphResult;
 }): boolean {
   const identity = createDependencyEdgeIdentity(options);
-  if (!identity) {
-    return false;
-  }
-
-  return options.generatedGraph.dependencyEdges.some((edge) =>
-    matchesDependencyEdge(edge, identity),
+  return (
+    identity !== null &&
+    options.generatedGraph.dependencyEdges.some((edge) =>
+      isMatchesDependencyEdge(edge, identity),
+    )
   );
 }
 
@@ -209,10 +209,12 @@ export function addMissingReferencesForProject(options: {
   project: ProjectInfo;
   projectCheckerNamesByPath: ReadonlyMap<string, string>;
 }): void {
-  const expectations = [...options.expectedReferences.values()].sort(
-    (left, right) =>
+  const expectations = options.expectedReferences
+    .values()
+    .toArray()
+    .sort((left, right) =>
       left.targetProjectPath.localeCompare(right.targetProjectPath),
-  );
+    );
 
   for (const expectation of expectations) {
     options.checks.add();

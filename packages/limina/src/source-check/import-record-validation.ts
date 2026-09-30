@@ -41,7 +41,7 @@ interface ImportRecordOptions {
   resolvedFilePath: string | null;
 }
 
-function addOutsideActivatedRegionProblem(options: {
+function isAddOutsideActivatedRegionProblem(options: {
   base: ImportRecordOptions;
   resolvedFilePath: string;
 }): boolean {
@@ -63,7 +63,7 @@ function addOutsideActivatedRegionProblem(options: {
   return true;
 }
 
-function addBoundaryProblemIfNeeded(options: {
+function isAddBoundaryProblemIfNeeded(options: {
   base: ImportRecordOptions;
   resolvedFilePath: string | null;
 }): boolean {
@@ -75,7 +75,7 @@ function addBoundaryProblemIfNeeded(options: {
     options.resolvedFilePath,
   );
   if (!boundary) {
-    return addOutsideActivatedRegionProblem({
+    return isAddOutsideActivatedRegionProblem({
       base: options.base,
       resolvedFilePath: options.resolvedFilePath,
     });
@@ -92,7 +92,7 @@ function addBoundaryProblemIfNeeded(options: {
   return true;
 }
 
-function addRelativeProblemIfNeeded(options: {
+function isAddRelativeProblemIfNeeded(options: {
   base: ImportRecordOptions;
   resolvedFilePath: string | null;
 }): boolean {
@@ -113,7 +113,7 @@ function addRelativeProblemIfNeeded(options: {
   return true;
 }
 
-function addPackageImportIfNeeded(options: {
+function isAddPackageImportIfNeeded(options: {
   base: ImportRecordOptions;
   resolvedFilePath: string | null;
 }): boolean {
@@ -163,11 +163,10 @@ function addImportKindProblem(options: {
   base: ImportRecordOptions;
   resolvedFilePath: string | null;
 }): void {
-  if (addRelativeProblemIfNeeded(options)) {
-    return;
-  }
-
-  if (addPackageImportIfNeeded(options)) {
+  if (
+    isAddRelativeProblemIfNeeded(options) ||
+    isAddPackageImportIfNeeded(options)
+  ) {
     return;
   }
 
@@ -180,7 +179,7 @@ export function addImportRecordProblems(options: ImportRecordOptions): void {
     resolvedFilePath: options.resolvedFilePath,
   };
 
-  if (!addBoundaryProblemIfNeeded(context)) {
+  if (!isAddBoundaryProblemIfNeeded(context)) {
     addImportKindProblem(context);
   }
 }

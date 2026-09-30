@@ -5,8 +5,8 @@ const removedImportAnalysisReason =
 
 export function validateImports(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined) return;
-  addConfigIssue(ctx, ['imports', 'vue'], removedImportAnalysisReason);
+  addConfigIssue(context, ['imports', 'vue'], removedImportAnalysisReason);
 }

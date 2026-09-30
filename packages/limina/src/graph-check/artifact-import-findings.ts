@@ -8,7 +8,10 @@ import type { WorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckIssueLocation } from '../check-reporting/snapshot';
-import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
+import {
+  createGraphImportFact,
+  getProjectCheckerName,
+} from './finding-utilities';
 import type { GraphWorkspaceImportOutsideGraphFinding } from './findings';
 import type { ImportTargetOptions } from './import-target-types';
 
@@ -18,11 +21,10 @@ interface NamedWorkspacePackage extends WorkspacePackage {
 
 function isGraphSourceDependency(options: ImportTargetOptions): boolean {
   const targetPackage = options.resolution.targetPackageForGraph;
-  if (!targetPackage) {
-    return false;
-  }
-
-  return shouldResolveThroughGraph(options.resolution.importer, targetPackage);
+  return (
+    Boolean(targetPackage) &&
+    shouldResolveThroughGraph(options.resolution.importer, targetPackage)
+  );
 }
 
 function isBuildArtifactCandidate(options: ImportTargetOptions): boolean {
@@ -54,39 +56,31 @@ function getBuildArtifactPackage(
   }
 
   const targetPackage = options.resolution.targetPackageForGraph;
-  if (!targetPackage) {
-    return null;
-  }
-
-  return asNamedPackage(targetPackage);
+  return targetPackage ? asNamedPackage(targetPackage) : null;
 }
 
 function getReferencedProjectPath(
   options: ImportTargetOptions,
 ): string | undefined {
   const targetPackage = options.resolution.targetPackageForGraph;
-  if (!targetPackage) {
-    return undefined;
-  }
-
-  return (
-    inferPackageProject(
-      options.resolution.resolvedFilePath,
-      targetPackage,
-      options.context.projectPaths,
-    ) ?? undefined
-  );
+  return targetPackage
+    ? (inferPackageProject(
+        options.resolution.resolvedFilePath,
+        targetPackage,
+        options.context.projectPaths,
+      ) ?? undefined)
+    : undefined;
 }
 
 function hasProjectReference(
   options: ImportTargetOptions,
   referencedProjectPath: string | undefined,
 ): boolean {
-  if (!referencedProjectPath) {
-    return false;
-  }
-
-  return options.project.references.has(referencedProjectPath);
+  return (
+    referencedProjectPath !== undefined &&
+    referencedProjectPath.length > 0 &&
+    options.project.references.has(referencedProjectPath)
+  );
 }
 
 function getBuildArtifactTitle(hasReference: boolean): string {
@@ -214,7 +208,7 @@ function createBuildArtifactFinding(options: {
   };
 }
 
-export function addBuildArtifactImportProblem(
+export function isAddBuildArtifactImportProblem(
   options: ImportTargetOptions,
 ): boolean {
   const targetPackage = getBuildArtifactPackage(options);

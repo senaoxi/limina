@@ -29,13 +29,13 @@ function isProcessTreeRunning(child: ChildProcess): boolean {
 }
 
 function ignoreTaskkillError(): undefined {
-  return undefined;
+  // Child termination is best-effort; its bounded liveness loop owns failure reporting.
 }
 
-function runTaskkill(pid: number, force: boolean): void {
+function runTaskkill(pid: number, isForce: boolean): void {
   const taskkill = spawn(
     'taskkill',
-    ['/pid', String(pid), '/T', ...(force ? ['/F'] : [])],
+    ['/pid', String(pid), '/T', ...(isForce ? ['/F'] : [])],
     { stdio: 'ignore', windowsHide: true },
   );
   taskkill.on('error', ignoreTaskkillError);
@@ -126,7 +126,6 @@ export function waitForChildProcessTreeTermination(
 }
 
 export function terminateChildProcessTree(child: ChildProcess): void {
-  if (terminatingChildren.has(child)) return;
-  if (!isProcessTreeRunning(child)) return;
+  if (terminatingChildren.has(child) || !isProcessTreeRunning(child)) return;
   terminatingChildren.set(child, terminateAndWait(child));
 }

@@ -50,11 +50,9 @@ function getSyntaxName(node: SyntaxNode): string | undefined {
     return node.name;
   }
 
-  if (node.type === 'Literal' && typeof node.value === 'string') {
-    return node.value;
-  }
-
-  return undefined;
+  return node.type === 'Literal' && typeof node.value === 'string'
+    ? node.value
+    : undefined;
 }
 
 function getMemberPropertyName(node: SyntaxNode): string | undefined {
@@ -66,11 +64,9 @@ function getCallName(node: CallExpressionNode): string | undefined {
     return node.callee.name;
   }
 
-  if (node.callee.type === 'MemberExpression') {
-    return getMemberPropertyName(node.callee);
-  }
-
-  return undefined;
+  return node.callee.type === 'MemberExpression'
+    ? getMemberPropertyName(node.callee)
+    : undefined;
 }
 
 function getMemberRootName(node: SyntaxNode): string | undefined {
@@ -110,7 +106,7 @@ function isExpectCall(node: Rule.Node): node is CallExpressionNode {
   );
 }
 
-function isRawFixtureRootDir(node: MemberExpressionNode): boolean {
+function isRawFixtureRootDirectory(node: MemberExpressionNode): boolean {
   return (
     node.object.type === 'Identifier' &&
     node.object.name === 'fixture' &&
@@ -136,8 +132,8 @@ function isUnsafeComparison(node: Rule.Node): boolean {
     }
 
     if (
-      isExpectCall(current) &&
       child === node &&
+      isExpectCall(current) &&
       current.arguments.includes(child as CallArgument)
     ) {
       isDirectExpectValue = true;
@@ -199,25 +195,15 @@ export const portablePathComparison: Rule.RuleModule = {
     }
 
     function isNativePathBuilderCall(node: CallExpressionNode): boolean {
-      if (node.callee.type === 'Identifier') {
-        return namedPathBuilders.has(node.callee.name);
-      }
-
-      if (node.callee.type !== 'MemberExpression') {
-        return false;
-      }
-
-      if (
-        node.callee.object.type === 'MemberExpression' &&
-        getMemberPropertyName(node.callee.object) === 'posix'
-      ) {
-        return false;
-      }
-
-      return (
-        nativePathBuilders.has(getMemberPropertyName(node.callee) ?? '') &&
-        pathNamespaces.has(getMemberRootName(node.callee) ?? '')
-      );
+      return node.callee.type === 'MemberExpression'
+        ? !(
+            node.callee.object.type === 'MemberExpression' &&
+            getMemberPropertyName(node.callee.object) === 'posix'
+          ) &&
+            nativePathBuilders.has(getMemberPropertyName(node.callee) ?? '') &&
+            pathNamespaces.has(getMemberRootName(node.callee) ?? '')
+        : node.callee.type === 'Identifier' &&
+            namedPathBuilders.has(node.callee.name);
     }
 
     function checkCallExpression(node: CallExpressionNode): void {
@@ -232,7 +218,7 @@ export const portablePathComparison: Rule.RuleModule = {
     }
 
     function checkMemberExpression(node: MemberExpressionNode): void {
-      if (!isRawFixtureRootDir(node)) {
+      if (!isRawFixtureRootDirectory(node)) {
         return;
       }
 

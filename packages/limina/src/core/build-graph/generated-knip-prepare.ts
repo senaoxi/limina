@@ -204,14 +204,12 @@ function compareDiagnostics(
     right.packageJsonPath,
   );
 
-  if (pathOrder !== 0) {
-    return pathOrder;
-  }
-
-  return compareCodeUnits(
-    getDiagnosticScriptName(left),
-    getDiagnosticScriptName(right),
-  );
+  return pathOrder === 0
+    ? compareCodeUnits(
+        getDiagnosticScriptName(left),
+        getDiagnosticScriptName(right),
+      )
+    : pathOrder;
 }
 
 function createPrepareContext(options: {

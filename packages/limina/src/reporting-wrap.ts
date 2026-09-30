@@ -31,14 +31,12 @@ export function splitDetailBlocks(
     return [];
   }
 
-  if (typeof details !== 'string') {
-    return [[...details]];
-  }
-
-  return details
-    .split(/\n{2,}/u)
-    .map((block) => block.split('\n'))
-    .filter((lines) => lines.some((line) => line.trim().length > 0));
+  return typeof details === 'string'
+    ? details
+        .split(/\n{2,}/u)
+        .map((block) => block.split('\n'))
+        .filter((lines) => lines.some((line) => line.trim().length > 0))
+    : [[...details]];
 }
 
 export function getBlockContentWidth(blockWidth: number): number {
@@ -86,10 +84,12 @@ function splitFixedWidth(value: string, width: number): string[] {
 }
 
 function flushPathChunk(state: PathChunkState): void {
-  if (state.current.length > 0) {
-    state.chunks.push(state.current);
-    state.current = '';
+  if (state.current.length === 0) {
+    return;
   }
+
+  state.chunks.push(state.current);
+  state.current = '';
 }
 
 function appendOversizedPathPart(options: {
@@ -174,7 +174,7 @@ function startWrapLine(state: WrapState, word: string, width: number): void {
   state.current = word;
 }
 
-function tryStartWrapLine(
+function isTryStartWrapLine(
   state: WrapState,
   word: string,
   width: number,
@@ -187,7 +187,7 @@ function tryStartWrapLine(
   return true;
 }
 
-function tryAppendToWrapLine(
+function isTryAppendToWrapLine(
   state: WrapState,
   word: string,
   width: number,
@@ -201,11 +201,10 @@ function tryAppendToWrapLine(
 }
 
 function appendWrapWord(state: WrapState, word: string, width: number): void {
-  if (tryStartWrapLine(state, word, width)) {
-    return;
-  }
-
-  if (tryAppendToWrapLine(state, word, width)) {
+  if (
+    isTryStartWrapLine(state, word, width) ||
+    isTryAppendToWrapLine(state, word, width)
+  ) {
     return;
   }
 
@@ -254,12 +253,7 @@ export function wrapDetailLine(line: string, contentWidth: number): string[] {
     contentWidth - prefix.firstPrefix.length,
   );
 
-  if (prefix.content.length <= continuationWidth) {
-    return [line];
-  }
-
-  return applyWrapPrefixes(
-    wrapContent(prefix.content, continuationWidth),
-    prefix,
-  );
+  return prefix.content.length <= continuationWidth
+    ? [line]
+    : applyWrapPrefixes(wrapContent(prefix.content, continuationWidth), prefix);
 }

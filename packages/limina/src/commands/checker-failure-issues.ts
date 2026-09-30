@@ -32,11 +32,9 @@ export function getCheckerFailureFilePath(options: {
   configPath?: string;
   cwd?: string;
 }): string {
-  if (options.configPath === undefined) {
-    return options.config.configPath;
-  }
-
-  return path.resolve(options.cwd ?? process.cwd(), options.configPath);
+  return options.configPath === undefined
+    ? options.config.configPath
+    : path.resolve(options.cwd ?? process.cwd(), options.configPath);
 }
 
 function getDefaultFailureCode(
@@ -63,11 +61,9 @@ function getFailureCode(
     return LIMINA_CHECK_ISSUE_CODES.checkerPeerDependencyMissing;
   }
 
-  if (options.failureKind === 'target-selection') {
-    return LIMINA_CHECK_ISSUE_CODES.checkerTargetSelectionFailed;
-  }
-
-  return getDefaultFailureCode(options.task);
+  return options.failureKind === 'target-selection'
+    ? LIMINA_CHECK_ISSUE_CODES.checkerTargetSelectionFailed
+    : getDefaultFailureCode(options.task);
 }
 
 function getVerifyCommand(task: CheckerFailureIssueOptions['task']): string {
@@ -85,11 +81,9 @@ function getVisibleProblems(
 function createProblemEvidence(
   problems: readonly string[] | undefined,
 ): LiminaCheckIssue['evidence'] {
-  if (problems === undefined || problems.length === 0) {
-    return undefined;
-  }
-
-  return [{ label: 'checker diagnostic', lines: [...problems] }];
+  return problems === undefined || problems.length === 0
+    ? undefined
+    : [{ label: 'checker diagnostic', lines: [...problems] }];
 }
 
 function createFallbackFailureIssue(
@@ -181,19 +175,19 @@ function createFallbackFailureIssues(
   options: CheckerFailureIssueOptions,
 ): LiminaCheckIssue[] {
   const checkerNames = options.fallbackCheckerNames ?? [];
-  if (checkerNames.length === 0) return [createFallbackFailureIssue(options)];
-  return checkerNames.map((checkerName) =>
-    createFallbackFailureIssue(options, checkerName),
-  );
+  return checkerNames.length === 0
+    ? [createFallbackFailureIssue(options)]
+    : checkerNames.map((checkerName) =>
+        createFallbackFailureIssue(options, checkerName),
+      );
 }
 
 export function createCheckerFailureIssues(
   options: CheckerFailureIssueOptions,
 ): LiminaCheckIssue[] {
-  if (options.failedTargets.length === 0) {
-    return createFallbackFailureIssues(options);
-  }
-  return options.failedTargets.map((target) =>
-    createTargetFailureIssue(target, options),
-  );
+  return options.failedTargets.length === 0
+    ? createFallbackFailureIssues(options)
+    : options.failedTargets.map((target) =>
+        createTargetFailureIssue(target, options),
+      );
 }

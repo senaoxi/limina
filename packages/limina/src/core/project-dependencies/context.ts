@@ -61,12 +61,12 @@ function createContext(options: {
 
 function packageRootsForFiles(
   fileNames: readonly string[],
-  packageRootDir: string,
+  packageRootDirectory: string,
 ): Map<string, string> {
   return new Map(
     fileNames.map((fileName) => [
       normalizeAbsolutePath(fileName),
-      packageRootDir,
+      packageRootDirectory,
     ]),
   );
 }

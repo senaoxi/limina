@@ -28,10 +28,10 @@ const liminaTsconfigSchemaPath = [
   'tsconfig-schema.json',
 ] as const;
 
-function createFormatHost(rootDir: string): ts.FormatDiagnosticsHost {
+function createFormatHost(rootDirectory: string): ts.FormatDiagnosticsHost {
   return {
     getCanonicalFileName: (fileName) => fileName,
-    getCurrentDirectory: () => rootDir,
+    getCurrentDirectory: () => rootDirectory,
     getNewLine: () => '\n',
   };
 }
@@ -50,7 +50,7 @@ function readVirtualOrDiskFile(
 }
 
 export function readJsonConfigFile(
-  rootDir: string,
+  rootDirectory: string,
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): JsonObject {
@@ -59,20 +59,20 @@ export function readJsonConfigFile(
   );
   if (result.error !== undefined) {
     throw new TsconfigInputError(
-      ts.formatDiagnostic(result.error, createFormatHost(rootDir)),
+      ts.formatDiagnostic(result.error, createFormatHost(rootDirectory)),
     );
   }
   return result.config as JsonObject;
 }
 
 export function createLiminaTsconfigSchemaPath(
-  rootDir: string,
+  rootDirectory: string,
   configPath: string,
 ): string {
   const relativePath = toPosixPath(
     path.relative(
       path.dirname(configPath),
-      path.join(rootDir, ...liminaTsconfigSchemaPath),
+      path.join(rootDirectory, ...liminaTsconfigSchemaPath),
     ),
   );
   return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
@@ -97,9 +97,9 @@ export function createExtensionPattern(extensions: string[]): RegExp {
 
 export function isLiminaArtifactPath(
   configPath: string,
-  rootDir: string,
+  rootDirectory: string,
 ): boolean {
-  const candidatePath = path.relative(rootDir, configPath);
+  const candidatePath = path.relative(rootDirectory, configPath);
   return candidatePath.split(/[\\/]/u).includes('.limina');
 }
 
@@ -132,10 +132,9 @@ function createProjectConfigCandidate(
   baseDirectory: string,
   value: string | undefined,
 ): string {
-  if (value === undefined) {
-    return path.join(baseDirectory, 'tsconfig.json');
-  }
-  return path.resolve(baseDirectory, value);
+  return value === undefined
+    ? path.join(baseDirectory, 'tsconfig.json')
+    : path.resolve(baseDirectory, value);
 }
 
 function isExistingDirectory(candidate: string): boolean {
@@ -161,11 +160,10 @@ export function resolveReferencePath(
     path.dirname(configPath),
     referencePath,
   );
-  if (path.extname(absoluteReferencePath) === '.json') {
-    return normalizeAbsolutePath(absoluteReferencePath);
-  }
   return normalizeAbsolutePath(
-    path.join(absoluteReferencePath, 'tsconfig.json'),
+    path.extname(absoluteReferencePath) === '.json'
+      ? absoluteReferencePath
+      : path.join(absoluteReferencePath, 'tsconfig.json'),
   );
 }
 
@@ -175,10 +173,7 @@ export function isDtsConfigPath(configPath: string): boolean {
 
 function readSourceConfigValue(configObject: JsonObject): unknown {
   const liminaOptions = configObject.liminaOptions;
-  if (!isPlainRecord(liminaOptions)) {
-    return undefined;
-  }
-  return liminaOptions.sourceConfig;
+  return isPlainRecord(liminaOptions) ? liminaOptions.sourceConfig : undefined;
 }
 
 export function getDtsCompanionConfigPath(dtsConfigPath: string): string {
@@ -204,7 +199,7 @@ export function isBuildGraphConfigPath(configPath: string): boolean {
   return buildGraphConfigFilePattern.test(path.basename(configPath));
 }
 
-function matchesReservedTypeScriptConfig(fileName: string): boolean {
+function isMatchesReservedTypeScriptConfig(fileName: string): boolean {
   return [
     dtsConfigFilePattern,
     buildGraphConfigFilePattern,
@@ -217,16 +212,16 @@ export function isOrdinaryTypecheckConfigPath(configPath: string): boolean {
   const fileName = path.basename(configPath);
   return (
     tsconfigFilePattern.test(fileName) &&
-    !matchesReservedTypeScriptConfig(fileName)
+    !isMatchesReservedTypeScriptConfig(fileName)
   );
 }
 
 export function isOrdinarySourceTypecheckConfigPath(
   configPath: string,
-  rootDir: string,
+  rootDirectory: string,
 ): boolean {
-  if (!isOrdinaryTypecheckConfigPath(configPath)) {
-    return false;
-  }
-  return !isLiminaArtifactPath(configPath, rootDir);
+  return (
+    isOrdinaryTypecheckConfigPath(configPath) &&
+    !isLiminaArtifactPath(configPath, rootDirectory)
+  );
 }

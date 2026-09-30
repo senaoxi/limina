@@ -32,8 +32,9 @@ export function findSemanticModuleRecord(options: {
   sourceFile: ts.SourceFile;
 }): ImportRecord | undefined {
   const exact = findImportRecordByLiteral(options);
-  if (exact !== undefined) return exact;
-  return findJsxRecord(options.literal, options.records);
+  return exact === undefined
+    ? findJsxRecord(options.literal, options.records)
+    : exact;
 }
 
 function findJsxRecord(
@@ -58,16 +59,16 @@ export function getStandaloneModuleLocation(options: {
     sourceFile,
     tsModule: options.tsModule,
   });
-  if (literal === null) return null;
-  return { literal, sourceFile };
+  return literal === null ? null : { literal, sourceFile };
 }
 
 function getModuleSourceFile(options: {
   getSourceFile(fileName: string): ts.SourceFile | undefined;
   importRecord: ImportRecord;
 }): ts.SourceFile | undefined {
-  if (!isModuleImportRecord(options.importRecord)) return undefined;
-  return options.getSourceFile(options.importRecord.filePath);
+  return isModuleImportRecord(options.importRecord)
+    ? options.getSourceFile(options.importRecord.filePath)
+    : undefined;
 }
 
 export function createConfiguredJsxRecord(options: {

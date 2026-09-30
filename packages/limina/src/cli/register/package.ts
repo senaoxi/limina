@@ -1,5 +1,5 @@
 import type { cac } from 'cac';
-import { runPackageCheck } from '../../commands/package';
+import { isRunPackageCheck } from '../../commands/package';
 import { runReleaseCheck } from '../../commands/release';
 import { LiminaPreflightManager } from '../../preflight';
 import type { LiminaCheckIssue } from '../../source-check/snapshot';
@@ -10,7 +10,7 @@ import {
   parsePackageNames,
   parsePackageTool,
 } from '../parse';
-import { runStandaloneIssueFlow } from '../standalone';
+import { isRunStandaloneIssueFlow } from '../standalone';
 import type { CheckFlags, PackageFlags } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -20,11 +20,11 @@ function assertCheckAction(action: string, domain: string): void {
   throw new Error(`Unknown ${domain} action "${action}". Expected check.`);
 }
 
-async function executePackageCheck(options: {
+async function isExecutePackageCheck(options: {
   flags: PackageFlags;
   flow: ReturnType<typeof createCliFlow>;
   registerSession: Parameters<
-    typeof runStandaloneIssueFlow
+    typeof isRunStandaloneIssueFlow
   >[0]['execute'] extends (register: infer Register) => Promise<boolean>
     ? Register
     : never;
@@ -45,7 +45,7 @@ async function executePackageCheck(options: {
     task: 'package:check',
     title: 'Package check',
   });
-  return runPackageCheck({
+  return isRunPackageCheck({
     attwProfile: parsePackageAttwProfile(options.flags.attwProfile),
     clearScreen: false,
     config,
@@ -69,23 +69,23 @@ async function runPackageAction(
 ): Promise<void> {
   assertCheckAction(action, 'package');
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: (registerSession) =>
-      executePackageCheck({ flags, flow, registerSession }),
+      isExecutePackageCheck({ flags, flow, registerSession }),
     flow,
     messages: {
       failed: 'limina package failed',
       passed: 'limina package passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
-async function executeReleaseCheck(options: {
+async function isExecuteReleaseCheck(options: {
   flags: CheckFlags;
   flow: ReturnType<typeof createCliFlow>;
   registerSession: Parameters<
-    typeof runStandaloneIssueFlow
+    typeof isRunStandaloneIssueFlow
   >[0]['execute'] extends (register: infer Register) => Promise<boolean>
     ? Register
     : never;
@@ -128,16 +128,16 @@ async function runReleaseAction(
 ): Promise<void> {
   assertCheckAction(action, 'release');
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: (registerSession) =>
-      executeReleaseCheck({ flags, flow, registerSession }),
+      isExecuteReleaseCheck({ flags, flow, registerSession }),
     flow,
     messages: {
       failed: 'limina release failed',
       passed: 'limina release passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 export function registerPackageCommands(cli: LiminaCli): void {

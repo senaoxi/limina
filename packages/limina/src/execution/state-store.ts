@@ -105,9 +105,9 @@ export class ExecutionStateStore {
     }
 
     if (
-      [...this.#states.values()].some(
-        (taskState) => taskState === 'planned' || taskState === 'running',
-      )
+      this.#states
+        .values()
+        .some((taskState) => taskState === 'planned' || taskState === 'running')
     ) {
       throw new Error('Cannot finish execution with non-terminal tasks.');
     }

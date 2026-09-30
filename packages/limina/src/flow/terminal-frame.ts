@@ -16,7 +16,7 @@ export interface FlowWrite {
   ): boolean;
 }
 
-export type FlowWriteArgs =
+export type FlowWriteArguments =
   | [chunk: FlowWritableChunk, callback?: FlowWriteCallback]
   | [
       chunk: FlowWritableChunk,
@@ -89,26 +89,24 @@ export function patchWriteStream(
   const originalWrite = stream.write;
   const forwardWrite = originalWrite.bind(stream);
 
-  const patchedWrite = (...args: FlowWriteArgs): boolean => {
-    onWrite(args[0]);
+  const isPatchedWrite = (...arguments_: FlowWriteArguments): boolean => {
+    onWrite(arguments_[0]);
 
-    return writeWithFlowArgs(forwardWrite, args);
+    return isWriteWithFlowArguments(forwardWrite, arguments_);
   };
 
-  stream.write = patchedWrite as FlowWrite;
+  stream.write = isPatchedWrite as FlowWrite;
 
   return () => {
     stream.write = originalWrite;
   };
 }
 
-export function writeWithFlowArgs(
-  write: FlowWrite,
-  args: FlowWriteArgs,
+export function isWriteWithFlowArguments(
+  isWrite: FlowWrite,
+  arguments_: FlowWriteArguments,
 ): boolean {
-  if (typeof args[1] === 'string') {
-    return write(args[0], args[1], args[2]);
-  }
-
-  return write(args[0], args[1]);
+  return typeof arguments_[1] === 'string'
+    ? isWrite(arguments_[0], arguments_[1], arguments_[2])
+    : isWrite(arguments_[0], arguments_[1]);
 }

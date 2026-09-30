@@ -29,8 +29,7 @@ function createRestoreOperation(state: FlowReporterState): () => void {
 
 export function beginTerminalTracking(state: FlowReporterState): void {
   state.trackedTaskCount += 1;
-  if (state.trackedTaskCount > 1) return;
-  if (!state.tracksProcessWrites) return;
+  if (state.trackedTaskCount > 1 || !state.tracksProcessWrites) return;
   state.restoreWriteStreams = createRestoreOperation(state);
 }
 
@@ -52,6 +51,6 @@ export function clearInteractiveTaskBlock(options: {
     redrawInteractiveHistory(options.state);
     return;
   }
-  writeControl(options.state, `\r\u001B[${linesToClear}A\u001B[J`);
+  writeControl(options.state, `\r\u{1B}[${linesToClear}A\u{1B}[J`);
   options.state.terminalFrame.setLineCount(options.startLine);
 }

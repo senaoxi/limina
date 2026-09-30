@@ -39,10 +39,11 @@ function collectReferencePaths(options: {
   configPath: string;
   references: unknown;
 }): string[] {
-  if (!Array.isArray(options.references)) return [];
-  return options.references.flatMap((reference) =>
-    collectReferencePath({ configPath: options.configPath, reference }),
-  );
+  return Array.isArray(options.references)
+    ? options.references.flatMap((reference) =>
+        collectReferencePath({ configPath: options.configPath, reference }),
+      )
+    : [];
 }
 
 function inspectVirtualConfig(options: {
@@ -88,15 +89,18 @@ function collectVirtualProjectConfigs(
     visited.add(configPath);
     processVirtualConfig({ configPath, generatedFiles, pending, projects });
   }
-  return [...projects].sort();
+  return [...projects].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 function resolveConfigDirectory(
   value: unknown,
   configPath: string,
 ): string | null {
-  if (typeof value !== 'string') return null;
-  return normalizeAbsolutePath(path.resolve(path.dirname(configPath), value));
+  return typeof value === 'string'
+    ? normalizeAbsolutePath(path.resolve(path.dirname(configPath), value))
+    : null;
 }
 
 function createProjectDirectories(options: {
@@ -104,11 +108,17 @@ function createProjectDirectories(options: {
   outDir: unknown;
   rootDir: unknown;
 }): ProjectDirectories | null {
-  const outDir = resolveConfigDirectory(options.outDir, options.configPath);
-  const rootDir = resolveConfigDirectory(options.rootDir, options.configPath);
-  if (outDir === null) return null;
-  if (rootDir === null) return null;
-  return { outDir, rootDir };
+  const outDirectory = resolveConfigDirectory(
+    options.outDir,
+    options.configPath,
+  );
+  const rootDirectory = resolveConfigDirectory(
+    options.rootDir,
+    options.configPath,
+  );
+  return outDirectory === null || rootDirectory === null
+    ? null
+    : { outDir: outDirectory, rootDir: rootDirectory };
 }
 
 function getCompilerDirectoryValues(config: {
@@ -246,5 +256,7 @@ export function collectGeneratedArtifactSourceEntryPatterns(options: {
       sourceFiles,
     }),
   );
-  return [...new Set(patterns)].sort();
+  return [...new Set(patterns)].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }

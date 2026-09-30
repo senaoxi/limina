@@ -38,17 +38,17 @@ export function resolveKnipCliPath(
 }
 
 function appendOptionalArgument(
-  args: string[],
+  arguments_: string[],
   name: string,
   value: string | undefined,
 ): void {
   if (value !== undefined) {
-    args.push(name, value);
+    arguments_.push(name, value);
   }
 }
 
 function appendWorkspaceArguments(
-  args: string[],
+  arguments_: string[],
   workspaceNames: readonly string[] | undefined,
 ): void {
   if (workspaceNames === undefined) {
@@ -56,12 +56,12 @@ function appendWorkspaceArguments(
   }
 
   for (const workspaceName of workspaceNames) {
-    args.push('--workspace', workspaceName);
+    arguments_.push('--workspace', workspaceName);
   }
 }
 
 function createKnipArguments(options: KnipCliInvocation): string[] {
-  const args = [
+  const arguments_ = [
     resolveKnipCliPath(),
     '--directory',
     options.rootDir,
@@ -69,18 +69,18 @@ function createKnipArguments(options: KnipCliInvocation): string[] {
     options.configPath,
   ];
   for (const issueType of options.include) {
-    args.push('--include', issueType);
+    arguments_.push('--include', issueType);
   }
-  appendOptionalArgument(args, '--tsConfig', options.tsConfigFile);
-  appendWorkspaceArguments(args, options.workspaceNames);
-  args.push(
+  appendOptionalArgument(arguments_, '--tsConfig', options.tsConfigFile);
+  appendWorkspaceArguments(arguments_, options.workspaceNames);
+  arguments_.push(
     '--reporter',
     'json',
     '--no-exit-code',
     '--no-progress',
     '--no-config-hints',
   );
-  return args;
+  return arguments_;
 }
 
 function createKnipFailure(options: {
@@ -103,11 +103,11 @@ function createKnipFailure(options: {
 export const runKnipCli: KnipCliRunner = (
   options: KnipCliInvocation,
 ): Promise<string> => {
-  const args = createKnipArguments(options);
+  const arguments_ = createKnipArguments(options);
   return new Promise((resolve, reject) => {
     execFile(
       process.execPath,
-      args,
+      arguments_,
       {
         cwd: options.rootDir,
         encoding: 'utf8',
@@ -120,7 +120,7 @@ export const runKnipCli: KnipCliRunner = (
       },
       (error, stdout, stderr) => {
         if (error !== null) {
-          reject(createKnipFailure({ args, error, stderr }));
+          reject(createKnipFailure({ args: arguments_, error, stderr }));
           return;
         }
 

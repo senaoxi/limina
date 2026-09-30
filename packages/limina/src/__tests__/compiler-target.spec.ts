@@ -4,7 +4,7 @@ import path from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { readExplicitSourceCompilerTarget } from '../core/build-graph/generated/compiler-target';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 describe('effective output compiler target', () => {
@@ -49,10 +49,11 @@ describe('effective output compiler target', () => {
   ])(
     'agrees with TypeScript for $name',
     async ({ right, bases, own, expected }) => {
-      const rootDir = await realpath(
-        await mkdtemp(path.join(tmpdir(), 'limina-target-')),
+      const temporaryDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-target-'),
       );
-      const fixturePath = createFixturePathResolver(rootDir);
+      const rootDirectory = await realpath(temporaryDirectory);
+      const fixturePath = createFixturePathResolver(rootDirectory);
       const configs = {
         'base.json': { compilerOptions: { target: 'ES2020' } },
         'bridge.json': { extends: './base.json' },
@@ -63,12 +64,12 @@ describe('effective output compiler target', () => {
         'b.json': right,
         'tsconfig.json': {
           extends: bases,
-          compilerOptions: { types: [], ...(own ? { target: own } : {}) },
+          compilerOptions: { types: [], ...(own && { target: own }) },
           files: ['index.ts'],
         },
       };
       try {
-        await mkdir(rootDir, { recursive: true });
+        await mkdir(rootDirectory, { recursive: true });
         for (const [file, value] of Object.entries(configs)) {
           await writeFile(fixturePath(file), JSON.stringify(value));
         }
@@ -80,28 +81,27 @@ describe('effective output compiler target', () => {
           {},
           {
             ...ts.sys,
-            onUnRecoverableConfigFileDiagnostic: (diagnostic) =>
-              diagnostics.push(diagnostic),
+            onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+              diagnostics.push(diagnostic);
+            },
           },
         );
         expect(diagnostics).toEqual([]);
         expect(parsed?.errors).toEqual([]);
         expect(ts.ScriptTarget[parsed!.options.target!]).toBe(expected);
+        const fixtureConfig = withFixtureGovernanceRoot({
+          rootDir: rootDirectory,
+          configPath: fixturePath('limina.config.mts'),
+          config: {},
+        });
         expect(
           readExplicitSourceCompilerTarget({
-            config: {
-              get governanceRoot() {
-                return resolveFixtureGovernanceRoot(this);
-              },
-              rootDir,
-              configPath: fixturePath('limina.config.mts'),
-              config: {},
-            },
+            config: fixtureConfig,
             configPath,
           }),
         ).toBe(expected);
       } finally {
-        await rm(rootDir, { recursive: true, force: true });
+        await rm(rootDirectory, { recursive: true, force: true });
       }
     },
   );

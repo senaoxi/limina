@@ -91,13 +91,11 @@ function renderHistoryEntry(options: {
     return [options.entry.line];
   }
 
-  if (options.entry.kind === 'flow-line') {
-    return [renderFlowLine(options.entry, options.spinnerFrameIndex)];
-  }
-
-  return options.snapshot.treeRoots.flatMap((root) =>
-    renderTreeNodeLines(root, options.spinnerFrameIndex),
-  );
+  return options.entry.kind === 'flow-line'
+    ? [renderFlowLine(options.entry, options.spinnerFrameIndex)]
+    : options.snapshot.treeRoots.flatMap((root) =>
+        renderTreeNodeLines(root, options.spinnerFrameIndex),
+      );
 }
 
 function appendOutro(
@@ -124,11 +122,7 @@ function getMaxCompactFlowLineDepth(
     .filter((entry): entry is FlowRenderFlowLine => entry.kind === 'flow-line')
     .map((entry) => entry.depth);
 
-  if (depths.length === 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return Math.min(...depths) + 1;
+  return depths.length === 0 ? Infinity : Math.min(...depths) + 1;
 }
 
 function renderCompactFlowLine(options: {
@@ -136,11 +130,9 @@ function renderCompactFlowLine(options: {
   maxDepth: number;
   spinnerFrameIndex: number;
 }): string[] {
-  if (options.entry.depth > options.maxDepth) {
-    return [];
-  }
-
-  return [renderFlowLine(options.entry, options.spinnerFrameIndex)];
+  return options.entry.depth > options.maxDepth
+    ? []
+    : [renderFlowLine(options.entry, options.spinnerFrameIndex)];
 }
 
 function renderCompactHistoryEntry(options: {
@@ -198,9 +190,5 @@ export function hasRunningSnapshotWork(snapshot: FlowRenderSnapshot): boolean {
 }
 
 export function toWritableText(chunk: FlowWritableChunk): string {
-  if (chunk instanceof Uint8Array) {
-    return Buffer.from(chunk).toString();
-  }
-
-  return chunk;
+  return chunk instanceof Uint8Array ? Buffer.from(chunk).toString() : chunk;
 }

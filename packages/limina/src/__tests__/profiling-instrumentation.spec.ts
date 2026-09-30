@@ -24,11 +24,11 @@ const workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceB
   (project) => createWorkspaceSourceBoundary(project.fileNames);
 
 async function writeText(
-  rootDir: string,
+  rootDirectory: string,
   relativePath: string,
   text: string,
 ): Promise<string> {
-  const filePath = path.join(rootDir, relativePath);
+  const filePath = path.join(rootDirectory, relativePath);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, text);
   return filePath;
@@ -79,23 +79,24 @@ function createTypeEvidenceProject(options: {
 
 describe('module resolution profiling instrumentation', () => {
   it('keeps outer-index, native TS cache, and Oxc factory counters distinct', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-resolution-metrics-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-resolution-metrics-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({ compilerOptions: {} }),
       );
       const containingFile = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import './target';\n",
       );
       const targetPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/target.ts',
         'export const target = true;\n',
       );
@@ -164,28 +165,29 @@ describe('module resolution profiling instrumentation', () => {
       expect(metricCount(snapshot, 'import-resolution-cache-miss')).toBe(1);
       expect(metricCount(snapshot, 'import-resolution-cache-hit')).toBe(1);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('reuses one native TypeScript cache within a conservative resolver identity', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-ts-cache-metrics-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-ts-cache-metrics-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({ compilerOptions: {} }),
       );
       const containingFile = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import './target';\n",
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'src/target.ts',
         'export const target = true;\n',
       );
@@ -227,33 +229,34 @@ describe('module resolution profiling instrumentation', () => {
       expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(1);
       expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(1);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps config, compiler option, and extension cache identities separate', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-ts-cache-identity-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-ts-cache-identity-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
       const configPathA = await writeText(
-        rootDir,
+        rootDirectory,
         'configs/a.json',
         JSON.stringify({ compilerOptions: {} }),
       );
       const configPathB = await writeText(
-        rootDir,
+        rootDirectory,
         'configs/b.json',
         JSON.stringify({ compilerOptions: {} }),
       );
       const containingFile = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import './target';\n",
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'src/target.ts',
         'export const target = true;\n',
       );
@@ -304,28 +307,29 @@ describe('module resolution profiling instrumentation', () => {
       expect(metricCount(snapshot, 'module-resolution-index-miss')).toBe(4);
       expect(metricCount(snapshot, 'module-resolution-index-hit')).toBe(1);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('does not share native TypeScript caches across analysis generations', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-ts-cache-generation-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-ts-cache-generation-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({ compilerOptions: {} }),
       );
       const containingFile = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import './target';\n",
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'src/target.ts',
         'export const target = true;\n',
       );
@@ -362,7 +366,7 @@ describe('module resolution profiling instrumentation', () => {
         metricCount(snapshot, 'typescript-module-resolution-cache-hit'),
       ).toBe(0);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });
@@ -385,7 +389,11 @@ describe('type evidence profiling instrumentation', () => {
         .snapshot()
         .filter((metric) => typeEvidenceMetricNames.has(metric.name))
         .map((metric) => metric.name),
-    ).toEqual([...TYPE_EVIDENCE_METRIC_NAMES].sort());
+    ).toEqual(
+      [...TYPE_EVIDENCE_METRIC_NAMES].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    );
     expect(
       metrics
         .snapshot()
@@ -396,31 +404,36 @@ describe('type evidence profiling instrumentation', () => {
   });
 
   it('creates no Program when source imports contain no resources', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-no-resource-metrics-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-no-resource-metrics-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
-      const configPath = await writeText(rootDir, 'tsconfig.json', '{}\n');
+      const configPath = await writeText(
+        rootDirectory,
+        'tsconfig.json',
+        '{}\n',
+      );
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from './target';\nexport { value };\n",
       );
       const targetPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/target.ts',
         'export const value = true;\n',
       );
       const metrics = createProfilingMetricsRecorder();
       const imports = createImportAnalysisContext({
-        projectRootDir: rootDir,
-      }).collectImportsFromFile(indexPath, rootDir);
+        projectRootDir: rootDirectory,
+      }).collectImportsFromFile(indexPath, rootDirectory);
       const core = new TypeEvidenceCore({
         generation: 0,
         importAnalysis: createImportAnalysisContext({
           metrics,
-          projectRootDir: rootDir,
+          projectRootDir: rootDirectory,
         }),
         metrics,
         workspaceSourceBoundaryProvider,
@@ -447,33 +460,38 @@ describe('type evidence profiling instrumentation', () => {
       expect(metricCount(metrics.snapshot(), 'resource-import-count')).toBe(0);
       core.dispose();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps a dotted extensionless specifier ordinary when it resolves to TypeScript', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-dotted-typescript-import-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-dotted-typescript-import-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
-      const configPath = await writeText(rootDir, 'tsconfig.json', '{}\n');
+      const configPath = await writeText(
+        rootDirectory,
+        'tsconfig.json',
+        '{}\n',
+      );
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from './target.fixtures';\nexport { value };\n",
       );
       const targetPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/target.fixtures.ts',
         'export const value = true;\n',
       );
       const importAnalysis = createImportAnalysisContext({
-        projectRootDir: rootDir,
+        projectRootDir: rootDirectory,
       });
       const [importRecord] = importAnalysis.collectImportsFromFile(
         indexPath,
-        rootDir,
+        rootDirectory,
       );
       const core = new TypeEvidenceCore({
         generation: 0,
@@ -494,28 +512,33 @@ describe('type evidence profiling instrumentation', () => {
       expect(core.cache.programCache.size).toBe(0);
       core.dispose();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps an unresolved dotted bare package specifier ordinary', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-dotted-package-import-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-dotted-package-import-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
-      const configPath = await writeText(rootDir, 'tsconfig.json', '{}\n');
+      const configPath = await writeText(
+        rootDirectory,
+        'tsconfig.json',
+        '{}\n',
+      );
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import value from 'missing.package';\nexport { value };\n",
       );
       const importAnalysis = createImportAnalysisContext({
-        projectRootDir: rootDir,
+        projectRootDir: rootDirectory,
       });
       const [importRecord] = importAnalysis.collectImportsFromFile(
         indexPath,
-        rootDir,
+        rootDirectory,
       );
       const core = new TypeEvidenceCore({
         generation: 0,
@@ -536,36 +559,41 @@ describe('type evidence profiling instrumentation', () => {
       expect(core.cache.programCache.size).toBe(0);
       core.dispose();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('records concrete resource queries through one shared Program and native provider', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-concrete-metrics-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-concrete-metrics-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
-      const configPath = await writeText(rootDir, 'tsconfig.json', '{}\n');
+      const configPath = await writeText(
+        rootDirectory,
+        'tsconfig.json',
+        '{}\n',
+      );
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import './style.css';\n",
       );
-      await writeText(rootDir, 'src/style.css', '.root {}\n');
+      await writeText(rootDirectory, 'src/style.css', '.root {}\n');
       const declarationPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/style.d.css.ts',
         'declare const styles: string;\nexport default styles;\n',
       );
       const metrics = createProfilingMetricsRecorder();
       const importAnalysis = createImportAnalysisContext({
         metrics,
-        projectRootDir: rootDir,
+        projectRootDir: rootDirectory,
       });
       const [importRecord] = importAnalysis.collectImportsFromFile(
         indexPath,
-        rootDir,
+        rootDirectory,
       );
       const core = new TypeEvidenceCore({
         generation: 0,
@@ -593,34 +621,42 @@ describe('type evidence profiling instrumentation', () => {
       expect(metricCount(snapshot, 'typescript-program-create')).toBe(1);
       core.dispose();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('reports one provider and Program for repeated ambient resource queries', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-ambient-metrics-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-ambient-metrics-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
-      const configPath = await writeText(rootDir, 'tsconfig.json', '{}\n');
+      const configPath = await writeText(
+        rootDirectory,
+        'tsconfig.json',
+        '{}\n',
+      );
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         ["import './style.css';", "import './style.css';", ''].join('\n'),
       );
       const ambientPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/assets.d.ts',
         "declare module '*.css';\n",
       );
-      await writeText(rootDir, 'src/style.css', '.root {}\n');
+      await writeText(rootDirectory, 'src/style.css', '.root {}\n');
       const metrics = createProfilingMetricsRecorder();
       const importAnalysis = createImportAnalysisContext({
         metrics,
-        projectRootDir: rootDir,
+        projectRootDir: rootDirectory,
       });
-      const imports = importAnalysis.collectImportsFromFile(indexPath, rootDir);
+      const imports = importAnalysis.collectImportsFromFile(
+        indexPath,
+        rootDirectory,
+      );
       const core = new TypeEvidenceCore({
         generation: 0,
         importAnalysis,
@@ -658,20 +694,21 @@ describe('type evidence profiling instrumentation', () => {
       expect(metricCount(snapshot, 'ambient-symbol-hit')).toBe(1);
       core.dispose();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps provider and Program caches separate across source configs', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-multi-config-metrics-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-multi-config-metrics-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
     try {
       const metrics = createProfilingMetricsRecorder();
       const importAnalysis = createImportAnalysisContext({
         metrics,
-        projectRootDir: rootDir,
+        projectRootDir: rootDirectory,
       });
       const core = new TypeEvidenceCore({
         generation: 0,
@@ -682,24 +719,28 @@ describe('type evidence profiling instrumentation', () => {
 
       for (const projectName of ['a', 'b']) {
         const configPath = await writeText(
-          rootDir,
+          rootDirectory,
           `${projectName}/tsconfig.json`,
           '{}\n',
         );
         const indexPath = await writeText(
-          rootDir,
+          rootDirectory,
           `${projectName}/src/index.ts`,
           "import './style.css';\n",
         );
         const ambientPath = await writeText(
-          rootDir,
+          rootDirectory,
           `${projectName}/src/assets.d.ts`,
           "declare module '*.css';\n",
         );
-        await writeText(rootDir, `${projectName}/src/style.css`, '.root {}\n');
+        await writeText(
+          rootDirectory,
+          `${projectName}/src/style.css`,
+          '.root {}\n',
+        );
         const [importRecord] = importAnalysis.collectImportsFromFile(
           indexPath,
-          rootDir,
+          rootDirectory,
         );
 
         expect(
@@ -721,7 +762,7 @@ describe('type evidence profiling instrumentation', () => {
       expect(core.cache.programCache.size).toBe(2);
       core.dispose();
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });

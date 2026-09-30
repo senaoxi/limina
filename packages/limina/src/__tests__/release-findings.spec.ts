@@ -161,10 +161,18 @@ describe('typed Release findings', () => {
           code !== LIMINA_CHECK_ISSUE_CODES.releaseCheckFailed &&
           code !== LIMINA_CHECK_ISSUE_CODES.releaseConsistency,
       )
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
 
-    expect([...RELEASE_SEMANTIC_ISSUE_CODES].sort()).toEqual(registryCodes);
-    expect(Object.keys(findingByCode).sort()).toEqual(registryCodes);
+    expect(
+      [...RELEASE_SEMANTIC_ISSUE_CODES].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
+    expect(
+      Object.keys(findingByCode).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
     expect(
       LIMINA_CHECK_ISSUE_DETECTOR_COVERAGE[
         LIMINA_CHECK_ISSUE_CODES.releaseConsistency

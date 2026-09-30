@@ -29,12 +29,12 @@ export interface PackageCommandContext {
 
 function isReportDeferred(options: RunPackageCheckOptions): boolean {
   const report = options.report;
-  return report === undefined ? false : report.defer === true;
+  return report !== undefined && report.defer === true;
 }
 
 function isInteractiveFlow(options: RunPackageCheckOptions): boolean {
   const flow = options.flow;
-  return flow === undefined ? false : flow.interactive === true;
+  return flow !== undefined && flow.interactive;
 }
 
 function isSnapshotDeferred(options: RunPackageCheckOptions): boolean {
@@ -42,7 +42,7 @@ function isSnapshotDeferred(options: RunPackageCheckOptions): boolean {
 }
 
 function shouldClearScreen(options: RunPackageCheckOptions): boolean {
-  return options.clearScreen === undefined ? true : options.clearScreen;
+  return options.clearScreen === undefined || options.clearScreen;
 }
 
 function getFlowDepth(options: RunPackageCheckOptions): number {
@@ -239,7 +239,7 @@ function failTask(
   task?.fail(reason, details);
 }
 
-async function handlePassedPackageCheck(
+async function isHandlePassedPackageCheck(
   context: PackageCommandContext,
 ): Promise<true> {
   if (!isSnapshotDeferred(context.options)) {
@@ -257,7 +257,7 @@ async function handlePassedPackageCheck(
   return true;
 }
 
-async function handleFailedPackageCheck(
+async function isHandleFailedPackageCheck(
   context: PackageCommandContext,
   issues: readonly LiminaCheckIssue[],
 ): Promise<false> {
@@ -268,18 +268,18 @@ async function handleFailedPackageCheck(
   return false;
 }
 
-export async function executePackageCommand(
+export async function isExecutePackageCommand(
   context: PackageCommandContext,
 ): Promise<boolean> {
   const issues: LiminaCheckIssue[] = [];
-  const passed = await runPackageCheckImpl({
+  const isPassed = await runPackageCheckImpl({
     ...context.options,
     issues,
     preflight: context.preflight,
   });
-  return passed
-    ? handlePassedPackageCheck(context)
-    : handleFailedPackageCheck(context, issues);
+  return isPassed
+    ? isHandlePassedPackageCheck(context)
+    : isHandleFailedPackageCheck(context, issues);
 }
 
 function getErrorDetails(error: unknown): { error: unknown } | undefined {

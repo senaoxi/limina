@@ -63,8 +63,8 @@ export function createProjectSemanticCacheIdentity(
     virtualFiles: configInputIdentity(context.virtualFiles),
     fileNames: context.fileNames,
     generation: context.generation,
-    packageRoots: [...context.packageRootByFileName.entries()].sort(
-      ([left], [right]) => left.localeCompare(right),
+    packageRoots: [...context.packageRootByFileName].sort(([left], [right]) =>
+      left.localeCompare(right),
     ),
     resolverConfigPath: context.resolverConfigPath,
     svelte: getSvelteCacheIdentity(context),

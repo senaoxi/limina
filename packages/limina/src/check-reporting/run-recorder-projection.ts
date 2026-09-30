@@ -81,11 +81,9 @@ function durationBetween(
   startedAt: string | undefined,
   completedAt: string,
 ): number | undefined {
-  if (startedAt === undefined) {
-    return undefined;
-  }
-
-  return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
+  return startedAt === undefined
+    ? undefined
+    : Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
 }
 
 function normalizeOptionalNumber(
@@ -131,7 +129,7 @@ function applyTaskStats(
   task.checkItems = stats.items?.map(normalizeCheckItem);
 }
 
-function taskIdentityMatches(
+function isTaskIdentityMatches(
   task: LiminaCheckRunTaskSummary,
   identity: ExecutionTaskIdentity,
 ): boolean {
@@ -155,7 +153,7 @@ function getTask(
     throw new Error(`Recorder received unknown task id: ${identity.id}.`);
   }
 
-  if (!taskIdentityMatches(task, identity)) {
+  if (!isTaskIdentityMatches(task, identity)) {
     throw new Error(`Recorder task identity mismatch for id: ${identity.id}.`);
   }
 
@@ -262,11 +260,9 @@ export function projectTask(
 function getOutcomeBlocker(
   outcome: CompletedRunOutcome,
 ): LiminaCheckRunSummary['blockedBy'] {
-  if (outcome.state !== 'blocked') {
-    return undefined;
-  }
-
-  return cloneOptionalObject(outcome.blocker);
+  return outcome.state === 'blocked'
+    ? cloneOptionalObject(outcome.blocker)
+    : undefined;
 }
 
 export function finishRun(

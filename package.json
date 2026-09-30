@@ -1,5 +1,5 @@
 {
-  "name": "limina-monorepo",
+  "name": "@limina/monorepo",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -45,7 +45,7 @@
     "@types/prompts": "catalog:dev",
     "prompts": "catalog:dev",
     "semver": "catalog:dev",
-    "logaria": "link:../docs-islands/packages/logaria/dist",
+    "logaria": "catalog:dev",
     "eslint": "catalog:lint",
     "typescript": "catalog:dev",
     "vue-tsc": "catalog:dev",

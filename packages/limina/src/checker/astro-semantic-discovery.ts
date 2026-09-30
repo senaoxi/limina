@@ -56,23 +56,23 @@ function createManifestScopeIdentity(
 }
 
 export function createAstroLeafScopeIdentity(
-  packageRootDir: string,
+  packageRootDirectory: string,
   manifest?: PackageManifest,
 ): string {
   try {
     return createManifestScopeIdentity(
-      path.join(packageRootDir, 'package.json'),
+      path.join(packageRootDirectory, 'package.json'),
       manifest,
     );
   } catch {
     return JSON.stringify({
       kind: 'leaf',
-      name: path.basename(packageRootDir),
+      name: path.basename(packageRootDirectory),
     });
   }
 }
 
-function declaresDependency(
+function isDeclaresDependency(
   manifest: PackageManifest,
   packageName: string,
 ): boolean {
@@ -174,7 +174,7 @@ function resolveOwnedPackageManifest(options: {
   packageName: string;
 }): string {
   const ownerManifest = getOwnerManifest(options);
-  if (!declaresDependency(ownerManifest, options.packageName)) {
+  if (!isDeclaresDependency(ownerManifest, options.packageName)) {
     throw createMissingPackageError({
       ...options,
       reason: `${options.packageName} is not declared by the owner scope; workspace-root fallback is not permitted.`,
@@ -194,37 +194,37 @@ function resolveOwnedPackageManifest(options: {
 }
 
 function resolveLeafManifest(
-  packageRootDir: string,
+  packageRootDirectory: string,
   manifest?: PackageManifest,
 ): string {
   const manifestPath = normalizeAbsolutePath(
-    path.join(packageRootDir, 'package.json'),
+    path.join(packageRootDirectory, 'package.json'),
   );
   if (manifest === undefined) readManifest(manifestPath);
   return manifestPath;
 }
 
 export function resolveAstroSemanticToolchainPaths(
-  packageRootDir: string,
+  packageRootDirectory: string,
   manifest?: PackageManifest,
 ): AstroSemanticToolchainPaths {
-  const leafManifest = resolveLeafManifest(packageRootDir, manifest);
+  const leafManifest = resolveLeafManifest(packageRootDirectory, manifest);
   const astro = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
     ownerManifest: manifest,
-    ownerScope: packageRootDir,
+    ownerScope: packageRootDirectory,
     packageName: 'astro',
   });
   const check = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
     ownerManifest: manifest,
-    ownerScope: packageRootDir,
+    ownerScope: packageRootDirectory,
     packageName: '@astrojs/check',
   });
   const leafTypeScript = resolveOwnedPackageManifest({
     ownerManifestPath: leafManifest,
     ownerManifest: manifest,
-    ownerScope: packageRootDir,
+    ownerScope: packageRootDirectory,
     packageName: 'typescript',
   });
   const checkRoot = path.dirname(check);

@@ -1,3 +1,4 @@
+import { isIntegerNumber } from '#utils/validation/is-integer';
 import ts from 'typescript';
 
 // Only the native Program may supply the parser callback described below.
@@ -28,14 +29,17 @@ const knownParserKeys = new Set([
   'packageJsonScope',
 ]);
 
-function knownParserInput(input: ParserInput): boolean {
-  if (typeof input === 'number') return Number.isInteger(input);
-  return Object.keys(input).every((key) => knownParserKeys.has(key));
+function isKnownParserInput(input: ParserInput): boolean {
+  return typeof input === 'number'
+    ? isIntegerNumber(input)
+    : Object.keys(input).every((key) => knownParserKeys.has(key));
 }
 
-function cleanParse(sourceFile: ParserSource): boolean {
-  if (!Array.isArray(sourceFile.parseDiagnostics)) return false;
-  return sourceFile.parseDiagnostics.length === 0;
+function isCleanParse(sourceFile: ParserSource): boolean {
+  return (
+    Array.isArray(sourceFile.parseDiagnostics) &&
+    sourceFile.parseDiagnostics.length === 0
+  );
 }
 
 function parserDescriptor(options: {
@@ -77,15 +81,6 @@ export class OwnedSyntaxScope {
     this.#compiler = compiler;
   }
 
-  createProgram(options: ts.CreateProgramOptions): ts.Program {
-    this.#active = true;
-    try {
-      return this.#compiler.createProgram(options);
-    } finally {
-      this.#active = false;
-    }
-  }
-
   #nativeParser(): boolean {
     return [
       this.#active,
@@ -97,18 +92,27 @@ export class OwnedSyntaxScope {
     ].every(Boolean);
   }
 
+  createProgram(options: ts.CreateProgramOptions): ts.Program {
+    this.#active = true;
+    try {
+      return this.#compiler.createProgram(options);
+    } finally {
+      this.#active = false;
+    }
+  }
+
   capture(
     sourceFile: ParserSource,
     input: ParserInput,
   ): OwnedSyntaxInput | undefined {
-    const safe = [
+    const isSafe = [
       this.#nativeParser(),
-      knownParserInput(input),
-      cleanParse(sourceFile),
-      Number.isInteger(sourceFile.scriptKind),
+      isKnownParserInput(input),
+      isCleanParse(sourceFile),
+      isIntegerNumber(sourceFile.scriptKind),
       /\.(?:[cm]?[jt]s|[jt]sx|json)$/u.test(sourceFile.fileName),
     ].every(Boolean);
-    if (!safe) return undefined;
+    if (!isSafe) return undefined;
     return {
       [ownedInput]: true,
       compiler: this.#compiler,

@@ -47,8 +47,9 @@ function createTypeScriptRouteAuthority(
   const families = new Set(
     project.checkerPresets.map(getCheckerSemanticFamily),
   );
-  if (families.size !== 1 || !families.has('typescript')) return undefined;
-  return { family: 'typescript', kind: 'locked', source: 'explicit' };
+  return families.size !== 1 || !families.has('typescript')
+    ? undefined
+    : { family: 'typescript', kind: 'locked', source: 'explicit' };
 }
 
 function alignWithoutGovernedUnit(project: ProjectInfo): ProjectInfo {

@@ -7,18 +7,21 @@ import {
 } from '#utils/path';
 import { getManagedSourceRelativeDirectory } from './source-paths';
 
-export const generatedRootDirName: string = '.limina';
-export const generatedTsconfigDir: string = path.join(
-  generatedRootDirName,
+const generatedRootDirectoryName: string = '.limina';
+export const generatedTsconfigDirectory: string = path.join(
+  generatedRootDirectoryName,
   'tsconfig',
 );
 export const generatedManifestPath: string = path.join(
-  generatedRootDirName,
+  generatedRootDirectoryName,
   'manifest.json',
 );
 
-const generatedDtsDir = path.join(generatedRootDirName, 'dts');
-const generatedTsbuildinfoDir = path.join(generatedRootDirName, 'tsbuildinfo');
+const generatedDtsDirectory = path.join(generatedRootDirectoryName, 'dts');
+const generatedTsbuildinfoDirectory = path.join(
+  generatedRootDirectoryName,
+  'tsbuildinfo',
+);
 
 export function createRelativePath(fromFile: string, toPath: string): string {
   const relativePath = toPosixPath(
@@ -60,17 +63,17 @@ export function getGeneratedDtsConfigPath(options: {
     options.rootDir,
     options.sourceConfigPath,
   );
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
   const dtsFileName = createDtsFileName(path.basename(relativeSourcePath));
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsconfigDir,
+      generatedTsconfigDirectory,
       'checkers',
       options.checkerName,
       'projects',
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       dtsFileName,
     ),
   );
@@ -82,16 +85,16 @@ export function getGeneratedSolutionBuildConfigPath(options: {
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsconfigDir,
+      generatedTsconfigDirectory,
       'checkers',
       options.checkerName,
       'solutions',
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       'tsconfig.build.json',
     ),
   );
@@ -103,17 +106,20 @@ export function getGeneratedLeafSolutionBuildConfigPath(options: {
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
+  const buildFileName = createBuildFileName(
+    path.basename(options.sourceConfigPath),
+  );
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsconfigDir,
+      generatedTsconfigDirectory,
       'checkers',
       options.checkerName,
       'solutions',
-      relativeDir === '.' ? '' : relativeDir,
-      createBuildFileName(path.basename(options.sourceConfigPath)),
+      relativeDirectory === '.' ? '' : relativeDirectory,
+      buildFileName,
     ),
   );
 }
@@ -128,7 +134,7 @@ export function getGeneratedOutputProjectConfigPath(options: {
     options.rootDir,
     options.sourceConfigPath,
   );
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
   const outputFileName = createOutputFileName(
     path.basename(relativeSourcePath),
   );
@@ -136,12 +142,12 @@ export function getGeneratedOutputProjectConfigPath(options: {
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsconfigDir,
+      generatedTsconfigDirectory,
       'checkers',
       options.checkerName,
       'outputs',
       'projects',
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       outputFileName,
     ),
   );
@@ -153,17 +159,17 @@ export function getGeneratedOutputSolutionConfigPath(options: {
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsconfigDir,
+      generatedTsconfigDirectory,
       'checkers',
       options.checkerName,
       'outputs',
       'solutions',
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       'tsconfig.output.json',
     ),
   );
@@ -176,7 +182,7 @@ export function getGeneratedCheckerEntryPath(options: {
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsconfigDir,
+      generatedTsconfigDirectory,
       'checkers',
       options.checkerName,
       'tsconfig.build.json',
@@ -184,21 +190,21 @@ export function getGeneratedCheckerEntryPath(options: {
   );
 }
 
-export function getGeneratedOutDir(options: {
+function getGeneratedOutputDirectory(options: {
   checkerName: string;
   packageRootDir?: string;
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedDtsDir,
+      generatedDtsDirectory,
       'checkers',
       options.checkerName,
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       createSourceConfigScope(options.sourceConfigPath),
     ),
   );
@@ -210,15 +216,15 @@ export function getGeneratedTsBuildInfoPath(options: {
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsbuildinfoDir,
+      generatedTsbuildinfoDirectory,
       'checkers',
       options.checkerName,
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       `${createSourceConfigScope(options.sourceConfigPath)}.tsbuildinfo`,
     ),
   );
@@ -229,15 +235,20 @@ export function getGeneratedOutputTsBuildInfoPath(options: {
   rootDir: string;
   sourceConfigPath: string;
 }): string {
-  const relativeDir = getManagedSourceRelativeDirectory(options);
+  const relativeDirectory = getManagedSourceRelativeDirectory(options);
 
   return normalizeAbsolutePath(
     path.join(
       options.rootDir,
-      generatedTsbuildinfoDir,
+      generatedTsbuildinfoDirectory,
       'build',
-      relativeDir === '.' ? '' : relativeDir,
+      relativeDirectory === '.' ? '' : relativeDirectory,
       `${createSourceConfigScope(options.sourceConfigPath)}.tsbuildinfo`,
     ),
   );
 }
+
+export {
+  generatedRootDirectoryName as generatedRootDirName,
+  getGeneratedOutputDirectory as getGeneratedOutDir,
+};

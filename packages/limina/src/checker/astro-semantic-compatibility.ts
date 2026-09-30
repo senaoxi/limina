@@ -11,7 +11,9 @@ import type {
 const ASTRO_RANGE = '>=7.0.0 <8.0.0';
 const TYPESCRIPT_CONTRACT = liminaRuntimeDependencyContracts.typescript;
 
-function matchesExactSemanticTuple(tuple: AstroSemanticVersionTuple): boolean {
+function isMatchesExactSemanticTuple(
+  tuple: AstroSemanticVersionTuple,
+): boolean {
   return [
     tuple.check === '0.9.10',
     tuple.languageServer === '2.16.13',
@@ -22,7 +24,7 @@ function matchesExactSemanticTuple(tuple: AstroSemanticVersionTuple): boolean {
   ].every(Boolean);
 }
 
-function matchesVersionRanges(tuple: AstroSemanticVersionTuple): boolean {
+function isMatchesVersionRanges(tuple: AstroSemanticVersionTuple): boolean {
   return [
     semver.satisfies(tuple.astro, ASTRO_RANGE),
     isSupportedDependencyVersion({
@@ -55,7 +57,7 @@ export function formatAstroSemanticVersionTuple(
 export function resolveAstroSemanticAdapter(
   tuple: AstroSemanticVersionTuple,
 ): AstroSemanticAdapter {
-  if (matchesExactSemanticTuple(tuple) && matchesVersionRanges(tuple)) {
+  if (isMatchesExactSemanticTuple(tuple) && isMatchesVersionRanges(tuple)) {
     return { family: 'astro-7-check-0.9', kind: 'supported' };
   }
   return {

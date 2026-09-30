@@ -67,7 +67,7 @@ function finishPreparation(options: {
 }
 
 type PreparationFinisher = (
-  ready: boolean,
+  isReady: boolean,
   directSourceRecords: ProjectDependencyPreparation['directSourceRecords'],
   facts?: ProjectDependencyPreparation['facts'],
 ) => ProjectDependencyPreparation;
@@ -100,9 +100,11 @@ function canUseDirectSource(options: {
   requiresGeneratedPreparation: boolean;
   source: SourceEvidence | undefined;
 }): boolean {
-  if (options.source === undefined) return false;
-  if (isTypeScriptSemanticSource(options.fileName)) return true;
-  return !options.requiresGeneratedPreparation;
+  return (
+    options.source !== undefined &&
+    (isTypeScriptSemanticSource(options.fileName) ||
+      !options.requiresGeneratedPreparation)
+  );
 }
 
 function prepareGeneratedSource(options: {

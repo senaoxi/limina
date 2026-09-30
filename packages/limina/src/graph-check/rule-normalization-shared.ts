@@ -32,10 +32,7 @@ export function isRuleKindEnabled(
   include: GraphRuleKindSelection | undefined,
   kind: keyof GraphRuleKindSelection,
 ): boolean {
-  if (include === undefined) {
-    return true;
-  }
-  return include[kind] !== false;
+  return include === undefined || include[kind] !== false;
 }
 
 export function addUnknownFields(options: {
@@ -45,14 +42,14 @@ export function addUnknownFields(options: {
   reason: string;
   state: NormalizationState;
 }): void {
-  for (const key of Object.keys(options.record)) {
+  for (const [key, value] of Object.entries(options.record)) {
     if (options.allowedKeys.has(key)) {
       continue;
     }
     addConfigFinding({
       details: [
         `  field: ${options.fieldPrefix}.${key}`,
-        `  value: ${formatUnknownValue(options.record[key])}`,
+        `  value: ${formatUnknownValue(value)}`,
         `  reason: ${options.reason}`,
       ],
       reason: options.reason,

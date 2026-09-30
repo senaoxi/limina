@@ -33,11 +33,7 @@ function resolveReportIssues(options: {
   findings: readonly ProofFinding[];
   issues?: readonly LiminaCheckIssue[];
 }): readonly LiminaCheckIssue[] {
-  if (options.issues) {
-    return options.issues;
-  }
-
-  return collectProofReportIssues(options);
+  return options.issues ?? collectProofReportIssues(options);
 }
 
 function resolveReportCommand(report?: CheckIssueReportOptions): string {
@@ -83,11 +79,7 @@ function resolveDiagnosticEvidence(
   evidence: readonly LiminaCheckIssueEvidence[] | undefined,
   detailLines: readonly string[],
 ): readonly LiminaCheckIssueEvidence[] {
-  if (evidence) {
-    return evidence;
-  }
-
-  return [{ label: 'diagnostic', lines: [...detailLines] }];
+  return evidence ?? [{ label: 'diagnostic', lines: [...detailLines] }];
 }
 
 export function createProofDiagnosticFinding<

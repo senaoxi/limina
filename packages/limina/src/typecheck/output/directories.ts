@@ -8,9 +8,9 @@ import type {
 } from './types';
 
 function isExistingError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (!('code' in error)) return false;
-  return String(error.code) === 'EEXIST';
+  return (
+    error instanceof Error && 'code' in error && String(error.code) === 'EEXIST'
+  );
 }
 
 function assertOrdinaryDirectory(
@@ -29,7 +29,7 @@ function assertOrdinaryDirectory(
   }
 }
 
-async function readExistingDirectory(directory: string): Promise<boolean> {
+async function isReadExistingDirectory(directory: string): Promise<boolean> {
   try {
     assertOrdinaryDirectory(await lstat(directory), directory);
     return true;
@@ -99,8 +99,9 @@ async function ensureParentDirectory(options: {
   prepared: PreparedDeclarationEntry;
   transactionToken: string;
 }): Promise<OwnedDeclarationDirectory | undefined> {
-  if (await readExistingDirectory(options.directory)) return undefined;
-  return createParentDirectory(options);
+  return (await isReadExistingDirectory(options.directory))
+    ? undefined
+    : createParentDirectory(options);
 }
 
 export async function ensureDeclarationParentDirectories(options: {
@@ -123,6 +124,7 @@ async function readOwnedDirectoryStats(
     if (!isMissingError(error)) throw error;
     throw new Error(
       `Transaction-created declaration directory disappeared before cleanup: ${owned.path}.`,
+      { cause: error },
     );
   }
 }
@@ -131,8 +133,7 @@ function hasOwnedDirectoryIdentity(
   owned: OwnedDeclarationDirectory,
   stats: Awaited<ReturnType<typeof lstat>>,
 ): boolean {
-  if (String(stats.dev) !== owned.dev) return false;
-  return String(stats.ino) === owned.ino;
+  return String(stats.dev) === owned.dev && String(stats.ino) === owned.ino;
 }
 
 export async function rollbackOwnedDirectory(

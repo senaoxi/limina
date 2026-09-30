@@ -82,6 +82,48 @@ export class TerminalTextStream {
   #decoder = new TextDecoder();
   #state: TerminalControlSequenceState = 'text';
 
+  #readCharacter(character: string): string {
+    switch (this.#state) {
+      case 'control-string': {
+        if (character === '\u{7}') {
+          this.#state = 'text';
+        } else if (character === '\u{1B}') {
+          this.#state = 'control-string-escape';
+        }
+        break;
+      }
+      case 'control-string-escape': {
+        this.#state = character === '\\' ? 'text' : 'control-string';
+        break;
+      }
+      case 'csi': {
+        if (/^[\u{40}-\u{7E}]$/u.test(character)) {
+          this.#state = 'text';
+        }
+        break;
+      }
+      case 'escape': {
+        if (character === '[') {
+          this.#state = 'csi';
+        } else if ([']', 'P', 'X', '^', '_'].includes(character)) {
+          this.#state = 'control-string';
+        } else {
+          this.#state = 'text';
+        }
+        break;
+      }
+      case 'text': {
+        if (character === '\u{1B}') {
+          this.#state = 'escape';
+        } else if (character !== '\r') {
+          return character;
+        }
+        break;
+      }
+    }
+    return '';
+  }
+
   decode(chunk: string | Uint8Array): string {
     const text =
       typeof chunk === 'string'
@@ -90,50 +132,7 @@ export class TerminalTextStream {
     let visibleText = '';
 
     for (const character of text) {
-      switch (this.#state) {
-        case 'control-string': {
-          if (character === '\u0007') {
-            this.#state = 'text';
-          } else if (character === '\u001B') {
-            this.#state = 'control-string-escape';
-          }
-          break;
-        }
-        case 'control-string-escape': {
-          this.#state = character === '\\' ? 'text' : 'control-string';
-          break;
-        }
-        case 'csi': {
-          if (/^[\u0040-\u007E]$/u.test(character)) {
-            this.#state = 'text';
-          }
-          break;
-        }
-        case 'escape': {
-          if (character === '[') {
-            this.#state = 'csi';
-          } else if (
-            character === ']' ||
-            character === 'P' ||
-            character === 'X' ||
-            character === '^' ||
-            character === '_'
-          ) {
-            this.#state = 'control-string';
-          } else {
-            this.#state = 'text';
-          }
-          break;
-        }
-        case 'text': {
-          if (character === '\u001B') {
-            this.#state = 'escape';
-          } else if (character !== '\r') {
-            visibleText += character;
-          }
-          break;
-        }
-      }
+      visibleText += this.#readCharacter(character);
     }
 
     return visibleText;

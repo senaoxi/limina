@@ -20,8 +20,8 @@ import {
 import { LiminaFlowReporter } from '../flow';
 import { ReleaseLogger } from '../logger';
 import type { ReleaseFinding } from '../package-check/release-findings';
-import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { loadReleaseRegistryConfig } from '../package-check/release/registry/config';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
 const ANSI_PATTERN = new RegExp(
@@ -74,8 +74,8 @@ vi.mock('@publint/pack', async () => {
   const { default: pathModule } = await import('node:path');
 
   async function collectPackedFiles(
-    outDir: string,
-    directoryPath = outDir,
+    outDirectory: string,
+    directoryPath = outDirectory,
   ): Promise<
     {
       data: Buffer;
@@ -94,12 +94,12 @@ vi.mock('@publint/pack', async () => {
       const absolutePath = pathModule.join(directoryPath, entry.name);
 
       if (entry.isDirectory()) {
-        files.push(...(await collectPackedFiles(outDir, absolutePath)));
+        files.push(...(await collectPackedFiles(outDirectory, absolutePath)));
         continue;
       }
 
       const relativePath = pathModule
-        .relative(outDir, absolutePath)
+        .relative(outDirectory, absolutePath)
         .replaceAll(pathModule.sep, '/');
 
       files.push({
@@ -114,14 +114,14 @@ vi.mock('@publint/pack', async () => {
   return {
     pack: vi.fn(
       async (
-        outDir: string,
+        outDirectory: string,
         options: {
           destination: string;
         },
       ) => {
-        const normalizedOutDir = pathModule.normalize(outDir);
+        const normalizedOutDirectory = pathModule.normalize(outDirectory);
 
-        packageCheckMocks.packCalls.push(normalizedOutDir);
+        packageCheckMocks.packCalls.push(normalizedOutDirectory);
         packageCheckMocks.packDestinations.push(options.destination);
         if (packageCheckMocks.packError !== undefined) {
           throw packageCheckMocks.packError;
@@ -129,13 +129,17 @@ vi.mock('@publint/pack', async () => {
         const tarballPath = pathModule.join(options.destination, 'package.tgz');
         if (packageCheckMocks.packReturnsMissingTarball) return tarballPath;
         const packageJson = JSON.parse(
-          await fs.readFile(pathModule.join(outDir, 'package.json'), 'utf8'),
+          await fs.readFile(
+            pathModule.join(outDirectory, 'package.json'),
+            'utf8',
+          ),
         ) as Record<string, unknown>;
         const packedManifest =
-          packageCheckMocks.packedManifestOverrides.get(normalizedOutDir) ??
-          packageJson;
+          packageCheckMocks.packedManifestOverrides.get(
+            normalizedOutDirectory,
+          ) ?? packageJson;
         const tarballData = `mock tarball ${packageCheckMocks.packCalls.length}`;
-        const packedFiles = await collectPackedFiles(outDir);
+        const packedFiles = await collectPackedFiles(outDirectory);
         const packageJsonIndex = packedFiles.findIndex(
           (file) => file.name === 'package/package.json',
         );
@@ -201,7 +205,7 @@ vi.mock('publint/utils', () => ({
 }));
 
 vi.mock('@arethetypeswrong/core', () => ({
-  checkPackage: vi.fn(async (_pkg: unknown, options: unknown) => {
+  checkPackage: vi.fn(async (_package: unknown, options: unknown) => {
     packageCheckMocks.attwRuns += 1;
     packageCheckMocks.attwCheckOptions.push(options);
 
@@ -223,7 +227,9 @@ const { auditPublishedPackageBoundaries, packOutputTarball } = await import(
 );
 const { assertPackageReleaseConsistency, PackageReleaseConsistencyError } =
   await import('../package-check/release-consistency');
-const { runPackageCheck } = await import('../commands/package');
+const { isRunPackageCheck: runPackageCheck } = await import(
+  '../commands/package'
+);
 const { runReleaseCheck } = await import('../commands/release');
 const { LiminaPreflightManager } = await import('../preflight');
 
@@ -243,20 +249,18 @@ async function createOutputPackage(
   outDir: string;
   rootDir: string;
 }> {
-  const rootDir = await createWorkspaceRoot();
-  const outDir = path.join(rootDir, 'output', 'package');
+  const rootDirectory = await createWorkspaceRoot();
+  const outDirectory = path.join(rootDirectory, 'output', 'package');
   const outputFiles = {
-    ...((options.includePublicMetadata ?? true)
-      ? {
-          'LICENSE.md': 'MIT\n',
-          'README.md': '# Example package\n',
-        }
-      : {}),
+    ...((options.includePublicMetadata ?? true) && {
+      'LICENSE.md': 'MIT\n',
+      'README.md': '# Example package\n',
+    }),
     ...files,
   };
 
   await writeText(
-    path.join(outDir, 'package.json'),
+    path.join(outDirectory, 'package.json'),
     JSON.stringify({
       dependencies: {
         '@example/dep': '1.0.0',
@@ -273,42 +277,46 @@ async function createOutputPackage(
   );
 
   for (const [relativePath, source] of Object.entries(outputFiles)) {
-    await writeText(path.join(outDir, relativePath), source);
+    await writeText(path.join(outDirectory, relativePath), source);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    outDir,
-    rootDir,
+    outDir: outDirectory,
+    rootDir: rootDirectory,
   };
 }
 
 async function createWorkspacePackage(
-  rootDir: string,
+  rootDirectory: string,
   packageName: string,
   manifest: Record<string, unknown>,
   outputManifest: Record<string, unknown> = manifest,
 ): Promise<string> {
-  const packageDirName = packageName.split('/').at(-1) ?? packageName;
-  const packageDir = path.join(rootDir, 'packages', packageDirName);
-  const outDir = path.join(packageDir, 'dist');
+  const packageDirectoryName = packageName.split('/').at(-1) ?? packageName;
+  const packageDirectory = path.join(
+    rootDirectory,
+    'packages',
+    packageDirectoryName,
+  );
+  const outDirectory = path.join(packageDirectory, 'dist');
 
   await writeText(
-    path.join(packageDir, 'package.json'),
+    path.join(packageDirectory, 'package.json'),
     JSON.stringify({
       name: packageName,
       version: '1.0.0',
       ...manifest,
     }),
   );
-  await writeText(path.join(packageDir, 'src/index.ts'), 'export {};\n');
+  await writeText(path.join(packageDirectory, 'src/index.ts'), 'export {};\n');
   await writeText(
-    path.join(outDir, 'package.json'),
+    path.join(outDirectory, 'package.json'),
     JSON.stringify({
       dependencies: {},
       exports: {
@@ -321,23 +329,28 @@ async function createWorkspacePackage(
       ...outputManifest,
     }),
   );
-  await writeText(path.join(outDir, 'index.js'), 'export const value = 1;\n');
-  await writeText(path.join(outDir, 'README.md'), '# Example package\n');
-  await writeText(path.join(outDir, 'LICENSE.md'), 'MIT\n');
+  await writeText(
+    path.join(outDirectory, 'index.js'),
+    'export const value = 1;\n',
+  );
+  await writeText(path.join(outDirectory, 'README.md'), '# Example package\n');
+  await writeText(path.join(outDirectory, 'LICENSE.md'), 'MIT\n');
 
-  return outDir;
+  return outDirectory;
 }
 
 async function createWorkspaceRoot(): Promise<string> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-package-root-'));
-  await writeText(path.join(rootDir, 'package.json'), '{}');
+  const rootDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-package-root-'),
+  );
+  await writeText(path.join(rootDirectory, 'package.json'), '{}');
 
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
 
-  return rootDir;
+  return rootDirectory;
 }
 
 function toArrayBuffer(buffer: Buffer): ArrayBuffer {
@@ -439,25 +452,22 @@ function registerPublishedPackage(
   const normalizedOptions = typeof options === 'string' ? {} : options;
   const tarballUrl = createPublishedTarballUrl(packageName, version);
   const tarballData = `published tarball ${packageName}@${version}`;
-  const dist = {
-    ...(normalizedOptions.includeTarballUrl === false
-      ? {}
-      : { tarball: tarballUrl }),
-    ...(normalizedOptions.includeIntegrity === false
-      ? {}
-      : {
-          integrity:
-            normalizedOptions.integrity ?? createIntegrity(tarballData),
-        }),
-    ...(normalizedOptions.shasum === undefined
-      ? {}
-      : { shasum: normalizedOptions.shasum }),
+  const distribution = {
+    ...(normalizedOptions.includeTarballUrl !== false && {
+      tarball: tarballUrl,
+    }),
+    ...(normalizedOptions.includeIntegrity !== false && {
+      integrity: normalizedOptions.integrity ?? createIntegrity(tarballData),
+    }),
+    ...(normalizedOptions.shasum !== undefined && {
+      shasum: normalizedOptions.shasum,
+    }),
   };
   const versions =
     normalizedOptions.versions ??
     ({
       [version]: {
-        dist,
+        dist: distribution,
       },
     } satisfies Record<string, unknown>);
 
@@ -498,9 +508,9 @@ async function createWorkspaceDependencyReleaseFixture(): Promise<{
   outDir: string;
   rootDir: string;
 }> {
-  const rootDir = await createWorkspaceRoot();
-  const outDir = await createWorkspacePackage(
-    rootDir,
+  const rootDirectory = await createWorkspaceRoot();
+  const outDirectory = await createWorkspacePackage(
+    rootDirectory,
     '@example/a',
     {
       dependencies: {
@@ -514,36 +524,33 @@ async function createWorkspaceDependencyReleaseFixture(): Promise<{
     },
   );
 
-  await createWorkspacePackage(rootDir, '@example/b', {
+  await createWorkspacePackage(rootDirectory, '@example/b', {
     version: '1.0.0',
   });
 
-  return { outDir, rootDir };
+  return { outDir: outDirectory, rootDir: rootDirectory };
 }
 
 function createConfig(
-  rootDir: string,
+  rootDirectory: string,
   entries: NonNullable<NonNullable<ResolvedLiminaConfig['package']>['entries']>,
   options: {
     release?: ResolvedLiminaConfig['release'];
   } = {},
 ): ResolvedLiminaConfig {
-  return {
-    get governanceRoot() {
-      return resolveFixtureGovernanceRoot(this);
-    },
-    configPath: path.join(rootDir, 'limina.config.mjs'),
+  return withFixtureGovernanceRoot({
+    configPath: path.join(rootDirectory, 'limina.config.mjs'),
     package: {
       entries: entries.map((entry) => ({
         ...entry,
         outDir: path.isAbsolute(entry.outDir)
-          ? path.relative(rootDir, entry.outDir)
+          ? path.relative(rootDirectory, entry.outDir)
           : entry.outDir,
       })),
     },
     release: options.release,
-    rootDir,
-  };
+    rootDir: rootDirectory,
+  });
 }
 
 async function collectReleaseConsistencyFindings(options: {
@@ -558,9 +565,7 @@ async function collectReleaseConsistencyFindings(options: {
 
   try {
     await assertPackageReleaseConsistency({
-      registryConfiguration: loadReleaseRegistryConfiguration(
-        options.config.rootDir,
-      ),
+      registryConfiguration: loadReleaseRegistryConfig(options.config.rootDir),
       config: options.config,
       label: options.label,
       outDir: options.outDir,
@@ -677,9 +682,9 @@ beforeEach(() => {
 
       const metadata = packageCheckMocks.registryPackages.get(packageName);
 
-      if (!metadata)
-        return new Response(null, { status: 404, statusText: 'Not Found' });
-      return Response.json(metadata, { statusText: 'OK' });
+      return metadata
+        ? Response.json(metadata, { statusText: 'OK' })
+        : new Response(null, { status: 404, statusText: 'Not Found' });
     }),
   );
 });
@@ -781,13 +786,13 @@ describe('typed Release finding producers', () => {
 
   it('emits changed, local-only, and remote-only content hash facts with hashes', async () => {
     const { outDir, rootDir } = await createWorkspaceDependencyReleaseFixture();
-    const dependencyOutDir = path.join(rootDir, 'packages/b/dist');
+    const dependencyOutDirectory = path.join(rootDir, 'packages/b/dist');
     await writeText(
-      path.join(dependencyOutDir, 'index.js'),
+      path.join(dependencyOutDirectory, 'index.js'),
       'export const value = 2;\n',
     );
     await writeText(
-      path.join(dependencyOutDir, 'local-only.js'),
+      path.join(dependencyOutDirectory, 'local-only.js'),
       'export const local = true;\n',
     );
     registerPublishedPackage('@example/b', '1.0.0', {
@@ -821,25 +826,26 @@ describe('typed Release finding producers', () => {
         'remote-only',
         'changed',
       ]);
+      const expectedDiffs = [
+        expect.objectContaining({
+          kind: 'changed',
+          localHash: expect.stringMatching(/^[\da-f]{64}$/u),
+          relativePath: 'index.js',
+          remoteHash: expect.stringMatching(/^[\da-f]{64}$/u),
+        }),
+        expect.objectContaining({
+          kind: 'local-only',
+          localHash: expect.stringMatching(/^[\da-f]{64}$/u),
+          relativePath: 'local-only.js',
+        }),
+        expect.objectContaining({
+          kind: 'remote-only',
+          relativePath: 'remote-only.js',
+          remoteHash: expect.stringMatching(/^[\da-f]{64}$/u),
+        }),
+      ];
       expect(finding.facts.diffs).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            kind: 'changed',
-            localHash: expect.stringMatching(/^[\da-f]{64}$/u),
-            relativePath: 'index.js',
-            remoteHash: expect.stringMatching(/^[\da-f]{64}$/u),
-          }),
-          expect.objectContaining({
-            kind: 'local-only',
-            localHash: expect.stringMatching(/^[\da-f]{64}$/u),
-            relativePath: 'local-only.js',
-          }),
-          expect.objectContaining({
-            kind: 'remote-only',
-            relativePath: 'remote-only.js',
-            remoteHash: expect.stringMatching(/^[\da-f]{64}$/u),
-          }),
-        ]),
+        expect.arrayContaining(expectedDiffs),
       );
     } finally {
       await rm(rootDir, { force: true, recursive: true });
@@ -1038,9 +1044,7 @@ describe('typed Release finding producers', () => {
             integrityField: 'integrity',
             registryIntegrity: 'not-valid-sri',
           });
-        }
-
-        if (expectedReason === 'integrity-mismatch') {
+        } else if (expectedReason === 'integrity-mismatch') {
           expect(finding?.facts).toMatchObject({
             actualIntegrity: expect.stringMatching(/^sha512-/u),
             actualShasum: createShasum('published tarball @example/b@1.0.0'),
@@ -1174,125 +1178,129 @@ describe('typed Release finding producers', () => {
   );
 
   it('emits typed packed-manifest facts for private dependencies and range mismatches', async () => {
-    const privateRootDir = await createWorkspaceRoot();
-    const rangeRootDir = await createWorkspaceRoot();
+    const privateRootDirectory = await createWorkspaceRoot();
+    const rangeRootDirectory = await createWorkspaceRoot();
 
     try {
-      const privateOutDir = await createWorkspacePackage(
-        privateRootDir,
+      const privateOutDirectory = await createWorkspacePackage(
+        privateRootDirectory,
         '@example/a',
         { dependencies: { '@example/b': 'workspace:*' } },
         { dependencies: { '@example/b': '^1.0.0' } },
       );
-      await createWorkspacePackage(privateRootDir, '@example/b', {
+      await createWorkspacePackage(privateRootDirectory, '@example/b', {
         private: true,
       });
       const privateFindings = await collectReleaseConsistencyFindings({
-        config: createConfig(privateRootDir, [
-          { name: '@example/a', outDir: privateOutDir },
+        config: createConfig(privateRootDirectory, [
+          { name: '@example/a', outDir: privateOutDirectory },
         ]),
         label: '@example/a',
-        outDir: privateOutDir,
+        outDir: privateOutDirectory,
       });
 
-      expect(privateFindings).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
-            facts: expect.objectContaining({
-              dependencyName: '@example/b',
-              kind: 'source-private-dependency',
-              targetManifestPath: normalizeAbsolutePath(
-                path.join(privateRootDir, 'packages/b/package.json'),
-              ),
-            }),
+      const privateManifestPath = normalizeAbsolutePath(
+        path.join(privateRootDirectory, 'packages/b/package.json'),
+      );
+      const expectedPrivateFindings = [
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+          facts: expect.objectContaining({
+            dependencyName: '@example/b',
+            kind: 'source-private-dependency',
+            targetManifestPath: privateManifestPath,
           }),
-        ]),
+        }),
+      ];
+      expect(privateFindings).toEqual(
+        expect.arrayContaining(expectedPrivateFindings),
       );
 
-      const rangeOutDir = await createWorkspacePackage(
-        rangeRootDir,
+      const rangeOutDirectory = await createWorkspacePackage(
+        rangeRootDirectory,
         '@example/a',
         { dependencies: { '@example/b': 'workspace:*' } },
         { dependencies: { '@example/b': '^2.0.0' } },
       );
-      await createWorkspacePackage(rangeRootDir, '@example/b', {
+      await createWorkspacePackage(rangeRootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPublishedPackage('@example/b', '1.0.0');
       const rangeFindings = await collectReleaseConsistencyFindings({
-        config: createConfig(rangeRootDir, [
-          { name: '@example/a', outDir: rangeOutDir },
+        config: createConfig(rangeRootDirectory, [
+          { name: '@example/a', outDir: rangeOutDirectory },
         ]),
         label: '@example/a',
-        outDir: rangeOutDir,
+        outDir: rangeOutDirectory,
       });
 
-      expect(rangeFindings).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
-            facts: expect.objectContaining({
-              actualRange: '^2.0.0',
-              dependencyName: '@example/b',
-              expectedVersion: '1.0.0',
-              kind: 'packed-dependency-range-mismatch',
-            }),
+      const expectedRangeFindings = [
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+          facts: expect.objectContaining({
+            actualRange: '^2.0.0',
+            dependencyName: '@example/b',
+            expectedVersion: '1.0.0',
+            kind: 'packed-dependency-range-mismatch',
           }),
-        ]),
+        }),
+      ];
+      expect(rangeFindings).toEqual(
+        expect.arrayContaining(expectedRangeFindings),
       );
     } finally {
-      await rm(privateRootDir, { force: true, recursive: true });
-      await rm(rangeRootDir, { force: true, recursive: true });
+      await rm(privateRootDirectory, { force: true, recursive: true });
+      await rm(rangeRootDirectory, { force: true, recursive: true });
     }
   });
 
   it('emits packed-dependency-missing facts from the packed manifest producer', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         { dependencies: { '@example/b': 'workspace:*' } },
         { dependencies: {} },
       );
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPublishedPackage('@example/b', '1.0.0');
 
       const findings = await collectReleaseConsistencyFindings({
-        config: createConfig(rootDir, [{ name: '@example/a', outDir }]),
+        config: createConfig(rootDirectory, [
+          { name: '@example/a', outDir: outDirectory },
+        ]),
         label: '@example/a',
-        outDir,
+        outDir: outDirectory,
       });
 
-      expect(findings).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
-            facts: expect.objectContaining({
-              dependencyName: '@example/b',
-              kind: 'packed-dependency-missing',
-              packedManifestPath: 'package.tgz#package.json',
-              sectionName: 'dependencies',
-            }),
+      const expectedFindings = [
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+          facts: expect.objectContaining({
+            dependencyName: '@example/b',
+            kind: 'packed-dependency-missing',
+            packedManifestPath: 'package.tgz#package.json',
+            sectionName: 'dependencies',
           }),
-        ]),
-      );
+        }),
+      ];
+      expect(findings).toEqual(expect.arrayContaining(expectedFindings));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('adapts command-owned output-manifest and private-output findings without parsing text', async () => {
-    const localRootDir = await createWorkspaceRoot();
-    const privateRootDir = await createWorkspaceRoot();
+    const localRootDirectory = await createWorkspaceRoot();
+    const privateRootDirectory = await createWorkspaceRoot();
 
     try {
-      const localOutDir = await createWorkspacePackage(
-        localRootDir,
+      const localOutDirectory = await createWorkspacePackage(
+        localRootDirectory,
         '@example/a',
         {},
         { devDependencies: { '@example/dev': 'file:../dev' } },
@@ -1300,8 +1308,8 @@ describe('typed Release finding producers', () => {
       const localIssues: LiminaCheckIssue[] = [];
       await expect(
         runReleaseCheck({
-          config: createConfig(localRootDir, [
-            { name: '@example/a', outDir: localOutDir },
+          config: createConfig(localRootDirectory, [
+            { name: '@example/a', outDir: localOutDirectory },
           ]),
           deferSnapshot: true,
           issues: localIssues,
@@ -1326,8 +1334,8 @@ describe('typed Release finding producers', () => {
         ),
       ).toBe(true);
 
-      const privateOutDir = await createWorkspacePackage(
-        privateRootDir,
+      const privateOutDirectory = await createWorkspacePackage(
+        privateRootDirectory,
         '@example/a',
         {},
         { private: true },
@@ -1335,8 +1343,8 @@ describe('typed Release finding producers', () => {
       const privateIssues: LiminaCheckIssue[] = [];
       await expect(
         runReleaseCheck({
-          config: createConfig(privateRootDir, [
-            { name: '@example/a', outDir: privateOutDir },
+          config: createConfig(privateRootDirectory, [
+            { name: '@example/a', outDir: privateOutDirectory },
           ]),
           deferSnapshot: true,
           issues: privateIssues,
@@ -1361,90 +1369,97 @@ describe('typed Release finding producers', () => {
         ),
       ).toBe(true);
     } finally {
-      await rm(localRootDir, { force: true, recursive: true });
-      await rm(privateRootDir, { force: true, recursive: true });
+      await rm(localRootDirectory, { force: true, recursive: true });
+      await rm(privateRootDirectory, { force: true, recursive: true });
     }
   });
 
   it('emits packed-manifest and tarball-hygiene facts from their detectors', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
-      packageCheckMocks.packedManifestOverrides.set(outDir, {
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
+      packageCheckMocks.packedManifestOverrides.set(outDirectory, {
         devDependencies: { '@example/dev': 'file:../dev' },
         name: '@example/a',
         version: '1.0.0',
       });
-      await rm(path.join(outDir, 'README.md'), { force: true });
-      await writeText(path.join(outDir, 'index.js.map'), '{}\n');
+      await rm(path.join(outDirectory, 'README.md'), { force: true });
+      await writeText(path.join(outDirectory, 'index.js.map'), '{}\n');
       await writeText(
-        path.join(outDir, 'mapped.js'),
+        path.join(outDirectory, 'mapped.js'),
         'export const mapped = true;\n//# sourceMappingURL=mapped.js.map\n',
       );
 
       const findings = await collectReleaseConsistencyFindings({
-        config: createConfig(rootDir, [{ name: '@example/a', outDir }], {
-          release: { npmPackageJsonLint: true },
-        }),
+        config: createConfig(
+          rootDirectory,
+          [{ name: '@example/a', outDir: outDirectory }],
+          {
+            release: { npmPackageJsonLint: true },
+          },
+        ),
         label: '@example/a',
-        outDir,
+        outDir: outDirectory,
       });
 
-      expect(findings).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
-            facts: expect.objectContaining({
-              dependencyName: '@example/dev',
-              kind: 'packed-local-specifier',
-              sectionName: 'devDependencies',
-              specifier: 'file:../dev',
-            }),
+      const expectedFindings = [
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+          facts: expect.objectContaining({
+            dependencyName: '@example/dev',
+            kind: 'packed-local-specifier',
+            sectionName: 'devDependencies',
+            specifier: 'file:../dev',
           }),
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_PACKED_MANIFEST',
-            external: expect.objectContaining({
-              code: expect.any(String),
-              tool: 'npm-package-json-lint',
-            }),
-            facts: expect.objectContaining({
-              kind: 'manifest-lint-failed',
-              lintRule: expect.any(String),
-            }),
+        }),
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_PACKED_MANIFEST',
+          external: expect.objectContaining({
+            code: expect.any(String),
+            tool: 'npm-package-json-lint',
           }),
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
-            facts: expect.objectContaining({
-              kind: 'required-files-missing',
-              missingFiles: ['README.md'],
-            }),
+          facts: expect.objectContaining({
+            kind: 'manifest-lint-failed',
+            lintRule: expect.any(String),
           }),
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
-            facts: expect.objectContaining({
-              archiveEntryPath: 'index.js.map',
-              kind: 'source-map-file',
-            }),
+        }),
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+          facts: expect.objectContaining({
+            kind: 'required-files-missing',
+            missingFiles: ['README.md'],
           }),
-          expect.objectContaining({
-            code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
-            facts: expect.objectContaining({
-              archiveEntryPath: 'mapped.js',
-              kind: 'source-mapping-url',
-            }),
+        }),
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+          facts: expect.objectContaining({
+            archiveEntryPath: 'index.js.map',
+            kind: 'source-map-file',
           }),
-        ]),
-      );
+        }),
+        expect.objectContaining({
+          code: 'LIMINA_RELEASE_TARBALL_HYGIENE',
+          facts: expect.objectContaining({
+            archiveEntryPath: 'mapped.js',
+            kind: 'source-mapping-url',
+          }),
+        }),
+      ];
+      expect(findings).toEqual(expect.arrayContaining(expectedFindings));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });
 
 describe('auditPublishedPackageBoundaries', () => {
   it('audits literal dynamic imports and reexports without treating template globs as packages', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': [
         "import('@example/missing-dynamic');",
         "export * from '@example/missing-star';",
@@ -1455,7 +1470,7 @@ describe('auditPublishedPackageBoundaries', () => {
 
     try {
       const violations = await auditPublishedPackageBoundaries({
-        outDir: pkg.outDir,
+        outDir: package_.outDir,
       });
 
       expect(violations.map((violation) => violation.specifier)).toEqual([
@@ -1463,12 +1478,12 @@ describe('auditPublishedPackageBoundaries', () => {
         '@example/missing-star',
       ]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('allows self exports, declared dependencies, relative imports, and node builtins in node output', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': "import '@example/dep';\nimport './local.js';\n",
         'local.js': 'export const value = 1;\n',
@@ -1486,16 +1501,16 @@ describe('auditPublishedPackageBoundaries', () => {
     try {
       await expect(
         auditPublishedPackageBoundaries({
-          outDir: pkg.outDir,
+          outDir: package_.outDir,
         }),
       ).resolves.toEqual([]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('matches self-import authority from complete exports keys instead of targets', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'feature/good.js': 'export const good = true;\n',
         'index.js': [
@@ -1518,7 +1533,7 @@ describe('auditPublishedPackageBoundaries', () => {
 
     try {
       const violations = await auditPublishedPackageBoundaries({
-        outDir: pkg.outDir,
+        outDir: package_.outDir,
       });
 
       expect(violations.map((violation) => violation.specifier)).toEqual([
@@ -1526,12 +1541,12 @@ describe('auditPublishedPackageBoundaries', () => {
         '@example/pkg/feature/bad.json',
       ]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('keeps bare self-import compatibility when exports is absent', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': "import '@example/pkg';\n",
       },
@@ -1543,23 +1558,23 @@ describe('auditPublishedPackageBoundaries', () => {
     try {
       await expect(
         auditPublishedPackageBoundaries({
-          outDir: pkg.outDir,
+          outDir: package_.outDir,
         }),
       ).resolves.toEqual([]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('reports browser node builtins, undeclared dependencies, and unexported self imports', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js':
         "import 'node:fs';\nimport '@example/missing';\nimport '@example/pkg/private';\n",
     });
 
     try {
       const violations = await auditPublishedPackageBoundaries({
-        outDir: pkg.outDir,
+        outDir: package_.outDir,
       });
 
       expect(violations.map((violation) => violation.specifier)).toEqual([
@@ -1568,19 +1583,25 @@ describe('auditPublishedPackageBoundaries', () => {
         'node:fs',
       ]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('validates exact, pattern, conditional, builtin, local, and dependency package imports from the published manifest', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'browser.js': 'export const browser = true;\n',
         'default.js': 'export const fallback = true;\n',
         'features/a.js': 'export const feature = true;\n',
+        'features/dollar-$&.js': 'export const feature = true;\n',
+        'features/dollar-$`.js': 'export const feature = true;\n',
+        "features/dollar-$'.js": 'export const feature = true;\n',
         'index.js': [
           "import '#exact';",
           "import '#features/a';",
+          'import "#features/dollar-$&";',
+          'import "#features/dollar-$`";',
+          `import "#features/dollar-$'";`,
           "import '#unknown';",
           "import '#blocked';",
           "import '#escape';",
@@ -1617,7 +1638,7 @@ describe('auditPublishedPackageBoundaries', () => {
 
     try {
       const violations = await auditPublishedPackageBoundaries({
-        outDir: pkg.outDir,
+        outDir: package_.outDir,
       });
 
       expect(violations.map((violation) => violation.specifier)).toEqual([
@@ -1629,20 +1650,20 @@ describe('auditPublishedPackageBoundaries', () => {
         '@example/direct-missing',
       ]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 });
 
 describe('runPackageCheck and runReleaseCheck', () => {
   it('records package boundary file paths relative to the config root', async () => {
-    const rootDir = await createWorkspaceRoot();
-    const outDir = path.join(rootDir, 'packages/pkg/dist');
+    const rootDirectory = await createWorkspaceRoot();
+    const outDirectory = path.join(rootDirectory, 'packages/pkg/dist');
     const issues: LiminaCheckIssue[] = [];
 
     try {
       await writeText(
-        path.join(outDir, 'package.json'),
+        path.join(outDirectory, 'package.json'),
         JSON.stringify({
           exports: { '.': './browser/index.js' },
           name: '@example/pkg',
@@ -1650,13 +1671,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       );
       await writeText(
-        path.join(outDir, 'browser/index.js'),
+        path.join(outDirectory, 'browser/index.js'),
         "import '@example/undeclared';\n",
       );
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/pkg',
@@ -1691,7 +1712,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         formatCheckIssueSnapshotInventory({
           filters: { files: ['packages/pkg/dist/browser/index.js'] },
           format: 'json',
-          rootDir,
+          rootDir: rootDirectory,
           snapshot,
         }),
       ) as { issueCount: number };
@@ -1699,14 +1720,14 @@ describe('runPackageCheck and runReleaseCheck', () => {
         formatCheckIssueSnapshotInventory({
           filters: { scopes: ['packages/pkg/dist/browser/**'] },
           format: 'json',
-          rootDir,
+          rootDir: rootDirectory,
           snapshot,
         }),
       ) as { issueCount: number };
       const ndjson = formatCheckIssueSnapshotInventory({
         filters: { scopes: ['packages/pkg/dist/browser'] },
         format: 'ndjson',
-        rootDir,
+        rootDir: rootDirectory,
         snapshot,
       });
 
@@ -1716,15 +1737,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
         filePath: 'packages/pkg/dist/browser/index.js',
       });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('reports package entry and sub-check states to the flow reporter', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
     const { chunks, flow } = createFlow();
     let stats: LiminaCheckRunTaskStats | undefined;
 
@@ -1732,10 +1753,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runPackageCheck({
           clearScreen: false,
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/valid',
             },
           ]),
@@ -1770,8 +1791,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
         total: 1,
       });
     } finally {
-      await pkg.cleanup();
-      await rm(rootDir, {
+      await package_.cleanup();
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -1779,15 +1800,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('does not read generated graph during package checks', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
-    const rootDir = await createWorkspaceRoot();
-    const config = createConfig(rootDir, [
+    const rootDirectory = await createWorkspaceRoot();
+    const config = createConfig(rootDirectory, [
       {
         checks: ['boundary'],
         name: '@example/valid',
-        outDir: pkg.outDir,
+        outDir: package_.outDir,
       },
     ]);
     const getGraph = vi.fn(async () => {
@@ -1805,8 +1826,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       expect(getGraph).not.toHaveBeenCalled();
     } finally {
-      await pkg.cleanup();
-      await rm(rootDir, {
+      await package_.cleanup();
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -1814,13 +1835,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('does not read generated graph during release checks', async () => {
-    const rootDir = await createWorkspaceRoot();
-    const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
-    const config = createConfig(rootDir, [
+    const rootDirectory = await createWorkspaceRoot();
+    const outDirectory = await createWorkspacePackage(
+      rootDirectory,
+      '@example/a',
+      {},
+    );
+    const config = createConfig(rootDirectory, [
       {
         checks: ['boundary'],
         name: '@example/a',
-        outDir,
+        outDir: outDirectory,
       },
     ]);
     const getGraph = vi.fn(async () => {
@@ -1853,7 +1878,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         total: 1,
       });
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -1861,9 +1886,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('reuses the preflight activated package index for release consistency', async () => {
-    const rootDir = await createWorkspaceRoot();
-    const outDir = await createWorkspacePackage(
-      rootDir,
+    const rootDirectory = await createWorkspaceRoot();
+    const outDirectory = await createWorkspacePackage(
+      rootDirectory,
       '@example/a',
       {
         dependencies: {
@@ -1876,12 +1901,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       },
     );
-    await createWorkspacePackage(rootDir, '@example/b', {});
-    const config = createConfig(rootDir, [
+    await createWorkspacePackage(rootDirectory, '@example/b', {});
+    const config = createConfig(rootDirectory, [
       {
         checks: ['boundary'],
         name: '@example/a',
-        outDir,
+        outDir: outDirectory,
       },
     ]);
     const preflight = createGraphRejectingPreflight(config, async () => {
@@ -1917,7 +1942,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
     } finally {
       errorSpy.mockRestore();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -1925,15 +1950,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails before metadata checks when the output package.json is missing', async () => {
-    const rootDir = await createWorkspaceRoot();
-    const outDir = path.join(rootDir, 'output', 'missing');
+    const rootDirectory = await createWorkspaceRoot();
+    const outDirectory = path.join(rootDirectory, 'output', 'missing');
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
-              outDir,
+              outDir: outDirectory,
               name: '@example/pkg',
             },
           ]),
@@ -1944,7 +1969,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       expect(packageCheckMocks.publintCalls).toHaveLength(0);
       expect(packageCheckMocks.attwRuns).toBe(0);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -1970,15 +1995,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
   ])(
     'checks declaration structure without duplicating publint: $label',
     async ({ exports, passes }) => {
-      const pkg = await createOutputPackage({}, { exports });
+      const package_ = await createOutputPackage({}, { exports });
       try {
         const issues: LiminaCheckIssue[] = [];
         await expect(
           runPackageCheck({
-            config: createConfig(pkg.rootDir, [
+            config: createConfig(package_.rootDir, [
               {
                 checks: ['boundary'],
-                outDir: pkg.outDir,
+                outDir: package_.outDir,
                 name: '@example/pkg',
               },
             ]),
@@ -1995,13 +2020,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
           );
         }
       } finally {
-        await pkg.cleanup();
+        await package_.cleanup();
       }
     },
   );
 
   it('rejects output package manifests without names', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': 'export const value = 1;\n',
       },
@@ -2013,10 +2038,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               checks: ['boundary'],
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
@@ -2025,12 +2050,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       expect(packageCheckMocks.packCalls).toEqual([]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('does not run release metadata validation during package checks', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': "import '@example/dep';\n",
       },
@@ -2043,25 +2068,25 @@ describe('runPackageCheck and runReleaseCheck', () => {
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([pkg.outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([package_.outDir]);
       expect(packageCheckMocks.publintCalls).toHaveLength(1);
       expect(packageCheckMocks.attwRuns).toBe(1);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('does not treat private package outputs as package check release failures', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': "import '@example/dep';\n",
       },
@@ -2076,22 +2101,22 @@ describe('runPackageCheck and runReleaseCheck', () => {
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               checks: ['boundary'],
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
         }),
       ).resolves.toBe(true);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('rejects pnpm-local output manifest dependency specifiers', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': 'export const value = 1;\n',
       },
@@ -2105,22 +2130,22 @@ describe('runPackageCheck and runReleaseCheck', () => {
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               checks: ['boundary'],
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
         }),
       ).resolves.toBe(false);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('runs a single selected package tool without release metadata validation', async () => {
-    const pkg = await createOutputPackage(
+    const package_ = await createOutputPackage(
       {
         'index.js': "import '@example/dep';\n",
       },
@@ -2133,9 +2158,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
@@ -2143,20 +2168,20 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([pkg.outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([package_.outDir]);
       expect(packageCheckMocks.publintCalls).toHaveLength(1);
       expect(packageCheckMocks.attwRuns).toBe(0);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('fails when a publishable package depends on a private workspace package', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -2170,24 +2195,24 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         private: true,
       });
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2195,38 +2220,42 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('allows unrelated nameless workspace packages during release checks', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(rootDir, 'packages/fixture/package.json'),
+        path.join(rootDirectory, 'packages/fixture/package.json'),
         JSON.stringify({
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/fixture/src/index.ts'),
+        path.join(rootDirectory, 'packages/fixture/src/index.ts'),
         'export const fixtureValue = 1;\n',
       );
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([outDirectory]);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2234,11 +2263,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when a publishable source manifest uses link in publish dependencies', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -2254,18 +2283,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2273,11 +2302,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks for private package outputs', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -2289,20 +2318,20 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await rm(path.join(outDir, 'README.md'), {
+      await rm(path.join(outDirectory, 'README.md'), {
         force: true,
       });
-      await rm(path.join(outDir, 'LICENSE.md'), {
+      await rm(path.join(outDirectory, 'LICENSE.md'), {
         force: true,
       });
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
@@ -2311,7 +2340,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       expect(packageCheckMocks.packCalls).toEqual([]);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2319,31 +2348,35 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when the tarball is missing README.md or LICENSE.md', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
-      await rm(path.join(outDir, 'README.md'), {
+      await rm(path.join(outDirectory, 'README.md'), {
         force: true,
       });
-      await rm(path.join(outDir, 'LICENSE.md'), {
+      await rm(path.join(outDirectory, 'LICENSE.md'), {
         force: true,
       });
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2351,26 +2384,30 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when the tarball contains source map files', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
-      await writeText(path.join(outDir, 'index.js.map'), '{}\n');
+      await writeText(path.join(outDirectory, 'index.js.map'), '{}\n');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2378,29 +2415,33 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when JavaScript has line sourceMappingURL comments', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(outDir, 'index.js'),
+        path.join(outDirectory, 'index.js'),
         'export const value = 1;\n//# sourceMappingURL=index.js.map\n',
       );
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2408,29 +2449,33 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when JavaScript has block sourceMappingURL comments', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(outDir, 'index.mjs'),
+        path.join(outDirectory, 'index.mjs'),
         'export const value = 1;\n/*# sourceMappingURL=index.mjs.map */\n',
       );
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2438,13 +2483,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('allows sourceMappingURL text in JavaScript literals', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(outDir, 'index.cjs'),
+        path.join(outDirectory, 'index.cjs'),
         [
           "const line = '//# sourceMappingURL=line.js.map';",
           'const block = "/*# sourceMappingURL=block.js.map */";',
@@ -2457,17 +2506,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2475,29 +2524,33 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when malformed JavaScript contains a sourceMappingURL comment', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(outDir, 'index.js'),
+        path.join(outDirectory, 'index.js'),
         'export const = ;\n//# sourceMappingURL=index.js.map\n',
       );
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2505,14 +2558,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails explicitly when malformed JavaScript prevents reliable comment analysis', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
     const issues: LiminaCheckIssue[] = [];
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(outDir, 'index.cjs'),
+        path.join(outDirectory, 'index.cjs'),
         [
           "const line = '//# sourceMappingURL=line.js.map';",
           'const block = "/*# sourceMappingURL=block.js.map */";',
@@ -2527,10 +2584,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           issues,
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
@@ -2542,7 +2599,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         ),
       ).toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2550,12 +2607,16 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('does not run npm-package-json-lint when the release integration is omitted', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
-      packageCheckMocks.packedManifestOverrides.set(outDir, {
+      packageCheckMocks.packedManifestOverrides.set(outDirectory, {
         dependencies: {},
         exports: {
           '.': './index.js',
@@ -2566,17 +2627,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2584,12 +2645,16 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when the enabled npm-package-json-lint defaults find a problem', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
-      packageCheckMocks.packedManifestOverrides.set(outDir, {
+      packageCheckMocks.packedManifestOverrides.set(outDirectory, {
         dependencies: {},
         exports: {
           '.': './index.js',
@@ -2601,11 +2666,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -2618,7 +2683,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2626,12 +2691,16 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('merges npm-package-json-lint rule overrides over Limina defaults', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
-      packageCheckMocks.packedManifestOverrides.set(outDir, {
+      packageCheckMocks.packedManifestOverrides.set(outDirectory, {
         dependencies: {},
         exports: {
           '.': './index.js',
@@ -2644,11 +2713,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -2665,7 +2734,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2673,13 +2742,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('lints the packed manifest instead of the output manifest', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
       await writeText(
-        path.join(outDir, 'package.json'),
+        path.join(outDirectory, 'package.json'),
         JSON.stringify({
           dependencies: {},
           exports: {
@@ -2689,7 +2762,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
           version: '1.0.0',
         }),
       );
-      packageCheckMocks.packedManifestOverrides.set(outDir, {
+      packageCheckMocks.packedManifestOverrides.set(outDirectory, {
         dependencies: {},
         exports: {
           '.': './index.js',
@@ -2703,11 +2776,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -2720,7 +2793,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2728,11 +2801,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('accepts source manifests that expose source entries while release manifests expose artifacts', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           exports: {
@@ -2751,31 +2824,31 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
 
       await writeText(
-        path.join(rootDir, 'packages/a/src/feature.ts'),
+        path.join(rootDirectory, 'packages/a/src/feature.ts'),
         'export const feature = 1;\n',
       );
       await writeText(
-        path.join(outDir, 'index.d.ts'),
+        path.join(outDirectory, 'index.d.ts'),
         'export declare const value: number;\n',
       );
       await writeText(
-        path.join(outDir, 'feature.js'),
+        path.join(outDirectory, 'feature.js'),
         'export const feature = 1;\n',
       );
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2783,11 +2856,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('ignores workspace and link specifiers in source devDependencies', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           devDependencies: {
@@ -2798,24 +2871,24 @@ describe('runPackageCheck and runReleaseCheck', () => {
         {},
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         private: true,
       });
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2823,11 +2896,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when the packed manifest leaks workspace or link specifiers', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -2842,25 +2915,25 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPublishedPackage('@example/b', '1.0.0');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2868,12 +2941,16 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when the packed manifest leaks local specifiers in devDependencies', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
 
-      packageCheckMocks.packedManifestOverrides.set(outDir, {
+      packageCheckMocks.packedManifestOverrides.set(outDirectory, {
         devDependencies: {
           '@example/dev': 'file:../dev',
         },
@@ -2888,18 +2965,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2907,11 +2984,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when a workspace dependency version is not published', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -2925,24 +3002,24 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2950,11 +3027,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('passes when workspace dependency source changes do not change packed package output', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -2968,29 +3045,29 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       await writeText(
-        path.join(rootDir, 'packages/b/src/index.ts'),
+        path.join(rootDirectory, 'packages/b/src/index.ts'),
         'export const sourceOnly = 2;\n',
       );
       registerPublishedPackage('@example/b', '1.0.0');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2998,11 +3075,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('uses the configured release contentHash dist-tag baseline', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3016,7 +3093,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.1.0',
       });
       registerPublishedPackage('@example/b', '1.1.0', {
@@ -3028,12 +3105,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3048,7 +3125,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3056,18 +3133,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('passes ignored dependency bundle differences and calls ignore with release context', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
     const ignore = vi.fn(
-      (args: { dependencyName: string; importerName: string }) =>
-        args.importerName === '@example/a' &&
-        args.dependencyName === '@example/b'
+      (arguments_: { dependencyName: string; importerName: string }) =>
+        arguments_.importerName === '@example/a' &&
+        arguments_.dependencyName === '@example/b'
           ? ['client/**']
           : [],
     );
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3080,8 +3157,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
@@ -3089,7 +3166,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
 
       await writeText(
-        path.join(dependencyOutDir, 'client/runtime.js'),
+        path.join(dependencyOutDirectory, 'client/runtime.js'),
         'export const runtime = "local";\n',
       );
       registerPublishedPackage('@example/b', '1.0.0', {
@@ -3101,12 +3178,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3126,7 +3203,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         importerName: '@example/a',
       });
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3135,11 +3212,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
   it('prints the baseline version and ignored contentHash diff counts', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3152,8 +3229,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
@@ -3161,11 +3238,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
 
       await writeText(
-        path.join(dependencyOutDir, 'ignored/local-only.js'),
+        path.join(dependencyOutDirectory, 'ignored/local-only.js'),
         'export const side = "local";\n',
       );
       await writeText(
-        path.join(dependencyOutDir, 'ignored/changed.js'),
+        path.join(dependencyOutDirectory, 'ignored/changed.js'),
         'export const side = "local";\n',
       );
       registerPublishedPackage('@example/b', '1.0.0', {
@@ -3178,12 +3255,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3212,7 +3289,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       expect(output).toContain('changed: 1');
     } finally {
       logSpy.mockRestore();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3220,11 +3297,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('does not ignore dependency README, docs, and examples by default', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3237,39 +3314,42 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
         },
       );
 
-      await writeText(path.join(dependencyOutDir, 'README.md'), '# New docs\n');
       await writeText(
-        path.join(dependencyOutDir, 'docs/guide.md'),
+        path.join(dependencyOutDirectory, 'README.md'),
+        '# New docs\n',
+      );
+      await writeText(
+        path.join(dependencyOutDirectory, 'docs/guide.md'),
         '# Guide\n',
       );
       await writeText(
-        path.join(dependencyOutDir, 'examples/basic.js'),
+        path.join(dependencyOutDirectory, 'examples/basic.js'),
         'export const example = true;\n',
       );
       registerPublishedPackage('@example/b', '1.0.0');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3277,11 +3357,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('uses builtin contentHash ignores when builtinIgnore is enabled without a user ignore', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3294,21 +3374,24 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
         },
       );
 
-      await writeText(path.join(dependencyOutDir, 'README.md'), '# New docs\n');
       await writeText(
-        path.join(dependencyOutDir, 'docs/guide.md'),
+        path.join(dependencyOutDirectory, 'README.md'),
+        '# New docs\n',
+      );
+      await writeText(
+        path.join(dependencyOutDirectory, 'docs/guide.md'),
         '# Guide\n',
       );
       await writeText(
-        path.join(dependencyOutDir, 'examples/basic.js'),
+        path.join(dependencyOutDirectory, 'examples/basic.js'),
         'export const example = true;\n',
       );
       registerPublishedPackage('@example/b', '1.0.0');
@@ -3316,12 +3399,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3336,7 +3419,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3344,11 +3427,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('uses builtin contentHash ignores when ignore returns undefined', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3361,26 +3444,29 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
         },
       );
 
-      await writeText(path.join(dependencyOutDir, 'README.md'), '# New docs\n');
+      await writeText(
+        path.join(dependencyOutDirectory, 'README.md'),
+        '# New docs\n',
+      );
       registerPublishedPackage('@example/b', '1.0.0');
 
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3396,7 +3482,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3404,11 +3490,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('does not use builtin contentHash ignores when ignore returns an empty array', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3421,26 +3507,29 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
         },
       );
 
-      await writeText(path.join(dependencyOutDir, 'README.md'), '# New docs\n');
+      await writeText(
+        path.join(dependencyOutDirectory, 'README.md'),
+        '# New docs\n',
+      );
       registerPublishedPackage('@example/b', '1.0.0');
 
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3456,7 +3545,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3464,11 +3553,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when dependency package.json differs from npm latest', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3483,7 +3572,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
 
       await createWorkspacePackage(
-        rootDir,
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
@@ -3497,18 +3586,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3518,11 +3607,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   it('prints release-relevant contentHash diff file names when dependency output differs', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3535,8 +3624,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
           },
         },
       );
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
@@ -3544,15 +3633,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
 
       await writeText(
-        path.join(dependencyOutDir, 'dist/shared/dep-abc.js'),
+        path.join(dependencyOutDirectory, 'dist/shared/dep-abc.js'),
         'export const dep = "local";\n',
       );
       await writeText(
-        path.join(dependencyOutDir, 'index.js'),
+        path.join(dependencyOutDirectory, 'index.js'),
         'export const value = "local";\n',
       );
       await writeText(
-        path.join(dependencyOutDir, 'index.d.ts'),
+        path.join(dependencyOutDirectory, 'index.d.ts'),
         'export declare const value: "local";\n',
       );
       registerPublishedPackage('@example/b', '1.0.0', {
@@ -3565,11 +3654,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
@@ -3595,7 +3684,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       logSpy.mockRestore();
       errorSpy.mockRestore();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3603,11 +3692,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('passes when dependency package.json differences match a user contentHash ignore glob', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3622,7 +3711,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
 
       await createWorkspacePackage(
-        rootDir,
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
@@ -3637,12 +3726,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3657,7 +3746,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3707,10 +3796,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
       .spyOn(ReleaseLogger, 'error')
       .mockImplementation(() => {});
     const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
-    let markRequestStarted!: () => void;
-    const requestStarted = new Promise<void>((resolve) => {
-      markRequestStarted = resolve;
-    });
+    const { promise: requestStarted, resolve: markRequestStarted } =
+      Promise.withResolvers<void>();
 
     vi.useFakeTimers();
     const timeoutSpy = vi
@@ -3744,16 +3831,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
         ]),
         packageNames: ['@example/a'],
       });
-      let settled = false;
+      let isSettled = false;
 
-      const settlementPromise = resultPromise.then(() => {
-        settled = true;
-      });
+      const settlementPromise = (async () => {
+        await resultPromise;
+        isSettled = true;
+      })();
       await requestStarted;
 
       expect(timeoutSpy).toHaveBeenCalledWith(30_000);
       await vi.advanceTimersByTimeAsync(29_999);
-      expect(settled).toBe(false);
+      expect(isSettled).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
       await expect(resultPromise).resolves.toBe(false);
       await settlementPromise;
@@ -3894,14 +3982,14 @@ describe('runPackageCheck and runReleaseCheck', () => {
   );
 
   it('fails when workspace dependency registry metadata has no latest dist-tag', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
     const errorSpy = vi
       .spyOn(ReleaseLogger, 'error')
       .mockImplementation(() => {});
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3915,7 +4003,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPackageMetadata('@example/b', {
@@ -3924,11 +4012,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
@@ -3940,7 +4028,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
     } finally {
       errorSpy.mockRestore();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3948,11 +4036,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when the configured release contentHash dist-tag is missing', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -3966,7 +4054,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPublishedPackage('@example/b', '1.0.0');
@@ -3974,12 +4062,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runReleaseCheck({
           config: createConfig(
-            rootDir,
+            rootDirectory,
             [
               {
                 checks: ['boundary'],
                 name: '@example/a',
-                outDir,
+                outDir: outDirectory,
               },
             ],
             {
@@ -3994,7 +4082,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4002,11 +4090,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when workspace dependency latest metadata has no tarball URL', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4020,7 +4108,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPublishedPackage('@example/b', '1.0.0', {
@@ -4029,18 +4117,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4048,11 +4136,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when workspace dependency latest tarball cannot be downloaded', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4066,7 +4154,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
       registerPublishedPackage('@example/b', '1.0.0', {
@@ -4075,18 +4163,18 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4099,10 +4187,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
       .spyOn(ReleaseLogger, 'error')
       .mockImplementation(() => {});
     const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
-    let markBodyStarted!: () => void;
-    const bodyStarted = new Promise<void>((resolve) => {
-      markBodyStarted = resolve;
-    });
+    const { promise: bodyStarted, resolve: markBodyStarted } =
+      Promise.withResolvers<void>();
 
     registerPublishedPackage('@example/b', '1.0.0');
     vi.useFakeTimers();
@@ -4144,16 +4230,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
         ]),
         packageNames: ['@example/a'],
       });
-      let settled = false;
+      let isSettled = false;
 
-      const settlementPromise = resultPromise.then(() => {
-        settled = true;
-      });
+      const settlementPromise = (async () => {
+        await resultPromise;
+        isSettled = true;
+      })();
       await bodyStarted;
 
       expect(timeoutSpy).toHaveBeenCalledWith(120_000);
       await vi.advanceTimersByTimeAsync(119_999);
-      expect(settled).toBe(false);
+      expect(isSettled).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
       await expect(resultPromise).resolves.toBe(false);
       await settlementPromise;
@@ -4376,11 +4463,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('does not run release dependency verification during package checks', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4394,23 +4481,23 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.0.0',
       });
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4418,11 +4505,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when a workspace dependency local package output differs from npm latest', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4436,33 +4523,33 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      const dependencyOutDir = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           version: '1.0.0',
         },
       );
       await writeText(
-        path.join(dependencyOutDir, 'index.js'),
+        path.join(dependencyOutDirectory, 'index.js'),
         'export const value = 2;\n',
       );
       registerPublishedPackage('@example/b', '1.0.0');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4470,11 +4557,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when the packed dependency range does not cover the workspace package version', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4488,25 +4575,25 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '2.0.0',
       });
       registerPublishedPackage('@example/b', '2.0.0');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(false);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4514,11 +4601,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('passes when workspace dependencies are published and packed ranges cover them', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4532,25 +4619,25 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      await createWorkspacePackage(rootDir, '@example/b', {
+      await createWorkspacePackage(rootDirectory, '@example/b', {
         version: '1.2.0',
       });
       registerPublishedPackage('@example/b', '1.2.0');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
         }),
       ).resolves.toBe(true);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4558,14 +4645,14 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('reports recursive workspace dependency publish order', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
     const errorSpy = vi
       .spyOn(ReleaseLogger, 'error')
       .mockImplementation(() => {});
 
     try {
-      const outDir = await createWorkspacePackage(
-        rootDir,
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
         '@example/a',
         {
           dependencies: {
@@ -4579,8 +4666,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       );
 
-      const dependencyOutDirB = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectoryB = await createWorkspacePackage(
+        rootDirectory,
         '@example/b',
         {
           dependencies: {
@@ -4589,19 +4676,19 @@ describe('runPackageCheck and runReleaseCheck', () => {
           version: '1.0.0',
         },
       );
-      const dependencyOutDirC = await createWorkspacePackage(
-        rootDir,
+      const dependencyOutDirectoryC = await createWorkspacePackage(
+        rootDirectory,
         '@example/c',
         {
           version: '1.0.0',
         },
       );
       await writeText(
-        path.join(dependencyOutDirB, 'index.js'),
+        path.join(dependencyOutDirectoryB, 'index.js'),
         'export const value = 2;\n',
       );
       await writeText(
-        path.join(dependencyOutDirC, 'index.js'),
+        path.join(dependencyOutDirectoryC, 'index.js'),
         'export const value = 2;\n',
       );
       registerPublishedPackage('@example/b', '1.0.0');
@@ -4609,11 +4696,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           packageNames: ['@example/a'],
@@ -4625,7 +4712,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
       );
     } finally {
       errorSpy.mockRestore();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4633,27 +4720,31 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('uses the activated package index for release checks from cwd', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
-      const cwd = path.join(rootDir, 'packages/a/src/nested');
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
+      const cwd = path.join(rootDirectory, 'packages/a/src/nested');
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           cwd,
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([outDirectory]);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4661,15 +4752,19 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('excludes overlap package cwd authority but keeps explicit release entries', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
-      const packageRoot = path.join(rootDir, 'packages/a');
-      const config = createConfig(rootDir, [
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
+      const packageRoot = path.join(rootDirectory, 'packages/a');
+      const config = createConfig(rootDirectory, [
         {
           name: '@example/a',
-          outDir,
+          outDir: outDirectory,
         },
       ]);
       config.regions = {
@@ -4699,9 +4794,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([outDirectory]);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4709,27 +4804,31 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when cwd is not in a named activated package', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
-      const cwd = path.join(rootDir, 'packages/nameless');
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
+      const cwd = path.join(rootDirectory, 'packages/nameless');
 
       await writeText(path.join(cwd, 'package.json'), JSON.stringify({}));
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           cwd,
         }),
       ).rejects.toThrow(/No activated workspace package|has no package name/iu);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4737,11 +4836,15 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails release checks when the activated cwd package has no entry', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDir = await createWorkspacePackage(rootDir, '@example/a', {});
-      const cwd = path.join(rootDir, 'packages/missing');
+      const outDirectory = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
+      const cwd = path.join(rootDirectory, 'packages/missing');
 
       await writeText(
         path.join(cwd, 'package.json'),
@@ -4752,17 +4855,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir,
+              outDir: outDirectory,
             },
           ]),
           cwd,
         }),
       ).rejects.toThrow(/does not match a configured package entry/u);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4770,22 +4873,30 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('runs explicit release check packages in order and deduplicates them', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      const outDirA = await createWorkspacePackage(rootDir, '@example/a', {});
-      const outDirB = await createWorkspacePackage(rootDir, '@example/b', {});
+      const outDirectoryA = await createWorkspacePackage(
+        rootDirectory,
+        '@example/a',
+        {},
+      );
+      const outDirectoryB = await createWorkspacePackage(
+        rootDirectory,
+        '@example/b',
+        {},
+      );
 
       await expect(
         runReleaseCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               name: '@example/a',
-              outDir: outDirA,
+              outDir: outDirectoryA,
             },
             {
               name: '@example/b',
-              outDir: outDirB,
+              outDir: outDirectoryB,
             },
           ]),
           packageNames: ['@example/a', '@example/b', '@example/a'],
@@ -4793,11 +4904,17 @@ describe('runPackageCheck and runReleaseCheck', () => {
       ).resolves.toBe(true);
 
       expect(packageCheckMocks.packCalls).toHaveLength(2);
-      expect([...packageCheckMocks.packCalls].sort()).toEqual(
-        [outDirA, outDirB].sort(),
+      expect(
+        [...packageCheckMocks.packCalls].sort(
+          (left, right) => Number(left > right) - Number(left < right),
+        ),
+      ).toEqual(
+        [outDirectoryA, outDirectoryB].sort(
+          (left, right) => Number(left > right) - Number(left < right),
+        ),
       );
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4811,12 +4928,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const secondArtifact = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['publint'],
               name: '@example/artifact',
@@ -4839,7 +4956,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await firstArtifact.cleanup();
       await secondArtifact.cleanup();
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -4850,14 +4967,14 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const secondArtifact = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
-      await createWorkspacePackage(rootDir, '@example/source', {});
+      await createWorkspacePackage(rootDirectory, '@example/source', {});
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['publint'],
               name: '@example/source',
@@ -4869,7 +4986,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
               outDir: secondArtifact.outDir,
             },
           ]),
-          cwd: path.join(rootDir, 'packages/source/src'),
+          cwd: path.join(rootDirectory, 'packages/source/src'),
         }),
       ).resolves.toBe(true);
 
@@ -4880,34 +4997,34 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await firstArtifact.cleanup();
       await secondArtifact.cleanup();
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('selects an external activated package and its external output from cwd', async () => {
-    const parentDir = await mkdtemp(
+    const parentDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-package-external-'),
     );
-    const rootDir = path.join(parentDir, 'repo');
-    await writeText(path.join(rootDir, 'package.json'), '{}');
-    const packageDir = path.join(parentDir, 'external', 'pkg');
-    const outDir = path.join(packageDir, 'dist');
+    const rootDirectory = path.join(parentDirectory, 'repo');
+    await writeText(path.join(rootDirectory, 'package.json'), '{}');
+    const packageDirectory = path.join(parentDirectory, 'external', 'pkg');
+    const outDirectory = path.join(packageDirectory, 'dist');
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - ../external/*\n',
       );
       await writeText(
-        path.join(packageDir, 'package.json'),
+        path.join(packageDirectory, 'package.json'),
         JSON.stringify({ name: '@example/external', version: '1.0.0' }),
       );
       await writeText(
-        path.join(packageDir, 'src/index.ts'),
+        path.join(packageDirectory, 'src/index.ts'),
         'export const source = true;\n',
       );
       await writeText(
-        path.join(outDir, 'package.json'),
+        path.join(outDirectory, 'package.json'),
         JSON.stringify({
           dependencies: {},
           exports: { '.': './index.js' },
@@ -4917,38 +5034,38 @@ describe('runPackageCheck and runReleaseCheck', () => {
           version: '1.0.0',
         }),
       );
-      await writeText(path.join(outDir, 'index.js'), 'export {};\n');
+      await writeText(path.join(outDirectory, 'index.js'), 'export {};\n');
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['publint'],
               name: '@example/external',
               outDir: '../external/pkg/dist',
             },
           ]),
-          cwd: path.join(packageDir, 'src'),
+          cwd: path.join(packageDirectory, 'src'),
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([outDirectory]);
     } finally {
-      await rm(parentDir, { force: true, recursive: true });
+      await rm(parentDirectory, { force: true, recursive: true });
     }
   });
 
   it('allows explicit artifact selection when the private root package has a different name', async () => {
-    const rootDir = await createWorkspaceRoot();
-    const outDir = path.join(rootDir, 'dist');
+    const rootDirectory = await createWorkspaceRoot();
+    const outDirectory = path.join(rootDirectory, 'dist');
 
     try {
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         JSON.stringify({ name: '@example/root', private: true }),
       );
       await writeText(
-        path.join(outDir, 'package.json'),
+        path.join(outDirectory, 'package.json'),
         JSON.stringify({
           dependencies: {},
           exports: { '.': './index.js' },
@@ -4958,11 +5075,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
           version: '1.0.0',
         }),
       );
-      await writeText(path.join(outDir, 'index.js'), 'export {};\n');
+      await writeText(path.join(outDirectory, 'index.js'), 'export {};\n');
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['publint'],
               name: '@example/artifact',
@@ -4973,9 +5090,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([outDirectory]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -4986,12 +5103,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const invalidPackage = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               outDir: validPackage.outDir,
@@ -5009,7 +5126,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await validPackage.cleanup();
       await invalidPackage.cleanup();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -5017,12 +5134,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('fails when an explicit package entry is not configured', async () => {
-    const rootDir = await createWorkspaceRoot();
+    const rootDirectory = await createWorkspaceRoot();
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/valid',
@@ -5033,7 +5150,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).rejects.toThrow(/No package entry named "@example\/missing"/u);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -5047,8 +5164,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const invalidPackage = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
-    const rootDir = await createWorkspaceRoot();
-    const cwd = path.join(rootDir, 'packages/valid');
+    const rootDirectory = await createWorkspaceRoot();
+    const cwd = path.join(rootDirectory, 'packages/valid');
 
     try {
       await writeText(
@@ -5060,7 +5177,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/valid',
@@ -5078,7 +5195,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await validPackage.cleanup();
       await invalidPackage.cleanup();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -5092,13 +5209,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const invalidPackage = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
-    const rootDir = await createWorkspaceRoot();
-    const packageDir = path.join(rootDir, 'packages/valid');
-    const cwd = path.join(packageDir, 'src/nested');
+    const rootDirectory = await createWorkspaceRoot();
+    const packageDirectory = path.join(rootDirectory, 'packages/valid');
+    const cwd = path.join(packageDirectory, 'src/nested');
 
     try {
       await writeText(
-        path.join(packageDir, 'package.json'),
+        path.join(packageDirectory, 'package.json'),
         JSON.stringify({
           name: '@example/valid',
         }),
@@ -5106,7 +5223,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/valid',
@@ -5124,7 +5241,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await validPackage.cleanup();
       await invalidPackage.cleanup();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -5138,8 +5255,8 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const invalidPackage = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
-    const rootDir = await createWorkspaceRoot();
-    const cwd = path.join(rootDir, 'packages/other');
+    const rootDirectory = await createWorkspaceRoot();
+    const cwd = path.join(rootDirectory, 'packages/other');
 
     try {
       await writeText(
@@ -5151,7 +5268,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/valid',
@@ -5169,7 +5286,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await validPackage.cleanup();
       await invalidPackage.cleanup();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -5183,13 +5300,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const invalidPackage = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
-    const rootDir = await createWorkspaceRoot();
-    const cwd = path.join(rootDir, 'packages/missing-manifest');
+    const rootDirectory = await createWorkspaceRoot();
+    const cwd = path.join(rootDirectory, 'packages/missing-manifest');
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/valid',
@@ -5207,7 +5324,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await validPackage.cleanup();
       await invalidPackage.cleanup();
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -5221,19 +5338,19 @@ describe('runPackageCheck and runReleaseCheck', () => {
     const invalidPackage = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
-    const parentDir = await mkdtemp(
+    const parentDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-package-parent-'),
     );
-    const rootDir = path.join(parentDir, 'repo');
-    const cwd = path.join(rootDir, 'packages/missing-manifest');
+    const rootDirectory = path.join(parentDirectory, 'repo');
+    const cwd = path.join(rootDirectory, 'packages/missing-manifest');
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(parentDir, 'package.json'),
+        path.join(parentDirectory, 'package.json'),
         JSON.stringify({
           name: '@example/valid',
         }),
@@ -5241,7 +5358,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(rootDir, [
+          config: createConfig(rootDirectory, [
             {
               checks: ['boundary'],
               name: '@example/valid',
@@ -5259,7 +5376,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       await validPackage.cleanup();
       await invalidPackage.cleanup();
-      await rm(parentDir, {
+      await rm(parentDirectory, {
         force: true,
         recursive: true,
       });
@@ -5267,41 +5384,41 @@ describe('runPackageCheck and runReleaseCheck', () => {
   });
 
   it('runs all package checks by default', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([pkg.outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([package_.outDir]);
       expect(packageCheckMocks.publintCalls).toHaveLength(1);
       expect(packageCheckMocks.attwRuns).toBe(1);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('runs only the selected tool', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
@@ -5309,27 +5426,27 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([pkg.outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([package_.outDir]);
       expect(packageCheckMocks.publintCalls).toHaveLength(1);
       expect(packageCheckMocks.attwRuns).toBe(0);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('allows publint and attw to be disabled with boolean config', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               attw: false,
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               publint: false,
             },
           ]),
@@ -5340,50 +5457,50 @@ describe('runPackageCheck and runReleaseCheck', () => {
       expect(packageCheckMocks.publintCalls).toHaveLength(0);
       expect(packageCheckMocks.attwRuns).toBe(0);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('allows publint and attw boolean true to re-enable checks omitted by checks', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               attw: true,
               checks: ['boundary'],
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               publint: true,
             },
           ]),
         }),
       ).resolves.toBe(true);
 
-      expect(packageCheckMocks.packCalls).toEqual([pkg.outDir]);
+      expect(packageCheckMocks.packCalls).toEqual([package_.outDir]);
       expect(packageCheckMocks.publintCalls).toHaveLength(1);
       expect(packageCheckMocks.attwRuns).toBe(1);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('passes publint object config to publint', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': 'export const value = 1;\n',
     });
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               publint: {
                 level: 'error',
                 strict: false,
@@ -5399,12 +5516,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
         strict: false,
       });
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('keeps arbitrary publint rule codes and messages external to the Limina code', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': 'export const value = 1;\n',
     });
     const issues: LiminaCheckIssue[] = [];
@@ -5431,10 +5548,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           deferSnapshot: true,
@@ -5478,12 +5595,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       ]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('keeps current and future ATTW rule codes in external.code', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': 'export const value = 1;\n',
     });
     const issues: LiminaCheckIssue[] = [];
@@ -5502,10 +5619,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           deferSnapshot: true,
@@ -5541,12 +5658,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
         },
       ]);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('passes attw object config to checkPackage and ignores configured rules', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': 'export const value = 1;\n',
     });
 
@@ -5561,7 +5678,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               attw: {
                 entrypoints: ['.'],
@@ -5572,7 +5689,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
                 profile: 'strict',
               },
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           tool: 'attw',
@@ -5586,12 +5703,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
         includeEntrypoints: ['./feature'],
       });
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('treats attw problems as warnings when attw.level is warn', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': 'export const value = 1;\n',
     });
 
@@ -5606,37 +5723,37 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               attw: {
                 level: 'warn',
                 profile: 'strict',
               },
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           tool: 'attw',
         }),
       ).resolves.toBe(true);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('prints the filtered checks in the package check plan', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import 'node:fs';\n",
     });
 
     try {
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           tool: 'publint',
@@ -5652,12 +5769,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
       expect(output).toContain('checks: publint');
     } finally {
       logSpy.mockRestore();
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('applies the default and overridden ATTW profile', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': 'export const value = 1;\n',
     });
     const node16CjsProblem = {
@@ -5671,9 +5788,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheck({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
@@ -5684,9 +5801,9 @@ describe('runPackageCheck and runReleaseCheck', () => {
       await expect(
         runPackageCheck({
           attwProfile: 'strict',
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
               name: '@example/pkg',
             },
           ]),
@@ -5694,7 +5811,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
         }),
       ).resolves.toBe(false);
     } finally {
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
@@ -5714,7 +5831,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
   ])(
     'filters the complete ATTW resolution matrix for $profile',
     async ({ ignored, profile }) => {
-      const pkg = await createOutputPackage({
+      const package_ = await createOutputPackage({
         'index.js': 'export const value = 1;\n',
       });
       const resolutionKinds = [
@@ -5736,11 +5853,11 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
           await expect(
             runPackageCheck({
-              config: createConfig(pkg.rootDir, [
+              config: createConfig(package_.rootDir, [
                 {
                   attw: { profile },
                   name: '@example/pkg',
-                  outDir: pkg.outDir,
+                  outDir: package_.outDir,
                 },
               ]),
               tool: 'attw',
@@ -5748,13 +5865,13 @@ describe('runPackageCheck and runReleaseCheck', () => {
           ).resolves.toBe(ignored.includes(resolutionKind));
         }
       } finally {
-        await pkg.cleanup();
+        await package_.cleanup();
       }
     },
   );
 
   it('skips a missing publint peer only when publint is enabled', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
     let stats: LiminaCheckRunTaskStats | undefined;
@@ -5781,16 +5898,16 @@ describe('runPackageCheck and runReleaseCheck', () => {
         };
       });
 
-      const { runPackageCheck: runPackageCheckWithMissingPublint } =
+      const { isRunPackageCheck: runPackageCheckWithMissingPublint } =
         await import('../commands/package');
 
       await expect(
         runPackageCheckWithMissingPublint({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               checks: ['boundary'],
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
         }),
@@ -5798,10 +5915,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheckWithMissingPublint({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           onStats: (nextStats) => {
@@ -5820,12 +5937,12 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       vi.doUnmock('../package-check/peer-tools');
       vi.resetModules();
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 
   it('skips a missing attw peer only when attw is enabled', async () => {
-    const pkg = await createOutputPackage({
+    const package_ = await createOutputPackage({
       'index.js': "import '@example/dep';\n",
     });
     let stats: LiminaCheckRunTaskStats | undefined;
@@ -5852,17 +5969,16 @@ describe('runPackageCheck and runReleaseCheck', () => {
         };
       });
 
-      const { runPackageCheck: runPackageCheckWithMissingAttw } = await import(
-        '../commands/package'
-      );
+      const { isRunPackageCheck: runPackageCheckWithMissingAttw } =
+        await import('../commands/package');
 
       await expect(
         runPackageCheckWithMissingAttw({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               checks: ['boundary'],
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
         }),
@@ -5870,10 +5986,10 @@ describe('runPackageCheck and runReleaseCheck', () => {
 
       await expect(
         runPackageCheckWithMissingAttw({
-          config: createConfig(pkg.rootDir, [
+          config: createConfig(package_.rootDir, [
             {
               name: '@example/pkg',
-              outDir: pkg.outDir,
+              outDir: package_.outDir,
             },
           ]),
           onStats: (nextStats) => {
@@ -5892,7 +6008,7 @@ describe('runPackageCheck and runReleaseCheck', () => {
     } finally {
       vi.doUnmock('../package-check/peer-tools');
       vi.resetModules();
-      await pkg.cleanup();
+      await package_.cleanup();
     }
   });
 });

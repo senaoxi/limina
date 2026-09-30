@@ -344,7 +344,9 @@ describe.each(['stdout', 'stderr'] as const)(
           child[target].emit('error', createInjectedFaultError(fault));
         }
       });
-      child[target].on('error', () => injectedOutput.push({ ...output }));
+      child[target].on('error', () => {
+        injectedOutput.push({ ...output });
+      });
       // Match the launcher: production forwarding attaches after observation.
       for (const name of ['stdout', 'stderr'] as const) {
         child[name].on('data', (chunk: Buffer) => {
@@ -427,12 +429,12 @@ describe.each(['stdout', 'stderr'] as const)(
 
 describe('fault helper executable', () => {
   const entry = { args: [helperPath], executable: process.execPath };
-  const runHelper = (args: readonly string[], timeout = 2000) =>
+  const runHelper = (arguments_: readonly string[], timeout = 2000) =>
     runLimina({
-      args,
+      args: arguments_,
       cwd: process.cwd(),
       entry,
-      fixtureName: `fault-helper-${args[0]}`,
+      fixtureName: `fault-helper-${arguments_[0]}`,
       timeout,
     });
 

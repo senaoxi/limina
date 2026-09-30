@@ -9,35 +9,26 @@ function isDeclarationFile(filePath: string): boolean {
 function isEmptyNamedExports(
   exportClause: ts.NamedExportBindings | undefined,
 ): boolean {
-  if (exportClause === undefined) {
-    return false;
-  }
-
-  if (!ts.isNamedExports(exportClause)) {
-    return false;
-  }
-
-  return exportClause.elements.length === 0;
+  return (
+    exportClause !== undefined &&
+    ts.isNamedExports(exportClause) &&
+    exportClause.elements.length === 0
+  );
 }
 
 function isEmptyExportMarker(statement: ts.Statement): boolean {
-  if (!ts.isExportDeclaration(statement)) {
-    return false;
-  }
-
-  if (statement.moduleSpecifier !== undefined) {
-    return false;
-  }
-
-  return isEmptyNamedExports(statement.exportClause);
+  return (
+    ts.isExportDeclaration(statement) &&
+    statement.moduleSpecifier === undefined &&
+    isEmptyNamedExports(statement.exportClause)
+  );
 }
 
 function isDeclareGlobalStatement(statement: ts.Statement): boolean {
-  if (!ts.isModuleDeclaration(statement)) {
-    return false;
-  }
-
-  return (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0;
+  return (
+    ts.isModuleDeclaration(statement) &&
+    (statement.flags & ts.NodeFlags.GlobalAugmentation) !== 0
+  );
 }
 
 function isAmbientCompatibleStatement(statement: ts.Statement): boolean {
@@ -57,11 +48,10 @@ async function hasAmbientDeclarationRole(filePath: string): Promise<boolean> {
     ts.ScriptKind.TS,
   );
 
-  if (!ts.isExternalModule(sourceFile)) {
-    return true;
-  }
-
-  return sourceFile.statements.every(isAmbientCompatibleStatement);
+  return (
+    !ts.isExternalModule(sourceFile) ||
+    sourceFile.statements.every(isAmbientCompatibleStatement)
+  );
 }
 
 export async function validateDeclarationExtension(

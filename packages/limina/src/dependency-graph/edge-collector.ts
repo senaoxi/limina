@@ -15,10 +15,10 @@ import type { DependencyGraphCollectionContext } from './collection-types';
 import {
   classifyEdge,
   isExternalPackageEdge,
+  isViewAllowsEdge,
   type ResolvedImportPaths,
   resolveImportPaths,
   resolveTargetPackage,
-  viewAllowsEdge,
 } from './edge-resolution';
 import { validateNamedPackages } from './edge-validation';
 import { addEdge, createPackageNodeId } from './model';
@@ -72,7 +72,7 @@ function createAllowedCandidate(options: {
   context: DependencyGraphCollectionContext;
   edgeKind: DependencyGraphEdgeKind;
 }): EdgeCandidate | null {
-  return viewAllowsEdge(options.context, options.edgeKind)
+  return isViewAllowsEdge(options.context, options.edgeKind)
     ? { ...options.candidate, edgeKind: options.edgeKind }
     : null;
 }
@@ -139,7 +139,8 @@ function addResolvedImportEdge(options: {
 }
 
 function processImportRecord(options: ImportProcessingOptions): void {
-  if (addConsumptionFailure(options.context, options.projectDependency)) return;
+  if (isAddConsumptionFailure(options.context, options.projectDependency))
+    return;
   const candidate = resolveClassifiedCandidate(options);
 
   if (candidate !== null) {
@@ -191,13 +192,13 @@ function collectDependencyGraphProject(options: {
   const owner = options.context.workspaceLookup.findPackageForFile(
     options.project.configPath,
   );
-  const packageRootDir =
+  const packageRootDirectory =
     owner === null ? options.context.config.rootDir : owner.directory;
   return collectProjectDependencies({
     caches: options.context.projectDependencyCaches,
     context: createParsedProjectSemanticContext({
       authority: options.authority,
-      packageRootDir,
+      packageRootDir: packageRootDirectory,
       project: options.project,
       workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),
@@ -251,7 +252,7 @@ export function collectDependencyGraphEdges(
   }
 }
 
-function addConsumptionFailure(
+function isAddConsumptionFailure(
   context: DependencyGraphCollectionContext,
   consumption: WorkspaceConsumption,
 ): boolean {
@@ -275,6 +276,6 @@ function collectDependencyGraphObservations(
 ): void {
   for (const observation of observations) {
     if (observation.kind !== 'unmapped-generated')
-      addConsumptionFailure(context, observation);
+      isAddConsumptionFailure(context, observation);
   }
 }

@@ -72,7 +72,7 @@ export function enumerateGeneratedSemanticDependencies(options: {
   }));
 }
 
-export function recordMatchesMappedRanges(options: {
+export function isRecordMatchesMappedRanges(options: {
   mappedRanges: ReadonlySet<string>;
   record: ImportRecord;
 }): boolean {

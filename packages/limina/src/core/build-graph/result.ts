@@ -17,8 +17,8 @@ import type {
   GovernedSourceUnit,
 } from './types';
 
-function toAbsolutePath(rootDir: string, relativePath: string): string {
-  return normalizeAbsolutePath(path.join(rootDir, relativePath));
+function toAbsolutePath(rootDirectory: string, relativePath: string): string {
+  return normalizeAbsolutePath(path.join(rootDirectory, relativePath));
 }
 
 function createBuildModuleMap(options: {
@@ -151,19 +151,17 @@ function cloneOutputDeclarationCopies(
   >,
 ): GeneratedTsconfigGraphResult['outputDeclarationCopies'] {
   return new Map(
-    [...copiesByChecker.entries()].map(
-      ([checkerName, copyContextsBySourcePath]) => [
-        checkerName,
-        new Map(
-          [...copyContextsBySourcePath.entries()].map(
-            ([sourceConfigPath, copyContexts]) => [
-              sourceConfigPath,
-              copyContexts.map((copyContext) => ({ ...copyContext })),
-            ],
-          ),
+    [...copiesByChecker].map(([checkerName, copyContextsBySourcePath]) => [
+      checkerName,
+      new Map(
+        [...copyContextsBySourcePath].map(
+          ([sourceConfigPath, copyContexts]) => [
+            sourceConfigPath,
+            copyContexts.map((copyContext) => ({ ...copyContext })),
+          ],
         ),
-      ],
-    ),
+      ),
+    ]),
   );
 }
 
@@ -247,9 +245,10 @@ export function collectGeneratedSourceConfigPaths(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): string[] {
   return uniqueSortedStrings(
-    [...generatedGraph.sourceToBuild.values()].flatMap((sourceToBuild) => [
-      ...sourceToBuild.keys(),
-    ]),
+    generatedGraph.sourceToBuild
+      .values()
+      .flatMap((sourceToBuild) => sourceToBuild.keys().toArray())
+      .toArray(),
   );
 }
 
@@ -257,8 +256,9 @@ export function collectGovernedSourceConfigPaths(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): string[] {
   return uniqueSortedStrings(
-    [...generatedGraph.governedSources.values()].flatMap((governedSources) => [
-      ...governedSources.keys(),
-    ]),
+    generatedGraph.governedSources
+      .values()
+      .flatMap((governedSources) => governedSources.keys().toArray())
+      .toArray(),
   );
 }

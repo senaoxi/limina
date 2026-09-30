@@ -22,18 +22,17 @@ export function getDirectNativeFact(options: {
   return context?.getDependencyFact(options.importRecord);
 }
 
-export function collectAmbientNativeObservation(options: {
+export function isCollectAmbientNativeObservation(options: {
   evidence: CanonicalImportResolutionEvidence;
   collection: ProjectDependencyCollection;
   importRecord: ImportRecord;
   request: ProjectDependencyRequest;
 }): boolean {
   const fact = getDirectNativeFact(options);
-  if (fact === undefined) return false;
-  return collectAmbientFact({ ...options, fact });
+  return fact !== undefined && isCollectAmbientFact({ ...options, fact });
 }
 
-function collectAmbientFact(options: {
+function isCollectAmbientFact(options: {
   request: ProjectDependencyRequest;
   evidence: CanonicalImportResolutionEvidence;
   collection: ProjectDependencyCollection;
@@ -41,8 +40,11 @@ function collectAmbientFact(options: {
   fact: NativeDependencyFact;
 }): boolean {
   const { fact } = options;
-  if (fact.typeEvidence.kind !== 'ambient') return false;
-  if (fact.referenceRequirement !== null) return false;
+  if (
+    fact.typeEvidence.kind !== 'ambient' ||
+    fact.referenceRequirement !== null
+  )
+    return false;
   const resolutionMode = String(fact.resolution.resolutionMode);
   options.collection.observations.push({
     evidence: createDirectDependencyEvidence({

@@ -142,15 +142,13 @@ function validateWriteResult(options: {
 }): number {
   const observedBytesWritten = readBytesWritten(options.result);
   const bytesWritten =
-    typeof observedBytesWritten === 'number'
-      ? observedBytesWritten
-      : Number.NaN;
-  const valid = [
+    typeof observedBytesWritten === 'number' ? observedBytesWritten : NaN;
+  const isValid = [
     Number.isSafeInteger(bytesWritten),
     bytesWritten > 0,
     bytesWritten <= options.requestedLength,
   ].every(Boolean);
-  if (valid) return bytesWritten;
+  if (isValid) return bytesWritten;
   throw new Error(
     `Invalid write result for ${options.filePath}: requested ${options.requestedLength} bytes, received ${String(observedBytesWritten)}`,
   );

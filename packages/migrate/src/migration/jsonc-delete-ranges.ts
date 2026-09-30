@@ -68,12 +68,14 @@ function skipHorizontalWhitespace(
   return offset;
 }
 function isCommentToken(kind: number): boolean {
-  if (kind === jsoncLineCommentTokenKind) return true;
-  return kind === jsoncBlockCommentTokenKind;
+  return (
+    kind === jsoncLineCommentTokenKind || kind === jsoncBlockCommentTokenKind
+  );
 }
 function isTokenWithinRange(token: ScannerToken, range: TokenRange): boolean {
-  if (token.offset < range.start) return false;
-  return token.offset + token.length <= range.end;
+  return (
+    !(token.offset < range.start) && token.offset + token.length <= range.end
+  );
 }
 
 function isCommentInRange(
@@ -81,8 +83,7 @@ function isCommentInRange(
   token: ScannerToken,
   range: TokenRange,
 ): boolean {
-  if (!isCommentToken(kind)) return false;
-  return isTokenWithinRange(token, range);
+  return isCommentToken(kind) && isTokenWithinRange(token, range);
 }
 
 function isCommentAt(
@@ -90,13 +91,15 @@ function isCommentAt(
   token: ScannerToken,
   range: TokenRange,
 ): boolean {
-  if (!isCommentToken(kind) || token.offset !== range.start) return false;
-  return isTokenWithinRange(token, range);
+  return (
+    isCommentToken(kind) &&
+    token.offset === range.start &&
+    isTokenWithinRange(token, range)
+  );
 }
 
 function isCompleteComment(kind: number, scanError: number): boolean {
-  if (kind !== jsoncBlockCommentTokenKind) return true;
-  return scanError === 0;
+  return kind !== jsoncBlockCommentTokenKind || scanError === 0;
 }
 function scanComments(
   content: string,
@@ -116,24 +119,16 @@ function scanComments(
   }
   return comments;
 }
-function getParentChildren(property: Node): readonly Node[] {
-  const parent = property.parent;
-  if (parent === undefined) return [];
-  const children = parent.children;
-  if (children === undefined) return [];
-  return children;
-}
 function findPreviousSibling(property: Node): Node | undefined {
-  const siblings = getParentChildren(property);
+  const siblings = property.parent?.children ?? [];
   const propertyIndex = siblings.findIndex((sibling) =>
     isSameNodePosition(sibling, property),
   );
-  return propertyIndex > 0 ? siblings[propertyIndex - 1] : undefined;
+  return siblings[propertyIndex - 1];
 }
 
 function isSameNodePosition(left: Node, right: Node): boolean {
-  if (left.offset !== right.offset) return false;
-  return left.length === right.length;
+  return left.offset === right.offset && left.length === right.length;
 }
 
 function findPreviousSiblingBoundary(property: Node): number {
@@ -142,8 +137,7 @@ function findPreviousSiblingBoundary(property: Node): number {
     return previousSibling.offset + previousSibling.length;
   }
   const parent = property.parent;
-  if (parent !== undefined) return parent.offset + 1;
-  return property.offset;
+  return parent === undefined ? property.offset : parent.offset + 1;
 }
 
 function isAttachedCommentLine(
@@ -153,12 +147,12 @@ function isAttachedCommentLine(
 ): boolean {
   const commentLineStart = findLineStart(content, comment.offset);
   const commentLine = findLineBounds(content, comment.offset + comment.length);
-  if (commentLine.end !== context.lineStart) return false;
-  if (content.slice(commentLineStart, comment.offset) !== context.indentation) {
-    return false;
-  }
-  return isHorizontalWhitespace(
-    content.slice(comment.offset + comment.length, commentLine.contentEnd),
+  return (
+    commentLine.end === context.lineStart &&
+    content.slice(commentLineStart, comment.offset) === context.indentation &&
+    isHorizontalWhitespace(
+      content.slice(comment.offset + comment.length, commentLine.contentEnd),
+    )
   );
 }
 
@@ -206,8 +200,8 @@ function isOwnedLineSuffix(
   if (commentStart === lineContentEnd) return true;
 
   const comment = scanOwnedComment(content, commentStart, lineContentEnd);
-  if (comment === null) return false;
   return (
+    comment !== null &&
     skipHorizontalWhitespace(
       content,
       comment.offset + comment.length,
@@ -227,10 +221,12 @@ function scanOwnedComment(
   const tokenOffset = scanner.getTokenOffset();
   const tokenEnd = tokenOffset + scanner.getTokenLength();
   const token = { length: tokenEnd - tokenOffset, offset: tokenOffset };
-  if (!isCommentAt(kind, token, { end: lineContentEnd, start: commentStart }))
-    return null;
-  if (!isCompleteComment(kind, scanner.getTokenError())) return null;
-  return token;
+  return !isCommentAt(kind, token, {
+    end: lineContentEnd,
+    start: commentStart,
+  }) || !isCompleteComment(kind, scanner.getTokenError())
+    ? null
+    : token;
 }
 
 function hasMultilineOwnedPrefix(
@@ -238,9 +234,11 @@ function hasMultilineOwnedPrefix(
   property: Node,
   followingComma: CommaToken | null,
 ): boolean {
-  if (followingComma === null) return false;
-  return /[\r\n]/u.test(
-    content.slice(property.offset + property.length, followingComma.offset),
+  return (
+    followingComma !== null &&
+    /[\r\n]/u.test(
+      content.slice(property.offset + property.length, followingComma.offset),
+    )
   );
 }
 
@@ -252,9 +250,9 @@ function findOwnedLine(
   if (hasMultilineOwnedPrefix(content, property, context.followingComma))
     return null;
   const ownedLine = findLineBounds(content, context.ownedEnd);
-  if (!isOwnedLineSuffix(content, context.ownedEnd, ownedLine.contentEnd))
-    return null;
-  return ownedLine;
+  return isOwnedLineSuffix(content, context.ownedEnd, ownedLine.contentEnd)
+    ? ownedLine
+    : null;
 }
 
 export function findLineAlignedDeletion(

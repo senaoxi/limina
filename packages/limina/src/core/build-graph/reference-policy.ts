@@ -17,10 +17,9 @@ function normalizeDeniedSourcePath(
   const deniedPath = normalizeAbsolutePath(
     path.resolve(config.rootDir, reference.path),
   );
-  if (!deniedPath.endsWith('.dts.json')) {
-    return deniedPath;
-  }
-  return normalizeAbsolutePath(deniedPath.replace(/\.dts\.json$/u, '.json'));
+  return deniedPath.endsWith('.dts.json')
+    ? normalizeAbsolutePath(deniedPath.replace(/\.dts\.json$/u, '.json'))
+    : deniedPath;
 }
 
 function getDeniedReferences(
@@ -35,20 +34,20 @@ function getDeniedReferences(
   return deny ? deny.refs : undefined;
 }
 
-function labelDeniesReference(options: {
+function isLabelDeniesReference(options: {
   config: ResolvedLiminaConfig;
   label: string;
   rules: GraphRules;
   targetSourceConfigPath: string;
 }): boolean {
   const references = getDeniedReferences(options.rules, options.label);
-  if (!references) {
-    return false;
-  }
-  return references.some(
-    (reference) =>
-      normalizeDeniedSourcePath(options.config, reference) ===
-      options.targetSourceConfigPath,
+  return (
+    references !== undefined &&
+    references.some(
+      (reference) =>
+        normalizeDeniedSourcePath(options.config, reference) ===
+        options.targetSourceConfigPath,
+    )
   );
 }
 
@@ -70,10 +69,10 @@ export function isDeniedGeneratedReferenceForConfig(options: {
   targetSourceConfigPath: string;
 }): boolean {
   const rules = options.config.graph?.rules;
-  if (!rules) {
-    return false;
-  }
-  return options.graphRules.some((label) =>
-    labelDeniesReference({ ...options, label, rules }),
+  return (
+    rules !== undefined &&
+    options.graphRules.some((label) =>
+      isLabelDeniesReference({ ...options, label, rules }),
+    )
   );
 }

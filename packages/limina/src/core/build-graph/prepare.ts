@@ -58,8 +58,9 @@ function getWorkspacePathIndex(options: {
 function createOwnedVueSemanticContexts(
   options: PrepareGeneratedTsconfigGraphOptions,
 ): VueSemanticContextManager | undefined {
-  if (options.importAnalysisContext !== undefined) return undefined;
-  return new VueSemanticContextManager();
+  return options.importAnalysisContext === undefined
+    ? new VueSemanticContextManager()
+    : undefined;
 }
 
 function createOwnedAstroSemanticContexts(
@@ -75,8 +76,9 @@ function createOwnedAstroSemanticContexts(
 function createOwnedSvelteSemanticContexts(
   options: PrepareGeneratedTsconfigGraphOptions,
 ): SvelteSemanticContextManager | undefined {
-  if (options.importAnalysisContext !== undefined) return undefined;
-  return new SvelteSemanticContextManager();
+  return options.importAnalysisContext === undefined
+    ? new SvelteSemanticContextManager()
+    : undefined;
 }
 
 function disposeOwnedVueSemanticContexts(
@@ -123,7 +125,7 @@ function prepareGeneratedKnip(options: {
 async function prepareGraph(
   config: ResolvedLiminaConfig,
   options: PrepareGeneratedTsconfigGraphOptions,
-  analysisOnly = false,
+  isAnalysisOnly = false,
 ): Promise<GeneratedTsconfigGraphResult | DependencyAnalysisResult> {
   const workspaceContext = await getWorkspaceContext({
     config,
@@ -171,7 +173,7 @@ async function prepareGraph(
       selections: checkerSelections,
     });
     registerCheckers(preparedCheckers, state);
-    const completeGraph = graphCompletion(analysisOnly);
+    const completeGraph = graphCompletion(isAnalysisOnly);
     completeGraph({
       activatedRegions,
       checkers,
@@ -181,7 +183,7 @@ async function prepareGraph(
       projectConfigCache: options.projectConfigCache,
       state,
     });
-    if (analysisOnly) return state.dependencyAnalysis;
+    if (isAnalysisOnly) return state.dependencyAnalysis;
     const generatedKnip = prepareGeneratedKnip({
       checkers,
       config,
@@ -241,8 +243,8 @@ function registerCheckers(
   for (const preparedChecker of checkers)
     registerPreparedChecker({ preparedChecker, state });
 }
-function graphCompletion(analysisOnly: boolean) {
-  return analysisOnly
+function graphCompletion(isAnalysisOnly: boolean) {
+  return isAnalysisOnly
     ? analyzeAndCompleteGeneratedGraph
     : validateAndCompleteGeneratedGraph;
 }
