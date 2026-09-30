@@ -115,10 +115,10 @@ function isApplyMembership(state: MembershipState, from: string): boolean {
 }
 export function rewriteMembership(options: MembershipOptions): Set<string> {
   const state = createMembershipState(options);
-  const retained = expandNamedWrappers(state);
   const baseline = new Map(
-    retained.map((from) => [from, reachableSources(state, from)]),
+    [...state.solutions].map((from) => [from, reachableSources(state, from)]),
   );
+  const retained = expandNamedWrappers(state);
   const traversal: Traversal = { visited: new Set(), ordered: [] };
   for (const from of retained)
     visit(state, traversal, { from, stack: new Set() });
@@ -126,7 +126,7 @@ export function rewriteMembership(options: MembershipOptions): Set<string> {
     compensate(state, from, baseline.get(from)!);
   // Publish only after every rewrite and reachability invariant has passed.
   const changed = new Set(
-    retained.filter((from) => isApplyMembership(state, from)),
+    [...state.solutions].filter((from) => isApplyMembership(state, from)),
   );
   options.records.push(...state.records);
   return changed;

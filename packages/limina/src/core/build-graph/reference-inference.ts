@@ -151,7 +151,7 @@ export function inferProjectReferences(options: {
   const analysis: DependencyAnalysisResult = {
     complete: true,
     facts: [],
-    diagnostics: problems,
+    diagnostics: [],
   };
   const dependencyEdgesByKey = new Map<string, GeneratedDependencyEdge>();
   const localDtsProjectsBySourcePath = createDtsProjectsBySourcePath(

@@ -104,6 +104,7 @@ function processMissingReferenceObservations(
   for (const observation of observations) {
     if (observation.kind !== 'missing') continue;
     markAnalysisIncomplete(options.context);
+    recordMissingObservation(options, observation);
     addMissingOwnedDeclarationProviderProblem({
       context: options.context,
       fileName: observation.importRecord.filePath,
@@ -111,6 +112,24 @@ function processMissingReferenceObservations(
       project: options.project,
     });
   }
+}
+
+function recordMissingObservation(
+  options: Parameters<typeof addProjectDependencyFailures>[0],
+  observation: Extract<
+    ReturnType<typeof collectProjectDependencies>['observations'][number],
+    { kind: 'missing' }
+  >,
+): void {
+  options.context.analysis?.diagnostics.push(
+    [
+      'Dependency comparison could not resolve an import:',
+      `  config: ${toRelativePath(options.context.config.rootDir, options.project.configPath)}`,
+      `  file: ${toRelativePath(options.context.config.rootDir, observation.importRecord.filePath)}:${observation.importRecord.line}`,
+      `  imported specifier: ${observation.importRecord.specifier}`,
+      '  stage: declaration-reference-inference',
+    ].join('\n'),
+  );
 }
 
 export function processProjectReferenceImports(options: {

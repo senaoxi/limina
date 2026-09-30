@@ -163,13 +163,13 @@ pnpm exec limina-migrate
 
 #### 配置与关系
 
-只有默认 `tsconfig.json` 能作为 checker entry。Named source config 经 solution references 纳入。迁移会移除普通 source 的 `references`，修剪无效或域外 solution 成员，并保留其余 source 的纳管关系。域外 reference 会被记录，不读取或迁移其目标。
+只有默认 `tsconfig.json` 能作为 checker entry。Named source config 经 solution references 获得 checker ownership。独立可读 source 候选也会规范化，但不会创建 checker entry。迁移会移除普通 source 的 `references`，修剪无效或域外 solution 成员，并保留其余 source 的纳管关系。域外 reference 会被记录，不读取或迁移其目标。
 
-纯 named solution 包装节点在被改写的 references 仅含 `path`、且没有实质 Limina 声明时，可以展开到所有父节点。路径按每个父文件重定位，包装文件保留。带附加属性的关系及 named-wrapper 环需要手动转换。默认 solution 环会在删除环边后补回 source membership，保持每个保留 solution 的 source 可达集合。空 solution 保留 solution 角色及显式 `references: []`。
+纯 named solution 包装节点在被改写的 references 仅含 `path`、且没有实质 Limina 声明时，可以展开到所有父节点。路径按每个父文件重定位，包装文件保留。带附加属性的关系需要手动转换。Named-wrapper 回边在展开时删除；默认 solution 环在删除环边后补回 source membership，两种改写都保持每个保留 solution 的 source 可达集合。空 solution 保留 solution 角色及显式 `references: []`。
 
-Limina 对比原生域内 source 关系与独立推导的 source 关系。可推导关系不重复写入 `implicitRefs`；其余原生声明转为显式 implicit reference，已有用户 reason 保留。分析不完整时报告无法完成比较，不将其视为空推导图。
+Limina 对比原生域内 source 关系与独立推导的 source 关系。可推导关系不重复写入 `implicitRefs`；Source 指向 solution 的声明展开到保留的 source 成员，记录原目标与展开结果；checker mapping 和 declaration project 合法性留给 core 分析。其余原生声明转为显式 implicit reference，已有用户 reason 保留。语义分析不完整或失败时报告无法完成比较，不将其视为空推导图。源码缺失或尚未生成，不会使可读配置成为隔离目标。
 
-无法解析的配置文件保留在磁盘上。能安全隔离时，迁移写入 `kind: 'tsconfig'` 的精确 `regions.exclude`，并移除指向它的 membership 或 implicit reference，package 仍保持激活。不会删除 `extends` 路径。单个 implicit-reference 对象可以包装成数组；缺失或空白 reason 会补入事实性的迁移说明。无法规范化的非法结构会被隔离，或报告未完成。
+无法解析的配置（包括空文件或格式损坏的 JSONC）保留在磁盘上。能安全隔离时，迁移写入 `kind: 'tsconfig'` 的精确 `regions.exclude`，并移除指向它的 membership 或 implicit reference，package 仍保持激活。不会删除 `extends` 路径。单个 implicit-reference 对象可以包装成数组；缺失或空白 reason 会补入事实性的迁移说明。无法规范化的非法结构会被隔离，或报告未完成。
 
 排除项自动编辑支持直接导出的对象、调用已导入 `defineConfig` 的对象，以及可唯一追踪的不可变 `const` 对象，并要求 regions/exclusion 数组可以静态编辑。函数、Promise、spread 和动态组合保持原样。必要排除无法落盘时，接入仍未完成。没有安全输入基线的既有 outputs 可见性环也需要修正；迁移不会排除正常 source 来制造成功结果。
 
@@ -197,7 +197,7 @@ JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复�
 
 新进程会通过正常 `check` 和 `graph` 输入读取路径加载实际配置。只有重新读取成功、必要写入完成、source 纳管关系保留且仍有可治理 source 时，才允许报告接入成功。必要写入失败、残留结构性错误或无法验证会返回非零。单独拒绝可选 outputs 不要求失败。
 
-审计报告位于 `.limina/migration/latest.json`，包含目标、隔离、修剪关系、比较完整性、outputs 决策、写入和最终验证。报告发布失败会警告，不撤销已经提交的配置。Core 和后续 migration 都不将报告作为输入事实来源。
+终端摘要包含隔离、域外引用删除、比较完整性、诊断及失败／跳过组数量与审计路径。规划阶段和 outputs 候选计数显示进度。审计报告位于 `.limina/migration/latest.json`，包含目标、隔离、修剪关系、比较完整性、outputs 决策、写入、最终验证、阶段耗时，以及报告位置仍可写时的致命失败尝试。报告发布失败会警告，不撤销已经提交的配置。Core 和后续 migration 都不将报告作为输入事实来源。
 
 迁移不会安装框架依赖、运行 `astro sync` 或改写框架源码。Generated graph 继续使用 manifest version 5，不持久化 migration readiness 或 partial-graph 状态。
 
