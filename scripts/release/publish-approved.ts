@@ -1,12 +1,12 @@
-import { execFileSync } from 'node:child_process';
 import semver from 'semver';
+import { execReleaseCommand } from './command';
 import { validatePublicationTarget } from './publication';
 import { runPublishCommand } from './release';
 import { discoverReleasePackages } from './shared';
 
 if (
   semver.lt(
-    execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
+    execReleaseCommand('npm', ['--version'], { encoding: 'utf8' }).trim(),
     '11.5.2',
   )
 )

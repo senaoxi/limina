@@ -1,7 +1,7 @@
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execReleaseCommand } from './command';
 import {
   getNpmCommand,
   isValidVersion,
@@ -90,7 +90,7 @@ function registryIntegrity(
 ): string | undefined {
   let output: string;
   try {
-    output = execFileSync(
+    output = execReleaseCommand(
       getNpmCommand(),
       [
         'view',

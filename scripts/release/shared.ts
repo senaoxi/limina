@@ -1,13 +1,13 @@
 import { createLogger } from '@limina/build-tools/logger';
 import { createElapsedTimer, formatErrorMessage } from 'logaria/helper';
 import type { LoggerLogOptions } from 'logaria/types';
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import prompts from 'prompts';
 import semver from 'semver';
+import { execReleaseCommand } from './command';
 
 const loggerInstance = createLogger({
   main: 'limina',
@@ -546,7 +546,7 @@ export function runCommand(
   const commandElapsed = createElapsedTimer();
 
   try {
-    return execFileSync(command, arguments_, {
+    return execReleaseCommand(command, arguments_, {
       cwd,
       env: env ? { ...process.env, ...env } : process.env,
       stdio,
