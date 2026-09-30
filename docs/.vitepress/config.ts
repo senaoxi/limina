@@ -2,11 +2,14 @@ import { defineConfig } from 'vitepress';
 
 import enConfig from '../en/config';
 import zhConfig from '../zh/config';
+import { resolveDocumentationOrigin } from './build-metadata';
 
 const base = '/';
+const documentationOrigin = resolveDocumentationOrigin();
 
 export default defineConfig({
   base,
+  sitemap: documentationOrigin ? { hostname: documentationOrigin } : undefined,
   title: 'Limina',
   description:
     'Project-reference graph compiler and architecture governance CLI for TypeScript monorepos',

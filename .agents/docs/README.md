@@ -6,6 +6,7 @@ Source, tests and configuration establish current behavior; records preserve dur
 
 - [architecture](./architecture.md)
 - [dependency-admission](./dependency-admission.md)
+- [infrastructure](./infrastructure.md)
 - [limina-architecture-audit](./limina-architecture-audit.md)
 - [limina-architecture-workflow](./limina-architecture-workflow.md)
 - [limina-invariants](./limina-invariants.md)

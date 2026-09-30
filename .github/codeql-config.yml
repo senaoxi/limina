@@ -1,0 +1,17 @@
+name: Limina source security
+paths:
+  - packages/limina/src
+  - packages/limina/bin
+  - packages/migrate/src
+  - packages/migrate/bin
+  - packages/build-tools/src
+  - packages/eslint-config/src
+  - scripts
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/fixtures/**"
+  - "**/__tests__/**"
+  - "**/*.spec.ts"
+queries:
+  - uses: security-extended

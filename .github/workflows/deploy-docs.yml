@@ -1,0 +1,53 @@
+name: Deploy Limina Docs
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Approved new limina/v<version> tag after independent CI acceptance
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: limina-docs-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.repository == 'senaoxi/limina' && vars.LIMINA_DOCS_DEPLOY_ENABLED == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      DOCS_ORIGIN: ${{ vars.DOCS_ORIGIN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-env
+        with:
+          node-version: 24.11.0
+      - name: Require the new tagged commit and deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DOCS_ORIGIN:?Set the approved documentation origin}"
+          : "${VERCEL_ORG_ID:?Set the approved Vercel organization}"
+          : "${VERCEL_PROJECT_ID:?Set the independent Limina Vercel project}"
+          : "${VERCEL_TOKEN:?Set the deployment credential}"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          pnpm run release:check-tag
+      - uses: ./.github/actions/build-and-check
+      - run: pnpm run security:audit
+      - run: pnpm run docs:build
+      - name: Build and deploy the independent documentation project
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir packages/deploy-tools exec vercel pull --cwd="$GITHUB_WORKSPACE" --yes --environment=production --token="$VERCEL_TOKEN"
+          pnpm --dir packages/deploy-tools exec vercel build --cwd="$GITHUB_WORKSPACE" --prod --token="$VERCEL_TOKEN"
+          pnpm --dir packages/deploy-tools exec vercel deploy --cwd="$GITHUB_WORKSPACE" --prebuilt --prod --yes --token="$VERCEL_TOKEN"

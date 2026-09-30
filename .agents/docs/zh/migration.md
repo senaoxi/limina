@@ -2,6 +2,8 @@
 
 [English](../migration.md) | [简体中文](./migration.md)
 
+适配后的基建工作流已在本地实现，启用仍受下述发布／部署门禁约束。[基建记录](./infrastructure.md)负责配置与报告语义，[集成验证](../../../migration/INFRASTRUCTURE.md)记录本次改动的证据与限制。
+
 状态：monorepo 布局的本地迁移已完成。2026-09-30，维护者要求将剩余产品与构建工具消费者切换到 registry Logaria 0.0.4；三个消费者现均使用 dev catalog。冷自举、完整本地检查、外部打包消费者、特殊路径／cwd 测试在 macOS arm64 / Node 24.21.0 / pnpm 11.9.0 上通过，独立的五组 Vue 版本矩阵也已在本机通过。完全独立迁移及远程平台验收仍未完成。继承记录中的历史结果不属于本次迁移验收。
 
 初始提取固定在 docs-islands 提交 `c09e12c1ef12f89e927cce4c41e714ee0539ada6`。目标为 `$LIMINA_REPO`，分支为 `codex/limina-migration`。保留目标既有 `.git` 及 `git@github.com:senaoxi/limina.git` origin。初始提取仅从固定的干净基线取文件，并保留源仓库的无关工作。

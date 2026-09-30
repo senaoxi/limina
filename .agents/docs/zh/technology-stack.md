@@ -12,6 +12,8 @@ CI 保留 Linux、macOS 和 Windows 的测试、构建与 smoke 职责，以及�
 
 ## ESLint 10 迁移
 
+仓库自动化、安全报告、CI 复用及带门禁的外部工作流由[基建记录](./infrastructure.md)负责。根工具仅增加已在 catalog 中的 YAML parser，不改变依赖版本或 task runner。
+
 lint catalog 现解析为 ESLint 10.11.0、typescript-eslint 8.71.0、Unicorn 76.0.0、Node plugin 18.4.0、pnpm plugin 1.9.1、HTML plugin/parser 0.66.1、Prettier plugin 5.5.6、flat-gitignore 2.4.0、JSONC parser 3.3.0 和 YAML parser 2.1.0。既有 Prettier config 10.1.8 与 globals 17.12.0 仍为当前版本。Regexp 保持兼容的 `~3.1.1` 版本线：3.3.1 引入的 parser 要求 Node `^22.22.2 || >=24.15.0`，高于本仓库声明的最低版本。已移除过时的 HTML parser 通配符 hook，以及随之不可达的 minimatch 3 patch/overrides。
 
 完整的新版 Unicorn recommended preset 在 JavaScript 和 TypeScript 上启用，随后应用仓库既有规则覆盖；它不处理 YAML/JSON/HTML parser 节点。根配置显式导入根文件设置，不再从组合后的 preset 筛选所有含 `files` 的项，避免在共享覆盖之后意外重放推荐规则。[配置测试](../../../packages/eslint-config/src/__tests__/general.spec.ts)覆盖 YAML 注释保留、JavaScript 修复和覆盖顺序。尽管 ESLint 10 改为按文件查找配置，根命令仍显式传入配置路径。

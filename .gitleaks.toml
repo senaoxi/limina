@@ -1,0 +1,6 @@
+title = "Limina secret scanning"
+
+[extend]
+useDefault = true
+
+# Do not inherit the docs-islands VitePress report exception or exempt fixtures.
