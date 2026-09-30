@@ -2,7 +2,7 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { lstat, opendir, realpath, stat } from 'node:fs/promises';
 import path from 'pathe';
 import { createDescriptorCandidate, isMissingFsError } from '../shared';
-import { addPackageDescriptor, addWorkspaceDescriptor } from './boundaries';
+import { isAddPackageDescriptor, isAddWorkspaceDescriptor } from './boundaries';
 import type {
   DirectoryEntries,
   DirectoryEntryStats,
@@ -19,15 +19,15 @@ function hasChildPackageRoot(options: {
   );
 }
 
-async function crossesChildPackageBoundary(
+async function isCrossesChildPackageBoundary(
   context: IslandWalkContext,
   directory: string,
 ): Promise<boolean> {
-  if (hasChildPackageRoot({ childRoots: context.childRoots, directory })) {
-    return true;
-  }
-  return context.canonicalChildRoots.has(
-    normalizeAbsolutePath(await realpath(directory)),
+  return (
+    hasChildPackageRoot({ childRoots: context.childRoots, directory }) ||
+    context.canonicalChildRoots.has(
+      normalizeAbsolutePath(await realpath(directory)),
+    )
   );
 }
 
@@ -83,8 +83,7 @@ async function readDirectoryEntries(
 }
 
 function isTsconfigEntry(name: string, stats: DirectoryEntryStats): boolean {
-  if (!stats.isFile()) return false;
-  return tsconfigNamePattern.test(name);
+  return stats.isFile() && tsconfigNamePattern.test(name);
 }
 
 async function addTsconfigDescriptors(options: {
@@ -113,8 +112,10 @@ function isWalkableDirectory(
   name: string,
   stats: DirectoryEntryStats,
 ): boolean {
-  if (!stats.isDirectory()) return false;
-  return !new Set(['.git', '.limina', 'node_modules']).has(name);
+  return (
+    stats.isDirectory() &&
+    !new Set(['.git', '.limina', 'node_modules']).has(name)
+  );
 }
 
 async function walkChildren(options: {
@@ -135,15 +136,14 @@ async function walkChildren(options: {
   }
 }
 
-async function processDirectoryDescriptors(options: {
+async function isProcessDirectoryDescriptors(options: {
   context: IslandWalkContext;
   directory: string;
   isOwnerRoot: boolean;
   names: DirectoryEntries;
 }): Promise<boolean> {
-  const workspaceBoundary = await addWorkspaceDescriptor(options);
-  if (workspaceBoundary) return true;
-  return addPackageDescriptor(options);
+  const isWorkspaceBoundary = await isAddWorkspaceDescriptor(options);
+  return isWorkspaceBoundary || isAddPackageDescriptor(options);
 }
 
 async function isBlockedChildDirectory(options: {
@@ -151,8 +151,10 @@ async function isBlockedChildDirectory(options: {
   directory: string;
   isOwnerRoot: boolean;
 }): Promise<boolean> {
-  if (options.isOwnerRoot) return false;
-  return crossesChildPackageBoundary(options.context, options.directory);
+  return (
+    !options.isOwnerRoot &&
+    isCrossesChildPackageBoundary(options.context, options.directory)
+  );
 }
 
 async function prepareDirectoryWalk(options: {
@@ -160,9 +162,8 @@ async function prepareDirectoryWalk(options: {
   directory: string;
   isOwnerRoot: boolean;
 }): Promise<DirectoryEntries | null> {
-  const blocked = await isBlockedChildDirectory(options);
-  if (blocked) return null;
-  return readDirectoryEntries(options.directory);
+  const isBlocked = await isBlockedChildDirectory(options);
+  return isBlocked ? null : readDirectoryEntries(options.directory);
 }
 
 async function processDirectoryWalk(options: {
@@ -171,8 +172,8 @@ async function processDirectoryWalk(options: {
   isOwnerRoot: boolean;
   names: DirectoryEntries;
 }): Promise<void> {
-  const boundary = await processDirectoryDescriptors(options);
-  if (boundary) return;
+  const isBoundary = await isProcessDirectoryDescriptors(options);
+  if (isBoundary) return;
   await addTsconfigDescriptors(options);
   await walkChildren(options);
 }

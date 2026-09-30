@@ -57,7 +57,7 @@ function createGovernedBuildOwners(options: {
     const buildModule = getGovernedBuildModule({ ...options, unit });
     owners.set(unit.configPath, {
       checkerName: unit.primaryCheckerName,
-      ...(buildModule === undefined ? {} : { buildModule }),
+      ...(buildModule !== undefined && { buildModule }),
     });
   }
   return owners;
@@ -200,8 +200,9 @@ export function inferProjectReferences(options: {
   return {
     analysis,
     problems,
-    dependencyEdges: [...dependencyEdgesByKey.values()].sort(
-      compareDependencyEdges,
-    ),
+    dependencyEdges: dependencyEdgesByKey
+      .values()
+      .toArray()
+      .sort(compareDependencyEdges),
   };
 }

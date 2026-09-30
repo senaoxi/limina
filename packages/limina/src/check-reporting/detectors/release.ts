@@ -110,7 +110,7 @@ export const RELEASE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
   [LIMINA_CHECK_ISSUE_CODES.releaseTarballHygiene]: {
     kind: 'fixture',
     producers: [
-      'packages/limina/src/commands/release/entry.ts#runReleaseCheckEntry',
+      'packages/limina/src/commands/release/entry.ts#isRunReleaseCheckEntry',
       'packages/limina/src/package-check/release/consistency/findings.ts#addTarballHygieneFinding',
       'packages/limina/src/package-check/release/packed/json.ts#readPackedPackageJson',
       'packages/limina/src/package-check/release/tarball-hygiene.ts#validateReleaseTarballHygiene',

@@ -31,9 +31,9 @@ export function applyToolResult(
 }
 
 export function requireTarball(state: EntryExecutionState): Buffer {
-  const packedDist = state.packedDist;
-  if (packedDist === undefined) {
+  const packedDistribution = state.packedDist;
+  if (packedDistribution === undefined) {
     throw new Error('Package tool requires a packed tarball.');
   }
-  return packedDist.tarball;
+  return packedDistribution.tarball;
 }

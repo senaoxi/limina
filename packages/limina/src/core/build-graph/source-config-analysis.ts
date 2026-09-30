@@ -10,11 +10,13 @@ import type {
 } from './source-config-collection-types';
 
 function resolveDiscoveryExtensions(options: ConfigVisit): string[] {
-  if (options.discoveryExtensions) return options.discoveryExtensions;
-  return normalizeExtensions(capabilityDiscoveryExtensions);
+  return (
+    options.discoveryExtensions ??
+    normalizeExtensions(capabilityDiscoveryExtensions)
+  );
 }
 
-function inspectionAddedProblems(options: {
+function isInspectionAddedProblems(options: {
   configObject: SourceConfigAnalysis['configObject'];
   problemCount: number;
   visit: ConfigVisit;
@@ -32,7 +34,7 @@ export function parseSourceConfig(
 ): SourceConfigAnalysis | null {
   const configObject = readJsonConfig(options.config, options.sourceConfigPath);
   if (
-    inspectionAddedProblems({
+    isInspectionAddedProblems({
       configObject,
       problemCount: options.problems.length,
       visit: options,

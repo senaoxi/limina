@@ -216,17 +216,23 @@ function loadLeafTypeScript(options: {
 }
 
 export function resolveSvelteSemanticToolchain(
-  packageRootDir: string,
+  packageRootDirectory: string,
 ): SvelteSemanticToolchain {
   const requireFromLeaf = createRequire(
-    path.join(packageRootDir, 'package.json'),
+    path.join(packageRootDirectory, 'package.json'),
   );
   const { compiler, compilerPath } = loadLeafCompiler({
-    packageRootDir,
+    packageRootDir: packageRootDirectory,
     requireFromLeaf,
   });
-  const transform = loadLeafTransform({ packageRootDir, requireFromLeaf });
-  const typeScript = loadLeafTypeScript({ packageRootDir, requireFromLeaf });
+  const transform = loadLeafTransform({
+    packageRootDir: packageRootDirectory,
+    requireFromLeaf,
+  });
+  const typeScript = loadLeafTypeScript({
+    packageRootDir: packageRootDirectory,
+    requireFromLeaf,
+  });
   return {
     compiler,
     compilerPath,

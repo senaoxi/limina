@@ -17,8 +17,9 @@ interface ResourceRequest {
 
 function getOccurrenceMode(request: ResourceRequest): 'import' | 'require' {
   if (['1', 'require'].includes(request.resolutionMode)) return 'require';
-  if (['99', 'import'].includes(request.resolutionMode)) return 'import';
-  return getSyntaxMode(request.importRecord);
+  return ['99', 'import'].includes(request.resolutionMode)
+    ? 'import'
+    : getSyntaxMode(request.importRecord);
 }
 
 function getSyntaxMode(record: ImportRecord): 'import' | 'require' {
@@ -64,13 +65,15 @@ function getResourceCacheKey(request: ResourceRequest): string {
 export class ResourceResolver {
   readonly #nodeCompatibility: ResourceNodeCompatibility;
 
+  readonly #resolvers = new Map<string, ResolverFactory>();
+
+  readonly #results = new Map<string, RuntimeEvidence>();
+
   constructor(
     readOwnerManifest?: (manifestPath: string) => PackageManifest | undefined,
   ) {
     this.#nodeCompatibility = new ResourceNodeCompatibility(readOwnerManifest);
   }
-  readonly #resolvers = new Map<string, ResolverFactory>();
-  readonly #results = new Map<string, RuntimeEvidence>();
 
   #getResolver(request: ResourceRequest): ResolverFactory {
     const mode = getOccurrenceMode(request);
@@ -79,12 +82,12 @@ export class ResourceResolver {
       mode,
       ...(request.options.customConditions ?? []),
     ];
-    const symlinks = !request.options.preserveSymlinks;
+    const isSymlinks = !request.options.preserveSymlinks;
     const key = JSON.stringify([
       'runtime-resource',
       mode,
       conditionNames,
-      symlinks,
+      isSymlinks,
     ]);
     const cached = this.#resolvers.get(key);
     if (cached !== undefined) return cached;
@@ -92,7 +95,7 @@ export class ResourceResolver {
       conditionNames,
       extensions: [],
       nodePath: false,
-      symlinks,
+      symlinks: isSymlinks,
     });
     this.#resolvers.set(key, resolver);
     return resolver;

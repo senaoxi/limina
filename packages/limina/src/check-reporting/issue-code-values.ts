@@ -27,7 +27,9 @@ export const LIMINA_CHECK_ISSUE_CODES = {
   packageCheckFailed: 'LIMINA_PACKAGE_CHECK_FAILED',
   packageManifestInvalid: 'LIMINA_PACKAGE_MANIFEST_INVALID',
   packagePublint: 'LIMINA_PACKAGE_PUBLINT',
-  /** @deprecated Historical alias. New command issues use LIMINA_COMMAND_FAILED. */
+  /**
+  @deprecated Historical alias. New command issues use LIMINA_COMMAND_FAILED.
+  */
   pipelineCommandFailed: 'LIMINA_PIPELINE_COMMAND_FAILED',
   proofAllowlistInvalid: 'LIMINA_PROOF_ALLOWLIST_INVALID',
   proofCheckerCoverageInvalid: 'LIMINA_PROOF_CHECKER_COVERAGE_INVALID',

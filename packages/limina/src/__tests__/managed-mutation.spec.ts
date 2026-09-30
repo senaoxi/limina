@@ -20,7 +20,7 @@ import {
   type TypecheckTarget,
 } from '../typecheck/targets';
 import { normalizeAbsolutePath } from '../utils/path';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function writeText(filePath: string, content: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -33,28 +33,29 @@ async function createFixture(): Promise<{
   rootDir: string;
   sourceConfigPath: string;
 }> {
-  const rootDir = normalizeAbsolutePath(
-    await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-managed-mutation-')),
-    ),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-managed-mutation-'),
+  );
+  const rootDirectory = normalizeAbsolutePath(
+    await realpath(temporaryDirectory),
   );
   const sourceConfigPath = normalizeAbsolutePath(
-    path.join(rootDir, 'packages/app/tsconfig.json'),
+    path.join(rootDirectory, 'packages/app/tsconfig.json'),
   );
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     '{"name":"root","private":true}\n',
   );
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
   await writeText(
-    path.join(rootDir, 'packages/app/package.json'),
+    path.join(rootDirectory, 'packages/app/package.json'),
     '{"name":"@fixture/app","private":true}\n',
   );
   await writeText(
-    path.join(rootDir, 'packages/app/tsconfig.base.json'),
+    path.join(rootDirectory, 'packages/app/tsconfig.base.json'),
     `${JSON.stringify({
       compilerOptions: {
         declaration: true,
@@ -83,15 +84,12 @@ async function createFixture(): Promise<{
     })}\n`,
   );
   await writeText(
-    path.join(rootDir, 'packages/app/src/index.ts'),
+    path.join(rootDirectory, 'packages/app/src/index.ts'),
     'export const value = 1;\n',
   );
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    config: withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -100,11 +98,11 @@ async function createFixture(): Promise<{
         },
       },
       configPath: normalizeAbsolutePath(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
       ),
-      rootDir,
-    },
-    rootDir,
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
     sourceConfigPath,
   };
 }

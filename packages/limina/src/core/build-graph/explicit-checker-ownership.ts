@@ -75,12 +75,11 @@ function getTargetModule(options: {
   reference: CrossCheckerReference;
 }): GeneratedBuildModule | null {
   const targetGraph = options.graphByChecker.get(options.reference.toChecker);
-  if (targetGraph === undefined) return null;
-  return (
-    targetGraph.collection.buildModulesBySourcePath.get(
-      options.reference.toConfigPath,
-    ) ?? null
-  );
+  return targetGraph === undefined
+    ? null
+    : (targetGraph.collection.buildModulesBySourcePath.get(
+        options.reference.toConfigPath,
+      ) ?? null);
 }
 
 function getCacheReuse(

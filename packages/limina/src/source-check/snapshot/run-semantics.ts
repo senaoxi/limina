@@ -16,7 +16,7 @@ function getPassedRunProblem(run: LiminaCheckRunSummary): string | null {
   return firstProblem([
     problemWhen(run.blockedBy !== undefined, message),
     problemWhen(
-      !run.tasks.every((task) => ['disabled', 'passed'].includes(task.state)),
+      run.tasks.some((task) => !['disabled', 'passed'].includes(task.state)),
       message,
     ),
   ]);
@@ -33,7 +33,10 @@ function getFailedRunProblem(run: LiminaCheckRunSummary): string | null {
     'Failed run must contain a failed task and no blocked or skipped tasks.';
   return firstProblem([
     problemWhen(run.blockedBy !== undefined, message),
-    problemWhen(!run.tasks.some((task) => task.state === 'failed'), message),
+    problemWhen(
+      run.tasks.every((task) => task.state !== 'failed'),
+      message,
+    ),
     problemWhen(hasSyntheticRunTask(run), message),
   ]);
 }
@@ -41,8 +44,9 @@ function getFailedRunProblem(run: LiminaCheckRunSummary): string | null {
 function getBlockedRunRootProblem(
   root: LiminaCheckRunTaskSummary | undefined,
 ): string | null {
-  if (root?.state === 'failed') return null;
-  return 'Blocked run blocker is not an actual failed task.';
+  return root?.state === 'failed'
+    ? null
+    : 'Blocked run blocker is not an actual failed task.';
 }
 
 function getBlockedRunProblem(options: {
@@ -72,8 +76,9 @@ function getRunResultProblem(options: {
   taskById: ReadonlyMap<string, LiminaCheckRunTaskSummary>;
 }): string | null {
   if (options.run.result === 'passed') return getPassedRunProblem(options.run);
-  if (options.run.result === 'failed') return getFailedRunProblem(options.run);
-  return getBlockedRunProblem(options);
+  return options.run.result === 'failed'
+    ? getFailedRunProblem(options.run)
+    : getBlockedRunProblem(options);
 }
 
 function isTerminalRunResult(run: LiminaCheckRunSummary): boolean {
@@ -154,8 +159,9 @@ export function getCompletedRunSemanticProblem(
   const headerProblem = getCompletedRunHeaderProblem(run);
   if (headerProblem !== null) return headerProblem;
   const taskById = indexCompletedTasks(run);
-  if (typeof taskById === 'string') return taskById;
-  return getIndexedRunProblem({ run, taskById });
+  return typeof taskById === 'string'
+    ? taskById
+    : getIndexedRunProblem({ run, taskById });
 }
 
 export function assertCompletedRunSummary(run: LiminaCheckRunSummary): void {
@@ -164,7 +170,7 @@ export function assertCompletedRunSummary(run: LiminaCheckRunSummary): void {
   throw new Error(`Invalid completed check run summary: ${problem}`);
 }
 
-function plannedTaskCarriesExecutionData(
+function isPlannedTaskCarriesExecutionData(
   task: LiminaCheckRunTaskSummary,
 ): boolean {
   return [
@@ -179,12 +185,13 @@ function plannedTaskCarriesExecutionData(
 }
 
 function getPlannedTaskProblem(run: LiminaCheckRunSummary): string | null {
-  const invalidTask = run.tasks.find(plannedTaskCarriesExecutionData);
-  if (invalidTask === undefined) return null;
-  return `Planned task "${invalidTask.label}" carries execution data.`;
+  const invalidTask = run.tasks.find(isPlannedTaskCarriesExecutionData);
+  return invalidTask === undefined
+    ? null
+    : `Planned task "${invalidTask.label}" carries execution data.`;
 }
 
-function notRunCarriesExecutionState(run: LiminaCheckRunSummary): boolean {
+function isNotRunCarriesExecutionState(run: LiminaCheckRunSummary): boolean {
   return [
     run.result !== 'not-run',
     run.startedAt !== undefined,
@@ -199,7 +206,7 @@ export function getNotRunSummaryProblem(
 ): string | null {
   return firstProblem([
     problemWhen(
-      notRunCarriesExecutionState(run),
+      isNotRunCarriesExecutionState(run),
       'Not-run summary carries execution state.',
     ),
     getPlannedTaskProblem(run),

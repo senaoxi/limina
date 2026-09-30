@@ -8,7 +8,7 @@ import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type {
   SourceFinding,
   SourcePackageImportUnauthorizedFacts,
@@ -44,26 +44,20 @@ function isSeparateTypePackage(options: {
   packageName: string;
 }): boolean {
   const specifier = options.dependencySpecifier;
-  if (!specifier) {
-    return false;
-  }
-
-  if (!specifier.startsWith('@types/')) {
-    return false;
-  }
-
-  return specifier !== options.packageName;
+  return (
+    specifier !== undefined &&
+    specifier.startsWith('@types/') &&
+    specifier !== options.packageName
+  );
 }
 
 function createTypeDeclarationFix(options: {
   dependencySpecifier?: string;
   packageName: string;
 }): string {
-  if (!isSeparateTypePackage(options)) {
-    return '';
-  }
-
-  return ` "${options.dependencySpecifier}" only supplies declarations and does not authorize "${options.packageName}".`;
+  return isSeparateTypePackage(options)
+    ? ` "${options.dependencySpecifier}" only supplies declarations and does not authorize "${options.packageName}".`
+    : '';
 }
 
 function createIntermediateAuthorityFix(
@@ -98,7 +92,7 @@ function formatPackageImportAuthorizationFix(options: {
     .join(' ');
 }
 
-function rootManifestDoesNotDeclarePackage(
+function isRootManifestDoesNotDeclarePackage(
   options: AuthorizationFindingOptions,
 ): boolean {
   if (!options.authorization.matchedGrant) {
@@ -126,11 +120,9 @@ function getAuthorizationReason(options: {
     return `source import authority can only use the owner package.json or an explicitly configured workspace root dependency grant. An intermediate workspace package declares "${options.packageName}", so the workspace root grant must not bypass it.`;
   }
 
-  if (options.rootManifestMissingDependency) {
-    return `the grant allows workspace root dependency authority, but the workspace root package.json does not declare "${options.packageName}".`;
-  }
-
-  return 'source imports must be declared by the nearest workspace source owner or by an explicitly configured workspace root dependency grant.';
+  return options.rootManifestMissingDependency
+    ? `the grant allows workspace root dependency authority, but the workspace root package.json does not declare "${options.packageName}".`
+    : 'source imports must be declared by the nearest workspace source owner or by an explicitly configured workspace root dependency grant.';
 }
 
 function createOptionalLine(
@@ -214,7 +206,7 @@ function createAuthorizationPresentation(
   const reason = getAuthorizationReason({
     authorization: options.authorization,
     packageName: options.packageName,
-    rootManifestMissingDependency: rootManifestDoesNotDeclarePackage(options),
+    rootManifestMissingDependency: isRootManifestDoesNotDeclarePackage(options),
   });
   const title = 'Unauthorized bare package import';
   const lines = [

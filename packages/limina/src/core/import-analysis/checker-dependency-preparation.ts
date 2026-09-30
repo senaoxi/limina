@@ -62,17 +62,15 @@ function classifyToolchainFailure(
   if (/unsupported .* semantic toolchain/iu.test(message)) {
     return 'toolchain-compatibility';
   }
-  if (/dependency|package|resolve|toolchain/iu.test(message)) {
-    return 'toolchain-resolution';
-  }
-  return 'context-creation';
+  return /dependency|package|resolve|toolchain/iu.test(message)
+    ? 'toolchain-resolution'
+    : 'context-creation';
 }
 
 function getVueContext(
   options: PreparationOptions,
 ): ContextFailure | VuePreparationContext {
   const identity = options.context.vueSemanticIdentity;
-  const manager = options.dependencies.vueSemanticContexts;
   if (identity === undefined) {
     return {
       failure: unsupported({
@@ -83,6 +81,7 @@ function getVueContext(
       kind: 'failure',
     };
   }
+  const manager = options.dependencies.vueSemanticContexts;
   if (manager === undefined) {
     return {
       failure: unsupported({
@@ -121,15 +120,15 @@ function prepareVue(
   options: PreparationOptions,
 ): FrameworkSemanticDependencyPreparation {
   const context = getVueContext(options);
-  if (context.kind === 'failure') return context.failure;
-  return runVuePreparation({ ...options, ...context });
+  return context.kind === 'failure'
+    ? context.failure
+    : runVuePreparation({ ...options, ...context });
 }
 
 function getAstroContext(
   options: PreparationOptions,
 ): AstroPreparationContext | ContextFailure {
   const project = options.context.astroSemanticProject;
-  const manager = options.dependencies.astroSemanticContexts;
   if (project === undefined) {
     return {
       failure: unsupported({
@@ -140,6 +139,7 @@ function getAstroContext(
       kind: 'failure',
     };
   }
+  const manager = options.dependencies.astroSemanticContexts;
   if (manager === undefined) {
     return {
       failure: unsupported({
@@ -178,15 +178,15 @@ function prepareAstro(
   options: PreparationOptions,
 ): FrameworkSemanticDependencyPreparation {
   const context = getAstroContext(options);
-  if (context.kind === 'failure') return context.failure;
-  return runAstroPreparation({ ...options, ...context });
+  return context.kind === 'failure'
+    ? context.failure
+    : runAstroPreparation({ ...options, ...context });
 }
 
 function getSvelteContext(
   options: PreparationOptions,
 ): ContextFailure | SveltePreparationContext {
   const project = options.context.svelteSemanticProject;
-  const manager = options.dependencies.svelteSemanticContexts;
   if (project === undefined) {
     return {
       failure: unsupported({
@@ -197,6 +197,7 @@ function getSvelteContext(
       kind: 'failure',
     };
   }
+  const manager = options.dependencies.svelteSemanticContexts;
   if (manager === undefined) {
     return {
       failure: unsupported({
@@ -235,8 +236,9 @@ function prepareSvelte(
   options: PreparationOptions,
 ): FrameworkSemanticDependencyPreparation {
   const context = getSvelteContext(options);
-  if (context.kind === 'failure') return context.failure;
-  return runSveltePreparation({ ...options, ...context });
+  return context.kind === 'failure'
+    ? context.failure
+    : runSveltePreparation({ ...options, ...context });
 }
 
 function prepareTypeScript(): FrameworkSemanticDependencyPreparation {

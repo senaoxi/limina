@@ -10,22 +10,19 @@ interface TerminalDescriptors {
   rows: PropertyDescriptor | undefined;
 }
 
-let descriptors: TerminalDescriptors;
-let originalCI: string | undefined;
-let originalCodexCI: string | undefined;
-let originalTerm: string | undefined;
-
 function setTerminal(options: {
   isTTY: boolean;
   rows: number | undefined;
 }): void {
-  Object.defineProperty(process.stdout, 'isTTY', {
-    configurable: true,
-    value: options.isTTY,
-  });
-  Object.defineProperty(process.stdout, 'rows', {
-    configurable: true,
-    value: options.rows,
+  Object.defineProperties(process.stdout, {
+    isTTY: {
+      configurable: true,
+      value: options.isTTY,
+    },
+    rows: {
+      configurable: true,
+      value: options.rows,
+    },
   });
 }
 
@@ -56,6 +53,10 @@ function createFakeCli(options: {
 }
 
 describe('CLI lifecycle screen clearing', () => {
+  let descriptors: TerminalDescriptors;
+  let originalCI: string | undefined;
+  let originalCodexCI: string | undefined;
+  let originalTerm: string | undefined;
   beforeEach(() => {
     descriptors = {
       isTTY: Object.getOwnPropertyDescriptor(process.stdout, 'isTTY'),

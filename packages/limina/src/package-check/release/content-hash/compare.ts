@@ -15,7 +15,7 @@ import {
   verifyRegistryTarballIntegrity,
 } from '../registry';
 import type { EffectiveRegistryAuthority } from '../registry/authority';
-import { resolveWorkspacePackageOutputDir } from './config';
+import { resolveWorkspacePackageOutputDirectory } from './config';
 import {
   createContentHashDiffs,
   hasContentHashDiffs,
@@ -34,7 +34,7 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
   tarballUrl: string;
   workspacePackage: NamedWorkspacePackage;
 }): Promise<WorkspacePackageOutputComparison> {
-  const localOutDir = resolveWorkspacePackageOutputDir(
+  const localOutDirectory = resolveWorkspacePackageOutputDirectory(
     options.config,
     options.workspacePackage,
   );
@@ -50,7 +50,7 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
     tarballUrl: options.tarballUrl,
     version: options.baselineVersion,
   });
-  const localPackedTarball = await packOutputTarball(localOutDir);
+  const localPackedTarball = await packOutputTarball(localOutDirectory);
   try {
     const [remoteArtifact, localArtifact] = await Promise.all([
       readPackedArtifactContent(publishedTarball),
@@ -62,7 +62,7 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
     });
     return {
       ignoredDiffGroups: partition.ignoredDiffGroups,
-      localOutputDirectory: localOutDir,
+      localOutputDirectory: localOutDirectory,
       localVersion: localArtifact.packageVersion,
       matchesBaseline: !hasContentHashDiffs(partition.releaseRelevantDiffs),
       releaseRelevantDiffs: partition.releaseRelevantDiffs,
@@ -75,8 +75,7 @@ export async function compareLocalWorkspacePackageOutputToBaseline(options: {
 function getRegistryTarballFailure(
   error: unknown,
 ): RegistryTarballFailure | null {
-  if (!(error instanceof RegistryTarballError)) return null;
-  return error.failure;
+  return error instanceof RegistryTarballError ? error.failure : null;
 }
 
 function getFailureValue<T>(
@@ -84,16 +83,14 @@ function getFailureValue<T>(
   selector: (value: RegistryTarballFailure) => T | undefined,
   fallback: T,
 ): T {
-  if (failure === null) return fallback;
-  return selector(failure) ?? fallback;
+  return failure === null ? fallback : (selector(failure) ?? fallback);
 }
 
 function getOptionalFailureValue<T>(
   failure: RegistryTarballFailure | null,
   selector: (value: RegistryTarballFailure) => T | undefined,
 ): T | undefined {
-  if (failure === null) return undefined;
-  return selector(failure);
+  return failure === null ? undefined : selector(failure);
 }
 
 export function createRegistryComparisonFailure(options: {

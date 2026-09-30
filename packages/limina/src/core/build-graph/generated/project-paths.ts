@@ -1,6 +1,6 @@
 import type { SourceProject } from '../types';
 import {
-  getGeneratedOutDir,
+  getGeneratedOutDir as getGeneratedOutDirectory,
   getGeneratedOutputTsBuildInfoPath,
   getGeneratedTsBuildInfoPath,
 } from './paths';
@@ -15,16 +15,19 @@ type ProjectPathOwner = Pick<
   | 'packageRootDir'
 >;
 
-function getProjectPaths(rootDir: string, project: ProjectPathOwner): string[] {
+function getProjectPaths(
+  rootDirectory: string,
+  project: ProjectPathOwner,
+): string[] {
   const options = {
     checkerName: project.checkerName,
     packageRootDir: project.packageRootDir,
-    rootDir,
+    rootDir: rootDirectory,
     sourceConfigPath: project.configPath,
   };
   const paths = [
     project.dtsConfigPath,
-    getGeneratedOutDir(options),
+    getGeneratedOutDirectory(options),
     getGeneratedTsBuildInfoPath(options),
   ];
   if (project.outputOptions !== null) {

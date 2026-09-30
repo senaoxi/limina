@@ -271,13 +271,15 @@ export function collectMissingCheckerPeerDependencies(options: {
       resolvePackage: options.resolvePackage,
     });
   }
-  return [...problemsByKey.values()]
+  return problemsByKey
+    .values()
     .map((problem) => ({
       ...problem,
       checkerNames: [...problem.checkerNames].sort((left, right) =>
         left.localeCompare(right),
       ),
     }))
+    .toArray()
     .sort(compareDependencyProblems);
 }
 

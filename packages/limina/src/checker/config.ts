@@ -19,7 +19,7 @@ function isVueCheckerName(name: string): boolean {
   return name === 'vue-tsc';
 }
 
-function getProjectRootDir(options: { projectRootDir?: string }): string {
+function getProjectRootDirectory(options: { projectRootDir?: string }): string {
   return options.projectRootDir === undefined ? '' : options.projectRootDir;
 }
 
@@ -79,7 +79,7 @@ function createExtensionContext(
   return {
     adapter: requireCheckerAdapter(name),
     checker,
-    projectRootDir: getProjectRootDir(options),
+    projectRootDir: getProjectRootDirectory(options),
   };
 }
 
@@ -114,8 +114,7 @@ function getExplicitCheckerMap(
 }
 
 function trimPatterns(patterns: readonly string[] | undefined): string[] {
-  if (patterns === undefined) return [];
-  return patterns.map((value) => value.trim());
+  return patterns === undefined ? [] : patterns.map((value) => value.trim());
 }
 
 function createResolvedChecker(options: {
@@ -137,8 +136,7 @@ function createResolvedChecker(options: {
 }
 
 function getResolvedProjectRoot(config: LiminaConfig): string | undefined {
-  if (!('rootDir' in config)) return undefined;
-  return String(config.rootDir);
+  return 'rootDir' in config ? String(config.rootDir) : undefined;
 }
 
 export function getResolvedCheckers(
@@ -146,14 +144,18 @@ export function getResolvedCheckers(
 ): ResolvedCheckerConfig[] {
   const checkerMap = getExplicitCheckerMap(config);
   if (checkerMap === undefined) return [];
-  const projectRootDir = getResolvedProjectRoot(config);
+  const projectRootDirectory = getResolvedProjectRoot(config);
   return Object.entries(checkerMap)
     .filter(
       (entry): entry is [ResolvedCheckerConfig['name'], CheckerConfig] =>
         entry[1] !== undefined,
     )
     .map(([name, checker]) =>
-      createResolvedChecker({ checker, name, projectRootDir }),
+      createResolvedChecker({
+        checker,
+        name,
+        projectRootDir: projectRootDirectory,
+      }),
     )
     .sort((left, right) => left.name.localeCompare(right.name));
 }

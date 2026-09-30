@@ -47,7 +47,7 @@ function addOutputOptionsProblem(
     field: options.field,
     reason: options.reason,
     sourceConfigPath: context.sourceConfigPath,
-    ...(Object.hasOwn(options, 'value') ? { value: options.value } : {}),
+    ...(Object.hasOwn(options, 'value') && { value: options.value }),
   });
 }
 
@@ -99,13 +99,13 @@ export function validateAllowedFields(
   outputs: Record<string, unknown>,
   context: OutputReaderContext,
 ): void {
-  for (const fieldName of Object.keys(outputs)) {
+  for (const [fieldName, value] of Object.entries(outputs)) {
     if (!allowedFields.has(fieldName)) {
       addOutputOptionsProblem(context, {
         field: `liminaOptions.outputs.${fieldName}`,
         reason:
           'outputs only supports target, rootDir, outDir, and declarationMap.',
-        value: outputs[fieldName],
+        value,
       });
     }
   }
@@ -115,16 +115,15 @@ function isOutputPathField(fieldName: OutputStringField): boolean {
   return fieldName === 'rootDir' || fieldName === 'outDir';
 }
 
-function validateRelativeOutputPath(options: {
+function isValidateRelativeOutputPath(options: {
   context: OutputReaderContext;
   fieldName: OutputStringField;
   value: string;
 }): boolean {
-  if (!isOutputPathField(options.fieldName)) {
-    return true;
-  }
-
-  if (!path.isAbsolute(options.value)) {
+  if (
+    !isOutputPathField(options.fieldName) ||
+    !path.isAbsolute(options.value)
+  ) {
     return true;
   }
 
@@ -142,7 +141,9 @@ function normalizeStringOutputValue(options: {
   fieldName: OutputStringField;
   value: string;
 }): string | undefined {
-  return validateRelativeOutputPath(options) ? options.value.trim() : undefined;
+  return isValidateRelativeOutputPath(options)
+    ? options.value.trim()
+    : undefined;
 }
 
 function readStringOutputField(options: {
@@ -187,7 +188,7 @@ export function readStringOutputFields(
   return values;
 }
 
-export function readDeclarationMap(
+export function isReadDeclarationMap(
   outputs: Record<string, unknown>,
   context: OutputReaderContext,
 ): boolean {

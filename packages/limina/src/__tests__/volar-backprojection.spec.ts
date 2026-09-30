@@ -34,7 +34,7 @@ function project(
   toSourceRange: (
     start: number,
     end: number,
-    fallbackToAnyMatch: boolean,
+    isFallbackToAnyMatch: boolean,
   ) => Iterable<readonly [number, number, unknown, unknown]>,
 ) {
   return strictBackprojectVolarDependency({

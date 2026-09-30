@@ -96,8 +96,7 @@ function startTreeNode(options: {
 }
 
 function getRequestedTreeMessage(input: FlowTreeFinishInput): string {
-  if (input.message !== undefined) return input.message;
-  return input.node.message;
+  return input.message === undefined ? input.node.message : input.message;
 }
 
 function getFinishedTreeMessage(
@@ -116,8 +115,7 @@ function getFinishedTreeMessage(
 function getExplicitElapsedTime(
   input: FlowTreeFinishInput,
 ): number | undefined {
-  if (input.options === undefined) return undefined;
-  return input.options.elapsedTimeMs;
+  return input.options === undefined ? undefined : input.options.elapsedTimeMs;
 }
 
 function getFinishedElapsedTime(
@@ -125,8 +123,9 @@ function getFinishedElapsedTime(
 ): number | undefined {
   const explicit = getExplicitElapsedTime(input);
   if (explicit !== undefined) return explicit;
-  if (input.node.startedAt === undefined) return undefined;
-  return performance.now() - input.node.startedAt;
+  return input.node.startedAt === undefined
+    ? undefined
+    : performance.now() - input.node.startedAt;
 }
 
 function updateFinishedNode(
@@ -189,8 +188,7 @@ function createTreeNodeHandle(
 }
 
 function ensureInteractiveTree(state: FlowReporterState): void {
-  if (!state.interactive) return;
-  if (state.hasInteractiveTree) return;
+  if (!state.interactive || state.hasInteractiveTree) return;
   state.interactiveHistory.push({ kind: 'tree' });
   state.hasInteractiveTree = true;
 }

@@ -12,11 +12,11 @@ import { env as inheritedEnvironment } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  assertDistArtifacts,
+  assertDistributionArtifacts,
   type CommandResult,
   type ConsumerFixture,
   createConsumerFixture,
-  packLiminaDist,
+  packLiminaDistribution,
   runCommand,
   runPnpm,
 } from './helpers';
@@ -196,7 +196,7 @@ async function assertGeneratedCommandRoundTrip(options: {
   const probe = JSON.parse(
     await readFile(probeOutputPath, 'utf8'),
   ) as ArgvProbePayload;
-  const realFixtureDir = normalizePath(
+  const realFixtureDirectory = normalizePath(
     await realpath(options.fixture.fixtureDir),
   );
   const realProbeEntry = normalizePath(await realpath(probe.argv[1] ?? ''));
@@ -226,7 +226,7 @@ async function assertGeneratedCommandRoundTrip(options: {
   const expectedCwd =
     options.variantName === 'posix'
       ? normalizePath(await realpath(options.outsideCwd))
-      : realFixtureDir;
+      : realFixtureDirectory;
   expect(normalizePath(await realpath(probe.cwd))).toBe(expectedCwd);
   // A direct Node invocation can legitimately contain pnpm in its installed
   // CLI path. Check executable and entry identities, not a command substring.
@@ -319,18 +319,18 @@ describe('smoke pnpm runner', () => {
     const corepackRoot = await mkdtemp(
       path.join(tmpdir(), 'limina-fake-corepack-'),
     );
-    const forwardedArgs = ['exec', 'limina', '--mode', MODE];
+    const forwardedArguments = ['exec', 'limina', '--mode', MODE];
 
     try {
-      const corepackDistDir = path.join(corepackRoot, 'dist');
-      await mkdir(corepackDistDir, { recursive: true });
+      const corepackDistributionDirectory = path.join(corepackRoot, 'dist');
+      await mkdir(corepackDistributionDirectory, { recursive: true });
       await writeFile(
-        path.join(corepackDistDir, 'pnpm.js'),
+        path.join(corepackDistributionDirectory, 'pnpm.js'),
         'process.stdout.write(JSON.stringify(process.argv.slice(2)));\n',
         'utf8',
       );
 
-      const result = await runPnpm(forwardedArgs, {
+      const result = await runPnpm(forwardedArguments, {
         cwd: corepackRoot,
         env: createShellEnvironment({
           COREPACK_ROOT: corepackRoot,
@@ -338,7 +338,7 @@ describe('smoke pnpm runner', () => {
         }),
       });
 
-      expect(result.stdout).toBe(JSON.stringify(forwardedArgs));
+      expect(result.stdout).toBe(JSON.stringify(forwardedArguments));
     } finally {
       await rm(corepackRoot, { force: true, recursive: true });
     }
@@ -347,8 +347,8 @@ describe('smoke pnpm runner', () => {
 
 describe('standalone invocation generated command', () => {
   it('round-trips the exact packed-consumer command through real shells', async () => {
-    const manifest = assertDistArtifacts();
-    const packedDist = await packLiminaDist();
+    const manifest = assertDistributionArtifacts();
+    const packedDistribution = await packLiminaDistribution();
     const outsideCwd = await mkdtemp(
       path.join(tmpdir(), 'limina-generated-command-outside-'),
     );
@@ -360,7 +360,7 @@ describe('standalone invocation generated command', () => {
         directoryName: 'ws pnpm 空格漢字 & ^ %PATH% !L! (x)',
         manifest,
         sourceText: 'export const value: string = 1;\n',
-        tarballPath: packedDist.tarballPath,
+        tarballPath: packedDistribution.tarballPath,
       });
       const environment = await removeResolvedBareLiminaFromPath(
         createShellEnvironment(),
@@ -502,7 +502,7 @@ describe('standalone invocation generated command', () => {
       if (fixture) {
         await fixture.cleanup();
       }
-      await packedDist.cleanup();
+      await packedDistribution.cleanup();
       await rm(outsideCwd, { force: true, recursive: true });
     }
   }, 600_000);

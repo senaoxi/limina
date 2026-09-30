@@ -91,8 +91,8 @@ const eligibilityRules: readonly EligibilityRule[] = [
     };
   },
   (options) => {
-    if (options.oxcResolvedFilePath === null) return null;
     if (
+      options.oxcResolvedFilePath === null ||
       isKnownSourcePath(options.oxcResolvedFilePath, options.checkerExtensions)
     ) {
       return null;

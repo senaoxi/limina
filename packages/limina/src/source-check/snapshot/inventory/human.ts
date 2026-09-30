@@ -66,8 +66,10 @@ function shouldReturnSummaryOnly(options: {
   filteredIssueCount: number;
   inventory: CheckIssueInventoryHumanOptions;
 }): boolean {
-  if (options.inventory.presentation.view === 'summary') return true;
-  return options.filteredIssueCount === 0;
+  return (
+    options.inventory.presentation.view === 'summary' ||
+    options.filteredIssueCount === 0
+  );
 }
 
 export function formatCompletedHumanInventory(options: {

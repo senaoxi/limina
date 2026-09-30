@@ -14,7 +14,7 @@ import {
 export const CHECKER_TARGET_ID_PATTERN: RegExp =
   /^checker-target:[a-f0-9]{64}$/u;
 
-export function allValid(values: readonly boolean[]): boolean {
+export function isAllValid(values: readonly boolean[]): boolean {
   return values.every(Boolean);
 }
 
@@ -22,16 +22,14 @@ export function firstProblem(
   problems: readonly (string | null)[],
 ): string | null {
   const problem = problems.find((entry) => entry !== null);
-  if (problem === undefined) return null;
-  return problem;
+  return problem === undefined ? null : problem;
 }
 
 export function problemWhen(
-  condition: boolean,
+  isCondition: boolean,
   message: string,
 ): string | null {
-  if (!condition) return null;
-  return message;
+  return isCondition ? message : null;
 }
 
 const SOURCE_SNAPSHOT_STATUSES = new Set<SourceIssueSnapshotStatus>([
@@ -90,8 +88,9 @@ export function isCheckIssueSnapshotStatus(
 }
 
 export function isStringArray(value: unknown): value is string[] {
-  if (!Array.isArray(value)) return false;
-  return value.every((entry) => typeof entry === 'string');
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+  );
 }
 
 export function isLiminaCheckIssueSeverity(
@@ -129,28 +128,23 @@ export function isKnownIssueTask(value: string): value is LiminaCheckTaskName {
 }
 
 export function isFiniteNonNegativeNumber(value: unknown): value is number {
-  if (typeof value !== 'number') return false;
-  return Number.isFinite(value) && value >= 0;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 export function isOptionalFiniteNonNegativeNumber(value: unknown): boolean {
-  if (value === undefined) return true;
-  return isFiniteNonNegativeNumber(value);
+  return value === undefined || isFiniteNonNegativeNumber(value);
 }
 
 export function isOptionalString(value: unknown): boolean {
-  if (value === undefined) return true;
-  return typeof value === 'string';
+  return value === undefined || typeof value === 'string';
 }
 
 export function isOptionalStringArray(value: unknown): boolean {
-  if (value === undefined) return true;
-  return isStringArray(value);
+  return value === undefined || isStringArray(value);
 }
 
 export function isNonEmptyString(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  return value.length > 0;
+  return typeof value === 'string' && value.length > 0;
 }
 
 export function hasOnlyKeys(
@@ -163,19 +157,18 @@ export function hasOnlyKeys(
 
 export function isOptionalRecord<T>(
   value: unknown,
-  predicate: (entry: unknown) => entry is T,
+  isPredicate: (entry: unknown) => entry is T,
 ): boolean {
-  if (value === undefined) return true;
-  return predicate(value);
+  return value === undefined || isPredicate(value);
 }
 
 export function isOptionalArray<T>(
   value: unknown,
-  predicate: (entry: unknown) => entry is T,
+  isPredicate: (entry: unknown) => entry is T,
 ): boolean {
-  if (value === undefined) return true;
-  if (!Array.isArray(value)) return false;
-  return value.every(predicate);
+  return (
+    value === undefined || (Array.isArray(value) && value.every(isPredicate))
+  );
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

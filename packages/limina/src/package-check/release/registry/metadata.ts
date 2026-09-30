@@ -104,8 +104,7 @@ function getMetadataBodyFailureReason(options: {
   signal: AbortSignal;
 }): 'body-read' | 'invalid-json' | 'timeout' {
   if (options.signal.aborted) return 'timeout';
-  if (options.error instanceof SyntaxError) return 'invalid-json';
-  return 'body-read';
+  return options.error instanceof SyntaxError ? 'invalid-json' : 'body-read';
 }
 
 function getMetadataBodyFailure(options: {
@@ -162,8 +161,9 @@ async function parseMetadataResponse(
   } catch (error) {
     return getMetadataBodyFailure({ error, request });
   }
-  if (!isPlainRecord(metadata)) return createInvalidMetadataResult(request);
-  return { kind: 'found', metadata: metadata as RegistryPackageMetadata };
+  return isPlainRecord(metadata)
+    ? { kind: 'found', metadata: metadata as RegistryPackageMetadata }
+    : createInvalidMetadataResult(request);
 }
 
 async function loadRegistryPackageMetadata(
@@ -215,8 +215,9 @@ function formatMetadataStatus(
 function formatMetadataCause(
   failure: Extract<RegistryMetadataResult, { kind: 'failure' }>,
 ): string {
-  if (failure.cause === undefined) return '';
-  return `: ${formatErrorMessage(failure.cause)}`;
+  return failure.cause === undefined
+    ? ''
+    : `: ${formatErrorMessage(failure.cause)}`;
 }
 
 const METADATA_FAILURE_PREFIXES = {
@@ -235,10 +236,9 @@ function formatKnownMetadataFailure(options: {
       options.failure.reason as keyof typeof METADATA_FAILURE_PREFIXES
     ];
   if (prefix === undefined) return null;
-  if (options.failure.reason === 'invalid-json') {
-    return `${prefix} ${options.packageName} from ${options.failure.url} is not valid JSON${options.cause}`;
-  }
-  return `${prefix} ${options.packageName} from ${options.failure.url}${options.cause}`;
+  return options.failure.reason === 'invalid-json'
+    ? `${prefix} ${options.packageName} from ${options.failure.url} is not valid JSON${options.cause}`
+    : `${prefix} ${options.packageName} from ${options.failure.url}${options.cause}`;
 }
 
 export function formatRegistryMetadataFailure(
@@ -247,10 +247,9 @@ export function formatRegistryMetadataFailure(
 ): string {
   if (failure.reason === 'body-too-large')
     return `npm registry metadata for ${packageName} exceeds the ${failure.maxBytes} byte limit`;
-  if (failure.reason === 'timeout') {
-    return formatMetadataTimeout(packageName, failure);
-  }
-  return formatOtherMetadataFailure(packageName, failure);
+  return failure.reason === 'timeout'
+    ? formatMetadataTimeout(packageName, failure)
+    : formatOtherMetadataFailure(packageName, failure);
 }
 
 function formatOtherMetadataFailure(
@@ -259,8 +258,9 @@ function formatOtherMetadataFailure(
 ): string {
   const cause = formatMetadataCause(failure);
   const known = formatKnownMetadataFailure({ cause, failure, packageName });
-  if (known !== null) return known;
-  return `unable to read npm registry metadata for ${packageName} from ${failure.url}${formatMetadataStatus(failure)}${cause}`;
+  return known === null
+    ? `unable to read npm registry metadata for ${packageName} from ${failure.url}${formatMetadataStatus(failure)}${cause}`
+    : known;
 }
 
 export function findRegistryVersionMetadata(
@@ -269,8 +269,9 @@ export function findRegistryVersionMetadata(
 ): RegistryVersionMetadata | null {
   if (!isPlainRecord(metadata.versions)) return null;
   const versionMetadata = metadata.versions[version];
-  if (!isPlainRecord(versionMetadata)) return null;
-  return versionMetadata as RegistryVersionMetadata;
+  return isPlainRecord(versionMetadata)
+    ? (versionMetadata as RegistryVersionMetadata)
+    : null;
 }
 
 function getNonEmptyString(value: unknown): string | null {
@@ -278,17 +279,19 @@ function getNonEmptyString(value: unknown): string | null {
   return value.trim().length > 0 ? value : null;
 }
 
-export function findRegistryDistTagVersion(
+export function findRegistryDistributionTagVersion(
   metadata: RegistryPackageMetadata,
-  distTag: string,
+  distributionTag: string,
 ): string | null {
-  if (!isPlainRecord(metadata['dist-tags'])) return null;
-  return getNonEmptyString(metadata['dist-tags'][distTag]);
+  return isPlainRecord(metadata['dist-tags'])
+    ? getNonEmptyString(metadata['dist-tags'][distributionTag])
+    : null;
 }
 
 export function getRegistryTarballUrl(
   versionMetadata: RegistryVersionMetadata,
 ): string | null {
-  if (!isPlainRecord(versionMetadata.dist)) return null;
-  return getNonEmptyString(versionMetadata.dist.tarball);
+  return isPlainRecord(versionMetadata.dist)
+    ? getNonEmptyString(versionMetadata.dist.tarball)
+    : null;
 }

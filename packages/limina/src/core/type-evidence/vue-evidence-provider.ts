@@ -45,10 +45,11 @@ function createLiteralEvidence(options: {
   const symbol = options.context.program
     .getTypeChecker()
     .getSymbolAtLocation(options.literal);
-  if (symbol === undefined) return { kind: 'missing' };
-  return options.cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
-    createAmbientTypeEvidence(symbol, options.context.tsModule),
-  );
+  return symbol === undefined
+    ? { kind: 'missing' }
+    : options.cache.getOrCreateAmbientSymbolEvidence(symbol, () =>
+        createAmbientTypeEvidence(symbol, options.context.tsModule),
+      );
 }
 
 function canonicalAmbientIdentity(evidence: TypeEvidence): string | null {
@@ -79,13 +80,12 @@ function selectCanonicalEvidence(options: {
   }
   const identities = options.evidence.map(canonicalAmbientIdentity);
   const firstIdentity = identities[0];
-  if (hasCanonicalIdentity(identities, firstIdentity)) {
-    return options.evidence[0]!;
-  }
-  return createUnsupportedEvidence(
-    options.checkerName,
-    'Vue source-map candidates did not agree on one canonical ambient module symbol.',
-  );
+  return hasCanonicalIdentity(identities, firstIdentity)
+    ? options.evidence[0]!
+    : createUnsupportedEvidence(
+        options.checkerName,
+        'Vue source-map candidates did not agree on one canonical ambient module symbol.',
+      );
 }
 
 function evaluateEvidence(options: {
@@ -106,8 +106,7 @@ function evaluateEvidence(options: {
 }
 
 function formatProviderError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
 function querySemanticProvider(
@@ -151,13 +150,12 @@ function queryActiveProvider(
   state: VueEvidenceProviderState,
   importRecord: ImportRecord,
 ): TypeEvidence {
-  if (state.unsupportedReason !== null) {
-    return createUnsupportedEvidence(
-      state.options.checkerName,
-      state.unsupportedReason,
-    );
-  }
-  return queryProviderSafely(state, importRecord);
+  return state.unsupportedReason === null
+    ? queryProviderSafely(state, importRecord)
+    : createUnsupportedEvidence(
+        state.options.checkerName,
+        state.unsupportedReason,
+      );
 }
 
 export function createVueTypeEvidenceProvider(

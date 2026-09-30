@@ -32,7 +32,7 @@ export function formatCustomConditions(conditions: readonly string[]): string {
   return JSON.stringify(conditions);
 }
 
-export function customConditionsEqual(
+export function isCustomConditionsEqual(
   left: readonly string[],
   right: readonly string[],
 ): boolean {
@@ -71,7 +71,7 @@ function getReferencedDeclarationProjects(
   context: CustomConditionConsistencyContext,
 ): ProjectInfo[] {
   return [...project.references]
-    .sort()
+    .sort((left, right) => Number(left > right) - Number(left < right))
     .map((referencePath) => context.projectsByPath.get(referencePath))
     .filter(
       (candidate): candidate is ProjectInfo =>
@@ -88,7 +88,7 @@ function createReferenceMismatchFinding(options: {
   referencedProject: ProjectInfo;
 }): GraphConditionDomainMismatchFinding | null {
   if (
-    customConditionsEqual(
+    isCustomConditionsEqual(
       options.projectConditions,
       options.referencedConditions,
     )

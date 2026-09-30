@@ -46,16 +46,15 @@ function getResolutionMode(options: {
   tsModule: typeof ts;
 }): string {
   const api = options.tsModule as typeof ts & Partial<TypeScriptModeApi>;
-  if (typeof api.getModeForUsageLocation !== 'function') {
-    return 'default';
-  }
-  return String(
-    api.getModeForUsageLocation(
-      options.evidence.containingSourceFile,
-      options.evidence.literal,
-      options.compilerOptions,
-    ),
-  );
+  return typeof api.getModeForUsageLocation === 'function'
+    ? String(
+        api.getModeForUsageLocation(
+          options.evidence.containingSourceFile,
+          options.evidence.literal,
+          options.compilerOptions,
+        ),
+      )
+    : 'default';
 }
 
 function isCheckerSource(options: {
@@ -64,11 +63,12 @@ function isCheckerSource(options: {
 }): boolean {
   const normalized = normalizeAbsolutePath(options.fileName);
   const generated = options.context.language.scripts.get(normalized)?.generated;
-  if (generated === undefined) return classifyMissingScript(options);
-  return hasServiceScript(generated);
+  return generated === undefined
+    ? isClassifyMissingScript(options)
+    : hasServiceScript(generated);
 }
 
-function classifyMissingScript(options: {
+function isClassifyMissingScript(options: {
   fileName: string;
   context: ReturnType<VueSemanticContextManager['acquire']>;
 }): false {
@@ -117,8 +117,7 @@ function getResolutionValue(
   resolution: ResolvedCheckerModuleName | null,
   key: 'resolvedBy' | 'resolvedFileName',
 ): string | null {
-  if (resolution === null) return null;
-  return resolution[key];
+  return resolution === null ? null : resolution[key];
 }
 
 function selectCanonicalCandidate(
@@ -134,7 +133,7 @@ function selectCanonicalCandidate(
   }
   const identity = canonicalCandidate(first);
   if (
-    !candidates.every((candidate) => canonicalCandidate(candidate) === identity)
+    candidates.some((candidate) => canonicalCandidate(candidate) !== identity)
   ) {
     return {
       kind: 'unsupported',
@@ -224,8 +223,7 @@ function resolveWithContext(options: {
 }
 
 function formatResolutionError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  return error instanceof Error ? error.message : String(error);
 }
 
 function hasServiceScript(

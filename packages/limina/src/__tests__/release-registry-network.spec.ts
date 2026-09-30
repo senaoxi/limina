@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createReleaseConsistencyState } from '../package-check/release/consistency/dependencies';
-import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
+import { loadReleaseRegistryConfig } from '../package-check/release/registry/config';
 import { fetchRegistryPackageMetadata } from '../package-check/release/registry/metadata';
 import { fetchRegistryTarball } from '../package-check/release/registry/tarball';
 
@@ -48,15 +48,15 @@ describe('release registry redirect boundary', () => {
           response.end();
         }),
       );
-      const configuration = loadReleaseRegistryConfiguration(process.cwd(), {
+      const config = loadReleaseRegistryConfig(process.cwd(), {
         LIMINA_INTERNAL_TEST_REGISTRY_URL: origin,
       });
-      const authority = configuration.authorityFor('pkg');
+      const authority = config.authorityFor('pkg');
       for (target of [`${otherOrigin}/target`, `${origin}/target`]) {
         expect(
           await fetchRegistryPackageMetadata(
             'pkg',
-            createReleaseConsistencyState(configuration),
+            createReleaseConsistencyState(config),
             authority,
           ),
         ).toMatchObject({ kind: 'failure', reason: 'request' });

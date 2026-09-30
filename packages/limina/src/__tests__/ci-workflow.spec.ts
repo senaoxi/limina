@@ -78,10 +78,14 @@ describe('Limina CI validation contract', () => {
   });
   it('waits for all validation jobs and rejects failure, cancellation and skipped gates', async () => {
     const { jobs } = await workflow();
-    expect(jobs.status.needs?.toSorted()).toEqual(
+    expect(
+      jobs.status.needs?.toSorted(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(
       Object.keys(jobs)
         .filter((name) => name !== 'status')
-        .toSorted(),
+        .toSorted((left, right) => Number(left > right) - Number(left < right)),
     );
     expect(jobs.status.if).toBe('always()');
     const check = jobs.status.steps?.find(

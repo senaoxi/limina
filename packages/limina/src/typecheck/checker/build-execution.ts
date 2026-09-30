@@ -162,7 +162,7 @@ export async function executeCheckerBuildTargets(options: {
   };
 }
 
-function reportCheckerBuildFailure(options: {
+function isReportCheckerBuildFailure(options: {
   execution: CheckerBuildExecutionResult;
   projectRootDir: string;
   report: RunCheckerBuildOptions['report'];
@@ -186,8 +186,10 @@ function shouldReportCheckerBuildSuccess(options: {
   report: RunCheckerBuildOptions['report'];
   runnerOptions: RunCheckerBuildOptions;
 }): boolean {
-  if (!shouldLogCheckReport(options.report)) return false;
-  return options.runnerOptions.flow?.interactive !== true;
+  return (
+    shouldLogCheckReport(options.report) &&
+    options.runnerOptions.flow?.interactive !== true
+  );
 }
 
 export function reportCheckerBuildExecution(options: {
@@ -198,8 +200,11 @@ export function reportCheckerBuildExecution(options: {
   successLabel: 'entry' | 'target';
   targetCount: number;
 }): void {
-  if (reportCheckerBuildFailure(options)) return;
-  if (!shouldReportCheckerBuildSuccess(options)) return;
+  if (
+    isReportCheckerBuildFailure(options) ||
+    !shouldReportCheckerBuildSuccess(options)
+  )
+    return;
   TypecheckLogger.success(
     `Checked ${options.targetCount} checker build ${options.successLabel}(s).`,
   );

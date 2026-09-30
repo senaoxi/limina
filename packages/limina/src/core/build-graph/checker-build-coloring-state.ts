@@ -5,8 +5,9 @@ import { getUniqueConstraint } from './checker-solution-constraints';
 export function getKnownBuildColor(
   state: TypeConfigOwnershipState,
 ): CheckerName | undefined {
-  if (state.localOwner.kind === 'resolved') return state.localOwner.checker;
-  return getUniqueConstraint(state);
+  return state.localOwner.kind === 'resolved'
+    ? state.localOwner.checker
+    : getUniqueConstraint(state);
 }
 
 export function isBuildColoringCandidate(

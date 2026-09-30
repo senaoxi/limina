@@ -39,6 +39,7 @@ export function attributeNativeDeclarationEvidence(options: {
     filePath: type.filePath,
     lookup: options.request.managedOutputLookup,
   });
-  if (managedSource == null) return options.evidence;
-  return { ...options.evidence, type: { ...type, managedSource } };
+  return managedSource == null
+    ? options.evidence
+    : { ...options.evidence, type: { ...type, managedSource } };
 }

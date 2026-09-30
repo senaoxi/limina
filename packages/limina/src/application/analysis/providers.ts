@@ -14,9 +14,9 @@ import type { AnalysisRun } from './analysis-run';
 
 export type AggregateLoader<Value> = (run: AnalysisRun) => Promise<Value>;
 
-function recordCache(run: AnalysisRun, provider: string, hit: boolean): void {
+function recordCache(run: AnalysisRun, provider: string, isHit: boolean): void {
   run.metrics.record({
-    name: hit ? 'provider-cache-hit' : 'provider-cache-miss',
+    name: isHit ? 'provider-cache-hit' : 'provider-cache-miss',
     provider,
   });
 }

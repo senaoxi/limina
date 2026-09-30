@@ -52,12 +52,12 @@ interface VolarMapper {
   toGeneratedRange(
     start: number,
     end: number,
-    fallbackToAnyMatch: boolean,
+    isFallbackToAnyMatch: boolean,
   ): Iterable<readonly [number, number, unknown, unknown]>;
   toSourceRange(
     start: number,
     end: number,
-    fallbackToAnyMatch: boolean,
+    isFallbackToAnyMatch: boolean,
   ): Iterable<readonly [number, number, unknown, unknown]>;
 }
 
@@ -67,7 +67,7 @@ export interface VolarLanguage {
   };
   scripts: {
     delete(id: string): void;
-    get(id: string, includeFsFiles?: boolean): VolarSourceScript | undefined;
+    get(id: string, isIncludeFsFiles?: boolean): VolarSourceScript | undefined;
     set(
       id: string,
       snapshot: ts.IScriptSnapshot,
@@ -82,7 +82,7 @@ export interface VueLanguageRuntime {
     scriptRegistry: Map<string, VolarSourceScript>,
     sync: (
       id: string,
-      includeFsFiles: boolean,
+      isIncludeFsFiles: boolean,
       shouldRegister: boolean,
     ) => void,
   ): VolarLanguage;

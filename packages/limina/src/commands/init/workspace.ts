@@ -11,7 +11,7 @@ import {
   resolveGovernancePackageManager,
   type SupportedPackageManager,
 } from '#utils/workspace-root';
-import { confirmAction } from './prompts';
+import { isConfirmAction } from './prompts';
 import { createInitConfig } from './shared';
 import type { InitPromptOptions } from './types';
 
@@ -38,7 +38,7 @@ export async function resolveInitWorkspace(options: {
 }): Promise<InitRootLocation> {
   const root = resolveInitLocation(options.cwd);
   if (
-    !(await confirmAction({
+    !(await isConfirmAction({
       message: initRootMessage(root),
       prompt: options.prompt,
     }))
@@ -62,9 +62,9 @@ function resolveInitLocation(cwd: string): InitRootLocation {
 }
 
 function initRootMessage(root: InitRootLocation): string {
-  if (root.governanceRoot === null)
-    return `Create package.json and Limina config at ${root.rootDir}?`;
-  return `Use ${root.governanceRoot.kind} ${initRootName(root.governanceRoot)}at ${root.rootDir}?`;
+  return root.governanceRoot === null
+    ? `Create package.json and Limina config at ${root.rootDir}?`
+    : `Use ${root.governanceRoot.kind} ${initRootName(root.governanceRoot)}at ${root.rootDir}?`;
 }
 
 function initRootName(root: ResolvedGovernanceRoot): string {

@@ -4,26 +4,26 @@ import {
   isNonEmptyString,
   isPlainRecord,
 } from '#utils/values';
-import { createNormalizedDep } from './dependency-rules';
+import { createNormalizedDependency } from './dependency-rules';
 import type { GraphFinding } from './findings';
 import { addRuleEntryConfigFinding } from './rule-findings';
-import type { GraphRuleDepDeny } from './rule-types';
+import type { GraphRuleDependencyDeny } from './rule-types';
 
-export interface AddNormalizedDepOptions {
+export interface AddNormalizedDependencyOptions {
   config: ResolvedLiminaConfig;
-  depsByLabel: Map<string, GraphRuleDepDeny[]>;
+  depsByLabel: Map<string, GraphRuleDependencyDeny[]>;
   entry: unknown;
   index: number;
   label: string;
   findings: GraphFinding[];
 }
 
-function getDependencyField(options: AddNormalizedDepOptions): string {
+function getDependencyField(options: AddNormalizedDependencyOptions): string {
   return `graph.rules.${options.label}.deny.deps[${options.index}]`;
 }
 
-function addInvalidDepEntry(
-  options: AddNormalizedDepOptions,
+function addInvalidDependencyEntry(
+  options: AddNormalizedDependencyOptions,
   field: string,
 ): void {
   const reason =
@@ -40,9 +40,9 @@ function addInvalidDepEntry(
   });
 }
 
-function addInvalidDepValue(options: {
+function addInvalidDependencyValue(options: {
   field: string;
-  normalizedOptions: AddNormalizedDepOptions;
+  normalizedOptions: AddNormalizedDependencyOptions;
   reason: string;
   value: unknown;
 }): void {
@@ -58,10 +58,10 @@ function addInvalidDepValue(options: {
   });
 }
 
-function addUnsupportedDepName(options: {
+function addUnsupportedDependencyName(options: {
   field: string;
   name: string;
-  normalizedOptions: AddNormalizedDepOptions;
+  normalizedOptions: AddNormalizedDependencyOptions;
 }): void {
   const reason =
     'deny.deps name must be a package root, a package.json imports specifier such as "#internal/*", or a Node builtin such as "fs", "node:fs", or "node:*".';
@@ -77,28 +77,28 @@ function addUnsupportedDepName(options: {
   });
 }
 
-function storeNormalizedDep(
-  options: AddNormalizedDepOptions,
-  normalizedDep: GraphRuleDepDeny,
+function storeNormalizedDependency(
+  options: AddNormalizedDependencyOptions,
+  normalizedDependency: GraphRuleDependencyDeny,
 ): void {
-  const deps = options.depsByLabel.get(options.label) ?? [];
-  deps.push(normalizedDep);
-  options.depsByLabel.set(options.label, deps);
+  const dependencies = options.depsByLabel.get(options.label) ?? [];
+  dependencies.push(normalizedDependency);
+  options.depsByLabel.set(options.label, dependencies);
 }
 
-interface ParsedDepEntry {
+interface ParsedDependencyEntry {
   name: string;
   reason: string;
 }
 
-function parseDepRecord(options: {
+function parseDependencyRecord(options: {
   field: string;
-  normalizedOptions: AddNormalizedDepOptions;
+  normalizedOptions: AddNormalizedDependencyOptions;
   record: Record<string, unknown>;
-}): ParsedDepEntry | null {
+}): ParsedDependencyEntry | null {
   const nameValue = options.record.name;
   if (!isNonEmptyString(nameValue)) {
-    addInvalidDepValue({
+    addInvalidDependencyValue({
       field: `${options.field}.name`,
       normalizedOptions: options.normalizedOptions,
       reason: 'deny.deps name is required and must be a non-empty string.',
@@ -108,7 +108,7 @@ function parseDepRecord(options: {
   }
   const reasonValue = options.record.reason;
   if (!isNonEmptyString(reasonValue)) {
-    addInvalidDepValue({
+    addInvalidDependencyValue({
       field: `${options.field}.reason`,
       normalizedOptions: options.normalizedOptions,
       reason: 'deny.deps reason is required and must be a non-empty string.',
@@ -119,35 +119,40 @@ function parseDepRecord(options: {
   return { name: nameValue.trim(), reason: reasonValue.trim() };
 }
 
-function parseDepEntry(
-  options: AddNormalizedDepOptions,
+function parseDependencyEntry(
+  options: AddNormalizedDependencyOptions,
   field: string,
-): ParsedDepEntry | null {
+): ParsedDependencyEntry | null {
   if (!isPlainRecord(options.entry)) {
-    addInvalidDepEntry(options, field);
+    addInvalidDependencyEntry(options, field);
     return null;
   }
-  return parseDepRecord({
+  return parseDependencyRecord({
     field,
     normalizedOptions: options,
     record: options.entry,
   });
 }
 
-export function addNormalizedDep(options: AddNormalizedDepOptions): void {
+export function addNormalizedDependency(
+  options: AddNormalizedDependencyOptions,
+): void {
   const field = getDependencyField(options);
-  const parsed = parseDepEntry(options, field);
+  const parsed = parseDependencyEntry(options, field);
   if (parsed === null) {
     return;
   }
-  const normalizedDep = createNormalizedDep(parsed.name, parsed.reason);
-  if (normalizedDep === null) {
-    addUnsupportedDepName({
+  const normalizedDependency = createNormalizedDependency(
+    parsed.name,
+    parsed.reason,
+  );
+  if (normalizedDependency === null) {
+    addUnsupportedDependencyName({
       field,
       name: parsed.name,
       normalizedOptions: options,
     });
     return;
   }
-  storeNormalizedDep(options, normalizedDep);
+  storeNormalizedDependency(options, normalizedDependency);
 }

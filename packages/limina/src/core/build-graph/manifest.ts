@@ -21,8 +21,8 @@ import type {
   SourceProject,
 } from './types';
 
-function toManifestPath(rootDir: string, filePath: string): string {
-  return toPosixPath(toRelativePath(rootDir, filePath));
+function toManifestPath(rootDirectory: string, filePath: string): string {
+  return toPosixPath(toRelativePath(rootDirectory, filePath));
 }
 
 function createBuildModuleRecord(options: {
@@ -157,9 +157,10 @@ function createManifestCheckers(options: {
   >;
 }): GeneratedTsconfigGraphManifest['checkers'] {
   const manifestCheckers: GeneratedTsconfigGraphManifest['checkers'] = {};
-  for (const checker of [...options.checkers].sort((left, right) =>
+  const sortedCheckers = [...options.checkers].sort((left, right) =>
     compareCodeUnits(left.name, right.name),
-  )) {
+  );
+  for (const checker of sortedCheckers) {
     const manifest = createCheckerManifest({ ...options, checker });
     if (manifest) {
       manifestCheckers[checker.name] = manifest;
@@ -170,17 +171,17 @@ function createManifestCheckers(options: {
 
 function createDependencyEdgeManifest(
   edge: GeneratedDependencyEdge,
-  rootDir: string,
+  rootDirectory: string,
 ): GeneratedTsconfigGraphManifest['dependencyEdges'][number] {
   const base = {
     file: edge.file,
     fromChecker: edge.fromChecker,
-    fromConfig: toManifestPath(rootDir, edge.fromConfigPath),
+    fromConfig: toManifestPath(rootDirectory, edge.fromConfigPath),
     importedSpecifier: edge.importedSpecifier,
     kind: edge.kind,
-    resolvedFile: toManifestPath(rootDir, edge.resolvedFilePath),
+    resolvedFile: toManifestPath(rootDirectory, edge.resolvedFilePath),
     toChecker: edge.toChecker,
-    toConfig: toManifestPath(rootDir, edge.toConfigPath),
+    toConfig: toManifestPath(rootDirectory, edge.toConfigPath),
   };
   return edge.kind === 'declaration-provider'
     ? { ...base, cacheReuse: edge.cacheReuse, kind: edge.kind }

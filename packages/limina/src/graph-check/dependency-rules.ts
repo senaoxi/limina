@@ -7,23 +7,23 @@ import {
 import { isBuiltin } from 'node:module';
 import path from 'pathe';
 import type {
-  GraphRuleDepDeny,
+  GraphRuleDependencyDeny,
   LabelSelection,
   NormalizedGraphRules,
 } from './rule-types';
 
-function matchesWildcardParts(options: {
+function isMatchesWildcardParts(options: {
   prefix: string;
   suffix: string;
   value: string;
 }): boolean {
-  if (!options.value.startsWith(options.prefix)) {
-    return false;
-  }
-  return options.value.endsWith(options.suffix);
+  return (
+    options.value.startsWith(options.prefix) &&
+    options.value.endsWith(options.suffix)
+  );
 }
 
-function matchWildcardPattern(pattern: string, value: string): boolean {
+function isMatchWildcardPattern(pattern: string, value: string): boolean {
   if (pattern === value) {
     return true;
   }
@@ -31,7 +31,7 @@ function matchWildcardPattern(pattern: string, value: string): boolean {
   if (wildcardIndex === -1) {
     return false;
   }
-  return matchesWildcardParts({
+  return isMatchesWildcardParts({
     prefix: pattern.slice(0, wildcardIndex),
     suffix: pattern.slice(wildcardIndex + 1),
     value,
@@ -44,21 +44,23 @@ function normalizeNodeBuiltinName(name: string): string {
 
 function getNodeBuiltinRuleName(
   name: string,
-): Pick<GraphRuleDepDeny, 'matchAllNodeBuiltins' | 'normalizedName'> | null {
+): Pick<
+  GraphRuleDependencyDeny,
+  'matchAllNodeBuiltins' | 'normalizedName'
+> | null {
   if (name === 'node:*') {
     return { matchAllNodeBuiltins: true, normalizedName: '*' };
   }
   const normalizedName = normalizeNodeBuiltinName(name);
-  if (!isBuiltin(name)) {
-    return null;
-  }
-  return { matchAllNodeBuiltins: false, normalizedName };
+  return isBuiltin(name)
+    ? { matchAllNodeBuiltins: false, normalizedName }
+    : null;
 }
 
-function createNodeBuiltinDep(
+function createNodeBuiltinDependency(
   name: string,
   reason: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   const normalized = getNodeBuiltinRuleName(name);
   if (normalized === null) {
     return null;
@@ -72,10 +74,10 @@ function createNodeBuiltinDep(
   };
 }
 
-function createPackageImportDep(
+function createPackageImportDependency(
   name: string,
   reason: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   if (!isPackageImportSpecifier(name)) {
     return null;
   }
@@ -97,10 +99,10 @@ function isInvalidPackageRuleName(name: string): boolean {
   ].some(Boolean);
 }
 
-function createPackageDep(
+function createPackageDependency(
   name: string,
   reason: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   if (isInvalidPackageRuleName(name)) {
     return null;
   }
@@ -113,14 +115,14 @@ function createPackageDep(
   };
 }
 
-export function createNormalizedDep(
+export function createNormalizedDependency(
   name: string,
   reason: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   return (
-    createNodeBuiltinDep(name, reason) ??
-    createPackageImportDep(name, reason) ??
-    createPackageDep(name, reason)
+    createNodeBuiltinDependency(name, reason) ??
+    createPackageImportDependency(name, reason) ??
+    createPackageDependency(name, reason)
   );
 }
 
@@ -135,63 +137,61 @@ function getSelectedLabels(labels: LabelSelection): readonly string[] {
   return typeof labels === 'string' ? [labels] : labels;
 }
 
-function getRuleDeps(
+function getRuleDependencies(
   rules: NormalizedGraphRules,
   labels: LabelSelection,
-): GraphRuleDepDeny[] {
+): GraphRuleDependencyDeny[] {
   return getSelectedLabels(labels).flatMap(
     (label) => rules.depsByLabel.get(label) ?? [],
   );
 }
 
-export function getDeniedDepRuleForPackage(
+export function getDeniedDependencyRuleForPackage(
   rules: NormalizedGraphRules,
   labels: LabelSelection,
   packageName: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   return (
-    getRuleDeps(rules, labels).find(
+    getRuleDependencies(rules, labels).find(
       (rule) => rule.kind === 'package' && rule.normalizedName === packageName,
     ) ?? null
   );
 }
 
 function findPackageImportRule(
-  deps: readonly GraphRuleDepDeny[],
+  dependencies: readonly GraphRuleDependencyDeny[],
   specifier: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   return (
-    deps.find(
+    dependencies.find(
       (rule) =>
         rule.kind === 'package-import' &&
-        matchWildcardPattern(rule.normalizedName, specifier),
+        isMatchWildcardPattern(rule.normalizedName, specifier),
     ) ?? null
   );
 }
 
-function matchesNodeRule(
-  rule: GraphRuleDepDeny,
+function isMatchesNodeRule(
+  rule: GraphRuleDependencyDeny,
   normalizedSpecifier: string,
 ): boolean {
-  if (rule.kind !== 'node-builtin') {
-    return false;
-  }
-  if (rule.matchAllNodeBuiltins) {
-    return true;
-  }
-  return rule.normalizedName === normalizedSpecifier;
+  return (
+    rule.kind === 'node-builtin' &&
+    (rule.matchAllNodeBuiltins || rule.normalizedName === normalizedSpecifier)
+  );
 }
 
 function findNodeBuiltinRule(
-  deps: readonly GraphRuleDepDeny[],
+  dependencies: readonly GraphRuleDependencyDeny[],
   specifier: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   if (!isNodeBuiltinSpecifier(specifier)) {
     return null;
   }
   const normalizedSpecifier = normalizeNodeBuiltinName(specifier);
   return (
-    deps.find((rule) => matchesNodeRule(rule, normalizedSpecifier)) ?? null
+    dependencies.find((rule) => isMatchesNodeRule(rule, normalizedSpecifier)) ??
+    null
   );
 }
 
@@ -205,33 +205,32 @@ function isNonPackageDependencySpecifier(specifier: string): boolean {
 }
 
 function findDirectDependencyRule(
-  deps: readonly GraphRuleDepDeny[],
+  dependencies: readonly GraphRuleDependencyDeny[],
   specifier: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   return (
-    findPackageImportRule(deps, specifier) ??
-    findNodeBuiltinRule(deps, specifier)
+    findPackageImportRule(dependencies, specifier) ??
+    findNodeBuiltinRule(dependencies, specifier)
   );
 }
 
-export function getDeniedDepRuleForSpecifier(
+export function getDeniedDependencyRuleForSpecifier(
   rules: NormalizedGraphRules,
   labels: LabelSelection,
   specifier: string,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   const directRule = findDirectDependencyRule(
-    getRuleDeps(rules, labels),
+    getRuleDependencies(rules, labels),
     specifier,
   );
   if (directRule !== null) {
     return directRule;
   }
-  if (isNonPackageDependencySpecifier(specifier)) {
-    return null;
-  }
-  return getDeniedDepRuleForPackage(
-    rules,
-    labels,
-    getPackageRootSpecifier(specifier),
-  );
+  return isNonPackageDependencySpecifier(specifier)
+    ? null
+    : getDeniedDependencyRuleForPackage(
+        rules,
+        labels,
+        getPackageRootSpecifier(specifier),
+      );
 }

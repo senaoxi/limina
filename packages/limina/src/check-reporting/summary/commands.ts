@@ -28,13 +28,15 @@ function withQueryTask(
   return queryTask === undefined ? { label } : { label, queryTask };
 }
 
-function matchesBlockedTask(options: {
+function isMatchesBlockedTask(options: {
   blockedId: string | undefined;
   blockedLabel: string;
   task: LiminaCheckRunTaskSummary;
 }): boolean {
-  if (options.task.label === options.blockedLabel) return true;
-  return options.task.id === options.blockedId;
+  return (
+    options.task.label === options.blockedLabel ||
+    options.task.id === options.blockedId
+  );
 }
 
 interface BlockedTaskContext {
@@ -46,9 +48,9 @@ interface BlockedTaskContext {
 function getBlockedTaskContext(
   run: LiminaCheckRunSummary | undefined,
 ): BlockedTaskContext | null {
-  if (run === undefined) return null;
-  if (run.blockedBy === undefined) return null;
-  return { id: run.blockedBy.id, label: run.blockedBy.label, run };
+  return run === undefined || run.blockedBy === undefined
+    ? null
+    : { id: run.blockedBy.id, label: run.blockedBy.label, run };
 }
 
 function getIssueTask(
@@ -63,7 +65,7 @@ function getBlockedTaskSelection(
   const blocked = getBlockedTaskContext(run);
   if (blocked === null) return null;
   const blockedTask = blocked.run.tasks.find((task) =>
-    matchesBlockedTask({
+    isMatchesBlockedTask({
       blockedId: blocked.id,
       blockedLabel: blocked.label,
       task,
@@ -75,8 +77,9 @@ function getBlockedTaskSelection(
 function getFailedTasks(
   run: LiminaCheckRunSummary | undefined,
 ): LiminaCheckRunTaskSummary[] {
-  if (run === undefined) return [];
-  return run.tasks.filter((task) => task.state === 'failed');
+  return run === undefined
+    ? []
+    : run.tasks.filter((task) => task.state === 'failed');
 }
 
 function getUniqueFailedTaskSelection(
@@ -121,8 +124,9 @@ export function createDefaultInventoryQueryContext(): InventoryQueryContext {
 function getFailedTaskFilters(
   failedTask: FailedTaskSelection | null,
 ): string[] | undefined {
-  if (failedTask?.queryTask === undefined) return undefined;
-  return [failedTask.queryTask];
+  return failedTask?.queryTask === undefined
+    ? undefined
+    : [failedTask.queryTask];
 }
 
 function createRuleCommand(options: {

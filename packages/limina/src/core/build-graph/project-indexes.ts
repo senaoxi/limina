@@ -14,14 +14,7 @@ export function createSourceProjectsByDtsPath(
 export function createDtsProjectsBySourcePath(
   projects: SourceProject[],
 ): Map<string, SourceProject[]> {
-  const projectsBySourcePath = new Map<string, SourceProject[]>();
-  for (const project of projects) {
-    const projectsForSource =
-      projectsBySourcePath.get(project.configPath) ?? [];
-    projectsForSource.push(project);
-    projectsBySourcePath.set(project.configPath, projectsForSource);
-  }
-  return projectsBySourcePath;
+  return Map.groupBy(projects, (project) => project.configPath);
 }
 
 export function getDtsConfigPathForSourcePath(options: {
@@ -45,7 +38,7 @@ export function getDtsProjectsForSourcePath(options: {
 
 export function isBuildCapableProject(project: SourceProject): boolean {
   const preset = project.context.checkerPresets[0];
-  return preset ? isBuildCapablePreset(preset) : false;
+  return Boolean(preset) && isBuildCapablePreset(preset);
 }
 
 export function getSourceProjectPreset(project: SourceProject): string {

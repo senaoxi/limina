@@ -1,6 +1,8 @@
 import type { ChildProcess } from 'node:child_process';
 
-/** Observe each complete stdout/stderr line pair from fault-process-helper. */
+/**
+Observe each complete stdout/stderr line pair from fault-process-helper.
+*/
 export function observeFaultProcessOutput(
   child: Pick<ChildProcess, 'stdout' | 'stderr'>,
   onOutput: () => void,

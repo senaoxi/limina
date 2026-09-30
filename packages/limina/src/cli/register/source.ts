@@ -1,5 +1,5 @@
 import type { cac } from 'cac';
-import { runSourceCheck } from '../../commands/source';
+import { isRunSourceCheck } from '../../commands/source';
 import { LiminaPreflightManager } from '../../preflight';
 import type { SourceCheckIssue } from '../../source-check/report';
 import {
@@ -10,7 +10,7 @@ import {
 import { loadStandaloneContext } from '../command-runtime';
 import { createCliFlow } from '../flow';
 import { createSourceIssueReportOptions } from '../parse';
-import { runStandaloneIssueFlow } from '../standalone';
+import { isRunStandaloneIssueFlow } from '../standalone';
 import type { SourceFlags } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -20,11 +20,11 @@ function assertSourceAction(action: string): void {
   throw new Error(`Unknown source action "${action}". Expected check.`);
 }
 
-async function executeSourceCheck(options: {
+async function isExecuteSourceCheck(options: {
   flags: SourceFlags;
   flow: ReturnType<typeof createCliFlow>;
   registerSession: Parameters<
-    typeof runStandaloneIssueFlow
+    typeof isRunStandaloneIssueFlow
   >[0]['execute'] extends (register: infer Register) => Promise<boolean>
     ? Register
     : never;
@@ -51,7 +51,7 @@ async function executeSourceCheck(options: {
     command: 'limina source check',
     rootDir: config.rootDir,
   });
-  const passed = await runSourceCheck(config, {
+  const isPassed = await isRunSourceCheck(config, {
     clearScreen: false,
     deferSnapshot: true,
     flow: options.flow,
@@ -73,7 +73,7 @@ async function executeSourceCheck(options: {
       rootDir: config.rootDir,
     });
   }
-  return passed;
+  return isPassed;
 }
 
 async function runSourceAction(
@@ -82,16 +82,16 @@ async function runSourceAction(
 ): Promise<void> {
   assertSourceAction(action);
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: (registerSession) =>
-      executeSourceCheck({ flags, flow, registerSession }),
+      isExecuteSourceCheck({ flags, flow, registerSession }),
     flow,
     messages: {
       failed: 'limina source failed',
       passed: 'limina source passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 export function registerSourceCommand(cli: LiminaCli): void {

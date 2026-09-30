@@ -138,13 +138,11 @@ function getValidatedPackageImport(
   options: PackageImportOptions,
 ): ValidatedPackageImport | null {
   const matched = getMatchedImport(options);
-  if (!matched) {
-    return null;
-  }
-
-  return rejectEscapedRelativeTarget(
-    getResolvedImport({ base: options, ...matched }),
-  );
+  return matched
+    ? rejectEscapedRelativeTarget(
+        getResolvedImport({ base: options, ...matched }),
+      )
+    : null;
 }
 
 function shouldCurrentOwnerStayInScope(
@@ -172,7 +170,7 @@ function handleCurrentOwnerContext(context: ValidatedPackageImport): void {
   }
 }
 
-function handleCurrentOwnerTarget(options: {
+function isHandleCurrentOwnerTarget(options: {
   context: ValidatedPackageImport;
   target: ResolvedPackageTarget;
 }): boolean {
@@ -221,7 +219,7 @@ function handleOtherOwnerContext(options: {
   });
 }
 
-function handleOtherOwnerTarget(options: {
+function isHandleOtherOwnerTarget(options: {
   context: ValidatedPackageImport;
   target: ResolvedPackageTarget;
 }): boolean {
@@ -236,18 +234,16 @@ function handleOtherOwnerTarget(options: {
   return true;
 }
 
-function handleOwnedTarget(options: {
+function isHandleOwnedTarget(options: {
   context: ValidatedPackageImport;
   target: ResolvedPackageTarget;
 }): boolean {
-  if (handleCurrentOwnerTarget(options)) {
-    return true;
-  }
-
-  return handleOtherOwnerTarget(options);
+  return (
+    isHandleCurrentOwnerTarget(options) || isHandleOtherOwnerTarget(options)
+  );
 }
 
-function handleArtifactTarget(options: {
+function isHandleArtifactTarget(options: {
   context: ValidatedPackageImport;
   target: ResolvedPackageTarget;
 }): boolean {
@@ -273,7 +269,7 @@ function processUnownedTarget(options: {
   context: ValidatedPackageImport;
   target: ResolvedPackageTarget;
 }): void {
-  if (!handleArtifactTarget(options)) {
+  if (!isHandleArtifactTarget(options)) {
     addPackageImportOutsideSourceOwnership(options.context);
   }
 }
@@ -283,7 +279,7 @@ function processResolvedTarget(context: ValidatedPackageImport): void {
     owner: context.owner,
     resolvedFilePath: context.resolvedFilePath,
   });
-  if (!handleOwnedTarget({ context, target })) {
+  if (!isHandleOwnedTarget({ context, target })) {
     processUnownedTarget({ context, target });
   }
 }

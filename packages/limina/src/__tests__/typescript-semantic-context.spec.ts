@@ -17,16 +17,17 @@ import { BoundedTypeScriptSemanticContext } from '../core/typescript-semantic/co
 const temporaryRoots: string[] = [];
 
 async function createFixture(files: Record<string, string>): Promise<string> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-ts-semantic-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-ts-semantic-'),
   );
-  temporaryRoots.push(rootDir);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  temporaryRoots.push(rootDirectory);
   for (const [relativePath, sourceText] of Object.entries(files)) {
-    const filePath = path.join(rootDir, relativePath);
+    const filePath = path.join(rootDirectory, relativePath);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, sourceText, 'utf8');
   }
-  return rootDir;
+  return rootDirectory;
 }
 
 function createContext(options: {
@@ -89,17 +90,21 @@ afterEach(async () => {
   await Promise.all(
     temporaryRoots
       .splice(0)
-      .map((rootDir) => rm(rootDir, { force: true, recursive: true })),
+      .map((rootDirectory) =>
+        rm(rootDirectory, { force: true, recursive: true }),
+      ),
   );
 });
 
 describe('bounded TypeScript semantic context', () => {
   it('preserves an explicit JSON project root admitted by checker extension authority', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'src/data.json': '{"value":true}\n',
       'tsconfig.json': '{}\n',
     });
-    const jsonFile = normalizeAbsolutePath(path.join(rootDir, 'src/data.json'));
+    const jsonFile = normalizeAbsolutePath(
+      path.join(rootDirectory, 'src/data.json'),
+    );
     const context = createContext({
       fileNames: [jsonFile],
       options: {
@@ -107,7 +112,7 @@ describe('bounded TypeScript semantic context', () => {
         moduleResolution: ts.ModuleResolutionKind.Bundler,
         resolveJsonModule: true,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -119,13 +124,15 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('does not incidentally admit a resolved non-root JSON module', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'src/data.json': '{"value":true}\n',
       'src/index.ts': "import data from './data.json';\nvoid data;\n",
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.ts');
-    const jsonFile = normalizeAbsolutePath(path.join(rootDir, 'src/data.json'));
+    const sourceFile = path.join(rootDirectory, 'src/index.ts');
+    const jsonFile = normalizeAbsolutePath(
+      path.join(rootDirectory, 'src/data.json'),
+    );
     const context = createContext({
       fileNames: [sourceFile],
       options: {
@@ -134,7 +141,7 @@ describe('bounded TypeScript semantic context', () => {
         moduleResolution: ts.ModuleResolutionKind.Bundler,
         resolveJsonModule: true,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -149,14 +156,14 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('blocks ordinary transitive source while retaining its physical ledger target', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'src/index.ts': "import './internal';\n",
       'src/internal.ts': 'export const internal = true;\n',
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.ts');
+    const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const internalFile = normalizeAbsolutePath(
-      path.join(rootDir, 'src/internal.ts'),
+      path.join(rootDirectory, 'src/internal.ts'),
     );
     const context = createContext({
       fileNames: [sourceFile],
@@ -164,7 +171,7 @@ describe('bounded TypeScript semantic context', () => {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -179,7 +186,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('admits transitive declarations inside a resolved external package', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'node_modules/pkg/index.d.ts': "export * from './internal';\n",
       'node_modules/pkg/internal.d.ts':
         'export declare const internal: true;\n',
@@ -191,9 +198,9 @@ describe('bounded TypeScript semantic context', () => {
       'src/index.ts': "import { internal } from 'pkg';\nvoid internal;\n",
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.ts');
+    const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const internalFile = normalizeAbsolutePath(
-      path.join(rootDir, 'node_modules/pkg/internal.d.ts'),
+      path.join(rootDirectory, 'node_modules/pkg/internal.d.ts'),
     );
     const context = createContext({
       fileNames: [sourceFile],
@@ -201,7 +208,7 @@ describe('bounded TypeScript semantic context', () => {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -212,7 +219,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('retains root dependency facts without admitting the dependency closure', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'node_modules/pkg/index.d.ts': "export * from './internal';\n",
       'node_modules/pkg/internal.d.ts':
         'export declare const internal: true;\n',
@@ -230,15 +237,15 @@ describe('bounded TypeScript semantic context', () => {
       ].join('\n'),
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.ts');
+    const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const packageEntry = normalizeAbsolutePath(
-      path.join(rootDir, 'node_modules/pkg/index.d.ts'),
+      path.join(rootDirectory, 'node_modules/pkg/index.d.ts'),
     );
     const packageInternal = normalizeAbsolutePath(
-      path.join(rootDir, 'node_modules/pkg/internal.d.ts'),
+      path.join(rootDirectory, 'node_modules/pkg/internal.d.ts'),
     );
     const referencedFile = normalizeAbsolutePath(
-      path.join(rootDir, 'src/env.d.ts'),
+      path.join(rootDirectory, 'src/env.d.ts'),
     );
     const context = createContext({
       admissionMode: 'root-facts',
@@ -247,7 +254,7 @@ describe('bounded TypeScript semantic context', () => {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -279,7 +286,7 @@ describe('bounded TypeScript semantic context', () => {
   it.each([false, true])(
     'preserves external package admission with preserveSymlinks=%s',
     async (preserveSymlinks) => {
-      const rootDir = await createFixture({
+      const rootDirectory = await createFixture({
         'external/pkg/index.d.ts': 'export declare const value: true;\n',
         'external/pkg/package.json': JSON.stringify({
           name: 'pkg',
@@ -291,11 +298,11 @@ describe('bounded TypeScript semantic context', () => {
         'tsconfig.json': '{}\n',
       });
       await symlink(
-        path.join(rootDir, 'external/pkg'),
-        path.join(rootDir, 'node_modules/pkg'),
+        path.join(rootDirectory, 'external/pkg'),
+        path.join(rootDirectory, 'node_modules/pkg'),
         'dir',
       );
-      const sourceFile = path.join(rootDir, 'src/index.ts');
+      const sourceFile = path.join(rootDirectory, 'src/index.ts');
       const context = createContext({
         fileNames: [sourceFile],
         options: {
@@ -303,7 +310,7 @@ describe('bounded TypeScript semantic context', () => {
           moduleResolution: ts.ModuleResolutionKind.NodeNext,
           preserveSymlinks,
         },
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       try {
@@ -322,7 +329,7 @@ describe('bounded TypeScript semantic context', () => {
   it.each([false, true])(
     'blocks a governed workspace source reached through node_modules with preserveSymlinks=%s',
     async (preserveSymlinks) => {
-      const rootDir = await createFixture({
+      const rootDirectory = await createFixture({
         'A/node_modules/@workspace/.keep': '',
         'A/src/index.ts': [
           "import { value } from '@workspace/b';",
@@ -346,16 +353,16 @@ describe('bounded TypeScript semantic context', () => {
         'B/tsconfig.json': '{}\n',
       });
       await symlink(
-        path.join(rootDir, 'B'),
-        path.join(rootDir, 'A/node_modules/@workspace/b'),
+        path.join(rootDirectory, 'B'),
+        path.join(rootDirectory, 'A/node_modules/@workspace/b'),
         'dir',
       );
-      const sourceFile = path.join(rootDir, 'A/src/index.ts');
+      const sourceFile = path.join(rootDirectory, 'A/src/index.ts');
       const foreignSource = normalizeAbsolutePath(
-        path.join(rootDir, 'B/src/index.ts'),
+        path.join(rootDirectory, 'B/src/index.ts'),
       );
       const foreignEnvironment = normalizeAbsolutePath(
-        path.join(rootDir, 'B/src/env.d.ts'),
+        path.join(rootDirectory, 'B/src/env.d.ts'),
       );
       const context = createContext({
         fileNames: [sourceFile],
@@ -364,7 +371,7 @@ describe('bounded TypeScript semantic context', () => {
           moduleResolution: ts.ModuleResolutionKind.NodeNext,
           preserveSymlinks,
         },
-        rootDir: path.join(rootDir, 'A'),
+        rootDir: path.join(rootDirectory, 'A'),
         workspaceSourceFileNames: [
           sourceFile,
           foreignSource,
@@ -399,7 +406,7 @@ describe('bounded TypeScript semantic context', () => {
   );
 
   it('preserves raw project-reference admission instead of treating it as ordinary closure', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'A/src/index.ts': [
         "import { value } from '../../B/src/index';",
         'void value;',
@@ -420,28 +427,28 @@ describe('bounded TypeScript semantic context', () => {
         include: ['src/index.ts'],
       }),
     });
-    const sourceFile = path.join(rootDir, 'A/src/index.ts');
+    const sourceFile = path.join(rootDirectory, 'A/src/index.ts');
     const referencedFile = normalizeAbsolutePath(
-      path.join(rootDir, 'B/src/index.ts'),
+      path.join(rootDirectory, 'B/src/index.ts'),
     );
     const referencedDeclaration = normalizeAbsolutePath(
-      path.join(rootDir, 'B/src/index.d.ts'),
+      path.join(rootDirectory, 'B/src/index.d.ts'),
     );
     const compilerOptions = {
       module: ts.ModuleKind.ESNext,
       moduleResolution: ts.ModuleResolutionKind.Bundler,
     };
-    const parsed = parseConfig(path.join(rootDir, 'A/tsconfig.json'));
+    const parsed = parseConfig(path.join(rootDirectory, 'A/tsconfig.json'));
     const withoutReference = createContext({
       fileNames: [sourceFile],
       options: compilerOptions,
-      rootDir: path.join(rootDir, 'A'),
+      rootDir: path.join(rootDirectory, 'A'),
     });
     const withReference = createContext({
       fileNames: [sourceFile],
       options: compilerOptions,
       projectReferences: parsed.projectReferences,
-      rootDir: path.join(rootDir, 'A'),
+      rootDir: path.join(rootDirectory, 'A'),
     });
 
     try {
@@ -464,7 +471,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('keeps NodeNext resolution occurrence- and mode-aware', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'node_modules/dual/import.d.mts':
         'declare const value: "import"; export default value;\n',
       'node_modules/dual/import.js': 'export default "import";\n',
@@ -491,7 +498,7 @@ describe('bounded TypeScript semantic context', () => {
       ].join('\n'),
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.mts');
+    const sourceFile = path.join(rootDirectory, 'src/index.mts');
     const context = createContext({
       fileNames: [sourceFile],
       options: {
@@ -499,7 +506,7 @@ describe('bounded TypeScript semantic context', () => {
         moduleResolution: ts.ModuleResolutionKind.NodeNext,
         target: ts.ScriptTarget.ES2023,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -515,12 +522,12 @@ describe('bounded TypeScript semantic context', () => {
       ]);
       expect(staticResolution.target?.resolvedFileName).toBe(
         normalizeAbsolutePath(
-          path.join(rootDir, 'node_modules/dual/import.d.mts'),
+          path.join(rootDirectory, 'node_modules/dual/import.d.mts'),
         ),
       );
       expect(equalsResolution.target?.resolvedFileName).toBe(
         normalizeAbsolutePath(
-          path.join(rootDir, 'node_modules/dual/require.d.cts'),
+          path.join(rootDirectory, 'node_modules/dual/require.d.cts'),
         ),
       );
       expect(staticResolution.resolutionMode).not.toBe(
@@ -533,7 +540,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('uses path, type-reference, and configured-types channels without module reinterpretation', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'node_modules/happy-dom/index.d.ts':
         'export declare const environment: true;\n',
       'node_modules/happy-dom/package.json': JSON.stringify({
@@ -557,27 +564,29 @@ describe('bounded TypeScript semantic context', () => {
     const typeSpecifiers: string[] = [];
     const instrumentedTypeScript = {
       ...ts,
-      resolveModuleName(...args: Parameters<typeof ts.resolveModuleName>) {
-        moduleSpecifiers.push(args[0]);
-        return ts.resolveModuleName(...args);
+      resolveModuleName(
+        ...arguments_: Parameters<typeof ts.resolveModuleName>
+      ) {
+        moduleSpecifiers.push(arguments_[0]);
+        return ts.resolveModuleName(...arguments_);
       },
       resolveTypeReferenceDirective(
-        ...args: Parameters<typeof ts.resolveTypeReferenceDirective>
+        ...arguments_: Parameters<typeof ts.resolveTypeReferenceDirective>
       ) {
-        typeSpecifiers.push(args[0]);
-        return ts.resolveTypeReferenceDirective(...args);
+        typeSpecifiers.push(arguments_[0]);
+        return ts.resolveTypeReferenceDirective(...arguments_);
       },
     } as typeof ts;
-    const sourceFile = path.join(rootDir, 'src/index.ts');
+    const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const context = createContext({
       fileNames: [sourceFile],
       options: {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
-        typeRoots: [path.join(rootDir, 'types')],
+        typeRoots: [path.join(rootDirectory, 'types')],
         types: ['configured'],
       },
-      rootDir,
+      rootDir: rootDirectory,
       tsModule: instrumentedTypeScript,
     });
 
@@ -600,11 +609,11 @@ describe('bounded TypeScript semantic context', () => {
       });
       expect(pathResolution.channel).toBe('triple-slash-path');
       expect(pathResolution.target?.resolvedFileName).toBe(
-        normalizeAbsolutePath(path.join(rootDir, 'src/env.d.ts')),
+        normalizeAbsolutePath(path.join(rootDirectory, 'src/env.d.ts')),
       );
       expect(typesResolution.channel).toBe('triple-slash-types');
       expect(typesResolution.target?.resolvedFileName).toBe(
-        normalizeAbsolutePath(path.join(rootDir, 'types/foo/index.d.ts')),
+        normalizeAbsolutePath(path.join(rootDirectory, 'types/foo/index.d.ts')),
       );
       expect(
         context.program.getSourceFile(pathResolution.target!.resolvedFileName),
@@ -614,7 +623,7 @@ describe('bounded TypeScript semantic context', () => {
       ).toBeDefined();
       expect(
         context.program.getSourceFile(
-          path.join(rootDir, 'types/configured/index.d.ts'),
+          path.join(rootDirectory, 'types/configured/index.d.ts'),
         ),
       ).toBeDefined();
       expect(moduleSpecifiers).toEqual([]);
@@ -627,7 +636,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('resolves jsxImportSource through the synthetic JSX runtime occurrence', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'node_modules/custom/jsx-runtime.d.ts': [
         'export namespace JSX {',
         '  interface IntrinsicElements { div: {}; }',
@@ -647,7 +656,7 @@ describe('bounded TypeScript semantic context', () => {
       ].join('\n'),
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.tsx');
+    const sourceFile = path.join(rootDirectory, 'src/index.tsx');
     const context = createContext({
       fileNames: [sourceFile],
       options: {
@@ -655,7 +664,7 @@ describe('bounded TypeScript semantic context', () => {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {
@@ -664,7 +673,7 @@ describe('bounded TypeScript semantic context', () => {
       expect(resolution.channel).toBe('jsx-runtime');
       expect(resolution.target?.resolvedFileName).toBe(
         normalizeAbsolutePath(
-          path.join(rootDir, 'node_modules/custom/jsx-runtime.d.ts'),
+          path.join(rootDirectory, 'node_modules/custom/jsx-runtime.d.ts'),
         ),
       );
     } finally {
@@ -673,7 +682,7 @@ describe('bounded TypeScript semantic context', () => {
   });
 
   it('admits a TypeScript library replacement through the library channel', async () => {
-    const rootDir = await createFixture({
+    const rootDirectory = await createFixture({
       'node_modules/@typescript/lib-dom/index.d.ts':
         'interface CustomDocument { replacement: true; }\n',
       'node_modules/@typescript/lib-dom/package.json': JSON.stringify({
@@ -684,9 +693,9 @@ describe('bounded TypeScript semantic context', () => {
       'src/index.ts': 'export {};\n',
       'tsconfig.json': '{}\n',
     });
-    const sourceFile = path.join(rootDir, 'src/index.ts');
+    const sourceFile = path.join(rootDirectory, 'src/index.ts');
     const replacement = normalizeAbsolutePath(
-      path.join(rootDir, 'node_modules/@typescript/lib-dom/index.d.ts'),
+      path.join(rootDirectory, 'node_modules/@typescript/lib-dom/index.d.ts'),
     );
     const context = createContext({
       fileNames: [sourceFile],
@@ -696,7 +705,7 @@ describe('bounded TypeScript semantic context', () => {
         module: ts.ModuleKind.ESNext,
         moduleResolution: ts.ModuleResolutionKind.Bundler,
       },
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     try {

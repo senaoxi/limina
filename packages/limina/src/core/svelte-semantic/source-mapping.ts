@@ -39,8 +39,7 @@ function lineColumnToOffset(
   column: number,
 ): number | null {
   const lineStart = lineStarts[line];
-  if (lineStart === undefined) return null;
-  return lineStart + column;
+  return lineStart === undefined ? null : lineStart + column;
 }
 
 function findExactSegment(options: {
@@ -49,8 +48,9 @@ function findExactSegment(options: {
   mappings: ReturnType<typeof decodedMappings>;
 }): DecodedSegment | null {
   const line = options.mappings[options.line];
-  if (line === undefined) return null;
-  return line.find((segment) => segment[0] === options.column) ?? null;
+  return line === undefined
+    ? null
+    : (line.find((segment) => segment[0] === options.column) ?? null);
 }
 
 function isMappedSegment(
@@ -65,16 +65,17 @@ function getExactMappedSegment(options: {
   mappings: ReturnType<typeof decodedMappings>;
 }) {
   const segment = findExactSegment(options);
-  if (!isMappedSegment(segment)) return null;
-  return segment;
+  return isMappedSegment(segment) ? segment : null;
 }
 
-function mapsToCurrentSource(
+function isMapsToCurrentSource(
   resolvedSource: string | undefined,
   sourceFilePath: string,
 ): boolean {
-  if (resolvedSource === undefined) return false;
-  return normalizeAbsolutePath(resolvedSource) === sourceFilePath;
+  return (
+    resolvedSource !== undefined &&
+    normalizeAbsolutePath(resolvedSource) === sourceFilePath
+  );
 }
 
 function mapOriginalPosition(options: {
@@ -105,7 +106,7 @@ function mapSegmentToSource(options: {
   | { kind: 'mapped'; offset: number }
   | { kind: 'source-map-mismatch'; reason: string } {
   const resolvedSource = options.trace.resolvedSources[options.segment[1]];
-  if (!mapsToCurrentSource(resolvedSource, options.sourceFilePath)) {
+  if (!isMapsToCurrentSource(resolvedSource, options.sourceFilePath)) {
     return {
       kind: 'source-map-mismatch',
       reason: 'Svelte dependency mapping crossed into a different source file.',
@@ -133,8 +134,9 @@ function mapExactOffset(options: {
     ...generated,
     mappings: options.mappings,
   });
-  if (segment === null) return { kind: 'unmapped' };
-  return mapSegmentToSource({ ...options, segment });
+  return segment === null
+    ? { kind: 'unmapped' }
+    : mapSegmentToSource({ ...options, segment });
 }
 
 interface DenseOffsetState {
@@ -209,10 +211,9 @@ function validateOffsetPairs(offsets: readonly number[]): string | null {
 }
 
 function validateContinuousOffsets(offsets: readonly number[]): string | null {
-  if (offsets.length === 0) {
-    return 'Svelte dependency mapping produced an empty source range.';
-  }
-  return validateOffsetPairs(offsets);
+  return offsets.length === 0
+    ? 'Svelte dependency mapping produced an empty source range.'
+    : validateOffsetPairs(offsets);
 }
 
 export function mapGeneratedRange(options: {

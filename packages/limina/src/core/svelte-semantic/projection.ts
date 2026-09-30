@@ -201,7 +201,7 @@ export function collectSvelteMappedCandidates(options: {
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
   >['unmapped'];
-}): { kind: 'supported'; resolved: MappedCandidate[] } | ProjectionFailure {
+}): ProjectionFailure | { kind: 'supported'; resolved: MappedCandidate[] } {
   const resolved: MappedCandidate[] = [];
   const sourceLineStarts = buildLineStarts(options.sourceText);
   for (const dependency of options.dependencies) {

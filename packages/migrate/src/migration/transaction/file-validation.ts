@@ -44,8 +44,11 @@ function isOutsideLogicalRoot(relativePath: string): boolean {
   ].some(Boolean);
 }
 
-function getLogicalSegments(rootDir: string, targetPath: string): string[] {
-  const relativePath = path.relative(rootDir, targetPath);
+function getLogicalSegments(
+  rootDirectory: string,
+  targetPath: string,
+): string[] {
+  const relativePath = path.relative(rootDirectory, targetPath);
   if (isOutsideLogicalRoot(relativePath)) {
     throw new TerminalReplacementValidationError(
       `Migration target is outside the logical workspace root: ${targetPath}`,
@@ -55,11 +58,11 @@ function getLogicalSegments(rootDir: string, targetPath: string): string[] {
 }
 
 export async function assertLogicalPathHasNoLinks(
-  rootDir: string,
+  rootDirectory: string,
   targetPath: string,
 ): Promise<void> {
-  let currentPath = rootDir;
-  for (const segment of getLogicalSegments(rootDir, targetPath)) {
+  let currentPath = rootDirectory;
+  for (const segment of getLogicalSegments(rootDirectory, targetPath)) {
     const inspectedPath = path.join(currentPath, segment);
     currentPath = inspectedPath;
     const currentStat = normalizeStat(

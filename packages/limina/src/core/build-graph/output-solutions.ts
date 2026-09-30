@@ -162,13 +162,13 @@ export function addOutputSolution(options: {
   if (references.length === 0) {
     return;
   }
-  const packageRootDir = options.collection.packageRootBySourcePath.get(
+  const packageRootDirectory = options.collection.packageRootBySourcePath.get(
     options.sourceConfigPath,
   )!;
   const outputSolution = createOutputSolutionProject({
     checkerName: options.checker.name,
     config: options.config,
-    packageRootDir,
+    packageRootDir: packageRootDirectory,
     references,
     sourceConfigPath: options.sourceConfigPath,
   });
@@ -177,7 +177,7 @@ export function addOutputSolution(options: {
     options.sourceConfigPath,
     createOutputSolutionBuildModule({
       checkerName: options.checker.name,
-      packageRootDir,
+      packageRootDir: packageRootDirectory,
       rootDir: options.config.rootDir,
       sourceConfigPath: options.sourceConfigPath,
     }),

@@ -51,19 +51,20 @@ function createFakeChild(): FakeChild {
   };
 }
 
-function observeSettlement(
+async function observeSettlement(
   promise: Promise<RunLiminaResult>,
 ): Promise<
   | { error: Error; kind: 'rejected' }
   | { kind: 'resolved'; value: RunLiminaResult }
 > {
-  return promise.then(
-    (value) => ({ kind: 'resolved' as const, value }),
-    (error: unknown) => ({
+  try {
+    return { kind: 'resolved', value: await promise };
+  } catch (error) {
+    return {
       error: error instanceof Error ? error : new Error(String(error)),
-      kind: 'rejected' as const,
-    }),
-  );
+      kind: 'rejected',
+    };
+  }
 }
 
 async function reachFinalWatchdog(): Promise<void> {
@@ -83,8 +84,8 @@ afterEach(() => {
 describe('runLimina bounded completion', () => {
   it('rejects within the final watchdog when the child never closes', async () => {
     const fakeChild = createFakeChild();
-    const terminate = vi.fn((_child: ChildProcess, force: boolean) =>
-      force
+    const terminate = vi.fn((_child: ChildProcess, isForce: boolean) =>
+      isForce
         ? Promise.reject(new Error('forced taskkill failed'))
         : Promise.resolve(),
     );
@@ -104,27 +105,29 @@ describe('runLimina bounded completion', () => {
     expect(terminate).toHaveBeenNthCalledWith(1, fakeChild.child, false);
     expect(terminate).toHaveBeenNthCalledWith(2, fakeChild.child, true);
     expect(outcome.kind).toBe('rejected');
-    if (outcome.kind === 'rejected') {
-      expect(outcome.error.message).toContain('fixture: stuck-fixture');
-      expect(outcome.error.message).toContain('cwd: /fixture/repo');
-      expect(outcome.error.message).toContain(
-        'args: ["--config","/fixture/limina.config.mts","graph","prepare"]',
-      );
-      expect(outcome.error.message).toContain('PID: 4242');
-      expect(outcome.error.message).toContain(
-        'graceful termination requested: true',
-      );
-      expect(outcome.error.message).toContain(
-        'graceful termination completed: true',
-      );
-      expect(outcome.error.message).toContain(
-        'force termination requested: true',
-      );
-      expect(outcome.error.message).toContain('force termination failed: true');
-      expect(outcome.error.message).toContain('forced taskkill failed');
-      expect(outcome.error.message).toContain('captured stdout');
-      expect(outcome.error.message).toContain('captured stderr');
+    if (outcome.kind !== 'rejected') {
+      return;
     }
+
+    expect(outcome.error.message).toContain('fixture: stuck-fixture');
+    expect(outcome.error.message).toContain('cwd: /fixture/repo');
+    expect(outcome.error.message).toContain(
+      'args: ["--config","/fixture/limina.config.mts","graph","prepare"]',
+    );
+    expect(outcome.error.message).toContain('PID: 4242');
+    expect(outcome.error.message).toContain(
+      'graceful termination requested: true',
+    );
+    expect(outcome.error.message).toContain(
+      'graceful termination completed: true',
+    );
+    expect(outcome.error.message).toContain(
+      'force termination requested: true',
+    );
+    expect(outcome.error.message).toContain('force termination failed: true');
+    expect(outcome.error.message).toContain('forced taskkill failed');
+    expect(outcome.error.message).toContain('captured stdout');
+    expect(outcome.error.message).toContain('captured stderr');
   });
 
   it('does not depend on a termination promise completing', async () => {
@@ -144,24 +147,24 @@ describe('runLimina bounded completion', () => {
 
     expect(terminate).toHaveBeenCalledTimes(2);
     expect(outcome.kind).toBe('rejected');
-    if (outcome.kind === 'rejected') {
-      expect(outcome.error.message).toContain(
-        'graceful termination completed: false',
-      );
-      expect(outcome.error.message).toContain(
-        'force termination completed: false',
-      );
+    if (outcome.kind !== 'rejected') {
+      return;
     }
+
+    expect(outcome.error.message).toContain(
+      'graceful termination completed: false',
+    );
+    expect(outcome.error.message).toContain(
+      'force termination completed: false',
+    );
   });
 });
 
 describe('runLimina settlement races', () => {
   it('ignores close, error, and termination completion after watchdog settlement', async () => {
     const fakeChild = createFakeChild();
-    let completeTermination: (() => void) | undefined;
-    const termination = new Promise<void>((resolve) => {
-      completeTermination = resolve;
-    });
+    const { promise: termination, resolve: completeTermination } =
+      Promise.withResolvers<void>();
     const run = createRunLimina({
       finalWatchdogDelay: watchdogDelay,
       forceTerminationDelay: forceDelay,
@@ -169,12 +172,11 @@ describe('runLimina settlement races', () => {
       terminateProcessTree: () => termination,
     });
     const settlement = vi.fn();
-    const outcomePromise = observeSettlement(run(runOptions)).then(
-      (outcome) => {
-        settlement(outcome.kind);
-        return outcome;
-      },
-    );
+    const outcomePromise = (async () => {
+      const outcome = await observeSettlement(run(runOptions));
+      settlement(outcome.kind);
+      return outcome;
+    })();
 
     await reachFinalWatchdog();
     const outcome = await outcomePromise;
@@ -183,7 +185,7 @@ describe('runLimina settlement races', () => {
 
     fakeChild.emitClose(0, null);
     fakeChild.emitError(new Error('late child error'));
-    completeTermination?.();
+    completeTermination();
     await vi.runAllTicks();
 
     expect(settlement).toHaveBeenCalledTimes(1);

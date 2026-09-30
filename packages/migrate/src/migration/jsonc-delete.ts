@@ -55,8 +55,7 @@ function findPrecedingComma(
 
 function getParentOffset(property: Node): number {
   const parent = property.parent;
-  if (parent !== undefined) return parent.offset;
-  return property.offset;
+  return parent === undefined ? property.offset : parent.offset;
 }
 
 function getPrecedingCommaEdit(

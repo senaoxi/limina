@@ -12,7 +12,7 @@ import {
 import {
   createRenderSnapshot,
   getTerminalDimensions,
-  sendProcessSnapshot,
+  isSendProcessSnapshot,
   writeRenderSnapshotInline,
 } from './state';
 import type {
@@ -30,8 +30,7 @@ function normalizeErrorDetail(error: unknown): string {
 export function formatFailureMessage(message: string, error: unknown): string {
   if (error === undefined) return message;
   const detail = normalizeErrorDetail(error);
-  if (detail.length === 0) return message;
-  return `${message}: ${detail}`;
+  return detail.length === 0 ? message : `${message}: ${detail}`;
 }
 
 export function formatReporterFailure(options: {
@@ -39,8 +38,9 @@ export function formatReporterFailure(options: {
   options: LiminaFlowFailureOptions | undefined;
   state: FlowReporterState;
 }): string {
-  if (options.state.statusOnly) return options.message;
-  return formatFailureMessage(options.message, options.options?.error);
+  return options.state.statusOnly
+    ? options.message
+    : formatFailureMessage(options.message, options.options?.error);
 }
 
 export function writeControl(state: FlowReporterState, message: string): void {
@@ -118,7 +118,7 @@ function emitProcessRenderedEntry(options: {
   if (reference === undefined) {
     reference = persistTransientEntry(options);
   }
-  sendProcessSnapshot(options.state);
+  isSendProcessSnapshot(options.state);
   return reference;
 }
 
@@ -162,13 +162,11 @@ function shouldSuppressStatus(
   state: FlowReporterState,
   status: FlowStatus,
 ): boolean {
-  if (!state.statusOnly) return false;
-  return status === 'info' || status === 'warn';
+  return state.statusOnly && (status === 'info' || status === 'warn');
 }
 
 function getMessageDepth(options: LiminaFlowMessageOptions): number {
-  if (options.depth === undefined) return 0;
-  return options.depth;
+  return options.depth === undefined ? 0 : options.depth;
 }
 
 export function emitFlow(
@@ -198,9 +196,9 @@ function redrawFrameLines(state: FlowReporterState): void {
 }
 
 export function redrawInteractiveHistory(state: FlowReporterState): void {
-  if (sendProcessSnapshot(state)) return;
+  if (isSendProcessSnapshot(state)) return;
   if (state.terminalFrame.lineCount > 0) {
-    writeControl(state, `\r\u001B[${state.terminalFrame.lineCount}A\u001B[J`);
+    writeControl(state, `\r\u{1B}[${state.terminalFrame.lineCount}A\u{1B}[J`);
   }
   state.terminalFrame.reset();
   redrawFrameLines(state);
@@ -240,7 +238,7 @@ export function replaceInteractiveHistoryLine(options: {
     reference: options.reference,
     state: options.state,
   });
-  if (sendProcessSnapshot(options.state)) return;
+  if (isSendProcessSnapshot(options.state)) return;
   syncSpinnerTimer(options.state);
 }
 
@@ -257,8 +255,9 @@ function advanceSpinner(state: FlowReporterState): void {
 }
 
 function shouldStopSpinner(state: FlowReporterState): boolean {
-  if (!state.interactive) return true;
-  return !hasRunningSnapshotWork(createRenderSnapshot(state));
+  return (
+    !state.interactive || !hasRunningSnapshotWork(createRenderSnapshot(state))
+  );
 }
 
 function startSpinner(state: FlowReporterState): void {
@@ -279,8 +278,7 @@ export function syncSpinnerTimer(state: FlowReporterState): void {
 }
 
 export function renderTreeChange(state: FlowReporterState): void {
-  if (!state.interactive) return;
-  if (sendProcessSnapshot(state)) return;
+  if (!state.interactive || isSendProcessSnapshot(state)) return;
   syncSpinnerTimer(state);
   redrawInteractiveHistory(state);
 }
@@ -293,7 +291,7 @@ export async function closeFlowRenderer(
     return;
   }
   const snapshot = createRenderSnapshot(state);
-  const completed = await state.processRenderer.close(snapshot);
+  const isCompleted = await state.processRenderer.close(snapshot);
   state.processRenderer = undefined;
-  if (!completed) writeRenderSnapshotInline(state, snapshot);
+  if (!isCompleted) writeRenderSnapshotInline(state, snapshot);
 }

@@ -18,8 +18,9 @@ function getParentDirectory(directory: string): string | null {
 
 function getExistingDefaultConfig(directory: string): string | null {
   const candidatePath = path.join(directory, 'tsconfig.json');
-  if (!existsSync(candidatePath)) return null;
-  return normalizeAbsolutePath(candidatePath);
+  return existsSync(candidatePath)
+    ? normalizeAbsolutePath(candidatePath)
+    : null;
 }
 
 function continueNearestSearch(options: {

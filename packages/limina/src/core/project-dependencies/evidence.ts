@@ -151,8 +151,9 @@ export function getDependencyCheckerTarget(
   evidence: ProjectDependencyEvidence,
 ): ResolvedCheckerModuleName | null {
   const checker = evidence.checker;
-  if (checker.kind === 'unobserved') return null;
-  return getObservedCheckerTarget(checker);
+  return checker.kind === 'unobserved'
+    ? null
+    : getObservedCheckerTarget(checker);
 }
 
 function getObservedCheckerTarget(

@@ -17,27 +17,31 @@ function getStringLiteralValue(
   node: ts.Node | undefined,
   tsModule: typeof ts,
 ): string | null {
-  if (node === undefined) return null;
-  if (!tsModule.isStringLiteralLike(node)) return null;
-  return node.text;
+  return node === undefined || !tsModule.isStringLiteralLike(node)
+    ? null
+    : node.text;
 }
 
 function hasOnlyTypeElements(
   bindings: ts.NamedImportBindings,
   tsModule: typeof ts,
 ): boolean {
-  if (!tsModule.isNamedImports(bindings)) return false;
-  if (bindings.elements.length === 0) return false;
-  return bindings.elements.every((element) => element.isTypeOnly);
+  return (
+    tsModule.isNamedImports(bindings) &&
+    bindings.elements.length > 0 &&
+    bindings.elements.every((element) => element.isTypeOnly)
+  );
 }
 
 function isNamedBindingOnlyClause(
   clause: ts.ImportClause,
   tsModule: typeof ts,
 ): boolean {
-  if (clause.name !== undefined) return false;
-  if (clause.namedBindings === undefined) return false;
-  return hasOnlyTypeElements(clause.namedBindings, tsModule);
+  return (
+    clause.name === undefined &&
+    clause.namedBindings !== undefined &&
+    hasOnlyTypeElements(clause.namedBindings, tsModule)
+  );
 }
 
 function getImportKind(
@@ -45,8 +49,9 @@ function getImportKind(
   tsModule: typeof ts,
 ): ImportRecordKind {
   const clause = node.importClause;
-  if (clause === undefined) return 'static';
-  return getImportClauseKind(clause, tsModule);
+  return clause === undefined
+    ? 'static'
+    : getImportClauseKind(clause, tsModule);
 }
 
 function getImportClauseKind(
@@ -64,8 +69,7 @@ function addNodeSpecifier(options: {
   tsModule: typeof ts;
 }): void {
   const specifier = getStringLiteralValue(options.node, options.tsModule);
-  if (options.node === undefined) return;
-  if (specifier === null) return;
+  if (specifier === null || options.node === undefined) return;
   options.add(specifier, options.node, options.kind);
 }
 
@@ -115,8 +119,11 @@ function collectDynamicImport(
   add: AddTypeScriptImport,
   tsModule: typeof ts,
 ): void {
-  if (!tsModule.isCallExpression(node)) return;
-  if (node.expression.kind !== tsModule.SyntaxKind.ImportKeyword) return;
+  if (
+    !tsModule.isCallExpression(node) ||
+    node.expression.kind !== tsModule.SyntaxKind.ImportKeyword
+  )
+    return;
   addNodeSpecifier({ add, kind: 'dynamic', node: node.arguments[0], tsModule });
 }
 

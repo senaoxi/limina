@@ -8,7 +8,7 @@ import {
   type DependencyGraphDocument,
   type DependencyGraphEdgeKind,
 } from '../dependency-graph/runner';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { linkSemanticWorkspacePackages } from './helpers/semantic-repair';
 
 const defaultCheckers: NonNullable<ResolvedLiminaConfig['config']>['checkers'] =
@@ -85,7 +85,9 @@ function addFixtureEntryConfigs(
 
     output[entryPath] = stringifyConfig({
       files: [],
-      references: references.sort().map((reference) => ({ path: reference })),
+      references: references
+        .sort((left, right) => Number(left > right) - Number(left < right))
+        .map((reference) => ({ path: reference })),
     });
   }
 
@@ -97,46 +99,43 @@ async function createFixture(files: Record<string, string>): Promise<{
   config: ResolvedLiminaConfig;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-dependency-graph-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-dependency-graph-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     stringifyConfig({
       name: 'root',
       private: true,
     }),
   );
 
-  for (const [relativePath, text] of Object.entries(
-    addFixtureEntryConfigs(files),
-  )) {
-    await writeText(path.join(rootDir, relativePath), text);
+  const fixtureEntries1 = Object.entries(addFixtureEntryConfigs(files));
+  for (const [relativePath, text] of fixtureEntries1) {
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       config: {
         checkers: defaultCheckers,
       },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
-      rootDir,
-    },
-    rootDir,
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
   };
 }
 
@@ -162,9 +161,7 @@ function typecheckBuildConfig(include: string[], outputRoot?: string): string {
       noEmit: true,
     },
     include,
-    ...(outputRoot
-      ? { liminaOptions: { outputs: { outDir: outputRoot } } }
-      : {}),
+    ...(outputRoot && { liminaOptions: { outputs: { outDir: outputRoot } } }),
   });
 }
 
@@ -250,10 +247,10 @@ describe('collectDependencyGraph', () => {
         await linkSemanticWorkspacePackages(fixture.rootDir, ['b']);
         for (const view of ['all', 'source', 'artifact'] as const) {
           const graph = await collectDependencyGraph(fixture.config, { view });
-          const visible =
+          const isVisible =
             entry.kind !== null && (view === 'all' || view === entry.kind);
           expect(graph.edges).toEqual(
-            visible
+            isVisible
               ? [
                   {
                     from: 'pkg:@example/a',

@@ -11,23 +11,28 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, it } from 'vitest';
 import {
-  packLiminaDist,
-  packMigrationDist,
+  packLiminaDistribution,
+  packMigrationDistribution,
   runCommand,
   runPnpm,
 } from './helpers';
 
 it('runs packed migration, preserves legacy argv and isolates verifier and version failures', async () => {
-  const core = await packLiminaDist();
-  const migration = await packMigrationDist();
-  const root = await realpath(
-    await mkdtemp(path.join(tmpdir(), "limina migrate ! & ' ")),
+  const core = await packLiminaDistribution();
+  const migration = await packMigrationDistribution();
+  const temporaryPath = await mkdtemp(
+    path.join(tmpdir(), "limina migrate ! & ' "),
   );
+  const root = await realpath(temporaryPath);
   const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
   const put = async (file: string, content: string) =>
     writeFile(path.join(root, file), content);
-  const node = (args: string[], env?: NodeJS.ProcessEnv) =>
-    runCommand(process.execPath, args, { cwd: root, env, reject: false });
+  const node = (arguments_: string[], environment?: NodeJS.ProcessEnv) =>
+    runCommand(process.execPath, arguments_, {
+      cwd: root,
+      env: environment,
+      reject: false,
+    });
   const commit = async () => {
     await runCommand('git', ['add', '.'], { cwd: root });
     await runCommand(
@@ -106,21 +111,21 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     );
     await runCommand('git', ['init'], { cwd: root });
     await commit();
-    const args = [
+    const arguments_ = [
       '--mode',
       'mode with ! & quotes',
       '--config',
       'limina.config.mjs',
     ];
-    const first = await node([migrateBin, ...args]);
+    const first = await node([migrateBin, ...arguments_]);
     expect(first.exitCode, first.stdout + first.stderr).toBe(0);
     const before = await readFile(path.join(root, 'tsconfig.json'), 'utf8');
     await commit();
     const legacy = await node([
       coreBin,
-      ...args.slice(0, 2),
+      ...arguments_.slice(0, 2),
       'migration',
-      ...args.slice(2),
+      ...arguments_.slice(2),
     ]);
     expect(legacy.exitCode, legacy.stdout + legacy.stderr).toBe(0);
     expect(legacy.stderr).toContain('deprecated');
@@ -133,7 +138,7 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     const worker = path.join(migrateRoot, 'migration-verify-process.js');
     await rename(worker, `${worker}.disabled`);
     try {
-      const missing = await node([migrateBin, ...args]);
+      const missing = await node([migrateBin, ...arguments_]);
       expect(missing.exitCode).not.toBe(0);
       const report = JSON.parse(
         await readFile(
@@ -153,7 +158,7 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     const manifest = JSON.parse(manifestText);
     await writeFile(manifestPath, json({ ...manifest, version: '99.0.0' }));
     try {
-      const mismatch = await node([migrateBin, ...args]);
+      const mismatch = await node([migrateBin, ...arguments_]);
       expect(mismatch.exitCode).not.toBe(0);
       expect(mismatch.stderr).toContain('requires limina@');
       expect(await readFile(path.join(root, 'tsconfig.json'), 'utf8')).toBe(
@@ -177,13 +182,24 @@ it('runs packed migration, preserves legacy argv and isolates verifier and versi
     );
     try {
       const fallback = await node(
-        [coreBin, ...args.slice(0, 2), 'migration', ...args.slice(2)],
-        { npm_execpath: npx },
+        [
+          coreBin,
+          ...arguments_.slice(0, 2),
+          'migration',
+          ...arguments_.slice(2),
+        ],
+        {
+          // Vitest adds uppercase env keys on Windows; Node keeps that variant.
+          npm_execpath: npx,
+          NPM_EXECPATH: npx,
+          npm_config_offline: 'true',
+          NPM_CONFIG_OFFLINE: 'true',
+        },
       );
       expect(fallback.exitCode, fallback.stdout + fallback.stderr).toBe(0);
       const observed = JSON.parse(fallback.stdout.trim().split('\n').at(-1)!);
       expect(observed).toEqual({
-        argv: ['--yes', `limina-migrate@${manifest.version}`, ...args],
+        argv: ['--yes', `limina-migrate@${manifest.version}`, ...arguments_],
         cwd: root,
       });
     } finally {

@@ -42,7 +42,8 @@ export function isResolvedFromLeafInstalledPackage(options: {
 }): boolean {
   const packageDirectory = resolveLeafInstalledPackageDirectory(options);
   const resolvedPath = resolveRealPath(options.resolvedPath);
-  if (packageDirectory === null) return false;
-  if (resolvedPath === null) return false;
-  return isPathInsidePackage(packageDirectory, resolvedPath);
+  return (
+    !(packageDirectory === null || resolvedPath === null) &&
+    isPathInsidePackage(packageDirectory, resolvedPath)
+  );
 }

@@ -96,7 +96,7 @@ describe('standalone invocation PowerShell transport', () => {
     'round-trips sensitive argv and appended arguments $appendedArgs through the PowerShell transport',
     async ({ appendedArgs }) => {
       const { context } = createSensitiveCommand();
-      const expectedArgs = [
+      const expectedArguments = [
         '--config',
         context.configPath,
         '--mode',
@@ -106,19 +106,22 @@ describe('standalone invocation PowerShell transport', () => {
         'process.stdout.write(JSON.stringify(process.argv.slice(1)))';
       const transportTokens = createPowerShellNodeTransportTokens(
         process.execPath,
-        ['-e', childScript, '--', ...expectedArgs],
+        ['-e', childScript, '--', ...expectedArguments],
       );
-      const [executable, ...args] = transportTokens;
+      const [executable, ...arguments_] = transportTokens;
 
       expect(transportTokens[2]).not.toMatch(/["\\]/u);
       const { stdout } = await execFileAsync(
         executable,
-        [...args, ...appendedArgs],
+        [...arguments_, ...appendedArgs],
         {
           encoding: 'utf8',
         },
       );
-      expect(JSON.parse(stdout)).toEqual([...expectedArgs, ...appendedArgs]);
+      expect(JSON.parse(stdout)).toEqual([
+        ...expectedArguments,
+        ...appendedArgs,
+      ]);
     },
   );
 

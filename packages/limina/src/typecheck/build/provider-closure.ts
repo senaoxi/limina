@@ -10,8 +10,7 @@ import {
 
 function isBuildCapableChecker(checker: ResolvedCheckerConfig): boolean {
   const adapter = getCheckerAdapter(checker.name);
-  if (adapter === null) return false;
-  return adapter.execution === 'build';
+  return adapter !== null && adapter.execution === 'build';
 }
 
 function getBuildCapableChecker(options: {
@@ -57,13 +56,14 @@ function createProviderDescriptor(options: {
   };
 }
 
-function edgeStartsAtDescriptor(options: {
+function isEdgeStartsAtDescriptor(options: {
   descriptor: BuildTargetDescriptor;
   edge: GeneratedTsconfigGraphResult['dependencyEdges'][number];
 }): boolean {
-  if (options.edge.fromChecker !== options.descriptor.checker.name)
-    return false;
-  return options.edge.fromConfigPath === options.descriptor.sourceConfigPath;
+  return (
+    options.edge.fromChecker === options.descriptor.checker.name &&
+    options.edge.fromConfigPath === options.descriptor.sourceConfigPath
+  );
 }
 
 function getProviderDescriptors(options: {
@@ -73,7 +73,7 @@ function getProviderDescriptors(options: {
 }): BuildTargetDescriptor[] {
   return options.generatedGraph.dependencyEdges
     .filter((edge) =>
-      edgeStartsAtDescriptor({ descriptor: options.descriptor, edge }),
+      isEdgeStartsAtDescriptor({ descriptor: options.descriptor, edge }),
     )
     .flatMap((edge) => {
       const descriptor = createProviderDescriptor({ ...options, edge });
@@ -86,8 +86,9 @@ function compareDescriptors(
   right: BuildTargetDescriptor,
 ): number {
   const checkerOrder = compareCodeUnits(left.checker.name, right.checker.name);
-  if (checkerOrder !== 0) return checkerOrder;
-  return compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath);
+  return checkerOrder === 0
+    ? compareCodeUnits(left.sourceConfigPath, right.sourceConfigPath)
+    : checkerOrder;
 }
 
 function seedDescriptorMap(
@@ -149,5 +150,5 @@ export function collectBuildTargetProviderClosure(options: {
     });
     current = queue.shift();
   }
-  return [...descriptorsByKey.values()].sort(compareDescriptors);
+  return descriptorsByKey.values().toArray().sort(compareDescriptors);
 }

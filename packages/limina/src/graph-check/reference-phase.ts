@@ -5,7 +5,7 @@ import {
   addDtsOptionProblems,
   addTypecheckParityProblems,
 } from './dts-options';
-import { getProjectCheckerName } from './finding-utils';
+import { getProjectCheckerName } from './finding-utilities';
 import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
 import { addGeneratedReferenceCycleProblems } from './reference-cycles';
 import type { GraphCheckState } from './run-state';

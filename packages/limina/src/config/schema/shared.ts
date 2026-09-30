@@ -17,30 +17,26 @@ export interface StringArrayFieldOptions {
 }
 
 export function addConfigIssue(
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
   pathSegments: PropertyKey[],
   message: string,
 ): void {
-  ctx.addIssue({ code: 'custom', message, path: pathSegments });
+  context.addIssue({ code: 'custom', message, path: pathSegments });
 }
 
 export function isPlainConfigRecord(
   value: unknown,
 ): value is Record<string, unknown> {
-  if (value === null) return false;
-  if (typeof value !== 'object') return false;
-  return !Array.isArray(value);
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function isNonEmptyString(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  return value.trim().length > 0;
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export function isAbsolutePublicSelector(value: string): boolean {
   const selector = value.trim().replace(/^!+/u, '');
-  if (path.isAbsolute(selector)) return true;
-  return /^[A-Za-z]:[\\/]/u.test(selector);
+  return path.isAbsolute(selector) || /^[A-Za-z]:[\\/]/u.test(selector);
 }
 
 function isReservedPathSegment(value: string): boolean {
@@ -82,20 +78,19 @@ function validateArrayEntries(
   }
 }
 
-function handleMissingArray(options: StringArrayFieldOptions): boolean {
+function isHandleMissingArray(options: StringArrayFieldOptions): boolean {
   if (options.required === true) addMissingArrayIssue(options);
   return false;
 }
 
 function isNonEmptyArray(value: unknown): value is readonly unknown[] {
-  if (!Array.isArray(value)) return false;
-  return value.length > 0;
+  return Array.isArray(value) && value.length > 0;
 }
 
-export function validateStringArrayField(
+export function isValidateStringArrayField(
   options: StringArrayFieldOptions,
 ): boolean {
-  if (options.value === undefined) return handleMissingArray(options);
+  if (options.value === undefined) return isHandleMissingArray(options);
   if (!isNonEmptyArray(options.value)) {
     addMissingArrayIssue(options);
     return false;
@@ -111,8 +106,11 @@ function validateRelativeSelector(options: {
   path: PropertyKey[];
   value: unknown;
 }): void {
-  if (!isNonEmptyString(options.value)) return;
-  if (!isAbsolutePublicSelector(options.value)) return;
+  if (
+    !isNonEmptyString(options.value) ||
+    !isAbsolutePublicSelector(options.value)
+  )
+    return;
   addConfigIssue(
     options.ctx,
     [...options.path, options.index],

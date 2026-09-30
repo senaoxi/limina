@@ -65,9 +65,9 @@ function peerFiles(packageName: string, mode: Mode): Record<string, string> {
       exports: {
         '.': entry,
         './utils': './utils.mjs',
-        ...(mode === 'hidden-metadata'
-          ? {}
-          : { './package.json': './package.json' }),
+        ...(mode !== 'hidden-metadata' && {
+          './package.json': './package.json',
+        }),
       },
     }),
     [`node_modules/${packageName}/index.mjs`]: source,

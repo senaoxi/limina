@@ -1,6 +1,6 @@
 import {
-  pathCandidatesMatchFileFilters,
-  pathCandidatesMatchScopeFilters,
+  isPathCandidatesMatchFileFilters,
+  isPathCandidatesMatchScopeFilters,
   type PathFilterCandidate,
 } from '../../../check-reporting/path-filters';
 import type {
@@ -56,63 +56,64 @@ function getIssuePathCandidates(
   ];
 }
 
-function matchesValueFilter(options: {
+function isMatchesValueFilter(options: {
   actual: string | undefined;
   expected: readonly string[];
 }): boolean {
-  if (options.expected.length === 0) return true;
-  if (options.actual === undefined) return false;
-  return options.expected.includes(options.actual);
+  return (
+    options.expected.length === 0 ||
+    (options.actual !== undefined && options.expected.includes(options.actual))
+  );
 }
 
-function matchesTaskFilter(
+function isMatchesTaskFilter(
   issue: LiminaCheckIssue,
   values: readonly string[],
 ): boolean {
-  return matchesValueFilter({ actual: issue.task, expected: values });
+  return isMatchesValueFilter({ actual: issue.task, expected: values });
 }
 
-function matchesPackageFilter(
+function isMatchesPackageFilter(
   issue: LiminaCheckIssue,
   values: readonly string[],
 ): boolean {
-  return matchesValueFilter({ actual: issue.packageName, expected: values });
+  return isMatchesValueFilter({ actual: issue.packageName, expected: values });
 }
 
-function matchesRuleFilter(
+function isMatchesRuleFilter(
   issue: LiminaCheckIssue,
   values: readonly string[],
 ): boolean {
-  return matchesValueFilter({ actual: issue.code, expected: values });
+  return isMatchesValueFilter({ actual: issue.code, expected: values });
 }
 
-function matchesCheckerFilter(
+function isMatchesCheckerFilter(
   issue: LiminaCheckIssue,
   values: readonly string[],
 ): boolean {
-  return matchesValueFilter({ actual: issue.checkerName, expected: values });
+  return isMatchesValueFilter({ actual: issue.checkerName, expected: values });
 }
 
-function matchesFileFilter(options: {
+function isMatchesFileFilter(options: {
   candidates: readonly PathFilterCandidate[];
   files: readonly string[];
   rootDir: string | undefined;
 }): boolean {
   if (options.files.length === 0) return true;
-  return pathCandidatesMatchFileFilters({
+  return isPathCandidatesMatchFileFilters({
     candidates: options.candidates,
     files: options.files,
     rootDir: options.rootDir,
   });
 }
 
-function matchesScopeFilter(options: {
+function isMatchesScopeFilter(options: {
   candidates: readonly PathFilterCandidate[];
   rootDir: string | undefined;
   scopes: readonly string[];
 }): boolean {
   if (options.scopes.length === 0) return true;
-  return pathCandidatesMatchScopeFilters({
+  return isPathCandidatesMatchScopeFilters({
     candidates: options.candidates,
     rootDir: options.rootDir,
     scopes: options.scopes,
@@ -141,23 +142,23 @@ function normalizeInventoryFilters(
   };
 }
 
-function issueMatchesNormalizedFilters(options: {
+function isIssueMatchesNormalizedFilters(options: {
   filters: NormalizedInventoryFilters;
   issue: LiminaCheckIssue;
   rootDir: string | undefined;
 }): boolean {
   const candidates = getIssuePathCandidates(options.issue);
   return [
-    matchesTaskFilter(options.issue, options.filters.tasks),
-    matchesPackageFilter(options.issue, options.filters.packages),
-    matchesRuleFilter(options.issue, options.filters.rules),
-    matchesCheckerFilter(options.issue, options.filters.checkers),
-    matchesFileFilter({
+    isMatchesTaskFilter(options.issue, options.filters.tasks),
+    isMatchesPackageFilter(options.issue, options.filters.packages),
+    isMatchesRuleFilter(options.issue, options.filters.rules),
+    isMatchesCheckerFilter(options.issue, options.filters.checkers),
+    isMatchesFileFilter({
       candidates,
       files: options.filters.files,
       rootDir: options.rootDir,
     }),
-    matchesScopeFilter({
+    isMatchesScopeFilter({
       candidates,
       rootDir: options.rootDir,
       scopes: options.filters.scopes,
@@ -172,7 +173,7 @@ export function filterInventoryIssues(options: {
 }): LiminaCheckIssue[] {
   const filters = normalizeInventoryFilters(options.filters);
   return options.issues.filter((issue) =>
-    issueMatchesNormalizedFilters({
+    isIssueMatchesNormalizedFilters({
       filters,
       issue,
       rootDir: options.rootDir,

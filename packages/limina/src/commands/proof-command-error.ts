@@ -12,7 +12,7 @@ import type { ProofCommandContext, ProofCommandTask } from './proof-command';
 
 function isReportDeferred(options: RunProofCheckOptions): boolean {
   const report = options.report;
-  return report === undefined ? false : report.defer === true;
+  return report !== undefined && report.defer === true;
 }
 
 function isSnapshotDeferred(options: RunProofCheckOptions): boolean {

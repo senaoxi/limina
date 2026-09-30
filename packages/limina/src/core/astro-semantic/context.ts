@@ -32,21 +32,21 @@ interface SnapshotEntry {
 }
 
 export type AstroSemanticToolchainResolver = (
-  packageRootDir: string,
+  packageRootDirectory: string,
 ) => AstroSemanticToolchain;
 
 export class AstroSemanticContext {
-  readonly identity: string;
-  readonly language: AstroLanguage;
-  readonly languageServiceHost: ts.LanguageServiceHost;
-  readonly project: AstroMaterializedProject;
-  readonly toolchain: AstroSemanticToolchain;
   readonly #scriptRegistry = new Map<AstroUri, AstroSourceScript>();
   readonly #snapshots = new Map<string, SnapshotEntry>();
   readonly #uriByFileName = new Map<string, AstroUri>();
   #languageService: ts.LanguageService | undefined;
   #program: ts.Program | undefined;
   #disposed = false;
+  readonly identity: string;
+  readonly language: AstroLanguage;
+  readonly languageServiceHost: ts.LanguageServiceHost;
+  readonly project: AstroMaterializedProject;
+  readonly toolchain: AstroSemanticToolchain;
 
   constructor(options: {
     project: AstroMaterializedProject;
@@ -73,6 +73,47 @@ export class AstroSemanticContext {
       host,
     );
     this.languageServiceHost = host;
+  }
+
+  #deleteRegisteredScripts(): void {
+    for (const uri of this.#uriByFileName.values()) {
+      this.language.scripts.delete(uri);
+    }
+  }
+
+  #disposeLanguageService(): void {
+    this.#languageService?.dispose();
+    this.#languageService = undefined;
+  }
+
+  #getLanguageService(): ts.LanguageService {
+    if (this.#languageService === undefined) {
+      this.#languageService = this.toolchain.tsModule.createLanguageService(
+        this.languageServiceHost,
+      );
+    }
+    return this.#languageService;
+  }
+
+  #deleteScript(id: AstroUri, fileName: string): void {
+    if (this.#snapshots.delete(fileName)) this.language.scripts.delete(id);
+  }
+
+  #hasCurrentSnapshot(fileName: string, text: string): boolean {
+    return this.#snapshots.get(fileName)?.text === text;
+  }
+
+  #syncScript(id: AstroUri): void {
+    const fileName = normalizeAbsolutePath(id.fsPath);
+    const text = this.toolchain.tsModule.sys.readFile(fileName);
+    if (text === undefined) {
+      this.#deleteScript(id, fileName);
+      return;
+    }
+    if (this.#hasCurrentSnapshot(fileName, text)) return;
+    const snapshot = this.toolchain.tsModule.ScriptSnapshot.fromString(text);
+    this.#snapshots.set(fileName, { snapshot, text });
+    this.language.scripts.set(id, snapshot, getAstroLanguageId(fileName));
   }
 
   get program(): ts.Program {
@@ -140,47 +181,6 @@ export class AstroSemanticContext {
     this.#scriptRegistry.clear();
     this.#uriByFileName.clear();
   }
-
-  #deleteRegisteredScripts(): void {
-    for (const uri of this.#uriByFileName.values()) {
-      this.language.scripts.delete(uri);
-    }
-  }
-
-  #disposeLanguageService(): void {
-    this.#languageService?.dispose();
-    this.#languageService = undefined;
-  }
-
-  #getLanguageService(): ts.LanguageService {
-    if (this.#languageService === undefined) {
-      this.#languageService = this.toolchain.tsModule.createLanguageService(
-        this.languageServiceHost,
-      );
-    }
-    return this.#languageService;
-  }
-
-  #deleteScript(id: AstroUri, fileName: string): void {
-    if (this.#snapshots.delete(fileName)) this.language.scripts.delete(id);
-  }
-
-  #hasCurrentSnapshot(fileName: string, text: string): boolean {
-    return this.#snapshots.get(fileName)?.text === text;
-  }
-
-  #syncScript(id: AstroUri): void {
-    const fileName = normalizeAbsolutePath(id.fsPath);
-    const text = this.toolchain.tsModule.sys.readFile(fileName);
-    if (text === undefined) {
-      this.#deleteScript(id, fileName);
-      return;
-    }
-    if (this.#hasCurrentSnapshot(fileName, text)) return;
-    const snapshot = this.toolchain.tsModule.ScriptSnapshot.fromString(text);
-    this.#snapshots.set(fileName, { snapshot, text });
-    this.language.scripts.set(id, snapshot, getAstroLanguageId(fileName));
-  }
 }
 
 function recordMetric(options: {
@@ -202,8 +202,8 @@ function canReuseContext(options: {
   project: AstroSemanticProject;
   toolchain: AstroSemanticToolchain;
 } {
-  if (options.active === undefined) return false;
   return (
+    options.active !== undefined &&
     options.active.project.seed.id === options.project.seed.id &&
     options.active.toolchain === options.toolchain
   );
@@ -235,6 +235,28 @@ export class AstroSemanticContextManager {
         ));
   }
 
+  #disposeActive(): void {
+    if (this.#active === undefined) return;
+    this.#active.dispose();
+    this.#active = undefined;
+    recordMetric({ metrics: this.#metrics, name: 'astro-context-dispose' });
+  }
+
+  #getToolchain(packageRootDirectory: string): AstroSemanticToolchain {
+    const root = normalizeAbsolutePath(packageRootDirectory);
+    const cached = this.#toolchainByRoot.get(root);
+    if (cached !== undefined) return cached;
+    const toolchain = this.#resolveToolchain(root);
+    this.#toolchainByRoot.set(root, toolchain);
+    return toolchain;
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) {
+      throw new Error('Astro semantic context manager was disposed.');
+    }
+  }
+
   acquire(project: AstroSemanticProject): AstroSemanticContext {
     this.#assertActive();
     const toolchain = this.#getToolchain(project.seed.packageRootDir);
@@ -262,27 +284,5 @@ export class AstroSemanticContextManager {
     this.#disposed = true;
     this.#disposeActive();
     this.#toolchainByRoot.clear();
-  }
-
-  #disposeActive(): void {
-    if (this.#active === undefined) return;
-    this.#active.dispose();
-    this.#active = undefined;
-    recordMetric({ metrics: this.#metrics, name: 'astro-context-dispose' });
-  }
-
-  #getToolchain(packageRootDir: string): AstroSemanticToolchain {
-    const root = normalizeAbsolutePath(packageRootDir);
-    const cached = this.#toolchainByRoot.get(root);
-    if (cached !== undefined) return cached;
-    const toolchain = this.#resolveToolchain(root);
-    this.#toolchainByRoot.set(root, toolchain);
-    return toolchain;
-  }
-
-  #assertActive(): void {
-    if (this.#disposed) {
-      throw new Error('Astro semantic context manager was disposed.');
-    }
   }
 }

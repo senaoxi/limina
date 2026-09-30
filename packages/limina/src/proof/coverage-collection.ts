@@ -100,25 +100,28 @@ function createGovernedCoverageEntries(options: {
   config: ResolvedLiminaConfig;
   generatedGraph: GeneratedTsconfigGraphResult;
 }): CoverageEntry[] {
-  return [...options.generatedGraph.governedSources.entries()].flatMap(
+  return [...options.generatedGraph.governedSources].flatMap(
     ([checkerName, governedSources]) =>
-      [...governedSources.values()].flatMap((unit) => {
-        const source: CoverageSource = {
-          checkerEntryPath:
-            options.generatedGraph.checkerEntries.get(checkerName) ??
-            unit.configPath,
-          checkerName,
-          checkerPreset: unit.primaryCheckerName,
-          label: toRelativePath(options.config.rootDir, unit.configPath),
-          projectPath: unit.configPath,
-          type: 'graph',
-        };
-        return unit.ownedFileNames
-          .filter((filePath) =>
-            isPathInsideDirectory(filePath, unit.packageRootDir),
-          )
-          .map((filePath) => ({ filePath, source }));
-      }),
+      governedSources
+        .values()
+        .flatMap((unit) => {
+          const source: CoverageSource = {
+            checkerEntryPath:
+              options.generatedGraph.checkerEntries.get(checkerName) ??
+              unit.configPath,
+            checkerName,
+            checkerPreset: unit.primaryCheckerName,
+            label: toRelativePath(options.config.rootDir, unit.configPath),
+            projectPath: unit.configPath,
+            type: 'graph',
+          };
+          return unit.ownedFileNames
+            .filter((filePath) =>
+              isPathInsideDirectory(filePath, unit.packageRootDir),
+            )
+            .map((filePath) => ({ filePath, source }));
+        })
+        .toArray(),
   );
 }
 
@@ -128,9 +131,9 @@ function hasGovernedSources(
   return (
     generatedGraph !== undefined &&
     generatedGraph.governedSources instanceof Map &&
-    [...generatedGraph.governedSources.values()].some(
-      (governedSources) => governedSources.size > 0,
-    )
+    generatedGraph.governedSources
+      .values()
+      .some((governedSources) => governedSources.size > 0)
   );
 }
 

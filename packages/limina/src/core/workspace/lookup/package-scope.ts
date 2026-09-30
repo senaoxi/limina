@@ -48,40 +48,10 @@ export class WorkspacePackageScopeLookup {
     this.#region = options.region;
   }
 
-  findNearestPackageScopeInfo(filePath: string): NearestPackageInfo | null {
-    const directory = normalizeAbsolutePath(
-      path.dirname(normalizeAbsolutePath(filePath)),
-    );
-    return this.#findNearestPackageInfoFromDirectory(directory, {
-      requireNamedPackageOrNodeModulesPackage: false,
-    });
-  }
-
-  findNearestNamedPackageInfo(directory: string): NearestPackageInfo | null {
-    return this.#findNearestPackageInfoFromDirectory(directory, {
-      requireNamedPackageOrNodeModulesPackage: true,
-    });
-  }
-
-  findWorkspacePackageForInfo(
-    packageInfo: NearestPackageInfo,
-  ): WorkspacePackage | null {
-    const byPath = this.#packagesByPackageJsonPath.get(
-      packageInfo.packageJsonPath,
-    );
-    if (byPath !== undefined) {
-      return byPath;
-    }
-
-    return this.#findNamedPackage(packageInfo.name);
-  }
-
   #findNamedPackage(name: string | undefined): WorkspacePackage | null {
-    if (name === undefined) {
-      return null;
-    }
-
-    return this.#namedPackagesByName.get(name) ?? null;
+    return name === undefined
+      ? null
+      : (this.#namedPackagesByName.get(name) ?? null);
   }
 
   #findNearestPackageInfoFromDirectory(
@@ -211,15 +181,11 @@ export class WorkspacePackageScopeLookup {
       options: NearestPackageLookupOptions;
     },
   ): boolean {
-    if (!options.options.requireNamedPackageOrNodeModulesPackage) {
-      return true;
-    }
-
-    if (packageInfo.name !== undefined) {
-      return true;
-    }
-
-    return this.#isAcceptedNodeModulesPackage(options);
+    return (
+      !options.options.requireNamedPackageOrNodeModulesPackage ||
+      packageInfo.name !== undefined ||
+      this.#isAcceptedNodeModulesPackage(options)
+    );
   }
 
   #isAcceptedNodeModulesPackage(options: {
@@ -238,14 +204,13 @@ export class WorkspacePackageScopeLookup {
     }
 
     const activatedPackage = this.#region.classifyPath(directory).package;
-    return activatedPackage === null
-      ? { activatedPackageRoot: null, allowNodeModulesPackage: false }
-      : {
-          activatedPackageRoot: normalizeAbsolutePath(
-            activatedPackage.directory,
-          ),
-          allowNodeModulesPackage: false,
-        };
+    return {
+      activatedPackageRoot:
+        activatedPackage === null
+          ? null
+          : normalizeAbsolutePath(activatedPackage.directory),
+      allowNodeModulesPackage: false,
+    };
   }
 
   #hasLookupScope(bounds: PackageLookupBounds): boolean {
@@ -287,10 +252,36 @@ export class WorkspacePackageScopeLookup {
     const packageInfo = {
       directory: normalizeAbsolutePath(path.dirname(normalizedPath)),
       manifest,
-      ...(name === undefined ? {} : { name }),
+      ...(name !== undefined && { name }),
       packageJsonPath: normalizedPath,
     };
     this.#packageInfoByPackageJsonPath.set(normalizedPath, packageInfo);
     return packageInfo;
+  }
+
+  findNearestPackageScopeInfo(filePath: string): NearestPackageInfo | null {
+    const directory = normalizeAbsolutePath(
+      path.dirname(normalizeAbsolutePath(filePath)),
+    );
+    return this.#findNearestPackageInfoFromDirectory(directory, {
+      requireNamedPackageOrNodeModulesPackage: false,
+    });
+  }
+
+  findNearestNamedPackageInfo(directory: string): NearestPackageInfo | null {
+    return this.#findNearestPackageInfoFromDirectory(directory, {
+      requireNamedPackageOrNodeModulesPackage: true,
+    });
+  }
+
+  findWorkspacePackageForInfo(
+    packageInfo: NearestPackageInfo,
+  ): WorkspacePackage | null {
+    const byPath = this.#packagesByPackageJsonPath.get(
+      packageInfo.packageJsonPath,
+    );
+    return byPath === undefined
+      ? this.#findNamedPackage(packageInfo.name)
+      : byPath;
   }
 }

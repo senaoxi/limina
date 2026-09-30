@@ -73,23 +73,23 @@ export function createFileRequest(
   request: ProjectDependencyRequest,
   fileName: string,
 ): ProjectDependencyRequest {
-  const packageRootDir = getPackageRoot(request, fileName);
-  const options = { packageRootDir, request };
+  const packageRootDirectory = getPackageRoot(request, fileName);
+  const options = { packageRootDir: packageRootDirectory, request };
   const astroSemanticProject = getAstroProjectForRoot(options);
   const svelteSemanticProject = getSvelteProjectForRoot(options);
   const context = {
     ...request.context,
     astroSemanticProject,
-    packageRootDir,
+    packageRootDir: packageRootDirectory,
     svelteSemanticProject,
   };
-  const preservesSemanticIdentity =
+  const isPreservesSemanticIdentity =
     astroSemanticProject === request.context.astroSemanticProject &&
     svelteSemanticProject === request.context.svelteSemanticProject;
   return {
     ...request,
     context,
-    projectSemanticCacheIdentity: preservesSemanticIdentity
+    projectSemanticCacheIdentity: isPreservesSemanticIdentity
       ? getProjectSemanticCacheIdentity(request)
       : createProjectSemanticCacheIdentity(context),
   };
@@ -100,11 +100,12 @@ function addSourceDiagnostics(options: {
   diagnostics: readonly string[];
 }): void {
   for (const diagnostic of options.diagnostics) {
+    const filePath = normalizeAbsolutePath(options.base.fileName);
     options.base.collection.failures.push(
       createProjectDependencyFailure({
         identity: JSON.stringify({
           configPath: options.base.request.context.configPath,
-          filePath: normalizeAbsolutePath(options.base.fileName),
+          filePath,
           framework: options.base.request.context.semanticAuthority.family,
           stage: 'dependency-enumeration',
         }),
@@ -171,8 +172,9 @@ function getSemanticSourceRecords(options: {
   fileName: string;
   hasSourceFile: boolean;
 }): SourceEvidence['records'] {
-  if (!options.hasSourceFile) return [];
-  return [...options.context.getImportRecords(options.fileName)];
+  return options.hasSourceFile
+    ? [...options.context.getImportRecords(options.fileName)]
+    : [];
 }
 
 function createSemanticSourceDiagnostics(

@@ -16,12 +16,16 @@ import {
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { toPortablePath } from './helpers/path';
 
-async function createTempDir(): Promise<string> {
+async function createTemporaryDirectory(): Promise<string> {
   return await mkdtemp(path.join(tmpdir(), 'limina-import-analysis-'));
 }
 
-async function writeText(rootDir: string, filePath: string, text: string) {
-  const absolutePath = path.join(rootDir, filePath);
+async function writeText(
+  rootDirectory: string,
+  filePath: string,
+  text: string,
+) {
+  const absolutePath = path.join(rootDirectory, filePath);
 
   await mkdir(path.dirname(absolutePath), { recursive: true });
   await writeFile(absolutePath, text);
@@ -69,7 +73,7 @@ describe('import analysis', () => {
   });
 
   it('keeps full UTF-16 string-token locators and duplicate occurrences stable', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
     const sourceText = [
       "const label = '資源😀';",
       "import './shared.css';",
@@ -80,8 +84,12 @@ describe('import analysis', () => {
     ].join('\r\n');
 
     try {
-      const filePath = await writeText(rootDir, 'src/locator.ts', sourceText);
-      const imports = collectImportsFromFile(filePath, rootDir).filter(
+      const filePath = await writeText(
+        rootDirectory,
+        'src/locator.ts',
+        sourceText,
+      );
+      const imports = collectImportsFromFile(filePath, rootDirectory).filter(
         (record) => record.specifier === './shared.css',
       );
 
@@ -101,16 +109,16 @@ describe('import analysis', () => {
         { kind: 'import-type', occurrence: 0, token: "'./shared.css'" },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('collects static, type, export-from, dynamic, and import-type dependencies', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const filePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.tsx',
         [
           "import value from './value';",
@@ -123,7 +131,7 @@ describe('import analysis', () => {
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => ({
+        collectImportsFromFile(filePath, rootDirectory).map((item) => ({
           kind: item.kind,
           line: item.line,
           specifier: item.specifier,
@@ -136,12 +144,12 @@ describe('import analysis', () => {
         { kind: 'import-type', line: 5, specifier: './import-type' },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('emits one export record per source literal and preserves statement occurrences', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
     const sourceText = [
       "export { first, second } from './shared';",
       "export { third } from './shared';",
@@ -149,10 +157,14 @@ describe('import analysis', () => {
     ].join('\n');
 
     try {
-      const filePath = await writeText(rootDir, 'src/reexports.ts', sourceText);
+      const filePath = await writeText(
+        rootDirectory,
+        'src/reexports.ts',
+        sourceText,
+      );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((record) => ({
+        collectImportsFromFile(filePath, rootDirectory).map((record) => ({
           kind: record.kind,
           occurrence: record.locator.occurrence,
           specifier: record.specifier,
@@ -176,37 +188,37 @@ describe('import analysis', () => {
         },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('collects import types from declaration files', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const filePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/import-type.d.ts',
         "export type VueModule = typeof import('vue');\n",
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((record) => ({
+        collectImportsFromFile(filePath, rootDirectory).map((record) => ({
           kind: record.kind,
           specifier: record.specifier,
         })),
       ).toEqual([{ kind: 'import-type', specifier: 'vue' }]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('collects CommonJS, require.resolve, import-equals, and literal template dependencies', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const filePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/commonjs.ts',
         [
           "import Equal = require('./equal');",
@@ -225,7 +237,7 @@ describe('import analysis', () => {
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => ({
+        collectImportsFromFile(filePath, rootDirectory).map((item) => ({
           kind: item.kind,
           line: item.line,
           specifier: item.specifier,
@@ -243,7 +255,7 @@ describe('import analysis', () => {
         { kind: 'dynamic', line: 6, specifier: './lazy-template' },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -370,11 +382,11 @@ describe('import analysis', () => {
   });
 
   it('collects dependency pragmas from comments', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const filePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/comments.ts',
         [
           '/**',
@@ -394,7 +406,7 @@ describe('import analysis', () => {
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => ({
+        collectImportsFromFile(filePath, rootDirectory).map((item) => ({
           kind: item.kind,
           line: item.line,
           specifier: item.specifier,
@@ -413,33 +425,33 @@ describe('import analysis', () => {
         { kind: 'triple-slash-path', line: 10, specifier: './ambient.d.ts' },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it.each(['App.vue', 'Page.astro', 'Widget.svelte'])(
     'rejects standalone framework source %s with a stable project-context error',
     async (name) => {
-      const rootDir = await createTempDir();
+      const rootDirectory = await createTemporaryDirectory();
       try {
-        const filePath = await writeText(rootDir, name, 'export {}\n');
-        expect(() => collectImportsFromFile(filePath, rootDir)).toThrow(
+        const filePath = await writeText(rootDirectory, name, 'export {}\n');
+        expect(() => collectImportsFromFile(filePath, rootDirectory)).toThrow(
           'Framework source requires project/checker context; use getResolvedImports(file, project).',
         );
       } finally {
-        await rm(rootDir, { force: true, recursive: true });
+        await rm(rootDirectory, { force: true, recursive: true });
       }
     },
   );
 
   it('rejects an explicit framework source profile on the standalone API', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
     try {
-      const filePath = await writeText(rootDir, 'Page.md', '# Page\n');
+      const filePath = await writeText(rootDirectory, 'Page.md', '# Page\n');
       expect(() =>
         collectImportsFromFile(
           filePath,
-          rootDir,
+          rootDirectory,
           undefined,
           'vitepress-markdown',
         ),
@@ -447,16 +459,16 @@ describe('import analysis', () => {
         'Framework source requires project/checker context; use getResolvedImports(file, project).',
       );
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('collects imports from files with recoverable TypeScript syntax errors', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const filePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/broken.ts',
         [
           "import value from './value';",
@@ -469,7 +481,7 @@ describe('import analysis', () => {
       );
 
       expect(
-        collectImportsFromFile(filePath, rootDir).map((item) => ({
+        collectImportsFromFile(filePath, rootDirectory).map((item) => ({
           kind: item.kind,
           specifier: item.specifier,
         })),
@@ -480,16 +492,16 @@ describe('import analysis', () => {
         { kind: 'import-equals', specifier: './equal' },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('resolves paths aliases, Vue extensionless imports, and package imports through the shared context', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         [
           "import App from './App';",
@@ -502,25 +514,29 @@ describe('import analysis', () => {
           'void shared;',
         ].join('\n'),
       );
-      const appPath = await writeText(rootDir, 'src/App.vue', '<script />\n');
+      const appPath = await writeText(
+        rootDirectory,
+        'src/App.vue',
+        '<script />\n',
+      );
       const aliasedPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/internal/aliased.ts',
         'export const aliased = 1;\n',
       );
       const packageImportPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/package-import.ts',
         'export const packageImported = 1;\n',
       );
       const sharedPath = await writeText(
-        rootDir,
+        rootDirectory,
         'shared.ts',
         'export const shared = 1;\n',
       );
 
       await writeText(
-        rootDir,
+        rootDirectory,
         'package.json',
         JSON.stringify({
           imports: {
@@ -530,14 +546,14 @@ describe('import analysis', () => {
         }),
       );
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({
           compilerOptions: {},
         }),
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/shared/package.json',
         JSON.stringify({
           name: 'shared',
@@ -545,14 +561,14 @@ describe('import analysis', () => {
         }),
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/shared/index.d.ts',
         'export declare const shared: number;\n',
       );
 
       const context = createImportAnalysisContext();
       const compilerOptions = {
-        baseUrl: rootDir,
+        baseUrl: rootDirectory,
         moduleResolution: 99,
         paths: {
           '@internal/*': ['src/internal/*'],
@@ -609,71 +625,70 @@ describe('import analysis', () => {
         ),
       ).toBe(toPortablePath(sharedPath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('falls back to TypeScript resolution for module suffixes', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { feature } from './feature';\nvoid feature;\n",
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'src/feature.ts',
         'export const feature = "default";\n',
       );
       const nativeFeaturePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/feature.native.ts',
         'export const feature = "native";\n',
       );
 
-      expect(
-        toPortablePath(
-          resolveInternalImport(
-            './feature',
-            indexPath,
-            { moduleSuffixes: ['.native', ''] },
-            {
-              checkerPresets: [],
-              extensions: ['.ts'],
-            },
-            createImportAnalysisContext(),
-          ) ?? '',
-        ),
-      ).toBe(toPortablePath(nativeFeaturePath));
+      const resolvedImportPath = toPortablePath(
+        resolveInternalImport(
+          './feature',
+          indexPath,
+          { moduleSuffixes: ['.native', ''] },
+          {
+            checkerPresets: [],
+            extensions: ['.ts'],
+          },
+          createImportAnalysisContext(),
+        ) ?? '',
+      );
+      expect(resolvedImportPath).toBe(toPortablePath(nativeFeaturePath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('uses compiler custom conditions when resolving package exports with Oxc', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from 'conditional';\nvoid value;\n",
       );
       const sourcePath = await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/conditional/src/index.ts',
         'export const value = "source";\n',
       );
-      const distPath = await writeText(
-        rootDir,
+      const distributionPath = await writeText(
+        rootDirectory,
         'node_modules/conditional/dist/index.js',
         'export const value = "dist";\n',
       );
 
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/conditional/package.json',
         JSON.stringify({
           exports: {
@@ -687,7 +702,7 @@ describe('import analysis', () => {
         }),
       );
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({
           compilerOptions: {},
@@ -714,7 +729,7 @@ describe('import analysis', () => {
             context,
           ) ?? '',
         ),
-      ).toBe(toPortablePath(distPath));
+      ).toBe(toPortablePath(distributionPath));
       expect(
         toPortablePath(
           resolveInternalImport(
@@ -730,26 +745,26 @@ describe('import analysis', () => {
         ),
       ).toBe(toPortablePath(sourcePath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps JavaScript package entry extensions in Oxc runtime resolution', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import value from 'lodash.kebabcase';\nvoid value;\n",
       );
       const packageEntryPath = await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/lodash.kebabcase/index.js',
         'module.exports = value => value;\n',
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/lodash.kebabcase/package.json',
         JSON.stringify({
           main: './index.js',
@@ -757,7 +772,7 @@ describe('import analysis', () => {
         }),
       );
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({
           compilerOptions: {
@@ -785,37 +800,37 @@ describe('import analysis', () => {
         ),
       ).toBe(toPortablePath(packageEntryPath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('uses legacy package lookup for node10 instead of package exports conditions', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from 'legacy-conditional';\nvoid value;\n",
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/legacy-conditional/src/index.ts',
         'export const value = "source";\n',
       );
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/legacy-conditional/dist/export.js',
         'export const value = "export";\n',
       );
       const mainPath = await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/legacy-conditional/dist/main.js',
         'export const value = "main";\n',
       );
 
       await writeText(
-        rootDir,
+        rootDirectory,
         'node_modules/legacy-conditional/package.json',
         JSON.stringify({
           exports: {
@@ -830,7 +845,7 @@ describe('import analysis', () => {
         }),
       );
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({
           compilerOptions: {
@@ -859,43 +874,42 @@ describe('import analysis', () => {
         ),
       ).toBe(toPortablePath(mainPath));
 
-      expect(
-        toPortablePath(
-          resolveInternalImport(
-            'legacy-conditional',
-            indexPath,
-            node10CompilerOptions,
-            checkerContext,
-            createImportAnalysisContext(),
-          ) ?? '',
-        ),
-      ).toBe(toPortablePath(mainPath));
+      const resolvedImportPath = toPortablePath(
+        resolveInternalImport(
+          'legacy-conditional',
+          indexPath,
+          node10CompilerOptions,
+          checkerContext,
+          createImportAnalysisContext(),
+        ) ?? '',
+      );
+      expect(resolvedImportPath).toBe(toPortablePath(mainPath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('uses explicit Oxc tsconfig paths without sharing resolver cache entries', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from '@target';\nvoid value;\n",
       );
       const firstPath = await writeText(
-        rootDir,
+        rootDirectory,
         'first.ts',
         'export const value = "first";\n',
       );
       const secondPath = await writeText(
-        rootDir,
+        rootDirectory,
         'second.ts',
         'export const value = "second";\n',
       );
       const firstConfigPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.first.json',
         JSON.stringify({
           compilerOptions: {
@@ -907,7 +921,7 @@ describe('import analysis', () => {
         }),
       );
       const secondConfigPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.second.json',
         JSON.stringify({
           compilerOptions: {
@@ -951,27 +965,27 @@ describe('import analysis', () => {
         ),
       ).toBe(toPortablePath(secondPath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('prefers the resolver config path over the graph config path for Oxc', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from '@target';\nvoid value;\n",
       );
       const companionPath = await writeText(
-        rootDir,
+        rootDirectory,
         'companion.ts',
         'export const value = "companion";\n',
       );
-      await writeText(rootDir, 'dts.ts', 'export const value = "dts";\n');
+      await writeText(rootDirectory, 'dts.ts', 'export const value = "dts";\n');
       const dtsConfigPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.lib.dts.json',
         JSON.stringify({
           compilerOptions: {
@@ -983,7 +997,7 @@ describe('import analysis', () => {
         }),
       );
       const companionConfigPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.lib.json',
         JSON.stringify({
           compilerOptions: {
@@ -995,33 +1009,32 @@ describe('import analysis', () => {
         }),
       );
 
-      expect(
-        toPortablePath(
-          resolveInternalImport(
-            '@target',
-            indexPath,
-            {},
-            {
-              checkerPresets: [],
-              configPath: dtsConfigPath,
-              extensions: ['.ts'],
-              resolverConfigPath: companionConfigPath,
-            },
-            createImportAnalysisContext(),
-          ) ?? '',
-        ),
-      ).toBe(toPortablePath(companionPath));
+      const resolvedImportPath = toPortablePath(
+        resolveInternalImport(
+          '@target',
+          indexPath,
+          {},
+          {
+            checkerPresets: [],
+            configPath: dtsConfigPath,
+            extensions: ['.ts'],
+            resolverConfigPath: companionConfigPath,
+          },
+          createImportAnalysisContext(),
+        ) ?? '',
+      );
+      expect(resolvedImportPath).toBe(toPortablePath(companionPath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('throws when Oxc resolution is missing an importer tsconfig configPath', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { value } from 'missing';\nvoid value;\n",
       );
@@ -1038,16 +1051,16 @@ describe('import analysis', () => {
         }),
       ).toThrow(/Oxc resolution requires the importer tsconfig configPath/u);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps import collection caches private to an analysis context', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const filePath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { first } from './first';\nvoid first;\n",
       );
@@ -1057,24 +1070,24 @@ describe('import analysis', () => {
 
       expect(
         context
-          .collectImportsFromFile(filePath, rootDir)
+          .collectImportsFromFile(filePath, rootDirectory)
           .map((item) => item.specifier),
       ).toEqual(['./first']);
 
       await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { second } from './second';\nvoid second;\n",
       );
 
       expect(
         context
-          .collectImportsFromFile(filePath, rootDir)
+          .collectImportsFromFile(filePath, rootDirectory)
           .map((item) => item.specifier),
       ).toEqual(['./first']);
       expect(
         createImportAnalysisContext()
-          .collectImportsFromFile(filePath, rootDir)
+          .collectImportsFromFile(filePath, rootDirectory)
           .map((item) => item.specifier),
       ).toEqual(['./second']);
 
@@ -1090,21 +1103,21 @@ describe('import analysis', () => {
       expect(metricCount('provider-cache-miss', 'imports')).toBe(1);
       expect(metricCount('provider-cache-hit', 'imports')).toBe(1);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps module resolution caches private to an analysis context', async () => {
-    const rootDir = await createTempDir();
+    const rootDirectory = await createTemporaryDirectory();
 
     try {
       const indexPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/index.ts',
         "import { missing } from './missing';\nvoid missing;\n",
       );
       const configPath = await writeText(
-        rootDir,
+        rootDirectory,
         'tsconfig.json',
         JSON.stringify({
           compilerOptions: {},
@@ -1129,7 +1142,7 @@ describe('import analysis', () => {
       ).toBeNull();
 
       const missingPath = await writeText(
-        rootDir,
+        rootDirectory,
         'src/missing.ts',
         'export const missing = 1;\n',
       );
@@ -1165,7 +1178,7 @@ describe('import analysis', () => {
         ),
       ).toBe(toPortablePath(missingPath));
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });

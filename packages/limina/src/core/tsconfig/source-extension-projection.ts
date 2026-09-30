@@ -30,9 +30,9 @@ function hasGovernedSources(
   return (
     generatedGraph !== undefined &&
     generatedGraph.governedSources instanceof Map &&
-    [...generatedGraph.governedSources.values()].some(
-      (governedSources) => governedSources.size > 0,
-    )
+    generatedGraph.governedSources
+      .values()
+      .some((governedSources) => governedSources.size > 0)
   );
 }
 
@@ -49,8 +49,9 @@ function recordSourceExtensionProjection(
 function getProjectContext(
   context: CheckerProjectParseContext | undefined,
 ): CheckerProjectParseContext {
-  if (context !== undefined) return context;
-  return { checkerPresets: [], extensions: [] };
+  return context === undefined
+    ? { checkerPresets: [], extensions: [] }
+    : context;
 }
 
 function assertCompatibleVueIdentities(options: {
@@ -60,12 +61,12 @@ function assertCompatibleVueIdentities(options: {
 }): void {
   const currentId = getVueSemanticIdentityId(options.current);
   const incomingId = getVueSemanticIdentityId(options.incoming);
-  const conflicts = [
+  const isConflicts = [
     currentId !== undefined,
     incomingId !== undefined,
     currentId !== incomingId,
   ].every(Boolean);
-  if (!conflicts) return;
+  if (!isConflicts) return;
   throw new Error(
     `Generated project received conflicting Vue semantic identities: ${options.projectPath}.`,
   );
@@ -74,15 +75,13 @@ function assertCompatibleVueIdentities(options: {
 function getVueSemanticIdentityId(
   identity: CheckerProjectParseContext['vueSemanticIdentity'],
 ): string | undefined {
-  if (identity === undefined) return undefined;
-  return identity.id;
+  return identity === undefined ? undefined : identity.id;
 }
 
 function getProjectExtensions(
   extensions: string[] | undefined,
 ): readonly string[] {
-  if (extensions === undefined) return [];
-  return extensions;
+  return extensions === undefined ? [] : extensions;
 }
 
 function mergeProjectContext(options: {

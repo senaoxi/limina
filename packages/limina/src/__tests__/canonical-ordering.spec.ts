@@ -39,22 +39,22 @@ function createChecker(): ResolvedCheckerConfig {
 }
 
 function createBuildModules(
-  rootDir: string,
+  rootDirectory: string,
   values: readonly string[],
 ): Map<string, GeneratedBuildModule> {
   return new Map(
     values.map((value) => [
-      `${rootDir}/packages/${value}/tsconfig.json`,
+      `${rootDirectory}/packages/${value}/tsconfig.json`,
       {
         kind: 'project' as const,
-        path: `${rootDir}/.limina/${value}.json`,
+        path: `${rootDirectory}/.limina/${value}.json`,
       },
     ]),
   );
 }
 
 function createTestManifest(
-  rootDir: string,
+  rootDirectory: string,
   values: readonly string[],
 ): GeneratedTsconfigGraphManifest {
   const checker = createChecker();
@@ -62,22 +62,22 @@ function createTestManifest(
     ...checker,
     name: 'vue-tsc',
   };
-  const modules = createBuildModules(rootDir, values);
+  const modules = createBuildModules(rootDirectory, values);
   const dependencyEdges: GeneratedDependencyEdge[] = values.map((value) => ({
     cacheReuse: 'reusable',
-    file: `${rootDir}/packages/${value}/src/index.ts`,
+    file: `${rootDirectory}/packages/${value}/src/index.ts`,
     fromChecker: value,
-    fromConfigPath: `${rootDir}/packages/${value}/tsconfig.json`,
+    fromConfigPath: `${rootDirectory}/packages/${value}/tsconfig.json`,
     importedSpecifier: value,
     kind: 'declaration-provider',
-    resolvedFilePath: `${rootDir}/packages/${value}/src/value.ts`,
+    resolvedFilePath: `${rootDirectory}/packages/${value}/src/value.ts`,
     toChecker: value,
-    toConfigPath: `${rootDir}/packages/${value}/tsconfig.lib.json`,
+    toConfigPath: `${rootDirectory}/packages/${value}/tsconfig.lib.json`,
   }));
   return createManifest({
     checkerEntries: new Map([
-      [vueChecker.name, `${rootDir}/.limina/vue.build.json`],
-      [checker.name, `${rootDir}/.limina/tsconfig.build.json`],
+      [vueChecker.name, `${rootDirectory}/.limina/vue.build.json`],
+      [checker.name, `${rootDirectory}/.limina/tsconfig.build.json`],
     ]),
     checkers: [vueChecker, checker],
     configToOutputBuildByChecker: new Map([[checker.name, modules]]),
@@ -106,7 +106,7 @@ function createTestManifest(
     ownedArtifacts: values.map((value) => `${value}.json`),
     projectsByChecker: new Map(),
     dependencyEdges,
-    rootDir,
+    rootDir: rootDirectory,
     sourceToBuildByChecker: new Map([[checker.name, modules]]),
   });
 }
@@ -137,7 +137,7 @@ describe('canonical code-unit ordering', () => {
     const localeCompare = vi
       .spyOn(String.prototype, 'localeCompare')
       .mockImplementation(function (this: string, right) {
-        return compareCodeUnits(String(right), String(this));
+        return compareCodeUnits(right, this);
       });
 
     try {
@@ -235,7 +235,7 @@ describe('canonical code-unit ordering', () => {
   });
 
   it('keeps source finding semantic facts independent of localeCompare', () => {
-    const rootDir = '/workspace';
+    const rootDirectory = '/workspace';
     const findings: SourceFinding[] = [];
     const localeCompare = vi
       .spyOn(String.prototype, 'localeCompare')
@@ -245,19 +245,19 @@ describe('canonical code-unit ordering', () => {
 
     try {
       addNearestTsconfigOwnershipProblem({
-        config: { rootDir } as ResolvedLiminaConfig,
-        fileName: `${rootDir}/src/index.ts`,
+        config: { rootDir: rootDirectory } as ResolvedLiminaConfig,
+        fileName: `${rootDirectory}/src/index.ts`,
         findings,
         matchedOwnerConfigPaths: [
-          `${rootDir}/packages/ä/tsconfig.json`,
-          `${rootDir}/packages/a/tsconfig.json`,
-          `${rootDir}/packages/z/tsconfig.json`,
+          `${rootDirectory}/packages/ä/tsconfig.json`,
+          `${rootDirectory}/packages/a/tsconfig.json`,
+          `${rootDirectory}/packages/z/tsconfig.json`,
         ],
         reason: 'test reason',
         searchedTsconfigPaths: [
-          `${rootDir}/search/ä/tsconfig.json`,
-          `${rootDir}/search/a/tsconfig.json`,
-          `${rootDir}/search/z/tsconfig.json`,
+          `${rootDirectory}/search/ä/tsconfig.json`,
+          `${rootDirectory}/search/a/tsconfig.json`,
+          `${rootDirectory}/search/z/tsconfig.json`,
         ],
         status: 'multiple',
         tsconfigPath: null,
@@ -266,14 +266,14 @@ describe('canonical code-unit ordering', () => {
       expect(findings).toHaveLength(1);
       expect(findings[0]!.facts).toMatchObject({
         candidateConfigPaths: [
-          `${rootDir}/search/a/tsconfig.json`,
-          `${rootDir}/search/z/tsconfig.json`,
-          `${rootDir}/search/ä/tsconfig.json`,
+          `${rootDirectory}/search/a/tsconfig.json`,
+          `${rootDirectory}/search/z/tsconfig.json`,
+          `${rootDirectory}/search/ä/tsconfig.json`,
         ],
         matchedConfigPaths: [
-          `${rootDir}/packages/a/tsconfig.json`,
-          `${rootDir}/packages/z/tsconfig.json`,
-          `${rootDir}/packages/ä/tsconfig.json`,
+          `${rootDirectory}/packages/a/tsconfig.json`,
+          `${rootDirectory}/packages/z/tsconfig.json`,
+          `${rootDirectory}/packages/ä/tsconfig.json`,
         ],
       });
     } finally {
@@ -282,10 +282,10 @@ describe('canonical code-unit ordering', () => {
   });
 
   it('keeps graph, manifest, revisions, and governance issues independent of localeCompare', () => {
-    const rootDir = '/workspace';
-    const config = { rootDir } as ResolvedLiminaConfig;
+    const rootDirectory = '/workspace';
+    const config = { rootDir: rootDirectory } as ResolvedLiminaConfig;
     const packages: WorkspacePackage[] = unicodeValues.map((name) => ({
-      directory: `${rootDir}/packages/${name}`,
+      directory: `${rootDirectory}/packages/${name}`,
       manifest: { name },
       name,
     }));
@@ -315,9 +315,9 @@ describe('canonical code-unit ordering', () => {
           evidence: edge.evidence.toReversed(),
         })),
       );
-      const manifest = createTestManifest(rootDir, unicodeValues);
+      const manifest = createTestManifest(rootDirectory, unicodeValues);
       const reversedManifest = createTestManifest(
-        rootDir,
+        rootDirectory,
         unicodeValues.toReversed(),
       );
       const revision = createMaterializationRevision(

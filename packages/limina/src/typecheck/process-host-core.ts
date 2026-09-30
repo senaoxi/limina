@@ -20,28 +20,30 @@ import {
 } from './process-host-pending';
 import {
   isChildProcessRunning,
-  refChildProcess,
+  referenceChildProcess,
   unrefChildProcess,
-} from './process-host-utils';
+} from './process-host-utilities';
 
 export type { CheckerHostDegradationListener } from './process-host-pending';
 
-let degradationNoticeSent = false;
+const state = {
+  isDegradationNoticeSent: false,
+};
 
 export function notifyCheckerHostDegraded(
   reason: string,
   listener: CheckerHostDegradationListener | undefined,
 ): void {
-  if (degradationNoticeSent) {
+  if (state.isDegradationNoticeSent) {
     return;
   }
 
-  degradationNoticeSent = true;
+  state.isDegradationNoticeSent = true;
   listener?.(reason);
 }
 
 export function resetCheckerHostDegradationNotice(): void {
-  degradationNoticeSent = false;
+  state.isDegradationNoticeSent = false;
 }
 
 function notifyProtocolMessage(
@@ -60,17 +62,24 @@ function notifyDeactivated(listener: (() => void) | undefined): void {
 }
 
 function isSignalAborted(signal: AbortSignal | undefined): boolean {
-  return signal === undefined ? false : signal.aborted;
+  return signal !== undefined && signal.aborted;
 }
 
 export class CheckerProcessHost {
   readonly #child: ChildProcess;
+
   readonly #onDeactivate: (() => void) | undefined;
+
   readonly #pending = new Map<number, PendingCheckerSpawn>();
+
   readonly #pingTimer: NodeJS.Timeout;
+
   readonly #removeExitHook: () => void;
+
   #active = true;
+
   #disposed = false;
+
   #nextRequestId = 0;
 
   constructor(
@@ -101,35 +110,6 @@ export class CheckerProcessHost {
     child.on('exit', () => {
       this.#deactivate('checker host process exited unexpectedly');
     });
-  }
-
-  get active(): boolean {
-    return this.#active;
-  }
-
-  dispose(): void {
-    this.#disposed = true;
-    this.#active = false;
-    clearInterval(this.#pingTimer);
-    this.#removeExitHook();
-    this.#killChild();
-  }
-
-  spawnMeasured(
-    spec: CheckerHostSpawnSpec,
-    onDegraded: CheckerHostDegradationListener | undefined,
-    signal?: AbortSignal,
-  ): Promise<CheckerHostSpawnMeasurement> {
-    if (!this.#active) {
-      return spawnAndMeasure(spec, { signal });
-    }
-    if (isSignalAborted(signal)) {
-      return Promise.resolve(createCancelledCheckerMeasurement(signal!));
-    }
-
-    return new Promise((resolve) =>
-      this.#startPendingSpawn({ onDegraded, resolve, signal, spec }),
-    );
   }
 
   #createAbortHandler(options: {
@@ -223,13 +203,16 @@ export class CheckerProcessHost {
         `${reason} — pending checkers retried in-process`,
         entry.onDegraded,
       );
-      spawnAndMeasure(entry.spec, { signal: entry.signal }).then(entry.resolve);
+      const measurement = spawnAndMeasure(entry.spec, { signal: entry.signal });
+      (async () => {
+        entry.resolve(await measurement);
+      })();
     }
   }
 
   #updateRefState(): void {
     if (this.#pending.size > 0) {
-      refChildProcess(this.#child);
+      referenceChildProcess(this.#child);
       return;
     }
 
@@ -248,5 +231,32 @@ export class CheckerProcessHost {
     } catch {
       this.#deactivate('checker host channel closed unexpectedly');
     }
+  }
+
+  get active(): boolean {
+    return this.#active;
+  }
+
+  dispose(): void {
+    this.#disposed = true;
+    this.#active = false;
+    clearInterval(this.#pingTimer);
+    this.#removeExitHook();
+    this.#killChild();
+  }
+
+  spawnMeasured(
+    spec: CheckerHostSpawnSpec,
+    onDegraded: CheckerHostDegradationListener | undefined,
+    signal?: AbortSignal,
+  ): Promise<CheckerHostSpawnMeasurement> {
+    if (!this.#active) {
+      return spawnAndMeasure(spec, { signal });
+    }
+    return isSignalAborted(signal)
+      ? Promise.resolve(createCancelledCheckerMeasurement(signal!))
+      : new Promise((resolve) =>
+          this.#startPendingSpawn({ onDegraded, resolve, signal, spec }),
+        );
   }
 }

@@ -31,10 +31,10 @@ function createLineWrapPrefix(line: string, prefix: string): LineWrapPrefix {
 
 function getLineWrapPrefix(line: string): LineWrapPrefix {
   const labelPrefix = getLabelWrapPrefix(line);
-  if (labelPrefix !== undefined) {
-    return createLineWrapPrefix(line, labelPrefix);
-  }
-  return createLineWrapPrefix(line, getListWrapPrefix(line));
+  return createLineWrapPrefix(
+    line,
+    labelPrefix === undefined ? getListWrapPrefix(line) : labelPrefix,
+  );
 }
 
 function splitFixedWidth(value: string, width: number): string[] {
@@ -122,14 +122,16 @@ function addWordToLine(options: {
   width: number;
   wrapped: string[];
 }): string {
-  if (options.current.length === 0) return startWrappedLine(options);
-  return addWordAfterCurrent(options);
+  return options.current.length === 0
+    ? startWrappedLine(options)
+    : addWordAfterCurrent(options);
 }
 
 function wrapContent(content: string, width: number): string[] {
   const wrapped: string[] = [];
   let current = '';
-  for (const word of content.split(/\s+/u).filter(Boolean)) {
+  const words = content.split(/\s+/u).filter((word) => word.length > 0);
+  for (const word of words) {
     current = addWordToLine({ current, word, width, wrapped });
   }
   if (current.length > 0) wrapped.push(current);
@@ -150,8 +152,9 @@ function wrapLine(line: string, contentWidth: number): string[] {
   if (line.length === 0) return [line];
   const prefix = getLineWrapPrefix(line);
   const width = Math.max(1, contentWidth - prefix.firstPrefix.length);
-  if (prefix.content.length <= width) return [line];
-  return applyWrapPrefixes(wrapContent(prefix.content, width), prefix);
+  return prefix.content.length <= width
+    ? [line]
+    : applyWrapPrefixes(wrapContent(prefix.content, width), prefix);
 }
 
 function getContentWidth(blockWidth: number): number {
@@ -216,8 +219,9 @@ function colorIssueTitleLine(
 ): string {
   const parsed = parseIssueCountSuffix(line);
   const color = getSeverityColor(severity);
-  if (parsed === null) return colorText(color, line);
-  return `${colorText(color, parsed.title)}${parsed.suffix}`;
+  return parsed === null
+    ? colorText(color, line)
+    : `${colorText(color, parsed.title)}${parsed.suffix}`;
 }
 
 function getMatchPart(match: RegExpExecArray, index: number): string {

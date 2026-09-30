@@ -14,8 +14,9 @@ import { createWorkspaceLookupState } from './index-state';
 import type { WorkspaceLookupIndexOptions } from './types';
 
 export class WorkspaceLookupIndex {
-  readonly rootDir: string;
   readonly #state: WorkspaceLookupState;
+
+  readonly rootDir: string;
 
   constructor(options: WorkspaceLookupIndexOptions) {
     this.#state = createWorkspaceLookupState(options);

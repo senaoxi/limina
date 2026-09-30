@@ -1,6 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { describe, expect, it } from 'vitest';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 import {
   getLiminaCheckIssueRuleMetadata,
@@ -18,13 +18,10 @@ import {
 } from '../source-check/findings';
 import { formatSourceCheckHumanReport } from '../source-check/report';
 
-const config = {
-  get governanceRoot() {
-    return resolveFixtureGovernanceRoot(this);
-  },
+const config = withFixtureGovernanceRoot({
   configPath: '/repo/limina.config.mts',
   rootDir: '/repo',
-} as ResolvedLiminaConfig;
+}) as ResolvedLiminaConfig;
 
 function commonFindingFields(title: string) {
   return {
@@ -288,10 +285,18 @@ describe('typed Source findings', () => {
           getLiminaCheckIssueRuleMetadata(code).task === 'source:check' &&
           code !== LIMINA_CHECK_ISSUE_CODES.sourceCheckFailed,
       )
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
 
-    expect([...SOURCE_SEMANTIC_ISSUE_CODES].sort()).toEqual(registryCodes);
-    expect(Object.keys(findingByCode).sort()).toEqual(registryCodes);
+    expect(
+      [...SOURCE_SEMANTIC_ISSUE_CODES].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
+    expect(
+      Object.keys(findingByCode).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
   });
 
   it.each(sourceFindingEntries())(

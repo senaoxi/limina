@@ -91,15 +91,15 @@ function getComponentChecker(
 function createColorEvidence(
   checker: CheckerName,
   configPath: string,
-  inherited: boolean,
+  isInherited: boolean,
 ) {
   return {
     checker,
     configPath,
-    detail: inherited
+    detail: isInherited
       ? 'inherited the unique build checker in the declaration component'
       : 'ordinary TypeScript fallback for the declaration component',
-    source: inherited ? ('build-closure' as const) : ('fallback' as const),
+    source: isInherited ? ('build-closure' as const) : ('fallback' as const),
   };
 }
 
@@ -156,9 +156,10 @@ export function colorAllBuildComponents(options: {
   problems: string[];
 }): void {
   const visited = new Set<string>();
-  for (const configPath of [...options.adjacency.keys()].sort(
-    compareCodeUnits,
-  )) {
+  for (const configPath of options.adjacency
+    .keys()
+    .toArray()
+    .sort(compareCodeUnits)) {
     if (visited.has(configPath)) continue;
     colorComponent({
       ...options,

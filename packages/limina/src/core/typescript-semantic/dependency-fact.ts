@@ -28,27 +28,27 @@ export interface NativeDependencyFact {
 export function hasDeclarationResolution(
   resolution: TypeScriptSemanticResolution,
 ): boolean {
-  if (resolution.target === null) return false;
   return (
+    resolution.target !== null &&
     getResolvedTargetKind(resolution.target.resolvedFileName) === 'declaration'
   );
 }
 
-function needsCompilerMembership(options: {
+function isNeedsCompilerMembership(options: {
   context: TypeScriptSemanticContext;
   resolution: TypeScriptSemanticResolution;
 }): boolean {
   const target = options.resolution.target;
-  if (target === null) return false;
-  if (target.isExternalLibraryImport) return false;
-  return !isAlreadyCovered(options.context.program, target.resolvedFileName);
+  return (
+    !(target === null || target.isExternalLibraryImport) &&
+    !isAlreadyCovered(options.context.program, target.resolvedFileName)
+  );
 }
 
 function isAlreadyCovered(program: ts.Program, target: string): boolean {
   if (isExplicitInput(program, target)) return true;
   const file = program.getSourceFile(target);
-  if (file === undefined) return false;
-  return program.isSourceFileFromExternalLibrary(file);
+  return file !== undefined && program.isSourceFileFromExternalLibrary(file);
 }
 
 function getRequirement(options: {
@@ -57,9 +57,9 @@ function getRequirement(options: {
   typeEvidence: TypeEvidence;
 }): DeclarationReferenceRequirement | null {
   const target = options.resolution.target;
-  if (target === null) return null;
-  if (hasDeclarationResolution(options.resolution)) return null;
-  return getSourceRequirement(options);
+  return target === null || hasDeclarationResolution(options.resolution)
+    ? null
+    : getSourceRequirement(options);
 }
 
 function getSourceRequirement(options: {
@@ -81,8 +81,11 @@ function getAmbientRequirement(options: {
   resolution: TypeScriptSemanticResolution;
   typeEvidence: TypeEvidence;
 }): DeclarationReferenceRequirement | null {
-  if (options.typeEvidence.kind !== 'ambient') return null;
-  if (!needsCompilerMembership(options)) return null;
+  if (
+    options.typeEvidence.kind !== 'ambient' ||
+    !isNeedsCompilerMembership(options)
+  )
+    return null;
   return {
     kind: 'compiler-membership',
     targetFileName: options.resolution.target!.resolvedFileName,

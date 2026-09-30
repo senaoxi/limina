@@ -18,8 +18,7 @@ import { ManagedCheckerEmitBoundaryError } from './types';
 function isInsideOrEqual(parentPath: string, childPath: string): boolean {
   const parent = normalizeAbsolutePath(parentPath);
   const child = normalizeAbsolutePath(childPath);
-  if (parent === child) return true;
-  return isPathInsideDirectory(child, parent);
+  return parent === child || isPathInsideDirectory(child, parent);
 }
 
 function requireOutputAuthority(options: {

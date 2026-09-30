@@ -24,7 +24,7 @@ export interface CommandExecutionContext {
   task: LiminaFlowTask | undefined;
 }
 
-function getStepArgs(step: CommandPipelineStep): readonly string[] {
+function getStepArguments(step: CommandPipelineStep): readonly string[] {
   return step.args ?? [];
 }
 
@@ -32,15 +32,17 @@ function getCommandCwd(options: {
   config: ResolvedLiminaConfig;
   step: CommandPipelineStep;
 }): string {
-  if (options.step.cwd === undefined) return options.config.rootDir;
-  return path.resolve(options.config.rootDir, options.step.cwd);
+  return options.step.cwd === undefined
+    ? options.config.rootDir
+    : path.resolve(options.config.rootDir, options.step.cwd);
 }
 
 function startCommandProgress(
   options: RunPipelineOptions,
 ): TaskProgressItem | undefined {
-  if (options.progress === undefined) return undefined;
-  return options.progress.startItem('command execution');
+  return options.progress === undefined
+    ? undefined
+    : options.progress.startItem('command execution');
 }
 
 function startCommandFlow(options: {
@@ -58,7 +60,9 @@ export function createCommandExecutionContext(options: {
   pipelineOptions: RunPipelineOptions;
   step: CommandPipelineStep;
 }): CommandExecutionContext {
-  const label = [options.step.command, ...getStepArgs(options.step)].join(' ');
+  const label = [options.step.command, ...getStepArguments(options.step)].join(
+    ' ',
+  );
   const cwd = getCommandCwd(options);
   return {
     commandItem: startCommandProgress(options.pipelineOptions),
@@ -111,14 +115,14 @@ function createFailureIssue(
 
 export function createCommandResult(
   context: CommandExecutionContext,
-  passed: boolean,
+  isPassed: boolean,
   exitCode: number,
 ): BuiltinTaskResult {
   const durationMs = performance.now() - context.startedAt;
   return {
-    issues: passed ? [] : [createFailureIssue(context, exitCode)],
-    passed,
-    stats: createCommandTaskStats({ durationMs, passed }),
+    issues: isPassed ? [] : [createFailureIssue(context, exitCode)],
+    passed: isPassed,
+    stats: createCommandTaskStats({ durationMs, passed: isPassed }),
   };
 }
 
@@ -145,10 +149,10 @@ function markCommandFailed(
 
 export function markCommandOutcome(
   context: CommandExecutionContext,
-  passed: boolean,
+  isPassed: boolean,
   exitCode: number,
 ): void {
-  if (passed) markCommandPassed(context);
+  if (isPassed) markCommandPassed(context);
   else markCommandFailed(context, exitCode);
 }
 

@@ -10,14 +10,14 @@ import path from 'pathe';
 import type { GraphFinding } from './findings';
 import { addRuleEntryConfigFinding } from './rule-findings';
 import type {
-  GraphRuleRef,
-  GraphRuleRefAllow,
-  GraphRuleRefDeny,
+  GraphRuleReference,
+  GraphRuleReferenceAllow,
+  GraphRuleReferenceDeny,
   LabelSelection,
   NormalizedGraphRules,
 } from './rule-types';
 
-export interface AddNormalizedRuleRefOptions {
+export interface AddNormalizedRuleReferenceOptions {
   config: ResolvedLiminaConfig;
   entry: unknown;
   index: number;
@@ -25,16 +25,16 @@ export interface AddNormalizedRuleRefOptions {
   findings: GraphFinding[];
   projectPathAliases?: Map<string, string>;
   projectPathSet: Set<string>;
-  refsByLabel: Map<string, Map<string, GraphRuleRef>>;
+  refsByLabel: Map<string, Map<string, GraphRuleReference>>;
   ruleKind: 'allow' | 'deny';
 }
 
-function getReferenceField(options: AddNormalizedRuleRefOptions): string {
+function getReferenceField(options: AddNormalizedRuleReferenceOptions): string {
   return `graph.rules.${options.label}.${options.ruleKind}.refs[${options.index}]`;
 }
 
 function addInvalidEntryFinding(
-  options: AddNormalizedRuleRefOptions,
+  options: AddNormalizedRuleReferenceOptions,
   field: string,
 ): void {
   const reason = `${options.ruleKind}.refs entries must be objects with non-empty path and reason fields.`;
@@ -52,7 +52,7 @@ function addInvalidEntryFinding(
 
 function addInvalidValueFinding(options: {
   field: string;
-  normalizedOptions: AddNormalizedRuleRefOptions;
+  normalizedOptions: AddNormalizedRuleReferenceOptions;
   reason: string;
   value: unknown;
 }): void {
@@ -68,22 +68,21 @@ function addInvalidValueFinding(options: {
   });
 }
 
-function resolveNormalizedRefPath(
-  options: AddNormalizedRuleRefOptions,
+function resolveNormalizedReferencePath(
+  options: AddNormalizedRuleReferenceOptions,
   pathValue: string,
 ): string | undefined {
-  const refPath = normalizeAbsolutePath(
+  const referencePath = normalizeAbsolutePath(
     path.resolve(options.config.rootDir, pathValue),
   );
-  if (options.projectPathSet.has(refPath)) {
-    return refPath;
-  }
-  return options.projectPathAliases?.get(refPath);
+  return options.projectPathSet.has(referencePath)
+    ? referencePath
+    : options.projectPathAliases?.get(referencePath);
 }
 
 function addUnreachablePathFinding(options: {
   field: string;
-  normalizedOptions: AddNormalizedRuleRefOptions;
+  normalizedOptions: AddNormalizedRuleReferenceOptions;
   pathValue: string;
 }): void {
   const reason = `${options.normalizedOptions.ruleKind}.refs path must point to a source tsconfig or generated declaration project reachable from a checker entry.`;
@@ -101,7 +100,7 @@ function addUnreachablePathFinding(options: {
 
 function addNonDeclarationPathFinding(options: {
   field: string;
-  normalizedOptions: AddNormalizedRuleRefOptions;
+  normalizedOptions: AddNormalizedRuleReferenceOptions;
   pathValue: string;
 }): void {
   const reason = `${options.normalizedOptions.ruleKind}.refs path must point to a tsconfig*.dts.json declaration leaf.`;
@@ -117,70 +116,75 @@ function addNonDeclarationPathFinding(options: {
   });
 }
 
-function storeNormalizedRef(options: {
-  normalizedOptions: AddNormalizedRuleRefOptions;
+function storeNormalizedReference(options: {
+  normalizedOptions: AddNormalizedRuleReferenceOptions;
   normalizedRefPath: string;
   reason: string;
 }): void {
-  const refs =
+  const references =
     options.normalizedOptions.refsByLabel.get(
       options.normalizedOptions.label,
-    ) ?? new Map<string, GraphRuleRef>();
-  refs.set(options.normalizedRefPath, {
+    ) ?? new Map<string, GraphRuleReference>();
+  references.set(options.normalizedRefPath, {
     path: options.normalizedRefPath,
     reason: options.reason.trim(),
   });
   options.normalizedOptions.refsByLabel.set(
     options.normalizedOptions.label,
-    refs,
+    references,
   );
 }
 
-function isReachableRefPath(
-  normalizedRefPath: string | undefined,
-  options: AddNormalizedRuleRefOptions,
-): normalizedRefPath is string {
-  if (normalizedRefPath === undefined) {
-    return false;
-  }
-  return options.projectPathSet.has(normalizedRefPath);
+function isReachableReferencePath(
+  normalizedReferencePath: string | undefined,
+  options: AddNormalizedRuleReferenceOptions,
+): normalizedReferencePath is string {
+  return (
+    normalizedReferencePath !== undefined &&
+    options.projectPathSet.has(normalizedReferencePath)
+  );
 }
 
-function validateResolvedRef(options: {
+function validateResolvedReference(options: {
   field: string;
-  normalizedOptions: AddNormalizedRuleRefOptions;
+  normalizedOptions: AddNormalizedRuleReferenceOptions;
   pathValue: string;
   reasonValue: string;
 }): void {
-  const normalizedRefPath = resolveNormalizedRefPath(
+  const normalizedReferencePath = resolveNormalizedReferencePath(
     options.normalizedOptions,
     options.pathValue,
   );
-  if (!isReachableRefPath(normalizedRefPath, options.normalizedOptions)) {
+  if (
+    !isReachableReferencePath(
+      normalizedReferencePath,
+      options.normalizedOptions,
+    )
+  ) {
     addUnreachablePathFinding(options);
     return;
   }
-  if (!isDtsProjectConfig(normalizedRefPath)) {
+  if (!isDtsProjectConfig(normalizedReferencePath)) {
     addNonDeclarationPathFinding(options);
     return;
   }
-  storeNormalizedRef({
+  storeNormalizedReference({
     normalizedOptions: options.normalizedOptions,
-    normalizedRefPath,
+    normalizedRefPath: normalizedReferencePath,
     reason: options.reasonValue,
   });
 }
 
-interface ParsedRuleRefEntry {
+interface ParsedRuleReferenceEntry {
   pathValue: string;
   reasonValue: string;
 }
 
-function parseRuleRefRecord(options: {
+function parseRuleReferenceRecord(options: {
   field: string;
-  normalizedOptions: AddNormalizedRuleRefOptions;
+  normalizedOptions: AddNormalizedRuleReferenceOptions;
   record: Record<string, unknown>;
-}): ParsedRuleRefEntry | null {
+}): ParsedRuleReferenceEntry | null {
   const pathValue = options.record.path;
   if (!isNonEmptyString(pathValue)) {
     addInvalidValueFinding({
@@ -204,30 +208,30 @@ function parseRuleRefRecord(options: {
   return { pathValue, reasonValue };
 }
 
-function parseRuleRefEntry(
-  options: AddNormalizedRuleRefOptions,
+function parseRuleReferenceEntry(
+  options: AddNormalizedRuleReferenceOptions,
   field: string,
-): ParsedRuleRefEntry | null {
+): ParsedRuleReferenceEntry | null {
   if (!isPlainRecord(options.entry)) {
     addInvalidEntryFinding(options, field);
     return null;
   }
-  return parseRuleRefRecord({
+  return parseRuleReferenceRecord({
     field,
     normalizedOptions: options,
     record: options.entry,
   });
 }
 
-export function addNormalizedRuleRef(
-  options: AddNormalizedRuleRefOptions,
+export function addNormalizedRuleReference(
+  options: AddNormalizedRuleReferenceOptions,
 ): void {
   const field = getReferenceField(options);
-  const parsed = parseRuleRefEntry(options, field);
+  const parsed = parseRuleReferenceEntry(options, field);
   if (parsed === null) {
     return;
   }
-  validateResolvedRef({
+  validateResolvedReference({
     field,
     normalizedOptions: options,
     pathValue: parsed.pathValue,
@@ -242,25 +246,28 @@ function getSelectedLabels(labels: LabelSelection): readonly string[] {
   return typeof labels === 'string' ? [labels] : labels;
 }
 
-function getLabelRefRule<T extends GraphRuleRef>(
-  refsByLabel: Map<string, Map<string, T>>,
+function getLabelReferenceRule<T extends GraphRuleReference>(
+  referencesByLabel: Map<string, Map<string, T>>,
   label: string,
   targetProjectPath: string,
 ): T | null {
-  const refs = refsByLabel.get(label);
-  if (refs === undefined) {
-    return null;
-  }
-  return refs.get(targetProjectPath) ?? null;
+  const references = referencesByLabel.get(label);
+  return references === undefined
+    ? null
+    : (references.get(targetProjectPath) ?? null);
 }
 
-function getRefRule<T extends GraphRuleRef>(
-  refsByLabel: Map<string, Map<string, T>>,
+function getReferenceRule<T extends GraphRuleReference>(
+  referencesByLabel: Map<string, Map<string, T>>,
   labels: LabelSelection,
   targetProjectPath: string,
 ): T | null {
   for (const label of getSelectedLabels(labels)) {
-    const rule = getLabelRefRule(refsByLabel, label, targetProjectPath);
+    const rule = getLabelReferenceRule(
+      referencesByLabel,
+      label,
+      targetProjectPath,
+    );
     if (rule !== null) {
       return rule;
     }
@@ -268,18 +275,18 @@ function getRefRule<T extends GraphRuleRef>(
   return null;
 }
 
-export function getDeniedRefRule(
+export function getDeniedReferenceRule(
   rules: NormalizedGraphRules,
   labels: LabelSelection,
   targetProjectPath: string,
-): GraphRuleRefDeny | null {
-  return getRefRule(rules.refsByLabel, labels, targetProjectPath);
+): GraphRuleReferenceDeny | null {
+  return getReferenceRule(rules.refsByLabel, labels, targetProjectPath);
 }
 
-export function getAllowedRefRule(
+export function getAllowedReferenceRule(
   rules: NormalizedGraphRules,
   labels: LabelSelection,
   targetProjectPath: string,
-): GraphRuleRefAllow | null {
-  return getRefRule(rules.allowRefsByLabel, labels, targetProjectPath);
+): GraphRuleReferenceAllow | null {
+  return getReferenceRule(rules.allowRefsByLabel, labels, targetProjectPath);
 }

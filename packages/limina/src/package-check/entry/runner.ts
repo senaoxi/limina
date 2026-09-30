@@ -2,8 +2,8 @@ import type { PackageEntry } from '#config/runner';
 import path from 'pathe';
 import { formatErrorMessage, PackageLogger } from '../../logger';
 import type { RunPackageCheckEntryOptions } from '../runner-types';
-import { readDistPackageJson } from '../tarball';
-import { reportManifestProblems } from './manifest';
+import { readDistributionPackageJson } from '../tarball';
+import { isReportManifestProblems } from './manifest';
 import { createEntryExecutionState, type EntryExecutionState } from './state';
 import { prepareEntryTarball } from './tarball';
 import { runEntryTools } from './tools';
@@ -26,8 +26,7 @@ function getFlowDepth(options: RunPackageCheckEntryOptions): number {
 }
 
 function canCreateEntryTask(options: RunPackageCheckEntryOptions): boolean {
-  if (options.progressItem !== undefined) return false;
-  return options.flow !== undefined;
+  return options.progressItem === undefined && options.flow !== undefined;
 }
 
 function createEntryTask(
@@ -40,8 +39,7 @@ function createEntryTask(
 }
 
 function shouldLogEntrySuccess(options: RunPackageCheckEntryOptions): boolean {
-  if (options.flow === undefined) return true;
-  return options.flow.interactive !== true;
+  return options.flow === undefined || !options.flow.interactive;
 }
 
 function passEntry(options: {
@@ -78,12 +76,12 @@ async function executeEntry(options: {
   runOptions: RunPackageCheckEntryOptions;
   state: EntryExecutionState;
 }): Promise<void> {
-  const manifest = await readDistPackageJson({
+  const manifest = await readDistributionPackageJson({
     config: options.runOptions.config,
     label: options.runOptions.label,
     packageJsonPath: options.manifestPath,
   });
-  options.state.passed = reportManifestProblems({
+  options.state.passed = isReportManifestProblems({
     manifest,
     outputPackageJsonPath: options.manifestPath,
     runOptions: options.runOptions,
@@ -115,8 +113,8 @@ function reportEntryFailure(options: {
 }
 
 async function cleanupEntry(state: EntryExecutionState): Promise<void> {
-  const packedDist = state.packedDist;
-  if (packedDist !== undefined) await packedDist.cleanup();
+  const packedDistribution = state.packedDist;
+  if (packedDistribution !== undefined) await packedDistribution.cleanup();
 }
 
 export async function runPackageCheckEntry(

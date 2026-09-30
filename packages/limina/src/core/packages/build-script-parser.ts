@@ -41,14 +41,12 @@ function tokenizePreparedCommand(
 
   const argumentOffset = getLiminaBuildArgumentOffset(tokens);
 
-  if (argumentOffset === null) {
-    return createBuildScriptDiagnostic(
-      source,
-      'Limina only recognizes direct limina build, pnpm limina build, and pnpm exec limina build package scripts.',
-    );
-  }
-
-  return { argumentOffset, tokens };
+  return argumentOffset === null
+    ? createBuildScriptDiagnostic(
+        source,
+        'Limina only recognizes direct limina build, pnpm limina build, and pnpm exec limina build package scripts.',
+      )
+    : { argumentOffset, tokens };
 }
 
 function prepareCommand(
@@ -58,14 +56,12 @@ function prepareCommand(
     return null;
   }
 
-  if (hasDynamicShellSyntax(source.command)) {
-    return createBuildScriptDiagnostic(
-      source,
-      'Limina only derives Knip source configs from static limina build scripts without shell control operators or dynamic expansion.',
-    );
-  }
-
-  return tokenizePreparedCommand(source);
+  return hasDynamicShellSyntax(source.command)
+    ? createBuildScriptDiagnostic(
+        source,
+        'Limina only derives Knip source configs from static limina build scripts without shell control operators or dynamic expansion.',
+      )
+    : tokenizePreparedCommand(source);
 }
 
 function isDiagnostic(

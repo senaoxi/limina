@@ -27,7 +27,7 @@ import {
 } from '../domain/artifacts/plan';
 import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
@@ -44,12 +44,9 @@ vi.mock('../core/build-graph/materializer', async (importOriginal) => {
   };
 });
 
-function createConfig(rootDir: string): ResolvedLiminaConfig {
-  const fixturePath = createFixturePathResolver(rootDir);
-  return {
-    get governanceRoot() {
-      return resolveFixtureGovernanceRoot(this);
-    },
+function createConfig(rootDirectory: string): ResolvedLiminaConfig {
+  const fixturePath = createFixturePathResolver(rootDirectory);
+  return withFixtureGovernanceRoot({
     configPath: fixturePath('limina.config.mjs'),
     package: {
       entries: [
@@ -60,8 +57,8 @@ function createConfig(rootDir: string): ResolvedLiminaConfig {
         },
       ],
     },
-    rootDir,
-  };
+    rootDir: rootDirectory,
+  });
 }
 
 function createGraph(
@@ -77,13 +74,7 @@ function createGraph(
 }
 
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((nextResolve, nextReject) => {
-    resolve = nextResolve;
-    reject = nextReject;
-  });
-  return { promise, reject, resolve };
+  return Promise.withResolvers<T>();
 }
 
 function createFakeCore(options: {
@@ -107,43 +98,43 @@ async function createFixture(): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-preflight-'));
+  const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-preflight-'));
 
   await writeFile(
-    path.join(rootDir, 'limina.config.mjs'),
+    path.join(rootDirectory, 'limina.config.mjs'),
     'export default {};\n',
   );
   await writeFile(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     '{"name":"root","private":true}\n',
   );
   await writeFile(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
-  await mkdir(path.join(rootDir, 'packages/pkg'), { recursive: true });
+  await mkdir(path.join(rootDirectory, 'packages/pkg'), { recursive: true });
   await writeFile(
-    path.join(rootDir, 'packages/pkg/package.json'),
+    path.join(rootDirectory, 'packages/pkg/package.json'),
     '{"name":"@fixture/pkg","private":true}\n',
   );
   const vueTscManifest = requireFromTest.resolve('vue-tsc/package.json');
-  await mkdir(path.join(rootDir, 'node_modules'), { recursive: true });
+  await mkdir(path.join(rootDirectory, 'node_modules'), { recursive: true });
   await symlink(
     path.dirname(vueTscManifest),
-    path.join(rootDir, 'node_modules/vue-tsc'),
+    path.join(rootDirectory, 'node_modules/vue-tsc'),
     'junction',
   );
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: createConfig(rootDir),
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    config: createConfig(rootDirectory),
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
@@ -399,7 +390,7 @@ describe('LiminaPreflightManager', () => {
           namespace: manager.artifactNamespace,
           providers: manager.providers,
           receipt:
-            issueTask.startsWith('checker:') || issueTask === 'graph:prepare'
+            issueTask === 'graph:prepare' || issueTask.startsWith('checker:')
               ? await manager.ensureGeneratedArtifactsMaterialized()
               : undefined,
           run: manager.run,

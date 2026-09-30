@@ -35,12 +35,17 @@ async function cleanupRegisteredStart(options: {
     type: 'fail',
   };
   options.context.state.transition(options.entry.task.id, cleanupEvent);
-  await projectRecorderAndFlow({
+  const cleanup = projectRecorderAndFlow({
     event: cleanupEvent,
     flowNode: options.context.flowNodes.get(options.entry.task.id),
     recorder: options.context.options.checkRunRecorder,
     task: options.entry.task,
-  }).catch(ignoreError);
+  });
+  try {
+    await cleanup;
+  } catch (error) {
+    ignoreError(error);
+  }
 }
 
 async function abortRegisteredStart(options: {
@@ -69,11 +74,11 @@ export async function startTask(options: {
     task: options.task,
   });
   options.context.running.set(options.task.id, entry);
-  let stateBecameRunning = false;
+  let isStateBecameRunning = false;
   try {
     const event: TaskLifecycleEvent = { startedAt: nowIso(), type: 'start' };
     options.context.state.transition(options.task.id, event);
-    stateBecameRunning = true;
+    isStateBecameRunning = true;
     await projectRecorderAndFlow({
       event,
       flowNode: options.context.flowNodes.get(options.task.id),
@@ -86,7 +91,7 @@ export async function startTask(options: {
       context: options.context,
       entry,
       error,
-      stateBecameRunning,
+      stateBecameRunning: isStateBecameRunning,
     });
     throw error;
   }
@@ -96,8 +101,11 @@ function assertSkippedCause(options: {
   outcome: Extract<ExecutionTaskOutcome, { status: 'blocked' | 'skipped' }>;
   task: ExecutionTask;
 }): void {
-  if (options.outcome.status !== 'skipped') return;
-  if (options.outcome.causedBy !== undefined) return;
+  if (
+    options.outcome.status !== 'skipped' ||
+    options.outcome.causedBy !== undefined
+  )
+    return;
   throw new Error(
     `Skipped task "${options.task.label}" is missing its root cause.`,
   );
@@ -106,10 +114,9 @@ function assertSkippedCause(options: {
 function createSyntheticEvent(
   outcome: Extract<ExecutionTaskOutcome, { status: 'blocked' | 'skipped' }>,
 ): TaskLifecycleEvent {
-  if (outcome.status === 'blocked') {
-    return { blockedBy: outcome.blockedBy, type: 'block' };
-  }
-  return { reason: outcome.reason, type: 'skip' };
+  return outcome.status === 'blocked'
+    ? { blockedBy: outcome.blockedBy, type: 'block' }
+    : { reason: outcome.reason, type: 'skip' };
 }
 
 export async function finishSynthetic(options: {

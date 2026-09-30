@@ -32,15 +32,15 @@ function createProgramHandle(
         createAmbientTypeEvidence(symbol, tsModule),
       ),
   });
-  let disposed = false;
+  let isDisposed = false;
 
   return {
     dispose(): void {
       context.dispose();
-      disposed = true;
+      isDisposed = true;
     },
     get program(): ts.Program {
-      if (disposed) {
+      if (isDisposed) {
         throw new Error('TypeScript type-evidence Program was disposed.');
       }
 
@@ -65,8 +65,8 @@ export function getOrCreateTypeScriptSemanticContext(options: {
   throw new Error('Cached TypeScript Program has no semantic context.');
 }
 
-function assertProviderActive(disposed: boolean): void {
-  if (disposed) {
+function assertProviderActive(isDisposedValue: boolean): void {
+  if (isDisposedValue) {
     throw new Error('TypeScript type-evidence provider was disposed.');
   }
 }
@@ -76,14 +76,14 @@ export function createTypeScriptTypeEvidenceProvider(options: {
   programKey: string;
   project: TypeScriptTypeEvidenceProject;
 }): TypeEvidenceProvider {
-  let disposed = false;
+  let isDisposed = false;
 
   return {
     dispose(): void {
-      disposed = true;
+      isDisposed = true;
     },
     query({ importRecord }): TypeEvidence {
-      assertProviderActive(disposed);
+      assertProviderActive(isDisposed);
       const context = getOrCreateTypeScriptSemanticContext(options);
       return context.getDependencyFact(importRecord).typeEvidence;
     },

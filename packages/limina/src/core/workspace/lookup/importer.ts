@@ -41,8 +41,11 @@ function isHighestPriorityImporter(
 
 export class WorkspaceImporterLookup {
   readonly #cache = new Map<string, ImporterInfo | null>();
+
   readonly #importerByDirectory = new Map<string, IndexedImporter>();
+
   readonly #metrics: WorkspaceIndexMetricsRecorder | undefined;
+
   readonly #region: WorkspaceLookupRegion;
 
   constructor(options: {
@@ -59,25 +62,6 @@ export class WorkspaceImporterLookup {
       name: 'workspace-directory-index-entry',
       provider: 'workspace-lookup-index',
     });
-  }
-
-  find(filePath: string): ImporterInfo | null {
-    const normalizedPath = normalizeAbsolutePath(filePath);
-    if (this.#cache.has(normalizedPath)) {
-      return this.#returnCached(normalizedPath);
-    }
-
-    const importer = this.#region.isOutsideGovernedRegion(normalizedPath)
-      ? null
-      : this.#findNearestImporter(normalizedPath);
-    this.#cache.set(normalizedPath, importer);
-    recordLookupMetric({
-      kind: 'importer',
-      metrics: this.#metrics,
-      state: 'miss',
-      value: importer,
-    });
-    return importer;
   }
 
   #indexImporters(importers: readonly ImporterInfo[]): void {
@@ -128,6 +112,25 @@ export class WorkspaceImporterLookup {
       kind: 'importer',
       metrics: this.#metrics,
       state: 'hit',
+      value: importer,
+    });
+    return importer;
+  }
+
+  find(filePath: string): ImporterInfo | null {
+    const normalizedPath = normalizeAbsolutePath(filePath);
+    if (this.#cache.has(normalizedPath)) {
+      return this.#returnCached(normalizedPath);
+    }
+
+    const importer = this.#region.isOutsideGovernedRegion(normalizedPath)
+      ? null
+      : this.#findNearestImporter(normalizedPath);
+    this.#cache.set(normalizedPath, importer);
+    recordLookupMetric({
+      kind: 'importer',
+      metrics: this.#metrics,
+      state: 'miss',
       value: importer,
     });
     return importer;

@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toPortablePath } from '../../src/__tests__/helpers/path';
 import {
-  exists,
   expectLiminaSuccess,
+  isExists,
   readJson,
   resolveGeneratedPath,
   runFixtureLimina,
@@ -36,13 +36,16 @@ interface GeneratedManifest {
   version: number;
 }
 
-let fixture: PreparedFixture | undefined;
+const fixtureState: { current: PreparedFixture | undefined } = {
+  current: undefined,
+};
 
-async function collectPrivateEntries(rootDir: string): Promise<string[]> {
+async function collectPrivateEntries(rootDirectory: string): Promise<string[]> {
   const matches: string[] = [];
 
-  for (const entryName of await readdir(rootDir)) {
-    const entryPath = path.join(rootDir, entryName);
+  const entryNames = await readdir(rootDirectory);
+  for (const entryName of entryNames) {
+    const entryPath = path.join(rootDirectory, entryName);
     const entryStat = await lstat(entryPath);
 
     if (entryName === '.limina' || entryName.endsWith('.tsbuildinfo')) {
@@ -55,28 +58,30 @@ async function collectPrivateEntries(rootDir: string): Promise<string[]> {
     }
   }
 
-  return matches.sort();
+  return matches.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 beforeEach(async () => {
-  fixture = await prepareFixture('project-references');
+  fixtureState.current = await prepareFixture('project-references');
 });
 
 afterEach(async () => {
-  await fixture?.cleanup();
-  fixture = undefined;
+  await fixtureState.current?.cleanup();
+  fixtureState.current = undefined;
 });
 
 describe('project references public CLI integration', () => {
   it('expands nested solutions and builds both declaration leaves', async () => {
-    const preparedFixture = fixture!;
+    const preparedFixture = fixtureState.current!;
     const rootSolutionPath = preparedFixture.path(
       'repo/.limina/tsconfig/checkers/tsc/solutions/tsconfig.build.json',
     );
     const packageSolutionPath = preparedFixture.path(
       'repo/.limina/tsconfig/checkers/tsc/solutions/packages/app/tsconfig.build.json',
     );
-    const libProjectPath = preparedFixture.path(
+    const libraryProjectPath = preparedFixture.path(
       'repo/.limina/tsconfig/checkers/tsc/projects/packages/app/tsconfig.lib.dts.json',
     );
     const testProjectPath = preparedFixture.path(
@@ -95,11 +100,11 @@ describe('project references public CLI integration', () => {
     for (const generatedPath of [
       rootSolutionPath,
       packageSolutionPath,
-      libProjectPath,
+      libraryProjectPath,
       testProjectPath,
       checkerEntryPath,
     ]) {
-      expect(await exists(generatedPath)).toBe(true);
+      expect(await isExists(generatedPath)).toBe(true);
     }
 
     const rootSolution =
@@ -120,7 +125,7 @@ describe('project references public CLI integration', () => {
           resolveGeneratedPath(packageSolutionPath, reference.path),
         ),
       ),
-    ).toEqual(new Set([libProjectPath, testProjectPath]));
+    ).toEqual(new Set([libraryProjectPath, testProjectPath]));
 
     const manifest = await readJson<GeneratedManifest>(
       preparedFixture.path('repo/.limina/manifest.json'),
@@ -165,27 +170,27 @@ describe('project references public CLI integration', () => {
     ]);
     expectLiminaSuccess(buildResult);
 
-    const libDeclarationPath = preparedFixture.path(
+    const libraryDeclarationPath = preparedFixture.path(
       'repo/.limina/dts/checkers/tsc/packages/app/tsconfig.lib.json/index.d.ts',
     );
     const testDeclarationPath = preparedFixture.path(
       'repo/.limina/dts/checkers/tsc/packages/app/tsconfig.test.json/index.test.d.ts',
     );
-    expect(await readFile(libDeclarationPath, 'utf8')).toContain(
+    expect(await readFile(libraryDeclarationPath, 'utf8')).toContain(
       'export declare const libraryValue: "library";',
     );
     expect(await readFile(testDeclarationPath, 'utf8')).toContain(
       'export declare const testValue: "test";',
     );
     expect(
-      await exists(
+      await isExists(
         preparedFixture.path(
           'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.lib.json.tsbuildinfo',
         ),
       ),
     ).toBe(true);
     expect(
-      await exists(
+      await isExists(
         preparedFixture.path(
           'repo/.limina/tsbuildinfo/checkers/tsc/packages/app/tsconfig.test.json.tsbuildinfo',
         ),

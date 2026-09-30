@@ -1,14 +1,16 @@
-export interface ReleaseContentHashConfigArgs {
+export interface ReleaseContentHashConfigArguments {
   dependencyName: string;
   importerName: string;
 }
 
 export interface ReleaseContentHashConfig {
-  baselineTag?: string | ((args: ReleaseContentHashConfigArgs) => string);
+  baselineTag?:
+    | string
+    | ((arguments_: ReleaseContentHashConfigArguments) => string);
   builtinIgnore?: boolean;
   ignore?:
     | string[]
-    | ((args: ReleaseContentHashConfigArgs) => string[] | undefined);
+    | ((arguments_: ReleaseContentHashConfigArguments) => string[] | undefined);
 }
 
 export type ReleaseNpmPackageJsonLintSeverity = 'error' | 'off' | 'warning';

@@ -4,7 +4,7 @@ import { createElapsedTimer } from 'logaria/helper';
 import { clearCliScreen, formatErrorMessage, InitLogger } from '../../logger';
 import {
   ensureGeneratedGraphGitignore,
-  removeRootGeneratedGraphDir,
+  removeRootGeneratedGraphDir as removeRootGeneratedGraphDirectory,
   writeLiminaConfig,
 } from './files';
 import { prepareInitMutationContext } from './mutation';
@@ -85,11 +85,11 @@ async function countWorkspacePackages(options: {
   return packages.length;
 }
 
-async function createInitState(rootDir: string): Promise<InitFileState> {
+async function createInitState(rootDirectory: string): Promise<InitFileState> {
   return {
     mutationContext: await prepareInitMutationContext({
       fileNames: [liminaConfigFileName, '.gitignore', 'package.json'],
-      rootDir,
+      rootDir: rootDirectory,
     }),
     removedPaths: [],
     skippedFiles: [],
@@ -136,7 +136,7 @@ async function runWorkspaceFileSteps(
   context: InitCommandContext,
 ): Promise<void> {
   await runFileStep({
-    action: () => removeRootGeneratedGraphDir(context.state),
+    action: () => removeRootGeneratedGraphDirectory(context.state),
     context,
     label: 'clean root .limina',
   });
@@ -161,7 +161,7 @@ async function runWorkspaceFileSteps(
   });
 }
 
-async function updatePackageJsonStep(
+async function isUpdatePackageJsonStep(
   context: InitCommandContext,
 ): Promise<boolean> {
   return runInitFlowStep({
@@ -209,7 +209,7 @@ async function installSkillStep(context: InitCommandContext) {
 async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
   const context = await createInitCommandContext(options);
   await runWorkspaceFileSteps(context);
-  const installRequired = await updatePackageJsonStep(context);
+  const isInstallRequired = await isUpdatePackageJsonStep(context);
   const skillInstallStatus = await installSkillStep(context);
   return {
     buildCommand:
@@ -221,7 +221,7 @@ async function runInitImpl(options: RunInitOptions): Promise<RunInitResult> {
         ? undefined
         : `${context.packageManager} install`,
     packageManager: context.packageManager,
-    installRequired,
+    installRequired: isInstallRequired,
     removedPaths: context.state.removedPaths,
     rootDir: context.rootDir,
     skippedFiles: context.state.skippedFiles,

@@ -28,17 +28,17 @@ import type { PrepareGeneratedTsconfigGraphOptions } from './types';
 function getAllProjects(
   state: GeneratedGraphPreparationState,
 ): ReturnType<typeof getCheckerProjects> {
-  return [...state.projectsByChecker.values()].flat();
+  return state.projectsByChecker.values().toArray().flat();
 }
 
 function getAllPrimaryProjects(
   state: GeneratedGraphPreparationState,
 ): ReturnType<typeof getCheckerProjects> {
-  return [...state.primaryProjectsByChecker.values()].flat();
+  return state.primaryProjectsByChecker.values().toArray().flat();
 }
 
 function getAllGovernedSources(state: GeneratedGraphPreparationState) {
-  return [...state.governedSourcesByChecker.values()].flat();
+  return state.governedSourcesByChecker.values().toArray().flat();
 }
 
 function getCheckerGovernedSources(options: {

@@ -45,8 +45,7 @@ function comparePackageBucketKeys(
   const rankDifference =
     getPackageBucketRank(left) - getPackageBucketRank(right);
   if (rankDifference !== 0) return rankDifference;
-  if (typeof left !== 'string') return 0;
-  return compareCodeUnits(left, right as string);
+  return typeof left === 'string' ? compareCodeUnits(left, right as string) : 0;
 }
 
 function firstNonZero(comparisons: readonly number[]): number {
@@ -103,7 +102,7 @@ function groupByPackage(
 function createPackageBuckets(
   issues: readonly LiminaCheckIssue[],
 ): PackageBucket[] {
-  return [...groupByPackage(issues).entries()]
+  return [...groupByPackage(issues)]
     .map(([key, group]) => createPackageBucket(key, group))
     .sort(comparePackageBuckets);
 }
@@ -146,7 +145,7 @@ function compareRootCauseBuckets(
 function createRootCauseBuckets(
   issues: readonly LiminaCheckIssue[],
 ): RootCauseBucket[] {
-  return [...groupByRootCause(issues).entries()]
+  return [...groupByRootCause(issues)]
     .map(([key, group]) => createRootCauseBucket(key, group))
     .sort(compareRootCauseBuckets);
 }
@@ -180,7 +179,7 @@ function takeNextRootCauseIssue(
   return undefined;
 }
 
-function selectCursorIssue(options: {
+function isSelectCursorIssue(options: {
   cursor: RootCauseBucketCursor;
   selected: LiminaCheckIssue[];
   selectionLimit: number;
@@ -192,18 +191,18 @@ function selectCursorIssue(options: {
   return true;
 }
 
-function selectRound(options: {
+function isSelectRound(options: {
   cursors: readonly RootCauseBucketCursor[];
   selected: LiminaCheckIssue[];
   selectionLimit: number;
 }): boolean {
-  let selectedInRound = false;
+  let isSelectedInRound = false;
   for (const cursor of options.cursors) {
-    if (selectCursorIssue({ ...options, cursor })) {
-      selectedInRound = true;
+    if (isSelectCursorIssue({ ...options, cursor })) {
+      isSelectedInRound = true;
     }
   }
-  return selectedInRound;
+  return isSelectedInRound;
 }
 
 function getSelectionLimit(
@@ -214,8 +213,7 @@ function getSelectionLimit(
 }
 
 function isDisabledSelection(maxIssues: number | null): boolean {
-  if (maxIssues === null) return false;
-  return maxIssues <= 0;
+  return maxIssues !== null && maxIssues <= 0;
 }
 
 function collectSelectedIssues(options: {
@@ -224,8 +222,8 @@ function collectSelectedIssues(options: {
 }): LiminaCheckIssue[] {
   const selected: LiminaCheckIssue[] = [];
   while (selected.length < options.selectionLimit) {
-    const changed = selectRound({ ...options, selected });
-    if (!changed) break;
+    const isChanged = isSelectRound({ ...options, selected });
+    if (!isChanged) break;
   }
   return selected;
 }

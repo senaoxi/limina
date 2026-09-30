@@ -157,8 +157,7 @@ function getMaterializedService(options: {
   });
   if (service === null) return null;
   const sourceFile = options.context.getSemanticSourceFile(filePath);
-  if (sourceFile === undefined) return null;
-  return { filePath, service, sourceFile };
+  return sourceFile === undefined ? null : { filePath, service, sourceFile };
 }
 
 function prepareUnchecked(options: {

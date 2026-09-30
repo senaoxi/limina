@@ -41,47 +41,52 @@ async function createFixture(): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-workspace-directory-index-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-workspace-directory-index-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
 function createPackage(
-  rootDir: string,
+  rootDirectory: string,
   relativeDirectory: string,
   name?: string,
 ): WorkspacePackage {
   const manifest: PackageManifest = name ? { name } : { private: true };
   return {
-    directory: normalizeAbsolutePath(path.join(rootDir, relativeDirectory)),
+    directory: normalizeAbsolutePath(
+      path.join(rootDirectory, relativeDirectory),
+    ),
     manifest,
-    ...(name ? { name } : {}),
+    ...(name && { name }),
   };
 }
 
 function createIdentity(
-  rootDir: string,
+  rootDirectory: string,
   workspacePackage: WorkspacePackage,
   canonicalDirectory = workspacePackage.directory,
 ): WorkspacePackageIdentity {
   return {
     canonicalDirectory: normalizeAbsolutePath(canonicalDirectory),
-    displayDirectory: path.relative(rootDir, workspacePackage.directory),
+    displayDirectory: path.relative(rootDirectory, workspacePackage.directory),
     package: workspacePackage,
   };
 }
 
-function createBoundary(rootDir: string): WorkspaceRegionBoundary {
+function createBoundary(rootDirectory: string): WorkspaceRegionBoundary {
   return {
     excluded: true,
     kind: 'package-scope',
-    packageJsonPath: normalizeAbsolutePath(path.join(rootDir, 'package.json')),
-    rootDir: normalizeAbsolutePath(rootDir),
+    packageJsonPath: normalizeAbsolutePath(
+      path.join(rootDirectory, 'package.json'),
+    ),
+    rootDir: normalizeAbsolutePath(rootDirectory),
   };
 }
 
@@ -127,7 +132,7 @@ function createContext(options: {
   };
 }
 
-function containsCanonicalPath(filePath: string, directory: string): boolean {
+function isContainsCanonicalPath(filePath: string, directory: string): boolean {
   return (
     filePath === directory ||
     filePath.startsWith(directory.endsWith('/') ? directory : `${directory}/`)
@@ -146,14 +151,14 @@ function linearClassify(
         right.canonicalDirectory.length - left.canonicalDirectory.length,
     )
     .find((candidate) =>
-      containsCanonicalPath(canonicalPath, candidate.canonicalDirectory),
+      isContainsCanonicalPath(canonicalPath, candidate.canonicalDirectory),
     );
   if (!identity) return { boundary: null, package: null };
 
   const boundary =
     context.boundaries
       .filter((candidate) =>
-        containsCanonicalPath(candidate.rootDir, identity.package.directory),
+        isContainsCanonicalPath(candidate.rootDir, identity.package.directory),
       )
       .map((candidate) => ({
         boundary: candidate,
@@ -164,7 +169,7 @@ function linearClassify(
           right.canonicalRootDir.length - left.canonicalRootDir.length,
       )
       .find((candidate) =>
-        containsCanonicalPath(canonicalPath, candidate.canonicalRootDir),
+        isContainsCanonicalPath(canonicalPath, candidate.canonicalRootDir),
       )?.boundary ?? null;
   return { boundary, package: boundary ? null : identity.package };
 }
@@ -192,23 +197,21 @@ function linearImporterForFile(options: {
   importers: ImporterInfo[];
 }): ImporterInfo | null {
   const normalizedFilePath = normalizeAbsolutePath(options.filePath);
-  if (normalizedFilePath.split('/').includes('node_modules')) return null;
-  if (!linearClassify(options.context, normalizedFilePath).package) return null;
-
-  return (
-    options.importers
-      .filter((importer) =>
-        Boolean(
-          linearClassify(
-            options.context,
-            normalizeAbsolutePath(importer.directory),
-          ).package,
-        ),
-      )
-      .find((importer) =>
-        isPathInsideDirectory(normalizedFilePath, importer.directory),
-      ) ?? null
-  );
+  return normalizedFilePath.split('/').includes('node_modules') ||
+    !linearClassify(options.context, normalizedFilePath).package
+    ? null
+    : (options.importers
+        .filter((importer) =>
+          Boolean(
+            linearClassify(
+              options.context,
+              normalizeAbsolutePath(importer.directory),
+            ).package,
+          ),
+        )
+        .find((importer) =>
+          isPathInsideDirectory(normalizedFilePath, importer.directory),
+        ) ?? null);
 }
 
 function metricCount(
@@ -459,9 +462,10 @@ describe('workspace canonical directory indexes', () => {
 
   it('shares canonical symlink projection while keeping importer matching lexical', async () => {
     const fixture = await createFixture();
-    const physicalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-workspace-index-physical-')),
+    const temporaryDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-workspace-index-physical-'),
     );
+    const physicalRoot = await realpath(temporaryDirectory);
     try {
       await mkdir(path.join(physicalRoot, 'generated'), { recursive: true });
       const aliasRoot = path.join(fixture.rootDir, 'alias');
@@ -674,7 +678,6 @@ describe('workspace canonical directory indexes', () => {
     const fixture = await createFixture();
     try {
       const packageCount = 1000;
-      const queryCount = 200;
       const packages = Array.from({ length: packageCount }, (_, index) =>
         createPackage(
           fixture.rootDir,
@@ -690,6 +693,7 @@ describe('workspace canonical directory indexes', () => {
       const targetPackage = packages.at(-1);
       expect(targetPackage).toBeDefined();
       if (!targetPackage) return;
+      const queryCount = 200;
 
       for (let index = 0; index < queryCount; index += 1) {
         const filePath = path.join(
@@ -816,27 +820,27 @@ describe('workspace region adversarial cases', () => {
   it('preserves empty, root-package, drive-prefix and same-root cut semantics', async () => {
     const fixture = await createFixture();
     try {
-      const rootDir = fixture.path();
-      const rootPackage = createPackage(rootDir, '.', 'root');
+      const rootDirectory = fixture.path();
+      const rootPackage = createPackage(rootDirectory, '.', 'root');
       const paths = [
-        rootDir,
-        `${rootDir}/`,
+        rootDirectory,
+        `${rootDirectory}/`,
         fixture.path('missing.ts'),
         fixture.path('foo/bar.ts'),
       ];
       expectDifferentialClassifications(
-        createContext({ packages: [], rootDir }),
+        createContext({ packages: [], rootDir: rootDirectory }),
         paths,
       );
       expectDifferentialClassifications(
-        createContext({ packages: [rootPackage], rootDir }),
+        createContext({ packages: [rootPackage], rootDir: rootDirectory }),
         paths,
       );
       expectDifferentialClassifications(
         createContext({
-          boundaries: [createBoundary(rootDir)],
+          boundaries: [createBoundary(rootDirectory)],
           packages: [rootPackage],
-          rootDir,
+          rootDir: rootDirectory,
         }),
         paths,
       );

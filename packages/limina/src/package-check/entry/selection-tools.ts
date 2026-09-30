@@ -102,27 +102,25 @@ function selectEntryChecks(
 ): PackageCheckTool[] {
   const configuredChecks = normalizeEntryChecks(entry);
 
-  if (isSpecificTool(requestedTool)) {
-    return selectRequestedTool(configuredChecks, requestedTool);
-  }
-
-  return configuredChecks;
+  return isSpecificTool(requestedTool)
+    ? selectRequestedTool(configuredChecks, requestedTool)
+    : configuredChecks;
 }
 
-function resolvePackageEntryOutDir(options: {
+function resolvePackageEntryOutDirectory(options: {
   config: ResolvedLiminaConfig;
   entry: PackageEntry;
   entryIndex: number;
 }): string {
-  const outDir = (options.entry as { outDir?: unknown }).outDir;
+  const outDirectory = (options.entry as { outDir?: unknown }).outDir;
 
-  if (typeof outDir !== 'string' || outDir.trim().length === 0) {
+  if (typeof outDirectory !== 'string' || outDirectory.trim().length === 0) {
     throw new Error(
       `Invalid package entry at package.entries[${options.entryIndex}].outDir. Expected a non-empty string.`,
     );
   }
 
-  return path.resolve(options.config.rootDir, outDir);
+  return path.resolve(options.config.rootDir, outDirectory);
 }
 
 function getPackageEntryLabel(options: {
@@ -150,7 +148,7 @@ export function createEntryPlan(options: {
     checks: selectEntryChecks(options.entry, options.requestedTool),
     entryIndex: options.entryIndex,
     label: getPackageEntryLabel(options),
-    outDir: resolvePackageEntryOutDir(options),
+    outDir: resolvePackageEntryOutDirectory(options),
     rawEntry: options.entry,
   };
 }

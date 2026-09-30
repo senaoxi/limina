@@ -13,17 +13,19 @@ import {
 import { MigrationInputError } from './declarations';
 
 function isReadableIoFailure(error: Error): boolean {
-  if (!('code' in error)) return false;
-  return ['EACCES', 'EPERM', 'ENOENT', 'EISDIR'].includes(String(error.code));
+  return (
+    'code' in error &&
+    ['EACCES', 'EPERM', 'ENOENT', 'EISDIR'].includes(String(error.code))
+  );
 }
-export function expectedInputFailure(error: unknown): error is Error {
+export function isExpectedInputFailure(error: unknown): error is Error {
   if (!(error instanceof Error)) return false;
-  const known = [
+  const isKnown = [
     MigrationInputError,
     TypeScriptConfigInputError,
     TsconfigInputError,
   ].some((Type) => error instanceof Type);
-  return known || isReadableIoFailure(error);
+  return isKnown || isReadableIoFailure(error);
 }
 
 function assertRecoverableOutputFailure(error: unknown): void {
@@ -74,6 +76,6 @@ export async function discover(
     })
       .candidates.filter((candidate) => candidate.kind === 'tsconfig')
       .map((candidate) => candidate.path)
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
   }
 }

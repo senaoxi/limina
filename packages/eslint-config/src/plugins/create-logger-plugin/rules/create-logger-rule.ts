@@ -23,11 +23,9 @@ function getModuleSyntaxName(node: NamedSyntaxNode): string | undefined {
     return node.name;
   }
 
-  if ('value' in node && typeof node.value === 'string') {
-    return node.value;
-  }
-
-  return undefined;
+  return 'value' in node && typeof node.value === 'string'
+    ? node.value
+    : undefined;
 }
 
 function isValidPackageNameSegment(segment: string): boolean {
@@ -80,11 +78,9 @@ function getPackageNameFromSource(sourceValue: string): string | undefined {
   if (sourceValue.startsWith('@')) {
     const [scope, name] = sourceParts;
 
-    if (typeof scope !== 'string' || typeof name !== 'string') {
-      return undefined;
-    }
-
-    return `${scope}/${name}`;
+    return typeof scope !== 'string' || typeof name !== 'string'
+      ? undefined
+      : `${scope}/${name}`;
   }
 
   return sourceParts[0];

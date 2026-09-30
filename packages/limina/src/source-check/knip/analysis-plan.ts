@@ -93,8 +93,8 @@ export function createKnipAnalysisPlan(options: {
     knipWorkspaceConfigs: options.knipWorkspaceConfigs,
     ownerModuleSets: options.ownerModuleSets,
   });
-  const includeFiles = options.ownerModuleSets.length > 0;
-  const needsDependencyAnalysis =
+  const isIncludeFiles = options.ownerModuleSets.length > 0;
+  const isNeedsDependencyAnalysis =
     options.workspacePackages.length > 0 && options.declarations.length > 0;
   const ownerProjects = createKnipOwnerProjects({
     entryPatternsByOwnerIdentity: createEntryPatternsByOwnerIdentity({
@@ -104,7 +104,7 @@ export function createKnipAnalysisPlan(options: {
       ownerModuleSets: options.ownerModuleSets,
     }),
     ignoredModuleKeys: unusedModuleConfig.ignoredKeys,
-    includeFiles,
+    includeFiles: isIncludeFiles,
     ownerModuleSets: options.ownerModuleSets,
   });
 
@@ -122,8 +122,8 @@ export function createKnipAnalysisPlan(options: {
     }),
     ignoredDependencies,
     ignoredModuleKeys: unusedModuleConfig.ignoredKeys,
-    includeFiles,
-    needsDependencyAnalysis,
+    includeFiles: isIncludeFiles,
+    needsDependencyAnalysis: isNeedsDependencyAnalysis,
     ownerProjects,
   };
 }

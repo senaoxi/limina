@@ -1,10 +1,10 @@
 import type { cac } from 'cac';
-import { runProofCheck } from '../../commands/proof';
+import { isRunProofCheck } from '../../commands/proof';
 import { LiminaPreflightManager } from '../../preflight';
 import type { LiminaCheckIssue } from '../../source-check/snapshot';
 import { loadStandaloneContext } from '../command-runtime';
 import { createCliFlow } from '../flow';
-import { runStandaloneIssueFlow } from '../standalone';
+import { isRunStandaloneIssueFlow } from '../standalone';
 import type { ProofFlags } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -20,7 +20,7 @@ async function runProofAction(
 ): Promise<void> {
   assertProofAction(action);
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: async (registerSession) => {
       flow.intro('limina proof check');
       const { commandContext, config } = await loadStandaloneContext(
@@ -38,7 +38,7 @@ async function runProofAction(
         task: 'proof:check',
         title: 'Proof check',
       });
-      return runProofCheck(config, {
+      return isRunProofCheck(config, {
         clearScreen: false,
         deferSnapshot: true,
         flow,
@@ -56,7 +56,7 @@ async function runProofAction(
       passed: 'limina proof passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 export function registerProofCommand(cli: LiminaCli): void {

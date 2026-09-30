@@ -1,14 +1,26 @@
-#!/usr/bin/env node
 import { cac } from 'cac';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pkg from '../package.json' with { type: 'json' };
+import package_ from '../package.json' with { type: 'json' };
 import { assertRuntimeVersion } from './runtime-version';
 
 interface MigrationFlags {
   config?: string;
   configLoader?: string;
   mode?: string;
+}
+
+function rethrowMigrationConfigError(error: unknown): never {
+  if (
+    error instanceof Error &&
+    error.message.toLowerCase().includes('unable to find limina config')
+  ) {
+    throw new Error(
+      'Run npx limina init first, then rerun npx limina-migrate.',
+      { cause: error },
+    );
+  }
+  throw error;
 }
 
 async function runMigrationAction(flags: MigrationFlags): Promise<void> {
@@ -23,30 +35,24 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
   const { runMigration } = await import('./migration');
   clearCliScreen();
   const flow = createCliFlow();
-  const passed = await runCliFlowWithCleanup(
+  const isPassed = await runCliFlowWithCleanup(
     flow,
     { failed: 'limina-migrate failed', passed: 'limina-migrate passed' },
     async () => {
       flow.intro('limina-migrate');
       const configLoader = parseConfigLoader(flags.configLoader);
-      const config = await loadConfig({
-        command: 'migration',
-        configLoader,
-        configPath: flags.config,
-        cwd: process.cwd(),
-        mode: flags.mode,
-      }).catch((error: unknown) => {
-        if (
-          error instanceof Error &&
-          error.message.toLowerCase().includes('unable to find limina config')
-        ) {
-          throw new Error(
-            'Run npx limina init first, then rerun npx limina-migrate.',
-            { cause: error },
-          );
-        }
-        throw error;
-      });
+      let config: Awaited<ReturnType<typeof loadConfig>>;
+      try {
+        config = await loadConfig({
+          command: 'migration',
+          configLoader,
+          configPath: flags.config,
+          cwd: process.cwd(),
+          mode: flags.mode,
+        });
+      } catch (error) {
+        rethrowMigrationConfigError(error);
+      }
       const result = await runMigration(config, {
         flow,
         flowDepth: 1,
@@ -56,12 +62,12 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
       return result.inputConsumable && result.incompleteFiles.length === 0;
     },
   );
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 export function createMigrationCli(): ReturnType<typeof cac> {
   const cli = cac('limina-migrate');
-  cli.version(pkg.version).help();
+  cli.version(package_.version).help();
   cli.option('--config <path>', 'Path to a Limina config file');
   cli.option('--config-loader <loader>', 'Config loader to use: native, tsx');
   cli.option('--mode <mode>', 'Mode passed to limina config functions');
@@ -71,8 +77,9 @@ export function createMigrationCli(): ReturnType<typeof cac> {
   return cli;
 }
 
-function assertNoArguments(args: readonly string[]): void {
-  if (args.length > 0) throw new Error(`Unexpected argument: ${args[0]}`);
+function assertNoArguments(arguments_: readonly string[]): void {
+  if (arguments_.length > 0)
+    throw new Error(`Unexpected argument: ${arguments_[0]}`);
 }
 
 function errorMessage(error: unknown): string {

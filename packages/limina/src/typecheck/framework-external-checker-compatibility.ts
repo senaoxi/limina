@@ -19,8 +19,9 @@ export interface UnsupportedExternalChecker {
 function getExternalCheckerContract(
   requirement: CheckerDependencyRequirement,
 ): LiminaDependencyContract | undefined {
-  if (requirement.category !== 'external-checker') return undefined;
-  return getExternalCheckerDependencyContract(requirement.packageName);
+  return requirement.category === 'external-checker'
+    ? getExternalCheckerDependencyContract(requirement.packageName)
+    : undefined;
 }
 
 function resolveRequirementVersion(options: {
@@ -70,8 +71,9 @@ function evaluateRequirement(options: {
     resolvePackage: options.resolvePackage,
     target: options.target,
   });
-  if (version === undefined) return undefined;
-  return createUnsupportedExternalChecker({ contract, version });
+  return version === undefined
+    ? undefined
+    : createUnsupportedExternalChecker({ contract, version });
 }
 
 function isUnsupportedExternalChecker(

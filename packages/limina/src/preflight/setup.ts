@@ -40,13 +40,11 @@ export function resolveProviders(options: {
   artifactNamespace: LiminaArtifactNamespace;
   managerOptions: LiminaPreflightManagerOptions;
 }): AnalysisProviderSet {
-  if (options.managerOptions.providers !== undefined) {
-    return options.managerOptions.providers;
-  }
-
-  return createAnalysisProviders(
-    options.managerOptions.config,
-    options.artifactNamespace,
-    options.managerOptions.metrics,
-  );
+  return options.managerOptions.providers === undefined
+    ? createAnalysisProviders(
+        options.managerOptions.config,
+        options.artifactNamespace,
+        options.managerOptions.metrics,
+      )
+    : options.managerOptions.providers;
 }

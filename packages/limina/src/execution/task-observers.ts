@@ -7,8 +7,9 @@ export function nowIso(): string {
 }
 
 export function formatFlowTaskName(task: ExecutionTask): string {
-  if (task.kind === 'command') return `command: ${task.label}`;
-  return task.label.replaceAll(':', ' ');
+  return task.kind === 'command'
+    ? `command: ${task.label}`
+    : task.label.replaceAll(':', ' ');
 }
 
 interface FlowProjectionOptions {
@@ -47,16 +48,14 @@ function projectFlowDisable(options: FlowProjectionOptions): void {
 }
 
 function projectFlowBlock(options: FlowProjectionOptions): void {
-  if (options.event.type !== 'block') return;
-  if (options.flowNode === undefined) return;
+  if (options.event.type !== 'block' || options.flowNode === undefined) return;
   options.flowNode.block(
     `${formatFlowTaskName(options.task)} (blocked by ${options.event.blockedBy.label})`,
   );
 }
 
 function projectFlowSkip(options: FlowProjectionOptions): void {
-  if (options.event.type !== 'skip') return;
-  if (options.flowNode === undefined) return;
+  if (options.event.type !== 'skip' || options.flowNode === undefined) return;
   options.flowNode.skip(
     `${formatFlowTaskName(options.task)} (${options.event.reason})`,
   );
@@ -79,8 +78,7 @@ function collectProjectionFailures(
   settled: readonly PromiseSettledResult<void>[],
 ): unknown[] {
   return settled.flatMap((result) => {
-    if (result.status === 'fulfilled') return [];
-    return [result.reason];
+    return result.status === 'fulfilled' ? [] : [result.reason];
   });
 }
 

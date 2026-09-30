@@ -28,7 +28,7 @@ export function findImporterForFile(
   );
 }
 
-function importerCanReachTarget(
+function isImporterCanReachTarget(
   importer: ImporterInfo,
   targetName: string,
 ): boolean {
@@ -54,11 +54,9 @@ export function shouldResolveThroughGraph(
 
   const targetName = getWorkspacePackageName(targetPackage);
 
-  if (targetName === undefined) {
-    return false;
-  }
-
-  return importerCanReachTarget(importer, targetName);
+  return (
+    targetName !== undefined && isImporterCanReachTarget(importer, targetName)
+  );
 }
 
 export function formatArtifactDependencyPolicy(
@@ -98,7 +96,7 @@ export function inferPackageProject(
   );
 }
 
-function getProjectOwnerRootDir(project: ProjectInfo): string {
+function getProjectOwnerRootDirectory(project: ProjectInfo): string {
   return project.options.rootDir === undefined
     ? path.dirname(project.resolverConfigPath)
     : normalizeAbsolutePath(project.options.rootDir);
@@ -118,10 +116,10 @@ function addProjectFileOwners(
   ownerLookup: Map<string, string[]>,
   project: ProjectInfo,
 ): void {
-  const ownerRootDir = getProjectOwnerRootDir(project);
+  const ownerRootDirectory = getProjectOwnerRootDirectory(project);
 
   for (const fileName of project.ownedFileNames) {
-    if (isPathInsideDirectory(fileName, ownerRootDir)) {
+    if (isPathInsideDirectory(fileName, ownerRootDirectory)) {
       addFileOwner(ownerLookup, fileName, project.configPath);
     }
   }
@@ -163,13 +161,11 @@ export function findTargetProject(options: {
     options.packages,
   );
 
-  if (workspacePackage === null) {
-    return null;
-  }
-
-  return inferPackageProject(
-    options.resolvedFilePath,
-    workspacePackage,
-    options.projectPaths,
-  );
+  return workspacePackage === null
+    ? null
+    : inferPackageProject(
+        options.resolvedFilePath,
+        workspacePackage,
+        options.projectPaths,
+      );
 }

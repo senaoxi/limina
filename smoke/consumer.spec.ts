@@ -2,11 +2,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  assertDistArtifacts,
+  assertDistributionArtifacts,
   type ConsumerFixture,
   createConsumerFixture,
   getPeerDependencyRange,
-  packLiminaDist,
+  packLiminaDistribution,
   RELEASE_FIXTURE_PACKAGE_NAME,
   runNodeScript,
   runPnpm,
@@ -14,15 +14,15 @@ import {
 
 describe('limina published package smoke', () => {
   it('installs the packed package and exercises the public CLI surface', async () => {
-    const manifest = assertDistArtifacts();
-    const packedDist = await packLiminaDist();
+    const manifest = assertDistributionArtifacts();
+    const packedDistribution = await packLiminaDistribution();
     let fixture: ConsumerFixture | undefined;
 
     try {
       fixture = await createConsumerFixture({
         astroSemanticFixture: true,
         manifest,
-        tarballPath: packedDist.tarballPath,
+        tarballPath: packedDistribution.tarballPath,
       });
 
       const installedManifest = JSON.parse(
@@ -90,7 +90,7 @@ describe('limina published package smoke', () => {
             packageManifest.devDependencies?.[workspacePackageName],
           ).toBeUndefined();
         }
-        expect(packageManifest.devDependencies?.logaria).toBe('0.0.3');
+        expect(packageManifest.devDependencies?.logaria).toBe('^0.0.4');
       }
       expect(manifest.dependencies?.['oxc-resolver']).toBeDefined();
       expect(installedManifest.dependencies?.['oxc-resolver']).toBe(
@@ -183,7 +183,7 @@ describe('limina published package smoke', () => {
       expect(graphCheckResult.stdout).toContain('limina graph check');
       expect(graphCheckResult.stdout).toContain('limina graph passed');
 
-      const releaseCheckArgs = [
+      const releaseCheckArguments = [
         'exec',
         'limina',
         '--config',
@@ -193,7 +193,7 @@ describe('limina published package smoke', () => {
         '--package',
         RELEASE_FIXTURE_PACKAGE_NAME,
       ];
-      const releaseCheckResult = await runPnpm(releaseCheckArgs, {
+      const releaseCheckResult = await runPnpm(releaseCheckArguments, {
         cwd: fixture.fixtureDir,
       });
 
@@ -216,7 +216,7 @@ describe('limina published package smoke', () => {
         'utf8',
       );
 
-      const invalidReleaseCheckResult = await runPnpm(releaseCheckArgs, {
+      const invalidReleaseCheckResult = await runPnpm(releaseCheckArguments, {
         cwd: fixture.fixtureDir,
         reject: false,
       });
@@ -234,7 +234,7 @@ describe('limina published package smoke', () => {
         'utf8',
       );
 
-      const missingPeerResult = await runPnpm(releaseCheckArgs, {
+      const missingPeerResult = await runPnpm(releaseCheckArguments, {
         cwd: fixture.fixtureDir,
         reject: false,
       });
@@ -262,7 +262,7 @@ describe('limina published package smoke', () => {
         },
       );
 
-      const enabledReleaseCheckResult = await runPnpm(releaseCheckArgs, {
+      const enabledReleaseCheckResult = await runPnpm(releaseCheckArguments, {
         cwd: fixture.fixtureDir,
         reject: false,
       });
@@ -278,7 +278,7 @@ describe('limina published package smoke', () => {
       if (fixture) {
         await fixture.cleanup();
       }
-      await packedDist.cleanup();
+      await packedDistribution.cleanup();
     }
   });
 });

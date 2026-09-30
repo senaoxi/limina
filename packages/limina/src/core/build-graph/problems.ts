@@ -26,11 +26,9 @@ function formatProblemList(
   if (problems.length === 0) {
     return fallback;
   }
-  if (problems.length === 1) {
-    return getGeneratedGraphProblemTitle(problems[0]!.split('\n'));
-  }
-
-  return `${problems.length} generated graph preparation problems.`;
+  return problems.length === 1
+    ? getGeneratedGraphProblemTitle(problems[0]!.split('\n'))
+    : `${problems.length} generated graph preparation problems.`;
 }
 
 type SpecializedIssueFactory = (options: {

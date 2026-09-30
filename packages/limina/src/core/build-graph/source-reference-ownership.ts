@@ -19,8 +19,9 @@ function getExplicitReferenceOwner(options: {
   referencePath: string;
 }): CollectionContext['checkerName'] | undefined {
   const explicitOwners = options.context.explicitOwnerByConfigPath;
-  if (explicitOwners === undefined) return undefined;
-  return explicitOwners.get(options.referencePath);
+  return explicitOwners === undefined
+    ? undefined
+    : explicitOwners.get(options.referencePath);
 }
 
 function addInheritedOwnerConflict(options: {
@@ -67,6 +68,7 @@ export function resolveReferenceOwner(options: {
   const explicitOwner = getExplicitReferenceOwner(options);
   if (explicitOwner !== undefined) return explicitOwner;
   const inheritedOwners = options.context.inheritedOwnerByConfigPath;
-  if (inheritedOwners === undefined) return options.context.checkerName;
-  return inheritReferenceOwner(options, inheritedOwners);
+  return inheritedOwners === undefined
+    ? options.context.checkerName
+    : inheritReferenceOwner(options, inheritedOwners);
 }

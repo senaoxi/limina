@@ -7,9 +7,9 @@ import type { CompletedRunOutcome, ExecutionPlan } from '../execution/tasks';
 import type { LiminaFlowTask } from '../flow';
 import { LiminaPreflightManager } from '../preflight';
 import {
+  isUsesAutoCheckers,
   reportAutoCheckerCapabilities,
   reportCheckerCapabilities,
-  usesAutoCheckers,
 } from './capabilities';
 import { createDefaultExecutionPlan, createExecutionPlan } from './plan';
 import type { RunPipelineOptions } from './types';
@@ -130,14 +130,13 @@ function resolvePipelinePlan(options: {
   pipelineName: string;
   pipelineOptions: RunPipelineOptions;
 }): ExecutionPlan {
-  if (options.pipelineOptions.executionPlan !== undefined) {
-    return options.pipelineOptions.executionPlan;
-  }
-  return createExecutionPlan(
-    options.config,
-    options.pipelineName,
-    options.pipelineOptions,
-  );
+  return options.pipelineOptions.executionPlan === undefined
+    ? createExecutionPlan(
+        options.config,
+        options.pipelineName,
+        options.pipelineOptions,
+      )
+    : options.pipelineOptions.executionPlan;
 }
 
 function startPipelineTask(options: {
@@ -180,7 +179,7 @@ export async function runPipelineWithResult(
   return execution;
 }
 
-export async function runPipeline(
+export async function isRunPipeline(
   config: ResolvedLiminaConfig,
   pipelineName: string,
   options: RunPipelineOptions = {},
@@ -188,13 +187,13 @@ export async function runPipeline(
   return (await runPipelineWithResult(config, pipelineName, options)).passed;
 }
 
-function reportConfiguredCheckerCapabilities(
+function isReportConfiguredCheckerCapabilities(
   config: ResolvedLiminaConfig,
   options: RunPipelineOptions,
 ): boolean {
-  const auto = usesAutoCheckers();
-  if (!auto) reportCheckerCapabilities(config, options.flow);
-  return auto;
+  const isAuto = isUsesAutoCheckers();
+  if (!isAuto) reportCheckerCapabilities(config, options.flow);
+  return isAuto;
 }
 
 async function reportGeneratedCheckerCapabilities(options: {
@@ -219,8 +218,9 @@ function resolveDefaultPlan(
   config: ResolvedLiminaConfig,
   options: RunPipelineOptions,
 ): ExecutionPlan {
-  if (options.executionPlan !== undefined) return options.executionPlan;
-  return createDefaultExecutionPlan(config, options);
+  return options.executionPlan === undefined
+    ? createDefaultExecutionPlan(config, options)
+    : options.executionPlan;
 }
 
 function getDefaultCheckCommand(options: RunPipelineOptions): string {
@@ -237,7 +237,7 @@ export async function runDefaultCheckWithResult(
     pipelineOptions: options,
   });
   const preflight = createPreflight(config, options);
-  const auto = reportConfiguredCheckerCapabilities(config, options);
+  const isAuto = isReportConfiguredCheckerCapabilities(config, options);
   const execution = await executePipelinePlan({
     command: getDefaultCheckCommand(options),
     config,
@@ -246,7 +246,7 @@ export async function runDefaultCheckWithResult(
     preflight,
   });
   await reportGeneratedCheckerCapabilities({
-    auto,
+    auto: isAuto,
     config,
     pipelineOptions: options,
     preflight,
@@ -260,7 +260,7 @@ export async function runDefaultCheckWithResult(
   return execution;
 }
 
-export async function runDefaultCheck(
+export async function isRunDefaultCheck(
   config: ResolvedLiminaConfig,
   options: RunPipelineOptions = {},
 ): Promise<boolean> {

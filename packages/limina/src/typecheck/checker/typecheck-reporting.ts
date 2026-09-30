@@ -23,8 +23,9 @@ function reportNoCheckerProgress(options: {
 }
 
 function shouldLogSuccess(request: RunCheckerTypecheckOptions): boolean {
-  if (!shouldLogCheckReport(request.report)) return false;
-  return request.flow?.interactive !== true;
+  return (
+    shouldLogCheckReport(request.report) && request.flow?.interactive !== true
+  );
 }
 
 export function createNoTypecheckCheckerResult(options: {
@@ -93,7 +94,7 @@ export function createTypecheckPeerFailure(options: {
   };
 }
 
-function reportTypecheckFailure(options: {
+function isReportTypecheckFailure(options: {
   failedResults: readonly TypecheckTargetResult[];
   projectRootDir: string;
   request: RunCheckerTypecheckOptions;
@@ -120,8 +121,8 @@ export function reportTypecheckResult(options: {
   request: RunCheckerTypecheckOptions;
   targetCount: number;
 }): void {
-  if (reportTypecheckFailure(options)) return;
-  if (!shouldLogSuccess(options.request)) return;
+  if (isReportTypecheckFailure(options) || !shouldLogSuccess(options.request))
+    return;
   TypecheckLogger.success(
     `Checked ${options.targetCount} checker typecheck entry(s).`,
   );

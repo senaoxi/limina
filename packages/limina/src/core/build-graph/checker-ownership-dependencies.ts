@@ -170,8 +170,7 @@ function getUniqueMembershipTarget(options: {
     options.membership,
     options.fact.physicalTargetPath,
   );
-  if (owners.length !== 1) return null;
-  return owners[0]!;
+  return owners.length === 1 ? owners[0]! : null;
 }
 
 function getMembershipOwners(
@@ -186,8 +185,7 @@ function getUniqueDependencyTarget(options: {
   membership: FileOwnerLookup;
 }): string | null {
   const target = getUniqueMembershipTarget(options);
-  if (target === options.fact.consumerConfigPath) return null;
-  return target;
+  return target === options.fact.consumerConfigPath ? null : target;
 }
 
 function addOwnershipDependency(options: {
@@ -207,10 +205,9 @@ export function createOwnershipDependenciesByConfig(options: {
     options.discovery.projectByConfigPath,
   );
   const dependencies = new Map(
-    [...options.discovery.plan.typeConfigs.keys()].map((configPath) => [
-      configPath,
-      new Set<string>(),
-    ]),
+    options.discovery.plan.typeConfigs
+      .keys()
+      .map((configPath) => [configPath, new Set<string>()]),
   );
   for (const fact of options.discovery.plan.dependencyFacts) {
     addOwnershipDependency({ dependencies, fact, membership });

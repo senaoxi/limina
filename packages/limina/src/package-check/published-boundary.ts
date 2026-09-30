@@ -9,7 +9,7 @@ import type {
   PublishedPackageBoundaryTarget,
   PublishedPackageBoundaryViolation,
 } from './runner-types';
-import { readDistPackageJson } from './tarball';
+import { readDistributionPackageJson } from './tarball';
 
 function normalizePublishedModulePath(relativeFilePath: string): string {
   return relativeFilePath.replaceAll('\\', '/');
@@ -22,8 +22,7 @@ function getConfiguredEnvironment(
   if (typeof target.environment === 'function') {
     return target.environment(relativeFilePath);
   }
-  if (target.environment !== undefined) return target.environment;
-  return null;
+  return target.environment === undefined ? null : target.environment;
 }
 
 function getDefaultEnvironment(relativeFilePath: string): RuntimeEnvironment {
@@ -39,8 +38,9 @@ function classifyRuntimeEnvironment(
   relativeFilePath: string,
 ): RuntimeEnvironment {
   const configured = getConfiguredEnvironment(target, relativeFilePath);
-  if (configured !== null) return configured;
-  return getDefaultEnvironment(relativeFilePath);
+  return configured === null
+    ? getDefaultEnvironment(relativeFilePath)
+    : configured;
 }
 
 async function collectPublishedEntryFiles(options: {
@@ -51,8 +51,7 @@ async function collectPublishedEntryFiles(options: {
   if (options.isDirectory) {
     return collectPublishedModuleFiles(options.absolutePath);
   }
-  if (/\.[cm]?js$/u.test(options.name)) return [options.absolutePath];
-  return [];
+  return /\.[cm]?js$/u.test(options.name) ? [options.absolutePath] : [];
 }
 
 async function collectPublishedModuleFiles(
@@ -79,7 +78,7 @@ function getDependencyNames(
 
 function collectAllowedExternalPackages(options: {
   ignoredExternalPackages: readonly string[];
-  manifest: Awaited<ReturnType<typeof readDistPackageJson>>;
+  manifest: Awaited<ReturnType<typeof readDistributionPackageJson>>;
 }): Set<string> {
   return new Set([
     ...getDependencyNames(options.manifest.dependencies),
@@ -91,7 +90,9 @@ function collectAllowedExternalPackages(options: {
 
 interface BoundaryAuditContext {
   allowedExternalPackages: Set<string>;
-  importsField: Awaited<ReturnType<typeof readDistPackageJson>>['imports'];
+  importsField: Awaited<
+    ReturnType<typeof readDistributionPackageJson>
+  >['imports'];
   packageName: string;
   selfSpecifiers: ReturnType<typeof collectSelfSpecifierMatchers>;
   target: PublishedPackageBoundaryTarget;
@@ -125,16 +126,16 @@ function createImportViolation(options: {
 function getDynamicSpecifier(
   importSpecifier: DynamicImport,
 ): string | undefined {
-  if (importSpecifier.glob) return undefined;
-  return importSpecifier.specifier;
+  return importSpecifier.glob ? undefined : importSpecifier.specifier;
 }
 
 function getAuditableSpecifier(importSpecifier: Import): string | undefined {
   if (importSpecifier.type === 'dynamic') {
     return getDynamicSpecifier(importSpecifier);
   }
-  if (importSpecifier.type === 'import-meta') return undefined;
-  return importSpecifier.specifier;
+  return importSpecifier.type === 'import-meta'
+    ? undefined
+    : importSpecifier.specifier;
 }
 
 async function collectFileViolations(options: {
@@ -166,17 +167,16 @@ function sortViolations(
   violations: PublishedPackageBoundaryViolation[],
 ): PublishedPackageBoundaryViolation[] {
   return violations.toSorted((left, right) => {
-    if (left.filePath === right.filePath) {
-      return compareCodeUnits(left.specifier, right.specifier);
-    }
-    return compareCodeUnits(left.filePath, right.filePath);
+    return left.filePath === right.filePath
+      ? compareCodeUnits(left.specifier, right.specifier)
+      : compareCodeUnits(left.filePath, right.filePath);
   });
 }
 
 export async function auditPublishedPackageBoundaries(
   target: PublishedPackageBoundaryTarget,
 ): Promise<PublishedPackageBoundaryViolation[]> {
-  const manifest = await readDistPackageJson({
+  const manifest = await readDistributionPackageJson({
     packageJsonPath: path.join(target.outDir, 'package.json'),
   });
   const context: BoundaryAuditContext = {

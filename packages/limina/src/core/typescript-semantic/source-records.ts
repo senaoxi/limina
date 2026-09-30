@@ -28,7 +28,7 @@ export function collectSemanticSourceRecords(options: {
   });
 
   admitExplicitReferences({ ...options, filePath, records });
-  admitLibReferences(options);
+  admitLibraryReferences(options);
   return records;
 }
 
@@ -88,7 +88,7 @@ function storeExplicitReference(options: {
   );
 }
 
-function admitLibReferences(options: {
+function admitLibraryReferences(options: {
   admission: TypeScriptInclusionLedger;
   sourceFile: ts.SourceFile;
 }): void {

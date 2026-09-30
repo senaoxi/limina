@@ -192,8 +192,11 @@ export async function deleteNonTargetOwnedPaths(options: {
   }
 }
 
-function skipsUnchangedChange(force: boolean, change: ArtifactChange): boolean {
-  return !force && change.status === 'unchanged';
+function isSkipsUnchangedChange(
+  isForce: boolean,
+  change: ArtifactChange,
+): boolean {
+  return !isForce && change.status === 'unchanged';
 }
 
 function shouldWriteChange(options: {
@@ -205,16 +208,20 @@ function shouldWriteChange(options: {
   force: boolean;
   manifestOnly: boolean;
 } {
-  if (options.change.status === 'delete') return false;
-  if (skipsUnchangedChange(options.force, options.change)) return false;
-  return isGeneratedManifestChange(options.change) === options.manifestOnly;
+  return (
+    !(
+      options.change.status === 'delete' ||
+      isSkipsUnchangedChange(options.force, options.change)
+    ) && isGeneratedManifestChange(options.change) === options.manifestOnly
+  );
 }
 
 function asWriteChange(
   change: Exclude<ArtifactChange, { status: 'delete' }>,
 ): Exclude<ArtifactChange, { status: 'delete' | 'unchanged' }> {
-  if (change.status !== 'unchanged') return change;
-  return { artifact: change.artifact, status: 'update' };
+  return change.status === 'unchanged'
+    ? { artifact: change.artifact, status: 'update' }
+    : change;
 }
 
 export async function writeTargetArtifacts(options: {

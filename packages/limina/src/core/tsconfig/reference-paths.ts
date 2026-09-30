@@ -61,10 +61,7 @@ function addInvalidReferencesField(options: {
 }
 
 function isReferenceRecord(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  return !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function addInvalidReferenceEntry(options: {
@@ -160,7 +157,7 @@ function collectReferenceArray(options: {
 }
 
 export function collectReferencePathInfosFromConfigObject(
-  rootDir: string,
+  rootDirectory: string,
   configPath: string,
   configObject: JsonObject,
 ): ReferencePathCollection {
@@ -170,22 +167,32 @@ export function collectReferencePathInfosFromConfigObject(
     return state;
   }
   if (!Array.isArray(references)) {
-    addInvalidReferencesField({ configPath, references, rootDir, state });
+    addInvalidReferencesField({
+      configPath,
+      references,
+      rootDir: rootDirectory,
+      state,
+    });
     return state;
   }
-  collectReferenceArray({ configPath, references, rootDir, state });
+  collectReferenceArray({
+    configPath,
+    references,
+    rootDir: rootDirectory,
+    state,
+  });
   return state;
 }
 
 export function collectReferencePathInfosForConfig(
-  rootDir: string,
+  rootDirectory: string,
   configPath: string,
   virtualFiles?: ReadonlyMap<string, string>,
 ): ReferencePathCollection {
   return collectReferencePathInfosFromConfigObject(
-    rootDir,
+    rootDirectory,
     configPath,
-    readJsonConfigFile(rootDir, configPath, virtualFiles),
+    readJsonConfigFile(rootDirectory, configPath, virtualFiles),
   );
 }
 
@@ -201,10 +208,11 @@ export function getRawReferencePaths(
 }
 
 export function getRawReferencePathsForConfig(
-  rootDir: string,
+  rootDirectory: string,
   configPath: string,
 ): string[] {
-  return collectReferencePathInfosForConfig(rootDir, configPath).references.map(
-    (reference) => reference.resolvedPath,
-  );
+  return collectReferencePathInfosForConfig(
+    rootDirectory,
+    configPath,
+  ).references.map((reference) => reference.resolvedPath);
 }

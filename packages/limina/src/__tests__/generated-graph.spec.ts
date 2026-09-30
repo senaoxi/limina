@@ -27,7 +27,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import { createManagedOutputDeclarationLookup } from '../core/import-graph/managed-output-provider';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const execFileAsync = promisify(execFile);
@@ -89,47 +89,47 @@ async function linkInstalledPackage(options: {
   });
   const segments = options.packageName.split('/');
   const packageBaseName = segments.pop()!;
-  const nodeModulesDir = path.join(
+  const nodeModulesDirectory = path.join(
     options.rootDir,
     'node_modules',
     ...segments,
   );
-  await mkdir(nodeModulesDir, { recursive: true });
+  await mkdir(nodeModulesDirectory, { recursive: true });
   await symlink(
     packageRoot,
-    path.join(nodeModulesDir, packageBaseName),
+    path.join(nodeModulesDirectory, packageBaseName),
     'junction',
   );
 }
 
-async function linkAstroToolchain(rootDir: string): Promise<void> {
+async function linkAstroToolchain(rootDirectory: string): Promise<void> {
   await Promise.all([
     linkInstalledPackage({
       installedName: '@astrojs/check',
       packageName: '@astrojs/check',
-      rootDir,
+      rootDir: rootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'astro-v7-current',
       packageName: 'astro',
-      rootDir,
+      rootDir: rootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'typescript',
       packageName: 'typescript',
-      rootDir,
+      rootDir: rootDirectory,
     }),
   ]);
 }
 
-async function linkVueToolchain(rootDir: string): Promise<void> {
+async function linkVueToolchain(rootDirectory: string): Promise<void> {
   const vueTscPackagePath = requireFromTest.resolve('vue-tsc/package.json');
-  const nodeModulesDir = path.join(rootDir, 'node_modules');
+  const nodeModulesDirectory = path.join(rootDirectory, 'node_modules');
 
-  await mkdir(nodeModulesDir, { recursive: true });
+  await mkdir(nodeModulesDirectory, { recursive: true });
   await symlink(
     path.dirname(vueTscPackagePath),
-    path.join(nodeModulesDir, 'vue-tsc'),
+    path.join(nodeModulesDirectory, 'vue-tsc'),
     'junction',
   );
 }
@@ -148,9 +148,10 @@ async function createFixture(
   rootDir: string;
   path: ReturnType<typeof createFixturePathResolver>;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-generated-graph-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-generated-graph-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
   const hasAstro = Object.keys(files).some((filePath) =>
     filePath.endsWith('.astro'),
   );
@@ -178,43 +179,40 @@ async function createFixture(
   };
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
-  await linkVueToolchain(rootDir);
+  await linkVueToolchain(rootDirectory);
   if (hasSvelte && !hasAstro) {
     await linkInstalledPackage({
       installedName: 'typescript',
       packageName: 'typescript',
-      rootDir,
+      rootDir: rootDirectory,
     });
   }
-  if (options.svelteCompiler !== false && hasSvelte) {
+  if (hasSvelte && options.svelteCompiler !== false) {
     await linkInstalledPackage({
       installedName: 'svelte-v4-min',
       packageName: 'svelte',
-      rootDir,
+      rootDir: rootDirectory,
     });
   }
-  if (options.svelteTransform !== false && hasSvelte) {
+  if (hasSvelte && options.svelteTransform !== false) {
     await linkInstalledPackage({
       installedName: 'svelte2tsx',
       packageName: 'svelte2tsx',
-      rootDir,
+      rootDir: rootDirectory,
     });
   }
-  if (options.astroToolchain !== false && hasAstro) {
-    await linkAstroToolchain(rootDir);
+  if (hasAstro && options.astroToolchain !== false) {
+    await linkAstroToolchain(rootDirectory);
   }
 
   return {
-    path: createFixturePathResolver(rootDir),
+    path: createFixturePathResolver(rootDirectory),
     cleanup: async () => {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -222,11 +220,11 @@ async function createFixture(
           },
         },
       },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
-      rootDir,
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
       source: options.source,
-    },
-    rootDir,
+    }),
+    rootDir: rootDirectory,
   };
 }
 
@@ -234,32 +232,34 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-async function readGeneratedIndexDeclaration(rootDir: string): Promise<string> {
-  const matches = (await readdir(rootDir, { recursive: true })).filter(
+async function readGeneratedIndexDeclaration(
+  rootDirectory: string,
+): Promise<string> {
+  const matches = (await readdir(rootDirectory, { recursive: true })).filter(
     (filePath) => path.basename(filePath) === 'index.d.ts',
   );
   expect(matches).toHaveLength(1);
-  return readFile(path.join(rootDir, matches[0]!), 'utf8');
+  return readFile(path.join(rootDirectory, matches[0]!), 'utf8');
 }
 
 async function linkWorkspacePackage(
-  rootDir: string,
+  rootDirectory: string,
   importer: string,
   target: string,
   packageName: string,
 ): Promise<void> {
-  const [scope, name] = packageName.split('/');
-  const nodeModulesDir =
+  const [scope, name] = packageName.split('/', 2);
+  const nodeModulesDirectory =
     scope && name
-      ? path.join(rootDir, importer, 'node_modules', scope)
-      : path.join(rootDir, importer, 'node_modules');
+      ? path.join(rootDirectory, importer, 'node_modules', scope)
+      : path.join(rootDirectory, importer, 'node_modules');
 
-  await mkdir(nodeModulesDir, {
+  await mkdir(nodeModulesDirectory, {
     recursive: true,
   });
   await symlink(
-    path.relative(nodeModulesDir, path.join(rootDir, target)),
-    path.join(nodeModulesDir, name ?? packageName),
+    path.relative(nodeModulesDirectory, path.join(rootDirectory, target)),
+    path.join(nodeModulesDirectory, name ?? packageName),
   );
 }
 
@@ -918,27 +918,26 @@ describe('prepareGeneratedTsconfigGraph', () => {
   ])(
     'reverse-maps managed %s output to owned %s source',
     (declarationName, sourceName) => {
-      const rootDir = path.join(process.cwd(), 'virtual-managed-source');
-      const sourceFilePath = path.join(rootDir, 'src', sourceName);
+      const rootDirectory = path.join(process.cwd(), 'virtual-managed-source');
+      const sourceFilePath = path.join(rootDirectory, 'src', sourceName);
       const lookup = createManagedOutputDeclarationLookup([
         {
           checkerName: 'test',
           extensions: ['.ts', '.tsx', '.mts', '.cts', '.vue'],
           outputOptions: {
-            outDir: path.join(rootDir, 'dist'),
-            rootDir: path.join(rootDir, 'src'),
+            outDir: path.join(rootDirectory, 'dist'),
+            rootDir: path.join(rootDirectory, 'src'),
           },
           ownedFileNames: [sourceFilePath],
-          sourceConfigPath: path.join(rootDir, 'tsconfig.json'),
+          sourceConfigPath: path.join(rootDirectory, 'tsconfig.json'),
         },
       ]);
 
-      expect(
-        toPortablePath(
-          lookup.resolve(path.join(rootDir, 'dist', declarationName))!
-            .mappedSourceFilePath,
-        ),
-      ).toBe(toPortablePath(sourceFilePath));
+      const mappedSourcePath = toPortablePath(
+        lookup.resolve(path.join(rootDirectory, 'dist', declarationName))!
+          .mappedSourceFilePath,
+      );
+      expect(mappedSourcePath).toBe(toPortablePath(sourceFilePath));
     },
   );
 
@@ -1350,19 +1349,20 @@ describe('prepareGeneratedTsconfigGraph', () => {
         'export const outside = 1;\n',
       );
       await writeText(outsideConfigPath, json({ include: ['src/**/*.ts'] }));
+      const referenceConfig = json({
+        files: [],
+        references: [
+          {
+            path: path.relative(
+              path.join(fixture.rootDir, 'packages/a'),
+              outsideConfigPath,
+            ),
+          },
+        ],
+      });
       await writeText(
         path.join(fixture.rootDir, 'packages/a/tsconfig.json'),
-        json({
-          files: [],
-          references: [
-            {
-              path: path.relative(
-                path.join(fixture.rootDir, 'packages/a'),
-                outsideConfigPath,
-              ),
-            },
-          ],
-        }),
+        referenceConfig,
       );
       await expect(
         prepareGeneratedTsconfigGraph(fixture.config),
@@ -2146,17 +2146,19 @@ describe('prepareGeneratedTsconfigGraph', () => {
           }),
         ]),
       );
+      const missingReferenceFindingMatcher = expect.objectContaining({
+        consumerConfigPath: normalizeAbsolutePath(
+          path.join(fixture.rootDir, 'packages/consumer/tsconfig.json'),
+        ),
+        typeEvidenceKind: 'missing',
+        referenceRequirement: null,
+        physicalTargetPath: null,
+      });
+      const missingReferenceFindingsMatcher = expect.arrayContaining([
+        missingReferenceFindingMatcher,
+      ]);
       expect(result.ownershipPlan.dependencyFacts).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            consumerConfigPath: normalizeAbsolutePath(
-              path.join(fixture.rootDir, 'packages/consumer/tsconfig.json'),
-            ),
-            typeEvidenceKind: 'missing',
-            referenceRequirement: null,
-            physicalTargetPath: null,
-          }),
-        ]),
+        missingReferenceFindingsMatcher,
       );
       expect(analysis.resolveOxcImport).not.toHaveBeenCalled();
     } finally {
@@ -2433,12 +2435,10 @@ describe('prepareGeneratedTsconfigGraph', () => {
     async ({ ambient, specifier }) => {
       const fixture = await createFixture({
         'packages/a/src/index.ts': `import raw from '${specifier}';\nexport const value = raw;\n`,
-        ...(ambient
-          ? {
-              'packages/a/src/env.d.ts':
-                "declare module '*?raw' { const value: string; export default value; }\n",
-            }
-          : {}),
+        ...(ambient && {
+          'packages/a/src/env.d.ts':
+            "declare module '*?raw' { const value: string; export default value; }\n",
+        }),
         'packages/a/tsconfig.json': json({
           compilerOptions: managedOutputCompilerOptions(),
           include: ['src/**/*'],
@@ -3548,47 +3548,44 @@ describe('prepareGeneratedTsconfigGraph', () => {
       const vueProviderConfigPath = configPath('vue-provider');
       const tsConfigPath = configPath('ts-target');
 
-      expect(result.dependencyEdges).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            file: expect.stringContaining('packages/a/src/App.astro:'),
-            fromConfigPath: aConfigPath,
-            importedSpecifier: '../../astro-target/src/Widget.astro',
-            kind: 'framework-schedule',
-            toConfigPath: astroConfigPath,
-          }),
-          expect.objectContaining({
-            file: expect.stringContaining('packages/a/src/App.astro:'),
-            fromConfigPath: aConfigPath,
-            importedSpecifier: '../../svelte-target/src/Widget.svelte',
-            kind: 'framework-schedule',
-            toConfigPath: svelteConfigPath,
-          }),
-          expect.objectContaining({
-            file: expect.stringContaining('packages/a/src/App.astro:'),
-            fromConfigPath: aConfigPath,
-            importedSpecifier: '../../vue-target/src/Widget.vue',
-            kind: 'framework-schedule',
-            toConfigPath: vueConfigPath,
-          }),
-          expect.objectContaining({
-            file: expect.stringContaining('packages/a/src/App.astro:'),
-            fromConfigPath: aConfigPath,
-            importedSpecifier: '../../ts-target/src/index.ts',
-            kind: 'framework-schedule',
-            toConfigPath: tsConfigPath,
-          }),
-          expect.objectContaining({
-            file: expect.stringContaining(
-              'packages/vue-target/src/Widget.vue:',
-            ),
-            fromConfigPath: vueConfigPath,
-            importedSpecifier: '../../vue-provider/src/index.ts',
-            kind: 'declaration-provider',
-            toConfigPath: vueProviderConfigPath,
-          }),
-        ]),
-      );
+      const frameworkRelationsMatcher = expect.arrayContaining([
+        expect.objectContaining({
+          file: expect.stringContaining('packages/a/src/App.astro:'),
+          fromConfigPath: aConfigPath,
+          importedSpecifier: '../../astro-target/src/Widget.astro',
+          kind: 'framework-schedule',
+          toConfigPath: astroConfigPath,
+        }),
+        expect.objectContaining({
+          file: expect.stringContaining('packages/a/src/App.astro:'),
+          fromConfigPath: aConfigPath,
+          importedSpecifier: '../../svelte-target/src/Widget.svelte',
+          kind: 'framework-schedule',
+          toConfigPath: svelteConfigPath,
+        }),
+        expect.objectContaining({
+          file: expect.stringContaining('packages/a/src/App.astro:'),
+          fromConfigPath: aConfigPath,
+          importedSpecifier: '../../vue-target/src/Widget.vue',
+          kind: 'framework-schedule',
+          toConfigPath: vueConfigPath,
+        }),
+        expect.objectContaining({
+          file: expect.stringContaining('packages/a/src/App.astro:'),
+          fromConfigPath: aConfigPath,
+          importedSpecifier: '../../ts-target/src/index.ts',
+          kind: 'framework-schedule',
+          toConfigPath: tsConfigPath,
+        }),
+        expect.objectContaining({
+          file: expect.stringContaining('packages/vue-target/src/Widget.vue:'),
+          fromConfigPath: vueConfigPath,
+          importedSpecifier: '../../vue-provider/src/index.ts',
+          kind: 'declaration-provider',
+          toConfigPath: vueProviderConfigPath,
+        }),
+      ]);
+      expect(result.dependencyEdges).toEqual(frameworkRelationsMatcher);
     } finally {
       await fixture.cleanup();
     }
@@ -3891,22 +3888,19 @@ describe('prepareGeneratedTsconfigGraph', () => {
 
       expect(generatedConfig.compilerOptions.composite).toBe(true);
       expect(generatedConfig.compilerOptions.emitDeclarationOnly).toBe(true);
-      expect(generatedConfig.extends).toEqual([
-        toPortablePath(
-          path.relative(
-            path.dirname(path.join(fixture.rootDir, dtsPath)),
-            path.join(fixture.rootDir, sourcePath),
-          ),
-        ),
-      ]);
-      expect(generatedConfig.files).toEqual([
-        toPortablePath(
-          path.relative(
-            path.dirname(path.join(fixture.rootDir, dtsPath)),
-            path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
-          ),
-        ),
-      ]);
+      const relativeSourceConfig = path.relative(
+        path.dirname(path.join(fixture.rootDir, dtsPath)),
+        path.join(fixture.rootDir, sourcePath),
+      );
+      const expectedSourceConfigReference =
+        toPortablePath(relativeSourceConfig);
+      expect(generatedConfig.extends).toEqual([expectedSourceConfigReference]);
+      const relativeRootFile = path.relative(
+        path.dirname(path.join(fixture.rootDir, dtsPath)),
+        path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
+      );
+      const expectedRootFile = toPortablePath(relativeRootFile);
+      expect(generatedConfig.files).toEqual([expectedRootFile]);
       expect(generatedConfig.include).toEqual([]);
       expect(generatedConfig.liminaOptions).toMatchObject({
         checker: 'tsc',
@@ -4652,70 +4646,73 @@ describe('prepareGeneratedTsconfigGraph', () => {
           path: outputPath,
         },
       });
+      const expectedDeclarationDirectory = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(fixture.rootDir, 'packages/pkg/dist'),
+        ),
+      );
+      const expectedOutputDirectory = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(fixture.rootDir, 'packages/pkg/dist'),
+        ),
+      );
+      const expectedRootDirectory = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(fixture.rootDir, 'packages/pkg/src'),
+        ),
+      );
+      const expectedBuildInfoPath = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(
+            fixture.rootDir,
+            '.limina/tsbuildinfo/build/packages/pkg/tsconfig.lib.json.tsbuildinfo',
+          ),
+        ),
+      );
       expect(outputConfig.compilerOptions).toMatchObject({
         composite: true,
         declaration: true,
         declarationMap: false,
-        declarationDir: toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, 'packages/pkg/dist'),
-          ),
-        ),
+        declarationDir: expectedDeclarationDirectory,
         emitDeclarationOnly: false,
         incremental: true,
         noEmit: false,
-        outDir: toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, 'packages/pkg/dist'),
-          ),
-        ),
-        rootDir: toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, 'packages/pkg/src'),
-          ),
-        ),
+        outDir: expectedOutputDirectory,
+        rootDir: expectedRootDirectory,
         target: 'ES2022',
-        tsBuildInfoFile: toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(
-              fixture.rootDir,
-              '.limina/tsbuildinfo/build/packages/pkg/tsconfig.lib.json.tsbuildinfo',
-            ),
-          ),
-        ),
+        tsBuildInfoFile: expectedBuildInfoPath,
       });
       expect(outputConfig.compilerOptions.declarationDir).toBe(
         outputConfig.compilerOptions.outDir,
       );
-      expect(outputConfig.extends).toEqual([
-        toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, sourcePath),
-          ),
+      const expectedSourceConfigReference = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(fixture.rootDir, sourcePath),
         ),
-      ]);
-      expect(outputConfig.files).toEqual([
-        toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
-          ),
+      );
+      expect(outputConfig.extends).toEqual([expectedSourceConfigReference]);
+      const expectedRootFile = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(fixture.rootDir, 'packages/pkg/src/index.ts'),
         ),
-      ]);
+      );
+      expect(outputConfig.files).toEqual([expectedRootFile]);
       expect(outputConfig.include).toEqual([]);
       expect(outputConfig.references).toEqual([]);
-      expect(outputConfig.liminaOptions.sourceConfig).toBe(
-        toPortablePath(
-          path.relative(
-            path.dirname(outputConfigPath),
-            path.join(fixture.rootDir, sourcePath),
-          ),
+      const expectedLiminaSourceConfig = toPortablePath(
+        path.relative(
+          path.dirname(outputConfigPath),
+          path.join(fixture.rootDir, sourcePath),
         ),
+      );
+      expect(outputConfig.liminaOptions.sourceConfig).toBe(
+        expectedLiminaSourceConfig,
       );
     } finally {
       await fixture.cleanup();
@@ -4772,7 +4769,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
           .map((fileName) =>
             toPortablePath(path.relative(fixture.rootDir, fileName)),
           )
-          .sort();
+          .sort((left, right) => Number(left > right) - Number(left < right));
 
       expect(
         toFixturePaths(
@@ -7724,7 +7721,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     }
   });
 
-  const invalidImplicitRefCases: {
+  const invalidImplicitReferenceCases: {
     expected: string;
     files: Record<string, string>;
     name: string;
@@ -7841,7 +7838,7 @@ describe('prepareGeneratedTsconfigGraph', () => {
     },
   ];
 
-  it.each(invalidImplicitRefCases)(
+  it.each(invalidImplicitReferenceCases)(
     'rejects invalid implicit references: $name',
     async (caseValue) => {
       const fixture = await createFixture({
@@ -7939,14 +7936,14 @@ describe('reference graph repair compiler differentials', () => {
   ])(
     'builds same-package named leaves from inferred references: %s',
     async (variant) => {
-      const vue = variant === 'vue-direct';
+      const isVue = variant === 'vue-direct';
       const compilerOptions = {
         target: 'ES2022',
         module: 'ESNext',
         moduleResolution: 'Bundler',
         strict: true,
         noEmit: true,
-        skipLibCheck: vue,
+        skipLibCheck: isVue,
         types: [],
         jsx: 'preserve',
       };
@@ -7988,7 +7985,7 @@ describe('reference graph repair compiler differentials', () => {
             include: ['a/src/**/*'],
           });
         }
-      } else if (vue) {
+      } else if (isVue) {
         files['packages/p/a/src/index.ts'] =
           "export { default as Child } from '../../b/src/Child.vue';";
         files['packages/p/b/src/Child.vue'] =
@@ -8010,12 +8007,12 @@ describe('reference graph repair compiler differentials', () => {
       }
       const fixture = await createFixture(files);
       const fixturePath = createFixturePathResolver(fixture.rootDir);
-      const checker = vue ? 'vue-tsc' : 'tsc';
+      const checker = isVue ? 'vue-tsc' : 'tsc';
       fixture.config.config!.checkers = {
         [checker]: { include: ['packages/**/tsconfig.json'] },
       };
       try {
-        if (vue) {
+        if (isVue) {
           const vueRequire = createRequire(
             new URL('../../package.json', import.meta.url),
           );
@@ -8049,7 +8046,7 @@ describe('reference graph repair compiler differentials', () => {
           }),
         );
         const bin = requireFromTest.resolve(
-          vue ? 'vue-tsc/bin/vue-tsc.js' : 'typescript/bin/tsc',
+          isVue ? 'vue-tsc/bin/vue-tsc.js' : 'typescript/bin/tsc',
         );
         const build = await execFileAsync(
           process.execPath,
@@ -8186,7 +8183,7 @@ describe('ambient references and compiler membership', () => {
   it.each(['type-only', 'dynamic', 'cjs', 'paths', 'augmentation'])(
     'retains actual evidence through graph coloring and build: %s',
     async (variant) => {
-      const membership = variant === 'paths' || variant === 'augmentation';
+      const isMembership = variant === 'paths' || variant === 'augmentation';
       const extension = variant === 'cjs' ? 'cts' : 'ts';
       const compilerOptions = {
         module: 'NodeNext',
@@ -8210,7 +8207,7 @@ describe('ambient references and compiler membership', () => {
         'packages/a/tsconfig.json': json({
           compilerOptions: {
             ...compilerOptions,
-            paths: membership
+            paths: isMembership
               ? { '@repair/b': ['../b/src/value.ts'] }
               : undefined,
           },
@@ -8222,7 +8219,7 @@ describe('ambient references and compiler membership', () => {
         }),
         [`packages/a/src/index.${extension}`]: code,
         'packages/a/src/env.d.ts': `${variant === 'augmentation' ? "import '@repair/b';" : ''}declare module '@repair/b' { export interface B { ambient: true } export const value: { ambient: true } }`,
-        'packages/b/src/value.ts': membership
+        'packages/b/src/value.ts': isMembership
           ? 'export interface B {}'
           : `import type { answer } from '../../a/src/index.${extension === 'cts' ? 'cjs' : 'js'}'; export interface B { physical: true } export type Answer = typeof answer;`,
       });
@@ -8236,8 +8233,8 @@ describe('ambient references and compiler membership', () => {
         );
         const generated = await prepareGeneratedTsconfigGraph(fixture.config);
         const pair = [
-          fixturePath(`packages/${membership ? 'a' : 'b'}/tsconfig.json`),
-          fixturePath(`packages/${membership ? 'b' : 'a'}/tsconfig.json`),
+          fixturePath(`packages/${isMembership ? 'a' : 'b'}/tsconfig.json`),
+          fixturePath(`packages/${isMembership ? 'b' : 'a'}/tsconfig.json`),
         ];
         expect(
           generated.dependencyEdges.map((edge) => [
@@ -8249,7 +8246,7 @@ describe('ambient references and compiler membership', () => {
           (fact) =>
             fact.consumerConfigPath === fixturePath('packages/a/tsconfig.json'),
         );
-        if (membership) {
+        if (isMembership) {
           expect(facts).toHaveLength(variant === 'augmentation' ? 2 : 1);
           for (const fact of facts) {
             expect(fact.typeEvidenceKind).toBe(
@@ -8265,7 +8262,7 @@ describe('ambient references and compiler membership', () => {
         const importer = generated.sourceToDts
           .get('tsc')!
           .get(
-            fixturePath(`packages/${membership ? 'a' : 'b'}/tsconfig.json`),
+            fixturePath(`packages/${isMembership ? 'a' : 'b'}/tsconfig.json`),
           )!;
         await execFileAsync(
           process.execPath,
@@ -8382,13 +8379,13 @@ describe('ambient references and compiler membership', () => {
   ])(
     'preserves source type inputs in declaration and output projections: %s',
     async (variant) => {
-      const named = variant.endsWith('roots');
+      const isNamed = variant.endsWith('roots');
       const compilerOptions = {
         ...managedOutputCompilerOptions(),
-        types: named ? ['fixture'] : ['./env'],
-        ...(variant === 'explicit-roots'
-          ? { typeRoots: ['./node_modules/@types'] }
-          : {}),
+        types: [isNamed ? 'fixture' : './env'],
+        ...(variant === 'explicit-roots' && {
+          typeRoots: ['./node_modules/@types'],
+        }),
       };
       const files = {
         'packages/pkg/tsconfig.json': json({
@@ -8426,7 +8423,7 @@ describe('ambient references and compiler membership', () => {
         for (const configPath of configs) {
           const config = JSON.parse(await readFile(configPath, 'utf8'));
           expect(config.compilerOptions.types).toEqual(
-            named ? ['fixture'] : [],
+            isNamed ? ['fixture'] : [],
           );
           const parsed = parseProject(fixture.config, configPath);
           expect(parsed.options.typeRoots).toContain(
@@ -8457,13 +8454,13 @@ describe('ambient references and compiler membership', () => {
     async (variant) => {
       const dependencyRoot =
         variant === 'hoisted-extends' ? '' : 'packages/pkg/';
-      const mixed = variant === 'mixed-names';
+      const isMixed = variant === 'mixed-names';
       const compilerOptions = {
         ...managedOutputCompilerOptions(),
-        types: mixed ? ['*', 'tools/client', './env'] : ['*'],
-        ...(variant === 'explicit-roots'
-          ? { typeRoots: ['./node_modules/@types'] }
-          : {}),
+        types: isMixed ? ['*', 'tools/client', './env'] : ['*'],
+        ...(variant === 'explicit-roots' && {
+          typeRoots: ['./node_modules/@types'],
+        }),
       };
       const fixture = await createFixture({
         'packages/pkg/tsconfig.json': json({
@@ -8495,7 +8492,7 @@ describe('ambient references and compiler membership', () => {
         'packages/pkg/node_modules/tools/client.d.ts':
           'declare const NamedValue: number;',
         'packages/pkg/env.d.ts': 'declare const RelativeValue: number;',
-        'packages/pkg/src/index.ts': mixed
+        'packages/pkg/src/index.ts': isMixed
           ? 'export const value = AmbientValue + NamedValue + RelativeValue;'
           : 'export const value = AmbientValue;',
       });
@@ -8515,7 +8512,7 @@ describe('ambient references and compiler membership', () => {
         for (const configPath of configs) {
           const projected = JSON.parse(await readFile(configPath, 'utf8'));
           expect(projected.compilerOptions.types).toEqual(
-            mixed ? ['fixture', 'tools/client'] : ['fixture'],
+            isMixed ? ['fixture', 'tools/client'] : ['fixture'],
           );
         }
         const build = ts.createSolutionBuilder(

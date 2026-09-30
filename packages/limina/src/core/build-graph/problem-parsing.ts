@@ -55,7 +55,8 @@ function collectProblemBlockFromIndex(
   startIndex: number,
 ): string[] {
   const blockLines: string[] = [];
-  for (const line of lines.slice(startIndex + 1)) {
+  const remainingLines = lines.slice(startIndex + 1);
+  for (const line of remainingLines) {
     if (isProblemSectionHeader(line)) {
       break;
     }
@@ -71,10 +72,9 @@ export function collectGeneratedGraphProblemBlockLines(
   const startIndex = lines.findIndex(
     (line) => line.trimStart() === `${label}:`,
   );
-  if (startIndex === -1) {
-    return [];
-  }
-  return collectProblemBlockFromIndex(lines, startIndex);
+  return startIndex === -1
+    ? []
+    : collectProblemBlockFromIndex(lines, startIndex);
 }
 
 function hasEvidenceLines(evidence: LiminaCheckIssueEvidence): boolean {
@@ -85,20 +85,20 @@ function hasEvidenceLines(evidence: LiminaCheckIssueEvidence): boolean {
 export function isNonEmptyGeneratedGraphEvidence(
   evidence: LiminaCheckIssueEvidence | undefined,
 ): evidence is LiminaCheckIssueEvidence {
-  if (!evidence) {
-    return false;
-  }
-  return Boolean(evidence.value) || hasEvidenceLines(evidence);
+  return (
+    evidence !== undefined &&
+    (Boolean(evidence.value) || hasEvidenceLines(evidence))
+  );
 }
 
 export function isNonEmptyGeneratedGraphLocation(
   location: LiminaCheckIssueLocation | undefined,
 ): location is LiminaCheckIssueLocation {
-  if (!location) {
-    return false;
-  }
-  return [location.filePath, location.packageManifestPath, location.scope].some(
-    Boolean,
+  return (
+    location !== undefined &&
+    [location.filePath, location.packageManifestPath, location.scope].some(
+      Boolean,
+    )
   );
 }
 
@@ -136,8 +136,5 @@ function trimCheckerDescriptor(descriptor: string): string {
 export function getCheckerDescriptorName(
   descriptor: string | undefined,
 ): string {
-  if (!descriptor) {
-    return 'Consumer checker';
-  }
-  return trimCheckerDescriptor(descriptor);
+  return descriptor ? trimCheckerDescriptor(descriptor) : 'Consumer checker';
 }

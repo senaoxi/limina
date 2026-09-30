@@ -4,7 +4,7 @@ import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import type {
   AmbientConsumersByFile,
@@ -26,9 +26,12 @@ function shouldReportSharedAmbient(options: {
 function sortConsumers(
   consumers: Map<string, GovernanceUnit>,
 ): GovernanceUnit[] {
-  return [...consumers.values()].sort((left, right) =>
-    compareCodeUnits(left.owner.packageJsonPath, right.owner.packageJsonPath),
-  );
+  return consumers
+    .values()
+    .toArray()
+    .sort((left, right) =>
+      compareCodeUnits(left.owner.packageJsonPath, right.owner.packageJsonPath),
+    );
 }
 
 function createConsumerLines(
@@ -56,11 +59,8 @@ function addSharedAmbientFinding(options: {
 }): void {
   options.checks.add();
   const policy = options.ambientDeclarations.get(options.fileName);
-  if (!policy) {
-    return;
-  }
-
   if (
+    !policy ||
     !shouldReportSharedAmbient({
       allowSharedAcrossOwners: policy.allowSharedAcrossOwners,
       consumerCount: options.consumers.size,
@@ -119,8 +119,8 @@ export function addAmbientSharingFindings(options: {
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];
 }): void {
-  const entries = [...options.ambientConsumersByFile.entries()].sort(
-    ([left], [right]) => compareCodeUnits(left, right),
+  const entries = [...options.ambientConsumersByFile].sort(([left], [right]) =>
+    compareCodeUnits(left, right),
   );
 
   for (const [fileName, consumers] of entries) {

@@ -1,3 +1,4 @@
+import { isIntegerNumber } from '#utils/validation/is-integer';
 import type {
   CheckerTargetCheckItemSnapshot,
   LiminaCheckRunBlockedBy,
@@ -6,9 +7,9 @@ import type {
   LiminaCheckRunTaskSummary,
 } from './types';
 import {
-  allValid,
   CHECKER_TARGET_ID_PATTERN,
   hasOnlyKeys,
+  isAllValid,
   isFiniteNonNegativeNumber,
   isKnownIssueTask,
   isLiminaCheckRunCheckItemStatus,
@@ -67,7 +68,7 @@ export function isLiminaCheckRunBlockedBy(
   value: unknown,
 ): value is LiminaCheckRunBlockedBy {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     hasOnlyKeys(value, ['id', 'label']),
     isNonEmptyString(value.id),
     isNonEmptyString(value.label),
@@ -75,7 +76,7 @@ export function isLiminaCheckRunBlockedBy(
 }
 
 function hasValidCheckItemStatistics(value: Record<string, unknown>): boolean {
-  return allValid([
+  return isAllValid([
     isNonEmptyString(value.name),
     isLiminaCheckRunCheckItemStatus(value.status),
     isOptionalFiniteNonNegativeNumber(value.checksPassed),
@@ -90,42 +91,47 @@ function isCheckerTargetBlocker(value: unknown): value is {
   name: string;
 } {
   if (!isRecord(value)) return false;
-  const validId =
+  const isValidId =
     typeof value.id === 'string' && CHECKER_TARGET_ID_PATTERN.test(value.id);
-  return allValid([
+  return isAllValid([
     hasOnlyKeys(value, ['id', 'name']),
     isNonEmptyString(value.name),
-    validId,
+    isValidId,
   ]);
 }
 
 function hasBlockedTargetEntries(value: unknown): boolean {
-  if (!Array.isArray(value)) return false;
-  return allValid([value.length > 0, value.every(isCheckerTargetBlocker)]);
+  return (
+    Array.isArray(value) &&
+    isAllValid([value.length > 0, value.every(isCheckerTargetBlocker)])
+  );
 }
 
 function hasValidCheckerTargetBlockers(
   value: Record<string, unknown>,
 ): boolean {
-  if (value.status !== 'blocked') return value.blockedBy === undefined;
-  return hasBlockedTargetEntries(value.blockedBy);
+  return value.status === 'blocked'
+    ? hasBlockedTargetEntries(value.blockedBy)
+    : value.blockedBy === undefined;
 }
 
 function isValidationCheckItem(value: Record<string, unknown>): boolean {
-  if (value.itemKind !== 'check') return false;
-  return hasOnlyKeys(value, CHECK_ITEM_STATISTIC_KEYS);
+  return (
+    value.itemKind === 'check' && hasOnlyKeys(value, CHECK_ITEM_STATISTIC_KEYS)
+  );
 }
 
 function hasCheckerTargetId(value: Record<string, unknown>): boolean {
-  if (typeof value.id !== 'string') return false;
-  return CHECKER_TARGET_ID_PATTERN.test(value.id);
+  return (
+    typeof value.id === 'string' && CHECKER_TARGET_ID_PATTERN.test(value.id)
+  );
 }
 
 function isCheckerTargetCheckItem(
   value: Record<string, unknown>,
 ): value is Record<string, unknown> & CheckerTargetCheckItemSnapshot {
   if (value.itemKind !== 'checker-target') return false;
-  return allValid([
+  return isAllValid([
     hasOnlyKeys(value, [...CHECK_ITEM_STATISTIC_KEYS, 'blockedBy', 'id']),
     hasCheckerTargetId(value),
     hasValidCheckerTargetBlockers(value),
@@ -133,25 +139,27 @@ function isCheckerTargetCheckItem(
 }
 
 function isSupportedCheckItem(value: Record<string, unknown>): boolean {
-  if (isValidationCheckItem(value)) return true;
-  return isCheckerTargetCheckItem(value);
+  return isValidationCheckItem(value) || isCheckerTargetCheckItem(value);
 }
 
 export function isLiminaCheckRunCheckItemSummary(
   value: unknown,
 ): value is LiminaCheckRunCheckItemSummary {
-  if (!isRecord(value)) return false;
-  if (!hasValidCheckItemStatistics(value)) return false;
-  return isSupportedCheckItem(value);
+  return (
+    isRecord(value) &&
+    hasValidCheckItemStatistics(value) &&
+    isSupportedCheckItem(value)
+  );
 }
 
 function hasKnownTask(value: Record<string, unknown>): boolean {
-  if (typeof value.issueTask !== 'string') return false;
-  return isKnownIssueTask(value.issueTask);
+  return (
+    typeof value.issueTask === 'string' && isKnownIssueTask(value.issueTask)
+  );
 }
 
 function hasValidTaskIdentity(value: Record<string, unknown>): boolean {
-  return allValid([
+  return isAllValid([
     isNonEmptyString(value.id),
     isNonEmptyString(value.label),
     hasKnownTask(value),
@@ -161,8 +169,7 @@ function hasValidTaskIdentity(value: Record<string, unknown>): boolean {
 }
 
 function hasValidTaskGeneration(value: Record<string, unknown>): boolean {
-  if (!Number.isInteger(value.generation)) return false;
-  return (value.generation as number) >= 0;
+  return isIntegerNumber(value.generation) && value.generation >= 0;
 }
 
 function hasValidTaskTiming(value: Record<string, unknown>): boolean {
@@ -181,7 +188,7 @@ export function isLiminaCheckRunTaskSummary(
   value: unknown,
 ): value is LiminaCheckRunTaskSummary {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     hasOnlyKeys(value, TASK_KEYS),
     hasValidTaskIdentity(value),
     hasValidTaskGeneration(value),
@@ -193,7 +200,7 @@ export function isLiminaCheckRunTaskSummary(
 }
 
 function hasValidRunIdentity(value: Record<string, unknown>): boolean {
-  return allValid([
+  return isAllValid([
     typeof value.command === 'string',
     typeof value.createdAt === 'string',
     isLiminaCheckRunResult(value.result),
@@ -201,7 +208,7 @@ function hasValidRunIdentity(value: Record<string, unknown>): boolean {
 }
 
 function hasValidRunTiming(value: Record<string, unknown>): boolean {
-  return allValid([
+  return isAllValid([
     isOptionalString(value.startedAt),
     isOptionalString(value.completedAt),
     isOptionalFiniteNonNegativeNumber(value.durationMs),
@@ -209,22 +216,23 @@ function hasValidRunTiming(value: Record<string, unknown>): boolean {
 }
 
 function hasValidRunMetadata(value: Record<string, unknown>): boolean {
-  return allValid([
+  return isAllValid([
     isOptionalString(value.configPath),
     isOptionalString(value.pipeline),
   ]);
 }
 
 function hasValidRunTasks(value: Record<string, unknown>): boolean {
-  if (!Array.isArray(value.tasks)) return false;
-  return value.tasks.every(isLiminaCheckRunTaskSummary);
+  return (
+    Array.isArray(value.tasks) && value.tasks.every(isLiminaCheckRunTaskSummary)
+  );
 }
 
 export function isLiminaCheckRunSummary(
   value: unknown,
 ): value is LiminaCheckRunSummary {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     hasOnlyKeys(value, RUN_KEYS),
     hasValidRunIdentity(value),
     hasValidRunTasks(value),

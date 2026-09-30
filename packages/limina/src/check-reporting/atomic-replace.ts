@@ -86,7 +86,7 @@ async function waitForValidationRetry(
   await delay(retryDelays[attempt]!);
 }
 
-async function validateReplaceAttempt(
+async function isValidateReplaceAttempt(
   context: ReplaceAttemptContext,
   attempt: number,
 ): Promise<boolean> {
@@ -119,7 +119,7 @@ async function waitForReplacementRetry(
   await delay(retryDelays[attempt]!);
 }
 
-async function runReplaceAttempt(
+async function isRunReplaceAttempt(
   context: ReplaceAttemptContext,
   attempt: number,
 ): Promise<boolean> {
@@ -136,14 +136,14 @@ async function executeReplaceAttempt(
   context: ReplaceAttemptContext,
   attempt: number,
 ): Promise<void> {
-  const isValidated = await validateReplaceAttempt(context, attempt);
+  const isValidated = await isValidateReplaceAttempt(context, attempt);
 
   if (!isValidated) {
     await executeReplaceAttempt(context, attempt + 1);
     return;
   }
 
-  const isReplaced = await runReplaceAttempt(context, attempt);
+  const isReplaced = await isRunReplaceAttempt(context, attempt);
 
   if (!isReplaced) {
     await executeReplaceAttempt(context, attempt + 1);

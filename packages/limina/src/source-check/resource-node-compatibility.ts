@@ -3,13 +3,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 function requiresNodeConditions(value: unknown): boolean {
-  if (value === null) return true;
-  if (typeof value !== 'object') return false;
-  return Object.entries(value).some(
-    ([key, target]) =>
-      key === 'module-sync' ||
-      key === 'node-addons' ||
-      requiresNodeConditions(target),
+  return (
+    value === null ||
+    (typeof value === 'object' &&
+      Object.entries(value).some(
+        ([key, target]) =>
+          key === 'module-sync' ||
+          key === 'node-addons' ||
+          requiresNodeConditions(target),
+      ))
   );
 }
 
@@ -47,11 +49,11 @@ export class ResourceNodeCompatibility {
     const cached = this.#nodeConditions.get(packageJsonPath);
     if (cached !== undefined) return cached;
     const manifest = this.#readManifest(packageJsonPath);
-    const found = [manifest.exports, manifest.imports].some(
+    const isFound = [manifest.exports, manifest.imports].some(
       requiresNodeConditions,
     );
-    this.#nodeConditions.set(packageJsonPath, found);
-    return found;
+    this.#nodeConditions.set(packageJsonPath, isFound);
+    return isFound;
   }
 
   #readManifest(packageJsonPath: string): PackageManifest {
@@ -69,10 +71,10 @@ export class ResourceNodeCompatibility {
   }
 
   #requiresExactImport(filePath: string, specifier: string): boolean {
-    if (!specifier.startsWith('#')) return false;
     return (
-      /[?#]/u.test(specifier.slice(1)) ||
-      this.#hasNodeConditions(this.#getScope(filePath))
+      specifier.startsWith('#') &&
+      (/[?#]/u.test(specifier.slice(1)) ||
+        this.#hasNodeConditions(this.#getScope(filePath)))
     );
   }
 

@@ -88,10 +88,10 @@ export function readOptionalRegistryFile(filePath: string): string | undefined {
 
 function readConfiguredFile(
   filePath: string,
-  required: boolean,
+  isRequired: boolean,
 ): string | undefined {
   const content = readOptionalRegistryFile(filePath);
-  if (content === undefined && required)
+  if (content === undefined && isRequired)
     throw new RegistryAuthorityError(
       filePath,
       'configuration file does not exist',
@@ -106,8 +106,8 @@ export function readNpmrc(options: {
   required: boolean;
 }): RegistrySettings {
   const content = readConfiguredFile(options.filePath, options.required);
-  const source = `${options.layer}:${options.filePath}`;
   if (content === undefined) return new Map();
+  const source = `${options.layer}:${options.filePath}`;
   const values: Record<string, unknown> = parse(content);
   const settings: RegistrySettings = new Map();
   for (const [key, value] of Object.entries(values))
@@ -125,7 +125,7 @@ function environmentKey(name: string): string {
   return name.slice('npm_config_'.length).replaceAll('_', '-').toLowerCase();
 }
 
-function isConfigurationEnvironmentEntry(
+function isConfigEnvironmentEntry(
   name: string,
   value: string | undefined,
 ): boolean {
@@ -141,7 +141,7 @@ export function readNpmEnvironment(
     ([a], [b]) => Number(a === a.toLowerCase()) - Number(b === b.toLowerCase()),
   );
   for (const [name, value] of entries) {
-    if (!isConfigurationEnvironmentEntry(name, value)) continue;
+    if (!isConfigEnvironmentEntry(name, value)) continue;
     addSetting({
       settings,
       key: environmentKey(name),

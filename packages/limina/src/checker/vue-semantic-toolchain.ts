@@ -101,42 +101,45 @@ export function createUnsupportedVueToolchainError(options: {
   });
 }
 
-function resolveVueTscManifest(checkerExecutionRootDir: string): string {
+function resolveVueTscManifest(checkerExecutionRootDirectory: string): string {
   const requireFromExecutionScope = createRequire(
-    path.join(checkerExecutionRootDir, 'package.json'),
+    path.join(checkerExecutionRootDirectory, 'package.json'),
   );
   try {
     return normalizeAbsolutePath(
       requireFromExecutionScope.resolve('vue-tsc/package.json'),
     );
   } catch (error) {
-    throw createMissingVueTscError({ checkerExecutionRootDir, error });
+    throw createMissingVueTscError({
+      checkerExecutionRootDir: checkerExecutionRootDirectory,
+      error,
+    });
   }
 }
 
-function resolveToolchainPaths(checkerExecutionRootDir: string): {
+function resolveToolchainPaths(checkerExecutionRootDirectory: string): {
   paths: VueSemanticToolchainPaths;
   requireFromVueTsc: NodeRequire;
 } {
-  const vueTsc = resolveVueTscManifest(checkerExecutionRootDir);
+  const vueTsc = resolveVueTscManifest(checkerExecutionRootDirectory);
   const requireFromVueTsc = createRequire(vueTsc);
   const vueTscVersion = readManifestVersion(vueTsc);
   return {
     paths: {
       languageCore: resolvePackageManifest({
-        checkerExecutionRootDir,
+        checkerExecutionRootDir: checkerExecutionRootDirectory,
         packageName: '@vue/language-core',
         requireFromVueTsc,
         vueTscVersion,
       }),
       typeScript: resolvePackageManifest({
-        checkerExecutionRootDir,
+        checkerExecutionRootDir: checkerExecutionRootDirectory,
         packageName: 'typescript',
         requireFromVueTsc,
         vueTscVersion,
       }),
       volarTypeScript: resolvePackageManifest({
-        checkerExecutionRootDir,
+        checkerExecutionRootDir: checkerExecutionRootDirectory,
         packageName: '@volar/typescript',
         requireFromVueTsc,
         vueTscVersion,
@@ -220,8 +223,9 @@ function assertTypeScriptRuntime(value: unknown): typeof ts {
 function getToolchainVersionIdentity(
   versions: VueSemanticVersionTuple | undefined,
 ): string | undefined {
-  if (versions !== undefined) return formatVueSemanticVersionTuple(versions);
-  return undefined;
+  return versions === undefined
+    ? undefined
+    : formatVueSemanticVersionTuple(versions);
 }
 
 function rethrowToolchainResolutionError(options: {
@@ -238,11 +242,11 @@ function rethrowToolchainResolutionError(options: {
 }
 
 export function resolveVueSemanticToolchain(
-  checkerExecutionRootDir: string,
+  checkerExecutionRootDirectory: string,
 ): VueSemanticToolchain {
   let versions: VueSemanticVersionTuple | undefined;
   try {
-    const resolved = resolveToolchainPaths(checkerExecutionRootDir);
+    const resolved = resolveToolchainPaths(checkerExecutionRootDirectory);
     versions = readVersionTuple(resolved.paths);
     return {
       adapter: resolveVueSemanticAdapter(versions),
@@ -260,7 +264,7 @@ export function resolveVueSemanticToolchain(
     };
   } catch (error) {
     return rethrowToolchainResolutionError({
-      checkerExecutionRootDir,
+      checkerExecutionRootDir: checkerExecutionRootDirectory,
       error,
       versions,
     });

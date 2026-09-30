@@ -105,7 +105,7 @@ function assertExistingSegment(options: {
   assertRegularFile(options.path, options.stats);
 }
 
-async function inspectLogicalSegment(options: {
+async function isInspectLogicalSegment(options: {
   cursor: string;
   final: boolean;
   targetKind: 'directory' | 'file';
@@ -136,13 +136,13 @@ async function assertLogicalSegmentsSafe(options: {
 }): Promise<void> {
   const segments = getRelativePathSegments(options.relativePath);
   let cursor = options.authority.trustedBaseLogicalPath;
-  let missingAncestor = false;
+  let isMissingAncestor = false;
 
   for (const [index, segment] of segments.entries()) {
     cursor = path.join(cursor, segment);
 
-    if (!missingAncestor) {
-      missingAncestor = await inspectLogicalSegment({
+    if (!isMissingAncestor) {
+      isMissingAncestor = await isInspectLogicalSegment({
         cursor,
         final: index === segments.length - 1,
         targetKind: options.targetKind,

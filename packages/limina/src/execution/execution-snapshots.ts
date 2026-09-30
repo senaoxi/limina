@@ -30,15 +30,18 @@ function isCurrentSourceTask(options: {
   finalRepositoryGeneration: number;
   sourceTask: ExecutionTask | undefined;
 }): boolean {
-  if (options.sourceTask === undefined) return false;
-  return options.sourceTask.generation === options.finalRepositoryGeneration;
+  return (
+    options.sourceTask !== undefined &&
+    options.sourceTask.generation === options.finalRepositoryGeneration
+  );
 }
 
 function hasSourceOutcomeSnapshot(
   sourceOutcome: StartedTaskResult | undefined,
 ): boolean {
-  if (sourceOutcome === undefined) return false;
-  return sourceOutcome.sourceSnapshot !== undefined;
+  return (
+    sourceOutcome !== undefined && sourceOutcome.sourceSnapshot !== undefined
+  );
 }
 
 function hasCurrentSourceSnapshot(options: {
@@ -46,8 +49,10 @@ function hasCurrentSourceSnapshot(options: {
   sourceOutcome: StartedTaskResult | undefined;
   sourceTask: ExecutionTask | undefined;
 }): boolean {
-  if (!isCurrentSourceTask(options)) return false;
-  return hasSourceOutcomeSnapshot(options.sourceOutcome);
+  return (
+    isCurrentSourceTask(options) &&
+    hasSourceOutcomeSnapshot(options.sourceOutcome)
+  );
 }
 
 function createSourceSnapshot(options: {
@@ -77,7 +82,7 @@ function getCheckWriter(execution: RunExecutionPlanOptions) {
   return writer === undefined ? writeCheckIssueSnapshotOnly : writer;
 }
 
-async function enqueueSourceSnapshot(options: {
+async function isEnqueueSourceSnapshot(options: {
   execution: RunExecutionPlanOptions;
   finalRepositoryGeneration: number;
   sourceOutcome: StartedTaskResult | undefined;
@@ -149,9 +154,9 @@ export async function writeExecutionSnapshots(options: {
   tasks: readonly ExecutionTask[];
 }): Promise<void> {
   const writer = new SerialSnapshotWriterQueue();
-  let sourceSnapshotPersisted = false;
+  let isSourceSnapshotPersisted = false;
   try {
-    sourceSnapshotPersisted = await enqueueSourceSnapshot({
+    isSourceSnapshotPersisted = await isEnqueueSourceSnapshot({
       ...options,
       writer,
     });
@@ -159,17 +164,22 @@ export async function writeExecutionSnapshots(options: {
       attempt: options.attempt,
       execution: options.execution,
       issues: options.issues,
-      sourceSnapshotPersisted,
+      sourceSnapshotPersisted: isSourceSnapshotPersisted,
       writer,
     });
     await writer.flush();
   } catch (error) {
-    await failCheckAttemptPersistence({
+    const cleanup = failCheckAttemptPersistence({
       attempt: options.attempt,
       error,
       namespace: options.execution.preflight.artifactNamespace,
-      sourceSnapshotPersisted,
-    }).catch(ignoreError);
+      sourceSnapshotPersisted: isSourceSnapshotPersisted,
+    });
+    try {
+      await cleanup;
+    } catch (error) {
+      ignoreError(error);
+    }
     throw error;
   }
 }

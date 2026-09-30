@@ -1,3 +1,4 @@
+import { isIntegerNumber } from '../utils/validation/is-integer';
 import type { ExecutionPlan, ExecutionTask, TaskId } from './tasks';
 
 function assertNonEmptyPlan(plan: ExecutionPlan): void {
@@ -19,7 +20,7 @@ function getDependencies(task: ExecutionTask): TaskId[] {
 }
 
 function assertValidGeneration(task: ExecutionTask): void {
-  if (!Number.isInteger(task.generation) || task.generation < 0) {
+  if (!isIntegerNumber(task.generation) || task.generation < 0) {
     throw new Error(
       `Execution task "${task.label}" has invalid generation "${task.generation}".`,
     );
@@ -61,7 +62,8 @@ function assertTaskDependencies(options: {
   ids: ReadonlySet<TaskId>;
   task: ExecutionTask;
 }): void {
-  for (const dependency of getDependencies(options.task)) {
+  const orderedEntries = getDependencies(options.task);
+  for (const dependency of orderedEntries) {
     assertDependencyExists({ ...options, dependency });
     assertDependencyGeneration({
       byId: options.byId,
@@ -231,7 +233,8 @@ function visitDependency(options: {
   assertNotVisiting(options);
   options.visiting.add(options.taskId);
   const task = options.byId.get(options.taskId)!;
-  for (const dependency of new Set(getDependencies(task))) {
+  const dependencies = new Set(getDependencies(task));
+  for (const dependency of dependencies) {
     visitDependency({ ...options, taskId: dependency });
   }
   options.visiting.delete(options.taskId);

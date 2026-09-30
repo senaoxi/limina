@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, it } from 'node:test';
-import repositoryConfig from '../../limina.config.mjs';
+import repoConfig from '../../limina.config.mjs';
 import { createReleasePlanFromVersionSelection } from './changelog';
+import { execReleaseCommand, resolveReleaseCommand } from './command';
 import {
   compareVersions,
   getReleasePackageConfigs,
@@ -110,6 +121,136 @@ describe('release version precedence', () => {
   });
 });
 
+describe('Windows release npm execution', () => {
+  it('preserves argv, cwd and error output through a JavaScript launcher', () => {
+    const temporary = mkdtempSync(
+      path.join(tmpdir(), 'limina npm & ^ %PATH% !L! (x)-'),
+    );
+    const directory = realpathSync(temporary);
+    try {
+      const entry = path.join(directory, 'node_modules/npm/bin/npm-cli.js');
+      mkdirSync(path.dirname(entry), { recursive: true });
+      writeFileSync(path.join(directory, 'npm.cmd'), 'not executable');
+      writeFileSync(
+        entry,
+        `process.stdout.write(JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
+if (process.argv.includes('fail')) {
+  process.stderr.write('controlled npm failure');
+  process.exit(17);
+}`,
+      );
+      const sentinel = path.join(directory, 'injected.txt');
+      const arguments_ = [
+        'pack',
+        '--pack-destination',
+        path.join(directory, 'output with spaces'),
+        '空格漢字',
+        `& echo injected > "${sentinel}"`,
+        '^caret',
+        '%PATH%',
+        '!L!',
+        '(x)',
+        'a"b',
+        'line1\nline2',
+      ];
+      const environment = {
+        ...process.env,
+        PATH: directory,
+        npm_execpath: 'pnpm.cjs',
+      };
+      const resolved = resolveReleaseCommand('npm.cmd', arguments_, {
+        cwd: directory,
+        env: environment,
+        execPath: process.execPath,
+        platform: 'win32',
+      });
+      assert.equal(resolved.command, process.execPath);
+      assert.deepEqual(resolved.arguments, [entry, ...arguments_]);
+      const command =
+        process.platform === 'win32' ? 'npm.cmd' : resolved.command;
+      const argv =
+        process.platform === 'win32' ? arguments_ : resolved.arguments;
+      const options = {
+        cwd: directory,
+        env: environment,
+        encoding: 'utf8' as const,
+        stdio: 'pipe' as const,
+      };
+      assert.deepEqual(JSON.parse(execReleaseCommand(command, argv, options)), {
+        argv: arguments_,
+        cwd: directory,
+      });
+      assert.equal(existsSync(sentinel), false);
+      assert.throws(
+        () => execReleaseCommand(command, [...argv, 'fail'], options),
+        (error: unknown) => {
+          const result = error as {
+            status?: number;
+            stderr?: string;
+            stdout?: string;
+          };
+          assert.equal(result.status, 17);
+          assert.equal(result.stderr, 'controlled npm failure');
+          assert.deepEqual(JSON.parse(result.stdout!), {
+            argv: [...arguments_, 'fail'],
+            cwd: directory,
+          });
+          return true;
+        },
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('respects npm identity and fails closed for an unsupported first PATH shim', () => {
+    const temporary = mkdtempSync(
+      path.join(tmpdir(), 'limina-npm-resolution-'),
+    );
+    const directory = realpathSync(temporary);
+    try {
+      const first = path.join(directory, 'first');
+      const second = path.join(directory, 'second');
+      const entry = path.join(second, 'node_modules/npm/bin/npm-cli.js');
+      mkdirSync(first, { recursive: true });
+      mkdirSync(path.dirname(entry), { recursive: true });
+      writeFileSync(path.join(first, 'npm.cmd'), 'custom shim');
+      writeFileSync(path.join(second, 'npm.cmd'), 'npm shim');
+      writeFileSync(entry, '');
+      const context = {
+        cwd: directory,
+        env: { PATH: `${first};${second}`, Path: second },
+        execPath: process.execPath,
+        platform: 'win32' as const,
+      };
+      assert.throws(
+        () => resolveReleaseCommand('npm.cmd', [], context),
+        /beside/,
+      );
+      assert.deepEqual(
+        resolveReleaseCommand('npm.cmd', ['--version'], {
+          ...context,
+          env: { ...context.env, npm_execpath: entry },
+        }),
+        { command: process.execPath, arguments: [entry, '--version'] },
+      );
+      assert.deepEqual(resolveReleaseCommand('git.exe', ['status'], context), {
+        command: 'git.exe',
+        arguments: ['status'],
+      });
+      assert.deepEqual(
+        resolveReleaseCommand('npm', ['--version'], {
+          ...context,
+          platform: 'darwin',
+        }),
+        { command: 'npm', arguments: ['--version'] },
+      );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
 it('publishes the governed product artifact from a private workspace root', () => {
   const [release] = getReleasePackageConfigs();
   const root = JSON.parse(
@@ -126,7 +267,7 @@ it('publishes the governed product artifact from a private workspace root', () =
   assert.equal(release?.relativeDir, 'packages/limina');
   assert.equal(release?.packageName, product.name);
   assert.deepEqual(
-    repositoryConfig.package?.entries?.map(({ name, outDir }) => ({
+    repoConfig.package?.entries?.map(({ name, outDir }) => ({
       name,
       outDir,
     })),

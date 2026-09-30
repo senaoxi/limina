@@ -38,7 +38,7 @@ export const PROOF_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     kind: 'fault-injection',
     producers: [
       'packages/limina/src/check-reporting/codes.ts#DEFAULT_ISSUE_CODE_BY_TASK',
-      'packages/limina/src/commands/proof.ts#runProofCheck',
+      'packages/limina/src/commands/proof.ts#isRunProofCheck',
       'packages/limina/src/execution/task-execution.ts#createInfrastructureIssue',
     ],
     task: 'proof:check',

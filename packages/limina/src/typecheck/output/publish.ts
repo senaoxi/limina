@@ -146,8 +146,7 @@ function hasPublicationError(options: {
   closeError: Error | undefined;
   primaryError: unknown;
 }): boolean {
-  if (options.primaryError !== undefined) return true;
-  return options.closeError !== undefined;
+  return options.primaryError !== undefined || options.closeError !== undefined;
 }
 
 function requireOwnedFile(
@@ -226,8 +225,8 @@ function hasOwnedFileState(
     hash: current.hash,
     length: current.length,
   };
-  if (fileIdentityKey(current) !== fileIdentityKey(expected)) return false;
-  return current.content.equals(
-    owned.pendingContent.subarray(0, current.length),
+  return (
+    fileIdentityKey(current) === fileIdentityKey(expected) &&
+    current.content.equals(owned.pendingContent.subarray(0, current.length))
   );
 }

@@ -5,9 +5,11 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const packageDir = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const distCliPath = path.join(packageDir, 'cli.js');
-const sourceCliPath = path.join(packageDir, 'src/cli.ts');
+const packageDirectory = path.resolve(
+  fileURLToPath(new URL('..', import.meta.url)),
+);
+const distributionCliPath = path.join(packageDirectory, 'cli.js');
+const sourceCliPath = path.join(packageDirectory, 'src/cli.ts');
 const require = createRequire(import.meta.url);
 
 if (existsSync(sourceCliPath)) {
@@ -25,9 +27,12 @@ if (existsSync(sourceCliPath)) {
   }
 
   process.exit(result.status ?? 1);
-} else if (existsSync(distCliPath)) {
-  const { runCli } = await import(pathToFileURL(distCliPath).href);
+}
+if (existsSync(distributionCliPath)) {
+  const { runCli } = await import(pathToFileURL(distributionCliPath).href);
   await runCli(process.argv);
 } else {
-  throw new Error(`Unable to find limina CLI entry. Expected ${distCliPath}.`);
+  throw new Error(
+    `Unable to find limina CLI entry. Expected ${distributionCliPath}.`,
+  );
 }

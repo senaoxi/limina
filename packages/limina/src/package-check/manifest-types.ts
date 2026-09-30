@@ -1,4 +1,4 @@
-export interface DistPackageJson {
+export interface DistributionPackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   exports?: unknown;

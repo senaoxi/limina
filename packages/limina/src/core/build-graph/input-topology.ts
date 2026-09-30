@@ -4,6 +4,7 @@ import {
   type ResolvedLiminaConfig,
 } from '#config/runner';
 import { collectRawWorkspacePackages } from '#core/workspace/actions';
+import { compareCodeUnits } from '#utils/collections';
 import { LiminaStructuredError } from '../../check-reporting/errors';
 import {
   CheckerEntryInputError,
@@ -15,7 +16,7 @@ import {
   type ValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../workspace/validated-context';
-import { readImplicitRefs } from './generated/config-readers';
+import { readImplicitReferences } from './generated/config-readers';
 import { collectCheckerSourceConfigModules } from './source-config-collection';
 import { createEmptySourceConfigCollection } from './source-config-root-collection';
 
@@ -26,7 +27,9 @@ export interface InputTopologyDiagnostic {
   code?: string;
 }
 
-/** Current-input facts only. No checker ownership or executable graph authority. */
+/**
+Current-input facts only. No checker ownership or executable graph authority.
+*/
 export interface InputTopologyResult {
   complete: boolean;
   diagnostics: InputTopologyDiagnostic[];
@@ -48,7 +51,7 @@ function emptyTopology(): InputTopologyResult {
   };
 }
 
-async function readWorkspace(
+async function isReadWorkspace(
   config: ResolvedLiminaConfig,
   result: InputTopologyResult,
 ): Promise<boolean> {
@@ -123,12 +126,13 @@ function readEntry(
     problems,
     seenConfigs: new Set(),
     sourceConfigPath: entry,
-    onInputError: (configPath, error) =>
+    onInputError: (configPath, error) => {
       result.diagnostics.push({
         configPath,
         phase: 'config',
         message: error.message,
-      }),
+      });
+    },
   });
   result.diagnostics.push(
     ...problems.map((message) => ({
@@ -137,7 +141,9 @@ function readEntry(
       message,
     })),
   );
-  result.reachableSources[entry] = [...collection.projectConfigPaths].sort();
+  result.reachableSources[entry] = [...collection.projectConfigPaths].sort(
+    compareCodeUnits,
+  );
   return collection;
 }
 
@@ -146,15 +152,15 @@ function readExplicitDeclarations(
   result: InputTopologyResult,
   source: string,
 ): void {
-  const refs = readImplicitRefs(config, source);
-  const outside = refs.implicitRefs.filter(
-    (ref) => !result.sources.includes(ref.targetConfigPath),
+  const references = readImplicitReferences(config, source);
+  const outside = references.implicitRefs.filter(
+    (reference) => !result.sources.includes(reference.targetConfigPath),
   );
   const messages = [
-    ...refs.problems,
+    ...references.problems,
     ...outside.map(
-      (ref) =>
-        `implicitRefs target is outside the effective source topology: ${ref.path}`,
+      (reference) =>
+        `implicitRefs target is outside the effective source topology: ${reference.path}`,
     ),
   ];
   result.diagnostics.push(
@@ -166,18 +172,20 @@ function readExplicitDeclarations(
   );
 }
 
-/** Collects input facts using the normal entry and config readers, without granting checker ownership. */
+/**
+Collects input facts using the normal entry and config readers, without granting checker ownership.
+*/
 export async function readInputTopology(
   config: ResolvedLiminaConfig,
 ): Promise<InputTopologyResult> {
   const result = emptyTopology();
-  if (!(await readWorkspace(config, result))) return result;
+  if (!(await isReadWorkspace(config, result))) return result;
   const selected = await Promise.all(
     checkerSelections(config).map((selection) =>
       readSelection(config, result, selection),
     ),
   );
-  result.entries = [...new Set(selected.flat())].sort();
+  result.entries = [...new Set(selected.flat())].sort(compareCodeUnits);
   const collections = result.entries.map((entry) =>
     readEntry(config, result, entry),
   );
@@ -185,12 +193,12 @@ export async function readInputTopology(
     ...new Set(
       collections.flatMap((collection) => [...collection.projectConfigPaths]),
     ),
-  ].sort();
+  ].sort(compareCodeUnits);
   result.solutions = [
     ...new Set(
       collections.flatMap((collection) => [...collection.solutionConfigPaths]),
     ),
-  ].sort();
+  ].sort(compareCodeUnits);
   readSolutionReachability(config, result);
   for (const source of [...result.sources, ...result.solutions])
     readExplicitDeclarations(config, result, source);

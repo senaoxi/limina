@@ -74,7 +74,17 @@ export function planArchitectureValidationStages(
       const ruleIds = grouped.get(kind);
 
       return ruleIds
-        ? [createStage(kind, Object.freeze([...ruleIds].sort()), factories)]
+        ? [
+            createStage(
+              kind,
+              Object.freeze(
+                [...ruleIds].sort(
+                  (left, right) => Number(left > right) - Number(left < right),
+                ),
+              ),
+              factories,
+            ),
+          ]
         : [];
     }),
   );

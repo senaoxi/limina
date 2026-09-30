@@ -9,7 +9,7 @@ export function resolveMigrationProcessEntry(options: {
   bundleFileName: string;
 }): { command: string; args: string[] } | undefined {
   const require = createRequire(import.meta.url);
-  const packageDir = path.dirname(
+  const packageDirectory = path.dirname(
     require.resolve('limina-migrate/package.json'),
   );
   const sourceEntry = fileURLToPath(
@@ -25,7 +25,7 @@ export function resolveMigrationProcessEntry(options: {
       ],
     };
   }
-  const bundleEntry = path.join(packageDir, options.bundleFileName);
+  const bundleEntry = path.join(packageDirectory, options.bundleFileName);
   return existsSync(bundleEntry)
     ? { command: process.execPath, args: [bundleEntry] }
     : undefined;

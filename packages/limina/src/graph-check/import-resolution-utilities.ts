@@ -16,11 +16,9 @@ function resolveNodeModulesPackageName(options: {
   packageName: string;
   parts: string[];
 }): string | null {
-  if (options.packageName.startsWith('@')) {
-    return getScopedPackageName(options.parts, options.nodeModulesIndex);
-  }
-
-  return options.packageName;
+  return options.packageName.startsWith('@')
+    ? getScopedPackageName(options.parts, options.nodeModulesIndex)
+    : options.packageName;
 }
 
 export function getNodeModulesPackageName(filePath: string): string | null {
@@ -48,11 +46,7 @@ function getWorkspacePackageName(
   workspaceLookup: WorkspaceLookupIndex,
 ): string | null {
   const workspacePackage = workspaceLookup.findPackageForFile(filePath);
-  if (!workspacePackage) {
-    return null;
-  }
-
-  return workspacePackage.name ?? null;
+  return workspacePackage ? (workspacePackage.name ?? null) : null;
 }
 
 export function getResolvedPackageName(
@@ -60,20 +54,16 @@ export function getResolvedPackageName(
   workspaceLookup: WorkspaceLookupIndex,
 ): string | null {
   const nodeModulesPackageName = getNodeModulesPackageName(filePath);
-  if (nodeModulesPackageName) {
-    return nodeModulesPackageName;
-  }
-
-  return getWorkspacePackageName(filePath, workspaceLookup);
+  return (
+    nodeModulesPackageName || getWorkspacePackageName(filePath, workspaceLookup)
+  );
 }
 
 export function getResolvedWorkspacePackage(
   filePath: string,
   workspaceLookup: WorkspaceLookupIndex,
 ): WorkspacePackage | null {
-  if (getNodeModulesPackageName(filePath)) {
-    return null;
-  }
-
-  return workspaceLookup.findPackageForFile(filePath);
+  return getNodeModulesPackageName(filePath)
+    ? null
+    : workspaceLookup.findPackageForFile(filePath);
 }

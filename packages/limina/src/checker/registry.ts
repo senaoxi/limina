@@ -143,8 +143,7 @@ function isBuildCheckerName(value: string): value is BuildCheckerName {
 }
 
 export function getCheckerAdapter(preset: string): CheckerAdapter | null {
-  if (!isBuildCheckerName(preset)) return null;
-  return builtinCheckerAdapters[preset];
+  return isBuildCheckerName(preset) ? builtinCheckerAdapters[preset] : null;
 }
 
 const checkerBuildEngines = {
@@ -164,8 +163,7 @@ const checkerCapabilityFamilies = {
 function getKnownBuildEngine(
   preset: CheckerPreset,
 ): CheckerBuildEngine | undefined {
-  if (!isBuildCheckerName(preset)) return undefined;
-  return checkerBuildEngines[preset];
+  return isBuildCheckerName(preset) ? checkerBuildEngines[preset] : undefined;
 }
 
 export function getCheckerBuildEngine(
@@ -178,8 +176,9 @@ export function getCheckerBuildEngine(
 function getKnownCapabilityFamily(
   preset: CheckerPreset,
 ): CheckerCapabilityFamily | undefined {
-  if (!Object.hasOwn(checkerCapabilityFamilies, preset)) return undefined;
-  return checkerCapabilityFamilies[preset as CheckerName];
+  return Object.hasOwn(checkerCapabilityFamilies, preset)
+    ? checkerCapabilityFamilies[preset as CheckerName]
+    : undefined;
 }
 
 export function getCheckerCapabilityFamily(
@@ -191,8 +190,7 @@ export function getCheckerCapabilityFamily(
 
 export function isBuildCapablePreset(preset: CheckerPreset): boolean {
   const adapter = getCheckerAdapter(preset);
-  if (adapter === null) return false;
-  return adapter.execution === 'build';
+  return adapter !== null && adapter.execution === 'build';
 }
 
 function getBuildAdapter(preset: CheckerPreset): CheckerAdapter | null {
@@ -205,8 +203,9 @@ function addVueExtension(
   preset: CheckerPreset,
   nativeExtensions: string[],
 ): string[] {
-  if (preset !== 'vue-tsc') return nativeExtensions;
-  return normalizeExtensions([...nativeExtensions, '.vue']);
+  return preset === 'vue-tsc'
+    ? normalizeExtensions([...nativeExtensions, '.vue'])
+    : nativeExtensions;
 }
 
 function getSupportedBuildExtensions(
@@ -229,6 +228,8 @@ export function isCheckerCacheReusable(options: {
   consumer: string;
   provider: string;
 }): boolean {
-  if (options.consumer === options.provider) return true;
-  return options.consumer === 'vue-tsc' && options.provider === 'tsc';
+  return (
+    options.consumer === options.provider ||
+    (options.consumer === 'vue-tsc' && options.provider === 'tsc')
+  );
 }

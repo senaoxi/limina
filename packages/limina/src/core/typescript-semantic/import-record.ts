@@ -28,7 +28,7 @@ export function createImportRecordIdentity(importRecord: ImportRecord): string {
   });
 }
 
-function matchesRange(
+function isMatchesRange(
   node: ts.StringLiteralLike,
   sourceFile: ts.SourceFile,
   importRecord: ImportRecord,
@@ -39,15 +39,17 @@ function matchesRange(
   );
 }
 
-function matchesNode(options: {
+function isMatchesNode(options: {
   importRecord: ImportRecord;
   node: ts.Node;
   sourceFile: ts.SourceFile;
   tsModule: typeof ts;
 }): options is typeof options & { node: ts.StringLiteralLike } {
-  if (!options.tsModule.isStringLiteralLike(options.node)) return false;
-  if (options.node.text !== options.importRecord.specifier) return false;
-  return matchesRange(options.node, options.sourceFile, options.importRecord);
+  return (
+    options.tsModule.isStringLiteralLike(options.node) &&
+    options.node.text === options.importRecord.specifier &&
+    isMatchesRange(options.node, options.sourceFile, options.importRecord)
+  );
 }
 
 export function findImportRecordLiteral(options: {
@@ -59,7 +61,7 @@ export function findImportRecordLiteral(options: {
   const visit = (node: ts.Node): void => {
     if (matched !== null) return;
     const candidate = { ...options, node };
-    if (matchesNode(candidate)) {
+    if (isMatchesNode(candidate)) {
       matched = candidate.node;
       return;
     }
@@ -78,7 +80,7 @@ export function findImportRecordByLiteral(options: {
     (record) =>
       isModuleImportRecord(record) &&
       record.specifier === options.literal.text &&
-      matchesRange(options.literal, options.sourceFile, record),
+      isMatchesRange(options.literal, options.sourceFile, record),
   );
 }
 

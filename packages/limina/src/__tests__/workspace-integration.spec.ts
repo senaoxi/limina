@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function writeText(filePath: string, text: string): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
@@ -16,30 +16,28 @@ async function createFixture(files: Record<string, string>): Promise<{
   config: ResolvedLiminaConfig;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-workspace-integration-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-workspace-integration-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
-  await writeText(path.join(rootDir, 'package.json'), '{}');
+  await writeText(path.join(rootDirectory, 'package.json'), '{}');
   for (const [relativePath, text] of Object.entries(files)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
-      rootDir,
-    },
-    rootDir,
+    config: withFixtureGovernanceRoot({
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
   };
 }
 

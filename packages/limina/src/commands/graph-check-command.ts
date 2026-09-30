@@ -7,7 +7,7 @@ import {
   type LiminaCheckIssue,
 } from '../check-reporting/snapshot';
 import {
-  runGraphCheckImpl,
+  isRunGraphCheckImpl,
   type RunGraphCheckOptions,
 } from '../graph-check/runner';
 import { formatErrorMessage, GraphLogger } from '../logger';
@@ -107,7 +107,7 @@ async function completeCheckSnapshot(
   });
 }
 
-async function handlePassedGraphCheck(
+async function isHandlePassedGraphCheck(
   context: GraphCheckCommandContext,
 ): Promise<true> {
   await completeCheckSnapshot(context);
@@ -124,7 +124,7 @@ function shouldLogFailedCheck(options: RunGraphCheckOptions): boolean {
   return options.flow === undefined;
 }
 
-async function handleFailedGraphCheck(
+async function isHandleFailedGraphCheck(
   context: GraphCheckCommandContext,
   issues: readonly LiminaCheckIssue[],
 ): Promise<false> {
@@ -144,11 +144,11 @@ async function handleFailedGraphCheck(
   return false;
 }
 
-export async function executeGraphCheckCommand(
+export async function isExecuteGraphCheckCommand(
   context: GraphCheckCommandContext,
 ): Promise<boolean> {
   const issues: LiminaCheckIssue[] = [];
-  const passed = await runGraphCheckImpl(context.config, {
+  const isPassed = await isRunGraphCheckImpl(context.config, {
     generatedGraphProvider: context.options.generatedGraphProvider,
     issues,
     logSuccess: shouldLogGraphSuccess(context.options),
@@ -159,9 +159,9 @@ export async function executeGraphCheckCommand(
     report: context.options.report,
   });
 
-  return passed
-    ? handlePassedGraphCheck(context)
-    : handleFailedGraphCheck(context, issues);
+  return isPassed
+    ? isHandlePassedGraphCheck(context)
+    : isHandleFailedGraphCheck(context, issues);
 }
 
 function getCheckErrorIssues(
@@ -177,7 +177,7 @@ function shouldReturnCheckFailure(options: RunGraphCheckOptions): boolean {
   return options.flow !== undefined;
 }
 
-export async function handleGraphCheckCommandError(
+export async function isHandleGraphCheckCommandError(
   context: GraphCheckCommandContext,
   error: unknown,
 ): Promise<false> {

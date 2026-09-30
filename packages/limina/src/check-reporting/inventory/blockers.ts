@@ -85,14 +85,15 @@ function comparePackageCounts(
   left: HumanCountEntry,
   right: HumanCountEntry,
 ): number {
-  if (left.count !== right.count) return right.count - left.count;
-  return compareCodeUnits(left.name, right.name);
+  return left.count === right.count
+    ? compareCodeUnits(left.name, right.name)
+    : right.count - left.count;
 }
 
 function createPackageCounts(
   counts: ReadonlyMap<string, number>,
 ): HumanCountEntry[] {
-  return [...counts.entries()]
+  return [...counts]
     .map(([name, count]) => ({ count, name }))
     .sort(comparePackageCounts);
 }
@@ -126,8 +127,10 @@ export function selectHumanPrimaryBlockers(
   issues: readonly LiminaCheckIssue[],
   limit: number = DEFAULT_PRIMARY_BLOCKER_LIMIT,
 ): HumanPrimaryBlocker[] {
-  return [...groupBlockerIssues(issues).values()]
+  return groupBlockerIssues(issues)
+    .values()
     .map(createPrimaryBlocker)
+    .toArray()
     .sort(compareHumanPrimaryBlockers)
     .slice(0, Math.max(0, limit));
 }

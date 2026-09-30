@@ -45,16 +45,16 @@ function recordInternalCacheAccess(options: {
 function getResolvedFileName(
   resolution: ResolvedCheckerModuleName | null,
 ): string | null {
-  if (resolution === null) return null;
-  return resolution.resolvedFileName;
+  return resolution === null ? null : resolution.resolvedFileName;
 }
 
 function resolveTypeScriptPreferred(
   dependencies: ProviderDependencies,
   request: NormalizedModuleResolutionRequest,
 ): string | null {
-  if (!hasTypeScriptOnlyResolutionOptions(request.compilerOptions)) return null;
-  return getResolvedFileName(resolveTypeScriptResult(dependencies, request));
+  return hasTypeScriptOnlyResolutionOptions(request.compilerOptions)
+    ? getResolvedFileName(resolveTypeScriptResult(dependencies, request))
+    : null;
 }
 
 function resolveLocalCandidate(
@@ -88,16 +88,18 @@ function resolveNonTypeScriptFallback(
   request: NormalizedModuleResolutionRequest,
 ): string | null {
   const oxc = resolveOxcResult(dependencies, request);
-  if (oxc !== null) return oxc;
-  return getResolvedFileName(resolveTypeScriptResult(dependencies, request));
+  return oxc === null
+    ? getResolvedFileName(resolveTypeScriptResult(dependencies, request))
+    : oxc;
 }
 
 function resolveProviderFallback(
   dependencies: ProviderDependencies,
   request: NormalizedModuleResolutionRequest,
 ): string | null {
-  if (hasTypeScriptOnlyResolutionOptions(request.compilerOptions)) return null;
-  return resolveNonTypeScriptFallback(dependencies, request);
+  return hasTypeScriptOnlyResolutionOptions(request.compilerOptions)
+    ? null
+    : resolveNonTypeScriptFallback(dependencies, request);
 }
 
 function resolveInternalResult(
@@ -107,18 +109,19 @@ function resolveInternalResult(
   const typeScript = resolveTypeScriptPreferred(dependencies, request);
   if (typeScript !== null) return typeScript;
   const local = resolveLocalCandidate(request);
-  if (local !== null) return local;
-  return resolveProviderFallback(dependencies, request);
+  return local === null
+    ? resolveProviderFallback(dependencies, request)
+    : local;
 }
 
 function resolveInternalRequest(
   dependencies: ProviderDependencies,
   request: NormalizedModuleResolutionRequest,
 ): string | null {
-  const hit = request.record.hasInternalImportResult;
-  dependencies.requests.recordIndexAccess('internal-import', hit);
-  recordInternalCacheAccess({ hit, metrics: dependencies.metrics });
-  if (hit) return request.record.internalImportResult;
+  const isHit = request.record.hasInternalImportResult;
+  dependencies.requests.recordIndexAccess('internal-import', isHit);
+  recordInternalCacheAccess({ hit: isHit, metrics: dependencies.metrics });
+  if (isHit) return request.record.internalImportResult;
   const resolved = resolveInternalResult(dependencies, request);
   request.record.internalImportResult = resolved;
   request.record.hasInternalImportResult = true;
@@ -128,12 +131,12 @@ function resolveInternalRequest(
 export function createInternalResolver(
   dependencies: ProviderDependencies,
 ): ImportAnalysisContext['resolveInternalImport'] {
-  return (...args) => {
+  return (...arguments_) => {
     dependencies.requests.recordRequest('internal-import');
     recordInternalResolution(dependencies.metrics);
     return resolveInternalRequest(
       dependencies,
-      dependencies.requests.getRequest(...args),
+      dependencies.requests.getRequest(...arguments_),
     );
   };
 }

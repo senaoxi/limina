@@ -1,7 +1,7 @@
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execReleaseCommand } from './command';
 import {
   getNpmCommand,
   isValidVersion,
@@ -21,13 +21,13 @@ export function validatePublicationTarget(
   version: string,
   gitTag: string,
 ): void {
-  const relativeDir = publicationDirectories.get(config.packageName);
+  const relativeDirectory = publicationDirectories.get(config.packageName);
   if (
-    !relativeDir ||
+    !relativeDirectory ||
     !isValidVersion(version) ||
     gitTag !== `limina/v${version}` ||
     realpathSync(config.publishDir) !==
-      path.join(realpathSync(REPO_ROOT), relativeDir)
+      path.join(realpathSync(REPO_ROOT), relativeDirectory)
   ) {
     throw new Error(
       'Publication requires an approved package directory and the matching limina version tag.',
@@ -37,7 +37,7 @@ export function validatePublicationTarget(
     name?: string;
     version?: string;
   };
-  const dist = JSON.parse(
+  const distribution = JSON.parse(
     readFileSync(path.join(config.publishDir, 'package.json'), 'utf8'),
   ) as {
     name?: string;
@@ -47,8 +47,8 @@ export function validatePublicationTarget(
   if (
     source.name !== config.packageName ||
     source.version !== version ||
-    dist.name !== source.name ||
-    dist.version !== version
+    distribution.name !== source.name ||
+    distribution.version !== version
   ) {
     throw new Error(
       `Source and published package must agree: ${config.packageName}@${version}`,
@@ -56,7 +56,7 @@ export function validatePublicationTarget(
   }
   if (
     config.packageName === 'limina-migrate' &&
-    dist.dependencies?.limina !== version
+    distribution.dependencies?.limina !== version
   ) {
     throw new Error(
       'Published limina-migrate must depend on the exact same limina version.',
@@ -90,7 +90,7 @@ function registryIntegrity(
 ): string | undefined {
   let output: string;
   try {
-    output = execFileSync(
+    output = execReleaseCommand(
       getNpmCommand(),
       [
         'view',
@@ -128,13 +128,15 @@ export function publishReleaseGroup(
   assertReleaseGroup(plans);
   for (const plan of plans)
     validatePublicationTarget(plan.config, plan.newVersion, plan.gitTag);
-  const temporaryDir = mkdtempSync(path.join(tmpdir(), 'limina-release-'));
+  const temporaryDirectory = mkdtempSync(
+    path.join(tmpdir(), 'limina-release-'),
+  );
   try {
     const packages = plans.map((plan) => {
       const packed = JSON.parse(
         runCommand(
           getNpmCommand(),
-          ['pack', '--json', '--pack-destination', temporaryDir],
+          ['pack', '--json', '--pack-destination', temporaryDirectory],
           {
             cwd: plan.config.publishDir,
           },
@@ -193,6 +195,6 @@ export function publishReleaseGroup(
       );
     }
   } finally {
-    rmSync(temporaryDir, { recursive: true, force: true });
+    rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 }

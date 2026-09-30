@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { randomUUID } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
 import { hostname } from 'node:os';
@@ -11,11 +12,11 @@ import { createMaterializationRevision } from '../../domain/artifacts/plan';
 import type { MaterializationRevision } from '../../domain/shared/identifiers';
 import type { CrossProcessLeaseOwner } from '../../utils/mutation/cross-process-lease';
 import {
+  isMatchesRecordSchema,
   isNonEmptyString,
   isPositiveInteger,
   isString,
   isStringArray,
-  matchesRecordSchema,
 } from '../../utils/validation/record-schema';
 import { isOwnedArtifactLedgerVersion } from './manifest-version';
 
@@ -59,7 +60,7 @@ export function getMaterializationMarkerPath(
 }
 
 function isLeaseOwner(value: unknown): value is CrossProcessLeaseOwner {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     hostname: isString,
     pid: isPositiveInteger,
     startedAt: isString,
@@ -68,7 +69,7 @@ function isLeaseOwner(value: unknown): value is CrossProcessLeaseOwner {
 }
 
 function isMarker(value: unknown): value is MaterializationInProgressMarker {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     baseRevision: isNonEmptyString,
     desiredRevision: isNonEmptyString,
     operationId: isNonEmptyString,
@@ -154,7 +155,7 @@ function isManifest(value: unknown): value is {
   ownedArtifacts: string[];
   version: number;
 } {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     generatedBy: (generatedBy) => generatedBy === 'limina',
     ownedArtifacts: isStringArray,
     version: isOwnedArtifactLedgerVersion,
@@ -164,7 +165,7 @@ function isManifest(value: unknown): value is {
 function parseManifest(text: string): string[] {
   const value: unknown = JSON.parse(text);
   if (!isManifest(value)) throw new Error('invalid manifest shape');
-  return [...new Set(value.ownedArtifacts)].sort();
+  return [...new Set(value.ownedArtifacts)].sort(compareCodeUnits);
 }
 
 function corruptManifest(error: unknown): CorruptMaterializationStateError {
@@ -257,7 +258,9 @@ export function createMaterializationMarker(options: {
         ...options.planDeletePaths,
         ...options.targetOwnedPaths,
       ]),
-    ].sort(),
-    targetOwnedPaths: [...new Set(options.targetOwnedPaths)].sort(),
+    ].sort(compareCodeUnits),
+    targetOwnedPaths: [...new Set(options.targetOwnedPaths)].sort(
+      compareCodeUnits,
+    ),
   };
 }

@@ -35,11 +35,9 @@ function createOperationRoles(options: {
   normalizedTarget: string;
   targetKind: ArtifactTargetKind | undefined;
 }): ReadonlySet<ArtifactPathSafetyRole> {
-  if (options.cursor !== options.normalizedTarget) {
-    return new Set(['parent-directory']);
-  }
-
-  return createTargetRoles(options.targetKind);
+  return options.cursor === options.normalizedTarget
+    ? createTargetRoles(options.targetKind)
+    : new Set(['parent-directory']);
 }
 
 function collectOperationPaths(

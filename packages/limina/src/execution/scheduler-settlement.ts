@@ -42,8 +42,10 @@ export async function stopRemaining(options: {
   blocker: ExecutionTask;
   context: SchedulerContext;
 }): Promise<void> {
-  const remaining = [...options.context.pending.values()]
+  const remaining = options.context.pending
+    .values()
     .filter((task) => task.order > options.blocker.order)
+    .toArray()
     .sort((left, right) => left.order - right.order);
   for (const task of remaining) {
     await finishSynthetic({
@@ -62,8 +64,10 @@ function shouldStopPipeline(options: {
   outcome: StartedTaskResult;
   task: ExecutionTask;
 }): boolean {
-  if (options.outcome.status !== 'failed') return false;
-  return options.task.failPolicy === 'stop-pipeline';
+  return (
+    options.outcome.status === 'failed' &&
+    options.task.failPolicy === 'stop-pipeline'
+  );
 }
 
 function markGenerationAdvance(options: {
@@ -136,7 +140,7 @@ async function firstSettledEntry(
   running: ReadonlyMap<string, RunningTaskEntry>,
 ): Promise<RunningTaskEntry> {
   return Promise.race(
-    [...running.values()].map(async (candidate) => {
+    running.values().map(async (candidate) => {
       await candidate.settlement;
       return candidate;
     }),

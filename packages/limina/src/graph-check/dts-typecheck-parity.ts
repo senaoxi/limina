@@ -11,12 +11,12 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import {
   comparableTypecheckOptions,
-  compilerOptionEquals,
   formatCompilerOptionValue,
+  isCompilerOptionEquals,
 } from './dts-option-shared';
 import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
 
-type AddTypecheckParityProblemsArgs = [
+type AddTypecheckParityProblemsArguments = [
   config: ResolvedLiminaConfig,
   dtsProject: ProjectInfo,
   findings: GraphFinding[],
@@ -163,7 +163,7 @@ function addOptionParityProblems(
     const buildValue = context.dtsProject.options[optionName];
     const typecheckValue = typecheckProject.options[optionName];
 
-    if (!compilerOptionEquals(optionName, buildValue, typecheckValue)) {
+    if (!isCompilerOptionEquals(optionName, buildValue, typecheckValue)) {
       context.findings.push(
         createOptionParityFinding({
           buildValue,
@@ -267,7 +267,7 @@ function addFileParityProblem(
 }
 
 export function addTypecheckParityProblems(
-  ...args: AddTypecheckParityProblemsArgs
+  ...arguments_: AddTypecheckParityProblemsArguments
 ): void {
   const [
     config,
@@ -276,7 +276,7 @@ export function addTypecheckParityProblems(
     checks,
     checkerName,
     projectConfigCache,
-  ] = args;
+  ] = arguments_;
 
   if (!isDtsProjectConfig(dtsProject.configPath)) return;
 

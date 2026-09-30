@@ -1,7 +1,7 @@
 import type { PackageAttwProfile, PackageEntry } from '#config/runner';
 import { runAttwCheck } from '../attw-check';
-import { runBoundaryCheck } from '../boundary-check';
-import type { DistPackageJson } from '../manifest';
+import { isRunBoundaryCheck } from '../boundary-check';
+import type { DistPackageJson as DistributionPackageJson } from '../manifest';
 import { runPublintCheck } from '../publint-check';
 import type { RunPackageCheckEntryOptions } from '../runner-types';
 import {
@@ -16,7 +16,7 @@ import {
 
 interface EntryToolOptions {
   entry: PackageEntry;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   manifestPath: string;
   runOptions: RunPackageCheckEntryOptions;
   state: EntryExecutionState;
@@ -54,8 +54,9 @@ function getAttwProfile(options: {
   requestedProfile: PackageAttwProfile | undefined;
 }): PackageAttwProfile {
   if (options.requestedProfile !== undefined) return options.requestedProfile;
-  if (options.configuredProfile !== undefined) return options.configuredProfile;
-  return 'esm-only';
+  return options.configuredProfile === undefined
+    ? 'esm-only'
+    : options.configuredProfile;
 }
 
 export async function runAttw(options: EntryToolOptions): Promise<void> {
@@ -82,7 +83,7 @@ export async function runAttw(options: EntryToolOptions): Promise<void> {
 
 export async function runBoundary(options: EntryToolOptions): Promise<void> {
   if (!isEnabled(options, 'boundary')) return;
-  const passed = await runBoundaryCheck({
+  const isPassed = await isRunBoundaryCheck({
     checkOptions: {
       flow: options.runOptions.flow,
       flowDepth: getToolDepth(options),
@@ -94,7 +95,7 @@ export async function runBoundary(options: EntryToolOptions): Promise<void> {
     label: options.runOptions.label,
     target: { ...options.entry.boundary, outDir: options.entry.outDir },
   });
-  applyToolResult(options.state, passed ? 'passed' : 'failed');
+  applyToolResult(options.state, isPassed ? 'passed' : 'failed');
 }
 
 export async function runEntryTools(options: EntryToolOptions): Promise<void> {

@@ -156,5 +156,7 @@ function collectRealKnipConfigReferences(
     });
   }
 
-  return [...realReferences].sort();
+  return [...realReferences].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }

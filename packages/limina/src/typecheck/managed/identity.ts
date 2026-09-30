@@ -29,13 +29,15 @@ function canonicalizeRecord(value: Record<string, unknown>): unknown {
 
 function canonicalizeNonArray(value: unknown): unknown {
   if (value === null) return value;
-  if (typeof value !== 'object') return value;
-  return canonicalizeRecord(value as Record<string, unknown>);
+  return typeof value === 'object'
+    ? canonicalizeRecord(value as Record<string, unknown>)
+    : value;
 }
 
 function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  return canonicalizeNonArray(value);
+  return Array.isArray(value)
+    ? value.map(canonicalize)
+    : canonicalizeNonArray(value);
 }
 
 export function stableJson(value: unknown): string {
@@ -46,7 +48,9 @@ export function hashValue(value: unknown): string {
   return createHash('sha256').update(stableJson(value)).digest('hex');
 }
 
-let compilerIdentity: string | undefined;
+const state = {
+  compilerIdentity: undefined as string | undefined,
+};
 
 function calculateCompilerIdentity(): string {
   const require = createRequire(import.meta.url);
@@ -64,10 +68,10 @@ function calculateCompilerIdentity(): string {
 }
 
 function getCompilerIdentity(): string {
-  if (compilerIdentity === undefined) {
-    compilerIdentity = calculateCompilerIdentity();
+  if (state.compilerIdentity === undefined) {
+    state.compilerIdentity = calculateCompilerIdentity();
   }
-  return compilerIdentity;
+  return state.compilerIdentity;
 }
 
 function createIdentityBase(
@@ -165,16 +169,14 @@ export function captureConfigDependencyIdentity(
   const logicalPath = normalizeAbsolutePath(dependencyPath);
   const stats = lstatSync(logicalPath) as Stats;
   const base = createIdentityBase(logicalPath, stats);
-  if (stats.isSymbolicLink()) {
-    return createSymlinkIdentity({ base, logicalPath });
-  }
-  return captureNonSymlinkIdentity({ base, logicalPath, stats });
+  return stats.isSymbolicLink()
+    ? createSymlinkIdentity({ base, logicalPath })
+    : captureNonSymlinkIdentity({ base, logicalPath, stats });
 }
 
 function getErrorCode(error: unknown): string | undefined {
   if (!(error instanceof Error)) return undefined;
-  if (!('code' in error)) return undefined;
-  return String(error.code);
+  return 'code' in error ? String(error.code) : undefined;
 }
 
 function isPackageResolutionMiss(error: unknown): boolean {
@@ -222,17 +224,15 @@ function getCommandPath(options: {
   projectRootDir: string;
   target: TypecheckTarget;
 }): string {
-  if (path.isAbsolute(options.target.command)) {
-    return normalizeAbsolutePath(options.target.command);
-  }
-  return normalizeAbsolutePath(
-    path.join(
-      options.projectRootDir,
-      'node_modules',
-      '.bin',
-      options.target.command,
-    ),
-  );
+  const commandPath = path.isAbsolute(options.target.command)
+    ? options.target.command
+    : path.join(
+        options.projectRootDir,
+        'node_modules',
+        '.bin',
+        options.target.command,
+      );
+  return normalizeAbsolutePath(commandPath);
 }
 
 function isMissingPathError(error: unknown): boolean {

@@ -10,11 +10,11 @@ import { createSinglePackageFixture } from './helpers/single-package';
 const execFileAsync = promisify(execFile);
 const cliPath = fileURLToPath(new URL('../../bin/limina.js', import.meta.url));
 
-async function runCli(cwd: string, args: string[]) {
+async function runCli(cwd: string, arguments_: string[]) {
   try {
     return {
       status: 0,
-      ...(await execFileAsync(process.execPath, [cliPath, ...args], {
+      ...(await execFileAsync(process.execPath, [cliPath, ...arguments_], {
         cwd,
         env: { ...process.env, CI: 'true' },
       })),
@@ -95,12 +95,12 @@ it('replays the emitted invocation query after config removal without loading co
       .find((line) => line.startsWith(label))
       ?.slice(label.length);
     expect(query).toBeDefined();
-    const encodedArgs = /'([A-Za-z0-9+/=]+)'$/u.exec(query!)?.[1];
+    const encodedArguments = /'([A-Za-z0-9+/=]+)'$/u.exec(query!)?.[1];
     const queryText =
       process.platform === 'win32'
         ? (
             JSON.parse(
-              Buffer.from(encodedArgs!, 'base64').toString('utf8'),
+              Buffer.from(encodedArguments!, 'base64').toString('utf8'),
             ) as string[]
           ).join(' ')
         : query!;

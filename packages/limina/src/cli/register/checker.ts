@@ -9,7 +9,7 @@ import {
   parseBuildPreset,
   rejectUnknownCheckerOptions,
 } from '../parse';
-import { runStandaloneIssueFlow } from '../standalone';
+import { isRunStandaloneIssueFlow } from '../standalone';
 import type { CheckerFlags, RegisterStandaloneIssueSession } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -28,14 +28,14 @@ interface CheckerTargetOptions {
 }
 
 function assertBuildPresetHasConfig(options: CheckerTargetOptions): void {
-  if (options.configPath !== undefined) return;
-  if (options.flags.preset === undefined) return;
+  if (options.configPath !== undefined || options.flags.preset === undefined)
+    return;
   throw new Error('checker build --preset requires a config argument.');
 }
 
 function assertBuildWatchHasConfig(options: CheckerTargetOptions): void {
-  if (options.configPath !== undefined) return;
-  if (!getCheckerWatchFlag(options.flags)) return;
+  if (options.configPath !== undefined || !getCheckerWatchFlag(options.flags))
+    return;
   throw new Error('checker build --watch requires a config argument.');
 }
 
@@ -67,7 +67,7 @@ function validateCheckerTypecheckFlags(options: CheckerTargetOptions): void {
   assertTypecheckHasNoWatch(options);
 }
 
-async function executeCheckerBuild(options: {
+async function isExecuteCheckerBuild(options: {
   configPath: string | undefined;
   flags: CheckerFlags;
   flow: ReturnType<typeof createCliFlow>;
@@ -115,7 +115,7 @@ async function executeCheckerBuild(options: {
   return result.passed;
 }
 
-async function executeCheckerTypecheck(options: {
+async function isExecuteCheckerTypecheck(options: {
   configPath: string | undefined;
   flags: CheckerFlags;
   flow: ReturnType<typeof createCliFlow>;
@@ -161,13 +161,13 @@ async function runCheckerAction(
   rejectUnknownCheckerOptions(flags);
   const parsedAction = parseCheckerAction(action);
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: (registerSession) => {
       flow.intro(`limina checker ${parsedAction}`);
       const options = { configPath, flags, flow, registerSession };
       return parsedAction === 'build'
-        ? executeCheckerBuild(options)
-        : executeCheckerTypecheck(options);
+        ? isExecuteCheckerBuild(options)
+        : isExecuteCheckerTypecheck(options);
     },
     flow,
     messages: {
@@ -175,7 +175,7 @@ async function runCheckerAction(
       passed: 'limina checker passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 export function registerCheckerCommand(cli: LiminaCli): void {

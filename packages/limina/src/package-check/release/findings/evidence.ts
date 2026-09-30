@@ -47,11 +47,7 @@ function pushEvidenceValue(
 ): void {
   const serialized = serializeUnknown(value);
 
-  if (serialized === undefined) {
-    return;
-  }
-
-  if (serialized === '') {
+  if (serialized === undefined || serialized === '') {
     return;
   }
 
@@ -59,9 +55,7 @@ function pushEvidenceValue(
 }
 
 function getProperty(facts: object, property: string): unknown {
-  return property in facts
-    ? (facts as Record<string, unknown>)[property]
-    : undefined;
+  return (facts as Record<string, unknown>)[property];
 }
 
 function appendProperties(

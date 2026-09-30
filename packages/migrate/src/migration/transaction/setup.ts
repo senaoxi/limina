@@ -53,32 +53,36 @@ export function resolveTransactionRuntimeOptions(
   };
 }
 
-function normalizeAllowedRootDirs(
-  allowedRootDirs: string | readonly string[],
+function normalizeAllowedRootDirectories(
+  allowedRootDirectories: string | readonly string[],
 ): string[] {
   const roots =
-    typeof allowedRootDirs === 'string' ? [allowedRootDirs] : allowedRootDirs;
+    typeof allowedRootDirectories === 'string'
+      ? [allowedRootDirectories]
+      : allowedRootDirectories;
   return [...new Set(roots.map(normalizeAbsolutePath))].sort(
     (left, right) => right.length - left.length,
   );
 }
 
 export async function resolveAllowedRoots(
-  allowedRootDirs: string | readonly string[],
+  allowedRootDirectories: string | readonly string[],
 ): Promise<{ normalizedRootDirs: string[]; roots: AllowedRoot[] }> {
-  const normalizedRootDirs = normalizeAllowedRootDirs(allowedRootDirs);
-  if (normalizedRootDirs.length === 0) {
+  const normalizedRootDirectories = normalizeAllowedRootDirectories(
+    allowedRootDirectories,
+  );
+  if (normalizedRootDirectories.length === 0) {
     throw new TerminalReplacementValidationError(
       'Migration requires at least one canonical allowed Git worktree root.',
     );
   }
   const roots = await Promise.all(
-    normalizedRootDirs.map(async (rootDir) => ({
-      canonicalRootDir: normalizeAbsolutePath(await realpath(rootDir)),
-      rootDir,
+    normalizedRootDirectories.map(async (rootDirectory) => ({
+      canonicalRootDir: normalizeAbsolutePath(await realpath(rootDirectory)),
+      rootDir: rootDirectory,
     })),
   );
-  return { normalizedRootDirs, roots };
+  return { normalizedRootDirs: normalizedRootDirectories, roots };
 }
 
 function findAllowedRoot(
@@ -87,8 +91,10 @@ function findAllowedRoot(
 ): AllowedRoot | undefined {
   const normalizedPath = normalizeAbsolutePath(configPath);
   return allowedRoots.find((candidate) => {
-    if (normalizedPath === candidate.rootDir) return true;
-    return isPathInsideDirectory(normalizedPath, candidate.rootDir);
+    return (
+      normalizedPath === candidate.rootDir ||
+      isPathInsideDirectory(normalizedPath, candidate.rootDir)
+    );
   });
 }
 
@@ -150,7 +156,7 @@ export function createEmptyMigrationResult(
 }
 
 export async function prepareMigrationWritePlan(
-  allowedRootDirs: string | readonly string[],
+  allowedRootDirectories: string | readonly string[],
   plan: readonly MigrationWritePlanItem[],
   transactionOptions: MigrationTransactionOptions = {},
 ): Promise<PreparedMigrationPlan> {
@@ -164,7 +170,7 @@ export async function prepareMigrationWritePlan(
     };
   }
   const runtime = resolveTransactionRuntimeOptions(transactionOptions);
-  const allowedRoots = await resolveAllowedRoots(allowedRootDirs);
+  const allowedRoots = await resolveAllowedRoots(allowedRootDirectories);
   const snapshots = await collectModifiedSnapshots({
     allowedRoots: allowedRoots.roots,
     items: modifiedItems,

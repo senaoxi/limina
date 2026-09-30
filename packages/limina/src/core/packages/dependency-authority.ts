@@ -44,15 +44,13 @@ function getDependencySection(
 ): Record<string, string> | null {
   const section = manifest[sectionName];
 
-  if (!isPlainRecord(section)) {
-    return null;
-  }
-
-  return Object.fromEntries(
-    Object.entries(section).filter(
-      (entry): entry is [string, string] => typeof entry[1] === 'string',
-    ),
-  );
+  return isPlainRecord(section)
+    ? Object.fromEntries(
+        Object.entries(section).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+    : null;
 }
 
 function collectSectionDeclaration(

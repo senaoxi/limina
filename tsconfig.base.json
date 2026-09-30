@@ -5,6 +5,14 @@
     "strict": true,
     "noEmit": true,
     "target": "ES2023",
+    "lib": [
+      "ES2023",
+      "ES2024.Collection",
+      "ES2024.Object",
+      "ES2024.Promise",
+      "ES2025.Collection",
+      "ES2025.Iterator"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "types": [],

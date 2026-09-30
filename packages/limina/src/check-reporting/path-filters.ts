@@ -7,7 +7,9 @@ export type PathFilterCandidateKind = 'file' | 'package-manifest';
 export interface PathFilterCandidate {
   kind: PathFilterCandidateKind;
   path: string;
-  /** Additional path roots used only for scope matching. */
+  /**
+  Additional path roots used only for scope matching.
+  */
   scopeRelativeTo?: readonly string[];
 }
 
@@ -27,28 +29,28 @@ function normalizeRelativePath(value: string): string {
 
 function normalizeCandidatePath(
   candidatePath: string,
-  rootDir?: string,
+  rootDirectory?: string,
 ): string {
   const normalizedPath = normalizeSlashes(candidatePath);
 
-  if (!rootDir) {
+  if (!rootDirectory) {
     return normalizeRelativePath(normalizedPath);
   }
 
   const absolutePath = path.isAbsolute(normalizedPath)
     ? normalizedPath
-    : path.resolve(rootDir, normalizedPath);
-  return normalizeRelativePath(path.relative(rootDir, absolutePath));
+    : path.resolve(rootDirectory, normalizedPath);
+  return normalizeRelativePath(path.relative(rootDirectory, absolutePath));
 }
 
-function normalizeFilterPath(value: string, rootDir?: string): string {
+function normalizeFilterPath(value: string, rootDirectory?: string): string {
   const normalizedValue = normalizeSlashes(value.trim());
 
-  if (rootDir && path.isAbsolute(normalizedValue)) {
-    return normalizeRelativePath(path.relative(rootDir, normalizedValue));
-  }
-
-  return normalizeRelativePath(normalizedValue);
+  return normalizeRelativePath(
+    rootDirectory && path.isAbsolute(normalizedValue)
+      ? path.relative(rootDirectory, normalizedValue)
+      : normalizedValue,
+  );
 }
 
 function getScopeRoots(candidate: PathFilterCandidate): readonly string[] {
@@ -57,47 +59,54 @@ function getScopeRoots(candidate: PathFilterCandidate): readonly string[] {
 
 function resolveAbsoluteCandidatePath(
   candidatePath: string,
-  rootDir: string | undefined,
+  rootDirectory: string | undefined,
 ): string | undefined {
   if (path.isAbsolute(candidatePath)) {
     return candidatePath;
   }
 
-  if (rootDir === undefined) {
-    return undefined;
-  }
-
-  return path.resolve(rootDir, candidatePath);
+  return rootDirectory === undefined
+    ? undefined
+    : path.resolve(rootDirectory, candidatePath);
 }
 
 function getAlternativeScopePaths(
   candidate: PathFilterCandidate,
-  rootDir: string | undefined,
+  rootDirectory: string | undefined,
 ): string[] {
   const scopeRoots = getScopeRoots(candidate);
   if (scopeRoots.length === 0) {
     return [];
   }
 
-  const absolutePath = resolveAbsoluteCandidatePath(candidate.path, rootDir);
+  const absolutePath = resolveAbsoluteCandidatePath(
+    candidate.path,
+    rootDirectory,
+  );
   return absolutePath === undefined
     ? []
-    : scopeRoots.map((baseDir) =>
-        normalizeRelativePath(path.relative(baseDir, absolutePath)),
+    : scopeRoots.map((baseDirectory) =>
+        normalizeRelativePath(path.relative(baseDirectory, absolutePath)),
       );
 }
 
 function getScopeCandidatePaths(
   candidate: PathFilterCandidate,
-  rootDir?: string,
+  rootDirectory?: string,
 ): string[] {
-  const rootRelativePath = normalizeCandidatePath(candidate.path, rootDir);
-  const alternativePaths = getAlternativeScopePaths(candidate, rootDir);
+  const rootRelativePath = normalizeCandidatePath(
+    candidate.path,
+    rootDirectory,
+  );
+  const alternativePaths = getAlternativeScopePaths(candidate, rootDirectory);
 
   return [...new Set([rootRelativePath, ...alternativePaths])];
 }
 
-function pathMatchesPlainScope(candidatePath: string, scope: string): boolean {
+function isPathMatchesPlainScope(
+  candidatePath: string,
+  scope: string,
+): boolean {
   return (
     candidatePath === scope ||
     (scope === '.'
@@ -106,17 +115,17 @@ function pathMatchesPlainScope(candidatePath: string, scope: string): boolean {
   );
 }
 
-function candidateMatchesScope(
+function isCandidateMatchesScope(
   candidate: PathFilterCandidate,
   scope: string,
-  rootDir?: string,
+  rootDirectory?: string,
 ): boolean {
-  const normalizedScope = normalizeFilterPath(scope, rootDir);
-  const candidatePaths = getScopeCandidatePaths(candidate, rootDir);
+  const normalizedScope = normalizeFilterPath(scope, rootDirectory);
+  const candidatePaths = getScopeCandidatePaths(candidate, rootDirectory);
 
   if (!hasGlobSyntax(normalizedScope)) {
     return candidatePaths.some((candidatePath) =>
-      pathMatchesPlainScope(candidatePath, normalizedScope),
+      isPathMatchesPlainScope(candidatePath, normalizedScope),
     );
   }
 
@@ -127,7 +136,7 @@ function candidateMatchesScope(
   return candidatePaths.some((candidatePath) => matches(candidatePath));
 }
 
-export function pathCandidatesMatchFileFilters(options: {
+export function isPathCandidatesMatchFileFilters(options: {
   candidates: readonly PathFilterCandidate[];
   files: readonly string[];
   rootDir?: string;
@@ -143,14 +152,14 @@ export function pathCandidatesMatchFileFilters(options: {
   );
 }
 
-export function pathCandidatesMatchScopeFilters(options: {
+export function isPathCandidatesMatchScopeFilters(options: {
   candidates: readonly PathFilterCandidate[];
   rootDir?: string;
   scopes: readonly string[];
 }): boolean {
   return options.scopes.some((scope) =>
     options.candidates.some((candidate) =>
-      candidateMatchesScope(candidate, scope, options.rootDir),
+      isCandidateMatchesScope(candidate, scope, options.rootDir),
     ),
   );
 }

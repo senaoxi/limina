@@ -17,7 +17,7 @@ import {
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -39,10 +39,11 @@ async function createFixture(files: Record<string, string> = {}): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-workspace-validation-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-workspace-validation-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   const allFiles = {
     'limina.config.mjs': 'export default {};\n',
     'package.json': json({ name: 'fixture-root', private: true }),
@@ -54,16 +55,13 @@ async function createFixture(files: Record<string, string> = {}): Promise<{
   }
 
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    config: withFixtureGovernanceRoot({
       configPath: fixturePath('limina.config.mjs'),
-      rootDir,
-    },
+      rootDir: rootDirectory,
+    }),
     path: fixturePath,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -89,15 +87,14 @@ describe('validated workspace context', () => {
     );
 
     try {
-      await expect(
-        collectValidatedWorkspaceContext({
-          config: fixture.config,
-          rawPackages: [
-            workspacePackage(fixture.path('packages/real'), '@fixture/real'),
-            workspacePackage(fixture.path('packages/alias'), '@fixture/alias'),
-          ],
-        }),
-      ).rejects.toMatchObject({
+      const validation = collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/real'), '@fixture/real'),
+          workspacePackage(fixture.path('packages/alias'), '@fixture/alias'),
+        ],
+      });
+      await expect(validation).rejects.toMatchObject({
         issues: [
           expect.objectContaining({
             code: 'LIMINA_WORKSPACE_PACKAGE_IDENTITY_CONFLICT',
@@ -154,9 +151,10 @@ describe('validated workspace context', () => {
 
   it('keeps config-relative parent selectors for external package exclusions', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-external-package-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-external-package-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     await writeText(
       path.join(externalRoot, 'package.json'),
       json({ name: '@fixture/external', private: true }),
@@ -189,9 +187,10 @@ describe('validated workspace context', () => {
 
   it('uses canonical identity for owner lookup while preserving lexical package display', async () => {
     const fixture = await createFixture();
-    const physicalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-physical-package-')),
+    const physicalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-physical-package-'),
     );
+    const physicalRoot = await realpath(physicalRootTemporaryPath);
     await writeText(
       path.join(physicalRoot, 'package.json'),
       json({ name: '@fixture/external', private: true }),
@@ -295,41 +294,9 @@ describe('validated workspace context', () => {
     ['internal namespace', '.limina'],
     ['activated package root', 'packages/app'],
     ['activated package ancestor', 'packages'],
-  ])('rejects a package output rooted at the %s', async (_label, outDir) => {
-    const fixture = await createFixture({
-      'packages/app/package.json': json({
-        name: '@fixture/app',
-        private: true,
-      }),
-    });
-    fixture.config.package = {
-      entries: [{ checks: [], name: '@fixture/output', outDir }],
-    };
-
-    try {
-      await expect(
-        collectValidatedWorkspaceContext({
-          config: fixture.config,
-          rawPackages: [
-            workspacePackage(fixture.path('packages/app'), '@fixture/app'),
-          ],
-        }),
-      ).rejects.toMatchObject({
-        issues: [
-          expect.objectContaining({
-            code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
-            task: 'workspace:validate',
-          }),
-        ],
-      });
-    } finally {
-      await fixture.cleanup();
-    }
-  });
-
-  it.each(['packages/app/dist', '../shared/dist'])(
-    'accepts a dedicated package artifact output at %s',
-    async (outDir) => {
+  ])(
+    'rejects a package output rooted at the %s',
+    async (_label, outDirectory) => {
       const fixture = await createFixture({
         'packages/app/package.json': json({
           name: '@fixture/app',
@@ -337,7 +304,45 @@ describe('validated workspace context', () => {
         }),
       });
       fixture.config.package = {
-        entries: [{ checks: [], name: '@fixture/output', outDir }],
+        entries: [
+          { checks: [], name: '@fixture/output', outDir: outDirectory },
+        ],
+      };
+
+      try {
+        const validation = collectValidatedWorkspaceContext({
+          config: fixture.config,
+          rawPackages: [
+            workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+          ],
+        });
+        await expect(validation).rejects.toMatchObject({
+          issues: [
+            expect.objectContaining({
+              code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
+              task: 'workspace:validate',
+            }),
+          ],
+        });
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+
+  it.each(['packages/app/dist', '../shared/dist'])(
+    'accepts a dedicated package artifact output at %s',
+    async (outDirectory) => {
+      const fixture = await createFixture({
+        'packages/app/package.json': json({
+          name: '@fixture/app',
+          private: true,
+        }),
+      });
+      fixture.config.package = {
+        entries: [
+          { checks: [], name: '@fixture/output', outDir: outDirectory },
+        ],
       };
 
       try {
@@ -348,7 +353,7 @@ describe('validated workspace context', () => {
           ],
         });
 
-        expect(context.outputRoots).toEqual([fixture.path(outDir)]);
+        expect(context.outputRoots).toEqual([fixture.path(outDirectory)]);
       } finally {
         await fixture.cleanup();
       }
@@ -445,25 +450,21 @@ describe('validated workspace context', () => {
     };
 
     try {
-      await expect(
-        collectValidatedWorkspaceContext({
-          config: fixture.config,
-          rawPackages: [
-            workspacePackage(
-              fixture.path('packages/parent'),
-              '@fixture/parent',
-            ),
-            workspacePackage(
-              fixture.path('packages/parent/fixture'),
-              '@fixture/fixture',
-            ),
-            workspacePackage(
-              fixture.path('packages/parent/fixture/nested'),
-              '@fixture/nested',
-            ),
-          ],
-        }),
-      ).rejects.toMatchObject({
+      const validation = collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/parent'), '@fixture/parent'),
+          workspacePackage(
+            fixture.path('packages/parent/fixture'),
+            '@fixture/fixture',
+          ),
+          workspacePackage(
+            fixture.path('packages/parent/fixture/nested'),
+            '@fixture/nested',
+          ),
+        ],
+      });
+      await expect(validation).rejects.toMatchObject({
         issues: [
           expect.objectContaining({
             code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
@@ -557,14 +558,13 @@ describe('validated workspace context', () => {
           fixture.path(target === 'missing' ? 'missing' : 'packages/app'),
           fixture.path('packages/app/nested/package.json'),
         );
-        await expect(
-          collectValidatedWorkspaceContext({
-            config: fixture.config,
-            rawPackages: [
-              workspacePackage(fixture.path('packages/app'), '@fixture/app'),
-            ],
-          }),
-        ).rejects.toThrow();
+        const validation = collectValidatedWorkspaceContext({
+          config: fixture.config,
+          rawPackages: [
+            workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+          ],
+        });
+        await expect(validation).rejects.toThrow();
       } finally {
         await fixture.cleanup();
       }
@@ -642,9 +642,10 @@ describe('validated workspace context', () => {
 
   it('rejects a mechanically discovered output parent symlink', async () => {
     const fixture = await createFixture();
-    const physicalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-output-physical-package-')),
+    const physicalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-output-physical-package-'),
     );
+    const physicalRoot = await realpath(physicalRootTemporaryPath);
     await writeText(
       path.join(physicalRoot, 'package.json'),
       json({ name: '@fixture/external', private: true }),
@@ -686,9 +687,10 @@ describe('validated workspace context', () => {
   });
 
   it('authenticates a package-local output through a symlinked workspace root', async () => {
-    const container = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-symlinked-workspace-')),
+    const containerTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-symlinked-workspace-'),
     );
+    const container = await realpath(containerTemporaryPath);
     const physicalRoot = path.join(container, 'workspace');
     const logicalRoot = path.join(container, 'workspace-link');
     await writeText(
@@ -712,13 +714,10 @@ describe('validated workspace context', () => {
     try {
       const sourceConfigPath = path.join(logicalRoot, 'tsconfig.json');
       const context = await collectValidatedWorkspaceContext({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           configPath: path.join(logicalRoot, 'limina.config.mjs'),
           rootDir: logicalRoot,
-        },
+        }),
         rawPackages: [workspacePackage(logicalRoot, '@fixture/root')],
       });
       const capability = context.outputMutationAuthorities?.get(
@@ -779,9 +778,10 @@ describe('validated workspace context', () => {
   });
 
   it('signs an exact authority for a missing external output under ordinary parents', async () => {
-    const container = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-external-output-')),
+    const containerTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-external-output-'),
     );
+    const container = await realpath(containerTemporaryPath);
     const repoRoot = path.join(container, 'repo');
     const packageRoot = path.join(repoRoot, 'packages/a');
     await writeText(
@@ -811,13 +811,10 @@ describe('validated workspace context', () => {
       const sourceConfigPath = path.join(packageRoot, 'tsconfig.json');
       const outputRoot = path.join(container, 'artifacts/a');
       const context = await collectValidatedWorkspaceContext({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           configPath: path.join(repoRoot, 'limina.config.mjs'),
           rootDir: repoRoot,
-        },
+        }),
         rawPackages: [workspacePackage(packageRoot, '@fixture/a')],
       });
       const capability = context.outputMutationAuthorities?.get(
@@ -839,9 +836,10 @@ describe('validated workspace context', () => {
   });
 
   it('does not sign an external output authority through an existing parent symlink', async () => {
-    const container = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-external-output-link-')),
+    const containerTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-external-output-link-'),
     );
+    const container = await realpath(containerTemporaryPath);
     const repoRoot = path.join(container, 'repo');
     const packageRoot = path.join(repoRoot, 'packages/a');
     const externalRoot = path.join(container, 'external');
@@ -872,18 +870,14 @@ describe('validated workspace context', () => {
     await symlink(externalRoot, path.join(container, 'artifacts'));
 
     try {
-      await expect(
-        collectValidatedWorkspaceContext({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            configPath: path.join(repoRoot, 'limina.config.mjs'),
-            rootDir: repoRoot,
-          },
-          rawPackages: [workspacePackage(packageRoot, '@fixture/a')],
+      const validation = collectValidatedWorkspaceContext({
+        config: withFixtureGovernanceRoot({
+          configPath: path.join(repoRoot, 'limina.config.mjs'),
+          rootDir: repoRoot,
         }),
-      ).rejects.toMatchObject({
+        rawPackages: [workspacePackage(packageRoot, '@fixture/a')],
+      });
+      await expect(validation).rejects.toMatchObject({
         issues: [
           expect.objectContaining({
             code: 'LIMINA_WORKSPACE_OUTPUT_ROOT_INVALID',
@@ -923,13 +917,12 @@ describe('validated workspace context', () => {
       expect(context.sourceConfigPaths).toEqual([
         fixture.path('packages/a/tsconfig.json'),
       ]);
-      expect(context.descriptorCandidates).not.toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            path: fixture.path('packages/b/generated/pnpm-workspace.yaml'),
-          }),
-        ]),
-      );
+      const expectedBoundaries = expect.arrayContaining([
+        expect.objectContaining({
+          path: fixture.path('packages/b/generated/pnpm-workspace.yaml'),
+        }),
+      ]);
+      expect(context.descriptorCandidates).not.toEqual(expectedBoundaries);
       expect(context.boundaries).toEqual([]);
     } finally {
       await fixture.cleanup();
@@ -948,14 +941,13 @@ describe('validated workspace context', () => {
     });
 
     try {
-      await expect(
-        collectValidatedWorkspaceContext({
-          config: fixture.config,
-          rawPackages: [
-            workspacePackage(fixture.path('packages/app'), '@fixture/app'),
-          ],
-        }),
-      ).rejects.toMatchObject({
+      const validation = collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+        ],
+      });
+      await expect(validation).rejects.toMatchObject({
         issues: [
           expect.objectContaining({
             code: 'LIMINA_WORKSPACE_OUTPUT_CYCLE',
@@ -982,14 +974,13 @@ describe('validated workspace context', () => {
     });
 
     try {
-      await expect(
-        collectValidatedWorkspaceContext({
-          config: fixture.config,
-          rawPackages: [
-            workspacePackage(fixture.path('packages/app'), '@fixture/app'),
-          ],
-        }),
-      ).rejects.toMatchObject({
+      const validation = collectValidatedWorkspaceContext({
+        config: fixture.config,
+        rawPackages: [
+          workspacePackage(fixture.path('packages/app'), '@fixture/app'),
+        ],
+      });
+      await expect(validation).rejects.toMatchObject({
         issues: [
           expect.objectContaining({
             code: 'LIMINA_WORKSPACE_OUTPUT_CYCLE',

@@ -8,7 +8,7 @@ import type {
 import { runTargetWithMeasuredDuration } from '../targets';
 import type {
   BuildRunState,
-  RunBuildTargetsArgs,
+  RunBuildTargetsArguments,
   RunnableLayer,
 } from './target-state';
 import {
@@ -20,7 +20,7 @@ import {
 } from './target-state';
 
 export type {
-  RunBuildTargetsArgs,
+  RunBuildTargetsArguments as RunBuildTargetsArgs,
   RunBuildTargetsOptions,
 } from './target-state';
 
@@ -175,9 +175,9 @@ function requireTargetResult(
 }
 
 export async function executeBuildTargets(
-  ...args: RunBuildTargetsArgs
+  ...arguments_: RunBuildTargetsArguments
 ): Promise<TypecheckTargetResult[]> {
-  const [targets, dependencyEdges, runner, options] = args;
+  const [targets, dependencyEdges, runner, options] = arguments_;
   const state = createBuildRunState({
     dependencyEdges,
     runner,

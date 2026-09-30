@@ -12,6 +12,7 @@ import {
   collectWorkspaceDependencyDeclarations,
   type WorkspaceDependencyDeclaration,
 } from './packages/authority';
+import { mapPromise } from './promise';
 import {
   cloneImporterInfo,
   clonePackageOwner,
@@ -67,14 +68,23 @@ export class WorkspaceCore {
   readonly #collectRawWorkspacePackages: (
     config: ResolvedLiminaConfig,
   ) => Promise<WorkspacePackage[]>;
+
   readonly #config: ResolvedLiminaConfig;
+
   readonly #metrics: WorkspaceCoreMetricsRecorder | undefined;
+
   #importersPromise: Promise<ImporterInfo[]> | undefined;
+
   #lookupIndexPromise: Promise<WorkspaceLookupIndex> | undefined;
+
   #ownersPromise: Promise<PackageOwner[]> | undefined;
+
   #pathIndexPromise: Promise<WorkspaceRegionPathIndex> | undefined;
+
   #rawPackagesPromise: Promise<WorkspacePackage[]> | undefined;
+
   #topologyPromise: Promise<ValidatedWorkspaceContext> | undefined;
+
   #workspaceDependenciesPromise:
     | Promise<WorkspaceDependencyDeclaration[]>
     | undefined;
@@ -90,6 +100,14 @@ export class WorkspaceCore {
     this.#metrics = metrics;
   }
 
+  #recordProviderCache(kind: 'hit' | 'miss', provider: string): void {
+    this.#metrics?.record({
+      kind: provider,
+      name: kind === 'hit' ? 'provider-cache-hit' : 'provider-cache-miss',
+      provider: 'workspace-core',
+    });
+  }
+
   get rootDir(): string {
     return this.#config.rootDir;
   }
@@ -98,47 +116,47 @@ export class WorkspaceCore {
     this.#rawPackagesPromise ??= this.#collectRawWorkspacePackages(
       this.#config,
     );
-    return this.#rawPackagesPromise.then(cloneWorkspacePackages);
+    return mapPromise(this.#rawPackagesPromise, cloneWorkspacePackages);
   }
 
   getPackages(): Promise<WorkspacePackage[]> {
-    return this.getRegionTopology().then((topology) =>
+    return mapPromise(this.getRegionTopology(), (topology) =>
       cloneWorkspacePackages(topology.packages),
     );
   }
 
   getRegionBoundaries(): Promise<WorkspaceRegionBoundary[]> {
-    return this.getRegionTopology().then((topology) =>
+    return mapPromise(this.getRegionTopology(), (topology) =>
       cloneWorkspaceRegionBoundaries(topology.boundaries),
     );
   }
 
   getRegionTopology(): Promise<WorkspaceRegionTopology> {
-    return this.getValidatedContext().then(cloneWorkspaceRegionTopology);
+    return mapPromise(this.getValidatedContext(), cloneWorkspaceRegionTopology);
   }
 
   getValidatedContext(): Promise<ValidatedWorkspaceContext> {
-    this.#topologyPromise ??= this.getRawPackages()
-      .then((rawPackages) =>
+    this.#topologyPromise ??= mapPromise(
+      mapPromise(this.getRawPackages(), (rawPackages) =>
         collectWorkspaceRegionTopology(this.#config, {
           provider: collectRawWorkspacePackages,
           rawPackages,
         }),
-      )
-      .then((topology) =>
+      ),
+      (topology) =>
         cloneValidatedWorkspaceContext(topology as ValidatedWorkspaceContext),
-      );
+    );
 
-    return this.#topologyPromise.then(cloneValidatedWorkspaceContext);
+    return mapPromise(this.#topologyPromise, cloneValidatedWorkspaceContext);
   }
 
   getPackageOwners(): Promise<PackageOwner[]> {
-    this.#ownersPromise ??= this.getPackages().then((packages) =>
+    this.#ownersPromise ??= mapPromise(this.getPackages(), (packages) =>
       packages
         .map((workspacePackage) => ({
           directory: workspacePackage.directory,
           manifest: workspacePackage.manifest,
-          ...(workspacePackage.name ? { name: workspacePackage.name } : {}),
+          ...(workspacePackage.name && { name: workspacePackage.name }),
           packageJsonPath: path.join(
             workspacePackage.directory,
             'package.json',
@@ -148,7 +166,7 @@ export class WorkspaceCore {
         .map(clonePackageOwner),
     );
 
-    return this.#ownersPromise.then(clonePackageOwners);
+    return mapPromise(this.#ownersPromise, clonePackageOwners);
   }
 
   async findPackageBySpecifier(
@@ -163,11 +181,11 @@ export class WorkspaceCore {
   }
 
   async getImporters(): Promise<ImporterInfo[]> {
-    this.#importersPromise ??= this.getPackages().then((packages) =>
+    this.#importersPromise ??= mapPromise(this.getPackages(), (packages) =>
       collectImporters(this.#config, packages).map(cloneImporterInfo),
     );
 
-    return this.#importersPromise.then((importers) =>
+    return mapPromise(this.#importersPromise, (importers) =>
       importers.map(cloneImporterInfo),
     );
   }
@@ -175,14 +193,15 @@ export class WorkspaceCore {
   async getWorkspaceDependencyDeclarations(): Promise<
     WorkspaceDependencyDeclaration[]
   > {
-    this.#workspaceDependenciesPromise ??= this.getValidatedContext().then(
+    this.#workspaceDependenciesPromise ??= mapPromise(
+      this.getValidatedContext(),
       (context) =>
         collectWorkspaceDependencyDeclarations(context).map(
           cloneWorkspaceDependencyDeclaration,
         ),
     );
 
-    return this.#workspaceDependenciesPromise.then((declarations) =>
+    return mapPromise(this.#workspaceDependenciesPromise, (declarations) =>
       declarations.map(cloneWorkspaceDependencyDeclaration),
     );
   }
@@ -194,7 +213,8 @@ export class WorkspaceCore {
     }
 
     this.#recordProviderCache('miss', 'workspace-path-index');
-    this.#pathIndexPromise = this.getValidatedContext().then(
+    this.#pathIndexPromise = mapPromise(
+      this.getValidatedContext(),
       (context) => new WorkspaceRegionPathIndex(context, this.#metrics),
     );
     return this.#pathIndexPromise;
@@ -207,29 +227,23 @@ export class WorkspaceCore {
     }
 
     this.#recordProviderCache('miss', 'workspace-lookup-index');
-    this.#lookupIndexPromise = Promise.all([
-      this.getImporters(),
-      this.getPackageOwners(),
-      this.getPackages(),
-      this.getPathIndex(),
-    ]).then(([importers, owners, packages, pathIndex]) =>
-      createWorkspaceLookupIndex({
-        importers,
-        owners,
-        packages,
-        pathIndex,
-        rootDir: this.rootDir,
-        metrics: this.#metrics,
-      }),
+    this.#lookupIndexPromise = mapPromise(
+      Promise.all([
+        this.getImporters(),
+        this.getPackageOwners(),
+        this.getPackages(),
+        this.getPathIndex(),
+      ]),
+      ([importers, owners, packages, pathIndex]) =>
+        createWorkspaceLookupIndex({
+          importers,
+          owners,
+          packages,
+          pathIndex,
+          rootDir: this.rootDir,
+          metrics: this.#metrics,
+        }),
     );
     return this.#lookupIndexPromise;
-  }
-
-  #recordProviderCache(kind: 'hit' | 'miss', provider: string): void {
-    this.#metrics?.record({
-      kind: provider,
-      name: kind === 'hit' ? 'provider-cache-hit' : 'provider-cache-miss',
-      provider: 'workspace-core',
-    });
   }
 }

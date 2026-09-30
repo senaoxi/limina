@@ -39,7 +39,10 @@ async function collectInitialProofs(
 function getAllMutationTargets(
   proofs: ReadonlyMap<unknown, ProvenManagedCheckerMutationContext>,
 ) {
-  return [...proofs.values()].flatMap((proof) => proof.mutationTargets);
+  return proofs
+    .values()
+    .flatMap((proof) => proof.mutationTargets)
+    .toArray();
 }
 
 function assertMatchingProof(options: {
@@ -54,18 +57,29 @@ function assertMatchingProof(options: {
 }
 
 export class ManagedCheckerMutationCoordinator {
+  static async create(
+    options: ManagedMutationCoordinatorOptions,
+  ): Promise<ManagedCheckerMutationCoordinator> {
+    const initialProofs = await collectInitialProofs(options);
+    await preflightMutationBoundary(getAllMutationTargets(initialProofs));
+    return new ManagedCheckerMutationCoordinator(options, initialProofs);
+  }
+
   readonly #initialProofs: ReadonlyMap<
     TypecheckTarget['id'],
     ProvenManagedCheckerMutationContext
   >;
+
   readonly #layerProofs = new Map<
     TypecheckTarget['id'],
     ProvenManagedCheckerMutationContext
   >();
+
   readonly #layerSnapshots = new Map<
     TypecheckTarget['id'],
     MutationBoundarySnapshot
   >();
+
   readonly #options: ManagedMutationCoordinatorOptions;
 
   private constructor(
@@ -79,12 +93,28 @@ export class ManagedCheckerMutationCoordinator {
     this.#initialProofs = initialProofs;
   }
 
-  static async create(
-    options: ManagedMutationCoordinatorOptions,
-  ): Promise<ManagedCheckerMutationCoordinator> {
-    const initialProofs = await collectInitialProofs(options);
-    await preflightMutationBoundary(getAllMutationTargets(initialProofs));
-    return new ManagedCheckerMutationCoordinator(options, initialProofs);
+  async #captureLayerSnapshots(
+    proofs: readonly ProvenManagedCheckerMutationContext[],
+  ): Promise<void> {
+    for (const proof of proofs) {
+      this.#layerSnapshots.set(
+        proof.targetId,
+        await preflightMutationBoundary(proof.mutationTargets),
+      );
+    }
+  }
+
+  async #prove(
+    target: TypecheckTarget,
+  ): Promise<ProvenManagedCheckerMutationContext> {
+    return proveManagedCheckerMutationContext({
+      artifactNamespace: this.#options.artifactNamespace,
+      checkers: this.#options.checkers,
+      generatedGraph: this.#options.generatedGraph,
+      projectRootDir: this.#options.config.rootDir,
+      target,
+      workspaceContext: this.#options.workspaceContext,
+    });
   }
 
   async beforeLayerRun(targets: readonly TypecheckTarget[]): Promise<void> {
@@ -122,29 +152,5 @@ export class ManagedCheckerMutationCoordinator {
       );
     }
     await recheckMutationBoundary(layerSnapshot);
-  }
-
-  async #captureLayerSnapshots(
-    proofs: readonly ProvenManagedCheckerMutationContext[],
-  ): Promise<void> {
-    for (const proof of proofs) {
-      this.#layerSnapshots.set(
-        proof.targetId,
-        await preflightMutationBoundary(proof.mutationTargets),
-      );
-    }
-  }
-
-  async #prove(
-    target: TypecheckTarget,
-  ): Promise<ProvenManagedCheckerMutationContext> {
-    return proveManagedCheckerMutationContext({
-      artifactNamespace: this.#options.artifactNamespace,
-      checkers: this.#options.checkers,
-      generatedGraph: this.#options.generatedGraph,
-      projectRootDir: this.#options.config.rootDir,
-      target,
-      workspaceContext: this.#options.workspaceContext,
-    });
   }
 }

@@ -7,20 +7,21 @@ import { createFixturePathResolver } from './path';
 export async function createSinglePackageFixture(
   files: Record<string, string> = {},
 ) {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-single-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-single-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   const write = async (file: string, contents: string) => {
     await mkdir(path.dirname(fixturePath(file)), { recursive: true });
     await writeFile(fixturePath(file), contents);
   };
-  for (const [file, contents] of Object.entries({
+  const fixtureEntries1 = Object.entries({
     'package.json': '{}',
     'limina.config.mjs': 'export default {};',
     ...files,
-  }))
-    await write(file, contents);
+  });
+  for (const [file, contents] of fixtureEntries1) await write(file, contents);
   return {
     rootDir: fixturePath(),
     path: fixturePath,
@@ -29,6 +30,6 @@ export async function createSinglePackageFixture(
       configPath = fixturePath('limina.config.mjs'),
       cwd = fixturePath(),
     ) => loadConfig({ configPath, cwd }),
-    cleanup: () => rm(rootDir, { recursive: true, force: true }),
+    cleanup: () => rm(rootDirectory, { recursive: true, force: true }),
   };
 }

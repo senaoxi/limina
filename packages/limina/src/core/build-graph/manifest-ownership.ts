@@ -7,8 +7,8 @@ import type {
   GovernedSourceUnit,
 } from './types';
 
-function toManifestPath(rootDir: string, filePath: string): string {
-  return toPosixPath(toRelativePath(rootDir, filePath));
+function toManifestPath(rootDirectory: string, filePath: string): string {
+  return toPosixPath(toRelativePath(rootDirectory, filePath));
 }
 
 function requireFinalOwner(options: {
@@ -26,18 +26,20 @@ export function createOwnershipManifest(options: {
   if (options.ownershipPlan === undefined) {
     return { configs: [], solutions: [] };
   }
-  const typeConfigs = [...options.ownershipPlan.typeConfigs.values()].map(
-    (state) => ({
+  const typeConfigs = options.ownershipPlan.typeConfigs
+    .values()
+    .map((state) => ({
       config: toManifestPath(options.rootDir, state.configPath),
       owner: requireFinalOwner({
         configPath: state.configPath,
         owner: state.finalOwner,
       }),
       role: 'type' as const,
-    }),
-  );
-  const solutions = [...options.ownershipPlan.solutions.values()].map(
-    (state) => ({
+    }))
+    .toArray();
+  const solutions = options.ownershipPlan.solutions
+    .values()
+    .map((state) => ({
       config: toManifestPath(options.rootDir, state.configPath),
       leaves: state.leafConfigPaths.map((configPath) =>
         toManifestPath(options.rootDir, configPath),
@@ -46,8 +48,8 @@ export function createOwnershipManifest(options: {
         configPath: state.configPath,
         owner: state.finalOwner,
       }),
-    }),
-  );
+    }))
+    .toArray();
   return {
     configs: [
       ...typeConfigs,
@@ -94,7 +96,9 @@ export function createExecutionTargets(options: {
       roots: [...checker.roots],
     }))
     .sort((left, right) => compareCodeUnits(left.checker, right.checker));
-  const framework = [...options.governedSourcesByChecker.values()]
+  const framework = options.governedSourcesByChecker
+    .values()
+    .toArray()
     .flat()
     .flatMap((unit) => createFrameworkTarget({ ...options, unit }))
     .sort((left, right) => compareCodeUnits(left.config, right.config));

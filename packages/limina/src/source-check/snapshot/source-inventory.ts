@@ -14,15 +14,14 @@ function compareCountEntries(
   right: readonly [string, number],
 ): number {
   const countOrder = right[1] - left[1];
-  if (countOrder !== 0) return countOrder;
-  return left[0].localeCompare(right[0]);
+  return countOrder === 0 ? left[0].localeCompare(right[0]) : countOrder;
 }
 
 function formatCountGroup(
   label: string,
   groups: ReadonlyMap<string, number>,
 ): string[] {
-  const entries = [...groups.entries()].sort(compareCountEntries);
+  const entries = [...groups].sort(compareCountEntries);
   const values = entries.map(
     ([name, count]) => `  - ${name}  ${count} ${pluralIssue(count)}`,
   );
@@ -86,16 +85,19 @@ function getUnavailableInventoryMessage(
   snapshot: SourceIssueSnapshot | null,
 ): string {
   if (snapshot === null) return formatMissingSourceSnapshot();
-  if (snapshot.status !== 'completed') return formatIncompleteSourceSnapshot();
-  return formatEmptySourceSnapshot();
+  return snapshot.status === 'completed'
+    ? formatEmptySourceSnapshot()
+    : formatIncompleteSourceSnapshot();
 }
 
 function isAvailableSourceSnapshot(
   snapshot: SourceIssueSnapshot | null,
 ): snapshot is SourceIssueSnapshot {
-  if (snapshot === null) return false;
-  if (snapshot.status !== 'completed') return false;
-  return snapshot.issues.length > 0;
+  return (
+    snapshot !== null &&
+    snapshot.status === 'completed' &&
+    snapshot.issues.length > 0
+  );
 }
 
 export function formatSourceIssueSnapshotInventory(

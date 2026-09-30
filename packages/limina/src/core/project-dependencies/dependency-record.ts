@@ -38,8 +38,7 @@ function isFrameworkProjectTarget(options: {
   request: ProjectDependencyRequest;
 }): boolean {
   const target = options.fact.target;
-  if (target === null) return false;
-  return isResolvedFrameworkTarget(options, target);
+  return target !== null && isResolvedFrameworkTarget(options, target);
 }
 
 function isResolvedFrameworkTarget(
@@ -49,9 +48,11 @@ function isResolvedFrameworkTarget(
   },
   target: NonNullable<PreparedDependencyFact['target']>,
 ): boolean {
-  if (isNativeProjectDependencyTarget(target.resolvedFileName)) return true;
-  if (target.resolvedBy === 'checker-source') return true;
-  return hasFrameworkExtension(options);
+  return (
+    isNativeProjectDependencyTarget(target.resolvedFileName) ||
+    target.resolvedBy === 'checker-source' ||
+    hasFrameworkExtension(options)
+  );
 }
 
 function hasFrameworkExtension(options: {
@@ -67,11 +68,10 @@ function hasFrameworkExtension(options: {
 
 function getEvidenceTargetPath(evidence: TypeEvidence): string | null {
   if (evidence.kind === 'checker-source') return evidence.filePath;
-  if (evidence.kind === 'concrete-declaration') return evidence.filePath;
-  return null;
+  return evidence.kind === 'concrete-declaration' ? evidence.filePath : null;
 }
 
-function evidenceKindMatchesTarget(
+function isEvidenceKindMatchesTarget(
   evidence: TypeEvidence,
   targetPath: string,
 ): boolean {
@@ -80,24 +80,25 @@ function evidenceKindMatchesTarget(
     : evidence.kind === 'checker-source';
 }
 
-function physicalEvidenceMatchesTarget(
+function isPhysicalEvidenceMatchesTarget(
   evidence: TypeEvidence,
   target: NonNullable<PreparedDependencyFact['target']>,
 ): boolean {
   const evidencePath = getEvidenceTargetPath(evidence);
   if (evidencePath === null) return false;
   const targetPath = normalizeAbsolutePath(target.resolvedFileName);
-  if (normalizeAbsolutePath(evidencePath) !== targetPath) return false;
-  return evidenceKindMatchesTarget(evidence, targetPath);
+  return (
+    normalizeAbsolutePath(evidencePath) === targetPath &&
+    isEvidenceKindMatchesTarget(evidence, targetPath)
+  );
 }
 
-function evidenceMatchesTarget(fact: PreparedDependencyFact): boolean {
+function isEvidenceMatchesTarget(fact: PreparedDependencyFact): boolean {
   const target = fact.target;
   const evidence = fact.typeEvidence;
-  if (target === null) {
-    return ['ambient', 'missing'].includes(evidence.kind);
-  }
-  return physicalEvidenceMatchesTarget(evidence, target);
+  return target === null
+    ? ['ambient', 'missing'].includes(evidence.kind)
+    : isPhysicalEvidenceMatchesTarget(evidence, target);
 }
 
 function addFactFailure(options: CollectFactOptions, reason: string): void {
@@ -144,22 +145,21 @@ function validatePreparedFact(options: CollectFactOptions): string | null {
   if (options.fact.typeEvidence.kind === 'unsupported-checker') {
     return options.fact.typeEvidence.reason;
   }
-  if (!evidenceMatchesTarget(options.fact)) {
-    return 'Prepared framework dependency target and TypeEvidence do not describe the same semantic result.';
-  }
-  return null;
+  return isEvidenceMatchesTarget(options.fact)
+    ? null
+    : 'Prepared framework dependency target and TypeEvidence do not describe the same semantic result.';
 }
 
-function addTargetedFact(options: CollectFactOptions): boolean {
+function isAddTargetedFact(options: CollectFactOptions): boolean {
   if (options.fact.target === null) return false;
   if (isFrameworkProjectTarget(options)) {
     addMappedDependency(options);
     return true;
   }
-  return addTypedTargetObservation(options);
+  return isAddTypedTargetObservation(options);
 }
 
-function addTypedTargetObservation(options: CollectFactOptions): boolean {
+function isAddTypedTargetObservation(options: CollectFactOptions): boolean {
   const evidence = options.fact.typeEvidence;
   if (evidence.kind !== 'checker-source') return false;
   options.collection.observations.push({
@@ -210,6 +210,6 @@ export function collectPreparedProjectDependencyFact(
     addFactFailure(options, failure);
     return;
   }
-  if (addTargetedFact(options)) return;
+  if (isAddTargetedFact(options)) return;
   addTargetlessFact(options);
 }

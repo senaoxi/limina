@@ -11,13 +11,13 @@ import {
 import { createLiminaCheckIssue } from '../check-reporting/structured';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 
-function createIssue(rootDir: string, title: string, id?: string) {
+function createIssue(rootDirectory: string, title: string, id?: string) {
   return createLiminaCheckIssue({
     code: 'LIMINA_CHECKER_BUILD_FAILED',
-    filePath: path.join(rootDir, `${title}.json`),
+    filePath: path.join(rootDirectory, `${title}.json`),
     id,
     reason: `${title} failed`,
-    rootDir,
+    rootDir: rootDirectory,
     task: 'checker:build',
     title,
   });
@@ -25,14 +25,18 @@ function createIssue(rootDir: string, title: string, id?: string) {
 
 describe('standalone issue invocation snapshots', () => {
   it('merges caller and structured-error issues by ID with caller precedence', () => {
-    const rootDir = path.resolve('invocation workspace');
-    const callerIssue = createIssue(rootDir, 'caller', 'shared-id');
+    const rootDirectory = path.resolve('invocation workspace');
+    const callerIssue = createIssue(rootDirectory, 'caller', 'shared-id');
     const duplicateStructuredIssue = createIssue(
-      rootDir,
+      rootDirectory,
       'structured duplicate',
       'shared-id',
     );
-    const structuredIssue = createIssue(rootDir, 'structured', 'structured-id');
+    const structuredIssue = createIssue(
+      rootDirectory,
+      'structured',
+      'structured-id',
+    );
 
     expect(
       mergeStandaloneFailureIssues({
@@ -46,13 +50,17 @@ describe('standalone issue invocation snapshots', () => {
   });
 
   it('creates a fallback only when both issue sources are empty', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-invocation-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-invocation-'),
+    );
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
-      rootDir,
+      rootDir: rootDirectory,
     });
-    const structuredIssue = createIssue(rootDir, 'structured');
-    const createFallbackIssue = vi.fn(() => createIssue(rootDir, 'fallback'));
+    const structuredIssue = createIssue(rootDirectory, 'structured');
+    const createFallbackIssue = vi.fn(() =>
+      createIssue(rootDirectory, 'fallback'),
+    );
 
     try {
       const invocation = await writeStandaloneFailureInvocation({
@@ -61,7 +69,7 @@ describe('standalone issue invocation snapshots', () => {
         createFallbackIssue,
         error: new LiminaStructuredError('failed', [structuredIssue]),
         issues: [],
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       expect(createFallbackIssue).not.toHaveBeenCalled();
@@ -72,7 +80,7 @@ describe('standalone issue invocation snapshots', () => {
         command: 'limina checker build',
         createFallbackIssue,
         issues: [],
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       expect(createFallbackIssue).toHaveBeenCalledTimes(1);
@@ -80,19 +88,21 @@ describe('standalone issue invocation snapshots', () => {
         expect.objectContaining({ title: 'fallback' }),
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps concurrent invocation records independently addressable', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-invocation-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-invocation-'),
+    );
     const namespace = createLiminaArtifactNamespace({
       generation: 0,
-      rootDir,
+      rootDir: rootDirectory,
     });
     const issues = [
-      createIssue(rootDir, 'first'),
-      createIssue(rootDir, 'second'),
+      createIssue(rootDirectory, 'first'),
+      createIssue(rootDirectory, 'second'),
     ];
 
     try {
@@ -101,9 +111,9 @@ describe('standalone issue invocation snapshots', () => {
           writeStandaloneFailureInvocation({
             artifactNamespace: namespace,
             command: 'limina checker build',
-            createFallbackIssue: () => createIssue(rootDir, 'fallback'),
+            createFallbackIssue: () => createIssue(rootDirectory, 'fallback'),
             issues: [issue],
-            rootDir,
+            rootDir: rootDirectory,
           }),
         ),
       );
@@ -112,13 +122,19 @@ describe('standalone issue invocation snapshots', () => {
         invocations[1]?.invocationId,
       );
       await expect(
-        readStandaloneIssueInvocation(rootDir, invocations[0]!.invocationId),
+        readStandaloneIssueInvocation(
+          rootDirectory,
+          invocations[0]!.invocationId,
+        ),
       ).resolves.toMatchObject({ issues: [{ id: issues[0]!.id }] });
       await expect(
-        readStandaloneIssueInvocation(rootDir, invocations[1]!.invocationId),
+        readStandaloneIssueInvocation(
+          rootDirectory,
+          invocations[1]!.invocationId,
+        ),
       ).resolves.toMatchObject({ issues: [{ id: issues[1]!.id }] });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });

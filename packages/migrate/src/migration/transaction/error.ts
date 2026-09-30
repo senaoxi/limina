@@ -4,7 +4,7 @@ export function formatUnknownError(error: unknown): string {
 
 export function hasErrorCode(
   error: unknown,
-): error is Error & { code: string } {
+): error is Error & { code: unknown } {
   return error instanceof Error && 'code' in error;
 }
 

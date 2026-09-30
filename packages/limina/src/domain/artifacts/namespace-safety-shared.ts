@@ -68,7 +68,7 @@ export async function lstatIfPresent(
   }
 }
 
-function validatorFails(options: {
+function isValidatorFails(options: {
   roles: ReadonlySet<ArtifactPathSafetyRole>;
   stats: Stats;
   validator: StatsSafetyValidator;
@@ -85,7 +85,7 @@ export function assertArtifactPathStatsSafe(
   roles: ReadonlySet<ArtifactPathSafetyRole>,
 ): void {
   const invalid = statsSafetyValidators.find((validator) =>
-    validatorFails({ roles, stats, validator }),
+    isValidatorFails({ roles, stats, validator }),
   );
 
   if (invalid !== undefined) {

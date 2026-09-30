@@ -27,7 +27,7 @@ export const PACKAGE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
   [LIMINA_CHECK_ISSUE_CODES.packageBoundary]: {
     kind: 'fixture',
     producers: [
-      'packages/limina/src/package-check/boundary-check.ts#runBoundaryCheck',
+      'packages/limina/src/package-check/boundary-check.ts#isRunBoundaryCheck',
     ],
     task: 'package:check',
     tests: [

@@ -1,4 +1,4 @@
-export interface ImplicitRef {
+export interface ImplicitReference {
   path: string;
   reason: string;
   targetConfigPath: string;

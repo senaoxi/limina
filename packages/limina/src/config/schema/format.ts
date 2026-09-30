@@ -20,8 +20,9 @@ interface IssueFormatter {
 function formatPathSegment(segment: PropertyKey): string {
   if (typeof segment === 'number') return `[${segment}]`;
   const text = String(segment);
-  if (/^[A-Za-z_$][\w$]*$/u.test(text)) return `.${text}`;
-  return `[${JSON.stringify(text)}]`;
+  return /^[A-Za-z_$][\w$]*$/u.test(text)
+    ? `.${text}`
+    : `[${JSON.stringify(text)}]`;
 }
 
 export function formatZodPath(pathSegments: readonly PropertyKey[]): string {
@@ -67,13 +68,15 @@ function formatIssueReason(context: IssueFormatContext, title: string): string {
   });
 }
 
-function matchesField(context: IssueFormatContext, field: string): boolean {
+function isMatchesField(context: IssueFormatContext, field: string): boolean {
   return context.field === field;
 }
 
-function matchesFieldTree(context: IssueFormatContext, field: string): boolean {
-  if (context.field === field) return true;
-  return context.field.startsWith(`${field}.`);
+function isMatchesFieldTree(
+  context: IssueFormatContext,
+  field: string,
+): boolean {
+  return context.field === field || context.field.startsWith(`${field}.`);
 }
 
 function createExactFormatter(options: {
@@ -88,7 +91,7 @@ function createExactFormatter(options: {
         reason: options.reason,
         title: options.title,
       }),
-    matches: (context) => matchesField(context, options.field),
+    matches: (context) => isMatchesField(context, options.field),
   };
 }
 
@@ -98,14 +101,13 @@ function createTreeFormatter(options: {
 }): IssueFormatter {
   return {
     format: (context) => formatIssueReason(context, options.title),
-    matches: (context) => matchesFieldTree(context, options.field),
+    matches: (context) => isMatchesFieldTree(context, options.field),
   };
 }
 
 function isNamedCheckerIssue(context: IssueFormatContext): boolean {
   const [root, collection] = context.pathSegments;
-  if (root !== 'config') return false;
-  return collection === 'checkers';
+  return root === 'config' && collection === 'checkers';
 }
 
 function getCheckerField(context: IssueFormatContext): string {
@@ -127,8 +129,9 @@ function formatCheckerEntry(context: IssueFormatContext): string {
 }
 
 function formatNamedCheckerIssue(context: IssueFormatContext): string {
-  if (context.pathSegments.length === 3) return formatCheckerEntry(context);
-  return formatIssueReason(context, 'Invalid Limina checker config:');
+  return context.pathSegments.length === 3
+    ? formatCheckerEntry(context)
+    : formatIssueReason(context, 'Invalid Limina checker config:');
 }
 
 function formatCheckerCollection(context: IssueFormatContext): string {
@@ -162,7 +165,7 @@ const issueFormatters: readonly IssueFormatter[] = [
   }),
   {
     format: formatCheckerCollection,
-    matches: (context) => matchesField(context, 'config.checkers'),
+    matches: (context) => isMatchesField(context, 'config.checkers'),
   },
   createTreeFormatter({
     field: 'config.checkers.mode',
@@ -257,6 +260,7 @@ export function formatLiminaConfigShapeIssue(
     value,
   };
   const formatter = findIssueFormatter(context);
-  if (formatter !== undefined) return formatter.format(context);
-  return formatIssueReason(context, 'Invalid Limina config:');
+  return formatter === undefined
+    ? formatIssueReason(context, 'Invalid Limina config:')
+    : formatter.format(context);
 }

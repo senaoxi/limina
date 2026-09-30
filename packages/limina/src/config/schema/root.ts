@@ -30,23 +30,23 @@ const sourceConfigKeys = new Set(['declarations', 'importAuthority', 'knip']);
 
 function validateSourceConfig(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined) return;
   if (!isPlainConfigRecord(value)) {
-    addConfigIssue(ctx, ['source'], 'source config must be an object.');
+    addConfigIssue(context, ['source'], 'source config must be an object.');
     return;
   }
   addUnknownFieldIssues({
     allowed: sourceConfigKeys,
-    ctx,
+    ctx: context,
     message: 'unknown source config field.',
     path: ['source'],
     value,
   });
-  validateSourceImportAuthorityConfig(value.importAuthority, ctx);
-  validateSourceDeclarationsConfig(value.declarations, ctx);
-  validateSourceKnipConfig(value.knip, ctx);
+  validateSourceImportAuthorityConfig(value.importAuthority, context);
+  validateSourceDeclarationsConfig(value.declarations, context);
+  validateSourceKnipConfig(value.knip, context);
 }
 
 export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
@@ -56,14 +56,14 @@ export const liminaConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
     regions: z.unknown().optional(),
     release: releaseConfigShapeSchema.optional(),
   })
-  .superRefine((config, ctx) => {
+  .superRefine((config, context) => {
     addUnknownFieldIssues({
       allowed: liminaConfigKeys,
-      ctx,
+      ctx: context,
       message: 'unknown Limina config field.',
       path: [],
       value: config,
     });
-    validateRegionsConfig(config.regions, ctx);
-    validateSourceConfig(config.source, ctx);
+    validateRegionsConfig(config.regions, context);
+    validateSourceConfig(config.source, context);
   });

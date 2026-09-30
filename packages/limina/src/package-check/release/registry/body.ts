@@ -13,18 +13,21 @@ export class RegistryBodyLimitError extends Error {
 }
 
 export async function cancelRegistryBody(response: Response): Promise<void> {
-  await response.body?.cancel().catch(() => {
-    /* Preserve the original failure if the body is already closed. */
-  });
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Preserve the original failure if the body is already closed.
+  }
 }
 
-function declaredLengthExceedsLimit(
+function isDeclaredLengthExceedsLimit(
   response: Response,
   maxBytes: number,
 ): boolean {
   const value = response.headers.get('content-length');
-  if (value === null || !/^\d+$/u.test(value)) return false;
-  return BigInt(value) > BigInt(maxBytes);
+  return (
+    value !== null && /^\d+$/u.test(value) && BigInt(value) > BigInt(maxBytes)
+  );
 }
 
 function assertBodySize(receivedBytes: number, maxBytes: number): void {
@@ -51,12 +54,13 @@ export async function readRegistryBody(
   response: Response,
   maxBytes: number,
 ): Promise<Buffer> {
-  if (declaredLengthExceedsLimit(response, maxBytes)) {
+  if (isDeclaredLengthExceedsLimit(response, maxBytes)) {
     await cancelRegistryBody(response);
     throw new RegistryBodyLimitError(maxBytes);
   }
-  if (response.body === null) return Buffer.alloc(0);
-  return consumeBody(response.body.getReader(), maxBytes);
+  return response.body === null
+    ? Buffer.alloc(0)
+    : consumeBody(response.body.getReader(), maxBytes);
 }
 
 async function consumeBody(
@@ -66,9 +70,11 @@ async function consumeBody(
   try {
     return await readChunks(reader, maxBytes);
   } catch (error) {
-    await reader.cancel().catch(() => {
-      /* Preserve the original failure if the body is already closed. */
-    });
+    try {
+      await reader.cancel();
+    } catch {
+      // Preserve the original failure if the body is already closed.
+    }
     throw error;
   } finally {
     reader.releaseLock();

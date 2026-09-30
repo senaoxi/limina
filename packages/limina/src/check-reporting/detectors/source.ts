@@ -7,7 +7,7 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     kind: 'fault-injection',
     producers: [
       'packages/limina/src/check-reporting/codes.ts#DEFAULT_ISSUE_CODE_BY_TASK',
-      'packages/limina/src/commands/source.ts#runSourceCheck',
+      'packages/limina/src/commands/source.ts#isRunSourceCheck',
       'packages/limina/src/execution/task-execution.ts#createInfrastructureIssue',
     ],
     task: 'source:check',
@@ -185,7 +185,7 @@ export const SOURCE_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     kind: 'fixture',
     producers: [
       'packages/limina/src/source-check/tsconfig-governance.ts#addTsconfigGovernanceProblems',
-      'packages/limina/src/source-check/runner.ts#runSourceCheckImpl',
+      'packages/limina/src/source-check/runner.ts#isRunSourceCheckImpl',
     ],
     task: 'source:check',
     tests: [

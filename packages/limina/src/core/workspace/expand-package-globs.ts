@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import { glob } from 'tinyglobby';
@@ -28,7 +29,9 @@ async function expandGroup(
   );
 }
 
-/** Enumeration retains lexical aliases; validation owns physical identity. */
+/**
+Enumeration retains lexical aliases; validation owns physical identity.
+*/
 export async function expandPackageGlobs(
   options: ExpansionOptions,
 ): Promise<string[]> {
@@ -37,5 +40,7 @@ export async function expandPackageGlobs(
   const directories = (
     await Promise.all(groups.map((group) => expandGroup(group, options)))
   ).flat();
-  return [...new Set(directories.map(normalizeAbsolutePath))].sort();
+  return [...new Set(directories.map(normalizeAbsolutePath))].sort(
+    compareCodeUnits,
+  );
 }

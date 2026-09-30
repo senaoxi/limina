@@ -31,8 +31,7 @@ function assertCompatibleOverlay(
   incoming: string,
   fileName: string,
 ): void {
-  if (existing === undefined) return;
-  if (existing === incoming) return;
+  if (existing === undefined || existing === incoming) return;
   throw new Error(
     `Conflicting Vue semantic virtual file overlays for ${fileName}.`,
   );
@@ -53,7 +52,7 @@ export function mergeVueVirtualFiles(
 export function createVueOverlayFingerprint(
   virtualFiles: ReadonlyMap<string, string>,
 ): string {
-  return hashText(JSON.stringify([...virtualFiles.entries()]));
+  return hashText(JSON.stringify([...virtualFiles]));
 }
 
 export function createVueConfigReadRecorder(): VueConfigReadRecorder {
@@ -78,8 +77,9 @@ function readOverlayOrDisk(options: {
   virtualFiles: ReadonlyMap<string, string>;
 }): string | undefined {
   const overlay = options.virtualFiles.get(options.normalized);
-  if (overlay !== undefined) return overlay;
-  return options.base.readFile(options.fileName, options.encoding);
+  return overlay === undefined
+    ? options.base.readFile(options.fileName, options.encoding)
+    : overlay;
 }
 
 function recordRead(options: {
@@ -104,10 +104,9 @@ export function createVueOverlaySystem(options: {
       return options.virtualFiles.has(normalized) || base.fileExists(fileName);
     },
     getModifiedTime(fileName): Date | undefined {
-      if (options.virtualFiles.has(normalizeAbsolutePath(fileName))) {
-        return new Date(0);
-      }
-      return base.getModifiedTime?.(fileName);
+      return options.virtualFiles.has(normalizeAbsolutePath(fileName))
+        ? new Date(0)
+        : base.getModifiedTime?.(fileName);
     },
     readFile(fileName, encoding): string | undefined {
       const normalized = normalizeAbsolutePath(fileName);

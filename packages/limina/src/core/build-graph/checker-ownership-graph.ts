@@ -34,7 +34,7 @@ export function collectOwnershipScopes(options: {
   });
 }
 
-function sameProjectShape(
+function isSameProjectShape(
   left: AutoScopeProject,
   right: AutoScopeProject,
 ): boolean {
@@ -115,7 +115,7 @@ function assertConsistentProjectShape(
   current: AutoScopeProject | undefined,
   incoming: AutoScopeProject,
 ): void {
-  if (current === undefined || sameProjectShape(current, incoming)) return;
+  if (current === undefined || isSameProjectShape(current, incoming)) return;
   throw new Error(
     `Checker ownership discovery observed inconsistent effective files for ${incoming.configPath}.`,
   );
@@ -188,7 +188,10 @@ interface LeafTraversal {
   visiting: Set<string>;
 }
 
-function addProjectLeaf(traversal: LeafTraversal, configPath: string): boolean {
+function isAddProjectLeaf(
+  traversal: LeafTraversal,
+  configPath: string,
+): boolean {
   if (!traversal.projectByConfigPath.has(configPath)) return false;
   traversal.leaves.add(configPath);
   return true;
@@ -198,8 +201,9 @@ function shouldSkipVisit(
   traversal: LeafTraversal,
   configPath: string,
 ): boolean {
-  if (addProjectLeaf(traversal, configPath)) return true;
-  return traversal.visited.has(configPath);
+  return (
+    isAddProjectLeaf(traversal, configPath) || traversal.visited.has(configPath)
+  );
 }
 
 function assertNotVisiting(traversal: LeafTraversal, configPath: string): void {
@@ -259,10 +263,9 @@ export function createOwnershipPlan(options: {
   projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
 }): CheckerOwnershipPlan {
   const typeConfigs = new Map(
-    [...options.projectByConfigPath.keys()].map((configPath) => [
-      configPath,
-      createTypeState(configPath),
-    ]),
+    options.projectByConfigPath
+      .keys()
+      .map((configPath) => [configPath, createTypeState(configPath)]),
   );
   const solutions = new Map<string, SolutionOwnershipState>();
   for (const solutionPath of options.directReferences.keys()) {

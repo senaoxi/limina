@@ -16,9 +16,7 @@ export interface OutputPackageManifest {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  if (value === null) return false;
-  if (typeof value !== 'object') return false;
-  return !Array.isArray(value);
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function createManifestTypeError(manifestPath: string): TypeError {
@@ -134,32 +132,33 @@ export function parseSourcePackageManifest(
 }
 
 function isLocalDependencySpecifier(specifier: string): boolean {
-  if (specifier.startsWith('workspace:')) return true;
-  if (specifier.startsWith('link:')) return true;
-  return specifier.startsWith('file:');
+  return (
+    specifier.startsWith('workspace:') ||
+    specifier.startsWith('link:') ||
+    specifier.startsWith('file:')
+  );
 }
 
 function resolvePublishedDependencySpecifier(
   specifier: string,
   dependencyVersion: string | undefined,
 ): string {
-  if (!isLocalDependencySpecifier(specifier)) return specifier;
-  return `^${dependencyVersion ?? '1.0.0'}`;
+  return isLocalDependencySpecifier(specifier)
+    ? `^${dependencyVersion ?? '1.0.0'}`
+    : specifier;
 }
 
 function getLicenseField(license: string | false | undefined): {
   license?: string;
 } {
-  if (license === false) return {};
-  return { license: license ?? 'MIT' };
+  return license === false ? {} : { license: license ?? 'MIT' };
 }
 
 function getDependenciesField(
   dependencies: Readonly<Record<string, string>> | undefined,
 ): { dependencies?: Readonly<Record<string, string>> } {
   if (dependencies === undefined) return {};
-  if (Object.keys(dependencies).length === 0) return {};
-  return { dependencies };
+  return Object.keys(dependencies).length === 0 ? {} : { dependencies };
 }
 
 function getPrivateField(value: boolean | undefined): { private?: boolean } {

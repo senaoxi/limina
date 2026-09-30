@@ -83,12 +83,12 @@ export interface AstroMapper {
   toGeneratedRange(
     start: number,
     end: number,
-    fallbackToAnyMatch: boolean,
+    isFallbackToAnyMatch: boolean,
   ): Iterable<readonly [number, number, unknown, unknown]>;
   toSourceRange(
     start: number,
     end: number,
-    fallbackToAnyMatch: boolean,
+    isFallbackToAnyMatch: boolean,
   ): Iterable<readonly [number, number, unknown, unknown]>;
 }
 
@@ -101,7 +101,7 @@ export interface AstroLanguage {
     delete(id: AstroUri): void;
     get(
       id: AstroUri,
-      includeFsFiles?: boolean,
+      isIncludeFsFiles?: boolean,
       shouldRegister?: boolean,
     ): AstroSourceScript | undefined;
     set(
@@ -118,7 +118,7 @@ export interface AstroLanguageCoreRuntime {
     scriptRegistry: Map<AstroUri, AstroSourceScript>,
     sync: (
       id: AstroUri,
-      includeFsFiles: boolean,
+      isIncludeFsFiles: boolean,
       shouldRegister: boolean,
     ) => void,
   ): AstroLanguage;

@@ -22,8 +22,7 @@ function getReusableContext(
   identity: VueProjectSemanticIdentity,
 ): VueSemanticContext | null {
   const active = processWideVueContextSlot.context;
-  if (active === undefined) return null;
-  if (active.identity.id !== identity.id) return null;
+  if (active === undefined || active.identity.id !== identity.id) return null;
   active.assertActive();
   return active;
 }
@@ -47,10 +46,9 @@ function recordProgramCreation(options: {
   });
 }
 
-function ownsActiveIdentity(identity: VueProjectSemanticIdentity): boolean {
+function isOwnsActiveIdentity(identity: VueProjectSemanticIdentity): boolean {
   const active = processWideVueContextSlot.context;
-  if (active === undefined) return false;
-  return active.identity.id === identity.id;
+  return active !== undefined && active.identity.id === identity.id;
 }
 
 function releaseManagerOwner(manager: VueSemanticContextManager): void {
@@ -62,10 +60,17 @@ function releaseManagerOwner(manager: VueSemanticContextManager): void {
 
 export class VueSemanticContextManager {
   readonly #metrics: TypeEvidenceMetricsRecorder | undefined;
+
   #disposed = false;
 
   constructor(metrics?: TypeEvidenceMetricsRecorder) {
     this.#metrics = metrics;
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) {
+      throw new Error('Vue semantic context manager was disposed.');
+    }
   }
 
   acquire(identity: VueProjectSemanticIdentity): VueSemanticContext {
@@ -92,7 +97,7 @@ export class VueSemanticContextManager {
 
   release(identity: VueProjectSemanticIdentity): void {
     this.#assertActive();
-    if (!ownsActiveIdentity(identity)) return;
+    if (!isOwnsActiveIdentity(identity)) return;
     releaseManagerOwner(this);
   }
 
@@ -100,11 +105,5 @@ export class VueSemanticContextManager {
     if (this.#disposed) return;
     this.#disposed = true;
     releaseManagerOwner(this);
-  }
-
-  #assertActive(): void {
-    if (this.#disposed) {
-      throw new Error('Vue semantic context manager was disposed.');
-    }
   }
 }

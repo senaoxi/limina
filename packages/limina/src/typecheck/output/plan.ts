@@ -87,11 +87,11 @@ function createPlanEntry(options: {
   return entry;
 }
 
-function shouldSkipInput(sourcePath: string, outDir: string): boolean {
-  if (isInNodeModules(sourcePath)) {
-    return true;
-  }
-  return isPathInsideDirectory(sourcePath, outDir);
+function shouldSkipInput(sourcePath: string, outDirectory: string): boolean {
+  return (
+    isInNodeModules(sourcePath) ||
+    isPathInsideDirectory(sourcePath, outDirectory)
+  );
 }
 
 function classifyTarget(options: {
@@ -193,8 +193,9 @@ function compareProblems(
   const severity = compareCodeUnits(left.severity, right.severity);
   if (severity !== 0) return severity;
   const filePath = compareCodeUnits(left.filePath, right.filePath);
-  if (filePath !== 0) return filePath;
-  return compareCodeUnits(getProblemTarget(left), getProblemTarget(right));
+  return filePath === 0
+    ? compareCodeUnits(getProblemTarget(left), getProblemTarget(right))
+    : filePath;
 }
 
 function createPlanResult(
@@ -202,8 +203,8 @@ function createPlanResult(
   problems: ReadonlyMap<string, OutputDeclarationCopyProblem>,
 ): OutputDeclarationCopyPlan {
   return {
-    entries: [...entries.values()].sort(compareEntries),
-    problems: [...problems.values()].sort(compareProblems),
+    entries: entries.values().toArray().sort(compareEntries),
+    problems: problems.values().toArray().sort(compareProblems),
   };
 }
 
@@ -228,8 +229,8 @@ export function createOutputDeclarationCopyPlan(options: {
   projectRootDir: string;
   rootDir: string;
 }): OutputDeclarationCopyPlan {
-  const rootDir = normalizeAbsolutePath(options.rootDir);
-  const outDir = normalizeAbsolutePath(options.outDir);
+  const rootDirectory = normalizeAbsolutePath(options.rootDir);
+  const outDirectory = normalizeAbsolutePath(options.outDir);
   const entries = new Map<string, OutputDeclarationCopyPlanEntry>();
   const problems = new Map<string, OutputDeclarationCopyProblem>();
 
@@ -238,8 +239,8 @@ export function createOutputDeclarationCopyPlan(options: {
       classifyDeclarationInput({
         authority: options.authority,
         fileName,
-        outDir,
-        rootDir,
+        outDir: outDirectory,
+        rootDir: rootDirectory,
       }),
       entries,
       problems,

@@ -29,20 +29,24 @@ export type {
 } from './types';
 
 export function collectImportsFromFile(
-  ...args: [
+  ...arguments_: [
     filePath: string,
     rootDir: string,
     context?: ImportAnalysisContext,
     sourceProfile?: VueSourceProfile,
   ]
 ): ImportRecord[] {
-  const [filePath, rootDir, context, sourceProfile] = args;
+  const [filePath, rootDirectory, context, sourceProfile] = arguments_;
   const provider = context ?? createImportAnalysisContext();
-  return provider.collectImportsFromFile(filePath, rootDir, sourceProfile);
+  return provider.collectImportsFromFile(
+    filePath,
+    rootDirectory,
+    sourceProfile,
+  );
 }
 
 export function resolveInternalImport(
-  ...args: StandaloneInternalImportArguments
+  ...arguments_: StandaloneInternalImportArguments
 ): string | null {
   const [
     specifier,
@@ -50,7 +54,7 @@ export function resolveInternalImport(
     compilerOptions,
     contextOrExtensions,
     analysisContext,
-  ] = args;
+  ] = arguments_;
   const provider = analysisContext ?? createImportAnalysisContext();
   return provider.resolveInternalImport(
     specifier,

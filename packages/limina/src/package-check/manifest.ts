@@ -1,6 +1,6 @@
 import { isLocalPackageDependencySpecifier } from '#core/workspace/actions';
 import { isPlainRecord } from '#utils/values';
-import type { DistPackageJson } from './manifest-types';
+import type { DistributionPackageJson } from './manifest-types';
 
 export { findPackageImportTargets } from './manifest-imports';
 export {
@@ -8,7 +8,7 @@ export {
   isAllowedSelfSpecifier,
 } from './manifest-self-specifiers';
 export type {
-  DistPackageJson,
+  DistributionPackageJson as DistPackageJson,
   PackageImportTargetMatch,
   SelfSpecifierMatchers,
 } from './manifest-types';
@@ -33,7 +33,7 @@ const packageDependencySectionNames: readonly PackageDependencySectionName[] = [
 ];
 
 function collectSectionDependencyEntries(
-  manifest: DistPackageJson,
+  manifest: DistributionPackageJson,
   sectionName: PackageDependencySectionName,
 ): PackageDependencyEntry[] {
   const section = manifest[sectionName];
@@ -52,7 +52,7 @@ function collectSectionDependencyEntries(
 }
 
 function collectPackageDependencyEntries(
-  manifest: DistPackageJson,
+  manifest: DistributionPackageJson,
 ): PackageDependencyEntry[] {
   return packageDependencySectionNames.flatMap((sectionName) =>
     collectSectionDependencyEntries(manifest, sectionName),
@@ -71,7 +71,7 @@ function createMissingNameProblem(options: {
   ].join('\n');
 }
 
-function hasValidPackageName(manifest: DistPackageJson): boolean {
+function hasValidPackageName(manifest: DistributionPackageJson): boolean {
   return typeof manifest.name === 'string' && manifest.name.trim().length > 0;
 }
 
@@ -91,7 +91,7 @@ function createLocalDependencyProblem(
 
 function collectLocalDependencyProblems(options: {
   label: string;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packageJsonPath: string;
 }): string[] {
   return collectPackageDependencyEntries(options.manifest)
@@ -107,7 +107,7 @@ function hasMixedExportKeys(exports: unknown): boolean {
 
 function collectExportShapeProblems(options: {
   label: string;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packageJsonPath: string;
 }): string[] {
   if (!hasMixedExportKeys(options.manifest.exports)) return [];
@@ -123,7 +123,7 @@ function collectExportShapeProblems(options: {
 
 export function collectBuiltPackageManifestProblems(options: {
   label: string;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packageJsonPath: string;
 }): string[] {
   const problems = collectLocalDependencyProblems(options);

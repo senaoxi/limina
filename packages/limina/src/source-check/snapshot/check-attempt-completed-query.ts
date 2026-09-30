@@ -56,9 +56,9 @@ async function readCompletedPointer(options: {
   return { status: 'valid', value: completed.value };
 }
 
-async function readRawSnapshot(rootDir: string): Promise<string | null> {
+async function readRawSnapshot(rootDirectory: string): Promise<string | null> {
   const snapshotPath = resolveArtifactNamespacePath(
-    createLiminaArtifactNamespace({ generation: 0, rootDir }),
+    createLiminaArtifactNamespace({ generation: 0, rootDir: rootDirectory }),
     'check',
     'last-run.json',
   );
@@ -74,37 +74,35 @@ function hashSnapshotText(rawSnapshot: string): string {
 }
 
 async function readValidatedSnapshot(
-  rootDir: string,
+  rootDirectory: string,
   completed: LatestCompletedCheckAttempt,
 ): Promise<CheckAttemptQueryResult> {
-  const snapshot = await readCheckIssueSnapshot(rootDir);
+  const snapshot = await readCheckIssueSnapshot(rootDirectory);
   if (snapshot === null) {
     return inconsistentCheckAttemptResult(
       `last-run.json is not a valid v${CHECK_ISSUE_SNAPSHOT_VERSION} snapshot`,
     );
   }
-  if (snapshot.createdAt !== completed.snapshotCreatedAt) {
-    return inconsistentCheckAttemptResult('snapshot timestamp does not match');
-  }
-  return { snapshot, state: 'completed' };
+  return snapshot.createdAt === completed.snapshotCreatedAt
+    ? { snapshot, state: 'completed' }
+    : inconsistentCheckAttemptResult('snapshot timestamp does not match');
 }
 
 async function readSnapshotForPointer(
-  rootDir: string,
+  rootDirectory: string,
   completed: LatestCompletedCheckAttempt,
 ): Promise<CheckAttemptQueryResult> {
-  const rawSnapshot = await readRawSnapshot(rootDir);
+  const rawSnapshot = await readRawSnapshot(rootDirectory);
   if (rawSnapshot === null) {
     return inconsistentCheckAttemptResult(
       'last-run.json is missing or unreadable',
     );
   }
-  if (hashSnapshotText(rawSnapshot) !== completed.snapshotHash) {
-    return inconsistentCheckAttemptResult(
-      'last-run.json content hash does not match',
-    );
-  }
-  return readValidatedSnapshot(rootDir, completed);
+  return hashSnapshotText(rawSnapshot) === completed.snapshotHash
+    ? readValidatedSnapshot(rootDirectory, completed)
+    : inconsistentCheckAttemptResult(
+        'last-run.json content hash does not match',
+      );
 }
 
 export async function readCompletedCheckSnapshot(options: {
@@ -113,6 +111,7 @@ export async function readCompletedCheckSnapshot(options: {
   rootDir: string;
 }): Promise<CheckAttemptQueryResult> {
   const completed = await readCompletedPointer(options);
-  if (completed.status === 'invalid') return completed.result;
-  return readSnapshotForPointer(options.rootDir, completed.value);
+  return completed.status === 'invalid'
+    ? completed.result
+    : readSnapshotForPointer(options.rootDir, completed.value);
 }

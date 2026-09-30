@@ -1,5 +1,6 @@
 import { lstat, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { isIntegerNumber } from '../../src/utils/validation/is-integer';
 
 import {
   assertIssueTaskMatchesCode,
@@ -209,7 +210,7 @@ function assertOnlyKeys(
 
   if (unexpectedKeys.length > 0) {
     throw new Error(
-      `${label} contains unsupported fields: ${unexpectedKeys.sort().join(', ')}.`,
+      `${label} contains unsupported fields: ${unexpectedKeys.sort((left, right) => Number(left > right) - Number(left < right)).join(', ')}.`,
     );
   }
 }
@@ -234,7 +235,7 @@ function validateFixtureId(value: unknown, label: string): string {
   validatePortableRelativePath(id, { label });
 
   if (
-    !id.split('/').every((segment) => FIXTURE_ID_SEGMENT_PATTERN.test(segment))
+    id.split('/').some((segment) => !FIXTURE_ID_SEGMENT_PATTERN.test(segment))
   ) {
     throw new Error(
       `${label} must contain lowercase kebab-case path segments: ${id}`,
@@ -322,7 +323,7 @@ function optionalPositiveInteger(
   if (value === undefined) {
     return undefined;
   }
-  if (!Number.isInteger(value) || (value as number) < 1) {
+  if (!isIntegerNumber(value) || (value as number) < 1) {
     throw new Error(`${label} must be a positive integer.`);
   }
 
@@ -456,7 +457,7 @@ function validateExpectedSnapshot(
   if (value.complete !== undefined && typeof value.complete !== 'boolean') {
     throw new Error(`${label}.complete must be boolean.`);
   }
-  if (value.expected === false && value.complete !== undefined) {
+  if (!value.expected && value.complete !== undefined) {
     throw new Error(`${label}.complete requires an expected snapshot.`);
   }
 
@@ -498,7 +499,7 @@ function validateExpectedFaultBoundary(
   const output: Record<string, boolean | number> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (EXPECTED_FAULT_BOUNDARY_NUMBER_KEYS.has(key)) {
-      if (!Number.isInteger(entry) || (entry as number) < 0) {
+      if (!isIntegerNumber(entry) || (entry as number) < 0) {
         throw new Error(`${label}.${key} must be a non-negative integer.`);
       }
       output[key] = entry as number;
@@ -576,7 +577,7 @@ function validateExpectation(
   }
   assertOnlyKeys(value, EXPECTATION_KEYS, label);
   if (
-    !Number.isInteger(value.exitCode) ||
+    !Number.isSafeInteger(value.exitCode) ||
     (value.exitCode as number) < 0 ||
     (value.exitCode as number) > 255
   ) {
@@ -609,7 +610,7 @@ function validateExpectation(
   if (exitCode !== 0 && primaryCode === undefined && !options.faultInjection) {
     throw new Error(`${label}.primaryCode is required for a failing fixture.`);
   }
-  if (primaryCode && !issues.some((issue) => issue.code === primaryCode)) {
+  if (primaryCode && issues.every((issue) => issue.code !== primaryCode)) {
     throw new Error(
       `${label}.primaryCode must be represented by an expected issue.`,
     );
@@ -708,7 +709,8 @@ function validateCopyPolicy(
     value.excludedNames === undefined
       ? undefined
       : validateStringArray(value.excludedNames, `${label}.excludedNames`);
-  for (const [index, entryName] of (excludedNames ?? []).entries()) {
+  const excludedNameEntries = (excludedNames ?? []).entries();
+  for (const [index, entryName] of excludedNameEntries) {
     if (
       entryName === '.' ||
       entryName === '..' ||
@@ -939,9 +941,9 @@ function validateRegistryDigest(
       value: validateJsonValue(value.value, `${label}.value`),
     };
   }
-  if (kind === 'actual' || kind === 'mismatch' || kind === 'omit') {
+  if (['actual', 'mismatch', 'omit'].includes(kind)) {
     assertOnlyKeys(value, new Set(['kind']), label);
-    return { kind };
+    return { kind: kind as 'actual' | 'mismatch' | 'omit' };
   }
 
   throw new Error(`${label}.kind is unsupported: ${kind}`);
@@ -1230,16 +1232,16 @@ export function validateDetectorFixtureDefinition(
   ) {
     throw new Error(`${label}.kind is unsupported: ${String(value.kind)}`);
   }
-  const faultInjection = value.kind === 'fault-injection';
-  if (faultInjection && value.fault === undefined) {
+  const isFaultInjection = value.kind === 'fault-injection';
+  if (isFaultInjection && value.fault === undefined) {
     throw new Error(`${label}.fault is required for fault-injection fixtures.`);
   }
-  if (!faultInjection && value.fault !== undefined) {
+  if (!isFaultInjection && value.fault !== undefined) {
     throw new Error(
       `${label}.fault is only valid for fault-injection fixtures.`,
     );
   }
-  if (!faultInjection && value.secondaryFault !== undefined) {
+  if (!isFaultInjection && value.secondaryFault !== undefined) {
     throw new Error(
       `${label}.secondaryFault is only valid for fault-injection fixtures.`,
     );
@@ -1327,7 +1329,7 @@ export function validateDetectorFixtureDefinition(
     copyPolicy: validateCopyPolicy(value.copyPolicy, `${label}.copyPolicy`),
     environment: validateEnvironment(value.environment, `${label}.environment`),
     expected: validateExpectation(value.expected, `${label}.expected`, {
-      faultInjection,
+      faultInjection: isFaultInjection,
     }),
     fault,
     id,
@@ -1350,7 +1352,7 @@ async function collectFixtureDirectories(
   const caseEntries = entries.filter((entry) => /^case\./u.test(entry.name));
   const repoEntry = entries.find((entry) => entry.name === 'repo');
 
-  if (caseEntries.length > 0 || repoEntry) {
+  if (repoEntry || caseEntries.length > 0) {
     if (
       caseEntries.length !== 1 ||
       caseEntries[0]!.name !== 'case.mts' ||
@@ -1419,7 +1421,7 @@ export async function discoverDetectorFixtures(
   await collectFixtureDirectories(detectorRoot, fixtureDirectories);
 
   const modulesByPath = new Map(
-    [...options.caseModules.entries()].map(([casePath, caseModule]) => [
+    [...options.caseModules].map(([casePath, caseModule]) => [
       path.resolve(casePath),
       caseModule,
     ]),

@@ -77,9 +77,10 @@ export function partitionSourceFiles(
   fileNames: readonly string[],
 ): SourceFilePartition {
   const partition = createEmptySourceFilePartition();
-  for (const fileName of uniqueSortedStrings(
+  const normalizedFileNames = uniqueSortedStrings(
     fileNames.map(normalizeAbsolutePath),
-  )) {
+  );
+  for (const fileName of normalizedFileNames) {
     const key = partitionKeyByExtension.get(getFileExtension(fileName));
     if (key) partition[key].push(fileName);
   }

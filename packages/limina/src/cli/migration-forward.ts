@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { getPrimaryCliCommandIndex } from './argv';
 
-const pkg = createRequire(import.meta.url)('limina/package.json') as {
+const package_ = createRequire(import.meta.url)('limina/package.json') as {
   version: string;
 };
 
@@ -19,8 +19,9 @@ export function migrationArguments(
 ): string[] | undefined {
   const index = getPrimaryCliCommandIndex(argv);
   if (index === undefined) return undefined;
-  if (argv[index] !== 'migration') return undefined;
-  return [...argv.slice(2, index), ...argv.slice(index + 1)];
+  return argv[index] === 'migration'
+    ? [...argv.slice(2, index), ...argv.slice(index + 1)]
+    : undefined;
 }
 
 function resolveManifest(origin: string): string | undefined {
@@ -38,9 +39,10 @@ function resolveManifest(origin: string): string | undefined {
 }
 
 function matchingBinary(manifest: MigrationPackage): string | undefined {
-  if (manifest.name !== 'limina-migrate' || manifest.version !== pkg.version)
-    return undefined;
-  return packageBinary(manifest);
+  return manifest.name !== 'limina-migrate' ||
+    manifest.version !== package_.version
+    ? undefined
+    : packageBinary(manifest);
 }
 
 function packageBinary(manifest: MigrationPackage): string | undefined {
@@ -58,8 +60,9 @@ function localMigrationEntry(origin: string): string | undefined {
   const binary = matchingBinary(
     JSON.parse(readFileSync(manifestPath, 'utf8')) as MigrationPackage,
   );
-  if (!binary) return undefined;
-  return existingPath(path.resolve(path.dirname(manifestPath), binary));
+  return binary
+    ? existingPath(path.resolve(path.dirname(manifestPath), binary))
+    : undefined;
 }
 
 function resolveLocalMigration(): string | undefined {
@@ -107,8 +110,9 @@ function npxCandidate(candidate: string): string | undefined {
     path.basename(candidate) === 'npm-cli.js'
       ? path.join(path.dirname(candidate), 'npx-cli.js')
       : candidate;
-  if (path.basename(entry) !== 'npx-cli.js') return undefined;
-  return existingPath(entry);
+  return path.basename(entry) === 'npx-cli.js'
+    ? existingPath(entry)
+    : undefined;
 }
 
 function resolveNpxEntry(): string {
@@ -121,33 +125,41 @@ function resolveNpxEntry(): string {
   );
 }
 
-function childArguments(args: string[]): string[] {
+function childArguments(arguments_: string[]): string[] {
   const localEntry = resolveLocalMigration();
   return localEntry
-    ? [localEntry, ...args]
-    : [resolveNpxEntry(), '--yes', `limina-migrate@${pkg.version}`, ...args];
+    ? [localEntry, ...arguments_]
+    : [
+        resolveNpxEntry(),
+        '--yes',
+        `limina-migrate@${package_.version}`,
+        ...arguments_,
+      ];
 }
 
-export async function forwardMigrationIfRequested(
+export async function isForwardMigrationIfRequested(
   argv: readonly string[],
 ): Promise<boolean> {
-  const args = migrationArguments(argv);
-  if (!args) return false;
-  if (args.some((arg) => ['--help', '-h'].includes(arg))) return false;
-  await forwardMigration(args);
+  const arguments_ = migrationArguments(argv);
+  if (
+    !arguments_ ||
+    arguments_.some((argument) => ['--help', '-h'].includes(argument))
+  )
+    return false;
+  await forwardMigration(arguments_);
   return true;
 }
 
-async function runChild(args: string[]): Promise<void> {
-  const child = spawn(process.execPath, args, {
+async function runChild(arguments_: string[]): Promise<void> {
+  const child = spawn(process.execPath, arguments_, {
     cwd: process.cwd(),
     env: process.env,
     stdio: 'inherit',
   });
-  const interrupt = () => child.kill('SIGINT');
-  const terminate = () => child.kill('SIGTERM');
-  process.on('SIGINT', interrupt);
-  process.on('SIGTERM', terminate);
+  const isInterrupt = () => child.kill('SIGINT');
+  const isTerminate = () => child.kill('SIGTERM');
+  process.on('SIGINT', isInterrupt);
+  process.on('SIGTERM', isTerminate);
   try {
     const result = await new Promise<{
       code: number | null;
@@ -158,23 +170,23 @@ async function runChild(args: string[]): Promise<void> {
     });
     process.exitCode = result.code ?? 1;
     if (result.signal) {
-      process.off('SIGINT', interrupt);
-      process.off('SIGTERM', terminate);
+      process.off('SIGINT', isInterrupt);
+      process.off('SIGTERM', isTerminate);
       process.kill(process.pid, result.signal);
     }
   } finally {
-    process.off('SIGINT', interrupt);
-    process.off('SIGTERM', terminate);
+    process.off('SIGINT', isInterrupt);
+    process.off('SIGTERM', isTerminate);
   }
 }
 
-export async function forwardMigration(args: string[]): Promise<void> {
-  const command = `npx --yes limina-migrate@${pkg.version}`;
+export async function forwardMigration(arguments_: string[]): Promise<void> {
+  const command = `npx --yes limina-migrate@${package_.version}`;
   process.stderr.write(
     `"limina migration" is deprecated. Use "${command}" instead.\n`,
   );
   try {
-    await runChild(childArguments(args));
+    await runChild(childArguments(arguments_));
     if (process.exitCode)
       process.stderr.write(`Migration failed. Retry with ${command}.\n`);
   } catch (error) {

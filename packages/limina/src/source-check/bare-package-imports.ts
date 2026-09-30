@@ -165,7 +165,7 @@ function handleArtifactTarget(options: {
   });
 }
 
-function processOwnedTarget(options: {
+function isProcessOwnedTarget(options: {
   base: BareImportOptions;
   target: ResolvedPackageTarget;
 }): boolean {
@@ -181,7 +181,7 @@ function processOwnedTarget(options: {
   return true;
 }
 
-function processArtifactTarget(options: {
+function isProcessArtifactTarget(options: {
   base: BareImportOptions;
   target: ResolvedPackageTarget;
 }): boolean {
@@ -193,18 +193,14 @@ function processArtifactTarget(options: {
   return true;
 }
 
-function processResolvedTarget(options: {
+function isProcessResolvedTarget(options: {
   base: BareImportOptions;
   target: ResolvedPackageTarget;
 }): boolean {
-  if (processOwnedTarget(options)) {
-    return true;
-  }
-
-  return processArtifactTarget(options);
+  return isProcessOwnedTarget(options) || isProcessArtifactTarget(options);
 }
 
-function processResolvedBareImport(options: {
+function isProcessResolvedBareImport(options: {
   base: BareImportOptions;
   resolvedFilePath: string | null;
   workspaceLookup: WorkspaceLookupIndex;
@@ -217,7 +213,7 @@ function processResolvedBareImport(options: {
     owner: options.base.owner,
     resolvedFilePath: options.resolvedFilePath,
   });
-  return processResolvedTarget({ base: options.base, target });
+  return isProcessResolvedTarget({ base: options.base, target });
 }
 
 function findWorkspacePackage(
@@ -245,12 +241,9 @@ export function addBarePackageImportProblems(
     workspaceLookup: WorkspaceLookupIndex;
   },
 ): void {
-  if (shouldIgnoreSelfImport(options)) {
-    return;
-  }
-
   if (
-    processResolvedBareImport({
+    shouldIgnoreSelfImport(options) ||
+    isProcessResolvedBareImport({
       base: options,
       resolvedFilePath: options.resolvedFilePath,
       workspaceLookup: options.workspaceLookup,

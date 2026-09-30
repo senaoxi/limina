@@ -25,7 +25,7 @@ import {
 } from './graph-coverage-ownership';
 import {
   createProofRunState,
-  finishProofPhase,
+  isFinishProofPhase,
   type ProofPhase,
   type ProofRunState,
 } from './run-state';
@@ -44,7 +44,8 @@ function collectSolutionConfigPaths(
   generatedGraph: ProofRunState['generatedGraph'],
 ): ReadonlySet<string> {
   return new Set(
-    [...generatedGraph.sourceToBuild.values()]
+    generatedGraph.sourceToBuild
+      .values()
       .flatMap((sourceToBuild) => [...sourceToBuild])
       .filter(([, module]) => module.kind === 'solution')
       .map(([configPath]) => configPath),
@@ -144,7 +145,7 @@ function addProjectConfigFindings(state: ProofRunState): void {
   );
 }
 
-async function runProjectConfigPhase(state: ProofRunState): Promise<boolean> {
+async function isRunProjectConfigPhase(state: ProofRunState): Promise<boolean> {
   await addRouteFindings(state);
   state.checkItems.start('project routes and configs');
   addProjectConfigFindings(state);
@@ -152,10 +153,10 @@ async function runProjectConfigPhase(state: ProofRunState): Promise<boolean> {
     state.entryProjectPaths.length + state.dtsConfigPaths.length,
   );
   state.checkItems.record('project routes and configs');
-  return finishProofPhase(state);
+  return isFinishProofPhase(state);
 }
 
-async function runCheckerTargetPhase(state: ProofRunState): Promise<boolean> {
+async function isRunCheckerTargetPhase(state: ProofRunState): Promise<boolean> {
   const collection = collectCheckerCoverageTargets(
     state.config,
     state.generatedGraph,
@@ -167,7 +168,7 @@ async function runCheckerTargetPhase(state: ProofRunState): Promise<boolean> {
   state.checkerTargets = collection.targets;
   state.checks.add(collection.targets.length);
   state.checkItems.record('checker coverage targets');
-  return finishProofPhase(state);
+  return isFinishProofPhase(state);
 }
 
 function addCoverageFindings(options: {
@@ -217,7 +218,7 @@ function addCoverageFindings(options: {
   });
 }
 
-async function runCoveragePhase(state: ProofRunState): Promise<boolean> {
+async function isRunCoveragePhase(state: ProofRunState): Promise<boolean> {
   const sourceFiles = await state.preflight.ensureExpectedSourceFiles();
   const allowlist = collectConfiguredAllowlistEntries(state.config);
 
@@ -254,7 +255,7 @@ async function runCoveragePhase(state: ProofRunState): Promise<boolean> {
   state.checks.add(sourceFiles.size);
   state.checkItems.record('source coverage');
 
-  if (!(await finishProofPhase(state))) {
+  if (!(await isFinishProofPhase(state))) {
     return false;
   }
 
@@ -268,12 +269,12 @@ async function runCoveragePhase(state: ProofRunState): Promise<boolean> {
 }
 
 const proofPhases: ProofPhase[] = [
-  runProjectConfigPhase,
-  runCheckerTargetPhase,
-  runCoveragePhase,
+  isRunProjectConfigPhase,
+  isRunCheckerTargetPhase,
+  isRunCoveragePhase,
 ];
 
-async function executeProofPhases(state: ProofRunState): Promise<boolean> {
+async function isExecuteProofPhases(state: ProofRunState): Promise<boolean> {
   for (const phase of proofPhases) {
     if (!(await phase(state))) {
       return false;
@@ -283,9 +284,9 @@ async function executeProofPhases(state: ProofRunState): Promise<boolean> {
   return true;
 }
 
-export async function runProofCheckImpl(
+export async function isRunProofCheckImpl(
   config: ResolvedLiminaConfig,
   options: RunProofCheckImplOptions = {},
 ): Promise<boolean> {
-  return executeProofPhases(await createProofRunState(config, options));
+  return isExecuteProofPhases(await createProofRunState(config, options));
 }

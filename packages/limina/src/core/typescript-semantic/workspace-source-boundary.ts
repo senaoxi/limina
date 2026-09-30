@@ -3,8 +3,9 @@ import { normalizeAbsolutePath } from '#utils/path';
 import { existsSync, realpathSync } from 'node:fs';
 
 function getRealPath(fileName: string): string {
-  if (!existsSync(fileName)) return normalizeAbsolutePath(fileName);
-  return normalizeAbsolutePath(realpathSync.native(fileName));
+  return normalizeAbsolutePath(
+    existsSync(fileName) ? realpathSync.native(fileName) : fileName,
+  );
 }
 
 function getPathIdentities(fileName: string): string[] {

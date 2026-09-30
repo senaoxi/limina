@@ -18,16 +18,12 @@ function createDeferred<T>(): {
   promise: Promise<T>;
   resolve(value: T): void;
 } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((nextResolve) => {
-    resolve = nextResolve;
-  });
-  return { promise, resolve };
+  return Promise.withResolvers<T>();
 }
 
 function createInfrastructureIssue(
   task: ExecutionTask,
-  rootDir: string,
+  rootDirectory: string,
   error: unknown,
 ): LiminaCheckIssue {
   const message = error instanceof Error ? error.message : String(error);
@@ -40,7 +36,7 @@ function createInfrastructureIssue(
     detailLines: [message],
     fix: `Inspect the ${task.issueTask} failure, then rerun limina check.`,
     reason: `${task.issueTask} failed: ${message}.`,
-    rootDir,
+    rootDir: rootDirectory,
     task: task.issueTask,
     title: `${task.issueTask} failed`,
   });
@@ -133,9 +129,10 @@ export function createRunningEntry(options: {
     settlement: Promise.resolve(undefined as never),
     task: options.task,
   };
-  entry.settlement = gate.promise.then((decision) =>
-    settleDecision({ ...options, decision, entry }),
-  );
+  entry.settlement = (async () => {
+    const decision = await gate.promise;
+    return settleDecision({ ...options, decision, entry });
+  })();
   return entry;
 }
 

@@ -5,23 +5,24 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { inspectFrameworkIntent } from '../core/build-graph/framework-intent';
 import { readExplicitSourceCompilerTarget } from '../core/build-graph/generated/compiler-target';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 async function createFixture(files: Record<string, unknown>) {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-inherits-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-inherits-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   for (const [file, content] of Object.entries(files)) {
     await mkdir(path.dirname(fixturePath(file)), { recursive: true });
     await writeFile(fixturePath(file), JSON.stringify(content));
   }
   await writeFile(fixturePath('index.ts'), 'export const value = 1;');
   return {
-    rootDir,
+    rootDir: rootDirectory,
     path: fixturePath,
-    cleanup: () => rm(rootDir, { recursive: true, force: true }),
+    cleanup: () => rm(rootDirectory, { recursive: true, force: true }),
   };
 }
 
@@ -90,14 +91,11 @@ describe('TypeScript inherited config identity', () => {
         const configPath = fixture.path('tsconfig.json');
         const options = {
           configPath,
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
+          config: withFixtureGovernanceRoot({
             rootDir: fixture.rootDir,
             configPath: fixture.path('limina.config.mts'),
             config: {},
-          },
+          }),
         };
         const parsed = ts.getParsedCommandLineOfConfigFile(
           configPath,
@@ -154,14 +152,11 @@ describe('TypeScript inherited config identity', () => {
     try {
       const options = {
         configPath: fixture.path('tsconfig.json'),
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           rootDir: fixture.rootDir,
           configPath: fixture.path('limina.config.mts'),
           config: {},
-        },
+        }),
       };
       expect(() => readExplicitSourceCompilerTarget(options)).toThrow();
       const inspection = inspectFrameworkIntent({

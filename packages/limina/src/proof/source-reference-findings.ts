@@ -8,17 +8,16 @@ import { isPlainRecord } from './config-values';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
-function hasImplicitRefs(
+function hasImplicitReferences(
   configObject: ReturnType<typeof readProofConfig>,
 ): boolean {
-  if (!isPlainRecord(configObject.liminaOptions)) {
-    return false;
-  }
-
-  return Object.hasOwn(configObject.liminaOptions, 'implicitRefs');
+  return (
+    isPlainRecord(configObject.liminaOptions) &&
+    Object.hasOwn(configObject.liminaOptions, 'implicitRefs')
+  );
 }
 
 function addSourceLeafReferenceFinding(options: {
@@ -64,7 +63,7 @@ function addSourceLeafReferenceFinding(options: {
   );
 }
 
-function addSolutionImplicitRefsFinding(options: {
+function addSolutionImplicitReferencesFinding(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   findings: ProofFinding[];
@@ -114,8 +113,8 @@ function getReferenceRoleValidation(
 
   return solutionConfigPaths.has(configPath)
     ? (options) => {
-        if (hasImplicitRefs(configObject)) {
-          addSolutionImplicitRefsFinding(options);
+        if (hasImplicitReferences(configObject)) {
+          addSolutionImplicitReferencesFinding(options);
         }
       }
     : addSourceLeafReferenceFinding;

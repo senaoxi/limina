@@ -18,7 +18,7 @@ import {
   type TypecheckRunnerResult,
   type TypecheckTarget,
 } from '../typecheck/targets';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 function createSleepTarget(sleepMs: number, name: string): TypecheckTarget {
   return {
@@ -31,14 +31,11 @@ function createSleepTarget(sleepMs: number, name: string): TypecheckTarget {
 }
 
 function createPoolConfig(): ResolvedLiminaConfig {
-  return {
-    get governanceRoot() {
-      return resolveFixtureGovernanceRoot(this);
-    },
+  return withFixtureGovernanceRoot({
     configPath: '/virtual/limina.config.mjs',
     execution: { checkerBuild: 2 },
     rootDir: '/virtual',
-  };
+  });
 }
 
 function blockMainThread(durationMs: number): void {
@@ -86,42 +83,47 @@ afterEach(() => {
 
 describe('createDefaultRunner duration measurement', () => {
   it('executes the package sibling host bundle instead of consumer cwd candidates', async () => {
-    const rootDir = await mkdtemp(
+    const rootDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-host-authority-'),
     );
-    const packageDir = path.join(rootDir, 'node_modules/limina');
-    const consumerDir = path.join(rootDir, 'consumer');
-    const safeMarker = path.join(rootDir, 'safe-marker');
-    const unsafeMarker = path.join(rootDir, 'unsafe-marker');
+    const packageDirectory = path.join(rootDirectory, 'node_modules/limina');
+    const consumerDirectory = path.join(rootDirectory, 'consumer');
+    const safeMarker = path.join(rootDirectory, 'safe-marker');
+    const unsafeMarker = path.join(rootDirectory, 'unsafe-marker');
 
     try {
-      await mkdir(path.join(packageDir, 'dist/typecheck'), { recursive: true });
-      await mkdir(path.join(consumerDir, 'src/typecheck'), { recursive: true });
-      await mkdir(path.join(consumerDir, 'dist'), { recursive: true });
+      await mkdir(path.join(packageDirectory, 'dist/typecheck'), {
+        recursive: true,
+      });
+      await mkdir(path.join(consumerDirectory, 'src/typecheck'), {
+        recursive: true,
+      });
+      await mkdir(path.join(consumerDirectory, 'dist'), { recursive: true });
       await writeFile(
-        path.join(packageDir, 'dist/checker-host-process.js'),
+        path.join(packageDirectory, 'dist/checker-host-process.js'),
         "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.SAFE_MARKER, 'safe');\n",
       );
       const unsafeSource =
         "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.UNSAFE_MARKER, 'unsafe');\n";
 
       await writeFile(
-        path.join(consumerDir, 'src/typecheck/host-process.ts'),
+        path.join(consumerDirectory, 'src/typecheck/host-process.ts'),
         unsafeSource,
       );
       await writeFile(
-        path.join(consumerDir, 'dist/checker-host-process.js'),
+        path.join(consumerDirectory, 'dist/checker-host-process.js'),
         unsafeSource,
       );
 
       const entry = resolveCheckerHostEntryForTesting(
-        pathToFileURL(path.join(packageDir, 'dist/typecheck/process-host.js'))
-          .href,
+        pathToFileURL(
+          path.join(packageDirectory, 'dist/typecheck/process-host.js'),
+        ).href,
       );
 
       expect(entry).toBeDefined();
       const result = spawnSync(entry!.command, entry!.args, {
-        cwd: consumerDir,
+        cwd: consumerDirectory,
         env: {
           ...process.env,
           SAFE_MARKER: safeMarker,
@@ -133,7 +135,7 @@ describe('createDefaultRunner duration measurement', () => {
       await expect(readFile(safeMarker, 'utf8')).resolves.toBe('safe');
       expect(existsSync(unsafeMarker)).toBe(false);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -206,10 +208,10 @@ describe('createDefaultRunner duration measurement', () => {
   });
 
   it('waits for a stubborn checker process tree to exit before resolving cancellation', async () => {
-    const rootDir = await mkdtemp(
+    const rootDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-host-cancellation-'),
     );
-    const pidPath = path.join(rootDir, 'checker.pid');
+    const pidPath = path.join(rootDirectory, 'checker.pid');
 
     try {
       const controller = new AbortController();
@@ -232,7 +234,7 @@ describe('createDefaultRunner duration measurement', () => {
         runner(target, { signal: controller.signal }),
       );
       await waitForFile(pidPath);
-      const pid = Number.parseInt(await readFile(pidPath, 'utf8'), 10);
+      const pid = Number(await readFile(pidPath, 'utf8'));
 
       controller.abort(new Error('cancel stubborn checker'));
       const result = await resultPromise;
@@ -241,7 +243,7 @@ describe('createDefaultRunner duration measurement', () => {
       expect(result.status).toBe(1);
       expect(isProcessRunning(pid)).toBe(false);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -404,7 +406,13 @@ describe('runBuildTargets provider blocking', () => {
       { config: createPoolConfig(), watch: true },
     );
 
-    expect(calls.sort()).toEqual([consumer.id, provider.id].sort());
+    expect(
+      calls.sort((left, right) => Number(left > right) - Number(left < right)),
+    ).toEqual(
+      [consumer.id, provider.id].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    );
   });
 
   it('does not cancel targets that execute inside the same provider SCC', async () => {
@@ -424,7 +432,13 @@ describe('runBuildTargets provider blocking', () => {
       { config: createPoolConfig() },
     );
 
-    expect(calls.sort()).toEqual([first.id, second.id].sort());
+    expect(
+      calls.sort((left, right) => Number(left > right) - Number(left < right)),
+    ).toEqual(
+      [first.id, second.id].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    );
     const secondResult = results.find((result) => result.id === second.id);
     expect(secondResult).toMatchObject({ status: 0 });
     expect(secondResult).not.toHaveProperty('blockedBy');
@@ -576,7 +590,9 @@ describe('runBuildTargets provider blocking', () => {
           }
         },
         config: createPoolConfig(),
-        onTargetStart: (target) => started.push(target.id),
+        onTargetStart: (target) => {
+          started.push(target.id);
+        },
       },
     );
 
@@ -612,7 +628,9 @@ describe('runBuildTargets provider blocking', () => {
         throw new Error('final output became a symlink');
       },
       config: createPoolConfig(),
-      onTargetStart: () => events.push('start'),
+      onTargetStart: () => {
+        events.push('start');
+      },
     });
 
     expect(events).toEqual(['layer', 'target-recheck']);

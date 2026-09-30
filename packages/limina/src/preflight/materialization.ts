@@ -1,3 +1,7 @@
+import type { GeneratedTsconfigGraphResult } from '#core/build-graph/runner';
+import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
+import { materializeGeneratedArtifactPlan } from '../core/build-graph/materializer';
+import type { LiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import type { MaterializationReceipt } from './types';
 
 export interface MaterializationSlot {
@@ -72,23 +76,82 @@ export function ensureMaterialization(
   const inFlight = createMaterializationPromise(options);
   options.slot.inFlight = inFlight;
 
-  return inFlight.then(
-    (receipt) => {
-      commitReceipt({
-        currentSlot: options.getCurrentSlot(),
-        inFlight,
-        receipt,
-        slot: options.slot,
-      });
-      return receipt;
-    },
-    (error: unknown) => {
+  return (async () => {
+    let receipt: MaterializationReceipt;
+    try {
+      receipt = await inFlight;
+    } catch (error) {
       clearFailedInFlight({
         currentSlot: options.getCurrentSlot(),
         inFlight,
         slot: options.slot,
       });
       throw error;
+    }
+    commitReceipt({
+      currentSlot: options.getCurrentSlot(),
+      inFlight,
+      receipt,
+      slot: options.slot,
+    });
+    return receipt;
+  })();
+}
+
+interface PreflightMaterializationSource {
+  artifactNamespace: LiminaArtifactNamespace;
+  ensureGeneratedGraph: () => Promise<GeneratedTsconfigGraphResult>;
+  run: { metrics: AnalysisMetricsRecorder };
+}
+
+export function ensurePreflightGraphMaterialized(options: {
+  getCurrentSlot: () => MaterializationSlot;
+  refreshProviders: () => void;
+  slot: MaterializationSlot;
+  source: PreflightMaterializationSource;
+}): Promise<MaterializationReceipt> {
+  const namespace = options.source.artifactNamespace;
+  const metrics = options.source.run.metrics;
+  return ensureMaterialization({
+    getCurrentSlot: options.getCurrentSlot,
+    materialize: () =>
+      materializePreflightGraph({
+        getGraph: () => options.source.ensureGeneratedGraph(),
+        getNamespace: () => options.source.artifactNamespace,
+        metrics,
+        namespace,
+        refreshProviders: options.refreshProviders,
+        slot: options.slot,
+      }),
+    slot: options.slot,
+  });
+}
+
+async function materializePreflightGraph(options: {
+  getGraph: () => Promise<GeneratedTsconfigGraphResult>;
+  getNamespace: () => LiminaArtifactNamespace;
+  metrics: AnalysisMetricsRecorder;
+  namespace: LiminaArtifactNamespace;
+  refreshProviders: () => void;
+  slot: MaterializationSlot;
+}): Promise<MaterializationReceipt> {
+  let graph = await options.getGraph();
+  const materialized = await materializeGeneratedArtifactPlan(
+    options.namespace,
+    graph.artifactPlan,
+    {
+      metrics: options.metrics,
+      replan: async () => {
+        options.refreshProviders();
+        graph = await options.getGraph();
+        return { namespace: options.getNamespace(), plan: graph.artifactPlan };
+      },
     },
   );
+  if (materialized.plan !== graph.artifactPlan) {
+    throw new Error(
+      'Materialization selected a plan outside the preflight graph generation.',
+    );
+  }
+  return { changed: graph.changed, generation: options.slot.generation, graph };
 }

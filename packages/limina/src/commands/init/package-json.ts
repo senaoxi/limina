@@ -2,7 +2,7 @@ import type { PackageManifest } from '#core/workspace/actions';
 import type { GovernanceRootBase } from '#utils/governance-manifest';
 import path from 'pathe';
 import type { InitMutationContext } from './mutation';
-import { confirmAction } from './prompts';
+import { isConfirmAction } from './prompts';
 import {
   formatConfigPath,
   liminaBuildScriptName,
@@ -57,7 +57,7 @@ async function createMissingPackageJson(
   context: RootPackageUpdateContext,
   packageJsonPath: string,
 ): Promise<RootPackageJsonUpdateResult> {
-  const shouldCreate = await confirmAction({
+  const shouldCreate = await isConfirmAction({
     message: `No package.json found at ${formatConfigPath(context.rootDir, packageJsonPath)}. Create one?`,
     prompt: context.prompt,
   });
@@ -94,7 +94,7 @@ function hasDependency(
   ].some((section) => section?.[dependencyName] !== undefined);
 }
 
-function ensureDevDependency(options: {
+function isEnsureDevelopmentDependency(options: {
   dependencyName: string;
   manifest: PackageManifest;
   range: string;
@@ -115,22 +115,20 @@ function hasConflictingBuildScript(scripts: Record<string, string>): boolean {
   return value !== undefined && value !== liminaBuildScriptValue;
 }
 
-async function updateBuildScript(options: {
+async function isUpdateBuildScript(options: {
   prompt: InitPromptOptions;
   scripts: Record<string, string>;
 }): Promise<boolean> {
-  if (hasConflictingBuildScript(options.scripts)) {
-    return overwriteBuildScript(options);
-  }
-
-  return addMissingBuildScript(options.scripts);
+  return hasConflictingBuildScript(options.scripts)
+    ? isOverwriteBuildScript(options)
+    : isAddMissingBuildScript(options.scripts);
 }
 
-async function overwriteBuildScript(options: {
+async function isOverwriteBuildScript(options: {
   prompt: InitPromptOptions;
   scripts: Record<string, string>;
 }): Promise<boolean> {
-  const shouldOverwrite = await confirmAction({
+  const shouldOverwrite = await isConfirmAction({
     message: `Script "${liminaBuildScriptName}" already exists in package.json. Overwrite it?`,
     prompt: options.prompt,
   });
@@ -142,7 +140,7 @@ async function overwriteBuildScript(options: {
   return true;
 }
 
-function addMissingBuildScript(scripts: Record<string, string>): boolean {
+function isAddMissingBuildScript(scripts: Record<string, string>): boolean {
   if (scripts[liminaBuildScriptName] !== undefined) {
     return false;
   }
@@ -157,28 +155,28 @@ async function updateExistingPackageJson(
 ): Promise<RootPackageJsonUpdateResult> {
   const manifest = { ...context.governanceRoot!.manifest };
   const scripts = { ...manifest.scripts };
-  const scriptChanged = await updateBuildScript({
+  const isScriptChanged = await isUpdateBuildScript({
     prompt: context.prompt,
     scripts,
   });
   const dependencyChanges = [
-    ensureDevDependency({
+    isEnsureDevelopmentDependency({
       dependencyName: 'limina',
       manifest,
       range: context.metadata.versionRange,
     }),
-    ensureDevDependency({
+    isEnsureDevelopmentDependency({
       dependencyName: 'typescript',
       manifest,
       range: context.metadata.typescriptRange,
     }),
   ];
-  const installRequired = dependencyChanges.some(Boolean);
-  const changed = [scriptChanged, installRequired].some(Boolean);
-  if (!changed) {
+  const isInstallRequired = dependencyChanges.some(Boolean);
+  const isChanged = [isScriptChanged, isInstallRequired].some(Boolean);
+  if (!isChanged) {
     context.skippedFiles.push(packageJsonPath);
     return {
-      installRequired,
+      installRequired: isInstallRequired,
       message:
         'package.json (skipped: script and dependencies already present)',
       status: 'skip',
@@ -191,7 +189,7 @@ async function updateExistingPackageJson(
     packageJsonPath,
   });
   return {
-    installRequired,
+    installRequired: isInstallRequired,
     message: 'package.json updated',
     status: 'pass',
   };

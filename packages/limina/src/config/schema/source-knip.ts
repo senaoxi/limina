@@ -18,9 +18,9 @@ function isKnipBaseDisabled(value: unknown): boolean {
   return value === undefined || typeof value === 'boolean';
 }
 
-function addMissingWorkspacesIssue(ctx: ConfigValidationContext): void {
+function addMissingWorkspacesIssue(context: ConfigValidationContext): void {
   addConfigIssue(
-    ctx,
+    context,
     [...knipPath],
     'source.knip must declare root or workspaces when using object form.\n  fix: Use source.knip: true for default rules, or source.knip: { workspaces: {} }.',
   );
@@ -28,21 +28,21 @@ function addMissingWorkspacesIssue(ctx: ConfigValidationContext): void {
 
 function validateKnipObject(
   value: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   addUnknownFieldIssues({
     allowed: knipConfigKeys,
-    ctx,
+    ctx: context,
     message:
       'unknown source.knip config field.\n  fix: source.knip only supports root and workspaces fields.',
     path: [...knipPath],
     value,
   });
   if (!Object.hasOwn(value, 'root') && !Object.hasOwn(value, 'workspaces')) {
-    addMissingWorkspacesIssue(ctx);
+    addMissingWorkspacesIssue(context);
     return;
   }
-  validateKnipOwnerObjects(value, ctx);
+  validateKnipOwnerObjects(value, context);
 }
 
 function knipOwnerObjectMessage(field: string): string {
@@ -53,34 +53,37 @@ function knipOwnerObjectMessage(field: string): string {
 
 function validateKnipOwnerObjects(
   value: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   for (const field of knipConfigKeys)
-    validateKnipOwnerObject({ value, ctx, field });
+    validateKnipOwnerObject({ value, ctx: context, field });
 }
 function validateKnipOwnerObject(options: {
   value: Record<string, unknown>;
   ctx: ConfigValidationContext;
   field: string;
 }): void {
-  if (!Object.hasOwn(options.value, options.field)) return;
-  if (isPlainRecord(options.value[options.field])) return;
+  if (
+    !Object.hasOwn(options.value, options.field) ||
+    isPlainRecord(options.value[options.field])
+  )
+    return;
   const message = knipOwnerObjectMessage(options.field);
   addConfigIssue(options.ctx, [...knipPath, options.field], message);
 }
 
 export function validateSourceKnipConfig(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (isKnipBaseDisabled(value)) return;
   if (!isPlainRecord(value)) {
     addConfigIssue(
-      ctx,
+      context,
       [...knipPath],
       'source.knip must be true, false, or an object containing root or workspaces.',
     );
     return;
   }
-  validateKnipObject(value, ctx);
+  validateKnipObject(value, context);
 }

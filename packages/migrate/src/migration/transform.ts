@@ -29,8 +29,10 @@ function hasExistingOutputs(target: MigrationTarget): boolean {
 function hasSplitOutputs(
   options: MigrationEffectiveConfig['options'],
 ): boolean {
-  if (!options.declarationDir || !options.outDir) return false;
-  return path.resolve(options.declarationDir) !== path.resolve(options.outDir);
+  return (
+    !(!options.declarationDir || !options.outDir) &&
+    path.resolve(options.declarationDir) !== path.resolve(options.outDir)
+  );
 }
 
 export function outputAdoptionRejectionReason(
@@ -64,12 +66,15 @@ export function outputAdoptionRejectionReason(
   return reasons.find(([reject]) => reject)?.[1];
 }
 
-/** Optional proposal only. The planner must check visibility and membership. */
+/**
+Optional proposal only. The planner must check visibility and membership.
+*/
 export function proposeOutputAdoption(
   target: MigrationTarget,
 ): JsonObject | undefined {
-  if (outputAdoptionRejectionReason(target)) return undefined;
-  return createOutputProposal(target);
+  return outputAdoptionRejectionReason(target)
+    ? undefined
+    : createOutputProposal(target);
 }
 
 function createOutputProposal(target: MigrationTarget): JsonObject {

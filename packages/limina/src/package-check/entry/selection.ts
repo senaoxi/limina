@@ -144,9 +144,9 @@ function selectForNamedCwdPackage(options: {
 
 function selectForUnnamedCwdPackage(
   entries: PackageEntry[],
-  requireMatch: boolean,
+  isRequireMatch: boolean,
 ): SelectedPackageEntries {
-  if (requireMatch) {
+  if (isRequireMatch) {
     throw new Error(
       [
         'The activated workspace package containing cwd has no package name.',
@@ -164,9 +164,9 @@ function selectForUnnamedCwdPackage(
 
 function selectWithoutCwdPackage(
   entries: PackageEntry[],
-  requireMatch: boolean,
+  isRequireMatch: boolean,
 ): SelectedPackageEntries {
-  if (requireMatch) {
+  if (isRequireMatch) {
     throw new Error(
       [
         'No activated workspace package contains cwd.',

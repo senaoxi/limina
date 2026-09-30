@@ -29,7 +29,7 @@ interface ProfileSessionState {
   readonly startedAt: number;
 }
 
-function readOptionalEnv(name: string): string | undefined {
+function readOptionalEnvironment(name: string): string | undefined {
   const value = process.env[name];
 
   if (value === undefined) {
@@ -47,7 +47,7 @@ function assertSha256Hash(name: string, value: string): void {
 }
 
 function readExpectedHash(name: string): string | undefined {
-  const configuredValue = readOptionalEnv(name);
+  const configuredValue = readOptionalEnvironment(name);
 
   if (configuredValue === undefined) {
     return undefined;
@@ -75,7 +75,7 @@ function assertExpectedValue(options: {
 }
 
 function resolveExpectedPath(name: string): string | undefined {
-  const value = readOptionalEnv(name);
+  const value = readOptionalEnvironment(name);
   return value === undefined ? undefined : path.resolve(value);
 }
 

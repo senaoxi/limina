@@ -12,13 +12,7 @@ import type { WorkspacePackageIdentity } from './types';
 function groupPackageIdentities(
   identities: readonly WorkspacePackageIdentity[],
 ): Map<string, WorkspacePackageIdentity[]> {
-  const groups = new Map<string, WorkspacePackageIdentity[]>();
-  for (const identity of identities) {
-    const group = groups.get(identity.canonicalDirectory) ?? [];
-    group.push(identity);
-    groups.set(identity.canonicalDirectory, group);
-  }
-  return groups;
+  return Map.groupBy(identities, (identity) => identity.canonicalDirectory);
 }
 
 function createIdentityConflictIssue(options: {
@@ -114,14 +108,14 @@ export async function assertNoSameRootOverlap(options: {
   config: ResolvedLiminaConfig;
   packages: readonly WorkspacePackage[];
 }): Promise<void> {
-  const workspaceRootDir = options.config.governanceRoot.rootDir;
+  const workspaceRootDirectory = options.config.governanceRoot.rootDir;
   const issues = (
     await Promise.all(
       options.packages.map((workspacePackage) =>
         collectOverlapIssue({
           config: options.config,
           workspacePackage,
-          workspaceRootDir,
+          workspaceRootDir: workspaceRootDirectory,
         }),
       ),
     )

@@ -4,9 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toPortablePath } from '../../src/__tests__/helpers/path';
 import {
-  exists,
   expectLiminaSuccess,
   expectPathInside,
+  isExists,
   readJson,
   resolveGeneratedPath,
   runFixtureLimina,
@@ -55,7 +55,9 @@ interface ExternalProjectPaths {
   tsBuildInfoPath: string;
 }
 
-let fixture: PreparedFixture | undefined;
+const fixtureState: { current: PreparedFixture | undefined } = {
+  current: undefined,
+};
 
 async function getExternalHashes(
   preparedFixture: PreparedFixture,
@@ -72,7 +74,7 @@ async function getExternalHashes(
       (entry) => entry.isDirectory() && /^[a-f0-9]{64}$/u.test(entry.name),
     )
     .map((entry) => entry.name)
-    .sort();
+    .sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 async function discoverExternalProject(
@@ -103,26 +105,29 @@ async function discoverExternalProject(
 }
 
 async function collectMatchingEntries(
-  rootDir: string,
-  predicate: (entryName: string) => boolean,
+  rootDirectory: string,
+  isPredicate: (entryName: string) => boolean,
 ): Promise<string[]> {
   const matches: string[] = [];
 
-  for (const entryName of await readdir(rootDir)) {
-    const entryPath = path.join(rootDir, entryName);
+  const entryNames = await readdir(rootDirectory);
+  for (const entryName of entryNames) {
+    const entryPath = path.join(rootDirectory, entryName);
     const entryStat = await lstat(entryPath);
 
-    if (predicate(entryName)) {
+    if (isPredicate(entryName)) {
       matches.push(toPortablePath(entryPath));
       continue;
     }
 
     if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
-      matches.push(...(await collectMatchingEntries(entryPath, predicate)));
+      matches.push(...(await collectMatchingEntries(entryPath, isPredicate)));
     }
   }
 
-  return matches.sort();
+  return matches.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 async function expectExternalSourceTreeClean(
@@ -139,17 +144,17 @@ async function expectExternalSourceTreeClean(
 }
 
 beforeEach(async () => {
-  fixture = await prepareFixture('external-workspace');
+  fixtureState.current = await prepareFixture('external-workspace');
 });
 
 afterEach(async () => {
-  await fixture?.cleanup();
-  fixture = undefined;
+  await fixtureState.current?.cleanup();
+  fixtureState.current = undefined;
 });
 
 describe('external workspace public CLI integration', () => {
   it('exports the discovered internal and external source edge', async () => {
-    const preparedFixture = fixture!;
+    const preparedFixture = fixtureState.current!;
     const result = await runFixtureLimina(preparedFixture, ['graph', 'export']);
     expectLiminaSuccess(result);
 
@@ -190,7 +195,7 @@ describe('external workspace public CLI integration', () => {
   });
 
   it('materializes internal and external generated projects', async () => {
-    const preparedFixture = fixture!;
+    const preparedFixture = fixtureState.current!;
     const result = await runFixtureLimina(preparedFixture, [
       'graph',
       'prepare',
@@ -203,9 +208,9 @@ describe('external workspace public CLI integration', () => {
     );
     const externalProject = await discoverExternalProject(preparedFixture);
 
-    expect(await exists(manifestPath)).toBe(true);
-    expect(await exists(internalConfigPath)).toBe(true);
-    expect(await exists(externalProject.generatedConfigPath)).toBe(true);
+    expect(await isExists(manifestPath)).toBe(true);
+    expect(await isExists(internalConfigPath)).toBe(true);
+    expect(await isExists(externalProject.generatedConfigPath)).toBe(true);
     expect(externalProject.generatedConfigPath).not.toBe(internalConfigPath);
 
     const externalConfig = await readJson<GeneratedDtsConfig>(
@@ -226,7 +231,7 @@ describe('external workspace public CLI integration', () => {
       ),
     ).toEqual(new Set([preparedFixture.path('external/shared/src/index.ts')]));
 
-    const externalOutDir = resolveGeneratedPath(
+    const externalOutDirectory = resolveGeneratedPath(
       externalProject.generatedConfigPath,
       externalConfig.compilerOptions.outDir,
     );
@@ -234,7 +239,10 @@ describe('external workspace public CLI integration', () => {
       externalProject.generatedConfigPath,
       externalConfig.compilerOptions.tsBuildInfoFile,
     );
-    expectPathInside(preparedFixture.path('repo/.limina/dts'), externalOutDir);
+    expectPathInside(
+      preparedFixture.path('repo/.limina/dts'),
+      externalOutDirectory,
+    );
     expectPathInside(
       preparedFixture.path('repo/.limina/tsbuildinfo'),
       externalTsBuildInfoPath,
@@ -250,7 +258,7 @@ describe('external workspace public CLI integration', () => {
   });
 
   it('reuses the external namespace and rebuilds after source changes', async () => {
-    const preparedFixture = fixture!;
+    const preparedFixture = fixtureState.current!;
     const firstBuild = await runFixtureLimina(preparedFixture, [
       'checker',
       'build',
@@ -269,7 +277,7 @@ describe('external workspace public CLI integration', () => {
     expect((await lstat(externalProject.declarationDir)).isDirectory()).toBe(
       true,
     );
-    expect(await exists(externalProject.tsBuildInfoPath)).toBe(true);
+    expect(await isExists(externalProject.tsBuildInfoPath)).toBe(true);
     const firstDeclaration = await readFile(externalDeclarationPath, 'utf8');
     expect(firstDeclaration).toContain('export declare const value: 1;');
     await expectExternalSourceTreeClean(preparedFixture);
@@ -285,7 +293,7 @@ describe('external workspace public CLI integration', () => {
     expect(await readFile(externalDeclarationPath, 'utf8')).toBe(
       firstDeclaration,
     );
-    expect(await exists(externalProject.tsBuildInfoPath)).toBe(true);
+    expect(await isExists(externalProject.tsBuildInfoPath)).toBe(true);
 
     await writeFile(
       preparedFixture.path('external/shared/src/index.ts'),
@@ -317,7 +325,7 @@ describe('external workspace public CLI integration', () => {
       'export declare const appValue: 2;',
     );
     expect(rebuiltInternalDeclaration).not.toBe(rebuiltExternalDeclaration);
-    expect(await exists(externalProject.tsBuildInfoPath)).toBe(true);
+    expect(await isExists(externalProject.tsBuildInfoPath)).toBe(true);
     await expectExternalSourceTreeClean(preparedFixture);
   });
 });

@@ -7,7 +7,6 @@ import type {
   SolutionOwnershipState,
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
-
 type ConstraintNode =
   | { kind: 'solution'; path: string }
   | { kind: 'type'; path: string };
@@ -77,8 +76,9 @@ function createLocalSeed(
 function getLocalSeedChecker(
   state: TypeConfigOwnershipState,
 ): CheckerName | undefined {
-  if (state.localOwner.kind === 'resolved') return state.localOwner.checker;
-  return state.finalOwner;
+  return state.localOwner.kind === 'resolved'
+    ? state.localOwner.checker
+    : state.finalOwner;
 }
 
 function getLocalSeedEvidence(
@@ -97,11 +97,11 @@ function getLocalSeedEvidence(
 
 function collectSeeds(plan: CheckerOwnershipPlan): ConstraintSeed[] {
   return [
-    ...[...plan.solutions.values()].flatMap((state) => {
+    ...plan.solutions.values().flatMap((state) => {
       const seed = createDeclaredSeed(state);
       return seed === null ? [] : [seed];
     }),
-    ...[...plan.typeConfigs.values()].flatMap((state) => {
+    ...plan.typeConfigs.values().flatMap((state) => {
       const seed = createLocalSeed(state);
       return seed === null ? [] : [seed];
     }),
@@ -167,13 +167,12 @@ function getNeighbors(options: {
   node: ConstraintNode;
   plan: CheckerOwnershipPlan;
 }): ConstraintNode[] {
-  if (options.node.kind === 'solution') {
-    return getSolutionNeighbors(options.plan, options.node.path);
-  }
-  return getTypeNeighbors(options.containingSolutions, options.node.path);
+  return options.node.kind === 'solution'
+    ? getSolutionNeighbors(options.plan, options.node.path)
+    : getTypeNeighbors(options.containingSolutions, options.node.path);
 }
 
-function addCandidate(options: {
+function isAddCandidate(options: {
   checker: CheckerName;
   evidence: CheckerEvidence;
   node: ConstraintNode;
@@ -204,14 +203,15 @@ function processConstraintSeed(options: {
   visited: Set<string>;
 }): void {
   const identity = `${nodeKey(options.current.node)}\0${options.current.checker}`;
-  addCandidate({ ...options.current, plan: options.plan });
+  isAddCandidate({ ...options.current, plan: options.plan });
   if (options.visited.has(identity)) return;
   options.visited.add(identity);
-  for (const neighbor of getNeighbors({
+  const neighbors = getNeighbors({
     containingSolutions: options.containingSolutions,
     node: options.current.node,
     plan: options.plan,
-  })) {
+  });
+  for (const neighbor of neighbors) {
     options.queue.push({ ...options.current, node: neighbor });
   }
 }
@@ -233,7 +233,7 @@ function propagate(plan: CheckerOwnershipPlan): void {
 
 function formatCandidateEvidence(
   candidates: ReadonlyMap<CheckerName, CheckerEvidence[]>,
-  rootDir: string,
+  rootDirectory: string,
 ): string[] {
   return [...candidates]
     .sort(([left], [right]) => compareCodeUnits(left, right))
@@ -243,7 +243,7 @@ function formatCandidateEvidence(
         .slice(0, 3)
         .map(
           (entry) =>
-            `    evidence: ${entry.source} at ${toRelativePath(rootDir, entry.configPath)} (${entry.detail})`,
+            `    evidence: ${entry.source} at ${toRelativePath(rootDirectory, entry.configPath)} (${entry.detail})`,
         ),
     ]);
 }
@@ -272,7 +272,7 @@ export function propagateSolutionConstraints(options: {
   clearCandidates(options.plan);
   propagate(options.plan);
   return [
-    ...[...options.plan.solutions.values()].flatMap((state) =>
+    ...options.plan.solutions.values().flatMap((state) =>
       collectStateProblems({
         candidates: state.constraintCandidates,
         configPath: state.configPath,
@@ -280,7 +280,7 @@ export function propagateSolutionConstraints(options: {
         rootDir: options.rootDir,
       }),
     ),
-    ...[...options.plan.typeConfigs.values()].flatMap((state) =>
+    ...options.plan.typeConfigs.values().flatMap((state) =>
       collectStateProblems({
         candidates: state.constraintCandidates,
         configPath: state.configPath,
@@ -294,6 +294,7 @@ export function propagateSolutionConstraints(options: {
 export function getUniqueConstraint(
   state: Pick<TypeConfigOwnershipState, 'constraintCandidates'>,
 ): CheckerName | undefined {
-  if (state.constraintCandidates.size !== 1) return undefined;
-  return state.constraintCandidates.keys().next().value;
+  return state.constraintCandidates.size === 1
+    ? state.constraintCandidates.keys().next().value
+    : undefined;
 }

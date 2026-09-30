@@ -14,11 +14,11 @@ import {
 import { toPortablePath } from './helpers/path';
 
 async function writeText(
-  rootDir: string,
+  rootDirectory: string,
   relativePath: string,
   text: string,
 ): Promise<string> {
-  const filePath = path.join(rootDir, relativePath);
+  const filePath = path.join(rootDirectory, relativePath);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, text);
   return filePath;
@@ -40,7 +40,7 @@ function metricCount(
 describe('generation-scoped module resolution index', () => {
   let configPath: string;
   let containingFile: string;
-  let rootDir: string;
+  let rootDirectory: string;
   let targetPath: string;
 
   const resolverContext = (
@@ -54,28 +54,29 @@ describe('generation-scoped module resolution index', () => {
   });
 
   beforeEach(async () => {
-    rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-resolution-index-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-resolution-index-'),
     );
+    rootDirectory = await realpath(rootDirectoryTemporaryPath);
     configPath = await writeText(
-      rootDir,
+      rootDirectory,
       'tsconfig.json',
       JSON.stringify({ compilerOptions: {} }),
     );
     containingFile = await writeText(
-      rootDir,
+      rootDirectory,
       'src/index.ts',
       "import './target';\n",
     );
     targetPath = await writeText(
-      rootDir,
+      rootDirectory,
       'src/target.ts',
       'export const target = true;\n',
     );
   });
 
   afterEach(async () => {
-    await rm(rootDir, { force: true, recursive: true });
+    await rm(rootDirectory, { force: true, recursive: true });
   });
 
   it('caches successful and null TypeScript results and Oxc results by cell', () => {
@@ -246,12 +247,12 @@ describe('generation-scoped module resolution index', () => {
 
   it('shares only resolver cells that the internal-import policy computed', async () => {
     const typeOnlyDeclaration = await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/type-only-package/types.d.ts',
       'export declare const value: true;\n',
     );
     await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/type-only-package/package.json',
       JSON.stringify({
         name: 'type-only-package',
@@ -326,12 +327,12 @@ describe('generation-scoped module resolution index', () => {
 
   it('lets source internal-import reuse both raw cells after a graph pair', async () => {
     const typeOnlyDeclaration = await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/graph-first-package/types.d.ts',
       'export declare const value: true;\n',
     );
     await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/graph-first-package/package.json',
       JSON.stringify({
         name: 'graph-first-package',
@@ -374,12 +375,12 @@ describe('generation-scoped module resolution index', () => {
 
   it('keeps the complete conservative request identity generation-local', async () => {
     const alternateConfigPath = await writeText(
-      rootDir,
+      rootDirectory,
       'configs/alternate.json',
       JSON.stringify({ compilerOptions: {} }),
     );
     const alternateContainingFile = await writeText(
-      rootDir,
+      rootDirectory,
       'other/index.ts',
       'export {};\n',
     );
@@ -393,7 +394,7 @@ describe('generation-scoped module resolution index', () => {
       specifier?: string;
     }[] = [
       {},
-      { containingFile: `${rootDir}/src/./index.ts` },
+      { containingFile: `${rootDirectory}/src/./index.ts` },
       { containingFile: alternateContainingFile },
       { specifier: 'another-missing-package' },
       {
@@ -444,7 +445,7 @@ describe('generation-scoped module resolution index', () => {
     const earlyMetrics = createProfilingMetricsRecorder();
     const earlyContext = createImportAnalysisContext({ metrics: earlyMetrics });
     const pathMappedOptions: ts.CompilerOptions = {
-      baseUrl: rootDir,
+      baseUrl: rootDirectory,
       paths: {
         '@target': ['src/target'],
       },
@@ -470,7 +471,7 @@ describe('generation-scoped module resolution index', () => {
       earlyContext.resolveInternalImport(
         'target',
         containingFile,
-        { baseUrl: path.join(rootDir, 'src') },
+        { baseUrl: path.join(rootDirectory, 'src') },
         resolverContext(),
       ),
     ).toBe(toPortablePath(targetPath));
@@ -480,7 +481,7 @@ describe('generation-scoped module resolution index', () => {
     expect(metricCount(earlySnapshot, 'typescript-resolution')).toBe(0);
 
     const nativeTargetPath = await writeText(
-      rootDir,
+      rootDirectory,
       'src/platform.native.ts',
       'export const platform = true;\n',
     );
@@ -503,12 +504,12 @@ describe('generation-scoped module resolution index', () => {
     expect(metricCount(typeScriptOnlySnapshot, 'oxc-resolution')).toBe(0);
 
     const runtimeEntryPath = await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/runtime-package/index.js',
       'export const runtime = true;\n',
     );
     await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/runtime-package/package.json',
       JSON.stringify({ main: './index.js', name: 'runtime-package' }),
     );
@@ -529,12 +530,12 @@ describe('generation-scoped module resolution index', () => {
     expect(metricCount(oxcFallbackSnapshot, 'typescript-resolution')).toBe(0);
 
     const declarationPath = await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/typescript-fallback/types.d.ts',
       'export declare const typeOnly: true;\n',
     );
     await writeText(
-      rootDir,
+      rootDirectory,
       'node_modules/typescript-fallback/package.json',
       JSON.stringify({
         name: 'typescript-fallback',

@@ -11,8 +11,9 @@ function readProjectManifest(
 ): Record<string, unknown> | undefined {
   const filePath = path.join(directory, 'package.json');
   const contents = readOptionalRegistryFile(filePath);
-  if (contents === undefined) return undefined;
-  return parseProjectManifest(contents, filePath);
+  return contents === undefined
+    ? undefined
+    : parseProjectManifest(contents, filePath);
 }
 
 function parseProjectManifest(
@@ -23,7 +24,9 @@ function parseProjectManifest(
     const manifest: unknown = JSON.parse(contents);
     if (isPlainRecord(manifest)) return manifest;
   } catch {
-    /* Report without including package contents. */
+    /*
+    Report without including package contents.
+    */
   }
   throw new RegistryAuthorityError(filePath, 'invalid npm project manifest');
 }
@@ -31,8 +34,9 @@ function parseProjectManifest(
 function workspacePatterns(manifest: Record<string, unknown>): string[] {
   const workspaces = manifest.workspaces;
   const patterns = isPlainRecord(workspaces) ? workspaces.packages : workspaces;
-  if (!Array.isArray(patterns)) return [];
-  return patterns.filter((value): value is string => typeof value === 'string');
+  return Array.isArray(patterns)
+    ? patterns.filter((value): value is string => typeof value === 'string')
+    : [];
 }
 
 function isWorkspaceMember(
@@ -79,7 +83,7 @@ function* ancestorDirectories(localPrefix: string): Generator<string> {
   }
 }
 
-function matchesWorkspace(directory: string, localPrefix: string): boolean {
+function isMatchesWorkspace(directory: string, localPrefix: string): boolean {
   const manifest = readProjectManifest(directory);
   return (
     manifest !== undefined &&
@@ -90,7 +94,7 @@ function matchesWorkspace(directory: string, localPrefix: string): boolean {
 export function resolveNpmProjectDirectory(cwd: string): string {
   const localPrefix = findLocalPrefix(cwd);
   for (const directory of ancestorDirectories(localPrefix)) {
-    if (matchesWorkspace(directory, localPrefix)) return directory;
+    if (isMatchesWorkspace(directory, localPrefix)) return directory;
   }
   return localPrefix;
 }

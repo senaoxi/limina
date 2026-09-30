@@ -1,7 +1,7 @@
 import type { ImportRecord, ProjectInfo } from '#core/import-graph/context';
 import type { ProjectDependency } from '../core/project-dependencies/contracts';
-import { addDeniedDepImportProblem } from './import-access-denied';
-import { getResolvedWorkspacePackage } from './import-resolution-utils';
+import { addDeniedDependencyImportProblem } from './import-access-denied';
+import { getResolvedWorkspacePackage } from './import-resolution-utilities';
 import {
   type ManagedResolution,
   resolveManagedOutput,
@@ -10,7 +10,7 @@ import type {
   ExpectedReferenceCollectionContext,
   GraphImportResolution,
 } from './reference-types';
-import { getDeniedDepRuleForResolvedPackage } from './workspace-import-findings';
+import { getDeniedDependencyRuleForResolvedPackage } from './workspace-import-findings';
 
 interface ImportResolutionOptions {
   context: ExpectedReferenceCollectionContext;
@@ -26,13 +26,13 @@ function createAllowedResolution(options: {
     ExpectedReferenceCollectionContext['workspaceLookup']['findPackageForSpecifier']
   >;
 }): GraphImportResolution | null {
-  const deniedRule = getDeniedDepRuleForResolvedPackage({
+  const deniedRule = getDeniedDependencyRuleForResolvedPackage({
     context: options.base.context,
     project: options.base.project,
     resolvedFilePath: options.managed.resolvedFilePath,
   });
   if (deniedRule) {
-    addDeniedDepImportProblem({
+    addDeniedDependencyImportProblem({
       config: options.base.context.config,
       findings: options.base.context.findings,
       importRecord: options.base.importRecord,

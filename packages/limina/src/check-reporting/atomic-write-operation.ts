@@ -38,7 +38,7 @@ interface AtomicWriteState {
   tempPath?: string;
 }
 
-interface TempCreationContext {
+interface TemporaryCreationContext {
   atomicWrite: AtomicWriteContext;
   createTempPath: (attempt: number) => string;
   openTemp: NonNullable<AtomicWriteOptions['openTemp']>;
@@ -55,30 +55,28 @@ function hasErrorCode(error: unknown, code: string): boolean {
   );
 }
 
-function createDefaultTempPath(targetPath: string): string {
+function createDefaultTemporaryPath(targetPath: string): string {
   return path.join(
     path.dirname(targetPath),
     `.${path.basename(targetPath)}.${process.pid}.${randomUUID()}.tmp`,
   );
 }
 
-function resolveTempPathFactory(
+function resolveTemporaryPathFactory(
   context: AtomicWriteContext,
 ): (attempt: number) => string {
-  if (context.options.createTempPath !== undefined) {
-    return context.options.createTempPath;
-  }
-
-  return () => createDefaultTempPath(context.targetPath);
+  return context.options.createTempPath === undefined
+    ? () => createDefaultTemporaryPath(context.targetPath)
+    : context.options.createTempPath;
 }
 
-function resolveOpenTemp(
+function resolveOpenTemporary(
   options: AtomicWriteOptions,
 ): NonNullable<AtomicWriteOptions['openTemp']> {
   return options.openTemp === undefined ? open : options.openTemp;
 }
 
-function resolveTempCreateAttempts(options: AtomicWriteOptions): number {
+function resolveTemporaryCreateAttempts(options: AtomicWriteOptions): number {
   const attempts =
     options.tempCreateAttempts === undefined
       ? TEMP_CREATE_ATTEMPTS
@@ -86,7 +84,7 @@ function resolveTempCreateAttempts(options: AtomicWriteOptions): number {
   return Math.max(1, attempts);
 }
 
-function canRetryTempCreation(
+function canRetryTemporaryCreation(
   error: unknown,
   attempt: number,
   totalAttempts: number,
@@ -94,20 +92,20 @@ function canRetryTempCreation(
   return hasErrorCode(error, 'EEXIST') && attempt + 1 < totalAttempts;
 }
 
-function handleTempCreationError(
+function handleTemporaryCreationError(
   error: unknown,
   attempt: number,
   totalAttempts: number,
 ): null {
-  if (!canRetryTempCreation(error, attempt, totalAttempts)) {
+  if (!canRetryTemporaryCreation(error, attempt, totalAttempts)) {
     throw error;
   }
 
   return null;
 }
 
-async function tryCreateTempFile(
-  context: TempCreationContext,
+async function tryCreateTemporaryFile(
+  context: TemporaryCreationContext,
   attempt: number,
 ): Promise<Required<AtomicWriteState> | null> {
   const candidatePath = context.createTempPath(attempt);
@@ -121,28 +119,28 @@ async function tryCreateTempFile(
     const handle = await context.openTemp(candidatePath, 'wx');
     return { handle, tempPath: candidatePath };
   } catch (error) {
-    return handleTempCreationError(error, attempt, context.totalAttempts);
+    return handleTemporaryCreationError(error, attempt, context.totalAttempts);
   }
 }
 
-function createTempCreationContext(
+function createTemporaryCreationContext(
   atomicWrite: AtomicWriteContext,
-): TempCreationContext {
+): TemporaryCreationContext {
   return {
     atomicWrite,
-    createTempPath: resolveTempPathFactory(atomicWrite),
-    openTemp: resolveOpenTemp(atomicWrite.options),
-    totalAttempts: resolveTempCreateAttempts(atomicWrite.options),
+    createTempPath: resolveTemporaryPathFactory(atomicWrite),
+    openTemp: resolveOpenTemporary(atomicWrite.options),
+    totalAttempts: resolveTemporaryCreateAttempts(atomicWrite.options),
   };
 }
 
-async function createTempFile(
+async function createTemporaryFile(
   atomicWrite: AtomicWriteContext,
 ): Promise<Required<AtomicWriteState>> {
-  const context = createTempCreationContext(atomicWrite);
+  const context = createTemporaryCreationContext(atomicWrite);
 
   for (let attempt = 0; attempt < context.totalAttempts; attempt += 1) {
-    const state = await tryCreateTempFile(context, attempt);
+    const state = await tryCreateTemporaryFile(context, attempt);
 
     if (state !== null) {
       return state;
@@ -155,11 +153,9 @@ async function createTempFile(
 }
 
 function serializeValue(context: AtomicWriteContext): string {
-  if (context.options.serialize !== undefined) {
-    return context.options.serialize(context.value);
-  }
-
-  return JSON.stringify(context.value, null, 2);
+  return context.options.serialize === undefined
+    ? JSON.stringify(context.value, null, 2)
+    : context.options.serialize(context.value);
 }
 
 function requireHandle(
@@ -175,7 +171,7 @@ function requireHandle(
   return state.handle;
 }
 
-function requireTempPath(
+function requireTemporaryPath(
   context: AtomicWriteContext,
   state: AtomicWriteState,
 ): string {
@@ -188,7 +184,7 @@ function requireTempPath(
   return state.tempPath;
 }
 
-async function writeAndCloseTempFile(
+async function writeAndCloseTemporaryFile(
   context: AtomicWriteContext,
   state: AtomicWriteState,
 ): Promise<void> {
@@ -205,9 +201,9 @@ async function writeAndCloseTempFile(
 
 async function assertReplacementPathsSafe(
   context: AtomicWriteContext,
-  tempPath: string,
+  temporaryPath: string,
 ): Promise<void> {
-  await assertArtifactPathOperationSafe(context.namespace, tempPath, {
+  await assertArtifactPathOperationSafe(context.namespace, temporaryPath, {
     targetKind: 'file',
   });
   await assertArtifactPathOperationSafe(context.namespace, context.targetPath, {
@@ -215,46 +211,60 @@ async function assertReplacementPathsSafe(
   });
 }
 
-async function replaceTempFile(
+async function replaceTemporaryFile(
   context: AtomicWriteContext,
   state: AtomicWriteState,
 ): Promise<void> {
-  const tempPath = requireTempPath(context, state);
-  await replaceFileWithRetry(tempPath, context.targetPath, {
-    beforeAttempt: () => assertReplacementPathsSafe(context, tempPath),
+  const temporaryPath = requireTemporaryPath(context, state);
+  await replaceFileWithRetry(temporaryPath, context.targetPath, {
+    beforeAttempt: () => assertReplacementPathsSafe(context, temporaryPath),
     replace: context.options.rename,
     retryDelaysMs: context.options.retryDelaysMs,
   });
 }
 
-async function removeTempFile(
+async function removeTemporaryFile(
   context: AtomicWriteContext,
-  tempPath: string,
+  temporaryPath: string,
 ): Promise<void> {
-  await assertArtifactPathOperationSafe(context.namespace, tempPath, {
+  await assertArtifactPathOperationSafe(context.namespace, temporaryPath, {
     targetKind: 'file',
   });
 
   if (context.options.removeTemp !== undefined) {
-    await context.options.removeTemp(tempPath);
+    await context.options.removeTemp(temporaryPath);
     return;
   }
 
-  await rm(tempPath, { force: true });
+  await rm(temporaryPath, { force: true });
 }
 
 async function closeHandle(state: AtomicWriteState): Promise<void> {
-  if (state.handle !== undefined) {
-    await state.handle.close().catch(ignoreError);
+  if (state.handle === undefined) {
+    return;
+  }
+
+  const cleanup = state.handle.close();
+  try {
+    await cleanup;
+  } catch (error) {
+    ignoreError(error);
   }
 }
 
-async function cleanupTempPath(
+async function cleanupTemporaryPath(
   context: AtomicWriteContext,
   state: AtomicWriteState,
 ): Promise<void> {
-  if (state.tempPath !== undefined) {
-    await removeTempFile(context, state.tempPath).catch(ignoreError);
+  if (state.tempPath === undefined) {
+    return;
+  }
+
+  const cleanup = removeTemporaryFile(context, state.tempPath);
+  try {
+    await cleanup;
+  } catch (error) {
+    ignoreError(error);
   }
 }
 
@@ -263,7 +273,7 @@ async function cleanupAtomicWrite(
   state: AtomicWriteState,
 ): Promise<void> {
   await closeHandle(state);
-  await cleanupTempPath(context, state);
+  await cleanupTemporaryPath(context, state);
 }
 
 export async function performAtomicJsonWrite(
@@ -273,9 +283,9 @@ export async function performAtomicJsonWrite(
 
   try {
     await ensureArtifactParentDirectory(context.namespace, context.targetPath);
-    Object.assign(state, await createTempFile(context));
-    await writeAndCloseTempFile(context, state);
-    await replaceTempFile(context, state);
+    Object.assign(state, await createTemporaryFile(context));
+    await writeAndCloseTemporaryFile(context, state);
+    await replaceTemporaryFile(context, state);
   } catch (error) {
     await cleanupAtomicWrite(context, state);
     throw error;

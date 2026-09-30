@@ -53,7 +53,7 @@ async function normalizeTreeTimestamps(directoryPath: string): Promise<void> {
 function validatePackageFiles(
   files: readonly LocalRegistryPackageFile[],
 ): void {
-  if (!files.some((file) => file.path === 'package.json')) {
+  if (files.every((file) => file.path !== 'package.json')) {
     throw new Error('Deterministic package tarballs require package.json.');
   }
   const uniquePathCount = new Set(files.map((file) => file.path)).size;

@@ -21,7 +21,7 @@ export interface RunBuildTargetsOptions {
   watch?: boolean;
 }
 
-export type RunBuildTargetsArgs = [
+export type RunBuildTargetsArguments = [
   targets: TypecheckTarget[],
   dependencyEdges: GeneratedDependencyEdge[],
   runner: TypecheckRunner,

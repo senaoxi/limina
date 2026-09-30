@@ -2,9 +2,9 @@ import { isPlainRecord, resolveReferencePath } from 'limina/internal/migration';
 import { MigrationInputError } from './declarations';
 import {
   dedupeMembership,
+  isPathOnly,
   type MembershipEdge,
   type MembershipState,
-  pathOnly,
 } from './membership-state';
 import { relativeConfigPath } from './transform';
 
@@ -12,7 +12,7 @@ function hasMetadata(state: MembershipState, file: string): boolean {
   const metadata = state.options.objects.get(file)!.liminaOptions;
   return isPlainRecord(metadata) && Object.keys(metadata).length > 0;
 }
-function expandable(state: MembershipState, file: string): boolean {
+function isExpandable(state: MembershipState, file: string): boolean {
   const target = state.options.targets.get(file)!;
   return target.isTypeScriptSolution && !target.isLiminaSolution;
 }
@@ -21,7 +21,7 @@ function assertPlainWrapper(
   edge: MembershipEdge,
   target: string,
 ): void {
-  if (!pathOnly(edge))
+  if (!isPathOnly(edge))
     throw new MigrationInputError(
       `Cannot propagate reference attributes through named solution ${target}.`,
     );
@@ -35,7 +35,7 @@ function expandMember(
   context: { from: string; wrapper: string; visiting: Set<string> },
   member: MembershipEdge,
 ): MembershipEdge[] {
-  if (!pathOnly(member))
+  if (!isPathOnly(member))
     throw new MigrationInputError(
       `Cannot propagate reference attributes through named solution ${context.wrapper}.`,
     );
@@ -56,7 +56,7 @@ function expand(
   edge: MembershipEdge,
 ): MembershipEdge[] {
   const target = resolveReferencePath(context.from, edge.path);
-  if (!expandable(state, target)) return [{ ...edge }];
+  if (!isExpandable(state, target)) return [{ ...edge }];
   assertPlainWrapper(state, edge, target);
   if (context.visiting.has(target))
     throw new MigrationInputError(
@@ -76,7 +76,7 @@ function expand(
 export function expandNamedWrappers(state: MembershipState): string[] {
   const retained = [...state.solutions]
     .filter((file) => state.options.targets.get(file)!.isLiminaSolution)
-    .sort();
+    .sort((left, right) => Number(left > right) - Number(left < right));
   for (const from of retained) {
     const edges = state.edges
       .get(from)!

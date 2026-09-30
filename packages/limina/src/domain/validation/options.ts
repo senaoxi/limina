@@ -1,5 +1,5 @@
 import type { RuleDescriptor, RuleOptionProblem } from './contracts';
-import { ConfigurationError } from './errors';
+import { ConfigError } from './errors';
 
 function rejectUnexpectedOptions(ruleId: string, input: unknown): void {
   if (input === undefined) {
@@ -11,7 +11,7 @@ function rejectUnexpectedOptions(ruleId: string, input: unknown): void {
     path: [],
   };
 
-  throw new ConfigurationError(problem.message, [problem]);
+  throw new ConfigError(problem.message, [problem]);
 }
 
 function parseSchemaOptions<Options>(
@@ -25,7 +25,7 @@ function parseSchemaOptions<Options>(
   const result = descriptor.options.schema.parse(input);
 
   if (!result.success) {
-    throw new ConfigurationError(
+    throw new ConfigError(
       `Options for rule "${descriptor.id}" are invalid.`,
       result.problems,
     );

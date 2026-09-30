@@ -16,10 +16,10 @@ export function isDefaultTsconfigPath(configPath: string): boolean {
 
 export function isDefaultSourceTsconfigPath(
   configPath: string,
-  rootDir: string,
+  rootDirectory: string,
 ): boolean {
   return (
-    isOrdinarySourceTypecheckConfigPath(configPath, rootDir) &&
+    isOrdinarySourceTypecheckConfigPath(configPath, rootDirectory) &&
     isDefaultTsconfigPath(configPath)
   );
 }
@@ -40,13 +40,11 @@ export function readGraphRules(
   const graphRules = getGraphRulesValue(
     readJsonConfig(config, sourceConfigPath),
   );
-  if (!Array.isArray(graphRules)) {
-    return [];
-  }
-
-  return uniqueValues(graphRules.filter(isGraphRuleLabel)).map((label) =>
-    label.trim(),
-  );
+  return Array.isArray(graphRules)
+    ? uniqueValues(graphRules.filter(isGraphRuleLabel)).map((label) =>
+        label.trim(),
+      )
+    : [];
 }
 
 export function addSourceReferenceConfigProblems(options: {
@@ -80,29 +78,35 @@ export function readRelativeTypeFiles(
   return readRelativeTypeRoots(sourceConfigPath, config.virtualFiles);
 }
 
-function isTraversalBoundary(currentDir: string, rootDir: string): boolean {
-  return currentDir === rootDir || path.dirname(currentDir) === currentDir;
+function isTraversalBoundary(
+  currentDirectory: string,
+  rootDirectory: string,
+): boolean {
+  return (
+    currentDirectory === rootDirectory ||
+    path.dirname(currentDirectory) === currentDirectory
+  );
 }
 
 function collectAncestorDirectories(
   sourceConfigPath: string,
-  rootDir: string,
+  rootDirectory: string,
 ): string[] {
   const directories: string[] = [];
-  let currentDir = path.dirname(sourceConfigPath);
+  let currentDirectory = path.dirname(sourceConfigPath);
 
   while (true) {
-    directories.push(currentDir);
-    if (isTraversalBoundary(currentDir, rootDir)) {
+    directories.push(currentDirectory);
+    if (isTraversalBoundary(currentDirectory, rootDirectory)) {
       return directories;
     }
-    currentDir = path.dirname(currentDir);
+    currentDirectory = path.dirname(currentDirectory);
   }
 }
 
 function getTypeRootCandidates(directory: string): string[] {
-  const nodeModulesDir = path.join(directory, 'node_modules');
-  return [path.join(nodeModulesDir, '@types'), nodeModulesDir];
+  const nodeModulesDirectory = path.join(directory, 'node_modules');
+  return [path.join(nodeModulesDirectory, '@types'), nodeModulesDirectory];
 }
 
 export function collectTypeRootCandidates(options: {

@@ -38,10 +38,13 @@ export class WorkspaceValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([
+    const prerequisite = Promise.all([
       this.#topology.get(run),
       this.#pool.get(run),
-    ]).then(([topology, pool]) => {
+    ]);
+    const view = (async () => {
+      const [topology, pool] = await prerequisite;
+
       const result: WorkspaceValidationView = Object.freeze({
         kind: 'workspace',
         packages: pool.packages,
@@ -63,7 +66,7 @@ export class WorkspaceValidationViewProvider {
         startedAt,
       });
       return result;
-    });
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }
@@ -97,10 +100,13 @@ export class ProjectValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([
+    const prerequisite = Promise.all([
       this.#catalog.get(run),
       this.#pool.get(run),
-    ]).then(([catalog, pool]) => {
+    ]);
+    const view = (async () => {
+      const [catalog, pool] = await prerequisite;
+
       const result: ProjectValidationView = Object.freeze({
         ...pool,
         kind: 'projects',
@@ -120,7 +126,7 @@ export class ProjectValidationViewProvider {
         startedAt,
       });
       return result;
-    });
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }
@@ -154,26 +160,30 @@ export class ImportFactsValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([this.#facts.get(run), this.#pool.get(run)]).then(
-      ([facts, pool]) => {
-        const result: ImportFactsValidationView = Object.freeze({
-          ...pool,
-          kind: 'import-facts',
-          occurrences: freezeArray(
-            facts.occurrences.map((occurrence) =>
-              Object.freeze({ ...occurrence }),
-            ),
+    const prerequisite = Promise.all([
+      this.#facts.get(run),
+      this.#pool.get(run),
+    ]);
+    const view = (async () => {
+      const [facts, pool] = await prerequisite;
+
+      const result: ImportFactsValidationView = Object.freeze({
+        ...pool,
+        kind: 'import-facts',
+        occurrences: freezeArray(
+          facts.occurrences.map((occurrence) =>
+            Object.freeze({ ...occurrence }),
           ),
-        });
-        recordProjection({
-          count: result.occurrences.length,
-          kind: result.kind,
-          run,
-          startedAt,
-        });
-        return result;
-      },
-    );
+        ),
+      });
+      recordProjection({
+        count: result.occurrences.length,
+        kind: result.kind,
+        run,
+        startedAt,
+      });
+      return result;
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }

@@ -78,7 +78,7 @@ function logFailure(
   );
 }
 
-function reportSuccess(state: SourceCheckResultInput): true {
+function isReportSuccess(state: SourceCheckResultInput): true {
   if (state.options.logSuccess !== false) {
     SourceLogger.success(
       `Checked ${state.sourceProjectEntries.length} source project owners; package scopes are valid.`,
@@ -93,7 +93,7 @@ function reportSuccess(state: SourceCheckResultInput): true {
   return true;
 }
 
-export async function finishSourceCheck(
+export async function isFinishSourceCheck(
   state: SourceCheckResultInput,
 ): Promise<boolean> {
   const issues = collectStructuredIssues(state);
@@ -101,7 +101,7 @@ export async function finishSourceCheck(
   publishStructuredIssues(state, issues);
   await persistIssues(state, issues);
   if (issues.length === 0) {
-    return reportSuccess(state);
+    return isReportSuccess(state);
   }
 
   reportFailureStats(state);

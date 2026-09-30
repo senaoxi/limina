@@ -53,13 +53,13 @@ function quotePosixArgument(value: string): string {
 
 export function createPowerShellNodeTransportTokens(
   nodeExecutablePath: string,
-  nodeArgs: readonly string[],
+  nodeArguments: readonly string[],
 ): readonly [string, '-e', string, string] {
   return Object.freeze([
     nodeExecutablePath,
     '-e',
     POWERSHELL_NODE_ARGV_RUNNER,
-    Buffer.from(JSON.stringify(nodeArgs), 'utf8').toString('base64'),
+    Buffer.from(JSON.stringify(nodeArguments), 'utf8').toString('base64'),
   ] as const);
 }
 
@@ -101,7 +101,7 @@ export function createStandaloneInvocationCommand(
 export function getGeneratedLiminaCommandTokens(
   generatedCommand: GeneratedLiminaCommand,
 ): readonly string[] {
-  const queryArgs = [
+  const queryArguments = [
     '--config',
     generatedCommand.context.configPath,
     '--config-loader',
@@ -114,7 +114,7 @@ export function getGeneratedLiminaCommandTokens(
   return Object.freeze([
     generatedCommand.context.nodeExecutablePath,
     generatedCommand.context.cliEntryPath,
-    ...queryArgs,
+    ...queryArguments,
   ]);
 }
 
@@ -122,7 +122,7 @@ export function renderGeneratedLiminaCommand(
   generatedCommand: GeneratedLiminaCommand,
   dialect: GeneratedCommandDialect,
 ): string {
-  const [executable, ...args] =
+  const [executable, ...arguments_] =
     getGeneratedLiminaCommandTokens(generatedCommand);
   if (dialect === 'powershell') {
     // Windows PowerShell 5.1 and PowerShell 7 marshal native arguments
@@ -131,7 +131,7 @@ export function renderGeneratedLiminaCommand(
     // installed Limina entry without another shell parsing pass.
     const transportTokens = createPowerShellNodeTransportTokens(
       executable,
-      args,
+      arguments_,
     );
 
     return [
@@ -145,7 +145,7 @@ export function renderGeneratedLiminaCommand(
     ].join(' ');
   }
 
-  return [executable, ...args].map(quotePosixArgument).join(' ');
+  return [executable, ...arguments_].map(quotePosixArgument).join(' ');
 }
 
 export function getGeneratedCommandPresentation(

@@ -9,7 +9,7 @@ import {
   type WorkspaceTsconfigOutputRootRead,
 } from '../types';
 
-type NormalizedOutDir =
+type NormalizedOutDirectory =
   | { kind: 'invalid'; reason: string }
   | { kind: 'value'; value: string };
 
@@ -19,8 +19,10 @@ function resolveDefaultOutputRoot(configPath: string): string {
   );
 }
 
-function normalizeStringOutDir(outDir: string): NormalizedOutDir {
-  const value = outDir.trim();
+function normalizeStringOutDirectory(
+  outDirectory: string,
+): NormalizedOutDirectory {
+  const value = outDirectory.trim();
   if (value.length === 0) {
     return {
       kind: 'invalid',
@@ -37,8 +39,9 @@ function normalizeStringOutDir(outDir: string): NormalizedOutDir {
   return { kind: 'value', value };
 }
 
-function normalizeOutDir(outDir: unknown): NormalizedOutDir {
-  if (typeof outDir === 'string') return normalizeStringOutDir(outDir);
+function normalizeOutDirectory(outDirectory: unknown): NormalizedOutDirectory {
+  if (typeof outDirectory === 'string')
+    return normalizeStringOutDirectory(outDirectory);
   return {
     kind: 'invalid',
     reason: 'liminaOptions.outputs.outDir must be a non-empty relative path.',
@@ -49,7 +52,7 @@ function resolveExplicitOutputRoot(options: {
   configPath: string;
   outDir: unknown;
 }): WorkspaceTsconfigOutputRootRead {
-  const normalized = normalizeOutDir(options.outDir);
+  const normalized = normalizeOutDirectory(options.outDir);
   if (normalized.kind === 'invalid') return normalized;
   return {
     kind: 'output',
@@ -74,9 +77,9 @@ function readOutputsRecord(
   configObject: Record<string, unknown>,
 ): Record<string, unknown> | null {
   const liminaOptions = configObject.liminaOptions;
-  if (!isPlainRecord(liminaOptions)) return null;
-  if (!isPlainRecord(liminaOptions.outputs)) return null;
-  return liminaOptions.outputs;
+  return !isPlainRecord(liminaOptions) || !isPlainRecord(liminaOptions.outputs)
+    ? null
+    : liminaOptions.outputs;
 }
 
 function readCandidateOutputs(options: {
@@ -84,8 +87,7 @@ function readCandidateOutputs(options: {
   config: ResolvedLiminaConfig;
 }): Record<string, unknown> | null {
   const configObject = tryReadConfig(options.config, options.candidate.path);
-  if (configObject === null) return null;
-  return readOutputsRecord(configObject);
+  return configObject === null ? null : readOutputsRecord(configObject);
 }
 
 function resolveOutputsRecord(

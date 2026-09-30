@@ -78,10 +78,7 @@ function addRulesConfigFinding(options: {
 }
 
 function getConfiguredRules(config: ResolvedLiminaConfig): unknown {
-  if (config.graph === undefined) {
-    return undefined;
-  }
-  return config.graph.rules;
+  return config.graph === undefined ? undefined : config.graph.rules;
 }
 
 export function getRulesRecord(

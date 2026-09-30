@@ -4,8 +4,8 @@ import {
   type ConfigValidationContext,
   isNonEmptyString,
   isPlainConfigRecord,
+  isValidateStringArrayField,
   validateRelativeSelectors,
-  validateStringArrayField,
 } from './shared';
 
 const declarationsKeys = new Set(['ambient']);
@@ -47,7 +47,7 @@ function validateAmbientIncludes(options: {
   rule: Record<string, unknown>;
 }): void {
   const includePath = [...options.path, 'include'];
-  validateStringArrayField({
+  isValidateStringArrayField({
     ctx: options.ctx,
     path: includePath,
     required: true,
@@ -116,12 +116,12 @@ function validateAmbientRule(options: {
 
 function getAmbientRules(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): unknown[] | null {
   if (value === undefined) return null;
   if (Array.isArray(value)) return value;
   addConfigIssue(
-    ctx,
+    context,
     [...declarationsPath, 'ambient'],
     'ambient must be an array.',
   );
@@ -130,23 +130,23 @@ function getAmbientRules(
 
 function validateAmbientRules(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
-  const rules = getAmbientRules(value, ctx);
+  const rules = getAmbientRules(value, context);
   if (rules === null) return;
   for (const [index, rule] of rules.entries()) {
-    validateAmbientRule({ ctx, index, value: rule });
+    validateAmbientRule({ ctx: context, index, value: rule });
   }
 }
 
 export function validateSourceDeclarationsConfig(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined) return;
   if (!isPlainConfigRecord(value)) {
     addConfigIssue(
-      ctx,
+      context,
       [...declarationsPath],
       'declarations must be an object.',
     );
@@ -154,10 +154,10 @@ export function validateSourceDeclarationsConfig(
   }
   addUnknownFieldIssues({
     allowed: declarationsKeys,
-    ctx,
+    ctx: context,
     message: 'unknown source declarations config field.',
     path: [...declarationsPath],
     value,
   });
-  validateAmbientRules(value.ambient, ctx);
+  validateAmbientRules(value.ambient, context);
 }

@@ -1,7 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import {
-  pathCandidatesMatchFileFilters,
-  pathCandidatesMatchScopeFilters,
+  isPathCandidatesMatchFileFilters,
+  isPathCandidatesMatchScopeFilters,
   type PathFilterCandidate,
 } from '../../check-reporting/path-filters';
 import { formatShellCommand } from '../../check-reporting/shell-command';
@@ -18,8 +18,7 @@ const DEFAULT_COMMAND = 'limina check';
 function hasValues(
   values: readonly string[] | undefined,
 ): values is readonly string[] {
-  if (values === undefined) return false;
-  return values.length > 0;
+  return values !== undefined && values.length > 0;
 }
 
 export function hasFilters(options: SourceIssueReportOptions): boolean {
@@ -35,8 +34,7 @@ function formatListFilter(
   label: string,
   values: readonly string[] | undefined,
 ): string[] {
-  if (!hasValues(values)) return [];
-  return [`  ${label}: ${values.join(', ')}`];
+  return hasValues(values) ? [`  ${label}: ${values.join(', ')}`] : [];
 }
 
 export function formatFilters(options: SourceIssueReportOptions): string[] {
@@ -52,8 +50,9 @@ export function formatFilters(options: SourceIssueReportOptions): string[] {
 function getScopeRelativeTo(
   issue: SourceUnusedModuleIssue | SourceStructuredIssue,
 ): { scopeRelativeTo?: string[] } {
-  if (!('ownerDirectory' in issue)) return {};
-  return { scopeRelativeTo: [issue.ownerDirectory] };
+  return 'ownerDirectory' in issue
+    ? { scopeRelativeTo: [issue.ownerDirectory] }
+    : {};
 }
 
 function getSourceIssuePathCandidates(
@@ -78,37 +77,39 @@ export function isSourceUnusedModuleIssue(
 export function isSourceStructuredIssue(
   issue: SourceCheckIssue,
 ): issue is SourceStructuredIssue {
-  if (issue.code === SOURCE_ISSUE_CODES.unusedModule) return false;
-  return issue.code !== SOURCE_ISSUE_CODES.unusedWorkspaceDependency;
+  return (
+    issue.code !== SOURCE_ISSUE_CODES.unusedModule &&
+    issue.code !== SOURCE_ISSUE_CODES.unusedWorkspaceDependency
+  );
 }
 
 function isFileBackedIssue(
   issue: SourceCheckIssue,
 ): issue is SourceUnusedModuleIssue | SourceStructuredIssue {
-  if (isSourceUnusedModuleIssue(issue)) return true;
-  if (!isSourceStructuredIssue(issue)) return false;
-  return issue.filePath !== undefined;
-}
-
-function matchesPackageFilter(
-  issue: SourceCheckIssue,
-  packageNames: readonly string[] | undefined,
-): boolean {
-  if (!hasValues(packageNames)) return true;
   return (
-    issue.ownerName !== undefined && packageNames.includes(issue.ownerName)
+    isSourceUnusedModuleIssue(issue) ||
+    (isSourceStructuredIssue(issue) && issue.filePath !== undefined)
   );
 }
 
-function matchesRuleFilter(
+function isMatchesPackageFilter(
+  issue: SourceCheckIssue,
+  packageNames: readonly string[] | undefined,
+): boolean {
+  return (
+    !hasValues(packageNames) ||
+    (issue.ownerName !== undefined && packageNames.includes(issue.ownerName))
+  );
+}
+
+function isMatchesRuleFilter(
   issue: SourceCheckIssue,
   rules: readonly string[] | undefined,
 ): boolean {
-  if (!hasValues(rules)) return true;
-  return rules.includes(issue.code);
+  return !hasValues(rules) || rules.includes(issue.code);
 }
 
-function matchesFileFilter(options: {
+function isMatchesFileFilter(options: {
   config: ResolvedLiminaConfig;
   files: readonly string[] | undefined;
   issue: SourceCheckIssue;
@@ -116,14 +117,14 @@ function matchesFileFilter(options: {
   const files = options.files;
   if (!hasValues(files)) return true;
   if (!isFileBackedIssue(options.issue)) return false;
-  return pathCandidatesMatchFileFilters({
+  return isPathCandidatesMatchFileFilters({
     candidates: getSourceIssuePathCandidates(options.issue),
     files,
     rootDir: options.config.rootDir,
   });
 }
 
-function matchesScopeFilter(options: {
+function isMatchesScopeFilter(options: {
   config: ResolvedLiminaConfig;
   issue: SourceCheckIssue;
   scopes: readonly string[] | undefined;
@@ -131,23 +132,23 @@ function matchesScopeFilter(options: {
   const scopes = options.scopes;
   if (!hasValues(scopes)) return true;
   if (!isFileBackedIssue(options.issue)) return false;
-  return pathCandidatesMatchScopeFilters({
+  return isPathCandidatesMatchScopeFilters({
     candidates: getSourceIssuePathCandidates(options.issue),
     rootDir: options.config.rootDir,
     scopes,
   });
 }
 
-export function issueMatchesFilters(
+export function isIssueMatchesFilters(
   config: ResolvedLiminaConfig,
   issue: SourceCheckIssue,
   options: SourceIssueReportOptions,
 ): boolean {
   return [
-    matchesPackageFilter(issue, options.packageNames),
-    matchesRuleFilter(issue, options.rules),
-    matchesFileFilter({ config, files: options.files, issue }),
-    matchesScopeFilter({ config, issue, scopes: options.scopes }),
+    isMatchesPackageFilter(issue, options.packageNames),
+    isMatchesRuleFilter(issue, options.rules),
+    isMatchesFileFilter({ config, files: options.files, issue }),
+    isMatchesScopeFilter({ config, issue, scopes: options.scopes }),
   ].every(Boolean);
 }
 
@@ -225,8 +226,9 @@ function findClosestRule(
 }
 
 function formatRuleSuggestion(suggestion: string | undefined): string[] | null {
-  if (suggestion === undefined) return null;
-  return ['', 'Did you mean:', `  - ${suggestion}`];
+  return suggestion === undefined
+    ? null
+    : ['', 'Did you mean:', `  - ${suggestion}`];
 }
 
 function formatAvailableRules(availableRules: readonly string[]): string[] {
@@ -253,10 +255,11 @@ export function formatUnknownRules(
   selectedRules: readonly string[] | undefined,
   availableRules: readonly string[],
 ): string[] {
-  if (!hasValues(selectedRules)) return [];
-  return selectedRules
-    .filter((rule) => !availableRules.includes(rule))
-    .flatMap((rule) => formatUnknownRule(rule, availableRules));
+  return hasValues(selectedRules)
+    ? selectedRules
+        .filter((rule) => !availableRules.includes(rule))
+        .flatMap((rule) => formatUnknownRule(rule, availableRules))
+    : [];
 }
 
 function formatFlagValues(

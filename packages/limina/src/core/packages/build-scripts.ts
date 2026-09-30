@@ -89,14 +89,14 @@ function compareDiagnostics(
 }
 
 function compareScripts(
-  rootDir: string,
+  rootDirectory: string,
   left: PackageBuildScript,
   right: PackageBuildScript,
 ): number {
   const packageComparison = toRelativePath(
-    rootDir,
+    rootDirectory,
     left.packageJsonPath,
-  ).localeCompare(toRelativePath(rootDir, right.packageJsonPath));
+  ).localeCompare(toRelativePath(rootDirectory, right.packageJsonPath));
 
   return packageComparison || left.name.localeCompare(right.name);
 }

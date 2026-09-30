@@ -17,6 +17,7 @@ import {
 import { normalizeAbsolutePath } from '#utils/path';
 import path from 'pathe';
 import { alignProjectWithFrozenSemanticAuthority } from './project-dependencies/project-alignment';
+import { mapPromise } from './promise';
 import type { WorkspaceCore } from './workspace';
 import type { WorkspaceLookupIndex } from './workspace/lookup';
 
@@ -51,6 +52,10 @@ export class TsconfigCore {
     this.#workspace = options.workspace;
   }
 
+  async #getWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex | null> {
+    return this.#workspace ? this.#workspace.getLookupIndex() : null;
+  }
+
   async getProject(
     configPath: string,
     contextOrExtensions?: CheckerProjectParseContext | string[],
@@ -58,7 +63,7 @@ export class TsconfigCore {
     const cacheKey = createProjectCacheKey(configPath, contextOrExtensions);
     const projectPromise =
       this.#projectCache.get(cacheKey) ??
-      this.#generatedGraphProvider().then((generatedGraph) =>
+      mapPromise(this.#generatedGraphProvider(), (generatedGraph) =>
         alignProjectWithFrozenSemanticAuthority({
           generatedGraph,
           project: parseProject(
@@ -95,15 +100,17 @@ export class TsconfigCore {
   }
 
   async getSourceGraphProjects(): Promise<SourceGraphProjects> {
-    this.#sourceGraphProjectsPromise ??= this.#generatedGraphProvider().then(
+    this.#sourceGraphProjectsPromise ??= mapPromise(
+      this.#generatedGraphProvider(),
       async (generatedGraph) => {
         const graphRoute = collectSourceGraphProjectExtensions(
           this.#config,
           generatedGraph,
         );
-        const projectPaths = [
-          ...graphRoute.projectExtensionsByPath.keys(),
-        ].sort();
+        const projectPaths = graphRoute.projectExtensionsByPath
+          .keys()
+          .toArray()
+          .sort((left, right) => Number(left > right) - Number(left < right));
         const workspaceLookup = await this.#getWorkspaceLookupIndex();
         const projects = (
           await Promise.all(
@@ -144,14 +151,6 @@ export class TsconfigCore {
     );
 
     return findProjectByConfigPath(projects, ownerProjectPath);
-  }
-
-  async #getWorkspaceLookupIndex(): Promise<WorkspaceLookupIndex | null> {
-    if (!this.#workspace) {
-      return null;
-    }
-
-    return this.#workspace.getLookupIndex();
   }
 }
 
@@ -219,9 +218,13 @@ function createProjectCacheKey(
       });
 
   return JSON.stringify({
-    checkerPresets: [...context.checkerPresets].sort(),
+    checkerPresets: [...context.checkerPresets].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    ),
     configPath: normalizeAbsolutePath(configPath),
-    extensions: [...context.extensions].sort(),
+    extensions: [...context.extensions].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    ),
   });
 }
 

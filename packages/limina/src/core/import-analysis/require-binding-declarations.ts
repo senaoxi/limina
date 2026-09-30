@@ -9,12 +9,13 @@ export function getBindingNames(
   name: ts.BindingName,
   tsModule: typeof ts,
 ): ts.Identifier[] {
-  if (tsModule.isIdentifier(name)) return [name];
-  return name.elements.flatMap((element) =>
-    tsModule.isOmittedExpression(element)
-      ? []
-      : getBindingNames(element.name, tsModule),
-  );
+  return tsModule.isIdentifier(name)
+    ? [name]
+    : name.elements.flatMap((element) =>
+        tsModule.isOmittedExpression(element)
+          ? []
+          : getBindingNames(element.name, tsModule),
+      );
 }
 
 export function registerBinding(
@@ -41,7 +42,7 @@ function getFunctionScope(scope: LexicalScope): LexicalScope {
   return current;
 }
 
-function isVarDeclaration(
+function isVariableDeclaration(
   node: ts.VariableDeclaration,
   tsModule: typeof ts,
 ): boolean {
@@ -56,7 +57,7 @@ function registerVariableDeclaration(
   scope: LexicalScope,
   tsModule: typeof ts,
 ): void {
-  const target = isVarDeclaration(node, tsModule)
+  const target = isVariableDeclaration(node, tsModule)
     ? getFunctionScope(scope)
     : scope;
   for (const identifier of getBindingNames(node.name, tsModule)) {
@@ -76,8 +77,10 @@ function isCreateRequireModule(
   declaration: ts.ImportDeclaration,
   tsModule: typeof ts,
 ): boolean {
-  if (!tsModule.isStringLiteral(declaration.moduleSpecifier)) return false;
-  return ['module', 'node:module'].includes(declaration.moduleSpecifier.text);
+  return (
+    tsModule.isStringLiteral(declaration.moduleSpecifier) &&
+    ['module', 'node:module'].includes(declaration.moduleSpecifier.text)
+  );
 }
 
 function isCreateRequireImport(
@@ -95,8 +98,7 @@ function isCreateRequireImportDeclaration(
   declaration: ts.ImportDeclaration | null,
   tsModule: typeof ts,
 ): declaration is ts.ImportDeclaration {
-  if (declaration === null) return false;
-  return isCreateRequireModule(declaration, tsModule);
+  return declaration !== null && isCreateRequireModule(declaration, tsModule);
 }
 
 function getImportedName(node: ts.ImportSpecifier): string {
@@ -161,8 +163,7 @@ function registerImportBindings(
   tsModule: typeof ts,
 ): void {
   const clause = node.importClause;
-  if (clause === undefined) return;
-  if (clause.isTypeOnly) return;
+  if (clause === undefined || clause.isTypeOnly) return;
   registerDefaultImportBinding(clause, scope);
   registerNamedImportBindings(clause.namedBindings, scope, tsModule);
 }

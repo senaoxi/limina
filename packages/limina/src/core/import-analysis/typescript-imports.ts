@@ -27,8 +27,7 @@ type NormalizedTypeScriptImportCollectionOptions =
 
 function getFileExtension(filePath: string): string {
   const index = filePath.lastIndexOf('.');
-  if (index === -1) return '';
-  return filePath.slice(index);
+  return index === -1 ? '' : filePath.slice(index);
 }
 
 export function getSourceFileKind(

@@ -45,20 +45,19 @@ function createInventoryFilters(flags: CheckFlags): CheckIssueInventoryFilters {
 }
 
 function getConfigLoaderField(flags: CheckFlags): { configLoader?: string } {
-  if (flags.configLoader === undefined) return {};
-  return { configLoader: flags.configLoader };
+  return flags.configLoader === undefined
+    ? {}
+    : { configLoader: flags.configLoader };
 }
 
 function getConfigPathField(configPath: string | undefined): {
   configPath?: string;
 } {
-  if (configPath === undefined) return {};
-  return { configPath };
+  return configPath === undefined ? {} : { configPath };
 }
 
 function getModeField(flags: CheckFlags): { mode?: string } {
-  if (flags.mode === undefined) return {};
-  return { mode: flags.mode };
+  return flags.mode === undefined ? {} : { mode: flags.mode };
 }
 
 function createGlobalQueryContext(options: {
@@ -75,8 +74,7 @@ function createGlobalQueryContext(options: {
 function getInvocationIdField(invocationId: string | undefined): {
   invocationId?: string;
 } {
-  if (invocationId === undefined) return {};
-  return { invocationId };
+  return invocationId === undefined ? {} : { invocationId };
 }
 
 function createQueryContext(options: {
@@ -118,8 +116,11 @@ async function readInventoryInput(options: {
 function isUnavailableAttemptQuery(
   query: CheckAttemptQueryResult | undefined,
 ): query is Extract<CheckAttemptQueryResult, { snapshot: null }> {
-  if (query === undefined) return false;
-  return query.state !== 'completed' && query.state !== 'legacy';
+  return (
+    query !== undefined &&
+    query.state !== 'completed' &&
+    query.state !== 'legacy'
+  );
 }
 
 function formatUnavailableInventory(options: {
@@ -136,23 +137,24 @@ function formatUnavailableInventory(options: {
     status: options.query.state,
     version: 1,
   };
-  if (options.format === 'json') return JSON.stringify(status, null, 2);
-  return JSON.stringify({ ...status, type: 'inventory-status' });
+  return options.format === 'json'
+    ? JSON.stringify(status, null, 2)
+    : JSON.stringify({ ...status, type: 'inventory-status' });
 }
 
 function getInvocationMetadata(
   invocation: StandaloneIssueInvocationSnapshot | undefined,
 ): CheckIssueInventoryInvocationMetadata | undefined {
-  if (invocation === undefined) return undefined;
-  return toCheckIssueInventoryInvocationMetadata(invocation);
+  return invocation === undefined
+    ? undefined
+    : toCheckIssueInventoryInvocationMetadata(invocation);
 }
 
 function getInvocationMetadataField(
   invocation: StandaloneIssueInvocationSnapshot | undefined,
 ): { invocation?: CheckIssueInventoryInvocationMetadata } {
   const metadata = getInvocationMetadata(invocation);
-  if (metadata === undefined) return {};
-  return { invocation: metadata };
+  return metadata === undefined ? {} : { invocation: metadata };
 }
 
 function formatHumanInventory(options: {
@@ -219,21 +221,14 @@ function formatInventory(options: {
 
 export async function showIssueInventory(flags: CheckFlags): Promise<void> {
   const format = parseIssueInventoryFormat(flags.format) ?? 'human';
-  const limitExplicit = flags.limit !== undefined;
+  const isLimitExplicit = flags.limit !== undefined;
   const limit = parseIssueInventoryLimit(flags.limit);
-  assertHumanIssueInventoryLimit({ format, limitExplicit });
+  assertHumanIssueInventoryLimit({ format, limitExplicit: isLimitExplicit });
   const filters = createInventoryFilters(flags);
   const location = locateCheckIssueWorkspace({ configPath: flags.config });
   const input = await readInventoryInput({
     invocationId: flags.invocation,
     rootDir: location.rootDir,
-  });
-  const queryContext = createQueryContext({
-    configPath: location.configPath,
-    filters,
-    flags,
-    limit,
-    limitExplicit,
   });
   if (isUnavailableAttemptQuery(input.attemptQuery)) {
     process.exitCode = 1;
@@ -245,13 +240,20 @@ export async function showIssueInventory(flags: CheckFlags): Promise<void> {
     );
     return;
   }
+  const queryContext = createQueryContext({
+    configPath: location.configPath,
+    filters,
+    flags,
+    limit,
+    limitExplicit: isLimitExplicit,
+  });
   const output = formatInventory({
     filters,
     flags,
     format,
     input,
     limit,
-    limitExplicit,
+    limitExplicit: isLimitExplicit,
     queryContext,
     rootDir: location.rootDir,
   });

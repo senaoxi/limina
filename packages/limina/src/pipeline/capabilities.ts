@@ -34,8 +34,7 @@ function appendExecutionCapability(options: {
 }): void {
   if (options.execution === 'build') {
     options.buckets.buildExecution.push(options.label);
-  }
-  if (options.execution === 'typecheck') {
+  } else if (options.execution === 'typecheck') {
     options.buckets.typecheckExecution.push(options.label);
   }
 }
@@ -59,8 +58,9 @@ function getAdapterCapabilities(checkerName: string): {
     return { execution: 'typecheck', sourceGraph: false };
   }
   const adapter = getCheckerAdapter(checkerName);
-  if (adapter === null) return { execution: undefined, sourceGraph: undefined };
-  return { execution: adapter.execution, sourceGraph: adapter.sourceGraph };
+  return adapter === null
+    ? { execution: undefined, sourceGraph: undefined }
+    : { execution: adapter.execution, sourceGraph: adapter.sourceGraph };
 }
 
 function collectCheckerCapabilities(
@@ -121,7 +121,7 @@ export function reportCheckerCapabilities(
   });
 }
 
-export function usesAutoCheckers(): boolean {
+export function isUsesAutoCheckers(): boolean {
   return true;
 }
 
@@ -140,13 +140,14 @@ export async function reportAutoCheckerCapabilities(
 }
 
 function hasPackageNames(packageNames: readonly string[] | undefined): boolean {
-  if (packageNames === undefined) return false;
-  return packageNames.length > 0;
+  return packageNames !== undefined && packageNames.length > 0;
 }
 
 function hasPackageScope(options: RunPipelineOptions): boolean {
-  if (options.sourceIssueReport !== undefined) return true;
-  return hasPackageNames(options.packageNames);
+  return (
+    options.sourceIssueReport !== undefined ||
+    hasPackageNames(options.packageNames)
+  );
 }
 
 function resolveReportPackageNames(

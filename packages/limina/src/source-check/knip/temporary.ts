@@ -10,7 +10,7 @@ interface VirtualEntryState {
   tempDirectories: string[];
 }
 
-async function pathExists(filePath: string): Promise<boolean> {
+async function isPathExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
     return true;
@@ -28,22 +28,22 @@ async function createVirtualEntryProject(options: {
   }
 
   const parentDirectory = path.join(options.ownerProject.directory, '.tsbuild');
-  const parentAlreadyExists = await pathExists(parentDirectory);
+  const isParentAlreadyExists = await isPathExists(parentDirectory);
   await mkdir(parentDirectory, { recursive: true });
-  if (!parentAlreadyExists) {
+  if (!isParentAlreadyExists) {
     options.state.createdParentDirectories.add(parentDirectory);
   }
 
-  const tempDirectory = await mkdtemp(
+  const temporaryDirectory = await mkdtemp(
     path.join(parentDirectory, 'limina-knip-'),
   );
-  const virtualEntryPath = path.join(tempDirectory, 'entry.ts');
-  options.state.tempDirectories.push(tempDirectory);
+  const virtualEntryPath = path.join(temporaryDirectory, 'entry.ts');
+  options.state.tempDirectories.push(temporaryDirectory);
   await writeFile(
     virtualEntryPath,
     createVirtualEntryContent(
       options.ownerProject.virtualEntrySourceFiles,
-      tempDirectory,
+      temporaryDirectory,
     ),
   );
   return {
@@ -51,7 +51,7 @@ async function createVirtualEntryProject(options: {
     entryFiles: [
       ...options.ownerProject.entryFiles,
       toRelativePath(options.ownerProject.directory, virtualEntryPath),
-    ].sort(),
+    ].sort((left, right) => Number(left > right) - Number(left < right)),
   };
 }
 
@@ -106,13 +106,15 @@ export async function withTemporaryKnipConfig<T>(
   config: KnipConfig,
   run: (configPath: string) => Promise<T>,
 ): Promise<T> {
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'limina-knip-'));
-  const configPath = path.join(tempDir, 'knip.json');
+  const temporaryDirectoryValue = await mkdtemp(
+    path.join(tmpdir(), 'limina-knip-'),
+  );
+  const configPath = path.join(temporaryDirectoryValue, 'knip.json');
 
   try {
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
     return await run(configPath);
   } finally {
-    await rm(tempDir, { force: true, recursive: true });
+    await rm(temporaryDirectoryValue, { force: true, recursive: true });
   }
 }

@@ -7,7 +7,7 @@ import type { PackageOwner, WorkspacePackage } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { NearestPackageInfo } from '../core/packages/owners';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 
 export function addResolvedPackageWithoutNameProblem(options: {
@@ -61,11 +61,10 @@ function getTargetPackageName(options: {
   targetOwner: PackageOwner;
   workspacePackage: WorkspacePackage | null;
 }): string | undefined {
-  if (options.targetOwner.name) {
-    return options.targetOwner.name;
-  }
-
-  return getWorkspacePackageName(options.workspacePackage);
+  return (
+    options.targetOwner.name ||
+    getWorkspacePackageName(options.workspacePackage)
+  );
 }
 
 function createWorkspacePackageLines(

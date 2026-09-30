@@ -47,9 +47,9 @@ function shouldColorLabels(options: CheckSummaryBlockOptions): boolean {
 
 function applyLabelColors(
   lines: readonly string[],
-  enabled: boolean,
+  isEnabled: boolean,
 ): string[] {
-  return enabled ? lines.map(colorSummaryLabel) : [...lines];
+  return isEnabled ? lines.map(colorSummaryLabel) : [...lines];
 }
 
 function applyLineColors(
@@ -60,11 +60,9 @@ function applyLineColors(
     return [...lines];
   }
 
-  if (options.colorLine === undefined) {
-    return [...lines];
-  }
-
-  return lines.map(options.colorLine);
+  return options.colorLine === undefined
+    ? [...lines]
+    : lines.map(options.colorLine);
 }
 
 function applyBorderColor(
@@ -75,11 +73,9 @@ function applyBorderColor(
     return [...lines];
   }
 
-  if (options.borderColor === undefined) {
-    return [...lines];
-  }
-
-  return colorSummaryBlockBorder(lines, options.borderColor);
+  return options.borderColor === undefined
+    ? [...lines]
+    : colorSummaryBlockBorder(lines, options.borderColor);
 }
 
 export function formatCheckSummaryBlock(

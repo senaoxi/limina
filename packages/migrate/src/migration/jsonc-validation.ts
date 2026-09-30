@@ -35,7 +35,7 @@ function isObjectRoot(root: Node | undefined): root is Node {
 
 function parseMigrationText(content: string): Node {
   const errors: ParseError[] = [];
-  const root = parseTree(content.replace(/^\uFEFF/u, ' '), errors, {
+  const root = parseTree(content.replace(/^\u{FEFF}/u, ' '), errors, {
     allowTrailingComma: true,
   });
   if (errors.length > 0) {

@@ -38,7 +38,7 @@ function isSemanticAuthoritySource(
   return semanticSources.has(source);
 }
 
-function sameLockedAuthority(
+function isSameLockedAuthority(
   left: LockedSemanticAuthority,
   right: LockedSemanticAuthority,
 ): boolean {
@@ -153,7 +153,7 @@ function freezeSemanticAuthorityState(options: {
 }): string | null {
   const authority = getLockedSemanticAuthority(options.state);
   const frozen = options.state.frozenSemanticAuthority;
-  if (frozen !== undefined && !sameLockedAuthority(frozen, authority)) {
+  if (frozen !== undefined && !isSameLockedAuthority(frozen, authority)) {
     return [
       'Semantic authority freeze mismatch:',
       `  config: ${toRelativePath(options.config.rootDir, options.state.configPath)}`,
@@ -181,9 +181,11 @@ function hasValidFrozenSemanticAuthority(
   state: TypeConfigOwnershipState,
 ): boolean {
   const frozen = state.frozenSemanticAuthority;
-  if (frozen === undefined) return false;
-  if (state.semanticAuthority.kind !== 'locked') return false;
-  return sameLockedAuthority(frozen, state.semanticAuthority);
+  return (
+    frozen !== undefined &&
+    state.semanticAuthority.kind === 'locked' &&
+    isSameLockedAuthority(frozen, state.semanticAuthority)
+  );
 }
 
 function getFrozenFamily(state: TypeConfigOwnershipState): string {

@@ -9,17 +9,16 @@ import {
 } from './shared';
 
 function isBaselineTag(value: unknown): boolean {
-  if (typeof value === 'function') return true;
-  return isNonEmptyString(value);
+  return typeof value === 'function' || isNonEmptyString(value);
 }
 
 function validateBaselineTag(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined || isBaselineTag(value)) return;
   addConfigIssue(
-    ctx,
+    context,
     ['baselineTag'],
     'baselineTag must be a non-empty string or function.',
   );
@@ -27,10 +26,14 @@ function validateBaselineTag(
 
 function validateBuiltinIgnore(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined || typeof value === 'boolean') return;
-  addConfigIssue(ctx, ['builtinIgnore'], 'builtinIgnore must be a boolean.');
+  addConfigIssue(
+    context,
+    ['builtinIgnore'],
+    'builtinIgnore must be a boolean.',
+  );
 }
 
 function validateIgnorePattern(options: {
@@ -47,40 +50,39 @@ function validateIgnorePattern(options: {
 }
 
 function isDeferredIgnore(value: unknown): boolean {
-  if (value === undefined) return true;
-  return typeof value === 'function';
+  return value === undefined || typeof value === 'function';
 }
 
 function validateIgnorePatterns(
   values: readonly unknown[],
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   for (const [index, pattern] of values.entries()) {
-    validateIgnorePattern({ ctx, index, value: pattern });
+    validateIgnorePattern({ ctx: context, index, value: pattern });
   }
 }
 
 function validateContentHashIgnore(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (isDeferredIgnore(value)) return;
   if (Array.isArray(value)) {
-    validateIgnorePatterns(value, ctx);
+    validateIgnorePatterns(value, context);
     return;
   }
   addConfigIssue(
-    ctx,
+    context,
     ['ignore'],
     'ignore must be an array of non-empty strings or function.',
   );
 }
 
 export const releaseContentHashShapeSchema: z.ZodType<Record<string, unknown>> =
-  z.looseObject({}).superRefine((contentHash, ctx) => {
-    validateBaselineTag(contentHash.baselineTag, ctx);
-    validateBuiltinIgnore(contentHash.builtinIgnore, ctx);
-    validateContentHashIgnore(contentHash.ignore, ctx);
+  z.looseObject({}).superRefine((contentHash, context) => {
+    validateBaselineTag(contentHash.baselineTag, context);
+    validateBuiltinIgnore(contentHash.builtinIgnore, context);
+    validateContentHashIgnore(contentHash.ignore, context);
   });
 
 const releaseNpmPackageJsonLintSeverities = new Set([
@@ -91,33 +93,34 @@ const releaseNpmPackageJsonLintSeverities = new Set([
 const npmPackageJsonLintKeys = new Set(['rules']);
 
 function isRuleSeverity(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  return releaseNpmPackageJsonLintSeverities.has(value);
+  return (
+    typeof value === 'string' && releaseNpmPackageJsonLintSeverities.has(value)
+  );
 }
 
 function isRuleOptions(value: unknown): boolean {
-  if (Array.isArray(value)) return true;
-  return isPlainConfigRecord(value);
+  return Array.isArray(value) || isPlainConfigRecord(value);
 }
 
 function isRuleTupleShape(
   value: unknown,
 ): value is readonly [unknown, unknown] {
-  if (!Array.isArray(value)) return false;
-  return value.length === 2;
+  return Array.isArray(value) && value.length === 2;
 }
 
 function isRuleTuple(value: unknown): boolean {
-  if (!isRuleTupleShape(value)) return false;
-  return isRuleSeverity(value[0]) && isRuleOptions(value[1]);
+  return (
+    isRuleTupleShape(value) &&
+    isRuleSeverity(value[0]) &&
+    isRuleOptions(value[1])
+  );
 }
 
 function isReleaseNpmPackageJsonLintRuleConfig(value: unknown): boolean {
-  if (isRuleSeverity(value)) return true;
-  return isRuleTuple(value);
+  return isRuleSeverity(value) || isRuleTuple(value);
 }
 
-function validateRuleName(options: {
+function isValidateRuleName(options: {
   ctx: ConfigValidationContext;
   name: string;
 }): boolean {
@@ -135,8 +138,11 @@ function validateRuleConfig(options: {
   name: string;
   value: unknown;
 }): void {
-  if (!validateRuleName(options)) return;
-  if (isReleaseNpmPackageJsonLintRuleConfig(options.value)) return;
+  if (
+    !isValidateRuleName(options) ||
+    isReleaseNpmPackageJsonLintRuleConfig(options.value)
+  )
+    return;
   addConfigIssue(
     options.ctx,
     ['rules', options.name],
@@ -146,32 +152,36 @@ function validateRuleConfig(options: {
 
 function getRuleRecord(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): Record<string, unknown> | null {
   if (value === undefined) return null;
   if (isPlainConfigRecord(value)) return value;
-  addConfigIssue(ctx, ['rules'], 'npmPackageJsonLint.rules must be an object.');
+  addConfigIssue(
+    context,
+    ['rules'],
+    'npmPackageJsonLint.rules must be an object.',
+  );
   return null;
 }
 
 function validateNpmPackageJsonLintRules(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
-  const rules = getRuleRecord(value, ctx);
+  const rules = getRuleRecord(value, context);
   if (rules === null) return;
   for (const [name, ruleConfig] of Object.entries(rules)) {
-    validateRuleConfig({ ctx, name, value: ruleConfig });
+    validateRuleConfig({ ctx: context, name, value: ruleConfig });
   }
 }
 
 export const releaseNpmPackageJsonLintShapeSchema: z.ZodType<unknown> = z
   .unknown()
-  .superRefine((value, ctx) => {
+  .superRefine((value, context) => {
     if (typeof value === 'boolean') return;
     if (!isPlainConfigRecord(value)) {
       addConfigIssue(
-        ctx,
+        context,
         [],
         'npmPackageJsonLint must be a boolean or object.',
       );
@@ -179,12 +189,12 @@ export const releaseNpmPackageJsonLintShapeSchema: z.ZodType<unknown> = z
     }
     addUnknownFieldIssues({
       allowed: npmPackageJsonLintKeys,
-      ctx,
+      ctx: context,
       message: 'unknown npmPackageJsonLint config field.',
       path: [],
       value,
     });
-    validateNpmPackageJsonLintRules(value.rules, ctx);
+    validateNpmPackageJsonLintRules(value.rules, context);
   });
 
 export const releaseConfigShapeSchema: z.ZodType<Record<string, unknown>> =
@@ -222,10 +232,10 @@ const executionConfigKeys = new Set(Object.keys(executionConfigShape));
 
 export const executionConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
   .looseObject(executionConfigShape)
-  .superRefine((execution, ctx) => {
+  .superRefine((execution, context) => {
     addUnknownFieldIssues({
       allowed: executionConfigKeys,
-      ctx,
+      ctx: context,
       message: 'unknown execution config field.',
       path: [],
       value: execution,

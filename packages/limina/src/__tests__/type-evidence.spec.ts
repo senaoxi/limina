@@ -18,22 +18,21 @@ async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-type-evidence-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-type-evidence-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
 
-  for (const [relativePath, text] of Object.entries({
-    'tsconfig.json': '{}\n',
-    ...files,
-  })) {
-    await writeText(path.join(rootDir, relativePath), text);
+  const fixtureFiles = { 'tsconfig.json': '{}\n', ...files };
+  for (const [relativePath, text] of Object.entries(fixtureFiles)) {
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     },
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -70,10 +69,12 @@ function createProject(options: {
   };
 }
 
-function createCore(rootDir: string): TypeEvidenceCore {
+function createCore(rootDirectory: string): TypeEvidenceCore {
   return new TypeEvidenceCore({
     generation: 0,
-    importAnalysis: createImportAnalysisContext({ projectRootDir: rootDir }),
+    importAnalysis: createImportAnalysisContext({
+      projectRootDir: rootDirectory,
+    }),
     workspaceSourceBoundaryProvider: (project) =>
       createWorkspaceSourceBoundary(project.fileNames),
   });
@@ -127,15 +128,13 @@ describe('TypeScript resource type evidence', () => {
     'hands the complete specifier $specifier to the checker (ambient=$ambient)',
     async ({ ambient, classification, runtime, specifier, type }) => {
       const fixture = await createFixture({
-        ...(ambient
-          ? {
-              'src/assets.d.ts': [
-                "declare module '*?raw' { const value: string; export default value; }",
-                "declare module '*.css' { const value: string; export default value; }",
-                '',
-              ].join('\n'),
-            }
-          : {}),
+        ...(ambient && {
+          'src/assets.d.ts': [
+            "declare module '*?raw' { const value: string; export default value; }",
+            "declare module '*.css' { const value: string; export default value; }",
+            '',
+          ].join('\n'),
+        }),
         'src/foo.ts': 'export const value = 1;\n',
         'src/index.ts': `import value from '${specifier}';\nvoid value;\n`,
         'src/style.css': '.root {}\n',
@@ -376,10 +375,8 @@ describe('TypeScript resource type evidence', () => {
     'keeps runtime $expectedRuntime independent from ambient=$withAmbient',
     async ({ cssExists, expectedRuntime, withAmbient }) => {
       const fixture = await createFixture({
-        ...(withAmbient
-          ? { 'src/assets.d.ts': "declare module '*.css';\n" }
-          : {}),
-        ...(cssExists ? { 'src/style.css': '.root {}\n' } : {}),
+        ...(withAmbient && { 'src/assets.d.ts': "declare module '*.css';\n" }),
+        ...(cssExists && { 'src/style.css': '.root {}\n' }),
         'src/index.ts': "import './style.css';\n",
       });
       const indexPath = path.join(fixture.rootDir, 'src/index.ts');

@@ -100,7 +100,7 @@ function createCompletedOutcome(
     ? { durationMs, id: result.id, status: 'passed' }
     : {
         durationMs,
-        ...(result.error === undefined ? {} : { error: result.error }),
+        ...(result.error !== undefined && { error: result.error }),
         exitCode: result.status,
         id: result.id,
         status: 'failed',
@@ -113,9 +113,7 @@ export function toCheckerTargetOutcome(
 ): CheckerTargetOutcome {
   assertMatchingTargetIdentity(target, result);
 
-  if (result.blockedBy !== undefined) {
-    return { blockedBy: result.blockedBy, id: result.id, status: 'blocked' };
-  }
-
-  return createCompletedOutcome(result);
+  return result.blockedBy === undefined
+    ? createCompletedOutcome(result)
+    : { blockedBy: result.blockedBy, id: result.id, status: 'blocked' };
 }

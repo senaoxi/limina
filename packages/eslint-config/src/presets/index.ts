@@ -1,1 +1,1 @@
-export { default as root } from './root.js';
+export { default as root, rootFileConfigs } from './root.js';

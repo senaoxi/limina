@@ -43,32 +43,38 @@ export type LiminaCommand =
   | 'source'
   | (string & {});
 
-export interface LiminaConfigEnv {
+export interface LiminaConfigEnvironment {
   command: LiminaCommand;
   mode: string;
 }
 
-export type LiminaConfigFnObject = (env: LiminaConfigEnv) => LiminaConfig;
-export type LiminaConfigFnPromise = (
-  env: LiminaConfigEnv,
+export type LiminaConfigFunctionObject = (
+  environment: LiminaConfigEnvironment,
+) => LiminaConfig;
+export type LiminaConfigFunctionPromise = (
+  environment: LiminaConfigEnvironment,
 ) => Promise<LiminaConfig>;
-export type LiminaConfigFn = (
-  env: LiminaConfigEnv,
+export type LiminaConfigFunction = (
+  environment: LiminaConfigEnvironment,
 ) => LiminaConfig | Promise<LiminaConfig>;
 
 export type LiminaConfigExport =
   | LiminaConfig
   | Promise<LiminaConfig>
-  | LiminaConfigFnObject
-  | LiminaConfigFnPromise
-  | LiminaConfigFn;
+  | LiminaConfigFunctionObject
+  | LiminaConfigFunctionPromise
+  | LiminaConfigFunction;
 
 export interface ResolvedLiminaConfig extends LiminaConfig {
-  /** Internal, generation-local config input. Never serialized as user configuration. */
+  /**
+  Internal, generation-local config input. Never serialized as user configuration.
+  */
   virtualFiles?: ReadonlyMap<string, string>;
   configPath: string;
   governanceRoot: ResolvedGovernanceRoot;
-  /** Compatibility projection of governanceRoot.rootDir. */
+  /**
+  Compatibility projection of governanceRoot.rootDir.
+  */
   rootDir: string;
 }
 

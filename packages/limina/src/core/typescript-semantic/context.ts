@@ -55,19 +55,32 @@ function activeSyntaxScope(
 export class BoundedTypeScriptSemanticContext
   implements TypeScriptSemanticContext
 {
-  readonly identity: string;
   readonly #admission: TypeScriptInclusionLedger;
+
   readonly #host: ts.CompilerHost;
+
   readonly #ledger = new TypeScriptResolutionLedger();
+
   readonly #recordsByFile = new Map<string, readonly ImportRecord[]>();
+
   readonly #resolver: TypeScriptImportResolver;
+
   readonly #sourceFiles = new Map<string, ts.SourceFile>();
-  readonly project: TypeScriptSemanticProject;
-  readonly tsModule: typeof ts;
+
   readonly #getAmbientEvidence: typeof createAmbientTypeEvidence;
+
   readonly #syntaxFacts: SourceSyntaxFactsCache | undefined;
+
   readonly #checkerObservation: TypeCheckerObservation;
+
   #disposed = false;
+
+  readonly identity: string;
+
+  readonly project: TypeScriptSemanticProject;
+
+  readonly tsModule: typeof ts;
+
   readonly program: ts.Program;
 
   constructor(
@@ -124,6 +137,53 @@ export class BoundedTypeScriptSemanticContext
     );
   }
 
+  #allowSourceFile(fileName: string): boolean {
+    return (
+      this.#admission.has(fileName) || this.#admission.allowDefaultLib(fileName)
+    );
+  }
+
+  #registerSourceFile(
+    sourceFile: ts.SourceFile,
+    syntaxInput?: OwnedSyntaxInput,
+  ): void {
+    const fileName = normalizeAbsolutePath(sourceFile.fileName);
+    if (this.#sourceFiles.has(fileName)) return;
+    this.#sourceFiles.set(fileName, sourceFile);
+    this.#recordsByFile.set(
+      fileName,
+      collectSemanticSourceRecords({
+        admission: this.#admission,
+        contextIdentity: this.identity,
+        ledger: this.#ledger,
+        syntaxFacts: this.#syntaxFacts,
+        syntaxInput,
+        sourceFile,
+        tsModule: this.tsModule,
+      }),
+    );
+  }
+
+  #addRecord(record: ImportRecord): void {
+    const records = this.#getRecords(record.filePath);
+    if (records.includes(record)) return;
+    this.#recordsByFile.set(record.filePath, [...records, record]);
+  }
+
+  #getRecords(fileName: string): readonly ImportRecord[] {
+    return this.#recordsByFile.get(normalizeAbsolutePath(fileName)) ?? [];
+  }
+
+  #getRegisteredSourceFile(fileName: string): ts.SourceFile | undefined {
+    return this.#sourceFiles.get(normalizeAbsolutePath(fileName));
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) {
+      throw new Error('TypeScript semantic context was disposed.');
+    }
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#recordsByFile.clear();
@@ -170,52 +230,6 @@ export class BoundedTypeScriptSemanticContext
   ): TypeScriptSemanticResolution {
     this.#assertActive();
     return this.#resolver.resolveImportRecord(importRecord);
-  }
-
-  #allowSourceFile(fileName: string): boolean {
-    if (this.#admission.has(fileName)) return true;
-    return this.#admission.allowDefaultLib(fileName);
-  }
-
-  #registerSourceFile(
-    sourceFile: ts.SourceFile,
-    syntaxInput?: OwnedSyntaxInput,
-  ): void {
-    const fileName = normalizeAbsolutePath(sourceFile.fileName);
-    if (this.#sourceFiles.has(fileName)) return;
-    this.#sourceFiles.set(fileName, sourceFile);
-    this.#recordsByFile.set(
-      fileName,
-      collectSemanticSourceRecords({
-        admission: this.#admission,
-        contextIdentity: this.identity,
-        ledger: this.#ledger,
-        syntaxFacts: this.#syntaxFacts,
-        syntaxInput,
-        sourceFile,
-        tsModule: this.tsModule,
-      }),
-    );
-  }
-
-  #addRecord(record: ImportRecord): void {
-    const records = this.#getRecords(record.filePath);
-    if (records.includes(record)) return;
-    this.#recordsByFile.set(record.filePath, [...records, record]);
-  }
-
-  #getRecords(fileName: string): readonly ImportRecord[] {
-    return this.#recordsByFile.get(normalizeAbsolutePath(fileName)) ?? [];
-  }
-
-  #getRegisteredSourceFile(fileName: string): ts.SourceFile | undefined {
-    return this.#sourceFiles.get(normalizeAbsolutePath(fileName));
-  }
-
-  #assertActive(): void {
-    if (this.#disposed) {
-      throw new Error('TypeScript semantic context was disposed.');
-    }
   }
 }
 

@@ -3,6 +3,7 @@ import {
   isBuildCapablePreset,
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import type { CheckerOwnershipPlan } from './checker-ownership-types';
 import { getGeneratedCheckerEntryPath } from './generated/paths';
@@ -17,7 +18,7 @@ import type {
   SourceProject,
 } from './types';
 
-function getPackageRootDir(options: {
+function getPackageRootDirectory(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   sourceConfigPath: string;
 }): string {
@@ -48,13 +49,13 @@ function createCheckerSolutions(options: {
   selection: ResolvedCheckerEntrySelection;
 }): ReturnType<typeof createSolutionProject>[] {
   return [...options.collection.solutionConfigPaths]
-    .sort()
+    .sort(compareCodeUnits)
     .map((sourceConfigPath) =>
       createSolutionProject({
         checkerName: options.selection.checker.name,
         collection: options.collection,
         config: options.config,
-        packageRootDir: getPackageRootDir({
+        packageRootDir: getPackageRootDirectory({
           activatedRegions: options.activatedRegions,
           sourceConfigPath,
         }),
@@ -127,8 +128,9 @@ function createDeclarationProject(
   unitsByConfigPath: ReadonlyMap<string, GovernedSourceUnit>,
 ): SourceProject[] {
   const unit = unitsByConfigPath.get(project.configPath);
-  if (unit === undefined) return [];
-  return [{ ...project, fileNames: [...unit.declarationFileNames] }];
+  return unit === undefined
+    ? []
+    : [{ ...project, fileNames: [...unit.declarationFileNames] }];
 }
 
 function getProjectionReferences(
@@ -174,7 +176,7 @@ function getCheckerParsingOptions(
   }
   return {
     checkerPreset: 'tsc',
-    discoveryExtensions: checkerName === 'astro' ? ['.astro'] : ['.svelte'],
+    discoveryExtensions: [checkerName === 'astro' ? '.astro' : '.svelte'],
   };
 }
 
@@ -221,14 +223,14 @@ export function prepareCheckerGraph(options: {
     projectConfigCache: options.projectConfigCache,
   });
   const primaryProjects = [...collection.projectConfigPaths]
-    .sort()
+    .sort(compareCodeUnits)
     .map((sourceConfigPath) =>
       createSourceProject({
         checkerName: options.selection.checker.name,
         checkerPreset: parsing.checkerPreset,
         config: options.config,
         discoveryExtensions: parsing.discoveryExtensions,
-        packageRootDir: getPackageRootDir({
+        packageRootDir: getPackageRootDirectory({
           activatedRegions: options.activatedRegions,
           sourceConfigPath,
         }),

@@ -6,11 +6,11 @@ import {
   type ImportRecordKind,
 } from './records';
 
-const jsDocImportRE = /import\(\s*['"]([^'"]+)['"]\s*\)(?:\.\w+)?/gu;
-const jsDocImportTagRE =
+const jsDocumentImportRE = /import\(\s*['"]([^'"]+)['"]\s*\)(?:\.\w+)?/gu;
+const jsDocumentImportTagRE =
   /@import\s+(?:\{[^}]*\}|\*\s+as\s+\w+)\s+from\s+['"]([^'"]+)['"]/gu;
 const jsxImportSourceRE = /@jsxImportSource\s+([^\s*]+)/gu;
-const envPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/gu;
+const environmentPragmaRE = /@(vitest|jest)-environment\s+([@\w./-]+)/gu;
 const tripleSlashPathReferenceRE =
   /\/\/\/\s*<reference\s+path\s*=\s*["']([^"']+)["'][^/]*\/>/gu;
 const tripleSlashTypesReferenceRE =
@@ -72,22 +72,20 @@ function getMatchedSpecifier(
   options: CommentImportOptions,
   match: RegExpMatchArray,
 ): string | null {
-  if (options.resolveSpecifier !== undefined) {
-    return options.resolveSpecifier(match);
-  }
-  return match[1] ?? null;
+  return options.resolveSpecifier === undefined
+    ? (match[1] ?? null)
+    : options.resolveSpecifier(match);
 }
 
 function isQuote(value: string | undefined): boolean {
-  return value === '"' || value === "'" || value === '`';
+  return ['"', "'", '`'].includes(value ?? '');
 }
 
 function hasStringQuotes(options: {
   after: string | undefined;
   before: string | undefined;
 }): boolean {
-  if (!isQuote(options.before)) return false;
-  return options.before === options.after;
+  return isQuote(options.before) && options.before === options.after;
 }
 
 function getSpecifierOffset(
@@ -118,19 +116,19 @@ function appendCommentMatch(options: {
 }): void {
   const offset = getSpecifierOffset(options.match, options.specifier);
   const before = offset > 0 ? options.match[0][offset - 1] : undefined;
-  const quoted = hasStringQuotes({
+  const isQuoted = hasStringQuotes({
     after: options.match[0][offset + options.specifier.length],
     before,
   });
   const tokenStart = getTokenStart({
     commentStart: options.collection.commentStart,
     match: options.match,
-    quoted,
+    quoted: isQuoted,
     specifierOffset: offset,
   });
   options.collection.records.push(
     createImportRecord({
-      end: tokenStart + options.specifier.length + (quoted ? 2 : 0),
+      end: tokenStart + options.specifier.length + (isQuoted ? 2 : 0),
       filePath: options.collection.filePath,
       kind: options.collection.kind,
       lineOffset: options.collection.lineOffset,
@@ -143,8 +141,7 @@ function appendCommentMatch(options: {
 }
 
 function hasSpecifier(specifier: string | null): specifier is string {
-  if (specifier === null) return false;
-  return specifier.length > 0;
+  return specifier !== null && specifier.length > 0;
 }
 
 function addCommentImportRecords(options: CommentImportOptions): void {
@@ -168,26 +165,25 @@ function resolveEnvironmentPragma(
   environment: string,
 ): string | null {
   const key = `${tool}\0${environment}`;
-  if (ENVIRONMENT_PRAGMA_ALIASES.has(key)) {
-    return ENVIRONMENT_PRAGMA_ALIASES.get(key) ?? null;
-  }
-  return environment;
+  return ENVIRONMENT_PRAGMA_ALIASES.has(key)
+    ? (ENVIRONMENT_PRAGMA_ALIASES.get(key) ?? null)
+    : environment;
 }
 
 function resolvePragmaMatch(match: RegExpMatchArray): string | null {
   const tool = match[1];
   const environment = match[2];
-  if (tool === undefined) return null;
-  if (environment === undefined) return null;
-  return resolveEnvironmentPragma(tool, environment);
+  return tool === undefined || environment === undefined
+    ? null
+    : resolveEnvironmentPragma(tool, environment);
 }
 
 function addStandardCommentImports(
   common: Omit<CommentImportOptions, 'kind' | 'regex'>,
 ): void {
   const entries: [ImportRecordKind, RegExp][] = [
-    ['jsdoc-import', jsDocImportRE],
-    ['jsdoc-import', jsDocImportTagRE],
+    ['jsdoc-import', jsDocumentImportRE],
+    ['jsdoc-import', jsDocumentImportTagRE],
     ['jsx-import-source', jsxImportSourceRE],
     ['triple-slash-path', tripleSlashPathReferenceRE],
     ['triple-slash-types', tripleSlashTypesReferenceRE],
@@ -203,7 +199,7 @@ function addEnvironmentCommentImport(
   addCommentImportRecords({
     ...common,
     kind: 'environment-pragma',
-    regex: envPragmaRE,
+    regex: environmentPragmaRE,
     resolveSpecifier: resolvePragmaMatch,
   });
 }
@@ -256,8 +252,7 @@ function scanCommentTokens(context: CommentScanContext): void {
 }
 
 function getLineOffset(value: number | undefined): number {
-  if (value === undefined) return 0;
-  return value;
+  return value === undefined ? 0 : value;
 }
 
 export function collectCommentImports(options: {

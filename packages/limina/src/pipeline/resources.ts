@@ -1,12 +1,12 @@
 import type { BuiltinTaskName } from '#config/runner';
 import type { ResourceRequest } from '../execution/resources';
 
-const repositoryRead = ['repository:snapshot', 'workspace:manifest'] as const;
+const repoRead = ['repository:snapshot', 'workspace:manifest'] as const;
 
 const builtinTaskResources: Record<BuiltinTaskName, ResourceRequest> = {
   'checker:build': {
     read: [
-      ...repositoryRead,
+      ...repoRead,
       'preflight:generated-graph',
       'workspace:generated-files',
     ],
@@ -14,7 +14,7 @@ const builtinTaskResources: Record<BuiltinTaskName, ResourceRequest> = {
   },
   'checker:typecheck': {
     read: [
-      ...repositoryRead,
+      ...repoRead,
       'preflight:generated-graph',
       'workspace:generated-files',
     ],
@@ -22,7 +22,7 @@ const builtinTaskResources: Record<BuiltinTaskName, ResourceRequest> = {
   },
   'graph:check': {
     read: [
-      ...repositoryRead,
+      ...repoRead,
       'preflight:generated-graph',
       'preflight:workspace-packages',
       'preflight:importers',
@@ -30,18 +30,18 @@ const builtinTaskResources: Record<BuiltinTaskName, ResourceRequest> = {
   },
   'graph:prepare': {
     read: [
-      ...repositoryRead,
+      ...repoRead,
       'preflight:generated-graph',
       'workspace:generated-files',
     ],
   },
   'package:check': {
-    read: [...repositoryRead, 'package-out'],
+    read: [...repoRead, 'package-out'],
     write: ['package-tarball'],
   },
   'proof:check': {
     read: [
-      ...repositoryRead,
+      ...repoRead,
       'preflight:generated-graph',
       'preflight:graph-project-routes',
       'preflight:checker-entry-project-routes',
@@ -49,7 +49,7 @@ const builtinTaskResources: Record<BuiltinTaskName, ResourceRequest> = {
     ],
   },
   'release:check': {
-    read: [...repositoryRead, 'package-out'],
+    read: [...repoRead, 'package-out'],
     write: ['release-tarball'],
   },
   'source:check': {

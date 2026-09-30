@@ -11,7 +11,7 @@ type TarballTask = ReturnType<
   NonNullable<RunPackageCheckEntryOptions['flow']>['start']
 >;
 
-function needsPackedTarball(checks: readonly PackageCheckTool[]): boolean {
+function isNeedsPackedTarball(checks: readonly PackageCheckTool[]): boolean {
   return checks.some((check) => check === 'publint' || check === 'attw');
 }
 
@@ -106,8 +106,7 @@ export function prepareEntryTarball(options: {
   entry: PackageEntry;
   runOptions: RunPackageCheckEntryOptions;
 }): Promise<PackedPackageTarball | undefined> {
-  if (!needsPackedTarball(options.runOptions.checks)) {
-    return noPackedTarball();
-  }
-  return packEntryOutput(options);
+  return isNeedsPackedTarball(options.runOptions.checks)
+    ? packEntryOutput(options)
+    : noPackedTarball();
 }

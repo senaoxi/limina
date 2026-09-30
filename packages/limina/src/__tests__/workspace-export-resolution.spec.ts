@@ -20,19 +20,26 @@ describe('workspace export resolver proof', () => {
   it.each(['astro-v7-min', 'astro-v7-current'])(
     'retains actual Astro resolver authority (%s)',
     async (astroPackage) => {
-      const directory = await realpath(
-        await mkdtemp(path.join(tmpdir(), 'limina-astro-export-proof-')),
+      const directoryTemporaryPath = await mkdtemp(
+        path.join(tmpdir(), 'limina-astro-export-proof-'),
       );
-      const req = createRequire(import.meta.url);
+      const directory = await realpath(directoryTemporaryPath);
+      const request = createRequire(import.meta.url);
       const importAnalysis = createImportAnalysisContext();
       try {
         for (const [name, target] of [
-          ['astro', path.dirname(req.resolve(`${astroPackage}/package.json`))],
+          [
+            'astro',
+            path.dirname(request.resolve(`${astroPackage}/package.json`)),
+          ],
           [
             '@astrojs/check',
             await realpath(path.resolve('node_modules/@astrojs/check')),
           ],
-          ['typescript', path.dirname(req.resolve('typescript/package.json'))],
+          [
+            'typescript',
+            path.dirname(request.resolve('typescript/package.json')),
+          ],
         ]) {
           const installed = path.join(directory, 'node_modules', name!);
           await mkdir(path.dirname(installed), { recursive: true });
@@ -163,14 +170,14 @@ describe('workspace export resolver proof', () => {
   ])(
     'requires actual resolution for $label',
     async ({ exports, conditions, stable }) => {
-      const rootDir = await mkdtemp(
+      const rootDirectory = await mkdtemp(
         path.join(tmpdir(), 'limina-export-proof-'),
       );
-      const directory = path.join(rootDir, 'pkg');
+      const directory = path.join(rootDirectory, 'pkg');
       const importAnalysis = createImportAnalysisContext();
       try {
         await mkdir(directory);
-        await writeFile(path.join(rootDir, 'outside.d.ts'), 'export {};');
+        await writeFile(path.join(rootDirectory, 'outside.d.ts'), 'export {};');
         const manifest = { name: 'proof-fixture', type: 'module', exports };
         await writeFile(
           path.join(directory, 'package.json'),
@@ -224,7 +231,7 @@ describe('workspace export resolver proof', () => {
         expect(evidence.typeScriptResolution !== null).toBe(stable);
       } finally {
         importAnalysis.dispose?.();
-        await rm(rootDir, { recursive: true, force: true });
+        await rm(rootDirectory, { recursive: true, force: true });
       }
     },
   );
