@@ -16,8 +16,7 @@ interface FlowCleanupResult {
 }
 
 function attachCleanupError(primary: unknown, cleanup: unknown): void {
-  if (!(primary instanceof Error)) return;
-  if (cleanup === undefined) return;
+  if (cleanup === undefined || !(primary instanceof Error)) return;
   Object.defineProperty(primary, 'flowCloseError', {
     configurable: true,
     value: cleanup,
@@ -72,10 +71,10 @@ export async function closeCliFlow(
 }
 
 async function executeFlowOperation(
-  execute: () => Promise<boolean>,
+  isExecute: () => Promise<boolean>,
 ): Promise<{ error?: unknown; passed: boolean }> {
   try {
-    return { passed: await execute() };
+    return { passed: await isExecute() };
   } catch (error) {
     return { error, passed: false };
   }
@@ -93,12 +92,12 @@ function throwFlowOperationError(
   if (cleanup.error !== undefined) throw cleanup.error;
 }
 
-export async function runCliFlowWithCleanup(
+export async function isRunCliFlowWithCleanup(
   flow: CliFlowBoundary,
   messages: { failed: string; passed: string },
-  execute: () => Promise<boolean>,
+  isExecute: () => Promise<boolean>,
 ): Promise<boolean> {
-  const execution = await executeFlowOperation(execute);
+  const execution = await executeFlowOperation(isExecute);
   const message = execution.passed ? messages.passed : messages.failed;
   const cleanup = await runCloseBoundary(flow, message);
   throwFlowOperationError(execution, cleanup);
@@ -119,11 +118,11 @@ async function runCloseBoundary(
 
 export function runCheckWithCliFlowCleanup(
   flow: CliFlowBoundary,
-  execute: () => Promise<boolean>,
+  isExecute: () => Promise<boolean>,
 ): Promise<boolean> {
-  return runCliFlowWithCleanup(
+  return isRunCliFlowWithCleanup(
     flow,
     { failed: 'limina check failed', passed: 'limina check passed' },
-    execute,
+    isExecute,
   );
 }

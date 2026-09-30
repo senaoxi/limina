@@ -3,7 +3,7 @@ import path from 'pathe';
 import { readReleaseRegistryTestAuthority } from '../../release-registry-test-seam';
 import {
   createRegistryAuthority,
-  type ReleaseRegistryConfiguration,
+  type ReleaseRegistryConfig,
 } from './authority';
 import {
   readNpmEnvironment,
@@ -27,7 +27,7 @@ function defaultPrefix(environment: NodeJS.ProcessEnv): string {
 }
 
 function packageScope(packageName: string): string | undefined {
-  return packageName.startsWith('@') ? packageName.split('/')[0] : undefined;
+  return packageName.startsWith('@') ? packageName.split('/', 1)[0] : undefined;
 }
 
 function selectRegistry(settings: RegistrySettings, packageName: string) {
@@ -89,7 +89,7 @@ function readSettings(
   environment: NodeJS.ProcessEnv,
 ): RegistrySettings {
   const home = environment.HOME ?? environment.USERPROFILE ?? homedir();
-  const env = readNpmEnvironment(environment);
+  const environment_ = readNpmEnvironment(environment);
   const project = readNpmrc({
     filePath: path.join(resolveNpmProjectDirectory(cwd), '.npmrc'),
     environment,
@@ -100,21 +100,21 @@ function readSettings(
     cwd,
     environment,
     home,
-    settings: new Map([...project, ...env]),
+    settings: new Map([...project, ...environment_]),
   });
   const global = readGlobalSettings({
     cwd,
     environment,
     home,
-    settings: new Map([...user, ...project, ...env]),
+    settings: new Map([...user, ...project, ...environment_]),
   });
-  return new Map([...global, ...user, ...project, ...env]);
+  return new Map([...global, ...user, ...project, ...environment_]);
 }
 
-export function loadReleaseRegistryConfiguration(
+export function loadReleaseRegistryConfig(
   cwd: string,
   environment: NodeJS.ProcessEnv = process.env,
-): ReleaseRegistryConfiguration {
+): ReleaseRegistryConfig {
   const snapshot = { ...environment };
   const testAuthority = readReleaseRegistryTestAuthority(snapshot);
   if (testAuthority !== undefined)

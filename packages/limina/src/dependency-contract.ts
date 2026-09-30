@@ -143,22 +143,25 @@ function isLiminaRuntimePackageName(
 export function getExternalCheckerDependencyContract(
   packageName: string,
 ): LiminaDependencyContract | undefined {
-  if (!isExternalCheckerPackageName(packageName)) return undefined;
-  return externalCheckerDependencyContracts[packageName];
+  return isExternalCheckerPackageName(packageName)
+    ? externalCheckerDependencyContracts[packageName]
+    : undefined;
 }
 
 export function getCheckerToolchainDependencyContract(
   packageName: string,
 ): LiminaDependencyContract | undefined {
-  if (!isCheckerToolchainPackageName(packageName)) return undefined;
-  return checkerToolchainDependencyContracts[packageName];
+  return isCheckerToolchainPackageName(packageName)
+    ? checkerToolchainDependencyContracts[packageName]
+    : undefined;
 }
 
 export function getLiminaRuntimeDependencyContract(
   packageName: string,
 ): LiminaDependencyContract | undefined {
-  if (!isLiminaRuntimePackageName(packageName)) return undefined;
-  return liminaRuntimeDependencyContracts[packageName];
+  return isLiminaRuntimePackageName(packageName)
+    ? liminaRuntimeDependencyContracts[packageName]
+    : undefined;
 }
 
 export function isSupportedDependencyVersion(options: {
@@ -185,20 +188,28 @@ function isPackageManifest(
   return manifest !== null && manifest.name === packageName;
 }
 
+function* packageAncestorDirectories(
+  startDirectory: string,
+): Generator<string> {
+  let directory = startDirectory;
+  while (true) {
+    yield directory;
+    const parentDirectory = path.dirname(directory);
+    if (parentDirectory === directory) return;
+    directory = parentDirectory;
+  }
+}
+
 function findPackageManifestInAncestors(options: {
   directory: string;
   packageName: string;
 }): PackageManifest | null {
-  const manifest = readPackageManifest(
-    path.join(options.directory, 'package.json'),
-  );
-  if (isPackageManifest(manifest, options.packageName)) return manifest;
-  const parentDirectory = path.dirname(options.directory);
-  if (parentDirectory === options.directory) return null;
-  return findPackageManifestInAncestors({
-    directory: parentDirectory,
-    packageName: options.packageName,
-  });
+  const directories = packageAncestorDirectories(options.directory);
+  for (const directory of directories) {
+    const manifest = readPackageManifest(path.join(directory, 'package.json'));
+    if (isPackageManifest(manifest, options.packageName)) return manifest;
+  }
+  return null;
 }
 
 function findResolvedPackageManifest(options: {

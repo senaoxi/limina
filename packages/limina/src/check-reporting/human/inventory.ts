@@ -23,23 +23,20 @@ function getLocationSummary(value: string | undefined): string {
 }
 
 function getIssueTool(issue: LiminaCheckIssue): string | undefined {
-  if (issue.tool !== undefined) return issue.tool;
-  return issue.external?.tool;
+  return issue.tool === undefined ? issue.external?.tool : issue.tool;
 }
 
 function getCompactReason(issue: LiminaCheckIssue): {
   label: 'reason' | 'summary';
   value: string;
 } {
-  if (issue.summary !== undefined && issue.summary.length > 0) {
-    return { label: 'summary', value: collapseIssueScalar(issue.summary) };
-  }
-  return { label: 'reason', value: collapseIssueScalar(issue.reason) };
+  return issue.summary !== undefined && issue.summary.length > 0
+    ? { label: 'summary', value: collapseIssueScalar(issue.summary) }
+    : { label: 'reason', value: collapseIssueScalar(issue.reason) };
 }
 
 function getCompactFix(issue: LiminaCheckIssue): string | undefined {
-  if (issue.fix === undefined) return undefined;
-  return collapseIssueScalar(issue.fix);
+  return issue.fix === undefined ? undefined : collapseIssueScalar(issue.fix);
 }
 
 function formatCompactInventoryIssueLines(
@@ -66,8 +63,7 @@ function getDeduplicatedRawDetailLines(issue: LiminaCheckIssue): string[] {
   );
   const seen = new Set<string>();
   return (issue.detailLines ?? []).filter((line) => {
-    if (evidenceLines.has(line)) return false;
-    if (seen.has(line)) return false;
+    if (evidenceLines.has(line) || seen.has(line)) return false;
     seen.add(line);
     return true;
   });
@@ -83,19 +79,22 @@ function appendOptionalSection(
 }
 
 function formatNumberedSteps(steps: readonly string[] | undefined): string[] {
-  if (steps === undefined) return [];
-  return steps.map((step, index) => `  ${index + 1}. ${step}`);
+  return steps === undefined
+    ? []
+    : steps.map((step, index) => `  ${index + 1}. ${step}`);
 }
 
 function formatCommands(commands: readonly string[] | undefined): string[] {
-  if (commands === undefined) return [];
-  return commands.map((command) => `  - ${command}`);
+  return commands === undefined
+    ? []
+    : commands.map((command) => `  - ${command}`);
 }
 
 function formatLocations(issue: LiminaCheckIssue): string[] {
   const locations = getAllCanonicalIssueLocations(issue);
-  if (locations.length === 0) return ['  - (not recorded)'];
-  return locations.map((location) => `  - ${location}`);
+  return locations.length === 0
+    ? ['  - (not recorded)']
+    : locations.map((location) => `  - ${location}`);
 }
 
 function appendMetadata(lines: string[], issue: LiminaCheckIssue): void {
@@ -117,8 +116,9 @@ function formatFixSection(issue: LiminaCheckIssue): string[] {
 }
 
 function formatEvidenceSection(issue: LiminaCheckIssue): string[] {
-  if (issue.evidence === undefined) return [];
-  return issue.evidence.flatMap(formatEvidenceLine);
+  return issue.evidence === undefined
+    ? []
+    : issue.evidence.flatMap(formatEvidenceLine);
 }
 
 function formatDetailedInventoryIssueLines(issue: LiminaCheckIssue): string[] {

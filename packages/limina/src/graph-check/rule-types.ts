@@ -1,12 +1,12 @@
-export interface GraphRuleRef {
+export interface GraphRuleReference {
   path: string;
   reason: string;
 }
 
-export type GraphRuleRefDeny = GraphRuleRef;
-export type GraphRuleRefAllow = GraphRuleRef;
+export type GraphRuleReferenceDeny = GraphRuleReference;
+export type GraphRuleReferenceAllow = GraphRuleReference;
 
-export interface GraphRuleDepDeny {
+export interface GraphRuleDependencyDeny {
   kind: 'node-builtin' | 'package' | 'package-import';
   matchAllNodeBuiltins: boolean;
   name: string;
@@ -15,9 +15,9 @@ export interface GraphRuleDepDeny {
 }
 
 export interface NormalizedGraphRules {
-  allowRefsByLabel: Map<string, Map<string, GraphRuleRefAllow>>;
-  depsByLabel: Map<string, GraphRuleDepDeny[]>;
-  refsByLabel: Map<string, Map<string, GraphRuleRefDeny>>;
+  allowRefsByLabel: Map<string, Map<string, GraphRuleReferenceAllow>>;
+  depsByLabel: Map<string, GraphRuleDependencyDeny[]>;
+  refsByLabel: Map<string, Map<string, GraphRuleReferenceDeny>>;
 }
 
 export interface GraphRuleKindSelection {

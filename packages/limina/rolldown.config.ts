@@ -4,34 +4,36 @@ import { fileURLToPath } from 'node:url';
 import path from 'pathe';
 import { defineConfig, type RolldownOptions } from 'rolldown';
 import { dts } from 'rolldown-plugin-dts';
-import pkg from './package.json' with { type: 'json' };
+import package_ from './package.json' with { type: 'json' };
 import packagePlugin from './packagePlugin';
 
-const packageDir = fileURLToPath(new URL('.', import.meta.url));
-let hasCleanedDist = false;
-const packageExternalDeps = [
-  ...Object.keys(pkg.dependencies || {}),
-  ...Object.keys(pkg.peerDependencies || {}),
+const packageDirectory = fileURLToPath(new URL('.', import.meta.url));
+const distributionState = { hasCleaned: false };
+const packageExternalDependencies = [
+  ...Object.keys(package_.dependencies || {}),
+  ...Object.keys(package_.peerDependencies || {}),
   // @ts-expect-error No type checking is needed here.
-  ...Object.keys(pkg.optionalDependencies ?? {}),
+  ...Object.keys(package_.optionalDependencies ?? {}),
 ];
 
 function isPackageExternal(id: string): boolean {
-  return packageExternalDeps.some(
+  return packageExternalDependencies.some(
     (dependencyName) =>
       id === dependencyName || id.startsWith(`${dependencyName}/`),
   );
 }
 
-const cleanDistPlugin = (): NonNullable<RolldownOptions['plugins']> => ({
+const cleanDistributionPlugin = (): NonNullable<
+  RolldownOptions['plugins']
+> => ({
   name: 'rolldown-plugin-clean-dist',
   async buildStart() {
-    if (hasCleanedDist) {
+    if (distributionState.hasCleaned) {
       return;
     }
 
-    hasCleanedDist = true;
-    await rm(path.resolve(packageDir, 'dist'), {
+    distributionState.hasCleaned = true;
+    await rm(path.resolve(packageDirectory, 'dist'), {
       force: true,
       recursive: true,
     });
@@ -51,13 +53,13 @@ const moduleConfig: RolldownOptions = defineConfig({
   preserveEntrySignatures: 'strict',
   external: isPackageExternal,
   plugins: [
-    cleanDistPlugin(),
+    cleanDistributionPlugin(),
     packagePlugin(),
     licensePlugin(
-      path.resolve(packageDir, 'LICENSE.md'),
+      path.resolve(packageDirectory, 'LICENSE.md'),
       'limina license',
       'limina',
-      path.resolve(packageDir, '../../LICENSE'),
+      path.resolve(packageDirectory, '../../LICENSE'),
     ),
   ],
   output: {

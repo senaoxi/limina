@@ -1,6 +1,6 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { describe, expect, it } from 'vitest';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 import {
   getLiminaCheckIssueRuleMetadata,
@@ -17,13 +17,10 @@ import {
   type GraphSemanticIssueCode,
 } from '../graph-check/findings';
 
-const config = {
-  get governanceRoot() {
-    return resolveFixtureGovernanceRoot(this);
-  },
+const config = withFixtureGovernanceRoot({
   configPath: '/repo/limina.config.mts',
   rootDir: '/repo',
-} as ResolvedLiminaConfig;
+}) as ResolvedLiminaConfig;
 
 const importFact: GraphImportFact = {
   filePath: '/repo/packages/app/src/index.ts',
@@ -234,10 +231,18 @@ describe('typed Graph findings', () => {
           getLiminaCheckIssueRuleMetadata(code).task === 'graph:check' &&
           code !== LIMINA_CHECK_ISSUE_CODES.graphCheckFailed,
       )
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
 
-    expect([...GRAPH_SEMANTIC_ISSUE_CODES].sort()).toEqual(registryCodes);
-    expect(Object.keys(findingByCode).sort()).toEqual(registryCodes);
+    expect(
+      [...GRAPH_SEMANTIC_ISSUE_CODES].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
+    expect(
+      Object.keys(findingByCode).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
   });
 
   it.each(graphFindingEntries())(

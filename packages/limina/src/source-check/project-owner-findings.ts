@@ -5,7 +5,7 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 
 interface OwnerCollection {
@@ -123,7 +123,7 @@ function addMixedOwnerFinding(
   const title = 'Tsconfig source file set mixes source owners';
   const reason =
     'non-aggregator tsconfig leaves and their companion typecheck configs must stay within one workspace source owner scope.';
-  const ownerManifestPaths = [...ownerPaths.keys()];
+  const ownerManifestPaths = ownerPaths.keys().toArray();
   const lines = [
     `${title}:`,
     `  ${options.role}: ${toRelativePath(options.config.rootDir, options.configPath)}`,

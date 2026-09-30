@@ -24,9 +24,11 @@ function assertPortableSeparators(value: string, label: string): void {
 }
 
 function isAbsolutePortablePath(value: string): boolean {
-  if (value.includes('\0')) return true;
-  if (path.isAbsolute(value)) return true;
-  return WINDOWS_ABSOLUTE_PATH_PATTERN.test(value);
+  return (
+    value.includes('\0') ||
+    path.isAbsolute(value) ||
+    WINDOWS_ABSOLUTE_PATH_PATTERN.test(value)
+  );
 }
 
 function assertRelativePath(value: string, label: string): void {
@@ -35,9 +37,7 @@ function assertRelativePath(value: string, label: string): void {
 }
 
 function isInvalidPathSegment(segment: string): boolean {
-  if (segment.length === 0) return true;
-  if (segment === '.') return true;
-  return segment === '..';
+  return segment.length === 0 || segment === '.' || segment === '..';
 }
 
 function assertPathSegments(
@@ -57,8 +57,11 @@ function assertNoGlobSyntax(
   segments: readonly string[],
   options: PortablePathOptions & { value: string },
 ): void {
-  if (options.allowGlob === true) return;
-  if (!segments.some((segment) => GLOB_SYNTAX_PATTERN.test(segment))) return;
+  if (
+    options.allowGlob === true ||
+    segments.every((segment) => !GLOB_SYNTAX_PATTERN.test(segment))
+  )
+    return;
   throw new Error(
     `${options.label} must not contain glob syntax: ${options.value}`,
   );
@@ -78,13 +81,13 @@ export function validatePortableRelativePath(
 }
 
 export function resolvePortablePathInside(
-  rootDir: string,
+  rootDirectory: string,
   relativePath: string,
   label = 'fixture path',
 ): string {
   validatePortableRelativePath(relativePath, { label });
-  const candidatePath = path.resolve(rootDir, ...relativePath.split('/'));
-  if (!isPathInsideDirectory(candidatePath, rootDir)) {
+  const candidatePath = path.resolve(rootDirectory, ...relativePath.split('/'));
+  if (!isPathInsideDirectory(candidatePath, rootDirectory)) {
     throw new Error(`${label} escapes its root: ${relativePath}`);
   }
   return candidatePath;
@@ -94,6 +97,7 @@ export function isPortablePathAtOrBelow(
   candidatePath: string,
   parentPath: string,
 ): boolean {
-  if (candidatePath === parentPath) return true;
-  return candidatePath.startsWith(`${parentPath}/`);
+  return (
+    candidatePath === parentPath || candidatePath.startsWith(`${parentPath}/`)
+  );
 }

@@ -84,9 +84,9 @@ function createParsedFileIgnore(options: {
   file: string | null;
   reason: string | null;
 }): ParsedFileIgnore | null {
-  if (options.file === null) return null;
-  if (options.reason === null) return null;
-  return { file: options.file, reason: options.reason };
+  return options.file === null || options.reason === null
+    ? null
+    : { file: options.file, reason: options.reason };
 }
 
 function parseIgnoreRecord(options: {
@@ -161,7 +161,7 @@ function addUnknownFileFinding(options: {
   });
 }
 
-function ownerContainsFile(options: {
+function isOwnerContainsFile(options: {
   context: UnusedModuleConfigContext;
   filePath: string;
   ownerIdentity: PackageOwnerIdentity;
@@ -169,8 +169,7 @@ function ownerContainsFile(options: {
   const ownerFiles = options.context.moduleFilesByOwnerIdentity.get(
     options.ownerIdentity,
   );
-  if (ownerFiles === undefined) return false;
-  return ownerFiles.has(options.filePath);
+  return ownerFiles !== undefined && ownerFiles.has(options.filePath);
 }
 
 function validateOwnedFilePath(options: {
@@ -180,7 +179,7 @@ function validateOwnedFilePath(options: {
   filePath: string;
   ownerIdentity: PackageOwnerIdentity;
 }): string | null {
-  if (ownerContainsFile(options)) return options.filePath;
+  if (isOwnerContainsFile(options)) return options.filePath;
   addUnknownFileFinding(options);
   return null;
 }
@@ -215,8 +214,9 @@ function collectIgnoreKey(options: {
     file: parsed.file,
     ownerIdentity: options.ownerIdentity,
   });
-  if (filePath === null) return null;
-  return createOwnerSourceFileKey(options.ownerIdentity, filePath);
+  return filePath === null
+    ? null
+    : createOwnerSourceFileKey(options.ownerIdentity, filePath);
 }
 
 function addMissingOwnerFinding(options: WorkspaceUnusedConfigOptions): void {

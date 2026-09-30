@@ -1,14 +1,14 @@
 import type { LiminaCheckIssue } from '../../check-reporting/snapshot';
-import { loadReleaseRegistryConfiguration } from '../../package-check/release/registry/configuration';
+import { loadReleaseRegistryConfig } from '../../package-check/release/registry/config';
 import {
   createReleaseCommandContext,
   logReleaseCheckPlan,
   type ReleaseCommandContext,
 } from './command-context';
 import {
-  handleFailedReleaseCheck,
-  handlePassedReleaseCheck,
   handleReleaseCommandError,
+  isHandleFailedReleaseCheck,
+  isHandlePassedReleaseCheck,
   recordReleaseStats,
 } from './command-result';
 import { runReleaseCheckEntries } from './entry-pool';
@@ -32,16 +32,16 @@ function appendInitialIssues(
   }
 }
 
-function entriesPassed(
+function isEntriesPassed(
   entryResults: readonly ReleaseCheckEntryRunResult[],
 ): boolean {
   return entryResults.every((result) => result.passed);
 }
 
-export async function executeReleaseCommand(
+export async function isExecuteReleaseCommand(
   context: ReleaseCommandContext,
 ): Promise<boolean> {
-  const registryConfiguration = loadReleaseRegistryConfiguration(context.cwd);
+  const registryConfig = loadReleaseRegistryConfig(context.cwd);
   const plan = await context.preflight.ensurePackageEntrySelectionPlan({
     cwd: context.cwd,
     packageNames: context.options.packageNames,
@@ -54,7 +54,7 @@ export async function executeReleaseCommand(
   });
   const workspacePackages = await context.preflight.ensureWorkspacePackages();
   const entryResults = await runReleaseCheckEntries({
-    registryConfiguration,
+    registryConfiguration: registryConfig,
     entries: plan.entries,
     runOptions: context.options,
     workspacePackages,
@@ -62,18 +62,18 @@ export async function executeReleaseCommand(
   const issues = collectEntryIssues(entryResults);
   appendInitialIssues(context.options.issues, issues);
   recordReleaseStats(context, entryResults);
-  return entriesPassed(entryResults)
-    ? handlePassedReleaseCheck(context)
-    : handleFailedReleaseCheck(context, issues);
+  return isEntriesPassed(entryResults)
+    ? isHandlePassedReleaseCheck(context)
+    : isHandleFailedReleaseCheck(context, issues);
 }
 
-export async function runReleaseCheck(
+export async function isRunReleaseCheck(
   options: RunReleaseCheckOptions,
 ): Promise<boolean> {
   const context = createReleaseCommandContext(options);
 
   try {
-    return await executeReleaseCommand(context);
+    return await isExecuteReleaseCommand(context);
   } catch (error) {
     return handleReleaseCommandError(context, error);
   }

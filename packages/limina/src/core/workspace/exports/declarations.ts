@@ -15,8 +15,7 @@ const declarationModulePattern = /\.d\.(?:cts|mts|ts)$/u;
 const declarationExtensions = ['.d.ts', '.d.mts', '.d.cts'] as const;
 
 function isResolvableDeclarationTarget(target: string): boolean {
-  if (path.isAbsolute(target)) return false;
-  return !target.includes('*');
+  return !path.isAbsolute(target) && !target.includes('*');
 }
 
 function findDeclarationCandidate(basePath: string): string | undefined {
@@ -28,9 +27,9 @@ function findDeclarationCandidate(basePath: string): string | undefined {
 function normalizeDeclarationCandidate(
   candidate: string | undefined,
 ): string | null {
-  if (candidate === undefined) return null;
-  if (!declarationModulePattern.test(candidate)) return null;
-  return normalizeAbsolutePath(candidate);
+  return candidate === undefined || !declarationModulePattern.test(candidate)
+    ? null
+    : normalizeAbsolutePath(candidate);
 }
 
 function resolvePackageDeclarationTarget(
@@ -41,8 +40,9 @@ function resolvePackageDeclarationTarget(
   const basePath = normalizeAbsolutePath(
     path.resolve(packageDirectory, target),
   );
-  if (!isPathInsideDirectory(basePath, packageDirectory)) return null;
-  return normalizeDeclarationCandidate(findDeclarationCandidate(basePath));
+  return isPathInsideDirectory(basePath, packageDirectory)
+    ? normalizeDeclarationCandidate(findDeclarationCandidate(basePath))
+    : null;
 }
 
 function resolveDeclarationTargets(

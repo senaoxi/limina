@@ -6,7 +6,7 @@ import globals from 'globals';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const tsconfigRootDir = path.dirname(fileURLToPath(import.meta.url));
+const tsconfigRootDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig([
   ...eslintGeneralConfig,
@@ -17,7 +17,7 @@ export default defineConfig([
       parser: typescriptESlintParser,
       parserOptions: {
         projectService: true,
-        tsconfigRootDir,
+        tsconfigRootDir: tsconfigRootDirectory,
         ecmaVersion: supportedEcmaVersion,
         sourceType: 'module',
       },

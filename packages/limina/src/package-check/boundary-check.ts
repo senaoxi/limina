@@ -95,7 +95,7 @@ function failBoundaryTask(
   if (task !== undefined) task.fail(message);
 }
 
-function finishPassedBoundary(options: {
+function isFinishPassedBoundary(options: {
   checkOptions: BoundaryCheckOptions;
   elapsed: ReturnType<typeof createElapsedTimer>;
   label: string;
@@ -111,7 +111,7 @@ function finishPassedBoundary(options: {
   return true;
 }
 
-function finishFailedBoundary(options: {
+function isFinishFailedBoundary(options: {
   count: number;
   elapsed: ReturnType<typeof createElapsedTimer>;
   label: string;
@@ -123,7 +123,7 @@ function finishFailedBoundary(options: {
   return false;
 }
 
-export async function runBoundaryCheck(options: {
+export async function isRunBoundaryCheck(options: {
   checkOptions: BoundaryCheckOptions;
   label: string;
   target: PublishedPackageBoundaryTarget;
@@ -133,10 +133,10 @@ export async function runBoundaryCheck(options: {
   const elapsed = createElapsedTimer();
   const violations = await auditPublishedPackageBoundaries(options.target);
   if (violations.length === 0) {
-    return finishPassedBoundary({ ...options, elapsed, task });
+    return isFinishPassedBoundary({ ...options, elapsed, task });
   }
   reportViolations({ ...options, violations });
-  return finishFailedBoundary({
+  return isFinishFailedBoundary({
     count: violations.length,
     elapsed,
     label: options.label,

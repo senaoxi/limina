@@ -18,7 +18,7 @@ import { LiminaPreflightManager } from '../preflight';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
 import { collectCoverage } from '../proof/coverage-collection';
 import { createSourceCheckState } from '../source-check/run-state';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortablePath,
@@ -91,45 +91,47 @@ async function linkInstalledPackage(options: {
   }
   const segments = options.packageName.split('/');
   const packageBaseName = segments.pop()!;
-  const nodeModulesDir = path.join(
+  const nodeModulesDirectory = path.join(
     options.rootDir,
     'node_modules',
     ...segments,
   );
-  await mkdir(nodeModulesDir, { recursive: true });
+  await mkdir(nodeModulesDirectory, { recursive: true });
   await symlink(
     packageRoot,
-    path.join(nodeModulesDir, packageBaseName),
+    path.join(nodeModulesDirectory, packageBaseName),
     'junction',
   );
 }
 
-async function linkFrameworkToolchains(packageRootDir: string): Promise<void> {
+async function linkFrameworkToolchains(
+  packageRootDirectory: string,
+): Promise<void> {
   await Promise.all([
     linkInstalledPackage({
       installedName: '@astrojs/check',
       packageName: '@astrojs/check',
-      rootDir: packageRootDir,
+      rootDir: packageRootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'astro-v7-current',
       packageName: 'astro',
-      rootDir: packageRootDir,
+      rootDir: packageRootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'svelte-v4-min',
       packageName: 'svelte',
-      rootDir: packageRootDir,
+      rootDir: packageRootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'svelte2tsx',
       packageName: 'svelte2tsx',
-      rootDir: packageRootDir,
+      rootDir: packageRootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'typescript',
       packageName: 'typescript',
-      rootDir: packageRootDir,
+      rootDir: packageRootDirectory,
     }),
   ]);
 }
@@ -144,13 +146,11 @@ async function createCoreFixture(): Promise<{
   core: AnalysisProviderSet;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-core-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-core-'),
   );
-  const config: ResolvedLiminaConfig = {
-    get governanceRoot() {
-      return resolveFixtureGovernanceRoot(this);
-    },
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
     config: {
       checkers: {
         tsc: {
@@ -158,24 +158,24 @@ async function createCoreFixture(): Promise<{
         },
       },
     },
-    configPath: path.join(rootDir, 'limina.config.mjs'),
-    rootDir,
-  };
+    configPath: path.join(rootDirectory, 'limina.config.mjs'),
+    rootDir: rootDirectory,
+  });
 
   await writeText(config.configPath, 'export default {};\n');
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     "packages:\n  - 'packages/*'\n",
   );
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     stringifyJson({
       name: 'fixture',
       private: true,
     }),
   );
   await writeText(
-    path.join(rootDir, 'packages/a/package.json'),
+    path.join(rootDirectory, 'packages/a/package.json'),
     stringifyJson({
       dependencies: {
         '@astrojs/check': '0.9.10',
@@ -187,40 +187,40 @@ async function createCoreFixture(): Promise<{
       version: '1.0.0',
     }),
   );
-  await linkFrameworkToolchains(path.join(rootDir, 'packages/a'));
+  await linkFrameworkToolchains(path.join(rootDirectory, 'packages/a'));
   await writeText(
-    path.join(rootDir, 'packages/a/tsconfig.json'),
+    path.join(rootDirectory, 'packages/a/tsconfig.json'),
     stringifyJson({
       files: [],
       references: [{ path: './tsconfig.lib.json' }],
     }),
   );
   await writeText(
-    path.join(rootDir, 'packages/a/tsconfig.lib.json'),
+    path.join(rootDirectory, 'packages/a/tsconfig.lib.json'),
     stringifyJson({
       compilerOptions: buildCompilerOptions,
       include: ['src/**/*.ts'],
     }),
   );
   await writeText(
-    path.join(rootDir, 'packages/a/src/index.ts'),
+    path.join(rootDirectory, 'packages/a/src/index.ts'),
     "import './dep';\nexport const value = 1;\n",
   );
   await writeText(
-    path.join(rootDir, 'packages/a/src/dep.ts'),
+    path.join(rootDirectory, 'packages/a/src/dep.ts'),
     'export const dep = 1;\n',
   );
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
     config,
     core: createAnalysisProviders(config),
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 

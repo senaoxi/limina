@@ -56,14 +56,14 @@ type LatestAttemptRead =
 
 async function readLatestAttempt(
   namespace: LiminaArtifactNamespace,
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<LatestAttemptRead> {
   const latest = await readCheckAttemptJson(
     resolveArtifactNamespacePath(namespace, 'check', 'latest-attempt.json'),
     isLatestAttempt,
   );
   if (latest.status === 'missing') {
-    return readLegacyAttempt(namespace, rootDir);
+    return readLegacyAttempt(namespace, rootDirectory);
   }
   if (latest.status === 'corrupt') {
     return {
@@ -81,7 +81,7 @@ async function readLatestAttempt(
 
 async function readLegacyAttempt(
   namespace: LiminaArtifactNamespace,
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<LatestAttemptRead> {
   const completed = await readCheckAttemptJson(
     resolveArtifactNamespacePath(namespace, 'check', 'latest-completed.json'),
@@ -90,7 +90,7 @@ async function readLegacyAttempt(
   if (completed.status === 'missing') {
     return {
       result: {
-        snapshot: await readCheckIssueSnapshot(rootDir),
+        snapshot: await readCheckIssueSnapshot(rootDirectory),
         state: 'legacy',
       },
       status: 'result',
@@ -112,11 +112,11 @@ type StartedAttemptRead =
   | { status: 'valid'; value: CheckAttemptStarted };
 
 async function readStartedAttempt(
-  attemptDir: string,
+  attemptDirectory: string,
   latest: LatestCheckAttempt,
 ): Promise<StartedAttemptRead> {
   const started = await readCheckAttemptJson(
-    `${attemptDir}/started.json`,
+    `${attemptDirectory}/started.json`,
     isStarted,
   );
   if (started.status === 'valid' && isSameAttempt(latest, started.value)) {
@@ -173,12 +173,11 @@ function validateCompletedStatus(
   status: CheckAttemptStatus,
 ): CheckAttemptQueryResult | null {
   if (status.status !== 'completed') return terminalFailureResult(status);
-  if (!status.inventoryPublished) {
-    return inconsistentCheckAttemptResult(
-      'the latest attempt did not publish inventory',
-    );
-  }
-  return null;
+  return status.inventoryPublished
+    ? null
+    : inconsistentCheckAttemptResult(
+        'the latest attempt did not publish inventory',
+      );
 }
 
 async function readTerminalAttemptQuery(options: {
@@ -208,16 +207,16 @@ async function readPublishedAttemptQuery(options: {
   namespace: LiminaArtifactNamespace;
   rootDir: string;
 }): Promise<CheckAttemptQueryResult> {
-  const attemptDir = resolveArtifactNamespacePath(
+  const attemptDirectory = resolveArtifactNamespacePath(
     options.namespace,
     'check',
     'attempts',
     options.latest.attemptId,
   );
-  const started = await readStartedAttempt(attemptDir, options.latest);
+  const started = await readStartedAttempt(attemptDirectory, options.latest);
   if (started.status === 'result') return started.result;
   return readTerminalAttemptQuery({
-    attemptDir,
+    attemptDir: attemptDirectory,
     latest: options.latest,
     namespace: options.namespace,
     rootDir: options.rootDir,
@@ -226,28 +225,34 @@ async function readPublishedAttemptQuery(options: {
 }
 
 async function readAttemptQueryUnderLease(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<CheckAttemptQueryResult> {
-  const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
-  const latest = await readLatestAttempt(namespace, rootDir);
+  const namespace = createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir: rootDirectory,
+  });
+  const latest = await readLatestAttempt(namespace, rootDirectory);
   if (latest.status === 'result') return latest.result;
   return readPublishedAttemptQuery({
     latest: latest.value,
     namespace,
-    rootDir,
+    rootDir: rootDirectory,
   });
 }
 
 export async function queryLatestCheckAttempt(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<CheckAttemptQueryResult> {
-  const namespace = createLiminaArtifactNamespace({ generation: 0, rootDir });
+  const namespace = createLiminaArtifactNamespace({
+    generation: 0,
+    rootDir: rootDirectory,
+  });
   const lease = await acquireCrossProcessReadLease(
     namespace.canonicalRootDir,
     CHECK_INDEX_LEASE,
   );
   try {
-    return await readAttemptQueryUnderLease(rootDir);
+    return await readAttemptQueryUnderLease(rootDirectory);
   } finally {
     await lease.release();
   }

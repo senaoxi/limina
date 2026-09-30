@@ -11,13 +11,13 @@ function collectStringTarget(value: unknown): string[] {
 }
 
 function collectArrayTargets(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap(collectManifestEntryTargets);
+  return Array.isArray(value) ? value.flatMap(collectManifestEntryTargets) : [];
 }
 
 function collectRecordTargets(value: unknown): string[] {
-  if (!isPlainRecord(value)) return [];
-  return Object.values(value).flatMap(collectManifestEntryTargets);
+  return isPlainRecord(value)
+    ? Object.values(value).flatMap(collectManifestEntryTargets)
+    : [];
 }
 
 const manifestTargetCollectors: readonly ManifestTargetCollector[] = [
@@ -47,7 +47,9 @@ export function collectPackageManifestEntryTargets(
     manifestRecord.typings,
     manifestRecord.bin,
   ];
-  return [...new Set(values.flatMap(collectManifestEntryTargets))].sort();
+  return [...new Set(values.flatMap(collectManifestEntryTargets))].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 function stripCurrentDirectoryPrefixes(value: string): string {
@@ -56,7 +58,7 @@ function stripCurrentDirectoryPrefixes(value: string): string {
   return target;
 }
 
-function containsParentTraversal(target: string): boolean {
+function isContainsParentTraversal(target: string): boolean {
   return [
     target === '..',
     target.startsWith('../'),
@@ -75,14 +77,14 @@ function isAbsoluteTarget(target: string): boolean {
 
 export function normalizeManifestTargetPath(value: string): string | null {
   const target = stripCurrentDirectoryPrefixes(normalizeSlashes(value.trim()));
-  const invalid = [
+  const isInvalid = [
     target.length === 0,
     target.includes('*'),
     isPackageJsonTarget(target),
     isAbsoluteTarget(target),
-    containsParentTraversal(target),
+    isContainsParentTraversal(target),
   ].some(Boolean);
-  return invalid ? null : target;
+  return isInvalid ? null : target;
 }
 
 interface ExtensionReplacement {
@@ -104,15 +106,15 @@ function replaceExtension(candidate: string): string[] {
   const replacement = extensionReplacements.find((entry) =>
     entry.pattern.test(candidate),
   );
-  if (replacement === undefined) return [];
-  return replacement.replacements.map((extension) =>
-    candidate.replace(replacement.pattern, extension),
-  );
+  return replacement === undefined
+    ? []
+    : replacement.replacements.map((extension) =>
+        candidate.replace(replacement.pattern, () => extension),
+      );
 }
 
 function collectInitialCandidates(target: string): string[] {
-  if (target.startsWith('dist/')) return [target, target.slice(5)];
-  return [target];
+  return target.startsWith('dist/') ? [target, target.slice(5)] : [target];
 }
 
 function collectReplacementCandidates(candidates: readonly string[]): string[] {
@@ -125,7 +127,7 @@ export function collectSourceCandidatesForManifestTarget(
   const initial = collectInitialCandidates(target);
   return [
     ...new Set([...initial, ...collectReplacementCandidates(initial)]),
-  ].sort();
+  ].sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 function createOwnerRelativeFileIndex(
@@ -162,5 +164,5 @@ export function collectManifestSourceEntryPatterns(
         collectExistingCandidates({ files, target }),
       ),
     ),
-  ].sort();
+  ].sort((left, right) => Number(left > right) - Number(left < right));
 }

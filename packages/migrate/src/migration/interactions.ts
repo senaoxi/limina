@@ -4,7 +4,7 @@ import {
   createDirtyWorkspacePrompt,
   inspectGitWorkspace,
 } from './git';
-import { confirmDirtyWorkspace, selectHardlinkStrategy } from './prompts';
+import { isConfirmDirtyWorkspace, selectHardlinkStrategy } from './prompts';
 import type { HardlinkMigrationDecision, RunMigrationOptions } from './types';
 
 export type MigrationTask =
@@ -16,13 +16,13 @@ function resolveHardlinkStrategySelection(options: RunMigrationOptions) {
 }
 
 function createHardlinkStrategyPrompt(
-  rootDir: string,
+  rootDirectory: string,
   configPaths: readonly string[],
 ): string {
   const visiblePaths = configPaths.slice(0, 5);
   const remainingCount = configPaths.length - visiblePaths.length;
   const displayedPaths = visiblePaths.map(
-    (configPath) => `  ${path.relative(rootDir, configPath)}`,
+    (configPath) => `  ${path.relative(rootDirectory, configPath)}`,
   );
   if (remainingCount > 0) {
     displayedPaths.push(`  ... and ${remainingCount} more`);
@@ -73,7 +73,7 @@ export async function decideHardlinkPolicy(options: {
 }
 
 function resolveDirtyWorkspaceConfirmation(options: RunMigrationOptions) {
-  return options.confirmDirtyWorkspace ?? confirmDirtyWorkspace;
+  return options.confirmDirtyWorkspace ?? isConfirmDirtyWorkspace;
 }
 
 export async function confirmDirtyWorkspaceChanges(options: {
@@ -83,18 +83,18 @@ export async function confirmDirtyWorkspaceChanges(options: {
 }): Promise<void> {
   const workspaces = (
     await Promise.all(
-      options.roots.map((rootDir) => inspectGitWorkspace(rootDir)),
+      options.roots.map((rootDirectory) => inspectGitWorkspace(rootDirectory)),
     )
   ).filter((workspace) => workspace !== undefined);
   if (workspaces.length === 0) return;
 
   const confirm = resolveDirtyWorkspaceConfirmation(options.runOptions);
   const message = createDirtyWorkspacePrompt(workspaces);
-  const accepted = await requestMigrationDecision({
+  const isAccepted = await requestMigrationDecision({
     request: () => confirm(message),
     task: options.task,
   });
-  if (accepted) return;
+  if (isAccepted) return;
 
   throw createDirtyWorkspaceDeclinedError(workspaces);
 }

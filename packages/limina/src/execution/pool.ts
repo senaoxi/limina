@@ -1,3 +1,4 @@
+import { isIntegerNumber } from '../utils/validation/is-integer';
 export interface RunPoolOptions<T, R> {
   concurrency: number;
   items: readonly T[];
@@ -8,7 +9,7 @@ export interface RunPoolOptions<T, R> {
 }
 
 function assertValidConcurrency(concurrency: number): void {
-  if (!Number.isInteger(concurrency) || concurrency < 1) {
+  if (!isIntegerNumber(concurrency) || concurrency < 1) {
     throw new Error('Pool concurrency must be an integer greater than 0.');
   }
 }

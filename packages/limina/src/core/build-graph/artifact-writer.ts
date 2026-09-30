@@ -28,10 +28,7 @@ function createGeneratedArtifact(
 }
 
 async function readExistingContent(filePath: string): Promise<string | null> {
-  if (!existsSync(filePath)) {
-    return null;
-  }
-  return readFile(filePath, 'utf8');
+  return existsSync(filePath) ? readFile(filePath, 'utf8') : null;
 }
 
 async function getArtifactWriteStatus(options: {

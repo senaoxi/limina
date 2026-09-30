@@ -9,8 +9,11 @@ interface FormatProblemOptions {
   projectRootDir: string;
 }
 
-function formatProblemPath(projectRootDir: string, filePath: string): string {
-  return toRelativePath(projectRootDir, filePath);
+function formatProblemPath(
+  projectRootDirectory: string,
+  filePath: string,
+): string {
+  return toRelativePath(projectRootDirectory, filePath);
 }
 
 function getTargetPath(problem: OutputDeclarationCopyProblem): string {
@@ -37,7 +40,7 @@ function formatConflict(options: FormatProblemOptions): string[] {
   ];
 }
 
-function formatTargetIsOutDir(options: FormatProblemOptions): string[] {
+function formatTargetIsOutDirectory(options: FormatProblemOptions): string[] {
   return [
     'Output declaration copy target is invalid:',
     `  source: ${formatProblemPath(options.projectRootDir, options.problem.filePath)}`,
@@ -47,7 +50,9 @@ function formatTargetIsOutDir(options: FormatProblemOptions): string[] {
   ];
 }
 
-function formatTargetOutsideOutDir(options: FormatProblemOptions): string[] {
+function formatTargetOutsideOutDirectory(
+  options: FormatProblemOptions,
+): string[] {
   return [
     'Output declaration copy target escapes outDir:',
     `  source: ${formatProblemPath(options.projectRootDir, options.problem.filePath)}`,
@@ -73,8 +78,8 @@ const errorFormatters: Readonly<
 > = {
   'outside-root': formatOutsideRoot,
   'target-conflict': formatConflict,
-  'target-is-out-dir': formatTargetIsOutDir,
-  'target-outside-out-dir': formatTargetOutsideOutDir,
+  'target-is-out-dir': formatTargetIsOutDirectory,
+  'target-outside-out-dir': formatTargetOutsideOutDirectory,
 };
 
 function formatErrorProblem(options: FormatProblemOptions): string[] {

@@ -38,9 +38,6 @@ export function cloneCoverageByFile(
   coverageByFile: Map<string, CoverageSource[]>,
 ): Map<string, CoverageSource[]> {
   return new Map(
-    [...coverageByFile.entries()].map(([filePath, sources]) => [
-      filePath,
-      [...sources],
-    ]),
+    [...coverageByFile].map(([filePath, sources]) => [filePath, [...sources]]),
   );
 }

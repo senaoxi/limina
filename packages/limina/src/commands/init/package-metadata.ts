@@ -12,13 +12,11 @@ interface WorkspaceCatalogManifest {
   catalogs?: Record<string, Record<string, string>>;
 }
 
-function findPnpmWorkspacePath(startDir: string): string | null {
-  const rootDir = findPnpmWorkspaceRoot(startDir);
-  if (rootDir === null) {
-    return null;
-  }
-
-  return path.join(rootDir, pnpmWorkspaceFileName);
+function findPnpmWorkspacePath(startDirectory: string): string | null {
+  const rootDirectory = findPnpmWorkspaceRoot(startDirectory);
+  return rootDirectory === null
+    ? null
+    : path.join(rootDirectory, pnpmWorkspaceFileName);
 }
 
 function readWorkspaceCatalog(
@@ -47,11 +45,9 @@ function resolveNamedCatalogEntry(options: {
   parsed: WorkspaceCatalogManifest;
 }): string | null {
   const catalogs = options.parsed.catalogs;
-  if (catalogs === undefined) {
-    return null;
-  }
-
-  return readRecordValue(catalogs[options.catalogName], options.packageName);
+  return catalogs === undefined
+    ? null
+    : readRecordValue(catalogs[options.catalogName], options.packageName);
 }
 
 function isDefaultCatalogName(catalogName: string): boolean {
@@ -67,11 +63,9 @@ function resolveCatalogEntry(options: {
     return null;
   }
 
-  if (isDefaultCatalogName(options.catalogName)) {
-    return readRecordValue(options.parsed.catalog, options.packageName);
-  }
-
-  return resolveNamedCatalogEntry({ ...options, parsed: options.parsed });
+  return isDefaultCatalogName(options.catalogName)
+    ? readRecordValue(options.parsed.catalog, options.packageName)
+    : resolveNamedCatalogEntry({ ...options, parsed: options.parsed });
 }
 
 function resolveCatalogSpecifier(options: {
@@ -82,11 +76,7 @@ function resolveCatalogSpecifier(options: {
   const workspacePath = findPnpmWorkspacePath(
     path.dirname(options.packageManifestPath),
   );
-  if (workspacePath === null) {
-    return null;
-  }
-
-  if (!existsSync(workspacePath)) {
+  if (workspacePath === null || !existsSync(workspacePath)) {
     return null;
   }
 
@@ -106,11 +96,9 @@ function resolveCatalogRange(options: {
     return null;
   }
 
-  if (!options.range.startsWith('catalog:')) {
-    return options.range;
-  }
-
-  return resolveCatalogSpecifier({ ...options, range: options.range });
+  return options.range.startsWith('catalog:')
+    ? resolveCatalogSpecifier({ ...options, range: options.range })
+    : options.range;
 }
 
 function getLiminaVersionRange(manifest: PackageManifest): string {
@@ -163,13 +151,11 @@ function findWorkspaceRootFrom(directory: string): string | null {
   }
 
   const parentDirectory = path.dirname(directory);
-  if (parentDirectory === directory) {
-    return null;
-  }
-
-  return findWorkspaceRootFrom(parentDirectory);
+  return parentDirectory === directory
+    ? null
+    : findWorkspaceRootFrom(parentDirectory);
 }
 
-function findPnpmWorkspaceRoot(startDir: string): string | null {
-  return findWorkspaceRootFrom(path.resolve(startDir));
+function findPnpmWorkspaceRoot(startDirectory: string): string | null {
+  return findWorkspaceRootFrom(path.resolve(startDirectory));
 }

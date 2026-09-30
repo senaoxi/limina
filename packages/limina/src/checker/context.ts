@@ -17,8 +17,8 @@ function assertConfigClosureEntryCompatible(
   existing: CheckerConfigClosureEntry | undefined,
   entry: CheckerConfigClosureEntry,
 ): void {
-  if (existing === undefined) return;
-  if (existing.contentHash === entry.contentHash) return;
+  if (existing === undefined || existing.contentHash === entry.contentHash)
+    return;
   throw new Error(
     `Checker parsers observed conflicting config content for ${entry.filePath}.`,
   );
@@ -28,14 +28,16 @@ function mergeConfigClosure(
   configs: readonly ParsedCheckerProjectConfig[],
 ): CheckerConfigClosureEntry[] {
   const entries = new Map<string, CheckerConfigClosureEntry>();
-  for (const entry of configs.flatMap((config) => config.configClosure)) {
+  const configClosure = configs.flatMap((config) => config.configClosure);
+  for (const entry of configClosure) {
     const existing = entries.get(entry.filePath);
     assertConfigClosureEntryCompatible(existing, entry);
     entries.set(entry.filePath, { ...entry });
   }
-  return [...entries.values()].sort((left, right) =>
-    compareCodeUnits(left.filePath, right.filePath),
-  );
+  return entries
+    .values()
+    .toArray()
+    .sort((left, right) => compareCodeUnits(left.filePath, right.filePath));
 }
 
 export class CheckerProjectConfigCache {
@@ -197,8 +199,9 @@ function resolveCachedProjectConfig(options: {
   generation: number;
   virtualFiles?: ReadonlyMap<string, string>;
 }): ParsedCheckerProjectConfig {
-  if (options.cached !== undefined) return options.cached;
-  return resolveCacheMiss(options);
+  return options.cached === undefined
+    ? resolveCacheMiss(options)
+    : options.cached;
 }
 
 function resolveParsedProjectConfig(options: {
@@ -257,8 +260,7 @@ export function parseCheckerProjectConfigForContext(options: {
   virtualFiles?: ReadonlyMap<string, string>;
 }): ParsedCheckerProjectConfig {
   const request = createContextParseRequest(options);
-  if (options.cache === undefined) {
-    return createParsedProjectConfig(request);
-  }
-  return resolveParsedProjectConfig({ ...request, cache: options.cache });
+  return options.cache === undefined
+    ? createParsedProjectConfig(request)
+    : resolveParsedProjectConfig({ ...request, cache: options.cache });
 }

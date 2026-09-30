@@ -74,6 +74,7 @@ function throwKnipParseError(source: string): never {
         '  output:',
         source.slice(0, 2000),
       ].join('\n'),
+      { cause: error },
     );
   }
 }
@@ -85,18 +86,10 @@ function parseNonEmptyReport(source: string): JSONReport {
   }
 
   const embedded = findEmbeddedReport(source);
-  if (embedded !== undefined) {
-    return embedded;
-  }
-
-  return throwKnipParseError(source);
+  return embedded === undefined ? throwKnipParseError(source) : embedded;
 }
 
 export function parseKnipJsonReport(source: string): JSONReport {
   const trimmed = source.trim();
-  if (trimmed.length === 0) {
-    return { issues: [] };
-  }
-
-  return parseNonEmptyReport(trimmed);
+  return trimmed.length === 0 ? { issues: [] } : parseNonEmptyReport(trimmed);
 }

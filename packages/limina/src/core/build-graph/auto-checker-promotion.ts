@@ -5,35 +5,37 @@ function findEligibleProvider(options: {
   return [...options.dependencies].find(options.isEligibleProvider);
 }
 
-function promoteDirectedConsumer(options: {
+function isPromoteDirectedConsumer(options: {
   consumerPath: string;
   dependencies: ReadonlySet<string>;
   isEligibleProvider: (providerPath: string) => boolean;
   promoteConsumer: (consumerPath: string, providerPath: string) => boolean;
 }): boolean {
   const providerPath = findEligibleProvider(options);
-  if (providerPath === undefined) return false;
-  return options.promoteConsumer(options.consumerPath, providerPath);
+  return (
+    providerPath !== undefined &&
+    options.promoteConsumer(options.consumerPath, providerPath)
+  );
 }
 
-function promoteDirectedPass(options: {
+function isPromoteDirectedPass(options: {
   dependenciesByConsumer: ReadonlyMap<string, Set<string>>;
   isEligibleProvider: (providerPath: string) => boolean;
   promoteConsumer: (consumerPath: string, providerPath: string) => boolean;
 }): boolean {
-  let changed = false;
+  let isChanged = false;
   for (const [consumerPath, dependencies] of options.dependenciesByConsumer) {
     if (
-      promoteDirectedConsumer({
+      isPromoteDirectedConsumer({
         consumerPath,
         dependencies,
         isEligibleProvider: options.isEligibleProvider,
         promoteConsumer: options.promoteConsumer,
       })
     )
-      changed = true;
+      isChanged = true;
   }
-  return changed;
+  return isChanged;
 }
 
 export function promoteDirectedCheckerDependencies(options: {
@@ -42,7 +44,7 @@ export function promoteDirectedCheckerDependencies(options: {
   onPass: () => void;
   promoteConsumer: (consumerPath: string, providerPath: string) => boolean;
 }): void {
-  while (promoteDirectedPass(options)) {
+  while (isPromoteDirectedPass(options)) {
     options.onPass();
   }
 }

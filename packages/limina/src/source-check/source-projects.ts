@@ -15,7 +15,7 @@ import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import type { AmbientDeclarationIndex } from './ambient-declarations';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import { addProjectOwnerProblems } from './project-owner-findings';
 import type { SourceProjectEntry } from './source-types';
@@ -161,7 +161,7 @@ async function createSourceProjectEntry(options: {
       .filter((fileName) =>
         options.workspaceLookup.isInsideActivatedRegion(fileName),
       )
-      .sort(),
+      .sort((left, right) => Number(left > right) - Number(left < right)),
     project: options.project,
   };
 }

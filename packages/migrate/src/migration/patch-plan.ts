@@ -1,7 +1,7 @@
 import type { InputTopologyResult } from 'limina/internal/migration';
 import { createCommitGroups } from './commit-groups';
 import { addStaticConfigExclusions } from './config-edit';
-import { expectedInputFailure } from './discovery';
+import { isExpectedInputFailure } from './discovery';
 import { MigrationJsoncInputError } from './jsonc-validation';
 import type { MigrationPlanningState } from './planning-state';
 import type { MigrationWritePlanItem } from './transaction';
@@ -23,8 +23,9 @@ function sourcePatch(
   state: MigrationPlanningState,
   file: string,
 ): MigrationWritePlanItem | undefined {
-  if (state.blockedTargets.has(file)) return undefined;
-  return readSourcePatch(state, file);
+  return state.blockedTargets.has(file)
+    ? undefined
+    : readSourcePatch(state, file);
 }
 function readSourcePatch(
   state: MigrationPlanningState,
@@ -82,7 +83,7 @@ function failedExclusionPatch(
   state: MigrationPlanningState,
   error: unknown,
 ): undefined {
-  if (!expectedInputFailure(error)) throw error;
+  if (!isExpectedInputFailure(error)) throw error;
   state.incomplete = true;
   state.records.push({
     configPath: state.config.configPath,
@@ -90,7 +91,6 @@ function failedExclusionPatch(
     message: error.message,
     details: plannedExclusions(state),
   });
-  return undefined;
 }
 export async function freezePatches(
   state: MigrationPlanningState,

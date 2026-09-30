@@ -88,12 +88,18 @@ export class AnalysisProviderSet {
       generatedGraph: Awaited<ReturnType<BuildGraphCore['getGraph']>>,
     ): void => {
       workspaceSourceBoundary = createWorkspaceSourceBoundary(
-        [...generatedGraph.governedSources.values()].flatMap((sources) =>
-          [...sources.values()].flatMap((source) => [
-            ...source.ownedFileNames,
-            ...source.declarationFileNames,
-          ]),
-        ),
+        generatedGraph.governedSources
+          .values()
+          .flatMap((sources) =>
+            sources
+              .values()
+              .flatMap((source) => [
+                ...source.ownedFileNames,
+                ...source.declarationFileNames,
+              ])
+              .toArray(),
+          )
+          .toArray(),
       );
     };
     const getWorkspaceSourceBoundary = (): WorkspaceSourceBoundary => {
@@ -170,14 +176,14 @@ export class AnalysisProviderSet {
 }
 
 export function createAnalysisProviders(
-  ...args: [
+  ...arguments_: [
     config: ResolvedLiminaConfig,
     artifactNamespace?: LiminaArtifactNamespace,
     metrics?: AnalysisCoreMetricsRecorder,
     dependencies?: AnalysisProviderSetDependencies,
   ]
 ): AnalysisProviderSet {
-  const [config, configuredNamespace, metrics, dependencies = {}] = args;
+  const [config, configuredNamespace, metrics, dependencies = {}] = arguments_;
   const artifactNamespace =
     configuredNamespace ??
     createLiminaArtifactNamespace({

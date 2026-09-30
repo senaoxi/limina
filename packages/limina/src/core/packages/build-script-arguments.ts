@@ -205,7 +205,7 @@ function createBuildScript(
   state: ArgumentState,
 ): PackageBuildScript {
   return {
-    ...(state.checker === undefined ? {} : { checker: state.checker }),
+    ...(state.checker !== undefined && { checker: state.checker }),
     command: source.command,
     configPath: normalizeAbsolutePath(
       path.resolve(source.packageDirectory, state.configPath!),

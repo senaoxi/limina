@@ -76,57 +76,62 @@ async function createIssueCliFixture(): Promise<{
   cliPath: string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-empty-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-cli-issues-empty-'),
   );
-  await writeText(path.join(rootDir, 'package.json'), '{}\n');
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  await writeText(path.join(rootDirectory, 'package.json'), '{}\n');
   try {
     await writeText(
-      path.join(rootDir, 'pnpm-workspace.yaml'),
+      path.join(rootDirectory, 'pnpm-workspace.yaml'),
       'packages:\n  - packages/*\n',
     );
     await writeText(
-      path.join(rootDir, 'limina.config.mjs'),
+      path.join(rootDirectory, 'limina.config.mjs'),
       'export default {\n',
     );
     return {
       cliPath: fileURLToPath(new URL('../../bin/limina.js', import.meta.url)),
-      rootDir,
+      rootDir: rootDirectory,
     };
   } catch (error) {
-    await rm(rootDir, { force: true, recursive: true });
+    await rm(rootDirectory, { force: true, recursive: true });
     throw error;
   }
 }
 
 async function writeBinShim(
-  rootDir: string,
+  rootDirectory: string,
   command: string,
   script: string,
 ): Promise<void> {
-  const scriptPath = path.join(rootDir, 'node_modules/.bin', `${command}.cjs`);
+  const scriptPath = path.join(
+    rootDirectory,
+    'node_modules/.bin',
+    `${command}.cjs`,
+  );
 
   await writeText(scriptPath, script);
   await writeText(
-    path.join(rootDir, 'node_modules/.bin', command),
+    path.join(rootDirectory, 'node_modules/.bin', command),
     [
       '#!/usr/bin/env sh',
       `exec node "$(dirname "$0")/${command}.cjs" "$@"`,
       '',
     ].join('\n'),
   );
-  await chmod(path.join(rootDir, 'node_modules/.bin', command), 0o755);
+  await chmod(path.join(rootDirectory, 'node_modules/.bin', command), 0o755);
   await writeText(
-    path.join(rootDir, 'node_modules/.bin', `${command}.cmd`),
+    path.join(rootDirectory, 'node_modules/.bin', `${command}.cmd`),
     ['@ECHO OFF', `node "%~dp0${command}.cjs" %*`, ''].join('\r\n'),
   );
 }
 
 async function createIsolatedLiminaCli(
-  rootDir: string,
-  useTscShim = false,
+  rootDirectory: string,
+  isUseTscShim = false,
 ): Promise<string> {
-  const packageRoot = path.join(rootDir, 'limina');
+  const packageRoot = path.join(rootDirectory, 'limina');
   const sourcePackageRoot = fileURLToPath(new URL('../..', import.meta.url));
   const sourceNodeModules = path.join(sourcePackageRoot, 'node_modules');
 
@@ -145,17 +150,19 @@ async function createIsolatedLiminaCli(
 
   const packageModules = path.join(packageRoot, 'node_modules');
   await mkdir(packageModules, { recursive: true });
-  for (const entry of await readdir(sourceNodeModules, {
+  const directoryEntries1 = await readdir(sourceNodeModules, {
     withFileTypes: true,
-  })) {
+  });
+  for (const entry of directoryEntries1) {
     if (entry.name === 'knip') continue;
-    if (useTscShim && entry.name === 'typescript') continue;
+    if (isUseTscShim && entry.name === 'typescript') continue;
 
     const sourceEntry = path.join(sourceNodeModules, entry.name);
     const packageEntry = path.join(packageModules, entry.name);
     if (entry.name.startsWith('@') && entry.isDirectory()) {
       await mkdir(packageEntry, { recursive: true });
-      for (const packageName of await readdir(sourceEntry)) {
+      const directoryEntries2 = await readdir(sourceEntry);
+      for (const packageName of directoryEntries2) {
         await symlink(
           path.join(sourceEntry, packageName),
           path.join(packageEntry, packageName),
@@ -168,7 +175,7 @@ async function createIsolatedLiminaCli(
     await symlink(sourceEntry, packageEntry, 'junction');
   }
 
-  if (useTscShim) {
+  if (isUseTscShim) {
     const sourceTypeScript = path.dirname(
       createRequire(import.meta.url).resolve('typescript/package.json'),
     );
@@ -187,7 +194,7 @@ async function createIsolatedLiminaCli(
     // Limina-owned package origin that preflight validates.
     await writeText(
       path.join(ownedTypeScript, 'bin/tsc'),
-      `require(${JSON.stringify(path.join(rootDir, 'node_modules/.bin/tsc.cjs'))});\n`,
+      `require(${JSON.stringify(path.join(rootDirectory, 'node_modules/.bin/tsc.cjs'))});\n`,
     );
   }
 
@@ -230,24 +237,25 @@ interface CliBuildFixture {
 }
 
 async function createCliBuildFixture(): Promise<CliBuildFixture> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-cli-build-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-cli-build-'),
   );
-  const cliPath = await createIsolatedLiminaCli(rootDir, true);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const cliPath = await createIsolatedLiminaCli(rootDirectory, true);
 
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     stringifyConfig({
       name: 'root',
       private: true,
     }),
   );
   await writeText(
-    path.join(rootDir, 'limina.config.mjs'),
+    path.join(rootDirectory, 'limina.config.mjs'),
     `export default ${JSON.stringify(
       {
         config: {
@@ -263,7 +271,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     )};\n`,
   );
   await writeBinShim(
-    rootDir,
+    rootDirectory,
     'tsc',
     [
       "const { writeFileSync } = require('node:fs');",
@@ -273,14 +281,14 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     ].join('\n'),
   );
   await writeText(
-    path.join(rootDir, 'node_modules/typescript/package.json'),
+    path.join(rootDirectory, 'node_modules/typescript/package.json'),
     stringifyConfig({
       name: 'tsc',
       version: '0.0.0-test',
     }),
   );
   await writeBinShim(
-    rootDir,
+    rootDirectory,
     'vue-tsc',
     [
       "const { writeFileSync } = require('node:fs');",
@@ -290,18 +298,18 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     ].join('\n'),
   );
   await writeText(
-    path.join(rootDir, 'node_modules/vue-tsc/package.json'),
+    path.join(rootDirectory, 'node_modules/vue-tsc/package.json'),
     stringifyConfig({
       name: 'vue-tsc',
       version: '3.2.4',
     }),
   );
   await writeText(
-    path.join(rootDir, 'packages/pkg/src/index.ts'),
+    path.join(rootDirectory, 'packages/pkg/src/index.ts'),
     'export const value = 1;\n',
   );
   await writeText(
-    path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
+    path.join(rootDirectory, 'packages/pkg/tsconfig.lib.json'),
     stringifyConfig({
       liminaOptions: {
         outputs: {},
@@ -314,7 +322,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
     }),
   );
   await writeText(
-    path.join(rootDir, 'packages/pkg/tsconfig.json'),
+    path.join(rootDirectory, 'packages/pkg/tsconfig.json'),
     stringifyConfig({
       files: [],
       references: [
@@ -327,7 +335,7 @@ async function createCliBuildFixture(): Promise<CliBuildFixture> {
 
   return {
     cliPath,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -384,8 +392,8 @@ function getHelpOutput(argv: string[]): string {
   // CAC 7 emits help through console.info.
   const consoleInfo = vi
     .spyOn(console, 'info')
-    .mockImplementation((...args) => {
-      output.push(args.map(String).join(' '));
+    .mockImplementation((...arguments_) => {
+      output.push(arguments_.map(String).join(' '));
     });
 
   try {
@@ -431,24 +439,25 @@ describe('limina CLI', () => {
   });
 
   it('closes the check flow and reports a snapshot writer error once', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-writer-failure-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-writer-failure-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({ name: 'root', private: true }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify({
           pipelines: {
             demo: [
@@ -461,24 +470,24 @@ describe('limina CLI', () => {
           },
         })};\n`,
       );
-      await mkdir(path.join(rootDir, '.limina/check/last-run.json'), {
+      await mkdir(path.join(rootDirectory, '.limina/check/last-run.json'), {
         recursive: true,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout: string;
+      let stderr: string;
       try {
         await execFileAsync(
           process.execPath,
           [
             cliPath,
             '--config',
-            path.join(rootDir, 'limina.config.mjs'),
+            path.join(rootDirectory, 'limina.config.mjs'),
             'check',
             'demo',
           ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: { ...process.env, CI: 'true' },
           },
         );
@@ -493,49 +502,53 @@ describe('limina CLI', () => {
       expect(output).toContain('limina check failed');
       expect(output.match(/limina failed:/gu)).toHaveLength(1);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   }, 15_000);
 
   it('rejects an empty named pipeline before flow and snapshot creation', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-empty-pipeline-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-empty-pipeline-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
-    const snapshotPath = path.join(rootDir, '.limina/check/last-run.json');
+    const snapshotPath = path.join(
+      rootDirectory,
+      '.limina/check/last-run.json',
+    );
     const previousSnapshot = '{"sentinel":"unchanged"}\n';
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({ name: 'root', private: true }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         'export default { pipelines: { demo: [] } };\n',
       );
       await writeText(snapshotPath, previousSnapshot);
 
-      let stdout = '';
-      let stderr = '';
+      let stdout: string;
+      let stderr: string;
       try {
         await execFileAsync(
           process.execPath,
           [
             cliPath,
             '--config',
-            path.join(rootDir, 'limina.config.mjs'),
+            path.join(rootDirectory, 'limina.config.mjs'),
             'check',
             'demo',
           ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: { ...process.env, CI: 'true' },
           },
         );
@@ -553,7 +566,7 @@ describe('limina CLI', () => {
       expect(output).not.toContain('limina check failed');
       expect(await readFile(snapshotPath, 'utf8')).toBe(previousSnapshot);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   }, 15_000);
 
@@ -589,14 +602,14 @@ describe('limina CLI', () => {
           },
         },
       );
-      const tscArgs = await readFile(
+      const tscArguments = await readFile(
         path.join(rootDir, 'tsc-args.txt'),
         'utf8',
       );
 
       expect(result.stdout).toContain('limina checker build');
       expect(result.stdout).toContain('limina checker passed');
-      expect(tscArgs).toContain(
+      expect(tscArguments).toContain(
         '.limina/tsconfig/checkers/tsc/projects/packages/pkg/tsconfig.lib.dts.json',
       );
     });
@@ -641,12 +654,12 @@ export default {
         },
       );
 
-      const tscArgs = await readFile(
+      const tscArguments = await readFile(
         path.join(rootDir, 'tsc-args.txt'),
         'utf8',
       );
 
-      expect(tscArgs).toContain(
+      expect(tscArguments).toContain(
         '.limina/tsconfig/checkers/tsc/tsconfig.build.json',
       );
     });
@@ -672,12 +685,12 @@ export default {
         },
       );
 
-      const globalTscArgs = await readFile(
+      const globalTscArguments = await readFile(
         path.join(rootDir, 'tsc-args.txt'),
         'utf8',
       );
 
-      expect(globalTscArgs).toContain(
+      expect(globalTscArguments).toContain(
         '.limina/tsconfig/checkers/tsc/tsconfig.build.json',
       );
     });
@@ -813,7 +826,7 @@ export default {
         );
 
         const runFailure = async (
-          args: string[],
+          arguments_: string[],
           expectedTask: string,
           options: {
             configArgument?: string;
@@ -828,7 +841,7 @@ export default {
           invocationId: string;
         }> => {
           const mode = 'standalone pnpm invocation mode';
-          let stdout = '';
+          let stdout: string;
 
           try {
             await execFileAsync(
@@ -842,14 +855,14 @@ export default {
                 'native',
                 '--mode',
                 mode,
-                ...args,
+                ...arguments_,
               ],
               {
                 cwd: rootDir,
                 env: { ...process.env, CI: 'true' },
               },
             );
-            throw new Error(`Expected ${args.join(' ')} to fail.`);
+            throw new Error(`Expected ${arguments_.join(' ')} to fail.`);
           } catch (error) {
             expect(error).toMatchObject({ code: 1 });
             stdout = String((error as { stdout?: unknown }).stdout ?? '');
@@ -870,7 +883,7 @@ export default {
           );
           expect(queryLines).toHaveLength(1);
           const queryLine = queryLines[0];
-          const expectedArgs = [
+          const expectedArguments = [
             toPortablePath(cliPath),
             '--config',
             toPortablePath(options.expectedConfigPath),
@@ -899,12 +912,12 @@ export default {
             );
             expect(
               JSON.parse(Buffer.from(transport![3], 'base64').toString('utf8')),
-            ).toEqual(expectedArgs);
+            ).toEqual(expectedArguments);
           } else {
             expect(queryLine).toMatch(/^Query: /u);
             expect(parsePosix(queryLine.slice('Query: '.length))).toEqual([
               toPortablePath(process.execPath),
-              ...expectedArgs,
+              ...expectedArguments,
             ]);
           }
           expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
@@ -955,16 +968,15 @@ export default {
             version: 1,
           });
           expect(payload.issueCount).toBeGreaterThan(0);
-          expect(payload.issues).toEqual(
-            expect.arrayContaining([
-              expect.objectContaining({
-                code: expect.any(String),
-                filePath: expect.any(String),
-                reason: expect.any(String),
-                task: expectedTask,
-              }),
-            ]),
-          );
+          const expectedIssues = expect.arrayContaining([
+            expect.objectContaining({
+              code: expect.any(String),
+              filePath: expect.any(String),
+              reason: expect.any(String),
+              task: expectedTask,
+            }),
+          ]);
+          expect(payload.issues).toEqual(expectedIssues);
           expect(await readFile(lastRunPath, 'utf8')).toBe(seedSnapshot);
         };
 
@@ -1091,7 +1103,7 @@ export default {
         checkProcessPid = processInfo.parentPid;
         commandPid = processInfo.commandPid;
         expect(() => process.kill(checkProcessPid!, 'SIGKILL')).not.toThrow();
-        if (Number.isInteger(commandPid)) {
+        if (Number.isSafeInteger(commandPid)) {
           try {
             process.kill(commandPid, 'SIGKILL');
           } catch {
@@ -1119,14 +1131,14 @@ export default {
           child.kill('SIGKILL');
           await closed;
         }
-        if (checkProcessPid && Number.isInteger(checkProcessPid)) {
+        if (checkProcessPid && Number.isSafeInteger(checkProcessPid)) {
           try {
             process.kill(checkProcessPid, 'SIGKILL');
           } catch {
             // The check process was expected to be terminated above.
           }
         }
-        if (commandPid && Number.isInteger(commandPid)) {
+        if (commandPid && Number.isSafeInteger(commandPid)) {
           try {
             process.kill(commandPid, 'SIGKILL');
           } catch {
@@ -1139,7 +1151,7 @@ export default {
 
   it('keeps concurrent checker failure invocations isolated', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-      const barrierDir = path.join(rootDir, 'barrier');
+      const barrierDirectory = path.join(rootDir, 'barrier');
       const configPath = path.join(rootDir, 'limina.config.mjs');
       const lastRunPath = path.join(rootDir, '.limina/check/last-run.json');
 
@@ -1219,32 +1231,33 @@ export default {
       );
       const seedSnapshot = await readFile(lastRunPath, 'utf8');
 
-      const runChecker = async (config: string) =>
-        execFileAsync(
-          process.execPath,
-          [cliPath, '--config', configPath, 'checker', 'build', config],
-          {
-            cwd: rootDir,
-            env: {
-              ...process.env,
-              CI: 'true',
-              LIMINA_TEST_BARRIER_DIR: barrierDir,
+      const runChecker = async (config: string) => {
+        try {
+          await execFileAsync(
+            process.execPath,
+            [cliPath, '--config', configPath, 'checker', 'build', config],
+            {
+              cwd: rootDir,
+              env: {
+                ...process.env,
+                CI: 'true',
+                LIMINA_TEST_BARRIER_DIR: barrierDirectory,
+              },
             },
-          },
-        ).then(
-          () => {
-            throw new Error(`Expected checker build ${config} to fail.`);
-          },
-          (error: { code?: number; stdout?: string }) => error,
-        );
-      const [pkgResult, bResult] = await Promise.all([
+          );
+        } catch (error) {
+          return error as { code?: number; stdout?: string };
+        }
+        throw new Error(`Expected checker build ${config} to fail.`);
+      };
+      const [packageResult, bResult] = await Promise.all([
         runChecker('packages/pkg/tsconfig.lib.json'),
         runChecker('packages/b/tsconfig.lib.json'),
       ]);
 
-      expect(pkgResult.code).toBe(1);
+      expect(packageResult.code).toBe(1);
       expect(bResult.code).toBe(1);
-      const invocationIds = [pkgResult, bResult].map(
+      const invocationIds = [packageResult, bResult].map(
         (result) =>
           /Standalone issue invocation: ([0-9a-f-]+)/u.exec(
             result.stdout ?? '',
@@ -1292,22 +1305,23 @@ export default {
   }, 45_000);
 
   it('prints only the current check result when two checks finish concurrently', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-concurrent-checks-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-concurrent-checks-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
-    const barrierScript = path.join(rootDir, 'check-barrier.cjs');
-    const barrierDir = path.join(rootDir, 'barrier');
+    const barrierScript = path.join(rootDirectory, 'check-barrier.cjs');
+    const barrierDirectory = path.join(rootDirectory, 'barrier');
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({ name: 'root', private: true }),
       );
       await writeText(
@@ -1336,19 +1350,19 @@ export default {
         ].join('\n'),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify({
           pipelines: {
             alpha: [
               {
-                args: [barrierScript, 'ALPHA_RESULT', barrierDir],
+                args: [barrierScript, 'ALPHA_RESULT', barrierDirectory],
                 command: process.execPath,
                 type: 'command',
               },
             ],
             beta: [
               {
-                args: [barrierScript, 'BETA_RESULT', barrierDir],
+                args: [barrierScript, 'BETA_RESULT', barrierDirectory],
                 command: process.execPath,
                 type: 'command',
               },
@@ -1357,20 +1371,21 @@ export default {
         })};\n`,
       );
 
-      const runCheck = (pipeline: 'alpha' | 'beta', run: string) =>
-        execFileAsync(process.execPath, [cliPath, 'check', pipeline], {
-          cwd: rootDir,
-          env: {
-            ...process.env,
-            CI: 'true',
-            LIMINA_TEST_RUN: run,
-          },
-        }).then(
-          () => {
-            throw new Error(`Expected check ${pipeline} to fail.`);
-          },
-          (error: { code?: number; stderr?: string; stdout?: string }) => error,
-        );
+      const runCheck = async (pipeline: 'alpha' | 'beta', run: string) => {
+        try {
+          await execFileAsync(process.execPath, [cliPath, 'check', pipeline], {
+            cwd: rootDirectory,
+            env: {
+              ...process.env,
+              CI: 'true',
+              LIMINA_TEST_RUN: run,
+            },
+          });
+        } catch (error) {
+          return error as { code?: number; stderr?: string; stdout?: string };
+        }
+        throw new Error(`Expected check ${pipeline} to fail.`);
+      };
 
       for (let iteration = 0; iteration < 3; iteration += 1) {
         const run = `run-${iteration}`;
@@ -1407,17 +1422,32 @@ export default {
         );
       }
 
-      const stableTaskQuery = await execFileAsync(
-        process.execPath,
-        [cliPath, 'check', '--issues', '--task', 'command', '--format', 'json'],
-        {
-          cwd: rootDir,
-          env: { ...process.env, CI: 'true' },
-        },
-      ).then(
-        (result) => ({ ...result, code: 0 }),
-        (error: { code?: number; stderr?: string; stdout?: string }) => error,
-      );
+      let stableTaskQuery: { code?: number; stderr?: string; stdout?: string };
+      try {
+        const queryResult = await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            'check',
+            '--issues',
+            '--task',
+            'command',
+            '--format',
+            'json',
+          ],
+          {
+            cwd: rootDirectory,
+            env: { ...process.env, CI: 'true' },
+          },
+        );
+        stableTaskQuery = { ...queryResult, code: 0 };
+      } catch (error) {
+        stableTaskQuery = error as {
+          code?: number;
+          stderr?: string;
+          stdout?: string;
+        };
+      }
       expect(
         stableTaskQuery.code,
         `${stableTaskQuery.stdout ?? ''}\n${stableTaskQuery.stderr ?? ''}`,
@@ -1427,7 +1457,7 @@ export default {
         issues: [{ task: 'command' }],
       });
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   }, 45_000);
 
@@ -1450,14 +1480,14 @@ export default {
           },
         },
       );
-      const tscArgs = await readFile(
+      const tscArguments = await readFile(
         path.join(rootDir, 'tsc-args.txt'),
         'utf8',
       );
 
       expect(result.stdout).toContain('limina build');
       expect(result.stdout).toContain('limina build passed');
-      expect(tscArgs).toContain(
+      expect(tscArguments).toContain(
         '.limina/tsconfig/checkers/tsc/outputs/projects/packages/pkg/tsconfig.lib.output.json',
       );
     });
@@ -1527,47 +1557,56 @@ export default {
       ['checker', 'build', 'packages/pkg/tsconfig.lib.json'],
     ],
     ['global checker build', ['checker', 'build']],
-  ])('rejects inherited outFile before %s spawn', async (_label, args) => {
-    await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-      const externalMarker = path.join(rootDir, 'external/marker.txt');
-      const bundlePath = path.join(rootDir, 'external/bundle.js');
-      await writeText(externalMarker, 'external marker bytes\n');
-      await writeText(
-        path.join(rootDir, 'packages/pkg/tsconfig.base.json'),
-        stringifyConfig({
-          compilerOptions: { outFile: bundlePath },
-        }),
-      );
-      await writeText(
-        path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
-        stringifyConfig({
-          compilerOptions: {
-            ...buildCompilerOptions,
-            noEmit: true,
-          },
-          extends: './tsconfig.base.json',
-          include: ['src/**/*.ts'],
-          liminaOptions: { outputs: {} },
-        }),
-      );
+  ])(
+    'rejects inherited outFile before %s spawn',
+    async (_label, arguments_) => {
+      await withCliBuildFixture(async ({ cliPath, rootDir }) => {
+        const externalMarker = path.join(rootDir, 'external/marker.txt');
+        const bundlePath = path.join(rootDir, 'external/bundle.js');
+        await writeText(externalMarker, 'external marker bytes\n');
+        await writeText(
+          path.join(rootDir, 'packages/pkg/tsconfig.base.json'),
+          stringifyConfig({
+            compilerOptions: { outFile: bundlePath },
+          }),
+        );
+        await writeText(
+          path.join(rootDir, 'packages/pkg/tsconfig.lib.json'),
+          stringifyConfig({
+            compilerOptions: {
+              ...buildCompilerOptions,
+              noEmit: true,
+            },
+            extends: './tsconfig.base.json',
+            include: ['src/**/*.ts'],
+            liminaOptions: { outputs: {} },
+          }),
+        );
 
-      const output = await runCliExpectFailure({ args, cliPath, rootDir });
+        const output = await runCliExpectFailure({
+          args: arguments_,
+          cliPath,
+          rootDir,
+        });
 
-      expect(output).toContain('outFile');
-      await expect(
-        readFile(path.join(rootDir, 'tsc-args.txt')),
-      ).rejects.toMatchObject({
-        code: 'ENOENT',
+        expect(output).toContain('outFile');
+        await expect(
+          readFile(path.join(rootDir, 'tsc-args.txt')),
+        ).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        await expect(lstat(bundlePath)).rejects.toMatchObject({
+          code: 'ENOENT',
+        });
+        await expect(
+          lstat(path.join(rootDir, 'external/bundle.d.ts')),
+        ).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(readFile(externalMarker, 'utf8')).resolves.toBe(
+          'external marker bytes\n',
+        );
       });
-      await expect(lstat(bundlePath)).rejects.toMatchObject({ code: 'ENOENT' });
-      await expect(
-        lstat(path.join(rootDir, 'external/bundle.d.ts')),
-      ).rejects.toMatchObject({ code: 'ENOENT' });
-      await expect(readFile(externalMarker, 'utf8')).resolves.toBe(
-        'external marker bytes\n',
-      );
-    });
-  });
+    },
+  );
 
   it('rejects an inherited outFile even when it is lexically inside outDir', async () => {
     await withCliBuildFixture(async ({ cliPath, rootDir }) => {
@@ -1605,15 +1644,17 @@ export default {
     'rejects an unsafe user outDir %s before public managed build spawn',
     async (unsafeKind) => {
       await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-        const outDir = path.join(rootDir, 'packages/pkg/dist');
-        const externalDir = path.join(rootDir, 'external');
-        const markerPath = path.join(externalDir, 'marker.txt');
+        const outDirectory = path.join(rootDir, 'packages/pkg/dist');
+        const externalDirectory = path.join(rootDir, 'external');
+        const markerPath = path.join(externalDirectory, 'marker.txt');
         await writeText(markerPath, 'external marker bytes\n');
-        await mkdir(outDir, { recursive: true });
+        await mkdir(outDirectory, { recursive: true });
         await symlink(
-          unsafeKind === 'nested-directory-link' ? externalDir : markerPath,
+          unsafeKind === 'nested-directory-link'
+            ? externalDirectory
+            : markerPath,
           path.join(
-            outDir,
+            outDirectory,
             unsafeKind === 'nested-directory-link' ? 'sub' : 'index.d.ts',
           ),
         );
@@ -1656,16 +1697,20 @@ export default {
     ['checker tsbuildinfo', ['checker', 'build'], 'tsbuildinfo/checkers'],
   ])(
     'rejects an unsafe internal %s runtime directory before checker spawn',
-    async (_label, args, runtimeDirectory) => {
+    async (_label, arguments_, runtimeDirectory) => {
       await withCliBuildFixture(async ({ cliPath, rootDir }) => {
-        const externalDir = path.join(rootDir, 'external');
-        const markerPath = path.join(externalDir, 'marker.txt');
+        const externalDirectory = path.join(rootDir, 'external');
+        const markerPath = path.join(externalDirectory, 'marker.txt');
         const internalPath = path.join(rootDir, '.limina', runtimeDirectory);
         await writeText(markerPath, 'external marker bytes\n');
         await mkdir(path.dirname(internalPath), { recursive: true });
-        await symlink(externalDir, internalPath);
+        await symlink(externalDirectory, internalPath);
 
-        const output = await runCliExpectFailure({ args, cliPath, rootDir });
+        const output = await runCliExpectFailure({
+          args: arguments_,
+          cliPath,
+          rootDir,
+        });
 
         expect(output).toContain('symbolic link or junction');
         await expect(
@@ -1677,7 +1722,7 @@ export default {
           'external marker bytes\n',
         );
         await expect(
-          lstat(path.join(externalDir, 'lib.tsbuildinfo')),
+          lstat(path.join(externalDirectory, 'lib.tsbuildinfo')),
         ).rejects.toMatchObject({ code: 'ENOENT' });
       });
     },
@@ -1750,12 +1795,12 @@ export default {
         },
       );
 
-      const vueTscArgs = await readFile(
+      const vueTscArguments = await readFile(
         path.join(rootDir, 'vue-tsc-args.txt'),
         'utf8',
       );
 
-      expect(vueTscArgs).toContain('packages/raw/tsconfig.raw.json');
+      expect(vueTscArguments).toContain('packages/raw/tsconfig.raw.json');
     });
   });
 
@@ -1780,13 +1825,13 @@ export default {
           },
         },
       );
-      const watchTscArgs = await readFile(
+      const watchTscArguments = await readFile(
         path.join(rootDir, 'tsc-args.txt'),
         'utf8',
       );
 
-      expect(watchTscArgs).toContain('--watch');
-      expect(watchTscArgs).toContain('--preserveWatchOutput');
+      expect(watchTscArguments).toContain('--watch');
+      expect(watchTscArguments).toContain('--preserveWatchOutput');
     });
   });
 
@@ -1817,8 +1862,8 @@ export default {
         ].join('\n'),
       );
 
-      let stdout = '';
-      let stderr = '';
+      let stdout: string;
+      let stderr: string;
 
       try {
         await execFileAsync(
@@ -2015,34 +2060,35 @@ export default {
   }, 30_000);
 
   it('runs source check from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({
           name: 'app',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             config: {
@@ -2058,7 +2104,7 @@ export default {
         )};\n`,
       );
       await writeText(
-        path.join(rootDir, 'tsconfig.build.json'),
+        path.join(rootDirectory, 'tsconfig.build.json'),
         stringifyConfig({
           files: [],
           references: [
@@ -2069,7 +2115,7 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({
           name: '@example/app',
           scripts: {
@@ -2079,18 +2125,18 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/src/index.ts'),
+        path.join(rootDirectory, 'app/src/index.ts'),
         'export const value = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.lib.dts.json'),
+        path.join(rootDirectory, 'app/tsconfig.lib.dts.json'),
         stringifyConfig({
           compilerOptions: buildCompilerOptions,
           include: ['src/**/*.ts'],
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.json'),
+        path.join(rootDirectory, 'app/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [
@@ -2101,7 +2147,7 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.lib.json'),
+        path.join(rootDirectory, 'app/tsconfig.lib.json'),
         stringifyConfig({
           liminaOptions: {
             outputs: {},
@@ -2119,12 +2165,12 @@ export default {
         [
           cliPath,
           '--config',
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'source',
           'check',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -2135,7 +2181,7 @@ export default {
       expect(result.stdout).toContain('limina source check');
       expect(result.stdout).toContain('limina source passed');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2143,23 +2189,24 @@ export default {
   }, 15_000);
 
   it('hard-fails standalone source check when isolated Knip resolution is missing', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-knip-missing-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-knip-missing-'),
     );
-    const cliPath = await createIsolatedLiminaCli(rootDir);
-    const configPath = path.join(rootDir, 'limina.config.mjs');
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+    const cliPath = await createIsolatedLiminaCli(rootDirectory);
+    const configPath = path.join(rootDirectory, 'limina.config.mjs');
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({ name: 'root', private: true }),
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({ name: '@example/app', private: true }),
       );
       await writeText(
@@ -2175,7 +2222,7 @@ export default {
           process.execPath,
           [cliPath, '--config', configPath, 'source', 'check'],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: { ...process.env, CI: 'true' },
           },
         );
@@ -2199,28 +2246,25 @@ export default {
       const invocation = JSON.parse(
         await readFile(
           path.join(
-            rootDir,
+            rootDirectory,
             '.limina/check/invocations',
             `${invocationId}.json`,
           ),
           'utf8',
         ),
       ) as { issues: { code: string; reason?: string; task?: string }[] };
-      expect(invocation.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_SOURCE_CHECK_FAILED',
-            reason: expect.stringContaining(
-              'Missing Limina runtime dependency:',
-            ),
-            task: 'source:check',
-          }),
-        ]),
-      );
+      const expectedIssues = expect.arrayContaining([
+        expect.objectContaining({
+          code: 'LIMINA_SOURCE_CHECK_FAILED',
+          reason: expect.stringContaining('Missing Limina runtime dependency:'),
+          task: 'source:check',
+        }),
+      ]);
+      expect(invocation.issues).toEqual(expectedIssues);
 
       const sourceSnapshot = JSON.parse(
         await readFile(
-          path.join(rootDir, '.limina/source-check/last-run.json'),
+          path.join(rootDirectory, '.limina/source-check/last-run.json'),
           'utf8',
         ),
       ) as { issues: unknown[]; status: string };
@@ -2240,26 +2284,23 @@ export default {
           'json',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: { ...process.env, CI: 'true' },
         },
       );
       const queryPayload = JSON.parse(query.stdout) as {
         issues: { code: string; reason?: string; task?: string }[];
       };
-      expect(queryPayload.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_SOURCE_CHECK_FAILED',
-            reason: expect.stringContaining(
-              'Missing Limina runtime dependency:',
-            ),
-            task: 'source:check',
-          }),
-        ]),
-      );
+      const expectedQueryIssues = expect.arrayContaining([
+        expect.objectContaining({
+          code: 'LIMINA_SOURCE_CHECK_FAILED',
+          reason: expect.stringContaining('Missing Limina runtime dependency:'),
+          task: 'source:check',
+        }),
+      ]);
+      expect(queryPayload.issues).toEqual(expectedQueryIssues);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2267,34 +2308,35 @@ export default {
   }, 40_000);
 
   it('prints source and Proof issue filters from the last run', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-issues-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({
           name: 'app',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             config: {
@@ -2313,7 +2355,7 @@ export default {
         )};\n`,
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({
           exports: {
             '.': './src/index.ts',
@@ -2326,22 +2368,22 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/src/index.ts'),
+        path.join(rootDirectory, 'app/src/index.ts'),
         'export const value = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'app/src/theme/dead.ts'),
+        path.join(rootDirectory, 'app/src/theme/dead.ts'),
         'export const deadValue = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.lib.dts.json'),
+        path.join(rootDirectory, 'app/tsconfig.lib.dts.json'),
         stringifyConfig({
           compilerOptions: buildCompilerOptions,
           include: ['src/**/*.ts'],
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.json'),
+        path.join(rootDirectory, 'app/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [
@@ -2352,7 +2394,7 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.lib.json'),
+        path.join(rootDirectory, 'app/tsconfig.lib.json'),
         stringifyConfig({
           liminaOptions: {
             outputs: {},
@@ -2373,11 +2415,11 @@ export default {
           [
             cliPath,
             '--config',
-            path.join(rootDir, 'limina.config.mjs'),
+            path.join(rootDirectory, 'limina.config.mjs'),
             'check',
           ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: {
               ...process.env,
               CI: 'true',
@@ -2412,7 +2454,7 @@ export default {
       expect(checkFailurePlainStdout).not.toContain('Source check summary');
 
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         'export default () => { throw new Error("config executed"); };\n',
       );
       const [explicitQuery, defaultNestedQuery] = await Promise.all([
@@ -2421,7 +2463,7 @@ export default {
           [
             cliPath,
             '--config',
-            path.join(rootDir, 'limina.config.mjs'),
+            path.join(rootDirectory, 'limina.config.mjs'),
             '--config-loader',
             'unavailable',
             '--mode',
@@ -2432,7 +2474,7 @@ export default {
             'json',
           ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: {
               ...process.env,
               CI: 'true',
@@ -2443,7 +2485,7 @@ export default {
           process.execPath,
           [cliPath, 'check', '--issues', '--format', 'json'],
           {
-            cwd: path.join(rootDir, 'app/src'),
+            cwd: path.join(rootDirectory, 'app/src'),
             env: {
               ...process.env,
               CI: 'true',
@@ -2460,14 +2502,14 @@ export default {
       const runIssueQuery = (flags: CheckFlags = {}) =>
         captureIssueInventory({
           flags: {
-            config: path.join(rootDir, 'limina.config.mjs'),
+            config: path.join(rootDirectory, 'limina.config.mjs'),
             issues: true,
             ...flags,
           },
         });
       const missingConfigQuery = await captureIssueInventory({
         flags: {
-          config: path.join(rootDir, 'missing.config.mjs'),
+          config: path.join(rootDirectory, 'missing.config.mjs'),
           format: 'json',
           issues: true,
         },
@@ -2603,7 +2645,7 @@ export default {
       );
       expect(normalizedUnmatchedRuleOutput).toContain('--rule --help');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -2611,25 +2653,26 @@ export default {
   }, 40_000);
 
   it('supports bounded human issue views while keeping machine output complete', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-issues-limit-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-issues-limit-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     await writeText(
-      path.join(rootDir, 'limina.config.mjs'),
+      path.join(rootDirectory, 'limina.config.mjs'),
       'export default {};\n',
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({ name: 'root', private: true }),
       );
       await writeText(
-        path.join(rootDir, '.limina/check/last-run.json'),
+        path.join(rootDirectory, '.limina/check/last-run.json'),
         stringifyConfig({
           command: 'limina check recorded-command-that-must-not-be-reused',
           createdAt: '2026-07-17T00:00:00.000Z',
@@ -2649,7 +2692,11 @@ export default {
       );
       const invocationId = '00000000-0000-4000-8000-000000000000';
       await writeText(
-        path.join(rootDir, '.limina/check/invocations', `${invocationId}.json`),
+        path.join(
+          rootDirectory,
+          '.limina/check/invocations',
+          `${invocationId}.json`,
+        ),
         stringifyConfig({
           command: 'recorded standalone command --not-a-query-template',
           completedAt: '2026-07-17T00:00:01.000Z',
@@ -2671,7 +2718,7 @@ export default {
 
       const runIssues = (flags: CheckFlags = {}) =>
         captureIssueInventory({
-          cwd: rootDir,
+          cwd: rootDirectory,
           flags: {
             issues: true,
             ...flags,
@@ -2718,21 +2765,22 @@ export default {
         `check --issues --invocation ${invocationId}`,
       );
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   }, 40_000);
 
   it('validates issue limits before reading a workspace or snapshot', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-limit-invalid-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-limit-invalid-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
     const environment = { ...process.env, CI: 'true' };
-    const run = (args: readonly string[]) =>
-      execFileAsync(process.execPath, [cliPath, 'check', ...args], {
-        cwd: rootDir,
+    const run = (arguments_: readonly string[]) =>
+      execFileAsync(process.execPath, [cliPath, 'check', ...arguments_], {
+        cwd: rootDirectory,
         env: environment,
       });
 
@@ -2785,7 +2833,7 @@ export default {
         }),
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   }, 40_000);
 
@@ -3261,36 +3309,37 @@ export default {
   }, 60_000);
 
   it('does not import config while reading checker filter help', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-auto-issues-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-auto-issues-'),
     );
-    await writeText(path.join(rootDir, 'package.json'), '{}\n');
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+    await writeText(path.join(rootDirectory, 'package.json'), '{}\n');
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         'throw new Error("config must not execute");\n',
       );
       await writeText(
-        path.join(rootDir, 'app/src/index.ts'),
+        path.join(rootDirectory, 'app/src/index.ts'),
         'export const value = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({
           name: 'app',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.json'),
+        path.join(rootDirectory, 'app/tsconfig.json'),
         stringifyConfig({
           compilerOptions: {
             module: 'ESNext',
@@ -3308,14 +3357,14 @@ export default {
         [
           cliPath,
           '--config',
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'check',
           '--issues',
           '--checker',
           '--help',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -3328,7 +3377,7 @@ export default {
       expect(plainStdout).toContain('No check issue snapshot found.');
       expect(plainStdout).not.toContain('config must not execute');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3336,29 +3385,37 @@ export default {
   }, 15_000);
 
   it('runs release check with repeated package filters from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-release-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-release-'),
     );
-    await writeText(path.join(rootDir, 'package.json'), '{}\n');
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+    await writeText(path.join(rootDirectory, 'package.json'), '{}\n');
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     async function writePackage(packageName: string): Promise<void> {
-      const packageDirName = packageName.split('/').at(-1) ?? packageName;
-      const packageDir = path.join(rootDir, 'packages', packageDirName);
-      const outDir = path.join(packageDir, 'dist');
+      const packageDirectoryName = packageName.split('/').at(-1) ?? packageName;
+      const packageDirectory = path.join(
+        rootDirectory,
+        'packages',
+        packageDirectoryName,
+      );
+      const outDirectory = path.join(packageDirectory, 'dist');
 
       await writeText(
-        path.join(packageDir, 'package.json'),
+        path.join(packageDirectory, 'package.json'),
         stringifyConfig({
           name: packageName,
           version: '1.0.0',
         }),
       );
-      await writeText(path.join(packageDir, 'src/index.ts'), 'export {};\n');
       await writeText(
-        path.join(outDir, 'package.json'),
+        path.join(packageDirectory, 'src/index.ts'),
+        'export {};\n',
+      );
+      await writeText(
+        path.join(outDirectory, 'package.json'),
         stringifyConfig({
           exports: {
             '.': './index.js',
@@ -3370,22 +3427,25 @@ export default {
         }),
       );
       await writeText(
-        path.join(outDir, 'index.js'),
+        path.join(outDirectory, 'index.js'),
         'export const value = 1;\n',
       );
-      await writeText(path.join(outDir, 'README.md'), '# Example package\n');
-      await writeText(path.join(outDir, 'LICENSE.md'), 'MIT\n');
+      await writeText(
+        path.join(outDirectory, 'README.md'),
+        '# Example package\n',
+      );
+      await writeText(path.join(outDirectory, 'LICENSE.md'), 'MIT\n');
     }
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writePackage('@example/a');
       await writePackage('@example/b');
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             package: {
@@ -3411,7 +3471,7 @@ export default {
         [
           cliPath,
           '--config',
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'release',
           'check',
           '--package',
@@ -3420,7 +3480,7 @@ export default {
           '@example/b',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -3431,7 +3491,7 @@ export default {
       expect(result.stdout).toContain('limina release check');
       expect(result.stdout).toContain('limina release passed');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3439,27 +3499,28 @@ export default {
   }, 30_000);
 
   it('prints standalone graph check verbose issue details from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-graph-verbose-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-graph-verbose-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             config: {
@@ -3475,7 +3536,7 @@ export default {
         )};\n`,
       );
       await writeText(
-        path.join(rootDir, 'packages/a/package.json'),
+        path.join(rootDirectory, 'packages/a/package.json'),
         stringifyConfig({
           dependencies: {
             '@example/b': 'workspace:*',
@@ -3484,11 +3545,11 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/a/src/index.ts'),
+        path.join(rootDirectory, 'packages/a/src/index.ts'),
         "import { value } from '@example/b';\nexport const appValue = value;\n",
       );
       await writeText(
-        path.join(rootDir, 'packages/a/tsconfig.lib.json'),
+        path.join(rootDirectory, 'packages/a/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {
             ...buildCompilerOptions,
@@ -3498,14 +3559,14 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/a/tsconfig.json'),
+        path.join(rootDirectory, 'packages/a/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/package.json'),
+        path.join(rootDirectory, 'packages/b/package.json'),
         stringifyConfig({
           exports: {
             '.': './src/index.ts',
@@ -3514,11 +3575,11 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/src/index.ts'),
+        path.join(rootDirectory, 'packages/b/src/index.ts'),
         'export const value = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'packages/b/tsconfig.lib.json'),
+        path.join(rootDirectory, 'packages/b/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {
             ...buildCompilerOptions,
@@ -3528,40 +3589,45 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/tsconfig.json'),
+        path.join(rootDirectory, 'packages/b/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
 
-      const result = await execFileAsync(
-        process.execPath,
-        [
-          cliPath,
-          '--config',
-          path.join(rootDir, 'limina.config.mjs'),
-          'graph',
-          'check',
-          '--verbose',
-        ],
-        {
-          cwd: rootDir,
-          env: {
-            ...process.env,
-            CI: 'true',
+      let result: { code?: number; output: string };
+      try {
+        const { stderr, stdout } = await execFileAsync(
+          process.execPath,
+          [
+            cliPath,
+            '--config',
+            path.join(rootDirectory, 'limina.config.mjs'),
+            'graph',
+            'check',
+            '--verbose',
+          ],
+          {
+            cwd: rootDirectory,
+            env: {
+              ...process.env,
+              CI: 'true',
+            },
           },
-        },
-      ).then(
-        ({ stderr, stdout }) => ({
-          code: 0,
-          output: `${stdout}${stderr}`,
-        }),
-        (error: { code?: number; stderr?: string; stdout?: string }) => ({
-          code: error.code,
-          output: `${error.stdout ?? ''}${error.stderr ?? ''}`,
-        }),
-      );
+        );
+        result = { code: 0, output: `${stdout}${stderr}` };
+      } catch (error) {
+        const failure = error as {
+          code?: number;
+          stderr?: string;
+          stdout?: string;
+        };
+        result = {
+          code: failure.code,
+          output: `${failure.stdout ?? ''}${failure.stderr ?? ''}`,
+        };
+      }
 
       expect(result.code).toBe(1);
       expect(result.output).toContain('Graph check summary');
@@ -3569,7 +3635,7 @@ export default {
       // With no installed package, the checker has no target to reference.
       expect(result.output).toContain('Unresolved workspace import');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3577,27 +3643,28 @@ export default {
   }, 30_000);
 
   it('exports the dependency graph to stdout from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-graph-export-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-graph-export-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             config: {
@@ -3613,7 +3680,7 @@ export default {
         )};\n`,
       );
       await writeText(
-        path.join(rootDir, 'packages/a/package.json'),
+        path.join(rootDirectory, 'packages/a/package.json'),
         stringifyConfig({
           dependencies: {
             '@example/b': 'workspace:*',
@@ -3622,11 +3689,11 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/a/src/index.ts'),
+        path.join(rootDirectory, 'packages/a/src/index.ts'),
         "import { value } from '@example/b';\nexport const appValue = value;\n",
       );
       await writeText(
-        path.join(rootDir, 'packages/a/tsconfig.lib.json'),
+        path.join(rootDirectory, 'packages/a/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {
             ...buildCompilerOptions,
@@ -3636,14 +3703,14 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/a/tsconfig.json'),
+        path.join(rootDirectory, 'packages/a/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/package.json'),
+        path.join(rootDirectory, 'packages/b/package.json'),
         stringifyConfig({
           exports: {
             '.': './src/index.ts',
@@ -3652,11 +3719,11 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/src/index.ts'),
+        path.join(rootDirectory, 'packages/b/src/index.ts'),
         'export const value = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'packages/b/tsconfig.lib.json'),
+        path.join(rootDirectory, 'packages/b/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {
             ...buildCompilerOptions,
@@ -3666,25 +3733,25 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/tsconfig.json'),
+        path.join(rootDirectory, 'packages/b/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
 
-      await linkSemanticWorkspacePackages(rootDir, ['b']);
+      await linkSemanticWorkspacePackages(rootDirectory, ['b']);
       const result = await execFileAsync(
         process.execPath,
         [
           cliPath,
           '--config',
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'graph',
           'export',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -3711,7 +3778,7 @@ export default {
         },
       ]);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3719,34 +3786,35 @@ export default {
   }, 15_000);
 
   it('runs graph prepare from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-graph-prepare-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-graph-prepare-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - app\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/package.json'),
+        path.join(rootDirectory, 'app/package.json'),
         stringifyConfig({
           name: 'app',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             config: {
@@ -3762,29 +3830,29 @@ export default {
         )};\n`,
       );
       await writeText(
-        path.join(rootDir, 'app/node.ts'),
+        path.join(rootDirectory, 'app/node.ts'),
         'export const nodeValue = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'app/runtime.ts'),
+        path.join(rootDirectory, 'app/runtime.ts'),
         "import { nodeValue } from './node';\nexport const runtimeValue = nodeValue;\n",
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.node.json'),
+        path.join(rootDirectory, 'app/tsconfig.node.json'),
         stringifyConfig({
           compilerOptions: buildCompilerOptions,
           include: ['node.ts'],
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.runtime.json'),
+        path.join(rootDirectory, 'app/tsconfig.runtime.json'),
         stringifyConfig({
           compilerOptions: buildCompilerOptions,
           include: ['runtime.ts'],
         }),
       );
       await writeText(
-        path.join(rootDir, 'app/tsconfig.json'),
+        path.join(rootDirectory, 'app/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [
@@ -3803,12 +3871,12 @@ export default {
         [
           cliPath,
           '--config',
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'graph',
           'prepare',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -3821,14 +3889,14 @@ export default {
       expect(
         await readFile(
           path.join(
-            rootDir,
+            rootDirectory,
             '.limina/tsconfig/checkers/tsc/projects/app/tsconfig.runtime.dts.json',
           ),
           'utf8',
         ),
       ).toContain('"path": "./tsconfig.node.dts.json"');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3836,27 +3904,28 @@ export default {
   }, 15_000);
 
   it('exports an artifact dependency graph to an output file', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-graph-export-output-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-graph-export-output-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
         }),
       );
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         `export default ${JSON.stringify(
           {
             config: {
@@ -3872,7 +3941,7 @@ export default {
         )};\n`,
       );
       await writeText(
-        path.join(rootDir, 'packages/a/package.json'),
+        path.join(rootDirectory, 'packages/a/package.json'),
         stringifyConfig({
           dependencies: {
             '@example/b': 'workspace:*',
@@ -3881,11 +3950,11 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/a/src/index.ts'),
+        path.join(rootDirectory, 'packages/a/src/index.ts'),
         "import { runtimeValue } from '@example/b/runtime';\nexport const value = runtimeValue;\n",
       );
       await writeText(
-        path.join(rootDir, 'packages/a/tsconfig.lib.json'),
+        path.join(rootDirectory, 'packages/a/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {
             ...buildCompilerOptions,
@@ -3895,14 +3964,14 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/a/tsconfig.json'),
+        path.join(rootDirectory, 'packages/a/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/package.json'),
+        path.join(rootDirectory, 'packages/b/package.json'),
         stringifyConfig({
           exports: {
             './runtime': {
@@ -3914,19 +3983,19 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/dist/runtime.d.ts'),
+        path.join(rootDirectory, 'packages/b/dist/runtime.d.ts'),
         'export declare const runtimeValue = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'packages/b/dist/runtime.js'),
+        path.join(rootDirectory, 'packages/b/dist/runtime.js'),
         'export const runtimeValue = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'packages/b/src/index.ts'),
+        path.join(rootDirectory, 'packages/b/src/index.ts'),
         'export const sourceValue = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'packages/b/tsconfig.lib.json'),
+        path.join(rootDirectory, 'packages/b/tsconfig.lib.json'),
         stringifyConfig({
           compilerOptions: {
             ...buildCompilerOptions,
@@ -3937,20 +4006,20 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/b/tsconfig.json'),
+        path.join(rootDirectory, 'packages/b/tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
 
-      await linkSemanticWorkspacePackages(rootDir, ['b']);
+      await linkSemanticWorkspacePackages(rootDirectory, ['b']);
       const result = await execFileAsync(
         process.execPath,
         [
           cliPath,
           '--config',
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'graph',
           'export',
           '--view',
@@ -3959,7 +4028,7 @@ export default {
           'dependency-graph.json',
         ],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -3967,14 +4036,17 @@ export default {
         },
       );
       const graph = JSON.parse(
-        await readFile(path.join(rootDir, 'dependency-graph.json'), 'utf8'),
+        await readFile(
+          path.join(rootDirectory, 'dependency-graph.json'),
+          'utf8',
+        ),
       ) as { edges: { kind: string }[]; view: string };
 
       expect(result.stdout).toBe('');
       expect(graph.view).toBe('artifact');
       expect(graph.edges.map((edge) => edge.kind)).toEqual(['artifact']);
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -3982,25 +4054,31 @@ export default {
   }, 15_000);
 
   it('rejects the removed task orchestrator command from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-nx-generate-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-nx-generate-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         'export default {};\n',
       );
 
       await expect(
         execFileAsync(
           process.execPath,
-          [cliPath, '--config', path.join(rootDir, 'limina.config.mjs'), 'nx'],
+          [
+            cliPath,
+            '--config',
+            path.join(rootDirectory, 'limina.config.mjs'),
+            'nx',
+          ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: {
               ...process.env,
               CI: 'true',
@@ -4011,7 +4089,7 @@ export default {
         stderr: expect.stringContaining('Unknown command "nx".'),
       });
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4019,16 +4097,17 @@ export default {
   }, 15_000);
 
   it('rejects removed paths commands from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-paths-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-paths-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         'export default {};\n',
       );
 
@@ -4038,12 +4117,12 @@ export default {
           [
             cliPath,
             '--config',
-            path.join(rootDir, 'limina.config.mjs'),
+            path.join(rootDirectory, 'limina.config.mjs'),
             'paths',
             'check',
           ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: {
               ...process.env,
               CI: 'true',
@@ -4054,7 +4133,7 @@ export default {
         stderr: expect.stringContaining('Unknown command'),
       });
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4062,20 +4141,21 @@ export default {
   }, 15_000);
 
   it('runs init from the public command', async () => {
-    const rootDir = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-cli-init-')),
+    const rootDirectoryTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-cli-init-'),
     );
+    const rootDirectory = await realpath(rootDirectoryTemporaryPath);
     const cliPath = fileURLToPath(
       new URL('../../bin/limina.js', import.meta.url),
     );
 
     try {
       await writeText(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages:\n  - packages/*\n',
       );
       await writeText(
-        path.join(rootDir, 'package.json'),
+        path.join(rootDirectory, 'package.json'),
         stringifyConfig({
           name: 'root',
           private: true,
@@ -4083,18 +4163,18 @@ export default {
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/app/package.json'),
+        path.join(rootDirectory, 'packages/app/package.json'),
         stringifyConfig({
           name: 'app',
           type: 'module',
         }),
       );
       await writeText(
-        path.join(rootDir, 'packages/app/src/index.ts'),
+        path.join(rootDirectory, 'packages/app/src/index.ts'),
         'export const value = 1;\n',
       );
       await writeText(
-        path.join(rootDir, 'packages/app/tsconfig.json'),
+        path.join(rootDirectory, 'packages/app/tsconfig.json'),
         stringifyConfig({
           compilerOptions: {
             module: 'ESNext',
@@ -4110,7 +4190,7 @@ export default {
         process.execPath,
         [cliPath, 'init', '--yes'],
         {
-          cwd: rootDir,
+          cwd: rootDirectory,
           env: {
             ...process.env,
             CI: 'true',
@@ -4123,19 +4203,19 @@ export default {
       expect(stdout).not.toContain('limina init finished');
       expect(stdout).not.toContain('[start]');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
+        await readFile(path.join(rootDirectory, 'limina.config.mts'), 'utf8'),
       ).toContain('auto: {');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
+        await readFile(path.join(rootDirectory, 'limina.config.mts'), 'utf8'),
       ).toContain('exclude: []');
       expect(
-        await readFile(path.join(rootDir, 'limina.config.mts'), 'utf8'),
+        await readFile(path.join(rootDirectory, 'limina.config.mts'), 'utf8'),
       ).not.toContain('include:');
       expect(
-        await readFile(path.join(rootDir, '.gitignore'), 'utf8'),
+        await readFile(path.join(rootDirectory, '.gitignore'), 'utf8'),
       ).toContain('.limina/');
     } finally {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
@@ -4151,7 +4231,7 @@ describe('CLI command help exit status', () => {
     ['graph', 'export', '-h'],
     ['checker', 'typecheck', '--help'],
     ['--help', 'source', 'check'],
-  ])('prints help without loading configuration: %j', async (...args) => {
+  ])('prints help without loading configuration: %j', async (...arguments_) => {
     const root = await mkdtemp(path.join(tmpdir(), 'limina-help-'));
     try {
       await writeFile(
@@ -4161,9 +4241,13 @@ describe('CLI command help exit status', () => {
       const cli = fileURLToPath(
         new URL('../../bin/limina.js', import.meta.url),
       );
-      const result = await execFileAsync(process.execPath, [cli, ...args], {
-        cwd: root,
-      });
+      const result = await execFileAsync(
+        process.execPath,
+        [cli, ...arguments_],
+        {
+          cwd: root,
+        },
+      );
       expect(result.stdout).toContain('Usage:');
       expect(result.stdout.match(/-h, --help/g)).toHaveLength(1);
       expect(result.stderr).not.toContain('limina failed');
@@ -4177,10 +4261,10 @@ describe('CLI command help exit status', () => {
     ['not-a-command'],
     ['not-a-command', '--help'],
     ['graph', 'bad-action'],
-  ])('still rejects unknown commands/actions: %j', async (...args) => {
+  ])('still rejects unknown commands/actions: %j', async (...arguments_) => {
     const cli = fileURLToPath(new URL('../../bin/limina.js', import.meta.url));
     await expect(
-      execFileAsync(process.execPath, [cli, ...args]),
+      execFileAsync(process.execPath, [cli, ...arguments_]),
     ).rejects.toMatchObject({ code: 1 });
   });
 });

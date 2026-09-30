@@ -1,7 +1,7 @@
 import { normalizeSlashes } from '#utils/path';
 import { plural } from '#utils/reporting';
 import path from 'pathe';
-import { generatedRootDirName } from '../../core/build-graph/generated/paths';
+import { generatedRootDirName as generatedRootDirectoryName } from '../../core/build-graph/generated/paths';
 import type {
   CheckIssueSnapshot,
   LiminaCheckIssue,
@@ -23,38 +23,43 @@ function formatLongDuration(durationMs: number): string {
 
 export function formatDuration(durationMs: number | undefined): string {
   if (durationMs === undefined) return '(not recorded)';
-  if (durationMs < 1000) return `${Math.max(0, Math.round(durationMs))}ms`;
-  return formatLongDuration(durationMs);
+  return durationMs < 1000
+    ? `${Math.max(0, Math.round(durationMs))}ms`
+    : formatLongDuration(durationMs);
 }
 
 function formatRecordedConfigPath(
   configPath: string,
-  rootDir: string | undefined,
+  rootDirectory: string | undefined,
 ): string {
-  if (rootDir === undefined) return normalizeSlashes(configPath);
-  if (!path.isAbsolute(configPath)) return normalizeSlashes(configPath);
-  return normalizeSlashes(path.relative(rootDir, configPath));
+  if (rootDirectory === undefined) return normalizeSlashes(configPath);
+  return normalizeSlashes(
+    path.isAbsolute(configPath)
+      ? path.relative(rootDirectory, configPath)
+      : configPath,
+  );
 }
 
 export function formatConfigPath(
   run: LiminaCheckRunSummary | undefined,
-  rootDir: string | undefined,
+  rootDirectory: string | undefined,
 ): string {
   const configPath = run?.configPath;
-  if (configPath === undefined) return '(not recorded)';
-  return formatRecordedConfigPath(configPath, rootDir);
+  return configPath === undefined
+    ? '(not recorded)'
+    : formatRecordedConfigPath(configPath, rootDirectory);
 }
 
-export function formatSnapshotPath(rootDir: string | undefined): string {
-  if (rootDir === undefined)
-    return `${generatedRootDirName}/check/last-run.json`;
+export function formatSnapshotPath(rootDirectory: string | undefined): string {
+  if (rootDirectory === undefined)
+    return `${generatedRootDirectoryName}/check/last-run.json`;
   const snapshotPath = path.join(
-    rootDir,
-    generatedRootDirName,
+    rootDirectory,
+    generatedRootDirectoryName,
     'check',
     'last-run.json',
   );
-  return normalizeSlashes(path.relative(rootDir, snapshotPath));
+  return normalizeSlashes(path.relative(rootDirectory, snapshotPath));
 }
 
 export function formatSnapshotTimestamp(snapshot: CheckIssueSnapshot): string {
@@ -75,15 +80,14 @@ export function getCheckSummaryBorderColor(options: {
   issues: readonly LiminaCheckIssue[];
   run?: LiminaCheckRunSummary;
 }): 'green' | 'red' {
-  const passed = options.run
+  const isPassed = options.run
     ? formatCheckRunResult(options.run) === 'PASSED'
     : options.issues.length === 0;
-  return passed ? 'green' : 'red';
+  return isPassed ? 'green' : 'red';
 }
 
 function isVisibleExecutionTask(task: LiminaCheckRunTaskSummary): boolean {
-  if (task.kind !== 'preparation') return true;
-  return task.state !== 'passed';
+  return task.kind !== 'preparation' || task.state !== 'passed';
 }
 
 function isExecutedTask(task: LiminaCheckRunTaskSummary): boolean {
@@ -115,8 +119,7 @@ function getCheckRunExecutionStats(
 function getBlockedTaskLabel(
   run: LiminaCheckRunSummary | undefined,
 ): string | undefined {
-  if (run === undefined) return undefined;
-  return run.blockedBy?.label;
+  return run === undefined ? undefined : run.blockedBy?.label;
 }
 
 function createNotReachedLine(label: string, count: number): string {

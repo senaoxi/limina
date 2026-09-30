@@ -24,16 +24,14 @@ export function createImportAnalysisCaches(): ImportAnalysisCaches {
 }
 
 function optionalString(value: string | undefined): string | null {
-  if (value === undefined) return null;
-  return value;
+  return value === undefined ? null : value;
 }
 
 function getVueSemanticIdentityId(
   context: ResolvedImportContext,
 ): string | null {
   const identity = context.vueSemanticIdentity;
-  if (identity === undefined) return null;
-  return identity.id;
+  return identity === undefined ? null : identity.id;
 }
 
 function getAstroSemanticIdentityId(
@@ -130,13 +128,11 @@ export function createLazyModuleResolutionRecord(): LazyModuleResolutionRecord {
 export function cloneTypeScriptResolution(
   resolution: ResolvedCheckerModuleName | null,
 ): ResolvedCheckerModuleName | null {
-  if (resolution === null) return null;
-  return { ...resolution };
+  return resolution === null ? null : { ...resolution };
 }
 
 function createCanonicalFileName(fileName: string): string {
-  if (ts.sys.useCaseSensitiveFileNames) return fileName;
-  return fileName.toLowerCase();
+  return ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase();
 }
 
 export function getTypeScriptModuleResolutionCache(

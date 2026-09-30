@@ -75,9 +75,10 @@ function collectProjectFacts(options: {
 function collectAllProjectFacts(options: FactCollectionOptions): ProjectFacts {
   const facts: CheckerDependencyFact[] = [];
   const problems: string[] = [];
-  const projects = [...options.discovery.projectByConfigPath.values()].sort(
-    (left, right) => compareCodeUnits(left.configPath, right.configPath),
-  );
+  const projects = options.discovery.projectByConfigPath
+    .values()
+    .toArray()
+    .sort((left, right) => compareCodeUnits(left.configPath, right.configPath));
   const caches = options.projectDependencyCaches;
   for (const project of projects) {
     const collected = collectProjectFacts({ base: options, caches, project });

@@ -57,14 +57,7 @@ function collectProviderProjects(options: {
 function groupProjectsByEngine(
   projects: SourceProject[],
 ): Map<CheckerBuildEngine, SourceProject[]> {
-  const projectsByEngine = new Map<CheckerBuildEngine, SourceProject[]>();
-  for (const project of projects) {
-    const engine = getSourceProjectBuildEngine(project);
-    const engineProjects = projectsByEngine.get(engine) ?? [];
-    engineProjects.push(project);
-    projectsByEngine.set(engine, engineProjects);
-  }
-  return projectsByEngine;
+  return Map.groupBy(projects, getSourceProjectBuildEngine);
 }
 
 function selectSameEngineProvider(options: {

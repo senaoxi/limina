@@ -14,9 +14,9 @@ import {
   type ReleaseFinding,
 } from '../../package-check/release-findings';
 import {
-  type DistPackageJson,
+  type DistPackageJson as DistributionPackageJson,
   type PackedPackageTarball,
-  readDistPackageJson,
+  readDistPackageJson as readDistributionPackageJson,
 } from '../../package-check/runner';
 import { packReleaseTarball } from './tarball';
 import type { ReleaseEntryOptions } from './types';
@@ -48,7 +48,7 @@ function isLocalSpecifierEntry(
 function createOutputSpecifierFinding(options: {
   dependencyName: string;
   entry: ReleaseEntryOptions;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packageManifestPath: string;
   sectionName: ReleaseDependencySectionName;
   specifier: string;
@@ -82,7 +82,7 @@ function createOutputSpecifierFinding(options: {
 
 function collectSectionFindings(options: {
   entry: ReleaseEntryOptions;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packageManifestPath: string;
   sectionName: ReleaseDependencySectionName;
 }): ReleaseFinding[] {
@@ -108,7 +108,7 @@ function collectSectionFindings(options: {
 
 function collectOutputManifestFindings(
   entry: ReleaseEntryOptions,
-  manifest: DistPackageJson,
+  manifest: DistributionPackageJson,
   packageManifestPath: string,
 ): ReleaseFinding[] {
   return dependencySections.flatMap((sectionName) =>
@@ -122,7 +122,7 @@ function collectOutputManifestFindings(
 }
 
 function createPrivateOutputFinding(options: {
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packageManifestPath: string;
 }): ReleaseFinding {
   const problemLine = `${options.manifest.name}: selected release package has "private": true; npm publish would reject it`;
@@ -158,7 +158,7 @@ function createConsistencyError(
 
 function assertOutputManifest(
   entry: ReleaseEntryOptions,
-  manifest: DistPackageJson,
+  manifest: DistributionPackageJson,
   packageManifestPath: string,
 ): void {
   const findings = collectOutputManifestFindings(
@@ -181,7 +181,7 @@ function assertOutputManifest(
 
 async function assertPackedRelease(options: {
   entry: ReleaseEntryOptions;
-  manifest: DistPackageJson;
+  manifest: DistributionPackageJson;
   packed: PackedPackageTarball;
 }): Promise<void> {
   await assertPackageReleaseConsistency({
@@ -198,7 +198,7 @@ async function assertPackedRelease(options: {
 
 async function executeReleaseEntry(entry: ReleaseEntryOptions): Promise<void> {
   const packageManifestPath = path.join(entry.outDir, 'package.json');
-  const manifest = await readDistPackageJson({
+  const manifest = await readDistributionPackageJson({
     config: entry.config,
     label: entry.label,
     packageJsonPath: packageManifestPath,
@@ -263,7 +263,7 @@ function logEntrySuccess(entry: ReleaseEntryOptions): void {
   }
 }
 
-function handleEntryFailure(
+function isHandleEntryFailure(
   entry: ReleaseEntryOptions,
   task: ReleaseEntryTask | undefined,
   error: unknown,
@@ -282,7 +282,7 @@ function handleEntryFailure(
   throw error;
 }
 
-export async function runReleaseCheckEntry(
+export async function isRunReleaseCheckEntry(
   entry: ReleaseEntryOptions,
 ): Promise<boolean> {
   const task = createEntryTask(entry);
@@ -293,6 +293,6 @@ export async function runReleaseCheckEntry(
     passTask(task);
     return true;
   } catch (error) {
-    return handleEntryFailure(entry, task, error);
+    return isHandleEntryFailure(entry, task, error);
   }
 }

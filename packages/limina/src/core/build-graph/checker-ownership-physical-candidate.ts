@@ -107,8 +107,9 @@ function getOwnerStateAndProject(options: {
   const project = options.context.discovery.projectByConfigPath.get(
     options.owningConfigPath,
   );
-  if (state === undefined || project === undefined) return null;
-  return { project, state };
+  return state === undefined || project === undefined
+    ? null
+    : { project, state };
 }
 
 function getLockedFrameworkFamily(
@@ -201,6 +202,7 @@ export function resolvePendingPhysicalCandidate(options: {
     options.context.semantic.project.options,
     options.context.semantic.project,
   );
-  if (targetPath === null) return null;
-  return qualifyPendingPhysicalCandidate({ ...options, targetPath });
+  return targetPath === null
+    ? null
+    : qualifyPendingPhysicalCandidate({ ...options, targetPath });
 }

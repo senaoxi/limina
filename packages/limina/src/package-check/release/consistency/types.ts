@@ -1,5 +1,5 @@
 import type {
-  ReleaseContentHashConfigArgs,
+  ReleaseContentHashConfigArguments,
   ResolvedLiminaConfig,
 } from '#config/runner';
 import type {
@@ -9,7 +9,7 @@ import type {
 } from '#core/workspace/actions';
 import type { ReleaseContentHashFileDiff } from '../findings/facts';
 import type { ReleaseFinding } from '../findings/types';
-import type { ReleaseRegistryConfiguration } from '../registry/authority';
+import type { ReleaseRegistryConfig } from '../registry/authority';
 
 export interface PublishDependencyEntry {
   dependencyName: string;
@@ -89,14 +89,14 @@ export interface WorkspacePackageOutputComparison {
   releaseRelevantDiffs: ContentHashDiffGroup;
 }
 
-export interface RegistryDistMetadata {
+export interface RegistryDistributionMetadata {
   integrity?: unknown;
   shasum?: unknown;
   tarball?: unknown;
 }
 
 export interface RegistryVersionMetadata {
-  dist?: RegistryDistMetadata;
+  dist?: RegistryDistributionMetadata;
 }
 
 export interface RegistryPackageMetadata {
@@ -182,7 +182,7 @@ export interface DirectWorkspaceDependency {
 }
 
 export interface ReleaseConsistencyState {
-  registryConfiguration: ReleaseRegistryConfiguration;
+  registryConfiguration: ReleaseRegistryConfig;
   changedPackageNames: Set<string>;
   directWorkspaceDependencies: DirectWorkspaceDependency[];
   edges: Map<string, Set<string>>;
@@ -193,7 +193,7 @@ export interface ReleaseConsistencyState {
 }
 
 export interface AssertPackageReleaseConsistencyOptions {
-  registryConfiguration: ReleaseRegistryConfiguration;
+  registryConfiguration: ReleaseRegistryConfig;
   config: ResolvedLiminaConfig;
   label: string;
   outputManifest: PublishManifest;
@@ -205,5 +205,5 @@ export interface AssertPackageReleaseConsistencyOptions {
 
 export interface ContentHashContext {
   baselineTag: string;
-  config: ReleaseContentHashConfigArgs | undefined;
+  config: ReleaseContentHashConfigArguments | undefined;
 }

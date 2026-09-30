@@ -112,7 +112,7 @@ function groupIssuesByOwnerScope(
   }
   for (const group of groups.values()) group.sort(compareIssues);
   return new Map(
-    [...groups.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    [...groups].sort(([left], [right]) => left.localeCompare(right)),
   );
 }
 
@@ -138,7 +138,7 @@ function formatScopeGroups(options: {
   config: ResolvedLiminaConfig;
   group: readonly SourceUnusedModuleIssue[];
 }): string[] {
-  const groups = [...groupIssuesByOwnerScope(options.group).entries()];
+  const groups = [...groupIssuesByOwnerScope(options.group)];
   return groups.flatMap(([scope, issues], index) => [
     ...formatScopeGroup({ config: options.config, issues, scope }),
     ...(index === groups.length - 1 ? [] : ['']),
@@ -163,8 +163,7 @@ export function formatUnusedModuleGroup(options: {
   group: readonly SourceUnusedModuleIssue[];
   report: SourceIssueReportOptions;
 }): string[] {
-  if (options.report.verbose === true) {
-    return formatVerboseUnusedModuleGroup(options);
-  }
-  return formatDefaultUnusedModuleGroup(options);
+  return options.report.verbose === true
+    ? formatVerboseUnusedModuleGroup(options)
+    : formatDefaultUnusedModuleGroup(options);
 }

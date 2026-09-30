@@ -35,11 +35,9 @@ function getProjectField(
 }
 
 function getTargetProjectId(edge: SourceDependencyEdge): ProjectId | undefined {
-  if (edge.target.kind !== 'workspace-file') {
-    return undefined;
-  }
-
-  return edge.target.projectId;
+  return edge.target.kind === 'workspace-file'
+    ? edge.target.projectId
+    : undefined;
 }
 
 function projectSourceDependencyEdge(
@@ -49,18 +47,19 @@ function projectSourceDependencyEdge(
   const sourceProject = getProject(pool.projects, edge.fromProjectId);
   const targetProject = getProject(pool.projects, getTargetProjectId(edge));
 
+  const boundary = Object.freeze({
+    domain: classifyBoundary(
+      getProjectField(sourceProject, 'domain'),
+      getProjectField(targetProject, 'domain'),
+    ),
+    team: classifyBoundary(
+      getProjectField(sourceProject, 'team'),
+      getProjectField(targetProject, 'team'),
+    ),
+  });
   return Object.freeze({
     ...edge,
-    boundary: Object.freeze({
-      domain: classifyBoundary(
-        getProjectField(sourceProject, 'domain'),
-        getProjectField(targetProject, 'domain'),
-      ),
-      team: classifyBoundary(
-        getProjectField(sourceProject, 'team'),
-        getProjectField(targetProject, 'team'),
-      ),
-    }),
+    boundary,
     evidenceIds: freezeArray(edge.evidenceIds),
     target: Object.freeze({ ...edge.target }),
   });
@@ -90,31 +89,35 @@ export class SourceDependencyValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([this.#graph.get(run), this.#pool.get(run)]).then(
-      ([graph, pool]) => {
-        const result: SourceDependencyValidationView = Object.freeze({
-          ...pool,
-          edges: freezeArray(
-            graph.edges.map((edge) => projectSourceDependencyEdge(edge, pool)),
-          ),
-          evidence: freezeRecord(
-            graph.evidence.map((evidence) => [
-              evidence.id,
-              Object.freeze({ ...evidence }),
-            ]),
-          ),
-          kind: 'source-dependencies',
-          roots: freezeArray(graph.roots),
-        });
-        recordProjection({
-          count: result.edges.length,
-          kind: result.kind,
-          run,
-          startedAt,
-        });
-        return result;
-      },
-    );
+    const prerequisite = Promise.all([
+      this.#graph.get(run),
+      this.#pool.get(run),
+    ]);
+    const view = (async () => {
+      const [graph, pool] = await prerequisite;
+
+      const result: SourceDependencyValidationView = Object.freeze({
+        ...pool,
+        edges: freezeArray(
+          graph.edges.map((edge) => projectSourceDependencyEdge(edge, pool)),
+        ),
+        evidence: freezeRecord(
+          graph.evidence.map((evidence) => [
+            evidence.id,
+            Object.freeze({ ...evidence }),
+          ]),
+        ),
+        kind: 'source-dependencies',
+        roots: freezeArray(graph.roots),
+      });
+      recordProjection({
+        count: result.edges.length,
+        kind: result.kind,
+        run,
+        startedAt,
+      });
+      return result;
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }

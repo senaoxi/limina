@@ -64,8 +64,7 @@ function readCachedSourceEvidence(
   cache: Map<string, SourceEvidence> | undefined,
   cacheKey: string,
 ): SourceEvidence | undefined {
-  if (cache === undefined) return undefined;
-  return cache.get(cacheKey);
+  return cache === undefined ? undefined : cache.get(cacheKey);
 }
 
 function storeSourceEvidence(options: {
@@ -91,14 +90,13 @@ function collectTypeScriptRecords(
 function collectRecords(
   options: CollectSourceEvidenceOptions,
 ): SourceEvidence['records'] {
-  if (isTypeScriptSemanticSource(options.filePath)) {
-    return collectTypeScriptRecords(options);
-  }
-  return options.importAnalysis.collectImportsFromFile(
-    options.filePath,
-    options.packageRootDir,
-    options.sourceProfile,
-  );
+  return isTypeScriptSemanticSource(options.filePath)
+    ? collectTypeScriptRecords(options)
+    : options.importAnalysis.collectImportsFromFile(
+        options.filePath,
+        options.packageRootDir,
+        options.sourceProfile,
+      );
 }
 
 function createFailureEvidence(

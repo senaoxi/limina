@@ -51,7 +51,7 @@ import { createCheckerTargetId } from '../typecheck/targets';
 import { createPreflightGenerationController } from './helpers/preflight-generation';
 
 const execFileAsync = promisify(execFile);
-const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
+const green = (message: string): string => `\u{1B}[32m${message}\u{1B}[0m`;
 
 function createIssue(overrides: Partial<LiminaCheckIssue>): LiminaCheckIssue {
   return {
@@ -65,41 +65,41 @@ function createIssue(overrides: Partial<LiminaCheckIssue>): LiminaCheckIssue {
 
 function createConfig(
   execution: ResolvedLiminaConfig['execution'] = {},
-  rootDir = '/workspace',
+  rootDirectory = '/workspace',
 ): ResolvedLiminaConfig {
   return {
     governanceRoot: {
       kind: 'single-package',
-      rootDir,
-      manifestPath: path.join(rootDir, 'package.json'),
+      rootDir: rootDirectory,
+      manifestPath: path.join(rootDirectory, 'package.json'),
       manifest: {},
     },
-    configPath: path.join(rootDir, 'limina.config.mjs'),
+    configPath: path.join(rootDirectory, 'limina.config.mjs'),
     execution,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
-async function withTempRoot<T>(
-  run: (rootDir: string) => Promise<T>,
+async function withTemporaryRoot<T>(
+  run: (rootDirectory: string) => Promise<T>,
 ): Promise<T> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-execution-'));
-  await writeFile(path.join(rootDir, 'package.json'), '{}\n');
+  const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-execution-'));
+  await writeFile(path.join(rootDirectory, 'package.json'), '{}\n');
 
   try {
-    return await run(rootDir);
+    return await run(rootDirectory);
   } finally {
-    await rm(rootDir, {
+    await rm(rootDirectory, {
       force: true,
       recursive: true,
     });
   }
 }
 
-function createPreflight(rootDir: string): LiminaPreflightManager {
+function createPreflight(rootDirectory: string): LiminaPreflightManager {
   return new LiminaPreflightManager({
     config: {
-      ...createConfig({ tasks: 4 }, rootDir),
+      ...createConfig({ tasks: 4 }, rootDirectory),
     },
     generatedGraphProvider: async () =>
       ({ artifactPlan: { changes: [] } }) as never,
@@ -508,7 +508,7 @@ describe('sortCollectedIssues', () => {
         this: string,
         other: string,
       ) {
-        return String(this) < other ? 1 : String(this) > other ? -1 : 0;
+        return this < other ? 1 : this > other ? -1 : 0;
       });
 
     try {
@@ -581,59 +581,59 @@ describe('execution concurrency resolution', () => {
 
 describe('runExecutionTasks', () => {
   it('does not publish an attempt when execution plan validation fails', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const task = createTask({ id: 'duplicate', order: 0 });
 
       await expect(
         runExecutionTasks({
           command: 'limina check',
-          preflight: createPreflight(rootDir),
-          rootDir,
+          preflight: createPreflight(rootDirectory),
+          rootDir: rootDirectory,
           tasks: [task, { ...task }],
         }),
       ).rejects.toThrow();
       await expect(
-        access(getCheckAttemptPaths(rootDir).latestAttempt),
+        access(getCheckAttemptPaths(rootDirectory).latestAttempt),
       ).rejects.toMatchObject({ code: 'ENOENT' });
     });
   });
 
   it('does not create scheduler context or start tasks when attempt publication fails', async () => {
-    await withTempRoot(async (rootDir) => {
-      const paths = getCheckAttemptPaths(rootDir);
+    await withTemporaryRoot(async (rootDirectory) => {
+      const paths = getCheckAttemptPaths(rootDirectory);
       await mkdir(paths.checkDir, { recursive: true });
       await writeFile(paths.latestAttempt, '{broken\n');
-      let ran = false;
+      let isRan = false;
 
       await expect(
         runExecutionTasks({
           command: 'limina check',
-          preflight: createPreflight(rootDir),
-          rootDir,
+          preflight: createPreflight(rootDirectory),
+          rootDir: rootDirectory,
           tasks: [
             createTask({
               id: 'must-not-run',
               onRun: () => {
-                ran = true;
+                isRan = true;
               },
               order: 0,
             }),
           ],
         }),
       ).rejects.toThrow('cannot be allocated safely');
-      expect(ran).toBe(false);
+      expect(isRan).toBe(false);
     });
   });
 
   it('renders task tree progress without replaying completed stats items', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const { chunks, flow } = createBufferedTtyFlow();
 
       await runExecutionTasks({
         command: 'limina check',
         flow,
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           {
             failPolicy: 'continue',
@@ -682,14 +682,14 @@ describe('runExecutionTasks', () => {
   });
 
   it('marks blocked tree tasks as skipped with blocked-by context', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const { chunks, flow } = createBufferedTtyFlow();
 
       await runExecutionTasks({
         command: 'limina check demo',
         flow,
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           createTask({
             failPolicy: 'stop-pipeline',
@@ -708,7 +708,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('runs independent tasks concurrently', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       let activeCount = 0;
       let maxActiveCount = 0;
       const onRun = () => {
@@ -721,8 +721,8 @@ describe('runExecutionTasks', () => {
 
       const result = await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           createTask({ delayMs: 20, id: 'a', onRun, order: 0 }),
           createTask({ delayMs: 20, id: 'b', onRun, order: 1 }),
@@ -735,24 +735,28 @@ describe('runExecutionTasks', () => {
   });
 
   it('waits for dependencies', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const calls: string[] = [];
 
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           createTask({
             delayMs: 10,
             id: 'a',
-            onRun: () => calls.push('a'),
+            onRun: () => {
+              calls.push('a');
+            },
             order: 0,
           }),
           createTask({
             after: ['a'],
             id: 'b',
-            onRun: () => calls.push('b'),
+            onRun: () => {
+              calls.push('b');
+            },
             order: 1,
           }),
         ],
@@ -763,7 +767,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('waits for conflicting resources', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       let activeCount = 0;
       let maxActiveCount = 0;
       const onRun = () => {
@@ -776,8 +780,8 @@ describe('runExecutionTasks', () => {
 
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           createTask({
             delayMs: 20,
@@ -801,11 +805,11 @@ describe('runExecutionTasks', () => {
   });
 
   it('continues independent tasks after a continue-policy failure', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const result = await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           createTask({ id: 'a', order: 0, passed: false }),
           createTask({ id: 'b', order: 1 }),
@@ -821,22 +825,22 @@ describe('runExecutionTasks', () => {
   });
 
   it('blocks only requiresSuccessOf consumers after dependency failure', async () => {
-    await withTempRoot(async (rootDir) => {
-      let afterRan = false;
-      let requiredRan = false;
+    await withTemporaryRoot(async (rootDirectory) => {
+      let isAfterRan = false;
+      let isRequiredRan = false;
       const failed = createTask({ id: 'failed', order: 0, passed: false });
       const after = createTask({
         after: ['failed'],
         id: 'after',
         onRun: () => {
-          afterRan = true;
+          isAfterRan = true;
         },
         order: 1,
       });
       const required = createTask({
         id: 'required',
         onRun: () => {
-          requiredRan = true;
+          isRequiredRan = true;
         },
         order: 2,
       });
@@ -844,13 +848,13 @@ describe('runExecutionTasks', () => {
 
       const result = await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [failed, after, required],
       });
 
-      expect(afterRan).toBe(true);
-      expect(requiredRan).toBe(false);
+      expect(isAfterRan).toBe(true);
+      expect(isRequiredRan).toBe(false);
       expect(result.results.map((entry) => entry.status)).toEqual([
         'failed',
         'passed',
@@ -860,7 +864,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('preserves the original failed root through transitive dependency blocks', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const failed = createTask({ id: 'a', order: 0, passed: false });
       const blocked = createTask({ id: 'b', order: 1 });
       blocked.requiresSuccessOf = [failed.id];
@@ -870,17 +874,17 @@ describe('runExecutionTasks', () => {
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: tasks,
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       await runExecutionTasks({
         checkRunRecorder: recorder,
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks,
       });
-      const snapshot = await readCheckIssueSnapshot(rootDir);
+      const snapshot = await readCheckIssueSnapshot(rootDirectory);
       expect(
         snapshot?.run?.tasks.slice(1).map((task) => task.blockedBy),
       ).toEqual([
@@ -895,7 +899,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('selects the first failed dependency in plan order regardless of timing', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const first = createTask({
         delayMs: 20,
         id: 'first',
@@ -909,18 +913,18 @@ describe('runExecutionTasks', () => {
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: tasks,
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       await runExecutionTasks({
         checkRunRecorder: recorder,
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks,
       });
       expect(
-        (await readCheckIssueSnapshot(rootDir))?.run?.tasks[2],
+        (await readCheckIssueSnapshot(rootDirectory))?.run?.tasks[2],
       ).toMatchObject({
         blockedBy: { id: first.id, label: first.label },
         state: 'blocked',
@@ -957,7 +961,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('classifies materializer rejection and blocks every segment consumer', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const materializer = createTask({ id: 'materializer', order: 0 });
       materializer.issueTask = 'graph:materialize';
       materializer.kind = 'preparation';
@@ -989,17 +993,17 @@ describe('runExecutionTasks', () => {
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: tasks,
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       const result = await runExecutionTasks({
         checkRunRecorder: recorder,
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks,
       });
-      const snapshot = await readCheckIssueSnapshot(rootDir);
+      const snapshot = await readCheckIssueSnapshot(rootDirectory);
 
       expect(result.results.map((entry) => entry.status)).toEqual([
         'failed',
@@ -1013,7 +1017,8 @@ describe('runExecutionTasks', () => {
         severity: 'error',
         task: 'graph:materialize',
       });
-      for (const task of snapshot?.run?.tasks.slice(1) ?? []) {
+      const blockedTasks = snapshot?.run?.tasks.slice(1) ?? [];
+      for (const task of blockedTasks) {
         expect(task).toMatchObject({
           blockedBy: {
             id: materializer.id,
@@ -1026,7 +1031,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('keeps a workspace validation failure authoritative when its snapshot write fails', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const validation = createTask({
         id: 'workspace-validation',
         issues: [
@@ -1050,8 +1055,8 @@ describe('runExecutionTasks', () => {
       const result = await runExecutionTasks({
         command: 'limina check',
         flow,
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         snapshotWriters: { writeCheck, writeSource },
         tasks: [validation],
       });
@@ -1072,14 +1077,14 @@ describe('runExecutionTasks', () => {
   });
 
   it('joins already running work before returning a stop-policy result', async () => {
-    await withTempRoot(async (rootDir) => {
-      let joined = false;
+    await withTemporaryRoot(async (rootDirectory) => {
+      let isJoined = false;
       const longRunning = createTask({
         delayMs: 30,
         id: 'running',
         onRun: () => {
           setTimeout(() => {
-            joined = true;
+            isJoined = true;
           }, 25);
         },
         order: 0,
@@ -1095,56 +1100,56 @@ describe('runExecutionTasks', () => {
 
       await runExecutionTasks({
         command: 'limina check demo',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [longRunning, command],
       });
-      expect(joined).toBe(true);
+      expect(isJoined).toBe(true);
     });
   });
 
   it('keeps a runner behind the start gate until projections succeed', async () => {
-    await withTempRoot(async (rootDir) => {
-      let runnerStarted = false;
+    await withTemporaryRoot(async (rootDirectory) => {
+      let isRunnerStarted = false;
       const task = createTask({
         id: 'gated',
         onRun: () => {
-          runnerStarted = true;
+          isRunnerStarted = true;
         },
         order: 0,
       });
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: [task],
-        rootDir,
+        rootDir: rootDirectory,
       });
       const originalProject = recorder.project;
       recorder.project = (identity, event) => {
-        if (event.type === 'start') expect(runnerStarted).toBe(false);
+        if (event.type === 'start') expect(isRunnerStarted).toBe(false);
         originalProject(identity, event);
       };
 
       await runExecutionTasks({
         checkRunRecorder: recorder,
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [task],
       });
-      expect(runnerStarted).toBe(true);
+      expect(isRunnerStarted).toBe(true);
     });
   });
 
   it('aborts an unstarted runner and joins existing work on recorder projection failure', async () => {
-    await withTempRoot(async (rootDir) => {
-      let firstJoined = false;
-      let secondStarted = false;
+    await withTemporaryRoot(async (rootDirectory) => {
+      let isFirstJoined = false;
+      let isSecondStarted = false;
       const first = createTask({
         delayMs: 30,
         id: 'first',
         onRun: () => {
           setTimeout(() => {
-            firstJoined = true;
+            isFirstJoined = true;
           }, 25);
         },
         order: 0,
@@ -1152,14 +1157,14 @@ describe('runExecutionTasks', () => {
       const second = createTask({
         id: 'second',
         onRun: () => {
-          secondStarted = true;
+          isSecondStarted = true;
         },
         order: 1,
       });
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: [first, second],
-        rootDir,
+        rootDir: rootDirectory,
       });
       const originalProject = recorder.project;
       recorder.project = (identity, event) => {
@@ -1173,14 +1178,14 @@ describe('runExecutionTasks', () => {
         runExecutionTasks({
           checkRunRecorder: recorder,
           command: 'limina check',
-          preflight: createPreflight(rootDir),
-          rootDir,
+          preflight: createPreflight(rootDirectory),
+          rootDir: rootDirectory,
           tasks: [first, second],
         }),
       ).rejects.toThrow('recorder start projection failed');
-      expect(firstJoined).toBe(true);
-      expect(secondStarted).toBe(false);
-      expect(await readCheckIssueSnapshot(rootDir)).toBeNull();
+      expect(isFirstJoined).toBe(true);
+      expect(isSecondStarted).toBe(false);
+      expect(await readCheckIssueSnapshot(rootDirectory)).toBeNull();
       expect(
         recorder
           .getRunSummary()
@@ -1190,13 +1195,13 @@ describe('runExecutionTasks', () => {
   });
 
   it('does not lose or start a runner when flow start projection fails', async () => {
-    await withTempRoot(async (rootDir) => {
-      let runnerStarted = false;
-      let cleanupFailed = false;
+    await withTemporaryRoot(async (rootDirectory) => {
+      let isRunnerStarted = false;
+      let isCleanupFailed = false;
       const task = createTask({
         id: 'flow-failure',
         onRun: () => {
-          runnerStarted = true;
+          isRunnerStarted = true;
         },
         order: 0,
       });
@@ -1209,7 +1214,7 @@ describe('runExecutionTasks', () => {
           return [];
         },
         fail() {
-          cleanupFailed = true;
+          isCleanupFailed = true;
         },
         pass() {},
         skip() {},
@@ -1223,19 +1228,19 @@ describe('runExecutionTasks', () => {
         runExecutionTasks({
           command: 'limina check',
           flow,
-          preflight: createPreflight(rootDir),
-          rootDir,
+          preflight: createPreflight(rootDirectory),
+          rootDir: rootDirectory,
           tasks: [task],
         }),
       ).rejects.toThrow('flow start projection failed');
-      expect(runnerStarted).toBe(false);
-      expect(cleanupFailed).toBe(true);
-      expect(await readCheckIssueSnapshot(rootDir)).toBeNull();
+      expect(isRunnerStarted).toBe(false);
+      expect(isCleanupFailed).toBe(true);
+      expect(await readCheckIssueSnapshot(rootDirectory)).toBeNull();
     });
   });
 
   it('blocks remaining ordered work after a block-policy failure', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const tasks = [
         createTask({
           failPolicy: 'stop-pipeline',
@@ -1248,16 +1253,16 @@ describe('runExecutionTasks', () => {
       const recorder = createCheckRunRecorder({
         command: 'limina check demo',
         plannedTasks: tasks,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const result = await runExecutionTasks({
         checkRunRecorder: recorder,
         command: 'limina check demo',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks,
       });
-      const snapshot = await readCheckIssueSnapshot(rootDir);
+      const snapshot = await readCheckIssueSnapshot(rootDirectory);
 
       expect(result.results.map((taskResult) => taskResult.status)).toEqual([
         'failed',
@@ -1272,8 +1277,8 @@ describe('runExecutionTasks', () => {
   });
 
   it('starts a new generation after repository-mutating tasks finish', async () => {
-    await withTempRoot(async (rootDir) => {
-      const preflight = createPreflight(rootDir);
+    await withTemporaryRoot(async (rootDirectory) => {
+      const preflight = createPreflight(rootDirectory);
       const command = createTask({
         id: 'a',
         invalidatesPreflight: true,
@@ -1284,7 +1289,7 @@ describe('runExecutionTasks', () => {
       await runExecutionTasks({
         command: 'limina check',
         preflight,
-        rootDir,
+        rootDir: rootDirectory,
         tasks: [command],
       });
 
@@ -1293,14 +1298,14 @@ describe('runExecutionTasks', () => {
   });
 
   it('rejects runtime generation drift before lock acquisition or runner start', async () => {
-    await withTempRoot(async (rootDir) => {
-      const preflight = createPreflight(rootDir);
+    await withTemporaryRoot(async (rootDirectory) => {
+      const preflight = createPreflight(rootDirectory);
       createPreflightGenerationController(preflight).startNextGeneration();
-      let runnerStarted = false;
+      let isRunnerStarted = false;
       const task = createTask({
         id: 'stale',
         onRun: () => {
-          runnerStarted = true;
+          isRunnerStarted = true;
         },
         order: 0,
         resources: { write: ['repository'] },
@@ -1308,7 +1313,7 @@ describe('runExecutionTasks', () => {
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: [task],
-        rootDir,
+        rootDir: rootDirectory,
       });
       const acquire = vi.spyOn(ResourceLockSet.prototype, 'acquire');
 
@@ -1318,15 +1323,15 @@ describe('runExecutionTasks', () => {
             checkRunRecorder: recorder,
             command: 'limina check',
             preflight,
-            rootDir,
+            rootDir: rootDirectory,
             tasks: [task],
           }),
         ).rejects.toThrow('active repository generation is 1');
-        expect(runnerStarted).toBe(false);
+        expect(isRunnerStarted).toBe(false);
         expect(acquire).not.toHaveBeenCalled();
         expect(recorder.getRunSummary().tasks[0]?.state).toBe('planned');
         expect(preflight.run.generation).toBe('1');
-        expect(await readCheckIssueSnapshot(rootDir)).toBeNull();
+        expect(await readCheckIssueSnapshot(rootDirectory)).toBeNull();
       } finally {
         acquire.mockRestore();
       }
@@ -1334,11 +1339,11 @@ describe('runExecutionTasks', () => {
   });
 
   it('writes deterministic issue order by task order', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           createTask({
             id: 'a',
@@ -1362,7 +1367,7 @@ describe('runExecutionTasks', () => {
           }),
         ],
       });
-      const snapshot = await readCheckIssueSnapshot(rootDir);
+      const snapshot = await readCheckIssueSnapshot(rootDirectory);
 
       expect(snapshot?.issues.map((issue) => issue.code)).toEqual([
         LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
@@ -1386,7 +1391,7 @@ describe('runExecutionTasks', () => {
       label: 'non-empty',
     },
   ])('writes an authoritative $label source snapshot', async ({ issues }) => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const source = createTask({ id: 'source', order: 0 });
       source.issueTask = 'source:check';
       source.label = 'source:check';
@@ -1398,20 +1403,20 @@ describe('runExecutionTasks', () => {
 
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [source],
       });
-      expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
         issues: issues.map((issue) => ({
           code: issue.code,
           ownerName: issue.ownerName,
         })),
         status: 'completed',
       });
-      expect((await readCheckIssueSnapshot(rootDir))?.issues).toHaveLength(
-        issues.length,
-      );
+      expect(
+        (await readCheckIssueSnapshot(rootDirectory))?.issues,
+      ).toHaveLength(issues.length);
     });
   });
 
@@ -1421,13 +1426,13 @@ describe('runExecutionTasks', () => {
   ])(
     'invalidates source inventory after a $label terminal command while preserving issues',
     async ({ commandPassed }) => {
-      await withTempRoot(async (rootDir) => {
+      await withTemporaryRoot(async (rootDirectory) => {
         const sourceIssue: SourceCheckIssue = createSourceUnusedModuleFinding({
           externalCode: 'files',
-          filePath: path.join(rootDir, 'src/old-generation.ts'),
-          ownerDirectory: rootDir,
+          filePath: path.join(rootDirectory, 'src/old-generation.ts'),
+          ownerDirectory: rootDirectory,
           ownerName: '@fixture/pkg',
-          packageJsonPath: path.join(rootDir, 'package.json'),
+          packageJsonPath: path.join(rootDirectory, 'package.json'),
         });
         const source = createTask({ id: 'source', order: 0 });
         source.issueTask = 'source:check';
@@ -1445,21 +1450,21 @@ describe('runExecutionTasks', () => {
             passed: commandPassed,
           }),
         );
-        const preflight = createPreflight(rootDir);
+        const preflight = createPreflight(rootDirectory);
 
         await runExecutionTasks({
           command: 'limina check',
           preflight,
-          rootDir,
+          rootDir: rootDirectory,
           tasks: [source, command],
         });
 
         expect(preflight.run.generation).toBe('1');
-        expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+        expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
           issues: [],
           status: 'not-run',
         });
-        expect((await readCheckIssueSnapshot(rootDir))?.issues).toEqual([
+        expect((await readCheckIssueSnapshot(rootDirectory))?.issues).toEqual([
           expect.objectContaining({
             code: SOURCE_ISSUE_CODES.unusedModule,
             task: 'source:check',
@@ -1470,13 +1475,13 @@ describe('runExecutionTasks', () => {
   );
 
   it('commits only the last source occurrence when it matches final generation', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const oldIssue: SourceCheckIssue = createSourceUnusedModuleFinding({
         externalCode: 'files',
-        filePath: path.join(rootDir, 'src/old-generation.ts'),
-        ownerDirectory: rootDir,
+        filePath: path.join(rootDirectory, 'src/old-generation.ts'),
+        ownerDirectory: rootDirectory,
         ownerName: '@fixture/pkg',
-        packageJsonPath: path.join(rootDir, 'package.json'),
+        packageJsonPath: path.join(rootDirectory, 'package.json'),
       });
       const firstSource = createTask({ id: 'source-0', order: 0 });
       firstSource.issueTask = 'source:check';
@@ -1502,21 +1507,21 @@ describe('runExecutionTasks', () => {
         sourceSnapshot: { issues: [], status: 'completed' },
         status: 'passed',
       });
-      const preflight = createPreflight(rootDir);
+      const preflight = createPreflight(rootDirectory);
 
       await runExecutionTasks({
         command: 'limina check',
         preflight,
-        rootDir,
+        rootDir: rootDirectory,
         tasks: [firstSource, command, finalSource],
       });
 
       expect(preflight.run.generation).toBe('1');
-      expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
         issues: [],
         status: 'completed',
       });
-      expect((await readCheckIssueSnapshot(rootDir))?.issues).toEqual([
+      expect((await readCheckIssueSnapshot(rootDirectory))?.issues).toEqual([
         expect.objectContaining({
           code: SOURCE_ISSUE_CODES.unusedModule,
           task: 'source:check',
@@ -1526,7 +1531,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('keeps final-generation source authority across non-invalidating work', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const source = createTask({ id: 'source', order: 0 });
       source.issueTask = 'source:check';
       source.label = 'source:check';
@@ -1538,32 +1543,32 @@ describe('runExecutionTasks', () => {
 
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [
           source,
           createTask({ after: ['source'], id: 'proof', order: 1 }),
         ],
       });
 
-      expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
         status: 'completed',
       });
     });
   });
 
   it('writes not-run when source analysis fails before producing authority', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const source = createTask({ id: 'source', order: 0, passed: false });
       source.issueTask = 'source:check';
       source.label = 'source:check';
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [source],
       });
-      expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
         issues: [],
         status: 'not-run',
       });
@@ -1571,7 +1576,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('writes not-run when a source task is skipped by stop policy', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const command = createTask({
         failPolicy: 'stop-pipeline',
         id: 'command',
@@ -1586,20 +1591,23 @@ describe('runExecutionTasks', () => {
 
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [command, source],
       });
-      expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
         status: 'not-run',
       });
     });
   });
 
   it('does not touch an existing source snapshot when the plan has no source task', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       await writeSourceIssueSnapshotOnly(
-        createLiminaArtifactNamespace({ generation: 0, rootDir }),
+        createLiminaArtifactNamespace({
+          generation: 0,
+          rootDir: rootDirectory,
+        }),
         {
           command: 'previous',
           createdAt: '2026-07-14T00:00:00.000Z',
@@ -1615,11 +1623,11 @@ describe('runExecutionTasks', () => {
       );
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [createTask({ id: 'graph', order: 0 })],
       });
-      expect(await readSourceIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readSourceIssueSnapshot(rootDirectory)).toMatchObject({
         command: 'previous',
         issues: [{ ownerName: '@fixture/old' }],
       });
@@ -1627,7 +1635,7 @@ describe('runExecutionTasks', () => {
   });
 
   it('does not commit completed check state when the source writer fails', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const source = createTask({ id: 'source', order: 0 });
       source.issueTask = 'source:check';
       source.label = 'source:check';
@@ -1639,39 +1647,41 @@ describe('runExecutionTasks', () => {
       await writeNotRunCheckIssueSnapshot({
         artifactNamespace: createLiminaArtifactNamespace({
           generation: 0,
-          rootDir,
+          rootDir: rootDirectory,
         }),
         command: 'limina check',
-        rootDir,
+        rootDir: rootDirectory,
       });
-      await rm(getSourceIssueSnapshotPath(rootDir), {
+      await rm(getSourceIssueSnapshotPath(rootDirectory), {
         force: true,
         recursive: true,
       });
-      await mkdir(getSourceIssueSnapshotPath(rootDir), { recursive: true });
+      await mkdir(getSourceIssueSnapshotPath(rootDirectory), {
+        recursive: true,
+      });
 
       await expect(
         runExecutionTasks({
           command: 'limina check',
-          preflight: createPreflight(rootDir),
-          rootDir,
+          preflight: createPreflight(rootDirectory),
+          rootDir: rootDirectory,
           tasks: [source],
         }),
       ).rejects.toBeDefined();
-      expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readCheckIssueSnapshot(rootDirectory)).toMatchObject({
         status: 'not-run',
       });
     });
   });
 
   it('keeps the source snapshot when the following check write fails', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const sourceIssue: SourceCheckIssue = createSourceUnusedModuleFinding({
         externalCode: 'files',
-        filePath: path.join(rootDir, 'src/unused.ts'),
-        ownerDirectory: rootDir,
+        filePath: path.join(rootDirectory, 'src/unused.ts'),
+        ownerDirectory: rootDirectory,
         ownerName: '@fixture/pkg',
-        packageJsonPath: path.join(rootDir, 'package.json'),
+        packageJsonPath: path.join(rootDirectory, 'package.json'),
       });
       const source = createTask({ id: 'source', order: 0 });
       source.issueTask = 'source:check';
@@ -1687,8 +1697,8 @@ describe('runExecutionTasks', () => {
 
       const executionResult = await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         snapshotWriters: {
           writeCheck,
           writeSource: writeSourceIssueSnapshotOnly,
@@ -1698,21 +1708,23 @@ describe('runExecutionTasks', () => {
 
       expect(executionResult.passed).toBe(false);
       expect(writeCheck).toHaveBeenCalledOnce();
-      await expect(access(getSourceIssueSnapshotPath(rootDir))).resolves.toBe(
-        undefined,
-      );
-      await expect(readCheckIssueSnapshot(rootDir)).resolves.toBeNull();
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        access(getSourceIssueSnapshotPath(rootDirectory)),
+      ).resolves.toBe(undefined);
+      await expect(readCheckIssueSnapshot(rootDirectory)).resolves.toBeNull();
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'persistence-failed',
       });
 
       await writeFile(
-        path.join(rootDir, 'limina.config.mjs'),
+        path.join(rootDirectory, 'limina.config.mjs'),
         'export default {};\n',
       );
       await writeFile(
-        path.join(rootDir, 'pnpm-workspace.yaml'),
+        path.join(rootDirectory, 'pnpm-workspace.yaml'),
         'packages: []\n',
       );
       const cliPath = fileURLToPath(
@@ -1724,12 +1736,12 @@ describe('runExecutionTasks', () => {
           [
             cliPath,
             '--config',
-            path.join(rootDir, 'limina.config.mjs'),
+            path.join(rootDirectory, 'limina.config.mjs'),
             'check',
             '--issues',
           ],
           {
-            cwd: rootDir,
+            cwd: rootDirectory,
             env: { ...process.env, CI: 'true' },
           },
         ),
@@ -1739,7 +1751,9 @@ describe('runExecutionTasks', () => {
           'latest check attempt could not persist',
         ),
       });
-      await expect(readSourceIssueSnapshot(rootDir)).resolves.toMatchObject({
+      await expect(
+        readSourceIssueSnapshot(rootDirectory),
+      ).resolves.toMatchObject({
         issues: [
           {
             code: SOURCE_ISSUE_CODES.unusedModule,
@@ -1753,7 +1767,7 @@ describe('runExecutionTasks', () => {
   }, 40_000);
 
   it('keeps check not-run until the authoritative source write settles', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const source = createTask({ id: 'source', order: 0 });
       source.issueTask = 'source:check';
       source.label = 'source:check';
@@ -1765,17 +1779,17 @@ describe('runExecutionTasks', () => {
       await writeNotRunCheckIssueSnapshot({
         artifactNamespace: createLiminaArtifactNamespace({
           generation: 0,
-          rootDir,
+          rootDir: rootDirectory,
         }),
         command: 'limina check',
-        rootDir,
+        rootDir: rootDirectory,
       });
       const writes: string[] = [];
 
       await runExecutionTasks({
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         snapshotWriters: {
           async writeCheck(namespace, snapshot) {
             writes.push(`check:${snapshot.status}`);
@@ -1784,7 +1798,7 @@ describe('runExecutionTasks', () => {
           async writeSource(namespace, snapshot) {
             writes.push(`source:${snapshot.status}`);
             await writeSourceIssueSnapshotOnly(namespace, snapshot);
-            expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
+            expect(await readCheckIssueSnapshot(rootDirectory)).toMatchObject({
               status: 'not-run',
             });
           },
@@ -1793,7 +1807,7 @@ describe('runExecutionTasks', () => {
       });
 
       expect(writes).toEqual(['source:completed', 'check:completed']);
-      expect(await readCheckIssueSnapshot(rootDir)).toMatchObject({
+      expect(await readCheckIssueSnapshot(rootDirectory)).toMatchObject({
         status: 'completed',
       });
     });
@@ -1802,7 +1816,7 @@ describe('runExecutionTasks', () => {
 
 describe('checker target snapshot projection', () => {
   it('preserves CheckerTargetId and root blocker identity inside one execution task', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const providerId = createCheckerTargetId(['test', 'provider']);
       const consumerId = createCheckerTargetId(['test', 'consumer']);
       const task: ExecutionTask = {
@@ -1849,18 +1863,18 @@ describe('checker target snapshot projection', () => {
       const recorder = createCheckRunRecorder({
         command: 'limina check',
         plannedTasks: [task],
-        rootDir,
+        rootDir: rootDirectory,
       });
 
       await runExecutionTasks({
         checkRunRecorder: recorder,
         command: 'limina check',
-        preflight: createPreflight(rootDir),
-        rootDir,
+        preflight: createPreflight(rootDirectory),
+        rootDir: rootDirectory,
         tasks: [task],
       });
 
-      const snapshot = await readCheckIssueSnapshot(rootDir);
+      const snapshot = await readCheckIssueSnapshot(rootDirectory);
       expect(snapshot?.run?.tasks).toHaveLength(1);
       expect(snapshot?.run?.tasks[0]?.id).toBe(task.id);
       expect(snapshot?.run?.tasks[0]?.checkItems?.[1]).toMatchObject({

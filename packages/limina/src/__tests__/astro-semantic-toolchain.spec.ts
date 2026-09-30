@@ -16,11 +16,11 @@ import {
   resolveAstroSemanticAdapter,
   resolveAstroSemanticToolchain,
 } from '../checker/astro-semantic-toolchain';
-import { runSourceCheck } from '../commands/source';
+import { isRunSourceCheck } from '../commands/source';
 import { LiminaDependencyError } from '../dependency-contract';
 import { LiminaPreflightManager } from '../preflight/manager';
 import type { SourceCheckIssue } from '../source-check/report';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -41,15 +41,19 @@ async function linkInstalledPackage(options: {
 }): Promise<void> {
   const segments = options.packageName.split('/');
   const packageBaseName = segments.pop()!;
-  const targetDir = path.join(options.rootDir, 'node_modules', ...segments);
-  await mkdir(targetDir, { recursive: true });
+  const targetDirectory = path.join(
+    options.rootDir,
+    'node_modules',
+    ...segments,
+  );
+  await mkdir(targetDirectory, { recursive: true });
   await symlink(
     path.join(
       liminaPackageRoot,
       'node_modules',
       ...options.installedName.split('/'),
     ),
-    path.join(targetDir, packageBaseName),
+    path.join(targetDirectory, packageBaseName),
     'junction',
   );
 }
@@ -58,11 +62,12 @@ async function createInstalledToolchainFixture(options: {
   astroInstalledName: string;
   astroVersion: string;
 }): Promise<{ cleanup: () => Promise<void>; rootDir: string }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-installed-astro-toolchain-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-installed-astro-toolchain-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     manifest({
       dependencies: {
         '@astrojs/check': '0.9.10',
@@ -77,22 +82,22 @@ async function createInstalledToolchainFixture(options: {
     linkInstalledPackage({
       installedName: '@astrojs/check',
       packageName: '@astrojs/check',
-      rootDir,
+      rootDir: rootDirectory,
     }),
     linkInstalledPackage({
       installedName: options.astroInstalledName,
       packageName: 'astro',
-      rootDir,
+      rootDir: rootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'typescript',
       packageName: 'typescript',
-      rootDir,
+      rootDir: rootDirectory,
     }),
   ]);
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    rootDir,
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    rootDir: rootDirectory,
   };
 }
 
@@ -121,21 +126,22 @@ async function createToolchainFixture(
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-astro-toolchain-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-astro-toolchain-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   const realTypeScriptEntry = requireFromTest.resolve('typescript');
   const files: Record<string, string> = {
     'package.json': manifest({
       dependencies: {
         astro: '7.3.2',
-        ...(options.declareCheck === false
-          ? {}
-          : { '@astrojs/check': '0.9.10' }),
-        ...(options.declareLanguageServer === false
-          ? { '@astrojs/language-server': '2.16.13' }
-          : {}),
+        ...(options.declareCheck !== false && {
+          '@astrojs/check': '0.9.10',
+        }),
+        ...(options.declareLanguageServer === false && {
+          '@astrojs/language-server': '2.16.13',
+        }),
         typescript: '6.0.3',
       },
       name: 'fixture',
@@ -176,14 +182,12 @@ async function createToolchainFixture(
         name: '@astrojs/language-server',
         version: '2.16.13',
       }),
-    ...(options.missingAstroCore === true
-      ? {}
-      : {
-          'node_modules/@astrojs/check/node_modules/@astrojs/language-server/dist/core/index.js':
-            options.brokenAstroCore === true
-              ? 'module.exports = { addAstroTypes() {} };\n'
-              : 'module.exports = { addAstroTypes() {}, getAstroLanguagePlugin() { return { getLanguageId() {}, createVirtualCode() {}, typescript: { extraFileExtensions: [], getServiceScript() {} } }; } };\n',
-        }),
+    ...(options.missingAstroCore !== true && {
+      'node_modules/@astrojs/check/node_modules/@astrojs/language-server/dist/core/index.js':
+        options.brokenAstroCore === true
+          ? 'module.exports = { addAstroTypes() {} };\n'
+          : 'module.exports = { addAstroTypes() {}, getAstroLanguagePlugin() { return { getLanguageId() {}, createVirtualCode() {}, typescript: { extraFileExtensions: [], getServiceScript() {} } }; } };\n',
+    }),
     'node_modules/@astrojs/check/node_modules/@astrojs/language-server/dist/core/vue.js':
       'module.exports = { getVueLanguagePlugin() { return { getLanguageId() {}, createVirtualCode() {}, typescript: { extraFileExtensions: [], getServiceScript() {} } }; } };\n',
     'node_modules/@astrojs/check/node_modules/@astrojs/language-server/dist/core/svelte.js':
@@ -229,9 +233,9 @@ async function createToolchainFixture(
     await writeText(fixturePath(...relativePath.split('/')), text);
   }
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
     path: fixturePath,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -242,15 +246,12 @@ describe('Astro semantic toolchain', () => {
       astroVersion: '7.3.2',
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
-    const config: ResolvedLiminaConfig = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
       config: { checkers: { astro: { include: ['tsconfig.json'] } } },
       configPath: fixturePath('limina.config.mjs'),
       rootDir: fixture.rootDir,
       source: { knip: false },
-    };
+    });
     let preflight: LiminaPreflightManager | undefined;
     try {
       await writeText(fixturePath('pnpm-workspace.yaml'), 'packages: []\n');
@@ -305,7 +306,7 @@ describe('Astro semantic toolchain', () => {
       preflight = new LiminaPreflightManager({ config });
       const sourceIssues: SourceCheckIssue[] = [];
       await expect(
-        runSourceCheck(config, {
+        isRunSourceCheck(config, {
           preflight,
           sourceIssues,
           deferSnapshot: true,
@@ -314,7 +315,8 @@ describe('Astro semantic toolchain', () => {
       ).resolves.toBe(true);
       expect(sourceIssues).toEqual([]);
       const caches = preflight.providers.projectDependencies;
-      const fact = [...caches.projectDependencyPreparationCache.values()]
+      const fact = caches.projectDependencyPreparationCache
+        .values()
         .flatMap(({ facts }) => facts)
         .find(({ semanticSpecifier }) => semanticSpecifier === '#component');
       expect(fact).toMatchObject({
@@ -328,32 +330,33 @@ describe('Astro semantic toolchain', () => {
         target: { resolvedFileName: fixturePath('src/Component.astro') },
         typeEvidence: { kind: 'checker-source' },
       });
+      const expectedEntries = [
+        expect.objectContaining({
+          framework: 'astro',
+          provenance: 'strict-source-map',
+          semanticSpecifier: '#component',
+          resolvedFilePath: fixturePath('src/Component.astro'),
+          targetKind: 'source',
+        }),
+      ];
       expect(
-        [...caches.projectDependencyCache.values()].flatMap(
-          ({ dependencies }) => dependencies,
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            framework: 'astro',
-            provenance: 'strict-source-map',
-            semanticSpecifier: '#component',
-            resolvedFilePath: fixturePath('src/Component.astro'),
-            targetKind: 'source',
-          }),
-        ]),
-      );
+        caches.projectDependencyCache
+          .values()
+          .flatMap(({ dependencies }) => dependencies)
+          .toArray(),
+      ).toEqual(expect.arrayContaining(expectedEntries));
       const graph = await preflight.ensureGeneratedGraph();
+      const expectedDependencyEdges = [
+        expect.objectContaining({
+          kind: 'framework-schedule',
+          importedSpecifier: '#component',
+          fromConfigPath: fixturePath('tsconfig.entry.json'),
+          toConfigPath: fixturePath('tsconfig.component.json'),
+          resolvedFilePath: fixturePath('src/Component.astro'),
+        }),
+      ];
       expect(graph.dependencyEdges).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            kind: 'framework-schedule',
-            importedSpecifier: '#component',
-            fromConfigPath: fixturePath('tsconfig.entry.json'),
-            toConfigPath: fixturePath('tsconfig.component.json'),
-            resolvedFilePath: fixturePath('src/Component.astro'),
-          }),
-        ]),
+        expect.arrayContaining(expectedDependencyEdges),
       );
     } finally {
       preflight?.dispose();
@@ -557,9 +560,9 @@ describe('Astro semantic toolchain', () => {
     const left = await createToolchainFixture({ brokenAstroCore: true });
     const right = await createToolchainFixture({ brokenAstroCore: true });
     try {
-      const readIdentity = (rootDir: string): string => {
+      const readIdentity = (rootDirectory: string): string => {
         try {
-          resolveAstroSemanticToolchain(rootDir);
+          resolveAstroSemanticToolchain(rootDirectory);
           throw new Error('Expected the toolchain to be rejected.');
         } catch (error) {
           expect(error).toBeInstanceOf(LiminaDependencyError);

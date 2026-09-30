@@ -19,8 +19,7 @@ export interface StandaloneCommandContext {
 
 function getConfigMode(flags: GlobalFlags): string {
   if (flags.mode !== undefined) return flags.mode;
-  if (process.env.NODE_ENV !== undefined) return process.env.NODE_ENV;
-  return 'default';
+  return process.env.NODE_ENV === undefined ? 'default' : process.env.NODE_ENV;
 }
 
 export async function loadCliConfig(
@@ -49,14 +48,13 @@ export async function loadStandaloneContext(
     cwd: process.cwd(),
     mode,
   });
+  const manifestPath = createRequire(import.meta.url).resolve(
+    'limina/package.json',
+  );
+  const cliEntryPath = path.join(path.dirname(manifestPath), 'bin/limina.js');
   return {
     commandContext: createGlobalQueryCommandContext({
-      cliEntryPath: path.join(
-        path.dirname(
-          createRequire(import.meta.url).resolve('limina/package.json'),
-        ),
-        'bin/limina.js',
-      ),
+      cliEntryPath,
       configLoader,
       configPath: config.configPath,
       mode,

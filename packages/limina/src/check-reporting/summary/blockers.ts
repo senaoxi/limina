@@ -7,18 +7,18 @@ function pluralIssue(count: number): string {
 }
 
 function formatSeverityLabel(count: number, severity: string): string {
-  if (severity === 'info') return 'info';
-  return plural(count, severity, `${severity}s`);
+  return severity === 'info' ? 'info' : plural(count, severity, `${severity}s`);
 }
 
 export function formatSeverityTotal(overview: CheckIssueOverview): string {
-  if (overview.issueCount === 0) return '0 errors';
-  return overview.severities
-    .map(
-      (entry) =>
-        `${entry.count} ${formatSeverityLabel(entry.count, entry.name)}`,
-    )
-    .join(', ');
+  return overview.issueCount === 0
+    ? '0 errors'
+    : overview.severities
+        .map(
+          (entry) =>
+            `${entry.count} ${formatSeverityLabel(entry.count, entry.name)}`,
+        )
+        .join(', ');
 }
 
 function formatVerboseChecker(blocker: HumanPrimaryBlocker): string[] {
@@ -45,10 +45,10 @@ function formatVerboseBlockerLines(blocker: HumanPrimaryBlocker): string[] {
 
 function formatPackageLines(
   blocker: HumanPrimaryBlocker,
-  verbose: boolean,
+  isVerbose: boolean,
 ): string[] {
   if (blocker.packages.length === 0) return [];
-  const limit = verbose ? blocker.packages.length : 5;
+  const limit = isVerbose ? blocker.packages.length : 5;
   return [`   Packages: ${formatTopCounts(blocker.packages, limit)}`];
 }
 
@@ -70,10 +70,11 @@ function formatBlockerLines(options: {
 
 export function formatHumanPrimaryBlockerLines(
   blockers: readonly HumanPrimaryBlocker[],
-  verbose: boolean,
+  isVerbose: boolean,
 ): string[] {
-  if (blockers.length === 0) return ['  (none)'];
-  return blockers.flatMap((blocker, index) =>
-    formatBlockerLines({ blocker, index, verbose }),
-  );
+  return blockers.length === 0
+    ? ['  (none)']
+    : blockers.flatMap((blocker, index) =>
+        formatBlockerLines({ blocker, index, verbose: isVerbose }),
+      );
 }

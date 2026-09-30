@@ -18,14 +18,15 @@ const PARENT_LIVENESS_CHECK_INTERVAL_MS = 5000;
 
 const liveCheckerChildren = new Set<ChildProcess>();
 const checkerChildrenByRequestId = new Map<number, ChildProcess>();
-let pendingSpawnCount = 0;
-let lastParentSignalAt = Date.now();
-
-let exitPending = false;
+const state = {
+  pendingSpawnCount: 0,
+  lastParentSignalAt: Date.now(),
+  isExitPending: false,
+};
 
 async function exitWithCheckerCleanup(): Promise<void> {
-  if (exitPending) return;
-  exitPending = true;
+  if (state.isExitPending) return;
+  state.isExitPending = true;
   const runningChildren = [...liveCheckerChildren];
   for (const child of runningChildren) terminateChildProcessTree(child);
   await Promise.all(runningChildren.map(waitForChildProcessTreeTermination));
@@ -35,9 +36,13 @@ async function exitWithCheckerCleanup(): Promise<void> {
 }
 
 function scheduleCheckerCleanup(): void {
-  exitWithCheckerCleanup().catch(() => {
-    process.exitCode = 1;
-  });
+  (async () => {
+    try {
+      await exitWithCheckerCleanup();
+    } catch {
+      process.exitCode = 1;
+    }
+  })();
 }
 
 function send(message: CheckerHostResponse): void {
@@ -74,27 +79,29 @@ function spawnChecker(request: SpawnRequest): void {
     process.exit(1);
   }
 
-  pendingSpawnCount += 1;
-  spawnAndMeasure(request, {
+  state.pendingSpawnCount += 1;
+  const pending = spawnAndMeasure(request, {
     onChild: (child) => {
       liveCheckerChildren.add(child);
       checkerChildrenByRequestId.set(request.id, child);
     },
-  }).then((measurement) => {
+  });
+  (async () => {
+    const measurement = await pending;
     forgetCheckerChild(request.id);
-    pendingSpawnCount -= 1;
+    state.pendingSpawnCount -= 1;
     send({
       durationMs: measurement.durationMs,
-      ...(measurement.error ? { errorMessage: measurement.error.message } : {}),
+      ...(measurement.error && { errorMessage: measurement.error.message }),
       id: request.id,
       status: measurement.status,
       type: 'result',
     });
-  });
+  })();
 }
 
 function handleHostRequest(request: CheckerHostRequest): void {
-  lastParentSignalAt = Date.now();
+  state.lastParentSignalAt = Date.now();
   if (request.type === 'spawn') {
     spawnChecker(request);
     return;
@@ -118,8 +125,8 @@ process.on('SIGINT', scheduleCheckerCleanup);
 // checkers are pending is treated as gone.
 setInterval(() => {
   if (
-    pendingSpawnCount === 0 &&
-    Date.now() - lastParentSignalAt > PARENT_LIVENESS_TIMEOUT_MS
+    state.pendingSpawnCount === 0 &&
+    Date.now() - state.lastParentSignalAt > PARENT_LIVENESS_TIMEOUT_MS
   ) {
     scheduleCheckerCleanup();
   }

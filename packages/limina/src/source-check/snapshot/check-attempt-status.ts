@@ -29,9 +29,9 @@ export function createAttemptStatus(options: {
     finishedAt: new Date().toISOString(),
     inventoryPublished: options.inventoryPublished,
     sequence: options.attempt.latest.sequence,
-    ...(options.sourceSnapshotPersisted === undefined
-      ? {}
-      : { sourceSnapshotPersisted: options.sourceSnapshotPersisted }),
+    ...(options.sourceSnapshotPersisted !== undefined && {
+      sourceSnapshotPersisted: options.sourceSnapshotPersisted,
+    }),
     status: options.status,
   };
 }

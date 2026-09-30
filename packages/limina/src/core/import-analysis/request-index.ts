@@ -16,9 +16,9 @@ type ResolutionKind = 'internal-import' | 'oxc' | 'typescript';
 
 export interface ModuleResolutionRequestIndex {
   getRequest(
-    ...args: ImportResolutionArguments
+    ...arguments_: ImportResolutionArguments
   ): NormalizedModuleResolutionRequest;
-  recordIndexAccess(kind: ResolutionKind, hit: boolean): void;
+  recordIndexAccess(kind: ResolutionKind, isHit: boolean): void;
   recordRequest(kind: ResolutionKind): void;
 }
 
@@ -63,9 +63,9 @@ export function createModuleResolutionRequestIndex(options: {
   metrics: ImportAnalysisMetricsRecorder | undefined;
 }): ModuleResolutionRequestIndex {
   return {
-    getRequest: (...args) => {
+    getRequest: (...arguments_) => {
       const [specifier, containingFile, compilerOptions, contextOrExtensions] =
-        args;
+        arguments_;
       const normalizedContainingFile = normalizeAbsolutePath(containingFile);
       const context = normalizeContextInput(contextOrExtensions);
       const resolverIdentity = getModuleResolverIdentity(options.caches, {

@@ -6,15 +6,18 @@ import {
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import { isDeclarationFile as isDeclarationFileFamily } from '../core/import-graph/declaration-classifier';
-import { addBuildArtifactImportProblem } from './artifact-import-findings';
-import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
+import { isAddBuildArtifactImportProblem } from './artifact-import-findings';
+import {
+  createGraphImportFact,
+  getProjectCheckerName,
+} from './finding-utilities';
 import type { GraphTargetUnreachableFinding } from './findings';
 import { getPreferredGeneratedTargetProjectPath } from './generated-project-paths';
-import { addDeniedRefImportProblem } from './import-access-denied';
+import { addDeniedReferenceImportProblem } from './import-access-denied';
 import type { ImportTargetOptions } from './import-target-types';
 import { addUnmappedWorkspaceImportProblem } from './outside-graph-findings';
 import { addExpectedReference } from './reference-expectations';
-import { getDeniedRefRule } from './rules';
+import { getDeniedRefRule as getDeniedReferenceRule } from './rules';
 
 const GRAPH_CHECK_DEFAULT_REASON =
   'Graph check found architecture, dependency, resolver, or config violations.';
@@ -46,11 +49,9 @@ function resolveSourceTargetProjectPath(
 function resolveNonArtifactTargetProjectPath(
   options: ReferenceTargetOptions,
 ): string | null {
-  if (addBuildArtifactImportProblem(options)) {
-    return null;
-  }
-
-  return resolveSourceTargetProjectPath(options);
+  return isAddBuildArtifactImportProblem(options)
+    ? null
+    : resolveSourceTargetProjectPath(options);
 }
 
 export function findExpectedReferenceTargetProjectPath(
@@ -64,11 +65,10 @@ export function findExpectedReferenceTargetProjectPath(
 function findSourceReferenceTargetProjectPath(
   options: ReferenceTargetOptions,
 ): string | null {
-  if (options.resolution.managedOutputTargetProjectPath) {
-    return options.resolution.managedOutputTargetProjectPath;
-  }
-
-  return resolveNonArtifactTargetProjectPath(options);
+  return (
+    options.resolution.managedOutputTargetProjectPath ||
+    resolveNonArtifactTargetProjectPath(options)
+  );
 }
 
 interface ExpectedTargetOptions extends ReferenceTargetOptions {
@@ -76,7 +76,7 @@ interface ExpectedTargetOptions extends ReferenceTargetOptions {
 }
 
 function shouldIgnoreExpectedTarget(options: ExpectedTargetOptions): boolean {
-  const consumesArtifact = Boolean(
+  const isConsumesArtifact = Boolean(
     options.resolution.targetPackageForGraph &&
       !shouldResolveThroughGraph(
         options.resolution.importer,
@@ -85,12 +85,13 @@ function shouldIgnoreExpectedTarget(options: ExpectedTargetOptions): boolean {
   );
 
   return (
-    options.targetProjectPath === options.project.configPath || consumesArtifact
+    options.targetProjectPath === options.project.configPath ||
+    isConsumesArtifact
   );
 }
 
-function addDeniedTargetIfNeeded(options: ExpectedTargetOptions): boolean {
-  const deniedRule = getDeniedRefRule(
+function isAddDeniedTargetIfNeeded(options: ExpectedTargetOptions): boolean {
+  const deniedRule = getDeniedReferenceRule(
     options.context.graphRules,
     options.project.labels,
     options.targetProjectPath,
@@ -99,7 +100,7 @@ function addDeniedTargetIfNeeded(options: ExpectedTargetOptions): boolean {
     return false;
   }
 
-  addDeniedRefImportProblem({
+  addDeniedReferenceImportProblem({
     config: options.context.config,
     findings: options.context.findings,
     importRecord: options.importRecord,
@@ -183,11 +184,10 @@ function addReachableExpectedTarget(options: ExpectedTargetOptions): void {
 export function addExpectedReferenceForTarget(
   options: ExpectedTargetOptions,
 ): void {
-  if (shouldIgnoreExpectedTarget(options)) {
-    return;
-  }
-
-  if (addDeniedTargetIfNeeded(options)) {
+  if (
+    shouldIgnoreExpectedTarget(options) ||
+    isAddDeniedTargetIfNeeded(options)
+  ) {
     return;
   }
 

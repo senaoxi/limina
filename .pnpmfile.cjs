@@ -1,6 +1,6 @@
-function readPackage(pkg) {
-  if (!pkg.name) {
-    return pkg;
+function readPackage(package_) {
+  if (!package_.name) {
+    return package_;
   }
 
   /**
@@ -16,31 +16,28 @@ function readPackage(pkg) {
    * I don't want to install the search-insights peer dependency at the root directory
    * for vitepress, installing it within vitepress's node_modules directory is sufficient.
    */
-  if (pkg.name.startsWith('vitepress')) {
-    pkg.dependencies = {
-      ...pkg.dependencies,
+  if (package_.name.startsWith('vitepress')) {
+    package_.dependencies = {
+      ...package_.dependencies,
       'search-insights': '>= 1 < 3',
-    };
-  }
-
-  if (pkg.name === '@html-eslint/eslint-plugin') {
-    pkg.dependencies = {
-      ...pkg.dependencies,
-      '@html-eslint/parser': '*',
     };
   }
 
   // Both Vue compiler declaration files import Babel types. With hoist=false,
   // each compiler needs its own dependency, matching the Babel parser version.
-  if (pkg.name === '@vue/compiler-core' || pkg.name === '@vue/compiler-sfc') {
-    pkg.dependencies = {
-      ...pkg.dependencies,
+  if (
+    package_.name === '@vue/compiler-core' ||
+    package_.name === '@vue/compiler-sfc'
+  ) {
+    package_.dependencies = {
+      ...package_.dependencies,
       '@babel/types':
-        pkg.dependencies['@babel/types'] ?? pkg.dependencies['@babel/parser'],
+        package_.dependencies['@babel/types'] ??
+        package_.dependencies['@babel/parser'],
     };
   }
 
-  return pkg;
+  return package_;
 }
 
 module.exports = {

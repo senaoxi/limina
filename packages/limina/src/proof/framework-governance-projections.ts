@@ -33,10 +33,10 @@ interface ProjectionContext {
 }
 
 function violationWhen(
-  condition: boolean,
+  isCondition: boolean,
   violation: ProjectionViolation,
 ): ProjectionViolation | undefined {
-  return condition ? violation : undefined;
+  return isCondition ? violation : undefined;
 }
 
 function getSourceToBuild(context: ProjectionContext) {
@@ -55,12 +55,12 @@ function validateDeclarationProject(
   context: ProjectionContext,
 ): ProjectionViolation | undefined {
   const projection = context.entry.unit.buildProjection;
-  const invalid = [
+  const isInvalid = [
     getSourceToBuild(context)?.kind !== 'project',
     getSourceToDts(context) !==
       ('dtsConfigPath' in projection ? projection.dtsConfigPath : undefined),
   ].some(Boolean);
-  return violationWhen(invalid, 'declaration-provider-mismatch');
+  return violationWhen(isInvalid, 'declaration-provider-mismatch');
 }
 
 function validateTransparentSolution(
@@ -77,9 +77,7 @@ function validateTransparentSolution(
     ].some(Boolean),
     'declaration-provider-mismatch',
   );
-  return [wrongKind, wrongProvider].find(
-    (violation) => violation !== undefined,
-  );
+  return wrongKind ?? wrongProvider;
 }
 
 function validateWrappedProject(
@@ -103,12 +101,12 @@ function validateWrappedProject(
 function validateFrameworkChecker(
   context: ProjectionContext,
 ): ProjectionViolation | undefined {
-  const invalid = [
+  const isInvalid = [
     getSourceToBuild(context) !== undefined,
     getSourceToDts(context) !== undefined,
     context.entry.unit.declarationFileNames.length > 0,
   ].some(Boolean);
-  return violationWhen(invalid, 'declaration-provider-mismatch');
+  return violationWhen(isInvalid, 'declaration-provider-mismatch');
 }
 
 const projectionValidators = {
@@ -138,9 +136,7 @@ function findProjectionViolation(
   );
   const projectionViolation =
     projectionValidators[context.entry.unit.buildProjection.kind](context);
-  return [frameworkViolation, kindViolation, projectionViolation].find(
-    (violation) => violation !== undefined,
-  );
+  return frameworkViolation ?? kindViolation ?? projectionViolation;
 }
 
 function addProjectionFinding(
@@ -208,15 +204,18 @@ function collectGeneratedBuildConfigPaths(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): string[] {
   const buildCheckerNames = getBuildCheckerNames(generatedGraph);
-  const buildPaths = [...generatedGraph.sourceToBuild.entries()].flatMap(
+  const buildPaths = [...generatedGraph.sourceToBuild].flatMap(
     ([checkerName, modules]) =>
       buildCheckerNames.has(checkerName)
-        ? [...modules.values()].map((module) => module.path)
+        ? modules
+            .values()
+            .map((module) => module.path)
+            .toArray()
         : [],
   );
-  const declarationPaths = [...generatedGraph.sourceToDts.entries()].flatMap(
+  const declarationPaths = [...generatedGraph.sourceToDts].flatMap(
     ([checkerName, sourceToDts]) =>
-      buildCheckerNames.has(checkerName) ? [...sourceToDts.values()] : [],
+      buildCheckerNames.has(checkerName) ? sourceToDts.values().toArray() : [],
   );
   return uniqueCodeUnitSortedStrings([...buildPaths, ...declarationPaths]);
 }
@@ -225,11 +224,13 @@ function findSourceConfigPath(
   generatedGraph: GeneratedTsconfigGraphResult,
   generatedConfigPath: string,
 ): string {
-  const buildSource = [...generatedGraph.sourceToBuild.values()]
-    .flatMap((modules) => [...modules.entries()])
+  const buildSource = generatedGraph.sourceToBuild
+    .values()
+    .flatMap((modules) => [...modules])
     .find(([, module]) => module.path === generatedConfigPath)?.[0];
-  const declarationSource = [...generatedGraph.dtsToSource.values()]
-    .flatMap((dtsToSource) => [...dtsToSource.entries()])
+  const declarationSource = generatedGraph.dtsToSource
+    .values()
+    .flatMap((dtsToSource) => [...dtsToSource])
     .find(([dtsPath]) => dtsPath === generatedConfigPath)?.[1];
   return [buildSource, declarationSource, generatedConfigPath].find(
     (candidate): candidate is string => candidate !== undefined,

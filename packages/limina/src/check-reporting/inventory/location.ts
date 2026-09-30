@@ -39,8 +39,7 @@ export function getIssueSeverityRank(
   severity: LiminaCheckIssueSeverity | undefined,
 ): number {
   if (severity === 'warning') return 2;
-  if (severity === 'info') return 1;
-  return 3;
+  return severity === 'info' ? 1 : 3;
 }
 
 function createLocationTuple(
@@ -57,8 +56,7 @@ function createLocationTuple(
 }
 
 function getLocationPath(tuple: CanonicalLocationTuple): string {
-  if (tuple[1].length > 0) return tuple[1];
-  return tuple[2];
+  return tuple[1].length > 0 ? tuple[1] : tuple[2];
 }
 
 function formatColumn(column: number | null): string {
@@ -70,15 +68,14 @@ function formatPosition(options: {
   line: number | null;
   pathValue: string;
 }): string {
-  if (options.pathValue.length === 0) return '';
-  if (options.line === null) return '';
-  return `:${options.line}${formatColumn(options.column)}`;
+  return options.pathValue.length === 0 || options.line === null
+    ? ''
+    : `:${options.line}${formatColumn(options.column)}`;
 }
 
 function getLocationValue(tuple: CanonicalLocationTuple): string {
   const pathValue = getLocationPath(tuple);
-  if (pathValue.length > 0) return pathValue;
-  return tuple[3];
+  return pathValue.length > 0 ? pathValue : tuple[3];
 }
 
 function formatLocationTuple(tuple: CanonicalLocationTuple): string {
@@ -112,8 +109,9 @@ function createCanonicalLocationCandidate(
 ): CanonicalLocationCandidate | null {
   const tuple = createLocationTuple(location);
   const display = formatLocationTuple(tuple);
-  if (display.length === 0) return null;
-  return { display, key: createCandidateKey(tuple) };
+  return display.length === 0
+    ? null
+    : { display, key: createCandidateKey(tuple) };
 }
 
 function addIssueLocation(
@@ -141,8 +139,8 @@ function addUniqueCandidate(options: {
   candidates: CanonicalLocationCandidate[];
   seenKeys: Set<string>;
 }): void {
-  if (options.candidate === null) return;
-  if (options.seenKeys.has(options.candidate.key)) return;
+  if (options.candidate === null || options.seenKeys.has(options.candidate.key))
+    return;
   options.seenKeys.add(options.candidate.key);
   options.candidates.push(options.candidate);
 }

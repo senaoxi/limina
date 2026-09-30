@@ -25,10 +25,9 @@ function formatSuggestedFix(fix: string | undefined): string[] {
 }
 
 function formatFixLines(group: IssueGroup): string[] {
-  if (group.fixSteps !== undefined && group.fixSteps.length > 0) {
-    return formatFixSteps(group.fixSteps);
-  }
-  return formatSuggestedFix(group.fix);
+  return group.fixSteps !== undefined && group.fixSteps.length > 0
+    ? formatFixSteps(group.fixSteps)
+    : formatSuggestedFix(group.fix);
 }
 
 type GraphPrepareExample = NonNullable<LiminaCheckIssue['evidence']>[number] & {
@@ -38,9 +37,11 @@ type GraphPrepareExample = NonNullable<LiminaCheckIssue['evidence']>[number] & {
 function isGraphPrepareExample(
   evidence: NonNullable<LiminaCheckIssue['evidence']>[number],
 ): evidence is GraphPrepareExample {
-  if (evidence.label !== 'example') return false;
-  if (evidence.lines === undefined) return false;
-  return evidence.lines.length > 0;
+  return (
+    evidence.label === 'example' &&
+    evidence.lines !== undefined &&
+    evidence.lines.length > 0
+  );
 }
 
 function getExampleEvidenceLines(issue: LiminaCheckIssue): string[] | null {
@@ -64,8 +65,9 @@ function formatExampleLines(lines: readonly string[]): string[] {
 }
 
 function formatExampleOverflow(count: number): string[] {
-  if (count === 0) return [];
-  return [`  ... ${count} more. Run with --verbose to show all details.`];
+  return count === 0
+    ? []
+    : [`  ... ${count} more. Run with --verbose to show all details.`];
 }
 
 function formatGraphPrepareExamples(
@@ -128,10 +130,10 @@ function formatVisibleLocations(options: {
 function getSingleIssueDetails(group: IssueGroup): string[] {
   if (group.issues.length !== 1) return [];
   const issue = group.issues[0]!;
-  const structuredPrepare = isStructuredGraphPrepareIssue(issue);
+  const isStructuredPrepare = isStructuredGraphPrepareIssue(issue);
   return formatIssueDetailLines(issue, {
-    includeDetailLines: !structuredPrepare,
-    includeSummary: !structuredPrepare,
+    includeDetailLines: !isStructuredPrepare,
+    includeSummary: !isStructuredPrepare,
   });
 }
 
@@ -153,8 +155,9 @@ function getMultiLocationDetails(
   const locations = getGroupLocations(group);
   const hasMultipleIssueLocations =
     locations.length > 0 && group.issues.length > 1;
-  if (!hasMultipleIssueLocations) return null;
-  return formatVisibleLocations({ group, limit: detailLimit, locations });
+  return hasMultipleIssueLocations
+    ? formatVisibleLocations({ group, limit: detailLimit, locations })
+    : null;
 }
 
 function getSingleIssueDetailBlock(
@@ -162,8 +165,9 @@ function getSingleIssueDetailBlock(
   detailLimit: number,
 ): string[] | null {
   const issueDetails = getSingleIssueDetails(group);
-  if (issueDetails.length === 0) return null;
-  return formatLimitedDetails(issueDetails, detailLimit);
+  return issueDetails.length === 0
+    ? null
+    : formatLimitedDetails(issueDetails, detailLimit);
 }
 
 function formatFallbackLocations(
@@ -196,8 +200,9 @@ export function formatGroupDetails(
   group: IssueGroup,
   options: { detailLimit: number; verbose: boolean },
 ): string[] {
-  if (options.verbose) return formatVerboseGroupDetails(group);
-  return formatNonVerboseGroupDetails(group, options.detailLimit);
+  return options.verbose
+    ? formatVerboseGroupDetails(group)
+    : formatNonVerboseGroupDetails(group, options.detailLimit);
 }
 
 function appendSummary(lines: string[], summary: string | undefined): void {

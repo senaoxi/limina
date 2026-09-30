@@ -13,7 +13,7 @@ import {
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
 interface FileSetDifference {
@@ -37,9 +37,10 @@ function collectFileSetDifference(options: {
     onlyInDeclaration: options.declaration.fileNames.filter(
       (fileName) => !companionFiles.has(fileName),
     ),
-    onlyInCompanion: [...companionFiles].filter(
-      (fileName) => !declarationFiles.has(fileName),
-    ),
+    onlyInCompanion: companionFiles
+      .difference(declarationFiles)
+      .values()
+      .toArray(),
   };
 }
 
@@ -249,7 +250,10 @@ export function addDtsConfigSemanticFindings(options: {
     ...Object.keys(options.dtsConfig.options),
   ]);
 
-  for (const optionName of [...optionNames].sort()) {
+  const sortedOptionNames = [...optionNames].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  for (const optionName of sortedOptionNames) {
     compareCompilerOption({
       config: options.config,
       declaration: options.dtsConfig,

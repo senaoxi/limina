@@ -13,7 +13,7 @@ import {
 } from './dts-option-shared';
 import type { GraphConfigInvalidFinding, GraphFinding } from './findings';
 
-type AddDtsOptionProblemsArgs = [
+type AddDtsOptionProblemsArguments = [
   config: ResolvedLiminaConfig,
   project: ProjectInfo,
   findings: GraphFinding[],
@@ -152,7 +152,8 @@ function addRequiredPathOptionProblems(
   for (const optionName of requiredDtsPathOptions) {
     context.checks.add();
 
-    if (!context.project.options[optionName]) {
+    const optionValue = context.project.options[optionName];
+    if (!optionValue) {
       context.findings.push(
         createPathOptionFinding({
           checkerName: context.checkerName,
@@ -165,8 +166,10 @@ function addRequiredPathOptionProblems(
   }
 }
 
-export function addDtsOptionProblems(...args: AddDtsOptionProblemsArgs): void {
-  const [config, project, findings, checks, checkerName] = args;
+export function addDtsOptionProblems(
+  ...arguments_: AddDtsOptionProblemsArguments
+): void {
+  const [config, project, findings, checks, checkerName] = arguments_;
 
   if (!isDtsProjectConfig(project.configPath)) {
     return;

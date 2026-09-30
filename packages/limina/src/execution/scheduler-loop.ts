@@ -1,7 +1,7 @@
 import {
   canStartTask,
-  dependenciesSettled,
   findBlockedDependency,
+  isDependenciesSettled,
 } from './scheduler-readiness';
 import { joinRunning, settleOneRunning } from './scheduler-settlement';
 import { finishSynthetic, startTask } from './scheduler-tasks';
@@ -35,7 +35,7 @@ const taskActionMatchers: readonly TaskActionMatcher[] = [
   },
   {
     action: 'wait-dependencies',
-    matches: ({ context, task }) => !dependenciesSettled(task, context),
+    matches: ({ context, task }) => !isDependenciesSettled(task, context),
   },
   {
     action: 'blocked',
@@ -52,7 +52,7 @@ function getTaskAction(options: TaskActionContext): TaskAction {
   return match === undefined ? 'start' : match.action;
 }
 
-async function handleBlocked(options: TaskActionContext): Promise<boolean> {
+async function isHandleBlocked(options: TaskActionContext): Promise<boolean> {
   await finishSynthetic({
     context: options.context,
     outcome: { blockedBy: options.blocker!, status: 'blocked' },
@@ -61,13 +61,13 @@ async function handleBlocked(options: TaskActionContext): Promise<boolean> {
   return true;
 }
 
-async function handleStart(options: TaskActionContext): Promise<boolean> {
+async function isHandleStart(options: TaskActionContext): Promise<boolean> {
   assertActiveGeneration(options.task, options.context.controller.generation);
   await startTask({ context: options.context, task: options.task });
   return true;
 }
 
-async function handleWait(): Promise<boolean> {
+async function isHandleWait(): Promise<boolean> {
   return false;
 }
 
@@ -75,14 +75,14 @@ const taskActionHandlers: Record<
   TaskAction,
   (options: TaskActionContext) => Promise<boolean>
 > = {
-  blocked: handleBlocked,
-  start: handleStart,
-  'wait-dependencies': handleWait,
-  'wait-generation': handleWait,
-  'wait-resources': handleWait,
+  blocked: isHandleBlocked,
+  start: isHandleStart,
+  'wait-dependencies': isHandleWait,
+  'wait-generation': isHandleWait,
+  'wait-resources': isHandleWait,
 };
 
-async function processTaskCandidate(options: {
+async function isProcessTaskCandidate(options: {
   context: SchedulerContext;
   task: ExecutionTask;
 }): Promise<boolean> {
@@ -94,41 +94,44 @@ async function processTaskCandidate(options: {
 }
 
 function getPendingTasks(context: SchedulerContext): ExecutionTask[] {
-  return [...context.pending.values()].sort(
-    (left, right) => left.order - right.order,
-  );
+  return context.pending
+    .values()
+    .toArray()
+    .sort((left, right) => left.order - right.order);
 }
 
-async function processPendingTasks(
+async function isProcessPendingTasks(
   context: SchedulerContext,
 ): Promise<boolean> {
-  let progressed = false;
+  let isProgressed = false;
   for (const task of getPendingTasks(context)) {
-    const taskProgressed = await processTaskCandidate({ context, task });
-    progressed = taskProgressed || progressed;
+    const isTaskProgressed = await isProcessTaskCandidate({ context, task });
+    isProgressed = isTaskProgressed || isProgressed;
   }
-  return progressed;
+  return isProgressed;
 }
 
 function shouldSettleRunning(options: {
   context: SchedulerContext;
   progressed: boolean;
 }): boolean {
-  if (options.context.running.size === 0) return false;
-  if (!options.progressed) return true;
-  return options.context.running.size >= options.context.concurrency;
+  return (
+    options.context.running.size > 0 &&
+    (!options.progressed ||
+      options.context.running.size >= options.context.concurrency)
+  );
 }
 
 function assertResolvedState(options: {
   context: SchedulerContext;
   progressed: boolean;
 }): void {
-  const unresolved = [
+  const isUnresolved = [
     !options.progressed,
     options.context.running.size === 0,
     options.context.pending.size > 0,
   ].every(Boolean);
-  if (unresolved) {
+  if (isUnresolved) {
     throw new Error('Execution scheduler reached an unresolved plan state.');
   }
 }
@@ -145,12 +148,12 @@ async function runSchedulerIteration(context: SchedulerContext): Promise<void> {
     await advanceGeneration(context);
     return;
   }
-  const progressed = await processPendingTasks(context);
-  if (shouldSettleRunning({ context, progressed })) {
+  const isProgressed = await isProcessPendingTasks(context);
+  if (shouldSettleRunning({ context, progressed: isProgressed })) {
     await settleOneRunning(context);
     return;
   }
-  assertResolvedState({ context, progressed });
+  assertResolvedState({ context, progressed: isProgressed });
 }
 
 function hasSchedulerWork(context: SchedulerContext): boolean {

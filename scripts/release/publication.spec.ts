@@ -69,27 +69,27 @@ it(
     const documents = new Map<string, RegistryDocument>();
     const uploads: string[] = [];
     let promotions = 0;
-    let failMigration = true;
-    let corruptIntegrity = false;
+    let isFailMigration = true;
+    let isCorruptIntegrity = false;
     const server = createServer(async (request, response) => {
       const chunks = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const url = new URL(request.url!, 'http://localhost');
       const parts = url.pathname.split('/');
-      const tagRequest = parts[1] === '-';
-      const name = tagRequest ? parts[3]! : parts[1]!;
+      const isTagRequest = parts[1] === '-';
+      const name = isTagRequest ? parts[3]! : parts[1]!;
       const reply = (status: number, value: unknown) => {
         response.writeHead(status, { 'content-type': 'application/json' });
         response.end(JSON.stringify(value));
       };
       if (request.method === 'PUT') {
         const body = JSON.parse(Buffer.concat(chunks).toString());
-        if (tagRequest) {
+        if (isTagRequest) {
           promotions++;
           documents.get(name)!['dist-tags'][parts[5]!] = body as string;
         } else {
           uploads.push(name);
-          if (failMigration && name === 'limina-migrate') {
+          if (isFailMigration && name === 'limina-migrate') {
             reply(503, { error: 'controlled second upload failure' });
             return;
           }
@@ -108,9 +108,9 @@ it(
         return;
       }
       const copy = structuredClone(document);
-      if (corruptIntegrity && name === 'limina')
+      if (isCorruptIntegrity && name === 'limina')
         copy.versions[version]!.dist.integrity = 'sha512-invalid';
-      reply(200, tagRequest ? copy['dist-tags'] : copy);
+      reply(200, isTagRequest ? copy['dist-tags'] : copy);
     });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -151,16 +151,16 @@ it(
       );
     try {
       await assert.rejects(run(), /controlled second upload failure/);
-      assert.deepEqual([...documents.keys()], ['limina']);
+      assert.deepEqual(documents.keys().toArray(), ['limina']);
       assert.equal(promotions, 0);
       assert.equal(documents.get('limina')!['dist-tags'].latest, undefined);
-      failMigration = false;
+      isFailMigration = false;
       await run();
       assert.deepEqual(uploads, ['limina', 'limina-migrate', 'limina-migrate']);
       assert.equal(promotions, 2);
       for (const document of documents.values())
         assert.equal(document['dist-tags'].latest, version);
-      corruptIntegrity = true;
+      isCorruptIntegrity = true;
       await assert.rejects(run(), /Published artifact differs/);
       assert.equal(uploads.length, 3);
       assert.equal(promotions, 2);

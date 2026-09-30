@@ -54,11 +54,9 @@ function readProjectConfigObject(options: {
     normalizeAbsolutePath(options.configPath),
   );
 
-  if (virtualContent !== undefined) {
-    return JSON.parse(virtualContent) as Record<string, unknown>;
-  }
-
-  return readJsonConfig(options.config, options.configPath);
+  return virtualContent === undefined
+    ? readJsonConfig(options.config, options.configPath)
+    : (JSON.parse(virtualContent) as Record<string, unknown>);
 }
 
 function parseGraphRuleLabel(options: {
@@ -130,11 +128,9 @@ function parseGraphRules(options: {
     graphRules: options.graphRules,
   });
 
-  if (!Array.isArray(labels)) {
-    return labels;
-  }
-
-  return { labelDiagnostic: null, labels, labelProblem: null };
+  return Array.isArray(labels)
+    ? { labelDiagnostic: null, labels, labelProblem: null }
+    : labels;
 }
 
 function parseLiminaOptions(options: {

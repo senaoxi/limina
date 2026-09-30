@@ -31,8 +31,9 @@ function getInlineOptionValue(
 ): string | undefined {
   if (argument === undefined) return undefined;
   const prefix = `${optionName}=`;
-  if (!argument.startsWith(prefix)) return undefined;
-  return argument.slice(prefix.length);
+  return argument.startsWith(prefix)
+    ? argument.slice(prefix.length)
+    : undefined;
 }
 
 function getSeparateOptionValue(
@@ -64,10 +65,9 @@ function getGlobalOptionDescriptor(
 ): GlobalOptionDescriptor | undefined {
   if (argument === undefined) return undefined;
   const exactField = GLOBAL_OPTION_FIELDS.get(argument);
-  if (exactField !== undefined) {
-    return { field: exactField, separate: true };
-  }
-  return getInlineGlobalOption(argument);
+  return exactField === undefined
+    ? getInlineGlobalOption(argument)
+    : { field: exactField, separate: true };
 }
 
 function applyGlobalOption(options: {
@@ -92,8 +92,9 @@ function readGlobalOptionAt(options: {
   index: number;
 }): number {
   const descriptor = getGlobalOptionDescriptor(options.argv[options.index]);
-  if (descriptor === undefined) return 0;
-  return applyGlobalOption({ ...options, descriptor });
+  return descriptor === undefined
+    ? 0
+    : applyGlobalOption({ ...options, descriptor });
 }
 
 function isGlobalOption(argument: string | undefined): boolean {
@@ -121,8 +122,9 @@ function matchOptionAt(options: {
 }): string | undefined {
   const inline = getInlineOptionValue(options.argument, options.optionName);
   if (inline !== undefined) return inline;
-  if (options.argument !== options.optionName) return undefined;
-  return getSeparateOptionValue(options.argv, options.index);
+  return options.argument === options.optionName
+    ? getSeparateOptionValue(options.argv, options.index)
+    : undefined;
 }
 
 export function readArgvOptionValue(
@@ -143,14 +145,12 @@ export function readArgvOptionValue(
 
 function toCommandCandidate(argument: string): string | undefined {
   if (argument === '--') return argument;
-  if (argument.startsWith('-')) return undefined;
-  return argument;
+  return argument.startsWith('-') ? undefined : argument;
 }
 
 function getCommandCandidate(argument: string | undefined): string | undefined {
   if (argument === undefined) return undefined;
-  if (isGlobalOption(argument)) return undefined;
-  return toCommandCandidate(argument);
+  return isGlobalOption(argument) ? undefined : toCommandCandidate(argument);
 }
 
 function scanCommandArgument(argument: string | undefined): {
@@ -182,8 +182,7 @@ export function getPrimaryCliCommandName(
 }
 
 function isLimitArgument(argument: string): boolean {
-  if (argument === '--limit') return true;
-  return argument.startsWith('--limit=');
+  return argument === '--limit' || argument.startsWith('--limit=');
 }
 
 function getLimitArgumentIndex(argv: readonly string[]): number {
@@ -198,8 +197,9 @@ function getArgumentOrEmpty(argv: readonly string[], index: number): string {
 function getLimitArgumentValue(argv: readonly string[], index: number): string {
   const argument = getArgumentOrEmpty(argv, index);
   const inlineValue = getInlineOptionValue(argument, '--limit');
-  if (inlineValue !== undefined) return inlineValue;
-  return getArgumentOrEmpty(argv, index + 1);
+  return inlineValue === undefined
+    ? getArgumentOrEmpty(argv, index + 1)
+    : inlineValue;
 }
 
 function isIssueInventoryCommand(argv: readonly string[]): boolean {
@@ -209,13 +209,13 @@ function isIssueInventoryCommand(argv: readonly string[]): boolean {
 }
 
 function normalizeArgumentIndex(index: number): number | null {
-  if (index === -1) return null;
-  return index;
+  return index === -1 ? null : index;
 }
 
 function getIssueInventoryLimitIndex(argv: readonly string[]): number | null {
-  if (!isIssueInventoryCommand(argv)) return null;
-  return normalizeArgumentIndex(getLimitArgumentIndex(argv));
+  return isIssueInventoryCommand(argv)
+    ? normalizeArgumentIndex(getLimitArgumentIndex(argv))
+    : null;
 }
 
 function getInventoryFormat(argv: readonly string[]) {
@@ -240,20 +240,19 @@ function isHelpArgument(value: string | undefined): boolean {
 }
 
 function getFilterHelpKindAt(
-  args: readonly string[],
+  arguments_: readonly string[],
   index: number,
 ): CheckIssueFilterHelpKind | null {
-  const kind = FILTER_HELP_KINDS.get(getArgumentOrEmpty(args, index));
+  const kind = FILTER_HELP_KINDS.get(getArgumentOrEmpty(arguments_, index));
   if (kind === undefined) return null;
-  if (isHelpArgument(args[index + 1])) return kind;
-  return null;
+  return isHelpArgument(arguments_[index + 1]) ? kind : null;
 }
 
 function findFilterHelpKind(
-  args: readonly string[],
+  arguments_: readonly string[],
 ): CheckIssueFilterHelpKind | null {
-  for (const index of args.keys()) {
-    const kind = getFilterHelpKindAt(args, index);
+  for (const index of arguments_.keys()) {
+    const kind = getFilterHelpKindAt(arguments_, index);
     if (kind !== null) return kind;
   }
   return null;
@@ -263,7 +262,8 @@ export function parseCheckIssueFilterHelpKind(
   argv: readonly string[],
 ): CheckIssueFilterHelpKind | null {
   if (getPrimaryCliCommandName(argv) !== 'check') return null;
-  const args = argv.slice(2);
-  if (!args.includes('--issues')) return null;
-  return findFilterHelpKind(args);
+  const arguments_ = argv.slice(2);
+  return arguments_.includes('--issues')
+    ? findFilterHelpKind(arguments_)
+    : null;
 }

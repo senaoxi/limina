@@ -10,7 +10,7 @@ import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 import type {
   FrameworkGovernanceProofFacts,
@@ -63,9 +63,12 @@ export function addFrameworkGovernanceFinding(
 export function collectGovernedSourceEntries(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): GovernedSourceEntry[] {
-  return [...generatedGraph.governedSources.entries()]
+  return [...generatedGraph.governedSources]
     .flatMap(([checkerName, units]) =>
-      [...units.values()].map((unit) => ({ checkerName, unit })),
+      units
+        .values()
+        .map((unit) => ({ checkerName, unit }))
+        .toArray(),
     )
     .sort(
       (left, right) =>
@@ -81,10 +84,9 @@ export function isPrimaryBuildEntry(entry: GovernedSourceEntry): boolean {
 export function getExpectedBuildProjectionKind(
   entry: GovernedSourceEntry,
 ): GovernedSourceEntry['unit']['buildProjection']['kind'] {
-  if (!isBuildCapablePreset(entry.unit.primaryCheckerName)) {
-    return 'framework-checker';
-  }
-  return getExpectedBuildCapableProjectionKind(entry);
+  return isBuildCapablePreset(entry.unit.primaryCheckerName)
+    ? getExpectedBuildCapableProjectionKind(entry)
+    : 'framework-checker';
 }
 
 function getExpectedBuildCapableProjectionKind(
@@ -121,11 +123,5 @@ export function collectUnsupportedFrameworkEntries(configObject: {
 export function groupEntriesByConfigPath(
   entries: readonly GovernedSourceEntry[],
 ): Map<string, GovernedSourceEntry[]> {
-  const groups = new Map<string, GovernedSourceEntry[]>();
-  for (const entry of entries) {
-    const current = groups.get(entry.unit.configPath) ?? [];
-    current.push(entry);
-    groups.set(entry.unit.configPath, current);
-  }
-  return groups;
+  return Map.groupBy(entries, (entry) => entry.unit.configPath);
 }

@@ -21,8 +21,8 @@ export interface LockedSemanticAuthority {
 }
 
 export type SemanticAuthority =
-  | { baseline: 'typescript'; kind: 'pending' }
-  | LockedSemanticAuthority;
+  | LockedSemanticAuthority
+  | { baseline: 'typescript'; kind: 'pending' };
 
 export type CheckerEvidenceSource =
   | 'explicit'

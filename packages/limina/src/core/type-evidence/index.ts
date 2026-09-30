@@ -47,12 +47,10 @@ export type { TypeEvidenceCoreOptions } from './types';
 function getVueCapabilityKey(
   identity: VueProjectSemanticIdentity | undefined,
 ): string {
-  if (identity === undefined) return '<missing>';
-  return identity.id;
+  return identity === undefined ? '<missing>' : identity.id;
 }
 
 export class TypeEvidenceCore {
-  readonly cache: TypeEvidenceGenerationCache;
   readonly #affectedSourceConfigs: Set<string> | undefined;
   readonly #completedConfigIdentities = new Set<string>();
   readonly #generation: number;
@@ -63,6 +61,8 @@ export class TypeEvidenceCore {
   readonly #vueSemanticContexts: VueSemanticContextManager;
   readonly #ownsVueSemanticContexts: boolean;
   readonly #workspaceSourceBoundaryProvider: TypeEvidenceCoreOptions['workspaceSourceBoundaryProvider'];
+  readonly cache: TypeEvidenceGenerationCache;
+
   constructor(options: TypeEvidenceCoreOptions) {
     this.cache = new TypeEvidenceGenerationCache(
       options.metrics,
@@ -80,78 +80,13 @@ export class TypeEvidenceCore {
     this.#workspaceSourceBoundaryProvider =
       options.workspaceSourceBoundaryProvider;
   }
-  classifyImportRuntime(
-    options: ResolveImportEvidenceOptions,
-  ): ImportRuntimeResolutionEvidence {
-    return resolveImportPair({
-      importAnalysis: this.#importAnalysis,
-      request: options,
-    }).runtimeEvidence;
-  }
-  resolveImportEvidence(
-    options: ResolveImportEvidenceOptions,
-  ): ImportResolutionEvidence {
-    const boundedOptions = addWorkspaceSourceBoundary({
-      input: options,
-      provider: this.#workspaceSourceBoundaryProvider,
-    });
-    const configIdentity = normalizeAbsolutePathIdentity(
-      options.project.configPath,
-    );
-    const typeScriptSemanticContext =
-      this.#getNativeTypeScriptSemanticContext(boundedOptions);
-    const pair = resolveImportPair({
-      importAnalysis: this.#importAnalysis,
-      request: boundedOptions,
-      typeScriptSemanticContext,
-    });
-    this.#recordResourceImport(configIdentity, pair.runtimeEvidence);
-
-    if (pair.semanticFailure !== undefined) {
-      return {
-        ...pair.runtimeEvidence,
-        type: createUnsupportedCheckerEvidence({
-          checkerName: options.checkerName,
-          reason: formatFrameworkSemanticFailure(pair.semanticFailure),
-        }),
-      };
-    }
-
-    return resolveCoreTypeEvidence({
-      native: typeScriptSemanticContext !== undefined,
-      pair,
-      request: boundedOptions,
-      resolveProvider: () =>
-        this.#resolveProviderEvidence(boundedOptions, pair.runtimeEvidence),
-    });
-  }
-
-  getTypeScriptSemanticContext(options: {
-    checkerName: string;
-    project: ResolveImportEvidenceOptions['project'];
-  }): TypeScriptSemanticContext {
-    return getCoreTypeScriptSemanticContext({
-      cache: this.cache,
-      checkerName: options.checkerName,
-      generation: this.#generation,
-      prepareProvider: (configPath, providerKey) =>
-        this.#prepareProvider(configPath, providerKey),
-      project: {
-        ...options.project,
-        workspaceSourceBoundary: this.#workspaceSourceBoundaryProvider(
-          options.project,
-        ),
-      },
-    });
-  }
 
   #getNativeTypeScriptSemanticContext(
     options: WorkspaceBoundedImportEvidenceOptions,
   ): TypeScriptSemanticContext | undefined {
-    if (resolveTypeScriptPreset(options.project.checkerPresets) === null) {
-      return undefined;
-    }
-    return this.getTypeScriptSemanticContext(options);
+    return resolveTypeScriptPreset(options.project.checkerPresets) === null
+      ? undefined
+      : this.getTypeScriptSemanticContext(options);
   }
 
   #recordResourceImport(
@@ -243,31 +178,6 @@ export class TypeEvidenceCore {
     this.#trackProviderKey(configPath, providerKey);
   }
 
-  dispose(): void {
-    this.cache.dispose();
-    this.#affectedSourceConfigs?.clear();
-    this.#completedConfigIdentities.clear();
-    this.#providerKeysByConfigIdentity.clear();
-    this.#vueCapabilities.clear();
-    if (this.#ownsVueSemanticContexts) {
-      this.#vueSemanticContexts.dispose();
-    }
-  }
-
-  completeProject(configPath: string): void {
-    const configIdentity = normalizeAbsolutePathIdentity(configPath);
-
-    if (this.#completedConfigIdentities.has(configIdentity)) {
-      return;
-    }
-
-    this.#completedConfigIdentities.add(configIdentity);
-    for (const key of this.#getProviderKeys(configIdentity)) {
-      this.cache.releaseProviderAndProgram(key);
-    }
-    this.#providerKeysByConfigIdentity.delete(configIdentity);
-  }
-
   #getProviderKeys(configIdentity: string): readonly string[] {
     return [...(this.#providerKeysByConfigIdentity.get(configIdentity) ?? [])];
   }
@@ -295,5 +205,96 @@ export class TypeEvidenceCore {
       configIdentity,
       new Set([providerKey]),
     );
+  }
+
+  classifyImportRuntime(
+    options: ResolveImportEvidenceOptions,
+  ): ImportRuntimeResolutionEvidence {
+    return resolveImportPair({
+      importAnalysis: this.#importAnalysis,
+      request: options,
+    }).runtimeEvidence;
+  }
+
+  resolveImportEvidence(
+    options: ResolveImportEvidenceOptions,
+  ): ImportResolutionEvidence {
+    const boundedOptions = addWorkspaceSourceBoundary({
+      input: options,
+      provider: this.#workspaceSourceBoundaryProvider,
+    });
+    const configIdentity = normalizeAbsolutePathIdentity(
+      options.project.configPath,
+    );
+    const typeScriptSemanticContext =
+      this.#getNativeTypeScriptSemanticContext(boundedOptions);
+    const pair = resolveImportPair({
+      importAnalysis: this.#importAnalysis,
+      request: boundedOptions,
+      typeScriptSemanticContext,
+    });
+    this.#recordResourceImport(configIdentity, pair.runtimeEvidence);
+
+    if (pair.semanticFailure !== undefined) {
+      return {
+        ...pair.runtimeEvidence,
+        type: createUnsupportedCheckerEvidence({
+          checkerName: options.checkerName,
+          reason: formatFrameworkSemanticFailure(pair.semanticFailure),
+        }),
+      };
+    }
+
+    return resolveCoreTypeEvidence({
+      native: typeScriptSemanticContext !== undefined,
+      pair,
+      request: boundedOptions,
+      resolveProvider: () =>
+        this.#resolveProviderEvidence(boundedOptions, pair.runtimeEvidence),
+    });
+  }
+
+  getTypeScriptSemanticContext(options: {
+    checkerName: string;
+    project: ResolveImportEvidenceOptions['project'];
+  }): TypeScriptSemanticContext {
+    return getCoreTypeScriptSemanticContext({
+      cache: this.cache,
+      checkerName: options.checkerName,
+      generation: this.#generation,
+      prepareProvider: (configPath, providerKey) =>
+        this.#prepareProvider(configPath, providerKey),
+      project: {
+        ...options.project,
+        workspaceSourceBoundary: this.#workspaceSourceBoundaryProvider(
+          options.project,
+        ),
+      },
+    });
+  }
+
+  dispose(): void {
+    this.cache.dispose();
+    this.#affectedSourceConfigs?.clear();
+    this.#completedConfigIdentities.clear();
+    this.#providerKeysByConfigIdentity.clear();
+    this.#vueCapabilities.clear();
+    if (this.#ownsVueSemanticContexts) {
+      this.#vueSemanticContexts.dispose();
+    }
+  }
+
+  completeProject(configPath: string): void {
+    const configIdentity = normalizeAbsolutePathIdentity(configPath);
+
+    if (this.#completedConfigIdentities.has(configIdentity)) {
+      return;
+    }
+
+    this.#completedConfigIdentities.add(configIdentity);
+    for (const key of this.#getProviderKeys(configIdentity)) {
+      this.cache.releaseProviderAndProgram(key);
+    }
+    this.#providerKeysByConfigIdentity.delete(configIdentity);
   }
 }

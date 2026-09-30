@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   AnalysisGeneration,
   AnalysisRunId,
-  RepositorySnapshotToken,
+  RepoSnapshotToken,
 } from '../../domain/shared/identifiers';
 import { identifier } from '../../domain/shared/identifiers';
 
@@ -95,14 +95,14 @@ export interface AnalysisRun {
   readonly id: AnalysisRunId;
   readonly metrics: AnalysisMetricsRecorder;
   readonly signal: AbortSignal;
-  readonly snapshotToken: RepositorySnapshotToken;
+  readonly snapshotToken: RepoSnapshotToken;
 }
 
 export interface CreateAnalysisRunOptions {
   readonly generation: AnalysisGeneration;
   readonly metrics: AnalysisMetricsRecorder;
   readonly signal: AbortSignal;
-  readonly snapshotToken: RepositorySnapshotToken;
+  readonly snapshotToken: RepoSnapshotToken;
 }
 
 export function createAnalysisRun(

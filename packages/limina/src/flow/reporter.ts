@@ -43,8 +43,7 @@ export class LiminaFlowReporter {
   }
 
   get rendererBackend(): 'inline' | 'process' {
-    if (this.#state.processRenderer === undefined) return 'inline';
-    return 'process';
+    return this.#state.processRenderer === undefined ? 'inline' : 'process';
   }
 
   waitForRendererReady(): Promise<boolean> {

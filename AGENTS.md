@@ -36,7 +36,7 @@ Run the relevant `test:unit`, `test:tooling`, `test:integration`, `test:smoke`, 
 
 Do not hand-edit generated `dist`, `.limina`, declarations or caches. Dependency versions belong in catalogs; generate lockfiles through pnpm. Read the dependency-admission record before adding third-party dependencies. Do not add reason-field governance exceptions; report the exact issue and alternatives for the user's decision. Keep full English/Chinese PCR pairs synchronized; never add a vouch or decision ledger without explicit direction.
 
-This repository currently consumes a temporary Logaria link. Independent CI, npm publication and documentation deployment remain closed until their gates in `.agents/docs/migration.md` are satisfied. Do not push, publish, replace old consumers or remove old source as part of local migration work. Finish with `git diff --check`, Git status, and an explicit list of executed and unexecuted validation.
+This repository consumes registry Logaria through the dev catalog. CI rejects temporary Logaria links; remote platform acceptance, npm publication and documentation deployment remain subject to their gates in `.agents/docs/migration.md`. Do not push, publish, replace old consumers or remove old source as part of local migration work. Finish with `git diff --check`, Git status, and an explicit list of executed and unexecuted validation.
 
 ## Commit messages
 

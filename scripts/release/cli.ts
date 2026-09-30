@@ -15,7 +15,7 @@ import {
 } from './shared';
 
 type RepeatableStringOption = string | string[] | undefined;
-type PositionalArgs = string | string[] | undefined;
+type PositionalArguments = string | string[] | undefined;
 
 interface BaseCliFlags {
   '--'?: string[];
@@ -80,7 +80,7 @@ function normalizeRepeatableOption(
   return normalized;
 }
 
-function normalizePositionals(value: PositionalArgs): string[] {
+function normalizePositionals(value: PositionalArguments): string[] {
   if (value === undefined) {
     return [];
   }
@@ -120,7 +120,7 @@ function normalizeReleaseType(
 }
 
 function createReleaseCliOptions(
-  positionals: PositionalArgs,
+  positionals: PositionalArguments,
   flags: ReleaseCommandFlags,
 ): ReleaseCliOptions {
   return {
@@ -147,7 +147,7 @@ function createReleaseCliOptions(
 }
 
 function createPublishCliOptions(
-  positionals: PositionalArgs,
+  positionals: PositionalArguments,
   flags: PublishCommandFlags,
 ): PublishCliOptions {
   return {
@@ -166,7 +166,7 @@ function createPublishCliOptions(
 }
 
 function createChangelogCliOptions(
-  positionals: PositionalArgs,
+  positionals: PositionalArguments,
   flags: ChangelogCommandFlags,
 ): ChangelogCliOptions {
   return {

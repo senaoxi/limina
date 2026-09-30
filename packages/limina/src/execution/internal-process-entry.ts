@@ -10,15 +10,15 @@ export interface InternalProcessEntry {
 
 function resolveTsxCliPath(
   moduleUrl: string,
-  packageDir: string,
+  packageDirectory: string,
 ): string | null {
   try {
     return createRequire(moduleUrl).resolve('tsx/cli');
   } catch {
     return (
       [
-        path.join(packageDir, 'node_modules/tsx/dist/cli.mjs'),
-        path.join(packageDir, '../../node_modules/tsx/dist/cli.mjs'),
+        path.join(packageDirectory, 'node_modules/tsx/dist/cli.mjs'),
+        path.join(packageDirectory, '../../node_modules/tsx/dist/cli.mjs'),
       ].find((candidate) => existsSync(candidate)) ?? null
     );
   }
@@ -39,8 +39,11 @@ function resolveSourceProcessEntry(options: {
     return undefined;
   }
 
-  const packageDir = path.resolve(path.dirname(options.sourceEntry), '../..');
-  const tsxCliPath = resolveTsxCliPath(options.moduleUrl, packageDir);
+  const packageDirectory = path.resolve(
+    path.dirname(options.sourceEntry),
+    '../..',
+  );
+  const tsxCliPath = resolveTsxCliPath(options.moduleUrl, packageDirectory);
   return tsxCliPath === null
     ? undefined
     : {
@@ -50,12 +53,12 @@ function resolveSourceProcessEntry(options: {
 }
 
 function resolveBundleProcessEntry(
-  currentDir: string,
+  currentDirectory: string,
   bundleFileName: string,
 ): InternalProcessEntry | undefined {
   const bundleEntry = [
-    path.resolve(currentDir, bundleFileName),
-    path.resolve(currentDir, '..', bundleFileName),
+    path.resolve(currentDirectory, bundleFileName),
+    path.resolve(currentDirectory, '..', bundleFileName),
   ].find((candidate) => existsSync(candidate));
 
   return bundleEntry === undefined
@@ -68,8 +71,8 @@ export function resolveInternalProcessEntry(options: {
   moduleUrl: string;
   sourceFileName: string;
 }): InternalProcessEntry | undefined {
-  const currentDir = fileURLToPath(new URL('.', options.moduleUrl));
-  const sourceEntry = path.resolve(currentDir, options.sourceFileName);
+  const currentDirectory = fileURLToPath(new URL('.', options.moduleUrl));
+  const sourceEntry = path.resolve(currentDirectory, options.sourceFileName);
   const sourceProcessEntry = resolveSourceProcessEntry({
     moduleUrl: options.moduleUrl,
     sourceEntry,
@@ -77,6 +80,6 @@ export function resolveInternalProcessEntry(options: {
 
   return (
     sourceProcessEntry ??
-    resolveBundleProcessEntry(currentDir, options.bundleFileName)
+    resolveBundleProcessEntry(currentDirectory, options.bundleFileName)
   );
 }

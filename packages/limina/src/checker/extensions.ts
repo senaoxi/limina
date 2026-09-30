@@ -18,8 +18,8 @@ interface TypeScriptExtensionApi {
 function isTypeScriptExtensionApi(
   api: Partial<TypeScriptExtensionApi>,
 ): api is TypeScriptExtensionApi {
-  if (typeof api.getSupportedExtensions !== 'function') return false;
   return (
+    typeof api.getSupportedExtensions === 'function' &&
     typeof api.getSupportedExtensionsWithJsonIfResolveJsonModule === 'function'
   );
 }
@@ -40,14 +40,11 @@ function flattenTypeScriptExtensionGroups(
 
 function getCompilerExtensions(options: ts.CompilerOptions): string[] {
   const api = getTypeScriptExtensionApi();
-  return normalizeExtensions(
-    flattenTypeScriptExtensionGroups(
-      api.getSupportedExtensionsWithJsonIfResolveJsonModule(
-        options,
-        api.getSupportedExtensions(options),
-      ),
-    ),
+  const extensionGroups = api.getSupportedExtensionsWithJsonIfResolveJsonModule(
+    options,
+    api.getSupportedExtensions(options),
   );
+  return normalizeExtensions(flattenTypeScriptExtensionGroups(extensionGroups));
 }
 
 export function getTypeScriptCheckerExtensions(): string[] {
@@ -125,8 +122,7 @@ export function resolveExtensionsForChecker(
 
 function compareExtensions(left: string, right: string): number {
   const lengthDelta = right.length - left.length;
-  if (lengthDelta !== 0) return lengthDelta;
-  return compareCodeUnits(left, right);
+  return lengthDelta === 0 ? compareCodeUnits(left, right) : lengthDelta;
 }
 
 export function normalizeExtensions(extensions: string[]): string[] {

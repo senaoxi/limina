@@ -110,8 +110,7 @@ function getPublintLogger(type: string): (value: string) => void {
     warning: (value) => PackageLogger.warn(value),
   };
   const logger = loggerByType[type];
-  if (logger !== undefined) return logger;
-  return (value) => PackageLogger.info(value);
+  return logger === undefined ? (value) => PackageLogger.info(value) : logger;
 }
 
 function logPublintMessage(options: {
@@ -192,8 +191,8 @@ function finishFailedPublint(options: {
   return 'failed';
 }
 
-function getStrictSetting(config: PackagePublintCheckConfig): boolean {
-  return config.strict === undefined ? true : config.strict;
+function isGetStrictSetting(config: PackagePublintCheckConfig): boolean {
+  return config.strict === undefined || config.strict;
 }
 
 async function executePublint(options: {
@@ -205,7 +204,7 @@ async function executePublint(options: {
   const result = await options.peer.publint({
     level: options.checkOptions.config.level,
     pack: { tarball: toArrayBuffer(options.checkOptions.tarball) },
-    strict: getStrictSetting(options.checkOptions.config),
+    strict: isGetStrictSetting(options.checkOptions.config),
   });
   if (result.messages.length === 0) {
     return finishPassedPublint(options);

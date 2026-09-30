@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'pathe';
-import { generatedRootDirName } from '../core/build-graph/generated/paths';
+import { generatedRootDirName as generatedRootDirectoryName } from '../core/build-graph/generated/paths';
 import {
   type LiminaArtifactNamespace,
   resolveArtifactNamespacePath,
@@ -68,7 +68,7 @@ export function toCheckIssueInventoryInvocationMetadata(
 }
 
 export function getStandaloneIssueInvocationPath(
-  rootDir: string,
+  rootDirectory: string,
   invocationId: string,
 ): string {
   if (!isStandaloneIssueInvocationId(invocationId)) {
@@ -78,8 +78,8 @@ export function getStandaloneIssueInvocationPath(
   }
 
   return path.join(
-    rootDir,
-    generatedRootDirName,
+    rootDirectory,
+    generatedRootDirectoryName,
     'check',
     'invocations',
     `${invocationId}.json`,
@@ -170,11 +170,13 @@ export function mergeStandaloneFailureIssues(options: {
   return merged;
 }
 
-function createInvocationId(rootDir: string): string {
+function createInvocationId(rootDirectory: string): string {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const invocationId = randomUUID();
 
-    if (!existsSync(getStandaloneIssueInvocationPath(rootDir, invocationId))) {
+    if (
+      !existsSync(getStandaloneIssueInvocationPath(rootDirectory, invocationId))
+    ) {
       return invocationId;
     }
   }
@@ -227,11 +229,11 @@ function assertValidInvocationSnapshot(
   parsed: unknown,
   invocationId: string,
 ): asserts parsed is StandaloneIssueInvocationSnapshot {
-  const matchesInvocation =
+  const isMatchesInvocation =
     isStandaloneIssueInvocationSnapshot(parsed) &&
     parsed.invocationId === invocationId;
 
-  if (!matchesInvocation) {
+  if (!isMatchesInvocation) {
     throw new StandaloneIssueInvocationInvalidError(
       `Invalid standalone issue invocation record for ${invocationId}.`,
     );
@@ -252,21 +254,22 @@ function wrapInvocationReadError(
   error: unknown,
   invocationId: string,
 ): StandaloneIssueInvocationInvalidError {
-  if (error instanceof StandaloneIssueInvocationInvalidError) {
-    return error;
-  }
-
-  return new StandaloneIssueInvocationInvalidError(
-    `Unable to read standalone issue invocation ${invocationId}.`,
-    { cause: error },
-  );
+  return error instanceof StandaloneIssueInvocationInvalidError
+    ? error
+    : new StandaloneIssueInvocationInvalidError(
+        `Unable to read standalone issue invocation ${invocationId}.`,
+        { cause: error },
+      );
 }
 
 export async function readStandaloneIssueInvocation(
-  rootDir: string,
+  rootDirectory: string,
   invocationId: string,
 ): Promise<StandaloneIssueInvocationSnapshot> {
-  const snapshotPath = getStandaloneIssueInvocationPath(rootDir, invocationId);
+  const snapshotPath = getStandaloneIssueInvocationPath(
+    rootDirectory,
+    invocationId,
+  );
 
   if (!existsSync(snapshotPath)) {
     throw new StandaloneIssueInvocationNotFoundError(

@@ -50,31 +50,33 @@ export function classifyGovernanceRoot(
   root: GovernanceRootBase,
 ): ResolvedGovernanceRoot {
   const descriptor = findWorkspaceRootDescriptor(root.rootDir, root.manifest);
-  if (descriptor === null)
-    return Object.freeze({ ...root, kind: 'single-package' });
-  return Object.freeze(resolveWorkspaceDescriptor(root, descriptor));
+  return descriptor === null
+    ? Object.freeze({ ...root, kind: 'single-package' })
+    : Object.freeze(resolveWorkspaceDescriptor(root, descriptor));
 }
 
 export function hasWorkspaceDeclaration(manifest: object): boolean {
   return Object.hasOwn(manifest, 'workspaces');
 }
 
-/** Descriptor detection deliberately does not resolve the nested manager. */
+/**
+Descriptor detection deliberately does not resolve the nested manager.
+*/
 export function findWorkspaceRootDescriptor(
-  rootDir: string,
+  rootDirectory: string,
   manifest?: Readonly<PackageManifest>,
 ): WorkspaceRootDescriptor | null {
-  const yamlPath = path.join(rootDir, 'pnpm-workspace.yaml');
-  if (hasManifestEntry(yamlPath))
-    return { kind: 'pnpm-workspace', path: yamlPath };
-  return findManifestDescriptor(rootDir, manifest);
+  const yamlPath = path.join(rootDirectory, 'pnpm-workspace.yaml');
+  return hasManifestEntry(yamlPath)
+    ? { kind: 'pnpm-workspace', path: yamlPath }
+    : findManifestDescriptor(rootDirectory, manifest);
 }
 
 function findManifestDescriptor(
-  rootDir: string,
+  rootDirectory: string,
   manifest?: Readonly<PackageManifest>,
 ): WorkspaceRootDescriptor | null {
-  const manifestPath = path.join(rootDir, 'package.json');
+  const manifestPath = path.join(rootDirectory, 'package.json');
   const contents = manifest ?? readLocalManifest(manifestPath);
   return isWorkspaceManifest(contents)
     ? { kind: 'package-json-workspaces', path: manifestPath }
@@ -115,21 +117,23 @@ const rootLockfiles: Record<SupportedPackageManager, readonly string[]> = {
 };
 
 export function inferPackageManagerFromRootLockfiles(
-  rootDir: string,
+  rootDirectory: string,
 ): SupportedPackageManager {
   const managers = (
     Object.keys(rootLockfiles) as SupportedPackageManager[]
   ).filter((manager) =>
-    rootLockfiles[manager].some((file) => existsSync(path.join(rootDir, file))),
+    rootLockfiles[manager].some((file) =>
+      existsSync(path.join(rootDirectory, file)),
+    ),
   );
   if (managers.length > 1)
     throw new Error(
-      `Ambiguous package manager at ${rootDir}: ${managers.join(', ')}.`,
+      `Ambiguous package manager at ${rootDirectory}: ${managers.join(', ')}.`,
     );
   const manager = managers[0];
   if (manager === undefined)
     throw new Error(
-      `Package manager undetermined at ${rootDir}. Declare packageManager or a same-root lockfile.`,
+      `Package manager undetermined at ${rootDirectory}. Declare packageManager or a same-root lockfile.`,
     );
   return manager;
 }
@@ -169,15 +173,16 @@ function resolveManifestManager({
   return manager;
 }
 
-/** Capability-only resolution. Single-package governance does not call this. */
+/**
+Capability-only resolution. Single-package governance does not call this.
+*/
 export function resolveGovernancePackageManager(
   root: ResolvedGovernanceRoot,
 ): SupportedPackageManager {
-  if (root.kind === 'workspace') return root.packageManager;
-  return (
-    readExplicitManager(root.manifest) ??
-    inferPackageManagerFromRootLockfiles(root.rootDir)
-  );
+  return root.kind === 'workspace'
+    ? root.packageManager
+    : (readExplicitManager(root.manifest) ??
+        inferPackageManagerFromRootLockfiles(root.rootDir));
 }
 
 function resolveWorkspaceDescriptor(
@@ -211,8 +216,9 @@ function getManifestWorkspaceGlobs(
   declaration: unknown,
   manager: SupportedPackageManager,
 ): unknown {
-  if (manager === 'npm' || Array.isArray(declaration)) return declaration;
-  return getWorkspaceObjectPackages(declaration);
+  return manager === 'npm' || Array.isArray(declaration)
+    ? declaration
+    : getWorkspaceObjectPackages(declaration);
 }
 
 function getWorkspaceObjectPackages(declaration: unknown): unknown {
@@ -234,10 +240,7 @@ function validateWorkspaceGlobs(
   value: unknown,
   manager: SupportedPackageManager,
 ): void {
-  if (
-    !Array.isArray(value) ||
-    !value.every((entry) => typeof entry === 'string')
-  )
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string'))
     throw new Error(
       `Invalid ${manager} workspace declaration: expected a string array.`,
     );

@@ -5,8 +5,10 @@ import ts from 'typescript';
 import { parseTypeScriptProjectConfig } from './project-references';
 
 export function isRelativeTypeName(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  return value.startsWith('./') || value.startsWith('../');
+  return (
+    typeof value === 'string' &&
+    (value.startsWith('./') || value.startsWith('../'))
+  );
 }
 
 export function resolveRelativeTypeRoots(project: {
@@ -32,7 +34,9 @@ export function resolveRelativeTypeRoots(project: {
     });
 }
 
-/** Explicit compiler inputs, never the transitive Program closure or ownership. */
+/**
+Explicit compiler inputs, never the transitive Program closure or ownership.
+*/
 export function getEffectiveImporterRoots(project: {
   configPath: string;
   fileNames: readonly string[];
@@ -53,6 +57,7 @@ export function readRelativeTypeRoots(
     tsModule: ts,
     virtualFiles,
   });
-  if (parsed === undefined) return [];
-  return resolveRelativeTypeRoots({ configPath, options: parsed.options });
+  return parsed === undefined
+    ? []
+    : resolveRelativeTypeRoots({ configPath, options: parsed.options });
 }

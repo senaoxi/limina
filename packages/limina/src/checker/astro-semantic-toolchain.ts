@@ -67,12 +67,12 @@ function assertSupportedTuple(options: {
 }
 
 export function resolveAstroSemanticToolchain(
-  packageRootDir: string,
+  packageRootDirectory: string,
   manifest?: PackageManifest,
 ): AstroSemanticToolchain {
   let versions: AstroSemanticVersionTuple | undefined;
   try {
-    const normalizedRoot = normalizeAbsolutePath(packageRootDir);
+    const normalizedRoot = normalizeAbsolutePath(packageRootDirectory);
     const paths = resolveAstroSemanticToolchainPaths(normalizedRoot, manifest);
     versions = readAstroSemanticVersionTuple(paths);
     assertSupportedTuple({
@@ -84,8 +84,11 @@ export function resolveAstroSemanticToolchain(
   } catch (error) {
     if (error instanceof LiminaDependencyError) throw error;
     throw createUnsupportedToolchainError({
-      ownerIdentity: createAstroLeafScopeIdentity(packageRootDir, manifest),
-      packageRootDir: normalizeAbsolutePath(packageRootDir),
+      ownerIdentity: createAstroLeafScopeIdentity(
+        packageRootDirectory,
+        manifest,
+      ),
+      packageRootDir: normalizeAbsolutePath(packageRootDirectory),
       reason: formatAstroToolchainError(error),
       versions,
     });

@@ -38,15 +38,15 @@ vi.mock(
 
 const execFileAsync = promisify(execFile);
 
-async function withTempRoot(
-  run: (rootDir: string) => Promise<void>,
+async function withTemporaryRoot(
+  run: (rootDirectory: string) => Promise<void>,
 ): Promise<void> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-attempt-'));
-  await writeFile(path.join(rootDir, 'package.json'), '{}\n');
+  const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-attempt-'));
+  await writeFile(path.join(rootDirectory, 'package.json'), '{}\n');
   try {
-    await run(rootDir);
+    await run(rootDirectory);
   } finally {
-    await rm(rootDir, { force: true, recursive: true });
+    await rm(rootDirectory, { force: true, recursive: true });
   }
 }
 
@@ -67,21 +67,23 @@ async function writeJson(filePath: string, value: unknown): Promise<void> {
 
 describe('check attempt freshness', () => {
   it('publishes only metadata and reports a started attempt as running', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const attempt = await publishCheckAttempt({
         command: 'limina check',
         namespace,
       });
 
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'running',
       });
-      const paths = getCheckAttemptPaths(rootDir);
+      const paths = getCheckAttemptPaths(rootDirectory);
       await expect(
         readFile(
           path.join(
@@ -96,16 +98,18 @@ describe('check attempt freshness', () => {
   });
 
   it('fails closed for corrupt latest-attempt metadata and refuses a new sequence', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
-      const paths = getCheckAttemptPaths(rootDir);
+      const paths = getCheckAttemptPaths(rootDirectory);
       await mkdir(paths.checkDir, { recursive: true });
       await writeFile(paths.latestAttempt, '{broken\n');
 
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'latest-attempt-corrupt',
       });
@@ -116,10 +120,10 @@ describe('check attempt freshness', () => {
   });
 
   it('fails closed when latest-attempt is missing but completed metadata exists', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const attempt = await publishCheckAttempt({
         command: 'limina check',
@@ -132,9 +136,11 @@ describe('check attempt freshness', () => {
         sourceSnapshotPersisted: false,
         writeSnapshot: writeCheckIssueSnapshotOnly,
       });
-      await rm(getCheckAttemptPaths(rootDir).latestAttempt);
+      await rm(getCheckAttemptPaths(rootDirectory).latestAttempt);
 
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'latest-attempt-corrupt',
       });
@@ -142,10 +148,10 @@ describe('check attempt freshness', () => {
   });
 
   it('fails closed on a torn completed pair and a higher sequence repairs it', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const first = await publishCheckAttempt({
         command: 'limina check first',
@@ -159,17 +165,21 @@ describe('check attempt freshness', () => {
         sourceSnapshotPersisted: false,
         writeSnapshot: writeCheckIssueSnapshotOnly,
       });
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: firstSnapshot,
         state: 'completed',
       });
 
-      const paths = getCheckAttemptPaths(rootDir);
+      const paths = getCheckAttemptPaths(rootDirectory);
       await writeFile(
         paths.lastRun,
         `${JSON.stringify(createSnapshot('torn'), null, 2)}\n`,
       );
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'completed-inconsistent',
       });
@@ -186,7 +196,9 @@ describe('check attempt freshness', () => {
         sourceSnapshotPersisted: false,
         writeSnapshot: writeCheckIssueSnapshotOnly,
       });
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: secondSnapshot,
         state: 'completed',
       });
@@ -194,10 +206,10 @@ describe('check attempt freshness', () => {
   });
 
   it('names the supported schema when a coherent completed snapshot has an old version', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const attempt = await publishCheckAttempt({
         command: 'limina check',
@@ -211,7 +223,7 @@ describe('check attempt freshness', () => {
         sourceSnapshotPersisted: false,
         writeSnapshot: writeCheckIssueSnapshotOnly,
       });
-      const paths = getCheckAttemptPaths(rootDir);
+      const paths = getCheckAttemptPaths(rootDirectory);
       const pointer = JSON.parse(
         await readFile(paths.latestCompleted, 'utf8'),
       ) as Record<string, unknown>;
@@ -224,7 +236,9 @@ describe('check attempt freshness', () => {
         ...pointer,
         snapshotHash: createHash('sha256').update(bytes).digest('hex'),
       });
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         state: 'completed-inconsistent',
         snapshot: null,
         message: expect.stringContaining(
@@ -235,10 +249,10 @@ describe('check attempt freshness', () => {
   });
 
   it('does not let a superseded completion replace the latest inventory', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const first = await publishCheckAttempt({
         command: 'limina check first',
@@ -266,20 +280,24 @@ describe('check attempt freshness', () => {
       });
 
       expect(oldWriter).not.toHaveBeenCalled();
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: secondSnapshot,
         state: 'completed',
       });
-      const firstStatus = JSON.parse(
-        await readFile(
-          path.join(
-            getCheckAttemptPaths(rootDir).attemptsDir,
-            first.latest.attemptId,
-            'status.json',
-          ),
-          'utf8',
+      const statusText = await readFile(
+        path.join(
+          getCheckAttemptPaths(rootDirectory).attemptsDir,
+          first.latest.attemptId,
+          'status.json',
         ),
-      ) as { inventoryPublished: boolean; status: string };
+        'utf8',
+      );
+      const firstStatus = JSON.parse(statusText) as {
+        inventoryPublished: boolean;
+        status: string;
+      };
       expect(firstStatus).toMatchObject({
         inventoryPublished: false,
         status: 'completed',
@@ -288,10 +306,10 @@ describe('check attempt freshness', () => {
   });
 
   it('records persistence and infrastructure failures without exposing old issues', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const persistenceAttempt = await publishCheckAttempt({
         command: 'limina check persistence',
@@ -308,7 +326,9 @@ describe('check attempt freshness', () => {
           },
         }),
       ).rejects.toThrow('disk unavailable');
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'persistence-failed',
       });
@@ -322,7 +342,9 @@ describe('check attempt freshness', () => {
         error: new Error('scheduler failed'),
         namespace,
       });
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         snapshot: null,
         state: 'aborted',
       });
@@ -330,10 +352,10 @@ describe('check attempt freshness', () => {
   });
 
   it('keeps cleanup failure secondary to a successfully published inventory', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
       const attempt = await publishCheckAttempt({
         command: 'limina check',
@@ -357,26 +379,28 @@ describe('check attempt freshness', () => {
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('cleanup unavailable'),
       );
-      await expect(queryLatestCheckAttempt(rootDir)).resolves.toMatchObject({
+      await expect(
+        queryLatestCheckAttempt(rootDirectory),
+      ).resolves.toMatchObject({
         state: 'completed',
       });
     });
   });
 
   it('retains pointers, newest, recent, live, and unknown attempts while collecting old terminal and dead attempts', async () => {
-    await withTempRoot(async (rootDir) => {
+    await withTemporaryRoot(async (rootDirectory) => {
       const namespace = createLiminaArtifactNamespace({
         generation: 0,
-        rootDir,
+        rootDir: rootDirectory,
       });
-      const paths = getCheckAttemptPaths(rootDir);
+      const paths = getCheckAttemptPaths(rootDirectory);
       const oldStartedAt = new Date(
         Date.now() - 31 * 24 * 60 * 60 * 1000,
       ).toISOString();
       const recentStartedAt = new Date().toISOString();
       for (let sequence = 1; sequence <= 40; sequence += 1) {
         const attemptId = `attempt-${sequence}`;
-        const attemptDir = path.join(paths.attemptsDir, attemptId);
+        const attemptDirectory = path.join(paths.attemptsDir, attemptId);
         const startedAt = sequence === 2 ? recentStartedAt : oldStartedAt;
         const owner =
           sequence === 4
@@ -385,7 +409,7 @@ describe('check attempt freshness', () => {
                 hostname: hostname(),
                 pid: sequence === 5 ? 2_147_483_647 : process.pid,
               };
-        await writeJson(path.join(attemptDir, 'started.json'), {
+        await writeJson(path.join(attemptDirectory, 'started.json'), {
           version: 1,
           attemptId,
           command: 'limina check',
@@ -398,7 +422,7 @@ describe('check attempt freshness', () => {
           startedAt,
         });
         if (![3, 4, 5].includes(sequence)) {
-          await writeJson(path.join(attemptDir, 'status.json'), {
+          await writeJson(path.join(attemptDirectory, 'status.json'), {
             version: 1,
             attemptId,
             finishedAt: oldStartedAt,
@@ -446,10 +470,10 @@ describe('check attempt freshness', () => {
   it.each(['human', 'json', 'ndjson'] as const)(
     'reports unavailable freshness explicitly in %s CLI output and exits one',
     async (format) => {
-      await withTempRoot(async (rootDir) => {
+      await withTemporaryRoot(async (rootDirectory) => {
         const namespace = createLiminaArtifactNamespace({
           generation: 0,
-          rootDir,
+          rootDir: rootDirectory,
         });
         const attempt = await publishCheckAttempt({
           command: 'limina check',
@@ -461,11 +485,11 @@ describe('check attempt freshness', () => {
           namespace,
         });
         await writeFile(
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'export default {};\n',
         );
         await writeFile(
-          path.join(rootDir, 'pnpm-workspace.yaml'),
+          path.join(rootDirectory, 'pnpm-workspace.yaml'),
           'packages: []\n',
         );
         const cliPath = fileURLToPath(
@@ -479,13 +503,13 @@ describe('check attempt freshness', () => {
             [
               cliPath,
               '--config',
-              path.join(rootDir, 'limina.config.mjs'),
+              path.join(rootDirectory, 'limina.config.mjs'),
               'check',
               '--issues',
               '--format',
               format,
             ],
-            { cwd: rootDir, env: { ...process.env, CI: 'true' } },
+            { cwd: rootDirectory, env: { ...process.env, CI: 'true' } },
           );
         } catch (error) {
           failure = error as Error & { code?: number; stdout?: string };
@@ -501,7 +525,7 @@ describe('check attempt freshness', () => {
             issueCount: 0,
             issues: [],
             status: 'aborted',
-            ...(format === 'ndjson' ? { type: 'inventory-status' } : {}),
+            ...(format === 'ndjson' && { type: 'inventory-status' }),
           });
         }
       });
@@ -528,12 +552,12 @@ describe('check attempt freshness', () => {
   ] as const)(
     'fails filter help closed for a $state latest attempt',
     async ({ expectedMessage, state }) => {
-      await withTempRoot(async (rootDir) => {
+      await withTemporaryRoot(async (rootDirectory) => {
         const namespace = createLiminaArtifactNamespace({
           generation: 0,
-          rootDir,
+          rootDir: rootDirectory,
         });
-        const paths = getCheckAttemptPaths(rootDir);
+        const paths = getCheckAttemptPaths(rootDirectory);
         if (state === 'latest-attempt-corrupt') {
           await mkdir(path.dirname(paths.latestAttempt), { recursive: true });
           await writeFile(paths.latestAttempt, '{broken\n');
@@ -557,8 +581,7 @@ describe('check attempt freshness', () => {
                 },
               },
             );
-          }
-          if (state === 'persistence-failed') {
+          } else if (state === 'persistence-failed') {
             await failCheckAttemptPersistence({
               attempt,
               error: new Error('disk unavailable'),
@@ -568,11 +591,11 @@ describe('check attempt freshness', () => {
           }
         }
         await writeFile(
-          path.join(rootDir, 'limina.config.mjs'),
+          path.join(rootDirectory, 'limina.config.mjs'),
           'export default {};\n',
         );
         await writeFile(
-          path.join(rootDir, 'pnpm-workspace.yaml'),
+          path.join(rootDirectory, 'pnpm-workspace.yaml'),
           'packages: []\n',
         );
         const cliPath = fileURLToPath(
@@ -585,13 +608,13 @@ describe('check attempt freshness', () => {
             [
               cliPath,
               '--config',
-              path.join(rootDir, 'limina.config.mjs'),
+              path.join(rootDirectory, 'limina.config.mjs'),
               'check',
               '--issues',
               '--task',
               '--help',
             ],
-            { cwd: rootDir, env: { ...process.env, CI: 'true' } },
+            { cwd: rootDirectory, env: { ...process.env, CI: 'true' } },
           ),
         ).rejects.toMatchObject({
           code: 1,

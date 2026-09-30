@@ -90,11 +90,11 @@ export function createCheckerTarget(options: {
   }
 
   const commandTarget = adapter.createCommandTarget(options);
-  const dependencyRootDir = resolveDefaultPath(
+  const dependencyRootDirectory = resolveDefaultPath(
     options.dependencyRootDir,
     options.projectRootDir,
   );
-  const executionRootDir = resolveDefaultPath(
+  const executionRootDirectory = resolveDefaultPath(
     options.executionRootDir,
     options.projectRootDir,
   );
@@ -113,10 +113,10 @@ export function createCheckerTarget(options: {
     ...commandTarget,
     checkerName: options.checker.name,
     configPath: options.configPath,
-    cwd: executionRootDir,
+    cwd: executionRootDirectory,
     dependencyRequirements: createCheckerDependencyRequirements(adapter),
-    dependencyRootDir,
-    executionRootDir,
+    dependencyRootDir: dependencyRootDirectory,
+    executionRootDir: executionRootDirectory,
     executionKind: options.executionKind,
     id: createCheckerTargetId([
       'checker-target',
@@ -134,13 +134,13 @@ export function createCheckerTarget(options: {
 function createCheckerProcessEnvironment(
   target: TypecheckTarget,
 ): NodeJS.ProcessEnv {
-  const executionRootDir = resolveDefaultPath(
+  const executionRootDirectory = resolveDefaultPath(
     target.executionRootDir,
     target.cwd,
   );
   return prependPathEntry(
     process.env,
-    path.join(executionRootDir, 'node_modules/.bin'),
+    path.join(executionRootDirectory, 'node_modules/.bin'),
   );
 }
 
@@ -159,7 +159,7 @@ function createRunnerResult(options: {
   return {
     configPath: options.configPath,
     durationMs: options.durationMs,
-    ...(options.error === undefined ? {} : { error: options.error }),
+    ...(options.error !== undefined && { error: options.error }),
     status: options.status,
   };
 }
@@ -173,7 +173,7 @@ export function createDefaultRunner(
   const stdio = resolveProcessStdio(options);
 
   return async (target, runOptions) => {
-    const executionRootDir = resolveDefaultPath(
+    const executionRootDirectory = resolveDefaultPath(
       target.executionRootDir,
       target.cwd,
     );
@@ -181,7 +181,7 @@ export function createDefaultRunner(
       {
         args: target.args,
         command: target.command,
-        cwd: executionRootDir,
+        cwd: executionRootDirectory,
         env: createCheckerProcessEnvironment(target),
         shell: shouldUseShellForCommand(target.command),
         stdio,

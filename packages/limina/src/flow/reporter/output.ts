@@ -1,7 +1,7 @@
 import { type FlowWritableChunk, toWritableText } from '../render-model';
 import type { FlowWriteStream } from '../terminal-frame';
 import { redrawInteractiveHistory, writeTracked } from './rendering';
-import { sendProcessSnapshot } from './state';
+import { isSendProcessSnapshot } from './state';
 import type { FlowReporterState, LiminaFlowOutputOptions } from './types';
 
 function writeLine(state: FlowReporterState, message: string): void {
@@ -12,13 +12,13 @@ function addIntroHistory(state: FlowReporterState, message: string): void {
   state.interactiveHistory.push({ kind: 'line', line: `┌  ${message}` });
 }
 
-function reportProcessIntro(
+function isReportProcessIntro(
   state: FlowReporterState,
   message: string,
 ): boolean {
   if (state.processRenderer?.active !== true) return false;
   addIntroHistory(state, message);
-  sendProcessSnapshot(state);
+  isSendProcessSnapshot(state);
   return true;
 }
 
@@ -27,19 +27,19 @@ export function reportIntro(state: FlowReporterState, message: string): void {
     writeLine(state, `[start] ${message}`);
     return;
   }
-  if (reportProcessIntro(state, message)) return;
+  if (isReportProcessIntro(state, message)) return;
   addIntroHistory(state, message);
   state.clack.intro(message);
   state.terminalFrame.record(`${message}\n`);
 }
 
-function reportProcessOutro(
+function isReportProcessOutro(
   state: FlowReporterState,
   message: string,
 ): boolean {
   if (state.processRenderer?.active !== true) return false;
   state.outroMessage = message;
-  sendProcessSnapshot(state);
+  isSendProcessSnapshot(state);
   return true;
 }
 
@@ -47,7 +47,7 @@ function reportInteractiveOutro(
   state: FlowReporterState,
   message: string,
 ): void {
-  if (reportProcessOutro(state, message)) return;
+  if (isReportProcessOutro(state, message)) return;
   if (state.statusOnly) {
     state.outroMessage = message;
     redrawInteractiveHistory(state);
@@ -68,8 +68,7 @@ function selectOutputStream(
   state: FlowReporterState,
   options: LiminaFlowOutputOptions,
 ): FlowWriteStream | undefined {
-  if (options.stream === 'stderr') return state.stderr;
-  return state.stdout;
+  return options.stream === 'stderr' ? state.stderr : state.stdout;
 }
 
 function getInteractiveOutputStream(options: {
@@ -77,8 +76,9 @@ function getInteractiveOutputStream(options: {
   state: FlowReporterState;
 }): FlowWriteStream | undefined {
   if (!options.state.interactive) return undefined;
-  if (!options.state.tracksProcessWrites) return undefined;
-  return selectOutputStream(options.state, options.outputOptions);
+  return options.state.tracksProcessWrites
+    ? selectOutputStream(options.state, options.outputOptions)
+    : undefined;
 }
 
 function recordUnpatchedWrite(
@@ -89,7 +89,7 @@ function recordUnpatchedWrite(
   state.terminalFrame.record(message);
 }
 
-function writeInteractiveOutput(options: {
+function isWriteInteractiveOutput(options: {
   message: FlowWritableChunk;
   outputOptions: LiminaFlowOutputOptions;
   state: FlowReporterState;
@@ -101,7 +101,7 @@ function writeInteractiveOutput(options: {
   return true;
 }
 
-function writeProcessOutput(options: {
+function isWriteProcessOutput(options: {
   message: FlowWritableChunk;
   outputOptions: LiminaFlowOutputOptions;
   state: FlowReporterState;
@@ -119,8 +119,8 @@ function writeActiveReporterOutput(options: {
   outputOptions: LiminaFlowOutputOptions;
   state: FlowReporterState;
 }): void {
-  if (writeProcessOutput(options)) return;
-  if (writeInteractiveOutput(options)) return;
+  if (isWriteProcessOutput(options) || isWriteInteractiveOutput(options))
+    return;
   writeTracked({
     message: toWritableText(options.message),
     state: options.state,

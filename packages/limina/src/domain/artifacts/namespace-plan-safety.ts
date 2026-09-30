@@ -94,7 +94,7 @@ function sortPlanNodes(
   namespace: LiminaArtifactNamespace,
   nodes: ReadonlyMap<string, Set<ArtifactPathSafetyRole>>,
 ): [string, Set<ArtifactPathSafetyRole>][] {
-  return [...nodes.entries()].sort(([left], [right]) =>
+  return [...nodes].sort(([left], [right]) =>
     comparePlanNodes(namespace, left, right),
   );
 }

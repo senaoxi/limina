@@ -23,7 +23,7 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import {
   createFixturePathResolver,
   toPortableRelativePaths,
@@ -37,9 +37,10 @@ afterEach(async () => {
 });
 const json = (value: unknown) => JSON.stringify(value);
 async function fixture(files: Record<string, string>) {
-  const root = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-discovery-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-discovery-'),
   );
+  const root = await realpath(temporaryDirectory);
   roots.push(root);
   const resolve = createFixturePathResolver(root);
   for (const [file, text] of Object.entries(files)) {
@@ -48,13 +49,10 @@ async function fixture(files: Record<string, string>) {
   }
   return {
     path: resolve,
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       rootDir: resolve(),
       configPath: resolve('limina.config.mjs'),
-    },
+    }),
   };
 }
 function declaration(
@@ -67,9 +65,9 @@ function declaration(
       packageManager: `${manager}@test-version`,
       workspaces: globs,
     }),
-    ...(manager === 'pnpm'
-      ? { 'pnpm-workspace.yaml': `packages: ${json(globs)}\n` }
-      : {}),
+    ...(manager === 'pnpm' && {
+      'pnpm-workspace.yaml': `packages: ${json(globs)}\n`,
+    }),
   };
 }
 const managers = ['pnpm', 'npm', 'yarn', 'bun'] as const;
@@ -304,7 +302,7 @@ describe('manager declaration and package selection', () => {
       const f = await fixture({
         ...declaration(manager, ['**', '.git/x', '.yarn/x']),
         ...Object.fromEntries(
-          directories.map((dir) => [`${dir}/package.json`, '{}']),
+          directories.map((direction) => [`${direction}/package.json`, '{}']),
         ),
       });
       const ignored = {
@@ -318,12 +316,14 @@ describe('manager declaration and package selection', () => {
         toPortableRelativePaths(
           f.path(),
           packages.map((p) => p.directory),
-        ).sort(),
+        ).sort((left, right) => Number(left > right) - Number(left < right)),
       ).toEqual(
         [
           '',
-          ...directories.filter((dir) => !ignored.includes(dir.split('/')[0]!)),
-        ].sort(),
+          ...directories.filter(
+            (direction) => !ignored.includes(direction.split('/', 1)[0]!),
+          ),
+        ].sort((left, right) => Number(left > right) - Number(left < right)),
       );
     },
   );
@@ -480,7 +480,7 @@ describe('workspace roots across consumers', () => {
         'packages/a/package.json': '{}',
         'packages/a/nested/package.json': json({
           workspaces: [],
-          ...(manager ? { packageManager: `${manager}@1` } : {}),
+          ...(manager && { packageManager: `${manager}@1` }),
         }),
         'packages/a/nested/source.ts': '',
         'packages/a/nested/tsconfig.json': '{}',

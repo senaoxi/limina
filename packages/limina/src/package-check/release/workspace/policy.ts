@@ -1,5 +1,5 @@
 import type {
-  ReleaseContentHashConfigArgs,
+  ReleaseContentHashConfigArguments,
   ResolvedLiminaConfig,
 } from '#config/runner';
 import { formatErrorMessage } from '../../../logger';
@@ -22,7 +22,7 @@ export interface ResolvedWorkspaceContentHashPolicy {
 }
 
 interface WorkspacePolicyContext {
-  args: ReleaseContentHashConfigArgs;
+  args: ReleaseContentHashConfigArguments;
   config: ResolvedLiminaConfig;
   dependencyName: string;
   importerName: string;
@@ -98,6 +98,5 @@ export function resolveWorkspaceContentHashPolicy(
   const baselineTag = resolveBaselineTag(context);
   if (baselineTag === null) return null;
   const ignoreRules = resolveIgnoreRules(context);
-  if (ignoreRules === null) return null;
-  return { baselineTag, ignoreRules };
+  return ignoreRules === null ? null : { baselineTag, ignoreRules };
 }

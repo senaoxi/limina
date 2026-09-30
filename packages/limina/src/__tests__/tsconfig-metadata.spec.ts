@@ -88,7 +88,7 @@ describe('user-maintained Limina tsconfig metadata', () => {
   });
 
   it('applies the user metadata contract below an ancestor .limina directory', () => {
-    const rootDir = path.join(
+    const rootDirectory = path.join(
       '/workspace',
       '.limina',
       'integration',
@@ -99,15 +99,17 @@ describe('user-maintained Limina tsconfig metadata', () => {
     expect(() =>
       validateUserMaintainedLiminaTsconfigMetadata({
         configObject: { limina: 'runtime' },
-        configPath: path.join(rootDir, 'tsconfig.json'),
-        rootDir,
+        configPath: path.join(rootDirectory, 'tsconfig.json'),
+        rootDir: rootDirectory,
       }),
     ).toThrow(removedMetadataError);
   });
 
   it('rejects removed metadata on an activated user graph route', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-metadata-'));
-    const configPath = path.join(rootDir, 'tsconfig.build.json');
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-metadata-'),
+    );
+    const configPath = path.join(rootDirectory, 'tsconfig.build.json');
 
     try {
       await writeJson(configPath, {
@@ -119,11 +121,11 @@ describe('user-maintained Limina tsconfig metadata', () => {
       expect(() =>
         collectGraphProjectRouteFromRoot({
           rootConfigPath: configPath,
-          rootDir,
+          rootDir: rootDirectory,
         }),
       ).toThrow(removedMetadataError);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });

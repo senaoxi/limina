@@ -28,11 +28,7 @@ function resolveActiveCheckers(
   config: ResolvedLiminaConfig,
   generatedGraph?: GeneratedTsconfigGraphResult,
 ): ResolvedCheckerConfig[] {
-  if (generatedGraph) {
-    return generatedGraph.checkers;
-  }
-
-  return getActiveCheckers(config);
+  return generatedGraph ? generatedGraph.checkers : getActiveCheckers(config);
 }
 
 export function getActiveCheckerContext(
@@ -120,11 +116,14 @@ export function parseProjectCoverage(options: {
         projectRootDir: options.config.rootDir,
       })
     : parsed;
-  const ownerRootDir = parsed.options.rootDir
+  const ownerRootDirectory = parsed.options.rootDir
     ? normalizeAbsolutePath(parsed.options.rootDir)
     : path.dirname(options.configPath);
 
-  return { fileNames: coverageParsed.fileNames, ownerRootDir };
+  return {
+    fileNames: coverageParsed.fileNames,
+    ownerRootDir: ownerRootDirectory,
+  };
 }
 
 interface RouteProjectContext {
@@ -169,8 +168,9 @@ function mergeProjectContext(
 function getProjectContext(
   context: CheckerProjectParseContext | undefined,
 ): CheckerProjectParseContext {
-  if (context !== undefined) return context;
-  return { checkerPresets: [], extensions: [] };
+  return context === undefined
+    ? { checkerPresets: [], extensions: [] }
+    : context;
 }
 
 function assertCompatibleVueIdentities(
@@ -179,12 +179,12 @@ function assertCompatibleVueIdentities(
 ): void {
   const currentId = getVueSemanticIdentityId(current);
   const incomingId = getVueSemanticIdentityId(incoming);
-  const conflicts = [
+  const isConflicts = [
     currentId !== undefined,
     incomingId !== undefined,
     currentId !== incomingId,
   ].every(Boolean);
-  if (!conflicts) return;
+  if (!isConflicts) return;
   throw new Error(
     'Generated proof project received conflicting Vue semantic identities.',
   );
@@ -193,8 +193,7 @@ function assertCompatibleVueIdentities(
 function getVueSemanticIdentityId(
   identity: CheckerProjectParseContext['vueSemanticIdentity'],
 ): string | undefined {
-  if (identity === undefined) return undefined;
-  return identity.id;
+  return identity === undefined ? undefined : identity.id;
 }
 
 function getGovernedProjectionPaths(unit: GovernedSourceUnit): string[] {
@@ -209,21 +208,26 @@ function createGovernedProjectContexts(
   generatedGraph: GeneratedTsconfigGraphResult | undefined,
 ): RouteProjectContext[] {
   if (generatedGraph === undefined) return [];
-  return [...generatedGraph.governedSources.values()].flatMap(
-    (governedSources) =>
-      [...governedSources.values()].flatMap((unit) =>
-        unit.context.vueSemanticIdentity === undefined
-          ? []
-          : getGovernedProjectionPaths(unit).map((projectPath) => ({
-              context: {
-                checkerPresets: [unit.primaryCheckerName],
-                extensions: [],
-                vueSemanticIdentity: unit.context.vueSemanticIdentity,
-              },
-              projectPath,
-            })),
-      ),
-  );
+  return generatedGraph.governedSources
+    .values()
+    .flatMap((governedSources) =>
+      governedSources
+        .values()
+        .flatMap((unit) =>
+          unit.context.vueSemanticIdentity === undefined
+            ? []
+            : getGovernedProjectionPaths(unit).map((projectPath) => ({
+                context: {
+                  checkerPresets: [unit.primaryCheckerName],
+                  extensions: [],
+                  vueSemanticIdentity: unit.context.vueSemanticIdentity,
+                },
+                projectPath,
+              })),
+        )
+        .toArray(),
+    )
+    .toArray();
 }
 
 export function collectProjectContextsByPath(

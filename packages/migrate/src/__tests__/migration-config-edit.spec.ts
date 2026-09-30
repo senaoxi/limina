@@ -27,9 +27,8 @@ it.each([
     expect(edited.slice(0, edited.indexOf('\n'))).toBe(
       original.slice(0, edited.indexOf('\n')),
     );
-    expect(edited.endsWith(original.slice(original.lastIndexOf('}')))).toBe(
-      true,
-    );
+    const originalSuffix = original.slice(original.lastIndexOf('}'));
+    expect(edited.endsWith(originalSuffix)).toBe(true);
   },
 );
 

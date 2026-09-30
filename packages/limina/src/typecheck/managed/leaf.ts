@@ -11,7 +11,7 @@ import {
   addOutputMutationTargets,
   assertProjectionInside,
   collectProjectedOutputs,
-  getEffectiveOutDir,
+  getEffectiveOutDir as getEffectiveOutDirectory,
   getOutputAuthority,
   type ManagedOutputProjection,
 } from './projection';
@@ -65,8 +65,9 @@ function prepareLeafProject(options: {
 }
 
 function getBuildInfoFile(parsed: ParsedProject): string | undefined {
-  if (parsed.options.tsBuildInfoFile === undefined) return undefined;
-  return normalizeAbsolutePath(parsed.options.tsBuildInfoFile);
+  return parsed.options.tsBuildInfoFile === undefined
+    ? undefined
+    : normalizeAbsolutePath(parsed.options.tsBuildInfoFile);
 }
 
 function removeBuildInfoFromProjection(
@@ -128,9 +129,11 @@ function createLeafResult(options: {
     ),
     inputPaths: options.preparation.parsed.fileNames
       .map(normalizeAbsolutePath)
-      .sort(),
+      .sort((left, right) => Number(left > right) - Number(left < right)),
     mutationTargets: options.mutationTargets,
-    projectedOutputPaths: [...options.projection.projectedOutputs].sort(),
+    projectedOutputPaths: [...options.projection.projectedOutputs].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    ),
   };
 }
 
@@ -143,14 +146,14 @@ export async function proveLeafMutation(options: {
   workspaceContext: ValidatedWorkspaceContext;
 }): Promise<ManagedLeafMutationProof> {
   const preparation = prepareLeafProject(options);
-  const outDir = getEffectiveOutDir(
+  const outDirectory = getEffectiveOutDirectory(
     options.configPath,
     preparation.parsed.options,
   );
   const outputAuthority = await getOutputAuthority({
     artifactNamespace: options.artifactNamespace,
     classification: options.classification,
-    outDir,
+    outDir: outDirectory,
     workspaceContext: options.workspaceContext,
   });
   const projection = collectProjectedOutputs({
@@ -165,14 +168,16 @@ export async function proveLeafMutation(options: {
   removeBuildInfoFromProjection(projection, tsBuildInfoFile);
   assertProjectionInside({
     configPath: options.configPath,
-    outDir,
+    outDir: outDirectory,
     projection,
   });
-  const outputPaths = [...projection.projectedOutputs].sort();
+  const outputPaths = [...projection.projectedOutputs].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
   const mutationTargets: MutationBoundaryTarget[] = [];
   addOutputMutationTargets({
     authority: outputAuthority,
-    outDir,
+    outDir: outDirectory,
     outputPaths,
     targets: mutationTargets,
     usesBoundedVueDirectory: projection.usesBoundedVueDirectory,

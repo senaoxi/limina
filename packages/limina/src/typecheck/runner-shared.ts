@@ -110,13 +110,15 @@ export function resolveTypecheckRunner(options: {
 function getElapsedOptions(
   result: TypecheckTargetResult,
 ): { elapsedTimeMs: number } | undefined {
-  if (result.durationMs === undefined) return undefined;
-  return { elapsedTimeMs: result.durationMs };
+  return result.durationMs === undefined
+    ? undefined
+    : { elapsedTimeMs: result.durationMs };
 }
 
 function getFailureSuffix(result: TypecheckTargetResult): string {
-  if (result.error !== undefined) return formatErrorMessage(result.error);
-  return `exited with code ${result.status}`;
+  return result.error === undefined
+    ? `exited with code ${result.status}`
+    : formatErrorMessage(result.error);
 }
 
 export function completeCheckerTargetTask(
@@ -149,10 +151,9 @@ function formatFailedResult(options: {
   if (options.result.blockedBy !== undefined) {
     return `  ${path} blocked by ${options.result.blockedBy.join(', ')}`;
   }
-  if (options.result.error !== undefined) {
-    return `  ${path}: ${formatErrorMessage(options.result.error)}`;
-  }
-  return `  ${path} exited with code ${options.result.status}`;
+  return options.result.error === undefined
+    ? `  ${path} exited with code ${options.result.status}`
+    : `  ${path}: ${formatErrorMessage(options.result.error)}`;
 }
 
 export function formatFailedTargetSummaryReport(options: {

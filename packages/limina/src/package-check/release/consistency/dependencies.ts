@@ -2,7 +2,7 @@ import {
   getPublishDependencySections,
   type PackageManifest,
 } from '#core/workspace/actions';
-import type { ReleaseRegistryConfiguration } from '../registry/authority';
+import type { ReleaseRegistryConfig } from '../registry/authority';
 import type {
   PackageDependencyEntry,
   PackageDependencySectionName,
@@ -16,10 +16,10 @@ export function isLinkDependencySpecifier(specifier: string): boolean {
 }
 
 export function createReleaseConsistencyState(
-  registryConfiguration: ReleaseRegistryConfiguration,
+  registryConfig: ReleaseRegistryConfig,
 ): ReleaseConsistencyState {
   return {
-    registryConfiguration,
+    registryConfiguration: registryConfig,
     changedPackageNames: new Set<string>(),
     directWorkspaceDependencies: [],
     edges: new Map<string, Set<string>>(),

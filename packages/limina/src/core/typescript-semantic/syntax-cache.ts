@@ -30,15 +30,13 @@ function cloneRecords(records: readonly ImportRecord[]): ImportRecord[] {
       sourceStart: record.locator.sourceStart,
     },
     specifier: record.specifier,
-    ...(record.configurationSource === undefined
-      ? {}
-      : {
-          configurationSource: {
-            configPath: record.configurationSource.configPath,
-            option: record.configurationSource.option,
-            resolutionMode: record.configurationSource.resolutionMode,
-          },
-        }),
+    ...(record.configurationSource !== undefined && {
+      configurationSource: {
+        configPath: record.configurationSource.configPath,
+        option: record.configurationSource.option,
+        resolutionMode: record.configurationSource.resolutionMode,
+      },
+    }),
   }));
 }
 
@@ -72,15 +70,22 @@ function cacheLimits(options: { budget?: number; entryLimit?: number }) {
   };
 }
 
-/** Plain syntax only; lifetime is one AnalysisProviderSet, never a generation number. */
+/**
+Plain syntax only; lifetime is one AnalysisProviderSet, never a generation number.
+*/
 export class SourceSyntaxFactsCache {
   readonly #entries = new Map<string, SyntaxEntry>();
+
   readonly #compilerIds = new WeakMap<OwnedSyntaxInput['compiler'], number>();
+
   #nextCompilerId = 0;
+
   readonly #budget: number;
+
   readonly #entryLimit: number;
-  readonly metrics: AnalysisMetricsRecorder | undefined;
+
   #disposed = false;
+
   readonly #statistics: SyntaxCacheStatistics = {
     hit: 0,
     miss: 0,
@@ -90,6 +95,8 @@ export class SourceSyntaxFactsCache {
     estimatedBytes: 0,
     peakEstimatedBytes: 0,
   };
+
+  readonly metrics: AnalysisMetricsRecorder | undefined;
 
   constructor(
     options: {
@@ -102,10 +109,6 @@ export class SourceSyntaxFactsCache {
     this.#budget = limits.budget;
     this.#entryLimit = limits.entryLimit;
     this.metrics = options.metrics;
-  }
-
-  get statistics(): Readonly<SyntaxCacheStatistics> {
-    return { ...this.#statistics, entries: this.#entries.size };
   }
 
   #key(input: OwnedSyntaxInput): string {
@@ -134,14 +137,6 @@ export class SourceSyntaxFactsCache {
     this.#entries.delete(key);
   }
 
-  get(input: OwnedSyntaxInput): ImportRecord[] | undefined {
-    if (this.#disposed) {
-      this.#record('bypass');
-      return undefined;
-    }
-    return this.#getEntry(input);
-  }
-
   #getEntry(input: OwnedSyntaxInput): ImportRecord[] | undefined {
     const key = this.#key(input);
     const entry = this.#entries.get(key);
@@ -154,6 +149,35 @@ export class SourceSyntaxFactsCache {
     this.#entries.set(key, entry);
     this.#record('hit');
     return cloneRecords(entry.records);
+  }
+
+  #recordRetained(bytes: number): void {
+    this.metrics?.record({
+      name: 'syntax-cache-retained',
+      count: 0,
+      estimatedBytes: bytes,
+    });
+  }
+
+  #makeRoom(bytes: number): void {
+    while (this.#statistics.estimatedBytes + bytes > this.#budget) {
+      const oldest = this.#entries.keys().next().value;
+      if (oldest === undefined) return;
+      this.#remove(oldest);
+      this.#record('eviction');
+    }
+  }
+
+  get statistics(): Readonly<SyntaxCacheStatistics> {
+    return { ...this.#statistics, entries: this.#entries.size };
+  }
+
+  get(input: OwnedSyntaxInput): ImportRecord[] | undefined {
+    if (this.#disposed) {
+      this.#record('bypass');
+      return undefined;
+    }
+    return this.#getEntry(input);
   }
 
   bypass(): void {
@@ -181,23 +205,6 @@ export class SourceSyntaxFactsCache {
       this.#statistics.estimatedBytes,
     );
     this.#recordRetained(bytes);
-  }
-
-  #recordRetained(bytes: number): void {
-    this.metrics?.record({
-      name: 'syntax-cache-retained',
-      count: 0,
-      estimatedBytes: bytes,
-    });
-  }
-
-  #makeRoom(bytes: number): void {
-    while (this.#statistics.estimatedBytes + bytes > this.#budget) {
-      const oldest = this.#entries.keys().next().value;
-      if (oldest === undefined) return;
-      this.#remove(oldest);
-      this.#record('eviction');
-    }
   }
 
   dispose(): void {

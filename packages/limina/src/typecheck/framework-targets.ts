@@ -74,8 +74,10 @@ function hasDependencyRootDrift(
   current: FrameworkCapabilityDescriptor | undefined,
   descriptor: FrameworkCapabilityDescriptor,
 ): boolean {
-  if (current === undefined) return false;
-  return current.packageRootDir !== descriptor.packageRootDir;
+  return (
+    current !== undefined &&
+    current.packageRootDir !== descriptor.packageRootDir
+  );
 }
 
 function registerDescriptor(
@@ -96,12 +98,15 @@ function registerDescriptor(
 function collectGraphCapabilities(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): FrameworkCapabilityDescriptor[] {
-  return [...generatedGraph.governedSources.values()].flatMap(
-    (governedSources) =>
-      [...governedSources.values()].flatMap(
-        (governedSource) => governedSource.frameworkCapabilities,
-      ),
-  );
+  return generatedGraph.governedSources
+    .values()
+    .flatMap((governedSources) =>
+      governedSources
+        .values()
+        .flatMap((governedSource) => governedSource.frameworkCapabilities)
+        .toArray(),
+    )
+    .toArray();
 }
 
 export function collectFrameworkCapabilityDescriptors(
@@ -111,7 +116,7 @@ export function collectFrameworkCapabilityDescriptors(
   for (const capability of collectGraphCapabilities(generatedGraph)) {
     registerDescriptor(descriptorsByKey, capability);
   }
-  return [...descriptorsByKey.values()].sort(compareDescriptors);
+  return descriptorsByKey.values().toArray().sort(compareDescriptors);
 }
 
 function createFrameworkCommandTarget(
@@ -155,10 +160,12 @@ export function createFrameworkCheckerTarget(options: {
       options.descriptor.sourceConfigPath,
     ),
   };
-  const workspaceRootDir = normalizeAbsolutePath(options.workspaceRootDir);
+  const workspaceRootDirectory = normalizeAbsolutePath(
+    options.workspaceRootDir,
+  );
   const checkerName = frameworkCheckerName(descriptor.family);
   const portableSourceConfigPath = normalizeSlashes(
-    toRelativePath(workspaceRootDir, descriptor.sourceConfigPath),
+    toRelativePath(workspaceRootDirectory, descriptor.sourceConfigPath),
   );
   const commandTarget = createFrameworkCommandTarget(descriptor);
 
@@ -182,7 +189,7 @@ export function createFrameworkCheckerTarget(options: {
     ]),
     label: `${checkerName}: ${portableSourceConfigPath}`,
     sourceConfigPath: descriptor.sourceConfigPath,
-    workspaceRootDir,
+    workspaceRootDir: workspaceRootDirectory,
   };
 }
 

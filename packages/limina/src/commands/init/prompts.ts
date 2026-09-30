@@ -32,7 +32,7 @@ function assertPromptNotCancelled(
   throw new Error('limina init canceled.');
 }
 
-export async function confirmAction(options: {
+export async function isConfirmAction(options: {
   message: string;
   prompt: InitPromptOptions;
 }): Promise<boolean> {

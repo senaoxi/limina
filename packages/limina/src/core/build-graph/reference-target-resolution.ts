@@ -89,11 +89,12 @@ function resolveExplicitSpecifierPath(
   // Missing observations have no semantic target. Path normalization itself
   // could erase query/fragment segments, so it is not a valid fallback.
   const specifier = options.importRecord.specifier;
-  if (hasModuleSpecifierQueryOrFragment(specifier)) return null;
-  if (!isRelativeSpecifier(specifier)) return null;
-  return normalizeAbsolutePath(
-    path.resolve(path.dirname(options.fileName), specifier),
-  );
+  return hasModuleSpecifierQueryOrFragment(specifier) ||
+    !isRelativeSpecifier(specifier)
+    ? null
+    : normalizeAbsolutePath(
+        path.resolve(path.dirname(options.fileName), specifier),
+      );
 }
 
 function getOwnedConfigPaths(
@@ -223,8 +224,5 @@ export function isValidReferenceTarget(
   projectConfigPath: string,
   target: ReferenceTarget | null,
 ): target is ReferenceTarget {
-  if (!target) {
-    return false;
-  }
-  return target.targetSourceConfigPath !== projectConfigPath;
+  return target !== null && target.targetSourceConfigPath !== projectConfigPath;
 }

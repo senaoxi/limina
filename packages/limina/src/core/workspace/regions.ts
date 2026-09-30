@@ -39,11 +39,7 @@ export type WorkspaceRegionBoundary =
 function getPackageScopeExclusionReason(
   boundary: PackageScopeRegionBoundary,
 ): string | null {
-  if (!boundary.excluded) {
-    return null;
-  }
-
-  return boundary.exclusionReason ?? null;
+  return boundary.excluded ? (boundary.exclusionReason ?? null) : null;
 }
 
 export function getWorkspaceRegionBoundaryExclusionReason(

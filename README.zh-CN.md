@@ -39,4 +39,4 @@ Limina 不是 bundler、测试框架或发布工具，也不会替代 TypeScript
 
 ## 开发
 
-workspace 开发流程见[贡献说明](./CONTRIBUTING.md)；临时 Logaria 依赖与发布门见[迁移状态](./.agents/docs/zh/migration.md)。
+workspace 开发流程见[贡献说明](./CONTRIBUTING.md)；Logaria 依赖与发布门见[迁移状态](./.agents/docs/zh/migration.md)。

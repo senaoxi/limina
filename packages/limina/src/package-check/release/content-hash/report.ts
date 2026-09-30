@@ -62,10 +62,9 @@ function resolveLocalVersion(options: {
   if (options.comparison.localVersion !== null) {
     return options.comparison.localVersion;
   }
-  if (options.localVersionFallback !== undefined) {
-    return options.localVersionFallback;
-  }
-  return '(missing version)';
+  return options.localVersionFallback === undefined
+    ? '(missing version)'
+    : options.localVersionFallback;
 }
 
 export function formatContentHashComparisonReport(options: {

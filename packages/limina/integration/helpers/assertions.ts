@@ -17,7 +17,7 @@ function getErrorCode(error: unknown): unknown {
   }
 }
 
-export async function exists(filePath: string): Promise<boolean> {
+export async function isExists(filePath: string): Promise<boolean> {
   try {
     await lstat(filePath);
     return true;
@@ -62,18 +62,21 @@ export function expectLiminaSuccess(result: RunLiminaResult): void {
 
 export async function runFixtureLimina(
   fixture: PreparedFixture,
-  args: string[],
+  arguments_: string[],
 ): Promise<RunLiminaResult> {
   return runLimina({
-    args: ['--config', fixture.configPath, ...args],
+    args: ['--config', fixture.configPath, ...arguments_],
     cwd: fixture.cwd,
     fixtureName: fixture.fixtureName,
     timeout: 90_000,
   });
 }
 
-export function expectPathInside(rootDir: string, candidatePath: string): void {
-  const relativePath = toPortableRelativePath(rootDir, candidatePath);
+export function expectPathInside(
+  rootDirectory: string,
+  candidatePath: string,
+): void {
+  const relativePath = toPortableRelativePath(rootDirectory, candidatePath);
 
   expect(relativePath).not.toBe('..');
   expect(relativePath.startsWith('../')).toBe(false);

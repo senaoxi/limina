@@ -56,9 +56,12 @@ function getModuleChannel(
 
 export class TypeScriptImportResolver {
   readonly #moduleResolutionCache: ts.ModuleResolutionCache;
-  readonly options: TypeScriptImportResolverOptions;
+
   readonly #symbolLocations = new Map<string, ts.StringLiteralLike>();
+
   readonly #typeReferences: TypeScriptTypeReferenceResolver;
+
+  readonly options: TypeScriptImportResolverOptions;
 
   constructor(options: TypeScriptImportResolverOptions) {
     this.options = options;
@@ -73,53 +76,6 @@ export class TypeScriptImportResolver {
       options,
       this.#moduleResolutionCache,
     );
-  }
-
-  dispose(): void {
-    this.#symbolLocations.clear();
-  }
-
-  getSymbolLocation(
-    importRecord: ImportRecord,
-  ): ts.StringLiteralLike | undefined {
-    return this.#symbolLocations.get(createImportRecordIdentity(importRecord));
-  }
-
-  resolveImportRecord(
-    importRecord: ImportRecord,
-  ): TypeScriptSemanticResolution {
-    const cached = this.options.ledger.get(importRecord);
-    if (cached !== undefined) return cached;
-    const resolution = this.#resolveUncachedRecord(importRecord);
-    this.options.ledger.set(importRecord, resolution);
-    return resolution;
-  }
-
-  resolveModuleNameLiterals(
-    input: HostModuleResolutionInput,
-  ): readonly ts.ResolvedModuleWithFailedLookupLocations[] {
-    const records = this.options.getRecords(input.containingFile);
-    return input.literals.map((literal) =>
-      this.#resolveHostModuleLiteral({ input, literal, records }),
-    );
-  }
-
-  resolveLibrary(
-    input: HostLibraryResolutionInput,
-  ): ts.ResolvedModuleWithFailedLookupLocations {
-    return resolveTypeScriptLibrary({
-      admission: this.options.admission,
-      cache: this.#moduleResolutionCache,
-      host: this.options.getHost(),
-      input,
-      tsModule: this.options.tsModule,
-    });
-  }
-
-  resolveTypeReferenceDirectiveReferences(
-    input: HostTypeReferenceResolutionInput,
-  ): readonly ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations[] {
-    return this.#typeReferences.resolveHost(input);
   }
 
   #resolveHostModuleLiteral(options: {
@@ -160,9 +116,9 @@ export class TypeScriptImportResolver {
   ): ts.ResolvedModuleWithFailedLookupLocations {
     const resolved = result.resolvedModule;
     if (resolved === undefined) return result;
-    if (this.options.admission.allowModuleTarget(resolved, containingFile))
-      return result;
-    return { ...result, resolvedModule: undefined };
+    return this.options.admission.allowModuleTarget(resolved, containingFile)
+      ? result
+      : { ...result, resolvedModule: undefined };
   }
 
   #resolveModule(options: {
@@ -281,5 +237,52 @@ export class TypeScriptImportResolver {
       redirectedReference: undefined,
       sourceFile: location.sourceFile,
     }).semantic;
+  }
+
+  dispose(): void {
+    this.#symbolLocations.clear();
+  }
+
+  getSymbolLocation(
+    importRecord: ImportRecord,
+  ): ts.StringLiteralLike | undefined {
+    return this.#symbolLocations.get(createImportRecordIdentity(importRecord));
+  }
+
+  resolveImportRecord(
+    importRecord: ImportRecord,
+  ): TypeScriptSemanticResolution {
+    const cached = this.options.ledger.get(importRecord);
+    if (cached !== undefined) return cached;
+    const resolution = this.#resolveUncachedRecord(importRecord);
+    this.options.ledger.set(importRecord, resolution);
+    return resolution;
+  }
+
+  resolveModuleNameLiterals(
+    input: HostModuleResolutionInput,
+  ): readonly ts.ResolvedModuleWithFailedLookupLocations[] {
+    const records = this.options.getRecords(input.containingFile);
+    return input.literals.map((literal) =>
+      this.#resolveHostModuleLiteral({ input, literal, records }),
+    );
+  }
+
+  resolveLibrary(
+    input: HostLibraryResolutionInput,
+  ): ts.ResolvedModuleWithFailedLookupLocations {
+    return resolveTypeScriptLibrary({
+      admission: this.options.admission,
+      cache: this.#moduleResolutionCache,
+      host: this.options.getHost(),
+      input,
+      tsModule: this.options.tsModule,
+    });
+  }
+
+  resolveTypeReferenceDirectiveReferences(
+    input: HostTypeReferenceResolutionInput,
+  ): readonly ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations[] {
+    return this.#typeReferences.resolveHost(input);
   }
 }

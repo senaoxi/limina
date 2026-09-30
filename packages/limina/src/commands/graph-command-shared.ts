@@ -29,14 +29,14 @@ export function isGraphReportDeferred(
   options: GraphCommandOptionsBase,
 ): boolean {
   const report = options.report;
-  return report === undefined ? false : report.defer === true;
+  return report !== undefined && report.defer === true;
 }
 
 export function isGraphInteractiveFlow(
   options: GraphCommandOptionsBase,
 ): boolean {
   const flow = options.flow;
-  return flow === undefined ? false : flow.interactive === true;
+  return flow !== undefined && flow.interactive;
 }
 
 export function isGraphSnapshotDeferred(
@@ -46,7 +46,7 @@ export function isGraphSnapshotDeferred(
 }
 
 function shouldClearScreen(options: GraphCommandOptionsBase): boolean {
-  return options.clearScreen === undefined ? true : options.clearScreen;
+  return options.clearScreen === undefined || options.clearScreen;
 }
 
 function getFlowDepth(options: GraphCommandOptionsBase): number {

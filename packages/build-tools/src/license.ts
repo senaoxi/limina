@@ -37,10 +37,12 @@ export default function licensePlugin(
       // MIT Licensed https://github.com/rollup/rollup/blob/master/LICENSE-CORE.md
       const coreLicense = fs.readFileSync(coreLicenseFilePath, 'utf8');
 
-      const deps = sortDependencies(dependencies);
+      const dependencies_ = sortDependencies(dependencies);
       const licenses = sortLicenses(
         new Set(
-          dependencies.map((dep) => dep.license).filter(Boolean) as string[],
+          dependencies
+            .map((dependency) => dependency.license)
+            .filter(Boolean) as string[],
         ),
       );
       const prohibitedLicenses = licenses.filter(
@@ -54,23 +56,31 @@ export default function licensePlugin(
       }
 
       let dependencyLicenseTexts = '';
-      for (let i = 0; i < deps.length; i++) {
+      for (let index = 0; index < dependencies_.length; index++) {
         // Find dependencies with the same license text so it can be shared.
-        const licenseText = deps[i].licenseText;
-        const sameDeps = [deps[i]];
+        const licenseText = dependencies_[index].licenseText;
+        const sameDependencies = [dependencies_[index]];
         if (licenseText) {
-          for (let j = i + 1; j < deps.length; j++) {
-            if (licenseText === deps[j].licenseText) {
-              sameDeps.push(...deps.splice(j, 1));
-              j--;
+          for (
+            let index_ = index + 1;
+            index_ < dependencies_.length;
+            index_++
+          ) {
+            if (licenseText !== dependencies_[index_].licenseText) {
+              continue;
             }
+
+            sameDependencies.push(...dependencies_.splice(index_, 1));
+            index_--;
           }
         }
 
-        let text = `## ${sameDeps.map((d) => d.name).join(', ')}\n\n`;
-        const depInfos = sameDeps.map((d) => getDependencyInformation(d));
+        let text = `## ${sameDependencies.map((d) => d.name).join(', ')}\n\n`;
+        const dependencyInfos = sameDependencies.map((d) =>
+          getDependencyInformation(d),
+        );
 
-        text += formatDependencyInfosText(depInfos);
+        text += formatDependencyInfosText(dependencyInfos);
 
         if (licenseText) {
           text += `\n${licenseText
@@ -81,7 +91,7 @@ export default function licensePlugin(
             .join('\n')}\n`;
         }
 
-        if (i !== deps.length - 1) {
+        if (index !== dependencies_.length - 1) {
           text += '\n---------------------------------------\n\n';
         }
 
@@ -109,23 +119,29 @@ ${bundledLicensesText}
       const existingLicenseText = fs.existsSync(licenseFilePath)
         ? fs.readFileSync(licenseFilePath, 'utf8')
         : undefined;
-      if (existingLicenseText !== licenseText) {
-        LicenseLogger.info('LICENSE.md update started');
-        fs.writeFileSync(licenseFilePath, licenseText);
-        LicenseLogger.success(
-          'LICENSE.md updated. You should commit the updated file.',
-          updateElapsed(),
-        );
+      if (existingLicenseText === licenseText) {
+        return;
       }
+
+      LicenseLogger.info('LICENSE.md update started');
+      fs.writeFileSync(licenseFilePath, licenseText);
+      LicenseLogger.success(
+        'LICENSE.md updated. You should commit the updated file.',
+        updateElapsed(),
+      );
     },
   }) as Plugin;
 
   // Skip for watch mode.
   for (const hook of ['renderChunk', 'generateBundle'] as const) {
     const originalHook = originalPlugin[hook]!;
-    originalPlugin[hook] = function (this: PluginContext, ...args: unknown[]) {
-      if (this.meta.watchMode) return null;
-      return (originalHook as Function).apply(this, args);
+    originalPlugin[hook] = function (
+      this: PluginContext,
+      ...arguments_: unknown[]
+    ) {
+      return this.meta.watchMode
+        ? null
+        : (originalHook as Function).apply(this, arguments_);
     };
   }
   return originalPlugin;
@@ -147,8 +163,12 @@ function sortLicenses(licenses: Set<string>) {
       noParenthesis.push(license);
     }
   }
-  withParenthesis = withParenthesis.toSorted();
-  noParenthesis = noParenthesis.toSorted();
+  withParenthesis = withParenthesis.toSorted(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  noParenthesis = noParenthesis.toSorted(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
   return [...noParenthesis, ...withParenthesis];
 }
 
@@ -158,9 +178,9 @@ interface DependencyInfo {
   repository?: string;
 }
 
-function getDependencyInformation(dep: Dependency): DependencyInfo {
+function getDependencyInformation(dependency: Dependency): DependencyInfo {
   const info: DependencyInfo = {};
-  const { license, author, maintainers, contributors, repository } = dep;
+  const { license, author, maintainers, contributors, repository } = dependency;
 
   if (license) {
     info.license = license;
@@ -185,38 +205,38 @@ function getDependencyInformation(dep: Dependency): DependencyInfo {
   return info;
 }
 
-function formatDependencyInfosText(depInfos: DependencyInfo[]): string {
+function formatDependencyInfosText(dependencyInfos: DependencyInfo[]): string {
   // If all same dependencies have the same license and contributor names, show them only once.
   if (
-    depInfos.length > 1 &&
-    depInfos.every(
+    dependencyInfos.length > 1 &&
+    dependencyInfos.every(
       (info) =>
-        info.license === depInfos[0].license &&
-        info.names === depInfos[0].names,
+        info.license === dependencyInfos[0].license &&
+        info.names === dependencyInfos[0].names,
     )
   ) {
     let text = '';
-    const { license, names } = depInfos[0];
-    const repositoryText = depInfos
+    const { license, names } = dependencyInfos[0];
+    const repoText = dependencyInfos
       .map((info) => info.repository)
       .filter(Boolean)
       .join(', ');
 
     if (license) text += `License: ${license}\n`;
     if (names) text += `By: ${names}\n`;
-    if (repositoryText) text += `Repositories: ${repositoryText}\n`;
+    if (repoText) text += `Repositories: ${repoText}\n`;
     return text;
   }
 
   // Else show each dependency separately.
   let text = '';
-  for (let j = 0; j < depInfos.length; j++) {
-    const { license, names, repository } = depInfos[j];
+  for (let index = 0; index < dependencyInfos.length; index++) {
+    const { license, names, repository } = dependencyInfos[index];
 
     if (license) text += `License: ${license}\n`;
     if (names) text += `By: ${names}\n`;
     if (repository) text += `Repository: ${repository}\n`;
-    if (j !== depInfos.length - 1) text += '\n';
+    if (index !== dependencyInfos.length - 1) text += '\n';
   }
   return text;
 }

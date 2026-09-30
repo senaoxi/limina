@@ -30,9 +30,7 @@ export function classifyBoundary(
   left: string | undefined,
   right: string | undefined,
 ): 'cross' | 'same' | 'unclassified' {
-  if ([left, right].some(isUndefined)) {
-    return 'unclassified';
-  }
-
-  return classifyDefinedBoundary(left as string, right as string);
+  return [left, right].some(isUndefined)
+    ? 'unclassified'
+    : classifyDefinedBoundary(left as string, right as string);
 }
