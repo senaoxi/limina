@@ -1,0 +1,17 @@
+# Mirrors the existing bundled-license policy; infrastructure:check detects drift.
+fail-on-severity: high
+fail-on-scopes:
+  - runtime
+  - development
+  - unknown
+allow-licenses:
+  - MIT
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - BlueOak-1.0.0
+  - ISC
+  - MPL-2.0
+comment-summary-in-pr: never
+retry-on-snapshot-warnings: true
+retry-on-snapshot-warnings-timeout: 120
