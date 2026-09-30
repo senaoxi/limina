@@ -57,12 +57,13 @@ function classifyUnretained(
 }
 
 function existingReferenceTarget(
-  ref: unknown,
+  reference: unknown,
   file: string,
 ): string | undefined {
-  if (!isPlainRecord(ref)) return undefined;
-  if (typeof ref.path !== 'string') return undefined;
-  return resolveReferencePath(file, ref.path);
+  if (!isPlainRecord(reference)) return undefined;
+  return typeof reference.path === 'string'
+    ? resolveReferencePath(file, reference.path)
+    : undefined;
 }
 
 function getMetadata(object: JsonObject): JsonObject {
@@ -80,28 +81,32 @@ function addImplicit(
 ): void {
   const object = plan.state.objects.get(file)!;
   const metadata = getMetadata(object);
-  const refs = implicitDeclarations(metadata);
-  const exists = refs.some(
-    (ref) => existingReferenceTarget(ref, file) === reference.resolvedPath,
+  const references = implicitDeclarations(metadata);
+  const isExists = references.some(
+    (reference_) =>
+      existingReferenceTarget(reference_, file) === reference.resolvedPath,
   );
-  if (!exists)
-    refs.push({
+  if (!isExists)
+    references.push({
       path: relativeConfigPath(file, reference.resolvedPath),
       reason: `Preserved native TypeScript reference ${reference.rawPath} during Limina migration.`,
     });
   plan.state.records.push({
     configPath: file,
-    kind: exists ? 'implicit-reused' : 'implicit-added',
+    kind: isExists ? 'implicit-reused' : 'implicit-added',
     original: reference.rawPath,
     message: 'Preserved the explicit declaration and any existing user reason.',
   });
-  object.liminaOptions = { ...metadata, implicitRefs: refs };
+  object.liminaOptions = { ...metadata, implicitRefs: references };
 }
 
-function comparisonMessage(complete: boolean, inferred: boolean): string {
-  if (!complete)
+function comparisonMessage(
+  isComplete: boolean,
+  isInferredValue: boolean,
+): string {
+  if (!isComplete)
     return 'comparison unavailable; preserving explicit declaration';
-  return inferred ? 'N ∩ G' : 'N - G';
+  return isInferredValue ? 'N ∩ G' : 'N - G';
 }
 
 function translateReference(
@@ -132,20 +137,20 @@ function translateRetainedReference(
 ): void {
   const key = relationKey(file, reference.resolvedPath);
   plan.native.add(key);
-  const inferred = plan.inferred.has(key);
+  const isInferred = plan.inferred.has(key);
   plan.state.records.push({
     configPath: file,
     kind: 'native-comparison',
     original: reference.rawPath,
-    message: comparisonMessage(plan.analysis.complete, inferred),
+    message: comparisonMessage(plan.analysis.complete, isInferred),
   });
-  if (plan.analysis.complete && inferred) return;
+  if (isInferred && plan.analysis.complete) return;
   addImplicit(plan, file, reference);
 }
 
 function translateSource(plan: RelationPlan, file: string): void {
   const target = plan.state.targets.get(file)!;
-  const refs = collectReferencePathInfosFromConfigObject(
+  const references = collectReferencePathInfosFromConfigObject(
     plan.state.config.rootDir,
     file,
     target.configObject,
@@ -158,9 +163,9 @@ function translateSource(plan: RelationPlan, file: string): void {
     original: target.configObject.references,
     message:
       'Only source relationship paths are translated; native build attributes are not adopted.',
-    details: { diagnostics: refs.problems },
+    details: { diagnostics: references.problems },
   });
-  for (const reference of refs.references)
+  for (const reference of references.references)
     translateReference(plan, file, reference);
 }
 
@@ -187,10 +192,11 @@ async function collectAnalysis(
 
 function recordInferredOnly(plan: RelationPlan): void {
   if (!plan.analysis.complete) return;
-  for (const fact of plan.analysis.facts.filter(
+  const inferredOnly = plan.analysis.facts.filter(
     (fact) =>
       !plan.native.has(relationKey(fact.fromConfigPath, fact.toConfigPath)),
-  )) {
+  );
+  for (const fact of inferredOnly) {
     plan.state.records.push({
       configPath: fact.fromConfigPath,
       kind: 'inferred-only',

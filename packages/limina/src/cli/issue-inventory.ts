@@ -20,12 +20,11 @@ function hasInventoryFilterValues(
   );
 }
 
-function getInventorySelectorState(options: {
+function isGetInventorySelectorState(options: {
   filters: CheckIssueInventoryFilters;
   hasInvocation: boolean;
 }): boolean {
-  if (options.hasInvocation) return true;
-  return hasInventoryFilterValues(options.filters);
+  return options.hasInvocation || hasInventoryFilterValues(options.filters);
 }
 
 function formatUnknownRuleCodeLabel(count: number): string {
@@ -83,8 +82,7 @@ export function parseIssueInventoryLimit(
 ): number | null {
   if (value === undefined) return DEFAULT_VISIBLE_ISSUE_LIMIT;
   const raw = String(value);
-  if (raw === 'all') return null;
-  return parsePositiveInventoryLimit(raw);
+  return raw === 'all' ? null : parsePositiveInventoryLimit(raw);
 }
 
 export function assertHumanIssueInventoryLimit(options: {
@@ -110,8 +108,7 @@ function resolveInventoryView(options: {
   selected: boolean;
   verbose: boolean;
 }): CheckIssueInventoryPresentationOptions['view'] {
-  if (options.verbose) return 'detailed';
-  return resolveUndetailedInventoryView(options);
+  return options.verbose ? 'detailed' : resolveUndetailedInventoryView(options);
 }
 
 export function resolveIssueInventoryPresentation(options: {
@@ -121,10 +118,10 @@ export function resolveIssueInventoryPresentation(options: {
   limitExplicit: boolean;
   verbose: boolean;
 }): CheckIssueInventoryPresentationOptions {
-  const selected = getInventorySelectorState(options);
+  const isSelected = isGetInventorySelectorState(options);
   const view = resolveInventoryView({
     limitExplicit: options.limitExplicit,
-    selected,
+    selected: isSelected,
     verbose: options.verbose,
   });
   return {
@@ -138,8 +135,7 @@ function assertIssuePipelineCompatibility(
   pipeline: string | undefined,
   issues: boolean | undefined,
 ): void {
-  if (issues !== true) return;
-  if (pipeline === undefined) return;
+  if (issues !== true || pipeline === undefined) return;
   throw new Error('`limina check --issues` does not accept a pipeline name.');
 }
 
@@ -158,8 +154,7 @@ export function assertStandaloneIssuesFlag(
   flags: CheckFlags,
 ): void {
   assertIssuePipelineCompatibility(pipeline, flags.issues);
-  if (flags.issues === true) return;
-  if (!hasIssueOnlyFlags(flags)) return;
+  if (flags.issues === true || !hasIssueOnlyFlags(flags)) return;
   throw new Error(
     '`limina check --task`, `--checker`, `--format`, `--invocation`, and `--limit` require --issues.',
   );

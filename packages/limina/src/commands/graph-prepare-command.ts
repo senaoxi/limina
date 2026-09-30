@@ -49,18 +49,18 @@ export function createGraphPrepareCommandContext(
   };
 }
 
-function getPrepareSuccessMessage(changed: boolean): string {
-  return changed
+function getPrepareSuccessMessage(isChanged: boolean): string {
+  return isChanged
     ? 'graph prepare generated files'
     : 'graph prepare found generated files up to date';
 }
 
 function logPrepareSuccess(
   context: GraphPrepareCommandContext,
-  changed: boolean,
+  isChanged: boolean,
 ): void {
   if (!isGraphInteractiveFlow(context.options)) {
-    GraphLogger.success(getPrepareSuccessMessage(changed), context.elapsed());
+    GraphLogger.success(getPrepareSuccessMessage(isChanged), context.elapsed());
   }
 }
 
@@ -77,7 +77,7 @@ async function completePrepareSnapshot(
   });
 }
 
-export async function executeGraphPrepareCommand(
+export async function isExecuteGraphPrepareCommand(
   context: GraphPrepareCommandContext,
 ): Promise<true> {
   const result = await runGraphPrepareImpl(context.config, {
@@ -142,7 +142,7 @@ function logStructuredPrepareReport(
 
 function isReportVerbose(options: RunGraphPrepareOptions): boolean {
   const report = options.report;
-  return report === undefined ? false : report.verbose === true;
+  return report !== undefined && report.verbose === true;
 }
 
 function shouldShowRawPrepareError(
@@ -155,25 +155,25 @@ function shouldShowRawPrepareError(
   ].some(Boolean);
 }
 
-function logPrepareFailure(
+function isLogPrepareFailure(
   context: GraphPrepareCommandContext,
   error: unknown,
 ): boolean {
-  const showRawError = shouldShowRawPrepareError(context.options, error);
-  const message = showRawError
+  const isShowRawError = shouldShowRawPrepareError(context.options, error);
+  const message = isShowRawError
     ? `graph prepare failed: ${formatErrorMessage(error)}`
     : 'graph prepare failed';
 
   GraphLogger.error(message, context.elapsed());
-  return showRawError;
+  return isShowRawError;
 }
 
 function failPrepareTask(
   context: GraphPrepareCommandContext,
   error: unknown,
-  showRawError: boolean,
+  isShowRawErrorValue: boolean,
 ): void {
-  const details = showRawError ? { error } : undefined;
+  const details = isShowRawErrorValue ? { error } : undefined;
   failGraphTask(context.task, 'graph prepare failed', details);
 }
 
@@ -189,7 +189,7 @@ export async function handleGraphPrepareCommandError(
     rootDir: context.config.rootDir,
   });
   logStructuredPrepareReport(context, error, issues);
-  const showRawError = logPrepareFailure(context, error);
-  failPrepareTask(context, error, showRawError);
+  const isShowRawError = isLogPrepareFailure(context, error);
+  failPrepareTask(context, error, isShowRawError);
   throw error;
 }

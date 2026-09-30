@@ -35,7 +35,7 @@ function createScope(
   return { bindings: new Map(), parent, type };
 }
 
-function createsBlockScope(node: ts.Node, tsModule: typeof ts): boolean {
+function isCreatesBlockScope(node: ts.Node, tsModule: typeof ts): boolean {
   const blockScopePredicates: readonly ((value: ts.Node) => boolean)[] = [
     tsModule.isBlock,
     tsModule.isCaseBlock,
@@ -86,8 +86,9 @@ function createStaticBlockScope(
   parent: LexicalScope,
   tsModule: typeof ts,
 ): LexicalScope | null {
-  if (!tsModule.isClassStaticBlockDeclaration(node)) return null;
-  return createScope('static-block', parent);
+  return tsModule.isClassStaticBlockDeclaration(node)
+    ? createScope('static-block', parent)
+    : null;
 }
 
 function createCatchScope(
@@ -131,8 +132,11 @@ function createBlockScope(
   parent: LexicalScope,
   context: ScopeBuildContext,
 ): LexicalScope | null {
-  if (node === context.sourceFile) return null;
-  if (!createsBlockScope(node, context.tsModule)) return null;
+  if (
+    node === context.sourceFile ||
+    !isCreatesBlockScope(node, context.tsModule)
+  )
+    return null;
   const scope = createScope('block', parent);
   registerClassExpressionName(node, scope, context.tsModule);
   return scope;

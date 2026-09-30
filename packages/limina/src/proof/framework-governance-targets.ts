@@ -98,11 +98,11 @@ function addTargetFinding(options: {
   });
 }
 
-function targetHasExpectedShape(
+function isTargetHasExpectedShape(
   target: TypecheckTarget,
   descriptor: FrameworkCapabilityDescriptor,
 ): boolean {
-  const forbiddenArgs = new Set([
+  const forbiddenArguments = new Set([
     '--incremental',
     '--output',
     '--preserveWatchOutput',
@@ -119,7 +119,7 @@ function targetHasExpectedShape(
     target.dependencyRootDir === descriptor.packageRootDir,
     target.executionKind === 'typecheck',
     target.sourceConfigPath === descriptor.sourceConfigPath,
-    target.args.every((argument) => !forbiddenArgs.has(argument)),
+    target.args.every((argument) => !forbiddenArguments.has(argument)),
     astroSyncPolicy[descriptor.family],
   ].every(Boolean);
 }
@@ -135,7 +135,7 @@ function indexTargetsByDescriptor(
   return index;
 }
 
-function addMissingOrInvalidTarget(options: {
+function isAddMissingOrInvalidTarget(options: {
   descriptor: FrameworkCapabilityDescriptor;
   target: TypecheckTarget | undefined;
   targetOptions: TargetOptions;
@@ -150,7 +150,8 @@ function addMissingOrInvalidTarget(options: {
     });
     return true;
   }
-  if (targetHasExpectedShape(options.target, options.descriptor)) return false;
+  if (isTargetHasExpectedShape(options.target, options.descriptor))
+    return false;
   addTargetFinding({
     ...options.targetOptions,
     descriptor: options.descriptor,
@@ -233,7 +234,11 @@ function addDescriptorTargetFindings(
   for (const descriptor of descriptors) {
     const target = targetsByDescriptor.get(descriptorIdentity(descriptor));
     if (
-      addMissingOrInvalidTarget({ descriptor, target, targetOptions: options })
+      isAddMissingOrInvalidTarget({
+        descriptor,
+        target,
+        targetOptions: options,
+      })
     ) {
       continue;
     }

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
-/** Config overlays participate in semantic cache identity; no state is persisted. */
+/**
+Config overlays participate in semantic cache identity; no state is persisted.
+*/
 export function configInputIdentity(
   files: ReadonlyMap<string, string> | undefined,
 ): string | undefined {

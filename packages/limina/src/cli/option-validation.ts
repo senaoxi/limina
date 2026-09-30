@@ -44,11 +44,9 @@ export function rejectUnknownBuildOptions(flags: BuildFlags): void {
 }
 
 export function getCheckerWatchFlag(flags: CheckerFlags): boolean | undefined {
-  if (flags.watch !== undefined) return flags.watch;
-  return flags.w;
+  return flags.watch === undefined ? flags.w : flags.watch;
 }
 
 export function getBuildWatchFlag(flags: BuildFlags): boolean | undefined {
-  if (flags.watch !== undefined) return flags.watch;
-  return flags.w;
+  return flags.watch === undefined ? flags.w : flags.watch;
 }

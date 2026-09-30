@@ -1,9 +1,9 @@
 import type { FlowStatus, FlowTreeNodeStatus } from './types';
 
-const ANSI_RESET = '\u001B[0m';
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_RED = '\u001B[31m';
-const ANSI_YELLOW = '\u001B[33m';
+const ANSI_RESET = '\u{1B}[0m';
+const ANSI_GREEN = '\u{1B}[32m';
+const ANSI_RED = '\u{1B}[31m';
+const ANSI_YELLOW = '\u{1B}[33m';
 
 export const SPINNER_FRAMES = [
   '⠋',
@@ -52,11 +52,9 @@ function colorInteractiveSymbol(status: FlowStatus, symbol: string): string {
 }
 
 export function formatElapsedTime(milliseconds: number): string {
-  if (milliseconds < 1000) {
-    return `${Math.round(milliseconds)}ms`;
-  }
-
-  return `${(milliseconds / 1000).toFixed(2)}s`;
+  return milliseconds < 1000
+    ? `${Math.round(milliseconds)}ms`
+    : `${(milliseconds / 1000).toFixed(2)}s`;
 }
 
 export function formatMessageWithElapsed(
@@ -69,14 +67,10 @@ export function formatMessageWithElapsed(
 }
 
 export function indentMessage(message: string, depth: number): string {
-  if (depth <= 0) {
-    return message;
-  }
-
-  return `${'  '.repeat(depth)}${message}`;
+  return depth <= 0 ? message : `${'  '.repeat(depth)}${message}`;
 }
 
-type FormatInteractiveLineArgs = [
+type FormatInteractiveLineArguments = [
   status: FlowStatus,
   message: string,
   depth: number,
@@ -87,17 +81,15 @@ function getInteractiveSymbol(
   status: FlowStatus,
   spinnerFrameIndex: number,
 ): string {
-  if (status !== 'start') {
-    return FLOW_SYMBOL_BY_STATUS[status];
-  }
-
-  return SPINNER_FRAMES[spinnerFrameIndex % SPINNER_FRAMES.length]!;
+  return status === 'start'
+    ? SPINNER_FRAMES[spinnerFrameIndex % SPINNER_FRAMES.length]!
+    : FLOW_SYMBOL_BY_STATUS[status];
 }
 
 export function formatInteractiveLine(
-  ...args: FormatInteractiveLineArgs
+  ...arguments_: FormatInteractiveLineArguments
 ): string {
-  const [status, message, depth, spinnerFrameIndex] = args;
+  const [status, message, depth, spinnerFrameIndex] = arguments_;
   const renderedMessage = indentMessage(message, depth);
   const symbol = getInteractiveSymbol(status, spinnerFrameIndex);
   return `${colorInteractiveSymbol(status, symbol)}    ${renderedMessage}`;

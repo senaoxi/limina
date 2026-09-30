@@ -51,14 +51,14 @@ type IssueValueSelector = (
 
 function compareCountEntries(left: CountEntry, right: CountEntry): number {
   const countOrder = right.count - left.count;
-  if (countOrder !== 0) return countOrder;
-  return compareCodeUnits(left.name, right.name);
+  return countOrder === 0
+    ? compareCodeUnits(left.name, right.name)
+    : countOrder;
 }
 
 function compareHumanCountEntries(left: CountEntry, right: CountEntry): number {
   const countOrder = right.count - left.count;
-  if (countOrder !== 0) return countOrder;
-  return left.name.localeCompare(right.name);
+  return countOrder === 0 ? left.name.localeCompare(right.name) : countOrder;
 }
 
 function createCountEntries(
@@ -66,7 +66,7 @@ function createCountEntries(
   getValue: (issue: LiminaCheckIssue) => string | undefined,
   compare: (left: CountEntry, right: CountEntry) => number,
 ): CountEntry[] {
-  return [...countDefinedBy(issues, getValue).entries()]
+  return [...countDefinedBy(issues, getValue)]
     .map(([name, count]) => ({ count, name }))
     .sort(compare);
 }
@@ -162,13 +162,13 @@ export function createHumanIssueOverview(
 }
 
 function isStructuredGraphPrepareIssue(issue: LiminaCheckIssue): boolean {
-  if (issue.task !== 'graph:prepare') return false;
-  return issue.detector === 'graph-prepare';
+  return issue.task === 'graph:prepare' && issue.detector === 'graph-prepare';
 }
 
 function getTopBlockerKey(issue: LiminaCheckIssue): string {
-  if (!isStructuredGraphPrepareIssue(issue)) return issue.code;
-  return `${issue.code}\0${issue.title}`;
+  return isStructuredGraphPrepareIssue(issue)
+    ? `${issue.code}\0${issue.title}`
+    : issue.code;
 }
 
 function incrementPackage(
@@ -182,7 +182,7 @@ function incrementPackage(
 function createPackageCounts(
   packages: ReadonlyMap<string, number>,
 ): CountEntry[] {
-  return [...packages.entries()]
+  return [...packages]
     .map(([name, count]) => ({ count, name }))
     .sort(compareCountEntries);
 }
@@ -230,8 +230,9 @@ function getOrCreateBlockerState(
 }
 
 function severityRank(severity: string | undefined): number {
-  if (severity === undefined) return SEVERITY_RANKS.error!;
-  return SEVERITY_RANKS[severity] ?? 1;
+  return severity === undefined
+    ? SEVERITY_RANKS.error!
+    : (SEVERITY_RANKS[severity] ?? 1);
 }
 
 function firstNonZero(values: readonly number[]): number {
@@ -262,8 +263,10 @@ export function selectTopBlockers(
     const key = getTopBlockerKey(issue);
     updateBlockerState(getOrCreateBlockerState(states, key, issue), issue);
   }
-  return [...states.values()]
+  return states
+    .values()
     .map((state) => state.blocker)
+    .toArray()
     .sort(compareBlockers)
     .slice(0, limit);
 }
@@ -272,11 +275,12 @@ export function formatTopCounts(
   entries: readonly CountEntry[],
   limit: number,
 ): string {
-  if (entries.length === 0) return '(none)';
-  return entries
-    .slice(0, limit)
-    .map((entry) => `${entry.name} (${entry.count})`)
-    .join(', ');
+  return entries.length === 0
+    ? '(none)'
+    : entries
+        .slice(0, limit)
+        .map((entry) => `${entry.name} (${entry.count})`)
+        .join(', ');
 }
 
 export function formatRankedCounts(

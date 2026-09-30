@@ -258,15 +258,15 @@ export function readPackageManifest(
 export function resolvePackageConfig(
   config: ReleasePackageConfig,
 ): ResolvedReleasePackageConfig {
-  const packageDir = path.join(REPO_ROOT, config.relativeDir);
-  const manifestPath = path.join(packageDir, 'package.json');
-  const publishDir = path.join(REPO_ROOT, config.publishRelativeDir);
+  const packageDirectory = path.join(REPO_ROOT, config.relativeDir);
+  const manifestPath = path.join(packageDirectory, 'package.json');
+  const publishDirectory = path.join(REPO_ROOT, config.publishRelativeDir);
   const changelogPath = path.join(REPO_ROOT, config.changelogRelativePath);
 
   return {
     ...config,
-    packageDir,
-    publishDir,
+    packageDir: packageDirectory,
+    publishDir: publishDirectory,
     changelogPath,
     manifestPath,
     manifest: readPackageManifest(manifestPath),
@@ -310,7 +310,8 @@ export function resolvePackageSelections(
   const resolved: ResolvedReleasePackageConfig[] = [];
   const seen = new Set<string>();
 
-  for (const selector of selectors.map(normalizePackageSelector)) {
+  for (const rawSelector of selectors) {
+    const selector = normalizePackageSelector(rawSelector);
     const config = configBySelector.get(selector);
     if (!config) {
       throw new Error(
@@ -319,10 +320,12 @@ export function resolvePackageSelections(
           .join(', ')}`,
       );
     }
-    if (!seen.has(config.packageName)) {
-      resolved.push(config);
-      seen.add(config.packageName);
+    if (seen.has(config.packageName)) {
+      continue;
     }
+
+    resolved.push(config);
+    seen.add(config.packageName);
   }
 
   if (resolved.length === 0) return [];
@@ -404,9 +407,9 @@ export function parseVersion(version: string): VersionParts {
   }
 
   return {
-    major: Number.parseInt(match[1], 10),
-    minor: Number.parseInt(match[2], 10),
-    patch: Number.parseInt(match[3], 10),
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
     prerelease: match[4],
   };
 }
@@ -416,12 +419,7 @@ export function isValidVersion(version: string): boolean {
 }
 
 export function isReleaseType(value: string): value is ReleaseType {
-  return (
-    value === 'patch' ||
-    value === 'minor' ||
-    value === 'major' ||
-    value === 'prerelease'
-  );
+  return ['patch', 'minor', 'major', 'prerelease'].includes(value);
 }
 
 export function compareVersions(a: string, b: string): number {
@@ -458,7 +456,7 @@ export function incrementVersion(
         const prereleaseMatch = /^(.+)\.(\d+)$/.exec(parsed.prerelease);
         if (prereleaseMatch) {
           parsed.prerelease = `${prereleaseMatch[1]}.${
-            Number.parseInt(prereleaseMatch[2], 10) + 1
+            Number(prereleaseMatch[2]) + 1
           }`;
         } else {
           parsed.prerelease = `${parsed.prerelease}.1`;
@@ -511,7 +509,7 @@ export function resolveDefaultNpmTag(
     return preId;
   }
 
-  const [prereleaseId] = parsed.prerelease.split('.');
+  const [prereleaseId] = parsed.prerelease.split('.', 1);
   return prereleaseId || 'next';
 }
 
@@ -533,7 +531,7 @@ export function readPublishBranch(): string {
 
 export function runCommand(
   command: string,
-  args: string[],
+  arguments_: string[],
   options: CommandOptions = {},
 ): string {
   const {
@@ -543,12 +541,12 @@ export function runCommand(
     allowFailure = false,
     logger = ReleaseLogger,
   } = options;
-  const commandText = [command, ...args].join(' ');
+  const commandText = [command, ...arguments_].join(' ');
   logger.info(`command started: ${commandText}`);
   const commandElapsed = createElapsedTimer();
 
   try {
-    return execFileSync(command, args, {
+    return execFileSync(command, arguments_, {
       cwd,
       env: env ? { ...process.env, ...env } : process.env,
       stdio,
@@ -746,18 +744,18 @@ export async function promptForExecutionMode(): Promise<{
     const modeAnswer = (
       await rl.question('Run mode: 1) dry-run  2) publish (default: 1): ')
     ).trim();
-    const dryRun = modeAnswer !== '2';
+    const isDryRun = modeAnswer !== '2';
     const confirmAnswer = (
       await rl.question(
-        dryRun
+        isDryRun
           ? 'Preview this release plan? [Y/n]: '
           : 'Proceed with publish? [y/N]: ',
       )
     ).trim();
-    const confirmed = dryRun
+    const isConfirmed = isDryRun
       ? confirmAnswer.toLowerCase() !== 'n'
       : confirmAnswer.toLowerCase() === 'y';
-    return { dryRun, confirmed };
+    return { dryRun: isDryRun, confirmed: isConfirmed };
   } finally {
     rl.close();
   }

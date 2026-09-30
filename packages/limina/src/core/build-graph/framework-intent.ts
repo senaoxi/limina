@@ -11,8 +11,9 @@ import type {
 
 function getExtendsValues(value: unknown): string[] {
   if (typeof value === 'string') return [value];
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === 'string');
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
 }
 
 function addExtendsHint(options: {

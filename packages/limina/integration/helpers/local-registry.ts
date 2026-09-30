@@ -115,11 +115,9 @@ function getPreparedBodyBytes(body: PreparedRegistryBody): Buffer | undefined {
   if (resolved.kind === 'text') {
     return Buffer.from(resolved.value);
   }
-  if (resolved.kind === 'json') {
-    return Buffer.from(JSON.stringify(resolved.value));
-  }
-
-  return undefined;
+  return resolved.kind === 'json'
+    ? Buffer.from(JSON.stringify(resolved.value))
+    : undefined;
 }
 
 function resolveDigest(options: {
@@ -168,13 +166,13 @@ function createPackageMetadata(options: {
   const tarballBytes = tarballResponse
     ? getPreparedBodyBytes(tarballResponse.body)
     : undefined;
-  const dist: Record<string, unknown> = {};
+  const distribution: Record<string, unknown> = {};
 
   if (options.body.tarballPath !== undefined) {
-    dist.tarball = new URL(
+    distribution.tarball = new URL(
       options.body.tarballPath,
       options.baseUrl,
-    ).toString();
+    ).href;
   }
   const integrity = resolveDigest({
     algorithm: 'sha512',
@@ -182,7 +180,7 @@ function createPackageMetadata(options: {
     tarballBytes,
   });
   if (integrity !== undefined) {
-    dist.integrity = integrity;
+    distribution.integrity = integrity;
   }
   if (options.body.shasum !== undefined) {
     const shasum = resolveDigest({
@@ -191,7 +189,7 @@ function createPackageMetadata(options: {
       tarballBytes,
     });
     if (shasum !== undefined) {
-      dist.shasum = shasum;
+      distribution.shasum = shasum;
     }
   }
 
@@ -202,7 +200,7 @@ function createPackageMetadata(options: {
     name: options.packageName,
     versions: {
       [options.body.version]: {
-        dist,
+        dist: distribution,
         name: options.packageName,
         version: options.body.version,
       },
@@ -231,10 +229,9 @@ function defaultContentType(body: PreparedRegistryBody): string {
   if (resolved.kind === 'json' || resolved.kind === 'package-metadata') {
     return 'application/json';
   }
-  if (resolved.kind === 'prepared-bytes' || resolved.kind === 'bytes') {
-    return 'application/octet-stream';
-  }
-  return 'text/plain; charset=utf-8';
+  return resolved.kind === 'prepared-bytes' || resolved.kind === 'bytes'
+    ? 'application/octet-stream'
+    : 'text/plain; charset=utf-8';
 }
 
 function writeResponseHeaders(options: {
@@ -267,10 +264,12 @@ async function sendRegistryBody(options: {
       }, delayedBody.milliseconds);
       options.timers.add(timer);
       options.request.once('close', () => {
-        if (options.timers.delete(timer)) {
-          clearTimeout(timer);
-          resolve();
+        if (!options.timers.delete(timer)) {
+          return;
         }
+
+        clearTimeout(timer);
+        resolve();
       });
     });
     if (options.request.destroyed || options.serverResponse.destroyed) {
@@ -357,9 +356,8 @@ export async function startLocalRegistryFixture(options: {
     tempRoot: options.tempRoot,
   });
   const tarballs = new Map<string, PreparedRegistryResponse>();
-  for (const [pathname, response] of Object.entries(
-    options.scenario.tarballs ?? {},
-  )) {
+  const tarballEntries = Object.entries(options.scenario.tarballs ?? {});
+  for (const [pathname, response] of tarballEntries) {
     tarballs.set(
       pathname,
       await prepareRegistryResponse({ response, tempRoot: options.tempRoot }),
@@ -372,7 +370,6 @@ export async function startLocalRegistryFixture(options: {
   let baseUrl: URL | undefined;
   let handlerFailure: unknown;
   let serverFailure: unknown;
-  let closed = false;
 
   const server = createServer((request, serverResponse) => {
     const recorded = recordRequest(request);
@@ -388,19 +385,24 @@ export async function startLocalRegistryFixture(options: {
       return;
     }
 
-    sendRegistryBody({
-      baseUrl: baseUrl!,
-      body: preparedResponse.body,
-      packageName: options.scenario.packageName,
-      request,
-      response: preparedResponse,
-      serverResponse,
-      tarballs,
-      timers,
-    }).catch((error: unknown) => {
-      handlerFailure ??= error;
-      serverResponse.destroy(error as Error);
-    });
+    const sendResponse = async (): Promise<void> => {
+      try {
+        await sendRegistryBody({
+          baseUrl: baseUrl!,
+          body: preparedResponse.body,
+          packageName: options.scenario.packageName,
+          request,
+          response: preparedResponse,
+          serverResponse,
+          tarballs,
+          timers,
+        });
+      } catch (error) {
+        handlerFailure ??= error;
+        serverResponse.destroy(error as Error);
+      }
+    };
+    sendResponse();
   });
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -433,14 +435,15 @@ export async function startLocalRegistryFixture(options: {
     throw new Error('Local registry fixture did not bind to IPv4 loopback.');
   }
   baseUrl = new URL(`http://127.0.0.1:${String(address.port)}/`);
+  let isClosed = false;
 
   return {
     baseUrl,
     async close(): Promise<void> {
-      if (closed) {
+      if (isClosed) {
         return;
       }
-      closed = true;
+      isClosed = true;
       for (const timer of timers) {
         clearTimeout(timer);
       }
@@ -480,13 +483,13 @@ export function assertLocalRegistryRequests(options: {
   for (const [index, expected] of options.expected.entries()) {
     const actual = options.actual[index]!;
     const expectedMethod = expected.method ?? 'GET';
-    const headersMatch = Object.entries(expected.headers ?? {}).every(
+    const isHeadersMatch = Object.entries(expected.headers ?? {}).every(
       ([name, value]) => actual.headers[name.toLowerCase()] === value,
     );
     if (
+      !isHeadersMatch ||
       actual.method !== expectedMethod ||
-      actual.pathname !== expected.pathname ||
-      !headersMatch
+      actual.pathname !== expected.pathname
     ) {
       throw new Error(
         `Detector fixture ${options.fixtureId} local registry request ${String(index)} mismatch: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}.`,

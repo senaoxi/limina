@@ -1,7 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import type { AnalysisMetricsRecorder } from '../application/analysis/analysis-run';
 import { runKnipSourcePhase } from './knip/phase';
-import { finishSourceCheckAnalysis, prepareSourceCheck } from './phases';
+import { isFinishSourceCheckAnalysis, prepareSourceCheck } from './phases';
 import type { RunSourceCheckImplOptions } from './runner-types';
 
 export type { RunSourceCheckOptions } from './runner-types';
@@ -23,7 +23,7 @@ async function observePhase<T>(options: {
   }
 }
 
-export async function runSourceCheckImpl(
+export async function isRunSourceCheckImpl(
   config: ResolvedLiminaConfig,
   options: RunSourceCheckImplOptions = {},
 ): Promise<boolean> {
@@ -41,6 +41,6 @@ export async function runSourceCheckImpl(
   return observePhase({
     kind: 'readonly-analysis',
     metrics,
-    run: () => finishSourceCheckAnalysis(state),
+    run: () => isFinishSourceCheckAnalysis(state),
   });
 }

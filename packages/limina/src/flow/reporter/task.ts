@@ -13,25 +13,27 @@ import type {
 } from './types';
 
 function getTaskDepth(options: LiminaFlowMessageOptions): number {
-  if (options.depth === undefined) return 0;
-  return options.depth;
+  return options.depth === undefined ? 0 : options.depth;
 }
 
-function getCollapseOnSuccess(
+function isGetCollapseOnSuccess(
   state: FlowReporterState,
   options: LiminaFlowMessageOptions,
 ): boolean {
-  if (state.statusOnly) return false;
-  if (options.collapseOnSuccess === undefined) return true;
-  return options.collapseOnSuccess;
+  return (
+    !state.statusOnly &&
+    (options.collapseOnSuccess === undefined || options.collapseOnSuccess)
+  );
 }
 
 function shouldTrackTask(options: {
   state: FlowReporterState;
   taskOptions: LiminaFlowMessageOptions;
 }): boolean {
-  if (!options.state.interactive) return false;
-  return getCollapseOnSuccess(options.state, options.taskOptions);
+  return (
+    options.state.interactive &&
+    isGetCollapseOnSuccess(options.state, options.taskOptions)
+  );
 }
 
 function reserveTransientTaskId(options: {
@@ -71,8 +73,10 @@ function shouldPersistStart(options: {
   reporterState: FlowReporterState;
   taskState: FlowTaskState;
 }): boolean {
-  if (options.taskState.shouldTrack) return false;
-  return options.reporterState.trackedTaskCount === 0;
+  return (
+    !options.taskState.shouldTrack &&
+    options.reporterState.trackedTaskCount === 0
+  );
 }
 
 function startFlowTask(options: {
@@ -99,10 +103,9 @@ function getNestedDepth(options: {
   messageOptions: LiminaFlowMessageOptions | undefined;
   taskState: FlowTaskState;
 }): number {
-  if (options.messageOptions?.depth !== undefined) {
-    return options.messageOptions.depth;
-  }
-  return options.taskState.depth + 1;
+  return options.messageOptions?.depth === undefined
+    ? options.taskState.depth + 1
+    : options.messageOptions.depth;
 }
 
 function emitNestedStatus(options: {

@@ -9,7 +9,7 @@ import type { PackageOwner } from '#core/workspace/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { SourceResourceTypeEvidenceKind } from './finding-facts';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 import type { ResourceResolver } from './resource-resolver';
 
@@ -34,13 +34,10 @@ function isResourceImport(options: ResourceModuleOptions): boolean {
     project: options.project,
     resolutionMode: 'checker-only',
   });
-  if (runtimeEvidence.classification !== 'resource') {
-    return false;
-  }
-  if (NON_PHYSICAL_RUNTIME_KINDS.has(runtimeEvidence.runtime.kind)) {
-    return false;
-  }
-  return true;
+  return (
+    runtimeEvidence.classification === 'resource' &&
+    !NON_PHYSICAL_RUNTIME_KINDS.has(runtimeEvidence.runtime.kind)
+  );
 }
 
 function addMissingResourceFinding(options: {
@@ -189,11 +186,10 @@ function addExistingResourceProblem(
   options: ResourceModuleOptions,
   evidence: ResourceImportEvidence,
 ): void {
-  if (options.importRecord.kind === 'require-resolve') {
-    return;
-  }
-
-  if (!hasUndeclaredResourceType(evidence)) {
+  if (
+    options.importRecord.kind === 'require-resolve' ||
+    !hasUndeclaredResourceType(evidence)
+  ) {
     return;
   }
 

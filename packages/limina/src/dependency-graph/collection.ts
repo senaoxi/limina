@@ -22,7 +22,7 @@ export async function collectDependencyGraph(
     collectDependencyGraphEdges(context);
     assertDependencyGraphProblemsEmpty(context);
     return {
-      edges: sortEdges([...context.edgesByKey.values()]),
+      edges: sortEdges(context.edgesByKey.values().toArray()),
       nodes: createNodes(config, context.workspacePackages),
       rootDir: '.',
       schemaVersion: 1,

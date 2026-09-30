@@ -68,7 +68,7 @@
     "@clack/prompts": "catalog:dev",
     "@jridgewell/trace-mapping": "catalog:dev",
     "boxen": "catalog:dev",
-    "logaria": "link:../../../docs-islands/packages/logaria/dist",
+    "logaria": "catalog:dev",
     "@publint/pack": "catalog:lint",
     "cac": "catalog:dev",
     "es-module-lexer": "catalog:dev",

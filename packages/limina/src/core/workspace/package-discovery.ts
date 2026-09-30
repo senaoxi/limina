@@ -21,7 +21,7 @@ function createWorkspacePackage(
   return {
     directory: normalizeAbsolutePath(path.dirname(packageJsonPath)),
     manifest,
-    ...(name === null ? {} : { name }),
+    ...(name !== null && { name }),
   };
 }
 
@@ -53,14 +53,14 @@ async function collectDeclaredWorkspacePackages(
 }
 
 function compareNamedPriority(
-  leftNamed: boolean,
-  rightNamed: boolean,
+  isLeftNamed: boolean,
+  isRightNamed: boolean,
 ): number | null {
-  if (leftNamed === rightNamed) {
+  if (isLeftNamed === isRightNamed) {
     return null;
   }
 
-  return leftNamed ? -1 : 1;
+  return isLeftNamed ? -1 : 1;
 }
 
 function getWorkspacePackageSortKey(
@@ -86,11 +86,9 @@ function compareWorkspacePackages(
     getWorkspacePackageSortKey(right),
   );
 
-  if (keyOrder !== 0) {
-    return keyOrder;
-  }
-
-  return left.directory.localeCompare(right.directory);
+  return keyOrder === 0
+    ? left.directory.localeCompare(right.directory)
+    : keyOrder;
 }
 
 function mergeWorkspacePackages(
@@ -102,7 +100,7 @@ function mergeWorkspacePackages(
       workspacePackage,
     ]),
   );
-  return [...byDirectory.values()].sort(compareWorkspacePackages);
+  return byDirectory.values().toArray().sort(compareWorkspacePackages);
 }
 
 export async function collectRawWorkspacePackages(
@@ -126,9 +124,9 @@ function toPackageOwner(workspacePackage: WorkspacePackage): PackageOwner {
   return {
     directory: workspacePackage.directory,
     manifest: workspacePackage.manifest,
-    ...(workspacePackage.name === undefined
-      ? {}
-      : { name: workspacePackage.name }),
+    ...(workspacePackage.name !== undefined && {
+      name: workspacePackage.name,
+    }),
     packageJsonPath: normalizeAbsolutePath(
       path.join(workspacePackage.directory, 'package.json'),
     ),

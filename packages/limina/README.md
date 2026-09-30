@@ -39,4 +39,4 @@ Limina is not a bundler, a test framework, or a publishing tool. It does not rep
 
 ## Development
 
-See [Contributing](../../CONTRIBUTING.md) for the workspace workflow and [migration status](../../.agents/docs/migration.md) for the temporary Logaria dependency and release gates.
+See [Contributing](../../CONTRIBUTING.md) for the workspace workflow and [migration status](../../.agents/docs/migration.md) for the Logaria dependency and release gates.

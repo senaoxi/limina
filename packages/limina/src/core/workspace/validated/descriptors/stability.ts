@@ -1,4 +1,5 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { LiminaStructuredError } from '../../../../check-reporting/errors';
 import type { PackageScopeRegionBoundary } from '../../regions';
 import {
@@ -33,12 +34,14 @@ function createOutputIdentities(
   }));
 }
 
-function descriptorInsideOutput(
+function isDescriptorInsideOutput(
   descriptor: WorkspaceDescriptorCandidate,
   output: OutputIdentity,
 ): boolean {
-  if (isInsideOrEqual(output.lexicalRoot, descriptor.path)) return true;
-  return isInsideOrEqual(output.canonicalRoot, descriptor.canonicalPath);
+  return (
+    isInsideOrEqual(output.lexicalRoot, descriptor.path) ||
+    isInsideOrEqual(output.canonicalRoot, descriptor.canonicalPath)
+  );
 }
 
 export function outsideOutputs(
@@ -46,11 +49,10 @@ export function outsideOutputs(
   outputs: ReadonlySet<string>,
 ): WorkspaceDescriptorCandidate[] {
   const outputIdentities = createOutputIdentities(outputs);
-  return descriptors.filter(
-    (descriptor) =>
-      !outputIdentities.some((output) =>
-        descriptorInsideOutput(descriptor, output),
-      ),
+  return descriptors.filter((descriptor) =>
+    outputIdentities.every(
+      (output) => !isDescriptorInsideOutput(descriptor, output),
+    ),
   );
 }
 
@@ -67,13 +69,15 @@ function visibleBoundaryRoots(options: {
     .map((boundary) => boundary.rootDir);
 }
 
-function hiddenByBoundary(
+function isHiddenByBoundary(
   candidate: WorkspaceDescriptorCandidate,
   boundaryRoots: readonly string[],
 ): boolean {
   return boundaryRoots.some((boundaryRoot) => {
-    if (candidate.rootDir === boundaryRoot) return false;
-    return isInsideOrEqual(boundaryRoot, candidate.path);
+    return (
+      candidate.rootDir !== boundaryRoot &&
+      isInsideOrEqual(boundaryRoot, candidate.path)
+    );
   });
 }
 
@@ -83,7 +87,7 @@ function classifyVisibleDescriptors(options: {
 }): WorkspaceDescriptorCandidate[] {
   const boundaryRoots = visibleBoundaryRoots(options);
   return options.candidates.filter(
-    (candidate) => !hiddenByBoundary(candidate, boundaryRoots),
+    (candidate) => !isHiddenByBoundary(candidate, boundaryRoots),
   );
 }
 
@@ -92,8 +96,10 @@ function fixedPointStateKey(options: {
   outputs: ReadonlySet<string>;
 }): string {
   return JSON.stringify({
-    candidates: options.candidates.map((candidate) => candidate.path).sort(),
-    outputs: [...options.outputs].sort(),
+    candidates: options.candidates
+      .map((candidate) => candidate.path)
+      .sort(compareCodeUnits),
+    outputs: [...options.outputs].sort(compareCodeUnits),
   });
 }
 

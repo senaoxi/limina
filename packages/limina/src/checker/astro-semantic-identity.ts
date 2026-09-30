@@ -1,3 +1,4 @@
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { createHash } from 'node:crypto';
 import type ts from 'typescript';
@@ -26,9 +27,7 @@ function normalizeProjectReferences(
             path: normalizeAbsolutePath(reference.path),
           },
     )
-    .sort((left, right) =>
-      left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
-    );
+    .sort((left, right) => compareCodeUnits(left.path, right.path));
 }
 
 export function createAstroSemanticProject(options: {
@@ -40,12 +39,12 @@ export function createAstroSemanticProject(options: {
   readSnapshot: () => AstroSemanticProjectSnapshotInput;
 }): AstroSemanticProject {
   const configPath = normalizeAbsolutePath(options.configPath);
-  const packageRootDir = normalizeAbsolutePath(options.packageRootDir);
+  const packageRootDirectory = normalizeAbsolutePath(options.packageRootDir);
   const seedFields = {
     analysisGeneration: options.analysisGeneration,
     configPath,
     overlayGeneration: options.overlayGeneration ?? 0,
-    packageRootDir,
+    packageRootDir: packageRootDirectory,
     projectFingerprint: options.projectFingerprint,
   };
   const seed: AstroSemanticSeed = {
@@ -64,23 +63,17 @@ export function materializeAstroSemanticProject(
     snapshot: {
       checkerExtensions: [
         ...new Set(snapshot.checkerExtensions.map((extension) => extension)),
-      ].sort(),
+      ].sort((left, right) => Number(left > right) - Number(left < right)),
       compilerOptions: { ...snapshot.compilerOptions },
       configClosure: snapshot.configClosure
         .map((entry) => ({
           contentHash: entry.contentHash,
           filePath: normalizeAbsolutePath(entry.filePath),
         }))
-        .sort((left, right) =>
-          left.filePath < right.filePath
-            ? -1
-            : left.filePath > right.filePath
-              ? 1
-              : 0,
-        ),
+        .sort((left, right) => compareCodeUnits(left.filePath, right.filePath)),
       fileNames: [
         ...new Set(snapshot.fileNames.map(normalizeAbsolutePath)),
-      ].sort(),
+      ].sort((left, right) => Number(left > right) - Number(left < right)),
       projectReferences: normalizeProjectReferences(snapshot.projectReferences),
     },
   };

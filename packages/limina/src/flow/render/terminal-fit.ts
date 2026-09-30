@@ -37,18 +37,13 @@ function getReservedContextLines(options: {
   dimensions: FlowTerminalDimensions;
   reserveContext: boolean;
 }): number {
-  if (!options.reserveContext) {
-    return 0;
-  }
-
-  if (getTerminalRows(options.dimensions) <= TERMINAL_FRAME_CONTEXT_LINES * 2) {
-    return 0;
-  }
-
-  return TERMINAL_FRAME_CONTEXT_LINES;
+  return !options.reserveContext ||
+    getTerminalRows(options.dimensions) <= TERMINAL_FRAME_CONTEXT_LINES * 2
+    ? 0
+    : TERMINAL_FRAME_CONTEXT_LINES;
 }
 
-export function fitsRenderedLines(
+export function isFitsRenderedLines(
   lines: readonly string[],
   dimensions: FlowTerminalDimensions,
   options: { reserveContext?: boolean } = {},
@@ -79,11 +74,9 @@ function addOmittedLinesMarker(lines: string[]): string[] {
 
   const lastLine = lines.at(-1);
 
-  if (isOutroLine(lastLine)) {
-    return [...lines.slice(0, -1), OMITTED_LINES_MARKER, lastLine!];
-  }
-
-  return [...lines, OMITTED_LINES_MARKER];
+  return isOutroLine(lastLine)
+    ? [...lines.slice(0, -1), OMITTED_LINES_MARKER, lastLine!]
+    : [...lines, OMITTED_LINES_MARKER];
 }
 
 function shouldReturnOriginal(options: {
@@ -92,7 +85,7 @@ function shouldReturnOriginal(options: {
   lines: readonly string[];
 }): boolean {
   return (
-    fitsRenderedLines(options.lines, options.dimensions) &&
+    isFitsRenderedLines(options.lines, options.dimensions) &&
     options.fitOptions.omittedLines !== true
   );
 }
@@ -109,15 +102,9 @@ function getReservedOutroRows(options: {
   lastLine: string | undefined;
   preserveOutro: boolean;
 }): number {
-  if (!options.preserveOutro) {
-    return 0;
-  }
-
-  if (options.lastLine === undefined) {
-    return 0;
-  }
-
-  return countRenderedTerminalRows(options.lastLine, options.columns);
+  return !options.preserveOutro || options.lastLine === undefined
+    ? 0
+    : countRenderedTerminalRows(options.lastLine, options.columns);
 }
 
 function shouldShowOmissionMarker(options: {
@@ -126,9 +113,9 @@ function shouldShowOmissionMarker(options: {
   ellipsisRows: number;
   omittedLines: boolean;
 }): boolean {
-  const needsMarker =
+  const isNeedsMarker =
     options.omittedLines || options.bodyRows > options.availableBodyRows;
-  return needsMarker && options.availableBodyRows >= options.ellipsisRows;
+  return isNeedsMarker && options.availableBodyRows >= options.ellipsisRows;
 }
 
 function createTerminalFitPlan(options: {
@@ -142,18 +129,18 @@ function createTerminalFitPlan(options: {
   );
   const columns = getTerminalColumns(options.dimensions);
   const lastLine = options.lines.at(-1);
-  const preserveOutro = isOutroLine(lastLine);
-  const bodyLineCount = options.lines.length - Number(preserveOutro);
+  const isPreserveOutro = isOutroLine(lastLine);
+  const bodyLineCount = options.lines.length - Number(isPreserveOutro);
   const bodyLines = options.lines.slice(0, bodyLineCount);
   const ellipsisRows = countRenderedTerminalRows(OMITTED_LINES_MARKER, columns);
   const reservedRows = getReservedOutroRows({
     columns,
     lastLine,
-    preserveOutro,
+    preserveOutro: isPreserveOutro,
   });
   const availableBodyRows = Math.max(0, lineLimit - reservedRows);
   const bodyRows = countRenderedRows(bodyLines, { columns });
-  const showOmissionMarker = shouldShowOmissionMarker({
+  const isShowOmissionMarker = shouldShowOmissionMarker({
     availableBodyRows,
     bodyRows,
     ellipsisRows,
@@ -166,9 +153,9 @@ function createTerminalFitPlan(options: {
     ellipsisRows,
     lastLine,
     lineLimit,
-    preserveOutro,
+    preserveOutro: isPreserveOutro,
     reservedRows,
-    showOmissionMarker,
+    showOmissionMarker: isShowOmissionMarker,
   };
 }
 
@@ -229,15 +216,11 @@ function appendOmissionMarker(lines: string[], plan: TerminalFitPlan): void {
 }
 
 function canAppendOutro(plan: TerminalFitPlan): boolean {
-  if (!plan.preserveOutro) {
-    return false;
-  }
-
-  if (plan.lastLine === undefined) {
-    return false;
-  }
-
-  return plan.reservedRows <= plan.lineLimit;
+  return (
+    plan.preserveOutro &&
+    plan.lastLine !== undefined &&
+    plan.reservedRows <= plan.lineLimit
+  );
 }
 
 function appendPreservedOutro(lines: string[], plan: TerminalFitPlan): void {
@@ -262,11 +245,9 @@ function getImmediateFitResult(options: {
     return options.lines;
   }
 
-  if (options.dimensions.rows === undefined) {
-    return fitWithoutRowLimit(options.lines, options.fitOptions);
-  }
-
-  return null;
+  return options.dimensions.rows === undefined
+    ? fitWithoutRowLimit(options.lines, options.fitOptions)
+    : null;
 }
 
 function fitWithRowLimit(options: {
@@ -292,9 +273,7 @@ export function fitRenderedLinesToTerminal(
     lines,
   });
 
-  if (immediate !== null) {
-    return immediate;
-  }
-
-  return fitWithRowLimit({ dimensions, fitOptions: options, lines });
+  return immediate === null
+    ? fitWithRowLimit({ dimensions, fitOptions: options, lines })
+    : immediate;
 }

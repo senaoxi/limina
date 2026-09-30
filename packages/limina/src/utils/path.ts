@@ -8,8 +8,11 @@ export function normalizeAbsolutePath(value: string): string {
   return resolve(value);
 }
 
-export function toRelativePath(rootDir: string, absolutePath: string): string {
-  const relativePath = relative(rootDir, resolve(absolutePath));
+export function toRelativePath(
+  rootDirectory: string,
+  absolutePath: string,
+): string {
+  const relativePath = relative(rootDirectory, resolve(absolutePath));
 
   return relativePath.length === 0 ? '.' : relativePath;
 }

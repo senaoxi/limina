@@ -10,7 +10,10 @@ export {
 export { LiminaStructuredError } from '../check-reporting/errors';
 export { TypeScriptConfigInputError } from '../checker/project-base';
 export { parseCheckerProjectConfigForContext } from '../checkers';
-export { createCliFlow, runCliFlowWithCleanup } from '../cli/flow';
+export {
+  createCliFlow,
+  isRunCliFlowWithCleanup as runCliFlowWithCleanup,
+} from '../cli/flow';
 export { parseConfigLoader } from '../cli/parse';
 export {
   loadConfig,
@@ -18,7 +21,7 @@ export {
   type ResolvedLiminaConfig,
 } from '../config/runner';
 export {
-  readImplicitRefs,
+  readImplicitReferences as readImplicitRefs,
   readOutputOptions,
 } from '../core/build-graph/generated/config-readers';
 export { capabilityDiscoveryExtensions } from '../core/build-graph/generated/file-extensions';

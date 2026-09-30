@@ -6,7 +6,7 @@ function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
 }
 
-function localProcessSignalResult(error: unknown): boolean {
+function isLocalProcessSignalResult(error: unknown): boolean {
   if (hasCode(error, 'ESRCH')) return false;
   if (hasCode(error, 'EPERM')) return true;
   throw error;
@@ -20,7 +20,7 @@ function isLocalProcessAlive(
     process.kill(owner.pid, 0);
     return true;
   } catch (error) {
-    return localProcessSignalResult(error);
+    return isLocalProcessSignalResult(error);
   }
 }
 

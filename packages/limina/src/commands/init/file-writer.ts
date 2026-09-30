@@ -181,14 +181,14 @@ async function authorizeReplacement(plan: InitFileMutationPlan): Promise<void> {
   ]);
 }
 
-async function cleanupTempFile(
+async function cleanupTemporaryFile(
   plan: InitFileMutationPlan,
-  tempState: FileState,
+  temporaryState: FileState,
 ): Promise<Error[]> {
   try {
     await removeIfOwned({
       authority: plan.tempAuthority,
-      expectedState: tempState,
+      expectedState: temporaryState,
       filePath: plan.tempPath,
     });
     return [];
@@ -202,7 +202,7 @@ async function replaceExistingFile(options: {
   existingState: FileState;
   plan: InitFileMutationPlan;
 }): Promise<void> {
-  const tempState = await writeExclusive({
+  const temporaryState = await writeExclusive({
     authority: options.plan.tempAuthority,
     content: options.content,
     filePath: options.plan.tempPath,
@@ -214,7 +214,10 @@ async function replaceExistingFile(options: {
     await authorizeReplacement(options.plan);
     await rename(options.plan.tempPath, options.plan.targetPath);
   } catch (error) {
-    throwCombined(error, await cleanupTempFile(options.plan, tempState));
+    throwCombined(
+      error,
+      await cleanupTemporaryFile(options.plan, temporaryState),
+    );
   }
 }
 

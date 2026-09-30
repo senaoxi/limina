@@ -13,16 +13,20 @@ function createExplicitOwnerIndex(
   ownershipPlan: CheckerOwnershipPlan,
 ): Map<string, ResolvedCheckerEntrySelection['checker']['name']> {
   return new Map([
-    ...[...ownershipPlan.typeConfigs.values()].flatMap((state) =>
-      state.finalOwner === undefined
-        ? []
-        : [[state.configPath, state.finalOwner] as const],
-    ),
-    ...[...ownershipPlan.solutions.values()].flatMap((state) =>
-      state.finalOwner === undefined
-        ? []
-        : [[state.configPath, state.finalOwner] as const],
-    ),
+    ...ownershipPlan.typeConfigs
+      .values()
+      .flatMap((state) =>
+        state.finalOwner === undefined
+          ? []
+          : [[state.configPath, state.finalOwner] as const],
+      ),
+    ...ownershipPlan.solutions
+      .values()
+      .flatMap((state) =>
+        state.finalOwner === undefined
+          ? []
+          : [[state.configPath, state.finalOwner] as const],
+      ),
   ]);
 }
 

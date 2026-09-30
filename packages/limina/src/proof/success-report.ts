@@ -21,9 +21,10 @@ function countCoverageType(
   coverageByFile: Map<string, CoverageSource[]>,
   type: CoverageSource['type'],
 ): number {
-  return [...coverageByFile.values()].filter((sources) =>
-    sources.some((source) => source.type === type),
-  ).length;
+  return coverageByFile
+    .values()
+    .filter((sources) => sources.some((source) => source.type === type))
+    .toArray().length;
 }
 
 function formatSuccess(options: ProofSuccessOptions): string {

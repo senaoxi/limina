@@ -3,7 +3,7 @@ import type { TypeScriptInclusionLedger } from './admission';
 import type { HostLibraryResolutionInput } from './host';
 
 type RawTypeScriptLibraryResolver = (
-  ...args: [
+  ...arguments_: [
     libraryName: string,
     resolveFrom: string,
     compilerOptions: ts.CompilerOptions,

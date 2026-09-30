@@ -146,8 +146,9 @@ function getWorkspaceValidationIssues(
   config: ResolvedLiminaConfig,
   error: unknown,
 ) {
-  if (error instanceof LiminaStructuredError) return error.issues;
-  return [createWorkspaceValidationFailure(config, error)];
+  return error instanceof LiminaStructuredError
+    ? error.issues
+    : [createWorkspaceValidationFailure(config, error)];
 }
 
 export function createWorkspaceValidationTask(options: {

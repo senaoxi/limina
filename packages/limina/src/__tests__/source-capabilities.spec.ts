@@ -8,30 +8,29 @@ import {
   collectConfirmedFrameworkCapabilities,
   partitionSourceFiles,
 } from '../core/build-graph/source-capabilities';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 async function createFixture(files: Record<string, unknown>): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
   rootDir: string;
 }> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-capabilities-'));
+  const rootDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-capabilities-'),
+  );
   for (const [relativePath, value] of Object.entries(files)) {
-    const filePath = path.join(rootDir, relativePath);
+    const filePath = path.join(rootDirectory, relativePath);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
   }
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    config: withFixtureGovernanceRoot({
       config: {},
-      configPath: path.join(rootDir, 'limina.config.mjs'),
-      rootDir,
-    },
-    rootDir,
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
   };
 }
 

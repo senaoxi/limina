@@ -28,7 +28,7 @@ import {
 } from './run-metadata';
 import { colorCheckStatsLine, formatTaskStatsLines } from './task-stats';
 
-function getVerbose(value: boolean | undefined): boolean {
+function isGetVerbose(value: boolean | undefined): boolean {
   return value === true;
 }
 
@@ -51,8 +51,7 @@ function getQueryContext(
 function getRunBlockedLabel(
   run: CheckRunSummaryHumanOptions['run'],
 ): string | undefined {
-  if (run.blockedBy === undefined) return undefined;
-  return run.blockedBy.label;
+  return run.blockedBy === undefined ? undefined : run.blockedBy.label;
 }
 
 function getFailedTaskLabel(failedTask: FailedTaskSelection | null): string {
@@ -69,21 +68,23 @@ function getBlockedAtLabel(options: {
 }
 
 function shouldShowBlockedAt(run: CheckRunSummaryHumanOptions['run']): boolean {
-  if (run.result === 'blocked') return true;
-  return run.blockedBy !== undefined;
+  return run.result === 'blocked' || run.blockedBy !== undefined;
 }
 
-function shouldShowFailureMetadata(result: string, verbose: boolean): boolean {
-  if (result !== 'PASSED') return true;
-  return verbose;
+function shouldShowFailureMetadata(
+  result: string,
+  isVerboseValue: boolean,
+): boolean {
+  return result !== 'PASSED' || isVerboseValue;
 }
 
 function formatBlockedAt(options: {
   failedTask: FailedTaskSelection | null;
   run: CheckRunSummaryHumanOptions['run'];
 }): string[] {
-  if (!shouldShowBlockedAt(options.run)) return [];
-  return [`Blocked at: ${getBlockedAtLabel(options)}`];
+  return shouldShowBlockedAt(options.run)
+    ? [`Blocked at: ${getBlockedAtLabel(options)}`]
+    : [];
 }
 
 function formatFailureMetadata(options: {
@@ -181,11 +182,11 @@ function createRunSummaryLines(options: {
 export function formatCheckRunSummaryHuman(
   options: CheckRunSummaryHumanOptions,
 ): string {
-  const verbose = getVerbose(options.verbose);
+  const isVerbose = isGetVerbose(options.verbose);
   const overview = createHumanIssueOverview(options.issues);
   const primaryBlockers = selectPrimaryBlockers({
     issues: options.issues,
-    verbose,
+    verbose: isVerbose,
   });
   const failedTask = getFailedTask(options.run);
   const queryContext = getQueryContext(options.queryContext);
@@ -208,7 +209,7 @@ export function formatCheckRunSummaryHuman(
       primaryBlockers,
       request: options,
       result: formatCheckRunResult(options.run),
-      verbose,
+      verbose: isVerbose,
     }),
     title: 'Limina check summary',
   }).join('\n');

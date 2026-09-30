@@ -21,8 +21,9 @@ function isMachineOptions(
 function getFilters(
   options: CheckIssueInventoryOptions,
 ): CheckIssueInventoryFilters {
-  if (isMachineOptions(options)) return options.filters ?? {};
-  return options.queryContext.filters;
+  return isMachineOptions(options)
+    ? (options.filters ?? {})
+    : options.queryContext.filters;
 }
 
 function formatMissingSnapshot(options: CheckIssueInventoryOptions): string {
@@ -104,8 +105,7 @@ export function formatCheckIssueSnapshotInventory(
 ): string {
   const snapshot = options.snapshot;
   if (snapshot === null) return formatMissingSnapshot(options);
-  if (snapshot.status !== 'completed') {
-    return formatIncompleteSnapshot({ inventory: options, snapshot });
-  }
-  return formatCompletedInventory({ inventory: options, snapshot });
+  return snapshot.status === 'completed'
+    ? formatCompletedInventory({ inventory: options, snapshot })
+    : formatIncompleteSnapshot({ inventory: options, snapshot });
 }

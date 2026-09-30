@@ -16,11 +16,11 @@ import type {
 export type { AstroSemanticResolution } from './resolution-types';
 
 type ContextResult =
+  | Extract<AstroSemanticResolution, { kind: 'unsupported' }>
   | {
       context: ReturnType<AstroSemanticContextManager['acquire']>;
       kind: 'supported';
-    }
-  | Extract<AstroSemanticResolution, { kind: 'unsupported' }>;
+    };
 
 function recordMetric(options: {
   count?: number;

@@ -10,7 +10,7 @@ export async function runBuildImpl(
   options: RunBuildOptions,
 ): Promise<RunBuildResult> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  const projectRootDir = normalizeAbsolutePath(options.config.rootDir);
+  const projectRootDirectory = normalizeAbsolutePath(options.config.rootDir);
   const preflight = resolvePreflight(options.config, options);
   await preflight.ensureWorkspaceValidated();
   const target = await resolveBuildTarget({
@@ -31,7 +31,7 @@ export async function runBuildImpl(
   return runManagedBuild({
     cwd,
     preflight,
-    projectRootDir,
+    projectRootDir: projectRootDirectory,
     request: options,
     target,
     workspaceContext,

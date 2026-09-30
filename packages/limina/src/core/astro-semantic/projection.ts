@@ -87,10 +87,9 @@ function handleNonUnmappedProjection(options: {
       'source-map-ambiguity',
     );
   }
-  if (options.projection.kind === 'source-map-mismatch') {
-    return createFailure(options.projection.reason, 'source-map-mismatch');
-  }
-  return handleMappedProjection({ ...options, projection: options.projection });
+  return options.projection.kind === 'source-map-mismatch'
+    ? createFailure(options.projection.reason, 'source-map-mismatch')
+    : handleMappedProjection({ ...options, projection: options.projection });
 }
 
 function projectDependency(options: {
@@ -142,7 +141,7 @@ export function mapAstroServiceCandidates(options: {
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
   >['unmapped'];
-}): { candidates: AstroCandidate[]; kind: 'supported' } | PreparationFailure {
+}): PreparationFailure | { candidates: AstroCandidate[]; kind: 'supported' } {
   const mapper = options.context.language.maps.get(
     options.service.serviceScript.code,
     options.service.sourceScript,

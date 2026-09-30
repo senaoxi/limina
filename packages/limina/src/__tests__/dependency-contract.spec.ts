@@ -73,11 +73,15 @@ describe('dependency ownership contract', () => {
         ]),
       ),
     );
-    expect(Object.keys(manifest.peerDependenciesMeta ?? {}).sort()).toEqual(
+    expect(
+      Object.keys(manifest.peerDependenciesMeta ?? {}).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(
       Object.values(contracts)
         .filter((contract) => contract.optional)
         .map((contract) => contract.packageName)
-        .sort(),
+        .sort((left, right) => Number(left > right) - Number(left < right)),
     );
     for (const contract of Object.values(contracts)) {
       expect(
@@ -132,16 +136,18 @@ describe('dependency ownership contract', () => {
   });
 
   it('reports an unsupported checker version from the execution scope', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-dependency-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-dependency-'),
+    );
     try {
       const manifestPath = await createPackageManifest({
         packageName: 'vue-tsc',
-        rootDir,
+        rootDir: rootDirectory,
         version: '3.3.0',
       });
       const problems = collectMissingCheckerPeerDependencies({
         checkers: [checker('vue-tsc')],
-        projectRootDir: rootDir,
+        projectRootDir: rootDirectory,
         resolvePackage: () => manifestPath,
       });
       const message = formatMissingCheckerPeerDependencies(problems);
@@ -153,35 +159,40 @@ describe('dependency ownership contract', () => {
       );
       expect(message).toContain('adjust vue-tsc');
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
   it('keeps Limina TypeScript and external checker resolution in separate scopes', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-dependency-'));
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-dependency-'),
+    );
     try {
-      await writeFile(path.join(rootDir, 'package.json'), '{"private":true}\n');
+      await writeFile(
+        path.join(rootDirectory, 'package.json'),
+        '{"private":true}\n',
+      );
       await createPackageManifest({
         packageName: 'typescript',
-        rootDir,
+        rootDir: rootDirectory,
         version: '1.0.0',
       });
       await createPackageManifest({
         packageName: 'vue-tsc',
-        rootDir,
+        rootDir: rootDirectory,
         version: '3.3.0',
       });
 
       expect(
         collectMissingCheckerPeerDependencies({
           checkers: [checker('tsc')],
-          projectRootDir: rootDir,
+          projectRootDir: rootDirectory,
         }),
       ).toEqual([]);
       expect(
         collectMissingCheckerPeerDependencies({
           checkers: [checker('vue-tsc')],
-          projectRootDir: rootDir,
+          projectRootDir: rootDirectory,
         }),
       ).toMatchObject([
         {
@@ -189,11 +200,11 @@ describe('dependency ownership contract', () => {
           installedVersion: '3.3.0',
           ownership: 'external-checker',
           packageName: 'vue-tsc',
-          resolutionScope: rootDir,
+          resolutionScope: rootDirectory,
         },
       ]);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 });

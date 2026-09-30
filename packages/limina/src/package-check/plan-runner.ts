@@ -25,10 +25,11 @@ function getRunnableEntries(plan: PackageEntrySelectionPlan): RunnableEntry[] {
 }
 
 function createNoChecksError(options: RunPackageCheckOptions): Error {
-  if (options.tool !== undefined && options.tool !== 'all') {
-    return new Error(`No package entries have "${options.tool}" enabled.`);
-  }
-  return new Error('No package checks are enabled.');
+  return new Error(
+    options.tool !== undefined && options.tool !== 'all'
+      ? `No package entries have "${options.tool}" enabled.`
+      : 'No package checks are enabled.',
+  );
 }
 
 function createProgressItems(options: {
@@ -147,9 +148,11 @@ async function runEntries(options: {
 }
 
 function isOnlySkipped(result: PackageCheckEntryRunResult): boolean {
-  if (!result.passed) return false;
-  if (result.checkedToolCount !== 0) return false;
-  return result.skippedToolCount > 0;
+  return (
+    result.passed &&
+    result.checkedToolCount === 0 &&
+    result.skippedToolCount > 0
+  );
 }
 
 function createSkippedItem(
@@ -188,7 +191,7 @@ function sumCheckItemField(
   return items.reduce((total, item) => total + (item[field] ?? 0), 0);
 }
 
-function reportResults(options: {
+function isReportResults(options: {
   entryResults: PackageCheckEntryRunResult[];
   runOptions: RunPackageCheckOptions;
 }): boolean {
@@ -204,7 +207,7 @@ function reportResults(options: {
   return options.entryResults.every((result) => result.passed);
 }
 
-export async function runPackageCheckImpl(
+export async function isRunPackageCheckImpl(
   options: RunPackageCheckOptions,
 ): Promise<boolean> {
   const cwd = path.resolve(options.cwd ?? process.cwd());
@@ -224,5 +227,5 @@ export async function runPackageCheckImpl(
     progressItems,
     runOptions: options,
   });
-  return reportResults({ entryResults, runOptions: options });
+  return isReportResults({ entryResults, runOptions: options });
 }

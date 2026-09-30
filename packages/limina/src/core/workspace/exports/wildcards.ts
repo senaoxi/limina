@@ -29,15 +29,15 @@ export function getSpecifierForSubpath(
 
 function collectNestedExportTargets(value: PackageExportValue): string[] {
   if (Array.isArray(value)) return value.flatMap(collectExportTargets);
-  if (isPlainRecord(value)) {
-    return Object.values(value).flatMap(collectExportTargets);
-  }
-  return [];
+  return isPlainRecord(value)
+    ? Object.values(value).flatMap(collectExportTargets)
+    : [];
 }
 
 export function collectExportTargets(value: PackageExportValue): string[] {
-  if (typeof value === 'string') return [value];
-  return collectNestedExportTargets(value);
+  return typeof value === 'string'
+    ? [value]
+    : collectNestedExportTargets(value);
 }
 
 export function isNullPackageExport(value: PackageExportValue): boolean {
@@ -177,7 +177,7 @@ function deduplicateEntries(
   const bySpecifier = new Map(
     entries.map((entry) => [entry.specifier, entry] as const),
   );
-  return [...bySpecifier.values()].sort(compareEntries);
+  return bySpecifier.values().toArray().sort(compareEntries);
 }
 
 export async function expandWildcardExportEntry(options: {

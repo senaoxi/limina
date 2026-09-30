@@ -12,7 +12,7 @@ import type { CoverageSource } from './coverage';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 import type { CheckerCoverageTarget } from './runner-types';
 
@@ -23,21 +23,13 @@ function getSourceConfig(config: ResolvedLiminaConfig) {
 function getConfiguredSourceIncludes(config: ResolvedLiminaConfig): string[] {
   const sourceConfig = getSourceConfig(config);
 
-  if (!sourceConfig?.include) {
-    return ['...'];
-  }
-
-  return [...sourceConfig.include];
+  return sourceConfig?.include ? [...sourceConfig.include] : ['...'];
 }
 
 function getConfiguredSourceExcludes(config: ResolvedLiminaConfig): string[] {
   const sourceConfig = getSourceConfig(config);
 
-  if (!sourceConfig?.exclude) {
-    return [];
-  }
-
-  return [...sourceConfig.exclude];
+  return sourceConfig?.exclude ? [...sourceConfig.exclude] : [];
 }
 
 interface UncoveredFindingContext {
@@ -199,9 +191,9 @@ export function addSourceBoundaryMismatchFindings(options: {
   outsideSourceCoverageByFile: Map<string, CoverageSource[]>;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  const outsideSourceFiles = [
-    ...options.outsideSourceCoverageByFile.entries(),
-  ].sort(([left], [right]) => compareCodeUnits(left, right));
+  const outsideSourceFiles = [...options.outsideSourceCoverageByFile].sort(
+    ([left], [right]) => compareCodeUnits(left, right),
+  );
 
   if (outsideSourceFiles.length === 0) {
     return;

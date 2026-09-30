@@ -3,8 +3,9 @@ const CHECK_COUNT_UNITS = ['', 'K', 'M', 'B', 'T', 'P', 'E'] as const;
 function trimTrailingZeroes(value: string): string {
   if (!value.includes('.')) return value;
   const withoutZeroes = value.replace(/0+$/u, '');
-  if (!withoutZeroes.endsWith('.')) return withoutZeroes;
-  return withoutZeroes.slice(0, -1);
+  return withoutZeroes.endsWith('.')
+    ? withoutZeroes.slice(0, -1)
+    : withoutZeroes;
 }
 
 function scaleCheckCount(value: number): { scaled: number; unitIndex: number } {
@@ -36,17 +37,15 @@ function formatPromotedUnit(rounded: number, unitIndex: number): string {
 }
 
 function shouldUseCurrentUnit(rounded: number, unitIndex: number): boolean {
-  if (rounded < 1000) return true;
-  return isFinalUnit(unitIndex);
+  return rounded < 1000 || isFinalUnit(unitIndex);
 }
 
 function formatScaledCount(scaled: number, unitIndex: number): string {
   const precision = scaled >= 100 ? 0 : 1;
   const rounded = Number(scaled.toFixed(precision));
-  if (shouldUseCurrentUnit(rounded, unitIndex)) {
-    return formatCurrentUnit(rounded, precision, unitIndex);
-  }
-  return formatPromotedUnit(rounded, unitIndex);
+  return shouldUseCurrentUnit(rounded, unitIndex)
+    ? formatCurrentUnit(rounded, precision, unitIndex)
+    : formatPromotedUnit(rounded, unitIndex);
 }
 
 export function formatCheckCount(count: number): string {

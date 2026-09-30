@@ -49,8 +49,7 @@ function getPackageDependencies(options: {
   state: ReleaseConsistencyState;
 }): readonly string[] {
   const dependencies = options.state.edges.get(options.packageName);
-  if (dependencies === undefined) return [];
-  return [...dependencies];
+  return dependencies === undefined ? [] : [...dependencies];
 }
 
 function appendPublishPackage(options: {

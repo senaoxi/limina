@@ -98,23 +98,23 @@ function validateCheckerSelectorArray(options: {
 
 export const checkerConfigShapeSchema: z.ZodType<Record<string, unknown>> = z
   .looseObject({})
-  .superRefine((checker, ctx) => {
+  .superRefine((checker, context) => {
     addUnknownFieldIssues({
       allowed: checkerConfigKeys,
-      ctx,
+      ctx: context,
       message: 'unknown checker config field.',
       path: [],
       value: checker,
     });
     validateCheckerSelectorArray({
       checker,
-      ctx,
+      ctx: context,
       field: 'include',
       required: true,
     });
     validateCheckerSelectorArray({
       checker,
-      ctx,
+      ctx: context,
       field: 'exclude',
       required: false,
     });

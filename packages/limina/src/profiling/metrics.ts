@@ -72,8 +72,10 @@ function aggregateMeasurement(
 function copyAndSortMeasurements(
   measurements: ReadonlyMap<string, AnalysisMetricAggregate>,
 ): AnalysisMetricAggregate[] {
-  return [...measurements.values()]
+  return measurements
+    .values()
     .map((measurement) => ({ ...measurement }))
+    .toArray()
     .sort((left, right) => compareCodeUnits(metricKey(left), metricKey(right)));
 }
 

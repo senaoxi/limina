@@ -97,11 +97,12 @@ function getContentDiffFilePath(options: {
   const firstLocalDiff = flattenReleaseRelevantDiffs(options.comparison).find(
     (diff) => diff.kind !== 'remote-only',
   );
-  if (firstLocalDiff === undefined) return options.sourceManifestPath;
-  return path.join(
-    options.comparison.localOutputDirectory,
-    firstLocalDiff.relativePath,
-  );
+  return firstLocalDiff === undefined
+    ? options.sourceManifestPath
+    : path.join(
+        options.comparison.localOutputDirectory,
+        firstLocalDiff.relativePath,
+      );
 }
 
 function addContentDiffFinding(options: {

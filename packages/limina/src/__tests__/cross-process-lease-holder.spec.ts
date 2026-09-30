@@ -13,14 +13,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
   return {
     ...actual,
-    rename: async (...args: Parameters<typeof actual.rename>) => {
+    rename: async (...arguments_: Parameters<typeof actual.rename>) => {
       const code = renameFailure.code;
       renameFailure.code = undefined;
       if (code !== undefined) {
         throw Object.assign(new Error(`simulated rename ${code}`), { code });
       }
       try {
-        return await actual.rename(...args);
+        return await actual.rename(...arguments_);
       } catch (error) {
         const afterCollision = renameFailure.afterCollision;
         renameFailure.afterCollision = undefined;
@@ -64,9 +64,8 @@ describe('cross-process lease holder publication', () => {
     'retries a definite %s collision even after the holder has exited',
     async (code) => {
       const fixture = await createFixture();
-      const { publishHolder, releaseOwnedHolder } = await import(
-        '../utils/mutation/cross-process-lease-holder'
-      );
+      const { isPublishHolder: publishHolder, releaseOwnedHolder } =
+        await import('../utils/mutation/cross-process-lease-holder');
       renameFailure.code = code;
 
       await expect(publishHolder(fixture)).resolves.toBe(false);
@@ -84,9 +83,8 @@ describe('cross-process lease holder publication', () => {
     'retries a real POSIX rename collision when the holder releases before inspection',
     async () => {
       const fixture = await createFixture();
-      const { publishHolder, releaseOwnedHolder } = await import(
-        '../utils/mutation/cross-process-lease-holder'
-      );
+      const { isPublishHolder: publishHolder, releaseOwnedHolder } =
+        await import('../utils/mutation/cross-process-lease-holder');
       const competingOwner = { ...fixture.owner, token: 'competing-owner' };
       await publishHolder({ ...fixture, owner: competingOwner });
       renameFailure.afterCollision = () =>
@@ -103,9 +101,8 @@ describe('cross-process lease holder publication', () => {
     'treats a Windows-style %s rename failure as contention when the holder exists',
     async (code) => {
       const fixture = await createFixture();
-      const { publishHolder, releaseOwnedHolder } = await import(
-        '../utils/mutation/cross-process-lease-holder'
-      );
+      const { isPublishHolder: publishHolder, releaseOwnedHolder } =
+        await import('../utils/mutation/cross-process-lease-holder');
       await mkdir(fixture.holderPath);
       await writeFile(
         path.join(fixture.holderPath, 'owner.json'),
@@ -127,7 +124,7 @@ describe('cross-process lease holder publication', () => {
 
   it('preserves a Windows-style rename failure when no holder exists', async () => {
     const fixture = await createFixture();
-    const { publishHolder } = await import(
+    const { isPublishHolder: publishHolder } = await import(
       '../utils/mutation/cross-process-lease-holder'
     );
     renameFailure.code = 'EPERM';
@@ -139,7 +136,7 @@ describe('cross-process lease holder publication', () => {
 
   it('preserves a non-retryable rename failure', async () => {
     const fixture = await createFixture();
-    const { publishHolder } = await import(
+    const { isPublishHolder: publishHolder } = await import(
       '../utils/mutation/cross-process-lease-holder'
     );
     renameFailure.code = 'EINVAL';

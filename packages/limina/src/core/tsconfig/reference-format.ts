@@ -1,14 +1,14 @@
+import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 
 export function formatReferences(
-  rootDir: string,
+  rootDirectory: string,
   references: Set<string>,
 ): string {
-  if (references.size === 0) {
-    return '(none)';
-  }
-  return [...references]
-    .sort()
-    .map((value) => toRelativePath(rootDir, value))
-    .join(', ');
+  return references.size === 0
+    ? '(none)'
+    : [...references]
+        .sort(compareCodeUnits)
+        .map((value) => toRelativePath(rootDirectory, value))
+        .join(', ');
 }

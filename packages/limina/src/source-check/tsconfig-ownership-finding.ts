@@ -2,25 +2,25 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { compareCodeUnits } from '#utils/collections';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 
 function formatConfigPathList(
   config: ResolvedLiminaConfig,
   configPaths: string[],
 ): string[] {
-  if (configPaths.length === 0) {
-    return ['    (none)'];
-  }
-
-  return configPaths
-    .sort((left, right) =>
-      compareCodeUnits(
-        toRelativePath(config.rootDir, left),
-        toRelativePath(config.rootDir, right),
-      ),
-    )
-    .map((configPath) => `    - ${toRelativePath(config.rootDir, configPath)}`);
+  return configPaths.length === 0
+    ? ['    (none)']
+    : configPaths
+        .sort((left, right) =>
+          compareCodeUnits(
+            toRelativePath(config.rootDir, left),
+            toRelativePath(config.rootDir, right),
+          ),
+        )
+        .map(
+          (configPath) => `    - ${toRelativePath(config.rootDir, configPath)}`,
+        );
 }
 
 function createResolverConfigLines(options: {

@@ -44,8 +44,8 @@ async function readJson<T>(filePath: string): Promise<T> {
   return JSON.parse(await readFile(filePath, 'utf8')) as T;
 }
 
-async function removeFixtureDirectory(rootDir: string): Promise<void> {
-  await rm(rootDir, {
+async function removeFixtureDirectory(rootDirectory: string): Promise<void> {
+  await rm(rootDirectory, {
     force: true,
     maxRetries: 5,
     recursive: true,
@@ -58,9 +58,10 @@ async function createFixture(files: Record<string, string>): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-migration-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-migration-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   const fixtureFiles = {
     'package.json': json({
       name: 'root',
@@ -73,22 +74,22 @@ async function createFixture(files: Record<string, string>): Promise<{
   };
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
-    cleanup: () => removeFixtureDirectory(rootDir),
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    cleanup: () => removeFixtureDirectory(rootDirectory),
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
-async function commitFixture(rootDir: string): Promise<void> {
+async function commitFixture(rootDirectory: string): Promise<void> {
   await execFileAsync('git', ['init'], {
-    cwd: rootDir,
+    cwd: rootDirectory,
   });
   await execFileAsync('git', ['add', '.'], {
-    cwd: rootDir,
+    cwd: rootDirectory,
   });
   await execFileAsync(
     'git',
@@ -103,17 +104,18 @@ async function commitFixture(rootDir: string): Promise<void> {
       'initial',
     ],
     {
-      cwd: rootDir,
+      cwd: rootDirectory,
     },
   );
 }
 
 async function collectMigrationTransactionDirectories(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<string[]> {
   const output: string[] = [];
   async function visit(directory: string): Promise<void> {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const entryPath = path.join(directory, entry.name);
       if (entry.name.startsWith('.limina-migration-')) {
@@ -122,8 +124,10 @@ async function collectMigrationTransactionDirectories(
       await visit(entryPath);
     }
   }
-  await visit(rootDir);
-  return output.sort();
+  await visit(rootDirectory);
+  return output.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 async function createHardlinkMigrationFixture(count: number): Promise<{
@@ -186,11 +190,11 @@ async function createHardlinkMigrationFixture(count: number): Promise<{
 }
 
 async function createResolvedConfig(
-  rootDir: string,
+  rootDirectory: string,
   config: NonNullable<ResolvedLiminaConfig['config']>,
 ): Promise<ResolvedLiminaConfig> {
   return {
-    ...(await loadConfig({ command: 'migration', cwd: rootDir })),
+    ...(await loadConfig({ command: 'migration', cwd: rootDirectory })),
     config,
   };
 }
@@ -205,13 +209,14 @@ async function createMultipleWorktreeFixture(
   rootConfigPath: string;
   rootDir: string;
 }> {
-  const parentDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-migration-worktrees-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-migration-worktrees-'),
   );
-  const rootDir = path.join(parentDir, 'root');
-  const externalRootDir = path.join(parentDir, 'external');
-  const rootConfigPath = path.join(rootDir, 'tsconfig.json');
-  const externalConfigPath = path.join(externalRootDir, 'tsconfig.json');
+  const parentDirectory = await realpath(temporaryDirectory);
+  const rootDirectory = path.join(parentDirectory, 'root');
+  const externalRootDirectory = path.join(parentDirectory, 'external');
+  const rootConfigPath = path.join(rootDirectory, 'tsconfig.json');
+  const externalConfigPath = path.join(externalRootDirectory, 'tsconfig.json');
   const tsconfig = json({
     compilerOptions: {
       outDir: './dist',
@@ -222,32 +227,35 @@ async function createMultipleWorktreeFixture(
   });
 
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     json({ name: '@example/root', private: true, type: 'module' }),
   );
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - ../external\n',
   );
   await writeText(
-    path.join(rootDir, 'limina.config.mjs'),
+    path.join(rootDirectory, 'limina.config.mjs'),
     'export default {};\n',
   );
-  await writeText(path.join(rootDir, 'src/index.ts'), 'export {};\n');
+  await writeText(path.join(rootDirectory, 'src/index.ts'), 'export {};\n');
   await writeText(rootConfigPath, tsconfig);
   await writeText(
-    path.join(externalRootDir, 'package.json'),
+    path.join(externalRootDirectory, 'package.json'),
     json({ name: '@example/external', version: '1.0.0' }),
   );
-  await writeText(path.join(externalRootDir, 'src/index.ts'), 'export {};\n');
+  await writeText(
+    path.join(externalRootDirectory, 'src/index.ts'),
+    'export {};\n',
+  );
   await writeText(externalConfigPath, options.externalTsconfig ?? tsconfig);
 
-  await commitFixture(rootDir);
-  await commitFixture(externalRootDir);
+  await commitFixture(rootDirectory);
+  await commitFixture(externalRootDirectory);
 
   return {
-    cleanup: () => removeFixtureDirectory(parentDir),
-    config: await createResolvedConfig(rootDir, {
+    cleanup: () => removeFixtureDirectory(parentDirectory),
+    config: await createResolvedConfig(rootDirectory, {
       checkers: {
         tsc: {
           include: ['tsconfig.json', '../external/tsconfig.json'],
@@ -255,9 +263,9 @@ async function createMultipleWorktreeFixture(
       },
     }),
     externalConfigPath,
-    externalRootDir,
+    externalRootDir: externalRootDirectory,
     rootConfigPath,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -362,7 +370,7 @@ describe('runMigration', () => {
         /Continue and write the planned tsconfig\*\.json changes\?/u,
       );
       expect(confirmationMessages[0]).toContain(' M packages/pkg/src/index.ts');
-      expect(promptFlowLine).toBe('\r\u001B[1A\u001B[J');
+      expect(promptFlowLine).toBe('\r\u{1B}[1A\u{1B}[J');
       expect(flowOutput.join('')).toContain('migration failed');
       await expect(readFile(tsconfigPath, 'utf8')).resolves.toBe(before);
     } finally {
@@ -474,12 +482,12 @@ describe('runMigration', () => {
         }),
       ).rejects.toThrow(/stopped without writing tsconfig files/u);
       expect(confirmationMessages).toHaveLength(1);
-      const [rootDir, externalRootDir] = toPortablePaths([
+      const [rootDirectory, externalRootDirectory] = toPortablePaths([
         fixture.rootDir,
         fixture.externalRootDir,
       ]);
-      expect(confirmationMessages[0]).toContain(rootDir);
-      expect(confirmationMessages[0]).toContain(externalRootDir);
+      expect(confirmationMessages[0]).toContain(rootDirectory);
+      expect(confirmationMessages[0]).toContain(externalRootDirectory);
       await expect(readFile(fixture.rootConfigPath, 'utf8')).resolves.toBe(
         rootBefore,
       );
@@ -549,7 +557,7 @@ describe('runMigration', () => {
       ).rejects.toThrow(/canceled before writing/u);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toContain('packages/pkg-0/tsconfig.json');
-      expect(promptFlowLine).toBe('\r\u001B[1A\u001B[J');
+      expect(promptFlowLine).toBe('\r\u{1B}[1A\u{1B}[J');
       expect(await readFile(fixture.targets[0]!)).toEqual(before);
       expect((await stat(fixture.targets[0]!, { bigint: true })).ino).toBe(
         beforeStat.ino,
@@ -773,7 +781,7 @@ describe('runMigration', () => {
 
       expect(migrated).toBe(
         original
-          .replace('./legacy-schema.json', rootSchemaPath)
+          .replace('./legacy-schema.json', () => rootSchemaPath)
           .replace('  "references": [{"path":"../legacy"},],\n', ''),
       );
       expect(migrated).not.toMatch(
@@ -871,12 +879,15 @@ describe('runMigration', () => {
     ['./build', 'build'],
   ])(
     'treats equivalent output paths as one managed root (%s, %s)',
-    async (outDir, declarationDir) => {
+    async (outDirectory, declarationDirectory) => {
       const fixture = await createFixture({
         'limina.config.mjs': 'export default {};\n',
         'src/index.ts': 'export const value = 1;\n',
         'tsconfig.json': json({
-          compilerOptions: { declarationDir, outDir },
+          compilerOptions: {
+            declarationDir: declarationDirectory,
+            outDir: outDirectory,
+          },
           include: ['src/**/*.ts'],
         }),
       });
@@ -902,7 +913,7 @@ describe('runMigration', () => {
         ).resolves.toMatchObject({
           liminaOptions: {
             outputs: {
-              outDir: `./${toPortableRelativePath(fixture.rootDir, fixture.path(outDir))}`,
+              outDir: `./${toPortableRelativePath(fixture.rootDir, fixture.path(outDirectory))}`,
             },
           },
         });
@@ -910,7 +921,7 @@ describe('runMigration', () => {
           readJson<Record<string, unknown>>(configPath),
         ).resolves.toHaveProperty(
           'compilerOptions.declarationDir',
-          declarationDir,
+          declarationDirectory,
         );
       } finally {
         await fixture.cleanup();
@@ -1325,7 +1336,7 @@ describe('runMigration', () => {
     try {
       await commitFixture(fixture.rootDir);
 
-      const originalLib = await readJson<{ compilerOptions: unknown }>(
+      const originalLibrary = await readJson<{ compilerOptions: unknown }>(
         fixture.path('packages/app/tsconfig.lib.json'),
       );
       const originalTest = await readJson<{ compilerOptions: unknown }>(
@@ -1335,7 +1346,7 @@ describe('runMigration', () => {
       const solution = await readJson<Record<string, unknown>>(
         path.join(fixture.rootDir, 'packages/app/tsconfig.json'),
       );
-      const lib = await readJson<{
+      const library = await readJson<{
         compilerOptions?: Record<string, unknown>;
         liminaOptions?: {
           graphRules?: string[];
@@ -1372,12 +1383,12 @@ describe('runMigration', () => {
       });
       expect(solution).not.toHaveProperty('compilerOptions');
       expect(solution).not.toHaveProperty('liminaOptions.outputs');
-      expect(lib.compilerOptions).toEqual(originalLib.compilerOptions);
-      expect(lib.references).toBeUndefined();
-      expect(lib.liminaOptions?.graphRules).toEqual(['app']);
-      expect(lib.liminaOptions?.implicitRefs).toEqual([]);
-      expect(lib).toHaveProperty('$schema', nestedPackageSchemaPath);
-      expect(lib.liminaOptions?.outputs).toEqual({ target: 'ES2019' });
+      expect(library.compilerOptions).toEqual(originalLibrary.compilerOptions);
+      expect(library.references).toBeUndefined();
+      expect(library.liminaOptions?.graphRules).toEqual(['app']);
+      expect(library.liminaOptions?.implicitRefs).toEqual([]);
+      expect(library).toHaveProperty('$schema', nestedPackageSchemaPath);
+      expect(library.liminaOptions?.outputs).toEqual({ target: 'ES2019' });
       expect(test.compilerOptions).toEqual(originalTest.compilerOptions);
       expect(test).toHaveProperty('$schema', nestedPackageSchemaPath);
       expect(test.liminaOptions?.outputs).toEqual({
@@ -1495,7 +1506,7 @@ describe('runMigration', () => {
         };
         references?: unknown;
       }>(path.join(fixture.rootDir, 'packages/app/tsconfig.json'));
-      const dep = await readJson<Record<string, unknown>>(
+      const dependency = await readJson<Record<string, unknown>>(
         path.join(fixture.rootDir, 'packages/dep/tsconfig.json'),
       );
 
@@ -1505,7 +1516,7 @@ describe('runMigration', () => {
       expect(app.references).toBeUndefined();
       expect(app.compilerOptions).toEqual(originalApp.compilerOptions);
       expect(app.liminaOptions?.outputs).toBeUndefined();
-      expect(dep).not.toHaveProperty('$schema');
+      expect(dependency).not.toHaveProperty('$schema');
     } finally {
       await fixture.cleanup();
     }

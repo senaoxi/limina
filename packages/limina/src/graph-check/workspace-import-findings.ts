@@ -10,11 +10,17 @@ import {
   type WorkspaceConsumption,
   type WorkspaceConsumptionFailure,
 } from '../core/project-dependencies/workspace-consumption';
-import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
+import {
+  createGraphImportFact,
+  getProjectCheckerName,
+} from './finding-utilities';
 import type { GraphWorkspaceImportUnresolvedFinding } from './findings';
-import { getResolvedPackageName } from './import-resolution-utils';
+import { getResolvedPackageName } from './import-resolution-utilities';
 import type { ExpectedReferenceCollectionContext } from './reference-types';
-import { getDeniedDepRuleForPackage, type GraphRuleDepDeny } from './rules';
+import {
+  getDeniedDepRuleForPackage as getDeniedDependencyRuleForPackage,
+  type GraphRuleDependencyDeny,
+} from './rules';
 
 const consumptionMessages = {
   unresolved: {
@@ -35,11 +41,14 @@ function getConsumedSubpath(failure: WorkspaceConsumptionFailure): string {
     : `.${specifier.slice(failure.package.name.length)}`;
 }
 
-function formatResolvedTarget(rootDir: string, target: string | null): string {
-  return target === null ? '(none)' : toRelativePath(rootDir, target);
+function formatResolvedTarget(
+  rootDirectory: string,
+  target: string | null,
+): string {
+  return target === null ? '(none)' : toRelativePath(rootDirectory, target);
 }
 
-export function addWorkspaceConsumptionProblem(options: {
+export function isAddWorkspaceConsumptionProblem(options: {
   context: ExpectedReferenceCollectionContext;
   project: ProjectInfo;
   consumption: WorkspaceConsumption;
@@ -73,9 +82,9 @@ export function addWorkspaceConsumptionProblem(options: {
       import: createGraphImportFact(importRecord),
       importingProjectPath: options.project.configPath,
       kind: failure.kind,
-      ...(failure.resolvedFilePath === null
-        ? {}
-        : { resolvedFilePath: failure.resolvedFilePath }),
+      ...(failure.resolvedFilePath !== null && {
+        resolvedFilePath: failure.resolvedFilePath,
+      }),
       targetPackageName: failure.package.name,
     },
     filePath: importRecord.filePath,
@@ -94,22 +103,20 @@ export function addWorkspaceConsumptionProblem(options: {
   return true;
 }
 
-export function getDeniedDepRuleForResolvedPackage(options: {
+export function getDeniedDependencyRuleForResolvedPackage(options: {
   context: ExpectedReferenceCollectionContext;
   project: ProjectInfo;
   resolvedFilePath: string;
-}): GraphRuleDepDeny | null {
+}): GraphRuleDependencyDeny | null {
   const packageName = getResolvedPackageName(
     options.resolvedFilePath,
     options.context.workspaceLookup,
   );
-  if (!packageName) {
-    return null;
-  }
-
-  return getDeniedDepRuleForPackage(
-    options.context.graphRules,
-    options.project.labels,
-    packageName,
-  );
+  return packageName
+    ? getDeniedDependencyRuleForPackage(
+        options.context.graphRules,
+        options.project.labels,
+        packageName,
+      )
+    : null;
 }

@@ -53,19 +53,13 @@ export function isLocalPackageDependencySpecifier(specifier: string): boolean {
 function getScopedPackageRoot(specifier: string): string {
   const parts = specifier.split('/');
 
-  if (parts.length < 2) {
-    return specifier;
-  }
-
-  return `${parts[0]}/${parts[1]}`;
+  return parts.length < 2 ? specifier : `${parts[0]}/${parts[1]}`;
 }
 
 export function getPackageRootSpecifier(specifier: string): string {
-  if (specifier.startsWith('@')) {
-    return getScopedPackageRoot(specifier);
-  }
-
-  return specifier.split('/')[0] ?? specifier;
+  return specifier.startsWith('@')
+    ? getScopedPackageRoot(specifier)
+    : (specifier.split('/', 1)[0] ?? specifier);
 }
 
 export function findPackageForSpecifier(

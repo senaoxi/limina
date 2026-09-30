@@ -78,8 +78,7 @@ function createSourceFile(options: {
 function getPrimaryServiceScript(
   serviceScript: AstroServiceScript | undefined,
 ): AstroServiceScript[] {
-  if (serviceScript === undefined) return [];
-  return [serviceScript];
+  return serviceScript === undefined ? [] : [serviceScript];
 }
 
 function getExtraServiceScripts(options: {
@@ -88,8 +87,9 @@ function getExtraServiceScripts(options: {
 }): readonly AstroServiceScript[] {
   const resolver =
     options.generated.languagePlugin.typescript?.getExtraServiceScripts;
-  if (resolver === undefined) return [];
-  return resolver(options.fileName, options.generated.root);
+  return resolver === undefined
+    ? []
+    : resolver(options.fileName, options.generated.root);
 }
 
 function getGeneratedServiceScripts(options: {
@@ -135,8 +135,7 @@ function getResolvedEntries(options: {
 ])[] {
   return options.group.flatMap((literal, index) => {
     const result = options.results[index];
-    if (result === undefined) return [];
-    return [[literal, result] as const];
+    return result === undefined ? [] : [[literal, result] as const];
   });
 }
 
@@ -154,13 +153,9 @@ export function resolveAstroModuleNameLiterals(options: {
   ts.ResolvedModuleWithFailedLookupLocations
 > {
   const resolver = requireTypeScriptHostResolver(options.languageServiceHost);
-  const groups = new Map<ts.SourceFile, ts.StringLiteralLike[]>();
-  for (const literal of options.literals) {
-    const sourceFile = literal.getSourceFile();
-    const group = groups.get(sourceFile) ?? [];
-    group.push(literal);
-    groups.set(sourceFile, group);
-  }
+  const groups = Map.groupBy(options.literals, (literal) =>
+    literal.getSourceFile(),
+  );
   const entries = [...groups].flatMap(([sourceFile, group]) => {
     const results = resolver(
       group,

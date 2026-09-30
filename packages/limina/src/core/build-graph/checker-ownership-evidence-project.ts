@@ -35,11 +35,12 @@ export interface EvidenceProject {
 }
 
 function getEvidenceChecker(state: TypeConfigOwnershipState): CheckerName {
-  if (state.semanticAuthority.kind === 'pending') return 'tsc';
-  return getLockedEvidenceChecker(
-    state.semanticAuthority,
-    state.authoritativeOwner,
-  );
+  return state.semanticAuthority.kind === 'pending'
+    ? 'tsc'
+    : getLockedEvidenceChecker(
+        state.semanticAuthority,
+        state.authoritativeOwner,
+      );
 }
 
 function getLockedEvidenceChecker(
@@ -49,8 +50,9 @@ function getLockedEvidenceChecker(
   >,
   authoritativeOwner: CheckerName | undefined,
 ): CheckerName {
-  if (authority.family === 'vue') return 'vue-tsc';
-  return getTypeScriptEvidenceChecker(authoritativeOwner);
+  return authority.family === 'vue'
+    ? 'vue-tsc'
+    : getTypeScriptEvidenceChecker(authoritativeOwner);
 }
 
 function getTypeScriptEvidenceChecker(
@@ -91,13 +93,10 @@ function getSemanticExtensions(
   project: AutoScopeProject,
   state: TypeConfigOwnershipState,
 ): string[] {
-  if (
-    state.semanticAuthority.kind === 'locked' &&
+  return state.semanticAuthority.kind === 'locked' &&
     state.semanticAuthority.family !== 'typescript'
-  ) {
-    return [...project.context.extensions];
-  }
-  return getBuildCheckerSupportedExtensions(checkerName);
+    ? [...project.context.extensions]
+    : getBuildCheckerSupportedExtensions(checkerName);
 }
 
 function getEvidenceSemanticFamily(

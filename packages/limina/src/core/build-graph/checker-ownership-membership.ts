@@ -33,10 +33,11 @@ function frameworkCheckerOrNull(checker: CheckerName): CheckerName | null {
 function getPendingFrameworkConstraint(
   state: TypeConfigOwnershipState,
 ): CheckerName | null {
-  if (state.constraintCandidates.size !== 1) return null;
-  return frameworkCheckerOrNull(
-    state.constraintCandidates.keys().next().value as CheckerName,
-  );
+  return state.constraintCandidates.size === 1
+    ? frameworkCheckerOrNull(
+        state.constraintCandidates.keys().next().value as CheckerName,
+      )
+    : null;
 }
 
 function getFrameworkDomain(
@@ -89,10 +90,10 @@ function createRequirementEvidence(options: {
 }
 
 function getMissingPhysicalTarget(fact: CheckerDependencyFact): string | null {
-  if (fact.typeEvidenceKind !== 'missing') return null;
-  if (fact.physicalTargetProvenance !== 'pending-framework-candidate')
-    return null;
-  return fact.physicalTargetPath;
+  return fact.typeEvidenceKind !== 'missing' ||
+    fact.physicalTargetProvenance !== 'pending-framework-candidate'
+    ? null
+    : fact.physicalTargetPath;
 }
 
 function resolveFrameworkDomain(options: {
@@ -129,8 +130,9 @@ function resolveOwnedPhysicalTarget(options: {
     };
   }
   const targetConfigPath = owners[0];
-  if (targetConfigPath === undefined) return {};
-  return resolveFrameworkDomain({ ...options, targetConfigPath });
+  return targetConfigPath === undefined
+    ? {}
+    : resolveFrameworkDomain({ ...options, targetConfigPath });
 }
 
 function getMembershipOwners(
@@ -147,8 +149,9 @@ function resolveRequirement(options: {
   plan: CheckerOwnershipPlan;
 }): RequirementResolution {
   const targetPath = getMissingPhysicalTarget(options.fact);
-  if (targetPath === null) return {};
-  return resolveOwnedPhysicalTarget({ ...options, targetPath });
+  return targetPath === null
+    ? {}
+    : resolveOwnedPhysicalTarget({ ...options, targetPath });
 }
 
 function appendRequirementResolution(options: {

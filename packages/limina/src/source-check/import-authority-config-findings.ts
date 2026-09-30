@@ -1,7 +1,7 @@
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding, SourceFindingFactsByCode } from './findings';
 
 interface ConfigFindingOptions {
@@ -138,7 +138,7 @@ function getEditDistance(left: string, right: string): number {
     );
   }
 
-  return previous[rightCharacters.length] ?? Number.POSITIVE_INFINITY;
+  return previous[rightCharacters.length] ?? Infinity;
 }
 
 function getSuggestedOwner(options: {
@@ -156,14 +156,16 @@ function getClosestOwnerSuggestion(
   ownerIdentities: string[],
 ): string | undefined {
   let bestSuggestion: string | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestDistance = Infinity;
 
   for (const ownerIdentity of ownerIdentities) {
     const distance = getEditDistance(ownerKey, ownerIdentity);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestSuggestion = ownerIdentity;
+    if (!(distance < bestDistance)) {
+      continue;
     }
+
+    bestDistance = distance;
+    bestSuggestion = ownerIdentity;
   }
 
   return getSuggestedOwner({ bestDistance, bestSuggestion, ownerKey });
@@ -180,23 +182,13 @@ function getRawAllow(config: ResolvedLiminaConfig): unknown {
 }
 
 function isObjectValue(value: unknown): value is object {
-  if (!value) {
-    return false;
-  }
-
-  return typeof value === 'object';
+  return Boolean(value) && typeof value === 'object';
 }
 
 function asAllowRecord(value: unknown): Record<string, unknown> | null {
-  if (!isObjectValue(value)) {
-    return null;
-  }
-
-  if (Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
+  return !isObjectValue(value) || Array.isArray(value)
+    ? null
+    : (value as Record<string, unknown>);
 }
 
 function getAllowRecord(
@@ -241,7 +233,9 @@ export function addImportAuthorityOwnerConfigProblems(options: {
     return;
   }
 
-  const sortedOwnerIdentities = [...options.ownerIdentities].sort();
+  const sortedOwnerIdentities = [...options.ownerIdentities].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
   for (const ownerKey of Object.keys(rawAllow)) {
     options.checks.add();
     addUnknownOwnerFinding({

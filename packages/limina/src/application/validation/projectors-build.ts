@@ -38,27 +38,31 @@ export class DeclarationBuildValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([this.#graph.get(run), this.#pool.get(run)]).then(
-      ([graph, pool]) => {
-        const result: DeclarationBuildValidationView = Object.freeze({
-          ...pool,
-          edges: freezeArray(
-            graph.edges.map((edge) => Object.freeze({ ...edge })),
-          ),
-          kind: 'declaration-build',
-          stronglyConnectedComponents: freezeArray(
-            graph.stronglyConnectedComponents.map(freezeArray),
-          ),
-        });
-        recordProjection({
-          count: result.edges.length,
-          kind: result.kind,
-          run,
-          startedAt,
-        });
-        return result;
-      },
-    );
+    const prerequisite = Promise.all([
+      this.#graph.get(run),
+      this.#pool.get(run),
+    ]);
+    const view = (async () => {
+      const [graph, pool] = await prerequisite;
+
+      const result: DeclarationBuildValidationView = Object.freeze({
+        ...pool,
+        edges: freezeArray(
+          graph.edges.map((edge) => Object.freeze({ ...edge })),
+        ),
+        kind: 'declaration-build',
+        stronglyConnectedComponents: freezeArray(
+          graph.stronglyConnectedComponents.map(freezeArray),
+        ),
+      });
+      recordProjection({
+        count: result.edges.length,
+        kind: result.kind,
+        run,
+        startedAt,
+      });
+      return result;
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }
@@ -92,24 +96,28 @@ export class OutputBuildValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([this.#graph.get(run), this.#pool.get(run)]).then(
-      ([graph, pool]) => {
-        const result: OutputBuildValidationView = Object.freeze({
-          ...pool,
-          edges: freezeArray(
-            graph.edges.map((edge) => Object.freeze({ ...edge })),
-          ),
-          kind: 'output-build',
-        });
-        recordProjection({
-          count: result.edges.length,
-          kind: result.kind,
-          run,
-          startedAt,
-        });
-        return result;
-      },
-    );
+    const prerequisite = Promise.all([
+      this.#graph.get(run),
+      this.#pool.get(run),
+    ]);
+    const view = (async () => {
+      const [graph, pool] = await prerequisite;
+
+      const result: OutputBuildValidationView = Object.freeze({
+        ...pool,
+        edges: freezeArray(
+          graph.edges.map((edge) => Object.freeze({ ...edge })),
+        ),
+        kind: 'output-build',
+      });
+      recordProjection({
+        count: result.edges.length,
+        kind: result.kind,
+        run,
+        startedAt,
+      });
+      return result;
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }
@@ -143,24 +151,28 @@ export class PackageArtifactValidationViewProvider {
     }
 
     const startedAt = performance.now();
-    const view = Promise.all([this.#graph.get(run), this.#pool.get(run)]).then(
-      ([graph, pool]) => {
-        const result: PackageArtifactValidationView = Object.freeze({
-          ...pool,
-          edges: freezeArray(
-            graph.edges.map((edge) => Object.freeze({ ...edge })),
-          ),
-          kind: 'package-artifacts',
-        });
-        recordProjection({
-          count: result.edges.length,
-          kind: result.kind,
-          run,
-          startedAt,
-        });
-        return result;
-      },
-    );
+    const prerequisite = Promise.all([
+      this.#graph.get(run),
+      this.#pool.get(run),
+    ]);
+    const view = (async () => {
+      const [graph, pool] = await prerequisite;
+
+      const result: PackageArtifactValidationView = Object.freeze({
+        ...pool,
+        edges: freezeArray(
+          graph.edges.map((edge) => Object.freeze({ ...edge })),
+        ),
+        kind: 'package-artifacts',
+      });
+      recordProjection({
+        count: result.edges.length,
+        kind: result.kind,
+        run,
+        startedAt,
+      });
+      return result;
+    })();
     this.#generations.set(run.generation, view);
     return view;
   }

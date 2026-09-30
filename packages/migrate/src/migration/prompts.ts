@@ -2,15 +2,16 @@ import * as prompts from '@clack/prompts';
 import type { HardlinkMigrationDecision } from './types';
 
 function isInteractiveTerminal(): boolean {
-  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+  return process.stdin.isTTY && process.stdout.isTTY;
 }
 
 function isAccepted(result: boolean | symbol): result is true {
-  if (prompts.isCancel(result)) return false;
-  return result;
+  return !prompts.isCancel(result) && result;
 }
 
-export async function confirmDirtyWorkspace(message: string): Promise<boolean> {
+export async function isConfirmDirtyWorkspace(
+  message: string,
+): Promise<boolean> {
   if (!isInteractiveTerminal()) {
     throw new Error(
       [

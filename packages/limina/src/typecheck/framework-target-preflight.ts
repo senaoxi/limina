@@ -33,15 +33,21 @@ function quoteCommandPath(value: string): string {
   return /\s/u.test(value) ? JSON.stringify(value) : value;
 }
 
-function relativePath(workspaceRootDir: string, filePath: string): string {
-  return normalizeSlashes(toRelativePath(workspaceRootDir, filePath));
+function relativePath(
+  workspaceRootDirectory: string,
+  filePath: string,
+): string {
+  return normalizeSlashes(toRelativePath(workspaceRootDirectory, filePath));
 }
 
 function createLeafCommandPrefix(
-  workspaceRootDir: string,
-  dependencyRootDir: string,
+  workspaceRootDirectory: string,
+  dependencyRootDirectory: string,
 ): string {
-  const relativeRoot = relativePath(workspaceRootDir, dependencyRootDir);
+  const relativeRoot = relativePath(
+    workspaceRootDirectory,
+    dependencyRootDirectory,
+  );
   return relativeRoot === '.'
     ? 'pnpm '
     : `pnpm --dir ${quoteCommandPath(relativeRoot)} `;
@@ -64,7 +70,7 @@ function formatMissingFrameworkDependencies(options: {
   workspaceRootDir: string;
 }): string {
   const sourceConfigPath = options.target.sourceConfigPath!;
-  const dependencyRootDir = options.target.dependencyRootDir!;
+  const dependencyRootDirectory = options.target.dependencyRootDir!;
   const missingLines = options.missing.flatMap((requirement) => [
     `  missing package: ${requirement.packageName}`,
     `  dependency category: ${dependencyCategoryLabels[requirement.category]}`,
@@ -74,10 +80,10 @@ function formatMissingFrameworkDependencies(options: {
     `  checker family: ${options.target.checkerFamily}`,
     `  checker: ${options.target.checkerName}`,
     `  source config: ${relativePath(options.workspaceRootDir, sourceConfigPath)}`,
-    `  leaf package root: ${relativePath(options.workspaceRootDir, dependencyRootDir)}`,
+    `  leaf package root: ${relativePath(options.workspaceRootDir, dependencyRootDirectory)}`,
     ...missingLines,
     `Fix: ${createLeafInstallCommand({
-      dependencyRootDir,
+      dependencyRootDir: dependencyRootDirectory,
       packageNames: options.missing.map(
         (requirement) => requirement.packageName,
       ),
@@ -91,17 +97,17 @@ function formatMissingExternalCheckers(options: {
   target: TypecheckTarget;
   workspaceRootDir: string;
 }): string {
-  const dependencyRootDir = options.target.dependencyRootDir!;
+  const dependencyRootDirectory = options.target.dependencyRootDir!;
   const packageNames = options.missing.map(
     (requirement) => requirement.packageName,
   );
   return [
     'Missing external checker:',
     `  checker family: ${options.target.checkerFamily}`,
-    `  checker execution scope: ${relativePath(options.workspaceRootDir, dependencyRootDir)}`,
+    `  checker execution scope: ${relativePath(options.workspaceRootDir, dependencyRootDirectory)}`,
     ...packageNames.map((packageName) => `  missing package: ${packageName}`),
     `Fix: ${createLeafInstallCommand({
-      dependencyRootDir,
+      dependencyRootDir: dependencyRootDirectory,
       packageNames,
       workspaceRootDir: options.workspaceRootDir,
     })}`,
@@ -113,11 +119,11 @@ function formatUnsupportedExternalCheckers(options: {
   unsupported: readonly UnsupportedExternalChecker[];
   workspaceRootDir: string;
 }): string {
-  const dependencyRootDir = options.target.dependencyRootDir!;
+  const dependencyRootDirectory = options.target.dependencyRootDir!;
   return [
     'Unsupported external checker:',
     `  checker family: ${options.target.checkerFamily}`,
-    `  checker execution scope: ${relativePath(options.workspaceRootDir, dependencyRootDir)}`,
+    `  checker execution scope: ${relativePath(options.workspaceRootDir, dependencyRootDirectory)}`,
     ...options.unsupported.flatMap((checker) => [
       `  package: ${checker.packageName}`,
       `  installed version: ${checker.version}`,
@@ -133,16 +139,19 @@ function formatMissingAstroTypes(options: {
   target: TypecheckTarget;
   workspaceRootDir: string;
 }): string {
-  const dependencyRootDir = options.target.dependencyRootDir!;
-  const generatedTypesPath = path.join(dependencyRootDir, '.astro/types.d.ts');
+  const dependencyRootDirectory = options.target.dependencyRootDir!;
+  const generatedTypesPath = path.join(
+    dependencyRootDirectory,
+    '.astro/types.d.ts',
+  );
   return [
     'Astro generated types are missing:',
     '  checker family: astro',
     `  source config: ${relativePath(options.workspaceRootDir, options.target.sourceConfigPath!)}`,
-    `  leaf package root: ${relativePath(options.workspaceRootDir, dependencyRootDir)}`,
+    `  leaf package root: ${relativePath(options.workspaceRootDir, dependencyRootDirectory)}`,
     `  expected generated type: ${relativePath(options.workspaceRootDir, generatedTypesPath)}`,
     'Limina never runs Astro sync automatically.',
-    `Fix: ${createLeafCommandPrefix(options.workspaceRootDir, dependencyRootDir)}exec astro sync`,
+    `Fix: ${createLeafCommandPrefix(options.workspaceRootDir, dependencyRootDirectory)}exec astro sync`,
   ].join('\n');
 }
 
@@ -200,9 +209,11 @@ function appendUnsupportedExternalCheckers(
 function hasMissingAstroTypes(
   options: Parameters<typeof collectTargetProblems>[0],
 ): boolean {
-  if (options.target.checkerFamily !== 'astro') return false;
-  return !options.generatedTypeExists(
-    path.join(options.target.dependencyRootDir!, '.astro/types.d.ts'),
+  return (
+    options.target.checkerFamily === 'astro' &&
+    !options.generatedTypeExists(
+      path.join(options.target.dependencyRootDir!, '.astro/types.d.ts'),
+    )
   );
 }
 

@@ -34,7 +34,7 @@ function expectedFrameworkFamilies(
   ) as FrameworkFamily[];
 }
 
-function capabilityMatchesUnit(
+function isCapabilityMatchesUnit(
   capability: FrameworkCapabilityDescriptor,
   unit: GovernedSourceUnit,
 ): boolean {
@@ -109,8 +109,8 @@ function addMissingCapability(
   entry: GovernedSourceEntry,
   family: FrameworkFamily,
 ): void {
-  const expected = expectedFrameworkFamilies(entry.unit).includes(family);
-  if (![expected, !hasCapability(entry, family)].every(Boolean)) return;
+  const isExpected = expectedFrameworkFamilies(entry.unit).includes(family);
+  if (![isExpected, !hasCapability(entry, family)].every(Boolean)) return;
   addCapabilityFinding({
     coverage,
     entries: [entry],
@@ -124,8 +124,8 @@ function addUnexpectedCapability(
   entry: GovernedSourceEntry,
   family: FrameworkFamily,
 ): void {
-  const expected = expectedFrameworkFamilies(entry.unit).includes(family);
-  if (![!expected, hasCapability(entry, family)].every(Boolean)) return;
+  const isExpected = expectedFrameworkFamilies(entry.unit).includes(family);
+  if (![!isExpected, hasCapability(entry, family)].every(Boolean)) return;
   addCapabilityFinding({
     coverage,
     entries: [entry],
@@ -139,10 +139,10 @@ function addMismatchedCapability(
   entry: GovernedSourceEntry,
   family: FrameworkFamily,
 ): void {
-  const mismatched = entry.unit.frameworkCapabilities
+  const isMismatched = entry.unit.frameworkCapabilities
     .filter((capability) => capability.family === family)
-    .some((capability) => !capabilityMatchesUnit(capability, entry.unit));
-  if (!mismatched) return;
+    .some((capability) => !isCapabilityMatchesUnit(capability, entry.unit));
+  if (!isMismatched) return;
   addCapabilityFinding({
     coverage,
     entries: [entry],

@@ -22,8 +22,10 @@ function findBuildInfoBoundaryTarget(options: {
   proof: ProvenManagedCheckerMutationContext;
 }): MutationBoundaryTarget {
   const boundaryTarget = options.proof.mutationTargets.find((target) => {
-    if (target.kind !== 'file') return false;
-    return normalizeAbsolutePath(target.path) === options.buildInfoPath;
+    return (
+      target.kind === 'file' &&
+      normalizeAbsolutePath(target.path) === options.buildInfoPath
+    );
   });
   if (boundaryTarget !== undefined) return boundaryTarget;
   throw new ManagedCheckerEmitBoundaryError(
@@ -35,8 +37,9 @@ function isStaleBuildInfo(options: {
   buildInfoPath: string;
   outputPaths: readonly string[];
 }): boolean {
-  if (!existsSync(options.buildInfoPath)) return false;
-  return hasMissingOutput(options.outputPaths);
+  return (
+    existsSync(options.buildInfoPath) && hasMissingOutput(options.outputPaths)
+  );
 }
 
 function getStaleBuildInfoPath(
@@ -73,9 +76,10 @@ function collectStaleBuildInfoTargets(
   for (const proof of proofs) {
     addStaleBuildInfoTargets(proof, targetsByPath);
   }
-  return [...targetsByPath.values()].sort((left, right) =>
-    compareCodeUnits(left.path, right.path),
-  );
+  return targetsByPath
+    .values()
+    .toArray()
+    .sort((left, right) => compareCodeUnits(left.path, right.path));
 }
 
 async function captureTargetSnapshots(

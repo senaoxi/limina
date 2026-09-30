@@ -47,9 +47,10 @@ function hashJson(value: unknown): string {
 function getSortedConfigClosure(
   recorder: VueConfigReadRecorder,
 ): readonly VueConfigClosureEntry[] {
-  return [...recorder.entries.values()].sort((left, right) =>
-    compareCodeUnits(left.filePath, right.filePath),
-  );
+  return recorder.entries
+    .values()
+    .toArray()
+    .sort((left, right) => compareCodeUnits(left.filePath, right.filePath));
 }
 
 function createIdentityId(options: {
@@ -175,8 +176,8 @@ export function createVueProjectSemanticIdentity(
   options: CheckerProjectConfigParseOptions,
 ): SemanticProjectParseResult {
   const configPath = normalizeAbsolutePath(options.configPath);
-  const projectRootDir = normalizeAbsolutePath(options.projectRootDir);
-  const toolchain = resolveVueSemanticToolchain(projectRootDir);
+  const projectRootDirectory = normalizeAbsolutePath(options.projectRootDir);
+  const toolchain = resolveVueSemanticToolchain(projectRootDirectory);
   const virtualFiles = normalizeVueVirtualFiles(options.virtualFiles);
   const recorder = createVueConfigReadRecorder();
   const host = createVueOverlaySystem({
@@ -206,7 +207,7 @@ export function createVueProjectSemanticIdentity(
     extensions,
     generation: options.generation ?? 0,
     parsed,
-    projectRootDir,
+    projectRootDir: projectRootDirectory,
     recorder,
     toolchain,
     virtualFiles,
@@ -241,13 +242,13 @@ function reuseVueProjectSemanticIdentity(options: {
   parseOptions: CheckerProjectConfigParseOptions;
 }): SemanticProjectParseResult {
   const generation = options.parseOptions.generation ?? 0;
-  const projectRootDir = normalizeAbsolutePath(
+  const projectRootDirectory = normalizeAbsolutePath(
     options.parseOptions.projectRootDir,
   );
   assertReusableIdentity({
     generation,
     identity: options.identity,
-    projectRootDir,
+    projectRootDir: projectRootDirectory,
   });
   const configPath = normalizeAbsolutePath(options.parseOptions.configPath);
   const virtualFiles = mergeVueVirtualFiles(
@@ -280,10 +281,9 @@ export function parseVueProjectWithSemanticIdentity(
   options: CheckerProjectConfigParseOptions,
 ): SemanticProjectParseResult {
   const identity = options.vueSemanticIdentity;
-  if (identity === undefined) {
-    return createVueProjectSemanticIdentity(options);
-  }
-  return reuseVueProjectSemanticIdentity({ identity, parseOptions: options });
+  return identity === undefined
+    ? createVueProjectSemanticIdentity(options)
+    : reuseVueProjectSemanticIdentity({ identity, parseOptions: options });
 }
 
 export function resolveVueSourceProfile(options: {

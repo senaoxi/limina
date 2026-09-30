@@ -13,9 +13,9 @@ import {
 } from './task-aggregation';
 
 const TASK_DISPLAY_LIMIT = 12;
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_RED = '\u001B[31m';
-const ANSI_YELLOW = '\u001B[33m';
+const ANSI_GREEN = '\u{1B}[32m';
+const ANSI_RED = '\u{1B}[31m';
+const ANSI_YELLOW = '\u{1B}[33m';
 const CHECK_STATS_LINE_PATTERN = /^(\s*)([✓✕◇]) (.*?)(\s{2}units\b.*)$/u;
 
 function formatTaskStatsMarker(task: CheckRunTaskExecutionStats): string {
@@ -164,15 +164,14 @@ export function colorCheckStatsLine(line: string): string {
 function hasRecordedTasks(
   run: LiminaCheckRunSummary | undefined,
 ): run is LiminaCheckRunSummary {
-  if (run === undefined) return false;
-  return run.tasks.length > 0;
+  return run !== undefined && run.tasks.length > 0;
 }
 
 function getVisibleStats(
   stats: readonly CheckRunTaskExecutionStats[],
-  verbose: boolean,
+  isVerbose: boolean,
 ): readonly CheckRunTaskExecutionStats[] {
-  return verbose ? stats : stats.slice(0, TASK_DISPLAY_LIMIT);
+  return isVerbose ? stats : stats.slice(0, TASK_DISPLAY_LIMIT);
 }
 
 function formatRecordedTaskStats(options: {

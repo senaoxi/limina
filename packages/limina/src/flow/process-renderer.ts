@@ -40,14 +40,32 @@ function getRendererCloseResult(
 }
 
 export class FlowProcessRenderer {
+  static start(): FlowProcessRenderer | undefined {
+    const entry = resolveRendererEntry();
+
+    if (!entry) {
+      return undefined;
+    }
+
+    const child = spawn(entry.command, entry.args, {
+      env: process.env,
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    });
+
+    const renderer = new FlowProcessRenderer(child);
+    renderer.#patchWriteStreams();
+
+    return renderer;
+  }
+
   readonly #child: ChildProcess;
   readonly #ready: Promise<boolean>;
   #restoreStreams: (() => void) | undefined;
   #active = true;
-  #closeResolver: ((value: boolean) => void) | undefined;
-  #readyResolver: ((value: boolean) => void) | undefined;
+  #closeResolver: ((isValue: boolean) => void) | undefined;
+  #readyResolver: ((isValue: boolean) => void) | undefined;
   #suspendPromise: Promise<boolean> | undefined;
-  #suspendResolver: ((value: boolean) => void) | undefined;
+  #suspendResolver: ((isValue: boolean) => void) | undefined;
 
   private constructor(child: ChildProcess) {
     this.#child = child;
@@ -65,22 +83,113 @@ export class FlowProcessRenderer {
     });
   }
 
-  static start(): FlowProcessRenderer | undefined {
-    const entry = resolveRendererEntry();
+  #handleParentMessage(message: FlowRendererParentMessage): void {
+    const closeResult = getRendererCloseResult(message);
+    if (closeResult !== undefined) {
+      this.#deactivate(closeResult);
+      return;
+    }
+    this.#handleRendererStateMessage(message);
+  }
 
-    if (!entry) {
-      return undefined;
+  #handleRendererStateMessage(message: FlowRendererParentMessage): void {
+    if (message.type === 'ready') {
+      this.#resolveReady(true);
+      return;
+    }
+    if (message.type !== 'suspended') {
+      return;
     }
 
-    const child = spawn(entry.command, entry.args, {
-      env: process.env,
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    });
+    this.#restorePatchedStreams();
+    this.#resolveSuspend(true);
+  }
 
-    const renderer = new FlowProcessRenderer(child);
-    renderer.#patchWriteStreams();
+  #shouldKillChild(isResult: boolean): boolean {
+    if (isResult) {
+      return false;
+    }
 
-    return renderer;
+    return [
+      !this.#child.killed,
+      this.#child.exitCode === null,
+      this.#child.signalCode === null,
+    ].every(Boolean);
+  }
+
+  #restorePatchedStreams(): void {
+    const restoreStreams = this.#restoreStreams;
+    this.#restoreStreams = undefined;
+    restoreStreams?.();
+  }
+
+  #resolveClose(isResult: boolean): void {
+    const resolve = this.#closeResolver;
+    this.#closeResolver = undefined;
+    resolve?.(isResult);
+  }
+
+  #deactivate(isResult: boolean): void {
+    if (!this.#active) {
+      return;
+    }
+
+    this.#active = false;
+    this.#resolveReady(false);
+    this.#restorePatchedStreams();
+    this.#resolveSuspend(false);
+
+    if (this.#shouldKillChild(isResult)) {
+      this.#child.kill();
+    }
+
+    this.#resolveClose(isResult);
+  }
+
+  #resolveReady(isResult: boolean): void {
+    this.#readyResolver?.(isResult);
+    this.#readyResolver = undefined;
+  }
+
+  #resolveSuspend(isResult: boolean): void {
+    const resolve = this.#suspendResolver;
+    this.#suspendResolver = undefined;
+    resolve?.(isResult);
+  }
+
+  #patchWriteStreams(): void {
+    if (this.#restoreStreams !== undefined) return;
+    // In real TTY sessions this keeps command output and live flow redraws from
+    // fighting over the same terminal frame.
+    const patch = (
+      stream: NodeJS.WriteStream,
+      streamName: 'stderr' | 'stdout',
+    ) =>
+      patchRendererWriteStream({
+        active: () => this.active,
+        output: (output) => this.writeOutput(output),
+        stream,
+        streamName,
+      });
+    const restoreStdout = patch(process.stdout, 'stdout');
+    const restoreStderr = patch(process.stderr, 'stderr');
+
+    this.#restoreStreams = () => {
+      restoreStdout();
+      restoreStderr();
+    };
+  }
+
+  #send(message: FlowRendererProcessMessage): void {
+    if (!this.active) {
+      return;
+    }
+
+    try {
+      this.#child.send(message);
+    } catch {
+      this.#deactivate(false);
+    }
   }
 
   get active(): boolean {
@@ -153,112 +262,5 @@ export class FlowProcessRenderer {
       output,
       type: 'output',
     });
-  }
-
-  #handleParentMessage(message: FlowRendererParentMessage): void {
-    const closeResult = getRendererCloseResult(message);
-    if (closeResult !== undefined) {
-      this.#deactivate(closeResult);
-      return;
-    }
-    this.#handleRendererStateMessage(message);
-  }
-
-  #handleRendererStateMessage(message: FlowRendererParentMessage): void {
-    if (message.type === 'ready') {
-      this.#resolveReady(true);
-      return;
-    }
-    if (message.type === 'suspended') {
-      this.#restorePatchedStreams();
-      this.#resolveSuspend(true);
-    }
-  }
-
-  #shouldKillChild(result: boolean): boolean {
-    if (result) {
-      return false;
-    }
-
-    return [
-      !this.#child.killed,
-      this.#child.exitCode === null,
-      this.#child.signalCode === null,
-    ].every(Boolean);
-  }
-
-  #restorePatchedStreams(): void {
-    const restoreStreams = this.#restoreStreams;
-    this.#restoreStreams = undefined;
-    restoreStreams?.();
-  }
-
-  #resolveClose(result: boolean): void {
-    const resolve = this.#closeResolver;
-    this.#closeResolver = undefined;
-    resolve?.(result);
-  }
-
-  #deactivate(result: boolean): void {
-    if (!this.#active) {
-      return;
-    }
-
-    this.#active = false;
-    this.#resolveReady(false);
-    this.#restorePatchedStreams();
-    this.#resolveSuspend(false);
-
-    if (this.#shouldKillChild(result)) {
-      this.#child.kill();
-    }
-
-    this.#resolveClose(result);
-  }
-
-  #resolveReady(result: boolean): void {
-    this.#readyResolver?.(result);
-    this.#readyResolver = undefined;
-  }
-
-  #resolveSuspend(result: boolean): void {
-    const resolve = this.#suspendResolver;
-    this.#suspendResolver = undefined;
-    resolve?.(result);
-  }
-
-  #patchWriteStreams(): void {
-    if (this.#restoreStreams !== undefined) return;
-    // In real TTY sessions this keeps command output and live flow redraws from
-    // fighting over the same terminal frame.
-    const patch = (
-      stream: NodeJS.WriteStream,
-      streamName: 'stderr' | 'stdout',
-    ) =>
-      patchRendererWriteStream({
-        active: () => this.active,
-        output: (output) => this.writeOutput(output),
-        stream,
-        streamName,
-      });
-    const restoreStdout = patch(process.stdout, 'stdout');
-    const restoreStderr = patch(process.stderr, 'stderr');
-
-    this.#restoreStreams = () => {
-      restoreStdout();
-      restoreStderr();
-    };
-  }
-
-  #send(message: FlowRendererProcessMessage): void {
-    if (!this.active) {
-      return;
-    }
-
-    try {
-      this.#child.send(message);
-    } catch {
-      this.#deactivate(false);
-    }
   }
 }

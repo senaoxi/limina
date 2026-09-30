@@ -6,11 +6,12 @@ import type {
 import { isNodeModulesPath } from './shared';
 
 export class WorkspaceLookupRegion {
-  readonly rootDir: string;
   readonly #pathIndex: WorkspaceRegionPathIndex;
 
-  constructor(rootDir: string, pathIndex: WorkspaceRegionPathIndex) {
-    this.rootDir = normalizeAbsolutePath(rootDir);
+  readonly rootDir: string;
+
+  constructor(rootDirectory: string, pathIndex: WorkspaceRegionPathIndex) {
+    this.rootDir = normalizeAbsolutePath(rootDirectory);
     this.#pathIndex = pathIndex;
   }
 
@@ -30,20 +31,16 @@ export class WorkspaceLookupRegion {
     filePath: string,
     classification?: WorkspacePathClassification,
   ): boolean {
-    if (isNodeModulesPath(filePath)) {
-      return true;
-    }
-
-    return !(classification ?? this.classifyPath(filePath)).package;
+    return (
+      isNodeModulesPath(filePath) ||
+      !(classification ?? this.classifyPath(filePath)).package
+    );
   }
 
   isLocalPathOutsideActivatedRegion(filePath: string): boolean {
     const normalizedPath = normalizeAbsolutePath(filePath);
-    if (!isPathInsideDirectory(normalizedPath, this.rootDir)) {
-      return false;
-    }
-
     return (
+      isPathInsideDirectory(normalizedPath, this.rootDir) &&
       !isNodeModulesPath(normalizedPath) &&
       !this.isInsideActivatedRegion(normalizedPath)
     );

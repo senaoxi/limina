@@ -285,7 +285,7 @@ describe('check run summary reporting', () => {
     expect(plainOutput).toContain('Limina check summary');
     expect(plainOutput).not.toContain('Result: FAILED');
     expect(plainOutput).toContain('Command: limina check');
-    expect(output).toContain('\u001B[36mCommand:\u001B[0m limina check');
+    expect(output).toContain('\u{1B}[36mCommand:\u{1B}[0m limina check');
     expect(plainOutput).toContain('Config: limina.config.mjs');
     expect(plainOutput).toContain('Duration: 3.0s');
     expect(plainOutput).toContain('Executed tasks: 3 / 3');
@@ -296,7 +296,7 @@ describe('check run summary reporting', () => {
     expect(plainOutput).not.toContain('Blocked at: source:check');
     expect(plainOutput).toContain('Snapshot: .limina/check/last-run.json');
     expect(plainOutput).toContain('Validation units:');
-    expect(output).toContain('\u001B[36mValidation units:\u001B[0m');
+    expect(output).toContain('\u{1B}[36mValidation units:\u{1B}[0m');
     expect(plainOutput).toContain('✓ graph:check');
     expect(output).toContain(
       `${ANSI_ESCAPE}[32m✓ graph:check${ANSI_ESCAPE}[0m`,
@@ -318,7 +318,7 @@ describe('check run summary reporting', () => {
     expect(plainOutput).not.toContain('skipped');
     expect(plainOutput).toContain('proof:check');
     expect(plainOutput).toContain('Issue overview:');
-    expect(output).toContain('\u001B[35mIssue overview:\u001B[0m');
+    expect(output).toContain('\u{1B}[35mIssue overview:\u{1B}[0m');
     expect(plainOutput).toContain('Total: 1 error');
     expect(plainOutput).toContain('Primary blockers:');
     expect(plainOutput).toContain('Packages: @example/app (1)');
@@ -636,7 +636,7 @@ describe('check run summary reporting', () => {
     expect(plainOutput).toContain('Limina check summary');
     expect(plainOutput).not.toContain('Result: PASSED');
     expect(plainOutput).toContain('Duration: 12.1s');
-    expect(output).toContain('\u001B[36mDuration:\u001B[0m 12.1s');
+    expect(output).toContain('\u{1B}[36mDuration:\u{1B}[0m 12.1s');
     expect(plainOutput).toContain('Executed tasks: 2 / 2');
     expect(plainOutput).toContain('Passed tasks: 2 / 2');
     expect(plainOutput).toContain('Open issues: 0');
@@ -663,9 +663,9 @@ describe('check run summary reporting', () => {
         title: 'Root A',
       });
       const run: CheckIssueSnapshot['run'] = {
-        ...(result === 'blocked'
-          ? { blockedBy: { id: 'source', label: 'source:check' } }
-          : {}),
+        ...(result === 'blocked' && {
+          blockedBy: { id: 'source', label: 'source:check' },
+        }),
         command: 'limina check',
         completedAt: '2026-07-17T00:00:01.000Z',
         configPath: '/repo/limina.config.mjs',

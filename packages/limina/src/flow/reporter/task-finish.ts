@@ -4,7 +4,7 @@ import {
   redrawInteractiveHistory,
   replaceInteractiveHistoryLine,
 } from './rendering';
-import { sendProcessSnapshot } from './state';
+import { isSendProcessSnapshot } from './state';
 import type { FlowTaskState } from './task-types';
 import { clearInteractiveTaskBlock, endTerminalTracking } from './tracking';
 import type {
@@ -19,10 +19,9 @@ function getElapsedTime(options: {
   finishOptions: LiminaFlowMessageOptions | undefined;
   startTime: number;
 }): number {
-  if (options.finishOptions?.elapsedTimeMs !== undefined) {
-    return options.finishOptions.elapsedTimeMs;
-  }
-  return performance.now() - options.startTime;
+  return options.finishOptions?.elapsedTimeMs === undefined
+    ? performance.now() - options.startTime
+    : options.finishOptions.elapsedTimeMs;
 }
 
 function createTaskFinishOptions<T extends LiminaFlowMessageOptions>(options: {
@@ -41,8 +40,7 @@ function finishTrackedTask(options: {
   reporterState: FlowReporterState;
   taskState: FlowTaskState;
 }): void {
-  if (!options.taskState.shouldTrack) return;
-  if (options.taskState.completed) return;
+  if (!options.taskState.shouldTrack || options.taskState.completed) return;
   options.taskState.completed = true;
   endTerminalTracking(options.reporterState);
 }
@@ -51,9 +49,11 @@ function canReplacePersistedStart(options: {
   reporterState: FlowReporterState;
   taskState: FlowTaskState;
 }): boolean {
-  if (options.taskState.shouldTrack) return false;
-  if (!options.reporterState.interactive) return false;
-  return options.taskState.persistedStart !== undefined;
+  return (
+    !options.taskState.shouldTrack &&
+    options.reporterState.interactive &&
+    options.taskState.persistedStart !== undefined
+  );
 }
 
 function replaceStart(options: {
@@ -101,8 +101,7 @@ function resolveTaskMessage(
   message: string | undefined,
   fallback: string,
 ): string {
-  if (message === undefined) return fallback;
-  return message;
+  return message === undefined ? fallback : message;
 }
 
 function resolveFailureMessage(options: {
@@ -146,10 +145,9 @@ function shouldPersistPass(options: {
   reporterState: FlowReporterState;
   taskState: FlowTaskState;
 }): boolean {
-  if (options.taskState.shouldTrack) {
-    return options.reporterState.trackedTaskCount <= 1;
-  }
-  return options.reporterState.trackedTaskCount === 0;
+  return options.taskState.shouldTrack
+    ? options.reporterState.trackedTaskCount <= 1
+    : options.reporterState.trackedTaskCount === 0;
 }
 
 function removeTransientTask(options: {
@@ -160,15 +158,14 @@ function removeTransientTask(options: {
     options.reporterState.processTransientHistory.filter(
       (entry) => entry.taskId !== options.taskState.processTransientTaskId,
     );
-  sendProcessSnapshot(options.reporterState);
+  isSendProcessSnapshot(options.reporterState);
 }
 
 function shouldRedrawCollapsedHistory(options: {
   persistInteractive: boolean;
   taskState: FlowTaskState;
 }): boolean {
-  if (!options.persistInteractive) return false;
-  return options.taskState.depth === 0;
+  return options.persistInteractive && options.taskState.depth === 0;
 }
 
 function hasActiveProcessRenderer(state: FlowReporterState): boolean {
@@ -203,11 +200,11 @@ export function finishPass(options: {
     finishOptions: options.finishOptions,
     startTime: options.taskState.startTime,
   });
-  const persistInteractive = shouldPersistPass(options);
-  clearTrackedPass({ ...options, persistInteractive });
+  const isPersistInteractive = shouldPersistPass(options);
+  clearTrackedPass({ ...options, persistInteractive: isPersistInteractive });
   emitCompletedTask({
     message: resolveTaskMessage(options.message, options.taskState.message),
-    persistInteractive,
+    persistInteractive: isPersistInteractive,
     reporterState: options.reporterState,
     status: 'pass',
     taskOptions,

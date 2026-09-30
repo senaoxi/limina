@@ -21,7 +21,7 @@ export interface MembershipState {
   sources: Set<string>;
   records: MigrationRecord[];
 }
-export function pathOnly(edge: MembershipEdge): boolean {
+export function isPathOnly(edge: MembershipEdge): boolean {
   return Object.keys(edge).every((key) => key === 'path');
 }
 
@@ -32,7 +32,7 @@ function isEdge(item: unknown): item is MembershipEdge {
   return hasStringPath(item) && item.path.trim() !== '';
 }
 
-function retainedEdge(
+function isRetainedEdge(
   state: MembershipState,
   from: string,
   edge: MembershipEdge,
@@ -64,14 +64,15 @@ function collectEdges(state: MembershipState, from: string): MembershipEdge[] {
       original: original.references,
     });
   const raw = Array.isArray(original.references) ? original.references : [];
-  return raw.filter(isEdge).filter((edge) => retainedEdge(state, from, edge));
+  return raw.filter(isEdge).filter((edge) => isRetainedEdge(state, from, edge));
 }
 
 export function createMembershipState(
   options: MembershipOptions,
 ): MembershipState {
   const solutions = new Set(
-    [...options.targets.values()]
+    options.targets
+      .values()
       .filter(
         (target) =>
           target.isTypeScriptSolution && options.objects.has(target.configPath),
@@ -79,7 +80,7 @@ export function createMembershipState(
       .map((target) => target.configPath),
   );
   const sources = new Set(
-    [...options.objects.keys()].filter((file) => !solutions.has(file)),
+    options.objects.keys().filter((file) => !solutions.has(file)),
   );
   const state: MembershipState = {
     options,
@@ -93,7 +94,10 @@ export function createMembershipState(
   return state;
 }
 
-function sameDeclaration(left: MembershipEdge, right: MembershipEdge): boolean {
+function isSameDeclaration(
+  left: MembershipEdge,
+  right: MembershipEdge,
+): boolean {
   const attributes = (edge: MembershipEdge): string =>
     JSON.stringify(
       Object.entries(edge)
@@ -109,7 +113,7 @@ export function dedupeMembership(
 ): MembershipEdge[] {
   const retained = new Map<string, MembershipEdge>();
   for (const edge of edges) addUniqueEdge(retained, from, edge);
-  return [...retained.values()];
+  return retained.values().toArray();
 }
 function addUniqueEdge(
   retained: Map<string, MembershipEdge>,
@@ -119,7 +123,7 @@ function addUniqueEdge(
   const target = resolveReferencePath(from, edge.path);
   const previous = retained.get(target);
   if (!previous) retained.set(target, edge);
-  else if (!sameDeclaration(previous, edge))
+  else if (!isSameDeclaration(previous, edge))
     throw new MigrationInputError(
       `Conflicting membership attributes: ${from} -> ${target}`,
     );
@@ -130,8 +134,9 @@ function edgeSources(
   target: string,
   seen: Set<string>,
 ): string[] {
-  if (state.sources.has(target)) return [target];
-  return [...reachableSources(state, target, seen)];
+  return state.sources.has(target)
+    ? [target]
+    : [...reachableSources(state, target, seen)];
 }
 export function reachableSources(
   state: MembershipState,

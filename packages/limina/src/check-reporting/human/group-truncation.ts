@@ -4,21 +4,18 @@ import { isStructuredGraphPrepareIssue } from './issue-details';
 import type { IssueGroup } from './types';
 
 function hasIssueDetailLines(issue: LiminaCheckIssue): boolean {
-  if (issue.detailLines === undefined) return false;
-  return issue.detailLines.length > 0;
+  return issue.detailLines !== undefined && issue.detailLines.length > 0;
 }
 
 function hasStructuredPrepareDetails(issue: LiminaCheckIssue): boolean {
-  if (!isStructuredGraphPrepareIssue(issue)) return false;
-  return hasIssueDetailLines(issue);
+  return isStructuredGraphPrepareIssue(issue) && hasIssueDetailLines(issue);
 }
 
 function hasTruncatedIssueCount(
   group: IssueGroup,
   detailLimit: number,
 ): boolean {
-  if (group.issues.length <= 1) return false;
-  return group.issues.length > detailLimit;
+  return !(group.issues.length <= 1) && group.issues.length > detailLimit;
 }
 
 function getDetailLineCount(issue: LiminaCheckIssue): number {

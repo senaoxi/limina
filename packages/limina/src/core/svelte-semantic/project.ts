@@ -34,8 +34,8 @@ export function createSvelteSemanticProject(options: {
   };
 }
 
-function createPackageIdentity(packageRootDir: string): string {
-  const fileName = path.join(packageRootDir, 'package.json');
+function createPackageIdentity(packageRootDirectory: string): string {
+  const fileName = path.join(packageRootDirectory, 'package.json');
   try {
     return createHash('sha256')
       .update(normalizeAbsolutePath(realpathSync(fileName)))

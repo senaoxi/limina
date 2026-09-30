@@ -47,12 +47,12 @@ export interface RunPipelineOptions {
 export interface CommandProcessDependencies {
   readonly spawn?: (
     command: string,
-    args: readonly string[],
+    arguments_: readonly string[],
     options: SpawnOptions,
   ) => ChildProcess;
   readonly spawnSync?: (
     command: string,
-    args: readonly string[],
+    arguments_: readonly string[],
     options: SpawnSyncOptions,
   ) => {
     readonly error?: Error;

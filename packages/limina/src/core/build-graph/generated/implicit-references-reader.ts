@@ -12,27 +12,13 @@ import {
 } from '#utils/values';
 import { existsSync } from 'node:fs';
 import path from 'pathe';
-import type { ImplicitRef } from './config-reader-types';
-
-interface ImplicitRefContext {
-  config: ResolvedLiminaConfig;
-  problems: string[];
-  sourceConfigPath: string;
-}
-
-type ImplicitRefEntriesResult =
-  | { kind: 'absent' | 'invalid' }
-  | { entries: unknown[]; kind: 'value' };
-
-interface RefTargetValidationOptions {
-  rootDir: string;
-  sourceConfigPath: string;
-  targetConfigPath: string;
-}
-
-type RefTargetValidator = (
-  options: RefTargetValidationOptions,
-) => string | null;
+import type { ImplicitReference } from './config-reader-types';
+import type {
+  ImplicitReferenceContext,
+  ImplicitReferenceEntriesResult,
+  ReferenceTargetValidationOptions,
+  ReferenceTargetValidator,
+} from './implicit-reference-types';
 
 function getValueDetail(options: { value?: unknown }): string[] {
   return Object.hasOwn(options, 'value')
@@ -40,8 +26,8 @@ function getValueDetail(options: { value?: unknown }): string[] {
     : [];
 }
 
-function addImplicitRefProblem(
-  context: ImplicitRefContext,
+function addImplicitReferenceProblem(
+  context: ImplicitReferenceContext,
   options: { field: string; reason: string; value?: unknown },
 ): void {
   context.problems.push(
@@ -55,17 +41,17 @@ function addImplicitRefProblem(
   );
 }
 
-function resolveImplicitRefEntries(
+function resolveImplicitReferenceEntries(
   configObject: Record<string, unknown>,
-  context: ImplicitRefContext,
-): ImplicitRefEntriesResult {
+  context: ImplicitReferenceContext,
+): ImplicitReferenceEntriesResult {
   const liminaOptions = configObject.liminaOptions;
   if (liminaOptions === undefined) {
     return { kind: 'absent' };
   }
 
   if (!isPlainRecord(liminaOptions)) {
-    addImplicitRefProblem(context, {
+    addImplicitReferenceProblem(context, {
       field: 'liminaOptions',
       reason:
         'liminaOptions must be an object before implicitRefs can be read.',
@@ -74,13 +60,13 @@ function resolveImplicitRefEntries(
     return { kind: 'invalid' };
   }
 
-  return resolveImplicitRefArray(liminaOptions.implicitRefs, context);
+  return resolveImplicitReferenceArray(liminaOptions.implicitRefs, context);
 }
 
-function resolveImplicitRefArray(
+function resolveImplicitReferenceArray(
   value: unknown,
-  context: ImplicitRefContext,
-): ImplicitRefEntriesResult {
+  context: ImplicitReferenceContext,
+): ImplicitReferenceEntriesResult {
   if (value === undefined) {
     return { kind: 'absent' };
   }
@@ -89,7 +75,7 @@ function resolveImplicitRefArray(
     return { entries: value, kind: 'value' };
   }
 
-  addImplicitRefProblem(context, {
+  addImplicitReferenceProblem(context, {
     field: 'liminaOptions.implicitRefs',
     reason:
       'implicitRefs must be an array of objects with non-empty path and reason fields.',
@@ -99,7 +85,7 @@ function resolveImplicitRefArray(
 }
 
 function readRequiredString(options: {
-  context: ImplicitRefContext;
+  context: ImplicitReferenceContext;
   field: string;
   reason: string;
   value: unknown;
@@ -108,7 +94,7 @@ function readRequiredString(options: {
     return options.value.trim();
   }
 
-  addImplicitRefProblem(options.context, {
+  addImplicitReferenceProblem(options.context, {
     field: options.field,
     reason: options.reason,
     value: options.value,
@@ -116,28 +102,30 @@ function readRequiredString(options: {
   return null;
 }
 
-const validateNotSelfReference: RefTargetValidator = (options) =>
+const validateNotSelfReference: ReferenceTargetValidator = (options) =>
   options.targetConfigPath === options.sourceConfigPath
     ? 'implicitRefs must not reference the declaring tsconfig.'
     : null;
 
-const validateExistingTarget: RefTargetValidator = (options) =>
+const validateExistingTarget: ReferenceTargetValidator = (options) =>
   existsSync(options.targetConfigPath)
     ? null
     : 'implicitRefs path must point to an existing ordinary source tsconfig.';
 
-const validateOrdinarySourceTarget: RefTargetValidator = (options) =>
+const validateOrdinarySourceTarget: ReferenceTargetValidator = (options) =>
   isOrdinarySourceTypecheckConfigPath(options.targetConfigPath, options.rootDir)
     ? null
     : 'implicitRefs path must point to an ordinary source tsconfig*.json file, not a generated, declaration, build, base, or check config.';
 
-const targetValidators: readonly RefTargetValidator[] = [
+const targetValidators: readonly ReferenceTargetValidator[] = [
   validateNotSelfReference,
   validateExistingTarget,
   validateOrdinarySourceTarget,
 ];
 
-function findTargetProblem(options: RefTargetValidationOptions): string | null {
+function findTargetProblem(
+  options: ReferenceTargetValidationOptions,
+): string | null {
   for (const validate of targetValidators) {
     const problem = validate(options);
     if (problem !== null) {
@@ -148,8 +136,8 @@ function findTargetProblem(options: RefTargetValidationOptions): string | null {
   return null;
 }
 
-function validateRelativeRefPath(options: {
-  context: ImplicitRefContext;
+function isValidateRelativeReferencePath(options: {
+  context: ImplicitReferenceContext;
   field: string;
   pathValue: string;
 }): boolean {
@@ -157,7 +145,7 @@ function validateRelativeRefPath(options: {
     return true;
   }
 
-  addImplicitRefProblem(options.context, {
+  addImplicitReferenceProblem(options.context, {
     field: options.field,
     reason:
       'implicitRefs path must be relative to the tsconfig that declares it.',
@@ -166,13 +154,13 @@ function validateRelativeRefPath(options: {
   return false;
 }
 
-function createValidatedImplicitRef(options: {
-  context: ImplicitRefContext;
+function createValidatedImplicitReference(options: {
+  context: ImplicitReferenceContext;
   field: string;
   pathValue: string;
   reasonValue: string;
-}): ImplicitRef | null {
-  if (!validateRelativeRefPath(options)) {
+}): ImplicitReference | null {
+  if (!isValidateRelativeReferencePath(options)) {
     return null;
   }
 
@@ -186,7 +174,7 @@ function createValidatedImplicitRef(options: {
     targetConfigPath,
   });
   if (problem !== null) {
-    addImplicitRefProblem(options.context, {
+    addImplicitReferenceProblem(options.context, {
       field: `${options.field}.path`,
       reason: problem,
       value: options.pathValue,
@@ -201,14 +189,14 @@ function createValidatedImplicitRef(options: {
   };
 }
 
-function readImplicitRefEntry(options: {
-  context: ImplicitRefContext;
+function readImplicitReferenceEntry(options: {
+  context: ImplicitReferenceContext;
   entry: unknown;
   index: number;
-}): ImplicitRef | null {
+}): ImplicitReference | null {
   const field = `liminaOptions.implicitRefs[${options.index}]`;
   if (!isPlainRecord(options.entry)) {
-    addImplicitRefProblem(options.context, {
+    addImplicitReferenceProblem(options.context, {
       field,
       reason:
         'implicitRefs entries must be objects with non-empty path and reason fields.',
@@ -217,18 +205,18 @@ function readImplicitRefEntry(options: {
     return null;
   }
 
-  return readImplicitRefRecord({
+  return readImplicitReferenceRecord({
     context: options.context,
     entry: options.entry,
     field,
   });
 }
 
-function readImplicitRefRecord(options: {
-  context: ImplicitRefContext;
+function readImplicitReferenceRecord(options: {
+  context: ImplicitReferenceContext;
   entry: Record<string, unknown>;
   field: string;
-}): ImplicitRef | null {
+}): ImplicitReference | null {
   const pathValue = readRequiredString({
     context: options.context,
     field: `${options.field}.path`,
@@ -245,7 +233,7 @@ function readImplicitRefRecord(options: {
     return null;
   }
 
-  return createValidatedImplicitRef({
+  return createValidatedImplicitReference({
     context: options.context,
     field: options.field,
     pathValue,
@@ -253,27 +241,30 @@ function readImplicitRefRecord(options: {
   });
 }
 
-function addImplicitRefEntry(
-  refsByTarget: Map<string, ImplicitRef>,
-  implicitRef: ImplicitRef | null,
+function addImplicitReferenceEntry(
+  referencesByTarget: Map<string, ImplicitReference>,
+  implicitReference: ImplicitReference | null,
 ): void {
-  if (implicitRef === null || refsByTarget.has(implicitRef.targetConfigPath)) {
+  if (
+    implicitReference === null ||
+    referencesByTarget.has(implicitReference.targetConfigPath)
+  ) {
     return;
   }
 
-  refsByTarget.set(implicitRef.targetConfigPath, implicitRef);
+  referencesByTarget.set(implicitReference.targetConfigPath, implicitReference);
 }
 
-export function readImplicitRefs(
+export function readImplicitReferences(
   config: ResolvedLiminaConfig,
   sourceConfigPath: string,
-): { implicitRefs: ImplicitRef[]; problems: string[] } {
-  const context: ImplicitRefContext = {
+): { implicitRefs: ImplicitReference[]; problems: string[] } {
+  const context: ImplicitReferenceContext = {
     config,
     problems: [],
     sourceConfigPath,
   };
-  const result = resolveImplicitRefEntries(
+  const result = resolveImplicitReferenceEntries(
     readJsonConfig(config, sourceConfigPath),
     context,
   );
@@ -281,16 +272,16 @@ export function readImplicitRefs(
     return { implicitRefs: [], problems: context.problems };
   }
 
-  const refsByTarget = new Map<string, ImplicitRef>();
+  const referencesByTarget = new Map<string, ImplicitReference>();
   for (const [index, entry] of result.entries.entries()) {
-    addImplicitRefEntry(
-      refsByTarget,
-      readImplicitRefEntry({ context, entry, index }),
+    addImplicitReferenceEntry(
+      referencesByTarget,
+      readImplicitReferenceEntry({ context, entry, index }),
     );
   }
 
   return {
-    implicitRefs: [...refsByTarget.values()],
+    implicitRefs: referencesByTarget.values().toArray(),
     problems: context.problems,
   };
 }

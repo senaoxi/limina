@@ -35,22 +35,20 @@ function getIgnoredProjectFiles(options: {
     .map((filePath) =>
       toRelativePath(options.moduleSet.owner.directory, filePath),
     )
-    .sort();
+    .sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 function getProjectFiles(options: {
   includeFiles: boolean;
   moduleSet: OwnerSourceModuleSet;
 }): string[] {
-  if (!options.includeFiles) {
-    return [];
-  }
-
-  return options.moduleSet.files
-    .map((filePath) =>
-      toRelativePath(options.moduleSet.owner.directory, filePath),
-    )
-    .sort();
+  return options.includeFiles
+    ? options.moduleSet.files
+        .map((filePath) =>
+          toRelativePath(options.moduleSet.owner.directory, filePath),
+        )
+        .sort((left, right) => Number(left > right) - Number(left < right))
+    : [];
 }
 
 function getVirtualEntryFiles(moduleSet: OwnerSourceModuleSet): string[] {

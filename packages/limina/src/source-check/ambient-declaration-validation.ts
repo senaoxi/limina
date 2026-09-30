@@ -38,17 +38,19 @@ function collectManagedDeclarationPaths(
   graph: GeneratedTsconfigGraphResult,
 ): Set<string> {
   return new Set(
-    [...graph.dtsToSource.values()].flatMap((mapping) =>
-      [...mapping.keys()].map(normalizeAbsolutePath),
-    ),
+    graph.dtsToSource
+      .values()
+      .flatMap((mapping) =>
+        mapping.keys().map(normalizeAbsolutePath).toArray(),
+      ),
   );
 }
 
 function isInsideOutputDirectory(
   filePath: string,
-  outputDirs: readonly string[],
+  outputDirectories: readonly string[],
 ): boolean {
-  return outputDirs.some((directory) =>
+  return outputDirectories.some((directory) =>
     isPathInsideDirectory(filePath, directory),
   );
 }
@@ -160,18 +162,18 @@ async function collectRuleIssues(
   return issues;
 }
 
-function resolvePolicyFlag(value: boolean | undefined): boolean {
-  return value === undefined ? false : value;
+function isResolvePolicyFlag(value: boolean | undefined): boolean {
+  return value !== undefined && value;
 }
 
 function createRulePolicies(
   ruleMatch: AmbientRuleMatch,
 ): AmbientDeclarationPolicy[] {
   return ruleMatch.matches.map((filePath) => ({
-    allowSharedAcrossOwners: resolvePolicyFlag(
+    allowSharedAcrossOwners: isResolvePolicyFlag(
       ruleMatch.rule.allowSharedAcrossOwners,
     ),
-    allowTripleSlashReferences: resolvePolicyFlag(
+    allowTripleSlashReferences: isResolvePolicyFlag(
       ruleMatch.rule.allowTripleSlashReferences,
     ),
     filePath,
@@ -201,9 +203,10 @@ async function processRulePolicy(options: {
 
   const issues = await collectRuleIssues(options.ruleMatch, options.context);
 
-  return issues.length > 0
-    ? { issues, policies: [] }
-    : { issues, policies: createRulePolicies(options.ruleMatch) };
+  return {
+    issues,
+    policies: issues.length > 0 ? [] : createRulePolicies(options.ruleMatch),
+  };
 }
 
 async function createValidationContext(options: {

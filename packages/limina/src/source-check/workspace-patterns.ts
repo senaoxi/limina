@@ -56,9 +56,7 @@ export function toOwnerRelativeEntryPattern(options: {
     return options.pattern;
   }
 
-  if (isOwnerRootPattern(options.pattern, ownerDirectory)) {
-    return '.';
-  }
-
-  return resolveOwnerNestedPattern(options.pattern, ownerDirectory);
+  return isOwnerRootPattern(options.pattern, ownerDirectory)
+    ? '.'
+    : resolveOwnerNestedPattern(options.pattern, ownerDirectory);
 }

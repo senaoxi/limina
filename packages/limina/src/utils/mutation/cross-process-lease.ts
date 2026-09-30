@@ -2,9 +2,9 @@ import { mkdir, readdir } from 'node:fs/promises';
 import path from 'pathe';
 import {
   createLeaseOwner,
-  publishHolder,
+  isPublishHolder,
+  isRemoveDeadHolder,
   releaseOwnedHolder,
-  removeDeadHolder,
 } from './cross-process-lease-holder';
 import {
   type CrossProcessLease,
@@ -48,11 +48,11 @@ async function waitForRetry(
 }
 
 function getLeasePaths(
-  canonicalRootDir: string,
+  canonicalRootDirectory: string,
   options: CrossProcessLeaseOptions,
 ) {
   const rootPath = path.join(
-    canonicalRootDir,
+    canonicalRootDirectory,
     '.state',
     'leases',
     options.leaseName ?? 'generated-artifacts',
@@ -68,8 +68,8 @@ async function ensureLeaseDirectories(paths: ReturnType<typeof getLeasePaths>) {
   await mkdir(paths.readersPath, { recursive: true });
 }
 
-async function writerIsAbsent(writerPath: string): Promise<boolean> {
-  return removeDeadHolder(writerPath);
+async function isWriterIsAbsent(writerPath: string): Promise<boolean> {
+  return isRemoveDeadHolder(writerPath);
 }
 
 async function listReaderPaths(readersPath: string): Promise<string[]> {
@@ -80,10 +80,10 @@ async function listReaderPaths(readersPath: string): Promise<string[]> {
     .map((entry) => path.join(readersPath, entry.name));
 }
 
-async function activeReadersAreAbsent(readersPath: string): Promise<boolean> {
+async function isActiveReadersAreAbsent(readersPath: string): Promise<boolean> {
   const readers = await listReaderPaths(readersPath);
   for (const readerPath of readers) {
-    if (!(await removeDeadHolder(readerPath))) return false;
+    if (!(await isRemoveDeadHolder(readerPath))) return false;
   }
   return (await listReaderPaths(readersPath)).length === 0;
 }
@@ -105,7 +105,7 @@ async function validatePublishedReader(options: {
   owner: CrossProcessLeaseOwner;
   writerPath: string;
 }): Promise<CrossProcessLease | null> {
-  if (await writerIsAbsent(options.writerPath)) {
+  if (await isWriterIsAbsent(options.writerPath)) {
     return createLease({ ...options, type: 'reader' });
   }
   await releaseOwnedHolder(options.holderPath, options.owner);
@@ -116,14 +116,14 @@ async function tryAcquireReader(options: {
   owner: CrossProcessLeaseOwner;
   paths: ReturnType<typeof getLeasePaths>;
 }): Promise<CrossProcessLease | null> {
-  if (!(await writerIsAbsent(options.paths.writerPath))) return null;
+  if (!(await isWriterIsAbsent(options.paths.writerPath))) return null;
   const holderPath = path.join(options.paths.readersPath, options.owner.token);
-  const published = await publishHolder({
+  const isPublished = await isPublishHolder({
     holderPath,
     owner: options.owner,
     rootPath: options.paths.readersPath,
   });
-  if (!published) return null;
+  if (!isPublished) return null;
   return validatePublishedReader({
     holderPath,
     owner: options.owner,
@@ -135,13 +135,13 @@ async function tryAcquireWriter(options: {
   owner: CrossProcessLeaseOwner;
   paths: ReturnType<typeof getLeasePaths>;
 }): Promise<CrossProcessLease | null> {
-  if (!(await writerIsAbsent(options.paths.writerPath))) return null;
-  const published = await publishHolder({
+  if (!(await isWriterIsAbsent(options.paths.writerPath))) return null;
+  const isPublished = await isPublishHolder({
     holderPath: options.paths.writerPath,
     owner: options.owner,
     rootPath: options.paths.rootPath,
   });
-  if (!published) return null;
+  if (!isPublished) return null;
   return createLease({
     holderPath: options.paths.writerPath,
     owner: options.owner,
@@ -174,17 +174,17 @@ async function waitForActiveReaders(
   description: string,
 ): Promise<void> {
   let attempt = 0;
-  while (!(await activeReadersAreAbsent(readersPath))) {
+  while (!(await isActiveReadersAreAbsent(readersPath))) {
     await waitForRetry(deadline, attempt, description);
     attempt += 1;
   }
 }
 
 export async function acquireCrossProcessReadLease(
-  canonicalRootDir: string,
+  canonicalRootDirectory: string,
   options: CrossProcessLeaseOptions = {},
 ): Promise<CrossProcessLease> {
-  const paths = getLeasePaths(canonicalRootDir, options);
+  const paths = getLeasePaths(canonicalRootDirectory, options);
   await ensureLeaseDirectories(paths);
   const owner = createLeaseOwner();
   const deadline = timeoutAt(options);
@@ -196,10 +196,10 @@ export async function acquireCrossProcessReadLease(
 }
 
 export async function acquireCrossProcessWriteLease(
-  canonicalRootDir: string,
+  canonicalRootDirectory: string,
   options: CrossProcessLeaseOptions = {},
 ): Promise<CrossProcessLease> {
-  const paths = getLeasePaths(canonicalRootDir, options);
+  const paths = getLeasePaths(canonicalRootDirectory, options);
   await ensureLeaseDirectories(paths);
   const owner = createLeaseOwner();
   const deadline = timeoutAt(options);

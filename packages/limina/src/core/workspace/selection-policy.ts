@@ -34,7 +34,7 @@ function validateGlobs(
 ): string[] {
   if (
     !Array.isArray(value) ||
-    !value.every((entry) => typeof entry === 'string')
+    value.some((entry) => typeof entry !== 'string')
   ) {
     throw new Error(
       `Invalid ${manager} workspace declaration: expected a string array.`,

@@ -10,7 +10,10 @@ import type {
   TypeConfigOwnershipState,
 } from './checker-ownership-types';
 import type { FileOwnerLookup } from './file-owner-lookup';
-import { readGraphRules, readImplicitRefs } from './generated/config-readers';
+import {
+  readGraphRules,
+  readImplicitReferences,
+} from './generated/config-readers';
 import { isDeniedGeneratedReferenceForConfig } from './reference-policy';
 
 export interface ColoringEdge {
@@ -84,16 +87,13 @@ function getUniqueFactTarget(options: {
   fact: CheckerDependencyFact;
   membership: FileOwnerLookup;
 }): string | null {
-  if (options.fact.physicalTargetPath === null) return null;
-  return getSingleOwner(
-    options.membership.get(options.fact.physicalTargetPath),
-  );
+  return options.fact.physicalTargetPath === null
+    ? null
+    : getSingleOwner(options.membership.get(options.fact.physicalTargetPath));
 }
 
 function getSingleOwner(owners: string[] | undefined): string | null {
-  if (owners === undefined) return null;
-  if (owners.length !== 1) return null;
-  return owners[0]!;
+  return owners === undefined || owners.length !== 1 ? null : owners[0]!;
 }
 
 function isDeclarationRelationFact(fact: CheckerDependencyFact): boolean {
@@ -106,9 +106,8 @@ function createBuildDependencyEdge(options: {
   fact: CheckerDependencyFact;
   provider: TypeConfigOwnershipState;
 }): ColoringEdge | null {
-  if (![options.consumer, options.provider].every(isBuildCandidate))
-    return null;
   if (
+    ![options.consumer, options.provider].every(isBuildCandidate) ||
     isDeniedGeneratedReferenceForConfig({
       config: options.config,
       graphRules: readGraphRules(options.config, options.consumer.configPath),
@@ -133,8 +132,9 @@ function createManagedDependencyEdge(options: {
     options.fact.consumerConfigPath,
   );
   const provider = options.discovery.plan.typeConfigs.get(options.target);
-  if (consumer === undefined || provider === undefined) return null;
-  return createBuildDependencyEdge({ ...options, consumer, provider });
+  return consumer === undefined || provider === undefined
+    ? null
+    : createBuildDependencyEdge({ ...options, consumer, provider });
 }
 
 function createDependencyEdge(options: {
@@ -145,8 +145,9 @@ function createDependencyEdge(options: {
 }): ColoringEdge | null {
   if (!isDeclarationRelationFact(options.fact)) return null;
   const target = getUniqueFactTarget(options);
-  if (target === null) return null;
-  return createManagedDependencyEdge({ ...options, target });
+  return target === null
+    ? null
+    : createManagedDependencyEdge({ ...options, target });
 }
 
 function addDependencyEdges(options: {
@@ -189,13 +190,16 @@ function addConsumerImplicitEdges(options: {
   graph: ColoringGraph;
   problems: string[];
 }): void {
-  const refs = readImplicitRefs(options.config, options.consumer.configPath);
-  options.problems.push(...refs.problems);
-  for (const ref of refs.implicitRefs) {
+  const references = readImplicitReferences(
+    options.config,
+    options.consumer.configPath,
+  );
+  options.problems.push(...references.problems);
+  for (const reference of references.implicitRefs) {
     const edge = createImplicitReferenceEdge({
       ...options,
-      path: ref.path,
-      targetConfigPath: ref.targetConfigPath,
+      path: reference.path,
+      targetConfigPath: reference.targetConfigPath,
     });
     if (edge !== null) addEdge({ edge, graph: options.graph });
   }
@@ -207,9 +211,10 @@ function addImplicitReferenceEdges(options: {
   graph: ColoringGraph;
   problems: string[];
 }): void {
-  const consumers = [...options.discovery.plan.typeConfigs.values()].filter(
-    isBuildCandidate,
-  );
+  const consumers = options.discovery.plan.typeConfigs
+    .values()
+    .filter(isBuildCandidate)
+    .toArray();
   for (const consumer of consumers)
     addConsumerImplicitEdges({ ...options, consumer });
 }
@@ -218,9 +223,10 @@ export function colorBuildCheckerComponents(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
 }): string[] {
-  const candidates = [...options.discovery.plan.typeConfigs.values()].filter(
-    isBuildCandidate,
-  );
+  const candidates = options.discovery.plan.typeConfigs
+    .values()
+    .filter(isBuildCandidate)
+    .toArray();
   const graph: ColoringGraph = {
     adjacency: new Map(
       candidates.map((state) => [state.configPath, new Set<string>()]),

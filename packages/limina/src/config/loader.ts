@@ -3,8 +3,8 @@ import { loadConfigModule } from './loader-import';
 import { resolveExecutionConfigLocation } from './loader-paths';
 import type {
   LiminaConfig,
-  LiminaConfigEnv,
-  LiminaConfigFn,
+  LiminaConfigEnvironment,
+  LiminaConfigFunction,
   LoadConfigOptions,
   ResolvedLiminaConfig,
 } from './root-types';
@@ -12,14 +12,18 @@ import { normalizeConfig } from './runtime';
 
 async function resolveConfigExport(
   configExport: unknown,
-  configEnv: LiminaConfigEnv,
+  configEnvironment_: LiminaConfigEnvironment,
 ): Promise<LiminaConfig> {
-  if (typeof configExport === 'function')
-    return normalizeConfig(await (configExport as LiminaConfigFn)(configEnv));
-  return normalizeConfig(await configExport);
+  return normalizeConfig(
+    typeof configExport === 'function'
+      ? await (configExport as LiminaConfigFunction)(configEnvironment_)
+      : await configExport,
+  );
 }
 
-function configEnvironment(options: LoadConfigOptions): LiminaConfigEnv {
+function configEnvironment(
+  options: LoadConfigOptions,
+): LiminaConfigEnvironment {
   return { command: options.command ?? 'check', mode: configMode(options) };
 }
 function configMode(options: LoadConfigOptions): string {

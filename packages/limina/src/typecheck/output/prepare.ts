@@ -119,8 +119,11 @@ function addTargetConflictIfNeeded(options: {
   state: PrepareState;
   targetState: RegularFileState | undefined;
 }): void {
-  if (options.targetState === undefined) return;
-  if (!hasContentConflict(options.sourceState, options.targetState)) return;
+  if (
+    options.targetState === undefined ||
+    !hasContentConflict(options.sourceState, options.targetState)
+  )
+    return;
   options.state.problems.push(createConflictProblem(options.entry));
 }
 
@@ -187,7 +190,10 @@ export async function prepareDeclarationEntries(options: {
   }
   return {
     boundaryTargets: state.boundaryTargets,
-    entries: [...state.preparedByTarget.values()].sort(comparePreparedEntries),
+    entries: state.preparedByTarget
+      .values()
+      .toArray()
+      .sort(comparePreparedEntries),
     problems: state.problems,
   };
 }

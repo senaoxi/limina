@@ -9,7 +9,7 @@ vi.mock('@clack/prompts', () => ({
   select: selectMock,
 }));
 
-function setTty(value: boolean): () => void {
+function setTty(isValue: boolean): () => void {
   const stdinDescriptor = Object.getOwnPropertyDescriptor(
     process.stdin,
     'isTTY',
@@ -21,11 +21,11 @@ function setTty(value: boolean): () => void {
 
   Object.defineProperty(process.stdin, 'isTTY', {
     configurable: true,
-    value,
+    value: isValue,
   });
   Object.defineProperty(process.stdout, 'isTTY', {
     configurable: true,
-    value,
+    value: isValue,
   });
 
   return () => {
@@ -42,17 +42,17 @@ function setTty(value: boolean): () => void {
   };
 }
 
-let restoreTty: (() => void) | undefined;
+const ttyState: { restore?: () => void } = {};
 
 afterEach(() => {
-  restoreTty?.();
-  restoreTty = undefined;
+  ttyState.restore?.();
+  ttyState.restore = undefined;
   selectMock.mockReset();
 });
 
 describe('migration prompts', () => {
   it('selects in-place hardlink rewrite by default', async () => {
-    restoreTty = setTty(true);
+    ttyState.restore = setTty(true);
     selectMock.mockResolvedValue('rewrite');
 
     await expect(selectHardlinkStrategy('choose a strategy')).resolves.toBe(

@@ -6,7 +6,7 @@ export interface EffectiveRegistryAuthority {
   readonly timeoutMs?: number;
 }
 
-export interface ReleaseRegistryConfiguration {
+export interface ReleaseRegistryConfig {
   authorityFor(packageName: string): EffectiveRegistryAuthority;
 }
 

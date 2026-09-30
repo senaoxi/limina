@@ -25,24 +25,21 @@ import {
 } from './vue-pair-resolution';
 
 function nullableString(value: string | undefined): string | null {
-  if (value === undefined) return null;
-  return value;
+  return value === undefined ? null : value;
 }
 
 function getAstroContextIdentity(
   request: NormalizedModuleResolutionRequest,
 ): string | null {
   const project = request.context.astroSemanticProject;
-  if (project === undefined) return null;
-  return project.seed.id;
+  return project === undefined ? null : project.seed.id;
 }
 
 function getVueContextIdentity(
   request: NormalizedModuleResolutionRequest,
 ): string | null {
   const identity = request.context.vueSemanticIdentity;
-  if (identity === undefined) return null;
-  return identity.id;
+  return identity === undefined ? null : identity.id;
 }
 
 function createCanonicalCacheKey(options: {
@@ -173,10 +170,9 @@ function resolveEligiblePair(options: {
   oxc: string | null;
   request: NormalizedModuleResolutionRequest;
 }): ModuleResolutionPair {
-  if (options.eligibility.kind === 'eligible') {
-    return resolveAstroSemanticPair(options);
-  }
-  return resolveNonAstroPair(options);
+  return options.eligibility.kind === 'eligible'
+    ? resolveAstroSemanticPair(options)
+    : resolveNonAstroPair(options);
 }
 
 function createCanonicalEvidence(options: {
@@ -219,8 +215,8 @@ function createCanonicalEvidence(options: {
 export function createCanonicalResolver(
   dependencies: ProviderDependencies,
 ): ImportAnalysisContext['resolveImportEvidence'] {
-  return (...args) => {
-    const [importRecord, containingFile, compilerOptions, context] = args;
+  return (...arguments_) => {
+    const [importRecord, containingFile, compilerOptions, context] = arguments_;
     const request = dependencies.requests.getRequest(
       importRecord.specifier,
       containingFile,

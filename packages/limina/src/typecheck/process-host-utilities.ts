@@ -24,7 +24,7 @@ export function createCheckerHostMeasurement(
   };
 }
 
-export function refChildProcess(child: ChildProcess): void {
+export function referenceChildProcess(child: ChildProcess): void {
   child.ref();
 
   if (child.channel) {

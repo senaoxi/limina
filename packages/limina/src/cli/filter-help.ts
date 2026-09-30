@@ -44,13 +44,13 @@ function getCheckerValues(snapshot: Snapshot): CheckIssueFilterHelpValue[] {
 
 function getRunTaskNames(snapshot: Snapshot): string[] {
   if (snapshot === null) return [];
-  if (snapshot.run === undefined) return [];
-  return snapshot.run.tasks.map((task) => task.issueTask);
+  return snapshot.run === undefined
+    ? []
+    : snapshot.run.tasks.map((task) => task.issueTask);
 }
 
 function getIssueTaskNames(snapshot: Snapshot): string[] {
-  if (snapshot === null) return [];
-  return snapshot.issues.map((issue) => issue.task);
+  return snapshot === null ? [] : snapshot.issues.map((issue) => issue.task);
 }
 
 function getTaskValues(snapshot: Snapshot): CheckIssueFilterHelpValue[] {
@@ -66,8 +66,9 @@ function getFilterHelpValues(options: {
   snapshot: Snapshot;
 }): CheckIssueFilterHelpValue[] {
   if (options.helpKind === 'task') return getTaskValues(options.snapshot);
-  if (options.helpKind === 'checker') return getCheckerValues(options.snapshot);
-  return getPackageValues(options.snapshot);
+  return options.helpKind === 'checker'
+    ? getCheckerValues(options.snapshot)
+    : getPackageValues(options.snapshot);
 }
 
 async function readRequestedSnapshot(
@@ -92,8 +93,11 @@ async function readRequestedSnapshot(
 function isUnavailableAttemptQuery(
   query: CheckAttemptQueryResult | undefined,
 ): query is Extract<CheckAttemptQueryResult, { snapshot: null }> {
-  if (query === undefined) return false;
-  return query.state !== 'completed' && query.state !== 'legacy';
+  return (
+    query !== undefined &&
+    query.state !== 'completed' &&
+    query.state !== 'legacy'
+  );
 }
 
 function printRuleHelp(): void {
@@ -125,7 +129,7 @@ async function printSnapshotHelp(options: {
   );
 }
 
-export async function printCheckIssueFilterHelpIfRequested(
+export async function isPrintCheckIssueFilterHelpIfRequested(
   argv: readonly string[],
 ): Promise<boolean> {
   const helpKind = parseCheckIssueFilterHelpKind(argv);

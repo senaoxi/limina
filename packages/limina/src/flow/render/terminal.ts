@@ -1,10 +1,13 @@
 import { renderCompactSnapshotLines, renderSnapshotLines } from './snapshot';
-import { fitRenderedLinesToTerminal, fitsRenderedLines } from './terminal-fit';
+import {
+  fitRenderedLinesToTerminal,
+  isFitsRenderedLines,
+} from './terminal-fit';
 import type { FlowRenderSnapshot, FlowTerminalDimensions } from './types';
 
 export {
   fitRenderedLinesToTerminal,
-  fitsRenderedLines,
+  isFitsRenderedLines as fitsRenderedLines,
   type FitRenderedLinesOptions,
 } from './terminal-fit';
 
@@ -21,7 +24,7 @@ function canRenderFullSnapshot(options: {
 }): boolean {
   return (
     !options.preferCompact &&
-    fitsRenderedLines(options.fullLines, options.dimensions, {
+    isFitsRenderedLines(options.fullLines, options.dimensions, {
       reserveContext: true,
     })
   );

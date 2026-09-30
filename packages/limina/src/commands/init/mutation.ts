@@ -1,6 +1,6 @@
 export { writeInitFile } from './file-writer';
 export {
   prepareInitMutationContext,
-  removeInitGeneratedRoot,
+  isRemoveInitGeneratedRoot as removeInitGeneratedRoot,
 } from './mutation-plan';
 export type { InitMutationContext } from './mutation-types';

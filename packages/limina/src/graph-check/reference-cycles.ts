@@ -8,7 +8,7 @@ import { toRelativePath } from '#utils/path';
 import { collectStronglyConnectedComponents } from '#utils/strongly-connected-components';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
-import { getProjectCheckerName } from './finding-utils';
+import { getProjectCheckerName } from './finding-utilities';
 import type { GraphFinding, GraphReferenceCycleFinding } from './findings';
 
 const GENERATED_REFERENCE_CYCLE_REASON =
@@ -35,7 +35,7 @@ function createGeneratedReferenceGraph(
   for (const project of dtsProjects) {
     const references = [...project.references]
       .filter((referencePath) => dtsProjectPaths.has(referencePath))
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
 
     graph.set(project.configPath, new Set(references));
   }
@@ -55,7 +55,9 @@ function collectGeneratedReferenceComponents(
   }
 
   return collectStronglyConnectedComponents(
-    [...configPaths].sort(),
+    [...configPaths].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    ),
     (configPath) => graph.get(configPath) ?? [],
   );
 }
@@ -88,22 +90,14 @@ function hasSelfReference(
   }
 
   const references = graph.get(member);
-  if (!references) {
-    return false;
-  }
-
-  return references.has(member);
+  return references !== undefined && references.has(member);
 }
 
 function isCycleComponent(
   graph: Map<string, Set<string>>,
   component: string[],
 ): boolean {
-  if (component.length > 1) {
-    return true;
-  }
-
-  return hasSelfReference(graph, component[0]);
+  return component.length > 1 || hasSelfReference(graph, component[0]);
 }
 
 function getSingleCheckerName(
@@ -116,11 +110,7 @@ function getSingleCheckerName(
       .filter((value): value is string => Boolean(value)),
   );
 
-  if (checkerNames.size !== 1) {
-    return undefined;
-  }
-
-  return [...checkerNames][0];
+  return checkerNames.size === 1 ? [...checkerNames][0] : undefined;
 }
 
 function createCycleFinding(options: {
@@ -191,7 +181,9 @@ export function addGeneratedReferenceCycleProblems(options: {
       continue;
     }
 
-    const members = [...component].sort();
+    const members = [...component].sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    );
     options.findings.push(
       createCycleFinding({
         config: options.config,

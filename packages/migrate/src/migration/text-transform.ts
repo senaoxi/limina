@@ -71,9 +71,9 @@ export function applyMigratedTsconfigText(options: {
       applyJsoncModification({
         content,
         ...edit,
-        ...(edit.path[0] === '$schema'
-          ? { modification: { getInsertionIndex: () => 0 } }
-          : {}),
+        ...(edit.path[0] === '$schema' && {
+          modification: { getInsertionIndex: () => 0 },
+        }),
       }),
     options.originalContent,
   );
@@ -84,7 +84,7 @@ function collectChangedValue(
   right: unknown,
   path: string[],
 ): { path: string[]; value: unknown }[] {
-  if (isPlainRecord(left) && isPlainRecord(right))
-    return collectMigrationEdits(left, right, path);
-  return [{ path, value: right }];
+  return isPlainRecord(left) && isPlainRecord(right)
+    ? collectMigrationEdits(left, right, path)
+    : [{ path, value: right }];
 }

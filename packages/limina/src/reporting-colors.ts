@@ -3,12 +3,12 @@ import { colorText } from '#utils/reporting';
 export type CheckSummaryBlockColor = 'green' | 'red';
 type AnsiColor = string;
 
-const ANSI_BLUE = '\u001B[34m';
-const ANSI_CYAN = '\u001B[36m';
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_MAGENTA = '\u001B[35m';
-const ANSI_RED = '\u001B[31m';
-const ANSI_YELLOW = '\u001B[33m';
+const ANSI_BLUE = '\u{1B}[34m';
+const ANSI_CYAN = '\u{1B}[36m';
+const ANSI_GREEN = '\u{1B}[32m';
+const ANSI_MAGENTA = '\u{1B}[35m';
+const ANSI_RED = '\u{1B}[31m';
+const ANSI_YELLOW = '\u{1B}[33m';
 const SUMMARY_LABEL_PREFIX_PATTERN =
   /^(\s*(?:-\s+|\d+\.\s+)?)([A-Za-z][A-Za-z ]*)(:)(\s*)/u;
 

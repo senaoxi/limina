@@ -8,9 +8,9 @@ function runCommand(
   command: readonly [string, ...string[]],
   cwd: string,
 ): Promise<void> {
-  const [bin, ...args] = command;
+  const [bin, ...arguments_] = command;
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { cwd }, (error) => {
+    execFile(bin, arguments_, { cwd }, (error) => {
       if (error !== null) {
         reject(error);
         return;
@@ -56,11 +56,11 @@ async function resolveSkillInstallDecision(
 }
 
 async function executeSkillInstall(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<InitSkillInstallResult> {
   const command = formatCommand(liminaSkillInstallCommand);
   try {
-    await runCommand(liminaSkillInstallCommand, rootDir);
+    await runCommand(liminaSkillInstallCommand, rootDirectory);
     InitLogger.success('limina skill installed.');
     return {
       flowStatus: 'pass',

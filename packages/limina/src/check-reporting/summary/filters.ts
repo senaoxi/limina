@@ -16,8 +16,7 @@ interface FilterSelection {
 function hasSelectedValues(
   values: readonly string[] | undefined,
 ): values is readonly string[] {
-  if (values === undefined) return false;
-  return values.length > 0;
+  return values !== undefined && values.length > 0;
 }
 
 function getFilterSelections(
@@ -44,8 +43,9 @@ export function hasFilters(
 
 function formatFilterSelection(selection: FilterSelection): string[] {
   const values = selection.values;
-  if (!hasSelectedValues(values)) return [];
-  return [`  ${selection.label}: ${values.join(', ')}`];
+  return hasSelectedValues(values)
+    ? [`  ${selection.label}: ${values.join(', ')}`]
+    : [];
 }
 
 export function formatFilters(
@@ -142,8 +142,9 @@ function createValueDiagnostics(options: {
 }
 
 function addDiagnosticsHeading(diagnostics: readonly string[]): string[] {
-  if (diagnostics.length === 0) return [];
-  return ['Filter diagnostics:', ...diagnostics];
+  return diagnostics.length === 0
+    ? []
+    : ['Filter diagnostics:', ...diagnostics];
 }
 
 export function formatFilterDiagnostics(options: {

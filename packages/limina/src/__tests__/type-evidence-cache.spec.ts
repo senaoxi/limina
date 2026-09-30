@@ -10,7 +10,7 @@ import {
 } from '../core/type-evidence';
 import { createPreflightGenerationController } from '../preflight/generation';
 import { LiminaPreflightManager } from '../preflight/manager';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 function createProvider(dispose = vi.fn()): TypeEvidenceProvider {
   return {
@@ -155,13 +155,10 @@ describe('type evidence cache locator identities', () => {
 
 describe('type evidence cache generation disposal', () => {
   it('disposes the old generation before replacement and at manager shutdown', () => {
-    const config = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config = withFixtureGovernanceRoot({
       configPath: path.join(process.cwd(), 'limina.config.mts'),
       rootDir: process.cwd(),
-    } satisfies ResolvedLiminaConfig;
+    }) satisfies ResolvedLiminaConfig;
     const manager = new LiminaPreflightManager({ config });
     const oldProviderDispose = vi.fn();
     const oldProgramDispose = vi.fn();
@@ -186,13 +183,14 @@ describe('type evidence cache generation disposal', () => {
     expect(oldProgramDispose).toHaveBeenCalledTimes(1);
 
     const nextProviderDispose = vi.fn();
+    const providerCacheKey = createTypeEvidenceProviderCacheKey({
+      checkerName: 'tsc',
+      configPath: path.join(process.cwd(), 'tsconfig.json'),
+      generation: 1,
+      preset: 'tsc',
+    });
     manager.providers.typeEvidence.cache.getOrCreateProvider(
-      createTypeEvidenceProviderCacheKey({
-        checkerName: 'tsc',
-        configPath: path.join(process.cwd(), 'tsconfig.json'),
-        generation: 1,
-        preset: 'tsc',
-      }),
+      providerCacheKey,
       () => createProvider(nextProviderDispose),
     );
 

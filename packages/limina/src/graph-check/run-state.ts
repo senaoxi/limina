@@ -86,7 +86,10 @@ export async function createGraphCheckState(
   const preflight = resolvePreflight(config, options);
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
-  const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
+  const projectPaths = graphRoute.projectExtensionsByPath
+    .keys()
+    .toArray()
+    .sort((left, right) => Number(left > right) - Number(left < right));
   const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
   const projects = alignProjectOwnedFilesWithGeneratedGraph({
     generatedGraph,

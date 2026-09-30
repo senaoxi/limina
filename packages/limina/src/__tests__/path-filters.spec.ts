@@ -1,8 +1,8 @@
 import path from 'pathe';
 import { describe, expect, it } from 'vitest';
 import {
-  pathCandidatesMatchFileFilters,
-  pathCandidatesMatchScopeFilters,
+  isPathCandidatesMatchFileFilters,
+  isPathCandidatesMatchScopeFilters,
   type PathFilterCandidate,
 } from '../check-reporting/path-filters';
 import { formatCheckIssueSnapshotInventory } from '../check-reporting/snapshot';
@@ -51,12 +51,12 @@ function formatIssueIds(options: {
 
 describe('check issue path filters', () => {
   it('canonicalizes equivalent file and scope path representations', () => {
-    const rootDir = path.resolve('path filter workspace');
+    const rootDirectory = path.resolve('path filter workspace');
     const relativeFile = 'packages/a/src/nested/file.ts';
-    const absoluteFile = path.join(rootDir, ...relativeFile.split('/'));
+    const absoluteFile = path.join(rootDirectory, ...relativeFile.split('/'));
     const expectedIds = formatIssueIds({
       files: [relativeFile],
-      rootDir,
+      rootDir: rootDirectory,
     });
 
     for (const file of [
@@ -65,33 +65,37 @@ describe('check issue path filters', () => {
       absoluteFile,
       relativeFile.replaceAll('/', '\\'),
     ]) {
-      expect(formatIssueIds({ files: [file], rootDir })).toEqual(expectedIds);
+      expect(formatIssueIds({ files: [file], rootDir: rootDirectory })).toEqual(
+        expectedIds,
+      );
     }
 
     for (const scope of [
       'packages/a/src',
       './packages/a/src',
-      path.join(rootDir, 'packages', 'a', 'src'),
+      path.join(rootDirectory, 'packages', 'a', 'src'),
       'packages\\a\\src',
       'packages/a/**',
       'packages/**/src/**',
     ]) {
-      expect(formatIssueIds({ rootDir, scopes: [scope] })).toEqual(expectedIds);
+      expect(
+        formatIssueIds({ rootDir: rootDirectory, scopes: [scope] }),
+      ).toEqual(expectedIds);
     }
   });
 
   it('matches repeated scopes with OR semantics and reports zero matches', () => {
-    const rootDir = path.resolve('path filter workspace');
+    const rootDirectory = path.resolve('path filter workspace');
 
     expect(
       formatIssueIds({
-        rootDir,
+        rootDir: rootDirectory,
         scopes: ['packages/missing/**', 'packages/a/**'],
       }),
     ).toHaveLength(1);
     expect(
       formatIssueIds({
-        rootDir,
+        rootDir: rootDirectory,
         scopes: ['packages/missing/**'],
       }),
     ).toEqual([]);
@@ -100,8 +104,8 @@ describe('check issue path filters', () => {
 
 describe('check issue scope path matching', () => {
   it('preserves source owner-relative scope matching', () => {
-    const rootDir = path.resolve('path filter workspace');
-    const ownerDirectory = path.join(rootDir, 'packages', 'a');
+    const rootDirectory = path.resolve('path filter workspace');
+    const ownerDirectory = path.join(rootDirectory, 'packages', 'a');
     const candidates: PathFilterCandidate[] = [
       {
         kind: 'file',
@@ -111,29 +115,29 @@ describe('check issue scope path matching', () => {
     ];
 
     expect(
-      pathCandidatesMatchScopeFilters({
+      isPathCandidatesMatchScopeFilters({
         candidates,
-        rootDir,
+        rootDir: rootDirectory,
         scopes: ['src/**'],
       }),
     ).toBe(true);
     expect(
-      pathCandidatesMatchFileFilters({
+      isPathCandidatesMatchFileFilters({
         candidates,
         files: ['src/nested/file.ts'],
-        rootDir,
+        rootDir: rootDirectory,
       }),
     ).toBe(false);
   });
 
   it('never treats diagnostic scope labels as path candidates', () => {
-    const rootDir = path.resolve('path filter workspace');
+    const rootDirectory = path.resolve('path filter workspace');
     const diagnosticScope = 'source.declarations.ambient[0]';
     const issue = createLiminaCheckIssue({
       code: 'LIMINA_SOURCE_AMBIENT_DECLARATION_CONFIG_INVALID',
       locations: [{ label: 'field', scope: diagnosticScope }],
       reason: 'invalid ambient declaration config',
-      rootDir,
+      rootDir: rootDirectory,
       scope: diagnosticScope,
       task: 'source:check',
       title: 'Ambient declaration config is invalid',
@@ -142,7 +146,7 @@ describe('check issue scope path matching', () => {
       formatCheckIssueSnapshotInventory({
         filters: { scopes: [diagnosticScope] },
         format: 'json',
-        rootDir,
+        rootDir: rootDirectory,
         snapshot: {
           command: 'limina check',
           createdAt: '2026-07-17T00:00:00.000Z',

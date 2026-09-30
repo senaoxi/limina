@@ -247,8 +247,9 @@ function canonicalManagedSource(
 function canonicalTerminalEvidence(
   evidence: Extract<TypeEvidence, { kind: 'missing' | 'unsupported-checker' }>,
 ): string {
-  if (evidence.kind === 'missing') return JSON.stringify([evidence.kind]);
-  return JSON.stringify([evidence.kind, evidence.checker, evidence.reason]);
+  return evidence.kind === 'missing'
+    ? JSON.stringify([evidence.kind])
+    : JSON.stringify([evidence.kind, evidence.checker, evidence.reason]);
 }
 
 function canonicalNonAmbientEvidence(

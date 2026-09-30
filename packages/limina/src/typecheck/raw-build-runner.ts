@@ -161,7 +161,7 @@ async function executeRawTarget(options: {
   );
 }
 
-function reportRawBuildFailure(options: {
+function isReportRawBuildFailure(options: {
   context: RawBuildContext;
   failedResults: readonly TypecheckTargetResult[];
 }): boolean {
@@ -182,16 +182,21 @@ function reportRawBuildFailure(options: {
 }
 
 function shouldReportRawBuildSuccess(context: RawBuildContext): boolean {
-  if (!shouldLogCheckReport(context.options.report)) return false;
-  return context.options.flow?.interactive !== true;
+  return (
+    shouldLogCheckReport(context.options.report) &&
+    context.options.flow?.interactive !== true
+  );
 }
 
 function reportRawBuildResult(options: {
   context: RawBuildContext;
   failedResults: readonly TypecheckTargetResult[];
 }): void {
-  if (reportRawBuildFailure(options)) return;
-  if (!shouldReportRawBuildSuccess(options.context)) return;
+  if (
+    isReportRawBuildFailure(options) ||
+    !shouldReportRawBuildSuccess(options.context)
+  )
+    return;
   TypecheckLogger.success('Built 1 raw target.');
 }
 

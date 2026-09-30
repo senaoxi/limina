@@ -21,7 +21,7 @@ type RootBlockerResolver = (
 ) => RootBlocker;
 
 function resolvePassedBlocker(): undefined {
-  return undefined;
+  // Passed and disabled tasks do not introduce a root blocker.
 }
 
 function resolveBlockedBlocker(
@@ -124,8 +124,9 @@ function createBlockedRunOutcome(options: {
   outcomes: ReadonlyMap<TaskId, ExecutionTaskOutcome>;
 }): CompletedRunOutcome {
   const skipped = findSkippedOutcome(options);
-  if (skipped === undefined) return createDirectBlockedRunOutcome(options);
-  return createSkippedRunOutcome(skipped);
+  return skipped === undefined
+    ? createDirectBlockedRunOutcome(options)
+    : createSkippedRunOutcome(skipped);
 }
 
 function hasFailedOutcome(options: {
@@ -143,7 +144,7 @@ export function createCompletedRunOutcome(
 ): CompletedRunOutcome {
   const options = { orderedTasks, outcomes };
   if (hasBlockedOutcome(options)) return createBlockedRunOutcome(options);
-  return hasFailedOutcome(options) ? { state: 'failed' } : { state: 'passed' };
+  return { state: hasFailedOutcome(options) ? 'failed' : 'passed' };
 }
 
 const startedOutcomeStatuses = new Set(['disabled', 'failed', 'passed']);
@@ -151,8 +152,7 @@ const startedOutcomeStatuses = new Set(['disabled', 'failed', 'passed']);
 function isStartedOutcome(
   outcome: ExecutionTaskOutcome | undefined,
 ): outcome is StartedTaskResult {
-  if (outcome === undefined) return false;
-  return startedOutcomeStatuses.has(outcome.status);
+  return outcome !== undefined && startedOutcomeStatuses.has(outcome.status);
 }
 
 export function collectExecutionIssues(options: {
@@ -212,10 +212,9 @@ function createResultView(options: {
   outcome: ExecutionTaskOutcome;
   task: ExecutionTask;
 }): ExecutionTaskResultView {
-  if (isStartedOutcome(options.outcome)) {
-    return createStartedResultView({ ...options, outcome: options.outcome });
-  }
-  return createSyntheticResultView({ ...options, outcome: options.outcome });
+  return isStartedOutcome(options.outcome)
+    ? createStartedResultView({ ...options, outcome: options.outcome })
+    : createSyntheticResultView({ ...options, outcome: options.outcome });
 }
 
 export function createExecutionResult(options: {

@@ -9,19 +9,21 @@ export const VALID_PLACEHOLDER_INTEGRITY = `sha512-${createHash('sha512')
   .digest('base64')}`;
 
 function hashOptionalContent(content: string | undefined): string | undefined {
-  if (content === undefined) return undefined;
-  return createHash('sha256').update(content).digest('hex');
+  return content === undefined
+    ? undefined
+    : createHash('sha256').update(content).digest('hex');
 }
 
 function formatOptionalHash(
   label: 'local' | 'remote',
   hash: string | undefined,
 ): string | undefined {
-  if (hash === undefined) return undefined;
-  return `${label}=${hash}`;
+  return hash === undefined ? undefined : `${label}=${hash}`;
 }
 
-/** Formats one expected content-hash diff evidence line. */
+/**
+Formats one expected content-hash diff evidence line.
+*/
 export function createReleaseContentDiffEvidenceLine(options: {
   readonly kind: 'changed' | 'local-only' | 'remote-only';
   readonly localContent?: string;

@@ -34,19 +34,19 @@ const terminalPositionCases: TerminalPositionCase[] = [
     columns: 4,
     expected: { column: 2, rowsAdvanced: 0 },
     label: 'combining marks',
-    text: 'e\u0301e\u0301',
+    text: 'e\u{301}e\u{301}',
   },
   {
     columns: 2,
     expected: { column: 0, rowsAdvanced: 1 },
     label: 'ZWJ emoji',
-    text: '👩\u200D💻',
+    text: '👩\u{200D}💻',
   },
   {
     columns: 4,
     expected: { column: 0, rowsAdvanced: 1 },
     label: 'ANSI colors',
-    text: '\u001B[31m你好\u001B[0m',
+    text: '\u{1B}[31m你好\u{1B}[0m',
   },
   {
     columns: 1,
@@ -87,11 +87,11 @@ describe('terminal display positions', () => {
 
   it('keeps split ANSI and OSC sequences out of frame widths', () => {
     const tracker = new TerminalFrameTracker(() => 4);
-    tracker.record('\u001B[');
+    tracker.record('\u{1B}[');
     expect(tracker.lineCount).toBe(0);
     tracker.record('31m你');
-    tracker.record('\u001B]0;title');
-    tracker.record('\u001B\\好');
+    tracker.record('\u{1B}]0;title');
+    tracker.record('\u{1B}\\好');
     expect(tracker.lineCount).toBe(1);
   });
 
@@ -99,7 +99,7 @@ describe('terminal display positions', () => {
     const tracker = new TerminalFrameTracker(() => 3);
     tracker.record('👩');
     expect(tracker.lineCount).toBe(0);
-    tracker.record('\u200D💻');
+    tracker.record('\u{200D}💻');
     expect(tracker.lineCount).toBe(0);
   });
 
@@ -131,8 +131,10 @@ describe('real Writable stream tracking', () => {
       });
       const original = stream.write;
       const observed: unknown[] = [];
-      const restore = patchWriteStream(stream, (value) => observed.push(value));
-      let returned = true;
+      const restore = patchWriteStream(stream, (value) => {
+        observed.push(value);
+      });
+      let isReturned = true;
       let callbacks = 0;
       try {
         await new Promise<void>((resolve, reject) => {
@@ -141,11 +143,11 @@ describe('real Writable stream tracking', () => {
             if (error) reject(error);
             else resolve();
           };
-          returned = encoding
+          isReturned = encoding
             ? stream.write(chunk, encoding, done)
             : stream.write(chunk, done);
         });
-        expect(returned).toBe(false);
+        expect(isReturned).toBe(false);
         expect(callbacks).toBe(1);
         expect(writes).toEqual([hex]);
         expect(observed).toEqual([chunk]);

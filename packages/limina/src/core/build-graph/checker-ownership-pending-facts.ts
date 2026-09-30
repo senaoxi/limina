@@ -109,8 +109,9 @@ function getPhysicalTarget(options: {
   const requirement = options.nativeFact.referenceRequirement;
   if (requirement !== null)
     return { path: requirement.targetFileName, provenance: 'checker-source' };
-  if (hasDeclarationResolution(options.nativeFact.resolution)) return null;
-  return getPendingFrameworkTarget(options);
+  return hasDeclarationResolution(options.nativeFact.resolution)
+    ? null
+    : getPendingFrameworkTarget(options);
 }
 
 function isRuntimeOnlyResource(
@@ -252,9 +253,8 @@ function collectProjectFacts(
     typeScriptSemanticContext,
   };
   try {
-    for (const fileName of semantic.project.fileNames.filter(
-      isNativeTypeScriptProjectInput,
-    )) {
+    for (const fileName of semantic.project.fileNames) {
+      if (!isNativeTypeScriptProjectInput(fileName)) continue;
       collectFileFacts({ context, facts, fileName, problems });
     }
   } finally {

@@ -50,14 +50,12 @@ function findExactPackageImportMatch(
   importsField: Record<string, unknown>,
   specifier: string,
 ): PackageImportMatch | null {
-  if (!Object.hasOwn(importsField, specifier)) {
-    return null;
-  }
-
-  return createPackageImportMatch(specifier, importsField[specifier]);
+  return Object.hasOwn(importsField, specifier)
+    ? createPackageImportMatch(specifier, importsField[specifier])
+    : null;
 }
 
-function matchesImportPattern(
+function isMatchesImportPattern(
   prefix: string,
   suffix: string,
   specifier: string,
@@ -76,11 +74,9 @@ function createMatchingPattern(
 
   const prefix = key.slice(0, wildcardIndex);
   const suffix = key.slice(wildcardIndex + 1);
-  if (!matchesImportPattern(prefix, suffix, specifier)) {
-    return null;
-  }
-
-  return { key, wildcardIndex };
+  return isMatchesImportPattern(prefix, suffix, specifier)
+    ? { key, wildcardIndex }
+    : null;
 }
 
 function comparePackageImportPatterns(
@@ -102,28 +98,22 @@ function findWildcardPackageImportMatch(
     .filter((pattern): pattern is PackageImportPattern => pattern !== null)
     .sort(comparePackageImportPatterns)[0];
 
-  if (selectedPattern === undefined) {
-    return null;
-  }
-
-  return createPackageImportMatch(
-    selectedPattern.key,
-    importsField[selectedPattern.key],
-  );
+  return selectedPattern === undefined
+    ? null
+    : createPackageImportMatch(
+        selectedPattern.key,
+        importsField[selectedPattern.key],
+      );
 }
 
 export function findPackageImportMatch(
   importsField: PackageManifest['imports'],
   specifier: string,
 ): PackageImportMatch | null {
-  if (!isPlainRecord(importsField)) {
-    return null;
-  }
-
-  return (
-    findExactPackageImportMatch(importsField, specifier) ??
-    findWildcardPackageImportMatch(importsField, specifier)
-  );
+  return isPlainRecord(importsField)
+    ? (findExactPackageImportMatch(importsField, specifier) ??
+        findWildcardPackageImportMatch(importsField, specifier))
+    : null;
 }
 
 function getOnlyTargetKind(

@@ -2,7 +2,7 @@ import ignore from 'ignore';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'pathe';
 import { removeInitGeneratedRoot } from './mutation';
-import { confirmAction } from './prompts';
+import { isConfirmAction } from './prompts';
 import {
   createLiminaConfigContent,
   liminaConfigFileName,
@@ -41,17 +41,15 @@ async function resolveExistingConfigPlan(options: {
     );
   }
 
-  const shouldOverwrite = await confirmAction({
+  const shouldOverwrite = await isConfirmAction({
     message: `${liminaConfigFileName} already exists. Overwrite it?`,
     prompt: options.prompt,
   });
-  if (shouldOverwrite) {
-    return createConfigWritePlan(options.content);
-  }
-
-  return createSkippedPlan(
-    `${liminaConfigFileName} (skipped: existing file kept)`,
-  );
+  return shouldOverwrite
+    ? createConfigWritePlan(options.content)
+    : createSkippedPlan(
+        `${liminaConfigFileName} (skipped: existing file kept)`,
+      );
 }
 
 async function resolveConfigWritePlan(options: {
@@ -59,11 +57,9 @@ async function resolveConfigWritePlan(options: {
   prompt: InitPromptOptions;
 }): Promise<FileWritePlan> {
   const content = createLiminaConfigContent();
-  if (!existsSync(options.configPath)) {
-    return createConfigWritePlan(content);
-  }
-
-  return resolveExistingConfigPlan({ ...options, content });
+  return existsSync(options.configPath)
+    ? resolveExistingConfigPlan({ ...options, content })
+    : createConfigWritePlan(content);
 }
 
 async function applyFileWritePlan(options: {
@@ -103,11 +99,7 @@ export async function writeLiminaConfig(options: {
 }
 
 function getGitignoreSeparator(content: string): string {
-  if (content.length === 0 || content.endsWith('\n')) {
-    return '';
-  }
-
-  return '\n';
+  return content.length === 0 || content.endsWith('\n') ? '' : '\n';
 }
 
 function createExistingGitignorePlan(
@@ -153,12 +145,12 @@ export async function ensureGeneratedGraphGitignore(options: {
   });
 }
 
-export async function removeRootGeneratedGraphDir(
+async function removeRootGeneratedGraphDirectory(
   state: InitFileState,
 ): Promise<InitFileStepResult> {
   const generatedRootPath = state.mutationContext.generatedRootPath;
-  const removed = await removeInitGeneratedRoot(state.mutationContext);
-  if (!removed) {
+  const isRemoved = await removeInitGeneratedRoot(state.mutationContext);
+  if (!isRemoved) {
     return {
       message: 'root .limina (skipped: not present)',
       status: 'skip',
@@ -171,3 +163,5 @@ export async function removeRootGeneratedGraphDir(
     status: 'pass',
   };
 }
+
+export { removeRootGeneratedGraphDirectory as removeRootGeneratedGraphDir };

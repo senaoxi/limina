@@ -27,9 +27,9 @@ export function createGeneratedGraphPathAliases(
   generatedGraph: GeneratedTsconfigGraphResult,
 ): Map<string, string> {
   return new Map(
-    [...generatedGraph.sourceToDts.values()].flatMap((sourceToDts) => [
-      ...sourceToDts.entries(),
-    ]),
+    generatedGraph.sourceToDts
+      .values()
+      .flatMap((sourceToDts) => [...sourceToDts]),
   );
 }
 
@@ -166,9 +166,9 @@ function addParsedDomainIssue(options: {
     field: options.issue.field,
     findings: options.findings,
     reason: options.issue.reason,
-    ...(Object.hasOwn(options.issue, 'value')
-      ? { value: options.issue.value }
-      : {}),
+    ...(Object.hasOwn(options.issue, 'value') && {
+      value: options.issue.value,
+    }),
   });
 }
 

@@ -19,8 +19,7 @@ interface RawExportEntry {
 }
 
 function isExportSubpath(subpath: string): boolean {
-  if (subpath === '.') return true;
-  return subpath.startsWith('./');
+  return subpath === '.' || subpath.startsWith('./');
 }
 
 function getSubpathEntries(
@@ -32,10 +31,9 @@ function getSubpathEntries(
 }
 
 function getRawExportEntries(exportsField: unknown): RawExportEntry[] {
-  if (isPlainRecord(exportsField) && isSubpathExportMap(exportsField)) {
-    return getSubpathEntries(exportsField);
-  }
-  return [{ subpath: '.', value: exportsField }];
+  return isPlainRecord(exportsField) && isSubpathExportMap(exportsField)
+    ? getSubpathEntries(exportsField)
+    : [{ subpath: '.', value: exportsField }];
 }
 
 function createConcreteExportEntry(options: {

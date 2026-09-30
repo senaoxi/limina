@@ -73,13 +73,18 @@ function wrapImplicitObject(
 function hasReadablePath(
   value: unknown,
 ): value is JsonObject & { path: string } {
-  if (!isPlainRecord(value)) return false;
-  return typeof value.path === 'string' && value.path.trim() !== '';
+  return (
+    isPlainRecord(value) &&
+    typeof value.path === 'string' &&
+    value.path.trim() !== ''
+  );
 }
 
-function needsReason(entry: JsonObject): boolean {
-  if (entry.reason === undefined) return true;
-  return typeof entry.reason === 'string' && entry.reason.trim() === '';
+function isNeedsReason(entry: JsonObject): boolean {
+  return (
+    entry.reason === undefined ||
+    (typeof entry.reason === 'string' && entry.reason.trim() === '')
+  );
 }
 
 function normalizeReason(
@@ -87,7 +92,7 @@ function normalizeReason(
   entry: JsonObject,
   original: JsonObject,
 ): void {
-  if (!needsReason(entry)) return;
+  if (!isNeedsReason(entry)) return;
   entry.reason = '保留迁移前已有的显式 implicitRef；原声明未提供 reason';
   options.records.push({
     kind: 'normalized-implicit-reason',
@@ -122,7 +127,7 @@ function shouldRemoveImplicit(
   return true;
 }
 
-function deduplicateImplicit(
+function isDeduplicateImplicit(
   context: ImplicitNormalization,
   target: string,
   original: JsonObject,
@@ -141,7 +146,7 @@ function deduplicateImplicit(
   return true;
 }
 
-function normalizeImplicitRecord(
+function isNormalizeImplicitRecord(
   context: ImplicitNormalization,
   entry: JsonObject & { path: string },
 ): boolean {
@@ -150,8 +155,9 @@ function normalizeImplicitRecord(
     context.options.configPath,
     entry.path.trim(),
   );
-  const removed = shouldRemoveImplicit(context, target, original);
-  if (removed || deduplicateImplicit(context, target, original)) return false;
+  const isRemoved = shouldRemoveImplicit(context, target, original);
+  if (isRemoved || isDeduplicateImplicit(context, target, original))
+    return false;
   normalizeImplicitPathAndReason(context.options, entry, original);
   return true;
 }
@@ -169,13 +175,12 @@ function normalizeImplicitPathAndReason(
   normalizeReason(options, entry, original);
 }
 
-function normalizeImplicitEntry(
+function isNormalizeImplicitEntry(
   context: ImplicitNormalization,
   entry: unknown,
 ): boolean {
   // Malformed fields remain available to the formal reader's diagnostics.
-  if (!hasReadablePath(entry)) return true;
-  return normalizeImplicitRecord(context, entry);
+  return !hasReadablePath(entry) || isNormalizeImplicitRecord(context, entry);
 }
 
 function normalizeImplicit(
@@ -186,7 +191,7 @@ function normalizeImplicit(
   if (!Array.isArray(metadata.implicitRefs)) return;
   const context = { options, seen: new Set<string>() };
   metadata.implicitRefs = metadata.implicitRefs.filter((entry) =>
-    normalizeImplicitEntry(context, entry),
+    isNormalizeImplicitEntry(context, entry),
   );
 }
 

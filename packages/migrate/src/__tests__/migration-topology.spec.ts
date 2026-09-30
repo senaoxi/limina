@@ -22,14 +22,18 @@ import { createFixturePathResolver } from './helpers/path';
 const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 const source = (options: Record<string, unknown> = {}): string =>
   json({ compilerOptions: options, files: ['./src/index.ts'] });
-const solution = (...refs: string[]): string =>
-  json({ files: [], references: refs.map((ref) => ({ path: ref })) });
+const solution = (...references: string[]): string =>
+  json({
+    files: [],
+    references: references.map((reference) => ({ path: reference })),
+  });
 
 async function fixture(extra: Record<string, string>) {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-adoption-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-adoption-'),
   );
-  const locate = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  const locate = createFixturePathResolver(rootDirectory);
   const files = {
     'package.json': json({ name: 'root', private: true, type: 'module' }),
     'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
@@ -44,8 +48,8 @@ async function fixture(extra: Record<string, string>) {
     await writeFile(locate(file), content);
   }
   const git = promisify(execFile);
-  await git('git', ['init'], { cwd: rootDir });
-  await git('git', ['add', '.'], { cwd: rootDir });
+  await git('git', ['init'], { cwd: rootDirectory });
+  await git('git', ['add', '.'], { cwd: rootDirectory });
   await git(
     'git',
     [
@@ -58,12 +62,12 @@ async function fixture(extra: Record<string, string>) {
       '-m',
       'fixture',
     ],
-    { cwd: rootDir },
+    { cwd: rootDirectory },
   );
   return {
     path: locate,
     rerunFresh: async () => {
-      await git('git', ['add', '.'], { cwd: rootDir });
+      await git('git', ['add', '.'], { cwd: rootDirectory });
       await git(
         'git',
         [
@@ -76,13 +80,13 @@ async function fixture(extra: Record<string, string>) {
           '-m',
           'after adoption',
         ],
-        { cwd: rootDir },
+        { cwd: rootDirectory },
       );
       const cli = path.resolve(
         import.meta.dirname,
         '../../bin/limina-migrate.js',
       );
-      await git(process.execPath, [cli], { cwd: rootDir });
+      await git(process.execPath, [cli], { cwd: rootDirectory });
       return JSON.parse(
         await readFile(locate('.limina/migration/latest.json'), 'utf8'),
       );
@@ -114,7 +118,7 @@ async function fixture(extra: Record<string, string>) {
           }[];
         };
       },
-    cleanup: () => rm(rootDir, { recursive: true, force: true }),
+    cleanup: () => rm(rootDirectory, { recursive: true, force: true }),
   };
 }
 
@@ -180,7 +184,8 @@ describe('migration input topology', () => {
       expect(
         (await f.read('packages/app/producer/tsconfig.json')).liminaOptions,
       ).toBeUndefined();
-      for (const topology of (await f.report()).verification.topologies)
+      const { topologies } = (await f.report()).verification;
+      for (const topology of topologies)
         expect(
           topology.reachableSources[
             f.path('packages/app/generated/tsconfig.json')
@@ -284,7 +289,8 @@ describe('migration input topology', () => {
       const configText = await readFile(f.path('limina.config.mjs'), 'utf8');
       expect(configText).toContain('"kind": "tsconfig"');
       expect(configText).toContain('packages/app/tsconfig.json');
-      for (const topology of (await f.report()).verification.topologies)
+      const { topologies } = (await f.report()).verification;
+      for (const topology of topologies)
         expect(topology.sources).toEqual([
           f.path('packages/app/good/tsconfig.json'),
         ]);
@@ -370,7 +376,8 @@ describe('migration input topology', () => {
           { path: '../x/tsconfig.lib.json' },
         ],
       );
-      for (const topology of (await f.report()).verification.topologies)
+      const { topologies } = (await f.report()).verification;
+      for (const topology of topologies)
         for (const parent of ['a', 'b'])
           expect(
             topology.reachableSources[
@@ -606,7 +613,8 @@ describe('migration input topology', () => {
         expect(
           await readFile(f.path(`packages/app/${name}/tsconfig.json`), 'utf8'),
         ).toBe(consumer);
-      for (const topology of (await f.report()).verification.topologies)
+      const { topologies } = (await f.report()).verification;
+      for (const topology of topologies)
         expect(topology.sources).toEqual([
           f.path('packages/app/good/tsconfig.json'),
         ]);

@@ -34,9 +34,9 @@ export function resolveTypeScriptResult(
   dependencies: ProviderDependencies,
   request: NormalizedModuleResolutionRequest,
 ): ResolvedCheckerModuleName | null {
-  const hit = request.record.hasTypeScriptResult;
-  dependencies.requests.recordIndexAccess('typescript', hit);
-  if (!hit) {
+  const isHit = request.record.hasTypeScriptResult;
+  dependencies.requests.recordIndexAccess('typescript', isHit);
+  if (!isHit) {
     request.record.typeScriptResult = cloneTypeScriptResolution(
       resolveTypeScriptRaw(dependencies, request),
     );
@@ -62,9 +62,9 @@ export function resolveOxcResult(
   dependencies: ProviderDependencies,
   request: NormalizedModuleResolutionRequest,
 ): string | null {
-  const hit = request.record.hasOxcResult;
-  dependencies.requests.recordIndexAccess('oxc', hit);
-  if (!hit) {
+  const isHit = request.record.hasOxcResult;
+  dependencies.requests.recordIndexAccess('oxc', isHit);
+  if (!isHit) {
     request.record.oxcResult = resolveOxcRaw(dependencies, request);
     request.record.hasOxcResult = true;
   }

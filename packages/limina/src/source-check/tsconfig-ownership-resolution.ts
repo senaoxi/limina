@@ -35,15 +35,15 @@ function addExistingCandidate(candidates: string[], directory: string): void {
 }
 
 function getParentDirectory(
-  currentDir: string,
-  rootDir: string,
+  currentDirectory: string,
+  rootDirectory: string,
 ): string | null {
-  if (currentDir === rootDir) {
+  if (currentDirectory === rootDirectory) {
     return null;
   }
 
-  const parentDir = normalizeAbsolutePath(path.dirname(currentDir));
-  return parentDir === currentDir ? null : parentDir;
+  const parentDirectory = normalizeAbsolutePath(path.dirname(currentDirectory));
+  return parentDirectory === currentDirectory ? null : parentDirectory;
 }
 
 function collectBareTsconfigPathCandidates(options: {
@@ -51,14 +51,17 @@ function collectBareTsconfigPathCandidates(options: {
   rootDir: string;
 }): string[] {
   const candidates: string[] = [];
-  const rootDir = normalizeAbsolutePath(options.rootDir);
-  let currentDir: string | null = normalizeAbsolutePath(
+  const rootDirectory = normalizeAbsolutePath(options.rootDir);
+  let currentDirectory: string | null = normalizeAbsolutePath(
     path.dirname(options.filePath),
   );
 
-  while (currentDir && isPathInsideDirectory(currentDir, rootDir)) {
-    addExistingCandidate(candidates, currentDir);
-    currentDir = getParentDirectory(currentDir, rootDir);
+  while (
+    currentDirectory &&
+    isPathInsideDirectory(currentDirectory, rootDirectory)
+  ) {
+    addExistingCandidate(candidates, currentDirectory);
+    currentDirectory = getParentDirectory(currentDirectory, rootDirectory);
   }
 
   return candidates;
@@ -102,7 +105,9 @@ function collectReachableOrdinaryTypecheckConfigPaths(options: {
   const reachablePaths: string[] = [];
   const seen = new Set<string>();
 
-  for (const configPath of queue) {
+  let index = 0;
+  while (index < queue.length) {
+    const configPath = queue[index++]!;
     const visit = visitReachableConfig({
       config: options.config,
       configPath,

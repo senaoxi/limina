@@ -12,7 +12,7 @@ interface RegistrationDescriptorValue {
 
 interface RegistrationValue {
   readonly descriptor: RegistrationDescriptorValue;
-  readonly validate: (...args: never[]) => unknown;
+  readonly validate: (...arguments_: never[]) => unknown;
 }
 
 export function defineArchitectureValidator<
@@ -50,18 +50,15 @@ function hasStringProperty(
 function isRegistrationDescriptor(
   value: unknown,
 ): value is RegistrationDescriptorValue {
-  if (!isObjectRecord(value)) {
-    return false;
-  }
-
-  return ['id', 'inputKind'].every((property) =>
-    hasStringProperty(value, property),
+  return (
+    isObjectRecord(value) &&
+    ['id', 'inputKind'].every((property) => hasStringProperty(value, property))
   );
 }
 
 function hasRegistrationShape(value: unknown): value is {
   readonly descriptor: unknown;
-  readonly validate: (...args: never[]) => unknown;
+  readonly validate: (...arguments_: never[]) => unknown;
 } {
   return isObjectRecord(value) && typeof value.validate === 'function';
 }

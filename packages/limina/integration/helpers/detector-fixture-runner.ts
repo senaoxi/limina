@@ -23,12 +23,12 @@ import {
   applyFixtureSetup,
   assertTreeSnapshotUnchanged,
   captureTreeSnapshot,
-  cleanupDetectorSandbox,
-  copyFixtureRepository,
+  copyFixtureRepo,
   createDetectorSandbox,
   DEFAULT_SANDBOX_IGNORED_PATH_PREFIXES,
   finishFixtureCleanup,
-  pathExists,
+  isCleanupDetectorSandbox,
+  isPathExists,
   PRESERVE_INTEGRATION_ARTIFACTS_ENV,
 } from './fixture-sandbox';
 import { assertDetectorIssues } from './issue-assertions';
@@ -114,11 +114,9 @@ function formatUnknownError(error: unknown): string {
 }
 
 function truncateOutput(value: string): string {
-  if (value.length <= OUTPUT_DIAGNOSTIC_LIMIT) {
-    return value;
-  }
-
-  return `${value.slice(0, OUTPUT_DIAGNOSTIC_LIMIT)}\n... truncated ${value.length - OUTPUT_DIAGNOSTIC_LIMIT} characters`;
+  return value.length <= OUTPUT_DIAGNOSTIC_LIMIT
+    ? value
+    : `${value.slice(0, OUTPUT_DIAGNOSTIC_LIMIT)}\n... truncated ${value.length - OUTPUT_DIAGNOSTIC_LIMIT} characters`;
 }
 
 function combineErrors(primary: unknown, secondary: unknown): Error {
@@ -155,7 +153,7 @@ function contextualizeFailure(options: {
       `executable: ${entry.executable}`,
       `argv: ${JSON.stringify([...entry.args, ...options.invocationArgs])}`,
       `exit code: ${String(options.cli?.code ?? 'unavailable')}`,
-      `signal: ${String(options.cli?.signal ?? 'unavailable')}`,
+      `signal: ${options.cli?.signal ?? 'unavailable'}`,
       `timed out: ${String(options.cli?.timedOut ?? false)}`,
       `structured snapshot: ${options.snapshotPath}`,
       `${PRESERVE_INTEGRATION_ARTIFACTS_ENV}=1 preserves this sandbox for inspection.`,
@@ -216,14 +214,14 @@ function assertSnapshotOutcome(options: {
     return;
   }
 
-  const runResult = options.snapshot.run?.result;
   if (options.expectedRunOutcome !== undefined) return;
-  if (options.expectedExitCode === 0 && runResult !== 'passed') {
+  const runResult = options.snapshot.run?.result;
+  if (runResult !== 'passed' && options.expectedExitCode === 0) {
     throw new Error(
       `Detector fixture ${options.fixtureId} exited successfully but structured run result is ${String(runResult)}.`,
     );
   }
-  if (options.expectedExitCode !== 0 && runResult === 'passed') {
+  if (runResult === 'passed' && options.expectedExitCode !== 0) {
     throw new Error(
       `Detector fixture ${options.fixtureId} exited unsuccessfully but structured run result is passed.`,
     );
@@ -244,9 +242,8 @@ export function assertExpectedRunState(options: {
     );
   }
 
-  for (const [task, expectedState] of Object.entries(
-    expected.taskStates ?? {},
-  )) {
+  const expectedTaskStates = Object.entries(expected.taskStates ?? {});
+  for (const [task, expectedState] of expectedTaskStates) {
     const matches =
       options.run?.tasks.filter((entry) => entry.issueTask === task) ?? [];
     if (matches.length !== 1) {
@@ -269,7 +266,8 @@ export function assertLinesInOrder(options: {
   readonly output: string;
 }): void {
   let cursor = 0;
-  for (const line of options.lines ?? []) {
+  const lines = options.lines ?? [];
+  for (const line of lines) {
     const index = options.output.indexOf(line, cursor);
     if (index === -1) {
       throw new Error(
@@ -346,7 +344,8 @@ function assertFaultReceiptExpectation(options: {
     }
   }
 
-  for (const [key, expectedValue] of Object.entries(expected.boundary ?? {})) {
+  const expectedBoundary = Object.entries(expected.boundary ?? {});
+  for (const [key, expectedValue] of expectedBoundary) {
     const actualValue =
       options.receipt.boundary?.[
         key as keyof NonNullable<FaultInjectionReceipt['boundary']>
@@ -370,7 +369,7 @@ async function readExpectedFixtureSnapshot(options: {
 }> {
   const expected = options.fixture.definition.expected;
   if (expected.snapshot?.expected === false) {
-    if (await pathExists(options.snapshotPath)) {
+    if (await isPathExists(options.snapshotPath)) {
       throw new Error(
         `Detector fixture ${options.fixture.id} produced an unexpected structured snapshot at ${options.snapshotPath}.`,
       );
@@ -392,9 +391,9 @@ async function readExpectedFixtureSnapshot(options: {
   }
   assertSnapshotOutcome({
     expectedExitCode: expected.exitCode,
-    ...(expected.runOutcome === undefined
-      ? {}
-      : { expectedRunOutcome: expected.runOutcome }),
+    ...(expected.runOutcome !== undefined && {
+      expectedRunOutcome: expected.runOutcome,
+    }),
     fixtureId: options.fixture.id,
     kind: structuredSnapshot.kind,
     snapshot,
@@ -405,14 +404,14 @@ async function readExpectedFixtureSnapshot(options: {
   };
 }
 
-async function createFaultInjectionEntry(enabled: boolean): Promise<
+async function createFaultInjectionEntry(isEnabled: boolean): Promise<
   | {
       readonly args: readonly string[];
       readonly executable: string;
     }
   | undefined
 > {
-  return enabled ? createFaultInjectionRuntimeEntry() : undefined;
+  return isEnabled ? createFaultInjectionRuntimeEntry() : undefined;
 }
 
 async function assertRequiredFixtureArtifacts(options: {
@@ -421,12 +420,12 @@ async function assertRequiredFixtureArtifacts(options: {
   readonly snapshot: CheckIssueSnapshot | undefined;
   readonly snapshotPath: string;
 }): Promise<void> {
-  const expectsSnapshot =
+  const isExpectsSnapshot =
     options.fixture.definition.expected.snapshot?.expected ?? true;
   if (
     !options.cli ||
-    (expectsSnapshot &&
-      (!options.snapshot || !(await pathExists(options.snapshotPath))))
+    (isExpectsSnapshot &&
+      (!options.snapshot || !(await isPathExists(options.snapshotPath))))
   ) {
     throw new Error(
       `Detector fixture ${options.fixture.id} completed without its required CLI result or structured snapshot.`,
@@ -462,7 +461,7 @@ export async function runDetectorFixture(
   const faultPlanPath = path.join(harnessRoot, 'fault-plan.json');
   const receiptPath = path.join(harnessRoot, 'fault-receipt.json');
   const entry = await createFaultInjectionEntry(isFaultInjection);
-  const invocationArgs = isFaultInjection
+  const invocationArguments = isFaultInjection
     ? [
         '--config',
         configPath,
@@ -486,9 +485,6 @@ export async function runDetectorFixture(
       }
     | undefined;
   let snapshot: CheckIssueSnapshot | undefined;
-  let sandboxBefore:
-    | Awaited<ReturnType<typeof captureTreeSnapshot>>
-    | undefined;
   let primaryError: unknown;
   const shouldMaterializeReleaseOutputs =
     fixture.id.startsWith('release/') &&
@@ -501,7 +497,7 @@ export async function runDetectorFixture(
     : fixture.definition.copyPolicy;
 
   try {
-    await copyFixtureRepository({
+    await copyFixtureRepo({
       destinationRoot: sandbox.repoRoot,
       policy: copyPolicy,
       sourceRoot: fixture.repoSourceRoot,
@@ -547,17 +543,15 @@ export async function runDetectorFixture(
       });
       environment = {
         ...environment,
-        [INTERNAL_RELEASE_REGISTRY_URL_ENV]: registry.baseUrl.toString(),
-        ...(fixture.definition.registry.requestTimeoutMs === undefined
-          ? {}
-          : {
-              [INTERNAL_RELEASE_REGISTRY_TIMEOUT_ENV]: String(
-                fixture.definition.registry.requestTimeoutMs,
-              ),
-            }),
+        [INTERNAL_RELEASE_REGISTRY_URL_ENV]: registry.baseUrl.href,
+        ...(fixture.definition.registry.requestTimeoutMs !== undefined && {
+          [INTERNAL_RELEASE_REGISTRY_TIMEOUT_ENV]: String(
+            fixture.definition.registry.requestTimeoutMs,
+          ),
+        }),
       };
     }
-    sandboxBefore = await captureTreeSnapshot({
+    const sandboxBefore = await captureTreeSnapshot({
       ignoredPathPrefixes: DEFAULT_SANDBOX_IGNORED_PATH_PREFIXES,
       rootDir: sandbox.sandboxRoot,
     });
@@ -566,7 +560,7 @@ export async function runDetectorFixture(
 
     try {
       cli = await runLimina({
-        args: invocationArgs,
+        args: invocationArguments,
         cwd: sandbox.repoRoot,
         entry,
         env: environment,
@@ -628,7 +622,7 @@ export async function runDetectorFixture(
           fixtureId: fixture.id,
         });
         registryResult = {
-          baseUrl: registry.baseUrl.toString(),
+          baseUrl: registry.baseUrl.href,
           requests,
         };
       }
@@ -679,15 +673,15 @@ export async function runDetectorFixture(
       error,
       entry,
       fixtureId: fixture.id,
-      invocationArgs,
+      invocationArgs: invocationArguments,
       repoRoot: sandbox.repoRoot,
       sandboxRoot: sandbox.sandboxRoot,
       snapshotPath,
     });
   }
 
-  const preserved = process.env[PRESERVE_INTEGRATION_ARTIFACTS_ENV] === '1';
-  let cleaned = false;
+  const isPreserved = process.env[PRESERVE_INTEGRATION_ARTIFACTS_ENV] === '1';
+  let isCleaned = false;
   await finishFixtureCleanup({
     cleanup: async () => {
       let cleanupError: unknown;
@@ -697,8 +691,8 @@ export async function runDetectorFixture(
         cleanupError = error;
       }
       try {
-        cleaned = await cleanupDetectorSandbox({
-          preserve: preserved,
+        isCleaned = await isCleanupDetectorSandbox({
+          preserve: isPreserved,
           sandboxRoot: sandbox.sandboxRoot,
           tempRoot: sandbox.tempRoot,
         });
@@ -711,7 +705,7 @@ export async function runDetectorFixture(
       if (cleanupError !== undefined) {
         throw cleanupError;
       }
-      if (preserved) {
+      if (isPreserved) {
         console.info(
           `Detector fixture ${fixture.id} artifact preserved at ${sandbox.sandboxRoot}`,
         );
@@ -721,13 +715,13 @@ export async function runDetectorFixture(
   });
 
   return {
-    cleaned,
+    cleaned: isCleaned,
     cli: cli!,
     fixtureId: fixture.id,
-    preserved,
+    preserved: isPreserved,
     registry: registryResult,
     sandboxRoot: sandbox.sandboxRoot,
-    ...(snapshot ? { snapshot } : {}),
+    ...(snapshot && { snapshot }),
     snapshotPath,
   };
 }

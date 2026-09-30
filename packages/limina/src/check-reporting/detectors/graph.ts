@@ -7,8 +7,8 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
     kind: 'fixture',
     producers: [
       'packages/limina/src/graph-check/access-denied.ts#addDeniedReferenceProblems',
-      'packages/limina/src/graph-check/import-access-denied.ts#addDeniedDepImportProblem',
-      'packages/limina/src/graph-check/import-access-denied.ts#addDeniedRefImportProblem',
+      'packages/limina/src/graph-check/import-access-denied.ts#addDeniedDependencyImportProblem',
+      'packages/limina/src/graph-check/import-access-denied.ts#addDeniedReferenceImportProblem',
     ],
     task: 'graph:check',
     tests: [
@@ -60,7 +60,7 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
       'packages/limina/src/graph-check/rule-findings.ts#getRulesRecord',
       'packages/limina/src/graph-check/rule-findings.ts#addRuleEntryConfigFinding',
       'packages/limina/src/graph-check/check-context.ts#createGraphCheckManagedOutputProjectContexts',
-      'packages/limina/src/graph-check/runner.ts#runGraphCheckImpl',
+      'packages/limina/src/graph-check/runner.ts#isRunGraphCheckImpl',
     ],
     task: 'graph:check',
     tests: [
@@ -181,7 +181,7 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
   [LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportOutsideGraph]: {
     kind: 'fixture',
     producers: [
-      'packages/limina/src/graph-check/artifact-import-findings.ts#addBuildArtifactImportProblem',
+      'packages/limina/src/graph-check/artifact-import-findings.ts#isAddBuildArtifactImportProblem',
       'packages/limina/src/graph-check/outside-graph-findings.ts#addOutsideWorkspaceGraphProblem',
     ],
     task: 'graph:check',
@@ -194,7 +194,7 @@ export const GRAPH_DETECTOR_COVERAGE: PartialDetectorCoverageRegistry = {
   [LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved]: {
     kind: 'fixture',
     producers: [
-      'packages/limina/src/graph-check/workspace-import-findings.ts#addWorkspaceConsumptionProblem',
+      'packages/limina/src/graph-check/workspace-import-findings.ts#isAddWorkspaceConsumptionProblem',
     ],
     task: 'graph:check',
     tests: [

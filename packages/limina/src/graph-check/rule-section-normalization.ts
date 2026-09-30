@@ -1,23 +1,23 @@
 import { formatUnknownValue } from '#utils/values';
-import { addNormalizedDep } from './dependency-rule-normalization';
-import { addNormalizedRuleRef } from './reference-rules';
+import { addNormalizedDependency } from './dependency-rule-normalization';
+import { addNormalizedRuleReference } from './reference-rules';
 import {
   addConfigFinding,
   addUnknownFields,
   isRuleKindEnabled,
   type NormalizationState,
 } from './rule-normalization-shared';
-import type { GraphRuleRef } from './rule-types';
+import type { GraphRuleReference } from './rule-types';
 
 const graphRuleAllowKeys = new Set(['refs']);
 const graphRuleDenyKeys = new Set(['deps', 'refs']);
 
 type RuleSection = 'allow' | 'deny';
 
-function getRefMap(
+function getReferenceMap(
   state: NormalizationState,
   ruleKind: RuleSection,
-): Map<string, Map<string, GraphRuleRef>> {
+): Map<string, Map<string, GraphRuleReference>> {
   return ruleKind === 'allow' ? state.allowRefsByLabel : state.refsByLabel;
 }
 
@@ -27,9 +27,9 @@ function addReferenceEntries(options: {
   ruleKind: RuleSection;
   state: NormalizationState;
 }): void {
-  const refsByLabel = getRefMap(options.state, options.ruleKind);
+  const referencesByLabel = getReferenceMap(options.state, options.ruleKind);
   for (const [index, entry] of options.entries.entries()) {
-    addNormalizedRuleRef({
+    addNormalizedRuleReference({
       config: options.state.config,
       entry,
       findings: options.state.findings,
@@ -37,7 +37,7 @@ function addReferenceEntries(options: {
       label: options.label,
       projectPathAliases: options.state.projectPathAliases,
       projectPathSet: options.state.projectPathSet,
-      refsByLabel,
+      refsByLabel: referencesByLabel,
       ruleKind: options.ruleKind,
     });
   }
@@ -93,7 +93,7 @@ function addDependencyEntries(options: {
   state: NormalizationState;
 }): void {
   for (const [index, entry] of options.entries.entries()) {
-    addNormalizedDep({
+    addNormalizedDependency({
       config: options.state.config,
       depsByLabel: options.state.depsByLabel,
       entry,
@@ -129,7 +129,7 @@ function normalizeDependencyValue(options: {
   });
 }
 
-function normalizeDenyRefs(
+function normalizeDenyReferences(
   label: string,
   deny: Record<string, unknown>,
   state: NormalizationState,
@@ -145,7 +145,7 @@ function normalizeDenyRefs(
   });
 }
 
-function normalizeDenyDeps(
+function normalizeDenyDependencies(
   label: string,
   deny: Record<string, unknown>,
   state: NormalizationState,
@@ -171,11 +171,11 @@ export function normalizeDenySection(
     reason: 'unknown graph rule deny field.',
     state,
   });
-  normalizeDenyRefs(label, deny, state);
-  normalizeDenyDeps(label, deny, state);
+  normalizeDenyReferences(label, deny, state);
+  normalizeDenyDependencies(label, deny, state);
 }
 
-function normalizeAllowRefs(
+function normalizeAllowReferences(
   label: string,
   allow: Record<string, unknown>,
   state: NormalizationState,
@@ -206,5 +206,5 @@ export function normalizeAllowSection(
     reason: 'unknown graph rule allow field.',
     state,
   });
-  normalizeAllowRefs(label, allow, state);
+  normalizeAllowReferences(label, allow, state);
 }

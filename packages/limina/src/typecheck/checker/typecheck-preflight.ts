@@ -22,8 +22,9 @@ type MissingCheckerPeers = ReturnType<
 function formatConfiguredPeerProblems(
   peerDependencies: MissingCheckerPeers,
 ): string[] {
-  if (peerDependencies.length === 0) return [];
-  return [formatMissingCheckerPeerDependencies(peerDependencies)];
+  return peerDependencies.length === 0
+    ? []
+    : [formatMissingCheckerPeerDependencies(peerDependencies)];
 }
 
 function collectCheckerNames(
@@ -35,7 +36,7 @@ function collectCheckerNames(
       ...peerDependencies.flatMap((dependency) => dependency.checkerNames),
       ...frameworkFailures.map((failure) => failure.checkerName),
     ]),
-  ].sort();
+  ].sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 export function collectTypecheckPeerFailure(options: {

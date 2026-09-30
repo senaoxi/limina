@@ -31,19 +31,24 @@ describe('Limina issue code contracts', () => {
     const codes = listLiminaCheckIssueCodes();
     const coverageCodes = Object.keys(
       LIMINA_CHECK_ISSUE_DETECTOR_COVERAGE,
-    ).sort();
+    ).sort((left, right) => Number(left > right) - Number(left < right));
     const metadata = listLiminaCheckIssueRuleMetadata();
 
     expect(codes).toHaveLength(62);
     expect(coverageCodes).toEqual(codes);
-    expect(metadata.map((entry) => entry.code).sort()).toEqual(codes);
+    expect(
+      metadata
+        .map((entry) => entry.code)
+        .sort((left, right) => Number(left > right) - Number(left < right)),
+    ).toEqual(codes);
     expect(new Set(metadata.map((entry) => entry.task))).toEqual(
       new Set(LIMINA_CHECK_TASK_NAMES),
     );
+    const statuses = new Set(metadata.map((entry) => entry.status));
     expect(
       Object.fromEntries(
-        [...new Set(metadata.map((entry) => entry.status))]
-          .sort()
+        [...statuses]
+          .sort((left, right) => Number(left > right) - Number(left < right))
           .map((status) => [
             status,
             metadata.filter((entry) => entry.status === status).length,
@@ -79,7 +84,7 @@ describe('Limina issue code contracts', () => {
 
       expect(entry.producers.length).toBeGreaterThan(0);
       for (const producer of entry.producers) {
-        const [filePath, symbol] = producer.split('#');
+        const [filePath, symbol] = producer.split('#', 2);
         expect(filePath).toMatch(/^packages\/limina\/src\/.+\.ts$/u);
         expect(symbol).toBeTruthy();
         expect(existsSync(path.join(WORKSPACE_ROOT, filePath!))).toBe(true);
@@ -101,7 +106,15 @@ describe('Limina issue code contracts', () => {
       }
     }
 
-    expect(Object.fromEntries([...kindCounts].sort())).toEqual({
+    expect(
+      Object.fromEntries(
+        [...kindCounts].sort(
+          (left, right) =>
+            Number(String(left) > String(right)) -
+            Number(String(left) < String(right)),
+        ),
+      ),
+    ).toEqual({
       'external-tool': 5,
       'fault-injection': 11,
       fixture: 37,

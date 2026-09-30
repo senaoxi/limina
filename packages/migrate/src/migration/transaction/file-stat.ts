@@ -175,8 +175,7 @@ function isKnownValidationError(error: unknown): boolean {
 }
 
 function isRetryableAccessError(error: unknown): boolean {
-  if (!hasErrorCode(error)) return false;
-  return retryableAccessCodes.has(String(error.code));
+  return hasErrorCode(error) && retryableAccessCodes.has(String(error.code));
 }
 
 function rethrowValidationError(error: unknown, label: string): never {

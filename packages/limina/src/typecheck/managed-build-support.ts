@@ -89,8 +89,11 @@ function getEmptyTargetProblem(context: ManagedBuildContext): string | null {
 function getAmbiguousTargetProblem(
   context: ManagedBuildContext,
 ): string | null {
-  if (context.target.selectedChecker !== undefined) return null;
-  if (context.target.checkerTargets.length <= 1) return null;
+  if (
+    context.target.selectedChecker !== undefined ||
+    context.target.checkerTargets.length <= 1
+  )
+    return null;
   return formatMultipleOutputBuildPresetProblem({
     availableCheckers: context.target.availableCheckers,
     projectRootDir: context.projectRootDir,
@@ -103,8 +106,7 @@ export function validateManagedSelection(
 ): RunBuildResult | null {
   const problem =
     getEmptyTargetProblem(context) ?? getAmbiguousTargetProblem(context);
-  if (problem === null) return null;
-  return createSelectionFailure({ context, problem });
+  return problem === null ? null : createSelectionFailure({ context, problem });
 }
 
 function reportPeerFailure(options: {
@@ -205,8 +207,11 @@ export function reportManagedFailure(options: {
   context: ManagedBuildContext;
   execution: CheckerBuildExecutionResult;
 }): void {
-  if (options.execution.failedResults.length === 0) return;
-  if (!shouldLogCheckReport(options.context.options.report)) return;
+  if (
+    options.execution.failedResults.length === 0 ||
+    !shouldLogCheckReport(options.context.options.report)
+  )
+    return;
   TypecheckLogger.error(
     formatFailedTargetSummaryReport({
       failedResults: options.execution.failedResults,
@@ -220,8 +225,10 @@ export function reportManagedFailure(options: {
 }
 
 function shouldReportManagedSuccess(context: ManagedBuildContext): boolean {
-  if (!shouldLogCheckReport(context.options.report)) return false;
-  return context.options.flow?.interactive !== true;
+  return (
+    shouldLogCheckReport(context.options.report) &&
+    context.options.flow?.interactive !== true
+  );
 }
 
 export function reportManagedSuccess(options: {

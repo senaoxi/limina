@@ -53,36 +53,30 @@ function formatExternalCheckerFix(
 ): string {
   const packageNames = dependencies.map((dependency) => dependency.packageName);
   const first = dependencies[0]!;
-  if (first.failureKind === 'missing') {
-    return `Fix: pnpm add -D ${packageNames.join(' ')} (run in checker execution scope ${first.resolutionScope}).`;
-  }
-  return `Fix: adjust ${packageNames.join(' ')} in checker execution scope ${first.resolutionScope} to a supported version.`;
+  return first.failureKind === 'missing'
+    ? `Fix: pnpm add -D ${packageNames.join(' ')} (run in checker execution scope ${first.resolutionScope}).`
+    : `Fix: adjust ${packageNames.join(' ')} in checker execution scope ${first.resolutionScope} to a supported version.`;
 }
 
 function formatFix(
   dependencies: readonly MissingCheckerPeerDependency[],
 ): string {
-  if (dependencies[0]!.ownership === 'limina-runtime') {
-    return formatRuntimeFix(dependencies);
-  }
-  return formatExternalCheckerFix(dependencies);
+  return dependencies[0]!.ownership === 'limina-runtime'
+    ? formatRuntimeFix(dependencies)
+    : formatExternalCheckerFix(dependencies);
 }
 
 export function formatMissingCheckerPeerDependencies(
   dependencies: MissingCheckerPeerDependency[],
 ): string {
-  const groups = new Map<string, MissingCheckerPeerDependency[]>();
-  for (const dependency of dependencies) {
-    const key = groupKey(dependency);
-    const group = groups.get(key) ?? [];
-    group.push(dependency);
-    groups.set(key, group);
-  }
-  return [...groups.values()]
+  const groups = Map.groupBy(dependencies, groupKey);
+  return groups
+    .values()
     .flatMap((group) => [
       groupHeading(group[0]!),
       ...group.map(formatDependency),
       formatFix(group),
     ])
+    .toArray()
     .join('\n');
 }

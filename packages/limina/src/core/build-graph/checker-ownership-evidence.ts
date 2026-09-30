@@ -38,13 +38,13 @@ function addEvidenceIfMissing(
   state: TypeConfigOwnershipState,
   evidence: CheckerEvidence,
 ): void {
-  const exists = state.evidence.some(
+  const isExists = state.evidence.some(
     (entry) =>
       entry.checker === evidence.checker &&
       entry.detail === evidence.detail &&
       entry.source === evidence.source,
   );
-  if (!exists) state.evidence.push({ ...evidence });
+  if (!isExists) state.evidence.push({ ...evidence });
 }
 
 function addAuthoritativeCheckerRequirement(options: {
@@ -85,8 +85,9 @@ export function addLocalCheckerRequirement(options: {
 }): string | null {
   addEvidenceIfMissing(options.state, options.evidence);
   const semanticProblem = lockSemanticAuthorityForEvidence(options);
-  if (semanticProblem !== null) return semanticProblem;
-  return resolveLocalCheckerRequirement(options);
+  return semanticProblem === null
+    ? resolveLocalCheckerRequirement(options)
+    : semanticProblem;
 }
 
 function resolveLocalCheckerRequirement(options: {
@@ -102,8 +103,9 @@ function resolveLocalCheckerRequirement(options: {
     };
     return null;
   }
-  if (current.checker === options.evidence.checker) return null;
-  return formatLocalConflict({ ...options, current: current.checker });
+  return current.checker === options.evidence.checker
+    ? null
+    : formatLocalConflict({ ...options, current: current.checker });
 }
 
 export function addSolutionRequirement(options: {
@@ -236,13 +238,17 @@ export function applyRootFileEvidence(options: {
   plan: CheckerOwnershipPlan;
   projectByConfigPath: ReadonlyMap<string, AutoScopeProject>;
 }): string[] {
-  return [...options.projectByConfigPath.values()].flatMap((project) => {
-    const state = options.plan.typeConfigs.get(project.configPath)!;
-    if (state.authoritativeOwner !== undefined) return [];
-    return collectRootRequirements(project).flatMap((requirement) =>
-      applyRootRequirement({ ...options, project, requirement, state }),
-    );
-  });
+  return options.projectByConfigPath
+    .values()
+    .flatMap((project) => {
+      const state = options.plan.typeConfigs.get(project.configPath)!;
+      return state.authoritativeOwner === undefined
+        ? collectRootRequirements(project).flatMap((requirement) =>
+            applyRootRequirement({ ...options, project, requirement, state }),
+          )
+        : [];
+    })
+    .toArray();
 }
 
 export function assertOwnershipPhase(options: {

@@ -22,15 +22,13 @@ function getRelativeKnipConfigPath(relativeDirectory: string): string {
     return path.join('.limina/knip', 'tsconfig.knip.json');
   }
 
-  if (isExternalPackageDirectory(relativeDirectory)) {
-    return path.join(
-      '.limina/knip/external',
-      createExternalArtifactStableId(toPosixPath(relativeDirectory)),
-      'tsconfig.knip.json',
-    );
-  }
-
-  return path.join('.limina/knip', relativeDirectory, 'tsconfig.knip.json');
+  return isExternalPackageDirectory(relativeDirectory)
+    ? path.join(
+        '.limina/knip/external',
+        createExternalArtifactStableId(toPosixPath(relativeDirectory)),
+        'tsconfig.knip.json',
+      )
+    : path.join('.limina/knip', relativeDirectory, 'tsconfig.knip.json');
 }
 
 export function getGeneratedKnipConfigPath(options: {
@@ -60,8 +58,8 @@ export function createGeneratedKnipContent(options: {
   };
 }
 
-function toRootRelativePath(rootDir: string, targetPath: string): string {
-  return toPosixPath(toRelativePath(rootDir, targetPath));
+function toRootRelativePath(rootDirectory: string, targetPath: string): string {
+  return toPosixPath(toRelativePath(rootDirectory, targetPath));
 }
 
 export function toManifestRelativePackageConfig(options: {
@@ -89,8 +87,8 @@ export function toManifestRelativePackageConfig(options: {
   };
 }
 
-function resolveRootRelativePath(rootDir: string, value: string): string {
-  return normalizeAbsolutePath(path.join(rootDir, value));
+function resolveRootRelativePath(rootDirectory: string, value: string): string {
+  return normalizeAbsolutePath(path.join(rootDirectory, value));
 }
 
 export function resolveGeneratedKnipPackageConfigs(options: {
@@ -133,10 +131,13 @@ export function resolveGeneratedKnipPackageDiagnostics(options: {
 
 export function toManifestRelativeDiagnostic(
   diagnostic: GeneratedKnipPackageDiagnostic,
-  rootDir: string,
+  rootDirectory: string,
 ): GeneratedKnipPackageDiagnostic {
   return {
     ...diagnostic,
-    packageJsonPath: toRootRelativePath(rootDir, diagnostic.packageJsonPath),
+    packageJsonPath: toRootRelativePath(
+      rootDirectory,
+      diagnostic.packageJsonPath,
+    ),
   };
 }

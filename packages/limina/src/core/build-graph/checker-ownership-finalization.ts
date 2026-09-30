@@ -110,9 +110,10 @@ function finalizeSolutions(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
 }): string[] {
-  return [...options.discovery.plan.solutions.values()].flatMap((solution) =>
-    finalizeSolution({ ...options, solution }),
-  );
+  return options.discovery.plan.solutions
+    .values()
+    .flatMap((solution) => finalizeSolution({ ...options, solution }))
+    .toArray();
 }
 
 function getEntryOwner(
@@ -122,8 +123,9 @@ function getEntryOwner(
   const solutionOwner = getStateFinalOwner(
     discovery.plan.solutions.get(entryPath),
   );
-  if (solutionOwner !== undefined) return solutionOwner;
-  return getStateFinalOwner(discovery.plan.typeConfigs.get(entryPath));
+  return solutionOwner === undefined
+    ? getStateFinalOwner(discovery.plan.typeConfigs.get(entryPath))
+    : solutionOwner;
 }
 
 function getStateFinalOwner(

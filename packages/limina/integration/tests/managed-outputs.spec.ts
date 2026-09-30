@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toPortablePath } from '../../src/__tests__/helpers/path';
 import {
-  exists,
   expectLiminaSuccess,
+  isExists,
   readJson,
   resolveGeneratedPath,
   runFixtureLimina,
@@ -41,29 +41,34 @@ const checkedInSourcePath = fileURLToPath(
   ),
 );
 
-let fixture: PreparedFixture | undefined;
+const fixtureState: { current: PreparedFixture | undefined } = {
+  current: undefined,
+};
 
 async function collectNamedEntries(
-  rootDir: string,
-  predicate: (entryName: string) => boolean,
+  rootDirectory: string,
+  isPredicate: (entryName: string) => boolean,
 ): Promise<string[]> {
   const matches: string[] = [];
 
-  for (const entryName of await readdir(rootDir)) {
-    const entryPath = path.join(rootDir, entryName);
+  const entryNames = await readdir(rootDirectory);
+  for (const entryName of entryNames) {
+    const entryPath = path.join(rootDirectory, entryName);
     const entryStat = await lstat(entryPath);
 
-    if (predicate(entryName)) {
+    if (isPredicate(entryName)) {
       matches.push(toPortablePath(entryPath));
       continue;
     }
 
     if (entryStat.isDirectory() && !entryStat.isSymbolicLink()) {
-      matches.push(...(await collectNamedEntries(entryPath, predicate)));
+      matches.push(...(await collectNamedEntries(entryPath, isPredicate)));
     }
   }
 
-  return matches.sort();
+  return matches.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 function expectValidDeclarationMap(map: DeclarationMap): void {
@@ -74,17 +79,17 @@ function expectValidDeclarationMap(map: DeclarationMap): void {
 }
 
 beforeEach(async () => {
-  fixture = await prepareFixture('managed-outputs');
+  fixtureState.current = await prepareFixture('managed-outputs');
 });
 
 afterEach(async () => {
-  await fixture?.cleanup();
-  fixture = undefined;
+  await fixtureState.current?.cleanup();
+  fixtureState.current = undefined;
 });
 
 describe('managed outputs public CLI integration', () => {
   it('builds and rebuilds the user artifact lifecycle', async () => {
-    const preparedFixture = fixture!;
+    const preparedFixture = fixtureState.current!;
     const sourceConfigPath = preparedFixture.path(
       'repo/packages/library/tsconfig.json',
     );
@@ -128,7 +133,7 @@ describe('managed outputs public CLI integration', () => {
       environmentOutputPath,
       tsBuildInfoPath,
     ]) {
-      expect(await exists(generatedPath)).toBe(true);
+      expect(await isExists(generatedPath)).toBe(true);
     }
 
     const firstOutputConfigText = await readFile(outputConfigPath, 'utf8');
@@ -186,8 +191,8 @@ describe('managed outputs public CLI integration', () => {
     );
 
     await rm(outputRoot, { force: true, recursive: true });
-    expect(await exists(outputRoot)).toBe(false);
-    expect(await exists(tsBuildInfoPath)).toBe(true);
+    expect(await isExists(outputRoot)).toBe(false);
+    expect(await isExists(tsBuildInfoPath)).toBe(true);
 
     const recoveredBuild = await runFixtureLimina(preparedFixture, [
       'build',
@@ -200,16 +205,13 @@ describe('managed outputs public CLI integration', () => {
       declarationMapPath,
       environmentOutputPath,
     ];
-    expect(
-      Object.fromEntries(
-        await Promise.all(
-          recoveredPaths.map(async (recoveredPath) => [
-            toPortablePath(path.relative(outputRoot, recoveredPath)),
-            await exists(recoveredPath),
-          ]),
-        ),
-      ),
-    ).toEqual({
+    const recoveredEntries = await Promise.all(
+      recoveredPaths.map(async (recoveredPath) => [
+        toPortablePath(path.relative(outputRoot, recoveredPath)),
+        await isExists(recoveredPath),
+      ]),
+    );
+    expect(Object.fromEntries(recoveredEntries)).toEqual({
       'environment.d.ts': true,
       'index.d.ts': true,
       'index.d.ts.map': true,
@@ -249,7 +251,7 @@ describe('managed outputs public CLI integration', () => {
     expect(await readFile(outputConfigPath, 'utf8')).toBe(
       firstOutputConfigText,
     );
-    expect(await exists(tsBuildInfoPath)).toBe(true);
+    expect(await isExists(tsBuildInfoPath)).toBe(true);
     expect(
       await collectNamedEntries(
         preparedFixture.path(

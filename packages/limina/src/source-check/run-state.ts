@@ -119,7 +119,10 @@ export async function createSourceCheckState(
   const core = preflight.providers;
   const generatedGraph = await preflight.ensureGeneratedGraph();
   const graphRoute = await preflight.ensureSourceGraphProjectExtensions();
-  const projectPaths = [...graphRoute.projectExtensionsByPath.keys()].sort();
+  const projectPaths = graphRoute.projectExtensionsByPath
+    .keys()
+    .toArray()
+    .sort((left, right) => Number(left > right) - Number(left < right));
   const workspaceLookup = await preflight.ensureWorkspaceLookupIndex();
   const projects = await loadProjects({
     graphRoute,

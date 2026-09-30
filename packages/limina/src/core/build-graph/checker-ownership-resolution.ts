@@ -36,13 +36,11 @@ import type {
 } from './types';
 
 function hasVueRequirement(state: TypeConfigOwnershipState): boolean {
-  if (
-    state.localOwner.kind === 'resolved' &&
-    state.localOwner.checker === 'vue-tsc'
-  ) {
-    return true;
-  }
-  return getUniqueConstraint(state) === 'vue-tsc';
+  return (
+    (state.localOwner.kind === 'resolved' &&
+      state.localOwner.checker === 'vue-tsc') ||
+    getUniqueConstraint(state) === 'vue-tsc'
+  );
 }
 
 function getPendingConsumer(
@@ -50,9 +48,9 @@ function getPendingConsumer(
   consumerPath: string,
 ): TypeConfigOwnershipState | null {
   const consumer = discovery.plan.typeConfigs.get(consumerPath);
-  if (consumer === undefined) return null;
-  if (consumer.localOwner.kind === 'resolved') return null;
-  return consumer;
+  return consumer === undefined || consumer.localOwner.kind === 'resolved'
+    ? null
+    : consumer;
 }
 
 function applyVuePromotion(options: {
@@ -79,7 +77,7 @@ function applyVuePromotion(options: {
   });
 }
 
-function promoteVueConsumer(options: {
+function isPromoteVueConsumer(options: {
   config: ResolvedLiminaConfig;
   consumerPath: string;
   discovery: CheckerOwnershipDiscovery;
@@ -116,7 +114,7 @@ function runVuePromotion(options: {
         phase: 'directed Vue promotion',
       }),
     promoteConsumer: (consumerPath, providerPath) =>
-      promoteVueConsumer({ ...options, consumerPath, providerPath }),
+      isPromoteVueConsumer({ ...options, consumerPath, providerPath }),
   });
 }
 
@@ -124,15 +122,15 @@ function runDependencyRequirements(options: {
   config: ResolvedLiminaConfig;
   discovery: CheckerOwnershipDiscovery;
 }): void {
-  let changed = true;
-  while (changed) {
+  let isChanged = true;
+  while (isChanged) {
     const pass = applyDependencyRequirementPass(options);
     assertOwnershipPhase({
       config: options.config,
       fallback: 'Failed to resolve checker dependency requirements.',
       problems: pass.problems,
     });
-    changed = pass.changed;
+    isChanged = pass.changed;
     validateOwnershipConstraints({
       config: options.config,
       discovery: options.discovery,

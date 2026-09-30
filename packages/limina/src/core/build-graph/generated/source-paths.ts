@@ -20,11 +20,9 @@ function normalizeRelativeDirectory(relativePath: string): string {
 function getInternalRelativeDirectory(
   relativeSourcePath: string,
 ): string | null {
-  if (isOutsideDirectory(relativeSourcePath)) {
-    return null;
-  }
-
-  return normalizeRelativeDirectory(relativeSourcePath);
+  return isOutsideDirectory(relativeSourcePath)
+    ? null
+    : normalizeRelativeDirectory(relativeSourcePath);
 }
 
 function requireActivatedPackageRoot(

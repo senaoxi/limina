@@ -69,15 +69,13 @@ function createQueryContext(
 }
 
 function getPermutations<T>(values: readonly T[]): T[][] {
-  if (values.length <= 1) {
-    return [[...values]];
-  }
-
-  return values.flatMap((value, index) =>
-    getPermutations(values.filter((_, itemIndex) => itemIndex !== index)).map(
-      (remaining) => [value, ...remaining],
-    ),
-  );
+  return values.length <= 1
+    ? [[...values]]
+    : values.flatMap((value, index) =>
+        getPermutations(
+          values.filter((_, itemIndex) => itemIndex !== index),
+        ).map((remaining) => [value, ...remaining]),
+      );
 }
 
 describe('check issue inventory presentation', () => {

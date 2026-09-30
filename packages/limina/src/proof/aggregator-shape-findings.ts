@@ -6,7 +6,7 @@ import { formatUnknownValue } from './config-values';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
 export type AggregatorConfigRole = 'build graph';
@@ -19,7 +19,7 @@ const allowedAggregatorKeys = new Set([
 ]);
 
 function isEmptyArray(value: unknown): boolean {
-  return Array.isArray(value) ? value.length === 0 : false;
+  return Array.isArray(value) && value.length === 0;
 }
 
 function collectFilesIssueLines(
@@ -121,7 +121,7 @@ export function addPureAggregatorFindings(options: {
 }): void {
   const extraKeys = Object.keys(options.configObject)
     .filter((key) => !allowedAggregatorKeys.has(key))
-    .sort();
+    .sort((left, right) => Number(left > right) - Number(left < right));
   const issueLines = [
     ...collectFilesIssueLines(options.configObject),
     ...collectExtraFieldsIssueLines(extraKeys),

@@ -20,7 +20,7 @@ interface StrictSourceMapper {
   toSourceRange(
     start: number,
     end: number,
-    fallbackToAnyMatch: boolean,
+    isFallbackToAnyMatch: boolean,
   ): Iterable<readonly [number, number, unknown, unknown]>;
 }
 
@@ -42,7 +42,7 @@ function collectRanges(options: {
     const range = { end, start };
     byIdentity.set(rangeIdentity(range), range);
   }
-  return [...byIdentity.values()];
+  return byIdentity.values().toArray();
 }
 
 function selectOrderedRanges(options: {
@@ -64,27 +64,24 @@ function selectOrderedRanges(options: {
 }
 
 function validateIntegerRange(range: SourceRange): string | null {
-  if (![range.start, range.end].every(Number.isInteger)) {
-    return 'Strict source-map projection returned non-integer source offsets.';
-  }
-  return null;
+  return [range.start, range.end].every(Number.isInteger)
+    ? null
+    : 'Strict source-map projection returned non-integer source offsets.';
 }
 
 function validateOrderedRange(range: SourceRange): string | null {
-  if (![range.start >= 0, range.end > range.start].every(Boolean)) {
-    return 'Strict source-map projection returned an unordered source range.';
-  }
-  return null;
+  return [range.start >= 0, range.end > range.start].every(Boolean)
+    ? null
+    : 'Strict source-map projection returned an unordered source range.';
 }
 
 function validateContainedRange(
   range: SourceRange,
   sourceText: string,
 ): string | null {
-  if (range.end > sourceText.length) {
-    return 'Strict source-map projection escaped the current source snapshot.';
-  }
-  return null;
+  return range.end > sourceText.length
+    ? 'Strict source-map projection escaped the current source snapshot.'
+    : null;
 }
 
 function validateRange(range: SourceRange, sourceText: string): string | null {
@@ -127,8 +124,7 @@ function classifyRanges(
   ranges: readonly SourceRange[],
 ): SourceRange | StrictBackprojection {
   if (ranges.length === 0) return { kind: 'unmapped' };
-  if (ranges.length > 1) return { kind: 'source-map-ambiguity' };
-  return ranges[0]!;
+  return ranges.length > 1 ? { kind: 'source-map-ambiguity' } : ranges[0]!;
 }
 
 export function strictBackprojectVolarDependency(options: {

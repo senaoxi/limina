@@ -30,47 +30,52 @@ async function createFixture(files: Record<string, string>): Promise<{
   cleanup: () => Promise<void>;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-workspace-lookup-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-workspace-lookup-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
 
   for (const [relativePath, text] of Object.entries(files)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
 function createWorkspacePackage(
-  rootDir: string,
+  rootDirectory: string,
   relativeDirectory: string,
   manifest: PackageManifest,
 ): WorkspacePackage {
   return {
-    directory: path.join(rootDir, relativeDirectory),
+    directory: path.join(rootDirectory, relativeDirectory),
     manifest,
-    ...(manifest.name ? { name: manifest.name } : {}),
+    ...(manifest.name && { name: manifest.name }),
   };
 }
 
 function createOwner(
-  rootDir: string,
+  rootDirectory: string,
   relativeDirectory: string,
   manifest: PackageManifest,
 ): PackageOwner {
   return {
-    directory: path.join(rootDir, relativeDirectory),
+    directory: path.join(rootDirectory, relativeDirectory),
     manifest,
-    ...(manifest.name ? { name: manifest.name } : {}),
-    packageJsonPath: path.join(rootDir, relativeDirectory, 'package.json'),
+    ...(manifest.name && { name: manifest.name }),
+    packageJsonPath: path.join(
+      rootDirectory,
+      relativeDirectory,
+      'package.json',
+    ),
   };
 }
 
@@ -83,41 +88,46 @@ function createImporter(options: {
   return {
     declaredWorkspaceDependencies: new Set(options.dependencies),
     directory: path.join(options.rootDir, options.relativeDirectory),
-    ...(options.name ? { name: options.name } : {}),
+    ...(options.name && { name: options.name }),
   };
 }
 
 function createPathIndex(
-  rootDir: string,
+  rootDirectory: string,
   packages: readonly WorkspacePackage[],
   metrics?: WorkspaceIndexMetricsRecorder,
 ): WorkspaceRegionPathIndex {
   return new WorkspaceRegionPathIndex(
     {
       boundaries: [],
-      configRootDir: rootDir,
+      configRootDir: rootDirectory,
       descriptorCandidates: [],
       extendedPackageScopes: [],
       outputRoots: [],
       packageIdentities: packages.map((workspacePackage) => ({
         canonicalDirectory: normalizeAbsolutePath(workspacePackage.directory),
-        displayDirectory: path.relative(rootDir, workspacePackage.directory),
+        displayDirectory: path.relative(
+          rootDirectory,
+          workspacePackage.directory,
+        ),
         package: workspacePackage,
       })),
       packages: [...packages],
       rawPackages: [...packages],
       sourceConfigPaths: [],
-      workspaceRootDir: rootDir,
+      workspaceRootDir: rootDirectory,
       governanceRoot: {
         kind: 'workspace',
-        manifestPath: normalizeAbsolutePath(path.join(rootDir, 'package.json')),
+        manifestPath: normalizeAbsolutePath(
+          path.join(rootDirectory, 'package.json'),
+        ),
         manifest: {},
-        rootDir,
+        rootDir: rootDirectory,
         packageManager: 'pnpm',
         descriptor: {
           kind: 'pnpm-workspace',
           path: normalizeAbsolutePath(
-            path.join(rootDir, 'pnpm-workspace.yaml'),
+            path.join(rootDirectory, 'pnpm-workspace.yaml'),
           ),
         },
       },
@@ -373,13 +383,10 @@ describe('WorkspaceLookupIndex', () => {
         rootDir: fixture.rootDir,
       });
 
-      expect(
-        toPortablePath(
-          index.findNearestPackageScopeInfo(
-            path.join(fixture.rootDir, 'packages/app/src/feature/index.ts'),
-          )?.packageJsonPath ?? '',
-        ),
-      ).toBe(
+      const featureScope = index.findNearestPackageScopeInfo(
+        path.join(fixture.rootDir, 'packages/app/src/feature/index.ts'),
+      );
+      expect(toPortablePath(featureScope?.packageJsonPath ?? '')).toBe(
         toPortablePath(
           path.join(fixture.rootDir, 'packages/app/src/feature/package.json'),
         ),
@@ -416,7 +423,7 @@ describe('WorkspaceLookupIndex', () => {
           name: '@acme/app',
         },
       );
-      const libPackage = createWorkspacePackage(
+      const libraryPackage = createWorkspacePackage(
         fixture.rootDir,
         'packages/lib',
         {
@@ -426,14 +433,17 @@ describe('WorkspaceLookupIndex', () => {
       const appOwner = createOwner(fixture.rootDir, 'packages/app', {
         name: '@acme/app',
       });
-      const libOwner = createOwner(fixture.rootDir, 'packages/lib', {
+      const libraryOwner = createOwner(fixture.rootDir, 'packages/lib', {
         name: '@acme/lib',
       });
       const index = createWorkspaceLookupIndex({
         importers: [],
-        owners: [appOwner, libOwner],
-        packages: [appPackage, libPackage],
-        pathIndex: createPathIndex(fixture.rootDir, [appPackage, libPackage]),
+        owners: [appOwner, libraryOwner],
+        packages: [appPackage, libraryPackage],
+        pathIndex: createPathIndex(fixture.rootDir, [
+          appPackage,
+          libraryPackage,
+        ]),
         rootDir: fixture.rootDir,
       });
 
@@ -450,8 +460,8 @@ describe('WorkspaceLookupIndex', () => {
         }),
       ).toMatchObject({
         kind: 'other-owner',
-        targetOwner: libOwner,
-        workspacePackage: libPackage,
+        targetOwner: libraryOwner,
+        workspacePackage: libraryPackage,
       });
       expect(
         index.classifyResolvedPackageTarget({

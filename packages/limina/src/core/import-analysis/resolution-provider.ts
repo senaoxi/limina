@@ -19,19 +19,19 @@ import type {
 
 function getRequest(
   dependencies: ProviderDependencies,
-  args: ImportResolutionArguments,
+  arguments_: ImportResolutionArguments,
 ): NormalizedModuleResolutionRequest {
-  return dependencies.requests.getRequest(...args);
+  return dependencies.requests.getRequest(...arguments_);
 }
 
 function createTypeScriptResolver(
   dependencies: ProviderDependencies,
 ): ImportAnalysisContext['resolveTypeScriptImport'] {
-  return (...args) => {
+  return (...arguments_) => {
     dependencies.requests.recordRequest('typescript');
     return resolveTypeScriptResult(
       dependencies,
-      getRequest(dependencies, args),
+      getRequest(dependencies, arguments_),
     );
   };
 }
@@ -39,17 +39,17 @@ function createTypeScriptResolver(
 function createOxcResolver(
   dependencies: ProviderDependencies,
 ): ImportAnalysisContext['resolveOxcImport'] {
-  return (...args) => {
+  return (...arguments_) => {
     dependencies.requests.recordRequest('oxc');
-    return resolveOxcResult(dependencies, getRequest(dependencies, args));
+    return resolveOxcResult(dependencies, getRequest(dependencies, arguments_));
   };
 }
 
 function createPairResolver(
   dependencies: ProviderDependencies,
 ): ImportAnalysisContext['resolveModulePair'] {
-  return (...args): ModuleResolutionPair => {
-    const request = getRequest(dependencies, args);
+  return (...arguments_): ModuleResolutionPair => {
+    const request = getRequest(dependencies, arguments_);
     dependencies.requests.recordRequest('typescript');
     const typescript = resolveTypeScriptResult(dependencies, request);
     dependencies.requests.recordRequest('oxc');

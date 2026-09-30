@@ -195,11 +195,9 @@ function formatStructuredErrorMessage(
   message: string,
   issues: readonly LiminaCheckIssue[],
 ): string {
-  if (issues.length === 0) {
-    return message;
-  }
-
-  return [message, '', ...issues.flatMap(formatIssueBlock)].join('\n');
+  return issues.length === 0
+    ? message
+    : [message, '', ...issues.flatMap(formatIssueBlock)].join('\n');
 }
 
 export class LiminaStructuredError extends Error {

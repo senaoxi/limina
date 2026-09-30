@@ -130,7 +130,7 @@ function resolveWorkspaceTarget(options: {
   return targetPackage;
 }
 
-function rejectPrivateWorkspaceTarget(options: {
+function isRejectPrivateWorkspaceTarget(options: {
   context: DependencyTraversalContext;
   entry: PublishDependencyEntry;
   targetPackage: NamedWorkspacePackage;
@@ -191,7 +191,7 @@ async function processWorkspaceEntry(options: {
   if (targetPackage === null) return;
   const targetOptions = { ...options, targetPackage };
   recordWorkspaceDependency(targetOptions);
-  if (rejectPrivateWorkspaceTarget(targetOptions)) return;
+  if (isRejectPrivateWorkspaceTarget(targetOptions)) return;
   await visitTargetPackage({ context: options.context, targetPackage });
 }
 

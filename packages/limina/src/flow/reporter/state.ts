@@ -1,5 +1,9 @@
 import * as prompts from '@clack/prompts';
-import { supportsInteractiveTerminal } from '../../terminal-environment';
+import { isSupportsInteractiveTerminal } from '../../terminal-environment';
+import {
+  isIntegerNumber,
+  parseIntegerPrefix,
+} from '../../utils/validation/is-integer';
 import { FlowProcessRenderer } from '../process-renderer';
 import {
   type FlowRenderSnapshot,
@@ -44,25 +48,27 @@ function shouldCreateProcessRenderer(options: {
   interactive: boolean;
   reporterOptions: LiminaFlowReporterOptions;
 }): boolean {
-  if (!options.interactive) return false;
-  if (options.reporterOptions.renderer === 'inline') return false;
-  return !hasInjectedRendererDependency(options.reporterOptions);
+  return (
+    options.interactive &&
+    options.reporterOptions.renderer !== 'inline' &&
+    !hasInjectedRendererDependency(options.reporterOptions)
+  );
 }
 
 function createProcessRenderer(options: {
   interactive: boolean;
   reporterOptions: LiminaFlowReporterOptions;
 }): FlowProcessRenderer | undefined {
-  if (!shouldCreateProcessRenderer(options)) return undefined;
-  return FlowProcessRenderer.start();
+  return shouldCreateProcessRenderer(options)
+    ? FlowProcessRenderer.start()
+    : undefined;
 }
 
 function isUnrenderedInteractive(options: {
   interactive: boolean;
   processRenderer: FlowProcessRenderer | undefined;
 }): boolean {
-  if (!options.interactive) return false;
-  return options.processRenderer === undefined;
+  return options.interactive && options.processRenderer === undefined;
 }
 
 function shouldTrackProcessWrites(options: {
@@ -71,99 +77,90 @@ function shouldTrackProcessWrites(options: {
   processRenderer: FlowProcessRenderer | undefined;
   statusOnly: boolean;
 }): boolean {
-  if (options.statusOnly) return false;
-  if (options.outputInjected) return false;
-  return isUnrenderedInteractive(options);
+  return (
+    !(options.statusOnly || options.outputInjected) &&
+    isUnrenderedInteractive(options)
+  );
 }
 
 function toPositiveInteger(parsed: number): number | undefined {
-  if (!Number.isInteger(parsed)) return undefined;
-  if (parsed <= 0) return undefined;
-  return parsed;
+  if (!isIntegerNumber(parsed)) return undefined;
+  return parsed <= 0 ? undefined : parsed;
 }
 
 export function readPositiveInteger(
   value: string | undefined,
 ): number | undefined {
-  if (value === undefined) return undefined;
-  return toPositiveInteger(Number.parseInt(value, 10));
+  return value === undefined
+    ? undefined
+    : toPositiveInteger(parseIntegerPrefix(value));
 }
 
 function resolveEnvironment(
   options: LiminaFlowReporterOptions,
 ): NodeJS.ProcessEnv {
-  if (options.env !== undefined) return options.env;
-  return process.env;
+  return options.env === undefined ? process.env : options.env;
 }
 
 function resolveStdout(options: LiminaFlowReporterOptions): FlowWriteStream {
-  if (options.stdout !== undefined) return options.stdout;
-  return process.stdout;
+  return options.stdout === undefined ? process.stdout : options.stdout;
 }
 
 function resolveStderr(options: LiminaFlowReporterOptions): FlowWriteStream {
-  if (options.stderr !== undefined) return options.stderr;
-  return process.stderr;
+  return options.stderr === undefined ? process.stderr : options.stderr;
 }
 
 function isInteger(value: number | undefined): value is number {
-  return Number.isInteger(value);
+  return isIntegerNumber(value);
 }
 
 function resolveReservedTopRows(value: number | undefined): number {
-  if (!isInteger(value)) {
-    return 0;
-  }
-
-  return Math.max(0, value);
+  return isInteger(value) ? Math.max(0, value) : 0;
 }
 
-function resolveInteractive(options: {
+function isResolveInteractive(options: {
   env: NodeJS.ProcessEnv;
   reporterOptions: LiminaFlowReporterOptions;
   stdout: FlowWriteStream;
 }): boolean {
-  if (options.reporterOptions.forceTty !== undefined) {
-    return options.reporterOptions.forceTty;
-  }
-  return supportsInteractiveTerminal(options.env, options.stdout);
+  return options.reporterOptions.forceTty === undefined
+    ? isSupportsInteractiveTerminal(options.env, options.stdout)
+    : options.reporterOptions.forceTty;
 }
 
 function resolveOutput(options: {
   reporterOptions: LiminaFlowReporterOptions;
   stdout: FlowWriteStream;
 }): FlowOutput {
-  if (options.reporterOptions.output !== undefined) {
-    return options.reporterOptions.output;
-  }
-  return createDefaultOutput(options.stdout);
+  return options.reporterOptions.output === undefined
+    ? createDefaultOutput(options.stdout)
+    : options.reporterOptions.output;
 }
 
 function resolveClack(options: LiminaFlowReporterOptions) {
-  if (options.clack !== undefined) return options.clack;
-  return prompts;
+  return options.clack === undefined ? prompts : options.clack;
 }
 
 export function createFlowReporterState(options: {
   reporterOptions: LiminaFlowReporterOptions;
   statusOnly: boolean;
 }): FlowReporterState {
-  const env = resolveEnvironment(options.reporterOptions);
+  const environment = resolveEnvironment(options.reporterOptions);
   const stdout = resolveStdout(options.reporterOptions);
-  const interactive = resolveInteractive({
-    env,
+  const isInteractive = isResolveInteractive({
+    env: environment,
     reporterOptions: options.reporterOptions,
     stdout,
   });
   const processRenderer = createProcessRenderer({
-    interactive,
+    interactive: isInteractive,
     reporterOptions: options.reporterOptions,
   });
   return {
     clack: resolveClack(options.reporterOptions),
-    env,
+    env: environment,
     hasInteractiveTree: false,
-    interactive,
+    interactive: isInteractive,
     interactiveHistory: [],
     nextProcessTransientEntryId: 0,
     nextProcessTransientTaskId: 0,
@@ -185,7 +182,7 @@ export function createFlowReporterState(options: {
     ),
     trackedTaskCount: 0,
     tracksProcessWrites: shouldTrackProcessWrites({
-      interactive,
+      interactive: isInteractive,
       outputInjected: options.reporterOptions.output !== undefined,
       processRenderer,
       statusOnly: options.statusOnly,
@@ -200,18 +197,15 @@ function getTerminalColumns(state: FlowReporterState): number | undefined {
 
 function getPhysicalTerminalRows(state: FlowReporterState): number | undefined {
   const testRows = readPositiveInteger(state.env[FLOW_RENDERER_TEST_ROWS_ENV]);
-  if (testRows !== undefined) return testRows;
-  return state.stdout?.rows;
+  return testRows === undefined ? state.stdout?.rows : testRows;
 }
 
 function getTerminalRows(state: FlowReporterState): number | undefined {
   const rows = getPhysicalTerminalRows(state);
 
-  if (rows === undefined) {
-    return undefined;
-  }
-
-  return Math.max(1, rows - state.reservedTopRows);
+  return rows === undefined
+    ? undefined
+    : Math.max(1, rows - state.reservedTopRows);
 }
 
 export function getTerminalDimensions(
@@ -226,21 +220,19 @@ export function getTerminalDimensions(
 function getTerminalDimensionField(dimensions: FlowTerminalDimensions): {
   terminalDimensions?: FlowTerminalDimensions;
 } {
-  if (dimensions.columns === undefined && dimensions.rows === undefined)
-    return {};
-  return { terminalDimensions: dimensions };
+  return dimensions.columns === undefined && dimensions.rows === undefined
+    ? {}
+    : { terminalDimensions: dimensions };
 }
 
-function getCompactModeField(statusOnly: boolean): {
+function getCompactModeField(isStatusOnly: boolean): {
   compactMode?: 'check-flow';
 } {
-  if (!statusOnly) return {};
-  return { compactMode: 'check-flow' };
+  return isStatusOnly ? { compactMode: 'check-flow' } : {};
 }
 
 function getOutroField(message: string | undefined): { outroMessage?: string } {
-  if (message === undefined) return {};
-  return { outroMessage: message };
+  return message === undefined ? {} : { outroMessage: message };
 }
 
 export function createRenderSnapshot(
@@ -259,7 +251,7 @@ export function createRenderSnapshot(
   };
 }
 
-export function sendProcessSnapshot(state: FlowReporterState): boolean {
+export function isSendProcessSnapshot(state: FlowReporterState): boolean {
   if (state.processRenderer?.active !== true) return false;
   state.processRenderer.sendSnapshot(createRenderSnapshot(state));
   return true;

@@ -25,7 +25,7 @@ function normalizeResourceRequest(
   };
 }
 
-function intersects(left: Set<string>, right: Set<string>): boolean {
+function isIntersects(left: Set<string>, right: Set<string>): boolean {
   for (const value of left) {
     if (right.has(value)) {
       return true;
@@ -39,7 +39,7 @@ function hasAnyIntersection(
   left: Set<string>,
   rights: readonly Set<string>[],
 ): boolean {
-  return rights.some((right) => intersects(left, right));
+  return rights.some((right) => isIntersects(left, right));
 }
 
 function hasConflict(

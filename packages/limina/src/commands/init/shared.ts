@@ -30,8 +30,11 @@ export function createInitConfig(
   };
 }
 
-export function formatConfigPath(rootDir: string, configPath: string): string {
-  return toRelativePath(rootDir, configPath);
+export function formatConfigPath(
+  rootDirectory: string,
+  configPath: string,
+): string {
+  return toRelativePath(rootDirectory, configPath);
 }
 
 export function stringifyJson(value: unknown): string {

@@ -1,6 +1,6 @@
 # Contributing to Limina
 
-Use pnpm 11.9.0 and Node `^22.18.0 || >=24.11.0`. During migration, the declared sibling Logaria build must already exist; see [migration status](.agents/docs/migration.md).
+Use pnpm 11.9.0 and Node `^22.18.0 || >=24.11.0`. Logaria is installed from the registry through the dev catalog; see [migration status](.agents/docs/migration.md).
 
 ```sh
 pnpm install --frozen-lockfile

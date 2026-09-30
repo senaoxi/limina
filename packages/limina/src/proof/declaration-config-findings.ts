@@ -8,8 +8,8 @@ import { existsSync } from 'node:fs';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
-  configExtendsPathTransitively,
   getProofCompanionConfigPath,
+  isConfigExtendsPathTransitively,
   normalizeRawExtends,
   parseProofConfig,
   readProofConfig,
@@ -19,7 +19,7 @@ import { addDtsConfigSemanticFindings } from './declaration-parity';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 
 function addManagedBoundaryFinding(options: {
@@ -108,14 +108,14 @@ function addDtsCompanionExtendsFinding(options: {
   localConfigPath: string;
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  const extendsCompanion = configExtendsPathTransitively({
+  const isExtendsCompanion = isConfigExtendsPathTransitively({
     config: options.config,
     configObject: options.configObject,
     configPath: options.dtsConfigPath,
     targetConfigPath: options.localConfigPath,
   });
 
-  if (extendsCompanion) {
+  if (isExtendsCompanion) {
     return;
   }
 

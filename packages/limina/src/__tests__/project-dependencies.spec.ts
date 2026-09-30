@@ -44,7 +44,7 @@ function createSemanticContext(options: {
   const fileName = createFixturePathResolver(path.dirname(options.fileName))(
     path.basename(options.fileName),
   );
-  const rootDir = fixturePath();
+  const rootDirectory = fixturePath();
   const context: ProjectSemanticContext = {
     compilerOptions: {
       module: 99,
@@ -55,8 +55,8 @@ function createSemanticContext(options: {
     extensions: options.family === 'vue' ? ['.vue'] : [],
     fileNames: [fileName],
     generation: 1,
-    packageRootByFileName: new Map([[fileName, rootDir]]),
-    packageRootDir: rootDir,
+    packageRootByFileName: new Map([[fileName, rootDirectory]]),
+    packageRootDir: rootDirectory,
     references: [],
     resolverConfigPath: fixturePath('tsconfig.json'),
     semanticAuthority: {
@@ -145,7 +145,9 @@ afterEach(async () => {
   await Promise.all(
     temporaryRoots
       .splice(0)
-      .map((rootDir) => rm(rootDir, { force: true, recursive: true })),
+      .map((rootDirectory) =>
+        rm(rootDirectory, { force: true, recursive: true }),
+      ),
   );
 });
 
@@ -156,7 +158,7 @@ describe('project dependency authority', () => {
     );
     temporaryRoots.push(temporaryRoot);
     const fixturePath = createFixturePathResolver(temporaryRoot);
-    const rootDir = fixturePath();
+    const rootDirectory = fixturePath();
     const sourceFile = fixturePath('index.ts');
     const targetFile = fixturePath('target.ts');
     await writeFile(sourceFile, "import './target';\n", 'utf8');
@@ -168,7 +170,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'typescript',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis: { ...base, resolveOxcImport },
     });
@@ -197,7 +199,7 @@ describe('project dependency authority', () => {
     );
     temporaryRoots.push(temporaryRoot);
     const fixturePath = createFixturePathResolver(temporaryRoot);
-    const rootDir = fixturePath();
+    const rootDirectory = fixturePath();
     const sourceFile = fixturePath('index.ts');
     const targetFile = fixturePath('env.d.ts');
     await writeFile(
@@ -212,17 +214,17 @@ describe('project dependency authority', () => {
       ...base,
       resolveCheckerImportEvidence: vi.fn(
         (
-          ...args: Parameters<
+          ...arguments_: Parameters<
             ImportAnalysisContext['resolveCheckerImportEvidence']
           >
         ) => {
-          const record = args[0];
-          const context = args[3];
+          const record = arguments_[0];
+          const context = arguments_[3];
           const semanticContext = Array.isArray(context)
             ? undefined
             : context?.typeScriptSemanticContext;
           channels.push(semanticContext!.resolveImportRecord(record).channel);
-          return base.resolveCheckerImportEvidence(...args);
+          return base.resolveCheckerImportEvidence(...arguments_);
         },
       ),
     } satisfies ImportAnalysisContext;
@@ -231,7 +233,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'typescript',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis,
     });
@@ -250,12 +252,13 @@ describe('project dependency authority', () => {
   });
 
   it('uses occurrence-specific NodeNext modes in locked dependency collection', async () => {
-    const temporaryRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-project-deps-nodenext-')),
+    const temporaryDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-project-deps-nodenext-'),
     );
+    const temporaryRoot = await realpath(temporaryDirectory);
     temporaryRoots.push(temporaryRoot);
     const fixturePath = createFixturePathResolver(temporaryRoot);
-    const rootDir = fixturePath();
+    const rootDirectory = fixturePath();
     const sourceFile = fixturePath('index.mts');
     await mkdir(fixturePath('node_modules/dual'), { recursive: true });
     await writeFile(
@@ -307,7 +310,7 @@ describe('project dependency authority', () => {
     const context = createSemanticContext({
       family: 'typescript',
       fileName: sourceFile,
-      rootDir,
+      rootDir: rootDirectory,
     });
     context.compilerOptions = {
       module: ts.ModuleKind.NodeNext,
@@ -340,9 +343,10 @@ describe('project dependency authority', () => {
   });
 
   it('isolates admission-sensitive snapshots and does not rescue checker misses with workspace exports', async () => {
-    const temporaryRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-project-deps-cache-')),
+    const temporaryDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-project-deps-cache-'),
     );
+    const temporaryRoot = await realpath(temporaryDirectory);
     temporaryRoots.push(temporaryRoot);
     const fixturePath = createFixturePathResolver(temporaryRoot);
     const sourceFile = fixturePath('index.ts');
@@ -364,14 +368,14 @@ describe('project dependency authority', () => {
       context,
       importAnalysis,
     });
-    const semanticSnapshot = [
-      ...caches.typeScriptSemanticFactsCache.values(),
-    ][0]!;
+    const semanticSnapshot = caches.typeScriptSemanticFactsCache
+      .values()
+      .toArray()[0]!;
     const resolveImportRecord = vi.fn(
       semanticSnapshot.resolveImportRecord.bind(semanticSnapshot),
     );
     caches.typeScriptSemanticFactsCache.set(
-      [...caches.typeScriptSemanticFactsCache.keys()][0]!,
+      caches.typeScriptSemanticFactsCache.keys().toArray()[0]!,
       { ...semanticSnapshot, resolveImportRecord },
     );
     const secondContext = {
@@ -410,7 +414,7 @@ describe('project dependency authority', () => {
 
   it('consumes a prepared source target without framework re-resolution', () => {
     const fixturePath = createFixturePathResolver('/virtual/mapped-vue');
-    const rootDir = fixturePath();
+    const rootDirectory = fixturePath();
     const sourceFile = fixturePath('App.vue');
     const targetFile = fixturePath('target.ts');
     const record = createRecord(sourceFile, './target.ts');
@@ -421,7 +425,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'vue',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis: analysis.context,
     });
@@ -442,14 +446,14 @@ describe('project dependency authority', () => {
   });
 
   it('classifies target-null ambient evidence as a semantic-only observation', () => {
-    const rootDir = '/virtual/ambient-vue';
-    const sourceFile = path.join(rootDir, 'App.vue');
+    const rootDirectory = '/virtual/ambient-vue';
+    const sourceFile = path.join(rootDirectory, 'App.vue');
     const fact = createFact({
       record: createRecord(sourceFile, './theme.css'),
       semanticSpecifier: './theme.css',
       target: null,
       typeEvidence: {
-        declarationFilePaths: [path.join(rootDir, 'env.d.ts')],
+        declarationFilePaths: [path.join(rootDirectory, 'env.d.ts')],
         kind: 'ambient',
         modulePattern: '*.css',
       },
@@ -460,7 +464,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'vue',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis: analysis.context,
     });
@@ -481,11 +485,13 @@ describe('project dependency authority', () => {
   });
 
   it('keeps an existing resource missing without checker type evidence', async () => {
-    const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-resource-miss-'));
-    temporaryRoots.push(rootDir);
-    const sourceFile = path.join(rootDir, 'App.vue');
-    await mkdir(rootDir, { recursive: true });
-    await writeFile(path.join(rootDir, 'theme.css'), '.app {}\n', 'utf8');
+    const rootDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-resource-miss-'),
+    );
+    temporaryRoots.push(rootDirectory);
+    const sourceFile = path.join(rootDirectory, 'App.vue');
+    await mkdir(rootDirectory, { recursive: true });
+    await writeFile(path.join(rootDirectory, 'theme.css'), '.app {}\n', 'utf8');
     const fact = createFact({
       record: createRecord(sourceFile, './theme.css'),
       semanticSpecifier: './theme.css',
@@ -498,7 +504,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'vue',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis: analysis.context,
     });
@@ -513,13 +519,13 @@ describe('project dependency authority', () => {
   });
 
   it('fails closed when prepared target and TypeEvidence paths disagree', () => {
-    const rootDir = '/virtual/mismatch-vue';
-    const sourceFile = path.join(rootDir, 'App.vue');
+    const rootDirectory = '/virtual/mismatch-vue';
+    const sourceFile = path.join(rootDirectory, 'App.vue');
     const fact = createFact({
       record: createRecord(sourceFile, './target'),
-      target: createTarget(path.join(rootDir, 'target.ts')),
+      target: createTarget(path.join(rootDirectory, 'target.ts')),
       typeEvidence: {
-        filePath: path.join(rootDir, 'other.ts'),
+        filePath: path.join(rootDirectory, 'other.ts'),
         kind: 'checker-source',
       },
     });
@@ -529,7 +535,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'vue',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis: analysis.context,
     });
@@ -571,8 +577,8 @@ describe('project dependency authority', () => {
       ),
     },
   ])('fails closed for $name at the same path', ({ evidence, target }) => {
-    const rootDir = '/virtual/mismatch-kind-vue';
-    const sourceFile = `${rootDir}/App.vue`;
+    const rootDirectory = '/virtual/mismatch-kind-vue';
+    const sourceFile = `${rootDirectory}/App.vue`;
     const fact = createFact({
       record: createRecord(sourceFile, './target'),
       target,
@@ -584,7 +590,7 @@ describe('project dependency authority', () => {
       context: createSemanticContext({
         family: 'vue',
         fileName: sourceFile,
-        rootDir,
+        rootDir: rootDirectory,
       }),
       importAnalysis: analysis.context,
     });
@@ -671,9 +677,10 @@ describe('project dependency authority', () => {
   });
 
   it('preserves competing runtime/native candidates without rescuing a framework checker miss', async () => {
-    const temporaryRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-framework-miss-')),
+    const temporaryDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-framework-miss-'),
     );
+    const temporaryRoot = await realpath(temporaryDirectory);
     temporaryRoots.push(temporaryRoot);
     const fixturePath = createFixturePathResolver(temporaryRoot);
     const sourceFile = fixturePath('consumer.mts');
@@ -743,9 +750,10 @@ describe('project dependency authority', () => {
   });
 
   it('preserves runtime evidence separately from a native checker miss across cached observations', async () => {
-    const temporaryRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-observation-evidence-')),
+    const temporaryDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-observation-evidence-'),
     );
+    const temporaryRoot = await realpath(temporaryDirectory);
     temporaryRoots.push(temporaryRoot);
     const fixturePath = createFixturePathResolver(temporaryRoot);
     const sourceFile = fixturePath('index.ts');
@@ -857,9 +865,10 @@ describe('project dependency authority', () => {
   ] as const)(
     'isolates dependency evidence when %s changes',
     async (dimension) => {
-      const temporaryRoot = await realpath(
-        await mkdtemp(path.join(tmpdir(), 'limina-evidence-identity-')),
+      const temporaryDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-evidence-identity-'),
       );
+      const temporaryRoot = await realpath(temporaryDirectory);
       temporaryRoots.push(temporaryRoot);
       const fixturePath = createFixturePathResolver(temporaryRoot);
       const sourceFile = fixturePath('index.ts');
@@ -870,20 +879,35 @@ describe('project dependency authority', () => {
         rootDir: temporaryRoot,
       });
       const changed = { ...context };
-      if (dimension === 'generation') changed.generation = 2;
-      if (dimension === 'extensions') changed.extensions = ['.custom'];
-      if (dimension === 'packageRootDir')
-        changed.packageRootDir = fixturePath('nested');
-      if (dimension === 'conditions')
-        changed.compilerOptions = {
-          ...context.compilerOptions,
-          customConditions: ['development'],
-        };
-      if (dimension === 'workspaceBoundary')
-        changed.workspaceSourceBoundary = createWorkspaceSourceBoundary([
-          sourceFile,
-          fixturePath('another-project.ts'),
-        ]);
+      switch (dimension) {
+        case 'generation': {
+          changed.generation = 2;
+          break;
+        }
+        case 'extensions': {
+          changed.extensions = ['.custom'];
+          break;
+        }
+        case 'packageRootDir': {
+          changed.packageRootDir = fixturePath('nested');
+          break;
+        }
+        case 'conditions': {
+          changed.compilerOptions = {
+            ...context.compilerOptions,
+            customConditions: ['development'],
+          };
+          break;
+        }
+        case 'workspaceBoundary': {
+          changed.workspaceSourceBoundary = createWorkspaceSourceBoundary([
+            sourceFile,
+            fixturePath('another-project.ts'),
+          ]);
+          // No default
+          break;
+        }
+      }
       const caches = createProjectDependencyCaches();
       const importAnalysis = createImportAnalysisContext();
       const first = collectProjectDependencies({
@@ -935,16 +959,17 @@ describe('project dependency authority', () => {
   });
 
   it('never admits an unmapped generated dependency as a source edge', () => {
+    const evidence = createUnobservedDependencyEvidence({
+      context: createSemanticContext({
+        family: 'vue',
+        fileName: '/workspace/App.vue',
+        rootDir: '/workspace',
+      }),
+      importAnalysis: createImportAnalysisContext(),
+    });
     expect(
       projectDependencyCreatesSourceEdge({
-        evidence: createUnobservedDependencyEvidence({
-          context: createSemanticContext({
-            family: 'vue',
-            fileName: '/workspace/App.vue',
-            rootDir: '/workspace',
-          }),
-          importAnalysis: createImportAnalysisContext(),
-        }),
+        evidence,
         generatedFilePath: '/workspace/App.svelte.tsx',
         kind: 'unmapped-generated',
         semanticSpecifier: '/workspace/owned.ts',

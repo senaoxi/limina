@@ -19,7 +19,7 @@
     "rolldown": "catalog:dev",
     "rollup-plugin-license": "catalog:dev",
     "del-cli": "catalog:dev",
-    "logaria": "link:../../../docs-islands/packages/logaria/dist"
+    "logaria": "catalog:dev"
   },
   "exports": {
     "./package-plugin": {

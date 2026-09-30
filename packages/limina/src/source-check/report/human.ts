@@ -6,7 +6,7 @@ import {
   formatFilters,
   formatUnknownRules,
   hasFilters,
-  issueMatchesFilters,
+  isIssueMatchesFilters,
 } from './filters';
 import { formatGenericSourceIssueGroup } from './generic';
 import {
@@ -65,7 +65,7 @@ function createContext(options: {
 }): SourceReportContext {
   const report = options.report ?? {};
   const filteredIssues = options.issues.filter((issue) =>
-    issueMatchesFilters(options.config, issue, report),
+    isIssueMatchesFilters(options.config, issue, report),
   );
   return {
     activeFilters: hasFilters(report),
@@ -91,8 +91,7 @@ function appendUnknownRuleLines(
 }
 
 function isNoMatch(context: SourceReportContext): boolean {
-  if (!context.activeFilters) return false;
-  return context.filteredIssues.length === 0;
+  return context.activeFilters && context.filteredIssues.length === 0;
 }
 
 function formatMatchedFilterHeader(context: SourceReportContext): string[] {

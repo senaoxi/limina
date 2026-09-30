@@ -131,13 +131,12 @@ async function attemptRollbackItem(options: {
 }
 
 function getExistingRecoveryFailure(item: TransactionItem): Error | undefined {
-  if (item.state !== 'rollback-failed') return undefined;
-  return (
-    item.recoveryFailure ??
-    new Error(
-      `Unable to recover ${item.snapshot.item.configPath}; recovery backup retained at ${item.backupPath}`,
-    )
-  );
+  return item.state === 'rollback-failed'
+    ? (item.recoveryFailure ??
+        new Error(
+          `Unable to recover ${item.snapshot.item.configPath}; recovery backup retained at ${item.backupPath}`,
+        ))
+    : undefined;
 }
 
 function shouldRollbackItem(item: TransactionItem): boolean {
@@ -214,7 +213,7 @@ function assertHardlinkPolicyAvailable(
   plan: PreparedMigrationPlan,
   hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
 ): void {
-  if (plan.hardlinkSnapshots.length > 0 && hardlinkPolicy === undefined) {
+  if (hardlinkPolicy === undefined && plan.hardlinkSnapshots.length > 0) {
     throw new Error(
       'Hard-linked migration targets require an explicit skip or rewrite policy.',
     );
@@ -225,16 +224,16 @@ function selectHardlinkSnapshots(
   plan: PreparedMigrationPlan,
   hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
 ) {
-  if (hardlinkPolicy === 'rewrite') return plan.hardlinkSnapshots;
-  return [];
+  return hardlinkPolicy === 'rewrite' ? plan.hardlinkSnapshots : [];
 }
 
 function collectHardlinkSkippedFiles(
   plan: PreparedMigrationPlan,
   hardlinkPolicy: MigrationTransactionOptions['hardlinkPolicy'],
 ): string[] {
-  if (hardlinkPolicy !== 'skip') return [];
-  return plan.hardlinkSnapshots.map((snapshot) => snapshot.item.configPath);
+  return hardlinkPolicy === 'skip'
+    ? plan.hardlinkSnapshots.map((snapshot) => snapshot.item.configPath)
+    : [];
 }
 
 function selectSnapshots(
@@ -286,12 +285,12 @@ export async function executePreparedMigrationPlan(
 }
 
 export async function executeMigrationWritePlan(
-  allowedRootDirs: string | readonly string[],
+  allowedRootDirectories: string | readonly string[],
   plan: readonly MigrationWritePlanItem[],
   transactionOptions: MigrationTransactionOptions = {},
 ): Promise<MigrationTransactionExecutionResult> {
   const preparedPlan = await prepareMigrationWritePlan(
-    allowedRootDirs,
+    allowedRootDirectories,
     plan,
     transactionOptions,
   );

@@ -29,13 +29,16 @@ function isPackageJsonFile(value: unknown): value is string {
   return typeof value === 'string' && value.endsWith('package.json');
 }
 
-function resolvePackageJsonPath(rootDir: string, file: unknown): string | null {
+function resolvePackageJsonPath(
+  rootDirectory: string,
+  file: unknown,
+): string | null {
   if (!isPackageJsonFile(file)) {
     return null;
   }
 
   return normalizeAbsolutePath(
-    path.isAbsolute(file) ? file : path.join(rootDir, file),
+    path.isAbsolute(file) ? file : path.join(rootDirectory, file),
   );
 }
 
@@ -54,11 +57,10 @@ function createDependencyIssue(options: {
   ownerIdentity: PackageOwnerIdentity;
   workspacePackageNames: ReadonlySet<string>;
 }): KnipUnusedWorkspaceDependencyIssue | null {
-  if (typeof options.dependency.name !== 'string') {
-    return null;
-  }
-
-  if (!options.workspacePackageNames.has(options.dependency.name)) {
+  if (
+    typeof options.dependency.name !== 'string' ||
+    !options.workspacePackageNames.has(options.dependency.name)
+  ) {
     return null;
   }
 
@@ -111,11 +113,9 @@ function compareDependencyIssues(
   right: KnipUnusedWorkspaceDependencyIssue,
 ): number {
   const pathOrder = left.packageJsonPath.localeCompare(right.packageJsonPath);
-  if (pathOrder !== 0) {
-    return pathOrder;
-  }
-
-  return left.dependencyName.localeCompare(right.dependencyName);
+  return pathOrder === 0
+    ? left.dependencyName.localeCompare(right.dependencyName)
+    : pathOrder;
 }
 
 function addEntryDependencyIssues(options: {
@@ -176,12 +176,12 @@ export function collectUnusedWorkspaceDependencyIssues(options: {
     addEntryDependencyIssues({ ...options, entry, issuesByKey });
   }
 
-  return [...issuesByKey.values()].sort(compareDependencyIssues);
+  return issuesByKey.values().toArray().sort(compareDependencyIssues);
 }
 
-function toAbsoluteIssuePath(rootDir: string, filePath: string): string {
+function toAbsoluteIssuePath(rootDirectory: string, filePath: string): string {
   return normalizeAbsolutePath(
-    path.isAbsolute(filePath) ? filePath : path.join(rootDir, filePath),
+    path.isAbsolute(filePath) ? filePath : path.join(rootDirectory, filePath),
   );
 }
 
@@ -190,11 +190,9 @@ function isNonEmptyFileName(value: unknown): value is string {
 }
 
 function collectNestedFileNames(entry: KnipIssueEntry): string[] | null {
-  if (!Array.isArray(entry.files) || entry.files.length === 0) {
-    return null;
-  }
-
-  return entry.files.map((file) => file.name).filter(isNonEmptyFileName);
+  return !Array.isArray(entry.files) || entry.files.length === 0
+    ? null
+    : entry.files.map((file) => file.name).filter(isNonEmptyFileName);
 }
 
 function isTopLevelSourceFile(value: unknown): value is string {
@@ -207,11 +205,7 @@ function collectEntryFileNames(entry: KnipIssueEntry): string[] {
     return nestedNames;
   }
 
-  if (isTopLevelSourceFile(entry.file)) {
-    return [entry.file];
-  }
-
-  return [];
+  return isTopLevelSourceFile(entry.file) ? [entry.file] : [];
 }
 
 export function collectUnusedSourceFileIssues(options: {

@@ -59,7 +59,7 @@ async function collectIdentityEntry(options: {
   options.files.push(entryPath);
 }
 
-async function collectRegularFiles(rootDir: string): Promise<string[]> {
+async function collectRegularFiles(rootDirectory: string): Promise<string[]> {
   const files: string[] = [];
 
   async function visit(directoryPath: string): Promise<void> {
@@ -71,27 +71,29 @@ async function collectRegularFiles(rootDir: string): Promise<string[]> {
     }
   }
 
-  await visit(rootDir);
+  await visit(rootDirectory);
   return files;
 }
 
 function compareFilePaths(
-  rootDir: string,
+  rootDirectory: string,
   left: string,
   right: string,
 ): number {
   return compareCodeUnits(
-    toPortableRelativePath(path.relative(rootDir, left)),
-    toPortableRelativePath(path.relative(rootDir, right)),
+    toPortableRelativePath(path.relative(rootDirectory, left)),
+    toPortableRelativePath(path.relative(rootDirectory, right)),
   );
 }
 
 async function hashFile(
   treeHash: ReturnType<typeof createHash>,
-  rootDir: string,
+  rootDirectory: string,
   filePath: string,
 ): Promise<void> {
-  const relativePath = toPortableRelativePath(path.relative(rootDir, filePath));
+  const relativePath = toPortableRelativePath(
+    path.relative(rootDirectory, filePath),
+  );
   const fileHash = createHash('sha256')
     .update(await readFile(filePath))
     .digest('hex');
@@ -103,16 +105,16 @@ async function hashFile(
 }
 
 async function hashFiles(
-  rootDir: string,
+  rootDirectory: string,
   files: readonly string[],
 ): Promise<FileTreeIdentity> {
   const treeHash = createHash('sha256');
   const orderedFiles = [...files].sort((left, right) =>
-    compareFilePaths(rootDir, left, right),
+    compareFilePaths(rootDirectory, left, right),
   );
 
   for (const filePath of orderedFiles) {
-    await hashFile(treeHash, rootDir, filePath);
+    await hashFile(treeHash, rootDirectory, filePath);
   }
 
   return {
@@ -122,11 +124,7 @@ async function hashFiles(
 }
 
 function getLiminaBinPath(manifest: PackageManifest): string | undefined {
-  if (typeof manifest.bin === 'string') {
-    return manifest.bin;
-  }
-
-  return manifest.bin?.limina;
+  return typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.limina;
 }
 
 async function readPackageBinPath(packageRoot: string): Promise<string> {

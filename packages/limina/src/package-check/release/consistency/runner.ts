@@ -130,9 +130,7 @@ function getPackedManifestLintConfig(
   context: ReleaseConsistencyContext,
 ): PackedManifestLintConfig | null {
   const config = getConfiguredManifestLint(context);
-  if (config === undefined) return null;
-  if (config === false) return null;
-  return config;
+  return config === undefined || config === false ? null : config;
 }
 
 async function validateOptionalManifestLint(options: {

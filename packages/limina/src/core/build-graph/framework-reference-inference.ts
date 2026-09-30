@@ -106,8 +106,9 @@ function resolveFrameworkImportTarget(
     importOptions: options,
     resolution,
   });
-  if ([null, options.source.configPath].includes(targetConfigPath)) return null;
-  return { resolution, targetConfigPath: targetConfigPath! };
+  return [null, options.source.configPath].includes(targetConfigPath)
+    ? null
+    : { resolution, targetConfigPath: targetConfigPath! };
 }
 
 function shouldRecordDeclarationProviderImport(
@@ -164,10 +165,9 @@ function getFrameworkSourceFileNames(
   source: GovernedSourceUnit,
   project: SourceProject,
 ): string[] {
-  if (!isBuildCapablePreset(source.primaryCheckerName)) {
-    return project.fileNames;
-  }
-  return source.ownedFileNames.filter(isFrameworkFile);
+  return isBuildCapablePreset(source.primaryCheckerName)
+    ? source.ownedFileNames.filter(isFrameworkFile)
+    : project.fileNames;
 }
 
 interface FrameworkSourceOptions {
@@ -225,8 +225,10 @@ function processFrameworkObservation(options: {
   >['observations'][number];
   source: GovernedSourceUnit;
 }): void {
-  if (options.observation.kind !== 'missing') return;
-  if (!options.frameworkFiles.has(options.observation.importRecord.filePath)) {
+  if (
+    options.observation.kind !== 'missing' ||
+    !options.frameworkFiles.has(options.observation.importRecord.filePath)
+  ) {
     return;
   }
   reportUnresolvedFrameworkImport({

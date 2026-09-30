@@ -49,21 +49,21 @@ export interface PackageJsonPluginContext {
   ) => DependencyMap | undefined;
 }
 
-export interface ExportPathRewriteArgs {
+export interface ExportPathRewriteArguments {
   condition?: string;
   context: PackageJsonPluginContext;
   key: string;
   value: string;
 }
 
-export interface PackageExportsRewriteArgs {
+export interface PackageExportsRewriteArguments {
   context: PackageJsonPluginContext;
   exportsField: Record<string, unknown> | undefined;
-  rewriteExportPath: (args: ExportPathRewriteArgs) => string;
+  rewriteExportPath: (arguments_: ExportPathRewriteArguments) => string;
 }
 
 export type PackageExportsRewriter = (
-  args: PackageExportsRewriteArgs,
+  arguments_: PackageExportsRewriteArguments,
 ) => Record<string, ExportValue> | undefined;
 
 export interface EmittedPackageAsset {
@@ -171,8 +171,8 @@ function toPosixPath(value: string): string {
   return value.replaceAll('\\', '/');
 }
 
-function isSubPath(ancestorDir: string, targetPath: string): boolean {
-  const relativePath = path.relative(ancestorDir, targetPath);
+function isSubPath(ancestorDirectory: string, targetPath: string): boolean {
+  const relativePath = path.relative(ancestorDirectory, targetPath);
   return (
     relativePath !== '' &&
     !relativePath.startsWith('..') &&
@@ -219,15 +219,13 @@ function createPackageFilesGlobPattern(relativePath: string): string {
     return relativePath;
   }
 
-  if (isDynamicPattern(relativePath, { caseSensitiveMatch: true })) {
-    return relativePath;
-  }
-
-  return escapePath(relativePath);
+  return isDynamicPattern(relativePath, { caseSensitiveMatch: true })
+    ? relativePath
+    : escapePath(relativePath);
 }
 
-function resolveOutputDir(
-  packageRootDir: string,
+function resolveOutputDirectory(
+  packageRootDirectory: string,
   outputOptions: OutputOptionsLike | undefined,
 ): string {
   const outputPath =
@@ -236,28 +234,31 @@ function resolveOutputDir(
       ? path.dirname(outputOptions.file)
       : DEFAULT_OUTPUT_DIR);
 
-  return path.resolve(packageRootDir, outputPath);
+  return path.resolve(packageRootDirectory, outputPath);
 }
 
-function createOutputDirIgnorePatterns(
-  packageRootDir: string,
+function createOutputDirectoryIgnorePatterns(
+  packageRootDirectory: string,
   outputOptions: OutputOptionsLike | undefined,
 ): string[] {
-  const outputDir = resolveOutputDir(packageRootDir, outputOptions);
+  const outputDirectory = resolveOutputDirectory(
+    packageRootDirectory,
+    outputOptions,
+  );
 
-  if (!isSubPath(packageRootDir, outputDir)) {
+  if (!isSubPath(packageRootDirectory, outputDirectory)) {
     return [];
   }
 
-  const relativeOutputDir = toPosixPath(
-    path.relative(packageRootDir, outputDir),
+  const relativeOutputDirectory = toPosixPath(
+    path.relative(packageRootDirectory, outputDirectory),
   );
-  const escapedOutputDir = escapePath(relativeOutputDir);
-  return [escapedOutputDir, `${escapedOutputDir}/**`];
+  const escapedOutputDirectory = escapePath(relativeOutputDirectory);
+  return [escapedOutputDirectory, `${escapedOutputDirectory}/**`];
 }
 
 async function collectPackageFiles(
-  packageRootDir: string,
+  packageRootDirectory: string,
   files: readonly string[] | undefined,
   outputOptions: OutputOptionsLike | undefined,
 ): Promise<EmittedPackageAsset[]> {
@@ -268,7 +269,7 @@ async function collectPackageFiles(
   const includePatterns: string[] = [];
   const ignorePatterns = new Set<string>([
     ...DEFAULT_PACKAGE_FILE_IGNORE_PATTERNS,
-    ...createOutputDirIgnorePatterns(packageRootDir, outputOptions),
+    ...createOutputDirectoryIgnorePatterns(packageRootDirectory, outputOptions),
   ]);
 
   for (const entry of files) {
@@ -296,7 +297,7 @@ async function collectPackageFiles(
 
   const fileNames = await glob(includePatterns, {
     absolute: false,
-    cwd: packageRootDir,
+    cwd: packageRootDirectory,
     dot: true,
     expandDirectories: true,
     followSymbolicLinks: false,
@@ -308,11 +309,13 @@ async function collectPackageFiles(
     ...new Set(fileNames.map((fileName) => toPosixPath(fileName))),
   ];
 
-  normalizedFileNames.sort();
+  normalizedFileNames.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 
   return normalizedFileNames.map((fileName) => ({
     fileName,
-    sourcePath: path.join(packageRootDir, fileName),
+    sourcePath: path.join(packageRootDirectory, fileName),
   }));
 }
 
@@ -332,9 +335,8 @@ function createWorkspaceCatalogs(
     catalogs.default = { ...workspaceManifest.catalog };
   }
 
-  for (const [catalogName, catalog] of Object.entries(
-    workspaceManifest?.catalogs ?? {},
-  )) {
+  const workspaceCatalogs = Object.entries(workspaceManifest?.catalogs ?? {});
+  for (const [catalogName, catalog] of workspaceCatalogs) {
     catalogs[catalogName] = { ...catalog };
   }
 
@@ -342,26 +344,29 @@ function createWorkspaceCatalogs(
 }
 
 async function collectPrivateWorkspacePackageNames(
-  workspaceRootDir: string,
+  workspaceRootDirectory: string,
   workspaceManifest: WorkspaceManifest | undefined,
 ): Promise<ReadonlySet<string>> {
-  const workspacePackageDirs = workspaceManifest?.packages.length
+  const workspacePackageDirectories = workspaceManifest?.packages.length
     ? await glob(workspaceManifest.packages, {
         absolute: false,
-        cwd: workspaceRootDir,
+        cwd: workspaceRootDirectory,
         dot: true,
         expandDirectories: false,
         followSymbolicLinks: false,
         onlyDirectories: true,
       })
     : [];
-  workspacePackageDirs.push('.');
+  workspacePackageDirectories.push('.');
 
   const privateWorkspacePackageNames = new Set<string>();
-  for (const workspacePackageDir of new Set(workspacePackageDirs)) {
+  const uniqueWorkspacePackageDirectories = new Set(
+    workspacePackageDirectories,
+  );
+  for (const workspacePackageDirectory of uniqueWorkspacePackageDirectories) {
     const packageJsonPath = path.join(
-      workspaceRootDir,
-      workspacePackageDir,
+      workspaceRootDirectory,
+      workspacePackageDirectory,
       'package.json',
     );
     if (!existsSync(packageJsonPath)) {
@@ -419,7 +424,7 @@ function filterDependencyMapForPnpmExport(
   const resolvedEntries = Object.entries(dependencies).filter(
     ([packageName, versionRange]) =>
       (allowInternal ||
-        !internalScopes.some((scope) => packageName.startsWith(scope))) &&
+        internalScopes.every((scope) => !packageName.startsWith(scope))) &&
       (!dropWorkspaceDependencies || !versionRange.startsWith('workspace:')) &&
       (!dropPrivateWorkspaceDependencies ||
         !isPrivateWorkspaceDependency(
@@ -429,11 +434,9 @@ function filterDependencyMapForPnpmExport(
         )),
   );
 
-  if (resolvedEntries.length === 0) {
-    return undefined;
-  }
-
-  return Object.fromEntries(resolvedEntries);
+  return resolvedEntries.length === 0
+    ? undefined
+    : Object.fromEntries(resolvedEntries);
 }
 
 function createPnpmExportInputPackageJson(
@@ -472,21 +475,21 @@ function createPnpmExportInputPackageJson(
 }
 
 async function createPnpmExportablePackageJson(
-  packageRootDir: string,
+  packageRootDirectory: string,
   packageJson: PackageJsonObject,
-  workspaceRootDir: string,
+  workspaceRootDirectory: string,
   dependencyFields: Partial<
     Record<DependencyFieldName, DependencyResolutionOptions | false>
   >,
 ): Promise<PnpmExportablePackageJsonResult> {
-  const workspaceManifest = await readWorkspaceManifest(workspaceRootDir);
+  const workspaceManifest = await readWorkspaceManifest(workspaceRootDirectory);
   const privateWorkspacePackageNames =
     await collectPrivateWorkspacePackageNames(
-      workspaceRootDir,
+      workspaceRootDirectory,
       workspaceManifest,
     );
   const exportablePackageJson = (await createExportableManifest(
-    packageRootDir,
+    packageRootDirectory,
     createPnpmExportInputPackageJson(
       packageJson,
       dependencyFields,
@@ -594,15 +597,13 @@ function sanitizeDependencyMap(
     },
   );
 
-  if (resolvedEntries.length === 0) {
-    return undefined;
-  }
-
-  return Object.fromEntries(resolvedEntries);
+  return resolvedEntries.length === 0
+    ? undefined
+    : Object.fromEntries(resolvedEntries);
 }
 
 function createPluginContext(
-  packageRootDir: string,
+  packageRootDirectory: string,
   workspaceConfigPath: string,
   resolvedVersionRanges: ReadonlyMap<string, string>,
   privateWorkspacePackageNames: ReadonlySet<string>,
@@ -619,7 +620,7 @@ function createPluginContext(
   };
 
   return {
-    packageRootDir,
+    packageRootDir: packageRootDirectory,
     resolvePublishedVersionRange,
     sanitizeDependencyMap: (dependencies, options) =>
       sanitizeDependencyMap(
@@ -634,7 +635,7 @@ function createPluginContext(
 export function defaultRewriteExportPath({
   condition,
   value,
-}: ExportPathRewriteArgs): string {
+}: ExportPathRewriteArguments): string {
   if (value.includes('dist/')) {
     return value.replace('dist/', '');
   }
@@ -644,11 +645,9 @@ export function defaultRewriteExportPath({
   }
 
   const rewrittenValue = value.replace('src/', '');
-  if (condition === 'types' || rewrittenValue.includes('types')) {
-    return rewrittenValue.replace('.ts', '.d.ts');
-  }
-
-  return rewrittenValue.replace('.ts', '.js');
+  return condition === 'types' || rewrittenValue.includes('types')
+    ? rewrittenValue.replace('.ts', '.d.ts')
+    : rewrittenValue.replace('.ts', '.js');
 }
 
 function rewriteTypesPath(
@@ -671,7 +670,7 @@ export function defaultRewritePackageExports({
   context,
   exportsField,
   rewriteExportPath,
-}: PackageExportsRewriteArgs): Record<string, ExportValue> | undefined {
+}: PackageExportsRewriteArguments): Record<string, ExportValue> | undefined {
   if (
     !exportsField ||
     typeof exportsField !== 'object' ||
@@ -758,49 +757,24 @@ export function createPackagePlugin(
     transformPackageJson,
   } = options;
 
-  const packageRootDir = path.dirname(packageJsonPath);
+  const packageRootDirectory = path.dirname(packageJsonPath);
   const packageJson = JSON.parse(
     readFileSync(packageJsonPath, 'utf8'),
   ) as PackageJsonObject;
-  // Temporary migration contract: only this exact bundled Logaria link is allowed.
-  if (
-    packageJson.devDependencies?.logaria ===
-    'link:../../../docs-islands/packages/logaria/dist'
-  ) {
-    const linkedManifestPath = path.resolve(
-      packageRootDir,
-      '../../../docs-islands/packages/logaria/dist/package.json',
-    );
-    const linked = JSON.parse(readFileSync(linkedManifestPath, 'utf8')) as {
-      name?: string;
-      version?: string;
-    };
-    if (
-      linked.name !== 'logaria' ||
-      !linked.version ||
-      !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(linked.version)
-    ) {
-      throw new Error('Expected a built Logaria manifest with a valid version');
-    }
-    packageJson.devDependencies = {
-      ...packageJson.devDependencies,
-      logaria: linked.version,
-    };
-  }
-  const workspaceRootDir = findMonorepoRoot(packageRootDir);
-  if (!workspaceRootDir) {
+  const workspaceRootDirectory = findMonorepoRoot(packageRootDirectory);
+  if (!workspaceRootDirectory) {
     throw new Error(
       `Unable to resolve workspace root from package manifest: ${packageJsonPath}`,
     );
   }
 
   const workspaceConfigPath = path.join(
-    workspaceRootDir,
+    workspaceRootDirectory,
     'pnpm-workspace.yaml',
   );
   if (!existsSync(workspaceConfigPath)) {
     throw new Error(
-      `Unable to resolve pnpm workspace config from workspace root: ${workspaceRootDir}`,
+      `Unable to resolve pnpm workspace config from workspace root: ${workspaceRootDirectory}`,
     );
   }
 
@@ -808,18 +782,21 @@ export function createPackagePlugin(
     name: pluginName,
     generateBundle: {
       order: 'post',
-      async handler(outputOptions: OutputOptionsLike | undefined) {
+      async handler(
+        this: PackagePluginContextLike,
+        outputOptions: OutputOptionsLike | undefined,
+      ) {
         const {
           packageJson: resolvedPackageJson,
           privateWorkspacePackageNames,
         } = await createPnpmExportablePackageJson(
-          packageRootDir,
+          packageRootDirectory,
           packageJson,
-          workspaceRootDir,
+          workspaceRootDirectory,
           dependencyFields,
         );
         const context = createPluginContext(
-          packageRootDir,
+          packageRootDirectory,
           workspaceConfigPath,
           createResolvedVersionRangeMap(packageJson, resolvedPackageJson),
           privateWorkspacePackageNames,
@@ -860,7 +837,7 @@ export function createPackagePlugin(
           emitAssets.map((asset) => asset.fileName),
         );
         const packageFileAssets = await collectPackageFiles(
-          packageRootDir,
+          packageRootDirectory,
           packageJson.files,
           outputOptions,
         );
@@ -891,3 +868,8 @@ export function createPackagePlugin(
     },
   };
 }
+
+export type {
+  ExportPathRewriteArguments as ExportPathRewriteArgs,
+  PackageExportsRewriteArguments as PackageExportsRewriteArgs,
+};

@@ -19,7 +19,7 @@ import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type {
   ProofCheckerCoverageInvalidFacts,
   ProofFinding,
@@ -33,11 +33,7 @@ import type {
 function createRouteLocations(
   filePath: string | undefined,
 ): LiminaCheckIssueLocation[] | undefined {
-  if (!filePath) {
-    return undefined;
-  }
-
-  return [{ filePath, label: 'checker project' }];
+  return filePath ? [{ filePath, label: 'checker project' }] : undefined;
 }
 
 export function createProofCheckerRouteFinding(options: {
@@ -135,7 +131,7 @@ function createMissingConfigFinding(options: {
   });
 }
 
-function checkerEntryExists(
+function isCheckerEntryExists(
   configPath: string,
   generatedFiles: ReadonlyMap<string, string>,
 ): boolean {
@@ -164,7 +160,9 @@ function resolveCheckerTarget(options: {
     return { findings: [createMissingEntryFinding(options.checker.name)] };
   }
 
-  if (!checkerEntryExists(configPath, options.generatedGraph.generatedFiles)) {
+  if (
+    !isCheckerEntryExists(configPath, options.generatedGraph.generatedFiles)
+  ) {
     return {
       findings: [
         createMissingConfigFinding({
@@ -225,8 +223,9 @@ function getFrameworkCoverageUnits(
   checkerName: string,
 ): GovernedSourceUnit[] {
   const governedSources = generatedGraph.governedSources.get(checkerName);
-  if (governedSources === undefined) return [];
-  return [...governedSources.values()];
+  return governedSources === undefined
+    ? []
+    : governedSources.values().toArray();
 }
 
 function addBuildCoverageTarget(options: {

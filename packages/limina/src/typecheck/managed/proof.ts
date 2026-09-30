@@ -108,9 +108,10 @@ function mergeDependencies(options: {
       dependencies.set(dependency.path, dependency);
     }
   }
-  return [...dependencies.values()].sort((left, right) =>
-    compareCodeUnits(left.path, right.path),
-  );
+  return dependencies
+    .values()
+    .toArray()
+    .sort((left, right) => compareCodeUnits(left.path, right.path));
 }
 
 function collectUniqueSorted(values: readonly string[]): string[] {

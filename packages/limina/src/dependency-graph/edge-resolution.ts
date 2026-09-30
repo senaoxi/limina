@@ -9,7 +9,7 @@ export interface ResolvedImportPaths {
   resolvedFilePath: string;
 }
 
-function matchesOutputRoot(
+function isMatchesOutputRoot(
   context: DependencyGraphCollectionContext,
   resolvedPath: string,
 ): boolean {
@@ -36,12 +36,12 @@ export function classifyEdge(options: {
   targetPackage: WorkspacePackage;
 }): DependencyGraphEdgeKind | null {
   if (hasSourceOwner(options)) return 'source';
-  return matchesOutputRoot(options.context, options.paths.resolvedFilePath)
+  return isMatchesOutputRoot(options.context, options.paths.resolvedFilePath)
     ? 'artifact'
     : null;
 }
 
-export function viewAllowsEdge(
+export function isViewAllowsEdge(
   context: DependencyGraphCollectionContext,
   edgeKind: DependencyGraphEdgeKind,
 ): boolean {
@@ -84,9 +84,8 @@ export function isExternalPackageEdge(
   importerPackage: WorkspacePackage,
   targetPackage: WorkspacePackage | null,
 ): targetPackage is WorkspacePackage {
-  if (targetPackage === null) {
-    return false;
-  }
-
-  return targetPackage.directory !== importerPackage.directory;
+  return (
+    targetPackage !== null &&
+    targetPackage.directory !== importerPackage.directory
+  );
 }

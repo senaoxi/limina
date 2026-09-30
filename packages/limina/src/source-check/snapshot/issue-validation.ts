@@ -21,7 +21,7 @@ import {
   SOURCE_ISSUE_SNAPSHOT_VERSION,
 } from './types';
 import {
-  allValid,
+  isAllValid,
   isCheckIssueSnapshotStatus,
   isKnownIssueTask,
   isLiminaCheckIssueSeverity,
@@ -33,25 +33,22 @@ import {
 } from './validation-shared';
 
 function isOptionalNumber(value: unknown): boolean {
-  if (value === undefined) return true;
-  return typeof value === 'number';
+  return value === undefined || typeof value === 'number';
 }
 
 function isOptionalSeverity(value: unknown): boolean {
-  if (value === undefined) return true;
-  return isLiminaCheckIssueSeverity(value);
+  return value === undefined || isLiminaCheckIssueSeverity(value);
 }
 
 function isOptionalExternal(value: unknown): boolean {
-  if (value === undefined) return true;
-  return isLiminaCheckIssueExternal(value);
+  return value === undefined || isLiminaCheckIssueExternal(value);
 }
 
 function isLiminaCheckIssueLocation(
   value: unknown,
 ): value is LiminaCheckIssueLocation {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     isOptionalString(value.label),
     isOptionalString(value.filePath),
     isOptionalString(value.packageManifestPath),
@@ -65,7 +62,7 @@ function isLiminaCheckIssueEvidence(
   value: unknown,
 ): value is LiminaCheckIssueEvidence {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     isOptionalString(value.label),
     isOptionalString(value.value),
     isOptionalStringArray(value.lines),
@@ -75,9 +72,9 @@ function isLiminaCheckIssueEvidence(
 function isLiminaCheckIssueExternal(
   value: unknown,
 ): value is LiminaCheckIssueExternal {
-  if (!isRecord(value)) return false;
-  return [value.tool, value.code, value.message, value.url].every(
-    isOptionalString,
+  return (
+    isRecord(value) &&
+    [value.tool, value.code, value.message, value.url].every(isOptionalString)
   );
 }
 
@@ -85,7 +82,7 @@ function isSourceIssueSnapshotIssue(
   value: unknown,
 ): value is SourceIssueSnapshotIssue {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     typeof value.code === 'string',
     isOptionalString(value.ownerName),
     isOptionalString(value.filePath),
@@ -93,15 +90,17 @@ function isSourceIssueSnapshotIssue(
 }
 
 function hasSourceSnapshotIssues(value: Record<string, unknown>): boolean {
-  if (!Array.isArray(value.issues)) return false;
-  return value.issues.every(isSourceIssueSnapshotIssue);
+  return (
+    Array.isArray(value.issues) &&
+    value.issues.every(isSourceIssueSnapshotIssue)
+  );
 }
 
 export function isSourceIssueSnapshot(
   value: unknown,
 ): value is SourceIssueSnapshot {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     value.version === SOURCE_ISSUE_SNAPSHOT_VERSION,
     typeof value.command === 'string',
     typeof value.createdAt === 'string',
@@ -111,34 +110,36 @@ export function isSourceIssueSnapshot(
 }
 
 function hasKnownIssueTask(value: Record<string, unknown>): boolean {
-  if (typeof value.task !== 'string') return false;
-  return isKnownIssueTask(value.task);
+  return typeof value.task === 'string' && isKnownIssueTask(value.task);
 }
 
 function hasReadableIssueCode(value: Record<string, unknown>): boolean {
-  if (typeof value.code !== 'string') return false;
-  return isReadableLiminaCheckIssueCode(value.code);
+  return (
+    typeof value.code === 'string' && isReadableLiminaCheckIssueCode(value.code)
+  );
 }
 
 function getReadableIssueCode(
   value: unknown,
 ): LiminaReadableCheckIssueCode | null {
-  if (typeof value !== 'string') return null;
-  if (!isReadableLiminaCheckIssueCode(value)) return null;
-  return value;
+  return typeof value !== 'string' || !isReadableLiminaCheckIssueCode(value)
+    ? null
+    : value;
 }
 
 function hasMatchingIssueTask(value: Record<string, unknown>): boolean {
   const code = getReadableIssueCode(value.code);
-  if (code === null) return false;
-  if (typeof value.task !== 'string') return false;
-  return getLiminaCheckIssueRuleMetadata(code).task === value.task;
+  return (
+    code !== null &&
+    typeof value.task === 'string' &&
+    getLiminaCheckIssueRuleMetadata(code).task === value.task
+  );
 }
 
 function hasLiminaCheckIssueBaseFields(
   value: Record<string, unknown>,
 ): boolean {
-  return allValid([
+  return isAllValid([
     hasKnownIssueTask(value),
     hasReadableIssueCode(value),
     hasMatchingIssueTask(value),
@@ -150,7 +151,7 @@ function hasLiminaCheckIssueBaseFields(
 function hasLiminaCheckIssueStructuredFields(
   value: Record<string, unknown>,
 ): boolean {
-  return allValid([
+  return isAllValid([
     isOptionalString(value.id),
     isOptionalString(value.domain),
     isOptionalString(value.detector),
@@ -167,7 +168,7 @@ function hasLiminaCheckIssueStructuredFields(
 function hasLiminaCheckIssuePresentationFields(
   value: Record<string, unknown>,
 ): boolean {
-  return allValid([
+  return isAllValid([
     isOptionalStringArray(value.detailLines),
     isOptionalString(value.fix),
     isOptionalString(value.packageManifestPath),
@@ -181,7 +182,7 @@ function hasLiminaCheckIssuePresentationFields(
 
 export function isLiminaCheckIssue(value: unknown): value is LiminaCheckIssue {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     hasLiminaCheckIssueBaseFields(value),
     hasLiminaCheckIssueStructuredFields(value),
     hasLiminaCheckIssuePresentationFields(value),
@@ -196,20 +197,18 @@ export function assertWritableLiminaCheckIssue(
 }
 
 function hasCheckSnapshotIssues(value: Record<string, unknown>): boolean {
-  if (!Array.isArray(value.issues)) return false;
-  return value.issues.every(isLiminaCheckIssue);
+  return Array.isArray(value.issues) && value.issues.every(isLiminaCheckIssue);
 }
 
 function hasOptionalRun(value: Record<string, unknown>): boolean {
-  if (value.run === undefined) return true;
-  return isLiminaCheckRunSummary(value.run);
+  return value.run === undefined || isLiminaCheckRunSummary(value.run);
 }
 
 export function isCurrentCheckIssueSnapshotStructure(
   value: unknown,
 ): value is CheckIssueSnapshot {
   if (!isRecord(value)) return false;
-  return allValid([
+  return isAllValid([
     value.version === CHECK_ISSUE_SNAPSHOT_VERSION,
     typeof value.command === 'string',
     typeof value.createdAt === 'string',
@@ -220,11 +219,12 @@ export function isCurrentCheckIssueSnapshotStructure(
 }
 
 function getSnapshotCommand(snapshot: CheckIssueSnapshot): string {
-  if (snapshot.run === undefined) return snapshot.command;
-  return snapshot.run.command;
+  return snapshot.run === undefined ? snapshot.command : snapshot.run.command;
 }
 
 export function isCheckInventoryOwner(snapshot: CheckIssueSnapshot): boolean {
-  if (snapshot.status === 'not-run') return true;
-  return /^limina check(?:\s|$)/u.test(getSnapshotCommand(snapshot));
+  return (
+    snapshot.status === 'not-run' ||
+    /^limina check(?:\s|$)/u.test(getSnapshotCommand(snapshot))
+  );
 }

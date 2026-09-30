@@ -8,13 +8,12 @@ export * from './project-parser';
 export type * from './project-types';
 
 export function formatImportRecordLocation(
-  rootDir: string,
+  rootDirectory: string,
   importRecord: ImportLocationRecord,
 ): string {
-  if (importRecord.configurationSource !== undefined) {
-    return `${toRelativePath(rootDir, importRecord.filePath)} (compiler option: ${toRelativePath(rootDir, importRecord.configurationSource.configPath)}#${importRecord.configurationSource.option})`;
-  }
-  return `${toRelativePath(rootDir, importRecord.filePath)}:${importRecord.line} (kind: ${importRecord.kind})`;
+  return importRecord.configurationSource === undefined
+    ? `${toRelativePath(rootDirectory, importRecord.filePath)}:${importRecord.line} (kind: ${importRecord.kind})`
+    : `${toRelativePath(rootDirectory, importRecord.filePath)} (compiler option: ${toRelativePath(rootDirectory, importRecord.configurationSource.configPath)}#${importRecord.configurationSource.option})`;
 }
 
 export {

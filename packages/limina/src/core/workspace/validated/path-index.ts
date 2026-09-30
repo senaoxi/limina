@@ -45,20 +45,24 @@ function getCacheMetricName(
 function isNegativeClassification(
   classification: WorkspacePathClassification,
 ): boolean {
-  if (classification.package !== null) return false;
-  return classification.boundary === null;
+  return classification.package === null && classification.boundary === null;
 }
 
 export class WorkspaceRegionPathIndex {
-  readonly packages: readonly WorkspacePackage[];
-  readonly rootDir: string;
   readonly #canonicalPathCache = new Map<string, string>();
+
   readonly #classificationCache = new Map<
     string,
     WorkspacePathClassification
   >();
+
   readonly #metrics: WorkspaceIndexMetricsRecorder | undefined;
+
   readonly #state: WorkspacePathIndexState;
+
+  readonly packages: readonly WorkspacePackage[];
+
+  readonly rootDir: string;
 
   constructor(
     context: ValidatedWorkspaceContext,
@@ -72,42 +76,6 @@ export class WorkspaceRegionPathIndex {
     this.rootDir = this.#state.rootDir;
     this.#recordIndexSize('package', this.#state.packageEntryCount);
     this.#recordIndexSize('boundary', this.#state.boundaryEntryCount);
-  }
-
-  classifyPath(filePath: string): WorkspacePathClassification {
-    const normalizedFilePath = normalizeAbsolutePath(filePath);
-    const cached = this.#classificationCache.get(normalizedFilePath);
-    if (cached !== undefined) {
-      this.#recordClassification('hit', cached);
-      return cached;
-    }
-    const classification = classifyGovernancePath({
-      canonicalPath: this.#canonicalProjectedPath(normalizedFilePath),
-      metrics: this.#metrics,
-      root: this.#state.root,
-    });
-    this.#classificationCache.set(normalizedFilePath, classification);
-    this.#recordClassification('miss', classification);
-    return classification;
-  }
-
-  findPackageForPath(filePath: string): WorkspacePackage | null {
-    return this.classifyPath(filePath).package;
-  }
-
-  findBoundaryForPath(filePath: string): WorkspaceRegionBoundary | null {
-    return this.classifyPath(filePath).boundary;
-  }
-
-  isInsideActivatedRegion(filePath: string): boolean {
-    return this.findPackageForPath(filePath) !== null;
-  }
-
-  isSourceConfigPath(filePath: string): boolean {
-    if (!this.isInsideActivatedRegion(filePath)) return false;
-    return this.#state.sourceConfigIdentities.has(
-      this.#canonicalProjectedPath(filePath),
-    );
   }
 
   #canonicalProjectedPath(targetPath: string): string {
@@ -167,6 +135,44 @@ export class WorkspaceRegionPathIndex {
       name: 'workspace-directory-index-entry',
       provider: 'workspace-path-index',
     });
+  }
+
+  classifyPath(filePath: string): WorkspacePathClassification {
+    const normalizedFilePath = normalizeAbsolutePath(filePath);
+    const cached = this.#classificationCache.get(normalizedFilePath);
+    if (cached !== undefined) {
+      this.#recordClassification('hit', cached);
+      return cached;
+    }
+    const classification = classifyGovernancePath({
+      canonicalPath: this.#canonicalProjectedPath(normalizedFilePath),
+      metrics: this.#metrics,
+      root: this.#state.root,
+    });
+    this.#classificationCache.set(normalizedFilePath, classification);
+    this.#recordClassification('miss', classification);
+    return classification;
+  }
+
+  findPackageForPath(filePath: string): WorkspacePackage | null {
+    return this.classifyPath(filePath).package;
+  }
+
+  findBoundaryForPath(filePath: string): WorkspaceRegionBoundary | null {
+    return this.classifyPath(filePath).boundary;
+  }
+
+  isInsideActivatedRegion(filePath: string): boolean {
+    return this.findPackageForPath(filePath) !== null;
+  }
+
+  isSourceConfigPath(filePath: string): boolean {
+    return (
+      this.isInsideActivatedRegion(filePath) &&
+      this.#state.sourceConfigIdentities.has(
+        this.#canonicalProjectedPath(filePath),
+      )
+    );
   }
 }
 

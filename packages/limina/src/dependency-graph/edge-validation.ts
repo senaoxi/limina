@@ -29,7 +29,7 @@ function addNamelessGraphPackageProblem(options: {
   );
 }
 
-function validateNamedPackage(options: {
+function isValidateNamedPackage(options: {
   context: DependencyGraphCollectionContext;
   importRecord: ImportRecord;
   packageRole: 'importer' | 'target';
@@ -66,7 +66,7 @@ export function validateNamedPackages(options: {
     workspacePackage: options.importerPackage,
   };
 
-  if (!validateNamedPackage(importerOptions)) {
+  if (!isValidateNamedPackage(importerOptions)) {
     return null;
   }
 
@@ -78,7 +78,7 @@ export function validateNamedPackages(options: {
     workspacePackage: options.targetPackage,
   };
 
-  if (!validateNamedPackage(targetOptions)) {
+  if (!isValidateNamedPackage(targetOptions)) {
     return null;
   }
 

@@ -188,10 +188,18 @@ describe('typed Proof findings', () => {
           getLiminaCheckIssueRuleMetadata(code).task === 'proof:check' &&
           code !== LIMINA_CHECK_ISSUE_CODES.proofCheckFailed,
       )
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
 
-    expect([...PROOF_SEMANTIC_ISSUE_CODES].sort()).toEqual(registryCodes);
-    expect(Object.keys(findingByCode).sort()).toEqual(registryCodes);
+    expect(
+      [...PROOF_SEMANTIC_ISSUE_CODES].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
+    expect(
+      Object.keys(findingByCode).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(registryCodes);
   });
 
   it.each(proofFindingEntries())(

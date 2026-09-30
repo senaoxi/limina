@@ -44,28 +44,29 @@ function getImportedLocalNames(
   return names;
 }
 
-function callsAnyLocalName(
+function isCallsAnyLocalName(
   sourceFile: ts.SourceFile,
   localNames: ReadonlySet<string>,
 ): boolean {
-  let found = false;
+  let isFound = false;
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
       ts.isIdentifier(node.expression) &&
       localNames.has(node.expression.text)
     ) {
-      found = true;
+      isFound = true;
     }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  return found;
+  return isFound;
 }
 
 async function findProductionCallers(importedName: string): Promise<string[]> {
   const callers: string[] = [];
-  for (const filePath of await collectProductionSourceFiles()) {
+  const directoryEntries1 = await collectProductionSourceFiles();
+  for (const filePath of directoryEntries1) {
     const source = await readFile(filePath, 'utf8');
     const sourceFile = ts.createSourceFile(
       filePath,
@@ -75,11 +76,13 @@ async function findProductionCallers(importedName: string): Promise<string[]> {
       ts.ScriptKind.TS,
     );
     const localNames = getImportedLocalNames(sourceFile, importedName);
-    if (localNames.size > 0 && callsAnyLocalName(sourceFile, localNames)) {
+    if (localNames.size > 0 && isCallsAnyLocalName(sourceFile, localNames)) {
       callers.push(toPortablePath(path.relative(sourceRoot, filePath)));
     }
   }
-  return callers.sort();
+  return callers.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 function hasRuntimeImport(importDeclaration: ts.ImportDeclaration): boolean {
@@ -88,8 +91,11 @@ function hasRuntimeImport(importDeclaration: ts.ImportDeclaration): boolean {
   if (clause.isTypeOnly) return false;
   if (clause.name !== undefined) return true;
   const bindings = clause.namedBindings;
-  if (bindings === undefined || ts.isNamespaceImport(bindings)) return true;
-  return bindings.elements.some((element) => !element.isTypeOnly);
+  return (
+    bindings === undefined ||
+    ts.isNamespaceImport(bindings) ||
+    bindings.elements.some((element) => !element.isTypeOnly)
+  );
 }
 
 function getRuntimeRelativeSpecifiers(sourceFile: ts.SourceFile): string[] {
@@ -166,6 +172,9 @@ describe('production architecture boundaries', () => {
   it('keeps generated artifact application at the preflight manager boundary', async () => {
     await expect(
       findProductionCallers('materializeGeneratedArtifactPlan'),
+    ).resolves.toEqual(['preflight/materialization.ts']);
+    await expect(
+      findProductionCallers('ensurePreflightGraphMaterialized'),
     ).resolves.toEqual(['preflight/manager.ts']);
   });
 
@@ -183,7 +192,8 @@ describe('production architecture boundaries', () => {
 
   it('does not introduce a preflight to execution dependency', async () => {
     const preflightRoot = path.join(sourceRoot, 'preflight');
-    for (const filePath of await collectProductionSourceFiles(preflightRoot)) {
+    const directoryEntries2 = await collectProductionSourceFiles(preflightRoot);
+    for (const filePath of directoryEntries2) {
       const sourceFile = ts.createSourceFile(
         filePath,
         await readFile(filePath, 'utf8'),

@@ -7,8 +7,8 @@ import { resolveReleaseEntryConcurrency } from '../../execution/config';
 import { runPool } from '../../execution/pool';
 import type { TaskProgressItem } from '../../execution/progress';
 import { formatErrorMessage } from '../../logger';
-import type { ReleaseRegistryConfiguration } from '../../package-check/release/registry/authority';
-import { runReleaseCheckEntry } from './entry';
+import type { ReleaseRegistryConfig } from '../../package-check/release/registry/authority';
+import { isRunReleaseCheckEntry } from './entry';
 import type {
   ReleaseCheckEntryRunResult,
   ReleasePlanEntry,
@@ -87,7 +87,7 @@ function createEntryErrorResult(options: {
 }
 
 async function executePoolEntry(options: {
-  registryConfiguration: ReleaseRegistryConfiguration;
+  registryConfiguration: ReleaseRegistryConfig;
   entry: ReleasePlanEntry;
   progressItem: TaskProgressItem | undefined;
   runOptions: RunReleaseCheckOptions;
@@ -95,7 +95,7 @@ async function executePoolEntry(options: {
 }): Promise<ReleaseCheckEntryRunResult> {
   const issues: LiminaCheckIssue[] = [];
   const startedAt = performance.now();
-  const passed = await runReleaseCheckEntry({
+  const isPassed = await isRunReleaseCheckEntry({
     registryConfiguration: options.registryConfiguration,
     config: options.runOptions.config,
     flow: options.runOptions.flow,
@@ -110,12 +110,12 @@ async function executePoolEntry(options: {
     durationMs: performance.now() - startedAt,
     issues,
     label: options.entry.label,
-    passed,
+    passed: isPassed,
   };
 }
 
 export async function runReleaseCheckEntries(options: {
-  registryConfiguration: ReleaseRegistryConfiguration;
+  registryConfiguration: ReleaseRegistryConfig;
   entries: readonly ReleasePlanEntry[];
   runOptions: RunReleaseCheckOptions;
   workspacePackages: readonly WorkspacePackage[];

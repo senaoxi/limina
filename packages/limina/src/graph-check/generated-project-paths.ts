@@ -26,15 +26,7 @@ export function isSameGeneratedCheckerNamespace(
   const leftChecker = getGeneratedCheckerNamespace(leftConfigPath);
   const rightChecker = getGeneratedCheckerNamespace(rightConfigPath);
 
-  if (!leftChecker) {
-    return true;
-  }
-
-  if (!rightChecker) {
-    return true;
-  }
-
-  return leftChecker === rightChecker;
+  return !leftChecker || !rightChecker || leftChecker === rightChecker;
 }
 
 export function getGeneratedSourceConfigPath(

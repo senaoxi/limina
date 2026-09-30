@@ -21,14 +21,15 @@ import {
   collectValidatedWorkspaceContext,
   WorkspaceRegionPathIndex,
 } from '../core/workspace/validated-context';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 async function createFixture() {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-package-scope-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-package-scope-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   const writeManifest = async (
     directory: string,
     manifest: PackageManifest,
@@ -57,10 +58,10 @@ async function createFixture() {
   await link('physical/pkg', 'workspace/alias');
   await link('physical/pkg/src', 'workspace/source-alias');
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
     link,
     path: fixturePath,
-    rootDir,
+    rootDir: rootDirectory,
     writeManifest,
   };
 }
@@ -75,23 +76,20 @@ async function createLookups(options: {
   const workspacePackage: WorkspacePackage = {
     directory: options.directory,
     manifest,
-    ...(manifest.name ? { name: manifest.name } : {}),
+    ...(manifest.name && { name: manifest.name }),
   };
   const owner: PackageOwner = {
     ...workspacePackage,
     packageJsonPath: `${options.directory}/package.json`,
   };
   const context = await collectValidatedWorkspaceContext({
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       configPath: `${options.rootDir}/limina.config.mjs`,
       regions: {
         extendNestedPackageScopes: options.extendNestedPackageScopes ?? false,
       },
       rootDir: options.rootDir,
-    },
+    }),
     rawPackages: [workspacePackage],
   });
   const pathIndex = new WorkspaceRegionPathIndex(context);
@@ -133,7 +131,8 @@ describe('WorkspacePackageScopeLookup canonical bounds', () => {
           'physical/pkg',
           'workspace/source-alias/missing/deep',
         ];
-        for (const query of reverse ? queries.toReversed() : queries) {
+        const fixtureEntries1 = reverse ? queries.toReversed() : queries;
+        for (const query of fixtureEntries1) {
           const filePath = fixture.path(query, 'missing.ts');
           expect(pathIndex.findPackageForPath(filePath)).toBe(workspacePackage);
           expect(

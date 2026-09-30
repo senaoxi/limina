@@ -48,7 +48,9 @@ export interface ArtifactPlan {
   readonly generationToken: ArtifactNamespaceGenerationToken;
   readonly ownedPaths: readonly string[];
   readonly desiredRevision: MaterializationRevision;
-  /** @internal Whether base revision metadata came from a complete planner snapshot. */
+  /**
+  @internal Whether base revision metadata came from a complete planner snapshot.
+  */
   readonly revisionValidated: boolean;
 }
 
@@ -75,9 +77,10 @@ export function createMaterializationRevision(
   }[],
 ): MaterializationRevision {
   const hash = createHash('sha256');
-  for (const entry of [...entries].sort((left, right) =>
+  const orderedEntries = [...entries].sort((left, right) =>
     compareCodeUnits(left.path, right.path),
-  )) {
+  );
+  for (const entry of orderedEntries) {
     hash.update(entry.path);
     hash.update('\0');
     updateHashContent(hash, entry.content);

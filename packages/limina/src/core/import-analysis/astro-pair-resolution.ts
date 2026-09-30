@@ -84,8 +84,9 @@ function getAstroFailureScopeIdentity(options: {
   scopeIdentity: string | undefined;
   stage: FrameworkSemanticFailure['stage'];
 }): string {
-  if (options.scopeIdentity !== undefined) return options.scopeIdentity;
-  return createAstroFailureScopeIdentity(options);
+  return options.scopeIdentity === undefined
+    ? createAstroFailureScopeIdentity(options)
+    : options.scopeIdentity;
 }
 
 export function resolveAstroSemanticPair(options: {

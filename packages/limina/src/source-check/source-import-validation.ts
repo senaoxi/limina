@@ -65,8 +65,9 @@ function getSourceOwner(
   );
   if (projectOwner !== null) return projectOwner;
   const firstFileName = entry.fileNames[0];
-  if (firstFileName === undefined) return null;
-  return base.workspaceLookup.findOwnerForFile(firstFileName);
+  return firstFileName === undefined
+    ? null
+    : base.workspaceLookup.findOwnerForFile(firstFileName);
 }
 
 function assertSourceCollection(
@@ -136,7 +137,7 @@ function processSourceProject(
   entry: SourceProjectEntry,
 ): void {
   const authority = getSourceAuthority(entry);
-  const packageRootDir = getSourcePackageRoot(base, entry);
+  const packageRootDirectory = getSourcePackageRoot(base, entry);
   const project = {
     ...entry.project,
     fileNames: [...entry.fileNames],
@@ -146,7 +147,7 @@ function processSourceProject(
     caches: base.projectDependencyCaches,
     context: createParsedProjectSemanticContext({
       authority,
-      packageRootDir,
+      packageRootDir: packageRootDirectory,
       project,
       workspaceSourceBoundary: base.workspaceSourceBoundary,
     }),

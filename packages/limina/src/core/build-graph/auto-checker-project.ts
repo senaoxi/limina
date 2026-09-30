@@ -2,16 +2,17 @@ import {
   type CheckerProjectConfigCache,
   type CheckerProjectParseContext,
   getBuildCheckerSupportedExtensions,
-  isBuildCapablePreset,
   parseCheckerProjectConfigForContext,
 } from '#checkers';
 import type { CheckerName, ResolvedLiminaConfig } from '#config/runner';
+import { compareCodeUnits } from '#utils/collections';
 import { normalizeAbsolutePath } from '#utils/path';
 import { getRawReferencePaths } from '../tsconfig/actions';
 import type { WorkspaceRegionPathIndex } from '../workspace/validated-context';
 import {
   addExplicitVueFiles,
   getExplicitAnalysisGeneration,
+  getScopedParseContext,
   getVueProfileFileNames,
 } from './explicit-checker-project-helpers';
 import {
@@ -56,7 +57,9 @@ function parseNeutralProject(options: {
     projectRootDir: options.config.rootDir,
     virtualFiles: options.config.virtualFiles,
   });
-  const fileNames = parsed.fileNames.map(normalizeAbsolutePath).sort();
+  const fileNames = parsed.fileNames
+    .map(normalizeAbsolutePath)
+    .sort(compareCodeUnits);
   return {
     context,
     fileNames,
@@ -64,15 +67,14 @@ function parseNeutralProject(options: {
     partition: partitionSourceFiles(fileNames),
   };
 }
-function isVueIntentHint(hint: FrameworkIntentHint): boolean {
-  return hint.family === 'vue';
-}
 function hasVueCandidate(
   neutral: NeutralProjectEvidence,
   intentHints: readonly FrameworkIntentHint[],
 ): boolean {
-  if (neutral.partition.vueFiles.length > 0) return true;
-  return intentHints.some(isVueIntentHint);
+  return (
+    neutral.partition.vueFiles.length > 0 ||
+    intentHints.some((hint) => hint.family === 'vue')
+  );
 }
 
 function parseVueProject(options: {
@@ -112,16 +114,16 @@ function parseVueProject(options: {
 function getParsedFileNames(
   parsed: ParsedCheckerProject | undefined,
 ): readonly string[] {
-  if (parsed === undefined) return [];
-  return parsed.fileNames;
+  return parsed === undefined ? [] : parsed.fileNames;
 }
 
 function getSemanticVueFileNames(
   parsed: ParsedCheckerProject | undefined,
 ): string[] | null {
   const identity = parsed?.vueSemanticIdentity;
-  if (identity === undefined) return null;
-  return [...identity.profilesByFileName.keys()].sort();
+  return identity === undefined
+    ? null
+    : identity.profilesByFileName.keys().toArray().sort(compareCodeUnits);
 }
 
 function assertNoUnclassifiedVueMembers(fileNames: readonly string[]): void {
@@ -197,13 +199,13 @@ export function createAutoScopeProject(options: {
     enabled: hasVueCandidate(neutral, options.intentHints),
   });
   const vueFileNames = collectVueFileNames(vue.parsed);
-  const fileNames = [
-    ...new Set([...neutral.fileNames, ...vueFileNames]),
-  ].sort();
+  const fileNames = [...new Set([...neutral.fileNames, ...vueFileNames])].sort(
+    compareCodeUnits,
+  );
   const filePartition = partitionSourceFiles(fileNames);
   filePartition.vueFiles = [
     ...new Set([...filePartition.vueFiles, ...vueFileNames]),
-  ].sort();
+  ].sort(compareCodeUnits);
   return {
     analysisGeneration: options.projectConfigCache?.generation ?? 0,
     configClosure: selectProjectConfigClosure({ neutral, vue }),
@@ -230,18 +232,6 @@ export function createAutoScopeProject(options: {
   };
 }
 
-function getScopedParseContext(
-  checkerName: CheckerName,
-): CheckerProjectParseContext {
-  if (isBuildCapablePreset(checkerName)) {
-    return { checkerPresets: [checkerName], extensions: [] };
-  }
-  return {
-    checkerPresets: ['tsc'],
-    extensions: checkerName === 'astro' ? ['.astro'] : ['.svelte'],
-  };
-}
-
 export function createExplicitScopeProject(options: {
   activatedRegions: WorkspaceRegionPathIndex;
   checkerName: CheckerName;
@@ -259,7 +249,9 @@ export function createExplicitScopeProject(options: {
     projectRootDir: options.config.rootDir,
     virtualFiles: options.config.virtualFiles,
   });
-  const fileNames = parsed.fileNames.map(normalizeAbsolutePath).sort();
+  const fileNames = parsed.fileNames
+    .map(normalizeAbsolutePath)
+    .sort(compareCodeUnits);
   const filePartition = partitionSourceFiles(fileNames);
   addExplicitVueFiles({
     checkerName: options.checkerName,

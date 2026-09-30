@@ -1,6 +1,6 @@
 export {
   fetchRegistryPackageMetadata,
-  findRegistryDistTagVersion,
+  findRegistryDistributionTagVersion as findRegistryDistTagVersion,
   findRegistryVersionMetadata,
   formatRegistryMetadataFailure,
   getRegistryTarballUrl,

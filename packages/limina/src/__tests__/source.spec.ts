@@ -13,7 +13,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
-import { runSourceCheck } from '../commands/source';
+import { isRunSourceCheck } from '../commands/source';
 import { sortCollectedIssues } from '../execution/issues';
 import { createTaskProgressReporter } from '../execution/progress';
 import { LiminaOptionalToolMissingError } from '../execution/tools';
@@ -35,7 +35,7 @@ import {
   readCheckIssueSnapshot,
   readSourceIssueSnapshot,
 } from '../source-check/snapshot';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const ANSI_ESCAPE = String.fromCodePoint(0x1b);
@@ -69,9 +69,10 @@ async function createFixture(
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-source-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-source-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
   const fixtureFiles = {
     'package.json': stringifyConfig({
       name: 'root',
@@ -82,7 +83,7 @@ async function createFixture(
   };
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   const hasOptionsShape =
@@ -105,15 +106,12 @@ async function createFixture(
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -122,14 +120,14 @@ async function createFixture(
         },
         source: sourceBoundary,
       },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
       graph,
       regions,
-      rootDir,
+      rootDir: rootDirectory,
       source,
-    },
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    }),
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
@@ -175,13 +173,11 @@ function buildConfig(options: {
   tsBuildInfoFile?: string;
 }): string {
   return stringifyConfig({
-    ...(options.limina === undefined
-      ? {}
-      : {
-          liminaOptions: {
-            graphRules: [options.limina],
-          },
-        }),
+    ...(options.limina !== undefined && {
+      liminaOptions: {
+        graphRules: [options.limina],
+      },
+    }),
     compilerOptions: {
       ...buildCompilerOptions,
       rootDir: '.',
@@ -480,7 +476,7 @@ describe('runSourceCheck package authority', () => {
       );
       try {
         const sourceIssues: SourceCheckIssue[] = [];
-        await runSourceCheck(fixture.config, {
+        await isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
           sourceIssues,
@@ -526,28 +522,32 @@ describe('runSourceCheck package authority', () => {
           'app/tsconfig.lib.json': typecheckConfig(['src/**/*.ts'], {
             allowArbitraryExtensions: true,
           }),
-          ...(physical ? { 'app/src/assets/logo.svg': '<svg />\n' } : {}),
-          ...(declaration
-            ? {
-                'app/src/assets/logo.d.svg.ts':
-                  'declare const logo: string;\nexport default logo;\n',
-              }
-            : {}),
+          ...(physical && { 'app/src/assets/logo.svg': '<svg />\n' }),
+          ...(declaration && {
+            'app/src/assets/logo.d.svg.ts':
+              'declare const logo: string;\nexport default logo;\n',
+          }),
         },
         { source: { knip: false } },
       );
       const sourceIssues: SourceCheckIssue[] = [];
 
       try {
-        const passed = await runSourceCheck(fixture.config, {
+        const isPassed = await isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
           sourceIssues,
         });
-        expect(sourceIssues.map(({ code }) => code).sort()).toEqual(
-          [...codes].sort(),
+        expect(
+          sourceIssues
+            .map(({ code }) => code)
+            .sort((left, right) => Number(left > right) - Number(left < right)),
+        ).toEqual(
+          [...codes].sort(
+            (left, right) => Number(left > right) - Number(left < right),
+          ),
         );
-        expect(passed).toBe(codes.length === 0);
+        expect(isPassed).toBe(codes.length === 0);
         if (!declaration) {
           expect(
             sourceIssues.find(
@@ -583,11 +583,9 @@ describe('runSourceCheck package authority', () => {
           ...createPackageFixture({
             source: `import logo from './logo.svg${suffix}';\nexport { logo };\n`,
           }),
-          ...(ambient
-            ? {
-                'app/src/assets.d.ts': `declare module '*${suffix}' { const value: string; export default value; }\n`,
-              }
-            : {}),
+          ...(ambient && {
+            'app/src/assets.d.ts': `declare module '*${suffix}' { const value: string; export default value; }\n`,
+          }),
           // The base file exists, but Limina never strips the suffix to find it.
           'app/src/logo.svg': '<svg />\n',
         },
@@ -596,7 +594,7 @@ describe('runSourceCheck package authority', () => {
       const sourceIssues: SourceCheckIssue[] = [];
       try {
         await expect(
-          runSourceCheck(fixture.config, {
+          isRunSourceCheck(fixture.config, {
             deferSnapshot: true,
             report: { defer: true },
             sourceIssues,
@@ -627,7 +625,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
           sourceIssues,
@@ -673,7 +671,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           onSourceSnapshot,
           report: { command: 'limina source check', defer: true },
           sourceIssues,
@@ -769,7 +767,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
           sourceIssues,
@@ -824,7 +822,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
         }),
@@ -860,7 +858,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
         }),
@@ -884,7 +882,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
         }),
@@ -956,7 +954,7 @@ describe('runSourceCheck package authority', () => {
 
       try {
         await expect(
-          runSourceCheck(fixture.config, {
+          isRunSourceCheck(fixture.config, {
             deferSnapshot: true,
             report: { defer: true },
             sourceIssues,
@@ -966,8 +964,12 @@ describe('runSourceCheck package authority', () => {
           sourceIssues
             .map((issue) => issue.code)
             .filter((code) => code.startsWith('LIMINA_SOURCE_AMBIENT_'))
-            .sort(),
-        ).toEqual([...expectedCodes].sort());
+            .sort((left, right) => Number(left > right) - Number(left < right)),
+        ).toEqual(
+          [...expectedCodes].sort(
+            (left, right) => Number(left > right) - Number(left < right),
+          ),
+        );
       } finally {
         await fixture.cleanup();
       }
@@ -985,7 +987,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('Unauthorized bare package import');
@@ -1015,11 +1017,11 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(builtinFixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(builtinFixture.config)).resolves.toBe(true);
 
       const sourceIssues: SourceCheckIssue[] = [];
       await expect(
-        runSourceCheck(bareFixture.config, {
+        isRunSourceCheck(bareFixture.config, {
           deferSnapshot: true,
           report: { defer: true },
           sourceIssues,
@@ -1070,7 +1072,7 @@ describe('runSourceCheck package authority', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           report: { defer: true },
           sourceIssues,
@@ -1096,7 +1098,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1126,7 +1128,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1173,7 +1175,7 @@ describe('runSourceCheck package authority', () => {
       );
 
       try {
-        await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+        await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
       } finally {
         await fixture.cleanup();
       }
@@ -1214,7 +1216,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1231,12 +1233,12 @@ describe('runSourceCheck package authority', () => {
       }),
       'pnpm-workspace.yaml': 'packages: []\n',
     });
-    const externalDir = `${fixture.rootDir}-external`;
-    const externalSelector = `../${path.basename(externalDir)}`;
+    const externalDirectory = `${fixture.rootDir}-external`;
+    const externalSelector = `../${path.basename(externalDirectory)}`;
 
     try {
       await writeText(
-        path.join(externalDir, 'package.json'),
+        path.join(externalDirectory, 'package.json'),
         stringifyConfig(
           withDefaultBuildScript({
             exports: { '.': './src/index.ts' },
@@ -1246,18 +1248,18 @@ describe('runSourceCheck package authority', () => {
         ),
       );
       await writeText(
-        path.join(externalDir, 'src/index.ts'),
+        path.join(externalDirectory, 'src/index.ts'),
         "import { z } from 'zod';\nexport const schema = z.string();\n",
       );
       await writeText(
-        path.join(externalDir, 'tsconfig.json'),
+        path.join(externalDirectory, 'tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
       await writeText(
-        path.join(externalDir, 'tsconfig.lib.json'),
+        path.join(externalDirectory, 'tsconfig.lib.json'),
         typecheckConfig(['src/**/*.ts']),
       );
       await writeText(
@@ -1286,9 +1288,9 @@ describe('runSourceCheck package authority', () => {
         knip: false,
       };
 
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
-      await rm(externalDir, { force: true, recursive: true });
+      await rm(externalDirectory, { force: true, recursive: true });
       await fixture.cleanup();
     }
   });
@@ -1320,7 +1322,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('dependency authority manifests:');
@@ -1366,7 +1368,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1405,7 +1407,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1445,7 +1447,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1488,7 +1490,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1530,7 +1532,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('Invalid source import authority config');
@@ -1577,7 +1579,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain(reason);
@@ -1602,7 +1604,7 @@ describe('runSourceCheck package authority', () => {
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1635,7 +1637,7 @@ describe('runSourceCheck package authority', () => {
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).rejects.toThrow(
+      await expect(isRunSourceCheck(fixture.config)).rejects.toThrow(
         'allow must be an object keyed by source owner identity',
       );
     } finally {
@@ -1659,7 +1661,7 @@ describe('runSourceCheck package authority', () => {
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1680,7 +1682,7 @@ describe('runSourceCheck package authority', () => {
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1742,7 +1744,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1819,7 +1821,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1902,7 +1904,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('workspace package declares "zod"');
@@ -1934,7 +1936,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1959,7 +1961,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1990,7 +1992,7 @@ catalog:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2018,7 +2020,7 @@ catalog:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('Unauthorized bare package import');
@@ -2072,7 +2074,7 @@ catalog:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2120,7 +2122,7 @@ catalog:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('package: execa');
@@ -2154,7 +2156,7 @@ catalog:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = stripAnsi(errorSpy.mock.calls.join('\n'));
 
       expect(errors).toContain('package: etag');
@@ -2206,7 +2208,7 @@ catalog:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2254,7 +2256,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2322,7 +2324,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2352,7 +2354,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2381,7 +2383,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -2409,7 +2411,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2435,7 +2437,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2463,7 +2465,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2477,7 +2479,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2500,7 +2502,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2534,7 +2536,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2562,7 +2564,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2591,7 +2593,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2606,7 +2608,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2636,7 +2638,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2678,7 +2680,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2720,7 +2722,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2747,7 +2749,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2762,7 +2764,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2777,7 +2779,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2810,7 +2812,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2857,7 +2859,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Package import relative target escapes package scope  1 issue',
       );
@@ -2909,7 +2911,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Package import relative target escapes package scope  1 issue',
       );
@@ -2937,7 +2939,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2964,7 +2966,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3009,7 +3011,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3034,7 +3036,7 @@ packages:
         'export const internalValue = 1;\n',
       );
 
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3054,7 +3056,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3069,7 +3071,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3087,7 +3089,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3122,7 +3124,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3144,7 +3146,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3183,7 +3185,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3222,7 +3224,7 @@ packages:
       const sourceIssues: SourceCheckIssue[] = [];
 
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           deferSnapshot: true,
           issues: checkIssues,
           sourceIssues,
@@ -3237,10 +3239,10 @@ packages:
       expect(errors).toContain('app/tools/build.ts');
 
       expect(
-        sourceIssues.some((issue) =>
-          'filePath' in issue
-            ? issue.filePath?.endsWith('app/tools/build.ts')
-            : false,
+        sourceIssues.some(
+          (issue) =>
+            'filePath' in issue &&
+            issue.filePath?.endsWith('app/tools/build.ts'),
         ),
       ).toBe(true);
 
@@ -3289,7 +3291,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -3340,7 +3342,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -3378,7 +3380,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3393,7 +3395,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3408,7 +3410,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3423,7 +3425,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3445,7 +3447,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3469,7 +3471,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3495,7 +3497,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3510,7 +3512,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3540,7 +3542,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3568,7 +3570,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -3598,7 +3600,11 @@ packages:
     const chunks: string[] = [];
     const flow = new LiminaFlowReporter({
       env: { CI: 'true' },
-      output: { write: (message) => chunks.push(message) },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
       stdout: { isTTY: false },
     });
     const sourceTask = flow.tree('source check');
@@ -3606,7 +3612,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner,
           onStats: (nextStats) => {
             stats = nextStats;
@@ -3654,7 +3660,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             defer: true,
           },
@@ -3674,7 +3680,7 @@ packages:
       }),
       { source: { knip: true } },
     );
-    let generatedGraphCalled = false;
+    let isGeneratedGraphCalled = false;
     const resolveKnipCliPath = vi.fn(() => {
       throw new LiminaOptionalToolMissingError({
         command: 'source check',
@@ -3685,16 +3691,16 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           generatedGraphProvider: async () => {
-            generatedGraphCalled = true;
+            isGeneratedGraphCalled = true;
             throw new Error('Generated graph should not run.');
           },
           report: { defer: true },
           resolveKnipCliPath,
         }),
       ).rejects.toThrow('Missing Limina runtime dependency:');
-      expect(generatedGraphCalled).toBe(false);
+      expect(isGeneratedGraphCalled).toBe(false);
       expect(resolveKnipCliPath).toHaveBeenCalledOnce();
     } finally {
       await fixture.cleanup();
@@ -3715,7 +3721,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner,
           report: { defer: true },
           resolveKnipCliPath,
@@ -3738,7 +3744,11 @@ packages:
     const chunks: string[] = [];
     const flow = new LiminaFlowReporter({
       env: { CI: 'true' },
-      output: { write: (message) => chunks.push(message) },
+      output: {
+        write: (message) => {
+          chunks.push(message);
+        },
+      },
       stdout: { isTTY: false },
     });
     const sourceTask = flow.tree('source check');
@@ -3748,7 +3758,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner: async () => {
             throw new LiminaOptionalToolMissingError({
               command: 'source check',
@@ -3806,7 +3816,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('reason must be a non-empty string');
@@ -3835,7 +3845,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3868,7 +3878,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -3905,7 +3915,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -3930,7 +3940,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner: async () =>
             JSON.stringify({
               issues: [
@@ -3970,7 +3980,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3989,7 +3999,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -4013,7 +4023,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -4032,7 +4042,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4050,7 +4060,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -4066,7 +4076,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4096,7 +4106,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4128,7 +4138,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4153,7 +4163,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner: async (options) => {
             invocations.push(options);
             return '{"issues":[]}';
@@ -4195,7 +4205,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner: async () => {
             throw new Error('Knip should not run after script diagnostics.');
           },
@@ -4299,7 +4309,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           knipRunner: async (options) => {
             invocations.push(options);
             return '{"issues":[]}';
@@ -4318,10 +4328,11 @@ packages:
       expect(generatedInvocation?.workspaceNames).toEqual(['packages/app']);
       expect(generatedInvocation?.tsConfigFile).toBe('tsconfig.dts.json');
       expect(defaultInvocation?.tsConfigFile).toBeUndefined();
-      expect([...(defaultInvocation?.workspaceNames ?? [])].sort()).toEqual([
-        'packages/cli',
-        'packages/tool',
-      ]);
+      expect(
+        [...(defaultInvocation?.workspaceNames ?? [])].sort(
+          (left, right) => Number(left > right) - Number(left < right),
+        ),
+      ).toEqual(['packages/cli', 'packages/tool']);
     } finally {
       await fixture.cleanup();
     }
@@ -4390,7 +4401,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4413,7 +4424,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, { sourceIssues }),
+        isRunSourceCheck(fixture.config, { sourceIssues }),
       ).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
@@ -4459,7 +4470,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, { sourceIssues }),
+        isRunSourceCheck(fixture.config, { sourceIssues }),
       ).resolves.toBe(false);
       expect(
         sourceIssues.find(
@@ -4553,7 +4564,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             command: 'limina check',
           },
@@ -4590,7 +4601,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             command: 'limina source check',
           },
@@ -4630,7 +4641,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             command: 'limina check',
           },
@@ -4677,7 +4688,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             command: 'limina check',
           },
@@ -4720,7 +4731,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             command: 'limina check',
             packageNames: ['@example/app'],
@@ -4765,7 +4776,7 @@ packages:
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           report: {
             command: 'limina check',
             files: ['packages/app/src/missing.ts'],
@@ -4804,7 +4815,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4824,7 +4835,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4844,7 +4855,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4879,7 +4890,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -4889,12 +4900,12 @@ packages:
     const fixture = await createFixture({
       'pnpm-workspace.yaml': 'packages: []\n',
     });
-    const externalDir = `${fixture.rootDir}-knip-external`;
-    const externalSelector = `../${path.basename(externalDir)}`;
+    const externalDirectory = `${fixture.rootDir}-knip-external`;
+    const externalSelector = `../${path.basename(externalDirectory)}`;
 
     try {
       await writeText(
-        path.join(externalDir, 'package.json'),
+        path.join(externalDirectory, 'package.json'),
         stringifyConfig(
           withDefaultBuildScript({
             exports: { '.': './src/index.ts' },
@@ -4904,30 +4915,30 @@ packages:
         ),
       );
       await writeText(
-        path.join(externalDir, 'src/index.ts'),
+        path.join(externalDirectory, 'src/index.ts'),
         'export const publicValue = 1;\n',
       );
       await writeText(
-        path.join(externalDir, 'src/test-entry.spec.ts'),
+        path.join(externalDirectory, 'src/test-entry.spec.ts'),
         "export { testedValue } from './tested';\n",
       );
       await writeText(
-        path.join(externalDir, 'src/tested.ts'),
+        path.join(externalDirectory, 'src/tested.ts'),
         'export const testedValue = 1;\n',
       );
       await writeText(
-        path.join(externalDir, 'src/generated/runtime.ts'),
+        path.join(externalDirectory, 'src/generated/runtime.ts'),
         'export const generatedRuntime = 1;\n',
       );
       await writeText(
-        path.join(externalDir, 'tsconfig.json'),
+        path.join(externalDirectory, 'tsconfig.json'),
         stringifyConfig({
           files: [],
           references: [{ path: './tsconfig.lib.json' }],
         }),
       );
       await writeText(
-        path.join(externalDir, 'tsconfig.lib.json'),
+        path.join(externalDirectory, 'tsconfig.lib.json'),
         typecheckConfig(['src/**/*.ts']),
       );
       await writeText(
@@ -4962,9 +4973,9 @@ packages:
         },
       };
 
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
-      await rm(externalDir, { force: true, recursive: true });
+      await rm(externalDirectory, { force: true, recursive: true });
       await fixture.cleanup();
     }
   });
@@ -4998,7 +5009,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -5043,7 +5054,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('Invalid source Knip entry config  1 issue');
@@ -5087,7 +5098,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('Invalid source Knip workspace config  1 issue');
@@ -5128,7 +5139,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain(
@@ -5179,7 +5190,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
       const errors = errorSpy.mock.calls.join('\n');
 
       expect(errors).toContain('reason must be a non-empty string');
@@ -5204,7 +5215,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -5225,7 +5236,7 @@ packages:
     });
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -5257,7 +5268,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -5294,7 +5305,7 @@ packages:
     );
 
     try {
-      await expect(runSourceCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunSourceCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -5320,7 +5331,7 @@ describe('runSourceCheck workspace regions', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           report: { defer: true },
@@ -5350,7 +5361,7 @@ describe('runSourceCheck workspace regions', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           report: { defer: true },
@@ -5381,7 +5392,7 @@ describe('runSourceCheck workspace regions', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           issues,
@@ -5427,7 +5438,7 @@ describe('runSourceCheck workspace regions', () => {
       };
 
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           issues,
@@ -5471,7 +5482,7 @@ describe('runSourceCheck workspace regions', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           issues,
@@ -5533,7 +5544,7 @@ describe('runSourceCheck workspace regions', () => {
       };
 
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           issues,
@@ -5567,7 +5578,7 @@ describe('runSourceCheck workspace regions', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           report: { defer: true },
@@ -5600,7 +5611,7 @@ describe('runSourceCheck workspace regions', () => {
 
     try {
       await expect(
-        runSourceCheck(fixture.config, {
+        isRunSourceCheck(fixture.config, {
           clearScreen: false,
           deferSnapshot: true,
           issues,

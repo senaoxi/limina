@@ -13,38 +13,53 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...actual,
-    mkdir: async (...args: Parameters<typeof actual.mkdir>) => {
-      if (fault.kind === 'directory' && String(args[0]) === fault.directory) {
+    mkdir: async (...arguments_: Parameters<typeof actual.mkdir>) => {
+      if (
+        fault.kind === 'directory' &&
+        String(arguments_[0]) === fault.directory
+      ) {
         throw new Error('injected directory failure');
       }
-      return actual.mkdir(...args);
+      return actual.mkdir(...arguments_);
     },
-    open: async (...args: Parameters<typeof actual.open>) => {
-      const handle = await actual.open(...args);
-      if (args[1] !== 'wx+' || String(args[0]) !== fault.target) return handle;
+    open: async (...arguments_: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...arguments_);
+      if (arguments_[1] !== 'wx+' || String(arguments_[0]) !== fault.target)
+        return handle;
       const write = handle.writeFile.bind(handle);
-      if (fault.kind === 'partial') {
-        handle.writeFile = async () => {
-          await write('export');
-          throw new Error('injected partial failure');
-        };
-      }
-      if (fault.kind === 'sync') {
-        handle.sync = async () => {
-          throw new Error('injected sync failure');
-        };
-      }
-      if (fault.kind === 'readback') {
-        handle.read = async () => {
-          throw new Error('injected readback failure');
-        };
-      }
-      if (fault.kind === 'replacement') {
-        handle.sync = async () => {
-          await actual.rename(fault.target, `${fault.target}.original`);
-          await actual.writeFile(fault.target, 'user replacement');
-          throw new Error('injected replacement');
-        };
+      switch (fault.kind) {
+        case 'partial': {
+          handle.writeFile = async () => {
+            await write('export');
+            throw new Error('injected partial failure');
+          };
+
+          break;
+        }
+        case 'sync': {
+          handle.sync = async () => {
+            throw new Error('injected sync failure');
+          };
+
+          break;
+        }
+        case 'readback': {
+          handle.read = async () => {
+            throw new Error('injected readback failure');
+          };
+
+          break;
+        }
+        case 'replacement': {
+          handle.sync = async () => {
+            await actual.rename(fault.target, `${fault.target}.original`);
+            await actual.writeFile(fault.target, 'user replacement');
+            throw new Error('injected replacement');
+          };
+
+          break;
+        }
+        // No default
       }
       return handle;
     },

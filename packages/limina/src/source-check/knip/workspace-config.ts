@@ -105,14 +105,14 @@ function addUnknownOwnerFields(
     raw: Record<string, unknown>;
   },
 ): void {
-  for (const key of Object.keys(options.raw)) {
+  for (const [key, value] of Object.entries(options.raw)) {
     if (!sourceKnipWorkspaceConfigKeys.has(key))
       options.findings.push(
         configFinding({
           ...options,
           field: `${options.field}.${key}`,
           reason: 'unknown source Knip workspace config field.',
-          value: options.raw[key],
+          value,
         }),
       );
   }
@@ -187,19 +187,22 @@ function findNamedOwner(
   options: Parameters<typeof addNamedConfig>[0],
 ): WorkspacePackage | undefined {
   const name = options.name.trim();
-  if (name.length === 0) return undefined;
-  return options.workspaceContext.packages.find(
-    (entry) =>
-      entry.directory !== options.config.governanceRoot.rootDir &&
-      entry.name === name,
-  );
+  return name.length === 0
+    ? undefined
+    : options.workspaceContext.packages.find(
+        (entry) =>
+          entry.directory !== options.config.governanceRoot.rootDir &&
+          entry.name === name,
+      );
 }
 
 function getKnipConfig(config: ResolvedLiminaConfig): unknown {
   return config.source?.knip;
 }
 
-/** Public name/root addressing ends here; downstream keys are validated owners. */
+/**
+Public name/root addressing ends here; downstream keys are validated owners.
+*/
 export function collectSourceKnipWorkspaceConfigs(options: {
   config: ResolvedLiminaConfig;
   findings: SourceFinding[];

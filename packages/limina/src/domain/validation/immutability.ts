@@ -54,11 +54,7 @@ function assertImmutableValidationValueInternal(
 ): void {
   assertNotFunction(value);
 
-  if (!isInspectableObject(value)) {
-    return;
-  }
-
-  if (seen.has(value)) {
+  if (!isInspectableObject(value) || seen.has(value)) {
     return;
   }
 

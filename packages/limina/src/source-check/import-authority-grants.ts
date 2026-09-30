@@ -110,22 +110,21 @@ function getImportAuthorityRuleContext(options: {
   };
 }
 
-function matchesRuleOwner(
+function isMatchesRuleOwner(
   rule: CompiledImportAuthorityAllowRule,
   ownerIdentity: string,
 ): boolean {
   return rule.ownerIdentity === ownerIdentity;
 }
 
-function matchesRuleFile(
+function isMatchesRuleFile(
   rule: CompiledImportAuthorityAllowRule,
   filePath: string,
 ): boolean {
-  if (rule.appliesToAllGovernedOwnerSources) {
-    return true;
-  }
-
-  return rule.includeMatchers.some((matches) => matches(filePath));
+  return (
+    rule.appliesToAllGovernedOwnerSources ||
+    rule.includeMatchers.some((matches) => matches(filePath))
+  );
 }
 
 function isImportAuthorityRuleInScope(
@@ -135,28 +134,27 @@ function isImportAuthorityRuleInScope(
     ownerIdentity: string;
   },
 ): boolean {
-  if (!matchesRuleOwner(rule, context.ownerIdentity)) {
-    return false;
-  }
-
-  return matchesRuleFile(rule, context.configRootRelativeFilePath);
+  return (
+    isMatchesRuleOwner(rule, context.ownerIdentity) &&
+    isMatchesRuleFile(rule, context.configRootRelativeFilePath)
+  );
 }
 
-function matchesPackage(
+function isMatchesPackage(
   rule: CompiledImportAuthorityAllowRule,
   packageName: string,
 ): boolean {
   return rule.packageMatchers.some((matches) => matches(packageName));
 }
 
-function matchesGrant(options: {
+function isMatchesGrant(options: {
   context: ReturnType<typeof getImportAuthorityRuleContext>;
   packageName: string;
   rule: CompiledImportAuthorityAllowRule;
 }): boolean {
   const conditions = [
     isImportAuthorityRuleInScope(options.rule, options.context),
-    matchesPackage(options.rule, options.packageName),
+    isMatchesPackage(options.rule, options.packageName),
   ];
 
   return conditions.every(Boolean);
@@ -175,7 +173,7 @@ export function findMatchingWorkspaceRootDependencyGrant(options: {
 
   const context = getImportAuthorityRuleContext(options);
   return options.importAuthorityAllowRules.find((rule) =>
-    matchesGrant({ context, packageName: options.packageName, rule }),
+    isMatchesGrant({ context, packageName: options.packageName, rule }),
   );
 }
 

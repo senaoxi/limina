@@ -11,7 +11,7 @@ import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
 import { runReferenceCompletenessPhase } from './completeness-phase';
 import { runConditionDomainPhase } from './condition-phase';
 import { runProjectReferencePhase } from './reference-phase';
-import { finishGraphCheck } from './result-reporting';
+import { isFinishGraphCheck } from './result-reporting';
 import { runGraphRoutePhase } from './route-phase';
 import { createGraphCheckState } from './run-state';
 import type {
@@ -26,7 +26,7 @@ export type {
   RunGraphPrepareOptions,
 } from './runner-types';
 
-export async function runGraphCheckImpl(
+export async function isRunGraphCheckImpl(
   config: ResolvedLiminaConfig,
   options: RunGraphCheckImplOptions = {},
 ): Promise<boolean> {
@@ -36,7 +36,7 @@ export async function runGraphCheckImpl(
   runProjectReferencePhase(state);
   runConditionDomainPhase(state);
   runReferenceCompletenessPhase(state);
-  return finishGraphCheck(state);
+  return isFinishGraphCheck(state);
 }
 
 export async function runGraphPrepareImpl(

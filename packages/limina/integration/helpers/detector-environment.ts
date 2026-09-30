@@ -9,7 +9,7 @@ import {
 } from '../../src/package-check/release-registry-test-seam';
 import { isPathInsideDirectory } from '../../src/utils/path';
 
-const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const COPIED_HOST_ENVIRONMENT_KEYS = [
   'ComSpec',
   'LANG',
@@ -37,21 +37,19 @@ const RESERVED_KEYS = new Set([
 ]);
 
 function isAbsolutePathEntry(entry: string): boolean {
-  if (entry.length === 0) return false;
-  return path.isAbsolute(entry);
+  return entry.length > 0 && path.isAbsolute(entry);
 }
 
 function isWorkspacePathEntry(entry: string): boolean {
   const normalizedEntry = path.resolve(entry);
-  if (normalizedEntry.includes(`${path.sep}node_modules${path.sep}.bin`)) {
-    return true;
-  }
-  return isPathInsideDirectory(normalizedEntry, repositoryRoot);
+  return (
+    normalizedEntry.includes(`${path.sep}node_modules${path.sep}.bin`) ||
+    isPathInsideDirectory(normalizedEntry, repoRoot)
+  );
 }
 
 function isUsableHostPathEntry(entry: string): boolean {
-  if (!isAbsolutePathEntry(entry)) return false;
-  return !isWorkspacePathEntry(entry);
+  return isAbsolutePathEntry(entry) && !isWorkspacePathEntry(entry);
 }
 
 function createSystemPath(toolBinDirectory: string): string {
@@ -122,13 +120,13 @@ async function createSandboxDirectories(sandboxRoot: string): Promise<{
 }> {
   const homeDirectory = path.join(sandboxRoot, 'home');
   const cacheDirectory = path.join(sandboxRoot, 'cache');
-  const tempDirectory = path.join(sandboxRoot, 'tmp');
+  const temporaryDirectory = path.join(sandboxRoot, 'tmp');
   await Promise.all([
     mkdir(homeDirectory, { recursive: true }),
     mkdir(cacheDirectory, { recursive: true }),
-    mkdir(tempDirectory, { recursive: true }),
+    mkdir(temporaryDirectory, { recursive: true }),
   ]);
-  return { cacheDirectory, homeDirectory, tempDirectory };
+  return { cacheDirectory, homeDirectory, tempDirectory: temporaryDirectory };
 }
 
 export async function createDetectorInvocationEnvironment(options: {

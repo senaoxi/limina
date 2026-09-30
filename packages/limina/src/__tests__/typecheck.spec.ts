@@ -30,7 +30,7 @@ import type {
   TypecheckRunnerResult,
   TypecheckTarget,
 } from '../typecheck/targets';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -92,47 +92,47 @@ async function linkInstalledPackage(options: {
   });
   const segments = options.packageName.split('/');
   const packageBaseName = segments.pop()!;
-  const nodeModulesDir = path.join(
+  const nodeModulesDirectory = path.join(
     options.rootDir,
     'node_modules',
     ...segments,
   );
-  await mkdir(nodeModulesDir, { recursive: true });
+  await mkdir(nodeModulesDirectory, { recursive: true });
   await symlink(
     packageRoot,
-    path.join(nodeModulesDir, packageBaseName),
+    path.join(nodeModulesDirectory, packageBaseName),
     'junction',
   );
 }
 
-async function linkAstroToolchain(rootDir: string): Promise<void> {
+async function linkAstroToolchain(rootDirectory: string): Promise<void> {
   await Promise.all([
     linkInstalledPackage({
       installedName: '@astrojs/check',
       packageName: '@astrojs/check',
-      rootDir,
+      rootDir: rootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'astro-v7-current',
       packageName: 'astro',
-      rootDir,
+      rootDir: rootDirectory,
     }),
     linkInstalledPackage({
       installedName: 'typescript',
       packageName: 'typescript',
-      rootDir,
+      rootDir: rootDirectory,
     }),
   ]);
 }
 
-async function linkVueToolchain(rootDir: string): Promise<void> {
+async function linkVueToolchain(rootDirectory: string): Promise<void> {
   const vueTscPackagePath = requireFromTest.resolve('vue-tsc/package.json');
-  const nodeModulesDir = path.join(rootDir, 'node_modules');
+  const nodeModulesDirectory = path.join(rootDirectory, 'node_modules');
 
-  await mkdir(nodeModulesDir, { recursive: true });
+  await mkdir(nodeModulesDirectory, { recursive: true });
   await symlink(
     path.dirname(vueTscPackagePath),
-    path.join(nodeModulesDir, 'vue-tsc'),
+    path.join(nodeModulesDirectory, 'vue-tsc'),
     'junction',
   );
 }
@@ -142,9 +142,10 @@ async function createFixture(files: Record<string, string>): Promise<{
   path: ReturnType<typeof createFixturePathResolver>;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-typecheck-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-typecheck-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   const hasAstro = Object.keys(files).some((filePath) =>
     filePath.endsWith('.astro'),
   );
@@ -157,14 +158,12 @@ async function createFixture(files: Record<string, string>): Promise<{
         dependencies:
           hasAstro || hasSvelte
             ? {
-                ...(hasAstro
-                  ? {
-                      '@astrojs/check': '0.9.10',
-                      astro: '7.3.2',
-                      typescript: '6.0.3',
-                    }
-                  : {}),
-                ...(hasSvelte ? { svelte: '4.0.0' } : {}),
+                ...(hasAstro && {
+                  '@astrojs/check': '0.9.10',
+                  astro: '7.3.2',
+                  typescript: '6.0.3',
+                }),
+                ...(hasSvelte && { svelte: '4.0.0' }),
               }
             : undefined,
         name: 'root',
@@ -178,41 +177,41 @@ async function createFixture(files: Record<string, string>): Promise<{
   };
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
-  await linkVueToolchain(rootDir);
+  await linkVueToolchain(rootDirectory);
   if (hasAstro) {
-    await linkAstroToolchain(rootDir);
+    await linkAstroToolchain(rootDirectory);
   }
   if (hasSvelte) {
     await Promise.all([
       linkInstalledPackage({
         installedName: 'svelte-v4-min',
         packageName: 'svelte',
-        rootDir,
+        rootDir: rootDirectory,
       }),
       linkInstalledPackage({
         installedName: 'svelte2tsx',
         packageName: 'svelte2tsx',
-        rootDir,
+        rootDir: rootDirectory,
       }),
       linkInstalledPackage({
         installedName: 'typescript',
         packageName: 'typescript',
-        rootDir,
+        rootDir: rootDirectory,
       }),
     ]);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
@@ -282,10 +281,8 @@ function delayedRunner(options: {
 } {
   let activeCount = 0;
   let maxActiveCount = 0;
-  let releaseWait: () => void = () => {};
-  const activeCountReached = new Promise<void>((resolve) => {
-    releaseWait = resolve;
-  });
+  const { promise: activeCountReached, resolve: releaseWait } =
+    Promise.withResolvers<void>();
 
   return {
     getMaxActive: () => maxActiveCount,
@@ -323,11 +320,8 @@ function delayedRunner(options: {
   };
 }
 
-function createLiminaConfig(rootDir: string): ResolvedLiminaConfig {
-  return {
-    get governanceRoot() {
-      return resolveFixtureGovernanceRoot(this);
-    },
+function createLiminaConfig(rootDirectory: string): ResolvedLiminaConfig {
+  return withFixtureGovernanceRoot({
     config: {
       checkers: {
         'svelte-check': {
@@ -341,9 +335,9 @@ function createLiminaConfig(rootDir: string): ResolvedLiminaConfig {
         },
       },
     },
-    configPath: path.join(rootDir, 'limina.config.mjs'),
-    rootDir,
-  };
+    configPath: path.join(rootDirectory, 'limina.config.mjs'),
+    rootDir: rootDirectory,
+  });
 }
 
 describe('runCheckerBuild', () => {
@@ -416,10 +410,7 @@ describe('runCheckerBuild', () => {
         include: ['src/**/*.ts'],
       }),
     });
-    const config: ResolvedLiminaConfig = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -429,7 +420,7 @@ describe('runCheckerBuild', () => {
       },
       configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
       rootDir: fixture.rootDir,
-    };
+    });
 
     try {
       const result = await runCheckerBuild({
@@ -482,10 +473,7 @@ describe('runCheckerBuild', () => {
       'tsconfig.build.json': tsconfig({ files: [] }),
       'tsconfig.svelte.build.json': tsconfig({ files: [] }),
     });
-    const config: ResolvedLiminaConfig = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
       config: {
         checkers: {
           'svelte-check': {
@@ -498,7 +486,7 @@ describe('runCheckerBuild', () => {
       },
       configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
       rootDir: fixture.rootDir,
-    };
+    });
     const resolveOnlyTypeScript: CheckerPackageResolver = ({ packageName }) =>
       packageName === 'typescript' ? packageName : undefined;
 
@@ -563,10 +551,7 @@ describe('runCheckerBuild', () => {
 
     try {
       const result = await runCheckerBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -579,16 +564,17 @@ describe('runCheckerBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         runner: delayed.runner,
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command).sort()).toEqual([
-        process.execPath,
-        'vue-tsc',
-      ]);
+      expect(
+        calls
+          .map((target) => target.command)
+          .sort((left, right) => Number(left > right) - Number(left < right)),
+      ).toEqual([process.execPath, 'vue-tsc']);
       expect(delayed.getMaxActive()).toBe(
         getExpectedDefaultBuildConcurrency(2),
       );
@@ -631,25 +617,23 @@ describe('runCheckerBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsc: {
+              include: ['packages/app/tsconfig.json'],
+            },
+            tsgo: {
+              include: ['packages/theme/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runCheckerBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsc: {
-                  include: ['packages/app/tsconfig.json'],
-                },
-                tsgo: {
-                  include: ['packages/theme/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           runner: delayed.runner,
         }),
@@ -693,25 +677,23 @@ describe('runCheckerBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsgo: {
+              include: ['packages/native/tsconfig.json'],
+            },
+            'vue-tsc': {
+              include: ['packages/vue/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runCheckerBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsgo: {
-                  include: ['packages/native/tsconfig.json'],
-                },
-                'vue-tsc': {
-                  include: ['packages/vue/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           runner: passingRunner(calls),
         }),
@@ -757,25 +739,23 @@ describe('runCheckerBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsgo: {
+              include: ['packages/shared/tsconfig.json'],
+            },
+            'vue-tsc': {
+              include: ['packages/theme/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runCheckerBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsgo: {
-                  include: ['packages/shared/tsconfig.json'],
-                },
-                'vue-tsc': {
-                  include: ['packages/theme/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           runner: passingRunner(calls),
         }),
@@ -798,10 +778,7 @@ describe('runCheckerBuild', () => {
 
     try {
       const result = await runCheckerBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsgo: {
@@ -811,7 +788,7 @@ describe('runCheckerBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
       });
@@ -854,10 +831,7 @@ describe('runCheckerBuild', () => {
           packageName === 'typescript' || packageName === 'vue-tsc'
             ? packageName
             : undefined,
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -870,16 +844,17 @@ describe('runCheckerBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command).sort()).toEqual([
-        process.execPath,
-        'vue-tsc',
-      ]);
+      expect(
+        calls
+          .map((target) => target.command)
+          .sort((left, right) => Number(left > right) - Number(left < right)),
+      ).toEqual([process.execPath, 'vue-tsc']);
       expect(errorSpy).not.toHaveBeenCalled();
     } finally {
       errorSpy.mockRestore();
@@ -904,10 +879,7 @@ describe('runCheckerBuild', () => {
     try {
       const result = await runCheckerBuild({
         checkerPackageResolver: (): string | undefined => undefined,
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsgo: {
@@ -917,7 +889,7 @@ describe('runCheckerBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
       });
@@ -985,10 +957,7 @@ describe('runCheckerBuild', () => {
 
     try {
       const result = await runCheckerBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1001,22 +970,23 @@ describe('runCheckerBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         runner: delayed.runner,
       });
       const errorText = errorSpy.mock.calls
-        .map(([message]) => String(message))
+        .map(([message]) => message)
         .join('\n');
       const typescriptPath =
         '.limina/tsconfig/checkers/tsc/tsconfig.build.json';
       const vuePath = '.limina/tsconfig/checkers/vue-tsc/tsconfig.build.json';
 
       expect(result.passed).toBe(false);
-      expect(calls.map((target) => target.command).sort()).toEqual([
-        process.execPath,
-        'vue-tsc',
-      ]);
+      expect(
+        calls
+          .map((target) => target.command)
+          .sort((left, right) => Number(left > right) - Number(left < right)),
+      ).toEqual([process.execPath, 'vue-tsc']);
       expect(delayed.getMaxActive()).toBe(
         getExpectedDefaultBuildConcurrency(2),
       );
@@ -1064,10 +1034,7 @@ describe('runCheckerBuild', () => {
 
     try {
       const result = await runCheckerBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1077,7 +1044,7 @@ describe('runCheckerBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -1128,10 +1095,7 @@ describe('runCheckerBuild', () => {
       }),
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
-    const config: ResolvedLiminaConfig = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -1141,7 +1105,7 @@ describe('runCheckerBuild', () => {
       },
       configPath: fixturePath('limina.config.mjs'),
       rootDir: fixture.rootDir,
-    };
+    });
     const sourceConfigPath = fixturePath(
       'packages',
       'pkg',
@@ -1149,7 +1113,7 @@ describe('runCheckerBuild', () => {
     );
     const managerA = new LiminaPreflightManager({ config });
     let managerB: LiminaPreflightManager | undefined;
-    let materializationCompleted = false;
+    let isMaterializationCompleted = false;
     const workspaceReads: {
       context: Awaited<ReturnType<typeof managerA.ensureWorkspaceValidated>>;
       materializationCompleted: boolean;
@@ -1185,7 +1149,10 @@ describe('runCheckerBuild', () => {
         .spyOn(managerA, 'ensureWorkspaceValidated')
         .mockImplementation(async () => {
           const context = await ensureWorkspaceValidated();
-          workspaceReads.push({ context, materializationCompleted });
+          workspaceReads.push({
+            context,
+            materializationCompleted: isMaterializationCompleted,
+          });
           return context;
         });
       const ensureGeneratedArtifactsMaterialized =
@@ -1194,7 +1161,7 @@ describe('runCheckerBuild', () => {
         .spyOn(managerA, 'ensureGeneratedArtifactsMaterialized')
         .mockImplementation(async () => {
           const receipt = await ensureGeneratedArtifactsMaterialized();
-          materializationCompleted = true;
+          isMaterializationCompleted = true;
           return receipt;
         });
 
@@ -1270,10 +1237,7 @@ describe('runBuild', () => {
       }),
     });
     const fixturePath = createFixturePathResolver(fixture.rootDir);
-    const config: ResolvedLiminaConfig = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -1283,7 +1247,7 @@ describe('runBuild', () => {
       },
       configPath: fixturePath('limina.config.mjs'),
       rootDir: fixture.rootDir,
-    };
+    });
     const sourceConfigPath = fixturePath(
       'packages',
       'pkg',
@@ -1291,7 +1255,7 @@ describe('runBuild', () => {
     );
     const managerA = new LiminaPreflightManager({ config });
     let managerB: LiminaPreflightManager | undefined;
-    let materializationCompleted = false;
+    let isMaterializationCompleted = false;
     const workspaceReads: {
       context: Awaited<ReturnType<typeof managerA.ensureWorkspaceValidated>>;
       materializationCompleted: boolean;
@@ -1327,7 +1291,10 @@ describe('runBuild', () => {
         .spyOn(managerA, 'ensureWorkspaceValidated')
         .mockImplementation(async () => {
           const context = await ensureWorkspaceValidated();
-          workspaceReads.push({ context, materializationCompleted });
+          workspaceReads.push({
+            context,
+            materializationCompleted: isMaterializationCompleted,
+          });
           return context;
         });
       const ensureGeneratedArtifactsMaterialized =
@@ -1336,7 +1303,7 @@ describe('runBuild', () => {
         .spyOn(managerA, 'ensureGeneratedArtifactsMaterialized')
         .mockImplementation(async () => {
           const receipt = await ensureGeneratedArtifactsMaterialized();
-          materializationCompleted = true;
+          isMaterializationCompleted = true;
           return receipt;
         });
 
@@ -1416,10 +1383,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1429,7 +1393,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: path.join(fixture.rootDir, 'packages/pkg/src'),
         runner: async (target) => {
           expect(existsSync(target.configPath)).toBe(true);
@@ -1491,10 +1455,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1504,7 +1465,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         configPath: 'packages/pkg/tsconfig.lib.json',
         runner: passingRunner(calls),
@@ -1558,10 +1519,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               astro: {
@@ -1574,7 +1532,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/a/tsconfig.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -1625,10 +1583,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1638,7 +1593,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -1676,10 +1631,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               'vue-tsc': {
@@ -1689,7 +1641,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/app/tsconfig.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -1724,22 +1676,20 @@ describe('runBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            'vue-tsc': {
+              include: ['packages/app/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                'vue-tsc': {
-                  include: ['packages/app/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           configPath: 'packages/app/tsconfig.json',
           cwd: fixture.rootDir,
           runner: passingRunner(calls),
@@ -1785,10 +1735,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1798,7 +1745,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -1850,10 +1797,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1863,7 +1807,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -1919,10 +1863,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1932,7 +1873,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(repoRoot, 'limina.config.mjs'),
           rootDir: repoRoot,
-        },
+        }),
         configPath: 'packages/a/tsconfig.json',
         cwd: repoRoot,
         runner: passingRunner(calls),
@@ -1984,10 +1925,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -1997,7 +1935,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -2058,10 +1996,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2071,7 +2006,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -2130,10 +2065,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2143,7 +2075,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -2217,10 +2149,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2230,7 +2159,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -2303,22 +2232,20 @@ describe('runBuild', () => {
     );
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsc: {
+              include: ['packages/pkg/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsc: {
-                  include: ['packages/pkg/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           configPath: 'packages/pkg/tsconfig.json',
           cwd: fixture.rootDir,
           runner: passingRunner(calls),
@@ -2370,10 +2297,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2383,7 +2307,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/pkg/tsconfig.lib.json',
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -2434,10 +2358,7 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         checker: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2447,7 +2368,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         configPath: 'packages/lib/tsconfig.json',
         raw: true,
@@ -2494,10 +2415,7 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         checker: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2507,7 +2425,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         configPath: 'packages/app/tsconfig.raw.json',
         raw: true,
@@ -2565,10 +2483,7 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         checker: 'vue-tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2578,7 +2493,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         configPath: 'packages/app/tsconfig.raw.json',
         raw: true,
@@ -2614,23 +2529,21 @@ describe('runBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsc: {
+              include: ['packages/managed/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runBuild({
           checker: 'tsc',
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsc: {
-                  include: ['packages/managed/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           configPath: '.limina/tsconfig/generated.json',
           cwd: fixture.rootDir,
           raw: true,
@@ -2677,10 +2590,7 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         checker: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2690,7 +2600,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         configPath: 'packages/app/tsconfig.raw.json',
         cwd: fixture.rootDir,
         raw: true,
@@ -2727,10 +2637,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               'svelte-check': {
@@ -2740,7 +2647,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         configPath: 'svelte/tsconfig.json',
         runner: passingRunner(calls),
@@ -2795,25 +2702,23 @@ describe('runBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsgo: {
+              include: ['packages/native/tsconfig.json'],
+            },
+            tsc: {
+              include: ['packages/ts/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsgo: {
-                  include: ['packages/native/tsconfig.json'],
-                },
-                tsc: {
-                  include: ['packages/ts/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           configPath: 'packages/shared/tsconfig.lib.json',
           runner: passingRunner(calls),
@@ -2870,10 +2775,7 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         checker: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsgo: {
@@ -2886,7 +2788,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         project: 'packages/shared/tsconfig.lib.json',
         runner: passingRunner(calls),
@@ -2933,10 +2835,7 @@ describe('runBuild', () => {
     try {
       const result = await runBuild({
         checker: 'vue-tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -2946,7 +2845,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         configPath: 'packages/app/tsconfig.json',
         runner: passingRunner(calls),
@@ -3002,25 +2901,23 @@ describe('runBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsc: {
+              include: ['packages/ts/tsconfig.json'],
+            },
+            'vue-tsc': {
+              include: ['packages/vue/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsc: {
-                  include: ['packages/ts/tsconfig.json'],
-                },
-                'vue-tsc': {
-                  include: ['packages/vue/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           project: 'packages/shared/tsconfig.lib.json',
           runner: passingRunner(calls),
@@ -3071,25 +2968,23 @@ describe('runBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsgo: {
+              include: ['packages/shared/tsconfig.json'],
+            },
+            'vue-tsc': {
+              include: ['packages/theme/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runCheckerBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsgo: {
-                  include: ['packages/shared/tsconfig.json'],
-                },
-                'vue-tsc': {
-                  include: ['packages/theme/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           runner: failingRunner(calls),
         }),
@@ -3144,10 +3039,7 @@ describe('runBuild', () => {
 
       try {
         await runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
+          config: withFixtureGovernanceRoot({
             config: {
               checkers: {
                 tsc: {
@@ -3160,7 +3052,7 @@ describe('runBuild', () => {
             },
             configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
             rootDir: fixture.rootDir,
-          },
+          }),
           cwd: fixture.rootDir,
           project: 'packages/app',
           runner: passingRunner(calls),
@@ -3247,10 +3139,7 @@ describe('runBuild', () => {
 
       try {
         await runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
+          config: withFixtureGovernanceRoot({
             config: {
               checkers: {
                 tsc: {
@@ -3266,7 +3155,7 @@ describe('runBuild', () => {
             },
             configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
             rootDir: fixture.rootDir,
-          },
+          }),
           cwd: fixture.rootDir,
           project: 'packages/app',
           runner: passingRunner(calls),
@@ -3324,25 +3213,23 @@ describe('runBuild', () => {
     });
 
     try {
+      const fixtureConfig = withFixtureGovernanceRoot({
+        config: {
+          checkers: {
+            tsc: {
+              include: ['packages/app/tsconfig.json'],
+            },
+            tsgo: {
+              include: ['packages/theme/tsconfig.json'],
+            },
+          },
+        },
+        configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
+        rootDir: fixture.rootDir,
+      });
       await expect(
         runBuild({
-          config: {
-            get governanceRoot() {
-              return resolveFixtureGovernanceRoot(this);
-            },
-            config: {
-              checkers: {
-                tsc: {
-                  include: ['packages/app/tsconfig.json'],
-                },
-                tsgo: {
-                  include: ['packages/theme/tsconfig.json'],
-                },
-              },
-            },
-            configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
-            rootDir: fixture.rootDir,
-          },
+          config: fixtureConfig,
           cwd: fixture.rootDir,
           project: 'packages/app',
           runner: delayed.runner,
@@ -3397,10 +3284,7 @@ describe('runBuild', () => {
 
     try {
       const result = await runBuild({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -3413,7 +3297,7 @@ describe('runBuild', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         cwd: fixture.rootDir,
         project: 'packages/app',
         runner: delayed.runner,
@@ -3421,10 +3305,11 @@ describe('runBuild', () => {
       });
 
       expect(result.passed).toBe(true);
-      expect(calls.map((target) => target.command).sort()).toEqual([
-        process.execPath,
-        process.execPath,
-      ]);
+      expect(
+        calls
+          .map((target) => target.command)
+          .sort((left, right) => Number(left > right) - Number(left < right)),
+      ).toEqual([process.execPath, process.execPath]);
       expect(delayed.getMaxActive()).toBe(2);
       expect(calls.map((target) => target.args)).toEqual(
         expect.arrayContaining([
@@ -3496,10 +3381,7 @@ describe('runCheckerTypecheck', () => {
 
     try {
       const result = await runCheckerTypecheck({
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           config: {
             checkers: {
               tsc: {
@@ -3512,7 +3394,7 @@ describe('runCheckerTypecheck', () => {
           },
           configPath: path.join(fixture.rootDir, 'limina.config.mjs'),
           rootDir: fixture.rootDir,
-        },
+        }),
         checkerPackageResolver: (): string | undefined => undefined,
         cwd: fixture.rootDir,
         runner: passingRunner(calls),
@@ -3544,16 +3426,13 @@ describe('checker targets after materialization', () => {
           liminaOptions: { outputs: { outDir: 'dist', rootDir: 'src' } },
         }),
       });
-      const config: ResolvedLiminaConfig = {
-        get governanceRoot() {
-          return resolveFixtureGovernanceRoot(this);
-        },
+      const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
         rootDir: fixture.rootDir,
         configPath: fixture.path('limina.config.mjs'),
         config: {
           checkers: { tsc: { include: ['packages/*/tsconfig.json'] } },
         },
-      };
+      });
       const first = new LiminaPreflightManager({ config });
       const second = new LiminaPreflightManager({ config });
       try {
@@ -3605,9 +3484,9 @@ describe('checker targets after materialization', () => {
             ? runBuild({ ...options, cwd: fixture.path('packages/app') })
             : runCheckerBuild({
                 ...options,
-                ...(entry === 'selected-checker'
-                  ? { configPath: fixture.path('packages/app/tsconfig.json') }
-                  : {}),
+                ...(entry === 'selected-checker' && {
+                  configPath: fixture.path('packages/app/tsconfig.json'),
+                }),
               });
         await expect(pending).rejects.toThrow(
           'revision changed after materialization',
@@ -3628,17 +3507,12 @@ describe('checker targets after materialization', () => {
       const fixture = await createFixture({
         'packages/a/src/App.svelte': '<p>hello</p>',
         'packages/a/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
-        ...(change === 'remove'
-          ? {
-              'packages/b/src/App.svelte': '<p>second</p>',
-              'packages/b/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
-            }
-          : {}),
+        ...(change === 'remove' && {
+          'packages/b/src/App.svelte': '<p>second</p>',
+          'packages/b/tsconfig.json': tsconfig({ include: ['src/**/*'] }),
+        }),
       });
-      const config: ResolvedLiminaConfig = {
-        get governanceRoot() {
-          return resolveFixtureGovernanceRoot(this);
-        },
+      const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
         rootDir: fixture.rootDir,
         configPath: fixture.path('limina.config.mjs'),
         config: {
@@ -3646,7 +3520,7 @@ describe('checker targets after materialization', () => {
             'svelte-check': { include: ['packages/*/tsconfig.json'] },
           },
         },
-      };
+      });
       const first = new LiminaPreflightManager({ config });
       const second = new LiminaPreflightManager({ config });
       try {

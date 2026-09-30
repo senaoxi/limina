@@ -1,6 +1,6 @@
 import { isPlainRecord } from '#utils/values';
 import type {
-  DistPackageJson,
+  DistributionPackageJson,
   PackageImportTargetMatch,
 } from './manifest-types';
 
@@ -15,11 +15,7 @@ function getConditionalTargets(value: unknown): unknown[] | null {
     return value;
   }
 
-  if (isPlainRecord(value)) {
-    return Object.values(value);
-  }
-
-  return null;
+  return isPlainRecord(value) ? Object.values(value) : null;
 }
 
 function collectConditionalTargets(value: unknown, targets: unknown[]): void {
@@ -44,7 +40,7 @@ function getSingleWildcardIndex(candidate: string): number | null {
   return candidate.includes('*', wildcardIndex + 1) ? null : wildcardIndex;
 }
 
-function matchesWildcardPattern(
+function isMatchesWildcardPattern(
   candidate: string,
   specifier: string,
   wildcardIndex: number,
@@ -59,11 +55,10 @@ function createWildcardImportMatch(
   specifier: string,
 ): WildcardImportMatch | null {
   const wildcardIndex = getSingleWildcardIndex(candidate);
-  if (wildcardIndex === null) {
-    return null;
-  }
-
-  if (!matchesWildcardPattern(candidate, specifier, wildcardIndex)) {
+  if (
+    wildcardIndex === null ||
+    !isMatchesWildcardPattern(candidate, specifier, wildcardIndex)
+  ) {
     return null;
   }
 
@@ -105,11 +100,9 @@ function findImportMatch(
   importsField: Record<string, unknown>,
   specifier: string,
 ): { key: string; wildcardValue: string | null } | null {
-  if (Object.hasOwn(importsField, specifier)) {
-    return { key: specifier, wildcardValue: null };
-  }
-
-  return findWildcardImportMatch(importsField, specifier);
+  return Object.hasOwn(importsField, specifier)
+    ? { key: specifier, wildcardValue: null }
+    : findWildcardImportMatch(importsField, specifier);
 }
 
 function replaceWildcardTarget(
@@ -117,12 +110,12 @@ function replaceWildcardTarget(
   wildcardValue: string | null,
 ): unknown {
   return typeof target === 'string' && wildcardValue !== null
-    ? target.replaceAll('*', wildcardValue)
+    ? target.replaceAll('*', () => wildcardValue)
     : target;
 }
 
 export function findPackageImportTargets(
-  importsField: DistPackageJson['imports'],
+  importsField: DistributionPackageJson['imports'],
   specifier: string,
 ): PackageImportTargetMatch | null {
   if (!isPlainRecord(importsField)) {

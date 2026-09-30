@@ -6,7 +6,7 @@ import {
   type ProjectDependency,
   type ProjectDependencyObservation,
 } from '../core/project-dependencies/runner';
-import { addDeniedDepImportProblem } from './import-access-denied';
+import { addDeniedDependencyImportProblem } from './import-access-denied';
 import { resolveImportForReferenceExpectation } from './reference-import-resolution';
 import {
   addExpectedReferenceForTarget,
@@ -18,8 +18,8 @@ import type {
   ExpectedReferencesByProjectPath,
   GraphImportResolution,
 } from './reference-types';
-import { getDeniedDepRuleForSpecifier } from './rules';
-import { addWorkspaceConsumptionProblem } from './workspace-import-findings';
+import { getDeniedDepRuleForSpecifier as getDeniedDependencyRuleForSpecifier } from './rules';
+import { isAddWorkspaceConsumptionProblem } from './workspace-import-findings';
 
 function createExpectedReferenceCollectionContext(
   options: ExpectedReferenceCollectionOptions,
@@ -35,16 +35,16 @@ function isProjectSelected(
   project: ProjectInfo,
 ): boolean {
   const selectedPaths = context.selectedProjectPaths;
-  return selectedPaths ? selectedPaths.has(project.configPath) : true;
+  return !selectedPaths || selectedPaths.has(project.configPath);
 }
 
-function addRawDeniedImportIfNeeded(options: {
+function isAddRawDeniedImportIfNeeded(options: {
   context: ExpectedReferenceCollectionContext;
   importRecord: ImportRecord;
   project: ProjectInfo;
   projectDependency?: ProjectDependency;
 }): boolean {
-  const rule = getDeniedDepRuleForSpecifier(
+  const rule = getDeniedDependencyRuleForSpecifier(
     options.context.graphRules,
     options.project.labels,
     options.importRecord.specifier,
@@ -53,7 +53,7 @@ function addRawDeniedImportIfNeeded(options: {
     return false;
   }
 
-  addDeniedDepImportProblem({
+  addDeniedDependencyImportProblem({
     config: options.context.config,
     findings: options.context.findings,
     importRecord: options.importRecord,
@@ -118,12 +118,9 @@ function collectExpectedReferenceForImport(options: {
   project: ProjectInfo;
   projectDependency: ProjectDependency;
 }): void {
-  if (addRawDeniedImportIfNeeded(options)) {
-    return;
-  }
-
   if (
-    addWorkspaceConsumptionProblem({
+    isAddRawDeniedImportIfNeeded(options) ||
+    isAddWorkspaceConsumptionProblem({
       ...options,
       consumption: options.projectDependency,
     })
@@ -191,8 +188,8 @@ function collectExpectedReferencesForMappedObservation(options: {
   project: ProjectInfo;
 }): void {
   const importRecord = options.observation.importRecord;
-  if (addRawDeniedImportIfNeeded({ ...options, importRecord })) return;
-  addWorkspaceConsumptionProblem({
+  if (isAddRawDeniedImportIfNeeded({ ...options, importRecord })) return;
+  isAddWorkspaceConsumptionProblem({
     ...options,
     consumption: options.observation,
   });
@@ -229,12 +226,15 @@ function collectProjectDependenciesForGraph(options: {
   project: ProjectInfo;
 }) {
   const authority = getGraphAuthority(options.project);
-  const packageRootDir = getGraphPackageRoot(options.context, options.project);
+  const packageRootDirectory = getGraphPackageRoot(
+    options.context,
+    options.project,
+  );
   return collectProjectDependencies({
     caches: options.context.projectDependencyCaches,
     context: createParsedProjectSemanticContext({
       authority,
-      packageRootDir,
+      packageRootDir: packageRootDirectory,
       project: options.project,
       workspaceSourceBoundary: options.context.workspaceSourceBoundary,
     }),

@@ -1,11 +1,11 @@
 import type { BuiltinTaskName, ResolvedLiminaConfig } from '#config/runner';
 import { LiminaStructuredError } from '../check-reporting/errors';
 import type { LiminaCheckRunTaskStats } from '../check-reporting/run-recorder';
-import { runGraphCheck, runGraphPrepare } from '../commands/graph';
-import { runPackageCheck } from '../commands/package';
-import { runProofCheck } from '../commands/proof';
+import { isRunGraphCheck, isRunGraphPrepare } from '../commands/graph';
+import { isRunPackageCheck } from '../commands/package';
+import { isRunProofCheck } from '../commands/proof';
 import { runReleaseCheck } from '../commands/release';
-import { runSourceCheck } from '../commands/source';
+import { isRunSourceCheck } from '../commands/source';
 import { runCheckerBuild, runCheckerTypecheck } from '../commands/typecheck';
 import type { SourceCheckIssue } from '../source-check/report';
 import {
@@ -50,9 +50,13 @@ function setStats(
 
 function createResult(
   context: BuiltinRunContext,
-  passed: boolean,
+  isPassedValue: boolean,
 ): BuiltinTaskResult {
-  return { issues: context.issues, passed, stats: context.stats };
+  return {
+    issues: context.issues,
+    passed: isPassedValue,
+    stats: context.stats,
+  };
 }
 
 function createCommonCheckOptions(context: BuiltinRunContext) {
@@ -74,31 +78,31 @@ function createCommonCheckOptions(context: BuiltinRunContext) {
 async function runGraphCheckTask(
   context: BuiltinRunContext,
 ): Promise<BuiltinTaskResult> {
-  const passed = await runGraphCheck(context.config, {
+  const isPassed = await isRunGraphCheck(context.config, {
     ...createCommonCheckOptions(context),
     onStats: (stats) => setStats(context, stats),
   });
-  return createResult(context, passed);
+  return createResult(context, isPassed);
 }
 
 async function runGraphPrepareTask(
   context: BuiltinRunContext,
 ): Promise<BuiltinTaskResult> {
-  const passed = await runGraphPrepare(
+  const isPassed = await isRunGraphPrepare(
     context.config,
     createCommonCheckOptions(context),
   );
-  return createResult(context, passed);
+  return createResult(context, isPassed);
 }
 
 async function runProofCheckTask(
   context: BuiltinRunContext,
 ): Promise<BuiltinTaskResult> {
-  const passed = await runProofCheck(context.config, {
+  const isPassed = await isRunProofCheck(context.config, {
     ...createCommonCheckOptions(context),
     onStats: (stats) => setStats(context, stats),
   });
-  return createResult(context, passed);
+  return createResult(context, isPassed);
 }
 
 function createSourceSnapshotResult(options: {
@@ -124,7 +128,7 @@ async function runSourceCheckTask(
   context: BuiltinRunContext,
 ): Promise<BuiltinTaskResult> {
   let authoritative: readonly SourceCheckIssue[] | undefined;
-  const passed = await runSourceCheck(context.config, {
+  const isPassed = await isRunSourceCheck(context.config, {
     ...createCommonCheckOptions(context),
     onSourceSnapshot: (issues) => {
       authoritative = [...issues];
@@ -133,7 +137,11 @@ async function runSourceCheckTask(
     report: createSourceIssueReportOptions(context.options),
     sourceIssues: context.sourceIssues,
   });
-  return createSourceSnapshotResult({ authoritative, context, passed });
+  return createSourceSnapshotResult({
+    authoritative,
+    context,
+    passed: isPassed,
+  });
 }
 
 function createPackageCheckOptions(context: BuiltinRunContext) {
@@ -157,15 +165,15 @@ function createPackageCheckOptions(context: BuiltinRunContext) {
 async function runPackageCheckTask(
   context: BuiltinRunContext,
 ): Promise<BuiltinTaskResult> {
-  const passed = await runPackageCheck(createPackageCheckOptions(context));
-  return createResult(context, passed);
+  const isPassed = await isRunPackageCheck(createPackageCheckOptions(context));
+  return createResult(context, isPassed);
 }
 
 async function runReleaseCheckTask(
   context: BuiltinRunContext,
 ): Promise<BuiltinTaskResult> {
-  const passed = await runReleaseCheck(createPackageCheckOptions(context));
-  return createResult(context, passed);
+  const isPassed = await runReleaseCheck(createPackageCheckOptions(context));
+  return createResult(context, isPassed);
 }
 
 function createCheckerOptions(context: BuiltinRunContext) {

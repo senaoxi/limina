@@ -29,14 +29,18 @@ function projectIdentity(project: SvelteSemanticProject): string {
 }
 
 export class SvelteSemanticContext {
-  readonly project: SvelteSemanticProject;
-  readonly toolchain: SvelteSemanticToolchain;
   readonly #preparedByFileName = new Map<string, PreparedFile>();
+
   readonly #preparedByLookup = new WeakMap<
     ManagedOutputDeclarationLookup,
     Map<string, PreparedFile>
   >();
+
   #disposed = false;
+
+  readonly project: SvelteSemanticProject;
+
+  readonly toolchain: SvelteSemanticToolchain;
 
   constructor(options: {
     project: SvelteSemanticProject;
@@ -44,6 +48,17 @@ export class SvelteSemanticContext {
   }) {
     this.project = options.project;
     this.toolchain = options.toolchain;
+  }
+
+  #getPreparationCache(
+    managedOutputLookup: ManagedOutputDeclarationLookup | undefined,
+  ): Map<string, PreparedFile> {
+    if (managedOutputLookup === undefined) return this.#preparedByFileName;
+    const cached = this.#preparedByLookup.get(managedOutputLookup);
+    if (cached !== undefined) return cached;
+    const created = new Map<string, PreparedFile>();
+    this.#preparedByLookup.set(managedOutputLookup, created);
+    return created;
   }
 
   prepare(
@@ -67,17 +82,6 @@ export class SvelteSemanticContext {
     return preparation;
   }
 
-  #getPreparationCache(
-    managedOutputLookup: ManagedOutputDeclarationLookup | undefined,
-  ): Map<string, PreparedFile> {
-    if (managedOutputLookup === undefined) return this.#preparedByFileName;
-    const cached = this.#preparedByLookup.get(managedOutputLookup);
-    if (cached !== undefined) return cached;
-    const created = new Map<string, PreparedFile>();
-    this.#preparedByLookup.set(managedOutputLookup, created);
-    return created;
-  }
-
   assertActive(): void {
     if (this.#disposed)
       throw new Error('Svelte semantic context was disposed.');
@@ -92,22 +96,12 @@ export class SvelteSemanticContext {
 
 export class SvelteSemanticContextManager {
   readonly #toolchainByRoot = new Map<string, SvelteSemanticToolchain>();
-  #active: SvelteSemanticContext | undefined;
-  #activeIdentity: string | undefined;
-  #disposed = false;
 
-  acquire(project: SvelteSemanticProject): SvelteSemanticContext {
-    this.assertActive();
-    const identity = projectIdentity(project);
-    const active = this.getReusableActive(identity);
-    if (active !== undefined) return active;
-    this.#active?.dispose();
-    const packageRootDir = normalizeAbsolutePath(project.packageRootDir);
-    const toolchain = this.getToolchain(packageRootDir);
-    this.#active = new SvelteSemanticContext({ project, toolchain });
-    this.#activeIdentity = identity;
-    return this.#active;
-  }
+  #active: SvelteSemanticContext | undefined;
+
+  #activeIdentity: string | undefined;
+
+  #disposed = false;
 
   private assertActive(): void {
     if (this.#disposed) {
@@ -123,12 +117,25 @@ export class SvelteSemanticContextManager {
     return this.#active;
   }
 
-  private getToolchain(packageRootDir: string): SvelteSemanticToolchain {
-    const cached = this.#toolchainByRoot.get(packageRootDir);
+  private getToolchain(packageRootDirectory: string): SvelteSemanticToolchain {
+    const cached = this.#toolchainByRoot.get(packageRootDirectory);
     if (cached !== undefined) return cached;
-    const toolchain = resolveSvelteSemanticToolchain(packageRootDir);
-    this.#toolchainByRoot.set(packageRootDir, toolchain);
+    const toolchain = resolveSvelteSemanticToolchain(packageRootDirectory);
+    this.#toolchainByRoot.set(packageRootDirectory, toolchain);
     return toolchain;
+  }
+
+  acquire(project: SvelteSemanticProject): SvelteSemanticContext {
+    this.assertActive();
+    const identity = projectIdentity(project);
+    const active = this.getReusableActive(identity);
+    if (active !== undefined) return active;
+    this.#active?.dispose();
+    const packageRootDirectory = normalizeAbsolutePath(project.packageRootDir);
+    const toolchain = this.getToolchain(packageRootDirectory);
+    this.#active = new SvelteSemanticContext({ project, toolchain });
+    this.#activeIdentity = identity;
+    return this.#active;
   }
 
   dispose(): void {

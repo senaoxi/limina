@@ -10,9 +10,9 @@ import type {
 import type {
   LiminaConfig,
   LiminaConfigExport,
-  LiminaConfigFn,
-  LiminaConfigFnObject,
-  LiminaConfigFnPromise,
+  LiminaConfigFunction,
+  LiminaConfigFunctionObject,
+  LiminaConfigFunctionPromise,
 } from './root-types';
 
 function isSourceKnipConfig(value: unknown): boolean {
@@ -23,11 +23,12 @@ export function isSourceKnipEnabled(
   config: Pick<LiminaConfig, 'source'>,
 ): boolean {
   const knip = config.source?.knip;
-  if (knip === true) return true;
-  return isSourceKnipConfig(knip);
+  return knip === true || isSourceKnipConfig(knip);
 }
 
-/** @deprecated Auto discovery is always active in the flat checker model. */
+/**
+@deprecated Auto discovery is always active in the flat checker model.
+*/
 export function isAutoCheckerConfigMode(
   _checkers: CheckerConfigMode | undefined,
 ): boolean {
@@ -55,19 +56,20 @@ export function defineConfig(
   config: Promise<LiminaConfig>,
 ): Promise<LiminaConfig>;
 export function defineConfig(
-  config: LiminaConfigFnObject,
-): LiminaConfigFnObject;
+  config: LiminaConfigFunctionObject,
+): LiminaConfigFunctionObject;
 export function defineConfig(
-  config: LiminaConfigFnPromise,
-): LiminaConfigFnPromise;
-export function defineConfig(config: LiminaConfigFn): LiminaConfigFn;
+  config: LiminaConfigFunctionPromise,
+): LiminaConfigFunctionPromise;
+export function defineConfig(
+  config: LiminaConfigFunction,
+): LiminaConfigFunction;
 export function defineConfig(config: LiminaConfigExport): LiminaConfigExport {
   return config;
 }
 
 function isResolvedConfig(config: LiminaConfig): boolean {
-  if (!('configPath' in config)) return false;
-  return 'rootDir' in config;
+  return 'configPath' in config && 'rootDir' in config;
 }
 
 function toUserConfig(config: LiminaConfig): LiminaConfig {

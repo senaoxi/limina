@@ -7,7 +7,7 @@ import {
   createLoggerPlugin,
   portablePathPlugin,
 } from '@limina/eslint-config/plugins';
-import { root } from '@limina/eslint-config/presets';
+import { rootFileConfigs } from '@limina/eslint-config/presets';
 import { defineConfig } from 'eslint/config';
 
 const liminaTestFilePatterns = [
@@ -22,7 +22,7 @@ export default defineConfig([
     ignores: ['packages/limina/fixtures/**'],
   },
   ...eslintGeneralConfig,
-  ...root.filter((entry) => entry.files),
+  ...rootFileConfigs,
 
   {
     files: [

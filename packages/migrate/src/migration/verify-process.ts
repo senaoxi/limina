@@ -27,9 +27,11 @@ async function main(): Promise<void> {
   process.stdout.write(`\nLIMINA_MIGRATION_INPUT=${JSON.stringify(results)}\n`);
 }
 
-main().catch((error: unknown) => {
+try {
+  await main();
+} catch (error) {
   process.stderr.write(
     `${error instanceof Error ? error.stack : String(error)}\n`,
   );
   process.exitCode = 1;
-});
+}

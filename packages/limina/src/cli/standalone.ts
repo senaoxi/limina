@@ -7,7 +7,7 @@ import {
 } from '../check-reporting/standalone-invocation-command';
 import { formatErrorMessage } from '../logger';
 import type { CliFlowBoundary } from './flow';
-import { runCliFlowWithCleanup } from './flow';
+import { isRunCliFlowWithCleanup } from './flow';
 import type {
   RegisterStandaloneIssueSession,
   StandaloneIssueSession,
@@ -74,8 +74,7 @@ async function finalizeStandaloneFailure(
   state: StandaloneFlowState,
   error?: unknown,
 ): Promise<void> {
-  if (state.session === undefined) return;
-  if (state.finalizationAttempted) return;
+  if (state.session === undefined || state.finalizationAttempted) return;
   state.finalizationAttempted = true;
   await writeStandaloneFailureSession(state.session, error);
 }
@@ -88,7 +87,7 @@ function registerSession(
   };
 }
 
-async function executeStandaloneCommand(options: {
+async function isExecuteStandaloneCommand(options: {
   execute: (register: RegisterStandaloneIssueSession) => Promise<boolean>;
   state: StandaloneFlowState;
 }): Promise<boolean> {
@@ -105,16 +104,17 @@ async function executeStandaloneCommand(options: {
 }
 
 function shouldFinalizeCaughtFailure(state: StandaloneFlowState): boolean {
-  if (state.session === undefined) return false;
-  if (!state.commandSettled) return true;
-  return !state.commandPassed;
+  return (
+    state.session !== undefined &&
+    (!state.commandSettled || !state.commandPassed)
+  );
 }
 
 async function finalizeFailedResult(
   state: StandaloneFlowState,
-  passed: boolean,
+  isPassedValue: boolean,
 ): Promise<void> {
-  if (!passed) await finalizeStandaloneFailure(state);
+  if (!isPassedValue) await finalizeStandaloneFailure(state);
 }
 
 async function finalizeCaughtFailure(
@@ -124,7 +124,7 @@ async function finalizeCaughtFailure(
   await finalizeStandaloneFailure(state, state.commandError);
 }
 
-export async function runStandaloneIssueFlow(options: {
+export async function isRunStandaloneIssueFlow(options: {
   execute: (register: RegisterStandaloneIssueSession) => Promise<boolean>;
   flow: CliFlowBoundary;
   messages: { failed: string; passed: string };
@@ -135,13 +135,13 @@ export async function runStandaloneIssueFlow(options: {
     finalizationAttempted: false,
   };
   try {
-    const passed = await runCliFlowWithCleanup(
+    const isPassed = await isRunCliFlowWithCleanup(
       options.flow,
       options.messages,
-      () => executeStandaloneCommand({ execute: options.execute, state }),
+      () => isExecuteStandaloneCommand({ execute: options.execute, state }),
     );
-    await finalizeFailedResult(state, passed);
-    return passed;
+    await finalizeFailedResult(state, isPassed);
+    return isPassed;
   } catch (error) {
     await finalizeCaughtFailure(state);
     throw error;

@@ -33,6 +33,7 @@ function getReferenceSpecifier(reference: ts.FileReference | string): string {
 
 export class TypeScriptTypeReferenceResolver {
   readonly #cache: ts.TypeReferenceDirectiveResolutionCache;
+
   readonly options: TypeScriptImportResolverOptions;
 
   constructor(
@@ -50,37 +51,6 @@ export class TypeScriptTypeReferenceResolver {
       options.project.options,
       packageJsonInfoCache,
     );
-  }
-
-  resolveHost(
-    input: HostTypeReferenceResolutionInput,
-  ): readonly ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations[] {
-    const occurrences = new Map<string, number>();
-    const records = this.options.getRecords(input.containingFile);
-    return input.references.map((reference, index) => {
-      const specifier = getReferenceSpecifier(reference);
-      const occurrence = occurrences.get(specifier) ?? 0;
-      occurrences.set(specifier, occurrence + 1);
-      return this.#resolveHostReference({
-        index,
-        input,
-        occurrence,
-        records,
-        reference,
-        specifier,
-      });
-    });
-  }
-
-  resolveStandalone(importRecord: ImportRecord): TypeScriptSemanticResolution {
-    return this.#resolve({
-      compilerOptions: this.options.project.options,
-      containingFile: importRecord.filePath,
-      importRecord,
-      redirectedReference: undefined,
-      reference: importRecord.specifier,
-      sourceFile: this.options.getSourceFile(importRecord.filePath),
-    }).semantic;
   }
 
   #resolveHostReference(options: {
@@ -151,5 +121,36 @@ export class TypeScriptTypeReferenceResolver {
     if (importRecord !== undefined) {
       this.options.ledger.set(importRecord, resolution);
     }
+  }
+
+  resolveHost(
+    input: HostTypeReferenceResolutionInput,
+  ): readonly ts.ResolvedTypeReferenceDirectiveWithFailedLookupLocations[] {
+    const occurrences = new Map<string, number>();
+    const records = this.options.getRecords(input.containingFile);
+    return input.references.map((reference, index) => {
+      const specifier = getReferenceSpecifier(reference);
+      const occurrence = occurrences.get(specifier) ?? 0;
+      occurrences.set(specifier, occurrence + 1);
+      return this.#resolveHostReference({
+        index,
+        input,
+        occurrence,
+        records,
+        reference,
+        specifier,
+      });
+    });
+  }
+
+  resolveStandalone(importRecord: ImportRecord): TypeScriptSemanticResolution {
+    return this.#resolve({
+      compilerOptions: this.options.project.options,
+      containingFile: importRecord.filePath,
+      importRecord,
+      redirectedReference: undefined,
+      reference: importRecord.specifier,
+      sourceFile: this.options.getSourceFile(importRecord.filePath),
+    }).semantic;
   }
 }

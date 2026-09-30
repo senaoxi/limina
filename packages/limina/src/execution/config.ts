@@ -45,11 +45,7 @@ function resolveAvailableParallelism(
 ): number {
   const provided = provider?.();
 
-  if (provided !== undefined) {
-    return provided;
-  }
-
-  return availableParallelism();
+  return provided === undefined ? availableParallelism() : provided;
 }
 
 function getParallelism(
@@ -59,11 +55,9 @@ function getParallelism(
 }
 
 function clampConcurrency(value: number, itemCount: number): number {
-  if (itemCount <= 0) {
-    return 0;
-  }
-
-  return Math.min(itemCount, Math.max(1, Math.floor(value)));
+  return itemCount <= 0
+    ? 0
+    : Math.min(itemCount, Math.max(1, Math.floor(value)));
 }
 
 function configuredConcurrency(

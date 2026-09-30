@@ -8,9 +8,12 @@ import {
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { LiminaCheckIssueEvidence } from '../check-reporting/snapshot';
-import { createGraphImportFact, getProjectCheckerName } from './finding-utils';
+import {
+  createGraphImportFact,
+  getProjectCheckerName,
+} from './finding-utilities';
 import type { GraphAccessDeniedFinding, GraphFinding } from './findings';
-import type { GraphRuleDepDeny, GraphRuleRefDeny } from './rules';
+import type { GraphRuleDependencyDeny, GraphRuleReferenceDeny } from './rules';
 
 interface DeniedImportOptions {
   config: ResolvedLiminaConfig;
@@ -34,8 +37,8 @@ function createImportEvidence(
   };
 }
 
-export function addDeniedDepImportProblem(
-  options: DeniedImportOptions & { rule: GraphRuleDepDeny },
+export function addDeniedDependencyImportProblem(
+  options: DeniedImportOptions & { rule: GraphRuleDependencyDeny },
 ): void {
   const detailLines = [
     'Denied graph access:',
@@ -84,9 +87,9 @@ export function addDeniedDepImportProblem(
   } satisfies GraphAccessDeniedFinding);
 }
 
-export function addDeniedRefImportProblem(
+export function addDeniedReferenceImportProblem(
   options: DeniedImportOptions & {
-    rule: GraphRuleRefDeny;
+    rule: GraphRuleReferenceDeny;
     targetProjectPath: string;
   },
 ): void {

@@ -7,8 +7,11 @@ import type { formatMessage } from 'publint/utils';
 import { createMissingPeerDependencyError } from './issue';
 
 function isModuleNotFound(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return 'code' in error && error.code === 'ERR_MODULE_NOT_FOUND';
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    error.code === 'ERR_MODULE_NOT_FOUND'
+  );
 }
 
 function isPackageAbsent(packageName: string): boolean {
@@ -27,12 +30,12 @@ export async function loadPublintPeer(): Promise<{
   publint: typeof publint;
 }> {
   try {
-    const [publintModule, publintUtilsModule] = await Promise.all([
+    const [publintModule, publintUtilitiesModule] = await Promise.all([
       import('publint'),
       import('publint/utils'),
     ]);
     return {
-      formatMessage: publintUtilsModule.formatMessage,
+      formatMessage: publintUtilitiesModule.formatMessage,
       publint: publintModule.publint,
     };
   } catch (error) {

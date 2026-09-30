@@ -176,9 +176,7 @@ describe('config-selected governance root', () => {
       const manifest = {
         scripts: { build: 'limina build tsconfig.json' },
         dependencies: { child: 'workspace:*' },
-        ...(workspace
-          ? { workspaces: ['child'], packageManager: 'npm@1' }
-          : {}),
+        ...(workspace && { workspaces: ['child'], packageManager: 'npm@1' }),
       };
       const f = await fixture({
         'package.json': json(manifest),

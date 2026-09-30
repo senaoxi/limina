@@ -21,7 +21,7 @@ function normalizeIssuePath(
   return normalizeCheckIssuePath(repoRoot, value);
 }
 
-function evidenceMatches(
+function isEvidenceMatches(
   expected: ExpectedEvidence,
   actual: NonNullable<LiminaCheckIssue['evidence']>[number],
 ): boolean {
@@ -33,7 +33,7 @@ function evidenceMatches(
   }
   if (
     expected.lines !== undefined &&
-    !expected.lines.every((line) => actual.lines?.includes(line))
+    expected.lines.some((line) => !actual.lines?.includes(line))
   ) {
     return false;
   }
@@ -41,7 +41,7 @@ function evidenceMatches(
   return true;
 }
 
-function expectedEvidenceMatches(
+function isExpectedEvidenceMatches(
   expected: readonly ExpectedEvidence[] | undefined,
   actual:
     | readonly NonNullable<LiminaCheckIssue['evidence']>[number][]
@@ -50,12 +50,12 @@ function expectedEvidenceMatches(
   return (
     expected === undefined ||
     expected.every((expectedItem) =>
-      actual?.some((actualItem) => evidenceMatches(expectedItem, actualItem)),
+      actual?.some((actualItem) => isEvidenceMatches(expectedItem, actualItem)),
     )
   );
 }
 
-function locationMatches(
+function isLocationMatches(
   expected: ExpectedLocation,
   actual: NonNullable<LiminaCheckIssue['locations']>[number],
   repoRoot: string,
@@ -77,7 +77,7 @@ function locationConstraintCount(location: ExpectedLocation): number {
   return Object.values(location).filter((entry) => entry !== undefined).length;
 }
 
-function expectedLocationsMatch(
+function isExpectedLocationsMatch(
   expected: readonly ExpectedLocation[] | undefined,
   actual:
     | readonly NonNullable<LiminaCheckIssue['locations']>[number][]
@@ -98,7 +98,7 @@ function expectedLocationsMatch(
 
   for (const expectedLocation of expectedInMatchOrder) {
     const match = [...available].find(([, actualLocation]) =>
-      locationMatches(expectedLocation, actualLocation, repoRoot),
+      isLocationMatches(expectedLocation, actualLocation, repoRoot),
     );
     if (match === undefined) {
       return false;
@@ -109,7 +109,7 @@ function expectedLocationsMatch(
   return true;
 }
 
-function issueMatches(
+function isIssueMatches(
   expected: ExpectedIssue,
   actual: LiminaCheckIssue,
   repoRoot: string,
@@ -119,7 +119,7 @@ function issueMatches(
     actual.task === expected.task &&
     (expected.filePath === undefined ||
       normalizeIssuePath(repoRoot, actual.filePath) === expected.filePath) &&
-    expectedLocationsMatch(expected.locations, actual.locations, repoRoot) &&
+    isExpectedLocationsMatch(expected.locations, actual.locations, repoRoot) &&
     (expected.packageManifestPath === undefined ||
       normalizeIssuePath(repoRoot, actual.packageManifestPath) ===
         expected.packageManifestPath) &&
@@ -131,7 +131,7 @@ function issueMatches(
       actual.checkerName === expected.checkerName) &&
     (expected.externalCode === undefined ||
       actual.external?.code === expected.externalCode) &&
-    expectedEvidenceMatches(expected.evidence, actual.evidence)
+    isExpectedEvidenceMatches(expected.evidence, actual.evidence)
   );
 }
 
@@ -233,8 +233,8 @@ export function assertDetectorIssues(options: IssueAssertionOptions): void {
     );
 
   for (const expectedEntry of expectedInMatchOrder) {
-    const candidates = [...available.entries()].filter(([, actual]) =>
-      issueMatches(expectedEntry.issue, actual, options.repoRoot),
+    const candidates = [...available].filter(([, actual]) =>
+      isIssueMatches(expectedEntry.issue, actual, options.repoRoot),
     );
     if (candidates.length === 0) {
       throw new Error(
@@ -242,7 +242,7 @@ export function assertDetectorIssues(options: IssueAssertionOptions): void {
           `Detector fixture ${options.fixtureId} is missing an expected issue.`,
           `expected: ${formatExpectedIssueSummary(expectedEntry.issue)}`,
           'remaining actual issues:',
-          ...formatIssueList([...available.values()], options.repoRoot),
+          ...formatIssueList(available.values().toArray(), options.repoRoot),
         ].join('\n'),
       );
     }
@@ -266,8 +266,8 @@ export function assertDetectorIssues(options: IssueAssertionOptions): void {
 
   if (
     options.expected.primaryCode !== undefined &&
-    !options.actualIssues.some(
-      (issue) => issue.code === options.expected.primaryCode,
+    options.actualIssues.every(
+      (issue) => issue.code !== options.expected.primaryCode,
     )
   ) {
     throw new Error(
@@ -276,9 +276,10 @@ export function assertDetectorIssues(options: IssueAssertionOptions): void {
   }
 
   const additionalCodes = new Set<string>(options.expected.additionalCodes);
-  const unexpected = [...available.values()].filter(
-    (issue) => !additionalCodes.has(issue.code),
-  );
+  const unexpected = available
+    .values()
+    .filter((issue) => !additionalCodes.has(issue.code))
+    .toArray();
   if (
     unexpected.length > 0 &&
     options.expected.allowUnexpectedIssues !== true

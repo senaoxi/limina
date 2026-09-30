@@ -51,7 +51,7 @@ function collectServiceCandidates(options: {
     FrameworkSemanticDependencyPreparation,
     { kind: 'supported' }
   >['unmapped'];
-}): { candidates: AstroCandidate[]; kind: 'supported' } | PreparationFailure {
+}): PreparationFailure | { candidates: AstroCandidate[]; kind: 'supported' } {
   const candidates: AstroCandidate[] = [];
   for (const service of options.services) {
     const mapped = mapAstroServiceCandidates({ ...options, service });

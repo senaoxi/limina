@@ -7,9 +7,9 @@ import type { MigrationPlanningState } from './planning-state';
 import type { MigrationWritePlanItem } from './transaction';
 
 function solutionEdges(state: MigrationPlanningState): Map<string, string[]> {
-  const targets = [...state.targets.values()].filter(
-    (target) => target.isTypeScriptSolution,
-  );
+  const targets = state.targets
+    .values()
+    .filter((target) => target.isTypeScriptSolution);
   return new Map(
     targets.map((target) => [
       target.configPath,
@@ -17,12 +17,12 @@ function solutionEdges(state: MigrationPlanningState): Map<string, string[]> {
         state.config.rootDir,
         target.configPath,
         target.configObject,
-      ).references.map((ref) => ref.resolvedPath),
+      ).references.map((reference) => reference.resolvedPath),
     ]),
   );
 }
 
-function reachesIsolation(
+function isReachesIsolation(
   state: MigrationPlanningState,
   edges: ReadonlyMap<string, string[]>,
   from: string,
@@ -48,16 +48,17 @@ function enqueueUnvisited(
 function implicitIsolationDependents(state: MigrationPlanningState): string[] {
   return state.records
     .filter((record) => record.kind === 'removed-implicit-reference')
-    .filter((record) => isolatedTarget(state, record.details))
+    .filter((record) => isIsolatedTarget(state, record.details))
     .map((record) => record.configPath);
 }
-function isolatedTarget(
+function isIsolatedTarget(
   state: MigrationPlanningState,
   details: unknown,
 ): boolean {
-  if (!isPlainRecord(details)) return false;
   return (
-    typeof details.target === 'string' && state.isolated.has(details.target)
+    isPlainRecord(details) &&
+    typeof details.target === 'string' &&
+    state.isolated.has(details.target)
   );
 }
 function joinGroups(
@@ -68,11 +69,12 @@ function joinGroups(
     group.some((item) => files.has(item.configPath)),
   );
   const independent = groups.filter((group) => !related.includes(group));
-  if (related.length === 0) return independent;
-  return [related.flat(), ...independent];
+  return related.length === 0 ? independent : [related.flat(), ...independent];
 }
 
-/** Only edits of a solution cycle or a shared persisted isolation are coupled. */
+/**
+Only edits of a solution cycle or a shared persisted isolation are coupled.
+*/
 export function createCommitGroups(
   state: MigrationPlanningState,
   patches: MigrationWritePlanItem[],
@@ -80,7 +82,7 @@ export function createCommitGroups(
 ): MigrationWritePlanItem[][] {
   const edges = solutionEdges(state);
   const components = collectStronglyConnectedComponents(
-    [...edges.keys()],
+    edges.keys().toArray(),
     (file) => edges.get(file)!.filter((target) => edges.has(target)),
   );
   let groups = patches.map((item) => [item]);
@@ -100,12 +102,12 @@ function coupleIsolation(
   },
 ): MigrationWritePlanItem[][] {
   if (
-    !input.patches.some((item) => item.configPath === state.config.configPath)
+    input.patches.every((item) => item.configPath !== state.config.configPath)
   )
     return input.groups;
-  const parents = [...input.edges.keys()].filter((file) =>
-    reachesIsolation(state, input.edges, file),
-  );
+  const parents = input.edges
+    .keys()
+    .filter((file) => isReachesIsolation(state, input.edges, file));
   return joinGroups(
     input.groups,
     new Set([

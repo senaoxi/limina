@@ -86,8 +86,7 @@ function createParsedDependencyIgnore(options: {
   dependencyName: string | null;
   reason: string | null;
 }): ParsedDependencyIgnore | null {
-  if (options.dependencyName === null) return null;
-  if (options.reason === null) return null;
+  if (options.dependencyName === null || options.reason === null) return null;
   return {
     dependencyName: options.dependencyName,
     reason: options.reason,
@@ -242,8 +241,9 @@ function collectConfiguredWorkspaceIgnores(options: {
   workspaceConfig: SourceKnipWorkspaceConfigRecord;
 }): string[] {
   const rawIgnore = options.workspaceConfig.ignoreDependencies;
-  if (rawIgnore === undefined) return [];
-  return collectWorkspaceIgnores({ ...options, rawIgnore });
+  return rawIgnore === undefined
+    ? []
+    : collectWorkspaceIgnores({ ...options, rawIgnore });
 }
 
 export function collectUnusedDependencyIgnore(options: {

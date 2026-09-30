@@ -4,7 +4,7 @@ import {
   type CheckerHostSpawnSpec,
   createCancelledCheckerMeasurement,
 } from './host-protocol';
-import { createCheckerHostMeasurement } from './process-host-utils';
+import { createCheckerHostMeasurement } from './process-host-utilities';
 
 export type CheckerHostDegradationListener = (reason: string) => void;
 
@@ -24,7 +24,7 @@ export function removePendingAbortListener(entry: PendingCheckerSpawn): void {
 export function drainPendingCheckerSpawns(
   pendingById: Map<number, PendingCheckerSpawn>,
 ): PendingCheckerSpawn[] {
-  const pending = [...pendingById.values()];
+  const pending = pendingById.values().toArray();
   pendingById.clear();
   for (const entry of pending) removePendingAbortListener(entry);
   return pending;
@@ -56,8 +56,8 @@ export function cancelPendingCheckerSpawn(options: {
   signal: AbortSignal;
 }): void {
   const pending = options.pendingById.get(options.id);
-  if (pending === undefined) return;
-  if (pending.cancelledMeasurement !== undefined) return;
+  if (pending === undefined || pending.cancelledMeasurement !== undefined)
+    return;
   removePendingAbortListener(pending);
   pending.removeAbortListener = undefined;
   pending.cancelledMeasurement = createCancelledCheckerMeasurement(

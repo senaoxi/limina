@@ -119,7 +119,7 @@ function parseArguments(argv: readonly string[]): LauncherArguments {
       break;
     }
     if (!argument?.startsWith('--')) {
-      throw new Error(`Unexpected launcher argument: ${String(argument)}.`);
+      throw new Error(`Unexpected launcher argument: ${argument}.`);
     }
     const value = argv[index + 1];
     if (!value || value.startsWith('--')) {
@@ -153,7 +153,7 @@ function parseArguments(argv: readonly string[]): LauncherArguments {
 function serializeError(error: unknown): SerializedError {
   const normalized = error instanceof Error ? error : new Error(String(error));
   return {
-    ...('code' in normalized ? { code: String(normalized.code) } : {}),
+    ...('code' in normalized && { code: String(normalized.code) }),
     message: normalized.message,
     name: normalized.name,
   };
@@ -193,14 +193,14 @@ function injectProtocolFault(options: {
   }
   const task = matchingTasks[0]!;
   task.run = async () => {
-    let degraded = false;
+    let isDegraded = false;
     const measurement = await runCheckerHostProtocolProbeForTesting({
       entry: {
         args: [getHelperPath(), 'ipc-invalid', fault.payload],
         command: process.execPath,
       },
       onDegraded: () => {
-        degraded = true;
+        isDegraded = true;
       },
       onProtocolMessage: (message) => {
         if (message !== fault.payload) return;
@@ -223,7 +223,7 @@ function injectProtocolFault(options: {
         stdio: 'inherit',
       },
     });
-    if (!degraded) {
+    if (!isDegraded) {
       options.boundaryErrors.push(
         new Error('Invalid checker host protocol did not trigger degradation.'),
       );
@@ -259,13 +259,13 @@ function selectPipelineStep(
       return 'graph:check';
     }
     case 'command': {
-      const fault = definition.fault;
       if (
         definition.point === 'cleanup.execute' ||
         definition.point === 'execution.finalize'
       ) {
         return createHelperCommand('success');
       }
+      const fault = definition.fault;
       if (definition.point === 'process.wait') {
         if (fault.kind === 'process-exit') {
           return createHelperCommand('exit', String(fault.exitCode));
@@ -276,20 +276,18 @@ function selectPipelineStep(
         if (fault.kind === 'timeout') {
           return createHelperCommand('timeout');
         }
-      }
-      if (definition.point === 'process.protocol') {
+      } else if (definition.point === 'process.protocol') {
         if (fault.kind !== 'invalid-protocol') {
           throw new Error('Invalid protocol point requires invalid-protocol.');
         }
         return createHelperCommand('invalid-protocol', fault.payload);
       }
-      if (
+      return createHelperCommand(
         definition.point === 'process.stdout' ||
-        definition.point === 'process.stderr'
-      ) {
-        return createHelperCommand('streams');
-      }
-      return createHelperCommand('success');
+          definition.point === 'process.stderr'
+          ? 'streams'
+          : 'success',
+      );
     }
   }
 
@@ -353,7 +351,7 @@ function createFilesystemReadProviders(options: {
   });
 }
 
-function usesCleanupFault(
+function isUsesCleanupFault(
   definitions: readonly FaultInjectionDefinition[],
 ): boolean {
   return definitions.some(
@@ -381,7 +379,7 @@ function createFaultProcessDependencies(options: {
   );
 
   return {
-    spawn(command, args, spawnOptions: SpawnOptions) {
+    spawn(command, arguments_, spawnOptions: SpawnOptions) {
       injectMatchingThrow(options.controller, processFaults, 'process.spawn');
 
       for (const definition of processFaults) {
@@ -393,7 +391,7 @@ function createFaultProcessDependencies(options: {
         }
       }
 
-      const child = spawn(command, [...args], spawnOptions);
+      const child = spawn(command, [...arguments_], spawnOptions);
 
       for (const definition of processFaults) {
         if (
@@ -423,7 +421,7 @@ function createFaultProcessDependencies(options: {
           if (!fault) continue;
           if (
             fault.kind === 'process-exit' &&
-            (code !== fault.exitCode || signal !== null)
+            (signal !== null || code !== fault.exitCode)
           ) {
             options.boundaryErrors.push(
               new Error(
@@ -470,7 +468,7 @@ function createFaultProcessDependencies(options: {
 
       return child;
     },
-    ...(timeoutFault ? { timeoutMs: 500 } : {}),
+    ...(timeoutFault && { timeoutMs: 500 }),
   };
 }
 
@@ -484,8 +482,8 @@ function createSnapshotWriteOptions(options: {
   readonly definitions: readonly FaultInjectionDefinition[];
 }): AtomicWriteOptions {
   return {
-    openTemp: async (tempPath, flags) => {
-      const handle = await open(tempPath, flags);
+    openTemp: async (temporaryPath, flags) => {
+      const handle = await open(temporaryPath, flags);
       return {
         close: async () => {
           await handle.close();
@@ -518,9 +516,9 @@ function createSnapshotWriteOptions(options: {
         },
       };
     },
-    removeTemp: async (tempPath) => {
+    removeTemp: async (temporaryPath) => {
       options.boundary.tempCleanupAttempts += 1;
-      await rm(tempPath, { force: true });
+      await rm(temporaryPath, { force: true });
       options.boundary.tempCleanupCompleted = true;
       options.boundary.removedTempFiles += 1;
     },
@@ -559,8 +557,8 @@ function createSnapshotWriters(options: {
   readonly definitions: readonly FaultInjectionDefinition[];
 }): RunExecutionPlanOptions['snapshotWriters'] | undefined {
   if (
-    !options.definitions.some((definition) =>
-      SNAPSHOT_FAULT_POINTS.has(definition.point),
+    options.definitions.every(
+      (definition) => !SNAPSHOT_FAULT_POINTS.has(definition.point),
     )
   ) {
     return undefined;
@@ -579,7 +577,7 @@ function createFinalizationRecorder(
   definitions: readonly FaultInjectionDefinition[],
 ): CheckRunRecorder {
   if (
-    !definitions.some((definition) => definition.point === 'execution.finalize')
+    definitions.every((definition) => definition.point !== 'execution.finalize')
   ) {
     return recorder;
   }
@@ -617,7 +615,7 @@ async function readFaultPlan(path: string): Promise<{
 }
 
 async function main(): Promise<void> {
-  const args = parseArguments(process.argv.slice(2));
+  const arguments_ = parseArguments(process.argv.slice(2));
   const boundary: MutableBoundaryReceipt = {
     cleanupDescriptorCount: 0,
     cleanupDirectoryDescriptorCount: 0,
@@ -639,7 +637,7 @@ async function main(): Promise<void> {
   let baseRecorder: CheckRunRecorder | undefined;
 
   try {
-    const planDocument = await readFaultPlan(args.faultPlanPath);
+    const planDocument = await readFaultPlan(arguments_.faultPlanPath);
     const definitions = faultDefinitions(
       planDocument.fault,
       planDocument.secondaryFault,
@@ -651,7 +649,7 @@ async function main(): Promise<void> {
     const loadedConfig = await loadConfig({
       command: 'check',
       configLoader: 'tsx',
-      configPath: args.configPath,
+      configPath: arguments_.configPath,
       cwd: process.cwd(),
     });
     const config = createFaultConfig(loadedConfig, planDocument.fault);
@@ -662,7 +660,7 @@ async function main(): Promise<void> {
     });
     const preflight = new LiminaPreflightManager({
       config,
-      ...(providers ? { providers } : {}),
+      ...(providers && { providers }),
     });
     const commandProcess = createFaultProcessDependencies({
       boundaryErrors,
@@ -670,7 +668,7 @@ async function main(): Promise<void> {
       definitions,
     });
     const plan = createExecutionPlan(config, 'fault-injection', {
-      ...(commandProcess ? { commandProcess } : {}),
+      ...(commandProcess && { commandProcess }),
       preflight,
     });
     injectExecutionBoundaryFault(plan, controller, planDocument.fault);
@@ -696,7 +694,7 @@ async function main(): Promise<void> {
       });
     }
     baseRecorder = createCheckRunRecorder({
-      command: commandText(args.command),
+      command: commandText(arguments_.command),
       configPath: config.configPath,
       pipeline: 'fault-injection',
       plannedTasks: plan.tasks,
@@ -714,7 +712,7 @@ async function main(): Promise<void> {
     });
     const flow = new LiminaFlowReporter({
       forceTty:
-        usesCleanupFault(definitions) ||
+        isUsesCleanupFault(definitions) ||
         definitions.some((definition) =>
           definition.point.startsWith('process.'),
         ),
@@ -735,15 +733,15 @@ async function main(): Promise<void> {
       async () => {
         execution = await runPipelineWithResult(config, 'fault-injection', {
           checkIssueReport: {
-            command: commandText(args.command),
+            command: commandText(arguments_.command),
             defer: true,
           },
           checkRunRecorder: recorder,
-          ...(commandProcess ? { commandProcess } : {}),
+          ...(commandProcess && { commandProcess }),
           executionPlan: plan,
           flow,
           preflight,
-          ...(snapshotWriters ? { snapshotWriters } : {}),
+          ...(snapshotWriters && { snapshotWriters }),
         });
         return execution.passed;
       },
@@ -759,20 +757,20 @@ async function main(): Promise<void> {
   }
 
   try {
-    controller?.assertConsumed(args.fixtureId);
+    controller?.assertConsumed(arguments_.fixtureId);
   } catch (error) {
     caughtError ??= error;
   }
 
   await writeFile(
-    args.receiptPath,
+    arguments_.receiptPath,
     `${JSON.stringify(
       {
         error:
           caughtError === undefined ? undefined : serializeError(caughtError),
         boundary: boundary satisfies BoundaryReceipt,
         execution,
-        fixtureId: args.fixtureId,
+        fixtureId: arguments_.fixtureId,
         observations: controller?.observations() ?? [],
         run,
         version: 1,

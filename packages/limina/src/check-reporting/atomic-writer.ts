@@ -18,7 +18,7 @@ export type {
 
 const writesByTargetPath = new Map<string, Promise<void>>();
 
-type WriteJsonAtomicallyArgs = [
+type WriteJsonAtomicallyArguments = [
   namespace: LiminaArtifactNamespace,
   targetPath: string,
   value: unknown,
@@ -41,27 +41,41 @@ function releaseTrackedWrite(targetPath: string, tracked: Promise<void>): void {
   }
 }
 
-function createScheduledWrite(options: {
+async function createScheduledWrite(options: {
   atomicWriteOptions: AtomicWriteOptions;
   namespace: LiminaArtifactNamespace;
   previous: Promise<void>;
   targetPath: string;
   value: unknown;
 }): Promise<void> {
-  return options.previous.catch(ignoreError).then(() =>
-    performAtomicJsonWrite({
-      namespace: options.namespace,
-      options: options.atomicWriteOptions,
-      targetPath: options.targetPath,
-      value: options.value,
-    }),
-  );
+  try {
+    await options.previous;
+  } catch (error) {
+    ignoreError(error);
+  }
+  return performAtomicJsonWrite({
+    namespace: options.namespace,
+    options: options.atomicWriteOptions,
+    targetPath: options.targetPath,
+    value: options.value,
+  });
+}
+
+async function trackScheduledWrite(
+  scheduled: Promise<void>,
+  release: () => void,
+): Promise<void> {
+  try {
+    await scheduled;
+  } finally {
+    release();
+  }
 }
 
 export function writeJsonAtomically(
-  ...args: WriteJsonAtomicallyArgs
+  ...arguments_: WriteJsonAtomicallyArguments
 ): Promise<void> {
-  const [namespace, targetPath, value, suppliedOptions] = args;
+  const [namespace, targetPath, value, suppliedOptions] = arguments_;
   const atomicWriteOptions = suppliedOptions ?? {};
   const scheduled = createScheduledWrite({
     atomicWriteOptions,
@@ -70,9 +84,9 @@ export function writeJsonAtomically(
     targetPath,
     value,
   });
-  const tracked = scheduled.finally(() =>
-    releaseTrackedWrite(targetPath, tracked),
-  );
+  const tracked = trackScheduledWrite(scheduled, () => {
+    releaseTrackedWrite(targetPath, tracked);
+  });
   writesByTargetPath.set(targetPath, tracked);
   return tracked;
 }
@@ -82,7 +96,9 @@ export class SerialSnapshotWriterQueue {
   #failure: unknown;
 
   enqueue(job: () => Promise<void>): Promise<void> {
-    const scheduled = this.#tail.then(async () => {
+    const previous = this.#tail;
+    const scheduled = (async () => {
+      await previous;
       if (this.#failure !== undefined) {
         throw this.#failure;
       }
@@ -93,9 +109,15 @@ export class SerialSnapshotWriterQueue {
         this.#failure = error;
         throw error;
       }
-    });
+    })();
 
-    this.#tail = scheduled.catch(ignoreError);
+    this.#tail = (async () => {
+      try {
+        await scheduled;
+      } catch (error) {
+        ignoreError(error);
+      }
+    })();
     return scheduled;
   }
 

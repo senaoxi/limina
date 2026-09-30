@@ -1,4 +1,6 @@
-/** Stable identifiers crossing aggregate and validation-view boundaries. */
+/**
+Stable identifiers crossing aggregate and validation-view boundaries.
+*/
 
 declare const identifierBrand: unique symbol;
 
@@ -20,7 +22,7 @@ export type OutputBuildEdgeId = Identifier<'OutputBuildEdgeId'>;
 export type PackageArtifactEdgeId = Identifier<'PackageArtifactEdgeId'>;
 export type PackageId = Identifier<'PackageId'>;
 export type ProjectId = Identifier<'ProjectId'>;
-export type RepositorySnapshotToken = Identifier<'RepositorySnapshotToken'>;
+export type RepoSnapshotToken = Identifier<'RepositorySnapshotToken'>;
 export type RuleId = Identifier<'RuleId'>;
 export type SourceDependencyEdgeId = Identifier<'SourceDependencyEdgeId'>;
 export type WorkspaceRegionId = Identifier<'WorkspaceRegionId'>;

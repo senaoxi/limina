@@ -2,7 +2,7 @@ import type { ResolvedLiminaConfig } from '#config/runner';
 import { toRelativePath } from '#utils/path';
 import {
   addSourceReferenceConfigProblems,
-  readImplicitRefs,
+  readImplicitReferences,
 } from './generated/config-readers';
 import { getDtsConfigPathForSourcePath } from './project-indexes';
 import type { SourceProject } from './types';
@@ -54,16 +54,16 @@ export function addImplicitProjectReferences(options: {
     problems: options.problems,
     sourceConfigPath: options.project.configPath,
   });
-  const collection = readImplicitRefs(
+  const collection = readImplicitReferences(
     options.config,
     options.project.configPath,
   );
   options.problems.push(...collection.problems);
-  for (const implicitRef of collection.implicitRefs) {
+  for (const implicitReference of collection.implicitRefs) {
     addImplicitReference({
       ...options,
-      path: implicitRef.path,
-      targetConfigPath: implicitRef.targetConfigPath,
+      path: implicitReference.path,
+      targetConfigPath: implicitReference.targetConfigPath,
     });
   }
 }

@@ -25,8 +25,9 @@ function getVisibleLocations(options: {
   locations: readonly string[];
   verbose: boolean;
 }): readonly string[] {
-  if (options.verbose) return options.locations;
-  return options.locations.slice(0, DEFAULT_DETAIL_LIMIT);
+  return options.verbose
+    ? options.locations
+    : options.locations.slice(0, DEFAULT_DETAIL_LIMIT);
 }
 
 function getConfiguredFixSteps(
@@ -64,8 +65,9 @@ function formatMetadata(issue: SourceStructuredIssue): string[] {
 }
 
 function formatSummary(issue: SourceStructuredIssue): string[] {
-  if (issue.summary === undefined) return [];
-  return ['summary:', `  ${issue.summary}`, ''];
+  return issue.summary === undefined
+    ? []
+    : ['summary:', `  ${issue.summary}`, ''];
 }
 
 function formatFixSection(issue: SourceStructuredIssue): string[] {
@@ -80,8 +82,9 @@ function formatFixSection(issue: SourceStructuredIssue): string[] {
 
 function formatVerifySection(issue: SourceStructuredIssue): string[] {
   const commands = issue.verifyCommands;
-  if (commands === undefined || commands.length === 0) return [];
-  return ['', 'verify:', ...commands.map((command) => `  - ${command}`)];
+  return commands === undefined || commands.length === 0
+    ? []
+    : ['', 'verify:', ...commands.map((command) => `  - ${command}`)];
 }
 
 function formatEvidenceSection(issue: SourceStructuredIssue): string[] {
@@ -94,13 +97,14 @@ function formatVerboseDetails(
 ): string[] {
   return issues.flatMap((issue) => {
     const detailLines = issue.detailLines;
-    if (detailLines === undefined || detailLines.length === 0) return [];
-    return ['', ...detailLines.map((line) => `    ${line}`)];
+    return detailLines === undefined || detailLines.length === 0
+      ? []
+      : ['', ...detailLines.map((line) => `    ${line}`)];
   });
 }
 
-function getDetailsHeading(verbose: boolean): string {
-  return verbose ? 'details:' : 'files:';
+function getDetailsHeading(isVerboseValue: boolean): string {
+  return isVerboseValue ? 'details:' : 'files:';
 }
 
 function formatVerboseDetailSection(options: {
@@ -142,8 +146,11 @@ export function formatGenericSourceIssueGroup(options: {
   const issue = getFirstIssue(options.group);
   if (issue === undefined) return [];
   const locations = getLocations(options);
-  const verbose = options.report.verbose === true;
-  const visibleLocations = getVisibleLocations({ locations, verbose });
+  const isVerbose = options.report.verbose === true;
+  const visibleLocations = getVisibleLocations({
+    locations,
+    verbose: isVerbose,
+  });
   const remainingCount = locations.length - visibleLocations.length;
   return [
     `${issue.title}  ${options.group.issues.length} ${plural(
@@ -163,11 +170,11 @@ export function formatGenericSourceIssueGroup(options: {
     ...formatVerifySection(issue),
     ...formatEvidenceSection(issue),
     '',
-    getDetailsHeading(verbose),
+    getDetailsHeading(isVerbose),
     ...visibleLocations.map((location) => `  - ${location}`),
     ...formatVerboseDetailSection({
       issues: options.group.issues,
-      verbose,
+      verbose: isVerbose,
     }),
     ...formatRemainingLocations({ remainingCount, report: options.report }),
   ];

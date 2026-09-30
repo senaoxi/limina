@@ -2,12 +2,12 @@ import { uniqueSortedStrings } from '#utils/collections';
 import type { LiminaCheckIssue, LiminaCheckIssueLocation } from '../snapshot';
 import type { IssueGroup } from './types';
 
-const ANSI_BLUE = '\u001B[34m';
-const ANSI_CYAN = '\u001B[36m';
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_MAGENTA = '\u001B[35m';
-const ANSI_RED = '\u001B[31m';
-const ANSI_YELLOW = '\u001B[33m';
+const ANSI_BLUE = '\u{1B}[34m';
+const ANSI_CYAN = '\u{1B}[36m';
+const ANSI_GREEN = '\u{1B}[32m';
+const ANSI_MAGENTA = '\u{1B}[35m';
+const ANSI_RED = '\u{1B}[31m';
+const ANSI_YELLOW = '\u{1B}[33m';
 
 const LABEL_COLORS = new Map<string, string>([
   ['fix', ANSI_GREEN],
@@ -23,8 +23,7 @@ const LABEL_COLORS = new Map<string, string>([
 
 export function getSeverityColor(severity: string | undefined): string {
   if (severity === 'warning') return ANSI_YELLOW;
-  if (severity === 'info') return ANSI_CYAN;
-  return ANSI_RED;
+  return severity === 'info' ? ANSI_CYAN : ANSI_RED;
 }
 
 export function getLabelColor(label: string): string {
@@ -35,7 +34,7 @@ export function formatTopCounts(
   counts: Map<string, number>,
   limit: number,
 ): string {
-  return [...counts.entries()]
+  return [...counts]
     .sort(([leftValue, leftCount], [rightValue, rightCount]) => {
       const countOrder = rightCount - leftCount;
       return countOrder === 0
@@ -63,8 +62,7 @@ function appendVerboseFlag(command: string): string {
 export function createVerboseCommand(
   command: string | undefined,
 ): string | null {
-  if (!command) return null;
-  return appendVerboseFlag(command);
+  return command ? appendVerboseFlag(command) : null;
 }
 
 function valueOrEmpty(value: string | undefined): string {
@@ -146,14 +144,15 @@ export function groupIssues(issues: readonly LiminaCheckIssue[]): IssueGroup[] {
     group.issues.push(issue);
     groups.set(key, group);
   }
-  return [...groups.values()].sort(compareGroups);
+  return groups.values().toArray().sort(compareGroups);
 }
 
 function getManifestLocation(
   location: LiminaCheckIssueLocation,
 ): string | undefined {
-  if (location.packageManifestPath === undefined) return undefined;
-  return `package manifest: ${location.packageManifestPath}`;
+  return location.packageManifestPath === undefined
+    ? undefined
+    : `package manifest: ${location.packageManifestPath}`;
 }
 
 function getLocationFilePath(
@@ -164,16 +163,18 @@ function getLocationFilePath(
 
 function formatPosition(location: LiminaCheckIssueLocation): string {
   if (location.line === undefined) return '';
-  if (location.column === undefined) return `:${location.line}`;
-  return `:${location.line}:${location.column}`;
+  return location.column === undefined
+    ? `:${location.line}`
+    : `:${location.line}:${location.column}`;
 }
 
 function getLocationText(
   location: LiminaCheckIssueLocation,
 ): string | undefined {
   const filePath = getLocationFilePath(location);
-  if (filePath === undefined) return location.scope;
-  return `${filePath}${formatPosition(location)}`;
+  return filePath === undefined
+    ? location.scope
+    : `${filePath}${formatPosition(location)}`;
 }
 
 export function formatLocation(location: LiminaCheckIssueLocation): string {
@@ -197,8 +198,9 @@ export function getIssueLocations(issue: LiminaCheckIssue): string[] {
     .map(formatLocation)
     .map((value) => value.trim())
     .filter(Boolean);
-  if (structuredLocations.length > 0) return structuredLocations;
-  return [getFallbackIssueLocation(issue)];
+  return structuredLocations.length > 0
+    ? structuredLocations
+    : [getFallbackIssueLocation(issue)];
 }
 
 export function getIssueLocation(issue: LiminaCheckIssue): string {
@@ -217,8 +219,10 @@ export function getGroupLocations(group: IssueGroup): string[] {
 function hasFileLocation(issue: LiminaCheckIssue): boolean {
   if (issue.filePath !== undefined) return true;
   return (issue.locations ?? []).some((location) => {
-    if (location.filePath !== undefined) return true;
-    return location.packageManifestPath !== undefined;
+    return (
+      location.filePath !== undefined ||
+      location.packageManifestPath !== undefined
+    );
   });
 }
 

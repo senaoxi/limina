@@ -11,7 +11,7 @@ import { createWorkspaceSourceBoundary } from '../core/typescript-semantic';
 import type { SourceFinding } from '../source-check/findings';
 import { addResourceModuleProblems } from '../source-check/resource-module-findings';
 import { ResourceResolver } from '../source-check/resource-resolver';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
@@ -71,13 +71,10 @@ it.each([false, true])(
         resolutionMode: 'import',
         resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           rootDir: fixture.root,
           configPath: fixture.path('limina.config.mjs'),
-        },
+        }),
         findings,
         importRecord: record,
         owner: {
@@ -164,13 +161,10 @@ it.each([
         resolutionMode: 'import',
         resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
+        config: withFixtureGovernanceRoot({
           rootDir: fixture.root,
           configPath: fixture.path('limina.config.mjs'),
-        },
+        }),
         findings,
         importRecord: record,
         owner: {
@@ -202,10 +196,11 @@ it.each([
 );
 
 it('passes complete package-import identities to the physical Node resolver', async () => {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-resource-identity-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-resource-identity-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(temporaryDirectory);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   const imports = {
     '#foo': './base.svg',
     '#foo/bar': './nested.svg',
@@ -252,13 +247,10 @@ it('passes complete package-import identities to the physical Node resolver', as
         resolutionMode: 'import',
         resourceResolver: new ResourceResolver(),
         checkerName: 'tsc',
-        config: {
-          get governanceRoot() {
-            return resolveFixtureGovernanceRoot(this);
-          },
-          rootDir,
+        config: withFixtureGovernanceRoot({
+          rootDir: rootDirectory,
           configPath: fixturePath('limina.config.mjs'),
-        },
+        }),
         findings,
         importRecord: records.find((record) => record.specifier === specifier)!,
         owner: {
@@ -286,6 +278,6 @@ it('passes complete package-import identities to the physical Node resolver', as
       });
     }
   } finally {
-    await rm(rootDir, { recursive: true, force: true });
+    await rm(rootDirectory, { recursive: true, force: true });
   }
 });

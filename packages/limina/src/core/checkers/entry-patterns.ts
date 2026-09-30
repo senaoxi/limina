@@ -102,11 +102,9 @@ export function normalizeTinyglobbyPattern(
 }
 
 export function expandTinyglobbyPattern(pattern: string): string[] {
-  if (!pattern || pattern.endsWith('*')) {
-    return [pattern];
-  }
-
-  return [pattern, `${pattern}/**`];
+  return !pattern || pattern.endsWith('*')
+    ? [pattern]
+    : [pattern, `${pattern}/**`];
 }
 
 function isPositiveExcludePattern(pattern: string): boolean {
@@ -119,27 +117,28 @@ function isNegativeExcludePattern(pattern: string): boolean {
 
 function appendExcludePattern(
   processed: ProcessedExcludePatterns,
-  rootDir: string,
+  rootDirectory: string,
   pattern: string,
 ): void {
   if (isPositiveExcludePattern(pattern)) {
     processed.positive.push(
-      ...expandTinyglobbyPattern(normalizeTinyglobbyPattern(pattern, rootDir)),
+      ...expandTinyglobbyPattern(
+        normalizeTinyglobbyPattern(pattern, rootDirectory),
+      ),
     );
     return;
   }
 
-  if (isNegativeExcludePattern(pattern)) {
-    processed.negative.push(
-      ...expandTinyglobbyPattern(
-        normalizeTinyglobbyPattern(pattern.slice(1), rootDir),
-      ),
-    );
-  }
+  if (!isNegativeExcludePattern(pattern)) return;
+  const positivePattern = normalizeTinyglobbyPattern(
+    pattern.slice(1),
+    rootDirectory,
+  );
+  processed.negative.push(...expandTinyglobbyPattern(positivePattern));
 }
 
 export function processExcludePatterns(
-  rootDir: string,
+  rootDirectory: string,
   patterns: readonly string[],
 ): ProcessedExcludePatterns {
   const processed: ProcessedExcludePatterns = {
@@ -151,7 +150,7 @@ export function processExcludePatterns(
     const pattern = normalizeWorkspaceGlob(value);
 
     if (pattern.length > 0) {
-      appendExcludePattern(processed, rootDir, pattern);
+      appendExcludePattern(processed, rootDirectory, pattern);
     }
   }
 

@@ -32,8 +32,10 @@ function resolveCheckerHostEntry(
 export const resolveCheckerHostEntryForTesting: typeof resolveCheckerHostEntry =
   resolveCheckerHostEntry;
 
-let sharedHost: CheckerProcessHost | undefined;
-let sharedHostUnavailable = false;
+const state = {
+  sharedHost: undefined as CheckerProcessHost | undefined,
+  isSharedHostUnavailable: false,
+};
 
 function isHostDisabled(
   onDegraded: CheckerHostDegradationListener | undefined,
@@ -56,8 +58,8 @@ function isActiveHost(
 }
 
 function markSharedHostUnavailable(): void {
-  sharedHost = undefined;
-  sharedHostUnavailable = true;
+  state.sharedHost = undefined;
+  state.isSharedHostUnavailable = true;
 }
 
 function createSharedCheckerHost(
@@ -77,26 +79,24 @@ function createSharedCheckerHost(
     env: process.env,
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
-  sharedHost = new CheckerProcessHost(
+  state.sharedHost = new CheckerProcessHost(
     child,
     undefined,
     markSharedHostUnavailable,
   );
-  return sharedHost;
+  return state.sharedHost;
 }
 
 function resolveAvailableSharedHost(
   onDegraded: CheckerHostDegradationListener | undefined,
 ): CheckerProcessHost | undefined {
-  if (sharedHostUnavailable) {
+  if (state.isSharedHostUnavailable) {
     return undefined;
   }
 
-  if (isActiveHost(sharedHost)) {
-    return sharedHost;
-  }
-
-  return createSharedCheckerHost(onDegraded);
+  return isActiveHost(state.sharedHost)
+    ? state.sharedHost
+    : createSharedCheckerHost(onDegraded);
 }
 
 function resolveSharedCheckerHost(
@@ -116,11 +116,9 @@ export async function runCheckerSpawnMeasured(
 ): Promise<CheckerHostSpawnMeasurement> {
   const host = resolveSharedCheckerHost(options.onDegraded);
 
-  if (!host) {
-    return spawnAndMeasure(spec, { signal: options.signal });
-  }
-
-  return host.spawnMeasured(spec, options.onDegraded, options.signal);
+  return host
+    ? host.spawnMeasured(spec, options.onDegraded, options.signal)
+    : spawnAndMeasure(spec, { signal: options.signal });
 }
 
 export async function runCheckerHostProtocolProbeForTesting(options: {
@@ -139,15 +137,15 @@ export async function runCheckerHostProtocolProbeForTesting(options: {
     return await host.spawnMeasured(options.spec, options.onDegraded);
   } finally {
     host.dispose();
-    sharedHost = undefined;
-    sharedHostUnavailable = false;
+    state.sharedHost = undefined;
+    state.isSharedHostUnavailable = false;
     resetCheckerHostDegradationNotice();
   }
 }
 
 export function disposeCheckerProcessHostForTesting(): void {
-  sharedHost?.dispose();
-  sharedHost = undefined;
-  sharedHostUnavailable = false;
+  state.sharedHost?.dispose();
+  state.sharedHost = undefined;
+  state.isSharedHostUnavailable = false;
   resetCheckerHostDegradationNotice();
 }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { glob } from 'tinyglobby';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveCheckerEntrySelection } from '../core/checkers/entry-selection';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const roots = new Set<string>();
@@ -22,10 +22,11 @@ async function createFixture(): Promise<{
   config: ResolvedLiminaConfig;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-entry-selection-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-entry-selection-'),
   );
-  roots.add(rootDir);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  roots.add(rootDirectory);
   const files = [
     'packages/a/tsconfig.json',
     'packages/a/test/tsconfig.json',
@@ -35,21 +36,18 @@ async function createFixture(): Promise<{
   ];
 
   for (const relativePath of files) {
-    const filePath = path.join(rootDir, relativePath);
+    const filePath = path.join(rootDirectory, relativePath);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, '{}\n');
   }
 
   return {
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       config: {},
-      configPath: path.join(rootDir, 'limina.config.mjs'),
-      rootDir,
-    },
-    rootDir,
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
   };
 }
 
@@ -59,14 +57,11 @@ async function resolveSelection(options: {
   rootDir: string;
   sourceConfigPaths?: string[];
 }) {
-  const config: ResolvedLiminaConfig = {
-    get governanceRoot() {
-      return resolveFixtureGovernanceRoot(this);
-    },
+  const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
     config: {},
     configPath: path.join(options.rootDir, 'limina.config.mjs'),
     rootDir: options.rootDir,
-  };
+  });
   const sourceConfigPaths =
     options.sourceConfigPaths ??
     (await glob('**/tsconfig*.json', {
@@ -115,8 +110,8 @@ async function collectOracleEffectivePaths(options: {
 }
 
 afterEach(async () => {
-  for (const rootDir of roots) {
-    await rm(rootDir, { force: true, recursive: true });
+  for (const rootDirectory of roots) {
+    await rm(rootDirectory, { force: true, recursive: true });
   }
   roots.clear();
 });
@@ -212,9 +207,10 @@ describe('checker entry selection across activated islands', () => {
 
   it('matches external activated-island candidates in config-root coordinates', async () => {
     const fixture = await createFixture();
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-entry-external-')),
+    const externalRootTemporaryPath = await mkdtemp(
+      path.join(tmpdir(), 'limina-entry-external-'),
     );
+    const externalRoot = await realpath(externalRootTemporaryPath);
     roots.add(externalRoot);
     const externalConfigPath = path.join(externalRoot, 'tsconfig.json');
     await writeFile(externalConfigPath, '{}\n');

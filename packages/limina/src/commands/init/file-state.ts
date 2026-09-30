@@ -95,12 +95,12 @@ function assertPathStateMatches(
   pathStats: Stats,
   state: FileState,
 ): void {
-  const matches = [
+  const isMatches = [
     state.dev === String(pathStats.dev),
     state.ino === String(pathStats.ino),
   ].every(Boolean);
 
-  if (!matches) {
+  if (!isMatches) {
     throw new Error(
       `Init mutation target identity drifted while it was read: ${filePath}.`,
     );
@@ -154,11 +154,11 @@ export async function removeIfOwned(options: {
     { authority: options.authority, kind: 'file', path: options.filePath },
   ]);
   const current = await readFileStateIfPresent(options.filePath);
-  const matches =
+  const isMatches =
     current !== undefined &&
     stateKey(current) === stateKey(options.expectedState);
 
-  if (!matches) {
+  if (!isMatches) {
     throw new Error(
       `Refusing to clean up an init file whose identity drifted: ${options.filePath}.`,
     );

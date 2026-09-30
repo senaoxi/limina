@@ -11,7 +11,7 @@ import {
   getWorkspaceRegionBoundaryExclusionReason,
   type WorkspaceRegionBoundary,
 } from '../core/workspace/regions';
-import { createSourceDiagnosticFinding } from './finding-utils';
+import { createSourceDiagnosticFinding } from './finding-utilities';
 import type { SourceFinding } from './findings';
 
 function getOwnerName(owner: PackageOwner): string | undefined {

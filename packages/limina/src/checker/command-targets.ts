@@ -11,7 +11,7 @@ function getRelativeConfigPath(options: CheckerCommandTargetOptions): string {
   return toRelativePath(options.projectRootDir, options.configPath);
 }
 
-function getWatchArgs(watch: boolean | undefined): string[] {
+function getWatchArguments(watch: boolean | undefined): string[] {
   return watch === true ? ['--watch', '--preserveWatchOutput'] : [];
 }
 
@@ -19,7 +19,7 @@ function getWatchLabel(watch: boolean | undefined): string {
   return watch === true ? ' --watch' : '';
 }
 
-function createBuildArgs(
+function createBuildArguments(
   relativeConfigPath: string,
   watch: boolean | undefined,
 ): string[] {
@@ -28,7 +28,7 @@ function createBuildArgs(
     relativeConfigPath,
     '--pretty',
     'false',
-    ...getWatchArgs(watch),
+    ...getWatchArguments(watch),
   ];
 }
 
@@ -36,12 +36,12 @@ export function createTscCommandTarget(
   options: CheckerCommandTargetOptions,
 ): CheckerCommandTarget {
   const relativeConfigPath = getRelativeConfigPath(options);
-  const args = createBuildArgs(relativeConfigPath, options.watch);
+  const arguments_ = createBuildArguments(relativeConfigPath, options.watch);
   return {
     args:
       options.commandOverride === undefined
-        ? [requireFromLimina.resolve('typescript/bin/tsc'), ...args]
-        : args,
+        ? [requireFromLimina.resolve('typescript/bin/tsc'), ...arguments_]
+        : arguments_,
     command: options.commandOverride ?? process.execPath,
     label: `tsc -b ${relativeConfigPath}${getWatchLabel(options.watch)}`,
   };
@@ -52,7 +52,7 @@ export function createTsgoCommandTarget(
 ): CheckerCommandTarget {
   const relativeConfigPath = getRelativeConfigPath(options);
   return {
-    args: createBuildArgs(relativeConfigPath, options.watch),
+    args: createBuildArguments(relativeConfigPath, options.watch),
     command: 'tsgo',
     label: `tsgo -b ${relativeConfigPath}${getWatchLabel(options.watch)}`,
   };
@@ -63,7 +63,7 @@ export function createVueTscCommandTarget(
 ): CheckerCommandTarget {
   const relativeConfigPath = getRelativeConfigPath(options);
   return {
-    args: createBuildArgs(relativeConfigPath, options.watch),
+    args: createBuildArguments(relativeConfigPath, options.watch),
     command: 'vue-tsc',
     label: `${options.checker.name}: vue-tsc -b ${relativeConfigPath}${getWatchLabel(options.watch)}`,
   };

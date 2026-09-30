@@ -80,9 +80,9 @@ export function finalizeImportRecords(
 function getLineTerminatorLength(sourceText: string, index: number): number {
   const codePoint = sourceText.codePointAt(index);
   if (codePoint === 10) return 1;
-  if (codePoint === 13)
-    return 1 + Number(sourceText.codePointAt(index + 1) === 10);
-  return 0;
+  return codePoint === 13
+    ? 1 + Number(sourceText.codePointAt(index + 1) === 10)
+    : 0;
 }
 
 export function buildLineStarts(sourceText: string): number[] {

@@ -12,10 +12,10 @@ import {
 import { hostname } from 'node:os';
 import path from 'pathe';
 import {
+  isMatchesRecordSchema,
   isNonEmptyString,
   isPositiveInteger,
   isString,
-  matchesRecordSchema,
 } from '../validation/record-schema';
 import {
   CrossProcessLeaseCorruptError,
@@ -26,7 +26,7 @@ function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
 }
 
-export async function holderExists(holderPath: string): Promise<boolean> {
+export async function isHolderExists(holderPath: string): Promise<boolean> {
   return (await readPresentOwner(holderPath)) !== null;
 }
 
@@ -49,7 +49,7 @@ export function createLeaseOwner(): CrossProcessLeaseOwner {
 }
 
 function isOwner(value: unknown): value is CrossProcessLeaseOwner {
-  return matchesRecordSchema(value, {
+  return isMatchesRecordSchema(value, {
     hostname: isString,
     pid: isPositiveInteger,
     startedAt: isString,
@@ -67,8 +67,7 @@ function throwOwnerReadError(error: unknown, holderPath: string): never {
 async function readOwner(holderPath: string): Promise<HolderRecord | null> {
   try {
     const names = await readdir(holderPath);
-    if (names.length === 0) return null;
-    return await readOwnerRecord(holderPath, names);
+    return names.length === 0 ? null : await readOwnerRecord(holderPath, names);
   } catch (error) {
     return throwOwnerReadError(error, holderPath);
   }
@@ -98,7 +97,7 @@ function assertOwnerFileName(
   throw new Error('owner token does not match its record path');
 }
 
-function localProcessSignalResult(error: unknown): boolean {
+function isLocalProcessSignalResult(error: unknown): boolean {
   if (hasCode(error, 'ESRCH')) return false;
   if (hasCode(error, 'EPERM')) return true;
   throw error;
@@ -110,7 +109,7 @@ function isLocalProcessAlive(owner: CrossProcessLeaseOwner): boolean | null {
     process.kill(owner.pid, 0);
     return true;
   } catch (error) {
-    return localProcessSignalResult(error);
+    return isLocalProcessSignalResult(error);
   }
 }
 
@@ -125,11 +124,12 @@ async function readPresentOwner(
   }
 }
 
-export async function removeDeadHolder(holderPath: string): Promise<boolean> {
+export async function isRemoveDeadHolder(holderPath: string): Promise<boolean> {
   const record = await readPresentOwner(holderPath);
-  if (record === null) return removeEmptyHolder(holderPath);
-  if (isLocalProcessAlive(record.owner) !== false) return false;
-  return removeHolderRecord(holderPath, record.fileName);
+  return record === null
+    ? isRemoveEmptyHolder(holderPath)
+    : isLocalProcessAlive(record.owner) === false &&
+        isRemoveHolderRecord(holderPath, record.fileName);
 }
 
 const retryableHolderPublicationCodes = new Set(['EACCES', 'EBUSY', 'EPERM']);
@@ -153,12 +153,13 @@ async function isHolderCollision(
   error: unknown,
   holderPath: string,
 ): Promise<boolean> {
-  if (isDefiniteHolderCollision(error)) return true;
-  if (!isRetryableHolderPublicationError(error)) return false;
-  return holderExists(holderPath);
+  return (
+    isDefiniteHolderCollision(error) ||
+    (isRetryableHolderPublicationError(error) && isHolderExists(holderPath))
+  );
 }
 
-export async function publishHolder(options: {
+export async function isPublishHolder(options: {
   holderPath: string;
   owner: CrossProcessLeaseOwner;
   rootPath: string;
@@ -193,10 +194,10 @@ export async function releaseOwnedHolder(
       `Cross-process lease ownership changed before release: ${holderPath}.`,
     );
   }
-  await removeHolderRecord(holderPath, current.fileName);
+  await isRemoveHolderRecord(holderPath, current.fileName);
 }
 
-async function removeHolderRecord(
+async function isRemoveHolderRecord(
   holderPath: string,
   fileName: string,
 ): Promise<boolean> {
@@ -205,21 +206,21 @@ async function removeHolderRecord(
   } catch (error) {
     if (!hasCode(error, 'ENOENT')) throw error;
   }
-  return removeEmptyHolder(holderPath);
+  return isRemoveEmptyHolder(holderPath);
 }
 
-async function removeEmptyHolder(holderPath: string): Promise<boolean> {
+async function isRemoveEmptyHolder(holderPath: string): Promise<boolean> {
   // Another publisher may have replaced the empty slot. Never recursively
   // remove it: the new holder's token record makes rmdir fail harmlessly.
   try {
     await rmdir(holderPath);
     return true;
   } catch (error) {
-    return handleHolderRemovalError(error);
+    return isHandleHolderRemovalError(error);
   }
 }
 
-function handleHolderRemovalError(error: unknown): boolean {
+function isHandleHolderRemovalError(error: unknown): boolean {
   if (hasCode(error, 'ENOENT')) return true;
   if (isNonEmptyHolderError(error)) return false;
   throw error;

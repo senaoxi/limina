@@ -3,8 +3,7 @@ import type * as tsxEsmApi from 'tsx/esm/api';
 import type { LiminaConfigLoader } from './root-types';
 
 function isConfigLoader(value: unknown): value is LiminaConfigLoader {
-  if (value === 'native') return true;
-  return value === 'tsx';
+  return value === 'native' || value === 'tsx';
 }
 
 export function resolveConfigLoader(configLoader: unknown): LiminaConfigLoader {
@@ -20,14 +19,12 @@ function getErrorMessage(error: unknown): string {
 }
 
 function isObject(value: unknown): value is object {
-  if (value === null) return false;
-  return typeof value === 'object';
+  return value !== null && typeof value === 'object';
 }
 
 function getErrorCode(error: unknown): unknown {
   if (!isObject(error)) return undefined;
-  if (!('code' in error)) return undefined;
-  return (error as { code?: unknown }).code;
+  return 'code' in error ? (error as { code?: unknown }).code : undefined;
 }
 
 function hasSuggestionCode(error: unknown): boolean {
@@ -47,9 +44,11 @@ function hasSuggestionMessage(error: unknown): boolean {
 }
 
 function hasTranslatorStack(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (typeof error.stack !== 'string') return false;
-  return error.stack.includes('node:internal/modules/esm/translators');
+  return (
+    error instanceof Error &&
+    typeof error.stack === 'string' &&
+    error.stack.includes('node:internal/modules/esm/translators')
+  );
 }
 
 function shouldSuggestTsxLoader(error: unknown): boolean {
@@ -69,31 +68,29 @@ function hasDefault(value: object): value is { default: unknown } {
 }
 
 function getDefaultOrSelf(value: object): unknown {
-  if (hasDefault(value)) return value.default;
-  return value;
+  return hasDefault(value) ? value.default : value;
 }
 
 function unwrapModuleDefault(module: unknown): unknown {
   if (!isObject(module)) return module;
-  if (!isModuleNamespace(module)) return module;
-  return getDefaultOrSelf(module);
+  return isModuleNamespace(module) ? getDefaultOrSelf(module) : module;
 }
 
 function isSingleDefaultObject(value: object): value is { default: unknown } {
-  if (Object.prototype.toString.call(value) !== '[object Object]') return false;
-  if (!hasDefault(value)) return false;
-  return Object.keys(value).length === 1;
+  return (
+    Object.prototype.toString.call(value) === '[object Object]' &&
+    hasDefault(value) &&
+    Object.keys(value).length === 1
+  );
 }
 
 function unwrapSingleDefaultObject(value: object): unknown {
-  if (isSingleDefaultObject(value)) return value.default;
-  return value;
+  return isSingleDefaultObject(value) ? value.default : value;
 }
 
 function unwrapTsxConfigExport(module: unknown): unknown {
   const value = unwrapModuleDefault(module);
-  if (!isObject(value)) return value;
-  return unwrapSingleDefaultObject(value);
+  return isObject(value) ? unwrapSingleDefaultObject(value) : value;
 }
 
 function createNativeLoaderError(error: unknown): Error {
@@ -147,6 +144,7 @@ export async function loadConfigModule(
   configLoader: unknown,
 ): Promise<unknown> {
   const loader = resolveConfigLoader(configLoader);
-  if (loader === 'native') return nativeImportConfig(configPath);
-  return tsxImportConfig(configPath);
+  return loader === 'native'
+    ? nativeImportConfig(configPath)
+    : tsxImportConfig(configPath);
 }

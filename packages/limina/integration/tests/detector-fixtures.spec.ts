@@ -211,9 +211,9 @@ describe('declarative detector fixtures', () => {
         continue;
       }
 
-      for (const testPath of coverage.tests.filter((candidate) =>
-        candidate.startsWith('packages/limina/fixtures/detectors/'),
-      )) {
+      for (const testPath of coverage.tests) {
+        if (!testPath.startsWith('packages/limina/fixtures/detectors/'))
+          continue;
         const fixture = fixtureByPath.get(testPath);
 
         expect(fixture, `${code} references ${testPath}`).toBeDefined();
@@ -239,11 +239,13 @@ describe('declarative detector fixtures', () => {
         (fixture) => fixture.definition.expected.primaryCode === undefined,
       )
       .map((fixture) => fixture.id)
-      .sort();
+      .sort((left, right) => Number(left > right) - Number(left < right));
 
-    expect(Object.keys(LIMINA_DETECTOR_SCENARIO_COVERAGE).sort()).toEqual(
-      scenarioIds,
-    );
+    expect(
+      Object.keys(LIMINA_DETECTOR_SCENARIO_COVERAGE).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(scenarioIds);
 
     for (const fixture of detectorFixtures) {
       const casePath = toWorkspaceRelativePath(fixture.casePath);
@@ -256,8 +258,15 @@ describe('declarative detector fixtures', () => {
 
       if (primaryCode) {
         expect(canonicalOwners.has(primaryCode), fixture.id).toBe(true);
-        expect([...canonicalOwners].sort(), fixture.id).toEqual(
-          [...expectedCodes].sort(),
+        expect(
+          [...canonicalOwners].sort(
+            (left, right) => Number(left > right) - Number(left < right),
+          ),
+          fixture.id,
+        ).toEqual(
+          [...expectedCodes].sort(
+            (left, right) => Number(left > right) - Number(left < right),
+          ),
         );
         expect(scenario, fixture.id).toBeUndefined();
         continue;

@@ -99,7 +99,7 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
   );
   temporaryDirectories.push(temporaryRoot);
   const fixturePath = createFixturePathResolver(temporaryRoot);
-  const rootDir = fixturePath();
+  const rootDirectory = fixturePath();
   const appPath = fixturePath('App.svelte');
   const childPath = fixturePath('Child.svelte');
   const declarationPath = fixturePath('globals.d.ts');
@@ -111,7 +111,7 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
     '</script>',
     '<Child />',
   ].join('\n');
-  await mkdir(rootDir, { recursive: true });
+  await mkdir(rootDirectory, { recursive: true });
   await writeFile(appPath, sourceText);
   await writeFile(childPath, '<p>child</p>');
   const fileNames = [appPath, childPath];
@@ -138,7 +138,7 @@ async function createProject(options?: { ambientCss?: boolean }): Promise<{
         skipLibCheck: true,
         target: ts.ScriptTarget.ESNext,
       },
-      packageRootDir: rootDir,
+      packageRootDir: rootDirectory,
       resolverConfigPath: fixturePath('tsconfig.json'),
     },
     sourceText,

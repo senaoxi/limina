@@ -35,7 +35,7 @@ import {
   createFrameworkCheckerTargets,
   type TypecheckTarget,
 } from '../typecheck/targets';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -51,10 +51,11 @@ async function createFixture(): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-framework-target-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-framework-target-'),
   );
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const fixturePath = createFixturePathResolver(rootDirectory);
   await writeText(
     fixturePath('package.json'),
     '{"name":"fixture","private":true}\n',
@@ -79,16 +80,13 @@ async function createFixture(): Promise<{
     '/// <reference types="astro/client" />\n',
   );
   return {
-    cleanup: async () => rm(rootDir, { force: true, recursive: true }),
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    cleanup: async () => rm(rootDirectory, { force: true, recursive: true }),
+    config: withFixtureGovernanceRoot({
       configPath: fixturePath('limina.config.mjs'),
-      rootDir,
-    },
+      rootDir: rootDirectory,
+    }),
     path: fixturePath,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 
@@ -171,10 +169,18 @@ function createProgressRecorder(): {
 } {
   const events: string[] = [];
   const createItem = (name: string): TaskProgressItem => ({
-    fail: () => events.push(`fail:${name}`),
-    pass: () => events.push(`pass:${name}`),
-    skip: () => events.push(`skip:${name}`),
-    start: () => events.push(`start:${name}`),
+    fail: () => {
+      events.push(`fail:${name}`);
+    },
+    pass: () => {
+      events.push(`pass:${name}`);
+    },
+    skip: () => {
+      events.push(`skip:${name}`);
+    },
+    start: () => {
+      events.push(`start:${name}`);
+    },
   });
   return {
     events,
@@ -244,16 +250,16 @@ describe('framework checker targets', () => {
   it('deduplicates descriptors and creates separate Astro and Svelte targets for one config', async () => {
     const fixture = await createFixture();
     try {
-      const packageRootDir = fixture.path('packages', 'a');
+      const packageRootDirectory = fixture.path('packages', 'a');
       const sourceConfigPath = fixture.path('packages', 'a', 'tsconfig.json');
       const astro = descriptor({
         family: 'astro',
-        packageRootDir,
+        packageRootDir: packageRootDirectory,
         sourceConfigPath,
       });
       const svelte = descriptor({
         family: 'svelte',
-        packageRootDir,
+        packageRootDir: packageRootDirectory,
         sourceConfigPath,
       });
       const graph = createGraph({
@@ -350,16 +356,16 @@ describe('framework checker targets', () => {
   it('keeps framework typecheck targets outside the build checker registry', async () => {
     const fixture = await createFixture();
     try {
-      const packageRootDir = fixture.path('packages', 'a');
+      const packageRootDirectory = fixture.path('packages', 'a');
       const sourceConfigPath = fixture.path('packages', 'a', 'tsconfig.json');
       const astro = descriptor({
         family: 'astro',
-        packageRootDir,
+        packageRootDir: packageRootDirectory,
         sourceConfigPath,
       });
       const svelte = descriptor({
         family: 'svelte',
-        packageRootDir,
+        packageRootDir: packageRootDirectory,
         sourceConfigPath,
       });
       const graph = createGraph({
@@ -432,12 +438,12 @@ describe('framework checker targets', () => {
   it('uses leaf execution roots and complete non-mutating checker arguments', async () => {
     const fixture = await createFixture();
     try {
-      const packageRootDir = fixture.path('packages', 'a');
+      const packageRootDirectory = fixture.path('packages', 'a');
       const sourceConfigPath = fixture.path('packages', 'a', 'tsconfig.json');
       const astro = createFrameworkCheckerTarget({
         descriptor: descriptor({
           family: 'astro',
-          packageRootDir,
+          packageRootDir: packageRootDirectory,
           sourceConfigPath,
         }),
         workspaceRootDir: toPortablePath(fixture.rootDir),
@@ -445,7 +451,7 @@ describe('framework checker targets', () => {
       const svelte = createFrameworkCheckerTarget({
         descriptor: descriptor({
           family: 'svelte',
-          packageRootDir,
+          packageRootDir: packageRootDirectory,
           sourceConfigPath,
         }),
         workspaceRootDir: fixture.rootDir,
@@ -456,19 +462,19 @@ describe('framework checker targets', () => {
           'check',
           '--noSync',
           '--root',
-          packageRootDir,
+          packageRootDirectory,
           '--tsconfig',
           sourceConfigPath,
         ],
         command: 'astro',
-        cwd: packageRootDir,
-        dependencyRootDir: packageRootDir,
-        executionRootDir: packageRootDir,
+        cwd: packageRootDirectory,
+        dependencyRootDir: packageRootDirectory,
+        executionRootDir: packageRootDirectory,
         workspaceRootDir: toPortablePath(fixture.rootDir),
       });
       expect(svelte.args).toEqual([
         '--workspace',
-        packageRootDir,
+        packageRootDirectory,
         '--tsconfig',
         sourceConfigPath,
       ]);
@@ -491,8 +497,8 @@ describe('framework checker targets', () => {
         workspaceRootDir: fixture.rootDir,
       });
       const resolver = vi.fn(({ packageName, projectRootDir }) =>
-        projectRootDir === fixture.path('packages', 'a') &&
-        packageName === 'svelte-check'
+        packageName === 'svelte-check' &&
+        projectRootDir === fixture.path('packages', 'a')
           ? packageName
           : undefined,
       );
@@ -527,7 +533,7 @@ describe('framework checker targets', () => {
   it('reports an unsupported svelte-check from the leaf checker scope', async () => {
     const fixture = await createFixture();
     try {
-      const packageRootDir = fixture.path('packages', 'a');
+      const packageRootDirectory = fixture.path('packages', 'a');
       const svelteCheckManifest = fixture.path(
         'packages',
         'a',
@@ -542,7 +548,7 @@ describe('framework checker targets', () => {
       const target = createFrameworkCheckerTarget({
         descriptor: descriptor({
           family: 'svelte',
-          packageRootDir,
+          packageRootDir: packageRootDirectory,
           sourceConfigPath: fixture.path('packages', 'a', 'tsconfig.json'),
         }),
         workspaceRootDir: fixture.rootDir,
@@ -660,30 +666,35 @@ describe('framework checker targets', () => {
   it('uses the leaf binary PATH and cwd in the default runner', async () => {
     const fixture = await createFixture();
     try {
-      const packageRootDir = fixture.path('packages', 'a');
+      const packageRootDirectory = fixture.path('packages', 'a');
       const recordPath = fixture.path('packages', 'a', 'runner-record.json');
-      const binDir = fixture.path('packages', 'a', 'node_modules', '.bin');
+      const binDirectory = fixture.path(
+        'packages',
+        'a',
+        'node_modules',
+        '.bin',
+      );
       await writeText(
-        path.join(binDir, 'svelte-check'),
+        path.join(binDirectory, 'svelte-check'),
         '#!/usr/bin/env sh\nexec node "$(dirname "$0")/svelte-check.js" "$@"\n',
       );
       await writeText(
-        path.join(binDir, 'svelte-check.cmd'),
+        path.join(binDirectory, 'svelte-check.cmd'),
         '@ECHO OFF\r\nnode "%~dp0svelte-check.js" %*\r\n',
       );
       await writeText(
-        path.join(binDir, 'svelte-check.js'),
+        path.join(binDirectory, 'svelte-check.js'),
         [
           "const { writeFileSync } = require('node:fs');",
           `writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), path: process.env.PATH }));`,
           '',
         ].join('\n'),
       );
-      await chmod(path.join(binDir, 'svelte-check'), 0o755);
+      await chmod(path.join(binDirectory, 'svelte-check'), 0o755);
       const target = createFrameworkCheckerTarget({
         descriptor: descriptor({
           family: 'svelte',
-          packageRootDir,
+          packageRootDir: packageRootDirectory,
           sourceConfigPath: fixture.path('packages', 'a', 'tsconfig.json'),
         }),
         workspaceRootDir: fixture.rootDir,
@@ -697,9 +708,11 @@ describe('framework checker targets', () => {
       };
 
       expect(result.status).toBe(0);
-      expect(toPortablePath(record.cwd)).toBe(toPortablePath(packageRootDir));
+      expect(toPortablePath(record.cwd)).toBe(
+        toPortablePath(packageRootDirectory),
+      );
       expect(toPortablePath(record.path.split(path.delimiter)[0]!)).toBe(
-        toPortablePath(binDir),
+        toPortablePath(binDirectory),
       );
       expect(record.args).toEqual(target.args);
     } finally {
@@ -710,10 +723,14 @@ describe('framework checker targets', () => {
   it('propagates cancellation while preserving progress and result identity maps', async () => {
     const fixture = await createFixture();
     try {
-      const packageRootDir = fixture.path('packages', 'a');
+      const packageRootDirectory = fixture.path('packages', 'a');
       const sourceConfigPath = fixture.path('packages', 'a', 'tsconfig.json');
       const descriptors = (['astro', 'svelte'] as const).map((family) =>
-        descriptor({ family, packageRootDir, sourceConfigPath }),
+        descriptor({
+          family,
+          packageRootDir: packageRootDirectory,
+          sourceConfigPath,
+        }),
       );
       let graph!: GeneratedTsconfigGraphResult;
       const preflight = new LiminaPreflightManager({
@@ -732,7 +749,7 @@ describe('framework checker targets', () => {
 
       const result = await runCheckerTypecheck({
         checkerPackageResolver: ({ packageName, projectRootDir }) => {
-          expect(projectRootDir).toBe(packageRootDir);
+          expect(projectRootDir).toBe(packageRootDirectory);
           return packageName;
         },
         config: fixture.config,

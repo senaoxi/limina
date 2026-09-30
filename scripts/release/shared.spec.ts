@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import repositoryConfig from '../../limina.config.mjs';
+import repoConfig from '../../limina.config.mjs';
 import { createReleasePlanFromVersionSelection } from './changelog';
 import {
   compareVersions,
@@ -126,7 +126,7 @@ it('publishes the governed product artifact from a private workspace root', () =
   assert.equal(release?.relativeDir, 'packages/limina');
   assert.equal(release?.packageName, product.name);
   assert.deepEqual(
-    repositoryConfig.package?.entries?.map(({ name, outDir }) => ({
+    repoConfig.package?.entries?.map(({ name, outDir }) => ({
       name,
       outDir,
     })),

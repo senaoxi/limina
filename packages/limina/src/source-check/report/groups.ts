@@ -44,8 +44,9 @@ function compareOwnerGroups<
   const ownerOrder = getFirstOwnerName(left).localeCompare(
     getFirstOwnerName(right),
   );
-  if (ownerOrder !== 0) return ownerOrder;
-  return getFirstManifestPath(left).localeCompare(getFirstManifestPath(right));
+  return ownerOrder === 0
+    ? getFirstManifestPath(left).localeCompare(getFirstManifestPath(right))
+    : ownerOrder;
 }
 
 function compareModuleIssues(
@@ -63,8 +64,10 @@ export function groupUnusedModuleIssues(
     if (!isSourceUnusedModuleIssue(issue)) continue;
     getOrCreateGroup(groups, getUnusedGroupKey(issue)).push(issue);
   }
-  return [...groups.values()]
+  return groups
+    .values()
     .map((group) => group.sort(compareModuleIssues))
+    .toArray()
     .sort(compareOwnerGroups);
 }
 
@@ -89,8 +92,10 @@ export function groupUnusedWorkspaceDependencyIssues(
     if (!isSourceUnusedWorkspaceDependencyIssue(issue)) continue;
     getOrCreateGroup(groups, getUnusedGroupKey(issue)).push(issue);
   }
-  return [...groups.values()]
+  return groups
+    .values()
     .map((group) => group.sort(compareDependencyIssues))
+    .toArray()
     .sort(compareOwnerGroups);
 }
 
@@ -161,7 +166,7 @@ export function groupGenericSourceIssues(
     if (!isSourceStructuredIssue(issue)) continue;
     getOrCreateGroup(groups, getGenericGroupKey(issue)).push(issue);
   }
-  return [...groups.entries()]
+  return [...groups]
     .map(([key, groupedIssues]) => ({
       issues: groupedIssues.sort(compareGenericIssues),
       key,

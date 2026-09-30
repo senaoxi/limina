@@ -21,8 +21,7 @@ const extensionAlias: NonNullable<NapiResolveOptions['extensionAlias']> = {
 };
 
 function getNormalizedPath(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  return normalizeAbsolutePath(value);
+  return value === undefined ? undefined : normalizeAbsolutePath(value);
 }
 
 function normalizeFieldContext(
@@ -77,40 +76,41 @@ const MODULE_RESOLUTION_BY_MODULE_KIND = new Map<
 function getModuleBasedResolutionKind(
   moduleKind: ts.ModuleKind | undefined,
 ): ts.ModuleResolutionKind {
-  if (moduleKind === undefined) return ts.ModuleResolutionKind.Node10;
-  return (
-    MODULE_RESOLUTION_BY_MODULE_KIND.get(moduleKind) ??
-    ts.ModuleResolutionKind.Node10
-  );
+  return moduleKind === undefined
+    ? ts.ModuleResolutionKind.Node10
+    : (MODULE_RESOLUTION_BY_MODULE_KIND.get(moduleKind) ??
+        ts.ModuleResolutionKind.Node10);
 }
 
 export function getEffectiveModuleResolutionKind(
   compilerOptions: ts.CompilerOptions,
 ): ts.ModuleResolutionKind {
-  if (compilerOptions.moduleResolution !== undefined) {
-    return compilerOptions.moduleResolution;
-  }
-  return getModuleBasedResolutionKind(compilerOptions.module);
+  return compilerOptions.moduleResolution === undefined
+    ? getModuleBasedResolutionKind(compilerOptions.module)
+    : compilerOptions.moduleResolution;
 }
 
-export function supportsPackageJsonExportsAndImports(
+export function isSupportsPackageJsonExportsAndImports(
   compilerOptions: ts.CompilerOptions,
 ): boolean {
   const kind = getEffectiveModuleResolutionKind(compilerOptions);
-  if (kind === ts.ModuleResolutionKind.Node16) return true;
-  if (kind === ts.ModuleResolutionKind.NodeNext) return true;
-  return kind === ts.ModuleResolutionKind.Bundler;
+  return [
+    ts.ModuleResolutionKind.Node16,
+    ts.ModuleResolutionKind.NodeNext,
+    ts.ModuleResolutionKind.Bundler,
+  ].includes(kind);
 }
 
 function getCustomConditions(compilerOptions: ts.CompilerOptions): string[] {
-  if (compilerOptions.customConditions === undefined) return [];
-  return compilerOptions.customConditions;
+  return compilerOptions.customConditions === undefined
+    ? []
+    : compilerOptions.customConditions;
 }
 
 export function getConditionNames(
   compilerOptions: ts.CompilerOptions,
 ): string[] {
-  if (!supportsPackageJsonExportsAndImports(compilerOptions)) return [];
+  if (!isSupportsPackageJsonExportsAndImports(compilerOptions)) return [];
   return uniqueValues([
     ...getCustomConditions(compilerOptions),
     'import',
@@ -121,8 +121,7 @@ export function getConditionNames(
 }
 
 function hasNonEmptyOption(value: readonly unknown[] | undefined): boolean {
-  if (value === undefined) return false;
-  return value.length > 0;
+  return value !== undefined && value.length > 0;
 }
 
 function hasClassicResolution(compilerOptions: ts.CompilerOptions): boolean {
@@ -132,8 +131,10 @@ function hasClassicResolution(compilerOptions: ts.CompilerOptions): boolean {
 function hasDisabledPackageJsonResolution(
   compilerOptions: ts.CompilerOptions,
 ): boolean {
-  if (compilerOptions.resolvePackageJsonExports === false) return true;
-  return compilerOptions.resolvePackageJsonImports === false;
+  return (
+    compilerOptions.resolvePackageJsonExports === false ||
+    compilerOptions.resolvePackageJsonImports === false
+  );
 }
 
 function hasArbitraryExtensions(compilerOptions: ts.CompilerOptions): boolean {
@@ -161,10 +162,9 @@ export function hasTypeScriptOnlyResolutionOptions(
 }
 
 function getPackageJsonFields(
-  enabled: boolean,
+  isEnabled: boolean,
 ): Pick<NapiResolveOptions, 'exportsFields' | 'importsFields'> {
-  if (enabled) return {};
-  return { exportsFields: [], importsFields: [] };
+  return isEnabled ? {} : { exportsFields: [], importsFields: [] };
 }
 
 export function createResolverOptions(options: {
@@ -172,14 +172,14 @@ export function createResolverOptions(options: {
   configPath: string;
   extensions: string[];
 }): NapiResolveOptions {
-  const packageJsonExportsAndImports = supportsPackageJsonExportsAndImports(
+  const isPackageJsonExportsAndImports = isSupportsPackageJsonExportsAndImports(
     options.compilerOptions,
   );
   return {
     conditionNames: getConditionNames(options.compilerOptions),
     extensionAlias,
     extensions: options.extensions,
-    ...getPackageJsonFields(packageJsonExportsAndImports),
+    ...getPackageJsonFields(isPackageJsonExportsAndImports),
     nodePath: false,
     symlinks: options.compilerOptions.preserveSymlinks !== true,
     tsconfig: { configFile: options.configPath },
@@ -192,16 +192,16 @@ export function createOxcResolverProfileIdentityFromResolvedOptions(options: {
   extensions: string[];
 }): OxcResolverProfileIdentity {
   const conditionNames = getConditionNames(options.compilerOptions);
-  const packageJsonExportsAndImports = supportsPackageJsonExportsAndImports(
+  const isPackageJsonExportsAndImports = isSupportsPackageJsonExportsAndImports(
     options.compilerOptions,
   );
-  const preserveSymlinks = options.compilerOptions.preserveSymlinks === true;
+  const isPreserveSymlinks = options.compilerOptions.preserveSymlinks === true;
   const identity = {
     conditionNames,
     configPath: options.configPath,
     extensions: options.extensions,
-    packageJsonExportsAndImports,
-    preserveSymlinks,
+    packageJsonExportsAndImports: isPackageJsonExportsAndImports,
+    preserveSymlinks: isPreserveSymlinks,
   };
   return {
     ...identity,
@@ -209,8 +209,8 @@ export function createOxcResolverProfileIdentityFromResolvedOptions(options: {
       conditions: conditionNames,
       configPath: options.configPath,
       extensions: options.extensions,
-      packageJsonExportsAndImports,
-      preserveSymlinks,
+      packageJsonExportsAndImports: isPackageJsonExportsAndImports,
+      preserveSymlinks: isPreserveSymlinks,
     }),
   };
 }
@@ -219,8 +219,7 @@ function getResolverConfigPath(context: ResolvedImportContext): string | null {
   if (context.resolverConfigPath !== undefined) {
     return context.resolverConfigPath;
   }
-  if (context.configPath !== undefined) return context.configPath;
-  return null;
+  return context.configPath === undefined ? null : context.configPath;
 }
 
 export function createOxcResolverProfileIdentity(options: {

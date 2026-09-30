@@ -98,11 +98,7 @@ function getExtensionTarget(specifier: string): string {
     return getBarePackageSubpath(specifier);
   }
 
-  if (isPackageImportSpecifier(specifier)) {
-    return specifier.slice(1);
-  }
-
-  return specifier;
+  return isPackageImportSpecifier(specifier) ? specifier.slice(1) : specifier;
 }
 
 function isExplicitPathExtension(specifier: string): boolean {
@@ -208,21 +204,21 @@ function isExplicitNonSourceExtension(
 
 function isResolvedResource(
   context: RuntimeClassificationContext,
-  runtimeIsOrdinary: boolean,
-  runtimeIsCheckerSource: boolean,
+  isRuntimeIsOrdinaryValue: boolean,
+  isRuntimeIsCheckerSourceValue: boolean,
 ): boolean {
   return (
     context.runtimeFilePath !== null &&
-    !runtimeIsOrdinary &&
-    !runtimeIsCheckerSource
+    !isRuntimeIsOrdinaryValue &&
+    !isRuntimeIsCheckerSourceValue
   );
 }
 
 function isMissingResource(
   context: RuntimeClassificationContext,
-  explicitNonSourceExtension: boolean,
+  isExplicitNonSourceExtensionValue: boolean,
 ): boolean {
-  return context.runtimeFilePath === null && explicitNonSourceExtension;
+  return context.runtimeFilePath === null && isExplicitNonSourceExtensionValue;
 }
 
 function classifyRuntimeModule(
@@ -232,20 +228,20 @@ function classifyRuntimeModule(
     context.runtimeFilePath === null
       ? context.specifier
       : context.runtimeFilePath;
-  const runtimeIsOrdinary = isOrdinaryTypeScriptModulePath(
+  const isRuntimeIsOrdinary = isOrdinaryTypeScriptModulePath(
     runtimeCandidatePath,
     context.compilerOptions,
   );
-  const runtimeIsCheckerSource = isCheckerSourcePath(
+  const isRuntimeIsCheckerSource = isCheckerSourcePath(
     runtimeCandidatePath,
     context.extensions,
   );
-  const resource = [
-    isResolvedResource(context, runtimeIsOrdinary, runtimeIsCheckerSource),
+  const isResource = [
+    isResolvedResource(context, isRuntimeIsOrdinary, isRuntimeIsCheckerSource),
     isMissingResource(context, isExplicitNonSourceExtension(context)),
   ].some(Boolean);
 
-  return resource ? 'resource' : 'ordinary-module';
+  return isResource ? 'resource' : 'ordinary-module';
 }
 function resolveRuntimeAuthority(
   oxcResolvedFilePath: string | null,

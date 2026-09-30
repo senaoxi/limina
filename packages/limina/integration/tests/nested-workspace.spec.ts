@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { toPortableRelativePath } from '../../src/__tests__/helpers/path';
 import {
-  exists,
   expectLiminaSuccess,
+  isExists,
   readJson,
   runFixtureLimina,
 } from '../helpers/assertions';
@@ -39,7 +39,9 @@ interface GeneratedProjectConfig {
   references: { path: string }[];
 }
 
-let fixture: PreparedFixture | undefined;
+const fixtureState: { current: PreparedFixture | undefined } = {
+  current: undefined,
+};
 
 async function collectChildTreePaths(options: {
   entryName: string;
@@ -53,37 +55,39 @@ async function collectChildTreePaths(options: {
 }
 
 async function collectTreeEntryPaths(
-  rootDir: string,
+  rootDirectory: string,
   entryName: string,
 ): Promise<string[]> {
-  const entryPath = path.join(rootDir, entryName);
+  const entryPath = path.join(rootDirectory, entryName);
   const entryStat = await lstat(entryPath);
   return [
-    toPortableRelativePath(rootDir, entryPath),
+    toPortableRelativePath(rootDirectory, entryPath),
     ...(await collectChildTreePaths({ entryName, entryPath, entryStat })),
   ];
 }
 
-async function collectTreePaths(rootDir: string): Promise<string[]> {
-  const entries = await readdir(rootDir);
+async function collectTreePaths(rootDirectory: string): Promise<string[]> {
+  const entries = await readdir(rootDirectory);
   const paths = await Promise.all(
-    entries.map((entryName) => collectTreeEntryPaths(rootDir, entryName)),
+    entries.map((entryName) => collectTreeEntryPaths(rootDirectory, entryName)),
   );
-  return paths.flat().sort();
+  return paths
+    .flat()
+    .sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 beforeEach(async () => {
-  fixture = await prepareFixture('nested-workspace');
+  fixtureState.current = await prepareFixture('nested-workspace');
 });
 
 afterEach(async () => {
-  await fixture?.cleanup();
-  fixture = undefined;
+  await fixtureState.current?.cleanup();
+  fixtureState.current = undefined;
 });
 
 describe('nested workspace public CLI integration', () => {
   it('keeps broad checker discovery inside the parent workspace boundary', async () => {
-    const preparedFixture = fixture!;
+    const preparedFixture = fixtureState.current!;
     const exportResult = await runFixtureLimina(preparedFixture, [
       'graph',
       'export',
@@ -116,8 +120,8 @@ describe('nested workspace public CLI integration', () => {
     const nestedProjectPath = preparedFixture.path(
       'repo/.limina/tsconfig/checkers/tsc/projects/packages/parent/nested/tsconfig.dts.json',
     );
-    expect(await exists(parentProjectPath)).toBe(true);
-    expect(await exists(nestedProjectPath)).toBe(false);
+    expect(await isExists(parentProjectPath)).toBe(true);
+    expect(await isExists(nestedProjectPath)).toBe(false);
 
     const manifest = await readJson<GeneratedManifest>(
       preparedFixture.path('repo/.limina/manifest.json'),

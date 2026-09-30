@@ -3,12 +3,12 @@ import { PackageLogger } from '../../logger';
 import { addPackageCheckIssue } from '../issue';
 import {
   collectBuiltPackageManifestProblems,
-  type DistPackageJson,
+  type DistPackageJson as DistributionPackageJson,
 } from '../manifest';
 import type { RunPackageCheckEntryOptions } from '../runner-types';
 
 function getProblemSummary(problem: string): string {
-  const summary = problem.split('\n')[0];
+  const summary = problem.split('\n', 1)[0];
   return summary === undefined ? 'Built package manifest is invalid.' : summary;
 }
 
@@ -43,8 +43,8 @@ function reportManifestProblem(options: {
   PackageLogger.error(options.problem);
 }
 
-export function reportManifestProblems(options: {
-  manifest: DistPackageJson;
+export function isReportManifestProblems(options: {
+  manifest: DistributionPackageJson;
   outputPackageJsonPath: string;
   runOptions: RunPackageCheckEntryOptions;
 }): boolean {

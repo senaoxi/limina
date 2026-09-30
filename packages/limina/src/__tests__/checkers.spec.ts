@@ -36,26 +36,27 @@ async function createFixture(files: Record<string, string>): Promise<{
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-checkers-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-checkers-'),
   );
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
 
   for (const [relativePath, text] of Object.entries(files)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
 
   return {
     cleanup: async () => {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     },
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
-async function linkVueToolchain(rootDir: string): Promise<void> {
+async function linkVueToolchain(rootDirectory: string): Promise<void> {
   const manifestPath = requireFromTest.resolve('vue-tsc/package.json');
-  const targetPath = path.join(rootDir, 'node_modules', 'vue-tsc');
+  const targetPath = path.join(rootDirectory, 'node_modules', 'vue-tsc');
   await mkdir(path.dirname(targetPath), { recursive: true });
   await symlink(path.dirname(manifestPath), targetPath, 'junction');
 }
@@ -293,13 +294,12 @@ describe('checker project config parsing', () => {
           toPortablePath(path.relative(fixture.rootDir, entry.filePath)),
         ),
       ).toEqual(['tsconfig.base.json', 'tsconfig.json']);
-      expect(first.configClosure).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            contentHash: expect.stringMatching(/^[a-f\d]{64}$/),
-          }),
-        ]),
-      );
+      const expectedInputHashes = expect.arrayContaining([
+        expect.objectContaining({
+          contentHash: expect.stringMatching(/^[a-f\d]{64}$/),
+        }),
+      ]);
+      expect(first.configClosure).toEqual(expectedInputHashes);
 
       const originalBaseHash = first.configClosure.find((entry) =>
         entry.filePath.endsWith('tsconfig.base.json'),
@@ -389,11 +389,10 @@ describe('checker project config parsing', () => {
 
     try {
       expect(parse()).toEqual(['src/physical.ts']);
-      expect(
-        parse(
-          new Map([[configPath, tsconfig({ include: ['src/virtual.ts'] })]]),
-        ),
-      ).toEqual(['src/virtual.ts']);
+      const parsedFiles = parse(
+        new Map([[configPath, tsconfig({ include: ['src/virtual.ts'] })]]),
+      );
+      expect(parsedFiles).toEqual(['src/virtual.ts']);
 
       cache.set('manager-a-only', {
         configClosure: [],

@@ -17,7 +17,9 @@ interface InteractiveCommandState {
   timeout: NodeJS.Timeout | undefined;
 }
 
-function getCommandArgs(context: CommandExecutionContext): readonly string[] {
+function getCommandArguments(
+  context: CommandExecutionContext,
+): readonly string[] {
   return context.step.args ?? [];
 }
 
@@ -33,7 +35,7 @@ function getInteractiveSpawnOptions(
 function spawnDefaultInteractiveChild(
   context: CommandExecutionContext,
 ): ChildProcess {
-  return spawn(context.step.command, [...getCommandArgs(context)], {
+  return spawn(context.step.command, [...getCommandArguments(context)], {
     ...context.commandOptions,
     stdio: ['inherit', 'pipe', 'pipe'],
   });
@@ -41,13 +43,13 @@ function spawnDefaultInteractiveChild(
 
 function spawnInteractiveChild(context: CommandExecutionContext): ChildProcess {
   const configuredSpawn = context.options.commandProcess?.spawn;
-  if (configuredSpawn === undefined)
-    return spawnDefaultInteractiveChild(context);
-  return configuredSpawn(
-    context.step.command,
-    getCommandArgs(context),
-    getInteractiveSpawnOptions(context),
-  );
+  return configuredSpawn === undefined
+    ? spawnDefaultInteractiveChild(context)
+    : configuredSpawn(
+        context.step.command,
+        getCommandArguments(context),
+        getInteractiveSpawnOptions(context),
+      );
 }
 
 function clearCommandTimeout(state: InteractiveCommandState): void {
@@ -62,8 +64,7 @@ function settle(state: InteractiveCommandState, callback: () => void): void {
 }
 
 function isRunning(child: ChildProcess): boolean {
-  if (child.exitCode !== null) return false;
-  return child.signalCode === null;
+  return child.exitCode === null && child.signalCode === null;
 }
 
 function storeBoundaryError(
@@ -132,11 +133,11 @@ function handleSuccessfulClose(options: {
   state: InteractiveCommandState;
 }): void {
   const exitCode = getExitCode(options.code);
-  const passed = exitCode === 0;
-  markCommandOutcome(options.state.context, passed, exitCode);
+  const isPassed = exitCode === 0;
+  markCommandOutcome(options.state.context, isPassed, exitCode);
   settle(options.state, () =>
     options.resolve(
-      createCommandResult(options.state.context, passed, exitCode),
+      createCommandResult(options.state.context, isPassed, exitCode),
     ),
   );
 }
@@ -160,11 +161,13 @@ function handleChildClose(options: {
   handleSuccessfulClose(options);
 }
 
+class CommandTimeoutError extends Error {
+  code = 'ETIMEDOUT';
+  override name = 'CommandTimeoutError';
+}
+
 function createTimeoutError(timeoutMs: number): Error {
-  return Object.assign(new Error(`Command timed out after ${timeoutMs}ms.`), {
-    code: 'ETIMEDOUT',
-    name: 'CommandTimeoutError',
-  });
+  return new CommandTimeoutError(`Command timed out after ${timeoutMs}ms.`);
 }
 
 function scheduleTimeout(state: InteractiveCommandState): void {
