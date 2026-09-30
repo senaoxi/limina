@@ -34,6 +34,8 @@
     "lint:check": "eslint . --config eslint.config.mjs",
     "lint:fix": "eslint . --config eslint.config.mjs --fix",
     "format": "prettier --write --cache .",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
     "clean": "pnpm -r run clean && del-cli .tsbuild .limina .smoke .eslintcache",
     "release": "tsx scripts/release.ts",
     "changelog": "tsx scripts/changelog.ts",
