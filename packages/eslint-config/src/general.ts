@@ -4,7 +4,6 @@ import htmlESlintParser from '@html-eslint/parser';
 import gitignore from 'eslint-config-flat-gitignore';
 import eslintConfigPrettier from 'eslint-config-prettier/flat';
 import eslintPluginN from 'eslint-plugin-n';
-import eslintPluginPnpm from 'eslint-plugin-pnpm';
 import eslintPluginPrettier from 'eslint-plugin-prettier';
 import eslintPluginRegexp from 'eslint-plugin-regexp';
 import eslintPluginUnicorn from 'eslint-plugin-unicorn';
@@ -26,6 +25,7 @@ import {
   typescriptFiles,
   untypedModuleTypeScriptRules,
 } from './config/index.js';
+import { pnpmPlugin as eslintPluginPnpm } from './plugins/pnpm-plugin/index.js';
 
 type Config = ReturnType<typeof defineConfig>;
 type Rules = NonNullable<Config[number]['rules']>;

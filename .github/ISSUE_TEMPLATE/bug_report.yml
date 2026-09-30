@@ -1,0 +1,47 @@
+name: Bug report / 问题报告
+description: Report a reproducible CLI, checker, package or documentation problem.
+title: "[Bug]: "
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area / 影响范围
+      options:
+        [limina core CLI, limina-migrate, Documentation, Repository tooling]
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior / 预期与实际行为
+    validations:
+      required: true
+  - type: input
+    id: reproduction
+    attributes:
+      label: Minimal reproduction / 最小复现
+      description: Link a small repository or archive preserving the workspace, module format and configuration that trigger the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Commands and working directory / 命令与执行目录
+      description: Include the install command, package manager, exact CLI arguments and workspace layout.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and operating system / 版本与操作系统
+      description: Include Node, package manager, limina, limina-migrate and relevant TypeScript, vue-tsc, tsgo, Astro or Svelte checker versions.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics / 诊断
+      description: For governance failures, include limina check --issues --format json and the relevant configuration. Remove private paths or credentials before posting.
+      render: json

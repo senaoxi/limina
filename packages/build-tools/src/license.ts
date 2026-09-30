@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import type { Plugin } from 'rolldown';
 import type { Dependency } from 'rollup-plugin-license';
 import license from 'rollup-plugin-license';
+import {
+  type BundledDependency,
+  collectBundledDependencies,
+} from './license-policy.js';
 import { createLogger } from './logger.js';
 
 type LoadPlugin = Plugin['load'];
@@ -13,17 +17,6 @@ const LicenseLogger = createLogger({
   main: '@limina/build-tools',
 }).getLoggerByGroup('plugin.license');
 
-// Keep in sync with github ci workflow: https://github.com/senaoxi/docs-islands/blob/main/.github/workflows/dependency-review.yml
-const ALLOWED_LICENSES = new Set([
-  'MIT',
-  'Apache-2.0',
-  'BSD-2-Clause',
-  'BSD-3-Clause',
-  'BlueOak-1.0.0',
-  'ISC',
-  'MPL-2.0',
-]);
-
 export default function licensePlugin(
   licenseFilePath: string,
   licenseTitle: string,
@@ -31,8 +24,10 @@ export default function licensePlugin(
   coreLicenseFilePath: string,
 ): Plugin {
   const updateElapsed = createElapsedTimer();
+  let bundledDependencies: BundledDependency[] = [];
   const originalPlugin = license({
     thirdParty(dependencies) {
+      bundledDependencies = collectBundledDependencies(dependencies);
       // https://github.com/rollup/rollup/blob/master/build-plugins/generate-license-file.js
       // MIT Licensed https://github.com/rollup/rollup/blob/master/LICENSE-CORE.md
       const coreLicense = fs.readFileSync(coreLicenseFilePath, 'utf8');
@@ -45,16 +40,6 @@ export default function licensePlugin(
             .filter(Boolean) as string[],
         ),
       );
-      const prohibitedLicenses = licenses.filter(
-        (license) => !ALLOWED_LICENSES.has(license),
-      );
-
-      if (prohibitedLicenses.length > 0) {
-        throw new Error(
-          `Prohibited licenses: ${prohibitedLicenses.join(', ')}`,
-        );
-      }
-
       let dependencyLicenseTexts = '';
       for (let index = 0; index < dependencies_.length; index++) {
         // Find dependencies with the same license text so it can be shared.
@@ -133,17 +118,29 @@ ${bundledLicensesText}
   }) as Plugin;
 
   // Skip for watch mode.
-  for (const hook of ['renderChunk', 'generateBundle'] as const) {
-    const originalHook = originalPlugin[hook]!;
-    originalPlugin[hook] = function (
-      this: PluginContext,
-      ...arguments_: unknown[]
-    ) {
-      return this.meta.watchMode
-        ? null
-        : (originalHook as Function).apply(this, arguments_);
-    };
-  }
+  const originalRenderChunk = originalPlugin.renderChunk!;
+  originalPlugin.renderChunk = function (
+    this: PluginContext,
+    ...arguments_: unknown[]
+  ) {
+    return this.meta.watchMode
+      ? null
+      : (originalRenderChunk as Function).apply(this, arguments_);
+  };
+  const originalGenerateBundle = originalPlugin.generateBundle!;
+  originalPlugin.generateBundle = function (
+    this: PluginContext,
+    ...arguments_: unknown[]
+  ) {
+    if (this.meta.watchMode) return null;
+    const result = (originalGenerateBundle as Function).apply(this, arguments_);
+    this.emitFile({
+      type: 'asset',
+      fileName: 'bundled-dependencies.json',
+      source: `${JSON.stringify({ packageName, dependencies: bundledDependencies }, null, 2)}\n`,
+    });
+    return result;
+  };
   return originalPlugin;
 }
 
