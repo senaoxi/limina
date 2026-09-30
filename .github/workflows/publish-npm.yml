@@ -10,11 +10,11 @@ permissions:
   contents: read
 jobs:
   publish:
-    if: vars.LIMINA_RELEASE_ENABLED == '1'
+    if: github.repository == 'senaoxi/limina' && vars.LIMINA_RELEASE_ENABLED == '1'
     runs-on: ubuntu-latest
     environment: Release
     permissions:
-      contents: read
+      contents: write
       id-token: write
     env:
       LIMINA_RELEASE_ENABLED: "1"
@@ -27,6 +27,26 @@ jobs:
       - uses: ./.github/actions/setup-env
         with:
           node-version: 24.11.0
+      - name: Reject historical tags and require the tagged commit on main
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          pnpm run release:check-tag
+      - name: Build and run read-only quality gates
+        uses: ./.github/actions/build-and-check
       - run: pnpm run test && pnpm run test:smoke && pnpm run typecheck && pnpm run check && pnpm run lint:packages
+      - run: pnpm run security:audit
+      - run: pnpm run artifacts:report
       - name: Publish the approved same-version group with provenance
         run: pnpm exec tsx scripts/release/publish-approved.ts
+      - name: Publish matching GitHub assets after both npm packages are available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: pnpm exec tsx scripts/release/github-release.ts
+      - name: Retain release evidence even if an external step fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: approved-release-evidence
+          path: .reports/**
+          include-hidden-files: true
+          retention-days: 30

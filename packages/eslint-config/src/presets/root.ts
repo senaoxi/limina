@@ -1,5 +1,4 @@
 import typescriptESlintParser from '@typescript-eslint/parser';
-import eslintPluginPnpm from 'eslint-plugin-pnpm';
 import type { defineConfig } from 'eslint/config';
 import { globalIgnores } from 'eslint/config';
 import {
@@ -10,6 +9,7 @@ import {
   untypedModuleTypeScriptRules,
 } from '../config/index.js';
 import eslintGeneralConfig from '../general.js';
+import { pnpmPlugin as eslintPluginPnpm } from '../plugins/pnpm-plugin/index.js';
 
 type Config = ReturnType<typeof defineConfig>;
 
@@ -147,7 +147,8 @@ export const rootFileConfigs: Config = [
       'pnpm/yaml-no-duplicate-catalog-item': [
         'error',
         {
-          allow: ['vite'],
+          // The deployment CLI consumes the distinct regexp 6 and 8 APIs.
+          allow: ['vite', 'path-to-regexp'],
         },
       ],
       'pnpm/yaml-no-unused-catalog-item': 'error',

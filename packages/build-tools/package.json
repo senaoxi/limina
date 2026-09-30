@@ -22,6 +22,11 @@
     "logaria": "catalog:dev"
   },
   "exports": {
+    "./license-policy": {
+      "source": "./src/license-policy.ts",
+      "types": "./dist/license-policy.d.ts",
+      "default": "./dist/license-policy.js"
+    },
     "./package-plugin": {
       "source": "./src/package-plugin.ts",
       "types": "./dist/package-plugin.d.ts",

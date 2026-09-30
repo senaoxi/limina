@@ -1,0 +1,75 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Asia/Taipei",
+  "dependencyDashboard": true,
+  "automerge": false,
+  "rangeStrategy": "bump",
+  "minimumReleaseAge": "1440 minutes",
+  "internalChecksFilter": "strict",
+  "labels": ["dependencies"],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/fixtures/**",
+    "**/__fixtures__/**",
+    "migration/**"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "packageRules": [
+    { "matchManagers": ["github-actions"], "pinDigests": true },
+    {
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["peerDependencies", "engines"],
+      "enabled": false
+    },
+    {
+      "description": "Checker upgrades require review against exact supported tuples and peer contracts",
+      "matchPackageNames": [
+        "typescript",
+        "vue-tsc",
+        "@typescript/native-preview",
+        "@types/node",
+        "@astrojs/check",
+        "svelte2tsx",
+        "svelte-check",
+        "astro-v7-current",
+        "astro-v7-min",
+        "svelte-v4-min",
+        "svelte-check-v4-min"
+      ],
+      "groupName": "checker compatibility toolchain",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "matchPackageNames": ["vite"],
+      "matchCurrentVersion": ">=5.0.0 <6.0.0",
+      "allowedVersions": ">=5.0.0 <6.0.0"
+    },
+    {
+      "matchDepTypes": ["packageManager"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "matchPackageNames": [
+        "eslint",
+        "@eslint/*",
+        "typescript-eslint",
+        "@typescript-eslint/*",
+        "eslint-*"
+      ],
+      "groupName": "lint toolchain",
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "matchPackageNames": ["prettier", "prettier-plugin-*"],
+      "groupName": "format tooling",
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    { "matchUpdateTypes": ["major"], "dependencyDashboardApproval": true }
+  ]
+}

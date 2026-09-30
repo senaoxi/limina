@@ -1,0 +1,11 @@
+{
+  "name": "@limina/deploy-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "version:cli": "vercel --version"
+  },
+  "devDependencies": {
+    "vercel": "catalog:dev"
+  }
+}
