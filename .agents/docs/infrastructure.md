@@ -20,6 +20,8 @@ Security maintenance uses the `security-patches` catalog in the [workspace confi
 
 ## CI and artifacts
 
+The shared build action invokes the root `format:check` script for read-only Prettier validation. The root manifest must provide that script; formatting mutation remains an explicit `format:write` operation.
+
 [CI](../../.github/workflows/ci.yml) preserves native platform builds/tests/smoke and isolated Vue tuples. Linux quality reuses the same commit/platform's package artifacts; other environments build/check independently. Explicit build is followed by test:smoke without rebuilding. No path filter, Nx cache or cached .limina state is introduced. CI Status depends on every validation job and rejects failure/cancellation/skipped jobs.
 
 The license plugin emits bundled-dependencies.json from actual bundler inputs, including bundled development dependencies, and rejects missing metadata while retaining the existing license list. artifacts:report packs both approved dist directories with an exact-version migration dependency, verifies packaged inventory, independently recomputes SHA-512 and records actual gzip/unpacked bytes. .reports/release contains tarballs, license reports, CycloneDX 1.6 SBOMs and group metadata. Components describe bundled code; external runtime/peer/optional ranges are properties. Consumer-selected versions and external transitive dependencies are outside this scope.
