@@ -1,24 +1,15 @@
 .DS_Store
 dist
-coverage
-.pnpm-store
-.nx/
 .smoke
+.reports/
 .limina/
-.vercel/
 node_modules
 .eslintcache
-cache
 
 # ignore the temporary config.ts build output,
 # when vitepress fails to build config.ts,
 # it will remain in the workspace.
-**/docs/.vitepress/config.ts.timestamp-*.mjs
-
-# Local editor integration state
-.claude/
-.cursor/
-.agent/
+docs/.vitepress/config.ts.timestamp-*.mjs
 
 # Local environment overrides
 *.local
