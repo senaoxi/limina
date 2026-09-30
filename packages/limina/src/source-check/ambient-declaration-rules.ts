@@ -43,7 +43,7 @@ function createIssueLines(options: {
 
 function createOptionalFileField(
   filePath: string | undefined,
-): { readonly filePath: string } | Record<string, never> {
+): Record<string, never> | { readonly filePath: string } {
   return filePath === undefined ? {} : { filePath };
 }
 
@@ -216,7 +216,7 @@ function appendOverlapIssues(options: {
   }
 }
 
-export function collectAmbientRuleConfiguration(options: {
+export function collectAmbientRuleConfig(options: {
   config: ResolvedLiminaConfig;
   ruleMatches: readonly AmbientRuleMatch[];
 }): { issues: SourceFinding[]; overlappingRules: Set<number> } {

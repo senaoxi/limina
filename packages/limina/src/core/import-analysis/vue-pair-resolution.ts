@@ -17,9 +17,11 @@ export function shouldUseVueSemanticResolution(options: {
   request: NormalizedModuleResolutionRequest;
 }): boolean {
   const identity = options.request.context.vueSemanticIdentity;
-  if (identity === undefined) return false;
-  return identity.profilesByFileName.has(
-    normalizeAbsolutePath(options.importRecord.filePath),
+  return (
+    identity !== undefined &&
+    identity.profilesByFileName.has(
+      normalizeAbsolutePath(options.importRecord.filePath),
+    )
   );
 }
 

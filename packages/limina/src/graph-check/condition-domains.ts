@@ -22,8 +22,8 @@ import {
 import {
   addUniqueConditionFindings,
   collectCustomConditionSubtreeSummary,
-  customConditionsEqual,
   getProjectCustomConditions,
+  isCustomConditionsEqual,
 } from './condition-subtree';
 import type {
   CustomConditionConsistencyContext,
@@ -198,7 +198,7 @@ function addDomainMismatch(
   );
 
   if (
-    !customConditionsEqual(resolved.domain.customConditions, entryConditions)
+    !isCustomConditionsEqual(resolved.domain.customConditions, entryConditions)
   ) {
     context.findingIdentities.add(
       registerConditionFinding(

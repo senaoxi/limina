@@ -21,27 +21,11 @@ function createConflictMessage(options: {
 export class TypeScriptResolutionLedger {
   readonly #byImportRecord = new Map<string, TypeScriptSemanticResolution>();
 
-  get(importRecord: ImportRecord): TypeScriptSemanticResolution | undefined {
-    return this.#byImportRecord.get(createImportRecordIdentity(importRecord));
-  }
-
-  set(
-    importRecord: ImportRecord,
-    resolution: TypeScriptSemanticResolution,
-  ): void {
-    const key = createImportRecordIdentity(importRecord);
-    const existing = this.#byImportRecord.get(key);
-    if (this.#isSameResolution(existing, resolution)) return;
-    this.#assertEmpty({ existing, importRecord, resolution });
-    this.#byImportRecord.set(key, resolution);
-  }
-
   #isSameResolution(
     existing: TypeScriptSemanticResolution | undefined,
     resolution: TypeScriptSemanticResolution,
   ): boolean {
-    if (existing === undefined) return false;
-    return existing.identity === resolution.identity;
+    return existing !== undefined && existing.identity === resolution.identity;
   }
 
   #assertEmpty(options: {
@@ -57,5 +41,20 @@ export class TypeScriptResolutionLedger {
         next: options.resolution,
       }),
     );
+  }
+
+  get(importRecord: ImportRecord): TypeScriptSemanticResolution | undefined {
+    return this.#byImportRecord.get(createImportRecordIdentity(importRecord));
+  }
+
+  set(
+    importRecord: ImportRecord,
+    resolution: TypeScriptSemanticResolution,
+  ): void {
+    const key = createImportRecordIdentity(importRecord);
+    const existing = this.#byImportRecord.get(key);
+    if (this.#isSameResolution(existing, resolution)) return;
+    this.#assertEmpty({ existing, importRecord, resolution });
+    this.#byImportRecord.set(key, resolution);
   }
 }

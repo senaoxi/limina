@@ -15,8 +15,7 @@ function hasFileEntry(
   name: string,
 ): boolean {
   const stats = names.get(name);
-  if (stats === undefined) return false;
-  return stats.isFile();
+  return stats !== undefined && stats.isFile();
 }
 
 async function readPackageManifest(
@@ -24,7 +23,7 @@ async function readPackageManifest(
 ): Promise<PackageManifest | null> {
   try {
     return JSON.parse(
-      (await readFile(packageJsonPath, 'utf8')).replace(/^\uFEFF/u, ''),
+      (await readFile(packageJsonPath, 'utf8')).replace(/^\u{FEFF}/u, ''),
     ) as PackageManifest;
   } catch (error) {
     if (error instanceof SyntaxError) return null;
@@ -48,7 +47,7 @@ function addNestedWorkspaceBoundary(options: {
   });
 }
 
-export async function addWorkspaceDescriptor(options: {
+export async function isAddWorkspaceDescriptor(options: {
   context: IslandWalkContext;
   directory: string;
   isOwnerRoot: boolean;
@@ -82,9 +81,11 @@ function shouldExtendPackageScope(options: {
   config: ResolvedLiminaConfig;
   manifest: PackageManifest | null;
 }): boolean {
-  if (!isNestedScopeExtensionEnabled(options.config)) return false;
-  if (options.manifest === null) return false;
-  return !Object.hasOwn(options.manifest, 'name');
+  return (
+    isNestedScopeExtensionEnabled(options.config) &&
+    options.manifest !== null &&
+    !Object.hasOwn(options.manifest, 'name')
+  );
 }
 
 function addExtendedScope(options: {
@@ -108,24 +109,26 @@ function addPackageBoundary(options: {
   const exclusionReason = options.exclusion?.entry.reason;
   options.context.result.boundaries.push({
     excluded: options.exclusion !== undefined,
-    ...(exclusionReason === undefined ? {} : { exclusionReason }),
+    ...(exclusionReason !== undefined && { exclusionReason }),
     kind: 'package-scope',
     packageJsonPath: options.packageJsonPath,
     rootDir: options.directory,
   });
 }
 
-async function processNestedPackageScope(options: {
+async function isProcessNestedPackageScope(options: {
   context: IslandWalkContext;
   directory: string;
   packageJsonPath: string;
 }): Promise<boolean> {
   const manifest = await readPackageManifest(options.packageJsonPath);
-  if (addManifestWorkspaceBoundary({ ...options, manifest })) return true;
-  return processOrdinaryPackageScope({ ...options, manifest });
+  return (
+    isAddManifestWorkspaceBoundary({ ...options, manifest }) ||
+    isProcessOrdinaryPackageScope({ ...options, manifest })
+  );
 }
 
-function processOrdinaryPackageScope(options: {
+function isProcessOrdinaryPackageScope(options: {
   context: IslandWalkContext;
   directory: string;
   packageJsonPath: string;
@@ -138,11 +141,11 @@ function processOrdinaryPackageScope(options: {
     rootDir: options.directory,
     rules: options.context.rules,
   })[0];
-  const extend = shouldExtendPackageScope({
+  const isExtend = shouldExtendPackageScope({
     config: options.context.config,
     manifest,
   });
-  if (extend && exclusion === undefined) {
+  if (isExtend && exclusion === undefined) {
     addExtendedScope(options);
     return false;
   }
@@ -150,7 +153,7 @@ function processOrdinaryPackageScope(options: {
   return true;
 }
 
-export async function addPackageDescriptor(options: {
+export async function isAddPackageDescriptor(options: {
   context: IslandWalkContext;
   directory: string;
   isOwnerRoot: boolean;
@@ -168,21 +171,21 @@ export async function addPackageDescriptor(options: {
     }),
   );
   if (options.isOwnerRoot) return false;
-  return processNestedPackageScope({
+  return isProcessNestedPackageScope({
     context: options.context,
     directory: options.directory,
     packageJsonPath,
   });
 }
 
-function addManifestWorkspaceBoundary(options: {
+function isAddManifestWorkspaceBoundary(options: {
   context: IslandWalkContext;
   directory: string;
   packageJsonPath: string;
   manifest: PackageManifest | null;
 }): boolean {
-  if (options.manifest === null) return false;
-  if (!hasWorkspaceDeclaration(options.manifest)) return false;
+  if (options.manifest === null || !hasWorkspaceDeclaration(options.manifest))
+    return false;
   addNestedWorkspaceBoundary({
     context: options.context,
     directory: options.directory,

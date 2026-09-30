@@ -66,8 +66,8 @@ export function reportUnresolvedFrameworkImport(options: {
   resolutionFound: boolean;
   source: GovernedSourceUnit;
 }): void {
-  if (options.resolutionFound) return;
   if (
+    options.resolutionFound ||
     !isUnresolvedGovernedSpecifier(
       options.context,
       options.importRecord.specifier,

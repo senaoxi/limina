@@ -1,21 +1,23 @@
 import nodePath from 'node:path';
 
-function findPathEnvKey(env: NodeJS.ProcessEnv): string | undefined {
-  return Object.keys(env).find((key) => key.toLowerCase() === 'path');
+function findPathEnvironmentKey(
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  return Object.keys(environment).find((key) => key.toLowerCase() === 'path');
 }
 
-function getPathEnvValue(env: NodeJS.ProcessEnv): string | undefined {
-  const pathKey = findPathEnvKey(env);
+function getPathEnvironmentValue(
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  const pathKey = findPathEnvironmentKey(environment);
 
-  return pathKey ? env[pathKey] : undefined;
+  return pathKey ? environment[pathKey] : undefined;
 }
 
-function getPathEnvKey(env: NodeJS.ProcessEnv): string {
-  if (process.platform !== 'win32') {
-    return 'PATH';
-  }
-
-  return Object.keys(env).find((key) => key === 'Path') ?? 'Path';
+function getPathEnvironmentKey(environment: NodeJS.ProcessEnv): string {
+  return process.platform === 'win32'
+    ? (Object.keys(environment).find((key) => key === 'Path') ?? 'Path')
+    : 'PATH';
 }
 
 function isDuplicatePathKey(key: string, pathKey: string): boolean {
@@ -23,33 +25,34 @@ function isDuplicatePathKey(key: string, pathKey: string): boolean {
 }
 
 function removeDuplicateWindowsPathKeys(
-  env: NodeJS.ProcessEnv,
+  environment: NodeJS.ProcessEnv,
   pathKey: string,
 ): void {
   if (process.platform !== 'win32') {
     return;
   }
 
-  for (const key of Object.keys(env).filter((candidate) =>
-    isDuplicatePathKey(candidate, pathKey),
-  )) {
-    delete env[key];
+  const duplicateKeys = Object.keys(environment).filter((key) =>
+    isDuplicatePathKey(key, pathKey),
+  );
+  for (const key of duplicateKeys) {
+    delete environment[key];
   }
 }
 
 export function prependPathEntry(
-  env: NodeJS.ProcessEnv,
+  environment: NodeJS.ProcessEnv,
   entry: string,
 ): NodeJS.ProcessEnv {
-  const pathKey = getPathEnvKey(env);
-  const nextEnv = { ...env };
+  const pathKey = getPathEnvironmentKey(environment);
+  const nextEnvironment = { ...environment };
 
-  removeDuplicateWindowsPathKeys(nextEnv, pathKey);
-  nextEnv[pathKey] = [entry, getPathEnvValue(env)]
+  removeDuplicateWindowsPathKeys(nextEnvironment, pathKey);
+  nextEnvironment[pathKey] = [entry, getPathEnvironmentValue(environment)]
     .filter(Boolean)
     .join(nodePath.delimiter);
 
-  return nextEnv;
+  return nextEnvironment;
 }
 
 function isWindowsShellCommand(command: string): boolean {

@@ -31,7 +31,9 @@ export function missingTopologyMembers(
     ...baseline.sources.filter((source) => !candidate.sources.includes(source)),
     ...missingMemberships(baseline, candidate),
   ];
-  return [...new Set(missing)].sort();
+  return [...new Set(missing)].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 async function readBaseline(
@@ -39,8 +41,9 @@ async function readBaseline(
 ): Promise<InputTopologyResult> {
   const view = planningView(state);
   const baseline = await readInputTopology(view);
-  if (!baseline.workspace || baseline.entries.length === 0) return baseline;
-  return normalizeRetainedDeclarations(state, baseline);
+  return !baseline.workspace || baseline.entries.length === 0
+    ? baseline
+    : normalizeRetainedDeclarations(state, baseline);
 }
 
 async function normalizeRetainedDeclarations(
@@ -136,8 +139,10 @@ export async function adoptOptionalOutputs(
   state: MigrationPlanningState,
 ): Promise<void> {
   const baseline = await readBaseline(state);
-  for (const file of [...baseline.sources].sort())
-    await proposeAndCheck(state, baseline, file);
+  const sourceFiles = [...baseline.sources].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  for (const file of sourceFiles) await proposeAndCheck(state, baseline, file);
 }
 
 function recordUnadoptedOutput(

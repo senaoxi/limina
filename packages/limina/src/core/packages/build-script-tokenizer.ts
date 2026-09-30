@@ -81,7 +81,7 @@ const commandPrefixes: readonly CommandPrefix[] = [
   { argumentOffset: 4, tokens: ['pnpm', 'exec', 'limina', 'build'] },
 ];
 
-function tokensStartWith(
+function isTokensStartWith(
   tokens: readonly string[],
   prefix: readonly string[],
 ): boolean {
@@ -92,7 +92,7 @@ export function getLiminaBuildArgumentOffset(
   tokens: readonly string[],
 ): number | null {
   const prefix = commandPrefixes.find((candidate) =>
-    tokensStartWith(tokens, candidate.tokens),
+    isTokensStartWith(tokens, candidate.tokens),
   );
   return prefix === undefined ? null : prefix.argumentOffset;
 }

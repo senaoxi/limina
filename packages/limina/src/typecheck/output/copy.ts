@@ -38,17 +38,17 @@ function getErrorProblems(
 
 function assertPlanHasNoErrors(
   plan: OutputDeclarationCopyPlan,
-  projectRootDir: string,
+  projectRootDirectory: string,
 ): void {
   const message = formatOutputDeclarationCopyErrors({
     problems: plan.problems,
-    projectRootDir,
+    projectRootDir: projectRootDirectory,
   });
   if (message === null) return;
   throw new OutputDeclarationCopyError(message, getErrorProblems(plan));
 }
 
-function getAuthenticatedAuthorityRequirement(
+function isGetAuthenticatedAuthorityRequirement(
   options: OutputDeclarationCopyOptions,
 ): boolean {
   return options.requireAuthenticatedAuthorities === true;
@@ -62,7 +62,7 @@ async function prepareValidatedCollection(
     entries: plan.entries,
     projectRootDir: options.projectRootDir,
     requireAuthenticatedAuthorities:
-      getAuthenticatedAuthorityRequirement(options),
+      isGetAuthenticatedAuthorityRequirement(options),
   });
   await preflightMutationBoundary(prepared.boundaryTargets);
   if (prepared.problems.length === 0) return prepared;
@@ -88,7 +88,9 @@ async function createParentDirectories(
 ): Promise<void> {
   for (const prepared of entries) {
     await ensureDeclarationParentDirectories({
-      onCreated: (directory) => state.ownedDirectories.push(directory),
+      onCreated: (directory) => {
+        state.ownedDirectories.push(directory);
+      },
       prepared,
       transactionToken: state.transactionToken,
     });
@@ -106,8 +108,11 @@ async function runBeforePublishHook(options: {
 }
 
 function captureFailedOwnedFile(error: unknown, state: PublicationState): void {
-  if (!(error instanceof ExclusivePublicationError)) return;
-  if (error.ownedFile === undefined) return;
+  if (
+    !(error instanceof ExclusivePublicationError) ||
+    error.ownedFile === undefined
+  )
+    return;
   state.ownedFiles.push(error.ownedFile);
 }
 
@@ -171,10 +176,9 @@ async function rollbackDirectories(
 }
 
 function getInitialCleanupErrors(error: unknown): Error[] {
-  if (error instanceof ExclusivePublicationError) {
-    return [...error.cleanupErrors];
-  }
-  return [];
+  return error instanceof ExclusivePublicationError
+    ? [...error.cleanupErrors]
+    : [];
 }
 
 async function rollbackPublication(

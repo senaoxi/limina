@@ -46,7 +46,11 @@ const hookKinds = {
 
 describe('future architecture extension compatibility', () => {
   it('maps the six stable semantic hooks to existing planner input kinds', () => {
-    expect(Object.values(hookKinds).sort()).toEqual([
+    expect(
+      Object.values(hookKinds).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual([
       'declaration-build',
       'output-build',
       'package-artifacts',

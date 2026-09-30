@@ -32,16 +32,12 @@ import {
   runPipelineWithResult,
 } from '../pipeline/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
-const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
+const green = (message: string): string => `\u{1B}[32m${message}\u{1B}[0m`;
 
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((nextResolve) => {
-    resolve = nextResolve;
-  });
-  return { promise, resolve };
+  return Promise.withResolvers<T>();
 }
 
 describe('ExecutionPlan construction', () => {
@@ -82,9 +78,8 @@ describe('ExecutionPlan construction', () => {
         (task) => task.issueTask === 'graph:materialize',
       );
       expect(new Set(materializers.map((task) => task.id)).size).toBe(3);
-      for (const checker of plan.tasks.filter((task) =>
-        task.issueTask.startsWith('checker:'),
-      )) {
+      for (const checker of plan.tasks) {
+        if (!checker.issueTask.startsWith('checker:')) continue;
         expect(checker.requiresSuccessOf).toHaveLength(1);
         expect(
           plan.tasks.find((task) => task.id === checker.requiresSuccessOf?.[0])
@@ -239,12 +234,12 @@ describe('ExecutionPlan construction', () => {
       const source = plan.tasks.find(
         (task) => task.issueTask === 'source:check',
       )!;
-      const otherRepositoryTasks = plan.tasks.filter(
+      const otherRepoTasks = plan.tasks.filter(
         (task) => task.kind !== 'command' && task.issueTask !== 'source:check',
       );
       expect(source.resources.read).toContain('repository:snapshot');
       expect(source.resources.write).toContain('workspace:manifest');
-      for (const task of otherRepositoryTasks) {
+      for (const task of otherRepoTasks) {
         expect(task.resources.read).toContain('repository:snapshot');
         expect(task.resources.read).toContain('workspace:manifest');
       }
@@ -257,7 +252,7 @@ describe('ExecutionPlan construction', () => {
 
       const locks = new ResourceLockSet();
       locks.acquire(source.id, source.resources);
-      for (const task of otherRepositoryTasks) {
+      for (const task of otherRepoTasks) {
         expect(locks.canAcquire(task.resources)).toBe(false);
       }
       const command = plan.tasks.find((task) => task.kind === 'command')!;
@@ -272,32 +267,33 @@ async function createConfig(): Promise<{
   cleanup: () => Promise<void>;
   config: ResolvedLiminaConfig;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-pipeline-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-pipeline-'),
   );
-  const configPath = path.join(rootDir, 'limina.config.mjs');
+  const rootDirectory = await realpath(temporaryDirectory);
+  const configPath = path.join(rootDirectory, 'limina.config.mjs');
 
   await writeFile(configPath, 'export default {};\n');
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     stringifyJson({ name: 'fixture', private: true }),
   );
-  await writeText(path.join(rootDir, 'pnpm-workspace.yaml'), 'packages: []\n');
+  await writeText(
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
+    'packages: []\n',
+  );
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       configPath,
-      rootDir,
-    },
+      rootDir: rootDirectory,
+    }),
   };
 }
 
@@ -329,21 +325,21 @@ async function createPassingCheckPipelineConfig(): Promise<{
   config: ResolvedLiminaConfig;
 }> {
   const fixture = await createConfig();
-  const rootDir = fixture.config.rootDir;
+  const rootDirectory = fixture.config.rootDir;
 
   await writeText(
-    path.join(rootDir, 'package.json'),
+    path.join(rootDirectory, 'package.json'),
     stringifyJson({
       name: 'fixture',
       private: true,
     }),
   );
   await writeText(
-    path.join(rootDir, 'pnpm-workspace.yaml'),
+    path.join(rootDirectory, 'pnpm-workspace.yaml'),
     'packages:\n  - packages/*\n',
   );
   await writeText(
-    path.join(rootDir, 'packages/app/package.json'),
+    path.join(rootDirectory, 'packages/app/package.json'),
     stringifyJson({
       exports: {
         '.': './src/index.ts',
@@ -357,27 +353,27 @@ async function createPassingCheckPipelineConfig(): Promise<{
     }),
   );
   await writeText(
-    path.join(rootDir, 'packages/app/src/index.ts'),
+    path.join(rootDirectory, 'packages/app/src/index.ts'),
     'export const value = 1;\n',
   );
   await writeText(
-    path.join(rootDir, 'node_modules/typescript/package.json'),
+    path.join(rootDirectory, 'node_modules/typescript/package.json'),
     stringifyJson({
       name: 'tsc',
       version: '0.0.0-fixture',
     }),
   );
   await writeText(
-    path.join(rootDir, 'node_modules/.bin/tsc'),
+    path.join(rootDirectory, 'node_modules/.bin/tsc'),
     '#!/usr/bin/env sh\nexit 0\n',
   );
-  await chmod(path.join(rootDir, 'node_modules/.bin/tsc'), 0o755);
+  await chmod(path.join(rootDirectory, 'node_modules/.bin/tsc'), 0o755);
   await writeText(
-    path.join(rootDir, 'node_modules/.bin/tsc.cmd'),
+    path.join(rootDirectory, 'node_modules/.bin/tsc.cmd'),
     '@ECHO OFF\r\nEXIT /B 0\r\n',
   );
   await writeText(
-    path.join(rootDir, 'packages/app/tsconfig.json'),
+    path.join(rootDirectory, 'packages/app/tsconfig.json'),
     stringifyJson({
       liminaOptions: {
         outputs: {},
@@ -387,7 +383,7 @@ async function createPassingCheckPipelineConfig(): Promise<{
     }),
   );
   await writeText(
-    path.join(rootDir, 'tsconfig.json'),
+    path.join(rootDirectory, 'tsconfig.json'),
     stringifyJson({
       files: [],
       references: [{ path: './packages/app/tsconfig.json' }],
@@ -415,15 +411,20 @@ async function createPassingCheckPipelineConfig(): Promise<{
 }
 
 async function createOutputPackage(
-  rootDir: string,
+  rootDirectory: string,
   packageName: string,
   source: string,
 ): Promise<string> {
-  const packageDirName = packageName.split('/').at(-1) ?? packageName;
-  const outDir = path.join(rootDir, 'packages', packageDirName, 'dist');
+  const packageDirectoryName = packageName.split('/').at(-1) ?? packageName;
+  const outDirectory = path.join(
+    rootDirectory,
+    'packages',
+    packageDirectoryName,
+    'dist',
+  );
 
   await writeText(
-    path.join(outDir, 'package.json'),
+    path.join(outDirectory, 'package.json'),
     JSON.stringify({
       dependencies: {
         '@example/dep': '1.0.0',
@@ -434,11 +435,11 @@ async function createOutputPackage(
       name: packageName,
     }),
   );
-  await writeText(path.join(outDir, 'index.js'), source);
-  await writeText(path.join(outDir, 'README.md'), '# Example package\n');
-  await writeText(path.join(outDir, 'LICENSE.md'), 'MIT\n');
+  await writeText(path.join(outDirectory, 'index.js'), source);
+  await writeText(path.join(outDirectory, 'README.md'), '# Example package\n');
+  await writeText(path.join(outDirectory, 'LICENSE.md'), 'MIT\n');
 
-  return path.relative(rootDir, outDir);
+  return path.relative(rootDirectory, outDirectory);
 }
 
 function createFlow(): {
@@ -640,11 +641,12 @@ describe('runPipeline', () => {
       // deadline. Observe discovery starting while its result is still held.
       await Promise.race([
         generatedGraphStarted.promise,
-        check.then(() => {
+        (async () => {
+          await check;
           throw new Error(
             'Default check completed before generated graph discovery started.',
           );
-        }),
+        })(),
       ]);
 
       const output = chunks.join('');
@@ -882,17 +884,14 @@ describe('runPipeline', () => {
       expect(plan.tasks.some((task) => task.label.includes('knip'))).toBe(
         false,
       );
-      expect(execution.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: 'LIMINA_SOURCE_CHECK_FAILED',
-            task: 'source:check',
-            reason: expect.stringContaining(
-              'Missing Limina runtime dependency:',
-            ),
-          }),
-        ]),
-      );
+      const expectedIssues = [
+        expect.objectContaining({
+          code: 'LIMINA_SOURCE_CHECK_FAILED',
+          task: 'source:check',
+          reason: expect.stringContaining('Missing Limina runtime dependency:'),
+        }),
+      ];
+      expect(execution.issues).toEqual(expect.arrayContaining(expectedIssues));
     } finally {
       await fixture.cleanup();
     }
@@ -1002,12 +1001,12 @@ describe('runPipeline', () => {
     const fixture = await createConfig();
 
     try {
-      const validOutDir = await createOutputPackage(
+      const validOutDirectory = await createOutputPackage(
         fixture.config.rootDir,
         '@example/valid',
         "import '@example/dep';\n",
       );
-      const invalidOutDir = await createOutputPackage(
+      const invalidOutDirectory = await createOutputPackage(
         fixture.config.rootDir,
         '@example/invalid',
         "import 'node:fs';\n",
@@ -1018,12 +1017,12 @@ describe('runPipeline', () => {
           {
             checks: ['boundary'],
             name: '@example/valid',
-            outDir: validOutDir,
+            outDir: validOutDirectory,
           },
           {
             checks: ['boundary'],
             name: '@example/invalid',
-            outDir: invalidOutDir,
+            outDir: invalidOutDirectory,
           },
         ],
       };
@@ -1070,9 +1069,9 @@ describe('runPipeline', () => {
         true,
       );
       expect(
-        chunks.some((chunk) => chunk.includes('\u001B[H\u001B[2J\u001B[3J')),
+        chunks.some((chunk) => chunk.includes('\u{1B}[H\u{1B}[2J\u{1B}[3J')),
       ).toBe(false);
-      expect(chunks.some((chunk) => chunk.includes('\u001B[J'))).toBe(true);
+      expect(chunks.some((chunk) => chunk.includes('\u{1B}[J'))).toBe(true);
       expect(
         chunks.some((chunk) => chunk.includes(`${green('◆')}      command: `)),
       ).toBe(true);

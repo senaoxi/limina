@@ -15,10 +15,7 @@ import type {
 import { runMigrationImpl } from './execution';
 import type { MigrationTask } from './interactions';
 function getCleanupWarningSummary(count: number): string[] {
-  if (count === 0) {
-    return [];
-  }
-  return [`cleanup warnings: ${count}`];
+  return count === 0 ? [] : [`cleanup warnings: ${count}`];
 }
 
 function getHardlinkSummary(result: RunMigrationResult): string[] {
@@ -159,9 +156,9 @@ export function runMigration(
 function completeTask(
   task: MigrationTask,
   summary: string,
-  success: boolean,
+  isSuccess: boolean,
 ): void {
   if (!task) return;
-  if (success) task.pass(summary);
+  if (isSuccess) task.pass(summary);
   else task.fail(summary);
 }

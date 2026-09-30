@@ -24,7 +24,7 @@ interface SnapshotBuildContext {
   traversals: Map<string, CheckerRouteTraversalSnapshot>;
 }
 
-function supportsSourceGraph(checker: ResolvedCheckerConfig): boolean {
+function isSupportsSourceGraph(checker: ResolvedCheckerConfig): boolean {
   const adapter = getCheckerAdapter(checker.name);
   return adapter?.sourceGraph === true;
 }
@@ -61,10 +61,10 @@ function isAvailableRootConfig(
   normalizedRootConfigPath: string,
   generatedGraph: GeneratedTsconfigGraphResult | undefined,
 ): boolean {
-  if (existsSync(rootConfigPath)) {
-    return true;
-  }
-  return generatedGraph?.generatedFiles.has(normalizedRootConfigPath) === true;
+  return (
+    existsSync(rootConfigPath) ||
+    generatedGraph?.generatedFiles.has(normalizedRootConfigPath) === true
+  );
 }
 
 function recordTraversalMetric(
@@ -120,7 +120,7 @@ function addMissingEntrySnapshot(
     createCheckerRouteSnapshot({
       checker,
       entryAvailability: 'missing-entry',
-      supportsSourceGraph: supportsSourceGraph(checker),
+      supportsSourceGraph: isSupportsSourceGraph(checker),
     }),
   );
 }
@@ -137,7 +137,7 @@ function addMissingConfigSnapshot(options: {
       entryAvailability: 'missing-config',
       normalizedRootConfigPath: options.normalizedRootConfigPath,
       rootConfigPath: options.rootConfigPath,
-      supportsSourceGraph: supportsSourceGraph(options.checker),
+      supportsSourceGraph: isSupportsSourceGraph(options.checker),
     }),
   );
 }
@@ -154,7 +154,7 @@ function addAvailableSnapshot(options: {
       entryAvailability: 'available',
       normalizedRootConfigPath: options.normalizedRootConfigPath,
       rootConfigPath: options.rootConfigPath,
-      supportsSourceGraph: supportsSourceGraph(options.checker),
+      supportsSourceGraph: isSupportsSourceGraph(options.checker),
       traversal: getTraversal({
         context: options.context,
         normalizedRootConfigPath: options.normalizedRootConfigPath,
@@ -218,19 +218,17 @@ function resolveSnapshotCheckers(
   config: ResolvedLiminaConfig,
   generatedGraph: GeneratedTsconfigGraphResult | undefined,
 ): readonly ResolvedCheckerConfig[] {
-  if (generatedGraph !== undefined) {
-    return generatedGraph.checkers;
-  }
-  return getActiveCheckers(config);
+  return generatedGraph === undefined
+    ? getActiveCheckers(config)
+    : generatedGraph.checkers;
 }
 
 function getGeneratedFiles(
   generatedGraph: GeneratedTsconfigGraphResult | undefined,
 ): ReadonlyMap<string, string> | undefined {
-  if (generatedGraph === undefined) {
-    return undefined;
-  }
-  return generatedGraph.generatedFiles;
+  return generatedGraph === undefined
+    ? undefined
+    : generatedGraph.generatedFiles;
 }
 
 export function collectCheckerRouteSnapshot(

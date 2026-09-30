@@ -27,11 +27,11 @@ const checkerConfigReason =
   'config.checkers must be an object keyed by auto or checker name.';
 
 function addCheckerIssue(
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
   path: PropertyKey[],
   message: string,
 ): void {
-  addConfigIssue(ctx, path, message);
+  addConfigIssue(context, path, message);
 }
 
 function validateAutoExcludeEntry(options: {
@@ -57,13 +57,13 @@ function validateAutoExcludeEntry(options: {
 
 function getAutoExclude(
   checkers: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): unknown[] | null {
   const exclude = checkers.exclude;
   if (exclude === undefined) return null;
   if (Array.isArray(exclude)) return exclude;
   addCheckerIssue(
-    ctx,
+    context,
     ['checkers', 'auto', 'exclude'],
     'auto checker exclude must be a string array when configured.',
   );
@@ -72,23 +72,23 @@ function getAutoExclude(
 
 function validateAutoExclude(
   checkers: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
-  const exclude = getAutoExclude(checkers, ctx);
+  const exclude = getAutoExclude(checkers, context);
   if (exclude === null) return;
   for (const [index, value] of exclude.entries()) {
-    validateAutoExcludeEntry({ ctx, index, value });
+    validateAutoExcludeEntry({ ctx: context, index, value });
   }
 }
 
 function validateAutoUseTsgo(
   checkers: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
-  if (checkers.useTsgo === undefined) return;
-  if (typeof checkers.useTsgo === 'boolean') return;
+  if (checkers.useTsgo === undefined || typeof checkers.useTsgo === 'boolean')
+    return;
   addCheckerIssue(
-    ctx,
+    context,
     ['checkers', 'auto', 'useTsgo'],
     'auto checker useTsgo must be a boolean when configured.',
   );
@@ -96,13 +96,13 @@ function validateAutoUseTsgo(
 
 function validateAutoCheckers(
   checkers: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
-  validateAutoExclude(checkers, ctx);
-  validateAutoUseTsgo(checkers, ctx);
+  validateAutoExclude(checkers, context);
+  validateAutoUseTsgo(checkers, context);
   addUnknownFieldIssues({
     allowed: autoCheckerKeys,
-    ctx,
+    ctx: context,
     message: 'unknown auto checker config field.',
     path: ['checkers', 'auto'],
     value: checkers,
@@ -143,14 +143,14 @@ function validateNamedChecker(options: {
 
 function validateAutoCheckerValue(
   checker: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (isPlainConfigRecord(checker)) {
-    validateAutoCheckers(checker, ctx);
+    validateAutoCheckers(checker, context);
     return;
   }
   addCheckerIssue(
-    ctx,
+    context,
     ['checkers', 'auto'],
     'config.checkers.auto must be an object when configured.',
   );
@@ -170,36 +170,43 @@ function validateCheckerValue(options: {
 
 function validateNamedCheckers(
   checkers: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   for (const [checkerName, checker] of Object.entries(checkers)) {
-    validateCheckerValue({ checker, checkerName, ctx });
+    validateCheckerValue({ checker, checkerName, ctx: context });
   }
 }
 
 function validateCheckerRecord(
   value: Record<string, unknown>,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (Object.hasOwn(value, 'mode')) {
-    addCheckerIssue(ctx, ['checkers', 'mode'], legacyAutoCheckerConfigReason);
+    addCheckerIssue(
+      context,
+      ['checkers', 'mode'],
+      legacyAutoCheckerConfigReason,
+    );
     return;
   }
-  validateNamedCheckers(value, ctx);
+  validateNamedCheckers(value, context);
 }
 
-function validateCheckers(value: unknown, ctx: ConfigValidationContext): void {
+function validateCheckers(
+  value: unknown,
+  context: ConfigValidationContext,
+): void {
   if (value === undefined) return;
   if (!isPlainConfigRecord(value)) {
-    addCheckerIssue(ctx, ['checkers'], checkerConfigReason);
+    addCheckerIssue(context, ['checkers'], checkerConfigReason);
     return;
   }
-  validateCheckerRecord(value, ctx);
+  validateCheckerRecord(value, context);
 }
 
 export const sharedLiminaConfigShapeSchema: z.ZodType<Record<string, unknown>> =
-  z.looseObject({}).superRefine((config, ctx) => {
-    validateCheckers(config.checkers, ctx);
-    validateImports(config.imports, ctx);
-    validateSourceBoundary(config.source, ctx);
+  z.looseObject({}).superRefine((config, context) => {
+    validateCheckers(config.checkers, context);
+    validateImports(config.imports, context);
+    validateSourceBoundary(config.source, context);
   });

@@ -1,9 +1,9 @@
 import type { cac } from 'cac';
 import path from 'pathe';
 import {
-  runGraphCheck,
+  isRunGraphCheck,
+  isRunGraphPrepare,
   runGraphExport,
-  runGraphPrepare,
 } from '../../commands/graph';
 import { stringifyDependencyGraph } from '../../dependency-graph/runner';
 import { LiminaPreflightManager } from '../../preflight';
@@ -11,7 +11,7 @@ import type { LiminaCheckIssue } from '../../source-check/snapshot';
 import { loadCliConfig, loadStandaloneContext } from '../command-runtime';
 import { createCliFlow } from '../flow';
 import { parseDependencyGraphView } from '../parse';
-import { runStandaloneIssueFlow } from '../standalone';
+import { isRunStandaloneIssueFlow } from '../standalone';
 import type { GraphFlags, RegisterStandaloneIssueSession } from '../types';
 
 type LiminaCli = ReturnType<typeof cac>;
@@ -30,13 +30,13 @@ function parseGraphAction(action: string): GraphAction {
 function getValidationDescriptor(action: GraphValidationAction) {
   if (action === 'check') {
     return {
-      run: runGraphCheck,
+      run: isRunGraphCheck,
       task: 'graph:check' as const,
       title: 'Graph check',
     };
   }
   return {
-    run: runGraphPrepare,
+    run: isRunGraphPrepare,
     task: 'graph:prepare' as const,
     title: 'Graph prepare',
   };
@@ -55,7 +55,7 @@ async function runGraphExportAction(flags: GraphFlags): Promise<void> {
   }
 }
 
-async function executeGraphValidation(options: {
+async function isExecuteGraphValidation(options: {
   action: GraphValidationAction;
   flags: GraphFlags;
   flow: ReturnType<typeof createCliFlow>;
@@ -94,16 +94,16 @@ async function runGraphValidationAction(options: {
   flags: GraphFlags;
 }): Promise<void> {
   const flow = createCliFlow();
-  const passed = await runStandaloneIssueFlow({
+  const isPassed = await isRunStandaloneIssueFlow({
     execute: (registerSession) =>
-      executeGraphValidation({ ...options, flow, registerSession }),
+      isExecuteGraphValidation({ ...options, flow, registerSession }),
     flow,
     messages: {
       failed: 'limina graph failed',
       passed: 'limina graph passed',
     },
   });
-  if (!passed) process.exitCode = 1;
+  if (!isPassed) process.exitCode = 1;
 }
 
 async function runGraphAction(

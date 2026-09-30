@@ -185,24 +185,35 @@ async function writeCompletedInventory(
   });
 }
 
-async function publishCompletedUnderLease(
+async function persistCompletionFailure(
   options: CompleteCheckAttemptOptions,
+  error: unknown,
 ): Promise<void> {
-  if (!(await prepareCompletedPublication(options))) return;
   try {
-    await writeCompletedInventory(options);
-  } catch (error) {
     await persistFailureStatus({
       attempt: options.attempt,
       error,
       namespace: options.namespace,
       sourceSnapshotPersisted: options.sourceSnapshotPersisted,
-    }).catch(ignoreError);
+    });
+  } catch (statusError) {
+    ignoreError(statusError);
+  }
+}
+
+async function publishCompletedUnderLease(
+  options: CompleteCheckAttemptOptions,
+): Promise<void> {
+  if (!(await isPrepareCompletedPublication(options))) return;
+  try {
+    await writeCompletedInventory(options);
+  } catch (error) {
+    await persistCompletionFailure(options, error);
     throw error;
   }
 }
 
-async function prepareCompletedPublication(
+async function isPrepareCompletedPublication(
   options: CompleteCheckAttemptOptions,
 ): Promise<boolean> {
   const current = await requireLatestAttempt(options.namespace);
@@ -228,11 +239,21 @@ export async function completeCheckAttempt(
   } finally {
     await lease.release();
   }
-  await cleanupAttemptRetention(options.namespace).catch((error) => {
+  await cleanupCompletedAttemptRetention(options);
+}
+
+async function cleanupCompletedAttemptRetention(
+  options: CompleteCheckAttemptOptions,
+): Promise<void> {
+  try {
+    await cleanupAttemptRetention(options.namespace);
+  } catch (error) {
     options.warn?.(
-      `Unable to clean old check attempt metadata: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `Unable to clean old check attempt metadata: ${getErrorMessage(error)}`,
     );
-  });
+  }
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

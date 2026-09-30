@@ -132,13 +132,19 @@ function disposePrograms(programs: ProgramCache): void {
 }
 
 export class TypeEvidenceGenerationCache {
-  readonly ambientSymbolLookupCache: AmbientSymbolLookupCache = new WeakMap();
-  readonly importTypeEvidenceCache: ImportTypeEvidenceCache = new Map();
-  readonly programCache: ProgramCache = new Map();
-  readonly typeEvidenceProviderCache: TypeEvidenceProviderCache = new Map();
   readonly #metrics: TypeEvidenceMetricsRecorder | undefined;
+
+  #disposed: boolean = false;
+
+  readonly ambientSymbolLookupCache: AmbientSymbolLookupCache = new WeakMap();
+
+  readonly importTypeEvidenceCache: ImportTypeEvidenceCache = new Map();
+
+  readonly programCache: ProgramCache = new Map();
+
+  readonly typeEvidenceProviderCache: TypeEvidenceProviderCache = new Map();
+
   readonly syntaxFacts: SourceSyntaxFactsCache | undefined;
-  #disposed = false;
 
   constructor(
     metrics?: TypeEvidenceMetricsRecorder,
@@ -151,6 +157,33 @@ export class TypeEvidenceGenerationCache {
       for (const name of TYPE_EVIDENCE_METRIC_NAMES) {
         metrics.record({ count: 0, name });
       }
+    }
+  }
+
+  #recordProgramSourceFileCount(
+    program: TypeEvidenceProgramHandle,
+    provider: 'typescript' | 'vue' | undefined,
+  ): void {
+    if (!this.#metrics) {
+      return;
+    }
+
+    this.#metrics.record({
+      count: program.program.getSourceFiles().length,
+      name: 'program-source-file-count',
+      provider,
+    });
+  }
+
+  #record(measurement: TypeEvidenceMetricMeasurement): void {
+    if (this.#metrics) {
+      this.#metrics.record(measurement);
+    }
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) {
+      throw new Error('Type evidence generation cache has been disposed.');
     }
   }
 
@@ -257,32 +290,5 @@ export class TypeEvidenceGenerationCache {
     this.typeEvidenceProviderCache.clear();
     this.programCache.clear();
     this.importTypeEvidenceCache.clear();
-  }
-
-  #recordProgramSourceFileCount(
-    program: TypeEvidenceProgramHandle,
-    provider: 'typescript' | 'vue' | undefined,
-  ): void {
-    if (!this.#metrics) {
-      return;
-    }
-
-    this.#metrics.record({
-      count: program.program.getSourceFiles().length,
-      name: 'program-source-file-count',
-      provider,
-    });
-  }
-
-  #record(measurement: TypeEvidenceMetricMeasurement): void {
-    if (this.#metrics) {
-      this.#metrics.record(measurement);
-    }
-  }
-
-  #assertActive(): void {
-    if (this.#disposed) {
-      throw new Error('Type evidence generation cache has been disposed.');
-    }
   }
 }

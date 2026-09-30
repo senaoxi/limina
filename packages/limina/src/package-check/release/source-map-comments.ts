@@ -47,7 +47,7 @@ function hasDirectiveAt(source: string, position: number): boolean {
   );
 }
 
-function inspectPosition(
+function isInspectPosition(
   source: string,
   position: number,
   seen: Set<number>,
@@ -57,14 +57,14 @@ function inspectPosition(
   return hasDirectiveAt(source, position);
 }
 
-function inspectNode(
+function isInspectNode(
   source: string,
   node: ts.Node,
   seen: Set<number>,
 ): boolean {
   return (
-    inspectPosition(source, node.pos, seen) ||
-    inspectPosition(source, node.end, seen)
+    isInspectPosition(source, node.pos, seen) ||
+    isInspectPosition(source, node.end, seen)
   );
 }
 
@@ -84,7 +84,7 @@ export function hasSourceMappingUrlDirective(
   const pending: ts.Node[] = [file];
   const seen = new Set<number>();
   for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
-    if (inspectNode(source, node, seen)) return true;
+    if (isInspectNode(source, node, seen)) return true;
     enqueueChildren(node, file, pending);
   }
   return false;

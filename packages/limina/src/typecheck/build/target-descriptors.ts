@@ -62,8 +62,9 @@ function cloneCopyContexts(
   contexts: readonly GeneratedOutputDeclarationCopyContext[] | undefined,
 ): GeneratedOutputDeclarationCopyContext[] | undefined {
   if (contexts === undefined) return undefined;
-  if (contexts.length === 0) return undefined;
-  return contexts.map((context) => ({ ...context }));
+  return contexts.length === 0
+    ? undefined
+    : contexts.map((context) => ({ ...context }));
 }
 
 export function getOutputDeclarationCopyContexts(options: {

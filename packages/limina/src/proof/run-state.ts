@@ -20,7 +20,7 @@ import { resolvePreflight } from '../preflight';
 import {
   collectProofReportIssues,
   formatProofFindingReport,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 import {
   type CheckerCoverageTarget,
@@ -87,7 +87,9 @@ function logFailure(state: ProofRunState, issues: LiminaCheckIssue[]): void {
   );
 }
 
-export async function finishProofPhase(state: ProofRunState): Promise<boolean> {
+export async function isFinishProofPhase(
+  state: ProofRunState,
+): Promise<boolean> {
   if (state.findings.length === 0) {
     return true;
   }

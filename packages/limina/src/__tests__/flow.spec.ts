@@ -20,9 +20,9 @@ const CLEAR_FRAME_PATTERN = new RegExp(
   'u',
 );
 const requireFromTest = createRequire(import.meta.url);
-const green = (message: string): string => `\u001B[32m${message}\u001B[0m`;
-const red = (message: string): string => `\u001B[31m${message}\u001B[0m`;
-const yellow = (message: string): string => `\u001B[33m${message}\u001B[0m`;
+const green = (message: string): string => `\u{1B}[32m${message}\u{1B}[0m`;
+const red = (message: string): string => `\u{1B}[31m${message}\u{1B}[0m`;
+const yellow = (message: string): string => `\u{1B}[33m${message}\u{1B}[0m`;
 const spinner = '⠋';
 
 function createBufferedFlow(options: { forceTty?: boolean } = {}): {
@@ -61,8 +61,8 @@ async function runFlowFixture(
   stderr: string;
   stdout: string;
 }> {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-flow-'));
-  const fixturePath = path.join(rootDir, 'fixture.ts');
+  const rootDirectory = await mkdtemp(path.join(tmpdir(), 'limina-flow-'));
+  const fixturePath = path.join(rootDirectory, 'fixture.ts');
 
   await writeFile(fixturePath, source);
 
@@ -107,7 +107,7 @@ async function runFlowFixture(
       });
     });
   } finally {
-    await rm(rootDir, {
+    await rm(rootDirectory, {
       force: true,
       recursive: true,
     });
@@ -133,42 +133,47 @@ function getLastRenderedFrame(output: string): string {
 
 describe('LiminaFlowReporter', () => {
   it('executes the package sibling renderer bundle instead of consumer cwd candidates', async () => {
-    const rootDir = await mkdtemp(
+    const rootDirectory = await mkdtemp(
       path.join(tmpdir(), 'limina-renderer-authority-'),
     );
-    const packageDir = path.join(rootDir, 'node_modules/limina');
-    const consumerDir = path.join(rootDir, 'consumer');
-    const safeMarker = path.join(rootDir, 'safe-marker');
-    const unsafeMarker = path.join(rootDir, 'unsafe-marker');
+    const packageDirectory = path.join(rootDirectory, 'node_modules/limina');
+    const consumerDirectory = path.join(rootDirectory, 'consumer');
+    const safeMarker = path.join(rootDirectory, 'safe-marker');
+    const unsafeMarker = path.join(rootDirectory, 'unsafe-marker');
 
     try {
-      await mkdir(path.join(packageDir, 'dist/flow'), { recursive: true });
-      await mkdir(path.join(consumerDir, 'src/flow'), { recursive: true });
-      await mkdir(path.join(consumerDir, 'dist'), { recursive: true });
+      await mkdir(path.join(packageDirectory, 'dist/flow'), {
+        recursive: true,
+      });
+      await mkdir(path.join(consumerDirectory, 'src/flow'), {
+        recursive: true,
+      });
+      await mkdir(path.join(consumerDirectory, 'dist'), { recursive: true });
       await writeFile(
-        path.join(packageDir, 'dist/flow-renderer-process.js'),
+        path.join(packageDirectory, 'dist/flow-renderer-process.js'),
         "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.SAFE_MARKER, 'safe');\n",
       );
       const unsafeSource =
         "import { writeFileSync } from 'node:fs'; writeFileSync(process.env.UNSAFE_MARKER, 'unsafe');\n";
 
       await writeFile(
-        path.join(consumerDir, 'src/flow/renderer-process.ts'),
+        path.join(consumerDirectory, 'src/flow/renderer-process.ts'),
         unsafeSource,
       );
       await writeFile(
-        path.join(consumerDir, 'dist/flow-renderer-process.js'),
+        path.join(consumerDirectory, 'dist/flow-renderer-process.js'),
         unsafeSource,
       );
 
       const entry = resolveRendererEntryForTesting(
-        pathToFileURL(path.join(packageDir, 'dist/flow/process-renderer.js'))
-          .href,
+        pathToFileURL(
+          path.join(packageDirectory, 'dist/flow/process-renderer.js'),
+        ).href,
       );
 
       expect(entry).toBeDefined();
       const result = spawnSync(entry!.command, entry!.args, {
-        cwd: consumerDir,
+        cwd: consumerDirectory,
         env: {
           ...process.env,
           SAFE_MARKER: safeMarker,
@@ -180,7 +185,7 @@ describe('LiminaFlowReporter', () => {
       await expect(readFile(safeMarker, 'utf8')).resolves.toBe('safe');
       expect(existsSync(unsafeMarker)).toBe(false);
     } finally {
-      await rm(rootDir, { force: true, recursive: true });
+      await rm(rootDirectory, { force: true, recursive: true });
     }
   });
 
@@ -908,15 +913,29 @@ describe('LiminaFlowReporter', () => {
     const chunks: string[] = [];
     const flow = new LiminaFlowReporter({
       clack: {
-        intro: (message) => calls.push(`intro:${message}`),
-        log: {
-          error: (message) => calls.push(`unused-error:${message}`),
-          info: (message) => calls.push(`unused-info:${message}`),
-          step: (message) => calls.push(`unused-step:${message}`),
-          success: (message) => calls.push(`unused-success:${message}`),
-          warn: (message) => calls.push(`unused-warn:${message}`),
+        intro: (message) => {
+          calls.push(`intro:${message}`);
         },
-        outro: (message) => calls.push(`outro:${message}`),
+        log: {
+          error: (message) => {
+            calls.push(`unused-error:${message}`);
+          },
+          info: (message) => {
+            calls.push(`unused-info:${message}`);
+          },
+          step: (message) => {
+            calls.push(`unused-step:${message}`);
+          },
+          success: (message) => {
+            calls.push(`unused-success:${message}`);
+          },
+          warn: (message) => {
+            calls.push(`unused-warn:${message}`);
+          },
+        },
+        outro: (message) => {
+          calls.push(`outro:${message}`);
+        },
       },
       env: {},
       forceTty: true,
@@ -944,7 +963,7 @@ describe('LiminaFlowReporter', () => {
     expect(chunks).toEqual([
       `${spinner}    proof check\n`,
       '│      proof check started\n',
-      '\r\u001B[3A\u001B[J',
+      '\r\u{1B}[3A\u{1B}[J',
       '┌  limina checker typecheck\n',
       `${green('◆')}    proof check (1.00s)\n`,
     ]);
@@ -977,7 +996,7 @@ describe('LiminaFlowReporter', () => {
     expect(chunks).toEqual([
       `${spinner}    proof check\n`,
       'limina[task.proof]: proof check started\n',
-      '\r\u001B[2A\u001B[J',
+      '\r\u{1B}[2A\u{1B}[J',
       `${green('◆')}    proof check (1.00s)\n`,
     ]);
   });
@@ -1012,7 +1031,7 @@ describe('LiminaFlowReporter', () => {
       `${spinner}    tsc check\n`,
       `${spinner}      tsc: tsconfig.lib.json\n`,
       `${green('◆')}      tsc: tsconfig.lib.json (1.00s)\n`,
-      '\r\u001B[4A\u001B[J',
+      '\r\u{1B}[4A\u{1B}[J',
       `${spinner}    pipeline: typecheck\n`,
       `${green('◆')}    tsc check (2.00s)\n`,
     ]);
@@ -1080,7 +1099,7 @@ describe('LiminaFlowReporter', () => {
       });
 
       await task.pause();
-      expect(chunks.at(-1)).toBe('\r\u001B[1A\u001B[J');
+      expect(chunks.at(-1)).toBe('\r\u{1B}[1A\u{1B}[J');
 
       const pausedOutput = chunks.join('');
       vi.advanceTimersByTime(160);
@@ -1195,7 +1214,7 @@ describe('LiminaFlowReporter', () => {
 
     expect(output).toContain(`${green('◆')}      source check (120ms)\n`);
     expect(output).toContain(`${green('◆')}    default check (300ms)\n`);
-    expect(output).not.toContain('\u001B[H\u001B[2J\u001B[3J');
+    expect(output).not.toContain('\u{1B}[H\u{1B}[2J\u{1B}[3J');
   });
 
   it('finishes parent tree nodes after skipping unstarted planned children', () => {
@@ -1263,7 +1282,7 @@ describe('LiminaFlowReporter', () => {
     expect(chunks).toEqual([
       `${spinner}    checker build\n`,
       `${yellow('▲')}      cache warning\n`,
-      '\r\u001B[3A\u001B[J',
+      '\r\u{1B}[3A\u{1B}[J',
       '┌  limina check\n',
       `${yellow('▲')}      cache warning\n`,
       `${green('◆')}    checker build (1.00s)\n`,
@@ -1357,7 +1376,7 @@ describe('LiminaFlowReporter', () => {
     task.pass('source check', { elapsedTimeMs: 1000 });
     flow.outro('limina check passed');
 
-    expect(chunks.join('')).not.toContain('\u001B[H\u001B[2J\u001B[3J');
+    expect(chunks.join('')).not.toContain('\u{1B}[H\u{1B}[2J\u{1B}[3J');
     expect(chunks).toContain(`${green('◆')}    source check (1.00s)\n`);
   });
 
@@ -1387,7 +1406,7 @@ describe('LiminaFlowReporter', () => {
 
     const output = chunks.join('');
 
-    expect(output).not.toContain('\u001B[H\u001B[2J\u001B[3J');
+    expect(output).not.toContain('\u{1B}[H\u{1B}[2J\u{1B}[3J');
     expect(chunks).toContain(`${red('✕')}    source check (2.97s)\n`);
     expect(output).not.toContain('source check failed');
     expect(output).not.toContain('detailed failure');

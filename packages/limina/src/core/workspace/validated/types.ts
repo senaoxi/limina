@@ -30,7 +30,7 @@ export function createReadableTsconfigCandidate(options: {
 export function isReadableTsconfigCandidate(
   value: ReadableWorkspaceTsconfigCandidate,
 ): boolean {
-  return value[readableTsconfigCandidateBrand] === true;
+  return value[readableTsconfigCandidateBrand];
 }
 
 export type WorkspaceTsconfigOutputRootRead =

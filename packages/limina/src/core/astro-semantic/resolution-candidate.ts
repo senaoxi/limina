@@ -65,8 +65,9 @@ function createCheckerResolution(options: {
 function getCandidateResolutionIdentity(
   resolution: ResolvedCheckerModuleName | null,
 ): readonly [string | null, string | null] {
-  if (resolution === null) return [null, null];
-  return [resolution.resolvedFileName, resolution.resolvedBy];
+  return resolution === null
+    ? [null, null]
+    : [resolution.resolvedFileName, resolution.resolvedBy];
 }
 
 function canonicalCandidate(candidate: ResolvedCandidate): string {
@@ -90,7 +91,7 @@ export function selectCanonicalAstroCandidate(
   }
   const identity = canonicalCandidate(first);
   if (
-    !candidates.every((candidate) => canonicalCandidate(candidate) === identity)
+    candidates.some((candidate) => canonicalCandidate(candidate) !== identity)
   ) {
     return {
       kind: 'unsupported',

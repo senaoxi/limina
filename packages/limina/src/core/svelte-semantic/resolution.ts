@@ -14,7 +14,7 @@ export type SvelteSemanticResolution =
       stage: FrameworkSemanticFailureStage;
     };
 
-function sameOccurrence(
+function isSameOccurrence(
   fact: PreparedDependencyFact,
   importRecord: ImportRecord,
 ): boolean {
@@ -34,7 +34,7 @@ function selectPreparedFact(
   facts: readonly PreparedDependencyFact[],
   importRecord: ImportRecord,
 ): SvelteSemanticResolution {
-  const matches = facts.filter((fact) => sameOccurrence(fact, importRecord));
+  const matches = facts.filter((fact) => isSameOccurrence(fact, importRecord));
   if (matches.length !== 1) {
     return {
       kind: 'unsupported',
@@ -54,8 +54,9 @@ function resolvePreparedImport(options: {
   const preparation = options.manager
     .acquire(options.project)
     .prepare(options.importRecord.filePath);
-  if (preparation.kind === 'unsupported') return preparation;
-  return selectPreparedFact(preparation.facts, options.importRecord);
+  return preparation.kind === 'unsupported'
+    ? preparation
+    : selectPreparedFact(preparation.facts, options.importRecord);
 }
 
 export function resolveSvelteSemanticImport(options: {

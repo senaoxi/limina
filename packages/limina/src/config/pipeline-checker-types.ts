@@ -28,7 +28,9 @@ export type BuildCheckerName = 'tsc' | 'tsgo' | 'vue-tsc';
 export type FrameworkCheckerName = 'svelte-check' | 'astro';
 export type CheckerName = BuildCheckerName | FrameworkCheckerName;
 
-/** Internal parser/CLI compatibility aliases. Config does not expose presets. */
+/**
+Internal parser/CLI compatibility aliases. Config does not expose presets.
+*/
 export type BuiltinCheckerPreset = CheckerName;
 export type CheckerPreset = CheckerName;
 export type BuildCheckerPreset = BuildCheckerName;

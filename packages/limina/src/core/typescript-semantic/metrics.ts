@@ -19,15 +19,13 @@ export function measureBoundedProgram(
 
 export class TypeCheckerObservation {
   #observed = false;
+
   readonly #metrics: AnalysisMetricsRecorder | undefined;
+
   constructor(metrics?: AnalysisMetricsRecorder) {
     this.#metrics = metrics;
   }
-  get(program: ts.Program): ts.TypeChecker {
-    if (this.#observed) return program.getTypeChecker();
-    this.#observed = true;
-    return this.#first(program);
-  }
+
   #first(program: ts.Program): ts.TypeChecker {
     const start = performance.now();
     try {
@@ -38,5 +36,11 @@ export class TypeCheckerObservation {
         durationMs: performance.now() - start,
       });
     }
+  }
+
+  get(program: ts.Program): ts.TypeChecker {
+    if (this.#observed) return program.getTypeChecker();
+    this.#observed = true;
+    return this.#first(program);
   }
 }

@@ -49,7 +49,9 @@ export interface MaterializeGeneratedArtifactPlanOptions {
   readonly afterPlanSafetyValidation?: () => Promise<void> | void;
   readonly beforeMutation?: (change: ArtifactChange) => Promise<void> | void;
   readonly metrics?: ArtifactMaterializationMetricsRecorder;
-  /** Failure injection seam for marker cleanup regression tests. */
+  /**
+  Failure injection seam for marker cleanup regression tests.
+  */
   readonly removeMarker?: (namespace: LiminaArtifactNamespace) => Promise<void>;
   readonly replan?: () => Promise<{
     namespace: LiminaArtifactNamespace;
@@ -69,7 +71,7 @@ function assertMatchingGeneration(
   }
 }
 
-function revisionsMatch(
+function isRevisionsMatch(
   left: ArtifactPlan['baseRevision'],
   right: ArtifactPlan['baseRevision'],
 ): boolean {
@@ -80,10 +82,9 @@ async function readPlanBaseState(
   namespace: LiminaArtifactNamespace,
   plan: ArtifactPlan,
 ) {
-  if (plan.revisionValidated) {
-    return readMaterializationStateSnapshot(namespace);
-  }
-  return { ownedPaths: [...plan.baseOwnedPaths], revision: plan.baseRevision };
+  return plan.revisionValidated
+    ? readMaterializationStateSnapshot(namespace)
+    : { ownedPaths: [...plan.baseOwnedPaths], revision: plan.baseRevision };
 }
 
 function requiresReplan(options: {
@@ -91,8 +92,10 @@ function requiresReplan(options: {
   markerPresent: boolean;
   plan: ArtifactPlan;
 }): boolean {
-  if (options.markerPresent && options.plan.revisionValidated) return true;
-  return !revisionsMatch(options.currentRevision, options.plan.baseRevision);
+  return (
+    (options.markerPresent && options.plan.revisionValidated) ||
+    !isRevisionsMatch(options.currentRevision, options.plan.baseRevision)
+  );
 }
 
 function requireReplan(
@@ -118,7 +121,7 @@ function assertReplannedRevision(
   plan: ArtifactPlan,
   currentRevision: ArtifactPlan['baseRevision'],
 ): void {
-  if (revisionsMatch(currentRevision, plan.baseRevision)) return;
+  if (isRevisionsMatch(currentRevision, plan.baseRevision)) return;
   throw new Error(
     'Generated-artifact base revision changed after the single allowed replan.',
   );
@@ -146,12 +149,12 @@ async function selectValidatedPlan(options: {
   recovered: boolean;
 }> {
   const current = await readPlanBaseState(options.namespace, options.plan);
-  const needsReplan = requiresReplan({
+  const isNeedsReplan = requiresReplan({
     currentRevision: current.revision,
     markerPresent: options.markerPresent,
     plan: options.plan,
   });
-  if (!needsReplan) {
+  if (!isNeedsReplan) {
     return {
       namespace: options.namespace,
       plan: options.plan,

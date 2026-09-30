@@ -8,15 +8,16 @@ async function isAncestorTarget(
 ): Promise<boolean> {
   if ((await realpath(directory)) === target) return true;
   const parent = path.dirname(directory);
-  return parent === directory ? false : isAncestorTarget(parent, target);
+  return parent !== directory && isAncestorTarget(parent, target);
 }
 
 function directoryEntry(entry: Dirent, isDirectory: boolean): Dirent {
   return new Proxy(entry, {
     get(target, property) {
       if (property === 'isDirectory') return () => isDirectory;
-      if (property === 'isSymbolicLink') return () => false;
-      return Reflect.get(target, property);
+      return property === 'isSymbolicLink'
+        ? () => false
+        : Reflect.get(target, property);
     },
   });
 }
@@ -75,12 +76,24 @@ export function createLexicalDirectoryFs(): { readdir: typeof readdir } {
       _options: unknown,
       callback: (error: unknown, entries?: Dirent[]) => void,
     ) => {
-      lexicalEntries(directory, cycleDirectories).then(
-        (entries) => callback(null, entries),
-        (error: unknown) => callback(error),
-      );
+      readLexicalEntries(directory, cycleDirectories, callback);
     }) as typeof readdir,
   };
+}
+
+async function readLexicalEntries(
+  directory: string,
+  cycleDirectories: Set<string>,
+  callback: (error: unknown, entries?: Dirent[]) => void,
+): Promise<void> {
+  let entries: Dirent[];
+  try {
+    entries = await lexicalEntries(directory, cycleDirectories);
+  } catch (error) {
+    callback(error);
+    return;
+  }
+  callback(null, entries);
 }
 
 async function readableLexicalEntry(
@@ -97,7 +110,9 @@ async function readableLexicalEntry(
 }
 
 function isMissingLink(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (!('code' in error)) return false;
-  return ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(error.code));
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    ['ENOENT', 'ENOTDIR', 'ELOOP'].includes(String(error.code))
+  );
 }

@@ -45,8 +45,9 @@ function shouldShowDetailHint(options: {
   groups: readonly IssueGroup[];
   verbose: boolean;
 }): boolean {
-  if (options.verbose) return false;
-  return hasTruncatedGroups(options.groups, options.detailLimit);
+  return (
+    !options.verbose && hasTruncatedGroups(options.groups, options.detailLimit)
+  );
 }
 
 function createDetailHint(options: {
@@ -55,8 +56,9 @@ function createDetailHint(options: {
   groups: readonly IssueGroup[];
   verbose: boolean;
 }): string | null {
-  if (!shouldShowDetailHint(options)) return null;
-  return formatDetailHint(createVerboseCommand(options.command));
+  return shouldShowDetailHint(options)
+    ? formatDetailHint(createVerboseCommand(options.command))
+    : null;
 }
 
 function compactOptionalLines(lines: readonly (string | null)[]): string[] {
@@ -113,7 +115,7 @@ function getDetailLimit(value: number | undefined): number {
   return value === undefined ? DEFAULT_DETAIL_LIMIT : value;
 }
 
-function getVerbose(value: boolean | undefined): boolean {
+function isGetVerbose(value: boolean | undefined): boolean {
   return value === true;
 }
 
@@ -151,14 +153,14 @@ function formatNonEmptyReport(
   issues: CheckIssueHumanReportOptions['issues'],
 ): string {
   const detailLimit = getDetailLimit(options.detailLimit);
-  const verbose = getVerbose(options.verbose);
+  const isVerbose = isGetVerbose(options.verbose);
   const groups = groupIssues(issues);
   const summaryLines = createSummaryLines({
     command: options.command,
     detailLimit,
     groups,
     issues,
-    verbose,
+    verbose: isVerbose,
   });
   return [
     ...formatCheckSummaryBlock({
@@ -170,7 +172,7 @@ function formatNonEmptyReport(
       color: options.color,
       detailLimit,
       groups,
-      verbose,
+      verbose: isVerbose,
     }),
   ].join('\n');
 }

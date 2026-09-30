@@ -6,13 +6,13 @@ import {
   readCheckIssueSnapshot,
 } from '../../src/check-reporting/snapshot';
 import type { SnapshotReadOptions } from './detector-snapshot-types';
-import { pathExists } from './fixture-sandbox';
+import { isPathExists } from './fixture-sandbox';
 
 export async function assertNoPreexistingCheckSnapshot(
   repoRoot: string,
 ): Promise<string> {
   const snapshotPath = getCheckIssueSnapshotPath(repoRoot);
-  if (!(await pathExists(snapshotPath))) return snapshotPath;
+  if (!(await isPathExists(snapshotPath))) return snapshotPath;
   throw new Error(
     `Detector fixture sandbox contains a stale structured snapshot before invocation: ${snapshotPath}`,
   );
@@ -40,8 +40,7 @@ type CompletedCheckSnapshot = CheckIssueSnapshot & {
 function hasCompletedRun(
   snapshot: CheckIssueSnapshot,
 ): snapshot is CompletedCheckSnapshot {
-  if (snapshot.status !== 'completed') return false;
-  return snapshot.run !== undefined;
+  return snapshot.status === 'completed' && snapshot.run !== undefined;
 }
 
 function assertCompletedCheckSnapshot(options: {
@@ -71,10 +70,10 @@ function assertCheckCommand(options: {
   snapshotPath: string;
 }): void {
   const expectedCommand = `limina ${options.command.join(' ')}`;
-  const commandsMatch =
+  const isCommandsMatch =
     options.snapshot.command === expectedCommand &&
     options.snapshot.run.command === expectedCommand;
-  if (commandsMatch) return;
+  if (isCommandsMatch) return;
   throw new Error(
     `Detector fixture ${options.fixtureId} snapshot command mismatch at ${options.snapshotPath}: expected ${JSON.stringify(expectedCommand)}, received snapshot=${JSON.stringify(options.snapshot.command)} run=${JSON.stringify(options.snapshot.run.command)}.`,
   );
@@ -84,8 +83,9 @@ export function isFreshSnapshotTimestamp(
   timestamp: number,
   invocationStartedAtMs: number,
 ): boolean {
-  if (!Number.isFinite(timestamp)) return false;
-  return timestamp >= invocationStartedAtMs - 1000;
+  return (
+    Number.isFinite(timestamp) && timestamp >= invocationStartedAtMs - 1000
+  );
 }
 
 async function assertCheckSnapshotFresh(options: {
@@ -95,15 +95,15 @@ async function assertCheckSnapshotFresh(options: {
   snapshotPath: string;
 }): Promise<void> {
   const snapshotStat = await lstat(options.snapshotPath);
-  const createdAtIsFresh = isFreshSnapshotTimestamp(
+  const isCreatedAtIsFresh = isFreshSnapshotTimestamp(
     Date.parse(options.snapshot.createdAt),
     options.invocationStartedAtMs,
   );
-  const fileIsFresh = isFreshSnapshotTimestamp(
+  const isFileIsFresh = isFreshSnapshotTimestamp(
     snapshotStat.mtimeMs,
     options.invocationStartedAtMs,
   );
-  if (createdAtIsFresh && fileIsFresh) return;
+  if (isCreatedAtIsFresh && isFileIsFresh) return;
   throw new Error(
     `Detector fixture ${options.fixtureId} structured snapshot is stale: ${options.snapshotPath}.`,
   );
@@ -113,7 +113,7 @@ export async function readDetectorCheckSnapshot(
   options: SnapshotReadOptions,
 ): Promise<CheckIssueSnapshot> {
   const snapshotPath = getCheckIssueSnapshotPath(options.repoRoot);
-  if (!(await pathExists(snapshotPath))) {
+  if (!(await isPathExists(snapshotPath))) {
     throw new Error(
       `Detector fixture ${options.fixtureId} did not produce structured snapshot ${snapshotPath}.`,
     );

@@ -17,10 +17,7 @@ import type {
   RuleDescriptor,
   RuleOptionsSchema,
 } from '../domain/validation/contracts';
-import {
-  ConfigurationError,
-  ExecutionFailure,
-} from '../domain/validation/errors';
+import { ConfigError, ExecutionFailure } from '../domain/validation/errors';
 
 function createRun() {
   return createAnalysisRun({
@@ -50,13 +47,11 @@ function descriptor<Options>(
 
 describe('validation foundation', () => {
   it('keeps AnalysisRun limited to identity, snapshot, signal and metrics', () => {
-    expect(Object.keys(createRun()).sort()).toEqual([
-      'generation',
-      'id',
-      'metrics',
-      'signal',
-      'snapshotToken',
-    ]);
+    expect(
+      Object.keys(createRun()).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ).toEqual(['generation', 'id', 'metrics', 'signal', 'snapshotToken']);
   });
 
   it('rejects configured values for rules without options before execution', () => {
@@ -71,7 +66,7 @@ describe('validation foundation', () => {
           validate,
         },
       }),
-    ).toThrow(ConfigurationError);
+    ).toThrow(ConfigError);
     expect(validate).not.toHaveBeenCalled();
   });
 
@@ -193,15 +188,14 @@ describe('validation foundation', () => {
     } as const;
     const packageOutput = new PackageOutputValidationWorkflow({
       async get() {
+        const finding = Object.freeze({
+          code: 'invalid-output',
+          evidence: Object.freeze([]),
+          packageId,
+        });
         return Object.freeze({
           ...references,
-          findings: Object.freeze([
-            Object.freeze({
-              code: 'invalid-output',
-              evidence: Object.freeze([]),
-              packageId,
-            }),
-          ]),
+          findings: Object.freeze([finding]),
           kind: 'package-output' as const,
         });
       },

@@ -157,6 +157,8 @@ flowchart TB
 
 配置/namespace/authority 不合法通常直接 throw；语义 preparation 不支持、source-map 不可信等成为 stage-specific failure；module missing、resource、unmapped generated 可成为 observation。`resource` 不是 TypeEvidence，missing 不等于异常。graph/source/proof 在自己的领域决定这些事实是否构成 issue。
 
+Knip JSON 解析失败和声明目录消失的错误包装保留原错误作为 `cause`；既有面向用户的消息与失败传播保持不变。[Knip parser guard](../../../packages/limina/src/__tests__/knip.spec.ts)使用畸形输出检查其 `SyntaxError` cause。这不意味着系统中的所有错误都采用统一包装。
+
 graph runner 验证关系、rules、condition/export 约束；source runner 验证 ownership、package import/dependency/ambient 规则并可结合 Knip；proof runner 比较 expected source 与 checker coverage；package runner检查配置 outputs；release runner检查发布一致性。可选工具与配置决定覆盖面，单个域通过不证明其他域通过。入口证据：[graph](../../../packages/limina/src/graph-check/runner.ts)、[source](../../../packages/limina/src/source-check/runner.ts)、[proof](../../../packages/limina/src/proof/runner.ts)、[package](../../../packages/limina/src/package-check/runner.ts)。
 
 graph 的 deny 规则、source import authority 与发布包边界检查都以当前 Node 版本的 `module.isBuiltin` 结果判定 Node 内置模块身份。specifier 的写法不能忽略：`node:test` 是内置模块，裸名 `test` 是包名；只支持 `node:` 前缀的内置模块不能凭空获得无前缀别名。受支持的 Node 22.18 中，`module.builtinModules` 不包含 `node:test`，因此不能靠规范化后的名单决定导入授权。见 [graph 规则](../../../packages/limina/src/graph-check/dependency-rules.ts)、[发布包边界](../../../packages/limina/src/package-check/published-boundary-specifier.ts)和[回归测试](../../../packages/limina/src/__tests__/node-builtin-specifiers.spec.ts)。
@@ -164,6 +166,8 @@ graph 的 deny 规则、source import authority 与发布包边界检查都以�
 source resource 检查分别问物理文件是否存在、类型是否声明、package import 是否授权；[resource-module-findings](../../../packages/limina/src/source-check/resource-module-findings.ts) 按原样检查 module specifier：`package.json#imports` key 保留其中的 `?`/`#`，普通 specifier 也不会在 query 或 fragment 处拆分去检查另一条物理路径，因此带 query 的导入不会仅凭后缀产生 resource finding。写 issue 时路径规范化。proof allowlist 带 reason 并接受范围/已有coverage校验；它是明确配置的例外，不代表 checker 实际读取了文件。package 检查配置 entries 的 Publint/ATTW/boundary 结果，不自动覆盖所有 raw workspace packages。 resource observation 保留 occurrence 的解析模式，包括原生 ambient observation 与经过映射的框架事实。包资源的物理查找使用专用 Oxc 解析器，只启用该 occurrence 对应的 import 或 require 条件以及自定义条件；缓存身份包含用途、模式、条件和符号链接策略，并在 source 检查结束后释放。该解析器不提供 TypeEvidence 或 compiler reference。含 `?` 或 `#` 的完整 package-import key 使用相同模式和条件下的 Node 解析，因为 Oxc 的 query 解析可能重新解释这些 key。含 null 目标的映射也使用 Node，因为当前 Oxc 版本可能从活动的 null 分支继续落到 default；该兼容探针只解析，不加载模块。虚拟或不支持的资源仍在物理查找前完成分类。[条件资源测试](../../../packages/limina/src/__tests__/resource-resolution-conditions.spec.ts) 覆盖两种模式、缓存复用、自定义条件以及 null/缺失分支。
 
 executor 区分 passed、failed、disabled、blocked、skipped 等 task outcome，stop policy、前提依赖与基础设施异常另有处理。issue presentation 和 completed inventory 不能把“未运行”“数据不可用”变成“零问题”。精确状态以 [tasks](../../../packages/limina/src/execution/tasks.ts)、[execution-results](../../../packages/limina/src/execution/execution-results.ts) 和 [snapshot types](../../../packages/limina/src/source-check/snapshot/types.ts) 为准。
+
+发布的 `package.json#imports` 通配符替换按字面处理捕获的路径文本，包括 `$&`、``$` `` 和 `$'`；JavaScript 替换标记不能重新解释这些文本。[清单匹配](../../../packages/limina/src/package-check/manifest-imports.ts)为发布边界审计提供 exact/pattern/conditional 目标候选，不授予语义 graph authority。既有[包边界测试](../../../packages/limina/src/__tests__/package.spec.ts)包含这些字面文件名对照。
 
 消费者图的正确性取决于实际 import。未使用的损坏 exports 不使 graph check 失败；已消费但无法解析的工作区入口在 import 处失败，graph export 同样拒绝。两者消费[保留的依赖证据](../../../packages/limina/src/core/project-dependencies/evidence.ts)，不增加并行 resolver 或 wildcard surface 枚举。Declaration-entry inventory 仅保留给 source ambient-policy 分类，不是 graph resolution authority。[Graph 回归](../../../packages/limina/src/__tests__/graph.spec.ts)覆盖精确、pattern、null 入口及 ATTW 独立性。
 
@@ -181,7 +185,7 @@ Release tarball 卫生检查从 TypeScript JavaScript 解析树取得注释位�
 
 ## Release registry authority
 
-release 命令在运行各 entry 前，以有效 cwd 创建 npm registry 配置快照。[配置解析](../../../packages/limina/src/package-check/release/registry/configuration.ts)按全局、用户、项目、环境变量依次合并各 registry 键，再按包 scope 选择。此次未新增 Limina 公共 registry 字段。默认使用 npm 官方 registry，显式配置的企业 HTTPS registry 也可以成为 authority。registry 路径参与 metadata URL 与缓存身份；输出目录和远端 metadata 都不决定配置来源。这是独立于工作区治理 authority 的网络 authority。
+release 命令在运行各 entry 前，以有效 cwd 创建 npm registry 配置快照。[配置解析](../../../packages/limina/src/package-check/release/registry/config.ts)按全局、用户、项目、环境变量依次合并各 registry 键，再按包 scope 选择。此次未新增 Limina 公共 registry 字段。默认使用 npm 官方 registry，显式配置的企业 HTTPS registry 也可以成为 authority。registry 路径参与 metadata URL 与缓存身份；输出目录和远端 metadata 都不决定配置来源。这是独立于工作区治理 authority 的网络 authority。
 
 [Authority 校验](../../../packages/limina/src/package-check/release/registry/authority.ts)要求 HTTPS、无 credentials/query/fragment，tarball 的规范化 origin 必须完全相同。两处 fetch 都在跟随重定向前拒绝所有重定向。已有显式测试 seam 创建独立的 loopback HTTP authority 并捕获测试超时；生产 HTTP registry 不能进入该分支。配置无效和 URL 拒绝保留结构化 `LIMINA_RELEASE_REGISTRY` 原因，不持久化被拒绝 URL 的 credentials 或 query。此处不隐含 npmrc 认证、CA 或代理集成能力。跨源 CDN 与带签名查询参数的 tarball 仍不受该策略支持。
 

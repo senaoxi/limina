@@ -3,23 +3,23 @@ import { MigrationInputError } from './declarations';
 import { expandNamedWrappers } from './membership-expansion';
 import {
   createMembershipState,
+  isPathOnly,
   type MembershipEdge,
   membershipEdges,
   type MembershipOptions,
   type MembershipState,
-  pathOnly,
   reachableSources,
 } from './membership-state';
 import { relativeConfigPath } from './transform';
 
-function retainAcyclicEdge(
+function isRetainAcyclicEdge(
   state: MembershipState,
   context: { from: string; stack: Set<string> },
   edge: MembershipEdge,
 ): boolean {
   const target = resolveReferencePath(context.from, edge.path);
   if (!context.stack.has(target)) return true;
-  if (!pathOnly(edge))
+  if (!isPathOnly(edge))
     throw new MigrationInputError(
       `Cannot remove attributed solution cycle edge: ${context.from} -> ${target}`,
     );
@@ -61,7 +61,7 @@ function visit(
     state.edges
       .get(context.from)!
       .filter((edge) =>
-        retainAcyclicEdge(state, { from: context.from, stack }, edge),
+        isRetainAcyclicEdge(state, { from: context.from, stack }, edge),
       ),
   );
   visitChildren(state, traversal, { from: context.from, stack });
@@ -73,17 +73,26 @@ function compensate(
   baseline: ReadonlySet<string>,
 ): void {
   const current = reachableSources(state, from);
-  for (const missing of [...baseline]
+  const missingSources = [...baseline]
     .filter((source) => !current.has(source))
-    .sort())
+    .sort((left, right) => Number(left > right) - Number(left < right));
+  for (const missing of missingSources)
     state.edges.get(from)!.push({ path: relativeConfigPath(from, missing) });
   if (
-    JSON.stringify([...reachableSources(state, from)].sort()) !==
-    JSON.stringify([...baseline].sort())
+    JSON.stringify(
+      [...reachableSources(state, from)].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    ) !==
+    JSON.stringify(
+      [...baseline].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    )
   )
     throw new Error(`Migration membership invariant failed for ${from}`);
 }
-function applyMembership(state: MembershipState, from: string): boolean {
+function isApplyMembership(state: MembershipState, from: string): boolean {
   const object = state.options.objects.get(from)!;
   const references = state.edges.get(from)!;
   if (JSON.stringify(object.references) === JSON.stringify(references))
@@ -94,7 +103,12 @@ function applyMembership(state: MembershipState, from: string): boolean {
     message:
       'Expanded/pruned membership with the retained source reachability preserved.',
     original: object.references,
-    details: { references, sources: [...reachableSources(state, from)].sort() },
+    details: {
+      references,
+      sources: [...reachableSources(state, from)].sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      ),
+    },
   });
   object.references = references;
   return true;
@@ -112,7 +126,7 @@ export function rewriteMembership(options: MembershipOptions): Set<string> {
     compensate(state, from, baseline.get(from)!);
   // Publish only after every rewrite and reachability invariant has passed.
   const changed = new Set(
-    retained.filter((from) => applyMembership(state, from)),
+    retained.filter((from) => isApplyMembership(state, from)),
   );
   options.records.push(...state.records);
   return changed;

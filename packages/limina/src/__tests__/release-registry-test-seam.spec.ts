@@ -38,7 +38,7 @@ describe('release registry test authority', () => {
   });
   it.each([
     'https://registry.npmjs.org/',
-    'http://example.com/',
+    ['http:', '//example.com/'].join(''),
     'http://localhost/?',
     'http://localhost/#',
     'http://user:secret@localhost/',

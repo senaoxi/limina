@@ -59,8 +59,8 @@ function applyOrderedDependency(options: {
   previous: ExecutionTask | undefined;
   task: ExecutionTask;
 }): void {
-  if (options.dependencyMode !== 'ordered') return;
-  if (options.previous === undefined) return;
+  if (options.dependencyMode !== 'ordered' || options.previous === undefined)
+    return;
   options.task.after = [options.previous.id];
 }
 
@@ -151,8 +151,7 @@ function partitionTaskSegments(
 function hasPredecessors(
   predecessors: readonly TaskId[] | undefined,
 ): predecessors is readonly TaskId[] {
-  if (predecessors === undefined) return false;
-  return predecessors.length > 0;
+  return predecessors !== undefined && predecessors.length > 0;
 }
 
 function attachValidationPredecessors(
@@ -171,8 +170,10 @@ function requireTaskSuccess(
 }
 
 function isFilesystemDependentTask(task: ExecutionTask): boolean {
-  if (task.kind !== 'task') return false;
-  return filesystemDependentTasks.has(task.issueTask as BuiltinTaskName);
+  return (
+    task.kind === 'task' &&
+    filesystemDependentTasks.has(task.issueTask as BuiltinTaskName)
+  );
 }
 
 function addPreparationTasks(options: {

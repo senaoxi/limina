@@ -7,13 +7,13 @@ import type { CheckIssueSnapshot, LiminaCheckIssue } from './snapshot';
 
 export type CheckIssueFilterHelpKind = 'checker' | 'package' | 'rule' | 'task';
 
-const ANSI_RESET = '\u001B[0m';
-const ANSI_BOLD = '\u001B[1m';
-const ANSI_DIM = '\u001B[2m';
-const ANSI_BLUE = '\u001B[34m';
-const ANSI_CYAN = '\u001B[36m';
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_YELLOW = '\u001B[33m';
+const ANSI_RESET = '\u{1B}[0m';
+const ANSI_BOLD = '\u{1B}[1m';
+const ANSI_DIM = '\u{1B}[2m';
+const ANSI_BLUE = '\u{1B}[34m';
+const ANSI_CYAN = '\u{1B}[36m';
+const ANSI_GREEN = '\u{1B}[32m';
+const ANSI_YELLOW = '\u{1B}[33m';
 
 interface CountEntry {
   count: number;
@@ -59,7 +59,7 @@ function formatDescription(description: string): string {
 function formatIssueCount(count: number): string {
   const text = `${count} ${pluralIssue(count)}`;
 
-  return count > 0 ? colorText(text, ANSI_GREEN) : colorText(text, ANSI_DIM);
+  return colorText(text, count > 0 ? ANSI_GREEN : ANSI_DIM);
 }
 
 function formatNotice(message: string): string {
@@ -76,7 +76,7 @@ function countBy(
 ): CountEntry[] {
   const counts = countDefinedBy(issues, getValue);
 
-  return [...counts.entries()]
+  return [...counts]
     .map(([name, count]) => ({ count, name }))
     .sort(
       (left, right) =>
@@ -182,7 +182,7 @@ function mergeAvailableValuesWithIssueCounts(options: {
     entries.set(count.name, count);
   }
 
-  return [...entries.values()].sort(compareCountEntries);
+  return entries.values().toArray().sort(compareCountEntries);
 }
 
 function hasAvailableValues(
@@ -254,9 +254,12 @@ function countSnapshotEntries(
     return countBy(snapshot.issues, (issue) => issue.task);
   }
 
-  return helpKind === 'package'
-    ? countBy(snapshot.issues, (issue) => issue.packageName)
-    : countBy(snapshot.issues, (issue) => issue.checkerName);
+  return countBy(
+    snapshot.issues,
+    helpKind === 'package'
+      ? (issue) => issue.packageName
+      : (issue) => issue.checkerName,
+  );
 }
 
 export function formatCheckIssueSnapshotFilterHelp(options: {

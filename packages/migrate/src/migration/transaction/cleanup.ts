@@ -37,7 +37,7 @@ function collectPhysicalConflicts(
     );
     uniqueConflicts.set(sortedPaths.join('\0'), sortedPaths);
   }
-  return [...uniqueConflicts.values()];
+  return uniqueConflicts.values().toArray();
 }
 
 export function assertUniquePhysicalTargets(
@@ -112,8 +112,7 @@ async function cleanupItemArtifacts(options: {
 }
 
 function isMissingPathError(error: unknown): boolean {
-  if (!hasErrorCode(error)) return false;
-  return error.code === 'ENOENT';
+  return hasErrorCode(error) && error.code === 'ENOENT';
 }
 
 async function cleanupDirectory(

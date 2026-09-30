@@ -3,9 +3,9 @@ import { lstat, open } from 'node:fs/promises';
 import type { RegularFileState } from './types';
 
 export function isMissingError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (!('code' in error)) return false;
-  return String(error.code) === 'ENOENT';
+  return (
+    error instanceof Error && 'code' in error && String(error.code) === 'ENOENT'
+  );
 }
 
 export function fileIdentityKey(state: RegularFileState): string {
@@ -38,17 +38,21 @@ function hasSameIdentity(
   left: { dev: bigint | number; ino: bigint | number },
   right: { dev: bigint | number; ino: bigint | number },
 ): boolean {
-  if (String(left.dev) !== String(right.dev)) return false;
-  return String(left.ino) === String(right.ino);
+  return (
+    String(left.dev) === String(right.dev) &&
+    String(left.ino) === String(right.ino)
+  );
 }
 
 function hasStableFileState(
   before: Awaited<ReturnType<Awaited<ReturnType<typeof open>>['stat']>>,
   after: Awaited<ReturnType<Awaited<ReturnType<typeof open>>['stat']>>,
 ): boolean {
-  if (!hasSameIdentity(before, after)) return false;
-  if (Number(before.nlink) !== Number(after.nlink)) return false;
-  return Number(before.size) === Number(after.size);
+  return (
+    hasSameIdentity(before, after) &&
+    Number(before.nlink) === Number(after.nlink) &&
+    Number(before.size) === Number(after.size)
+  );
 }
 
 function assertOrdinaryFile(

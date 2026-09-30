@@ -15,18 +15,18 @@ function uniqueSortedPresets(
 export function resolveContextCheckerPresets(
   context: CheckerProjectParseContext,
 ): CheckerPreset[] {
-  if (context.checkerPresets.length > 0) {
-    return uniqueSortedPresets(context.checkerPresets);
-  }
-  return ['tsc'];
+  return context.checkerPresets.length > 0
+    ? uniqueSortedPresets(context.checkerPresets)
+    : ['tsc'];
 }
 
 function getVirtualConfigContent(options: {
   configPath: string;
   virtualFiles?: ReadonlyMap<string, string>;
 }): string | undefined {
-  if (options.virtualFiles === undefined) return undefined;
-  return options.virtualFiles.get(normalizeAbsolutePath(options.configPath));
+  return options.virtualFiles === undefined
+    ? undefined
+    : options.virtualFiles.get(normalizeAbsolutePath(options.configPath));
 }
 
 function createVirtualFilesIdentity(
@@ -34,9 +34,10 @@ function createVirtualFilesIdentity(
 ): string | undefined {
   if (virtualFiles === undefined) return undefined;
   const hash = createHash('sha256');
-  for (const [filePath, content] of [...virtualFiles.entries()].sort(
-    ([left], [right]) => compareCodeUnits(left, right),
-  )) {
+  const sortedFiles = [...virtualFiles].sort(([left], [right]) =>
+    compareCodeUnits(left, right),
+  );
+  for (const [filePath, content] of sortedFiles) {
     hash.update(normalizeAbsolutePath(filePath));
     hash.update('\0');
     hash.update(content);

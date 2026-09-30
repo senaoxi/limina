@@ -50,7 +50,7 @@ function logFailure(
   );
 }
 
-function reportGraphFailure(state: GraphCheckState): false {
+function isReportGraphFailure(state: GraphCheckState): false {
   const issues = createGraphCheckIssuesFromFindings({
     config: state.config,
     findings: state.findings,
@@ -66,7 +66,7 @@ function reportGraphFailure(state: GraphCheckState): false {
   return false;
 }
 
-function reportGraphSuccess(state: GraphCheckState): true {
+function isReportGraphSuccess(state: GraphCheckState): true {
   if (state.options.logSuccess !== false) {
     GraphLogger.success(
       `Checked ${state.projects.length} graph projects; references are valid.`,
@@ -81,8 +81,8 @@ function reportGraphSuccess(state: GraphCheckState): true {
   return true;
 }
 
-export function finishGraphCheck(state: GraphCheckState): boolean {
+export function isFinishGraphCheck(state: GraphCheckState): boolean {
   return state.findings.length > 0
-    ? reportGraphFailure(state)
-    : reportGraphSuccess(state);
+    ? isReportGraphFailure(state)
+    : isReportGraphSuccess(state);
 }

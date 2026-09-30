@@ -1,13 +1,13 @@
 import type { TypecheckTargetResult } from '../targets';
 import {
   executeBuildTargets,
-  type RunBuildTargetsArgs,
+  type RunBuildTargetsArgs as RunBuildTargetsArguments,
 } from './target-execution';
 
 export type { RunBuildTargetsOptions } from './target-execution';
 
 export async function runBuildTargets(
-  ...args: RunBuildTargetsArgs
+  ...arguments_: RunBuildTargetsArguments
 ): Promise<TypecheckTargetResult[]> {
-  return executeBuildTargets(...args);
+  return executeBuildTargets(...arguments_);
 }

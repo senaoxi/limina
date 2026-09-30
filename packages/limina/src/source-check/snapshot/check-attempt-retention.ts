@@ -38,41 +38,43 @@ function isOwnerDefinitelyDead(owner: CrossProcessLeaseOwner): boolean {
 }
 
 async function readRetentionEntry(
-  attemptsDir: string,
+  attemptsDirectory: string,
   entry: Dirent,
 ): Promise<RetentionEntry | null> {
   if (!entry.isDirectory()) return null;
-  const attemptDir = path.join(attemptsDir, entry.name);
+  const attemptDirectory = path.join(attemptsDirectory, entry.name);
   const started = await readCheckAttemptJson(
-    path.join(attemptDir, 'started.json'),
+    path.join(attemptDirectory, 'started.json'),
     isStarted,
   );
   if (started.status !== 'valid') return null;
   return {
-    attemptDir,
+    attemptDir: attemptDirectory,
     started: started.value,
     status: await readCheckAttemptJson(
-      path.join(attemptDir, 'status.json'),
+      path.join(attemptDirectory, 'status.json'),
       isStatus,
     ),
   };
 }
 
 async function collectRetentionEntries(
-  attemptsDir: string,
+  attemptsDirectory: string,
 ): Promise<RetentionEntry[]> {
-  const directoryEntries = await readAttemptDirectories(attemptsDir);
+  const directoryEntries = await readAttemptDirectories(attemptsDirectory);
   const entries: RetentionEntry[] = [];
   for (const directoryEntry of directoryEntries) {
-    const entry = await readRetentionEntry(attemptsDir, directoryEntry);
+    const entry = await readRetentionEntry(attemptsDirectory, directoryEntry);
     if (entry !== null) entries.push(entry);
   }
   return entries;
 }
 
-async function readAttemptDirectories(attemptsDir: string): Promise<Dirent[]> {
+async function readAttemptDirectories(
+  attemptsDirectory: string,
+): Promise<Dirent[]> {
   try {
-    return await readdir(attemptsDir, { withFileTypes: true });
+    return await readdir(attemptsDirectory, { withFileTypes: true });
   } catch (error) {
     if (hasCode(error, 'ENOENT')) return [];
     throw error;
@@ -98,9 +100,11 @@ async function collectPreservedAttemptIds(
 }
 
 function isTerminalOrDead(entry: RetentionEntry): boolean {
-  if (entry.status.status === 'corrupt') return false;
-  if (entry.status.status === 'valid') return true;
-  return isOwnerDefinitelyDead(entry.started.owner);
+  return (
+    entry.status.status !== 'corrupt' &&
+    (entry.status.status === 'valid' ||
+      isOwnerDefinitelyDead(entry.started.owner))
+  );
 }
 
 function canRemoveEntry(
@@ -108,9 +112,12 @@ function canRemoveEntry(
   preserved: ReadonlySet<string>,
   cutoff: number,
 ): boolean {
-  if (preserved.has(entry.started.attemptId)) return false;
-  if (Date.parse(entry.started.startedAt) >= cutoff) return false;
-  return isTerminalOrDead(entry);
+  return (
+    !(
+      preserved.has(entry.started.attemptId) ||
+      Date.parse(entry.started.startedAt) >= cutoff
+    ) && isTerminalOrDead(entry)
+  );
 }
 
 function preserveNewest(
@@ -126,8 +133,10 @@ function preserveNewest(
 export async function cleanupAttemptRetention(
   namespace: LiminaArtifactNamespace,
 ): Promise<void> {
-  const attemptsDir = getCheckAttemptPaths(namespace.configRootDir).attemptsDir;
-  const entries = await collectRetentionEntries(attemptsDir);
+  const attemptsDirectory = getCheckAttemptPaths(
+    namespace.configRootDir,
+  ).attemptsDir;
+  const entries = await collectRetentionEntries(attemptsDirectory);
   const preserved = await collectPreservedAttemptIds(namespace);
   preserveNewest(entries, preserved);
   const cutoff = Date.now() - ATTEMPT_RETENTION_MS;

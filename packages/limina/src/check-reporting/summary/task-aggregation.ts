@@ -58,8 +58,9 @@ function sumCheckItemTotals(
 
 function getTaskTotal(task: LiminaCheckRunTaskSummary): number {
   const checkItems = task.checkItems ?? [];
-  if (checkItems.length === 0) return getRecordedTaskTotal(task);
-  return sumCheckItemTotals(checkItems);
+  return checkItems.length === 0
+    ? getRecordedTaskTotal(task)
+    : sumCheckItemTotals(checkItems);
 }
 
 function createTaskStat(
@@ -79,8 +80,7 @@ function createTaskStat(
 }
 
 function isVisibleTask(task: LiminaCheckRunTaskSummary): boolean {
-  if (task.kind !== 'preparation') return true;
-  return task.state !== 'passed';
+  return task.kind !== 'preparation' || task.state !== 'passed';
 }
 
 function applyReachedTask(
@@ -141,22 +141,26 @@ function getOrCreateStat(options: {
   task: LiminaCheckRunTaskSummary;
 }): CheckRunTaskExecutionStats {
   const existing = options.stats.get(options.task.label);
-  if (existing !== undefined) return existing;
-  return createTaskStat(options.task, options.issueCounts);
+  return existing === undefined
+    ? createTaskStat(options.task, options.issueCounts)
+    : existing;
 }
 
 export function createTaskExecutionStats(
   run: LiminaCheckRunSummary | undefined,
   issues: readonly LiminaCheckIssue[],
 ): CheckRunTaskExecutionStats[] {
-  const tasks = getRunTasks(run);
+  const tasks = getRunTasks(run).filter(isVisibleTask);
   if (tasks.length === 0) return [];
   const issueCounts = countIssuesByTask(issues);
   const stats = new Map<string, CheckRunTaskExecutionStats>();
-  for (const task of tasks.filter(isVisibleTask)) {
+  for (const task of tasks) {
     const stat = getOrCreateStat({ issueCounts, stats, task });
     updateTaskStat(stat, task);
     stats.set(task.label, stat);
   }
-  return [...stats.values()].filter((stat) => stat.reached > 0);
+  return stats
+    .values()
+    .filter((stat) => stat.reached > 0)
+    .toArray();
 }

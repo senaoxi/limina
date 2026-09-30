@@ -52,8 +52,7 @@ function normalizeVersion(value: unknown): string | null {
 }
 
 function getManifestVersion(manifest: unknown): string | null {
-  if (!isPlainRecord(manifest)) return null;
-  return normalizeVersion(manifest.version);
+  return isPlainRecord(manifest) ? normalizeVersion(manifest.version) : null;
 }
 
 function parseManifestVersion(data: Uint8Array): string | null {
@@ -71,8 +70,9 @@ function readPackedPackageVersion(
   const packageJsonFile = contentFiles.find(
     (file) => file.relativePath === 'package.json',
   );
-  if (packageJsonFile === undefined) return null;
-  return parseManifestVersion(packageJsonFile.data);
+  return packageJsonFile === undefined
+    ? null
+    : parseManifestVersion(packageJsonFile.data);
 }
 
 export async function readPackedArtifactContent(
@@ -86,7 +86,7 @@ export async function readPackedArtifactContent(
   };
 }
 
-function fileDataEquals(left: Uint8Array, right: Uint8Array): boolean {
+function isFileDataEquals(left: Uint8Array, right: Uint8Array): boolean {
   return Buffer.from(left).equals(Buffer.from(right));
 }
 
@@ -134,8 +134,8 @@ function createLocalSideDiff(options: {
   relativePath: string;
   remoteFile: PackedPackageContentFile | undefined;
 }): ContentHashDiff | null {
-  if (options.localFile === undefined) return null;
-  if (options.remoteFile !== undefined) return null;
+  if (options.localFile === undefined || options.remoteFile !== undefined)
+    return null;
   return createLocalOnlyDiff({
     file: options.localFile,
     relativePath: options.relativePath,
@@ -147,8 +147,8 @@ function createRemoteSideDiff(options: {
   relativePath: string;
   remoteFile: PackedPackageContentFile | undefined;
 }): ContentHashDiff | null {
-  if (options.remoteFile === undefined) return null;
-  if (options.localFile !== undefined) return null;
+  if (options.remoteFile === undefined || options.localFile !== undefined)
+    return null;
   return createRemoteOnlyDiff({
     file: options.remoteFile,
     relativePath: options.relativePath,
@@ -162,9 +162,9 @@ function getComparableFiles(options: {
   localFile: PackedPackageContentFile;
   remoteFile: PackedPackageContentFile;
 } | null {
-  if (options.localFile === undefined) return null;
-  if (options.remoteFile === undefined) return null;
-  return { localFile: options.localFile, remoteFile: options.remoteFile };
+  return options.localFile === undefined || options.remoteFile === undefined
+    ? null
+    : { localFile: options.localFile, remoteFile: options.remoteFile };
 }
 
 function createTwoSidedDiff(options: {
@@ -173,9 +173,10 @@ function createTwoSidedDiff(options: {
   remoteFile: PackedPackageContentFile | undefined;
 }): ContentHashDiff | null {
   const files = getComparableFiles(options);
-  if (files === null) return null;
-  if (fileDataEquals(files.localFile.data, files.remoteFile.data)) return null;
-  return createChangedDiff({ ...files, relativePath: options.relativePath });
+  return files === null ||
+    isFileDataEquals(files.localFile.data, files.remoteFile.data)
+    ? null
+    : createChangedDiff({ ...files, relativePath: options.relativePath });
 }
 
 function createPathDiff(options: {

@@ -45,8 +45,9 @@ function findChild(
   node: GovernanceTrieNode,
   segment: string,
 ): GovernanceTrieNode | undefined {
-  if (node.children instanceof Map) return node.children.get(segment);
-  return findSingleChild(node.children, segment);
+  return node.children instanceof Map
+    ? node.children.get(segment)
+    : findSingleChild(node.children, segment);
 }
 
 function attachChild(
@@ -127,16 +128,16 @@ function applyCuts(
   activeCuts: Map<string, WorkspaceRegionBoundary>,
 ): (() => void) | undefined {
   const cuts = event?.cuts;
-  if (cuts === undefined) return undefined;
-  return pushCuts(cuts, activeCuts);
+  return cuts === undefined ? undefined : pushCuts(cuts, activeCuts);
 }
 
 function findActiveBoundary(
   identity: WorkspacePackageIdentity | null,
   activeCuts: ReadonlyMap<string, WorkspaceRegionBoundary>,
 ): WorkspaceRegionBoundary | null {
-  if (identity === null) return null;
-  return activeCuts.get(identity.canonicalDirectory) ?? null;
+  return identity === null
+    ? null
+    : (activeCuts.get(identity.canonicalDirectory) ?? null);
 }
 
 function childNodes(node: GovernanceTrieNode): Iterable<GovernanceTrieNode> {

@@ -19,8 +19,7 @@ function formatOptionalPart(
   value: string | undefined,
   formatter: (entry: string) => string,
 ): string {
-  if (value === undefined) return '';
-  return formatter(value);
+  return value === undefined ? '' : formatter(value);
 }
 
 export function formatDependencyLocation(options: {

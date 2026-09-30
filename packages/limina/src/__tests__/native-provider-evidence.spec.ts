@@ -71,7 +71,11 @@ function evidenceCore(
       projectRootDir: fixture.root,
     }),
     workspaceSourceBoundaryProvider: () => boundary,
-    metrics: { record: (measurement) => measurements.push(measurement) },
+    metrics: {
+      record: (measurement) => {
+        measurements.push(measurement);
+      },
+    },
   });
   const project: ResolveImportEvidenceOptions['project'] = {
     checkerPresets: ['tsc'],

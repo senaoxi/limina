@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
-import { runProofCheck } from '../commands/proof';
+import { isRunProofCheck } from '../commands/proof';
 import { collectValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import { createLiminaArtifactNamespace } from '../domain/artifacts/namespace';
 import { createArtifactPlan } from '../domain/artifacts/plan';
@@ -25,14 +25,14 @@ import {
   type ProofFindingForCode,
   type ProofSemanticIssueCode,
 } from '../proof/findings';
-import { runProofCheckImpl } from '../proof/runner';
+import { isRunProofCheckImpl } from '../proof/runner';
 import { collectExpectedSourceFiles } from '../proof/source-files';
 import {
   type LiminaCheckIssue,
   readCheckIssueSnapshot,
 } from '../source-check/snapshot';
 import { prepareAndMaterializeGeneratedTsconfigGraph } from './helpers/generated-graph';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -84,16 +84,12 @@ function getFixtureWorkspacePackageManifestPath(
 ): string | null {
   const segments = relativePath.split('/');
 
-  if (
-    segments[0] !== 'packages' ||
+  return segments[0] !== 'packages' ||
     !segments[1] ||
     segments.length < 3 ||
     segments[2] === 'package.json'
-  ) {
-    return null;
-  }
-
-  return `packages/${segments[1]}/package.json`;
+    ? null
+    : `packages/${segments[1]}/package.json`;
 }
 
 function createFixtureFiles(
@@ -139,7 +135,7 @@ function createFixtureFiles(
 
 function getSvelteFixtureRoots(
   files: Record<string, string>,
-  rootDir: string,
+  rootDirectory: string,
 ): string[] {
   return [
     ...new Set(
@@ -148,14 +144,16 @@ function getSvelteFixtureRoots(
         .map((filePath) => {
           const segments = filePath.split('/');
           return segments[0] === 'packages' && segments[1]
-            ? path.join(rootDir, 'packages', segments[1])
-            : rootDir;
+            ? path.join(rootDirectory, 'packages', segments[1])
+            : rootDirectory;
         }),
     ),
   ];
 }
 
-async function linkSvelteSemanticToolchain(rootDir: string): Promise<void> {
+async function linkSvelteSemanticToolchain(
+  rootDirectory: string,
+): Promise<void> {
   const compilerRoot = resolveInstalledPackageRoot(
     'svelte-v4-min/package.json',
     'svelte',
@@ -168,18 +166,26 @@ async function linkSvelteSemanticToolchain(rootDir: string): Promise<void> {
     'typescript/package.json',
     'typescript',
   );
-  const nodeModulesDir = path.join(rootDir, 'node_modules');
-  await mkdir(nodeModulesDir, { recursive: true });
-  await rm(path.join(nodeModulesDir, 'typescript'), {
+  const nodeModulesDirectory = path.join(rootDirectory, 'node_modules');
+  await mkdir(nodeModulesDirectory, { recursive: true });
+  await rm(path.join(nodeModulesDirectory, 'typescript'), {
     force: true,
     recursive: true,
   });
   await Promise.all([
-    symlink(compilerRoot, path.join(nodeModulesDir, 'svelte'), 'junction'),
-    symlink(transformRoot, path.join(nodeModulesDir, 'svelte2tsx'), 'junction'),
+    symlink(
+      compilerRoot,
+      path.join(nodeModulesDirectory, 'svelte'),
+      'junction',
+    ),
+    symlink(
+      transformRoot,
+      path.join(nodeModulesDirectory, 'svelte2tsx'),
+      'junction',
+    ),
     symlink(
       typeScriptRoot,
-      path.join(nodeModulesDir, 'typescript'),
+      path.join(nodeModulesDirectory, 'typescript'),
       'junction',
     ),
   ]);
@@ -190,36 +196,36 @@ async function createFixture(files: Record<string, string>): Promise<{
   config: ResolvedLiminaConfig;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-proof-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-proof-'),
   );
+  const rootDirectory = await realpath(temporaryDirectory);
   const fixtureFiles = createFixtureFiles(files);
 
   for (const [relativePath, text] of Object.entries(fixtureFiles)) {
-    await writeText(path.join(rootDir, relativePath), text);
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
   await Promise.all(
-    getSvelteFixtureRoots(files, rootDir).map(linkSvelteSemanticToolchain),
+    getSvelteFixtureRoots(files, rootDirectory).map(
+      linkSvelteSemanticToolchain,
+    ),
   );
   const vueTscManifest = requireFromTest.resolve('vue-tsc/package.json');
-  await mkdir(path.join(rootDir, 'node_modules'), { recursive: true });
+  await mkdir(path.join(rootDirectory, 'node_modules'), { recursive: true });
   await symlink(
     path.dirname(vueTscManifest),
-    path.join(rootDir, 'node_modules/vue-tsc'),
+    path.join(rootDirectory, 'node_modules/vue-tsc'),
     'junction',
   );
 
   return {
     cleanup: async () => {
-      await rm(rootDir, {
+      await rm(rootDirectory, {
         force: true,
         recursive: true,
       });
     },
-    config: {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    config: withFixtureGovernanceRoot({
       config: {
         checkers: {
           tsc: {
@@ -227,10 +233,10 @@ async function createFixture(files: Record<string, string>): Promise<{
           },
         },
       },
-      configPath: path.join(rootDir, 'limina.config.mjs'),
-      rootDir,
-    },
-    rootDir,
+      configPath: path.join(rootDirectory, 'limina.config.mjs'),
+      rootDir: rootDirectory,
+    }),
+    rootDir: rootDirectory,
   };
 }
 
@@ -239,7 +245,7 @@ async function collectProofIssues(config: ResolvedLiminaConfig): Promise<{
   passed: boolean;
 }> {
   const issues: LiminaCheckIssue[] = [];
-  const passed = await runProofCheck(config, {
+  const isPassed = await isRunProofCheck(config, {
     clearScreen: false,
     deferSnapshot: true,
     issues,
@@ -250,13 +256,13 @@ async function collectProofIssues(config: ResolvedLiminaConfig): Promise<{
 
   return {
     issues,
-    passed,
+    passed: isPassed,
   };
 }
 
 async function collectTypedProofFindings(
   config: ResolvedLiminaConfig,
-  options: NonNullable<Parameters<typeof runProofCheckImpl>[1]> = {},
+  options: NonNullable<Parameters<typeof isRunProofCheckImpl>[1]> = {},
 ): Promise<{
   findings: ProofFinding[];
   issues: LiminaCheckIssue[];
@@ -264,7 +270,7 @@ async function collectTypedProofFindings(
 }> {
   const findings: ProofFinding[] = [];
   const issues: LiminaCheckIssue[] = [];
-  const passed = await runProofCheckImpl(config, {
+  const isPassed = await isRunProofCheckImpl(config, {
     ...options,
     deferSnapshot: true,
     findingSink: findings,
@@ -276,7 +282,7 @@ async function collectTypedProofFindings(
     },
   });
 
-  return { findings, issues, passed };
+  return { findings, issues, passed: isPassed };
 }
 
 function requireProofFinding<Code extends ProofSemanticIssueCode>(
@@ -301,7 +307,7 @@ function collectUncoveredSourceIssueFiles(
         ? [issue.filePath]
         : [],
     )
-    .sort();
+    .sort((left, right) => Number(left > right) - Number(left < right));
 }
 
 function createPassingFiles(
@@ -402,14 +408,14 @@ function createMultiEnvironmentFiles(
 }
 
 function createCheckerGraphCoverageProofGeneratedGraph(
-  rootDir: string,
+  rootDirectory: string,
 ): GeneratedTsconfigGraphResult {
   const artifactNamespace = createLiminaArtifactNamespace({
     generation: 0,
-    rootDir,
+    rootDir: rootDirectory,
   });
   const checkerEntryPath = normalizeAbsolutePath(
-    path.join(rootDir, '.limina/tsconfig.typescript.build.json'),
+    path.join(rootDirectory, '.limina/tsconfig.typescript.build.json'),
   );
 
   return {
@@ -443,7 +449,7 @@ function createCheckerGraphCoverageProofGeneratedGraph(
       dependencyEdges: [],
       version: 5,
     },
-    manifestPath: path.join(rootDir, '.limina/manifest.json'),
+    manifestPath: path.join(rootDirectory, '.limina/manifest.json'),
     outputDeclarationCopies: new Map(),
     ownershipPlan: {
       dependencyFacts: [],
@@ -471,10 +477,10 @@ function cloneFrameworkProofGraph(
     ...graph,
     generatedFiles: new Map(graph.generatedFiles),
     governedSources: new Map(
-      [...graph.governedSources.entries()].map(([checkerName, units]) => [
+      [...graph.governedSources].map(([checkerName, units]) => [
         checkerName,
         new Map(
-          [...units.entries()].map(([configPath, unit]) => [
+          [...units].map(([configPath, unit]) => [
             configPath,
             {
               ...unit,
@@ -491,13 +497,13 @@ function cloneFrameworkProofGraph(
       ]),
     ),
     sourceToBuild: new Map(
-      [...graph.sourceToBuild.entries()].map(([checkerName, modules]) => [
+      [...graph.sourceToBuild].map(([checkerName, modules]) => [
         checkerName,
         new Map(modules),
       ]),
     ),
     sourceToDts: new Map(
-      [...graph.sourceToDts.entries()].map(([checkerName, sourceToDts]) => [
+      [...graph.sourceToDts].map(([checkerName, sourceToDts]) => [
         checkerName,
         new Map(sourceToDts),
       ]),
@@ -526,7 +532,7 @@ describe('runProofCheck dts config semantics', () => {
     const fixture = await createFixture(createPassingFiles());
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -694,9 +700,10 @@ describe('runProofCheck dts config semantics', () => {
         violation: 'solution-kind-mismatch',
       });
 
-      const missingDependencyRoot = await realpath(
-        await mkdtemp(path.join(tmpdir(), 'limina-proof-missing-deps-')),
+      const temporaryDirectory = await mkdtemp(
+        path.join(tmpdir(), 'limina-proof-missing-deps-'),
       );
+      const missingDependencyRoot = await realpath(temporaryDirectory);
       const missingTarget = cloneFrameworkProofGraph(graph);
       missingTarget.governedSources
         .get(checkerName)!
@@ -723,7 +730,7 @@ describe('runProofCheck dts config semantics', () => {
     const fixture = await createFixture(createMultiEnvironmentFiles());
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -791,7 +798,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -819,7 +826,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -845,7 +852,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck(fixture.config, {
+        isRunProofCheck(fixture.config, {
           deferSnapshot: true,
           generatedGraphProvider: async () =>
             createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
@@ -876,7 +883,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1173,7 +1180,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck(fixture.config, {
+        isRunProofCheck(fixture.config, {
           deferSnapshot: true,
           generatedGraphProvider: async () =>
             createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
@@ -1317,7 +1324,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck(fixture.config, {
+        isRunProofCheck(fixture.config, {
           deferSnapshot: true,
           generatedGraphProvider: async () =>
             createCheckerGraphCoverageProofGeneratedGraph(fixture.rootDir),
@@ -1364,7 +1371,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1387,7 +1394,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1434,7 +1441,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1461,7 +1468,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).rejects.toThrow(
+      await expect(isRunProofCheck(fixture.config)).rejects.toThrow(
         'Source typecheck config declares project references',
       );
     } finally {
@@ -1475,7 +1482,7 @@ describe('runProofCheck dts config semantics', () => {
     const fixture = await createFixture(files);
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1501,7 +1508,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1541,7 +1548,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1569,7 +1576,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1593,7 +1600,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1621,7 +1628,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -1642,7 +1649,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -1732,7 +1739,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -1846,14 +1853,13 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
             checkers: {
-              ...(typeof fixture.config.config?.checkers === 'object'
-                ? fixture.config.config.checkers
-                : {}),
+              ...(typeof fixture.config.config?.checkers === 'object' &&
+                fixture.config.config.checkers),
               'vue-tsc': {
                 include: ['packages/pkg/tsconfig.missing.json'],
               },
@@ -1902,7 +1908,7 @@ describe('runProofCheck dts config semantics', () => {
         task: 'proof:check',
       });
 
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
 
       const snapshot = await readCheckIssueSnapshot(fixture.rootDir);
 
@@ -1958,7 +1964,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
       const snapshot = await readCheckIssueSnapshot(fixture.rootDir);
       const issueFiles = snapshot?.issues.map((issue) => issue.filePath);
 
@@ -2126,7 +2132,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2261,7 +2267,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2308,7 +2314,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2345,7 +2351,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2463,6 +2469,24 @@ describe('runProofCheck dts config semantics', () => {
       );
 
       expect(result.passed).toBe(false);
+      const expectedSources = [
+        {
+          coverage: expect.arrayContaining([
+            expect.objectContaining({ type: 'graph' }),
+            expect.objectContaining({ type: 'checker' }),
+          ]),
+          sourcePath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/fixtures/covered.ts'),
+          ),
+          packageManifestPath: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg/package.json'),
+          ),
+          packageName: '@fixture/pkg',
+          packageRoot: toPortablePath(
+            path.join(fixture.rootDir, 'packages/pkg'),
+          ),
+        },
+      ];
       expect(finding).toMatchObject({
         code: LIMINA_CHECK_ISSUE_CODES.proofSourceBoundaryMismatch,
         facts: {
@@ -2470,30 +2494,12 @@ describe('runProofCheck dts config semantics', () => {
           configuredSourceIncludes: ['packages/pkg/src/**/*.ts'],
           kind: 'coverage-outside-source-boundary',
           repositoryRoot: toPortablePath(fixture.rootDir),
-          sources: expect.arrayContaining([
-            {
-              coverage: expect.arrayContaining([
-                expect.objectContaining({ type: 'graph' }),
-                expect.objectContaining({ type: 'checker' }),
-              ]),
-              sourcePath: toPortablePath(
-                path.join(fixture.rootDir, 'packages/pkg/fixtures/covered.ts'),
-              ),
-              packageManifestPath: toPortablePath(
-                path.join(fixture.rootDir, 'packages/pkg/package.json'),
-              ),
-              packageName: '@fixture/pkg',
-              packageRoot: toPortablePath(
-                path.join(fixture.rootDir, 'packages/pkg'),
-              ),
-            },
-          ]),
+          sources: expect.arrayContaining(expectedSources),
         },
         hint: expect.any(String),
         task: 'proof:check',
       });
-
-      await expect(runProofCheck(config)).resolves.toBe(false);
+      await expect(isRunProofCheck(config)).resolves.toBe(false);
       expect(errorSpy.mock.calls.join('\n')).toContain(
         'Typecheck proof source boundary does not match tsconfig coverage',
       );
@@ -2529,7 +2535,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2552,7 +2558,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -2580,7 +2586,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
       const output = errorSpy.mock.calls.join('\n');
 
       expect(output).toContain(
@@ -2605,7 +2611,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2634,7 +2640,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2741,9 +2747,10 @@ describe('runProofCheck dts config semantics', () => {
         '.gitignore': '**/*.ts\n',
       }),
     );
-    const externalRoot = await realpath(
-      await mkdtemp(path.join(tmpdir(), 'limina-proof-external-')),
+    const temporaryDirectory = await mkdtemp(
+      path.join(tmpdir(), 'limina-proof-external-'),
     );
+    const externalRoot = await realpath(temporaryDirectory);
     const externalSourcePath = path.join(externalRoot, 'src/index.ts');
     await writeText(
       path.join(externalRoot, 'package.json'),
@@ -2827,7 +2834,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2864,7 +2871,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -2930,7 +2937,7 @@ describe('runProofCheck dts config semantics', () => {
         task: 'proof:check',
       });
 
-      await expect(runProofCheck(config)).resolves.toBe(false);
+      await expect(isRunProofCheck(config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -2945,7 +2952,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           proof: {
             allowlist: [
@@ -2986,7 +2993,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3035,7 +3042,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3076,7 +3083,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3124,7 +3131,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3173,7 +3180,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3208,7 +3215,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3235,7 +3242,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3309,7 +3316,7 @@ describe('runProofCheck dts config semantics', () => {
     });
 
     try {
-      await expect(runProofCheck(fixture.config)).rejects.toThrow(
+      await expect(isRunProofCheck(fixture.config)).rejects.toThrow(
         'Source typecheck config declares project references',
       );
     } finally {
@@ -3321,7 +3328,7 @@ describe('runProofCheck dts config semantics', () => {
     const fixture = await createFixture(createPassingFiles());
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3347,7 +3354,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).rejects.toThrow(
+      await expect(isRunProofCheck(fixture.config)).rejects.toThrow(
         'Source typecheck config declares project references',
       );
     } finally {
@@ -3373,7 +3380,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(true);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(true);
     } finally {
       await fixture.cleanup();
     }
@@ -3402,7 +3409,7 @@ describe('runProofCheck dts config semantics', () => {
     );
 
     try {
-      await expect(runProofCheck(fixture.config)).resolves.toBe(false);
+      await expect(isRunProofCheck(fixture.config)).resolves.toBe(false);
     } finally {
       await fixture.cleanup();
     }
@@ -3428,7 +3435,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,
@@ -3450,7 +3457,7 @@ describe('runProofCheck dts config semantics', () => {
 
     try {
       await expect(
-        runProofCheck({
+        isRunProofCheck({
           ...fixture.config,
           config: {
             ...fixture.config.config,

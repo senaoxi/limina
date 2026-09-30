@@ -44,7 +44,7 @@ function addGovernedSourceFinding(options: {
   violation: FrameworkGovernanceFactForKind<'governed-source'>['violation'];
   workspaceLookup: WorkspaceLookupIndex;
 }): void {
-  const missing = options.violation === 'missing-runtime-unit';
+  const isMissing = options.violation === 'missing-runtime-unit';
   const reasons = {
     false:
       'runtime governed-source evidence must correspond to a canonical checker root in the generated manifest.',
@@ -54,8 +54,8 @@ function addGovernedSourceFinding(options: {
     false: 'Governed-source evidence is absent from the generated manifest',
     true: 'Generated checker root is missing governed-source evidence',
   } as const;
-  const reason = reasons[String(missing) as 'false' | 'true'];
-  const title = titles[String(missing) as 'false' | 'true'];
+  const reason = reasons[String(isMissing) as 'false' | 'true'];
+  const title = titles[String(isMissing) as 'false' | 'true'];
   addFrameworkGovernanceFinding({
     checkerName: options.checkerName,
     config: options.config,

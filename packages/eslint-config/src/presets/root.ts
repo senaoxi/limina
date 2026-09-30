@@ -29,11 +29,7 @@ type Config = ReturnType<typeof defineConfig>;
  *
  * If you need to write new configuration or scripts, prefer ESM (.mjs) over CommonJS (.cjs).
  */
-const config: Config = [
-  ...eslintGeneralConfig,
-
-  globalIgnores(['packages/**', 'docs', 'utils']),
-
+export const rootFileConfigs: Config = [
   // Root directory TypeScript script files
   {
     files: ['scripts/*.ts'],
@@ -135,7 +131,7 @@ const config: Config = [
         'error',
         {
           props: true,
-          ignorePropertyModificationsFor: ['pkg'], // Required for pnpm readPackage hook
+          ignorePropertyModificationsFor: ['package_'], // Required for pnpm readPackage hook
         },
       ],
     },
@@ -159,4 +155,8 @@ const config: Config = [
   },
 ];
 
-export default config;
+export default [
+  ...eslintGeneralConfig,
+  globalIgnores(['packages/**', 'docs', 'utils']),
+  ...rootFileConfigs,
+] as Config;

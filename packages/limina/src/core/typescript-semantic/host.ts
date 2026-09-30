@@ -27,7 +27,7 @@ export interface HostLibraryResolutionInput {
 
 type CompilerHostWithLibraryResolution = ts.CompilerHost & {
   resolveLibrary?: (
-    ...args: [
+    ...arguments_: [
       libraryName: string,
       resolveFrom: string,
       compilerOptions: ts.CompilerOptions,
@@ -95,51 +95,51 @@ export function createTypeScriptSemanticHost(options: {
         tsModule: options.tsModule,
         virtualFiles: options.virtualFiles,
       }),
-    getSourceFile(...args): ts.SourceFile | undefined {
+    getSourceFile(...arguments_): ts.SourceFile | undefined {
       return readSourceFile({
         callbacks: options.callbacks,
-        create: () => base.getSourceFile(...args),
-        fileName: args[0],
-        parserInput: args[1],
+        create: () => base.getSourceFile(...arguments_),
+        fileName: arguments_[0],
+        parserInput: arguments_[1],
         syntaxScope: options.syntaxScope,
       });
     },
-    resolveModuleNameLiterals: (...args) =>
+    resolveModuleNameLiterals: (...arguments_) =>
       options.callbacks.resolveModuleNameLiterals({
-        compilerOptions: args[3],
-        containingFile: args[1],
-        literals: args[0],
-        redirectedReference: args[2],
-        sourceFile: args[4],
+        compilerOptions: arguments_[3],
+        containingFile: arguments_[1],
+        literals: arguments_[0],
+        redirectedReference: arguments_[2],
+        sourceFile: arguments_[4],
       }),
-    resolveTypeReferenceDirectiveReferences: (...args) =>
+    resolveTypeReferenceDirectiveReferences: (...arguments_) =>
       options.callbacks.resolveTypeReferenceDirectiveReferences({
-        compilerOptions: args[3],
-        containingFile: args[1],
-        redirectedReference: args[2],
-        references: args[0],
-        sourceFile: args[4],
+        compilerOptions: arguments_[3],
+        containingFile: arguments_[1],
+        redirectedReference: arguments_[2],
+        references: arguments_[0],
+        sourceFile: arguments_[4],
       }),
   };
 
   if (base.getSourceFileByPath !== undefined) {
-    host.getSourceFileByPath = (...args): ts.SourceFile | undefined =>
+    host.getSourceFileByPath = (...arguments_): ts.SourceFile | undefined =>
       readSourceFile({
         callbacks: options.callbacks,
-        create: () => base.getSourceFileByPath!(...args),
-        fileName: args[0],
-        parserInput: args[2],
+        create: () => base.getSourceFileByPath!(...arguments_),
+        fileName: arguments_[0],
+        parserInput: arguments_[2],
         syntaxScope: options.syntaxScope,
       });
   }
 
   const hostWithLibrary = host as CompilerHostWithLibraryResolution;
-  hostWithLibrary.resolveLibrary = (...args) =>
+  hostWithLibrary.resolveLibrary = (...arguments_) =>
     options.callbacks.resolveLibrary({
-      compilerOptions: args[2],
-      libFileName: args[3],
-      libraryName: args[0],
-      resolveFrom: args[1],
+      compilerOptions: arguments_[2],
+      libFileName: arguments_[3],
+      libraryName: arguments_[0],
+      resolveFrom: arguments_[1],
     });
 
   return host;

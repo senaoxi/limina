@@ -45,7 +45,7 @@ async function addOutputAuthority(options: {
     options.issues.push(
       createOutputAuthorityIssue({
         config: options.config,
-        declaredAt: options.declaringSourceConfig.split('#')[0]!,
+        declaredAt: options.declaringSourceConfig.split('#', 1)[0]!,
         error,
         outputRoot: options.outputRoot,
       }),

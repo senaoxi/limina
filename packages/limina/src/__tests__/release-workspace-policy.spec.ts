@@ -1,14 +1,14 @@
 import type {
-  ReleaseContentHashConfigArgs,
+  ReleaseContentHashConfigArguments,
   ResolvedLiminaConfig,
 } from '#config/runner';
 import type { NamedWorkspacePackage } from '#core/workspace/actions';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createReleaseConsistencyState } from '../package-check/release/consistency/dependencies';
-import { loadReleaseRegistryConfiguration } from '../package-check/release/registry/configuration';
+import { loadReleaseRegistryConfig } from '../package-check/release/registry/config';
 import { visitWorkspacePackageDependencies } from '../package-check/release/workspace/dependencies';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
 
 const fixturePath = createFixturePathResolver(
@@ -53,7 +53,7 @@ describe('release policy for every importer', () => {
         ]),
       );
       const state = createReleaseConsistencyState(
-        loadReleaseRegistryConfiguration(fixturePath(), {
+        loadReleaseRegistryConfig(fixturePath(), {
           HOME: fixturePath(),
           NPM_CONFIG_PREFIX: fixturePath(),
         }),
@@ -71,27 +71,26 @@ describe('release policy for every importer', () => {
           },
         );
       }
-      const tags: ReleaseContentHashConfigArgs[] = [];
-      const ignores: ReleaseContentHashConfigArgs[] = [];
-      const config: ResolvedLiminaConfig = {
-        get governanceRoot() {
-          return resolveFixtureGovernanceRoot(this);
-        },
+      const tags: ReleaseContentHashConfigArguments[] = [];
+      const ignores: ReleaseContentHashConfigArguments[] = [];
+      const config: ResolvedLiminaConfig = withFixtureGovernanceRoot({
         rootDir: fixturePath(),
         configPath: fixturePath('limina.config.mjs'),
         release: {
           contentHash: {
-            baselineTag: (args) => {
-              tags.push(args);
-              return `${args.importerName}-baseline`;
+            baselineTag: (arguments_) => {
+              tags.push(arguments_);
+              return `${arguments_.importerName}-baseline`;
             },
-            ignore: (args) => {
-              ignores.push(args);
-              return args.importerName === name('left') ? ['index.js'] : [];
+            ignore: (arguments_) => {
+              ignores.push(arguments_);
+              return arguments_.importerName === name('left')
+                ? ['index.js']
+                : [];
             },
           },
         },
-      };
+      });
       const root = packages.get(name('root'))!;
       await visitWorkspacePackageDependencies({
         config,
@@ -108,11 +107,11 @@ describe('release policy for every importer', () => {
             (dependency) => `${name(importer)} -> ${name(dependency)}`,
           ),
         )
-        .sort();
-      const pairs = (values: ReleaseContentHashConfigArgs[]) =>
+        .sort((left, right) => Number(left > right) - Number(left < right));
+      const pairs = (values: ReleaseContentHashConfigArguments[]) =>
         values
           .map((value) => `${value.importerName} -> ${value.dependencyName}`)
-          .sort();
+          .sort((left, right) => Number(left > right) - Number(left < right));
       expect(pairs(tags)).toEqual(expected);
       expect(pairs(ignores)).toEqual(expected);
       expect(
@@ -125,7 +124,7 @@ describe('release policy for every importer', () => {
                 ]
               : [],
           )
-          .sort(),
+          .sort((left, right) => Number(left > right) - Number(left < right)),
       ).toEqual(expected);
       expect(state.visitedPackages.size).toBe(packages.size);
       expect(state.registryMetadataCache.size).toBe(packages.size);

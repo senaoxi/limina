@@ -1,5 +1,8 @@
 import { isPlainRecord } from '#utils/values';
-import type { DistPackageJson, SelfSpecifierMatchers } from './manifest-types';
+import type {
+  DistributionPackageJson,
+  SelfSpecifierMatchers,
+} from './manifest-types';
 
 function nonEmptySubpath(value: string): string | null {
   return value.length === 0 ? null : value;
@@ -10,11 +13,9 @@ function normalizeExportSubpath(exportKey: string): string | null {
     return '';
   }
 
-  if (!exportKey.startsWith('./')) {
-    return null;
-  }
-
-  return nonEmptySubpath(exportKey.slice('./'.length));
+  return exportKey.startsWith('./')
+    ? nonEmptySubpath(exportKey.slice('./'.length))
+    : null;
 }
 
 function addExportMatcher(
@@ -81,7 +82,7 @@ function collectNonObjectExportMatchers(
 
 export function collectSelfSpecifierMatchers(
   packageName: string,
-  exportsField: DistPackageJson['exports'],
+  exportsField: DistributionPackageJson['exports'],
 ): SelfSpecifierMatchers {
   const matchers: SelfSpecifierMatchers = {
     exact: new Set(),
@@ -92,10 +93,9 @@ export function collectSelfSpecifierMatchers(
     matchers.exact.add(packageName);
     return matchers;
   }
-  if (!isPlainRecord(exportsField)) {
-    return collectNonObjectExportMatchers(packageName, exportsField, matchers);
-  }
-  return collectObjectExportMatchers(packageName, exportsField, matchers);
+  return isPlainRecord(exportsField)
+    ? collectObjectExportMatchers(packageName, exportsField, matchers)
+    : collectNonObjectExportMatchers(packageName, exportsField, matchers);
 }
 
 export function isAllowedSelfSpecifier(

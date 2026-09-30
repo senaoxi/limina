@@ -8,7 +8,7 @@ import { formatReferences } from '#core/tsconfig/actions';
 import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
-import { getProjectCheckerName } from './finding-utils';
+import { getProjectCheckerName } from './finding-utilities';
 import type { GraphFinding, GraphReferenceExtraFinding } from './findings';
 import {
   getGeneratedCheckerNamespace,
@@ -19,7 +19,10 @@ import type {
   ExpectedReferencesByProjectPath,
   ReferenceExpectation,
 } from './reference-types';
-import { getAllowedRefRule, type NormalizedGraphRules } from './rules';
+import {
+  getAllowedRefRule as getAllowedReferenceRule,
+  type NormalizedGraphRules,
+} from './rules';
 
 function isGeneratedCheckerRoot(configPath: string): boolean {
   const checkerName = getGeneratedCheckerNamespace(configPath);
@@ -37,7 +40,7 @@ function hasAllowedReference(options: {
   referencePath: string;
 }): boolean {
   return Boolean(
-    getAllowedRefRule(
+    getAllowedReferenceRule(
       options.graphRules,
       options.project.labels,
       options.referencePath,
@@ -45,17 +48,16 @@ function hasAllowedReference(options: {
   );
 }
 
-function sharesGeneratedCheckerNamespace(options: {
+function isSharesGeneratedCheckerNamespace(options: {
   project: ProjectInfo;
   referencePath: string;
 }): boolean {
-  if (!getGeneratedCheckerNamespace(options.project.configPath)) {
-    return false;
-  }
-
-  return isSameGeneratedCheckerNamespace(
-    options.project.configPath,
-    options.referencePath,
+  return (
+    Boolean(getGeneratedCheckerNamespace(options.project.configPath)) &&
+    isSameGeneratedCheckerNamespace(
+      options.project.configPath,
+      options.referencePath,
+    )
   );
 }
 
@@ -70,7 +72,7 @@ function shouldSkipExtraReference(options: {
     isGeneratedCheckerRoot(options.project.configPath),
     options.expectedReferences.has(options.referencePath),
     !options.projectsByPath.has(options.referencePath),
-    sharesGeneratedCheckerNamespace(options),
+    isSharesGeneratedCheckerNamespace(options),
     hasAllowedReference(options),
   ];
 
@@ -129,7 +131,10 @@ function addExtraReferencesForProject(options: {
   projectCheckerNamesByPath: ReadonlyMap<string, string>;
   projectsByPath: Map<string, ProjectInfo>;
 }): void {
-  for (const referencePath of [...options.project.references].sort()) {
+  const referencePaths = [...options.project.references].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  for (const referencePath of referencePaths) {
     options.checks.add();
     if (shouldSkipExtraReference({ ...options, referencePath })) {
       continue;

@@ -15,15 +15,16 @@ type InclusionReason =
   | 'type-reference';
 
 function getRealPath(fileName: string): string {
-  if (!existsSync(fileName)) return normalizeAbsolutePath(fileName);
-  return normalizeAbsolutePath(realpathSync.native(fileName));
+  return normalizeAbsolutePath(
+    existsSync(fileName) ? realpathSync.native(fileName) : fileName,
+  );
 }
 
 function getPathIdentities(fileName: string): string[] {
   return [...new Set([normalizeAbsolutePath(fileName), getRealPath(fileName)])];
 }
 
-function resolveLibFileName(options: {
+function resolveLibraryFileName(options: {
   defaultLibDirectory: string;
   name: string;
 }): string {
@@ -39,9 +40,13 @@ function resolveLibFileName(options: {
 
 export class TypeScriptInclusionLedger {
   readonly #defaultLibDirectory: string;
+
   readonly #mode: NonNullable<TypeScriptSemanticProject['admissionMode']>;
+
   readonly #project: TypeScriptSemanticProject;
+
   readonly #pathIdentitiesByFileName = new Map<string, readonly string[]>();
+
   readonly #reasons = new Map<string, Set<InclusionReason>>();
 
   constructor(project: TypeScriptSemanticProject, tsModule: typeof ts) {
@@ -73,19 +78,69 @@ export class TypeScriptInclusionLedger {
     project: TypeScriptSemanticProject,
     tsModule: typeof ts,
   ): void {
-    for (const fileName of getProjectReferenceSemanticFiles({
+    const referenceFiles = getProjectReferenceSemanticFiles({
       references: project.projectReferences ?? [],
       virtualFiles: project.virtualFiles,
       tsModule,
-    })) {
+    });
+    for (const fileName of referenceFiles) {
       this.add(fileName, 'project-reference');
     }
   }
 
-  #addConfiguredLibs(libNames: readonly string[]): void {
-    for (const libName of libNames) {
-      this.addLibReference(libName);
+  #addConfiguredLibs(libraryNames: readonly string[]): void {
+    for (const libraryName of libraryNames) {
+      this.addLibReference(libraryName);
     }
+  }
+
+  #addTransitiveFile(fileName: string, reason: InclusionReason): void {
+    if (this.#mode === 'root-facts') return;
+    this.add(fileName, reason);
+  }
+
+  #allowExternalModuleTarget(
+    resolution: ts.ResolvedModuleFull,
+    containingFile?: string,
+  ): boolean {
+    if (
+      !this.#isExternalDeclarationTarget(resolution, containingFile) ||
+      this.#project.workspaceSourceBoundary.has(resolution.resolvedFileName)
+    ) {
+      return false;
+    }
+    this.add(resolution.resolvedFileName, 'external-module-target');
+    return true;
+  }
+
+  #isExternalDeclarationTarget(
+    resolution: ts.ResolvedModuleFull,
+    containingFile?: string,
+  ): boolean {
+    return (
+      resolution.isExternalLibraryImport === true ||
+      (isDeclarationFile(resolution.resolvedFileName) &&
+        this.#isExternalDeclarationImporter(containingFile))
+    );
+  }
+
+  #isExternalDeclarationImporter(fileName: string | undefined): boolean {
+    if (fileName === undefined || !isDeclarationFile(fileName)) return false;
+    return this.#getPathIdentities(fileName).some((identity) => {
+      const reasons = this.#reasons.get(identity);
+      return ['external-module-target', 'type-reference'].some((reason) =>
+        reasons?.has(reason as InclusionReason),
+      );
+    });
+  }
+
+  #getPathIdentities(fileName: string): readonly string[] {
+    const normalized = normalizeAbsolutePath(fileName);
+    const cached = this.#pathIdentitiesByFileName.get(normalized);
+    if (cached !== undefined) return cached;
+    const resolved = getPathIdentities(normalized);
+    this.#pathIdentitiesByFileName.set(normalized, resolved);
+    return resolved;
   }
 
   add(fileName: string, reason: InclusionReason): void {
@@ -106,7 +161,7 @@ export class TypeScriptInclusionLedger {
 
   addLibReference(name: string): void {
     this.#addTransitiveFile(
-      resolveLibFileName({
+      resolveLibraryFileName({
         defaultLibDirectory: this.#defaultLibDirectory,
         name,
       }),
@@ -123,8 +178,10 @@ export class TypeScriptInclusionLedger {
   }
 
   allowDefaultLib(fileName: string): boolean {
-    if (this.#mode === 'root-facts') return false;
-    if (!isPathInsideDirectory(fileName, this.#defaultLibDirectory))
+    if (
+      this.#mode === 'root-facts' ||
+      !isPathInsideDirectory(fileName, this.#defaultLibDirectory)
+    )
       return false;
     this.addDefaultLib(fileName);
     return true;
@@ -134,63 +191,16 @@ export class TypeScriptInclusionLedger {
     resolution: ts.ResolvedModuleFull,
     containingFile?: string,
   ): boolean {
-    if (this.has(resolution.resolvedFileName)) return true;
-    if (this.#mode === 'root-facts') return false;
-    return this.#allowExternalModuleTarget(resolution, containingFile);
-  }
-
-  #addTransitiveFile(fileName: string, reason: InclusionReason): void {
-    if (this.#mode === 'root-facts') return;
-    this.add(fileName, reason);
-  }
-
-  #allowExternalModuleTarget(
-    resolution: ts.ResolvedModuleFull,
-    containingFile?: string,
-  ): boolean {
-    if (!this.#isExternalDeclarationTarget(resolution, containingFile))
-      return false;
-    if (
-      this.#project.workspaceSourceBoundary.has(resolution.resolvedFileName)
-    ) {
-      return false;
-    }
-    this.add(resolution.resolvedFileName, 'external-module-target');
-    return true;
-  }
-
-  #isExternalDeclarationTarget(
-    resolution: ts.ResolvedModuleFull,
-    containingFile?: string,
-  ): boolean {
-    if (resolution.isExternalLibraryImport === true) return true;
-    if (!isDeclarationFile(resolution.resolvedFileName)) return false;
-    return this.#isExternalDeclarationImporter(containingFile);
-  }
-
-  #isExternalDeclarationImporter(fileName: string | undefined): boolean {
-    if (fileName === undefined) return false;
-    if (!isDeclarationFile(fileName)) return false;
-    return this.#getPathIdentities(fileName).some((identity) => {
-      const reasons = this.#reasons.get(identity);
-      return ['external-module-target', 'type-reference'].some((reason) =>
-        reasons?.has(reason as InclusionReason),
-      );
-    });
+    return (
+      this.has(resolution.resolvedFileName) ||
+      (this.#mode !== 'root-facts' &&
+        this.#allowExternalModuleTarget(resolution, containingFile))
+    );
   }
 
   has(fileName: string): boolean {
     return this.#getPathIdentities(fileName).some((identity) =>
       this.#reasons.has(identity),
     );
-  }
-
-  #getPathIdentities(fileName: string): readonly string[] {
-    const normalized = normalizeAbsolutePath(fileName);
-    const cached = this.#pathIdentitiesByFileName.get(normalized);
-    if (cached !== undefined) return cached;
-    const resolved = getPathIdentities(normalized);
-    this.#pathIdentitiesByFileName.set(normalized, resolved);
-    return resolved;
   }
 }

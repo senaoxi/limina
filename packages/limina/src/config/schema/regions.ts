@@ -4,8 +4,8 @@ import {
   type ConfigValidationContext,
   isNonEmptyString,
   isPlainConfigRecord,
+  isValidateStringArrayField,
   validateRelativeSelectors,
-  validateStringArrayField,
 } from './shared';
 
 const regionKeys = new Set(['exclude', 'extendNestedPackageScopes']);
@@ -18,8 +18,10 @@ const regionExcludeKinds = [
 type RegionExcludeKind = (typeof regionExcludeKinds)[number];
 
 function isRegionExcludeKind(value: unknown): value is RegionExcludeKind {
-  if (typeof value !== 'string') return false;
-  return regionExcludeKinds.includes(value as RegionExcludeKind);
+  return (
+    typeof value === 'string' &&
+    regionExcludeKinds.includes(value as RegionExcludeKind)
+  );
 }
 
 function validateRegionKind(options: {
@@ -53,7 +55,7 @@ function validateRegionIncludes(options: {
   value: Record<string, unknown>;
 }): void {
   const includePath = [...options.path, 'include'];
-  validateStringArrayField({
+  isValidateStringArrayField({
     ctx: options.ctx,
     path: includePath,
     required: true,
@@ -117,12 +119,12 @@ function validateRegionEntry(options: {
 
 function getRegionExclusions(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): unknown[] | null {
   if (value === undefined) return null;
   if (Array.isArray(value)) return value;
   addConfigIssue(
-    ctx,
+    context,
     ['regions', 'exclude'],
     'regions.exclude must be an array.',
   );
@@ -131,22 +133,22 @@ function getRegionExclusions(
 
 function validateRegionExclusions(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
-  const exclusions = getRegionExclusions(value, ctx);
+  const exclusions = getRegionExclusions(value, context);
   if (exclusions === null) return;
   for (const [index, entry] of exclusions.entries()) {
-    validateRegionEntry({ ctx, index, value: entry });
+    validateRegionEntry({ ctx: context, index, value: entry });
   }
 }
 
 function validateNestedPackageScopeFlag(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined || typeof value === 'boolean') return;
   addConfigIssue(
-    ctx,
+    context,
     ['regions', 'extendNestedPackageScopes'],
     'regions.extendNestedPackageScopes must be a boolean.',
   );
@@ -154,29 +156,29 @@ function validateNestedPackageScopeFlag(
 
 export function validateRegionsConfig(
   value: unknown,
-  ctx: ConfigValidationContext,
+  context: ConfigValidationContext,
 ): void {
   if (value === undefined) return;
   if (!isPlainConfigRecord(value)) {
-    addConfigIssue(ctx, ['regions'], 'regions config must be an object.');
+    addConfigIssue(context, ['regions'], 'regions config must be an object.');
     return;
   }
   addUnknownFieldIssues({
     allowed: regionKeys,
-    ctx,
+    ctx: context,
     message: 'unknown regions config field.',
     path: ['regions'],
     value,
   });
-  validateNestedPackageScopeFlag(value.extendNestedPackageScopes, ctx);
-  validateRegionExclusions(value.exclude, ctx);
+  validateNestedPackageScopeFlag(value.extendNestedPackageScopes, context);
+  validateRegionExclusions(value.exclude, context);
 }
 
-function invalidExactTsconfigPath(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
+function isInvalidExactTsconfigPath(value: unknown): boolean {
   return (
-    /[*?{}]/u.test(value) ||
-    !/(?:^|[\\/])tsconfig(?:\.[^\\/]+)?\.json$/u.test(value)
+    typeof value === 'string' &&
+    (/[*?{}]/u.test(value) ||
+      !/(?:^|[\\/])tsconfig(?:\.[^\\/]+)?\.json$/u.test(value))
   );
 }
 function validateExactTsconfigSelectors(options: {
@@ -184,8 +186,11 @@ function validateExactTsconfigSelectors(options: {
   path: PropertyKey[];
   value: Record<string, unknown>;
 }): void {
-  if (options.value.kind !== 'tsconfig') return;
-  if (!Array.isArray(options.value.include)) return;
+  if (
+    options.value.kind !== 'tsconfig' ||
+    !Array.isArray(options.value.include)
+  )
+    return;
   addExactSelectorIssues(options, options.value.include);
 }
 function addExactSelectorIssues(
@@ -193,7 +198,7 @@ function addExactSelectorIssues(
   values: unknown[],
 ): void {
   for (const [index, value] of values.entries()) {
-    if (invalidExactTsconfigPath(value))
+    if (isInvalidExactTsconfigPath(value))
       addConfigIssue(
         options.ctx,
         [...options.path, 'include', index],

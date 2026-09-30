@@ -8,9 +8,9 @@ import type {
   OutputOptionsProblem,
 } from './config-reader-types';
 import {
+  isReadDeclarationMap,
   type OutputReaderContext,
   type OutputStringField,
-  readDeclarationMap,
   readStringOutputFields,
   resolveOutputRecord,
   validateAllowedFields,
@@ -121,7 +121,7 @@ export function readOutputOptions(
   validateAllowedFields(outputRecord.value, context);
   return createOutputResult({
     context,
-    declarationMap: readDeclarationMap(outputRecord.value, context),
+    declarationMap: isReadDeclarationMap(outputRecord.value, context),
     values: readStringOutputFields(outputRecord.value, context),
   });
 }

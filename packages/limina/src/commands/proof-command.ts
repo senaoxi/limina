@@ -8,7 +8,10 @@ import {
 } from '../check-reporting/snapshot';
 import { clearCliScreen, ProofLogger } from '../logger';
 import { type LiminaPreflightManager, resolvePreflight } from '../preflight';
-import { runProofCheckImpl, type RunProofCheckOptions } from '../proof/runner';
+import {
+  isRunProofCheckImpl,
+  type RunProofCheckOptions,
+} from '../proof/runner';
 
 export interface ProofCommandTask {
   fail(reason: string, details?: { error: unknown }): void;
@@ -25,12 +28,12 @@ export interface ProofCommandContext {
 
 function isReportDeferred(options: RunProofCheckOptions): boolean {
   const report = options.report;
-  return report === undefined ? false : report.defer === true;
+  return report !== undefined && report.defer === true;
 }
 
 function isInteractiveFlow(options: RunProofCheckOptions): boolean {
   const flow = options.flow;
-  return flow === undefined ? false : flow.interactive === true;
+  return flow !== undefined && flow.interactive;
 }
 
 function isSnapshotDeferred(options: RunProofCheckOptions): boolean {
@@ -38,7 +41,7 @@ function isSnapshotDeferred(options: RunProofCheckOptions): boolean {
 }
 
 function shouldClearScreen(options: RunProofCheckOptions): boolean {
-  return options.clearScreen === undefined ? true : options.clearScreen;
+  return options.clearScreen === undefined || options.clearScreen;
 }
 
 function getFlowDepth(options: RunProofCheckOptions): number {
@@ -172,7 +175,7 @@ async function completeProofSnapshot(
   });
 }
 
-async function handlePassedProofCheck(
+async function isHandlePassedProofCheck(
   context: ProofCommandContext,
 ): Promise<true> {
   await completeProofSnapshot(context);
@@ -185,7 +188,7 @@ async function handlePassedProofCheck(
   return true;
 }
 
-async function handleFailedProofCheck(
+async function isHandleFailedProofCheck(
   context: ProofCommandContext,
   issues: readonly LiminaCheckIssue[],
 ): Promise<false> {
@@ -199,11 +202,11 @@ async function handleFailedProofCheck(
   return false;
 }
 
-export async function executeProofCommand(
+export async function isExecuteProofCommand(
   context: ProofCommandContext,
 ): Promise<boolean> {
   const issues = context.options.issues ?? [];
-  const passed = await runProofCheckImpl(context.config, {
+  const isPassed = await isRunProofCheckImpl(context.config, {
     deferSnapshot: context.options.deferSnapshot,
     generatedGraphProvider: context.options.generatedGraphProvider,
     issues,
@@ -215,7 +218,7 @@ export async function executeProofCommand(
     report: context.options.report,
   });
 
-  return passed
-    ? handlePassedProofCheck(context)
-    : handleFailedProofCheck(context, issues);
+  return isPassed
+    ? isHandlePassedProofCheck(context)
+    : isHandleFailedProofCheck(context, issues);
 }

@@ -31,11 +31,12 @@ import { toPortablePath } from './helpers/path';
 const fixtureRoots = new Set<string>();
 
 async function createFixture(): Promise<string> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-migration-transaction-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-migration-transaction-'),
   );
-  fixtureRoots.add(rootDir);
-  return rootDir;
+  const rootDirectory = await realpath(temporaryDirectory);
+  fixtureRoots.add(rootDirectory);
+  return rootDirectory;
 }
 
 async function writeText(filePath: string, content: string): Promise<void> {
@@ -59,25 +60,30 @@ function planItem(
 }
 
 async function collectTransactionDirectories(
-  rootDir: string,
+  rootDirectory: string,
 ): Promise<string[]> {
   const output: string[] = [];
 
   async function visit(directory: string): Promise<void> {
-    for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries) {
       const entryPath = path.join(directory, entry.name);
 
-      if (entry.isDirectory()) {
-        if (entry.name.startsWith('.limina-migration-')) {
-          output.push(entryPath);
-        }
-        await visit(entryPath);
+      if (!entry.isDirectory()) {
+        continue;
       }
+
+      if (entry.name.startsWith('.limina-migration-')) {
+        output.push(entryPath);
+      }
+      await visit(entryPath);
     }
   }
 
-  await visit(rootDir);
-  return output.sort();
+  await visit(rootDirectory);
+  return output.sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
 }
 
 function retryableError(code: 'EACCES' | 'EBUSY' | 'EPERM'): Error {
@@ -93,8 +99,8 @@ function createTransactionDirectoryMock() {
 }
 
 afterEach(async () => {
-  for (const rootDir of fixtureRoots) {
-    await rm(rootDir, { force: true, recursive: true });
+  for (const rootDirectory of fixtureRoots) {
+    await rm(rootDirectory, { force: true, recursive: true });
   }
   fixtureRoots.clear();
 });
@@ -123,10 +129,10 @@ describe('migration transaction', () => {
   });
 
   it('leaves ordinary, symlink, and hardlink skipped targets untouched', async () => {
-    const rootDir = await createFixture();
-    const ordinaryPath = path.join(rootDir, 'ordinary/tsconfig.json');
-    const symlinkPath = path.join(rootDir, 'symlink/tsconfig.json');
-    const hardlinkPath = path.join(rootDir, 'hardlink/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const ordinaryPath = path.join(rootDirectory, 'ordinary/tsconfig.json');
+    const symlinkPath = path.join(rootDirectory, 'symlink/tsconfig.json');
+    const hardlinkPath = path.join(rootDirectory, 'hardlink/tsconfig.json');
     await writeText(ordinaryPath, 'original\n');
     await mkdir(path.dirname(symlinkPath), { recursive: true });
     await mkdir(path.dirname(hardlinkPath), { recursive: true });
@@ -142,7 +148,7 @@ describe('migration transaction', () => {
     const replace = vi.fn(rename);
 
     const result = await executeMigrationWritePlan(
-      rootDir,
+      rootDirectory,
       [ordinaryPath, symlinkPath, hardlinkPath].map((filePath) =>
         planItem(filePath, 'original\n', 'original\n', 'skipped'),
       ),
@@ -181,13 +187,13 @@ describe('migration transaction', () => {
   });
 
   it('preserves mode and gives successful content a new transaction result', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
     await writeText(targetPath, '{"old":true}\n');
     await chmod(targetPath, 0o640);
     const originalStat = await stat(targetPath);
 
-    const result = await executeMigrationWritePlan(rootDir, [
+    const result = await executeMigrationWritePlan(rootDirectory, [
       planItem(targetPath, '{"old":true}\n', '{"new":true}\n'),
     ]);
     const targetStat = await stat(targetPath);
@@ -199,19 +205,19 @@ describe('migration transaction', () => {
       expect(targetStat.gid).toBe(originalStat.gid);
     }
     expect(result.modifiedFiles).toEqual([targetPath]);
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('cleans every parent after a late preparation failure', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -228,17 +234,17 @@ describe('migration transaction', () => {
 
     expect(await readFile(firstPath, 'utf8')).toBe('first\n');
     expect(await readFile(secondPath, 'utf8')).toBe('second\n');
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('cleans all artifacts when the first replacement fails', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
     await writeText(targetPath, 'original\n');
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original\n', 'next\n')],
         {
           replace: async () => {
@@ -250,13 +256,13 @@ describe('migration transaction', () => {
     ).rejects.toThrow(/replacement failed/u);
 
     expect(await readFile(targetPath, 'utf8')).toBe('original\n');
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('rolls back earlier replacements and restores the restorable mtime', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     const originalTime = new Date('2025-01-02T03:04:05.000Z');
@@ -266,7 +272,7 @@ describe('migration transaction', () => {
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -287,13 +293,13 @@ describe('migration transaction', () => {
     expect(await readFile(firstPath, 'utf8')).toBe('first\n');
     expect(await readFile(secondPath, 'utf8')).toBe('second\n');
     expect(restorableMtimeMs(await stat(firstPath))).toBe(originalMtime);
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('preserves external in-place content and only its recovery artifacts', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     let replacementCount = 0;
@@ -301,7 +307,7 @@ describe('migration transaction', () => {
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -327,7 +333,7 @@ describe('migration transaction', () => {
     expect(String(failure)).toMatch(/recovery backup retained/u);
     expect(await readFile(firstPath, 'utf8')).toBe('external\n');
     expect(await readFile(secondPath, 'utf8')).toBe('second\n');
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     const artifacts = await readdir(directories[0]!);
     expect(artifacts).toContain('0.backup');
@@ -335,9 +341,9 @@ describe('migration transaction', () => {
   });
 
   it('revalidates rollback after EBUSY and refuses external in-place content', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     let replacementCount = 0;
@@ -345,7 +351,7 @@ describe('migration transaction', () => {
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -376,28 +382,30 @@ describe('migration transaction', () => {
     expect(await readFile(firstPath, 'utf8')).toBe(
       'external during rollback retry\n',
     );
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     expect(await readdir(directories[0]!)).toContain('0.backup');
   });
 
   it('revalidates after a retryable commit error and preserves drifted content', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
     await writeText(targetPath, 'original\n');
     let replaceCount = 0;
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original\n', 'next\n')],
         {
           replace: async () => {
             replaceCount += 1;
-            if (replaceCount === 1) {
-              await writeFile(targetPath, 'external\n');
-              throw retryableError('EBUSY');
+            if (replaceCount !== 1) {
+              return;
             }
+
+            await writeFile(targetPath, 'external\n');
+            throw retryableError('EBUSY');
           },
           retryDelaysMs: [0, 0],
         },
@@ -408,46 +416,52 @@ describe('migration transaction', () => {
     expect(await readFile(targetPath, 'utf8')).toBe('external\n');
   });
 
-  it('shares validation and rename retries within one commit invocation', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
-    await writeText(targetPath, 'original\n');
-    let replaceCount = 0;
-    let writableOpenCount = 0;
+  it.each([
+    { label: 'string', code: 'EBUSY' },
+    { label: 'coercible object', code: { toString: (): string => 'EBUSY' } },
+  ])(
+    'shares validation and rename retries within one commit invocation ($label validation code)',
+    async ({ code }) => {
+      const rootDirectory = await createFixture();
+      const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
+      await writeText(targetPath, 'original\n');
+      let replaceCount = 0;
+      let writableOpenCount = 0;
 
-    await executeMigrationWritePlan(
-      rootDir,
-      [planItem(targetPath, 'original\n', 'next\n')],
-      {
-        openFile: async (filePath, flags, mode) => {
-          if (filePath === targetPath && flags === 'r+') {
-            writableOpenCount += 1;
-            if (writableOpenCount === 3) {
+      await executeMigrationWritePlan(
+        rootDirectory,
+        [planItem(targetPath, 'original\n', 'next\n')],
+        {
+          openFile: async (filePath, flags, mode) => {
+            if (filePath === targetPath && flags === 'r+') {
+              writableOpenCount += 1;
+              if (writableOpenCount === 3) {
+                throw Object.assign(new Error('EBUSY'), { code });
+              }
+            }
+            return open(filePath, flags, mode);
+          },
+          replace: async (sourcePath, replacementPath) => {
+            replaceCount += 1;
+            if (replaceCount === 1) {
               throw retryableError('EBUSY');
             }
-          }
-          return open(filePath, flags, mode);
+            await rename(sourcePath, replacementPath);
+          },
+          retryDelaysMs: [0, 0],
         },
-        replace: async (sourcePath, replacementPath) => {
-          replaceCount += 1;
-          if (replaceCount === 1) {
-            throw retryableError('EBUSY');
-          }
-          await rename(sourcePath, replacementPath);
-        },
-        retryDelaysMs: [0, 0],
-      },
-    );
+      );
 
-    expect(replaceCount).toBe(2);
-    expect(await readFile(targetPath, 'utf8')).toBe('next\n');
-  });
+      expect(replaceCount).toBe(2);
+      expect(await readFile(targetPath, 'utf8')).toBe('next\n');
+    },
+  );
 
   it('rejects modified symlink targets and classifies hardlinks before temp creation', async () => {
-    const rootDir = await createFixture();
-    const realPath = path.join(rootDir, 'real/tsconfig.json');
-    const symlinkPath = path.join(rootDir, 'linked/tsconfig.json');
-    const hardlinkPath = path.join(rootDir, 'hard/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const realPath = path.join(rootDirectory, 'real/tsconfig.json');
+    const symlinkPath = path.join(rootDirectory, 'linked/tsconfig.json');
+    const hardlinkPath = path.join(rootDirectory, 'hard/tsconfig.json');
     await writeText(realPath, 'original\n');
     await mkdir(path.dirname(symlinkPath), { recursive: true });
     await mkdir(path.dirname(hardlinkPath), { recursive: true });
@@ -457,13 +471,13 @@ describe('migration transaction', () => {
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(symlinkPath, 'original\n', 'next\n')],
         { makeTransactionDirectory },
       ),
     ).rejects.toThrow(/symbolic link|regular config/u);
     const prepared = await prepareMigrationWritePlan(
-      rootDir,
+      rootDirectory,
       [planItem(hardlinkPath, 'original\n', 'next\n')],
       { makeTransactionDirectory },
     );
@@ -474,9 +488,9 @@ describe('migration transaction', () => {
   });
 
   it('requires an explicit policy for a modified hardlink before temp creation', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
@@ -484,7 +498,7 @@ describe('migration transaction', () => {
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original\n', 'next\n')],
         { makeTransactionDirectory },
       ),
@@ -493,10 +507,10 @@ describe('migration transaction', () => {
   });
 
   it('skips hardlinks while atomically migrating ordinary targets', async () => {
-    const rootDir = await createFixture();
-    const ordinaryPath = path.join(rootDir, 'ordinary/tsconfig.json');
-    const hardlinkPath = path.join(rootDir, 'hard/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'alias/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const ordinaryPath = path.join(rootDirectory, 'ordinary/tsconfig.json');
+    const hardlinkPath = path.join(rootDirectory, 'hard/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'alias/tsconfig.json');
     await writeText(ordinaryPath, 'ordinary\n');
     await writeText(hardlinkPath, 'hardlink\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
@@ -504,7 +518,7 @@ describe('migration transaction', () => {
     const ordinaryBefore = await stat(ordinaryPath, { bigint: true });
 
     const result = await executeMigrationWritePlan(
-      rootDir,
+      rootDirectory,
       [
         planItem(hardlinkPath, 'hardlink\n', 'hardlink-next\n'),
         planItem(ordinaryPath, 'ordinary\n', 'ordinary-next\n'),
@@ -525,9 +539,9 @@ describe('migration transaction', () => {
   });
 
   it('rewrites a hardlink in place while preserving identity and metadata', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original-content\n');
     await chmod(targetPath, 0o640);
     await mkdir(path.dirname(aliasPath), { recursive: true });
@@ -535,7 +549,7 @@ describe('migration transaction', () => {
     const before = await stat(targetPath, { bigint: true });
 
     const result = await executeMigrationWritePlan(
-      rootDir,
+      rootDirectory,
       [planItem(targetPath, 'original-content\n', 'next\n')],
       { hardlinkPolicy: 'rewrite' },
     );
@@ -556,15 +570,15 @@ describe('migration transaction', () => {
     expect(result.modifiedFiles).toEqual([targetPath]);
     expect(result.hardlinkRewrittenFiles).toEqual([targetPath]);
     expect(result.hardlinkSkippedFiles).toEqual([]);
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it.runIf(process.platform !== 'win32')(
     'does not copy live ownership onto private in-place artifacts',
     async () => {
-      const rootDir = await createFixture();
-      const targetPath = path.join(rootDir, 'source/tsconfig.json');
-      const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+      const rootDirectory = await createFixture();
+      const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+      const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
       await writeText(targetPath, 'original-content\n');
       await chmod(targetPath, 0o640);
       await mkdir(path.dirname(aliasPath), { recursive: true });
@@ -573,7 +587,7 @@ describe('migration transaction', () => {
       const artifactChownCalls: string[] = [];
 
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original-content\n', 'next-content\n')],
         {
           hardlinkPolicy: 'rewrite',
@@ -605,10 +619,10 @@ describe('migration transaction', () => {
   );
 
   it('commits atomic targets before in-place hardlinks regardless of plan order', async () => {
-    const rootDir = await createFixture();
-    const hardlinkPath = path.join(rootDir, 'hard/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'alias/tsconfig.json');
-    const atomicPath = path.join(rootDir, 'atomic/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const hardlinkPath = path.join(rootDirectory, 'hard/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'alias/tsconfig.json');
+    const atomicPath = path.join(rootDirectory, 'atomic/tsconfig.json');
     await writeText(hardlinkPath, 'hard\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(hardlinkPath, aliasPath);
@@ -616,7 +630,7 @@ describe('migration transaction', () => {
     const events: string[] = [];
 
     await executeMigrationWritePlan(
-      rootDir,
+      rootDirectory,
       [
         planItem(hardlinkPath, 'hard\n', 'hard-next\n'),
         planItem(atomicPath, 'atomic\n', 'atomic-next\n'),
@@ -638,13 +652,13 @@ describe('migration transaction', () => {
   });
 
   it('fails closed when content changes after hardlink preflight', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
-    const prepared = await prepareMigrationWritePlan(rootDir, [
+    const prepared = await prepareMigrationWritePlan(rootDirectory, [
       planItem(targetPath, 'original\n', 'next\n'),
     ]);
     await writeFile(targetPath, 'external\n');
@@ -653,15 +667,15 @@ describe('migration transaction', () => {
       executePreparedMigrationPlan(prepared, { hardlinkPolicy: 'rewrite' }),
     ).rejects.toThrow(/content hash|byte length|changed/u);
     expect(await readFile(targetPath, 'utf8')).toBe('external\n');
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('fails closed when nlink changes after ordinary-target preflight', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original\n');
-    const prepared = await prepareMigrationWritePlan(rootDir, [
+    const prepared = await prepareMigrationWritePlan(rootDirectory, [
       planItem(targetPath, 'original\n', 'next\n'),
     ]);
     await mkdir(path.dirname(aliasPath), { recursive: true });
@@ -674,14 +688,14 @@ describe('migration transaction', () => {
   });
 
   it('fails closed when inode changes after hardlink preflight', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
-    const replacementPath = path.join(rootDir, 'replacement.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
+    const replacementPath = path.join(rootDirectory, 'replacement.json');
     await writeText(targetPath, 'original\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
-    const prepared = await prepareMigrationWritePlan(rootDir, [
+    const prepared = await prepareMigrationWritePlan(rootDirectory, [
       planItem(targetPath, 'original\n', 'next\n'),
     ]);
     await writeText(replacementPath, 'original\n');
@@ -695,16 +709,16 @@ describe('migration transaction', () => {
   });
 
   it('preserves post-write verification drift without restoring original content', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
     let failure: unknown;
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original\n', 'next000\n')],
         {
           hardlinkPolicy: 'rewrite',
@@ -725,21 +739,21 @@ describe('migration transaction', () => {
     );
     expect(await readFile(targetPath, 'utf8')).toBe('drift00\n');
     expect(await readFile(aliasPath, 'utf8')).toBe('drift00\n');
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     expect(await readdir(directories[0]!)).toContain('0.backup');
   });
 
   it('rejects duplicate logical hardlink targets during preflight', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
 
     await expect(
-      prepareMigrationWritePlan(rootDir, [
+      prepareMigrationWritePlan(rootDirectory, [
         planItem(targetPath, 'original\n', 'source-next\n'),
         planItem(aliasPath, 'original\n', 'alias-next\n'),
       ]),
@@ -747,11 +761,11 @@ describe('migration transaction', () => {
   });
 
   it('restores an earlier hardlink when a later in-place commit fails', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'first/tsconfig.json');
-    const firstAlias = path.join(rootDir, 'first-alias/tsconfig.json');
-    const secondPath = path.join(rootDir, 'second/tsconfig.json');
-    const secondAlias = path.join(rootDir, 'second-alias/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'first/tsconfig.json');
+    const firstAlias = path.join(rootDirectory, 'first-alias/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'second/tsconfig.json');
+    const secondAlias = path.join(rootDirectory, 'second-alias/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     await chmod(firstPath, 0o640);
@@ -763,11 +777,11 @@ describe('migration transaction', () => {
     await link(secondPath, secondAlias);
     const firstIdentity = await stat(firstPath, { bigint: true });
     const secondIdentity = await stat(secondPath, { bigint: true });
-    let failed = false;
+    let isFailed = false;
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -776,8 +790,8 @@ describe('migration transaction', () => {
           hardlinkPolicy: 'rewrite',
           writeAt: async ({ bytes, handle, length, offset, position }) => {
             const opened = await handle.stat({ bigint: true });
-            if (opened.ino === secondIdentity.ino && !failed) {
-              failed = true;
+            if (!isFailed && opened.ino === secondIdentity.ino) {
+              isFailed = true;
               throw new Error('second in-place commit failed');
             }
             return handle.write(bytes, offset, length, position);
@@ -794,11 +808,13 @@ describe('migration transaction', () => {
       expect(restorableMtimeMs(restored)).toBe(
         restorableMtimeMs(firstIdentity),
       );
-      if (process.platform !== 'win32') {
-        expect(restored.mode).toBe(firstIdentity.mode);
-        expect(restored.uid).toBe(firstIdentity.uid);
-        expect(restored.gid).toBe(firstIdentity.gid);
+      if (process.platform === 'win32') {
+        continue;
       }
+
+      expect(restored.mode).toBe(firstIdentity.mode);
+      expect(restored.uid).toBe(firstIdentity.uid);
+      expect(restored.gid).toBe(firstIdentity.gid);
     }
     for (const filePath of [secondPath, secondAlias]) {
       expect(await readFile(filePath, 'utf8')).toBe('second\n');
@@ -806,15 +822,15 @@ describe('migration transaction', () => {
         secondIdentity.ino,
       );
     }
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('preserves external hardlink drift and retains its recovery backup', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'first/tsconfig.json');
-    const firstAlias = path.join(rootDir, 'first-alias/tsconfig.json');
-    const secondPath = path.join(rootDir, 'second/tsconfig.json');
-    const secondAlias = path.join(rootDir, 'second-alias/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'first/tsconfig.json');
+    const firstAlias = path.join(rootDirectory, 'first-alias/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'second/tsconfig.json');
+    const secondAlias = path.join(rootDirectory, 'second-alias/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     await mkdir(path.dirname(firstAlias), { recursive: true });
@@ -822,12 +838,12 @@ describe('migration transaction', () => {
     await link(firstPath, firstAlias);
     await link(secondPath, secondAlias);
     const secondIdentity = await stat(secondPath, { bigint: true });
-    let failed = false;
+    let isFailed = false;
     let failure: unknown;
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -836,8 +852,8 @@ describe('migration transaction', () => {
           hardlinkPolicy: 'rewrite',
           writeAt: async ({ bytes, handle, length, offset, position }) => {
             const opened = await handle.stat({ bigint: true });
-            if (opened.ino === secondIdentity.ino && !failed) {
-              failed = true;
+            if (!isFailed && opened.ino === secondIdentity.ino) {
+              isFailed = true;
               await writeFile(firstPath, 'external\n');
               throw new Error('later hardlink failed');
             }
@@ -853,15 +869,15 @@ describe('migration transaction', () => {
     expect(String(failure)).toMatch(/recovery backup retained/u);
     expect(await readFile(firstPath, 'utf8')).toBe('external\n');
     expect(await readFile(firstAlias, 'utf8')).toBe('external\n');
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     expect(await readdir(directories[0]!)).toContain('0.backup');
   });
 
   it('preserves partial hardlink content and backup after a write failure', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original-content\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
@@ -884,7 +900,7 @@ describe('migration transaction', () => {
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original-content\n', 'next-content\n')],
         { hardlinkPolicy: 'rewrite', writeAt },
       );
@@ -898,15 +914,15 @@ describe('migration transaction', () => {
     expect(await readFile(targetPath, 'utf8')).toBe('neiginal-content\n');
     expect(await readFile(aliasPath, 'utf8')).toBe('neiginal-content\n');
     expect((await stat(targetPath, { bigint: true })).ino).toBe(before.ino);
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     expect(await readdir(directories[0]!)).toContain('0.backup');
   });
 
   it('does not write recovery content when a failed hardlink remains original', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original-content\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
@@ -916,7 +932,7 @@ describe('migration transaction', () => {
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original-content\n', 'next-content\n')],
         { hardlinkPolicy: 'rewrite', writeAt },
       ),
@@ -925,28 +941,28 @@ describe('migration transaction', () => {
     expect(writeAt).toHaveBeenCalledTimes(1);
     expect(await readFile(targetPath, 'utf8')).toBe('original-content\n');
     expect(await readFile(aliasPath, 'utf8')).toBe('original-content\n');
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('preserves external drift on the current hardlink item', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'source/tsconfig.json');
-    const aliasPath = path.join(rootDir, 'consumer/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'source/tsconfig.json');
+    const aliasPath = path.join(rootDirectory, 'consumer/tsconfig.json');
     await writeText(targetPath, 'original-content\n');
     await mkdir(path.dirname(aliasPath), { recursive: true });
     await link(targetPath, aliasPath);
-    let firstWrite = true;
+    let isFirstWrite = true;
     let failure: unknown;
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original-content\n', 'next-content\n')],
         {
           hardlinkPolicy: 'rewrite',
           writeAt: async ({ bytes, handle, length, offset, position }) => {
-            if (firstWrite) {
-              firstWrite = false;
+            if (isFirstWrite) {
+              isFirstWrite = false;
               await handle.write(bytes, offset, Math.min(length, 2), position);
               await writeFile(aliasPath, 'external-content\n');
               throw new Error('write failed after external drift');
@@ -963,16 +979,16 @@ describe('migration transaction', () => {
     expect(String(failure)).toMatch(/recovery backup retained/u);
     expect(await readFile(targetPath, 'utf8')).toBe('external-content\n');
     expect(await readFile(aliasPath, 'utf8')).toBe('external-content\n');
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     expect(await readdir(directories[0]!)).toContain('0.backup');
   });
 
   it('rejects a directory symlink that points outside the workspace', async () => {
-    const rootDir = await createFixture();
+    const rootDirectory = await createFixture();
     const externalRoot = await createFixture();
     const externalPath = path.join(externalRoot, 'tsconfig.json');
-    const linkedDirectory = path.join(rootDir, 'linked');
+    const linkedDirectory = path.join(rootDirectory, 'linked');
     await writeText(externalPath, 'original\n');
     await symlink(externalRoot, linkedDirectory, 'dir');
     const targetPath = path.join(linkedDirectory, 'tsconfig.json');
@@ -980,7 +996,7 @@ describe('migration transaction', () => {
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original\n', 'next\n')],
         { makeTransactionDirectory },
       ),
@@ -992,15 +1008,15 @@ describe('migration transaction', () => {
   it.runIf(process.platform !== 'win32')(
     'does not bypass a read-only target with rename replacement',
     async () => {
-      const rootDir = await createFixture();
-      const targetPath = path.join(rootDir, 'package/tsconfig.json');
+      const rootDirectory = await createFixture();
+      const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
       await writeText(targetPath, 'original\n');
       await chmod(targetPath, 0o400);
       const makeTransactionDirectory = createTransactionDirectoryMock();
 
       await expect(
         executeMigrationWritePlan(
-          rootDir,
+          rootDirectory,
           [planItem(targetPath, 'original\n', 'next\n')],
           { makeTransactionDirectory },
         ),
@@ -1011,8 +1027,8 @@ describe('migration transaction', () => {
   );
 
   it('aggregates post-commit cleanup failures and continues cleanup', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
     await writeText(targetPath, 'original\n');
     const removePath = vi.fn(async (filePath: string) => {
       if (filePath.endsWith('.backup') || filePath.endsWith('.rollback')) {
@@ -1022,7 +1038,7 @@ describe('migration transaction', () => {
     });
 
     const result = await executeMigrationWritePlan(
-      rootDir,
+      rootDirectory,
       [planItem(targetPath, 'original\n', 'next\n')],
       { removePath },
     );
@@ -1033,8 +1049,8 @@ describe('migration transaction', () => {
   });
 
   it('aggregates cleanup failures after a pre-commit replacement failure', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
     await writeText(targetPath, 'original\n');
     const removePath = vi.fn(async (filePath: string) => {
       if (filePath.endsWith('.next') || filePath.endsWith('.backup')) {
@@ -1046,7 +1062,7 @@ describe('migration transaction', () => {
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [planItem(targetPath, 'original\n', 'next\n')],
         {
           removePath,
@@ -1069,9 +1085,9 @@ describe('migration transaction', () => {
   });
 
   it('refuses rollback when the immutable backup mtime drifts', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     let firstBackupPath = '';
@@ -1080,19 +1096,22 @@ describe('migration transaction', () => {
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
         ],
         {
           afterPrepareItem: async (_item, index) => {
-            if (index === 0) {
-              const [directory] = await collectTransactionDirectories(rootDir);
-              firstBackupPath = path.join(directory!, '0.backup');
-              const driftTime = new Date('2030-01-02T03:04:05.000Z');
-              await utimes(firstBackupPath, driftTime, driftTime);
+            if (index !== 0) {
+              return;
             }
+
+            const [directory] =
+              await collectTransactionDirectories(rootDirectory);
+            firstBackupPath = path.join(directory!, '0.backup');
+            const driftTime = new Date('2030-01-02T03:04:05.000Z');
+            await utimes(firstBackupPath, driftTime, driftTime);
           },
           replace: async (sourcePath, targetPath) => {
             replacementCount += 1;
@@ -1115,18 +1134,18 @@ describe('migration transaction', () => {
   });
 
   it('refuses rollback when the prepared rollback temp mtime drifts', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     let replacementCount = 0;
-    let rollbackTempDrifted = false;
+    let isRollbackTemporaryDrifted = false;
     let failure: unknown;
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -1134,8 +1153,8 @@ describe('migration transaction', () => {
         {
           readFileBytes: async (filePath) => {
             const bytes = await readFile(filePath);
-            if (filePath.endsWith('.rollback') && !rollbackTempDrifted) {
-              rollbackTempDrifted = true;
+            if (!isRollbackTemporaryDrifted && filePath.endsWith('.rollback')) {
+              isRollbackTemporaryDrifted = true;
               const driftTime = new Date('2031-01-02T03:04:05.000Z');
               await utimes(filePath, driftTime, driftTime);
             }
@@ -1157,24 +1176,24 @@ describe('migration transaction', () => {
 
     expect(failure).toBeInstanceOf(MigrationTransactionError);
     expect(String(failure)).toMatch(/mtime changed|recovery backup retained/u);
-    expect(rollbackTempDrifted).toBe(true);
+    expect(isRollbackTemporaryDrifted).toBe(true);
     expect(replacementCount).toBe(2);
     expect(await readFile(firstPath, 'utf8')).toBe('first-next\n');
   });
 
   it('retries transient post-rollback verification access errors', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     let replacementCount = 0;
-    let rollbackInstalled = false;
+    let isRollbackInstalled = false;
     let transientReadCount = 0;
 
     await expect(
       executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -1182,7 +1201,7 @@ describe('migration transaction', () => {
         {
           readFileBytes: async (filePath) => {
             if (
-              rollbackInstalled &&
+              isRollbackInstalled &&
               filePath === firstPath &&
               transientReadCount < 2
             ) {
@@ -1198,7 +1217,7 @@ describe('migration transaction', () => {
             }
             await rename(sourcePath, targetPath);
             if (replacementCount === 3) {
-              rollbackInstalled = true;
+              isRollbackInstalled = true;
             }
           },
           retryDelaysMs: [0, 0],
@@ -1209,13 +1228,13 @@ describe('migration transaction', () => {
     expect(transientReadCount).toBe(2);
     expect(await readFile(firstPath, 'utf8')).toBe('first\n');
     expect(await readFile(secondPath, 'utf8')).toBe('second\n');
-    expect(await collectTransactionDirectories(rootDir)).toEqual([]);
+    expect(await collectTransactionDirectories(rootDirectory)).toEqual([]);
   });
 
   it('keeps an immutable backup when rollback post-verification fails', async () => {
-    const rootDir = await createFixture();
-    const firstPath = path.join(rootDir, 'a/tsconfig.json');
-    const secondPath = path.join(rootDir, 'b/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const firstPath = path.join(rootDirectory, 'a/tsconfig.json');
+    const secondPath = path.join(rootDirectory, 'b/tsconfig.json');
     await writeText(firstPath, 'first\n');
     await writeText(secondPath, 'second\n');
     let replaceCount = 0;
@@ -1223,7 +1242,7 @@ describe('migration transaction', () => {
 
     try {
       await executeMigrationWritePlan(
-        rootDir,
+        rootDirectory,
         [
           planItem(firstPath, 'first\n', 'first-next\n'),
           planItem(secondPath, 'second\n', 'second-next\n'),
@@ -1249,18 +1268,18 @@ describe('migration transaction', () => {
     expect(failure).toBeInstanceOf(MigrationTransactionError);
     expect(String(failure)).toMatch(/recovery backup retained/u);
     expect(await readFile(firstPath, 'utf8')).toBe('post-verify external\n');
-    const directories = await collectTransactionDirectories(rootDir);
+    const directories = await collectTransactionDirectories(rootDirectory);
     expect(directories).toHaveLength(1);
     expect(await readdir(directories[0]!)).toContain('0.backup');
   });
 
   it('records a stable physical identity for regular files', async () => {
-    const rootDir = await createFixture();
-    const targetPath = path.join(rootDir, 'package/tsconfig.json');
+    const rootDirectory = await createFixture();
+    const targetPath = path.join(rootDirectory, 'package/tsconfig.json');
     await writeText(targetPath, 'original\n');
     const before = await lstat(targetPath, { bigint: true });
 
-    await executeMigrationWritePlan(rootDir, [
+    await executeMigrationWritePlan(rootDirectory, [
       planItem(targetPath, 'original\n', 'next\n'),
     ]);
 
@@ -1270,12 +1289,12 @@ describe('migration transaction', () => {
   });
 
   it('allows one case alias but rejects duplicate aliases on insensitive filesystems', async () => {
-    const rootDir = await createFixture();
+    const rootDirectory = await createFixture();
     const targetPath = toPortablePath(
-      path.join(rootDir, 'Package/tsconfig.json'),
+      path.join(rootDirectory, 'Package/tsconfig.json'),
     );
     const aliasPath = toPortablePath(
-      path.join(rootDir, 'package/tsconfig.json'),
+      path.join(rootDirectory, 'package/tsconfig.json'),
     );
     await writeText(targetPath, 'original\n');
 
@@ -1290,13 +1309,13 @@ describe('migration transaction', () => {
       return;
     }
 
-    await executeMigrationWritePlan(rootDir, [
+    await executeMigrationWritePlan(rootDirectory, [
       planItem(aliasPath, 'original\n', 'next\n'),
     ]);
     expect(await readFile(targetPath, 'utf8')).toBe('next\n');
 
     await expect(
-      executeMigrationWritePlan(rootDir, [
+      executeMigrationWritePlan(rootDirectory, [
         planItem(targetPath, 'next\n', 'next-again\n'),
         planItem(aliasPath, 'next\n', 'alias-next\n'),
       ]),

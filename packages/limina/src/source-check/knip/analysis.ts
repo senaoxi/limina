@@ -7,7 +7,10 @@ import {
   collectUnusedWorkspaceDependencyIssues,
 } from './report-issues';
 import { parseKnipJsonReport } from './report-parser';
-import { withTemporaryKnipConfig, withTemporaryVirtualEntries } from './temp';
+import {
+  withTemporaryKnipConfig,
+  withTemporaryVirtualEntries,
+} from './temporary';
 import type {
   CollectKnipSourceIssuesOptions,
   KnipCliInvocation,
@@ -20,11 +23,7 @@ import type {
 } from './types';
 
 function hasWorkspaceSelection(group: KnipSourceAnalysisGroup): boolean {
-  if (group.workspaceNames === undefined) {
-    return true;
-  }
-
-  return group.workspaceNames.length > 0;
+  return group.workspaceNames === undefined || group.workspaceNames.length > 0;
 }
 
 function normalizeAnalysisGroups(
@@ -46,8 +45,8 @@ function mergeKnipReports(reports: readonly JSONReport[]): JSONReport {
   };
 }
 
-function getIssueTypes(includeFiles: boolean): KnipSourceIssueType[] {
-  return includeFiles ? ['dependencies', 'files'] : ['dependencies'];
+function getIssueTypes(isIncludeFiles: boolean): KnipSourceIssueType[] {
+  return isIncludeFiles ? ['dependencies', 'files'] : ['dependencies'];
 }
 
 function createInvocation(options: {

@@ -13,14 +13,14 @@ import {
 } from '../core/typescript-semantic/context';
 import { SourceSyntaxFactsCache } from '../core/typescript-semantic/syntax-cache';
 import { OwnedSyntaxScope } from '../core/typescript-semantic/syntax-input';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 
 const roots: string[] = [];
-async function fixture(text = "import 'alpha';", ext = 'ts') {
+async function fixture(text = "import 'alpha';", extension = 'ts') {
   const root = await mkdtemp(path.join(tmpdir(), 'limina-syntax-'));
   roots.push(root);
   await writeFile(path.join(root, 'package.json'), '{}');
-  const file = normalizeAbsolutePath(path.join(root, `input.${ext}`));
+  const file = normalizeAbsolutePath(path.join(root, `input.${extension}`));
   await writeFile(file, text);
   const project = {
     configPath: normalizeAbsolutePath(path.join(root, 'tsconfig.json')),
@@ -181,13 +181,10 @@ describe('provider-owned raw syntax facts', () => {
       cache,
     );
     expect(cache.statistics.entries).toBe(2);
-    const config = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const config = withFixtureGovernanceRoot({
       configPath: normalizeAbsolutePath(path.join(f.root, 'limina.config.mjs')),
       rootDir: f.root,
-    };
+    });
     const first = createAnalysisProviders(config);
     const second = createAnalysisProviders(config);
     expect(first.artifactNamespace.generation).toBe(

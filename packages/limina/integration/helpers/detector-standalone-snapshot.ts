@@ -13,7 +13,7 @@ import type {
   DetectorStructuredSnapshotResult,
   SnapshotReadOptions,
 } from './detector-snapshot-types';
-import { pathExists } from './fixture-sandbox';
+import { isPathExists } from './fixture-sandbox';
 
 export function getStandaloneInvocationDirectory(repoRoot: string): string {
   return path.join(
@@ -55,7 +55,7 @@ export async function assertNoPreexistingStandaloneSnapshots(
   repoRoot: string,
 ): Promise<void> {
   const invocationDirectory = getStandaloneInvocationDirectory(repoRoot);
-  if (!(await pathExists(invocationDirectory))) return;
+  if (!(await isPathExists(invocationDirectory))) return;
   await assertDirectory(
     invocationDirectory,
     `Detector fixture sandbox contains an invalid standalone invocation directory before invocation: ${invocationDirectory}`,
@@ -75,8 +75,8 @@ async function readInvocationEntry(options: {
   )
     .filter((entry) => entry.name.endsWith('.json'))
     .sort((left, right) => left.name.localeCompare(right.name));
-  const valid = entries.length === 1 && entries[0]!.isFile();
-  if (valid) return entries[0]!.name.slice(0, -'.json'.length);
+  const isValid = entries.length === 1 && entries[0]!.isFile();
+  if (isValid) return entries[0]!.name.slice(0, -'.json'.length);
   throw new Error(
     `Detector fixture ${options.fixtureId} must produce exactly one formal standalone invocation snapshot in ${options.invocationDirectory}; received ${entries.length}.`,
   );
@@ -101,7 +101,7 @@ async function resolveInvocationDirectory(
   const invocationDirectory = getStandaloneInvocationDirectory(
     options.repoRoot,
   );
-  if (await pathExists(invocationDirectory)) return invocationDirectory;
+  if (await isPathExists(invocationDirectory)) return invocationDirectory;
   throw new Error(
     `Detector fixture ${options.fixtureId} did not produce a formal standalone invocation snapshot in ${invocationDirectory}.`,
   );
@@ -126,15 +126,15 @@ function assertStandaloneFresh(options: {
   mtimeMs: number;
   snapshotPath: string;
 }): void {
-  const completedAtIsFresh = isFreshSnapshotTimestamp(
+  const isCompletedAtIsFresh = isFreshSnapshotTimestamp(
     Date.parse(options.completedAt),
     options.invocationStartedAtMs,
   );
-  const fileIsFresh = isFreshSnapshotTimestamp(
+  const isFileIsFresh = isFreshSnapshotTimestamp(
     options.mtimeMs,
     options.invocationStartedAtMs,
   );
-  if (completedAtIsFresh && fileIsFresh) return;
+  if (isCompletedAtIsFresh && isFileIsFresh) return;
   throw new Error(
     `Detector fixture ${options.fixtureId} standalone invocation snapshot is stale: ${options.snapshotPath}.`,
   );

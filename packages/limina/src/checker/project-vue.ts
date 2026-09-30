@@ -97,7 +97,9 @@ export function parseVueProjectConfig(
       ...entry,
     })),
     extensions: [...result.extensions],
-    fileNames: result.parsed.fileNames.map(normalizeAbsolutePath).sort(),
+    fileNames: result.parsed.fileNames
+      .map(normalizeAbsolutePath)
+      .sort((left, right) => Number(left > right) - Number(left < right)),
     options: { ...result.parsed.options },
     vueSemanticIdentity: result.identity,
   };

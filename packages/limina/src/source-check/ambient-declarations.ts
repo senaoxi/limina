@@ -6,7 +6,7 @@ import {
 } from '../core/workspace/file-candidates';
 import type { ValidatedWorkspaceContext } from '../core/workspace/validated-context';
 import {
-  collectAmbientRuleConfiguration,
+  collectAmbientRuleConfig,
   collectAmbientRuleMatches,
 } from './ambient-declaration-rules';
 import {
@@ -67,14 +67,14 @@ export async function createAmbientDeclarationIndex(options: {
     config: options.config,
     rules,
   });
-  const configuration = collectAmbientRuleConfiguration({
+  const config = collectAmbientRuleConfig({
     config: options.config,
     ruleMatches,
   });
   const policyResult = await collectAmbientPolicies({
     config: options.config,
     generatedGraph: options.generatedGraph,
-    overlappingRules: configuration.overlappingRules,
+    overlappingRules: config.overlappingRules,
     ruleMatches,
     workspaceContext: options.workspaceContext,
   });
@@ -83,6 +83,6 @@ export async function createAmbientDeclarationIndex(options: {
     index: new AmbientDeclarationIndexImpl(
       createPolicyEntries(policyResult.policies),
     ),
-    issues: [...configuration.issues, ...policyResult.issues],
+    issues: [...config.issues, ...policyResult.issues],
   };
 }

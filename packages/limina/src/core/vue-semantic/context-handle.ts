@@ -55,8 +55,7 @@ function hasSameText(
   current: SnapshotEntry | undefined,
   text: string,
 ): boolean {
-  if (current === undefined) return false;
-  return current.text === text;
+  return current !== undefined && current.text === text;
 }
 
 function registerLanguageScript(options: {
@@ -128,18 +127,29 @@ function disposeLanguage(options: {
 }
 
 export class VueSemanticContext {
-  readonly identity: VueProjectSemanticIdentity;
-  readonly language: VolarLanguage;
-  readonly languageService: ts.LanguageService;
-  readonly languageServiceHost: VueLanguageServiceHost;
-  readonly sys: typeof ts.sys;
-  readonly tsModule: typeof ts;
   readonly #onProgramCreated: ProgramCreationObserver | undefined;
+
   #program: ts.Program | undefined;
+
   readonly #semanticSourceFiles = new Map<string, ts.SourceFile>();
+
   readonly #scriptRegistry: Map<string, VolarSourceScript>;
+
   readonly #snapshots: Map<string, SnapshotEntry>;
+
   #disposed = false;
+
+  readonly identity: VueProjectSemanticIdentity;
+
+  readonly language: VolarLanguage;
+
+  readonly languageService: ts.LanguageService;
+
+  readonly languageServiceHost: VueLanguageServiceHost;
+
+  readonly sys: typeof ts.sys;
+
+  readonly tsModule: typeof ts;
 
   constructor(
     identity: VueProjectSemanticIdentity,

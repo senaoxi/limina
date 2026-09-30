@@ -15,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import picomatch from 'picomatch';
 
 import {
@@ -86,7 +87,7 @@ function isMissingPathError(error: unknown): boolean {
   );
 }
 
-export async function pathExists(candidatePath: string): Promise<boolean> {
+export async function isPathExists(candidatePath: string): Promise<boolean> {
   try {
     await lstat(candidatePath);
     return true;
@@ -207,7 +208,7 @@ async function writeSandboxFile(options: {
   );
   await prepareSafeParent(options.sandboxRoot, destinationPath);
 
-  if (await pathExists(destinationPath)) {
+  if (await isPathExists(destinationPath)) {
     const destinationStat = await lstat(destinationPath);
     if (destinationStat.isSymbolicLink()) {
       throw new Error(
@@ -249,7 +250,7 @@ async function removeSandboxPath(options: {
     rootDir: options.sandboxRoot,
   });
 
-  if (!(await pathExists(destinationPath))) {
+  if (!(await isPathExists(destinationPath))) {
     if (options.allowMissing) {
       return;
     }
@@ -288,7 +289,7 @@ async function createSandboxDirectoryLink(options: {
       `Fixture directory-link target must be a real directory: ${options.targetPath}`,
     );
   }
-  if (await pathExists(linkPath)) {
+  if (await isPathExists(linkPath)) {
     throw new Error(
       `Fixture directory-link path already exists: ${options.linkPath}`,
     );
@@ -386,14 +387,31 @@ async function replaceSandboxText(options: {
       `Fixture replace-text search was not found: ${options.relativePath}`,
     );
   }
-  if (!options.all && matches !== 1) {
+  if (matches !== 1 && !options.all) {
     throw new Error(
       `Fixture replace-text expected one match but found ${matches}: ${options.relativePath}`,
     );
   }
+  const replaceMatch = (match: string, offset: number): string => {
+    // Preserve the native string-replacement token contract explicitly.
+    const substitutions = new Map([
+      ['$$', '$'],
+      ['$&', match],
+      ['$`', current.slice(0, offset)],
+      ["$'", current.slice(offset + match.length)],
+    ]);
+    return options.replacement.replaceAll(
+      /\$[$&`']/gu,
+      (token) => substitutions.get(token)!,
+    );
+  };
   const next = options.all
-    ? current.replaceAll(options.search, options.replacement)
-    : current.replace(options.search, options.replacement);
+    ? current.replaceAll(options.search, (match, offset: number) =>
+        replaceMatch(match, offset),
+      )
+    : current.replace(options.search, (match, offset: number) =>
+        replaceMatch(match, offset),
+      );
   await writeFile(targetPath, next, 'utf8');
 }
 
@@ -439,17 +457,12 @@ function isCopyEntryExcluded(
   entryName: string,
   policy: FixtureCopyPolicy,
 ): boolean {
-  if (PERMANENT_COPY_EXCLUDED_NAME_SET.has(entryName)) {
-    return true;
-  }
-  if (!policy.includeBuildInfoFiles && entryName.endsWith('.tsbuildinfo')) {
-    return true;
-  }
-  if (!policy.includeOutputDirectories && entryName === 'dist') {
-    return true;
-  }
-
-  return new Set(policy.excludedNames).has(entryName);
+  return (
+    PERMANENT_COPY_EXCLUDED_NAME_SET.has(entryName) ||
+    (!policy.includeBuildInfoFiles && entryName.endsWith('.tsbuildinfo')) ||
+    (!policy.includeOutputDirectories && entryName === 'dist') ||
+    new Set(policy.excludedNames).has(entryName)
+  );
 }
 
 class FixtureCopyError extends Error {}
@@ -476,7 +489,9 @@ async function copyFixtureEntry(options: {
 
     if (sourceStat.isDirectory()) {
       await mkdir(options.destinationPath, { recursive: true });
-      const entries = (await readdir(options.sourcePath)).sort();
+      const entries = (await readdir(options.sourcePath)).sort(
+        (left, right) => Number(left > right) - Number(left < right),
+      );
       for (const entryName of entries) {
         if (isCopyEntryExcluded(entryName, options.policy)) {
           continue;
@@ -508,14 +523,14 @@ async function copyFixtureEntry(options: {
   }
 }
 
-export async function copyFixtureRepository(options: {
+export async function copyFixtureRepo(options: {
   readonly destinationRoot: string;
   readonly policy?: FixtureCopyPolicy;
   readonly sourceRoot: string;
 }): Promise<void> {
   await assertRealDirectory(options.sourceRoot, 'Detector fixture source');
   const canonicalSourceRoot = await realpath(options.sourceRoot);
-  if (await pathExists(options.destinationRoot)) {
+  if (await isPathExists(options.destinationRoot)) {
     throw new Error(
       `Detector fixture copy destination already exists: ${options.destinationRoot}`,
     );
@@ -547,13 +562,15 @@ export async function captureTreeSnapshot(options: {
   readonly ignoredPathPrefixes?: readonly string[];
   readonly rootDir: string;
 }): Promise<TreeSnapshot> {
-  const rootDir = await realpath(options.rootDir);
-  await assertRealDirectory(rootDir, 'Tree snapshot root');
+  const rootDirectory = await realpath(options.rootDir);
+  await assertRealDirectory(rootDirectory, 'Tree snapshot root');
   const ignoredPrefixes = options.ignoredPathPrefixes ?? [];
   const snapshot = new Map<string, TreeEntrySnapshot>();
 
   async function visit(directoryPath: string, relativeDirectory: string) {
-    const entries = (await readdir(directoryPath)).sort();
+    const entries = (await readdir(directoryPath)).sort(
+      (left, right) => Number(left > right) - Number(left < right),
+    );
     for (const entryName of entries) {
       const absolutePath = path.join(directoryPath, entryName);
       const relativePath = relativeDirectory
@@ -574,7 +591,7 @@ export async function captureTreeSnapshot(options: {
         const canonicalTarget = normalizeAbsolutePathIdentity(
           await realpath(absolutePath),
         );
-        if (!isPathInsideDirectory(canonicalTarget, rootDir)) {
+        if (!isPathInsideDirectory(canonicalTarget, rootDirectory)) {
           throw new Error(
             `Tree snapshot directory link escapes its root: ${absolutePath}`,
           );
@@ -605,16 +622,16 @@ export async function captureTreeSnapshot(options: {
     }
   }
 
-  await visit(rootDir, '');
+  await visit(rootDirectory, '');
   return snapshot;
 }
 
 function isAllowedAddedPath(
   relativePath: string,
   patterns: readonly string[],
-  matcher: (value: string) => boolean,
+  isMatcher: (value: string) => boolean,
 ): boolean {
-  if (matcher(relativePath)) {
+  if (isMatcher(relativePath)) {
     return true;
   }
 
@@ -653,35 +670,37 @@ export function assertTreeSnapshotUnchanged(options: {
     }
   }
 
-  if (differences.length > 0) {
-    const visible = differences.slice(0, 20);
-    const omitted = differences.length - visible.length;
-    throw new Error(
-      [
-        `${options.label} changed unexpectedly:`,
-        ...visible.map((difference) => `- ${difference}`),
-        ...(omitted > 0 ? [`- ... ${omitted} more changes omitted`] : []),
-      ].join('\n'),
-    );
-  }
+  if (differences.length === 0) return;
+  const visible = differences.slice(0, 20);
+  const omitted = differences.length - visible.length;
+  throw new Error(
+    [
+      `${options.label} changed unexpectedly:`,
+      ...visible.map((difference) => `- ${difference}`),
+      ...(omitted > 0 ? [`- ... ${omitted} more changes omitted`] : []),
+    ].join('\n'),
+  );
 }
 
 export async function createDetectorSandbox(options: {
   readonly fixtureId: string;
   readonly tempRoot?: string;
 }): Promise<DetectorSandbox> {
-  const platformTempRoot =
+  const platformTemporaryRoot =
     process.platform === 'win32' ? tmpdir() : `${path.parse(tmpdir()).root}tmp`;
-  const requestedTempRoot =
+  const requestedTemporaryRoot =
     options.tempRoot ??
-    path.join(platformTempRoot, `ldi-${String(process.getuid?.() ?? 'user')}`);
-  await mkdir(requestedTempRoot, { recursive: true });
+    path.join(
+      platformTemporaryRoot,
+      `ldi-${String(process.getuid?.() ?? 'user')}`,
+    );
+  await mkdir(requestedTemporaryRoot, { recursive: true });
   await assertRealDirectory(
-    requestedTempRoot,
+    requestedTemporaryRoot,
     'Detector integration temp root',
   );
-  const tempRoot = await realpath(requestedTempRoot);
-  await assertRealDirectory(tempRoot, 'Detector integration temp root');
+  const temporaryRoot = await realpath(requestedTemporaryRoot);
+  await assertRealDirectory(temporaryRoot, 'Detector integration temp root');
   const readableName = options.fixtureId.replaceAll('/', '-');
   const stableName =
     readableName.length <= 24
@@ -691,17 +710,17 @@ export async function createDetectorSandbox(options: {
           .digest('hex')
           .slice(0, 8)}`;
   const sandboxRoot = await realpath(
-    await mkdtemp(path.join(tempRoot, `detector-${stableName}-`)),
+    await mkdtemp(path.join(temporaryRoot, `detector-${stableName}-`)),
   );
 
   return {
     repoRoot: path.join(sandboxRoot, 'repo'),
     sandboxRoot,
-    tempRoot,
+    tempRoot: temporaryRoot,
   };
 }
 
-export async function cleanupDetectorSandbox(
+export async function isCleanupDetectorSandbox(
   options: {
     readonly preserve?: boolean;
     readonly sandboxRoot: string;
@@ -709,13 +728,13 @@ export async function cleanupDetectorSandbox(
   },
   dependencies: RemoveSandboxDependencies = { remove: rm },
 ): Promise<boolean> {
-  const tempRoot = normalizeAbsolutePathIdentity(
+  const temporaryRoot = normalizeAbsolutePathIdentity(
     await realpath(options.tempRoot),
   );
   const sandboxRoot = normalizeAbsolutePathIdentity(options.sandboxRoot);
   if (
-    sandboxRoot === tempRoot ||
-    !isPathInsideDirectory(sandboxRoot, tempRoot)
+    sandboxRoot === temporaryRoot ||
+    !isPathInsideDirectory(sandboxRoot, temporaryRoot)
   ) {
     throw new Error(
       `Refusing to clean detector sandbox outside the integration temp root: ${sandboxRoot}`,
@@ -725,15 +744,15 @@ export async function cleanupDetectorSandbox(
   const canonicalSandbox = normalizeAbsolutePathIdentity(
     await realpath(sandboxRoot),
   );
-  if (!isPathInsideDirectory(canonicalSandbox, tempRoot)) {
+  if (!isPathInsideDirectory(canonicalSandbox, temporaryRoot)) {
     throw new Error(
       `Refusing to clean detector sandbox outside the canonical integration temp root: ${canonicalSandbox}`,
     );
   }
 
-  const preserve =
+  const isPreserve =
     options.preserve ?? process.env[PRESERVE_INTEGRATION_ARTIFACTS_ENV] === '1';
-  if (preserve) {
+  if (isPreserve) {
     return false;
   }
 
@@ -757,7 +776,7 @@ export async function finishFixtureCleanup(options: {
     cleanupError = error;
   }
 
-  if (options.primaryError !== undefined && cleanupError !== undefined) {
+  if (cleanupError !== undefined && options.primaryError !== undefined) {
     throw new Error(
       `${formatUnknownError(options.primaryError)}\nCleanup failure: ${formatUnknownError(cleanupError)}`,
       { cause: options.primaryError },

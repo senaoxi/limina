@@ -92,8 +92,11 @@ function assertProjectDependencyCollection(
 
 export class ImportCore {
   readonly #config: ResolvedLiminaConfig;
+
   #context: ImportAnalysisContext;
+
   readonly #projectDependencyCaches = createProjectDependencyCaches();
+
   readonly #workspaceSourceBoundaryProvider: ImportCoreOptions['workspaceSourceBoundaryProvider'];
 
   constructor(config: ResolvedLiminaConfig, options: ImportCoreOptions) {
@@ -101,10 +104,6 @@ export class ImportCore {
     this.#context = this.#createContext(options);
     this.#workspaceSourceBoundaryProvider =
       options.workspaceSourceBoundaryProvider;
-  }
-
-  get context(): ImportAnalysisContext {
-    return this.#context;
   }
 
   #createContext(options: ImportCoreOptions): ImportAnalysisContext {
@@ -115,6 +114,26 @@ export class ImportCore {
       svelteSemanticContexts: options.svelteSemanticContexts,
       vueSemanticContexts: options.vueSemanticContexts,
     });
+  }
+
+  #collectProject(project: ProjectInfo): ProjectDependencyCollection {
+    const authority = getProjectSemanticAuthority(project);
+    const packageRootDirectory = getProjectPackageRoot(project);
+    const collection = collectProjectDependencies({
+      caches: this.#projectDependencyCaches,
+      context: createParsedProjectSemanticContext({
+        authority,
+        packageRootDir: packageRootDirectory,
+        project,
+        workspaceSourceBoundary: this.#workspaceSourceBoundaryProvider(project),
+      }),
+      importAnalysis: this.#context,
+    });
+    return assertProjectDependencyCollection(collection);
+  }
+
+  get context(): ImportAnalysisContext {
+    return this.#context;
   }
 
   getImports(filePath: string): ImportRecord[] {
@@ -168,21 +187,5 @@ export class ImportCore {
         left.importRecord.locator.sourceStart -
         right.importRecord.locator.sourceStart,
     );
-  }
-
-  #collectProject(project: ProjectInfo): ProjectDependencyCollection {
-    const authority = getProjectSemanticAuthority(project);
-    const packageRootDir = getProjectPackageRoot(project);
-    const collection = collectProjectDependencies({
-      caches: this.#projectDependencyCaches,
-      context: createParsedProjectSemanticContext({
-        authority,
-        packageRootDir,
-        project,
-        workspaceSourceBoundary: this.#workspaceSourceBoundaryProvider(project),
-      }),
-      importAnalysis: this.#context,
-    });
-    return assertProjectDependencyCollection(collection);
   }
 }

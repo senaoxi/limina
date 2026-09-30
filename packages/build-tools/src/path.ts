@@ -5,20 +5,22 @@ export function slash(p: string): string {
   return p.replaceAll('\\', '/');
 }
 
-/** Check whether `child` is inside (or equal to) `parent` using path segments. */
+/**
+Check whether `child` is inside (or equal to) `parent` using path segments.
+*/
 export function isSubpath(parent: string, child: string): boolean {
-  const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  const related = relative(parent, child);
+  return related === '' || (!related.startsWith('..') && !isAbsolute(related));
 }
 
 const WORKSPACE_ROOT_FILES = ['pnpm-workspace.yaml', 'lerna.json'];
 
-function hasWorkspaceRootFile(dir: string): boolean {
-  return WORKSPACE_ROOT_FILES.some((f) => fs.existsSync(join(dir, f)));
+function hasWorkspaceRootFile(direction: string): boolean {
+  return WORKSPACE_ROOT_FILES.some((f) => fs.existsSync(join(direction, f)));
 }
 
-function hasWorkspacePackageJson(dir: string): boolean {
-  const p = join(dir, 'package.json');
+function hasWorkspacePackageJson(direction: string): boolean {
+  const p = join(direction, 'package.json');
   if (!fs.existsSync(p)) return false;
   try {
     const content = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
@@ -28,9 +30,9 @@ function hasWorkspacePackageJson(dir: string): boolean {
   }
 }
 
-function hasWorkspaceDenoJson(dir: string): boolean {
+function hasWorkspaceDenoJson(direction: string): boolean {
   for (const name of ['deno.json', 'deno.jsonc']) {
-    const p = join(dir, name);
+    const p = join(direction, name);
     if (!fs.existsSync(p)) continue;
     try {
       const content = JSON.parse(fs.readFileSync(p, 'utf8')) || {};
@@ -42,11 +44,11 @@ function hasWorkspaceDenoJson(dir: string): boolean {
   return false;
 }
 
-function isWorkspaceRoot(dir: string): boolean {
+function isWorkspaceRoot(direction: string): boolean {
   return (
-    hasWorkspaceRootFile(dir) ||
-    hasWorkspacePackageJson(dir) ||
-    hasWorkspaceDenoJson(dir)
+    hasWorkspaceRootFile(direction) ||
+    hasWorkspacePackageJson(direction) ||
+    hasWorkspaceDenoJson(direction)
   );
 }
 
@@ -59,40 +61,42 @@ const packageRootCache = new Map<string, string | undefined>();
  * subsequent queries starting anywhere along that chain are O(1).
  */
 function walkUpWithCache(
-  startDir: string,
+  startDirectory: string,
   cache: Map<string, string | undefined>,
-  matches: (dir: string) => boolean,
+  isMatches: (direction: string) => boolean,
 ): string | undefined {
-  const resolved = realpathSync(startDir);
+  const resolved = realpathSync(startDirectory);
   if (cache.has(resolved)) return cache.get(resolved);
 
   const visited: string[] = [];
-  let dir = resolved;
+  let direction = resolved;
   while (true) {
     // mid-walk cache hit: every dir we've passed shares the cached answer
-    if (cache.has(dir)) {
-      const cached = cache.get(dir);
+    if (cache.has(direction)) {
+      const cached = cache.get(direction);
       for (const v of visited) cache.set(v, cached);
       return cached;
     }
-    visited.push(dir);
+    visited.push(direction);
 
-    if (matches(dir)) {
-      for (const v of visited) cache.set(v, dir);
-      return dir;
+    if (isMatches(direction)) {
+      for (const v of visited) cache.set(v, direction);
+      return direction;
     }
 
-    const parent = dirname(dir);
-    if (parent === dir) {
+    const parent = dirname(direction);
+    if (parent === direction) {
       // fs root reached without a match — record "no result" for the whole chain
       for (const v of visited) cache.set(v, undefined);
       return undefined;
     }
-    dir = parent;
+    direction = parent;
   }
 }
 
-let monorepoRoot: string | undefined | null = null;
+const workspaceRootCache: { value: string | undefined | null } = {
+  value: null,
+};
 
 /**
  * Walks up from `startDir` and returns the first directory matching a workspace
@@ -101,21 +105,21 @@ let monorepoRoot: string | undefined | null = null;
  * deno.json{c} with `workspace`. A project has at most one workspace root, so
  * the result is cached in a single slot for the process lifetime.
  */
-export function findMonorepoRoot(startDir: string): string | undefined {
-  if (monorepoRoot !== null) return monorepoRoot;
+export function findMonorepoRoot(startDirectory: string): string | undefined {
+  if (workspaceRootCache.value !== null) return workspaceRootCache.value;
 
-  let dir = realpathSync(startDir);
+  let direction = realpathSync(startDirectory);
   while (true) {
-    if (isWorkspaceRoot(dir)) {
-      monorepoRoot = dir;
-      return dir;
+    if (isWorkspaceRoot(direction)) {
+      workspaceRootCache.value = direction;
+      return direction;
     }
-    const parent = dirname(dir);
-    if (parent === dir) {
-      monorepoRoot = undefined;
+    const parent = dirname(direction);
+    if (parent === direction) {
+      workspaceRootCache.value = undefined;
       return undefined;
     }
-    dir = parent;
+    direction = parent;
   }
 }
 
@@ -124,9 +128,11 @@ export function findMonorepoRoot(startDir: string): string | undefined {
  * `package.json`, or `undefined` if none is found up to the filesystem root.
  * Results are cached per visited directory.
  */
-export function findNearestPackageRoot(startDir: string): string | undefined {
-  return walkUpWithCache(startDir, packageRootCache, (dir) =>
-    fs.existsSync(join(dir, 'package.json')),
+export function findNearestPackageRoot(
+  startDirectory: string,
+): string | undefined {
+  return walkUpWithCache(startDirectory, packageRootCache, (direction) =>
+    fs.existsSync(join(direction, 'package.json')),
   );
 }
 

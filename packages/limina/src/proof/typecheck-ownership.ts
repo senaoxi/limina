@@ -15,7 +15,7 @@ import { parseProofConfig, readProofConfig } from './config-reader';
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 import { isOrdinarySourceOwnershipCandidate } from './ownership-candidates';
 
@@ -28,13 +28,12 @@ function isDefaultTypecheckAggregator(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
 }): boolean {
-  if (path.basename(options.configPath) !== 'tsconfig.json') {
-    return false;
-  }
-
-  return Object.hasOwn(
-    readProofConfig(options.config, options.configPath),
-    'references',
+  return (
+    path.basename(options.configPath) === 'tsconfig.json' &&
+    Object.hasOwn(
+      readProofConfig(options.config, options.configPath),
+      'references',
+    )
   );
 }
 

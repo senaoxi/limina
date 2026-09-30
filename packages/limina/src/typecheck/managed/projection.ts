@@ -25,7 +25,7 @@ export interface ManagedOutputProjection {
   usesBoundedVueDirectory: boolean;
 }
 
-export function getEffectiveOutDir(
+function getEffectiveOutputDirectory(
   configPath: string,
   compilerOptions: ts.CompilerOptions,
 ): string {
@@ -114,13 +114,15 @@ function isBoundedVueInput(options: {
   emitProjection: string | undefined;
   fileName: string;
 }): boolean {
-  if (isNativeTypeScriptProjectInput(options.fileName)) return false;
-  if (!isAdapterExtraInput(options)) return false;
-  return options.emitProjection === 'vue-bounded';
+  return (
+    !isNativeTypeScriptProjectInput(options.fileName) &&
+    isAdapterExtraInput(options) &&
+    options.emitProjection === 'vue-bounded'
+  );
 }
 
-function formatRootDir(rootDir: string | undefined): string {
-  return rootDir === undefined ? '(missing)' : rootDir;
+function formatRootDirectory(rootDirectory: string | undefined): string {
+  return rootDirectory === undefined ? '(missing)' : rootDirectory;
 }
 
 function assertVueInputInsideRoot(options: {
@@ -136,7 +138,7 @@ function assertVueInputInsideRoot(options: {
       'Vue checker input cannot be proven inside the configured emit root:',
       `  config: ${options.configPath}`,
       `  input: ${options.fileName}`,
-      `  rootDir: ${formatRootDir(options.rootDir)}`,
+      `  rootDir: ${formatRootDirectory(options.rootDir)}`,
     ].join('\n'),
   );
 }
@@ -189,11 +191,12 @@ function projectInput(options: {
   );
 }
 
-function getCompilerRootDir(
+function getCompilerRootDirectory(
   compilerOptions: ts.CompilerOptions,
 ): string | undefined {
-  if (compilerOptions.rootDir === undefined) return undefined;
-  return normalizeAbsolutePath(compilerOptions.rootDir);
+  return compilerOptions.rootDir === undefined
+    ? undefined
+    : normalizeAbsolutePath(compilerOptions.rootDir);
 }
 
 export function collectProjectedOutputs(options: {
@@ -208,9 +211,9 @@ export function collectProjectedOutputs(options: {
     projectedOutputs: new Set(),
     usesBoundedVueDirectory: false,
   };
-  const rootDir = getCompilerRootDir(options.compilerOptions);
+  const rootDirectory = getCompilerRootDirectory(options.compilerOptions);
   for (const fileNameValue of options.fileNames) {
-    projectInput({ ...options, fileNameValue, rootDir, state });
+    projectInput({ ...options, fileNameValue, rootDir: rootDirectory, state });
   }
   return state;
 }
@@ -219,8 +222,7 @@ function shouldAddOutputTargets(options: {
   outputPaths: readonly string[];
   usesBoundedVueDirectory: boolean;
 }): boolean {
-  if (options.outputPaths.length > 0) return true;
-  return options.usesBoundedVueDirectory;
+  return options.outputPaths.length > 0 || options.usesBoundedVueDirectory;
 }
 
 export function addOutputMutationTargets(options: {
@@ -288,3 +290,5 @@ export function assertProjectionInside(options: {
     });
   }
 }
+
+export { getEffectiveOutputDirectory as getEffectiveOutDir };

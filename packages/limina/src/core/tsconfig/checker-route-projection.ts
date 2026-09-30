@@ -22,10 +22,9 @@ function shouldProjectChecker(
   checker: CheckerRouteSnapshot,
   projection: RouteProjection,
 ): boolean {
-  if (projection === 'entry') {
-    return isBuildCapablePreset(checker.checkerPreset);
-  }
-  return checker.supportsSourceGraph;
+  return projection === 'entry'
+    ? isBuildCapablePreset(checker.checkerPreset)
+    : checker.supportsSourceGraph;
 }
 
 function getMissingEntryText(projection: RouteProjection): {
@@ -101,10 +100,9 @@ function hasAvailableRoute(
   rootConfigPath: string;
   traversal: NonNullable<CheckerRouteSnapshot['traversal']>;
 } {
-  if (checker.rootConfigPath === undefined) {
-    return false;
-  }
-  return checker.traversal !== undefined;
+  return (
+    checker.rootConfigPath !== undefined && checker.traversal !== undefined
+  );
 }
 
 function addAvailableRoute(

@@ -39,10 +39,9 @@ function filterSelectedChecker(options: {
   checker: BuildCheckerPreset | undefined;
   targets: readonly ManagedDeclarationBuildTarget[];
 }): ManagedDeclarationBuildTarget[] {
-  if (options.checker === undefined) return [...options.targets];
-  return options.targets.filter(
-    ({ checker }) => checker.name === options.checker,
-  );
+  return options.checker === undefined
+    ? [...options.targets]
+    : options.targets.filter(({ checker }) => checker.name === options.checker);
 }
 
 function createUnmanagedConfigProblem(options: {

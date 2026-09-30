@@ -3,7 +3,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { expect, it, vi } from 'vitest';
 import { acquireCrossProcessWriteLease } from '../utils/mutation/cross-process-lease';
-import { removeDeadHolder } from '../utils/mutation/cross-process-lease-holder';
+import { isRemoveDeadHolder } from '../utils/mutation/cross-process-lease-holder';
 import { createSemanticRepairFixture } from './helpers/semantic-repair';
 
 const barrier = vi.hoisted(() => ({
@@ -15,22 +15,19 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
     ...actual,
-    unlink: async (...args: Parameters<typeof actual.unlink>) => {
-      await barrier.hook?.('unlink', String(args[0]));
-      return actual.unlink(...args);
+    unlink: async (...arguments_: Parameters<typeof actual.unlink>) => {
+      await barrier.hook?.('unlink', String(arguments_[0]));
+      return actual.unlink(...arguments_);
     },
-    rmdir: async (...args: Parameters<typeof actual.rmdir>) => {
-      await barrier.hook?.('rmdir', String(args[0]));
-      return actual.rmdir(...args);
+    rmdir: async (...arguments_: Parameters<typeof actual.rmdir>) => {
+      await barrier.hook?.('rmdir', String(arguments_[0]));
+      return actual.rmdir(...arguments_);
     },
   };
 });
 
 function createGate() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
+  const { promise: promise, resolve: resolve } = Promise.withResolvers<void>();
   return { promise, resolve };
 }
 
@@ -67,7 +64,7 @@ it.each(['legacy-unlink', 'token-unlink', 'token-rmdir'])(
       | Awaited<ReturnType<typeof acquireCrossProcessWriteLease>>
       | undefined;
     try {
-      const pending = removeDeadHolder(holder);
+      const pending = isRemoveDeadHolder(holder);
       await ready.promise;
       replacement = await acquireCrossProcessWriteLease(fixture.root, {
         timeoutMs: 1000,

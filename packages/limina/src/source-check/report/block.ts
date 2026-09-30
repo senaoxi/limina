@@ -4,12 +4,12 @@ import boxen from 'boxen';
 const ISSUE_BLOCK_MIN_WIDTH = 88;
 const ISSUE_BLOCK_HORIZONTAL_PADDING = 2;
 const ISSUE_BLOCK_BORDER_WIDTH = 2;
-const ANSI_BLUE = '\u001B[34m';
-const ANSI_CYAN = '\u001B[36m';
-const ANSI_GREEN = '\u001B[32m';
-const ANSI_MAGENTA = '\u001B[35m';
-const ANSI_RED = '\u001B[31m';
-const ANSI_YELLOW = '\u001B[33m';
+const ANSI_BLUE = '\u{1B}[34m';
+const ANSI_CYAN = '\u{1B}[36m';
+const ANSI_GREEN = '\u{1B}[32m';
+const ANSI_MAGENTA = '\u{1B}[35m';
+const ANSI_RED = '\u{1B}[31m';
+const ANSI_YELLOW = '\u{1B}[33m';
 const LABEL_PREFIX_PATTERN = /^(\s*(?:-\s+|\d+\.\s+)?)([A-Za-z][A-Za-z ]*):/u;
 
 interface LineWrapPrefix {
@@ -70,8 +70,10 @@ function createWrapPrefix(line: string, prefix: string): LineWrapPrefix {
 
 function getLineWrapPrefix(line: string): LineWrapPrefix {
   const labelPrefix = getLabelWrapPrefix(line);
-  if (labelPrefix !== undefined) return createWrapPrefix(line, labelPrefix);
-  return createWrapPrefix(line, getListWrapPrefix(line));
+  return createWrapPrefix(
+    line,
+    labelPrefix === undefined ? getListWrapPrefix(line) : labelPrefix,
+  );
 }
 
 function splitFixedWidth(value: string, width: number): string[] {
@@ -156,7 +158,8 @@ function appendWord(options: {
 function wrapContent(content: string, width: number): string[] {
   const wrapped: string[] = [];
   let current = '';
-  for (const word of content.split(/\s+/u).filter(Boolean)) {
+  const words = content.split(/\s+/u).filter(Boolean);
+  for (const word of words) {
     current = appendWord({ current, word, width, wrapped });
   }
   if (current.length > 0) wrapped.push(current);
@@ -178,22 +181,25 @@ function isFilesHeading(line: string): boolean {
   return line === 'files:' || line === 'files by scope:';
 }
 
-function getFileLineWidth(line: string, inFilesSection: boolean): number {
-  if (!inFilesSection) return 0;
+function getFileLineWidth(
+  line: string,
+  isInFilesSectionValue: boolean,
+): number {
+  if (!isInFilesSectionValue) return 0;
   return /^\s+-\s+\S/u.test(line) ? line.length : 0;
 }
 
 function getRequiredFilesLineWidth(lines: readonly string[]): number {
-  let inFilesSection = false;
+  let isInFilesSection = false;
   let requiredWidth = 0;
   for (const line of lines) {
     if (isFilesHeading(line)) {
-      inFilesSection = true;
+      isInFilesSection = true;
       continue;
     }
     requiredWidth = Math.max(
       requiredWidth,
-      getFileLineWidth(line, inFilesSection),
+      getFileLineWidth(line, isInFilesSection),
     );
   }
   return requiredWidth;

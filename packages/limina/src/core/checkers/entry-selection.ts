@@ -62,14 +62,14 @@ function isExcludedEntry(options: {
   const relativePath = toPosixPath(
     toRelativePath(options.config.rootDir, options.entryPath),
   );
-  const excluded = options.positiveMatchers.some((matches) =>
+  const isExcluded = options.positiveMatchers.some((matches) =>
     matches(relativePath),
   );
-  const restored = options.negativeMatchers.some((matches) =>
+  const isRestored = options.negativeMatchers.some((matches) =>
     matches(relativePath),
   );
 
-  return excluded && !restored;
+  return isExcluded && !isRestored;
 }
 
 function filterExcludedEntries(
@@ -98,22 +98,24 @@ function filterExcludedEntries(
 }
 
 function createIncludePatterns(
-  rootDir: string,
+  rootDirectory: string,
   patterns: readonly string[],
 ): string[] {
   return patterns
     .map(normalizeWorkspaceGlob)
     .flatMap((pattern) =>
-      expandTinyglobbyPattern(normalizeTinyglobbyPattern(pattern, rootDir)),
+      expandTinyglobbyPattern(
+        normalizeTinyglobbyPattern(pattern, rootDirectory),
+      ),
     );
 }
 
-function matchesAnyPattern(
+function isMatchesAnyPattern(
   configPath: string,
-  rootDir: string,
+  rootDirectory: string,
   matchers: readonly ((value: string) => boolean)[],
 ): boolean {
-  const relativePath = toPosixPath(toRelativePath(rootDir, configPath));
+  const relativePath = toPosixPath(toRelativePath(rootDirectory, configPath));
   return matchers.some((matches) => matches(relativePath));
 }
 
@@ -123,7 +125,7 @@ function collectIncludedEntryPaths(
 ): string[] {
   const matchers = createMatchers(includePatterns);
   const discoveredPaths = context.sourceConfigPaths.filter((configPath) =>
-    matchesAnyPattern(configPath, context.config.rootDir, matchers),
+    isMatchesAnyPattern(configPath, context.config.rootDir, matchers),
   );
 
   return [...new Set(discoveredPaths.map(normalizeAbsolutePath))].sort(
@@ -207,7 +209,7 @@ export function createCheckerEntrySelectionOptions(
   };
 }
 
-export function matchesCheckerScope(options: {
+export function isMatchesCheckerScope(options: {
   config: ResolvedLiminaConfig;
   configPath: string;
   scope: CheckerScope;
@@ -215,16 +217,12 @@ export function matchesCheckerScope(options: {
   const includeMatchers = createMatchers(
     createIncludePatterns(options.config.rootDir, options.scope.include),
   );
-  if (
-    !matchesAnyPattern(
+  return (
+    isMatchesAnyPattern(
       options.configPath,
       options.config.rootDir,
       includeMatchers,
-    )
-  ) {
-    return false;
-  }
-  return (
+    ) &&
     filterExcludedEntries(
       options.config,
       [options.configPath],

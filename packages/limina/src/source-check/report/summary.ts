@@ -124,8 +124,9 @@ function formatAvailableValues(options: {
   label: string;
   values: readonly string[];
 }): string[] {
-  if (options.values.length === 0) return [];
-  return ['', options.label, ...options.values.map((value) => `  - ${value}`)];
+  return options.values.length === 0
+    ? []
+    : ['', options.label, ...options.values.map((value) => `  - ${value}`)];
 }
 
 export function formatNoMatchedSourceIssues(options: {

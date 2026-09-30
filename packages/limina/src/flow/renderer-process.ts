@@ -1,4 +1,8 @@
 import {
+  isIntegerNumber,
+  parseIntegerPrefix,
+} from '../utils/validation/is-integer';
+import {
   type FlowRendererParentMessage,
   type FlowRendererProcessMessage,
   type FlowRenderSnapshot,
@@ -12,16 +16,18 @@ import {
   TerminalFrameTracker,
 } from './terminal-frame';
 
-let snapshot: FlowRenderSnapshot = {
-  entries: [],
-  treeRoots: [],
+const state = {
+  snapshot: {
+    entries: [],
+    treeRoots: [],
+  } as FlowRenderSnapshot,
+  spinnerFrameIndex: 0,
+  spinnerTimer: undefined as NodeJS.Timeout | undefined,
+  isClosed: false,
+  isSuspended: false,
 };
 const terminalFrame = new TerminalFrameTracker(getTerminalColumns);
 const FLOW_RENDERER_TEST_COLUMNS_ENV = 'LIMINA_FLOW_RENDERER_TEST_COLUMNS';
-let spinnerFrameIndex = 0;
-let spinnerTimer: NodeJS.Timeout | undefined;
-let closed = false;
-let suspended = false;
 
 type RendererMessageType = FlowRendererProcessMessage['type'];
 type RendererMessageFor<Type extends RendererMessageType> = Extract<
@@ -37,7 +43,7 @@ function send(message: FlowRendererParentMessage): void {
 }
 
 function isPositiveInteger(value: number): boolean {
-  return Number.isInteger(value) && value > 0;
+  return isIntegerNumber(value) && value > 0;
 }
 
 function readPositiveInteger(value: string | undefined): number | undefined {
@@ -45,7 +51,7 @@ function readPositiveInteger(value: string | undefined): number | undefined {
     return undefined;
   }
 
-  const parsed = Number.parseInt(value, 10);
+  const parsed = parseIntegerPrefix(value);
   return isPositiveInteger(parsed) ? parsed : undefined;
 }
 
@@ -59,7 +65,7 @@ function getTerminalColumns(): number {
   const columns = firstDefinedNumber([
     readPositiveInteger(process.env[FLOW_RENDERER_TEST_COLUMNS_ENV]),
     process.stdout.columns,
-    snapshot.terminalDimensions?.columns,
+    state.snapshot.terminalDimensions?.columns,
     DEFAULT_TERMINAL_COLUMNS,
   ]);
 
@@ -74,7 +80,7 @@ function getTerminalRows(): number | undefined {
 }
 
 function getRenderRows(): number | undefined {
-  const dimensions = snapshot.terminalDimensions;
+  const dimensions = state.snapshot.terminalDimensions;
   return dimensions === undefined ? getTerminalRows() : dimensions.rows;
 }
 
@@ -88,7 +94,7 @@ function clearRenderedFrame(): void {
     return;
   }
 
-  process.stdout.write(`\r\u001B[${terminalFrame.lineCount}A\u001B[J`);
+  process.stdout.write(`\r\u{1B}[${terminalFrame.lineCount}A\u{1B}[J`);
   terminalFrame.reset();
 }
 
@@ -97,12 +103,12 @@ function renderLine(line: string): void {
 }
 
 function render(): void {
-  if (suspended) return;
+  if (state.isSuspended) return;
   clearRenderedFrame();
 
   const renderedLines = renderSnapshotLinesForTerminal(
-    snapshot,
-    spinnerFrameIndex,
+    state.snapshot,
+    state.spinnerFrameIndex,
     {
       columns: getTerminalColumns(),
       rows: getRenderRows(),
@@ -115,22 +121,27 @@ function render(): void {
 }
 
 function stopSpinnerTimer(): void {
-  const timer = spinnerTimer;
+  const timer = state.spinnerTimer;
 
   if (timer === undefined) {
     return;
   }
 
   clearInterval(timer);
-  spinnerTimer = undefined;
+  state.spinnerTimer = undefined;
 }
 
 function shouldStopSpinner(): boolean {
-  return closed || suspended || !hasRunningSnapshotWork(snapshot);
+  return (
+    state.isClosed ||
+    state.isSuspended ||
+    !hasRunningSnapshotWork(state.snapshot)
+  );
 }
 
 function advanceSpinner(): void {
-  spinnerFrameIndex = (spinnerFrameIndex + 1) % SPINNER_FRAMES.length;
+  state.spinnerFrameIndex =
+    (state.spinnerFrameIndex + 1) % SPINNER_FRAMES.length;
   render();
 }
 
@@ -140,11 +151,11 @@ function syncSpinnerTimer(): void {
     return;
   }
 
-  if (spinnerTimer !== undefined) {
+  if (state.spinnerTimer !== undefined) {
     return;
   }
 
-  spinnerTimer = setInterval(advanceSpinner, SPINNER_INTERVAL_MS);
+  state.spinnerTimer = setInterval(advanceSpinner, SPINNER_INTERVAL_MS);
 }
 
 function getOutputStream(
@@ -157,7 +168,7 @@ function writeOutput(message: RendererMessageFor<'output'>): void {
   clearRenderedFrame();
   writeTracked(message.output.text, getOutputStream(message.output.stream));
   terminalFrame.reset();
-  if (!suspended) render();
+  if (!state.isSuspended) render();
 }
 
 function requireMessage<Type extends RendererMessageType>(
@@ -173,15 +184,15 @@ function requireMessage<Type extends RendererMessageType>(
 
 function handleSnapshot(rawMessage: FlowRendererProcessMessage): void {
   const message = requireMessage(rawMessage, 'snapshot');
-  snapshot = message.snapshot;
+  state.snapshot = message.snapshot;
   syncSpinnerTimer();
   render();
 }
 
 function handleResume(rawMessage: FlowRendererProcessMessage): void {
   const message = requireMessage(rawMessage, 'resume');
-  snapshot = message.snapshot;
-  suspended = false;
+  state.snapshot = message.snapshot;
+  state.isSuspended = false;
   syncSpinnerTimer();
   render();
 }
@@ -190,7 +201,7 @@ function handleSuspend(rawMessage: FlowRendererProcessMessage): void {
   requireMessage(rawMessage, 'suspend');
   stopSpinnerTimer();
   clearRenderedFrame();
-  suspended = true;
+  state.isSuspended = true;
   send({ type: 'suspended' });
 }
 
@@ -212,9 +223,9 @@ function exitRenderer(): void {
 
 function handleClose(rawMessage: FlowRendererProcessMessage): void {
   const message = requireMessage(rawMessage, 'close');
-  closed = true;
-  suspended = false;
-  snapshot = message.snapshot;
+  state.isClosed = true;
+  state.isSuspended = false;
+  state.snapshot = message.snapshot;
   stopSpinnerTimer();
   render();
   send({ type: 'closed' });

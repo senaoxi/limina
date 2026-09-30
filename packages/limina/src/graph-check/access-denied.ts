@@ -7,13 +7,13 @@ import { toRelativePath } from '#utils/path';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import { getProjectCheckerName } from './finding-utils';
+import { getProjectCheckerName } from './finding-utilities';
 import type { GraphAccessDeniedFinding, GraphFinding } from './findings';
 import {
-  getDeniedDepRuleForPackage,
-  getDeniedRefRule,
-  type GraphRuleDepDeny,
-  type GraphRuleRefDeny,
+  getDeniedDepRuleForPackage as getDeniedDependencyRuleForPackage,
+  getDeniedRefRule as getDeniedReferenceRule,
+  type GraphRuleDependencyDeny,
+  type GraphRuleReferenceDeny,
   type NormalizedGraphRules,
 } from './rules';
 
@@ -31,13 +31,13 @@ interface DeniedReferenceContext {
 function getDeniedDependencyRule(
   context: DeniedReferenceContext,
   referencedProject: ProjectInfo,
-): GraphRuleDepDeny | null {
+): GraphRuleDependencyDeny | null {
   const packageName = context.workspaceLookup.findPackageForFile(
     referencedProject.resolverConfigPath,
   )?.name;
 
   return packageName
-    ? getDeniedDepRuleForPackage(
+    ? getDeniedDependencyRuleForPackage(
         context.rules,
         context.project.labels,
         packageName,
@@ -58,7 +58,7 @@ function createReferenceLocations(
 function addDeniedDependencyReference(
   context: DeniedReferenceContext,
   referencePath: string,
-  rule: GraphRuleDepDeny,
+  rule: GraphRuleDependencyDeny,
 ): void {
   const projectPath = context.project.configPath;
   const detailLines = [
@@ -104,7 +104,7 @@ function addDeniedDependencyReference(
 function addDeniedProjectReference(
   context: DeniedReferenceContext,
   referencePath: string,
-  rule: GraphRuleRefDeny,
+  rule: GraphRuleReferenceDeny,
 ): void {
   const projectPath = context.project.configPath;
   const detailLines = [
@@ -150,7 +150,7 @@ function addDeniedProjectReferenceIfNeeded(
   context: DeniedReferenceContext,
   referencePath: string,
 ): void {
-  const rule = getDeniedRefRule(
+  const rule = getDeniedReferenceRule(
     context.rules,
     context.project.labels,
     referencePath,

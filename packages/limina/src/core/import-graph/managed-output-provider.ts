@@ -31,11 +31,7 @@ function sortCheckerNames(
       return -1;
     }
 
-    if (right === preferredCheckerName) {
-      return 1;
-    }
-
-    return left.localeCompare(right);
+    return right === preferredCheckerName ? 1 : left.localeCompare(right);
   });
 }
 
@@ -85,7 +81,7 @@ function createProvider(options: {
     return null;
   }
 
-  const matches = [...options.matchesByIdentity.values()][0]!;
+  const matches = options.matchesByIdentity.values().toArray()[0]!;
   const firstMatch = matches[0]!;
 
   return {

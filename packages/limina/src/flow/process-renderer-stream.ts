@@ -1,21 +1,22 @@
 import { type FlowOutputMessage, toWritableText } from './render-model';
 import {
   type FlowWrite,
-  type FlowWriteArgs,
+  type FlowWriteArguments,
   type FlowWriteCallback,
-  writeWithFlowArgs,
+  isWriteWithFlowArguments as writeWithFlowArguments,
 } from './terminal-frame';
 
 type WriteStreamName = 'stderr' | 'stdout';
 
-function getWriteCallback(args: FlowWriteArgs): FlowWriteCallback | undefined {
-  if (args.length === 3) return args[2];
-  if (typeof args[1] === 'function') return args[1];
-  return undefined;
+function getWriteCallback(
+  arguments_: FlowWriteArguments,
+): FlowWriteCallback | undefined {
+  if (arguments_.length === 3) return arguments_[2];
+  return typeof arguments_[1] === 'function' ? arguments_[1] : undefined;
 }
 
-function callWriteCallback(args: FlowWriteArgs): void {
-  const callback = getWriteCallback(args);
+function callWriteCallback(arguments_: FlowWriteArguments): void {
+  const callback = getWriteCallback(arguments_);
   if (callback) queueMicrotask(callback);
 }
 
@@ -27,16 +28,16 @@ export function patchRendererWriteStream(options: {
 }): () => void {
   const originalWrite = options.stream.write;
 
-  options.stream.write = ((...args: FlowWriteArgs) => {
+  options.stream.write = ((...arguments_: FlowWriteArguments) => {
     if (options.active()) {
       options.output({
         stream: options.streamName,
-        text: toWritableText(args[0]),
+        text: toWritableText(arguments_[0]),
       });
-      callWriteCallback(args);
+      callWriteCallback(arguments_);
       return true;
     }
-    return writeWithFlowArgs(originalWrite as FlowWrite, args);
+    return writeWithFlowArguments(originalWrite as FlowWrite, arguments_);
   }) as NodeJS.WriteStream['write'];
 
   return () => {

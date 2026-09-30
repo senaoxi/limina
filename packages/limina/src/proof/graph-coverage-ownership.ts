@@ -25,7 +25,7 @@ import {
 import {
   createProofDiagnosticFinding,
   getProofPackageIdentity,
-} from './finding-utils';
+} from './finding-utilities';
 import type { ProofFinding } from './findings';
 import {
   isCheckerGraphDeclarationOwnerCandidate,
@@ -38,7 +38,7 @@ interface OwnerEntry {
   owner: ConfigFileOwner;
 }
 
-function projectConfigExists(
+function isProjectConfigExists(
   configPath: string,
   virtualFiles: ReadonlyMap<string, string>,
 ): boolean {
@@ -56,7 +56,7 @@ function createProjectOwnerEntries(options: {
   sourceFiles: Set<string>;
   virtualFiles: ReadonlyMap<string, string>;
 }): OwnerEntry[] {
-  if (!projectConfigExists(options.configPath, options.virtualFiles)) {
+  if (!isProjectConfigExists(options.configPath, options.virtualFiles)) {
     return [];
   }
 
@@ -119,25 +119,28 @@ function collectGovernedOwnerEntries(options: {
   generatedGraph: GeneratedTsconfigGraphResult;
   sourceFiles: Set<string>;
 }): OwnerEntry[] {
-  return [...options.generatedGraph.governedSources.entries()].flatMap(
+  return [...options.generatedGraph.governedSources].flatMap(
     ([checkerName, governedSources]) =>
-      [...governedSources.values()].flatMap((unit) => {
-        const owner: ConfigFileOwner = {
-          checkerEntryPath:
-            options.generatedGraph.checkerEntries.get(checkerName) ??
-            unit.configPath,
-          checkerName,
-          checkerPreset: unit.primaryCheckerName,
-          configPath:
-            'dtsConfigPath' in unit.buildProjection
-              ? unit.buildProjection.dtsConfigPath
-              : unit.configPath,
-        };
-        return unit.ownedFileNames
-          .filter((filePath) => options.sourceFiles.has(filePath))
-          .filter((filePath) => !isDeclarationInputFile(filePath))
-          .map((filePath) => ({ filePath, owner }));
-      }),
+      governedSources
+        .values()
+        .flatMap((unit) => {
+          const owner: ConfigFileOwner = {
+            checkerEntryPath:
+              options.generatedGraph.checkerEntries.get(checkerName) ??
+              unit.configPath,
+            checkerName,
+            checkerPreset: unit.primaryCheckerName,
+            configPath:
+              'dtsConfigPath' in unit.buildProjection
+                ? unit.buildProjection.dtsConfigPath
+                : unit.configPath,
+          };
+          return unit.ownedFileNames
+            .filter((filePath) => options.sourceFiles.has(filePath))
+            .filter((filePath) => !isDeclarationInputFile(filePath))
+            .map((filePath) => ({ filePath, owner }));
+        })
+        .toArray(),
   );
 }
 
@@ -147,9 +150,9 @@ function hasGovernedSources(
   return (
     generatedGraph !== undefined &&
     generatedGraph.governedSources instanceof Map &&
-    [...generatedGraph.governedSources.values()].some(
-      (governedSources) => governedSources.size > 0,
-    )
+    generatedGraph.governedSources
+      .values()
+      .some((governedSources) => governedSources.size > 0)
   );
 }
 
@@ -184,16 +187,7 @@ function resolveOwnerEntries(
 function groupOwnersByPreset(
   owners: ConfigFileOwner[],
 ): Map<string, ConfigFileOwner[]> {
-  const ownersByPreset = new Map<string, ConfigFileOwner[]>();
-
-  for (const owner of owners) {
-    const presetOwners = ownersByPreset.get(owner.checkerPreset) ?? [];
-
-    presetOwners.push(owner);
-    ownersByPreset.set(owner.checkerPreset, presetOwners);
-  }
-
-  return ownersByPreset;
+  return Map.groupBy(owners, (owner) => owner.checkerPreset);
 }
 
 function addDuplicateOwnerGroupFinding(options: {

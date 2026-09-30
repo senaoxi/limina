@@ -79,7 +79,7 @@ function normalizeComparableCompilerOption(
   return isStringArray(value) ? uniqueSortedStrings(value) : value;
 }
 
-export function compilerOptionEquals(
+export function isCompilerOptionEquals(
   optionName: keyof ts.CompilerOptions,
   left: unknown,
   right: unknown,

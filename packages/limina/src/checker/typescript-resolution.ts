@@ -21,8 +21,8 @@ function recordResolutionRequest(options: CheckerModuleResolveOptions): void {
 
 function hasNativeCacheHit(options: CheckerModuleResolveOptions): boolean {
   const cache = options.moduleResolutionCache;
-  if (cache === undefined) return false;
   return (
+    cache !== undefined &&
     (options.tsModule ?? ts).resolveModuleNameFromCache(
       options.specifier,
       options.containingFile,
@@ -99,8 +99,9 @@ function resolveCheckerSourcePath(options: {
     extensions: options.checkerOnlyExtensions,
     specifier: options.resolveOptions.specifier,
   });
-  if (relative !== null) return relative;
-  return resolveNonRelativeCheckerSource(options);
+  return relative === null
+    ? resolveNonRelativeCheckerSource(options)
+    : relative;
 }
 
 function isCheckerSourcePath(
@@ -118,8 +119,10 @@ function createCheckerSourceResolution(options: {
   resolvedFileName: string | null;
 }): ResolvedCheckerModuleName | null {
   const resolvedFileName = options.resolvedFileName;
-  if (resolvedFileName === null) return null;
-  if (!isCheckerSourcePath(resolvedFileName, options.checkerOnlyExtensions)) {
+  if (
+    resolvedFileName === null ||
+    !isCheckerSourcePath(resolvedFileName, options.checkerOnlyExtensions)
+  ) {
     return null;
   }
   return {

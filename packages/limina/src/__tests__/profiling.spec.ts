@@ -18,10 +18,11 @@ async function createRuntimeFixture(): Promise<{
   packageRoot: string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-profile-')),
+  const temporaryDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-profile-'),
   );
-  const packageRoot = path.join(rootDir, 'runtime');
+  const rootDirectory = await realpath(temporaryDirectory);
+  const packageRoot = path.join(rootDirectory, 'runtime');
   const executablePath = path.join(packageRoot, 'bin', 'limina.js');
   await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
   await mkdir(path.join(packageRoot, 'chunks'), { recursive: true });
@@ -33,10 +34,10 @@ async function createRuntimeFixture(): Promise<{
     `${JSON.stringify({ bin: { limina: './bin/limina.js' } }, null, 2)}\n`,
   );
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
     executablePath,
     packageRoot,
-    rootDir,
+    rootDir: rootDirectory,
   };
 }
 

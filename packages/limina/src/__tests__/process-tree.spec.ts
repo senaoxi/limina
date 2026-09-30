@@ -20,8 +20,10 @@ async function createGroupFixture(
   childMode: string,
   exitCode = 0,
 ) {
-  const rootDir = await mkdtemp(path.join(tmpdir(), 'limina-process-tree-'));
-  const fixturePath = createFixturePathResolver(rootDir);
+  const rootDirectory = await mkdtemp(
+    path.join(tmpdir(), 'limina-process-tree-'),
+  );
+  const fixturePath = createFixturePathResolver(rootDirectory);
   const childScript = [
     "const fs = require('node:fs');",
     childMode === 'stubborn' ? "process.on('SIGTERM', () => {});" : '',
@@ -36,15 +38,15 @@ async function createGroupFixture(
     `const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(fixturePath('child.pid'))})) return; clearInterval(timer); fs.writeFileSync(${JSON.stringify(fixturePath('ready.json'))}, JSON.stringify({pid:process.pid, child:child.pid})); ${leaderMode === 'early' ? `process.exit(${exitCode});` : ''} }, 10);`,
     'setTimeout(() => process.exit(0), 15000);',
   ].join('\n');
-  await mkdir(rootDir, { recursive: true });
+  await mkdir(rootDirectory, { recursive: true });
   await writeFile(fixturePath('leader.cjs'), script);
-  return { rootDir, path: fixturePath };
+  return { rootDir: rootDirectory, path: fixturePath };
 }
 
 async function waitForReady(
   file: string,
 ): Promise<{ pid: number; child: number }> {
-  for (let i = 0; i < 150; i += 1) {
+  for (let index = 0; index < 150; index += 1) {
     try {
       return JSON.parse(await readFile(file, 'utf8'));
     } catch {
@@ -68,7 +70,9 @@ function cleanGroup(pid: number | undefined): void {
   try {
     process.kill(-pid, 'SIGKILL');
   } catch {
-    /* The owned group already exited. */
+    /*
+    The owned group already exited.
+    */
   }
 }
 
@@ -152,7 +156,7 @@ describe.skipIf(process.platform === 'win32')(
           }
           if (entry === 'shutdown') {
             disposeCheckerProcessHostForTesting();
-            for (let i = 0; i < 150 && isAlive(group.child); i += 1)
+            for (let index = 0; index < 150 && isAlive(group.child); index += 1)
               await delay(20);
           } else if (entry === 'host') {
             controller.abort(new Error('cancel owned group'));

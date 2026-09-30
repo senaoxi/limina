@@ -8,7 +8,7 @@ const [mode, value] = process.argv.slice(2);
 switch (mode) {
   case 'exit': {
     const exitCode = Number(value);
-    if (!Number.isInteger(exitCode) || exitCode < 1 || exitCode > 255) {
+    if (!Number.isSafeInteger(exitCode) || exitCode < 1 || exitCode > 255) {
       throw new Error('exit mode requires an exit code from 1 through 255');
     }
     process.exitCode = exitCode;
@@ -47,7 +47,7 @@ switch (mode) {
   }
   case 'streams-exit': {
     const exitCode = Number(value);
-    if (!Number.isInteger(exitCode) || exitCode < 1 || exitCode > 255) {
+    if (!Number.isSafeInteger(exitCode) || exitCode < 1 || exitCode > 255) {
       throw new Error(
         'streams-exit mode requires an exit code from 1 through 255',
       );

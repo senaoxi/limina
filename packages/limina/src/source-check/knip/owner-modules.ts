@@ -22,8 +22,7 @@ function findOwner(options: {
   pathIndex: WorkspaceRegionPathIndex;
 }): PackageOwner | null {
   const owner = options.workspaceLookup.findOwnerForFile(options.filePath);
-  if (owner === null) return null;
-  return owner;
+  return owner === null ? null : owner;
 }
 
 function addOwnerFile(options: {
@@ -113,8 +112,10 @@ export function collectOwnerSourceModuleSets(options: {
       });
     }
   }
-  return [...filesByOwner.values()]
+  return filesByOwner
+    .values()
     .map(toModuleSet)
+    .toArray()
     .sort((left, right) =>
       left.owner.packageJsonPath.localeCompare(right.owner.packageJsonPath),
     );

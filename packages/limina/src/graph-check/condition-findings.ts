@@ -34,7 +34,10 @@ export function addUniqueConditionFindings(
   context: CustomConditionConsistencyContext,
   identities: ReadonlySet<string>,
 ): void {
-  for (const identity of [...identities].sort()) {
+  const sortedIdentities = [...identities].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  for (const identity of sortedIdentities) {
     if (context.emittedFindingIdentities.has(identity)) continue;
     context.emittedFindingIdentities.add(identity);
     findings.push(context.mismatchFindingsByIdentity.get(identity)!);

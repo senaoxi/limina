@@ -87,8 +87,9 @@ function createAutoScope(options: {
   const projects = [...collection.projectConfigPaths]
     .sort(compareCodeUnits)
     .map((configPath) => {
-      const packageRootDir = collection.packageRootBySourcePath.get(configPath);
-      if (packageRootDir === undefined) {
+      const packageRootDirectory =
+        collection.packageRootBySourcePath.get(configPath);
+      if (packageRootDirectory === undefined) {
         throw new Error(`Missing auto checker package root for ${configPath}.`);
       }
       return createAutoScopeProject({
@@ -96,7 +97,7 @@ function createAutoScope(options: {
         config: options.config,
         configPath,
         intentHints: intentHintsByConfigPath.get(configPath) ?? [],
-        packageRootDir,
+        packageRootDir: packageRootDirectory,
         projectConfigCache: options.projectConfigCache,
       });
     });
@@ -106,7 +107,7 @@ function createAutoScope(options: {
   const scope: AutoScope = {
     collection,
     entryConfigPath: options.entryConfigPath,
-    frameworkEvidence: [...intentHintsByConfigPath.entries()]
+    frameworkEvidence: [...intentHintsByConfigPath]
       .sort(([left], [right]) => compareCodeUnits(left, right))
       .map(([configPath, intentHints]) =>
         createAutoFrameworkEvidence({
@@ -138,10 +139,9 @@ function getExplicitParsing(checkerName: CheckerName): {
   if (checkerName === 'astro') {
     return { checkerPreset: 'tsc', discoveryExtensions: ['.astro'] };
   }
-  if (checkerName === 'svelte-check') {
-    return { checkerPreset: 'tsc', discoveryExtensions: ['.svelte'] };
-  }
-  return { checkerPreset: checkerName, discoveryExtensions: [] };
+  return checkerName === 'svelte-check'
+    ? { checkerPreset: 'tsc', discoveryExtensions: ['.svelte'] }
+    : { checkerPreset: checkerName, discoveryExtensions: [] };
 }
 
 export function collectExplicitScope(options: {
@@ -183,8 +183,8 @@ export function collectExplicitScope(options: {
 }
 
 export function classifyAutoScope(scope: AutoScope): AutoCheckerPreset {
-  const needsVue = scope.projects.some(
+  const isNeedsVue = scope.projects.some(
     (project) => project.filePartition.vueFiles.length > 0,
   );
-  return needsVue ? 'vue-tsc' : 'tsc';
+  return isNeedsVue ? 'vue-tsc' : 'tsc';
 }

@@ -91,16 +91,16 @@ describe('check reporting', () => {
 
     expect(plainReport).toContain('Limina check summary');
     expect(plainReport).toContain('Command: limina check');
-    expect(report).toContain('\u001B[36mCommand:\u001B[0m limina check');
+    expect(report).toContain('\u{1B}[36mCommand:\u{1B}[0m limina check');
     expect(report).toContain(
-      '\u001B[35mVerbose:\u001B[0m limina check --issues --verbose',
+      '\u{1B}[35mVerbose:\u{1B}[0m limina check --issues --verbose',
     );
     expect(report).toContain(
-      '\u001B[32mFix steps:\u001B[0m rebuild the package output',
+      '\u{1B}[32mFix steps:\u{1B}[0m rebuild the package output',
     );
-    expect(report).toContain('\u001B[34mBy rule:\u001B[0m limina check');
+    expect(report).toContain('\u{1B}[34mBy rule:\u{1B}[0m limina check');
     expect(report).toContain(
-      '\u001B[33mReason:\u001B[0m source imports must be authorized.',
+      '\u{1B}[33mReason:\u{1B}[0m source imports must be authorized.',
     );
   });
 
@@ -403,16 +403,16 @@ describe('check reporting', () => {
     });
 
     expect(report).toContain(
-      '\u001B[31mUnauthorized bare package import\u001B[0m  1 issue',
+      '\u{1B}[31mUnauthorized bare package import\u{1B}[0m  1 issue',
     );
-    expect(report).toContain('\u001B[36mpackage:\u001B[0m @tsdown/css');
-    expect(report).toContain('\u001B[34mrule:\u001B[0m');
-    expect(report).toContain('\u001B[36msummary:\u001B[0m');
-    expect(report).toContain('\u001B[33mreason:\u001B[0m');
-    expect(report).toContain('\u001B[32mfix steps:\u001B[0m');
-    expect(report).toContain('\u001B[36mverify:\u001B[0m');
-    expect(report).toContain('\u001B[35mevidence:\u001B[0m');
-    expect(report).toContain('\u001B[36msource owner:\u001B[0m');
-    expect(report).toContain('\u001B[32mfix:\u001B[0m');
+    expect(report).toContain('\u{1B}[36mpackage:\u{1B}[0m @tsdown/css');
+    expect(report).toContain('\u{1B}[34mrule:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[36msummary:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[33mreason:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[32mfix steps:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[36mverify:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[35mevidence:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[36msource owner:\u{1B}[0m');
+    expect(report).toContain('\u{1B}[32mfix:\u{1B}[0m');
   });
 });

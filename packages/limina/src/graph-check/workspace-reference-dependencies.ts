@@ -14,7 +14,7 @@ import path from 'pathe';
 import { LIMINA_CHECK_ISSUE_CODES } from '../check-reporting/codes';
 import type { CheckCounter } from '../check-reporting/stats';
 import type { WorkspaceLookupIndex } from '../core/workspace/lookup';
-import { getProjectCheckerName } from './finding-utils';
+import { getProjectCheckerName } from './finding-utilities';
 import type {
   GraphFinding,
   GraphWorkspaceDependencyUndeclaredFinding,
@@ -100,13 +100,11 @@ function getTargetPackage(
   referencePath: string,
 ): WorkspacePackage | null {
   const referencedProject = context.projectsByPath.get(referencePath);
-  if (referencedProject === undefined) {
-    return null;
-  }
-
-  return context.workspaceLookup.findPackageForFile(
-    referencedProject.resolverConfigPath,
-  );
+  return referencedProject === undefined
+    ? null
+    : context.workspaceLookup.findPackageForFile(
+        referencedProject.resolverConfigPath,
+      );
 }
 
 function isCrossPackageTarget(
@@ -118,7 +116,7 @@ function isCrossPackageTarget(
   );
 }
 
-function addNameProblemIfNeeded(
+function isAddNameProblemIfNeeded(
   context: WorkspaceReferenceContext,
   targetPackage: WorkspacePackage,
   referencePath: string,
@@ -232,11 +230,10 @@ function checkWorkspaceReference(
 ): void {
   context.checks.add();
   const targetPackage = getTargetPackage(context, referencePath);
-  if (!isCrossPackageTarget(context.sourcePackage, targetPackage)) {
-    return;
-  }
-
-  if (addNameProblemIfNeeded(context, targetPackage, referencePath)) {
+  if (
+    !isCrossPackageTarget(context.sourcePackage, targetPackage) ||
+    isAddNameProblemIfNeeded(context, targetPackage, referencePath)
+  ) {
     return;
   }
 

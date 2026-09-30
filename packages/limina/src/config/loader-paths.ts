@@ -9,9 +9,11 @@ export const DEFAULT_LIMINA_CONFIG_FILES = [
   'limina.config.js',
 ] as const;
 
-/** Config discovery is independent of package and workspace classification. */
-export function findLiminaConfigPath(startDir: string): string | null {
-  for (const directory of ancestorDirectories(startDir)) {
+/**
+Config discovery is independent of package and workspace classification.
+*/
+export function findLiminaConfigPath(startDirectory: string): string | null {
+  for (const directory of ancestorDirectories(startDirectory)) {
     const configPath = findLocalConfig(directory);
     if (configPath !== undefined) return configPath;
   }
@@ -45,15 +47,20 @@ export interface ExecutionConfigLocation extends QueryConfigAnchor {
   readonly exists: true;
 }
 
-/** An explicit query anchor need not still exist on disk. */
+/**
+An explicit query anchor need not still exist on disk.
+*/
 export function resolveQueryConfigAnchor(options: {
   cwd?: string;
   configPath?: string;
 }): QueryConfigAnchor {
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  if (options.configPath !== undefined)
-    return { configPath: path.resolve(cwd, options.configPath) };
-  return { configPath: requireDefaultConfig(cwd) };
+  return {
+    configPath:
+      options.configPath === undefined
+        ? requireDefaultConfig(cwd)
+        : path.resolve(cwd, options.configPath),
+  };
 }
 
 export function resolveExecutionConfigLocation(options: {

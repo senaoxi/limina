@@ -25,7 +25,7 @@ import { resolveVueSemanticImport } from '../core/vue-semantic/resolution';
 import { runGraphExportImpl } from '../graph-check/runner';
 import { LiminaPreflightManager } from '../preflight/manager';
 import { createProfilingMetricsRecorder } from '../profiling/metrics';
-import { resolveFixtureGovernanceRoot } from './helpers/governance-root';
+import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver, toPortablePath } from './helpers/path';
 
 const requireFromTest = createRequire(import.meta.url);
@@ -43,29 +43,31 @@ async function createFixture(
   path: (...segments: string[]) => string;
   rootDir: string;
 }> {
-  const rootDir = await realpath(
-    await mkdtemp(path.join(tmpdir(), 'limina-vue-semantic-')),
+  const rootDirectoryTemporaryPath = await mkdtemp(
+    path.join(tmpdir(), 'limina-vue-semantic-'),
   );
-  for (const [relativePath, text] of Object.entries({
+  const rootDirectory = await realpath(rootDirectoryTemporaryPath);
+  const fixtureEntries1 = Object.entries({
     'node_modules/vue/index.d.ts': 'export {}\n',
     'node_modules/vue/package.json':
       '{"name":"vue","version":"3.5.0","types":"index.d.ts"}\n',
     'package.json': '{"name":"fixture","private":true}\n',
     ...files,
-  })) {
-    await writeText(path.join(rootDir, relativePath), text);
+  });
+  for (const [relativePath, text] of fixtureEntries1) {
+    await writeText(path.join(rootDirectory, relativePath), text);
   }
   if (options.linkVueTsc !== false) {
     const vueTscManifest = requireFromTest.resolve('vue-tsc/package.json');
     const vueTscTarget = path.dirname(vueTscManifest);
-    const vueTscLink = path.join(rootDir, 'node_modules/vue-tsc');
+    const vueTscLink = path.join(rootDirectory, 'node_modules/vue-tsc');
     await mkdir(path.dirname(vueTscLink), { recursive: true });
     await symlink(vueTscTarget, vueTscLink, 'junction');
   }
   return {
-    cleanup: () => rm(rootDir, { force: true, recursive: true }),
-    path: createFixturePathResolver(rootDir),
-    rootDir,
+    cleanup: () => rm(rootDirectory, { force: true, recursive: true }),
+    path: createFixturePathResolver(rootDirectory),
+    rootDir: rootDirectory,
   };
 }
 
@@ -345,14 +347,11 @@ describe('Vue semantic architecture', () => {
       'src/value.ts': 'export default 1;\n',
       'tsconfig.json': config(),
     });
-    const liminaConfig: ResolvedLiminaConfig = {
-      get governanceRoot() {
-        return resolveFixtureGovernanceRoot(this);
-      },
+    const liminaConfig: ResolvedLiminaConfig = withFixtureGovernanceRoot({
       config: { checkers: { 'vue-tsc': { include: ['tsconfig.json'] } } },
       configPath: fixture.path('limina.config.mjs'),
       rootDir: fixture.rootDir,
-    };
+    });
     return { ...fixture, config: liminaConfig };
   }
 
@@ -567,9 +566,10 @@ describe('Vue semantic architecture', () => {
         identity.toolchain.tsModule.ScriptTarget.ES5,
       );
       expect(
-        [...identity.profilesByFileName.entries()].map(
-          ([fileName, profile]) => [path.basename(fileName), profile],
-        ),
+        [...identity.profilesByFileName].map(([fileName, profile]) => [
+          path.basename(fileName),
+          profile,
+        ]),
       ).toEqual([
         ['App.component', 'vue-sfc'],
         ['Page.md', 'vitepress-markdown'],

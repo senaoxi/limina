@@ -1,5 +1,5 @@
 import type {
-  ReleaseContentHashConfigArgs,
+  ReleaseContentHashConfigArguments,
   ResolvedLiminaConfig,
 } from '#config/runner';
 import type { NamedWorkspacePackage } from '#core/workspace/actions';
@@ -24,27 +24,27 @@ const ARTIFACT_HASH_IGNORED_FILES = new Set([
 
 function getPackageEntries(config: ResolvedLiminaConfig) {
   const packageConfig = config.package;
-  if (packageConfig === undefined) return [];
-  return packageConfig.entries ?? [];
+  return packageConfig === undefined ? [] : (packageConfig.entries ?? []);
 }
 
-export function resolveWorkspacePackageOutputDir(
+export function resolveWorkspacePackageOutputDirectory(
   config: ResolvedLiminaConfig,
   workspacePackage: NamedWorkspacePackage,
 ): string {
   const configuredEntry = getPackageEntries(config).find(
     (entry) => entry.name === workspacePackage.name,
   );
-  if (configuredEntry !== undefined) {
-    return path.resolve(config.rootDir, configuredEntry.outDir);
-  }
-  return path.join(workspacePackage.directory, 'dist');
+  return configuredEntry === undefined
+    ? path.join(workspacePackage.directory, 'dist')
+    : path.resolve(config.rootDir, configuredEntry.outDir);
 }
 
 function isIgnoredArtifactHashFile(relativePath: string): boolean {
-  if (ARTIFACT_HASH_IGNORED_FILES.has(relativePath)) return true;
-  if (relativePath.startsWith('docs/')) return true;
-  return relativePath.startsWith('examples/');
+  return (
+    ARTIFACT_HASH_IGNORED_FILES.has(relativePath) ||
+    relativePath.startsWith('docs/') ||
+    relativePath.startsWith('examples/')
+  );
 }
 
 function getContentHashConfig(config: ResolvedLiminaConfig) {
@@ -53,16 +53,15 @@ function getContentHashConfig(config: ResolvedLiminaConfig) {
 }
 
 function resolveConfiguredBaselineTag(options: {
-  args: ReleaseContentHashConfigArgs;
+  args: ReleaseContentHashConfigArguments;
   configured: unknown;
 }): unknown {
   if (typeof options.configured === 'function') {
     return options.configured(options.args);
   }
-  if (options.configured === undefined) {
-    return DEFAULT_CONTENT_HASH_BASELINE_TAG;
-  }
-  return options.configured;
+  return options.configured === undefined
+    ? DEFAULT_CONTENT_HASH_BASELINE_TAG
+    : options.configured;
 }
 
 function requireBaselineTag(value: unknown): string {
@@ -82,10 +81,12 @@ function requireBaselineTag(value: unknown): string {
 
 export function resolveReleaseContentHashBaselineTag(
   config: ResolvedLiminaConfig,
-  args: ReleaseContentHashConfigArgs,
+  arguments_: ReleaseContentHashConfigArguments,
 ): string {
   const configured = getContentHashConfig(config)?.baselineTag;
-  return requireBaselineTag(resolveConfiguredBaselineTag({ args, configured }));
+  return requireBaselineTag(
+    resolveConfiguredBaselineTag({ args: arguments_, configured }),
+  );
 }
 
 function normalizeIgnorePattern(pattern: unknown, index: number): string {
@@ -124,24 +125,23 @@ function createBuiltinContentHashIgnoreRule(): ContentHashIgnoreRule {
   return { label: 'builtin', matches: isIgnoredArtifactHashFile };
 }
 
-function createFallbackRules(enabled: boolean): ContentHashIgnoreRule[] {
-  return enabled ? [createBuiltinContentHashIgnoreRule()] : [];
+function createFallbackRules(isEnabled: boolean): ContentHashIgnoreRule[] {
+  return isEnabled ? [createBuiltinContentHashIgnoreRule()] : [];
 }
 
 function resolveConfiguredIgnore(options: {
-  args: ReleaseContentHashConfigArgs;
+  args: ReleaseContentHashConfigArguments;
   configured: NonNullable<
     NonNullable<ResolvedLiminaConfig['release']>['contentHash']
   >['ignore'];
 }): unknown {
-  if (typeof options.configured === 'function') {
-    return options.configured(options.args);
-  }
-  return options.configured;
+  return typeof options.configured === 'function'
+    ? options.configured(options.args)
+    : options.configured;
 }
 
 function resolveIgnoreRules(options: {
-  args: ReleaseContentHashConfigArgs;
+  args: ReleaseContentHashConfigArguments;
   configured: NonNullable<
     NonNullable<ResolvedLiminaConfig['release']>['contentHash']
   >['ignore'];
@@ -149,20 +149,21 @@ function resolveIgnoreRules(options: {
 }): ContentHashIgnoreRule[] {
   if (options.configured === undefined) return options.fallback;
   const resolved = resolveConfiguredIgnore(options);
-  if (resolved === undefined) return options.fallback;
-  return createUserContentHashIgnoreRules(
-    normalizeReleaseContentHashIgnorePatterns(resolved),
-  );
+  return resolved === undefined
+    ? options.fallback
+    : createUserContentHashIgnoreRules(
+        normalizeReleaseContentHashIgnorePatterns(resolved),
+      );
 }
 
 export function resolveReleaseContentHashIgnoreRules(
   config: ResolvedLiminaConfig,
-  args: ReleaseContentHashConfigArgs,
+  arguments_: ReleaseContentHashConfigArguments,
 ): ContentHashIgnoreRule[] {
   const contentHash = getContentHashConfig(config);
   if (contentHash === undefined) return [];
   return resolveIgnoreRules({
-    args,
+    args: arguments_,
     configured: contentHash.ignore,
     fallback: createFallbackRules(contentHash.builtinIgnore === true),
   });

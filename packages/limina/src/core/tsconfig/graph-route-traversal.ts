@@ -39,10 +39,10 @@ function isAvailableConfig(
   configPath: string,
   virtualFiles: ReadonlyMap<string, string> | undefined,
 ): boolean {
-  if (existsSync(configPath)) {
-    return true;
-  }
-  return virtualFiles?.has(normalizeAbsolutePath(configPath)) === true;
+  return (
+    existsSync(configPath) ||
+    virtualFiles?.has(normalizeAbsolutePath(configPath)) === true
+  );
 }
 
 function validateUserConfig(
@@ -65,10 +65,7 @@ function validateUserConfig(
 }
 
 function isGraphRouteConfig(configPath: string): boolean {
-  if (isBuildGraphConfigPath(configPath)) {
-    return true;
-  }
-  return isDtsConfigPath(configPath);
+  return isBuildGraphConfigPath(configPath) || isDtsConfigPath(configPath);
 }
 
 function addInvalidRootProblem(
@@ -101,10 +98,12 @@ function validateRootConfig(
   if (!isGraphRouteConfig(rootConfigPath)) {
     addInvalidRootProblem(rootConfigPath, options, state);
   }
-  if (isDtsConfigPath(rootConfigPath)) {
-    state.seen.add(rootConfigPath);
-    state.orderedProjects.push(rootConfigPath);
+  if (!isDtsConfigPath(rootConfigPath)) {
+    return;
   }
+
+  state.seen.add(rootConfigPath);
+  state.orderedProjects.push(rootConfigPath);
 }
 
 function addMissingReferenceProblem(
