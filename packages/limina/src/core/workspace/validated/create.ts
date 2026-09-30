@@ -133,8 +133,22 @@ export async function collectValidatedWorkspaceContext(options: {
   config: ResolvedLiminaConfig;
   rawPackages: readonly WorkspacePackage[];
 }): Promise<ValidatedWorkspaceContext> {
+  return collectValidatedWorkspaceContextFromSnapshot({
+    ...options,
+    inputSnapshot: await collectWorkspaceInputSnapshot(options),
+  });
+}
+
+// Internal projection of one discovery generation. Callers must retain its
+// config/region authority; output declarations and physical write authority
+// are validated again for each projection.
+export async function collectValidatedWorkspaceContextFromSnapshot(options: {
+  config: ResolvedLiminaConfig;
+  rawPackages: readonly WorkspacePackage[];
+  inputSnapshot: Awaited<ReturnType<typeof collectWorkspaceInputSnapshot>>;
+}): Promise<ValidatedWorkspaceContext> {
   const { islands, packageIdentities, packages, activatedPackageRoots, rules } =
-    await collectWorkspaceInputSnapshot(options);
+    options.inputSnapshot;
   const governanceRoot = options.config.governanceRoot;
   const universe = excludeTsconfigDescriptors({
     config: options.config,

@@ -4,6 +4,7 @@ import {
 } from '#checkers';
 import type { ResolvedLiminaConfig } from '#config/runner';
 import { normalizeAbsolutePath, toRelativePath } from '#utils/path';
+import { TypeScriptConfigInputError } from '../../checker/project-base';
 import type { ImportAnalysisContext } from '../import-analysis/runner';
 import { shouldInferDeclarationReferenceFromImportRecord } from '../import-graph/declaration-reference-evidence';
 import { configInputIdentity } from '../tsconfig/input-identity';
@@ -197,11 +198,12 @@ function collectImportFact(options: {
 function getProgramSourceFile(
   context: TypeScriptSemanticContext,
   fileName: string,
+  configPath: string,
 ) {
   const sourceFile = context.getSourceFile(normalizeAbsolutePath(fileName));
   if (sourceFile !== undefined) return sourceFile;
-  throw new Error(
-    `Pending TypeScript Program did not contain an effective source file: ${fileName}`,
+  throw new TypeScriptConfigInputError(
+    `Pending TypeScript Program did not contain an effective source file: ${fileName}\n  config: ${configPath}\n  stage: pending-ownership-evidence`,
   );
 }
 
@@ -212,6 +214,7 @@ function collectFileImportRecords(options: {
   getProgramSourceFile(
     options.context.typeScriptSemanticContext,
     options.fileName,
+    options.context.project.configPath,
   );
   return [
     ...options.context.typeScriptSemanticContext.getImportRecords(

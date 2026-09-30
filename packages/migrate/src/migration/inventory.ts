@@ -7,9 +7,14 @@ import {
   validateUserMaintainedLiminaTsconfigMetadata,
 } from 'limina/internal/migration';
 import { readFile } from 'node:fs/promises';
+import { stripVTControlCharacters } from 'node:util';
+import path from 'pathe';
 import { MigrationInputError, normalizeDeclarations } from './declarations';
 import { isExpectedInputFailure } from './discovery';
-import { assertUnambiguousMigrationText } from './jsonc-validation';
+import {
+  assertUnambiguousMigrationText,
+  MigrationJsoncParseError,
+} from './jsonc-validation';
 import { type MigrationPlanningState, planningView } from './planning-state';
 import { readMigrationTarget } from './targets';
 import { migrateTsconfigObject } from './transform';
@@ -23,17 +28,22 @@ async function capture(
     state.snapshot.set(file, await readFile(file, 'utf8'));
   } catch (error) {
     if (!isExpectedInputFailure(error)) throw error;
-    state.isolated.set(file, error.message);
+    state.isolated.set(file, stripVTControlCharacters(error.message));
   }
 }
 
-function checkAmbiguity(
+function isReadableMigrationText(
   state: MigrationPlanningState,
   target: MigrationTarget,
-): void {
+): boolean {
   try {
     assertUnambiguousMigrationText(target.originalContent);
+    return true;
   } catch (error) {
+    if (error instanceof MigrationJsoncParseError) {
+      state.isolated.set(target.configPath, error.message);
+      return false;
+    }
     state.blockedTargets.add(target.configPath);
     state.incomplete = true;
     state.records.push({
@@ -41,6 +51,7 @@ function checkAmbiguity(
       kind: 'ambiguous-input',
       message: formatErrorMessage(error),
     });
+    return true;
   }
 }
 
@@ -48,6 +59,7 @@ function register(
   state: MigrationPlanningState,
   target: MigrationTarget,
 ): void {
+  if (!isReadableMigrationText(state, target)) return;
   validateUserMaintainedLiminaTsconfigMetadata({
     ...target,
     rootDir: state.config.rootDir,
@@ -69,7 +81,6 @@ function register(
       ? 'solution; compiler options retained'
       : 'source; compiler options retained',
   });
-  checkAmbiguity(state, target);
 }
 
 async function parseTarget(
@@ -87,7 +98,7 @@ async function parseTarget(
     );
   } catch (error) {
     if (!isExpectedInputFailure(error)) throw error;
-    state.isolated.set(file, error.message);
+    state.isolated.set(file, stripVTControlCharacters(error.message));
   }
 }
 
@@ -120,7 +131,7 @@ function isolateDeclaration(
     preserveFailedSolution(options.state, file, error);
     return;
   }
-  options.state.isolated.set(file, error.message);
+  options.state.isolated.set(file, stripVTControlCharacters(error.message));
   options.state.objects.delete(file);
   options.validTargets.delete(file);
 }
@@ -175,6 +186,28 @@ async function normalizeTarget(
   }
 }
 
+function workspaceDescriptorInputs(state: MigrationPlanningState): string[] {
+  const root = state.config.governanceRoot;
+  return root.kind === 'workspace' ? [root.descriptor.path] : [];
+}
+async function captureDiscoveryInputs(
+  state: MigrationPlanningState,
+  workspace: Awaited<ReturnType<typeof collectWorkspaceInputSnapshot>>,
+): Promise<void> {
+  const inputs = new Set([
+    state.config.governanceRoot.manifestPath,
+    ...workspaceDescriptorInputs(state),
+    ...workspace.packages.map((owner) =>
+      path.join(owner.directory, 'package.json'),
+    ),
+    ...workspace.islands.universe
+      .filter((candidate) => candidate.kind !== 'tsconfig')
+      .map((candidate) => candidate.path),
+  ]);
+  for (const input of inputs)
+    state.discoveryInputs.set(input, await readFile(input, 'utf8'));
+}
+
 async function inventoryDeclarations(
   state: MigrationPlanningState,
 ): Promise<void> {
@@ -193,6 +226,7 @@ async function inventoryDeclarations(
     validTargets,
     activatedPackageRoots: workspace.activatedPackageRoots,
   };
+  await captureDiscoveryInputs(state, workspace);
   for (const file of state.objects.keys()) await normalizeTarget(options, file);
   const sourceFiles = state.objects
     .keys()

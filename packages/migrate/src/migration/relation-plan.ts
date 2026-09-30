@@ -5,16 +5,14 @@ import type {
   ReferencePathInfo,
 } from 'limina/internal/migration';
 import {
-  analyzeProjectDependencies,
   collectReferencePathInfosFromConfigObject,
   isOrdinarySourceTypecheckConfigPath,
   isPlainRecord,
-  readInputTopology,
   resolveReferencePath,
-  WorkspaceRegionPathIndex,
 } from 'limina/internal/migration';
-import { existsSync } from 'node:fs';
-import { type MigrationPlanningState, planningView } from './planning-state';
+import { createMembershipState, reachableSources } from './membership-state';
+import type { MigrationPlanningState } from './planning-state';
+import { collectAnalysis } from './relation-analysis';
 import { relativeConfigPath } from './transform';
 
 interface RelationPlan {
@@ -23,7 +21,7 @@ interface RelationPlan {
   retained: ReadonlySet<string>;
   inferred: ReadonlySet<string>;
   native: Set<string>;
-  pathIndex?: WorkspaceRegionPathIndex;
+  solutionMembers: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
 function relationKey(from: string, to: string): string {
@@ -31,7 +29,7 @@ function relationKey(from: string, to: string): string {
 }
 
 function firstClassification(rules: [boolean, string][]): string {
-  return rules.find(([matches]) => matches)?.[1] ?? 'outside region';
+  return rules.find(([matches]) => matches)?.[1] ?? 'not a retained source';
 }
 
 function classifyUnretained(
@@ -42,16 +40,11 @@ function classifyUnretained(
   const rules: [boolean, string][] = [
     [file === target, 'self reference'],
     [plan.state.isolated.has(target), 'isolated target'],
-    [!existsSync(target), 'missing target'],
     [
       !isOrdinarySourceTypecheckConfigPath(target, plan.state.config.rootDir),
       'not an ordinary source/solution config',
     ],
-    [plan.state.paths.includes(target), 'not a retained source'],
-    [
-      plan.pathIndex?.isInsideActivatedRegion(target) === true,
-      'inside region but excluded or hidden from discovery',
-    ],
+    [!plan.state.paths.includes(target), 'outside activated config topology'],
   ];
   return firstClassification(rules);
 }
@@ -114,10 +107,12 @@ function translateReference(
   file: string,
   reference: ReferencePathInfo,
 ): void {
-  if (
-    file === reference.resolvedPath ||
-    !plan.retained.has(reference.resolvedPath)
-  ) {
+  const members = plan.solutionMembers.get(reference.resolvedPath);
+  if (members) {
+    expandSolutionReference(plan, file, { reference, members });
+    return;
+  }
+  if (!isRetainedReference(plan, file, reference)) {
     plan.state.records.push({
       configPath: file,
       kind: 'removed-native-reference',
@@ -128,6 +123,36 @@ function translateReference(
     return;
   }
   translateRetainedReference(plan, file, reference);
+}
+
+function isRetainedReference(
+  plan: RelationPlan,
+  file: string,
+  reference: ReferencePathInfo,
+): boolean {
+  return (
+    file !== reference.resolvedPath && plan.retained.has(reference.resolvedPath)
+  );
+}
+function expandSolutionReference(
+  plan: RelationPlan,
+  file: string,
+  declaration: { reference: ReferencePathInfo; members: ReadonlySet<string> },
+): void {
+  const { reference, members } = declaration;
+  const sortedMembers = [...members].sort(
+    (left, right) => Number(left > right) - Number(left < right),
+  );
+  plan.state.records.push({
+    configPath: file,
+    kind: 'native-solution-expanded',
+    original: reference.rawPath,
+    message:
+      'Expanded the solution declaration to retained source members; checker mapping remains a core analysis concern.',
+    details: { target: reference.resolvedPath, members: sortedMembers },
+  });
+  for (const member of sortedMembers)
+    translateReference(plan, file, { ...reference, resolvedPath: member });
 }
 
 function translateRetainedReference(
@@ -169,27 +194,6 @@ function translateSource(plan: RelationPlan, file: string): void {
     translateReference(plan, file, reference);
 }
 
-async function collectAnalysis(
-  state: MigrationPlanningState,
-  artifactNamespace: LiminaArtifactNamespace,
-) {
-  const view = planningView(state);
-  const topology = await readInputTopology(view);
-  const analysis: DependencyAnalysisResult = topology.complete
-    ? await analyzeProjectDependencies(view, {
-        artifactNamespace,
-        workspaceContext: topology.workspace,
-      })
-    : {
-        complete: false,
-        facts: [],
-        diagnostics: topology.diagnostics.map(
-          (diagnostic) => diagnostic.message,
-        ),
-      };
-  return { topology, analysis };
-}
-
 function recordInferredOnly(plan: RelationPlan): void {
   if (!plan.analysis.complete) return;
   const inferredOnly = plan.analysis.facts.filter(
@@ -216,30 +220,36 @@ export async function translateRelations(
   state: MigrationPlanningState,
   artifactNamespace: LiminaArtifactNamespace,
 ): Promise<void> {
-  const { topology, analysis } = await collectAnalysis(
-    state,
-    artifactNamespace,
-  );
+  const { analysis } = await collectAnalysis(state, artifactNamespace);
   state.records.push({
     configPath: state.config.configPath,
     kind: 'dependency-analysis',
     message: analysisStatus(analysis),
     details: analysis,
   });
+  const membership = createMembershipState({
+    rootDir: state.config.rootDir,
+    targets: state.targets,
+    objects: state.objects,
+    records: [],
+  });
   const plan: RelationPlan = {
     state,
     analysis,
-    retained: new Set(topology.sources),
+    retained: membership.sources,
+    solutionMembers: new Map(
+      [...membership.solutions].map((file) => [
+        file,
+        reachableSources(membership, file),
+      ]),
+    ),
     inferred: new Set(
       analysis.facts.map((fact) =>
         relationKey(fact.fromConfigPath, fact.toConfigPath),
       ),
     ),
     native: new Set(),
-    pathIndex: topology.workspace
-      ? new WorkspaceRegionPathIndex(topology.workspace)
-      : undefined,
   };
-  for (const file of topology.sources) translateSource(plan, file);
+  for (const file of plan.retained) translateSource(plan, file);
   recordInferredOnly(plan);
 }

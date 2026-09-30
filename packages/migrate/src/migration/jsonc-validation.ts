@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import ts from 'typescript';
 
 export class MigrationJsoncInputError extends Error {}
+export class MigrationJsoncParseError extends MigrationJsoncInputError {}
 
 const compilerFields = [
   'outDir',
@@ -39,12 +40,12 @@ function parseMigrationText(content: string): Node {
     allowTrailingComma: true,
   });
   if (errors.length > 0) {
-    throw new MigrationJsoncInputError(
+    throw new MigrationJsoncParseError(
       'Migration JSONC must parse as a complete object before writing.',
     );
   }
   if (!isObjectRoot(root)) {
-    throw new MigrationJsoncInputError(
+    throw new MigrationJsoncParseError(
       'Migration JSONC must parse as a complete object before writing.',
     );
   }

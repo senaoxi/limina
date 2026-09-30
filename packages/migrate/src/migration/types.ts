@@ -23,6 +23,11 @@ export interface RunMigrationResult {
   processingComplete: boolean;
   inputConsumable: boolean;
   incompleteFiles: string[];
+  comparisonComplete: boolean;
+  analysisDiagnostics: string[];
+  isolatedFiles: string[];
+  outsideReferenceCount: number;
+  failedGroups: number;
   reportPath?: string;
   reportWarning?: string;
   checkerEntryCount: number;

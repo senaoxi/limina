@@ -26,6 +26,7 @@ export {
 } from '../core/build-graph/generated/config-readers';
 export { capabilityDiscoveryExtensions } from '../core/build-graph/generated/file-extensions';
 export {
+  createInputTopologyReader,
   readInputTopology,
   type InputTopologyResult,
 } from '../core/build-graph/input-topology';

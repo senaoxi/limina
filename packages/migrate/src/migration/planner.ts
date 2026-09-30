@@ -18,6 +18,7 @@ import {
   type MigrationPlanningState,
   planningView,
 } from './planning-state';
+import { MigrationPlanningError, planningPhase } from './progress';
 import { translateRelations } from './relation-plan';
 import type { MigrationWritePlanItem } from './transaction';
 export interface FrozenMigrationPlan {
@@ -75,20 +76,35 @@ export async function createFrozenMigrationPlan(
   config: ResolvedLiminaConfig,
   artifactNamespace: LiminaArtifactNamespace,
 ): Promise<FrozenMigrationPlan> {
-  const state = createPlanningState(config, await discover(config));
-  await inventory(state);
-  planExclusions(state);
-  const membershipChanges = planMembership(state);
-  await adoptOptionalOutputs(state);
-  await translateRelations(state, artifactNamespace);
-  const topology = await readInputTopology(planningView(state));
-  const groups = await freezePatches(state, topology, membershipChanges);
-  return {
-    inputs: state.snapshot,
-    groups,
-    records: state.records,
-    topology,
-    incomplete: state.incomplete || !topology.complete,
-    targetCount: state.paths.length,
-  };
+  const state = createPlanningState(config, []);
+  try {
+    state.paths = await planningPhase(state, 'discovery', () =>
+      discover(config),
+    );
+    await planningPhase(state, 'inventory', () => inventory(state));
+    planExclusions(state);
+    const membershipChanges = await planningPhase(state, 'membership', () =>
+      planMembership(state),
+    );
+    await planningPhase(state, 'outputs', () => adoptOptionalOutputs(state));
+    await planningPhase(state, 'dependency-comparison', () =>
+      translateRelations(state, artifactNamespace),
+    );
+    const topology = await planningPhase(state, 'input-topology', () =>
+      readInputTopology(planningView(state)),
+    );
+    const groups = await planningPhase(state, 'patches', () =>
+      freezePatches(state, topology, membershipChanges),
+    );
+    return {
+      inputs: new Map([...state.snapshot, ...state.discoveryInputs]),
+      groups,
+      records: state.records,
+      topology,
+      incomplete: state.incomplete || !topology.complete,
+      targetCount: state.paths.length,
+    };
+  } catch (error) {
+    throw new MigrationPlanningError(error, state.records);
+  }
 }

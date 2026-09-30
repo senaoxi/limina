@@ -157,6 +157,9 @@ function addInferredReferences(options: {
       sourceToBuildByChecker: options.state.sourceToBuildByChecker,
     });
     options.state.dependencyAnalysis.facts.push(...collection.analysis.facts);
+    options.state.dependencyAnalysis.diagnostics.push(
+      ...collection.analysis.diagnostics,
+    );
     options.state.dependencyAnalysis.complete &&= collection.analysis.complete;
     options.state.problems.push(...collection.problems);
     options.state.dependencyEdges.push(...collection.dependencyEdges);
@@ -278,7 +281,9 @@ export function analyzeAndCompleteGeneratedGraph(options: {
   addDeclarationCheckerInvariantProblems(options);
   addCheckerOutputGraphs({ ...options, allProjects });
   options.state.dependencyEdges.sort(compareDependencyEdges);
-  options.state.dependencyAnalysis.diagnostics = [...options.state.problems];
+  const { dependencyAnalysis: analysis } = options.state;
+  analysis.diagnostics.push(...options.state.problems);
+  analysis.diagnostics = [...new Set(analysis.diagnostics)];
 }
 
 export function validateAndCompleteGeneratedGraph(

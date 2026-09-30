@@ -1,6 +1,7 @@
 import { parse } from 'jsonc-parser';
 import { loadConfig } from 'limina/internal/migration';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import {
   link,
   mkdir,
@@ -123,6 +124,170 @@ async function fixture(extra: Record<string, string>) {
 }
 
 describe('migration input topology', () => {
+  it('isolates empty default and named inputs while preserving healthy membership and fresh consumption', async () => {
+    const f = await fixture({
+      'packages/app/tsconfig.json': solution(
+        './good',
+        './empty',
+        './named/tsconfig.lib.json',
+      ),
+      'packages/app/empty/tsconfig.json': '',
+      'packages/app/named/tsconfig.lib.json': '',
+    });
+    try {
+      const result = await f.run();
+      expect(result.inputConsumable).toBe(true);
+      expect(result.isolatedFiles).toEqual([
+        f.path('packages/app/empty/tsconfig.json'),
+        f.path('packages/app/named/tsconfig.lib.json'),
+      ]);
+      expect((await f.read('packages/app/tsconfig.json')).references).toEqual([
+        { path: './good' },
+      ]);
+      for (const file of ['empty/tsconfig.json', 'named/tsconfig.lib.json'])
+        expect(await readFile(f.path(`packages/app/${file}`), 'utf8')).toBe('');
+      const report = await f.report();
+      for (const topology of report.verification.topologies)
+        expect(topology.sources).toEqual([
+          f.path('packages/app/good/tsconfig.json'),
+        ]);
+      expect((await f.rerunFresh()).result.modifiedFiles).toEqual([]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it('reports unresolved observations separately from fresh input consumption', async () => {
+    const f = await fixture({
+      'packages/app/good/src/index.ts':
+        "import type { Missing } from 'not-installed'; export type Result = Missing;",
+    });
+    try {
+      const result = await f.run();
+      expect(result.inputConsumable).toBe(true);
+      expect(result.comparisonComplete).toBe(false);
+      expect(result.analysisDiagnostics.join('\n')).toContain('not-installed');
+      expect(result.analysisDiagnostics.join('\n')).toContain(
+        'good/src/index.ts:1',
+      );
+      expect(result.analysisDiagnostics.join('\n')).toContain(
+        'declaration-reference-inference',
+      );
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it('rejects manifest drift after confirmation and publishes the failed attempt without writing configs', async () => {
+    const f = await fixture({ 'README.md': 'original' });
+    try {
+      const before = await readFile(
+        f.path('packages/app/good/tsconfig.json'),
+        'utf8',
+      );
+      await writeFile(f.path('README.md'), 'dirty');
+      await expect(
+        f.run({
+          confirmDirtyWorkspace: async () => {
+            await writeFile(
+              f.path('packages/app/package.json'),
+              json({ name: '@fixture/changed', private: true }),
+            );
+            return true;
+          },
+        }),
+      ).rejects.toThrow('Migration planning input changed before writing');
+      expect(
+        await readFile(f.path('packages/app/good/tsconfig.json'), 'utf8'),
+      ).toBe(before);
+      const report = await f.report();
+      expect(
+        report.records.find((record) => record.kind === 'migration-failed')
+          ?.message,
+      ).toContain('package.json');
+      expect(report.verification.topologies).toEqual([]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it('retains missing-file sources and native declarations while migrating healthy siblings', async () => {
+    const f = await fixture({
+      'packages/app/missing/tsconfig.json': json({
+        files: ['generated.ts'],
+        references: [{ path: '../good' }],
+      }),
+    });
+    try {
+      const result = await f.run();
+      expect(result.inputConsumable).toBe(true);
+      const migrated = await f.read('packages/app/missing/tsconfig.json');
+      expect(migrated.references).toBeUndefined();
+      expect(migrated.files).toEqual(['generated.ts']);
+      expect(migrated.liminaOptions.implicitRefs).toEqual([
+        expect.objectContaining({ path: '../good/tsconfig.json' }),
+      ]);
+      expect(
+        (await f.read('packages/app/good/tsconfig.json')).$schema,
+      ).toBeDefined();
+      const report = await f.report();
+      expect(
+        report.records.filter((record) => record.kind === 'isolated'),
+      ).toEqual([]);
+      const analysis = report.records.find(
+        (record) => record.kind === 'dependency-analysis',
+      )!.details;
+      expect(analysis.complete).toBe(false);
+      expect(analysis.diagnostics.join('\n')).toContain('generated.ts');
+      expect((await f.run()).modifiedFiles).toEqual([]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it('expands source declarations through default and named solutions without requiring checker mapping', async () => {
+    const f = await fixture({
+      'packages/app/client/tsconfig.json': json({
+        files: ['index.ts'],
+        references: [
+          { path: '../wrapper' },
+          { path: '../standalone/tsconfig.lib.json' },
+        ],
+      }),
+      'packages/app/client/index.ts': 'export {};',
+      'packages/app/wrapper/tsconfig.json': solution('./tsconfig.group.json'),
+      'packages/app/wrapper/tsconfig.group.json': solution(
+        './tsconfig.lib.json',
+      ),
+      'packages/app/wrapper/tsconfig.lib.json': json({ files: ['index.ts'] }),
+      'packages/app/wrapper/index.ts': 'export {};',
+      'packages/app/standalone/tsconfig.lib.json': json({
+        files: ['generated.ts'],
+      }),
+    });
+    try {
+      const result = await f.run();
+      const client = await f.read('packages/app/client/tsconfig.json');
+      expect(client.liminaOptions.implicitRefs).toEqual([
+        expect.objectContaining({ path: '../wrapper/tsconfig.lib.json' }),
+        expect.objectContaining({ path: '../standalone/tsconfig.lib.json' }),
+      ]);
+      expect(
+        (await f.read('packages/app/standalone/tsconfig.lib.json')).$schema,
+      ).toBeDefined();
+      expect(result.inputConsumable).toBe(true);
+      const report = await f.report();
+      expect(
+        report.records.find(
+          (record) => record.kind === 'native-solution-expanded',
+        )?.details.members,
+      ).toEqual([f.path('packages/app/wrapper/tsconfig.lib.json')]);
+      expect((await f.run()).modifiedFiles).toEqual([]);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
   it('rejects self-hiding output while adopting the source and accepting an independent safe output', async () => {
     const f = await fixture({
       'packages/app/tools/tsconfig.json': source({
@@ -307,6 +472,10 @@ describe('migration input topology', () => {
     const f = await fixture({
       'packages/app/a/tsconfig.json': solution('../shared/tsconfig.lib.json'),
       'packages/app/b/tsconfig.json': solution('../shared/tsconfig.lib.json'),
+      'packages/app/c/tsconfig.wrap.json': solution(
+        '../shared/tsconfig.lib.json',
+        '../good/tsconfig.json',
+      ),
       'packages/app/shared/tsconfig.lib.json': '{ invalid',
     });
     try {
@@ -319,7 +488,11 @@ describe('migration input topology', () => {
         (await f.report()).records.filter(
           (record) => record.kind === 'removed-membership',
         ),
-      ).toHaveLength(2);
+      ).toHaveLength(3);
+      expect(
+        (await f.read('packages/app/c/tsconfig.wrap.json')).references,
+      ).toEqual([{ path: '../good/tsconfig.json' }]);
+      expect((await f.rerunFresh()).result.modifiedFiles).toEqual([]);
     } finally {
       await f.cleanup();
     }
@@ -348,6 +521,38 @@ describe('migration input topology', () => {
       expect(
         await readFile(f.path('packages/app/shared/tsconfig.wrap.json')),
       ).toEqual(wrapper);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it('expands cyclic named wrappers without losing either source member', async () => {
+    const f = await fixture({
+      'packages/app/tsconfig.json': solution('./a/tsconfig.wrap.json'),
+      'packages/app/a/tsconfig.wrap.json': solution(
+        '../b/tsconfig.wrap.json',
+        '../x/tsconfig.lib.json',
+      ),
+      'packages/app/b/tsconfig.wrap.json': solution(
+        '../a/tsconfig.wrap.json',
+        '../y/tsconfig.lib.json',
+      ),
+      'packages/app/x/tsconfig.lib.json': source(),
+      'packages/app/x/src/index.ts': 'export const x = 1;',
+      'packages/app/y/tsconfig.lib.json': source(),
+      'packages/app/y/src/index.ts': 'export const y = 1;',
+    });
+    try {
+      expect((await f.run()).inputConsumable).toBe(true);
+      const { topologies } = (await f.report()).verification;
+      for (const topology of topologies)
+        expect(
+          topology.reachableSources[f.path('packages/app/tsconfig.json')],
+        ).toEqual([
+          f.path('packages/app/x/tsconfig.lib.json'),
+          f.path('packages/app/y/tsconfig.lib.json'),
+        ]);
+      expect((await f.rerunFresh()).result.modifiedFiles).toEqual([]);
     } finally {
       await f.cleanup();
     }
@@ -661,6 +866,7 @@ describe('migration input topology', () => {
       'packages/app/a/index.ts': 'export {};',
     });
     const originalRead = ts.sys.readFile;
+    const originalRealpath = fs.realpathSync.native;
     const outsideReads: string[] = [];
     const read = vi
       .spyOn(ts.sys, 'readFile')
@@ -669,8 +875,17 @@ describe('migration input topology', () => {
           outsideReads.push(new Error('Outside config read').stack!);
         return originalRead(file, encoding);
       });
+    const realpathRead = vi
+      .spyOn(fs.realpathSync, 'native')
+      .mockImplementation((file, options) => {
+        if (file === f.path('outside/tsconfig.json'))
+          outsideReads.push('Outside config physical-path probe');
+        return originalRealpath(file, options);
+      });
     try {
-      expect((await f.run()).inputConsumable).toBe(true);
+      const result = await f.run();
+      expect(result.inputConsumable).toBe(true);
+      expect(result.outsideReferenceCount).toBe(1);
       expect(outsideReads).toEqual([]);
       const target = await f.read('packages/app/a/tsconfig.json');
       expect(target.references).toBeUndefined();
@@ -679,12 +894,13 @@ describe('migration input topology', () => {
         (await f.report()).records.find(
           (record) => record.kind === 'removed-native-reference',
         )?.message,
-      ).toBe('outside region');
+      ).toBe('outside activated config topology');
       expect(await readFile(f.path('outside/tsconfig.json'), 'utf8')).toBe(
         '{ invalid external target',
       );
     } finally {
       read.mockRestore();
+      realpathRead.mockRestore();
       await f.cleanup();
     }
   });

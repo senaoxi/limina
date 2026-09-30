@@ -40,6 +40,11 @@ function formatMigrationSummary(
   return [
     `processing complete: ${result.processingComplete}`,
     `input topology consumable: ${result.inputConsumable}`,
+    `dependency comparison complete: ${result.comparisonComplete}`,
+    `analysis diagnostics: ${result.analysisDiagnostics.length}`,
+    `isolated configs: ${result.isolatedFiles.length}`,
+    `outside references removed: ${result.outsideReferenceCount}`,
+    `failed or skipped groups: ${result.failedGroups}`,
     `incomplete files: ${result.incompleteFiles.length}`,
     `checker entries: ${result.checkerEntryCount}`,
     `recursive references: ${result.recursiveReferenceCount}`,
@@ -47,6 +52,7 @@ function formatMigrationSummary(
     ...hardlinkSummary,
     `skipped files: ${result.skippedFiles.length}`,
     ...warnings,
+    ...(result.reportPath ? [`audit: ${result.reportPath}`] : []),
   ].join(', ');
 }
 

@@ -10,6 +10,7 @@ export interface MigrationPlanningState {
   candidateConfig: ResolvedLiminaConfig;
   paths: string[];
   snapshot: Map<string, string>;
+  discoveryInputs: Map<string, string>;
   targets: Map<string, MigrationTarget>;
   objects: Map<string, JsonObject>;
   isolated: Map<string, string>;
@@ -27,6 +28,7 @@ export function createPlanningState(
     candidateConfig: config,
     paths,
     snapshot: new Map(),
+    discoveryInputs: new Map(),
     targets: new Map(),
     objects: new Map(),
     isolated: new Map(),

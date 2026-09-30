@@ -1,7 +1,9 @@
 import type { JsonObject } from 'limina/internal/migration';
 import {
+  createInputTopologyReader,
   type InputTopologyResult,
   isPlainRecord,
+  MigrationLogger,
   readInputTopology,
 } from 'limina/internal/migration';
 import { normalizeDeclarations } from './declarations';
@@ -27,6 +29,9 @@ export function missingTopologyMembers(
   candidate: InputTopologyResult,
 ): string[] {
   const missing = [
+    ...baseline.configPaths.filter(
+      (file) => !candidate.configPaths.includes(file),
+    ),
     ...baseline.entries.filter((entry) => !candidate.entries.includes(entry)),
     ...baseline.sources.filter((source) => !candidate.sources.includes(source)),
     ...missingMemberships(baseline, candidate),
@@ -43,16 +48,19 @@ async function readBaseline(
   const baseline = await readInputTopology(view);
   return !baseline.workspace || baseline.entries.length === 0
     ? baseline
-    : normalizeRetainedDeclarations(state, baseline);
+    : normalizeRetainedDeclarations(state);
 }
 
 async function normalizeRetainedDeclarations(
   state: MigrationPlanningState,
-  baseline: InputTopologyResult,
 ): Promise<InputTopologyResult> {
-  const validTargets = new Set(baseline.sources);
+  const validTargets = new Set(
+    state.objects
+      .keys()
+      .filter((file) => !state.targets.get(file)!.isTypeScriptSolution),
+  );
   const config = planningView(state);
-  for (const source of baseline.sources)
+  for (const source of validTargets)
     normalizeDeclarations({
       config,
       configPath: source,
@@ -75,13 +83,14 @@ interface OutputTrial {
   baseline: InputTopologyResult;
   file: string;
   proposal: JsonObject;
+  readTrial: Awaited<ReturnType<typeof createInputTopologyReader>>;
 }
 
 async function tryOutput(options: OutputTrial): Promise<void> {
-  const { state, file, proposal, baseline } = options;
+  const { state, file, proposal, baseline, readTrial } = options;
   const previous = state.objects.get(file)!;
   state.objects.set(file, withOutput(previous, proposal));
-  const trial = await readInputTopology(planningView(state));
+  const trial = await readTrial(planningView(state).virtualFiles);
   const missing = missingTopologyMembers(baseline, trial);
   if (trial.complete && missing.length === 0) {
     state.records.push({
@@ -93,7 +102,7 @@ async function tryOutput(options: OutputTrial): Promise<void> {
     return;
   }
   state.objects.set(file, previous);
-  const restored = await readInputTopology(planningView(state));
+  const restored = await readTrial(planningView(state).virtualFiles);
   state.records.push({
     configPath: file,
     kind: 'output-rejected',
@@ -114,17 +123,16 @@ async function tryOutput(options: OutputTrial): Promise<void> {
 }
 
 async function proposeAndCheck(
-  state: MigrationPlanningState,
-  baseline: InputTopologyResult,
-  file: string,
+  options: Omit<OutputTrial, 'proposal'>,
 ): Promise<void> {
+  const { state, baseline, file, readTrial } = options;
   const proposal = proposeOutputAdoption(state.targets.get(file)!);
   if (!proposal) {
     recordUnadoptedOutput(state, file);
     return;
   }
   if (baseline.complete) {
-    await tryOutput({ state, baseline, file, proposal });
+    await tryOutput({ state, baseline, file, proposal, readTrial });
     return;
   }
   state.records.push({
@@ -139,10 +147,29 @@ export async function adoptOptionalOutputs(
   state: MigrationPlanningState,
 ): Promise<void> {
   const baseline = await readBaseline(state);
+  const view = planningView(state);
+  const readTrial = await outputTrialReader(view, baseline);
   const sourceFiles = [...baseline.sources].sort(
     (left, right) => Number(left > right) - Number(left < right),
   );
-  for (const file of sourceFiles) await proposeAndCheck(state, baseline, file);
+  for (const [index, file] of sourceFiles.entries()) {
+    await proposeAndCheck({ state, baseline, file, readTrial });
+    reportOutputProgress(index + 1, sourceFiles.length);
+  }
+}
+
+async function outputTrialReader(
+  view: ReturnType<typeof planningView>,
+  baseline: InputTopologyResult,
+): Promise<OutputTrial['readTrial']> {
+  return baseline.complete
+    ? await createInputTopologyReader(view)
+    : (virtualFiles: typeof view.virtualFiles) =>
+        readInputTopology({ ...view, virtualFiles });
+}
+function reportOutputProgress(processed: number, total: number): void {
+  if (processed === total || processed % 20 === 0)
+    MigrationLogger.info(`output candidates processed: ${processed}/${total}`);
 }
 
 function recordUnadoptedOutput(
