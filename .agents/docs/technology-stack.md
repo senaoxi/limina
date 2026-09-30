@@ -12,6 +12,8 @@ CI retains Linux, macOS and Windows test/build/smoke responsibilities and the is
 
 ## ESLint 10 migration
 
+Repository automation, security reports, CI reuse and gated external workflows are owned by [infrastructure](./infrastructure.md). Root tooling adds only the already cataloged YAML parser; dependency versions and the task runner remain unchanged.
+
 The lint catalog now resolves ESLint 10.11.0, typescript-eslint 8.71.0, Unicorn 76.0.0, Node plugin 18.4.0, pnpm plugin 1.9.1, HTML plugin/parser 0.66.1, Prettier plugin 5.5.6, flat-gitignore 2.4.0, JSONC parser 3.3.0 and YAML parser 2.1.0. Existing Prettier config 10.1.8 and globals 17.12.0 remain current. Regexp stays on the compatible `~3.1.1` line: 3.3.1 pulls a parser requiring Node `^22.22.2 || >=24.15.0`, above this repository's declared floor. The obsolete HTML parser wildcard hook and its now-unreachable minimatch 3 patch/overrides were removed.
 
 The complete new Unicorn recommended preset is enabled for JavaScript and TypeScript, followed by the repository's existing rule overrides. It is not applied to YAML/JSON/HTML parser nodes. Root composition imports explicit root file settings rather than selecting every `files` entry from the composed preset, so it cannot accidentally reapply recommended rules after shared overrides. Executable controls in the [config suite](../../packages/eslint-config/src/__tests__/general.spec.ts) cover YAML comment preservation, JavaScript fixes and override ordering. Root commands continue to pass an explicit config path despite ESLint 10's file-based lookup.

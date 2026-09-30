@@ -9,6 +9,8 @@
   "include": [
     "scripts/**/*.ts",
     "migration/*.json",
+    ".github/*.json",
+    ".vscode/*.json",
     "limina.config.mts",
     "eslint.config.mjs",
     ".pnpmfile.cjs",

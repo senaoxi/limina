@@ -13,3 +13,22 @@ export function resolveCommitId(): string | null {
     return null;
   }
 }
+
+export function resolveDocumentationOrigin(): string | undefined {
+  const value = process.env.DOCS_ORIGIN;
+  if (!value) return undefined;
+  const origin = new URL(value);
+  if (
+    origin.protocol !== 'https:' ||
+    origin.username ||
+    origin.password ||
+    origin.pathname !== '/' ||
+    origin.search ||
+    origin.hash
+  ) {
+    throw new Error(
+      'DOCS_ORIGIN must be an HTTPS origin without credentials, path, query or fragment.',
+    );
+  }
+  return origin.origin;
+}

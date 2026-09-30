@@ -1,0 +1,22 @@
+name: Feature request / 功能建议
+description: Describe a concrete governance, migration or developer workflow need.
+title: "[Feature]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case / 问题与使用场景
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / 建议行为
+      description: Include the expected CLI, configuration or package behavior and meaningful failure cases.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and compatibility / 替代方案与兼容性
+      description: Describe existing workarounds and affected checker, workspace or migration contracts.
