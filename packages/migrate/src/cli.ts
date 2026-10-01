@@ -2,6 +2,8 @@ import { cac } from 'cac';
 import nodePath from 'node:path';
 import { fileURLToPath } from 'node:url';
 import package_ from '../package.json' with { type: 'json' };
+import { migrationBuildInfo } from './build-info';
+import { reportRuntimeObservations } from './runtime-observation';
 import { assertRuntimeVersion } from './runtime-version';
 
 interface MigrationFlags {
@@ -10,11 +12,45 @@ interface MigrationFlags {
   mode?: string;
 }
 
-function rethrowMigrationConfigError(error: unknown): never {
-  if (
+function configErrorCauses(error: unknown): Error[] {
+  const causes = new Set<Error>();
+  let cause: unknown = error;
+  while (cause instanceof Error) {
+    if (causes.has(cause)) break;
+    causes.add(cause);
+    cause = cause.cause;
+  }
+  return [...causes];
+}
+
+function hasMissingPackageCode(error: Error): boolean {
+  return (
+    'code' in error &&
+    ['ERR_MODULE_NOT_FOUND', 'MODULE_NOT_FOUND'].includes(String(error.code))
+  );
+}
+
+function isMissingPublicLimina(error: Error): boolean {
+  return (
+    hasMissingPackageCode(error) &&
+    /Cannot find (?:package|module) ['"]limina['"]/u.test(error.message)
+  );
+}
+
+function isMissingConfig(error: unknown): boolean {
+  return (
     error instanceof Error &&
     error.message.toLowerCase().includes('unable to find limina config')
-  ) {
+  );
+}
+
+function rethrowMigrationConfigError(error: unknown): never {
+  if (configErrorCauses(error).some(isMissingPublicLimina))
+    throw new Error(
+      'The Limina config imports the public "limina" package, but it is not installed where that config resolves dependencies. Install Limina in the project before migrating. limina-migrate embeds its input implementation; it does not supply or rewrite user config imports.',
+      { cause: error },
+    );
+  if (isMissingConfig(error)) {
     throw new Error(
       'Run npx limina init first, then rerun npx limina-migrate.',
       { cause: error },
@@ -37,7 +73,10 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
   const flow = createCliFlow();
   const isPassed = await runCliFlowWithCleanup(
     flow,
-    { failed: 'limina-migrate failed', passed: 'limina-migrate passed' },
+    {
+      failed: 'limina-migrate failed',
+      passed: `limina-migrate passed (embedded Limina@${migrationBuildInfo.coreVersion} inputs)`,
+    },
     async () => {
       flow.intro('limina-migrate');
       const configLoader = parseConfigLoader(flags.configLoader);
@@ -53,6 +92,7 @@ async function runMigrationAction(flags: MigrationFlags): Promise<void> {
       } catch (error) {
         rethrowMigrationConfigError(error);
       }
+      reportRuntimeObservations(config, flow);
       const result = await runMigration(config, {
         flow,
         flowDepth: 1,

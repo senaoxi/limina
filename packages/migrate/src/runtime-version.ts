@@ -1,13 +1,21 @@
 import { createRequire } from 'node:module';
-import package_ from '../package.json' with { type: 'json' };
+import { migrationBuildInfo } from './build-info';
+
+function isMatchingBuild(installedVersion: string | undefined): boolean {
+  const { coreVersion, migrateVersion } = migrationBuildInfo;
+  return coreVersion === migrateVersion && installedVersion === migrateVersion;
+}
 
 export function assertRuntimeVersion(): void {
-  const runtime = createRequire(import.meta.url)('limina/package.json') as {
+  const installed = createRequire(import.meta.url)(
+    'limina-migrate/package.json',
+  ) as {
     version?: string;
   };
-  if (runtime.version !== package_.version) {
+  const { coreVersion, migrateVersion } = migrationBuildInfo;
+  if (!isMatchingBuild(installed.version)) {
     throw new Error(
-      `limina-migrate@${package_.version} requires limina@${package_.version}; found ${runtime.version ?? 'an unknown version'}. Install matching versions before migrating.`,
+      `Invalid limina-migrate build: embedded Limina@${coreVersion}, embedded limina-migrate@${migrateVersion}, installed limina-migrate@${installed.version ?? 'unknown'}. Reinstall the matching release before migrating.`,
     );
   }
 }

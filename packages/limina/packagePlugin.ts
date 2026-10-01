@@ -8,5 +8,9 @@ export default function generatePackage(): Plugin {
   return createPackagePlugin({
     packageJsonPath,
     rewriteTypes: true,
+    transformPackageJson(packageJson) {
+      // Keep the source bridge in the workspace; it is not a published API.
+      delete packageJson.exports?.['./internal/migration'];
+    },
   });
 }

@@ -1,4 +1,10 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execReleaseCommand } from './command';
@@ -15,6 +21,86 @@ const publicationDirectories = new Map([
   ['limina', 'packages/limina/dist'],
   ['limina-migrate', 'packages/migrate/dist'],
 ]);
+
+interface PublishedManifest {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  exports?: Record<string, unknown>;
+}
+
+function validatePublishedDependencies(manifest: PublishedManifest): void {
+  for (const section of [
+    manifest.dependencies,
+    manifest.devDependencies,
+    manifest.optionalDependencies,
+    manifest.peerDependencies,
+  ]) {
+    const entries = Object.entries(section ?? {});
+    for (const [name, range] of entries) {
+      const isMigrationCoreDependency =
+        name === 'limina' && manifest.name === 'limina-migrate';
+      if (
+        isMigrationCoreDependency ||
+        name.startsWith('@limina/') ||
+        /^(?:workspace|link|file|catalog):/u.test(range)
+      ) {
+        throw new Error(
+          `Published ${manifest.name} contains a workspace-only dependency: ${name}@${range}.`,
+        );
+      }
+    }
+  }
+}
+
+function validateMigrationBuild(
+  config: ResolvedReleasePackageConfig,
+  version: string,
+): void {
+  const buildPath = path.join(config.publishDir, 'migration-build.json');
+  const build = JSON.parse(readFileSync(buildPath, 'utf8')) as {
+    formatVersion?: unknown;
+    coreVersion?: unknown;
+    migrateVersion?: unknown;
+  };
+  const coreDirectory = path.join(REPO_ROOT, 'packages/limina');
+  const coreSource = JSON.parse(
+    readFileSync(path.join(coreDirectory, 'package.json'), 'utf8'),
+  ) as PublishedManifest;
+  const coreDistribution = JSON.parse(
+    readFileSync(path.join(coreDirectory, 'dist/package.json'), 'utf8'),
+  ) as PublishedManifest;
+  if (
+    build.formatVersion !== 1 ||
+    build.coreVersion !== version ||
+    build.migrateVersion !== version ||
+    coreSource.name !== 'limina' ||
+    coreDistribution.name !== 'limina' ||
+    coreSource.version !== version ||
+    coreDistribution.version !== version
+  ) {
+    throw new Error(
+      'Published limina-migrate must embed the same-release Limina source and match both source and distribution versions.',
+    );
+  }
+  for (const resource of [
+    'cli.js',
+    'bin/limina-migrate.js',
+    'migration-verify-process.js',
+    'flow-renderer-process.js',
+    'LICENSE.md',
+    'bundled-dependencies.json',
+  ]) {
+    if (!existsSync(path.join(config.publishDir, resource))) {
+      throw new Error(
+        `Published limina-migrate resource is unavailable: ${resource}.`,
+      );
+    }
+  }
+}
 
 export function validatePublicationTarget(
   config: ResolvedReleasePackageConfig,
@@ -39,11 +125,7 @@ export function validatePublicationTarget(
   };
   const distribution = JSON.parse(
     readFileSync(path.join(config.publishDir, 'package.json'), 'utf8'),
-  ) as {
-    name?: string;
-    version?: string;
-    dependencies?: Record<string, string>;
-  };
+  ) as PublishedManifest;
   if (
     source.name !== config.packageName ||
     source.version !== version ||
@@ -54,12 +136,17 @@ export function validatePublicationTarget(
       `Source and published package must agree: ${config.packageName}@${version}`,
     );
   }
+  validatePublishedDependencies(distribution);
+  if (config.packageName === 'limina-migrate')
+    validateMigrationBuild(config, version);
   if (
-    config.packageName === 'limina-migrate' &&
-    distribution.dependencies?.limina !== version
+    config.packageName === 'limina' &&
+    Object.keys(distribution.exports ?? {}).some(
+      (key) => key === './internal' || key.startsWith('./internal/'),
+    )
   ) {
     throw new Error(
-      'Published limina-migrate must depend on the exact same limina version.',
+      'Published Limina must not export workspace-only internal support.',
     );
   }
 }
