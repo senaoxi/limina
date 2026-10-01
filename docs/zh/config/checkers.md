@@ -145,7 +145,7 @@ Framework dependency 收集使用所属 checker 生成的 TypeScript representat
 | 组件                                     | 支持契约                              |
 | ---------------------------------------- | ------------------------------------- |
 | Astro                                    | `>=7.0.0 <8.0.0`                      |
-| `@astrojs/check`                         | `0.9.10`                              |
+| `@astrojs/check`                         | `>=0.9.6 <0.10.0`                     |
 | `@astrojs/language-server`               | `2.16.13`                             |
 | LS-owned `@astrojs/compiler`             | `2.13.1`                              |
 | `@volar/language-core`                   | `2.4.28`                              |
@@ -154,6 +154,8 @@ Framework dependency 收集使用所属 checker 生成的 TypeScript representat
 | leaf-visible 与 check-visible TypeScript | Limina 已声明的 TypeScript peer range |
 
 TypeScript peer range 是 `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`。Astro `7.0.0` 是受支持的 floor，不是唯一可接受版本。adapter 还会检查 internal API shape，因此版本字符串匹配但 exports 不兼容时仍然 fail closed。
+
+Check 范围准入还要求表中其他组件和受支持的 internal API shape 全部满足。`@astrojs/check` 的 `0.9.6`–`0.9.8` 版本声明 TypeScript 5 peer；使用 TypeScript 6 时应选择 `0.9.9` 或更高版本，依据见[上游 changelog](https://github.com/withastro/astro/blob/main/packages/language-tools/astro-check/CHANGELOG.md)。Limina 的运行时 check 版本准入保留 `includePrerelease: true`，因此 `0.9.7-beta.1`、`0.10.0-beta.1` 等版本可以满足该范围。Package manager 按自身的 peer-range 匹配规则判断。
 
 依赖解析遵循 package ownership。Limina 依次从所属 leaf、`@astrojs/check`、Language Server、`@volar/kit` 创建解析 scope。依赖必须由拥有它的 scope 声明；owner-scoped 解析失败后不会改从 workspace root 重试。resolved file 可以位于 pnpm store、hoisted directory 或其他 symlink layout。路径只记录为 provenance，并用于隔离不同 module instance；物理路径相等永远不是兼容条件。因此，两份受支持的 TypeScript 可以来自不同 realpath，甚至可以是范围内不同版本。
 

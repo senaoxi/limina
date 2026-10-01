@@ -20,6 +20,11 @@ export interface ConsumerFixture {
   fixtureDir: string;
 }
 
+interface AstroConsumerToolchain {
+  checkVersion: string;
+  typeScriptVersion: string;
+}
+
 export interface DistributionPackageJson {
   bin?: Record<string, string>;
   dependencies?: Record<string, string>;
@@ -55,7 +60,7 @@ const REQUIRED_DIST_FILES = [
 ] as const;
 const EXPECTED_PEER_RANGES = {
   '@arethetypeswrong/core': '^0.18.3',
-  '@astrojs/check': '0.9.10',
+  '@astrojs/check': '>=0.9.6 <0.10.0',
   '@typescript/native-preview': '>=7.0.0-dev.20260421.2 <7.0.0',
   knip: '>=6.0.0 <7.0.0',
   'npm-package-json-lint': '>=9.1.0 <10.0.0',
@@ -394,34 +399,27 @@ export async function readCurrentPnpmConfig<T>(
   }
 }
 
-async function writeConsumerPackageManagerConfig(
-  fixtureDirectory: string,
-): Promise<void> {
+async function createConsumerPackageManagerSettings(): Promise<string[]> {
   const trustPolicy = await readCurrentPnpmConfig<string>('trust-policy');
   const trustPolicyExcludes =
     (await readCurrentPnpmConfig<string[]>('trust-policy-exclude')) ?? [];
   const lines: string[] = [
-    'auto-install-peers=false',
-    'strict-peer-dependencies=true',
+    'autoInstallPeers: false',
+    'strictPeerDependencies: true',
   ];
 
   if (trustPolicy) {
-    lines.push(`trust-policy=${trustPolicy}`);
+    lines.push(`trustPolicy: ${JSON.stringify(trustPolicy)}`);
   }
 
-  for (const exclude of trustPolicyExcludes) {
-    lines.push(`trust-policy-exclude[]=${exclude}`);
+  if (trustPolicyExcludes.length > 0) {
+    lines.push('trustPolicyExclude:');
+    for (const exclude of trustPolicyExcludes) {
+      lines.push(`  - ${JSON.stringify(exclude)}`);
+    }
   }
 
-  if (lines.length === 0) {
-    return;
-  }
-
-  await writeFile(
-    path.join(fixtureDirectory, '.npmrc'),
-    `${lines.join('\n')}\n`,
-    'utf8',
-  );
+  return lines;
 }
 
 async function writeConsumerFiles(
@@ -449,11 +447,24 @@ async function writeConsumerFiles(
     'utf8',
   );
 
-  await writeConsumerPackageManagerConfig(fixtureDirectory);
-
   await writeFile(
     path.join(fixtureDirectory, 'pnpm-workspace.yaml'),
-    'packages:\n  - app\n',
+    [
+      'packages:',
+      '  - app',
+      ...(await createConsumerPackageManagerSettings()),
+      ...(options.astroSemanticFixture
+        ? [
+            'overrides:',
+            "  '@astrojs/check>@astrojs/language-server': 2.16.13",
+            "  '@astrojs/language-server>@astrojs/compiler': 2.13.1",
+            "  '@astrojs/language-server>@volar/language-core': 2.4.28",
+            "  '@astrojs/language-server>@volar/kit': 2.4.28",
+            "  '@volar/kit>@volar/typescript': 2.4.28",
+          ]
+        : []),
+      '',
+    ].join('\n'),
     'utf8',
   );
   await writeFile(
@@ -463,12 +474,12 @@ async function writeConsumerFiles(
 export default defineConfig({
   config: {
     checkers: {
-      tsc: {
+      ${options.astroSemanticFixture ? 'astro' : 'tsc'}: {
         include: ['app/tsconfig.json'],
       },
     },
     source: {
-      include: ['**/*.ts'],
+      include: [${options.astroSemanticFixture ? "'**/*.ts', '**/*.astro'" : "'**/*.ts'"}],
       exclude: ['node_modules', '.limina', '.tsbuild', 'dist'],
     },
   },
@@ -519,6 +530,7 @@ export default defineConfig({
         strict: true,
         target: 'ES2023',
         types: [],
+        ...(options.astroSemanticFixture && { allowArbitraryExtensions: true }),
       },
       include: [options.astroSemanticFixture ? 'src/**/*' : 'src/**/*.ts'],
     }),
@@ -620,14 +632,14 @@ console.log('limina exports ok');
 
 export async function installConsumerDependencies(options: {
   astroSemanticFixture: boolean;
+  astroToolchain?: AstroConsumerToolchain;
   fixtureDir: string;
   manifest: DistributionPackageJson;
   tarballPath: string;
 }): Promise<void> {
-  const typescriptRange = getPeerDependencyRange(
-    options.manifest,
-    'typescript',
-  );
+  const typescriptRange =
+    options.astroToolchain?.typeScriptVersion ??
+    getPeerDependencyRange(options.manifest, 'typescript');
   const knipRange = getPeerDependencyRange(options.manifest, 'knip');
 
   await runPnpm(
@@ -657,8 +669,8 @@ export async function installConsumerDependencies(options: {
         '--prefer-offline',
         '--ignore-scripts',
         'astro@7.3.2',
-        '@astrojs/check@0.9.10',
-        'typescript@6.0.3',
+        `@astrojs/check@${options.astroToolchain?.checkVersion ?? '0.9.10'}`,
+        `typescript@${options.astroToolchain?.typeScriptVersion ?? '6.0.3'}`,
       ],
       {
         cwd: options.fixtureDir,
@@ -667,10 +679,17 @@ export async function installConsumerDependencies(options: {
       },
     );
   }
+
+  await runPnpm(['install', '--frozen-lockfile', '--ignore-scripts'], {
+    cwd: options.fixtureDir,
+    inherit: true,
+    timeout: 300_000,
+  });
 }
 
 export async function createConsumerFixture(options: {
   astroSemanticFixture?: boolean;
+  astroToolchain?: AstroConsumerToolchain;
   configFileName?: string;
   directoryName?: string;
   manifest: DistributionPackageJson;
@@ -700,6 +719,7 @@ export async function createConsumerFixture(options: {
     }
     await installConsumerDependencies({
       astroSemanticFixture: options.astroSemanticFixture === true,
+      astroToolchain: options.astroToolchain,
       fixtureDir: fixtureDirectory,
       manifest: options.manifest,
       tarballPath: options.tarballPath,
