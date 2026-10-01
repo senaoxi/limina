@@ -40,7 +40,9 @@
     "clean": "del-cli dist .tsbuild .smoke coverage"
   },
   "dependencies": {
-    "limina": "workspace:*"
+    "picomatch": "catalog:prod",
+    "tinyglobby": "catalog:prod",
+    "oxc-resolver": "catalog:prod"
   },
   "devDependencies": {
     "@limina/build-tools": "workspace:*",
@@ -53,10 +55,37 @@
     "rolldown": "catalog:dev",
     "tsx": "catalog:dev",
     "typescript": "catalog:dev",
-    "vitest": "catalog:test"
+    "vitest": "catalog:test",
+    "limina": "workspace:*"
   },
   "peerDependencies": {
-    "typescript": ">=5.4.0 <5.10.0 || >=6.0.0 <6.1.0"
+    "typescript": ">=5.4.0 <5.10.0 || >=6.0.0 <6.1.0",
+    "tsx": "^4.9.0",
+    "@typescript/native-preview": ">=7.0.0-dev.20260421.2 <7.0.0",
+    "vue-tsc": ">=2.2.0 <=2.2.12 || >=3.2.0 <=3.2.4",
+    "@astrojs/check": "0.9.10",
+    "svelte-check": ">=4.0.0 <5.0.0",
+    "svelte2tsx": "^0.7.61"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "peerDependenciesMeta": {
+    "tsx": {
+      "optional": true
+    },
+    "@typescript/native-preview": {
+      "optional": true
+    },
+    "vue-tsc": {
+      "optional": true
+    },
+    "@astrojs/check": {
+      "optional": true
+    },
+    "svelte-check": {
+      "optional": true
+    },
+    "svelte2tsx": {
+      "optional": true
+    }
+  }
 }

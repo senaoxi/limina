@@ -149,7 +149,9 @@ pnpm exec limina init --yes
 
 ### limina-migrate {#limina-migration}
 
-`limina-migrate` 是独立 CLI 包，精确依赖同版本 `limina`。本地安装后可执行下面的命令，或使用 `pnpm dlx limina-migrate@<version>`。它支持 `--config`、`--config-loader` 和 `--mode`；配置函数仍收到 `command: 'migration'`。
+`limina-migrate` 是独立 CLI 包，与 `limina` 同版本配对发布。它内联所需的核心输入实现，没有主包 runtime 依赖。本地安装后可执行下面的命令，或使用 `pnpm dlx limina-migrate@<version>`。它支持 `--config`、`--config-loader` 和 `--mode`；配置函数仍收到 `command: 'migration'`。
+
+`export default {}` 这类中立配置只需工具及其 required TypeScript peer 即可迁移。配置导入公开 `limina` 时，须在该配置解析依赖的位置安装 Limina；工具不提供或改写这些 import。可选 loader/checker 仍要求受支持的 peers。CLI 报告内嵌版本，并从 config/governance-root 锚点观察项目包版本。项目版本不同或无法确定只是非阻断的元数据提示，不是 target-runtime 验收；工具 build/self 版本不一致会在写入前失败。持久 `$schema` 路径仍指向 `node_modules/limina/schemas/tsconfig-schema.json`，主包安装前 editor 解析可能不可用。
 
 `limina migration` 保留为弃用转调入口，优先使用本地同版本包，否则通过 npm 下载该精确版本。帮助仍在本地显示；离线执行需要事先安装匹配的迁移包。命令不会升级项目依赖。
 
@@ -195,7 +197,7 @@ JSONC 编辑保留无关文本、注释和换行符。受管字段存在重复�
 
 同一 solution 环的修改，以及共享必要持久排除的修改，组成一致性组。可恢复失败会恢复该组，然后继续独立组。文件系统状态不确定时停止并保留恢复证据。迁移没有跨进程 writer lease，写入开始后也不会重新执行语义规划。
 
-新进程会通过正常 `check` 和 `graph` 输入读取路径加载实际配置。只有重新读取成功、必要写入完成、source 纳管关系保留且仍有可治理 source 时，才允许报告接入成功。必要写入失败、残留结构性错误或无法验证会返回非零。单独拒绝可选 outputs 不要求失败。
+新进程会通过同次发行 Limina 源码内嵌的正常 `check` 和 `graph` 输入读取路径加载实际配置。成功表示该内嵌实现消费了磁盘输入，不表示执行了完整 typecheck、graph 治理或项目安装版 Limina runtime。只有重新读取成功、必要写入完成、source 纳管关系保留且仍有可治理 source 时，才允许报告接入成功。必要写入失败、残留结构性错误或无法验证会返回非零。单独拒绝可选 outputs 不要求失败。
 
 终端摘要包含隔离、域外引用删除、比较完整性、诊断及失败／跳过组数量与审计路径。规划阶段和 outputs 候选计数显示进度。审计报告位于 `.limina/migration/latest.json`，包含目标、隔离、修剪关系、比较完整性、outputs 决策、写入、最终验证、阶段耗时，以及报告位置仍可写时的致命失败尝试。报告发布失败会警告，不撤销已经提交的配置。Core 和后续 migration 都不将报告作为输入事实来源。
 

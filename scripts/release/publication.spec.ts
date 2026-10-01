@@ -1,9 +1,18 @@
 import { execFile } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 import assert from 'node:assert/strict';
@@ -12,6 +21,7 @@ import { assertReleaseGroup } from './publication';
 import {
   discoverReleasePackages,
   resolvePackageSelections,
+  sortReleasePackageConfigs,
   type ReleasePlan,
 } from './shared';
 
@@ -40,6 +50,12 @@ describe('paired publication contract', () => {
       () => resolvePackageSelections(['migrate'], configs.slice(1)),
       /complete, same-version/,
     );
+    assert.deepEqual(
+      sortReleasePackageConfigs(configs.toReversed()).map(
+        (config) => config.packageName,
+      ),
+      ['limina', 'limina-migrate'],
+    );
   });
   it('rejects incomplete, mixed-version and mixed-channel groups before publication', () => {
     assert.doesNotThrow(() => assertReleaseGroup(plans()));
@@ -54,6 +70,140 @@ describe('paired publication contract', () => {
     channels[1]!.npmTag = 'beta';
     assert.throws(() => assertReleaseGroup(channels), /one channel/);
   });
+});
+
+it('rejects leaked product dependencies, mismatched embedded sources and missing workers before publication', async () => {
+  const root = await mkdtemp(
+    path.join(tmpdir(), 'limina-publication-contract-'),
+  );
+  const put = async (file: string, value: unknown) => {
+    const target = path.join(root, file);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, `${JSON.stringify(value, null, 2)}\n`);
+  };
+  try {
+    await put('package.json', { private: true, type: 'module' });
+    const scripts = path.join(root, 'scripts/release');
+    await mkdir(scripts, { recursive: true });
+    for (const file of ['publication.ts', 'shared.ts', 'command.ts'])
+      await copyFile(
+        fileURLToPath(new URL(file, import.meta.url)),
+        path.join(scripts, file),
+      );
+    // Only the fixture's release tooling uses these development dependencies.
+    // Product source/dist inputs and their mutations are separate fixture data.
+    await symlink(
+      fileURLToPath(new URL('../../node_modules', import.meta.url)),
+      path.join(root, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    const version = '1.2.0';
+    for (const [directory, name] of [
+      ['limina', 'limina'],
+      ['migrate', 'limina-migrate'],
+    ]) {
+      const manifest = { name, version, publishConfig: { access: 'public' } };
+      await put(`packages/${directory}/package.json`, manifest);
+      await put(`packages/${directory}/dist/package.json`, manifest);
+    }
+    const build = {
+      formatVersion: 1,
+      coreVersion: version,
+      migrateVersion: version,
+    };
+    const buildFile = 'packages/migrate/dist/migration-build.json';
+    await put(buildFile, build);
+    for (const resource of [
+      'cli.js',
+      'bin/limina-migrate.js',
+      'migration-verify-process.js',
+      'flow-renderer-process.js',
+      'LICENSE.md',
+      'bundled-dependencies.json',
+    ])
+      await put(`packages/migrate/dist/${resource}`, 'fixture');
+    const publication = (await import(
+      pathToFileURL(path.join(scripts, 'publication.ts')).href
+    )) as typeof import('./publication');
+    const shared = (await import(
+      pathToFileURL(path.join(scripts, 'shared.ts')).href
+    )) as typeof import('./shared');
+    const configs = shared.discoverReleasePackages();
+    const core = configs.find((config) => config.packageName === 'limina')!;
+    const migrate = configs.find(
+      (config) => config.packageName === 'limina-migrate',
+    )!;
+    const validate = () =>
+      publication.validatePublicationTarget(
+        migrate,
+        version,
+        `limina/v${version}`,
+      );
+    assert.doesNotThrow(validate);
+    const manifestFile = 'packages/migrate/dist/package.json';
+    const manifest = { name: 'limina-migrate', version };
+    for (const section of [
+      'dependencies',
+      'devDependencies',
+      'optionalDependencies',
+      'peerDependencies',
+    ]) {
+      await put(manifestFile, { ...manifest, [section]: { limina: version } });
+      assert.throws(validate, /workspace-only dependency/u);
+    }
+    await put(manifestFile, {
+      ...manifest,
+      dependencies: { '@limina/core': version },
+    });
+    assert.throws(validate, /workspace-only dependency/u);
+    await put(manifestFile, {
+      ...manifest,
+      dependencies: { tinyglobby: 'catalog:prod' },
+    });
+    assert.throws(validate, /workspace-only dependency/u);
+    await put(manifestFile, manifest);
+    for (const broken of [
+      { ...build, coreVersion: '1.1.0' },
+      { ...build, migrateVersion: '1.1.0' },
+      { ...build, formatVersion: 99 },
+    ]) {
+      await put(buildFile, broken);
+      assert.throws(validate, /same-release Limina source/u);
+    }
+    await put(buildFile, build);
+    const coreSourceFile = 'packages/limina/package.json';
+    await put(coreSourceFile, { name: 'limina', version: '1.1.0' });
+    assert.throws(validate, /source and distribution versions/u);
+    await put(coreSourceFile, { name: 'limina', version });
+    const renderer = path.join(
+      root,
+      'packages/migrate/dist/flow-renderer-process.js',
+    );
+    await rename(renderer, `${renderer}.disabled`);
+    assert.throws(validate, /resource is unavailable: flow-renderer-process/u);
+    await rename(`${renderer}.disabled`, renderer);
+    const buildPath = path.join(root, buildFile);
+    await rename(buildPath, `${buildPath}.disabled`);
+    assert.throws(validate, /migration-build\.json/u);
+    await rename(`${buildPath}.disabled`, buildPath);
+    await put('packages/limina/dist/package.json', {
+      name: 'limina',
+      version,
+      exports: { './internal/migration': './internal/migration.js' },
+    });
+    assert.throws(
+      () =>
+        publication.validatePublicationTarget(
+          core,
+          version,
+          `limina/v${version}`,
+        ),
+      /workspace-only internal support/u,
+    );
+    assert.doesNotThrow(validate);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 interface RegistryDocument {
