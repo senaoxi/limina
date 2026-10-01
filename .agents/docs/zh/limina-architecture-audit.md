@@ -2,6 +2,8 @@
 
 [English](../limina-architecture-audit.md) | [简体中文](./limina-architecture-audit.md)
 
+下文历史本地路径使用脱敏别名：`$EVIDENCE_ROOT` 表示复现根目录，`$SOURCE_REPO` 表示原始源 checkout。命令结果与证据日期保持不变；别名不表示私有证据已公开。
+
 本页记录本次 reconstruction 的 evidence 与 reconciliation，不另定义系统语义。当前定义归[system model](./limina-system-model.md)、[semantics](./limina-semantics.md)、[lifecycle](./limina-lifecycle.md)；性质归 [I01–I12](./limina-invariants.md)。
 
 ## Scope 与方法

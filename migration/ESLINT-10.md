@@ -1,5 +1,7 @@
 # ESLint 10 migration validation
 
+Historical local paths use redacted aliases: `$LIMINA_REPO` is the Limina checkout, `$SOURCE_REPO` the source checkout, and `$EVIDENCE_ROOT` the local reproduction root. Recorded results retain their original scope and dates; private raw evidence is not included in this repository.
+
 This record describes the local migration of the current working tree to ESLint 10.11.0. It does not accept independent CI, publication or documentation deployment. Those gates remain governed by the repository's temporary Logaria dependency.
 
 ## Environment and baseline

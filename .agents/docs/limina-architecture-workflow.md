@@ -2,6 +2,8 @@
 
 [English](./limina-architecture-workflow.md) | [简体中文](./zh/limina-architecture-workflow.md)
 
+Local reproduction roots use the redacted `$EVIDENCE_ROOT` alias; set it to the evidence directory when reproducing a recorded experiment.
+
 This page defines the repo-native workflow established by this work. It contains maintenance guidance and repository operating conventions, not historical design intent inferred from source. Start at [limina.md](./limina.md); do not create separate docs/architecture or ADR copies.
 
 ## Explain invariant impact in the PR
@@ -76,7 +78,7 @@ P0/P1 denotes severe correctness/authority/freshness failures; P2 denotes a boun
 
 ## Validation selection and known execution traps
 
-Discover targets with `pnpm nx show project limina`. For governed production source/config changes, follow root AGENTS and run `pnpm exec limina check`; on failure read `pnpm exec limina check --issues --format json`. For tests/guards, run unit/typecheck/lint as required by package AGENTS. The current lint target uses `eslint --fix`; in a dirty worktree, use non-fixing ESLint and explain the substitution so unrelated content is not rewritten. PCR-only changes require formatting, English/Chinese content parity, links, source anchors, relevant semantic evidence, and Git boundary checks, not an automatic full build/package/release run.
+Discover available scripts from the root and owning package `package.json`. For governed production source/config changes, follow root AGENTS and run `pnpm run check`; on failure read `pnpm exec limina check --issues --format json`. For tests/guards, run unit/typecheck/lint as required by root and any existing package AGENTS. `lint:check` and `format:check` are read-only; `lint:fix` and `format:write` are explicit mutations. PCR-only changes require formatting, English/Chinese content parity, links, source anchors, relevant semantic evidence, and Git boundary checks, not an automatic full build/package/release run.
 
 Empirical conclusions follow the root verification protocol: create a faithful minimal repro under `$EVIDENCE_ROOT/<topic>/`; run at least three independent rounds that change consequential dimensions and seek to disprove the proposition; record intent, independence, commands/conditions, and observations. After revising a proposition, repeat the relevant challenges. If a key toolchain/platform condition cannot be preserved, label it NOT VERIFIED rather than presenting source reading as an experiment.
 

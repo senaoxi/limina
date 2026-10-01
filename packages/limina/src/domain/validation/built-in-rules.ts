@@ -28,7 +28,7 @@ export const workspaceRegionMembershipRule: TypedValidatorRegistration<
   descriptor: createNoOptionsDescriptor({
     category: 'workspace',
     description: 'Every activated workspace package belongs to one region.',
-    documentation: 'https://docs.senao.me/docs-islands/limina/config/regions',
+    documentation: 'https://senao.me/repos/limina/config/regions',
     id: 'workspace/package-region-membership',
     inputKind: 'workspace',
     messages: {
@@ -54,7 +54,7 @@ export const projectOwnershipConflictRule: TypedValidatorRegistration<
   descriptor: createNoOptionsDescriptor({
     category: 'ownership',
     description: 'Unique ownership domains reject conflicting candidates.',
-    documentation: 'https://docs.senao.me/docs-islands/limina/concepts',
+    documentation: 'https://senao.me/repos/limina/concepts',
     id: 'projects/ownership-conflict',
     inputKind: 'projects',
     messages: {
@@ -77,7 +77,7 @@ export const importEvidenceIntegrityRule: TypedValidatorRegistration<
     category: 'dependency',
     description: 'Every import occurrence has stable evidence identity.',
     documentation:
-      'https://docs.senao.me/docs-islands/limina/import-resolution-to-declaration-build-graph',
+      'https://senao.me/repos/limina/import-resolution-to-declaration-build-graph',
     id: 'imports/evidence-integrity',
     inputKind: 'import-facts',
     messages: {
@@ -100,7 +100,7 @@ export const sourceDependencyResolutionRule: TypedValidatorRegistration<
     category: 'dependency',
     description: 'Governed source dependencies must have classified targets.',
     documentation:
-      'https://docs.senao.me/docs-islands/limina/import-resolution-to-declaration-build-graph',
+      'https://senao.me/repos/limina/import-resolution-to-declaration-build-graph',
     id: 'source-dependencies/unresolved-target',
     inputKind: 'source-dependencies',
     messages: {
@@ -122,8 +122,7 @@ export const declarationCycleRule: TypedValidatorRegistration<
   descriptor: createNoOptionsDescriptor({
     category: 'build',
     description: 'Declaration build references must be acyclic.',
-    documentation:
-      'https://docs.senao.me/docs-islands/limina/why-import-is-not-references',
+    documentation: 'https://senao.me/repos/limina/why-import-is-not-references',
     id: 'declaration-build/cycle',
     inputKind: 'declaration-build',
     messages: {
@@ -145,7 +144,7 @@ export const outputBuildSelfEdgeRule: TypedValidatorRegistration<
   descriptor: createNoOptionsDescriptor({
     category: 'build',
     description: 'Output-build dependencies cannot point to the same package.',
-    documentation: 'https://docs.senao.me/docs-islands/limina/workflows',
+    documentation: 'https://senao.me/repos/limina/workflows',
     id: 'output-build/self-edge',
     inputKind: 'output-build',
     messages: {
@@ -167,8 +166,7 @@ export const packageArtifactAccessRule: TypedValidatorRegistration<
   descriptor: createNoOptionsDescriptor({
     category: 'architecture',
     description: 'Package artifact edges use accessible public exports.',
-    documentation:
-      'https://docs.senao.me/docs-islands/limina/monorepo-constraints',
+    documentation: 'https://senao.me/repos/limina/monorepo-constraints',
     id: 'package-artifacts/public-export',
     inputKind: 'package-artifacts',
     messages: {
