@@ -446,7 +446,37 @@ describe('Astro semantic toolchain', () => {
   });
 
   it.each([
-    ['check', '0.9.9'],
+    ['0.9.5', 'unsupported'],
+    ['0.9.6', 'supported'],
+    ['0.9.7', 'supported'],
+    ['0.9.8', 'supported'],
+    ['0.9.9', 'supported'],
+    ['0.9.10', 'supported'],
+    ['0.9.11', 'supported'],
+    ['0.10.0', 'unsupported'],
+    ['0.9.6-beta.1', 'unsupported'],
+    ['0.9.7-beta.1', 'supported'],
+    ['0.10.0-beta.1', 'supported'],
+  ] as const)(
+    'uses the check version range and existing prerelease policy for %s',
+    (check, kind) => {
+      expect(
+        resolveAstroSemanticAdapter({
+          astro: '7.3.2',
+          check,
+          compiler: '2.13.1',
+          languageCore: '2.4.28',
+          languageServer: '2.16.13',
+          leafTypeScript: '5.9.3',
+          typeScript: '5.9.3',
+          volarKit: '2.4.28',
+          volarTypeScript: '2.4.28',
+        }).kind,
+      ).toBe(kind);
+    },
+  );
+
+  it.each([
     ['languageServer', '2.16.12'],
     ['compiler', '2.13.0'],
     ['languageCore', '2.4.27'],

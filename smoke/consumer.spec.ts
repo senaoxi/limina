@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -13,6 +14,63 @@ import {
 } from './helpers';
 
 describe('limina published package smoke', () => {
+  it('checks the Astro semantic graph with the lowest supported check version and TypeScript 5', async () => {
+    const manifest = assertDistributionArtifacts();
+    const packedDistribution = await packLiminaDistribution();
+    let fixture: ConsumerFixture | undefined;
+
+    try {
+      fixture = await createConsumerFixture({
+        astroSemanticFixture: true,
+        astroToolchain: {
+          checkVersion: '0.9.6',
+          typeScriptVersion: '5.9.3',
+        },
+        manifest,
+        tarballPath: packedDistribution.tarballPath,
+      });
+      const rootRequire = createRequire(
+        path.join(fixture.fixtureDir, 'package.json'),
+      );
+      const leafRequire = createRequire(
+        path.join(fixture.fixtureDir, 'app/package.json'),
+      );
+      const checkManifestPath = leafRequire.resolve(
+        '@astrojs/check/package.json',
+      );
+      const checkManifest = JSON.parse(
+        await readFile(checkManifestPath, 'utf8'),
+      ) as { version: string };
+      const checkRequire = createRequire(checkManifestPath);
+      const checkTypeScript = checkRequire('typescript') as { version: string };
+      const rootTypeScript = rootRequire('typescript') as { version: string };
+      expect(checkManifest.version).toBe('0.9.6');
+      expect(checkTypeScript.version).toBe('5.9.3');
+      expect(rootTypeScript.version).toBe('5.9.3');
+
+      await writeFile(
+        path.join(fixture.fixtureDir, 'app/src/Page.astro'),
+        [
+          '---',
+          "import { value } from './index.ts';",
+          'void value;',
+          '---',
+          '<h1>Minimum check version</h1>',
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      const graphCheckResult = await runPnpm(
+        ['exec', 'limina', '--config', './limina.config.mjs', 'graph', 'check'],
+        { cwd: fixture.fixtureDir },
+      );
+      expect(graphCheckResult.stdout).toContain('limina graph passed');
+    } finally {
+      await fixture?.cleanup();
+      await packedDistribution.cleanup();
+    }
+  });
+
   it('installs the packed package and exercises the public CLI surface', async () => {
     const manifest = assertDistributionArtifacts();
     const packedDistribution = await packLiminaDistribution();
@@ -74,7 +132,7 @@ describe('limina published package smoke', () => {
           true,
         );
         expect(packageManifest.peerDependencies?.['@astrojs/check']).toBe(
-          '0.9.10',
+          '>=0.9.6 <0.10.0',
         );
         expect(
           packageManifest.peerDependenciesMeta?.['@astrojs/check']?.optional,

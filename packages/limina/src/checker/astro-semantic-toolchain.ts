@@ -1,6 +1,9 @@
 import type { PackageManifest } from '#core/workspace/actions';
 import { normalizeAbsolutePath } from '#utils/path';
-import { LiminaDependencyError } from '../dependency-contract';
+import {
+  externalCheckerDependencyContracts,
+  LiminaDependencyError,
+} from '../dependency-contract';
 import {
   formatAstroSemanticVersionTuple,
   resolveAstroSemanticAdapter,
@@ -40,7 +43,7 @@ function createUnsupportedToolchainError(options: {
       'Unsupported Astro semantic toolchain:',
       `  leaf package scope: ${options.packageRootDir}`,
       `  reason: ${options.reason}`,
-      '  fix: install a supported Astro 7 and @astrojs/check 0.9.10 toolchain in this leaf.',
+      `  fix: install a supported Astro 7 and @astrojs/check ${externalCheckerDependencyContracts['@astrojs/check'].supportedRange} toolchain in this leaf.`,
     ].join('\n'),
     ownership: 'checker-toolchain',
     packageName: '@astrojs/check',
