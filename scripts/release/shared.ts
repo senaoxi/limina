@@ -382,6 +382,9 @@ export function sortReleasePackageConfigs(
 
     visiting.add(config.packageName);
     const internalDependencies = getInternalDependencyNames(config.manifest);
+    // The release group stays ordered after core becomes a build-time input.
+    if (config.packageName === 'limina-migrate')
+      internalDependencies.add('limina');
     for (const dependencyName of internalDependencies) {
       const dependencyConfig = configByName.get(dependencyName);
       if (dependencyConfig) {
