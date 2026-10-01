@@ -5,6 +5,7 @@ dist
 .limina/
 node_modules
 .eslintcache
+cache
 
 # ignore the temporary config.ts build output,
 # when vitepress fails to build config.ts,

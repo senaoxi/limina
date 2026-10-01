@@ -4,12 +4,14 @@ import enConfig from '../en/config';
 import zhConfig from '../zh/config';
 import { resolveDocumentationOrigin } from './build-metadata';
 
-const base = '/';
+const base = '/repos/limina/';
 const documentationOrigin = resolveDocumentationOrigin();
 
 export default defineConfig({
   base,
-  sitemap: documentationOrigin ? { hostname: documentationOrigin } : undefined,
+  sitemap: documentationOrigin
+    ? { hostname: new URL(base, documentationOrigin).href }
+    : undefined,
   title: 'Limina',
   description:
     'Project-reference graph compiler and architecture governance CLI for TypeScript monorepos',
