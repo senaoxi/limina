@@ -155,7 +155,7 @@ const config: LocaleSpecificConfig<DefaultTheme.Config> & {
         items: [
           {
             text: 'Changelog',
-            link: 'https://github.com/senaoxi/limina/blob/main/CHANGELOG.md',
+            link: 'https://github.com/senaoxi/limina/blob/main/packages/limina/CHANGELOG.md',
           },
           {
             text: 'Contributing',

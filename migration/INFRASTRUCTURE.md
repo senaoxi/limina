@@ -1,5 +1,7 @@
 # Adapted infrastructure validation
 
+Historical local paths use redacted aliases: `$LIMINA_REPO` is the Limina checkout, `$SOURCE_REPO` the source checkout, and `$EVIDENCE_ROOT` the local reproduction root. Recorded results retain their original scope and dates; private raw evidence is not included in this repository.
+
 Date: 2026-09-30. Target baseline: `196a9c7`. Source infrastructure inspected at `$SOURCE_REPO`, `e64ed491`. Host: macOS arm64, Node 24.21.0, pnpm 11.9.0. Floor experiments use the official checksum-verified Node 22.18.0 binary and the same pnpm JS entry, with `pnpm exec node` asserted to report 22.18.0.
 
 Local integration is complete. Normal local quality gates pass. The dependency-audit gate correctly fails on six pre-existing high advisory entries. This does not establish remote CI, publication or deployment acceptance.

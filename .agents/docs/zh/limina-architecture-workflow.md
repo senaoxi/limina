@@ -2,6 +2,8 @@
 
 [English](../limina-architecture-workflow.md) | [简体中文](./limina-architecture-workflow.md)
 
+本地复现根目录使用脱敏别名 `$EVIDENCE_ROOT`；复现实验时将其设为实际证据目录。
+
 本页定义本次建立的 repo-native 工作机制。它是维护建议与本仓库的操作约定，不是由源码推得的历史设计意图。入口为 [limina.md](./limina.md)，不另建 docs/architecture 或 ADR 副本。
 
 ## PR 先说明 invariant impact
@@ -76,7 +78,7 @@ P0/P1 表示严重 correctness/authority/freshness 破坏；P2 是受限缺陷�
 
 ## 验证选择与已知运行陷阱
 
-先 `pnpm nx show project limina` 发现 targets。涉及 production governed source/config 时按 root AGENTS 执行 `pnpm exec limina check`，失败读取 `pnpm exec limina check --issues --format json`。涉及 tests/guard 按 package AGENTS 运行 unit/typecheck/lint；当前 lint target 使用 `eslint --fix`，dirty tree 不应让无关内容被改写，应使用非 fixing ESLint 检查并报告替代原因。只改 PCR 时检查格式、中英文内容一致性、links、source anchors、相关 semantic evidence 与 Git 边界，不强制触发 build/package/release 全套任务。
+先从根目录与归属 package 的 `package.json` 发现可用脚本。涉及 production governed source/config 时按 root AGENTS 执行 `pnpm run check`，失败读取 `pnpm exec limina check --issues --format json`。涉及 tests/guard 按 root 及现有 package AGENTS 运行 unit/typecheck/lint；`lint:check` 与 `format:check` 为只读检查，`lint:fix` 与 `format:write` 为显式修改。只改 PCR 时检查格式、中英文内容一致性、links、source anchors、相关 semantic evidence 与 Git 边界，不强制触发 build/package/release 全套任务。
 
 实证结论遵守 root verification protocol：在 `$EVIDENCE_ROOT/<topic>/` 建立忠实最小复现；至少三轮独立改变会影响结果的维度，以推翻命题为目标；记录 intent、独立性、命令/条件、观察。修正命题后重做相应反证。无法保留 toolchain/platform 条件时写 NOT VERIFIED，不用 source 阅读冒充实测。
 
