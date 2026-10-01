@@ -26,7 +26,7 @@ Limina 把配置选定的 package 治理范围、checker 的语义事实、声�
 
 [package.json](../../../packages/limina/package.json) 定义 ESM 包、Node 范围、`limina` binary 和 exports；版本号以 manifest 为准，不在架构记录中维护第二份。主模块的公开 API 以 [src/index.ts](../../../packages/limina/src/index.ts) 为准：`defineConfig`、配置类型、validation errors 和 governance issue types；内部 provider / semantic context 并未因此成为公开插件 API。
 
-[CLI factory](../../../packages/limina/src/cli/factory.ts) 注册 init、check、graph、proof、source、build、checker、package、release 和弃用的 migration 转调入口。独立的 `limina-migrate` 包拥有迁移执行，精确依赖同版本 `limina`。主 CLI 的 `migration` 仅保留为弃用转调入口。`limina/internal/migration` 是供配套包使用的显式支持入口，不是跨版本插件 API。具体子命令和 flags 查看注册模块、schema 与 `limina --help`。`release check` 检查配置的发布一致性；真正的发布流程由仓库 release 脚本负责，不能把检查命令当作 npm publish。
+[CLI factory](../../../packages/limina/src/cli/factory.ts) 注册 init、check、graph、proof、source、build、checker、package、release 和弃用的 migration 转调入口。独立的 `limina-migrate` 包拥有迁移执行，并内联同次发行所需的核心源码。主 CLI 的 `migration` 仅保留为弃用转调入口。`limina/internal/migration` 是 workspace 源码支持入口，发布 export map 中会移除它；它不是跨版本插件 API。分发与依赖细节归[仓库边界](./architecture.md#limina-边界)，验收范围归[迁移生命周期](./limina-lifecycle.md#migration-是另一种事务)。具体子命令和 flags 查看注册模块、schema 与 `limina --help`。`release check` 检查配置的发布一致性；真正的发布流程由仓库 release 脚本负责，不能把检查命令当作 npm publish。
 
 [构建配置](../../../packages/limina/rolldown.config.ts) externalize 声明的 runtime/peer/optional dependencies，其余 build inputs 可被打包；[manifest generator](../../../packages/build-tools/src/package-plugin.ts) 保留并解析 development metadata，移除 private workspace development dependencies。devDependencies 中出现工具不意味着它变成生产依赖，也不能从名称推断一定 bundled。发布产物的具体内容仍需相应 build/package checks。
 
