@@ -1,5 +1,7 @@
 # Local migration validation
 
+Historical local paths use redacted aliases: `$LIMINA_REPO` is the Limina checkout, `$SOURCE_REPO` the source checkout, and `$EVIDENCE_ROOT` the local reproduction root. Recorded results retain their original scope and dates; private raw evidence is not included in this repository.
+
 Local migration is complete under the declared external Logaria dependency, using the monorepo layout. Full independent migration, native remote-platform acceptance, publication and deployment remain closed.
 
 Implementation commit: `5dd3022d3b040a53794e26cd9fdb007da57528c9` (`build: configure standalone monorepo`).
@@ -64,7 +66,7 @@ Intent: disprove dependence on a simple checkout path or repository cwd. An inde
 | `pnpm run build`                                                                                                                                                                                                                               | 0    | build              |
 | `pnpm run test:unit src/__tests__/atomic-writer.spec.ts src/__tests__/path-filters.spec.ts src/__tests__/shell-command.spec.ts src/__tests__/standalone-invocation-command.spec.ts src/__tests__/migration-transaction.spec.ts --maxWorkers=2` | 0    | path-unit          |
 | `pnpm --dir smoke exec vitest run generated-command.spec.ts`                                                                                                                                                                                   | 0    | generated-consumer |
-| `node $EVIDENCE_ROOT/limina-monorepo-migration/vite 路径 space ! & quote'/limina/packages/limina/dist/bin/limina.js --help`                                                                                | 0    | different-cwd      |
+| `node $EVIDENCE_ROOT/limina-monorepo-migration/vite 路径 space ! & quote'/limina/packages/limina/dist/bin/limina.js --help`                                                                                                                    | 0    | different-cwd      |
 
 The focused atomic-write, portable-path, shell-command, standalone-invocation and migration-transaction suite passed 5 files / 75 tests. Generated-command consumers passed 9 tests against installed tarballs. The absolute dist CLI also ran from an unrelated cwd. This establishes native macOS arm64 / Node 24.21.0 behavior only.
 

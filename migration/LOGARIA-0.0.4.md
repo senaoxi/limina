@@ -1,5 +1,7 @@
 # Logaria 0.0.4 replacement validation
 
+Historical local paths use redacted aliases: `$LIMINA_REPO` is the Limina checkout, `$SOURCE_REPO` the source checkout, and `$EVIDENCE_ROOT` the local reproduction root. Recorded results retain their original scope and dates; private raw evidence is not included in this repository.
+
 Evidence date: 2026-09-30. The reported setup-action failure is repaired by completing the registry replacement for the remaining product and build-tool consumers. This is local evidence; remote GitHub Actions acceptance is still pending.
 
 ## Environment and baseline

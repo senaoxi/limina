@@ -53,11 +53,11 @@ export default defineConfig([
   {
     files: liminaTestFilePatterns,
     plugins: {
-      '@docs-islands/portable-path': portablePathPlugin,
+      '@limina/portable-path': portablePathPlugin,
     },
     rules: {
       ...baseTestFileRules,
-      '@docs-islands/portable-path/portable-path-comparison': 'error',
+      '@limina/portable-path/portable-path-comparison': 'error',
       'max-params': 'off',
       'unicorn/better-regex': 'off',
     },

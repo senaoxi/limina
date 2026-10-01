@@ -201,7 +201,7 @@ Limina 会为受治理的源码归属方工作区写入 `entry: []`，从而关�
 
 当包入口指向构建产物时，`Knip` 可能需要一个能说明 `rootDir` / `outDir` 的 `tsconfig`，才能把这些产物映射回源码文件。托管模式下，把这个布局写在源码叶子的 `liminaOptions.outputs` 中，再让包里的静态 `limina build <config>` 脚本指向托管源码配置或聚合配置。如果使用包内手写构建 `tsconfig`，则使用 `limina build <config> --raw --preset <checker>`。
 
-这是一种通用的包设计方式：`package.json` 面向消费者，只暴露构建后的 `dist` 文件；被选中的源码 `tsconfig` 描述会产出这些文件的源码树。例如 `@docs-islands/utils` 可以只写：
+这是一种通用的包设计方式：`package.json` 面向消费者，只暴露构建后的 `dist` 文件；被选中的源码 `tsconfig` 描述会产出这些文件的源码树。例如 `@example/utils` 可以只写：
 
 ```json
 {

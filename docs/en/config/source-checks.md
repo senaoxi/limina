@@ -201,7 +201,7 @@ Limina disables `Knip`'s implicit `index` / `main` / `cli` entry guessing by wri
 
 When package entries point at build artifacts, `Knip` may need a `tsconfig` with enough `rootDir` / `outDir` information to map those artifacts back to source files. In managed mode, declare that layout with `liminaOptions.outputs` on the source leaf and point a static `limina build <config>` package script at the managed source or aggregator config. For a package-local hand-authored build `tsconfig`, use `limina build <config> --raw --preset <checker>`.
 
-This is a general package design pattern: `package.json` describes the built files that consumers import, while the selected source tsconfig describes the source tree that writes those files. For example, `@docs-islands/utils` can expose only built files:
+This is a general package design pattern: `package.json` describes the built files that consumers import, while the selected source tsconfig describes the source tree that writes those files. For example, `@example/utils` can expose only built files:
 
 ```json
 {

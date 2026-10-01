@@ -1,8 +1,8 @@
 # limina
 
 <p align="center">
-  <a href="https://docs.senao.me/docs-islands/limina/" target="_blank" rel="noopener noreferrer">
-    <img width="180" src="https://docs.senao.me/docs-islands/limina/logo.svg" alt="limina logo">
+  <a href="https://senao.me/repos/limina/" target="_blank" rel="noopener noreferrer">
+    <img width="180" src="https://senao.me/repos/limina/logo.svg" alt="limina logo">
   </a>
 </p>
 
@@ -35,7 +35,7 @@ Configuration migration is provided by the separate, same-version `limina-migrat
 
 Limina is not a bundler, a test framework, or a publishing tool. It does not replace TypeScript or framework-specific checkers. Instead, it runs alongside existing tools and verifies that the project structure they depend on remains consistent and reviewable.
 
-[Read the Docs to Learn More](https://docs.senao.me/docs-islands/limina/)
+[Read the Docs to Learn More](https://senao.me/repos/limina/)
 
 ## Development
 

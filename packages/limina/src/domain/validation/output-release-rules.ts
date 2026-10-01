@@ -16,7 +16,7 @@ export const packageOutputFindingRule: TypedValidatorRegistration<
     defaultSeverity: 'error',
     description: 'Reports classified package output findings.',
     documentation: {
-      url: 'https://docs.senao.me/docs-islands/limina/config/package-checks',
+      url: 'https://senao.me/repos/limina/config/package-checks',
     },
     id: identifier<'RuleId'>('package-output/classified-finding'),
     inputKind: 'package-output',
@@ -49,7 +49,7 @@ export const releaseAssessmentFindingRule: TypedValidatorRegistration<
     defaultSeverity: 'error',
     description: 'Reports classified release assessment findings.',
     documentation: {
-      url: 'https://docs.senao.me/docs-islands/limina/config/release-checks',
+      url: 'https://senao.me/repos/limina/config/release-checks',
     },
     id: identifier<'RuleId'>('release/classified-finding'),
     inputKind: 'release-assessment',

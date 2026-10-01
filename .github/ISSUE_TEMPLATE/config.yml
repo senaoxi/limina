@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/senaoxi/limina/security
     about: Use the repository security reporting channel for vulnerabilities.
   - name: Limina documentation / Limina 文档
-    url: https://docs.senao.me/docs-islands/limina/
+    url: https://senao.me/repos/limina/
     about: Read the existing public documentation while independent deployment remains gated.

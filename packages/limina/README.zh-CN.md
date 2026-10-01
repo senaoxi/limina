@@ -1,8 +1,8 @@
 # limina
 
 <p align="center">
-  <a href="https://docs.senao.me/docs-islands/limina/zh" target="_blank" rel="noopener noreferrer">
-    <img width="180" src="https://docs.senao.me/docs-islands/limina/logo.svg" alt="limina logo">
+  <a href="https://senao.me/repos/limina/zh" target="_blank" rel="noopener noreferrer">
+    <img width="180" src="https://senao.me/repos/limina/logo.svg" alt="limina logo">
   </a>
 </p>
 
@@ -35,7 +35,7 @@ Limina 支持单包项目，以及 pnpm、npm、Yarn 和 Bun 工作区，帮助�
 
 Limina 不是 bundler、测试框架或发布工具，也不会替代 TypeScript 或框架专属 checker。它调用已有工具，并验证这些工具依赖的 项目结构是否仍然可靠。
 
-[阅读文档了解更多](https://docs.senao.me/docs-islands/limina/zh/)
+[阅读文档了解更多](https://senao.me/repos/limina/zh/)
 
 ## 开发
 

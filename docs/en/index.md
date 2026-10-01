@@ -17,7 +17,7 @@ hero:
       link: /built-in-tasks
     - theme: alt
       text: View on GitHub
-      link: https://github.com/senaoxi/docs-islands/tree/main/packages/limina
+      link: https://github.com/senaoxi/limina
 
 features:
   - icon: ⚙️

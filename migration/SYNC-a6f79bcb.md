@@ -1,5 +1,7 @@
 # Input topology synchronization
 
+Historical local paths use redacted aliases: `$LIMINA_REPO` is the Limina checkout, `$SOURCE_REPO` the source checkout, and `$EVIDENCE_ROOT` the local reproduction root. Recorded results retain their original scope and dates; private raw evidence is not included in this repository.
+
 Source: docs-islands local main commit `a6f79bcb4528098f7bbf8c9f309216f176ffa826`, immediately following the initial extraction baseline. The original commit title is preserved. All 91 changed files are carried over: product paths stay under `packages/limina`, product documentation moves to root `docs`, and PCR remains under `.agents/docs`. Of these files, 88 match source bytes or source deletions exactly. The Rolldown configuration retains private build-tool imports and the two lifecycle records retain normalized documentation links. No dependency or public peer range was changed.
 
 The change adds the packaged `migration-verify-process.js` entry, input topology preservation, optional-output trials, exact config isolation, consistency-group writes and fresh-process verification. The source commit's tests and complete English/Chinese documentation and PCR changes are retained without new test-only production interfaces. [File mapping](./upstream-a6f79bcb.json) records provenance; initial extraction evidence remains in [VALIDATION.md](./VALIDATION.md).

@@ -88,7 +88,7 @@ export default [
           selector:
             "MemberExpression[object.name='process'][property.name='env']",
           message:
-            'Direct process access is restricted. Import helpers from @docs-islands/utils instead.',
+            'Direct process access is restricted. Use the package environment entry point instead.',
         },
       ],
       'no-console': ['error'],

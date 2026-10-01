@@ -2,6 +2,8 @@
 
 [English](../migration.md) | [简体中文](./migration.md)
 
+本地路径使用脱敏别名：`$LIMINA_REPO` 表示 Limina checkout，`$SOURCE_REPO` 表示源 checkout，`$EVIDENCE_ROOT` 表示本地复现根目录。这不表示私有证据已随本仓库分发。
+
 适配后的基建工作流已在本地实现，启用仍受下述发布／部署门禁约束。[基建记录](./infrastructure.md)负责配置与报告语义，[集成验证](../../../migration/INFRASTRUCTURE.md)记录本次改动的证据与限制。
 
 状态：monorepo 布局的本地迁移已完成。2026-09-30，维护者要求将剩余产品与构建工具消费者切换到 registry Logaria 0.0.4；三个消费者现均使用 dev catalog。冷自举、完整本地检查、外部打包消费者、特殊路径／cwd 测试在 macOS arm64 / Node 24.21.0 / pnpm 11.9.0 上通过，独立的五组 Vue 版本矩阵也已在本机通过。完全独立迁移及远程平台验收仍未完成。继承记录中的历史结果不属于本次迁移验收。
@@ -16,8 +18,8 @@
 
 复现和命令日志位于 `$EVIDENCE_ROOT/limina-monorepo-migration/`。三轮对抗测试覆盖冷自举与缺失 Logaria 反例、外部打包消费者、路径／cwd／平台行为。未实际运行的平台和 Node 版本必须保持未验证状态。实际结果见[验收记录](../../../migration/VALIDATION.md)。
 
-发布与部署门保持关闭。发布前需通过干净的独立安装及完整远程 CI 矩阵，选择未发布版本，核对 npm trusted publisher、workflow 与 `Release` environment，并在启用新发布前冻结旧发布权威。导入历史标签不得自动发布。发布脚本只面向获准的 `packages/limina/dist` 与 `packages/migrate/dist` 配对产物，要求包名、版本及共享的 `limina/v<version>` tag 一致。迁移包清单必须精确依赖核心版本。发布先使用候选 npm tag 上传，核对两个产物的完整性后才更新渠道。重试只接受完整性相符的既有版本，不覆盖已发布版本。既有 changelog 保留原链接；新条目依据 commit map 区分两仓库历史。
+npm 发布仍受门禁约束。[基建记录](./infrastructure.md#外部门禁与协作)记载的公开文档入口不代表仓库中独立受门禁控制的部署工作流已启用。发布前需通过干净的独立安装及完整远程 CI 矩阵，选择未发布版本，核对 npm trusted publisher、workflow 与 `Release` environment，并在启用新发布前冻结旧发布权威。导入历史标签不得自动发布。发布脚本只面向获准的 `packages/limina/dist` 与 `packages/migrate/dist` 配对产物，要求包名、版本及共享的 `limina/v<version>` tag 一致。迁移包清单必须精确依赖核心版本。发布先使用候选 npm tag 上传，核对两个产物的完整性后才更新渠道。重试只接受完整性相符的既有版本，不覆盖已发布版本。既有 changelog 保留原链接；新条目依据 commit map 区分两仓库历史。
 
-Vercel 配置以固定的 `/repos/limina/` base 构建文档，输出仍为 `docs/.vitepress/dist`；Limina project 不再维护对应的内部 rewrite，由 Senao 站点统一负责把外部 `/repos/limina/*` gateway 映射到独立的 Limina 部署。其余 `DOCS_ORIGIN`、项目关联和部署权限仍受部署门禁约束。新路由批准并验收前保留此前公开文档 URL。之后将旧消费者迁到获准的 registry 版本，遵守 release-age／trust，移除旧源码及 Nx／发布归属，验收旧仓库，再对其余旧双语文档路由配置跳转，覆盖资源、查询参数和锚点。
+当前公开入口、固定 base、Vercel gateway 及部署配置由[基建记录](./infrastructure.md#外部门禁与协作)负责。项目关联和部署权限仍受各自独立门禁约束。旧消费者迁移仍是独立受门禁控制的行动：将旧消费者迁到获准的 registry 版本，遵守 release-age／trust，移除旧源码及 Nx／发布归属，验收旧仓库，再对其余旧双语文档路由配置跳转，覆盖资源、查询参数和锚点。
 
 发布前回滚是停止切换并保留旧仓库。发布后分别回滚消费者版本、文档入口和工作流；不覆盖已发布版本、不 unpublish、不强推历史。

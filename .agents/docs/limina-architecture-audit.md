@@ -2,6 +2,8 @@
 
 [English](./limina-architecture-audit.md) | [简体中文](./zh/limina-architecture-audit.md)
 
+Historical local paths below are redacted aliases: `$EVIDENCE_ROOT` denotes the reproduction root and `$SOURCE_REPO` the original source checkout. Command results and evidence dates are unchanged; the aliases do not make private evidence publicly available.
+
 This page records evidence and reconciliation for this reconstruction; it does not independently define system semantics. Current definitions belong to the [system model](./limina-system-model.md), [semantics](./limina-semantics.md), and [lifecycle](./limina-lifecycle.md); properties belong to [I01–I12](./limina-invariants.md).
 
 ## Scope and method

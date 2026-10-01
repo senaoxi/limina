@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-04/schema#",
-  "id": "https://docs.senao.me/docs-islands/limina/schemas/tsconfig-schema.json",
+  "id": "https://senao.me/repos/limina/schemas/tsconfig-schema.json",
   "title": "Limina TypeScript Configuration",
   "description": "TypeScript tsconfig.json with Limina graph governance options.",
   "allowTrailingCommas": true,

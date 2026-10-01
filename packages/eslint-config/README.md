@@ -1,6 +1,6 @@
-# @docs-islands/eslint-config
+# @limina/eslint-config
 
-Shared ESLint configuration for the docs-islands monorepo.
+Private shared ESLint configuration for the Limina monorepo.
 
 ## Features
 
@@ -18,7 +18,7 @@ Shared ESLint configuration for the docs-islands monorepo.
 
 ```javascript
 // eslint.config.mjs
-import eslintGeneralConfig from '@docs-islands/eslint-config';
+import eslintGeneralConfig from '@limina/eslint-config';
 import { defineConfig } from 'eslint/config';
 
 export default defineConfig([...eslintGeneralConfig]);
@@ -29,7 +29,7 @@ export default defineConfig([...eslintGeneralConfig]);
 For core rendering packages with complex logic:
 
 ```javascript
-import { core } from '@docs-islands/eslint-config/presets';
+import { core } from '@limina/eslint-config/presets';
 export default defineConfig([...core]);
 ```
 
@@ -38,7 +38,7 @@ export default defineConfig([...core]);
 For monorepo root directory:
 
 ```javascript
-import { root } from '@docs-islands/eslint-config/presets';
+import { root } from '@limina/eslint-config/presets';
 export default defineConfig([...root]);
 ```
 
@@ -47,7 +47,7 @@ export default defineConfig([...root]);
 For documentation sites with Vue, React, and Markdown:
 
 ```javascript
-export { docs as default } from '@docs-islands/eslint-config/presets';
+export { docs as default } from '@limina/eslint-config/presets';
 ```
 
 ### Playground Preset
@@ -55,7 +55,7 @@ export { docs as default } from '@docs-islands/eslint-config/presets';
 For E2E test playgrounds:
 
 ```javascript
-export { playground as default } from '@docs-islands/eslint-config/presets';
+export { playground as default } from '@limina/eslint-config/presets';
 ```
 
 ## Shared Configurations
@@ -69,7 +69,7 @@ import {
   untypedTypeScriptRules,
   testFilePatterns,
   nodeFilePatterns,
-} from '@docs-islands/eslint-config/config';
+} from '@limina/eslint-config/config';
 ```
 
 ### baseTestFileRules
@@ -92,15 +92,15 @@ Rules for build/automation scripts:
 
 ### create-logger-plugin
 
-Enforces centralized logging through `@docs-islands/utils/logger`.
+Enforces centralized logging through `@limina/build-tools/logger`.
 
 ```javascript
-import { createLoggerPlugin } from '@docs-islands/eslint-config/plugins';
+import { createLoggerPlugin } from '@limina/eslint-config/plugins';
 
 export default defineConfig([
   {
-    plugins: { '@docs-islands/core': createLoggerPlugin },
-    rules: { '@docs-islands/core/unified-log-entry': 'error' },
+    plugins: { '@limina/core': createLoggerPlugin },
+    rules: { '@limina/core/unified-log-entry': 'error' },
   },
 ]);
 ```
@@ -120,8 +120,8 @@ export default defineConfig([
 
 ```bash
 pnpm build      # Build
-pnpm typecheck  # Type check
-pnpm lint       # Lint
+pnpm --dir ../.. typecheck   # Type check the repository
+pnpm --dir ../.. lint:check  # Check lint without mutation
 pnpm test       # Test
 pnpm clean      # Clean
 ```

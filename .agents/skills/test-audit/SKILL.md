@@ -1,6 +1,6 @@
 ---
 name: test-audit
-description: 'Invoke whenever writing, materially changing, reviewing, or sweeping tests in docs-islands. Gate new tests by observable contracts, audit low-value or implementation-coupled coverage, consolidate duplicate proof at the correct owner boundary, and remove test-only production seams when they have no non-test contract.'
+description: 'Invoke whenever writing, materially changing, reviewing, or sweeping tests in Limina. Gate new tests by observable contracts, audit low-value or implementation-coupled coverage, consolidate duplicate proof at the correct owner boundary, and remove test-only production seams when they have no non-test contract.'
 ---
 
 # Test Audit
@@ -103,8 +103,8 @@ or implementation before acting.
 
 Keep discovery read-only until candidate evidence is complete.
 
-1. Identify the owning Nx project and available targets with
-   `pnpm nx show project <project> --json`; do not guess target names or flags.
+1. Identify the owning workspace package and its available scripts from the
+   root and package `package.json`; do not guess script names or flags.
 2. Inspect the package's unit tests plus any owned integration, playground,
    E2E, smoke, fixture, or platform-specific suites.
 3. Inspect cross-package proof when the contract is shared.
@@ -113,7 +113,7 @@ Keep discovery read-only until candidate evidence is complete.
 
 For broad audits, divide work by production owner boundaries rather than test
 filename prefixes. In this repository that commonly means package/core source,
-Limina integration and detector fixtures, VitePress playground/E2E and smoke,
+Limina integration and detector fixtures, VitePress documentation and smoke,
 package smoke projects, scripts/tooling, and cross-cutting architecture tests.
 
 Outside campaign mode, prefer a few high-confidence candidates over a large
@@ -172,17 +172,16 @@ Follow the repository and nearest scoped `AGENTS.md` first. Do not edit source
 or tests concurrently with a validation process that is reading the same
 checkout.
 
-1. Confirm the owner and available Nx targets with
-   `pnpm nx show project <project> --json`.
-2. Run the narrowest relevant Nx test target first. Pass file/filter arguments
-   only when the target's configured command supports them.
+1. Confirm the owner and available root/package scripts in `package.json`.
+2. Run the narrowest relevant package test script first. Pass file/filter
+   arguments only when the script's configured command supports them.
 3. Run integration, E2E, smoke, packaging, or platform proof only when the
    changed contract crosses that boundary.
 4. Run the owner's required typecheck, lint, build, or documentation targets as
    required by repository policy.
 5. For Limina-governed source/config/package changes, follow the repository
-   Limina validation section, including `pnpm exec limina check`; for Limina
-   tests, also follow `packages/limina/AGENTS.md`.
+   validation section, including `pnpm run check`; for Limina tests, follow
+   any existing package-scoped `AGENTS.md`.
 6. Run `pnpm lint:packages` when manifests, exports, dependencies, publishable
    outputs, or package structure are affected.
 7. Avoid repository-wide mutating `pnpm lint` or `pnpm format` in a dirty
