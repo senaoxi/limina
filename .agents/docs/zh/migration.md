@@ -18,6 +18,6 @@
 
 发布与部署门保持关闭。发布前需通过干净的独立安装及完整远程 CI 矩阵，选择未发布版本，核对 npm trusted publisher、workflow 与 `Release` environment，并在启用新发布前冻结旧发布权威。导入历史标签不得自动发布。发布脚本只面向获准的 `packages/limina/dist` 与 `packages/migrate/dist` 配对产物，要求包名、版本及共享的 `limina/v<version>` tag 一致。迁移包清单必须精确依赖核心版本。发布先使用候选 npm tag 上传，核对两个产物的完整性后才更新渠道。重试只接受完整性相符的既有版本，不覆盖已发布版本。既有 changelog 保留原链接；新条目依据 commit map 区分两仓库历史。
 
-Vercel 配置准备了 `/` base 与 `docs/.vitepress/dist` 输出；`DOCS_ORIGIN`、项目关联和部署权限尚未确定。批准并验收部署前保留当前公开文档 URL。之后将旧消费者迁到获准的 registry 版本，遵守 release-age／trust，移除旧源码及 Nx／发布归属，验收旧仓库，再对旧双语文档路由配置跳转，覆盖资源、查询参数和锚点。
+Vercel 配置以固定的 `/repos/limina/` base 构建文档，输出仍为 `docs/.vitepress/dist`；Limina project 不再维护对应的内部 rewrite，由 Senao 站点统一负责把外部 `/repos/limina/*` gateway 映射到独立的 Limina 部署。其余 `DOCS_ORIGIN`、项目关联和部署权限仍受部署门禁约束。新路由批准并验收前保留此前公开文档 URL。之后将旧消费者迁到获准的 registry 版本，遵守 release-age／trust，移除旧源码及 Nx／发布归属，验收旧仓库，再对其余旧双语文档路由配置跳转，覆盖资源、查询参数和锚点。
 
 发布前回滚是停止切换并保留旧仓库。发布后分别回滚消费者版本、文档入口和工作流；不覆盖已发布版本、不 unpublish、不强推历史。
