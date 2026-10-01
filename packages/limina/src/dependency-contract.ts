@@ -78,7 +78,7 @@ export const externalCheckerDependencyContracts: Readonly<
     optional: true,
     ownership: 'external-checker',
     packageName: '@astrojs/check',
-    supportedRange: '0.9.10',
+    supportedRange: '>=0.9.6 <0.10.0',
   },
   '@typescript/native-preview': {
     optional: true,

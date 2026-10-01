@@ -145,7 +145,7 @@ The first adapter family is intentionally bounded:
 | Component                                 | Supported contract                      |
 | ----------------------------------------- | --------------------------------------- |
 | Astro                                     | `>=7.0.0 <8.0.0`                        |
-| `@astrojs/check`                          | `0.9.10`                                |
+| `@astrojs/check`                          | `>=0.9.6 <0.10.0`                       |
 | `@astrojs/language-server`                | `2.16.13`                               |
 | LS-owned `@astrojs/compiler`              | `2.13.1`                                |
 | `@volar/language-core`                    | `2.4.28`                                |
@@ -154,6 +154,8 @@ The first adapter family is intentionally bounded:
 | leaf-visible and check-visible TypeScript | Limina's declared TypeScript peer range |
 
 The TypeScript peer range is `>=5.4.0 <5.10.0 || >=6.0.0 <6.1.0`. Astro `7.0.0` is the supported floor, not the only accepted Astro version. The adapter also checks the internal API shape, so matching version strings with incompatible exports still fail closed.
+
+The check range also requires every other component in the table and the supported internal API shape. `@astrojs/check` versions `0.9.6`–`0.9.8` declare a TypeScript 5 peer; use `0.9.9` or later for TypeScript 6, as recorded in the [upstream changelog](https://github.com/withastro/astro/blob/main/packages/language-tools/astro-check/CHANGELOG.md). Limina's runtime check-version admission retains `includePrerelease: true`, so versions such as `0.9.7-beta.1` and `0.10.0-beta.1` can satisfy this range. Package managers apply their own peer-range matching rules.
 
 Dependency resolution follows package ownership. Limina creates resolution scopes from the owning leaf, then `@astrojs/check`, then the Language Server, and finally `@volar/kit`. A package must be declared by the scope that owns that dependency; Limina does not retry from the workspace root after an owner-scoped failure. The resolved files may physically live in a pnpm store, a hoisted directory, or another symlink layout. Their paths are recorded as provenance and keep different module instances isolated, but physical-path equality is never a compatibility condition. Two supported TypeScript instances may therefore have different real paths, or even different supported versions.
 

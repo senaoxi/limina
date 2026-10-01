@@ -1,5 +1,6 @@
 import semver from 'semver';
 import {
+  externalCheckerDependencyContracts,
   isSupportedDependencyVersion,
   liminaRuntimeDependencyContracts,
 } from '../dependency-contract';
@@ -9,13 +10,13 @@ import type {
 } from './astro-semantic-types';
 
 const ASTRO_RANGE = '>=7.0.0 <8.0.0';
+const CHECK_CONTRACT = externalCheckerDependencyContracts['@astrojs/check'];
 const TYPESCRIPT_CONTRACT = liminaRuntimeDependencyContracts.typescript;
 
 function isMatchesExactSemanticTuple(
   tuple: AstroSemanticVersionTuple,
 ): boolean {
   return [
-    tuple.check === '0.9.10',
     tuple.languageServer === '2.16.13',
     tuple.compiler === '2.13.1',
     tuple.languageCore === '2.4.28',
@@ -27,6 +28,10 @@ function isMatchesExactSemanticTuple(
 function isMatchesVersionRanges(tuple: AstroSemanticVersionTuple): boolean {
   return [
     semver.satisfies(tuple.astro, ASTRO_RANGE),
+    isSupportedDependencyVersion({
+      contract: CHECK_CONTRACT,
+      version: tuple.check,
+    }),
     isSupportedDependencyVersion({
       contract: TYPESCRIPT_CONTRACT,
       version: tuple.typeScript,
