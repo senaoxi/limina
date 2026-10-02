@@ -29,6 +29,7 @@ import { createArtifactPlan } from '../domain/artifacts/plan';
 import { addTypecheckParityProblems } from '../graph-check/dts-options';
 import type { GraphFinding } from '../graph-check/findings';
 import { GraphLogger } from '../logger';
+import { LiminaPreflightManager } from '../preflight';
 import { prepareAndMaterializeGeneratedTsconfigGraph as prepareGeneratedTsconfigGraph } from './helpers/generated-graph';
 import { withFixtureGovernanceRoot } from './helpers/governance-root';
 import { createFixturePathResolver } from './helpers/path';
@@ -1728,44 +1729,59 @@ packages:
               },
             ],
           };
-          const result = await runGraphCheckWithIssues(fixture.config);
-          expect(result.passed).toBe(passes);
-          if (passes) {
-            expect(result.issues).toEqual([]);
-            const graph = await collectDependencyGraph(fixture.config);
-            expect(graph.edges).toContainEqual(
-              expect.objectContaining({
-                from: 'pkg:@example/app',
-                to: 'pkg:@example/internal',
-                kind: 'source',
-                evidence: [
-                  expect.objectContaining({
-                    specifier: `@example/internal/${entry}`,
-                    resolvedPath: 'packages/internal/src/index.ts',
-                  }),
-                ],
-              }),
-            );
-            results.push({ result, graph });
-          } else {
-            expect(result.issues).toContainEqual(
-              expect.objectContaining({
-                code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
-                filePath: 'packages/app/src/index.ts',
-              }),
-            );
-            const views =
-              entry === 'broken' && checks.length === 1
-                ? (['all', 'source', 'artifact'] as const)
-                : (['all'] as const);
-            for (const view of views) {
-              await expect(
-                collectDependencyGraph(fixture.config, { view }),
-              ).rejects.toThrow(
-                `imported specifier: @example/internal/${entry}`,
+          // Each ATTW setting owns a run shared by graph check and export.
+          const preflight = new LiminaPreflightManager({
+            config: fixture.config,
+          });
+          try {
+            const result = await runGraphCheckWithIssues(fixture.config, {
+              preflight,
+            });
+            expect(result.passed).toBe(passes);
+            if (passes) {
+              expect(result.issues).toEqual([]);
+              const graph = await collectDependencyGraph(fixture.config, {
+                providers: preflight.providers,
+              });
+              expect(graph.edges).toContainEqual(
+                expect.objectContaining({
+                  from: 'pkg:@example/app',
+                  to: 'pkg:@example/internal',
+                  kind: 'source',
+                  evidence: [
+                    expect.objectContaining({
+                      specifier: `@example/internal/${entry}`,
+                      resolvedPath: 'packages/internal/src/index.ts',
+                    }),
+                  ],
+                }),
               );
+              results.push({ result, graph });
+            } else {
+              expect(result.issues).toContainEqual(
+                expect.objectContaining({
+                  code: LIMINA_CHECK_ISSUE_CODES.graphWorkspaceImportUnresolved,
+                  filePath: 'packages/app/src/index.ts',
+                }),
+              );
+              const views =
+                entry === 'broken' && checks.length === 1
+                  ? (['all', 'source', 'artifact'] as const)
+                  : (['all'] as const);
+              for (const view of views) {
+                await expect(
+                  collectDependencyGraph(fixture.config, {
+                    providers: preflight.providers,
+                    view,
+                  }),
+                ).rejects.toThrow(
+                  `imported specifier: @example/internal/${entry}`,
+                );
+              }
+              results.push({ result });
             }
-            results.push({ result });
+          } finally {
+            preflight.dispose();
           }
         }
         expect(results[1]).toEqual(results[0]);
