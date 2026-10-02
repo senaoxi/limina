@@ -1,82 +1,98 @@
 :root {
   --vp-c-brand-1: #0f766e;
   --vp-c-brand-2: #0d9488;
-  --vp-c-brand-3: #14b8a6;
-  --vp-c-brand-soft: rgb(20 184 166 / 0.14);
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(
-    120deg,
-    #111827 18%,
-    #0f766e 58%,
-    #0284c7 100%
-  );
-  --vp-home-hero-image-background-image: linear-gradient(
-    135deg,
-    rgb(20 184 166 / 0.32),
-    rgb(2 132 199 / 0.24)
-  );
-  --vp-home-hero-image-filter: blur(46px);
-  --limina-c-ink: #111827;
-  --limina-c-panel: #f6f8fb;
-  --limina-c-line: #d8dee8;
+  --vp-c-brand-3: #0f766e;
+  --vp-c-brand-soft: rgb(15 118 110 / 0.08);
+  --vp-home-hero-name-color: #111827;
+  --vp-home-hero-name-background: none;
+  --limina-c-ink: #182b32;
+  --limina-c-line: #e2e7e8;
+  --limina-c-terminal: #f8fafb;
+  --limina-c-terminal-text: #485960;
+  --limina-c-dot: #b8c4c9;
+  --limina-c-success: #21674f;
+  --limina-c-warning: #855b1c;
+  --limina-c-error: #b83a3a;
 }
 
 .dark {
-  --vp-c-brand-1: #5eead4;
-  --vp-c-brand-2: #2dd4bf;
-  --vp-c-brand-3: #14b8a6;
-  --vp-c-brand-soft: rgb(45 212 191 / 0.16);
-  --vp-home-hero-name-background: linear-gradient(
-    120deg,
-    #f8fafc 12%,
-    #5eead4 62%,
-    #7dd3fc 100%
-  );
-  --vp-home-hero-image-background-image: linear-gradient(
-    135deg,
-    rgb(45 212 191 / 0.22),
-    rgb(125 211 252 / 0.16)
-  );
-  --limina-c-ink: #f8fafc;
-  --limina-c-panel: #121922;
-  --limina-c-line: #283241;
+  --vp-c-brand-1: #82d8c9;
+  --vp-c-brand-2: #6dcbbb;
+  --vp-c-brand-3: #0f766e;
+  --vp-c-brand-soft: rgb(130 216 201 / 0.09);
+  --vp-home-hero-name-color: #e7eef0;
+  --limina-c-ink: #e7eef0;
+  --limina-c-line: #2c353b;
+  --limina-c-terminal: #171d22;
+  --limina-c-terminal-text: #b6c3c9;
+  --limina-c-dot: #46565e;
+  --limina-c-success: #84d0b1;
+  --limina-c-warning: #d9b577;
+  --limina-c-error: #f29d9d;
 }
 
 .VPNavBarTitle .logo {
   border-radius: 8px;
 }
 
-.VPHomeHero .image-src {
-  width: 232px;
-  max-width: 58vw;
-  border-radius: 32px;
-  filter: drop-shadow(0 18px 34px rgb(15 23 42 / 0.18));
+.VPHomeHero {
+  position: relative;
+  padding-top: calc(var(--vp-nav-height) + 70px);
+  padding-bottom: 64px;
 }
 
-.dark .VPHomeHero .image-src {
-  filter: drop-shadow(0 18px 34px rgb(0 0 0 / 0.38));
+.VPHomeHero .main {
+  width: 100%;
+  text-align: center;
+}
+
+.VPHomeHero .heading {
+  align-items: center;
+}
+
+.VPHomeHero .name {
+  margin-bottom: 16px;
+  color: var(--vp-c-brand-1);
+  -webkit-text-fill-color: var(--vp-c-brand-1);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+.VPHomeHero .text {
+  max-width: 920px;
+  margin: 0 auto;
+  color: var(--limina-c-ink);
+  font-size: 48px;
+  font-weight: 500;
+  line-height: 1.18;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.VPHomeHero .hero-accent {
+  color: var(--vp-c-brand-1);
 }
 
 .VPHomeHero .tagline {
-  max-width: 640px;
+  max-width: 680px;
+  margin: 18px auto 0;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.7;
 }
 
-.VPFeature {
-  border-color: var(--limina-c-line);
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.64), rgb(255 255 255 / 0)),
-    var(--limina-c-panel);
+.VPHomeHero .actions {
+  justify-content: center;
+  padding-top: 26px;
 }
 
-.dark .VPFeature {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0)),
-    var(--limina-c-panel);
-}
-
-.VPFeature .title {
-  color: var(--limina-c-ink);
+.limina-home .VPHomeHero .VPButton.medium {
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .vp-doc h1,
@@ -102,8 +118,163 @@
   background: var(--vp-c-bg-soft);
 }
 
-@media (min-width: 960px) {
-  :root {
-    --vp-home-hero-image-filter: blur(62px);
+@media (max-width: 767px) {
+  .VPHomeHero {
+    padding-top: calc(var(--vp-nav-height) + 32px);
+    padding-bottom: 40px;
+  }
+
+  .VPHomeHero .text {
+    max-width: 600px;
+    font-size: 36px;
+    line-height: 1.25;
+  }
+
+  .VPHomeHero .tagline {
+    max-width: 460px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 479px) {
+  .VPHomeHero .text {
+    font-size: 30px;
+  }
+
+  .VPHomeHero .name {
+    margin-bottom: 14px;
+    font-size: 18px;
+  }
+
+  .limina-home .VPHomeHero .VPButton.medium {
+    padding: 0 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .VPHome a,
+  .VPHome button {
+    transition: none;
+  }
+}
+
+/* The homepage entrance uses the existing brand, then settles into the CLI demos. */
+.limina-home {
+  --vp-c-bg: #fafaf7;
+  --limina-c-grid: rgb(24 43 50 / 0.038);
+  --limina-c-grid-major: rgb(24 43 50 / 0.045);
+  --limina-c-logo-ink: #183450;
+}
+.dark .limina-home {
+  --vp-c-bg: #141a1e;
+  --limina-c-grid: rgb(194 218 226 / 0.035);
+  --limina-c-grid-major: rgb(194 218 226 / 0.045);
+  --limina-c-logo-ink: #c2d7e4;
+}
+.limina-home .VPHomeHero::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--limina-c-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--limina-c-grid) 1px, transparent 1px),
+    linear-gradient(var(--limina-c-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--limina-c-grid-major) 1px, transparent 1px);
+  background-size:
+    24px 24px,
+    24px 24px,
+    120px 120px,
+    120px 120px;
+  mask-image: linear-gradient(#000, #000 55%, transparent);
+}
+.limina-home .VPHomeHero .container {
+  position: relative;
+}
+.home-brand {
+  display: block;
+  width: 86px;
+  height: 90px;
+  margin: 0 auto 26px;
+  overflow: visible;
+}
+.home-brand path:last-child {
+  fill: var(--limina-c-logo-ink);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .limina-home .VPHomeHero .heading {
+    animation: limina-heading-settle 1250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .home-brand {
+    animation: limina-mark-settle 1250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .home-brand path {
+    transform-origin: center;
+    animation: limina-mark-reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .home-brand path:first-child {
+    animation-delay: 140ms;
+  }
+  .limina-home .VPHomeHero .tagline {
+    animation: limina-enter 700ms 450ms both;
+  }
+  .limina-home .VPHomeHero .actions {
+    animation: limina-enter 700ms 550ms both;
+  }
+  .limina-home .home-install {
+    animation: limina-enter 700ms 650ms both;
+  }
+  .limina-home .VPHomeHero .actions:focus-within,
+  .limina-home .home-install:focus-within {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+@keyframes limina-heading-settle {
+  from {
+    transform: translateY(100px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes limina-mark-settle {
+  from {
+    transform: translateY(100px) scale(1.08);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes limina-mark-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    clip-path: inset(100% 0 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0);
+  }
+}
+@keyframes limina-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 767px) {
+  .home-brand {
+    width: 68px;
+    height: 72px;
+    margin-bottom: 22px;
+  }
+  .limina-home .VPHomeHero .name {
+    font-size: 16px;
   }
 }
