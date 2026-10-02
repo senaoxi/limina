@@ -16,6 +16,8 @@ The private [pnpm ESLint adapter](../../packages/eslint-config/src/plugins/pnpm-
 
 Security maintenance uses the `security-patches` catalog in the [workspace configuration](../../pnpm-workspace.yaml). It retains the existing scope of the undici and minimatch 10 brace-expansion overrides, and limits the added fast-uri and moment overrides to Ajv 8 and rollup-plugin-license respectively. The 2026-09-30 local all-class audit returned no advisory entries under the 18 unchanged GHSA exclusions. Release-age, trust and peer policies remain in force; no new audit, trust, release-age or deprecation exception was added.
 
+On 2026-10-01, registry audit returned six devalue advisories against the Astro host dependencies. The `astro@^7.0.0>devalue` override selects the [5.9.3 security patch](https://github.com/sveltejs/devalue/releases/tag/v5.9.3) from that catalog, within both installed Astro versions' declared `^5.8.1` range. Astro 7.0.0 and 7.3.2 and the independent compatibility-fixture workspaces retain their versions and boundaries. The selected patch is MIT, is not deprecated and was published on 2026-09-18. Frozen installation and the local all-class audit passed, with zero returned advisories under the same 18 exclusions; no policy exception was added.
+
 [CodeQL](../../.github/workflows/codeql.yml) explicitly loads its [scope](../../.github/codeql-config.yml), analyzes JavaScript/TypeScript without a product build and includes both products/private tools/scripts, excluding generated output/fixtures/tests. Static scanning is not exhaustive runtime/filesystem proof.
 
 ## CI and artifacts
@@ -23,6 +25,8 @@ Security maintenance uses the `security-patches` catalog in the [workspace confi
 The shared build action invokes the root `format:check` script for read-only Prettier validation. The root manifest must provide that script; formatting mutation remains an explicit `format:write` operation.
 
 [CI](../../.github/workflows/ci.yml) preserves native platform builds/tests/smoke and isolated Vue tuples. Linux quality reuses the same commit/platform's package artifacts; other environments build/check independently. Explicit build is followed by test:smoke without rebuilding. No path filter, Nx cache or cached .limina state is introduced. CI Status depends on every validation job and rejects failure/cancellation/skipped jobs.
+
+The full matrix's Unit Tests step caps Vitest at two workers through `VITEST_MAX_WORKERS`, leaving capacity for CLI child processes and framework hosts. Isolated CLI fixtures physically copy runtime source while excluding `__tests__` directories; their dependency links, compiler shims and repository boundaries remain fixture-owned. Test selection, security assertions and timeouts are unchanged.
 
 The license plugin emits bundled-dependencies.json from actual bundler inputs, including bundled development dependencies, and rejects missing metadata while retaining the existing license list. artifacts:report packs both approved dist directories with an exact-version migration dependency, verifies packaged inventory, independently recomputes SHA-512 and records actual gzip/unpacked bytes. .reports/release contains tarballs, license reports, CycloneDX 1.6 SBOMs and group metadata. Components describe bundled code; external runtime/peer/optional ranges are properties. Consumer-selected versions and external transitive dependencies are outside this scope.
 

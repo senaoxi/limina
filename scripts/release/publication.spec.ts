@@ -4,6 +4,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  realpath,
   rename,
   rm,
   symlink,
@@ -92,11 +93,25 @@ it('rejects leaked product dependencies, mismatched embedded sources and missing
       );
     // Only the fixture's release tooling uses these development dependencies.
     // Product source/dist inputs and their mutations are separate fixture data.
-    await symlink(
-      fileURLToPath(new URL('../../node_modules', import.meta.url)),
-      path.join(root, 'node_modules'),
-      process.platform === 'win32' ? 'junction' : 'dir',
+    // Resolve each package before linking so workspace-relative links keep
+    // their physical roots when the fixture and repository use different drives.
+    const repoNodeModules = fileURLToPath(
+      new URL('../../node_modules/', import.meta.url),
     );
+    for (const name of [
+      '@limina/build-tools',
+      'logaria',
+      'prompts',
+      'semver',
+    ]) {
+      const dependencyPath = path.join(root, 'node_modules', name);
+      await mkdir(path.dirname(dependencyPath), { recursive: true });
+      await symlink(
+        await realpath(path.join(repoNodeModules, name)),
+        dependencyPath,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    }
     const version = '1.2.0';
     for (const [directory, name] of [
       ['limina', 'limina'],

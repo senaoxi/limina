@@ -138,6 +138,8 @@ async function createIsolatedLiminaCli(
   await mkdir(path.join(packageRoot, 'bin'), { recursive: true });
   await cp(path.join(sourcePackageRoot, 'src'), path.join(packageRoot, 'src'), {
     recursive: true,
+    // Only runtime source belongs to the isolated CLI package.
+    filter: (sourcePath) => path.basename(sourcePath) !== '__tests__',
   });
   await cp(
     path.join(sourcePackageRoot, 'bin/limina.js'),
