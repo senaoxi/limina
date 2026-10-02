@@ -233,6 +233,7 @@ overrides:
   '@vercel/static-config>ajv': 8.20.0
   '@vercel/fun>@tootallnate/once': 2.0.1
   ajv@^8.0.0>fast-uri: 3.1.8
+  astro@^7.0.0>devalue: 5.9.3
   astro@7.0.0>sharp: 0.35.4
   js-yaml@^4.0.0: 4.3.2
   '@types/node': 22.18.0
@@ -6411,10 +6412,10 @@ packages:
       }
     engines: { node: '>=8' }
 
-  devalue@5.9.1:
+  devalue@5.9.3:
     resolution:
       {
-        integrity: sha512-+17vil3EVQRzvtDJSFuTWEb8XJRvXqAiV3qZyQWD398QeXUa6CxsUyMdD1fxzEhUrd4FojitFz7lhIHBTlV4fw==,
+        integrity: sha512-xRumYOCUZN/EesqHEU3WOXanOZNvfZFZ/o1AHVFDX1yI0UAkZkOgDXt341CzKoBVIkgQba55/+DjGBKrIoKcHw==,
       }
 
   devlop@1.1.0:
@@ -13847,7 +13848,7 @@ snapshots:
       clsx: 2.1.1
       common-ancestor-path: 2.0.0
       cookie: 1.1.1
-      devalue: 5.9.1
+      devalue: 5.9.3
       diff: 8.0.4
       dset: 3.1.4
       es-module-lexer: 2.3.2
@@ -13941,7 +13942,7 @@ snapshots:
       clsx: 2.1.1
       common-ancestor-path: 2.0.0
       cookie: 2.0.1
-      devalue: 5.9.1
+      devalue: 5.9.3
       diff: 9.0.0
       dset: 3.1.4
       es-module-lexer: 2.3.2
@@ -14348,7 +14349,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  devalue@5.9.1: {}
+  devalue@5.9.3: {}
 
   devlop@1.1.0:
     dependencies:

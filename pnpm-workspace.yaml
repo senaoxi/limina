@@ -108,6 +108,7 @@ catalogs:
     vue: ^3.5.39
   security-patches:
     brace-expansion: 5.0.12
+    devalue: 5.9.3
     fast-uri: 3.1.8
     moment: 2.31.0
     undici: 7.29.1
@@ -144,6 +145,7 @@ overrides:
   '@vercel/static-config>ajv': catalog:deployment-patches
   '@vercel/fun>@tootallnate/once': catalog:deployment-patches
   ajv@^8.0.0>fast-uri: catalog:security-patches
+  astro@^7.0.0>devalue: catalog:security-patches
   astro@7.0.0>sharp: 0.35.4
   js-yaml@^4.0.0: 4.3.2
   '@types/node': 22.18.0

@@ -108,6 +108,8 @@ jobs:
       - name: Build and Quality Check
         uses: ./.github/actions/build-and-check
       - name: Unit Tests
+        env:
+          VITEST_MAX_WORKERS: "2"
         run: pnpm --filter limina run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-unit.xml && pnpm --filter limina-migrate run test:unit --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-unit.xml && pnpm run test:tooling
       - name: Limina Integration Tests
         run: pnpm --filter limina run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/limina-integration.xml && pnpm --filter limina-migrate run test:integration --reporter=default --reporter=junit --outputFile=../../.smoke/test-results/migrate-integration.xml
