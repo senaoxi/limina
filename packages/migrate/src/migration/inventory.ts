@@ -1,11 +1,9 @@
-import {
-  collectRawWorkspacePackages,
-  collectWorkspaceInputSnapshot,
-  formatErrorMessage,
-  readOutputOptions,
-  validateOutputRoot,
-  validateUserMaintainedLiminaTsconfigMetadata,
-} from 'limina/internal/migration';
+import { readOutputOptions } from 'limina/internal/core/build-graph/generated/config-readers';
+import { validateUserMaintainedLiminaTsconfigMetadata } from 'limina/internal/core/tsconfig/actions';
+import { collectRawWorkspacePackages } from 'limina/internal/core/workspace/actions';
+import { collectWorkspaceInputSnapshot } from 'limina/internal/core/workspace/validated-context';
+import { validateOutputRoot } from 'limina/internal/core/workspace/validated/outputs/validation';
+import { formatErrorMessage } from 'limina/internal/logger';
 import { readFile } from 'node:fs/promises';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'pathe';

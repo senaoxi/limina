@@ -1,4 +1,5 @@
-import { isPlainRecord, resolveReferencePath } from 'limina/internal/migration';
+import { resolveReferencePath } from 'limina/internal/core/tsconfig/actions';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import { MigrationInputError } from './declarations';
 import {
   dedupeMembership,

@@ -1,4 +1,4 @@
-import type { InputTopologyResult } from 'limina/internal/migration';
+import type { InputTopologyResult } from 'limina/internal/core/build-graph/input-topology';
 import { createCommitGroups } from './commit-groups';
 import { addStaticConfigExclusions } from './config-edit';
 import { isExpectedInputFailure } from './discovery';

@@ -1,5 +1,5 @@
 import { parse } from 'jsonc-parser';
-import { loadConfig } from 'limina/internal/migration';
+import { loadConfig } from 'limina/internal/config/runner';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import {

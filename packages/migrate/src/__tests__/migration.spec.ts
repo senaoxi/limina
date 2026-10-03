@@ -1,6 +1,7 @@
 import { parse } from 'jsonc-parser';
-import type { ResolvedLiminaConfig } from 'limina/internal/migration';
-import { LiminaFlowReporter, loadConfig } from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import { loadConfig } from 'limina/internal/config/runner';
+import { LiminaFlowReporter } from 'limina/internal/flow';
 import { execFile } from 'node:child_process';
 import {
   link,

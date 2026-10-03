@@ -1,13 +1,13 @@
-import type { ResolvedLiminaConfig } from 'limina/internal/migration';
+import { parseCheckerProjectConfigForContext } from 'limina/internal/checkers';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
+import { capabilityDiscoveryExtensions } from 'limina/internal/core/build-graph/generated/file-extensions';
 import {
-  capabilityDiscoveryExtensions,
   collectReferencePathInfosFromConfigObject,
   isLiminaSolutionConfig,
   isTypeScriptSolutionConfig,
-  normalizeAbsolutePath,
-  parseCheckerProjectConfigForContext,
   readJsonConfig,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/tsconfig/actions';
+import { normalizeAbsolutePath } from 'limina/internal/utils/path';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { MigrationTarget } from './types';

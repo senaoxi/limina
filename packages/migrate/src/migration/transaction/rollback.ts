@@ -1,7 +1,7 @@
 import {
   replaceFileWithRetry,
   RetryableReplacementValidationIoError,
-} from 'limina/internal/migration';
+} from 'limina/internal/check-reporting/atomic-writer';
 import type { FileHandle } from 'node:fs/promises';
 import { stat } from 'node:fs/promises';
 import { prepareFile } from './file-preparation';

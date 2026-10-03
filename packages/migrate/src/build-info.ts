@@ -1,4 +1,4 @@
-import corePackage from '../../limina/package.json' with { type: 'json' };
+import corePackage from 'limina/package.json' with { type: 'json' };
 import migratePackage from '../package.json' with { type: 'json' };
 
 export interface MigrationBuildInfo {

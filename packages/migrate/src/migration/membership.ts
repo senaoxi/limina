@@ -1,4 +1,4 @@
-import { resolveReferencePath } from 'limina/internal/migration';
+import { resolveReferencePath } from 'limina/internal/core/tsconfig/actions';
 import { MigrationInputError } from './declarations';
 import { expandNamedWrappers } from './membership-expansion';
 import {

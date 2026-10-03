@@ -43,7 +43,6 @@ const cleanDistributionPlugin = (): NonNullable<
 const moduleConfig: RolldownOptions = defineConfig({
   input: {
     cli: 'src/cli.ts',
-    'internal/migration': 'src/internal/migration.ts',
     'checker-host-process': 'src/typecheck/host-process.ts',
     'flow-renderer-process': 'src/flow/renderer-process.ts',
     index: 'src/index.ts',
@@ -74,7 +73,6 @@ const moduleConfig: RolldownOptions = defineConfig({
 const dtsConfig: RolldownOptions = defineConfig({
   input: {
     index: 'src/index.ts',
-    'internal/migration': 'src/internal/migration.ts',
   },
   platform: 'node',
   preserveEntrySignatures: 'strict',

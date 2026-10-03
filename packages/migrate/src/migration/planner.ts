@@ -1,11 +1,9 @@
-import type {
-  LiminaArtifactNamespace,
-  ResolvedLiminaConfig,
-} from 'limina/internal/migration';
+import type { ResolvedLiminaConfig } from 'limina/internal/config/runner';
 import {
   type InputTopologyResult,
   readInputTopology,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/build-graph/input-topology';
+import type { LiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
 import path from 'pathe';
 import { MigrationInputError, type MigrationRecord } from './declarations';
 import { discover } from './discovery';

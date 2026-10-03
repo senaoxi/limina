@@ -1,15 +1,13 @@
-import type {
-  DependencyAnalysisResult,
-  JsonObject,
-  LiminaArtifactNamespace,
-  ReferencePathInfo,
-} from 'limina/internal/migration';
+import type { DependencyAnalysisResult } from 'limina/internal/core/build-graph/types';
+import type { ReferencePathInfo } from 'limina/internal/core/tsconfig/action-types';
+import type { JsonObject } from 'limina/internal/core/tsconfig/actions';
 import {
   collectReferencePathInfosFromConfigObject,
   isOrdinarySourceTypecheckConfigPath,
-  isPlainRecord,
   resolveReferencePath,
-} from 'limina/internal/migration';
+} from 'limina/internal/core/tsconfig/actions';
+import type { LiminaArtifactNamespace } from 'limina/internal/domain/artifacts/namespace';
+import { isPlainRecord } from 'limina/internal/utils/values';
 import { createMembershipState, reachableSources } from './membership-state';
 import type { MigrationPlanningState } from './planning-state';
 import { collectAnalysis } from './relation-analysis';
