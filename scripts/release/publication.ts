@@ -424,17 +424,27 @@ export function publishReleaseGroup(
         );
     }
     evidence.phase = 'verify-channels';
-    for (const { plan, member } of packages) {
+    for (const [index, { plan, member }] of packages.entries()) {
       evidence.activePackage = plan.config.packageName;
       member.tagsAfter = registryTags(plan, options.registry);
       saveEvidence();
-      if (
-        member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion ||
-        ((plan.npmTag ?? 'latest') !== 'latest' &&
-          member.tagsAfter.latest !== member.tagsBefore!.latest)
-      )
+      if (member.tagsAfter[plan.npmTag ?? 'latest'] !== plan.newVersion)
         throw new Error(
           `Channel verification failed for ${plan.config.packageName}.`,
+        );
+      // npm requires a latest tag when the namespace is first created, even
+      // when the upload uses a candidate tag. An established latest stays fixed.
+      const isRegistryBootstrap =
+        !existing[index] &&
+        Object.keys(member.tagsBefore!).length === 0 &&
+        member.tagsAfter.latest === plan.newVersion;
+      if (
+        !isRegistryBootstrap &&
+        (plan.npmTag ?? 'latest') !== 'latest' &&
+        member.tagsAfter.latest !== member.tagsBefore!.latest
+      )
+        throw new Error(
+          `Latest channel changed for ${plan.config.packageName}: expected ${member.tagsBefore!.latest ?? 'absent'}, received ${member.tagsAfter.latest ?? 'absent'}.`,
         );
     }
     evidence.status = 'complete';
