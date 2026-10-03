@@ -271,12 +271,14 @@ async function createPublicationFixture() {
   const documents = new Map<string, RegistryDocument>();
   const uploads: string[] = [];
   let promotions = 0;
+  const metadataMissingPromotions: number[] = [];
   const controls = {
     isFailMigration: false,
     isCorruptIntegrity: false,
     isFailPromotion: false,
     isDropPromotion: false,
     isLoseUploadResponse: false,
+    metadataMisses: new Map<string, number>(),
   };
   const server = createServer(async (request, response) => {
     const chunks = [];
@@ -326,6 +328,12 @@ async function createPublicationFixture() {
       return;
     }
     const copy = structuredClone(document);
+    const misses = controls.metadataMisses.get(name) ?? 0;
+    if (!isTagRequest && misses > 0) {
+      controls.metadataMisses.set(name, misses - 1);
+      metadataMissingPromotions.push(promotions);
+      delete copy.versions[version];
+    }
     if (name === 'limina' && controls.isCorruptIntegrity)
       copy.versions[version]!.dist.integrity = 'sha512-invalid';
     reply(200, isTagRequest ? copy['dist-tags'] : copy);
@@ -347,7 +355,7 @@ async function createPublicationFixture() {
     const plans = discoverReleasePackages().map(config => ({ config, currentVersion: config.manifest.version, newVersion: config.manifest.version, gitTag: 'limina/v' + config.manifest.version, npmTag: 'beta' }));
     publishReleaseGroup(plans, { registry: ${JSON.stringify(registry)}, provenance: false, evidenceDirectory: ${JSON.stringify(path.join(directory, 'evidence'))} });
   `;
-  const run = () =>
+  const run = (isFastVisibilityTimeout = false) =>
     promisify(execFile)(
       process.execPath,
       [
@@ -355,7 +363,19 @@ async function createPublicationFixture() {
         import.meta.resolve('tsx'),
         '--input-type=module',
         '--eval',
-        source,
+        isFastVisibilityTimeout
+          ? `
+            import { mock } from 'node:test';
+            import { performance } from 'node:perf_hooks';
+            let elapsed = 0;
+            mock.method(performance, 'now', () => elapsed);
+            mock.method(Atomics, 'wait', () => {
+              elapsed += 3_600_000;
+              return 'timed-out';
+            });
+            ${source}
+          `
+          : source,
       ],
       {
         timeout: 45_000,
@@ -390,6 +410,7 @@ async function createPublicationFixture() {
     documents,
     uploads,
     controls,
+    metadataMissingPromotions,
     get promotions() {
       return promotions;
     },
@@ -545,6 +566,55 @@ it(
       assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
       for (const document of fixture.documents.values())
         assert.equal(document['dist-tags'].beta, fixture.version);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'waits for both accepted versions to become visible before promoting the channel',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.metadataMisses.set('limina', 2);
+      fixture.controls.metadataMisses.set('limina-migrate', 2);
+      await fixture.run();
+      assert.deepEqual(fixture.uploads, ['limina', 'limina-migrate']);
+      assert.deepEqual(fixture.metadataMissingPromotions, [0, 0, 0, 0]);
+      assert.equal(fixture.promotions, 2);
+      for (const document of fixture.documents.values()) {
+        assert.equal(document['dist-tags'].beta, fixture.version);
+        assert.equal(document['dist-tags'].latest, undefined);
+      }
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.status, 'complete');
+      for (const member of evidence.packages)
+        assert.equal(member.registryIntegrity, member.integrity);
+    } finally {
+      await fixture.close();
+    }
+  },
+);
+
+it(
+  'fails without promoting when an accepted version stays invisible past the deadline',
+  { timeout: 60_000 },
+  async () => {
+    const fixture = await createPublicationFixture();
+    try {
+      fixture.controls.metadataMisses.set('limina', Infinity);
+      await assert.rejects(
+        fixture.run(true),
+        /Published version did not become visible within five minutes/u,
+      );
+      assert.deepEqual(fixture.uploads, ['limina']);
+      assert.equal(fixture.promotions, 0);
+      const [evidence] = await fixture.readEvidence();
+      assert.equal(evidence.status, 'failed');
+      assert.equal(evidence.phase, 'upload');
+      assert.equal(evidence.packages[0].registryIntegrity, null);
     } finally {
       await fixture.close();
     }
