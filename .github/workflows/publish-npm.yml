@@ -34,6 +34,8 @@ jobs:
           node-version: 24.11.0
       - name: Install npm with trusted publication and dist-tag support
         run: npm install --global npm@11.21.0
+      - name: Build private release tools
+        run: pnpm run build:tools
       - name: Reject historical tags and require the tagged commit on main
         run: |
           git fetch --no-tags origin main:refs/remotes/origin/main
