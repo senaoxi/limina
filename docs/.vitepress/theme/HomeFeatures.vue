@@ -8,13 +8,13 @@ import {
   ref,
   watch,
 } from 'vue';
-import { demoTranscripts } from './demo-transcripts';
-import TerminalDemo from './TerminalDemo.vue';
+import { commandTranscripts } from './command-transcripts';
+import CommandTerminal from './CommandTerminal.vue';
 
 const { lang } = useData();
 const chinese = computed(() => lang.value.startsWith('zh'));
 const activeIndex = ref(0);
-const activeScenario = ref(0);
+const activeCommandIndex = ref(0);
 const isPlaying = ref(false);
 const hasUserPaused = ref(false);
 const consolePanel = ref<HTMLElement>();
@@ -32,23 +32,23 @@ const groups = computed(() => {
       intro: zh
         ? '读取 TypeScript 配置与源码依赖，生成类型构建所需的项目图。'
         : 'Read TypeScript configs and source dependencies to generate a graph for type builds.',
-      scenarios: [
+      commands: [
         {
           label: zh ? '生成项目图' : 'Prepare graph',
-          transcript: demoTranscripts.prepare!,
+          transcript: commandTranscripts.prepare!,
         },
         {
           label: zh ? '首次构建' : 'First build',
-          transcript: demoTranscripts.build!,
+          transcript: commandTranscripts.build!,
         },
         {
           label: zh ? '增量重跑' : 'Build again',
-          transcript: demoTranscripts.incremental!,
+          transcript: commandTranscripts.incremental!,
         },
       ],
       features: [
         {
-          demoIndex: 0,
+          commandIndex: 0,
           title: zh ? '接入增量构建' : 'Adopt incremental type builds',
           body: zh
             ? '为受管理的 TypeScript 与 Vue 项目准备声明构建配置，再由选定的检查器执行增量构建。源码配置与跨项目引用须满足 Limina 的图约束。'
@@ -57,7 +57,7 @@ const groups = computed(() => {
           link: zh ? '开始接入' : 'Get started',
         },
         {
-          demoIndex: 1,
+          commandIndex: 1,
           title: zh ? '选择类型检查器' : 'Choose a type checker',
           body: zh
             ? '使用兼容工具链进行 TypeScript、Vue、Astro 和 Svelte 检查。声明构建由 tsc、tsgo 或 vue-tsc 执行；Astro 与 Svelte 按叶子配置执行类型检查。'
@@ -77,23 +77,23 @@ const groups = computed(() => {
       intro: zh
         ? '检查治理范围内的代码关系。诊断包含规则和能够取得的项目、包或源码证据。'
         : 'Check code relationships within the governance scope. Diagnostics include the rule and available project, package, or source evidence.',
-      scenarios: [
+      commands: [
         {
           label: zh ? '依赖关系' : 'Graph',
-          transcript: demoTranscripts.graph!,
+          transcript: commandTranscripts.graph!,
         },
         {
           label: zh ? '边界诊断' : 'Boundary',
-          transcript: demoTranscripts.boundary!,
+          transcript: commandTranscripts.boundary!,
         },
         {
           label: zh ? '检查覆盖' : 'Coverage',
-          transcript: demoTranscripts.proof!,
+          transcript: commandTranscripts.proof!,
         },
       ],
       features: [
         {
-          demoIndex: 0,
+          commandIndex: 0,
           title: zh ? '治理依赖关系' : 'Govern the dependency graph',
           body: zh
             ? '检查项目引用、访问边界与依赖声明，报告缺失、冗余或不符合规则的连接。'
@@ -102,7 +102,7 @@ const groups = computed(() => {
           link: zh ? '配置图规则' : 'Configure graph rules',
         },
         {
-          demoIndex: 1,
+          commandIndex: 1,
           title: zh ? '保护源码边界' : 'Protect source boundaries',
           body: zh
             ? '在配置的治理范围内，检查跨包相对导入、包导入授权、依赖声明和源码归属。'
@@ -111,7 +111,7 @@ const groups = computed(() => {
           link: zh ? '配置源码边界' : 'Configure source boundaries',
         },
         {
-          demoIndex: 2,
+          commandIndex: 2,
           title: zh ? '确认检查覆盖' : 'Verify check coverage',
           body: zh
             ? '将配置的源码范围与项目图、检查器目标和注明理由的允许清单进行对照，检查遗漏、重复覆盖与范围偏差。覆盖证明说明计划中的检查覆盖范围，不代表每个检查器进程都已执行。'
@@ -129,19 +129,19 @@ const groups = computed(() => {
       intro: zh
         ? '检查可以独立运行，也可以将构建和产物检查组合成命名流水线。'
         : 'Run checks independently or combine builds and artifact checks in a named pipeline.',
-      scenarios: [
+      commands: [
         {
           label: zh ? '默认检查' : 'Default check',
-          transcript: demoTranscripts.check!,
+          transcript: commandTranscripts.check!,
         },
         {
           label: zh ? '发布流水线' : 'Release pipeline',
-          transcript: demoTranscripts.pipeline!,
+          transcript: commandTranscripts.pipeline!,
         },
       ],
       features: [
         {
-          demoIndex: 0,
+          commandIndex: 0,
           title: zh ? '编排检查流程' : 'Compose check pipelines',
           body: zh
             ? '构建、依赖关系、源码边界与覆盖证明都可以独立使用。默认检查在资源允许时并发执行；命名流水线按配置顺序运行，适用于本地开发、持续集成与发布前检查。'
@@ -150,7 +150,7 @@ const groups = computed(() => {
           link: zh ? '配置检查流水线' : 'Configure pipelines',
         },
         {
-          demoIndex: 1,
+          commandIndex: 1,
           title: zh ? '补充发布检查' : 'Add release checks',
           body: zh
             ? '发布或预发布前，先运行项目自身的构建，再检查包信息、类型入口、构建产物和打包内容。Limina 负责检查，构建与发布仍由项目的工具执行。'
@@ -189,17 +189,18 @@ function syncScroll() {
     if (!section || section.getBoundingClientRect().top > trigger) break;
     index = candidate;
   }
-  let scenario = 0;
+  let commandIndex = 0;
   const section = document.getElementById(groups.value[index]!.id);
   for (const feature of section?.querySelectorAll<HTMLElement>(
-    '.showcase-feature',
+    '.features-feature',
   ) ?? []) {
     if (feature.getBoundingClientRect().top > trigger) break;
-    scenario = Number(feature.dataset.demoIndex);
+    commandIndex = Number(feature.dataset.commandIndex);
   }
-  if (index === activeIndex.value && scenario === activeScenario.value) return;
+  if (index === activeIndex.value && commandIndex === activeCommandIndex.value)
+    return;
   activeIndex.value = index;
-  activeScenario.value = scenario;
+  activeCommandIndex.value = commandIndex;
   if (!hasUserPaused.value) isPlaying.value = true;
 }
 function requestSync() {
@@ -232,11 +233,11 @@ function link(path: string) {
 </script>
 
 <template>
-  <div class="home-showcase">
+  <div class="home-features">
     <!-- Native anchors respect the sticky console’s scroll margin. -->
     <nav
-      class="showcase-nav vp-raw"
-      :aria-label="chinese ? '首页功能演示' : 'Feature demos'"
+      class="features-nav vp-raw"
+      :aria-label="chinese ? '首页功能展示' : 'Feature overview'"
     >
       <span>{{ chinese ? '查看 Limina 如何工作' : 'See Limina at work' }}</span>
       <a
@@ -248,19 +249,19 @@ function link(path: string) {
       >
     </nav>
     <div
-      class="showcase-workspace"
-      :style="{ '--showcase-console-height': consoleHeight + 'px' }"
+      class="features-workspace"
+      :style="{ '--features-console-height': consoleHeight + 'px' }"
     >
-      <div ref="consolePanel" class="showcase-console">
-        <p class="showcase-console-label" aria-live="polite">
+      <div ref="consolePanel" class="features-console">
+        <p class="features-console-label" aria-live="polite">
           <span>{{ activeGroup.number }}</span
           >{{ activeGroup.eyebrow }}
         </p>
-        <TerminalDemo
+        <CommandTerminal
           :id="activeGroup.id"
-          :scenario="activeScenario"
+          :command-index="activeCommandIndex"
           :label="activeGroup.title"
-          :scenarios="activeGroup.scenarios"
+          :commands="activeGroup.commands"
           :playing="isPlaying"
           :paused="hasUserPaused"
           :chinese="chinese"
@@ -270,31 +271,31 @@ function link(path: string) {
           @user-pause="pause"
         />
       </div>
-      <div class="showcase-copies">
+      <div class="features-copies">
         <section
           v-for="group in groups"
           :id="group.id"
           :key="group.id"
-          class="showcase-section"
+          class="features-section"
           :class="{ 'is-active': activeGroup.id === group.id }"
           :aria-labelledby="'heading-' + group.id"
         >
-          <div class="showcase-copy">
-            <p class="showcase-eyebrow">
+          <div class="features-copy">
+            <p class="features-eyebrow">
               <span>{{ group.number }}</span
               >{{ group.eyebrow }}
             </p>
             <h2 :id="'heading-' + group.id">{{ group.title }}</h2>
-            <p class="showcase-intro">{{ group.intro }}</p>
+            <p class="features-intro">{{ group.intro }}</p>
             <div
               v-for="feature in group.features"
               :key="feature.path"
-              class="showcase-feature"
-              :data-demo-index="feature.demoIndex"
+              class="features-feature"
+              :data-command-index="feature.commandIndex"
               :class="{
                 'is-active':
                   activeGroup.id === group.id &&
-                  activeScenario === feature.demoIndex,
+                  activeCommandIndex === feature.commandIndex,
               }"
             >
               <h3>{{ feature.title }}</h3>
@@ -307,7 +308,7 @@ function link(path: string) {
         </section>
       </div>
     </div>
-    <div class="showcase-next">
+    <div class="features-next">
       <p>
         {{
           chinese
@@ -324,12 +325,12 @@ function link(path: string) {
 </template>
 
 <style scoped>
-.home-showcase {
+.home-features {
   max-width: 1280px;
   margin: 0 auto;
   padding: 0 64px;
 }
-.showcase-nav {
+.features-nav {
   display: flex;
   align-items: center;
   gap: 28px;
@@ -340,22 +341,22 @@ function link(path: string) {
   line-height: 1.5;
   letter-spacing: 0.025em;
 }
-.showcase-nav > span {
+.features-nav > span {
   flex: 1;
   color: var(--vp-c-text-3);
   font-size: 12px;
   letter-spacing: 0;
 }
-.showcase-nav a {
+.features-nav a {
   display: inline-flex;
   align-items: center;
   gap: 9px;
   color: var(--vp-c-text-2);
 }
-.showcase-nav a:hover {
+.features-nav a:hover {
   color: var(--vp-c-brand-1);
 }
-.showcase-workspace {
+.features-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   align-items: start;
@@ -363,13 +364,13 @@ function link(path: string) {
   padding-top: 80px;
   border-bottom: 1px solid var(--limina-c-line);
 }
-.showcase-console {
+.features-console {
   position: sticky;
   top: calc(var(--vp-nav-height) + 24px);
   align-self: start;
   min-width: 0;
 }
-.showcase-console-label {
+.features-console-label {
   display: flex;
   gap: 14px;
   margin: 0 0 14px;
@@ -377,34 +378,34 @@ function link(path: string) {
   font: 11px/1.6 var(--vp-font-family-mono);
   letter-spacing: 0.05em;
 }
-.showcase-console-label span {
+.features-console-label span {
   color: var(--vp-c-text-3);
 }
-.showcase-console :deep(.terminal-log) {
+.features-console :deep(.terminal-log) {
   height: clamp(180px, 34svh, 326px);
 }
-.showcase-section {
+.features-section {
   min-height: calc(100svh - 100px);
   padding: 0 0 100px;
   scroll-margin-top: 96px;
 }
-.showcase-section + .showcase-section {
+.features-section + .features-section {
   padding-top: 48px;
 }
-.showcase-section.is-active .showcase-eyebrow {
+.features-section.is-active .features-eyebrow {
   color: var(--vp-c-brand-1);
 }
-.showcase-nav a[aria-current='step'] {
+.features-nav a[aria-current='step'] {
   color: var(--vp-c-brand-1);
 }
-.showcase-copies {
+.features-copies {
   min-width: 0;
 }
-.showcase-copy {
+.features-copy {
   min-width: 0;
   padding-top: 3px;
 }
-.showcase-eyebrow {
+.features-eyebrow {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -413,7 +414,7 @@ function link(path: string) {
   font: 11px/1.6 var(--vp-font-family-mono);
   letter-spacing: 0.06em;
 }
-.showcase-eyebrow span {
+.features-eyebrow span {
   color: var(--vp-c-text-3);
 }
 h2 {
@@ -425,13 +426,13 @@ h2 {
   font-weight: 600;
   text-wrap: balance;
 }
-.showcase-intro {
+.features-intro {
   margin: 0 0 32px;
   color: var(--vp-c-text-2);
   font-size: 16px;
   line-height: 1.75;
 }
-.showcase-feature + .showcase-feature {
+.features-feature + .features-feature {
   margin-top: 28px;
 }
 h3 {
@@ -441,16 +442,16 @@ h3 {
   line-height: 1.5;
   font-weight: 600;
 }
-.showcase-feature.is-active h3 {
+.features-feature.is-active h3 {
   color: var(--vp-c-brand-1);
 }
-.showcase-feature p {
+.features-feature p {
   margin: 0;
   color: var(--vp-c-text-2);
   font-size: 14px;
   line-height: 1.8;
 }
-.showcase-feature a {
+.features-feature a {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -459,11 +460,11 @@ h3 {
   font-size: 13px;
   line-height: 1.6;
 }
-.showcase-feature a:hover {
+.features-feature a:hover {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
-.showcase-next {
+.features-next {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -472,10 +473,10 @@ h3 {
   color: var(--vp-c-text-2);
   font-size: 14px;
 }
-.showcase-next p {
+.features-next p {
   margin: 0;
 }
-.showcase-next a {
+.features-next a {
   display: inline-flex;
   gap: 10px;
   color: var(--vp-c-brand-1);
@@ -486,15 +487,15 @@ a:focus-visible {
   border-radius: 2px;
 }
 @media (max-width: 959px) {
-  .home-showcase {
+  .home-features {
     padding: 0 40px;
   }
-  .showcase-workspace {
+  .features-workspace {
     gap: 36px;
     grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
     padding-top: 64px;
   }
-  .showcase-nav {
+  .features-nav {
     gap: 18px;
     font-size: 10px;
   }
@@ -503,75 +504,75 @@ a:focus-visible {
   }
 }
 @media (max-width: 767px) {
-  .home-showcase {
+  .home-features {
     padding: 0 24px;
   }
-  .showcase-nav {
+  .features-nav {
     flex-wrap: wrap;
     gap: 12px 20px;
     padding: 20px 0;
   }
-  .showcase-nav > span {
+  .features-nav > span {
     flex-basis: 100%;
   }
-  .showcase-workspace {
+  .features-workspace {
     display: block;
     padding-top: 32px;
   }
-  .showcase-console {
+  .features-console {
     top: 8px;
     z-index: 20;
     padding: 8px 0 14px;
     background: var(--vp-c-bg);
     box-shadow: 0 12px 24px rgb(24 43 50 / 0.05);
   }
-  .showcase-console-label {
+  .features-console-label {
     margin-bottom: 8px;
     font-size: 10px;
   }
-  .showcase-console :deep(.terminal-log) {
+  .features-console :deep(.terminal-log) {
     height: clamp(104px, 18svh, 148px);
     padding: 12px 14px;
   }
-  .showcase-console :deep(.terminal-titlebar) {
+  .features-console :deep(.terminal-titlebar) {
     padding: 8px 14px;
   }
-  .showcase-console :deep(.terminal-scenarios) {
+  .features-console :deep(.terminal-commands) {
     padding: 6px 10px;
   }
-  .showcase-console :deep(.terminal-controls) {
+  .features-console :deep(.terminal-controls) {
     min-height: 42px;
     padding: 8px 12px;
   }
-  .showcase-console :deep(summary) {
+  .features-console :deep(summary) {
     padding: 8px 12px;
     font-size: 10px;
   }
-  .showcase-console :deep(.terminal-transcript > pre) {
+  .features-console :deep(.terminal-transcript > pre) {
     max-height: 180px;
   }
-  .showcase-copies {
+  .features-copies {
     padding-top: 32px;
   }
-  .showcase-section {
+  .features-section {
     min-height: calc(100svh - 240px);
     padding: 16px 0 72px;
-    scroll-margin-top: calc(var(--showcase-console-height) + 24px);
+    scroll-margin-top: calc(var(--features-console-height) + 24px);
   }
-  .showcase-section + .showcase-section {
+  .features-section + .features-section {
     padding-top: 32px;
   }
-  .showcase-copy h2 {
+  .features-copy h2 {
     max-width: 540px;
     font-size: 28px;
   }
-  .showcase-intro {
+  .features-intro {
     margin-bottom: 24px;
   }
-  .showcase-feature + .showcase-feature {
+  .features-feature + .features-feature {
     margin-top: 22px;
   }
-  .showcase-next {
+  .features-next {
     align-items: start;
     flex-direction: column;
     gap: 18px;

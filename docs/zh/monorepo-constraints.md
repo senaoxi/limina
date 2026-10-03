@@ -171,9 +171,9 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 
 例如，一个包可以同时声明以下入口：
 
-```json [packages/demo/package.json]
+```json [packages/utility/package.json]
 {
-  "name": "demo",
+  "name": "utility",
   "type": "module",
   "exports": {
     "./a": "./src/a.ts",
@@ -182,7 +182,7 @@ Limina 会检查相对导入是否越过最近的 `package.json` 包作用域。
 }
 ```
 
-当 `src/a.ts` 存在，且消费者只导入 `demo/a` 时，未被消费的损坏入口不会使 `limina graph check` 失败。已消费的依赖仍需满足归属、引用和图规则。如果消费者改为导入 `demo/broken`，且其检查器无法解析，图检查会定位该导入并失败。`graph export` 也会报告该失败，而非静默省略依赖。
+当 `src/a.ts` 存在，且消费者只导入 `utility/a` 时，未被消费的损坏入口不会使 `limina graph check` 失败。已消费的依赖仍需满足归属、引用和图规则。如果消费者改为导入 `utility/broken`，且其检查器无法解析，图检查会定位该导入并失败。`graph export` 也会报告该失败，而非静默省略依赖。
 
 导入方检查器仍然决定按包自身名称导入、解析条件、`paths`、环境模块声明、框架源码和声明的语义。另一个检查器配置或运行时文件命中不能修复其解析失败，也不能生成源码边。图检查不枚举包的 `exports`，也不展开通配入口来验证该包公开提供的入口和文件。既有声明引用规则继续适用，包括排除 `require.resolve()`。
 

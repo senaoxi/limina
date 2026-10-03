@@ -148,6 +148,7 @@ export interface PublishCliOptions {
   registry?: string;
   npmTag?: string;
   provenance: boolean;
+  evidenceDirectory?: string;
   help: boolean;
 }
 
