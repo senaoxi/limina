@@ -45,7 +45,7 @@ export default defineConfig({
 
 - **Type:** `Record<string, GraphRule>`
 
-The `rules` `key` must match an entry in `liminaOptions.graphRules` in a source `tsconfig`. A source config can list multiple labels, and Limina merges the matching rules for that config.
+Each `rules` key names a label. The rule applies to source configs that list that label in `liminaOptions.graphRules`; a config can list multiple labels and uses their matching rules. An unused label does not apply to any source config.
 
 Pair the rule with labels in the source config:
 
@@ -64,9 +64,9 @@ Source covered by that config now uses `graph.rules.runtime-client`.
 
 - **Type:** `Array<{ path: string; reason: string }>`
 
-`allow.refs` uses the same entry shape as `deny.refs`, and acknowledges extra declared references that static import analysis cannot prove. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path matches both `allow` and `deny`.
+`allow.refs` uses the same entry shape as `deny.refs`, and acknowledges extra declared references that static import analysis cannot prove. Each `path` is resolved from `config.rootDir` and must map to a reachable generated declaration leaf; use its original source leaf path, including `../` for an external activated package. A solution or an ungoverned config is not a valid rule target. It does not create references, it does not make denied references valid, and `deny.refs` still wins if the same path matches both `allow` and `deny`.
 
-Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source `tsconfig` files. Use `implicitRefs` when a dynamic import, generated manifest, or virtual module creates a real source edge that static analysis cannot see. Use `allow.refs` only to explain extra declared references that already exist.
+Generated references are inferred from source imports and from `liminaOptions.implicitRefs` on source `tsconfig` files. Literal dynamic imports are already analyzed. Use `implicitRefs` for an explicit declaration-build relationship that computed runtime imports, generated manifests, or other unobserved code cannot expose; it does not add a module resolver or make an unsupported virtual module consumable. Use `allow.refs` only to explain extra declared references that already exist.
 
 ## deny.refs
 
@@ -85,7 +85,7 @@ For example, if the rule contains:
 
 and a project labeled `runtime-client` references the generated `Node`-only config, `limina graph check` fails and prints the configured reason.
 
-In a fuller example, the repository can look like this:
+The example repository contains:
 
 ```text
 packages/app/
@@ -95,7 +95,7 @@ packages/app/
   src/node/read-file.ts
 ```
 
-The client source config is labeled `runtime-client`; Limina generates the references:
+The client source config is labeled `runtime-client`:
 
 ```jsonc
 // packages/app/src/client/tsconfig.lib.json
@@ -107,9 +107,9 @@ The client source config is labeled `runtime-client`; Limina generates the refer
 }
 ```
 
-When `pnpm exec limina graph check` runs, Limina prepares the generated graph and reads the relevant project `references`. When it sees a project labeled `runtime-client` referencing the generated config for `packages/app/src/node/tsconfig.lib.json`, it compares that source path with `graph.rules.runtime-client.deny.refs`.
+When `pnpm exec limina graph check` runs, Limina compares the source provider relationship with `graph.rules.runtime-client.deny.refs`, as well as checking actual project references. Reference inference omits a denied import-derived reference from the generated config; that omission does not make the source import valid.
 
-The result is a graph check failure that points at the forbidden project reference and prints the configured `reason`. This means the problem is not just one import line; the `TypeScript` graph itself now says client runtime depends on `Node` runtime.
+A client import that requires the Node leaf is reported as denied graph access with the configured `reason`. Resolve the source relationship or the policy rather than editing generated files.
 
 ## deny.deps
 
@@ -125,7 +125,7 @@ import { readFileSync } from 'node:fs';
 import { createServerClient } from '@acme/internal-node';
 ```
 
-`limina graph check` matches `node:*` and `@acme/internal-node` through the `runtime-client` rule and prints the configured reason. Browser/runtime boundaries are then verified by config and real imports, not just team convention.
+`limina graph check` matches `node:*` and `@acme/internal-node` through the `runtime-client` rule and prints the configured reason.
 
 The matching directory can look like this:
 
@@ -147,4 +147,4 @@ import { createServerClient } from '@acme/internal-node';
 
 When `pnpm exec limina graph check` runs, Limina parses imports from `src/client/load.ts` with `TypeScript`. Because the file belongs to a leaf configured with `liminaOptions.graphRules: ["runtime-client"]`, Limina compares each resolved specifier with `deny.deps`: `node:fs` matches `node:*`, and `@acme/internal-node` matches the package rule.
 
-The result is a graph check failure with the configured reason for each match. Reviewers can immediately see that browser runtime code imported `Node`-only capabilities instead of guessing whether those imports will break in the browser.
+Graph check fails and reports the configured reason for each matching rule.

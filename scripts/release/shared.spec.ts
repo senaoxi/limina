@@ -12,7 +12,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import repoConfig from '../../limina.config.mjs';
-import { createReleasePlanFromVersionSelection } from './changelog';
+import {
+  buildChangelogSection,
+  createReleasePlanFromVersionSelection,
+  insertChangelogSection,
+} from './changelog';
 import { execReleaseCommand, resolveReleaseCommand } from './command';
 import {
   compareVersions,
@@ -47,6 +51,46 @@ function plan(from: string, to: string) {
     version: to,
   });
 }
+
+it('renders nonempty changelogs without migration maps and preserves historical links', () => {
+  const section = buildChangelogSection(
+    '1.2.3',
+    [
+      '1d82962 feat: imported feature',
+      'b1f1150 fix: standalone repair',
+      'abc1234 docs: clarify behavior',
+      'def5678 build: refresh tooling',
+      'fed4321 other change',
+    ],
+    '2026-10-02',
+  );
+  assert.ok(
+    section.includes(
+      '[1d82962](https://github.com/senaoxi/limina/commit/1d82962)',
+    ),
+  );
+  assert.ok(
+    section.includes(
+      '[b1f1150](https://github.com/senaoxi/limina/commit/b1f1150)',
+    ),
+  );
+  for (const title of [
+    'Features',
+    'Bug Fixes',
+    'Documentation',
+    'Maintenance',
+    'Other Changes',
+  ])
+    assert.ok(section.includes(`### ${title}`));
+  const history =
+    '## [0.4.0]\n\n- Imported fix ([017ef49](https://github.com/senaoxi/docs-islands/commit/017ef494b51a3c99084bacc5dc7e69531f125e71))\n';
+  const output = insertChangelogSection(
+    `# Changelog\n\n## [Unreleased]\n\n${history}`,
+    section,
+  );
+  assert.ok(output.includes(section));
+  assert.ok(output.endsWith(history));
+});
 
 describe('release version precedence', () => {
   it('compares numeric prerelease identifiers numerically at every depth', () => {

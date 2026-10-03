@@ -1,3 +1,4 @@
+import { collectBundledDependencies } from '@limina/build-tools/license-policy';
 import { execFile } from 'node:child_process';
 import { once } from 'node:events';
 import {
@@ -18,6 +19,7 @@ import { promisify } from 'node:util';
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { assertNewReleaseTag } from './check-tag';
 import { assertReleaseGroup } from './publication';
 import {
   discoverReleasePackages,
@@ -35,6 +37,41 @@ function plans(): ReleasePlan[] {
     npmTag: undefined,
   }));
 }
+
+it('rejects missing, conflicting and prohibited bundled license evidence', () => {
+  assert.throws(
+    () => collectBundledDependencies([{ name: 'fixture', version: '1.0.0' }]),
+    /require/,
+  );
+  assert.throws(
+    () =>
+      collectBundledDependencies([
+        { name: 'fixture', version: '1.0.0', license: 'GPL-3.0' },
+      ]),
+    /Prohibited/,
+  );
+  assert.throws(
+    () =>
+      collectBundledDependencies([
+        { name: 'fixture', version: '1.0.0', license: 'MIT' },
+        { name: 'fixture', version: '1.0.0', license: 'ISC' },
+      ]),
+    /Conflicting/,
+  );
+});
+
+it('rejects imported tags and malformed selectors before release or deployment', () => {
+  assert.equal(assertNewReleaseTag('limina/v1.2.3-beta.1'), '1.2.3-beta.1');
+  assert.throws(() => assertNewReleaseTag('limina/v0.4.0'), /historical/);
+  for (const tag of [
+    'main',
+    'other/v1.2.3',
+    'limina/v1.2.3/../main',
+    'limina/v1.2.3\n',
+  ]) {
+    assert.throws(() => assertNewReleaseTag(tag), /Expected/);
+  }
+});
 
 describe('paired publication contract', () => {
   it('expands either package selector into dependency order', () => {

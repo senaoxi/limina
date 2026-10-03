@@ -1,14 +1,16 @@
 # Release Checks
 
-`limina release check` is separate from `package check`. It uses the same `package.entries` selection, packs the `npm tarball`, and verifies publish hygiene plus workspace publish-dependency consistency against `npm` registry content.
+`limina release check` uses `package.entries` to select outputs, packs them into an npm tarball, checks release files, and compares workspace publish dependencies against npm registry content. It runs separately from `package check`.
 
-Limina's built-in release checks always run. The optional `release.npmPackageJsonLint` integration can additionally lint the packed `package.json` with `npm-package-json-lint`.
+Built-in release checks are part of the command and do not depend on enabling an optional analyzer. An early failure, such as an invalid or private output manifest, can stop that entry before packing and later checks. The optional `release.npmPackageJsonLint` integration additionally lints the packed `package.json` with `npm-package-json-lint`.
 
-For workspace publish dependencies, Limina compares the local packed package output with an `npm dist-tag` baseline (`release.contentHash.baselineTag`, defaulting to `latest`) by package-relative content diffs. Diff reports classify files as `changed`, `local-only`, or `remote-only`, and failures list the release-relevant file names. If the consumer-visible package content matches after configured ignores, the dependency does not need a new publish.
+For workspace publish dependencies, Limina compares local packed content with an npm dist-tag baseline (`release.contentHash.baselineTag`, default `latest`). It reports `changed`, `local-only`, and `remote-only` files. Equal content after configured ignores produces no content-difference finding for that comparison; other release checks still apply.
+
+Workspace traversal starts only when the output manifest name matches a named activated source package. It reads that source manifest's `workspace:` dependencies in `dependencies`, `optionalDependencies`, and `peerDependencies`, and rejects `link:` entries. An ordinary semver dependency is not traversed solely because a local package has that name. Without a matching source package, release-file and manifest checks still run, but workspace dependency traversal is absent. For each dependency, comparison uses the first configured output entry with its source name, or `<source-package>/dist` if none exists; multiple same-name entries are not all compared as dependency outputs.
 
 Before unpacking or comparing a registry baseline tarball, Limina verifies it against `dist.integrity`. If that field is absent, Limina verifies the SHA-1 `dist.shasum` fallback. Missing, malformed, or mismatched integrity metadata fails `release check`; this verification cannot be skipped.
 
-::: warning Tarball and publish hygiene
+::: warning Release file requirements
 Release checks reject private outputs (`private: true`), missing `README.md` or `LICENSE.md`, source map files (`.map`), `JavaScript sourceMappingURL` directives, and publish dependency ranges that do not cover local workspace versions.
 :::
 
@@ -21,7 +23,7 @@ Release checks reject `workspace:`, `link:`, `file:`, and `catalog:` leaks from 
 :::
 
 ::: tip Selecting entries
-Without `--package`, `limina release check` requires the nearest cwd `package.json#name` to match a configured entry. Pass `--package <name>` one or more times to skip cwd matching.
+Without `--package`, `limina release check` resolves cwd through the validated activated-package index and requires its owner's name to match configured entries. Nearby unactivated manifests cannot select entries. Pass one or more `--package <name>` values to skip cwd matching and select all entries with each name.
 :::
 
 ## Registry authority and response limits
@@ -37,7 +39,7 @@ registry=https://packages.example.com/npm/default/
 @team:registry=https://packages.example.com/npm/team/
 ```
 
-Production registry and tarball URLs must be absolute HTTPS URLs without credentials, query strings, or fragments. Tarballs must have the same origin (scheme, host, and effective port) as the selected registry. Explicitly configured internal HTTPS registries are trusted authorities. Both metadata and tarball requests reject every redirect, including same-origin redirects. Cross-origin CDN tarballs, signed query URLs, and HTTP registries are outside the supported boundary. This registry selection support does not add npmrc authentication, custom CA, or proxy configuration support.
+Registry and tarball URLs must be absolute HTTPS URLs without credentials, query strings, or fragments. Tarballs must have the same origin (scheme, host, and effective port) as the selected registry. Explicitly configured internal HTTPS registries are trusted authorities. Both metadata and tarball requests reject every redirect, including same-origin redirects. Cross-origin CDN tarballs, signed query URLs, and HTTP registries are outside the supported boundary. This registry selection support does not add npmrc authentication, custom CA, or proxy configuration support.
 
 Metadata responses are limited to **16 MiB** and tarball responses to **128 MiB**. Limina checks `Content-Length` when valid, counts the actual response stream bytes after HTTP content decoding, and cancels oversized responses before parsing or integrity checking. Limits also apply to chunked and HTTP-compressed responses; responses exactly at the limit remain accepted. Timeouts and tarball integrity verification remain in effect. `LIMINA_RELEASE_REGISTRY` reports invalid authority, disallowed tarball URL, and oversized metadata/tarball reasons, with the byte limit and observed byte count when available.
 
@@ -80,14 +82,14 @@ If the integration is enabled but the package is not installed, `release check` 
 
 `contentHash.baselineTag` is the `npm dist-tag` used as the online baseline when comparing dependency package output. Pass a function to choose a different baseline per importer/dependency pair.
 
-Each importer → dependency edge evaluates its own baseline and ignore policy, including shared dependencies reached through several importers. Package visitation only limits recursive traversal; it does not reuse the first importer’s policy result for later edges.
+Each importer → dependency edge evaluates its baseline and ignore policy independently, including shared dependencies reached through different importers. Package-level visited state limits recursion but does not reuse the first importer's policy for later edges. The baseline must resolve synchronously to a non-empty string; invalid callback results are reported as failures. Registry metadata is cached by registry base URL and package name within one selected entry's consistency state; this does not share policy decisions across edges or establish a persistent cache.
 
 ## contentHash.builtinIgnore
 
 - **Type:** `boolean`
 - **Default:** `false`
 
-By default `contentHash.builtinIgnore` is `false`, so README/changelog/contributing/security files plus `docs/**` and `examples/**` are not ignored.
+By default `contentHash.builtinIgnore` is `false`, so no built-in files are ignored. When enabled, the built-in set contains exact root names `README`, `README.md`, `CHANGELOG.md`, `HISTORY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md`, plus paths below `docs/` and `examples/`. Other spellings or locations are not added automatically.
 
 Set `builtinIgnore: true` to use that built-in ignore set only as a fallback when `release.contentHash.ignore` is omitted or an ignore function returns `undefined`.
 
