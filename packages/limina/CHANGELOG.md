@@ -10,6 +10,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+## [0.5.0-beta.0] - 2026-10-03
+
+### Features
+
+- feat(docs): enhanced console effect demonstration ([51b72d88](https://github.com/senaoxi/limina/commit/51b72d88))
+- feat(migrate): checkpoint standalone distribution for cloud validation ([a62b7752](https://github.com/senaoxi/limina/commit/a62b7752))
+- feat: upgrade to eslint 10 ([723e13e0](https://github.com/senaoxi/limina/commit/723e13e0))
+- feat: upgrade to eslint 10 ([92e5ab6c](https://github.com/senaoxi/limina/commit/92e5ab6c))
+- feat: extract migration into standalone limina-migrate package ([342b04e5](https://github.com/senaoxi/limina/commit/342b04e5))
+- feat(limina): preserve input topology during migration ([a69a05c9](https://github.com/senaoxi/limina/commit/a69a05c9))
+- feat(limina): enforce registry authority and response limits ([d54e133c](https://github.com/senaoxi/limina/commit/d54e133c))
+
+### Bug Fixes
+
+- fix(ci): restore read-only formatting script ([8d89fca6](https://github.com/senaoxi/limina/commit/8d89fca6))
+- fix(migrate): preserve healthy sources and native relations ([6af8f716](https://github.com/senaoxi/limina/commit/6af8f716))
+
+### Documentation
+
+- docs(home): add scroll-synced terminal landing page ([b1f11505](https://github.com/senaoxi/limina/commit/b1f11505))
+- docs: record monorepo migration and validation ([2b41945a](https://github.com/senaoxi/limina/commit/2b41945a))
+
+### Maintenance
+
+- chore: finalize standalone repository migration ([772e3c1c](https://github.com/senaoxi/limina/commit/772e3c1c))
+- refactor: replace migration bridge with internal module exports ([fa9a25eb](https://github.com/senaoxi/limina/commit/fa9a25eb))
+- chore: harden tests and patch Astro dependencies ([bfe3bfa2](https://github.com/senaoxi/limina/commit/bfe3bfa2))
+- build(checker): allow the @astrojs/check 0.9 peer range ([f550fbb6](https://github.com/senaoxi/limina/commit/f550fbb6))
+- chore: update documentation links and redact local paths ([35e25e29](https://github.com/senaoxi/limina/commit/35e25e29))
+- chore: document site path updated ([e640f007](https://github.com/senaoxi/limina/commit/e640f007))
+- build: integrate standalone monorepo infrastructure ([2d54c028](https://github.com/senaoxi/limina/commit/2d54c028))
+- build: configure standalone monorepo ([5dd3022d](https://github.com/senaoxi/limina/commit/5dd3022d))
+- refactor: move Limina product to repository root ([5ad61842](https://github.com/senaoxi/limina/commit/5ad61842))
+- refactor(limina): separate dependency and package export validation ([ba7b926a](https://github.com/senaoxi/limina/commit/ba7b926a))
+
 ## [0.4.0] - 2026-09-25
 
 ### Features
