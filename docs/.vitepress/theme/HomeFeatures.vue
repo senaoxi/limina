@@ -16,7 +16,6 @@ const chinese = computed(() => lang.value.startsWith('zh'));
 const activeIndex = ref(0);
 const activeCommandIndex = ref(0);
 const isPlaying = ref(false);
-const hasUserPaused = ref(false);
 const consolePanel = ref<HTMLElement>();
 const consoleHeight = ref(320);
 const groups = computed(() => {
@@ -167,12 +166,7 @@ let frame: number | undefined;
 let resizeObserver: ResizeObserver | undefined;
 
 function play() {
-  hasUserPaused.value = false;
   isPlaying.value = true;
-}
-function pause() {
-  hasUserPaused.value = true;
-  isPlaying.value = false;
 }
 function syncScroll() {
   frame = undefined;
@@ -201,7 +195,7 @@ function syncScroll() {
     return;
   activeIndex.value = index;
   activeCommandIndex.value = commandIndex;
-  if (!hasUserPaused.value) isPlaying.value = true;
+  isPlaying.value = true;
 }
 function requestSync() {
   if (consolePanel.value) consoleHeight.value = consolePanel.value.offsetHeight;
@@ -263,12 +257,10 @@ function link(path: string) {
           :label="activeGroup.title"
           :commands="activeGroup.commands"
           :playing="isPlaying"
-          :paused="hasUserPaused"
           :chinese="chinese"
           :autoplay="true"
           @play="play"
           @pause="isPlaying = false"
-          @user-pause="pause"
         />
       </div>
       <div class="features-copies">
@@ -382,7 +374,7 @@ function link(path: string) {
   color: var(--vp-c-text-3);
 }
 .features-console :deep(.terminal-log) {
-  height: clamp(180px, 34svh, 326px);
+  height: clamp(220px, 44svh, 400px);
 }
 .features-section {
   min-height: calc(100svh - 100px);
@@ -537,19 +529,12 @@ a:focus-visible {
   .features-console :deep(.terminal-titlebar) {
     padding: 8px 14px;
   }
-  .features-console :deep(.terminal-commands) {
-    padding: 6px 10px;
-  }
   .features-console :deep(.terminal-controls) {
     min-height: 42px;
     padding: 8px 12px;
   }
-  .features-console :deep(summary) {
-    padding: 8px 12px;
-    font-size: 10px;
-  }
-  .features-console :deep(.terminal-transcript > pre) {
-    max-height: 180px;
+  .features-console :deep(.terminal-caption) {
+    padding: 10px 12px;
   }
   .features-copies {
     padding-top: 32px;

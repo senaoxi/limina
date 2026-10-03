@@ -10,11 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-## [0.5.0-beta.1] - 2026-10-03
+## [0.5.0-beta.1] - 2026-10-04
 
-### Other Changes
+### Bug Fixes
 
-- No user-facing changes were recorded for this release.
+- fix(docs): replay recorded interactive terminal output ([b7f09e4f](https://github.com/senaoxi/limina/commit/b7f09e4f67a5bfec3a6aaacb9700a68ca2daca4c))
+- fix(release): wait for new npm metadata and preserve first-package latest ([a17d287a](https://github.com/senaoxi/limina/commit/a17d287ae2c282274ae48b77d6090b91938b719a), [d8c86b3e](https://github.com/senaoxi/limina/commit/d8c86b3e5dc4e2b04e2553e6930956faa6b39950))
+- fix(ci): build private release tools before cold tag checks ([170de4ca](https://github.com/senaoxi/limina/commit/170de4ca5486c584954cd775466513c2abfba669))
 
 ## [0.5.0-beta.0] - 2026-10-03
 
